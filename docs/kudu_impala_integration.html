@@ -1,8 +1,8 @@
 ---
-title: Using Impala With Kudu
+title: Using Apache Kudu (incubating) with Apache Impala (incubating)
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-11-24 16:23:43 PST'
+last_updated: 'Last updated 2015-12-08 20:51:02 PST'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -25,11 +25,11 @@ limitations under the License.
   <div class="row">
     <div class="col-md-9">
 
-<h1>Using Impala With Kudu</h1>
+<h1>Using Apache Kudu (incubating) with Apache Impala (incubating)</h1>
       <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>Kudu has tight integration with Cloudera Impala, allowing you to use Impala
+<p>Kudu has tight integration with Impala, allowing you to use Impala
 to insert, query, update, and delete data from Kudu tablets using Impala&#8217;s SQL
 syntax, as an alternative to using the <a href="installation.html#view_api">Kudu APIs</a>
 to build a custom Kudu application. In addition, you can use JDBC or ODBC to connect
@@ -651,12 +651,30 @@ to an Impala table, except that you need to write the <code>CREATE</code> statem
 Use the following example as a guideline. Impala first creates the table, then creates
 the mapping.</p>
 </div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+When creating a new Kudu table, you are strongly encouraged to specify
+a distribution scheme. If you do not, your table will consist of a single tablet,
+and thus load will not be distributed across your cluster. See
+<a href="#partitioning_tables">Partitioning Tables</a>. The table creation example below is distributed into 16
+buckets by hashing the <code>id</code> column, for simplicity. See
+<a href="#partitioning_rules_of_thumb">[partitioning_rules_of_thumb]</a> for guidelines on partitioning.
+</td>
+</tr>
+</table>
+</div>
 <div class="listingblock">
 <div class="content">
 <pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE my_first_table (
 id BIGINT,
 name STRING
 )
+DISTRIBUTE BY HASH (id) INTO 16 BUCKETS
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'my_first_table',
@@ -902,7 +920,7 @@ must contain at least one column.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_partitioning_tables"><a class="link" href="#_partitioning_tables">Partitioning Tables</a></h3>
+<h3 id="partitioning_tables"><a class="link" href="#partitioning_tables">Partitioning Tables</a></h3>
 <div class="paragraph">
 <p>Tables are partitioned into tablets according to a partition schema on the primary
 key columns. Each tablet is served by at least one tablet server. Ideally, a table
@@ -1177,13 +1195,41 @@ than possibly being limited to 4.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_first_table VALUES (99, "sarah");</code></pre>
+<pre>[[partitioning_rules_of_thumb]]
+==== Partitioning Rules of Thumb
+
+- For large tables, such as fact tables, aim for as many tablets as you have
+  cores in the cluster.
+- For small tables, such as dimension tables, aim for a large enough number of tablets
+  that each tablet is at least 1 GB in size.
+
+In general, be mindful the number of tablets limits the parallelism of reads,
+in the current implementation. Increasing the number of tablets significantly
+beyond the number of cores is likely to have diminishing returns.
+
+=== Inserting Data Into Kudu Tables
+
+Impala allows you to use standard SQL syntax to insert data into Kudu.
+
+==== Inserting Single Values
+
+This example inserts a single row.
+
+[source,sql]</pre>
 </div>
+</div>
+<div class="paragraph">
+<p>INSERT INTO my_first_table VALUES (99, "sarah");</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_first_table VALUES (1, "john"), (2, "jane"), (3, "jim");</code></pre>
+<pre>This example inserts three rows using a single statement.
+
+[source,sql]</pre>
 </div>
+</div>
+<div class="paragraph">
+<p>INSERT INTO my_first_table VALUES (1, "john"), (2, "jane"), (3, "jim");</p>
 </div>
 </div>
 <div class="sect3">
@@ -1527,7 +1573,7 @@ data.</p>
 <li><a href="#_querying_an_existing_kudu_table_in_impala">Querying an Existing Kudu Table In Impala</a></li>
 <li><a href="#kudu_impala_create_table">Creating a New Kudu Table From Impala</a></li>
 <li><a href="#_optimizing_performance_for_evaluating_sql_predicates">Optimizing Performance for Evaluating SQL Predicates</a></li>
-<li><a href="#_partitioning_tables">Partitioning Tables</a></li>
+<li><a href="#partitioning_tables">Partitioning Tables</a></li>
 <li><a href="#_updating_a_row">Updating a Row</a></li>
 <li><a href="#_deleting_a_row">Deleting a Row</a></li>
 <li><a href="#impala_insertion_caveat">Failures During <code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> Operations</a></li>

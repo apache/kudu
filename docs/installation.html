@@ -1,8 +1,8 @@
 ---
-title: Installing Kudu
+title: Installing Apache Kudu (incubating)
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-11-24 16:23:43 PST'
+last_updated: 'Last updated 2015-12-08 20:47:08 PST'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -25,7 +25,7 @@ limitations under the License.
   <div class="row">
     <div class="col-md-9">
 
-<h1>Installing Kudu</h1>
+<h1>Installing Apache Kudu (incubating)</h1>
       <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
@@ -379,7 +379,8 @@ need, you can build Kudu from source. You can build from source on any supported
 <p>Install the prerequisite libraries, if they are not installed:</p>
 <div class="listingblock">
 <div class="content">
-<pre>$ sudo yum install boost-static boost-devel openssl-devel cyrus-sasl-devel</pre>
+<pre>$ sudo yum install boost-static boost-devel openssl-devel cyrus-sasl-devel \
+  cyrus-sasl-plain patch pkg-config make rsync vim-common gdb</pre>
 </div>
 </div>
 </li>
@@ -451,8 +452,8 @@ automated deployment scenario. It skips the steps marked <strong>Optional</stron
 <div class="content">
 <pre class="highlight"><code class="language-bash" data-lang="bash">#!/bin/bash
 
-sudo yum -y install boost-static boost-devel openssl-devel cyrus-sasl-devel
-git clone http://github.com/cloudera/kudu
+sudo yum -y install boost-static boost-devel openssl-devel cyrus-sasl-devel \
+  cyrus-sasl-plain patch pkg-config make rsync vim-common gdb
 cd kudu
 thirdparty/build-if-necessary.sh
 thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
@@ -472,7 +473,8 @@ make install</code></pre>
 <div class="listingblock">
 <div class="content">
 <pre>$ sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
-  libssl-dev libsasl2-dev libtool ntp</pre>
+  libssl-dev libsasl2-dev libsasl2-modules libtool ntp patch pkg-config make rsync \
+  unzip vim-common gdb python</pre>
 </div>
 </div>
 </li>
@@ -525,16 +527,17 @@ is not appropriate for uploading to the Kudu website.</p>
 <div class="title">Example 2. Ubuntu / Debian Build Script</div>
 <div class="content">
 <div class="paragraph">
-<p>This script provides an overview of the procedure to build Kudu on RHEL or
-CentOS, and can be used as the basis for an automated deployment scenario. It skips
+<p>This script provides an overview of the procedure to build Kudu on Ubuntu, and
+can be used as the basis for an automated deployment scenario. It skips
 the steps marked <strong>Optional</strong> above.</p>
 </div>
 <div class="listingblock">
 <div class="content">
 <pre class="highlight"><code class="language-bash" data-lang="bash">#!/bin/bash
 
-sudo apt-get -y install git autoconf automake libboost-thread-dev curl \
-  gcc g++ libssl-dev libsasl2-dev libtool ntp
+sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
+  libssl-dev libsasl2-dev libsasl2-modules libtool ntp patch pkg-config make rsync \
+  unzip vim-common gdb python
 git clone http://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
@@ -617,6 +620,30 @@ make -j4</code></pre>
 </div>
 </li>
 </ol>
+</div>
+<div class="exampleblock">
+<div class="title">Example 3. OSX Build Script</div>
+<div class="content">
+<div class="paragraph">
+<p>This script provides an overview of the procedure to build Kudu on OSX, and can
+be used as the basis for an automated deployment scenario. It assumes Xcode and Homebrew
+are installed.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>#!/bin/bash
+
+brew install autoconf automake cmake libtool pkg-config boost pstree
+brew install openssl
+brew link -f openssl
+git clone http://github.com/cloudera/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+thirdparty/installed/bin/cmake .
+make -j4</pre>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>

@@ -2,7 +2,7 @@
 title: kudu-master Unsupported Flags
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-11-24 16:52:09 PST'
+last_updated: 'Last updated 2015-12-08 21:18:59 PST'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -32,202 +32,6 @@ limitations under the License.
 <p>Flags marked <code>advanced</code> or <code>experimental</code> and not marked <code>stable</code>, or flags with no stability tag, are <strong>unsupported</strong> and are included
 for informational purposes only. They are subject to change or be removed without notice.</p>
 </div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_block_cache_type"><a class="link" href="#kudu-master_block_cache_type"><code>--block_cache_type</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Which type of block cache to use for caching data. Valid choices are 'DRAM' or 'NVM'. DRAM, the default, caches data in regular memory. 'NVM' caches data in a memory-mapped file using the NVML library.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DRAM</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_cfile_default_block_size"><a class="link" href="#kudu-master_cfile_default_block_size"><code>--cfile_default_block_size</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The default block size to use in cfiles</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>262144</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_cfile_default_compression_codec"><a class="link" href="#kudu-master_cfile_default_compression_codec"><code>--cfile_default_compression_codec</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Default cfile block compression codec.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>none</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_cfile_do_on_finish"><a class="link" href="#kudu-master_cfile_do_on_finish"><code>--cfile_do_on_finish</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>What to do to cfile blocks when writing is finished. Possible values are 'close', 'flush', or 'nothing'.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>close</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_codegen_dump_functions"><a class="link" href="#kudu-master_codegen_dump_functions"><code>--codegen_dump_functions</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Whether to print the LLVM IR for generated functions</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_codegen_dump_mc"><a class="link" href="#kudu-master_codegen_dump_mc"><code>--codegen_dump_mc</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Whether to dump the disassembly of the machine code for generated functions.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_codegen_time_compilation"><a class="link" href="#kudu-master_codegen_time_compilation"><code>--codegen_time_compilation</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Whether to print time that each code generation request took.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
-</tr>
-</tbody>
-</table>
 </div>
 </div>
 <div class="sect1">
@@ -679,146 +483,6 @@ for informational purposes only. They are subject to change or be removed withou
 </div>
 </div>
 <div class="sect1">
-<h2 id="kudu-master_block_coalesce_close"><a class="link" href="#kudu-master_block_coalesce_close"><code>--block_coalesce_close</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Coalesce synchronization of data during CloseBlocks()</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_block_manager"><a class="link" href="#kudu-master_block_manager"><code>--block_manager</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Which block manager to use for storage. Valid options are 'file' and 'log'.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>log</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_log_block_manager_test_hole_punching"><a class="link" href="#kudu-master_log_block_manager_test_hole_punching"><code>--log_block_manager_test_hole_punching</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Ensure hole punching is supported by the underlying filesystem</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">unsafe,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_log_container_max_size"><a class="link" href="#kudu-master_log_container_max_size"><code>--log_container_max_size</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Maximum size (soft) of a log container</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10737418240</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_log_container_preallocate_bytes"><a class="link" href="#kudu-master_log_container_preallocate_bytes"><code>--log_container_preallocate_bytes</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Number of bytes to preallocate in a log container when creating new blocks. Set to 0 to disable preallocation</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>33554432</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
 <h2 id="kudu-master_default_num_replicas"><a class="link" href="#kudu-master_default_num_replicas"><code>--default_num_replicas</code></a></h2>
 <div class="sectionbody">
 <div class="paragraph">
@@ -1071,314 +735,6 @@ for informational purposes only. They are subject to change or be removed withou
 </div>
 </div>
 <div class="sect1">
-<h2 id="kudu-master_rpc_acceptor_listen_backlog"><a class="link" href="#kudu-master_rpc_acceptor_listen_backlog"><code>--rpc_acceptor_listen_backlog</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Socket backlog parameter used when listening for RPC connections. This defines the maximum length to which the queue of pending TCP connections inbound to the RPC server may grow. If a connection request arrives when the queue is full, the client may receive an error. Higher values may help the server ride over bursts of new inbound connection requests.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>128</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_rpc_dump_all_traces"><a class="link" href="#kudu-master_rpc_dump_all_traces"><code>--rpc_dump_all_traces</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>If true, dump all RPC traces at INFO level</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_rpc_default_keepalive_time_ms"><a class="link" href="#kudu-master_rpc_default_keepalive_time_ms"><code>--rpc_default_keepalive_time_ms</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>If an RPC connection from a client is idle for this amount of time, the server will disconnect the client.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>65000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_rpc_callback_max_cycles"><a class="link" href="#kudu-master_rpc_callback_max_cycles"><code>--rpc_callback_max_cycles</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The maximum number of cycles for which an RPC callback should be allowed to run without emitting a warning. (Advanced debugging option)</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>100000000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_rpc_negotiation_timeout_ms"><a class="link" href="#kudu-master_rpc_negotiation_timeout_ms"><code>--rpc_negotiation_timeout_ms</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Timeout for negotiating an RPC connection.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>3000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_rpc_max_message_size"><a class="link" href="#kudu-master_rpc_max_message_size"><code>--rpc_max_message_size</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The maximum size of a message that any RPC that the server will accept.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>8388608</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_web_log_bytes"><a class="link" href="#kudu-master_web_log_bytes"><code>--web_log_bytes</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The maximum number of bytes to display on the debug webserver&#8217;s log page</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1048576</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_max_clock_sync_error_usec"><a class="link" href="#kudu-master_max_clock_sync_error_usec"><code>--max_clock_sync_error_usec</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Maximum allowed clock synchronization error as reported by NTP before the server will abort.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10000000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_rpc_num_acceptors_per_address"><a class="link" href="#kudu-master_rpc_num_acceptors_per_address"><code>--rpc_num_acceptors_per_address</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Number of RPC acceptor threads for each bound address</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_rpc_num_service_threads"><a class="link" href="#kudu-master_rpc_num_service_threads"><code>--rpc_num_service_threads</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Number of RPC worker threads to run</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_rpc_service_queue_length"><a class="link" href="#kudu-master_rpc_service_queue_length"><code>--rpc_service_queue_length</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Default length of queue for incoming RPC requests</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>50</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
 <h2 id="kudu-master_num_reactor_threads"><a class="link" href="#kudu-master_num_reactor_threads"><code>--num_reactor_threads</code></a></h2>
 <div class="sectionbody">
 <div class="paragraph">
@@ -1401,286 +757,6 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_metrics_log_interval_ms"><a class="link" href="#kudu-master_metrics_log_interval_ms"><code>--metrics_log_interval_ms</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Interval (in milliseconds) at which the server will dump its metrics to a local log file. The log files are located in the same directory as specified by the -log_dir flag. If this is not a positive value, then metrics logging will be disabled.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_webserver_max_post_length_bytes"><a class="link" href="#kudu-master_webserver_max_post_length_bytes"><code>--webserver_max_post_length_bytes</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The maximum length of a POST request that will be accepted by the embedded web server.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1048576</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_webserver_doc_root"><a class="link" href="#kudu-master_webserver_doc_root"><code>--webserver_doc_root</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Files under &lt;webserver_doc_root&gt; are accessible via the debug webserver. Defaults to $KUDU_HOME/www, or if $KUDU_HOME is not set, disables the document root</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_webserver_enable_doc_root"><a class="link" href="#kudu-master_webserver_enable_doc_root"><code>--webserver_enable_doc_root</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>If true, webserver may serve static files from the webserver_doc_root</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_webserver_interface"><a class="link" href="#kudu-master_webserver_interface"><code>--webserver_interface</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Interface to start debug webserver on. If blank, webserver binds to 0.0.0.0</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_webserver_num_worker_threads"><a class="link" href="#kudu-master_webserver_num_worker_threads"><code>--webserver_num_worker_threads</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Maximum number of threads to start for handling web server requests</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>50</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_budgeted_compaction_target_rowset_size"><a class="link" href="#kudu-master_budgeted_compaction_target_rowset_size"><code>--budgeted_compaction_target_rowset_size</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The target size for DiskRowSets during flush/compact when the budgeted compaction policy is used</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>33554432</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,experimental</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_deltafile_default_block_size"><a class="link" href="#kudu-master_deltafile_default_block_size"><code>--deltafile_default_block_size</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Block size for delta files. In the future, this may become configurable on a per-table basis.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>32768</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_tablet_delta_store_major_compact_min_ratio"><a class="link" href="#kudu-master_tablet_delta_store_major_compact_min_ratio"><code>--tablet_delta_store_major_compact_min_ratio</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Minimum ratio of sizeof(deltas) to sizeof(base data) before a major compaction can run (Advanced option)</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">double</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0.10000000149011612</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-master_tablet_delta_store_minor_compact_max"><a class="link" href="#kudu-master_tablet_delta_store_minor_compact_max"><code>--tablet_delta_store_minor_compact_max</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>How many delta stores are required before forcing a minor delta compaction (Advanced option)</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
 </tr>
 </tbody>
 </table>
@@ -2017,6 +1093,930 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_block_cache_type"><a class="link" href="#kudu-master_block_cache_type"><code>--block_cache_type</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Which type of block cache to use for caching data. Valid choices are 'DRAM' or 'NVM'. DRAM, the default, caches data in regular memory. 'NVM' caches data in a memory-mapped file using the NVML library.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DRAM</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_cfile_default_block_size"><a class="link" href="#kudu-master_cfile_default_block_size"><code>--cfile_default_block_size</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The default block size to use in cfiles</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>262144</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_cfile_default_compression_codec"><a class="link" href="#kudu-master_cfile_default_compression_codec"><code>--cfile_default_compression_codec</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Default cfile block compression codec.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>none</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_cfile_do_on_finish"><a class="link" href="#kudu-master_cfile_do_on_finish"><code>--cfile_do_on_finish</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>What to do to cfile blocks when writing is finished. Possible values are 'close', 'flush', or 'nothing'.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>close</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_codegen_dump_functions"><a class="link" href="#kudu-master_codegen_dump_functions"><code>--codegen_dump_functions</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to print the LLVM IR for generated functions</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_codegen_dump_mc"><a class="link" href="#kudu-master_codegen_dump_mc"><code>--codegen_dump_mc</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to dump the disassembly of the machine code for generated functions.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_codegen_time_compilation"><a class="link" href="#kudu-master_codegen_time_compilation"><code>--codegen_time_compilation</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to print time that each code generation request took.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_block_coalesce_close"><a class="link" href="#kudu-master_block_coalesce_close"><code>--block_coalesce_close</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Coalesce synchronization of data during CloseBlocks()</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_block_manager"><a class="link" href="#kudu-master_block_manager"><code>--block_manager</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Which block manager to use for storage. Valid options are 'file' and 'log'.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>log</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_log_block_manager_test_hole_punching"><a class="link" href="#kudu-master_log_block_manager_test_hole_punching"><code>--log_block_manager_test_hole_punching</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Ensure hole punching is supported by the underlying filesystem</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">unsafe,advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_log_container_max_size"><a class="link" href="#kudu-master_log_container_max_size"><code>--log_container_max_size</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Maximum size (soft) of a log container</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10737418240</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_log_container_preallocate_bytes"><a class="link" href="#kudu-master_log_container_preallocate_bytes"><code>--log_container_preallocate_bytes</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Number of bytes to preallocate in a log container when creating new blocks. Set to 0 to disable preallocation</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>33554432</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_rpc_acceptor_listen_backlog"><a class="link" href="#kudu-master_rpc_acceptor_listen_backlog"><code>--rpc_acceptor_listen_backlog</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Socket backlog parameter used when listening for RPC connections. This defines the maximum length to which the queue of pending TCP connections inbound to the RPC server may grow. If a connection request arrives when the queue is full, the client may receive an error. Higher values may help the server ride over bursts of new inbound connection requests.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>128</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_rpc_dump_all_traces"><a class="link" href="#kudu-master_rpc_dump_all_traces"><code>--rpc_dump_all_traces</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If true, dump all RPC traces at INFO level</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_rpc_default_keepalive_time_ms"><a class="link" href="#kudu-master_rpc_default_keepalive_time_ms"><code>--rpc_default_keepalive_time_ms</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If an RPC connection from a client is idle for this amount of time, the server will disconnect the client.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>65000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_rpc_callback_max_cycles"><a class="link" href="#kudu-master_rpc_callback_max_cycles"><code>--rpc_callback_max_cycles</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The maximum number of cycles for which an RPC callback should be allowed to run without emitting a warning. (Advanced debugging option)</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>100000000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_rpc_negotiation_timeout_ms"><a class="link" href="#kudu-master_rpc_negotiation_timeout_ms"><code>--rpc_negotiation_timeout_ms</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Timeout for negotiating an RPC connection.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>3000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_rpc_max_message_size"><a class="link" href="#kudu-master_rpc_max_message_size"><code>--rpc_max_message_size</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The maximum size of a message that any RPC that the server will accept.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>8388608</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_web_log_bytes"><a class="link" href="#kudu-master_web_log_bytes"><code>--web_log_bytes</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The maximum number of bytes to display on the debug webserver&#8217;s log page</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1048576</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_max_clock_sync_error_usec"><a class="link" href="#kudu-master_max_clock_sync_error_usec"><code>--max_clock_sync_error_usec</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Maximum allowed clock synchronization error as reported by NTP before the server will abort.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10000000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_rpc_num_acceptors_per_address"><a class="link" href="#kudu-master_rpc_num_acceptors_per_address"><code>--rpc_num_acceptors_per_address</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Number of RPC acceptor threads for each bound address</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_rpc_num_service_threads"><a class="link" href="#kudu-master_rpc_num_service_threads"><code>--rpc_num_service_threads</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Number of RPC worker threads to run</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_rpc_service_queue_length"><a class="link" href="#kudu-master_rpc_service_queue_length"><code>--rpc_service_queue_length</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Default length of queue for incoming RPC requests</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>50</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_metrics_log_interval_ms"><a class="link" href="#kudu-master_metrics_log_interval_ms"><code>--metrics_log_interval_ms</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Interval (in milliseconds) at which the server will dump its metrics to a local log file. The log files are located in the same directory as specified by the -log_dir flag. If this is not a positive value, then metrics logging will be disabled.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_webserver_max_post_length_bytes"><a class="link" href="#kudu-master_webserver_max_post_length_bytes"><code>--webserver_max_post_length_bytes</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The maximum length of a POST request that will be accepted by the embedded web server.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1048576</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_webserver_doc_root"><a class="link" href="#kudu-master_webserver_doc_root"><code>--webserver_doc_root</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Files under &lt;webserver_doc_root&gt; are accessible via the debug webserver. Defaults to $KUDU_HOME/www, or if $KUDU_HOME is not set, disables the document root</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_webserver_enable_doc_root"><a class="link" href="#kudu-master_webserver_enable_doc_root"><code>--webserver_enable_doc_root</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If true, webserver may serve static files from the webserver_doc_root</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_webserver_interface"><a class="link" href="#kudu-master_webserver_interface"><code>--webserver_interface</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Interface to start debug webserver on. If blank, webserver binds to 0.0.0.0</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_webserver_num_worker_threads"><a class="link" href="#kudu-master_webserver_num_worker_threads"><code>--webserver_num_worker_threads</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Maximum number of threads to start for handling web server requests</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>50</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_budgeted_compaction_target_rowset_size"><a class="link" href="#kudu-master_budgeted_compaction_target_rowset_size"><code>--budgeted_compaction_target_rowset_size</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The target size for DiskRowSets during flush/compact when the budgeted compaction policy is used</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>33554432</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_deltafile_default_block_size"><a class="link" href="#kudu-master_deltafile_default_block_size"><code>--deltafile_default_block_size</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Block size for delta files. In the future, this may become configurable on a per-table basis.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>32768</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_tablet_delta_store_major_compact_min_ratio"><a class="link" href="#kudu-master_tablet_delta_store_major_compact_min_ratio"><code>--tablet_delta_store_major_compact_min_ratio</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Minimum ratio of sizeof(deltas) to sizeof(base data) before a major compaction can run (Advanced option)</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">double</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0.10000000149011612</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_tablet_delta_store_minor_compact_max"><a class="link" href="#kudu-master_tablet_delta_store_minor_compact_max"><code>--tablet_delta_store_minor_compact_max</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>How many delta stores are required before forcing a minor delta compaction (Advanced option)</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
 </tr>
 </tbody>
 </table>
