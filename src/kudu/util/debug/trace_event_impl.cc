@@ -675,6 +675,7 @@ void JsonEscape(StringPiece s, string* out) {
         break;
       case '\n':
         out->append("\\n");
+        break;
       case '\r':
         out->append("\\r");
         break;
