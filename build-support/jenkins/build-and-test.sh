@@ -267,7 +267,7 @@ fi
 
 if [ "$DO_COVERAGE" == "1" ]; then
   echo Generating coverage report...
-  ./thirdparty/gcovr-3.0/scripts/gcovr -r src/  -e '.*\.pb\..*' --xml \
+  ./thirdparty/gcovr-3.0/scripts/gcovr -r .  -e '.*\.pb\..*' --xml \
       > build/coverage.xml || EXIT_STATUS=$?
 fi
 
