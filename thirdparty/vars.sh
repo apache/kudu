@@ -58,7 +58,7 @@ RAPIDJSON_VERSION=0.11
 RAPIDJSON_DIR=$TP_DIR/rapidjson-${RAPIDJSON_VERSION}
 
 # Hash of the squeasel git revision to use.
-# (from http://github.mtv.cloudera.com/CDH/squeasel)
+# (from http://github.com/cloudera/squeasel)
 #
 # To re-build this tarball use the following in the squeasel repo:
 #  export NAME=squeasel-$(git rev-parse HEAD)
@@ -66,7 +66,7 @@ RAPIDJSON_DIR=$TP_DIR/rapidjson-${RAPIDJSON_VERSION}
 #  s3cmd put -P /tmp/$NAME.tar.gz s3://cloudera-thirdparty-libs/$NAME.tar.gz
 #
 # File a HD ticket for access to the cloudera-dev AWS instance to push to S3.
-SQUEASEL_VERSION=5b330b5791ea69fc0e65c7e7751f27437dae1e7d
+SQUEASEL_VERSION=fe28fe62b80c2e8a5e6a7d23e58369309958dc26
 SQUEASEL_DIR=$TP_DIR/squeasel-${SQUEASEL_VERSION}
 
 # SVN revision of google style guide:
