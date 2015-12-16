@@ -60,7 +60,7 @@ fi
 
 set -x
 cd "$DOCS_SCRIPTS"
-"$BUNDLE" install --no-color --path "$GEM_PATH" --jobs 4
+"$BUNDLE" install --no-color --path "$GEM_PATH"
 set +x
 
 # We need the xsltproc package.
