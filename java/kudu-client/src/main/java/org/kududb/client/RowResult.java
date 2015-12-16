@@ -363,8 +363,7 @@ public class RowResult {
   /**
    * Get the specified column's binary data.
    *
-   * This doesn't copy the data and instead returns a ByteBuffer that wraps it. The ByteBuffer
-   * is backed by 'indirectData' in this RowResult.
+   * This doesn't copy the data and instead returns a ByteBuffer that wraps it.
    *
    * @param columnName name of the column to get data for
    * @return a byte[] with the binary data.
@@ -378,8 +377,7 @@ public class RowResult {
   /**
    * Get the specified column's binary data.
    *
-   * This doesn't copy the data and instead returns a ByteBuffer that wraps it. The ByteBuffer
-   * is backed by 'indirectData' in this RowResult.
+   * This doesn't copy the data and instead returns a ByteBuffer that wraps it.
    *
    * @param columnIndex Column index in the schema
    * @return a byte[] with the binary data.

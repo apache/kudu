@@ -240,7 +240,8 @@ public class BaseKuduTest {
             new ColumnSchema.ColumnSchemaBuilder("float", Type.FLOAT).build(),
             new ColumnSchema.ColumnSchemaBuilder("double", Type.DOUBLE).build(),
             new ColumnSchema.ColumnSchemaBuilder("string", Type.STRING).build(),
-            new ColumnSchema.ColumnSchemaBuilder("binary", Type.BINARY).build(),
+            new ColumnSchema.ColumnSchemaBuilder("binary-array", Type.BINARY).build(),
+            new ColumnSchema.ColumnSchemaBuilder("binary-bytebuffer", Type.BINARY).build(),
             new ColumnSchema.ColumnSchemaBuilder("null", Type.STRING).nullable(true).build(),
             new ColumnSchema.ColumnSchemaBuilder("timestamp", Type.TIMESTAMP).build());
 

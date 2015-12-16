@@ -52,9 +52,12 @@ public class TestRowResult extends BaseKuduTest {
     row.addFloat(5, 5.6f);
     row.addDouble(6, 7.8);
     row.addString(7, "string-value");
-    row.addBinary(8, "binary-value".getBytes());
-    row.setNull(9);
-    row.addLong(10, 10l);
+    row.addBinary(8, "binary-array".getBytes());
+    ByteBuffer bb = ByteBuffer.wrap("binary-bytebuffer".getBytes());
+    bb.position(7); // We're only inserting the bytebuffer part of the original array.
+    row.addBinary(9, bb);
+    row.setNull(10);
+    row.addLong(11, 11l);
 
     KuduSession session = syncClient.newSession();
     session.apply(insert);
@@ -89,21 +92,23 @@ public class TestRowResult extends BaseKuduTest {
       assertEquals("string-value", rr.getString(7));
       assertEquals("string-value", rr.getString(allTypesSchema.getColumnByIndex(7).getName()));
 
-      assertArrayEquals("binary-value".getBytes(), rr.getBinaryCopy(8));
-      assertArrayEquals("binary-value".getBytes(),
+      assertArrayEquals("binary-array".getBytes(), rr.getBinaryCopy(8));
+      assertArrayEquals("binary-array".getBytes(),
           rr.getBinaryCopy(allTypesSchema.getColumnByIndex(8).getName()));
 
       ByteBuffer buffer = rr.getBinary(8);
       assertEquals(buffer, rr.getBinary(allTypesSchema.getColumnByIndex(8).getName()));
       byte[] binaryValue = new byte[buffer.remaining()];
       buffer.get(binaryValue);
-      assertArrayEquals("binary-value".getBytes(), binaryValue);
+      assertArrayEquals("binary-array".getBytes(), binaryValue);
 
-      assertEquals(true, rr.isNull(9));
-      assertEquals(true, rr.isNull(allTypesSchema.getColumnByIndex(9).getName()));
+      assertArrayEquals("bytebuffer".getBytes(), rr.getBinaryCopy(9));
 
-      assertEquals(10, rr.getLong(10));
-      assertEquals(10, rr.getLong(allTypesSchema.getColumnByIndex(10).getName()));
+      assertEquals(true, rr.isNull(10));
+      assertEquals(true, rr.isNull(allTypesSchema.getColumnByIndex(10).getName()));
+
+      assertEquals(11, rr.getLong(11));
+      assertEquals(11, rr.getLong(allTypesSchema.getColumnByIndex(11).getName()));
 
       // We test with the column name once since it's the same method for all types, unlike above.
       assertEquals(Type.INT8, rr.getColumnType(allTypesSchema.getColumnByIndex(0).getName()));
@@ -116,7 +121,7 @@ public class TestRowResult extends BaseKuduTest {
       assertEquals(Type.DOUBLE, rr.getColumnType(6));
       assertEquals(Type.STRING, rr.getColumnType(7));
       assertEquals(Type.BINARY, rr.getColumnType(8));
-      assertEquals(Type.TIMESTAMP, rr.getColumnType(10));
+      assertEquals(Type.TIMESTAMP, rr.getColumnType(11));
     }
   }
 }

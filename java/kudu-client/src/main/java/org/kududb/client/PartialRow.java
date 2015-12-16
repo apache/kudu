@@ -13,6 +13,7 @@
 // limitations under the License.
 package org.kududb.client;
 
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
@@ -25,24 +26,31 @@ import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 
 /**
- * Class used to represent parts of a row along with its schema.
+ * Class used to represent parts of a row along with its schema.<p>
  *
  * Values can be replaced as often as needed, but once the enclosing {@link Operation} is applied
- * then they cannot be changed again. This means that a PartialRow cannot be reused.
+ * then they cannot be changed again. This means that a PartialRow cannot be reused.<p>
  *
  * Each PartialRow is backed by an byte array where all the cells (except strings and binary data)
- * are written. The others are kept in a List.
+ * are written. The others are kept in a List.<p>
+ *
+ * This class isn't thread-safe.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public class PartialRow {
 
   private final Schema schema;
-  // Variable length data. If string, will be UTF-8 encoded.
-  private final List<byte[]> varLengthData;
+
+  // Variable length data. If string, will be UTF-8 encoded. Elements of this list _must_ have a
+  // mark that we can reset() to. Readers of these fields (encoders, etc) must call reset() before
+  // attempting to read these values.
+  private final List<ByteBuffer> varLengthData;
   private final byte[] rowAlloc;
+
   private final BitSet columnsBitSet;
   private final BitSet nullsBitSet;
+
   private boolean frozen = false;
 
   /**
@@ -57,7 +65,7 @@ public class PartialRow {
         new BitSet(this.schema.getColumnCount()) : null;
     this.rowAlloc = new byte[schema.getRowSize()];
     // Pre-fill the array with nulls. We'll only replace cells that have varlen values.
-    this.varLengthData = Arrays.asList(new byte[this.schema.getColumnCount()][]);
+    this.varLengthData = Arrays.asList(new ByteBuffer[this.schema.getColumnCount()]);
   }
 
   /**
@@ -68,8 +76,19 @@ public class PartialRow {
     this.schema = row.schema;
 
     this.varLengthData = Lists.newArrayListWithCapacity(row.varLengthData.size());
-    for (byte[] data: row.varLengthData) {
-      this.varLengthData.add(data == null ? null : data.clone());
+    for (ByteBuffer data: row.varLengthData) {
+      if (data == null) {
+        this.varLengthData.add(null);
+      } else {
+        data.reset();
+        // Deep copy the ByteBuffer.
+        ByteBuffer clone = ByteBuffer.allocate(data.remaining());
+        clone.put(data);
+        clone.flip();
+
+        clone.mark(); // We always expect a mark.
+        this.varLengthData.add(clone);
+      }
     }
 
     this.rowAlloc = row.rowAlloc.clone();
@@ -326,6 +345,21 @@ public class PartialRow {
   }
 
   /**
+   * Add binary data with the specified value, from the current ByteBuffer's position to its limit.
+   * This method duplicates the ByteBuffer but doesn't copy the data. This means that the wrapped
+   * data must not be mutated after this.
+   * @param columnIndex the column's index in the schema
+   * @param value byte buffer to get the value from
+   * @throws IllegalArgumentException if the column doesn't exist or if the value doesn't match
+   * the column's type
+   * @throws IllegalStateException if the row was already applied
+   */
+  public void addBinary(int columnIndex, ByteBuffer value) {
+    checkColumn(schema.getColumnByIndex(columnIndex), Type.BINARY);
+    addVarLengthData(columnIndex, value);
+  }
+
+  /**
    * Add binary data with the specified value.
    * Note that the provided value must not be mutated after this.
    * @param columnName Name of the column
@@ -338,8 +372,31 @@ public class PartialRow {
     addBinary(schema.getColumnIndex(columnName), val);
   }
 
+  /**
+   * Add binary data with the specified value, from the current ByteBuffer's position to its limit.
+   * This method duplicates the ByteBuffer but doesn't copy the data. This means that the wrapped
+   * data must not be mutated after this.
+   * @param columnName Name of the column
+   * @param value byte buffer to get the value from
+   * @throws IllegalArgumentException if the column doesn't exist or if the value doesn't match
+   * the column's type
+   * @throws IllegalStateException if the row was already applied
+   */
+  public void addBinary(String columnName, ByteBuffer value) {
+    addBinary(schema.getColumnIndex(columnName), value);
+  }
+
   private void addVarLengthData(int columnIndex, byte[] val) {
-    varLengthData.set(columnIndex, val);
+    addVarLengthData(columnIndex, ByteBuffer.wrap(val));
+  }
+
+  private void addVarLengthData(int columnIndex, ByteBuffer val) {
+    // A duplicate will copy all the original's metadata but still point to the same content.
+    ByteBuffer duplicate = val.duplicate();
+    // Mark the current position so we can reset to it.
+    duplicate.mark();
+
+    varLengthData.set(columnIndex, duplicate);
     // Set the usage bit but we don't care where it is.
     getPositionInRowAllocAndSetBitSet(columnIndex);
     // We don't set anything in row alloc, it will be managed at encoding time.
@@ -464,7 +521,7 @@ public class PartialRow {
    * Get the list variable length data cells that were added to this row.
    * @return a list of binary data, may be empty
    */
-  List<byte[]> getVarLengthData() {
+  List<ByteBuffer> getVarLengthData() {
     return varLengthData;
   }
 

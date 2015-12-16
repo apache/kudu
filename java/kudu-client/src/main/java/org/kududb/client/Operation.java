@@ -13,7 +13,6 @@
 // limitations under the License.
 package org.kududb.client;
 
-import com.google.common.primitives.Longs;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
@@ -29,9 +28,9 @@ import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -170,7 +169,10 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   static class OperationsEncoder {
     private Schema schema;
     private ByteBuffer rows;
-    private ByteArrayOutputStream indirect;
+    // We're filling this list as we go through the operations in encodeRow() and at the same time
+    // compute the total size, which will be used to right-size the array in toPB().
+    private List<ByteBuffer> indirect;
+    private long indirectWrittenBytes;
 
     /**
      * Initializes the state of the encoder based on the schema and number of operations to encode.
@@ -195,7 +197,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
       // instead of a doubling buffer like BAOS.
       this.rows = ByteBuffer.allocate(sizePerRow * numOperations)
                             .order(ByteOrder.LITTLE_ENDIAN);
-      this.indirect = new ByteArrayOutputStream();
+      this.indirect = new ArrayList<>(schema.getVarLengthColumnCount() * numOperations);
     }
 
     /**
@@ -214,7 +216,14 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
       if (indirect.size() > 0) {
         // TODO: same as above, we could avoid a copy here by using an implementation that allows
         // zero-copy on a slice of an array.
-        rowOpsBuilder.setIndirectData(ZeroCopyLiteralByteString.wrap(indirect.toByteArray()));
+        byte[] indirectData = new byte[(int)indirectWrittenBytes];
+        int offset = 0;
+        for (ByteBuffer bb : indirect) {
+          int bbSize = bb.remaining();
+          bb.get(indirectData, offset, bbSize);
+          offset += bbSize;
+        }
+        rowOpsBuilder.setIndirectData(ZeroCopyLiteralByteString.wrap(indirectData));
       }
       return rowOpsBuilder.build();
     }
@@ -232,14 +241,13 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
         // Keys should always be specified, maybe check?
         if (row.isSet(colIdx) && !row.isSetToNull(colIdx)) {
           if (col.getType() == Type.STRING || col.getType() == Type.BINARY) {
-            byte[] varLengthData = row.getVarLengthData().get(colIdx);
-            rows.putLong(indirect.size());
-            rows.putLong(varLengthData.length);
-            try {
-              indirect.write(varLengthData);
-            } catch (IOException e) {
-              throw new AssertionError(e); // cannot occur
-            }
+            ByteBuffer varLengthData = row.getVarLengthData().get(colIdx);
+            varLengthData.reset();
+            rows.putLong(indirectWrittenBytes);
+            int bbSize = varLengthData.remaining();
+            rows.putLong(bbSize);
+            indirect.add(varLengthData);
+            indirectWrittenBytes += bbSize;
           } else {
             // This is for cols other than strings
             rows.put(rowData, currentRowOffset, col.getType().getSize());
