@@ -336,16 +336,6 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   WritableFileOptions wr_opts;
   wr_opts.mode = Env::CREATE_NON_EXISTING;
 
-  // Memory mapped files preallocate space ahead of the current offset,
-  // then truncate that space when closed. As containers are only closed
-  // when the block manager is destroyed, this has the effect of leaving
-  // runs of zeroes at the end of container metadata files when the process
-  // crashes, and LogBlockContainer::Open() can't deal with that yet.
-  //
-  // For the time being, we work around this by disabling memory mapped
-  // metadata writing. See KUDU-668 for details.
-  wr_opts.mmap_file = false;
-
   // Repeat in the event of a container id collision (unlikely).
   //
   // When looping, we delete any created-and-orphaned files.
@@ -396,10 +386,6 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   gscoped_ptr<WritableFile> metadata_writer;
   WritableFileOptions wr_opts;
   wr_opts.mode = Env::OPEN_EXISTING;
-
-  // See the comment in LogBlockContainer::Create() to understand why we're
-  // not using memory mapped files.
-  wr_opts.mmap_file = false;
 
   RETURN_NOT_OK(block_manager->env()->NewWritableFile(wr_opts,
                                                       metadata_path,

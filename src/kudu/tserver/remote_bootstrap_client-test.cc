@@ -77,6 +77,8 @@ Status RemoteBootstrapClientTest::CompareFileContents(const string& path1, const
 
   Slice slice1, slice2;
   faststring scratch1, scratch2;
+  scratch1.resize(size1);
+  scratch2.resize(size2);
   RETURN_NOT_OK(env_util::ReadFully(file1.get(), 0, size1, &slice1, scratch1.data()));
   RETURN_NOT_OK(env_util::ReadFully(file2.get(), 0, size2, &slice2, scratch2.data()));
   int result = strings::fastmemcmp_inlined(slice1.data(), slice2.data(), size1);

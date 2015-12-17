@@ -191,151 +191,6 @@ class TestEnv : public KuduTest {
     }
   }
 
-  void DoTestPreallocate(const WritableFileOptions& opts) {
-    LOG(INFO) << "Testing PreAllocate() with mmap "
-              << (opts.mmap_file ? "enabled" : "disabled");
-
-    string test_path = GetTestPath("test_env_wf");
-    shared_ptr<WritableFile> file;
-    ASSERT_OK(env_util::OpenFileForWrite(opts, env_.get(), test_path, &file));
-
-    // pre-allocate 1 MB
-    ASSERT_OK(file->PreAllocate(kOneMb));
-    ASSERT_OK(file->Sync());
-
-    // the writable file size should report 0
-    ASSERT_EQ(file->Size(), 0);
-    // but the real size of the file on disk should report 1MB
-    uint64_t size;
-    ASSERT_OK(env_->GetFileSize(test_path, &size));
-    ASSERT_EQ(size, kOneMb);
-
-    // write 1 MB
-    uint8_t scratch[kOneMb];
-    Slice slice(scratch, kOneMb);
-    ASSERT_OK(file->Append(slice));
-    ASSERT_OK(file->Sync());
-
-    // the writable file size should now report 1 MB
-    ASSERT_EQ(file->Size(), kOneMb);
-    ASSERT_OK(file->Close());
-    // and the real size for the file on disk should match ony the
-    // written size
-    ASSERT_OK(env_->GetFileSize(test_path, &size));
-    ASSERT_EQ(kOneMb, size);
-  }
-
-  void DoTestConsecutivePreallocate(const WritableFileOptions& opts) {
-    LOG(INFO) << "Testing consecutive PreAllocate() with mmap "
-              << (opts.mmap_file ? "enabled" : "disabled");
-
-    string test_path = GetTestPath("test_env_wf");
-    shared_ptr<WritableFile> file;
-    ASSERT_OK(env_util::OpenFileForWrite(opts, env_.get(), test_path, &file));
-
-    // pre-allocate 64 MB
-    ASSERT_OK(file->PreAllocate(64 * kOneMb));
-    ASSERT_OK(file->Sync());
-
-    // the writable file size should report 0
-    ASSERT_EQ(file->Size(), 0);
-    // but the real size of the file on disk should report 64 MBs
-    uint64_t size;
-    ASSERT_OK(env_->GetFileSize(test_path, &size));
-    ASSERT_EQ(size, 64 * kOneMb);
-
-    // write 1 MB
-    uint8_t scratch[kOneMb];
-    Slice slice(scratch, kOneMb);
-    ASSERT_OK(file->Append(slice));
-    ASSERT_OK(file->Sync());
-
-    // the writable file size should now report 1 MB
-    ASSERT_EQ(kOneMb, file->Size());
-    ASSERT_OK(env_->GetFileSize(test_path, &size));
-    ASSERT_EQ(64 * kOneMb, size);
-
-    // pre-allocate 64 additional MBs
-    ASSERT_OK(file->PreAllocate(64 * kOneMb));
-    ASSERT_OK(file->Sync());
-
-    // the writable file size should now report 1 MB
-    ASSERT_EQ(kOneMb, file->Size());
-    // while the real file size should report 128 MB's
-    ASSERT_OK(env_->GetFileSize(test_path, &size));
-    ASSERT_EQ(128 * kOneMb, size);
-
-    // write another MB
-    ASSERT_OK(file->Append(slice));
-    ASSERT_OK(file->Sync());
-
-    // the writable file size should now report 2 MB
-    ASSERT_EQ(file->Size(), 2 * kOneMb);
-    // while the real file size should reamin at 128 MBs
-    ASSERT_OK(env_->GetFileSize(test_path, &size));
-    ASSERT_EQ(128 * kOneMb, size);
-
-    // close the file (which ftruncates it to the real size)
-    ASSERT_OK(file->Close());
-    // and the real size for the file on disk should match only the written size
-    ASSERT_OK(env_->GetFileSize(test_path, &size));
-    ASSERT_EQ(2* kOneMb, size);
-  }
-
-  void DoTestAppendVector(const WritableFileOptions& opts) {
-    LOG(INFO) << "Testing AppendVector() with mmap "
-              << (opts.mmap_file ? "enabled" : "disabled");
-    LOG(INFO) << "Testing AppendVector() only, NO pre-allocation";
-    ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, false, opts));
-
-    if (!fallocate_supported_) {
-      LOG(INFO) << "fallocate not supported, skipping preallocated runs";
-    } else {
-      LOG(INFO) << "Testing AppendVector() only, WITH pre-allocation";
-      ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, true, opts));
-      LOG(INFO) << "Testing AppendVector() together with Append() and Read(), WITH pre-allocation";
-      ASSERT_NO_FATAL_FAILURE(TestAppendVector(128, 4096, 5, false, true, opts));
-    }
-  }
-
-  void DoTestReopen(const WritableFileOptions& opts) {
-    LOG(INFO) << "Testing reopening behavior with mmap "
-              << (opts.mmap_file ? "enabled" : "disabled");
-
-    string test_path = GetTestPath("test_env_wf");
-    string first = "The quick brown fox";
-    string second = "jumps over the lazy dog";
-
-    // Create the file and write to it.
-    shared_ptr<WritableFile> writer;
-    ASSERT_OK(env_util::OpenFileForWrite(opts,
-                                         env_.get(), test_path, &writer));
-    ASSERT_OK(writer->Append(first));
-    ASSERT_EQ(first.length(), writer->Size());
-    ASSERT_OK(writer->Close());
-
-    // Reopen it and append to it.
-    WritableFileOptions reopen_opts = opts;
-    reopen_opts.mode = Env::OPEN_EXISTING;
-    ASSERT_OK(env_util::OpenFileForWrite(reopen_opts,
-                                         env_.get(), test_path, &writer));
-    ASSERT_EQ(first.length(), writer->Size());
-    ASSERT_OK(writer->Append(second));
-    ASSERT_EQ(first.length() + second.length(), writer->Size());
-    ASSERT_OK(writer->Close());
-
-    // Check that the file has both strings.
-    shared_ptr<RandomAccessFile> reader;
-    ASSERT_OK(env_util::OpenFileForRandom(env_.get(), test_path, &reader));
-    uint64_t size;
-    ASSERT_OK(reader->Size(&size));
-    ASSERT_EQ(first.length() + second.length(), size);
-    Slice s;
-    uint8_t scratch[size];
-    ASSERT_OK(env_util::ReadFully(reader.get(), 0, size, &s, scratch));
-    ASSERT_EQ(first + second, s.ToString());
-  }
-
   static bool fallocate_supported_;
   static bool fallocate_punch_hole_supported_;
 };
@@ -348,11 +203,36 @@ TEST_F(TestEnv, TestPreallocate) {
     LOG(INFO) << "fallocate not supported, skipping test";
     return;
   }
-  WritableFileOptions opts;
-  opts.mmap_file = true;
-  ASSERT_NO_FATAL_FAILURE(DoTestPreallocate(opts));
-  opts.mmap_file = false;
-  ASSERT_NO_FATAL_FAILURE(DoTestPreallocate(opts));
+  LOG(INFO) << "Testing PreAllocate()";
+  string test_path = GetTestPath("test_env_wf");
+  shared_ptr<WritableFile> file;
+  ASSERT_OK(env_util::OpenFileForWrite(WritableFileOptions(),
+                                       env_.get(), test_path, &file));
+
+  // pre-allocate 1 MB
+  ASSERT_OK(file->PreAllocate(kOneMb));
+  ASSERT_OK(file->Sync());
+
+  // the writable file size should report 0
+  ASSERT_EQ(file->Size(), 0);
+  // but the real size of the file on disk should report 1MB
+  uint64_t size;
+  ASSERT_OK(env_->GetFileSize(test_path, &size));
+  ASSERT_EQ(size, kOneMb);
+
+  // write 1 MB
+  uint8_t scratch[kOneMb];
+  Slice slice(scratch, kOneMb);
+  ASSERT_OK(file->Append(slice));
+  ASSERT_OK(file->Sync());
+
+  // the writable file size should now report 1 MB
+  ASSERT_EQ(file->Size(), kOneMb);
+  ASSERT_OK(file->Close());
+  // and the real size for the file on disk should match ony the
+  // written size
+  ASSERT_OK(env_->GetFileSize(test_path, &size));
+  ASSERT_EQ(kOneMb, size);
 }
 
 // To test consecutive pre-allocations we need higher pre-allocations since the
@@ -363,11 +243,60 @@ TEST_F(TestEnv, TestConsecutivePreallocate) {
     LOG(INFO) << "fallocate not supported, skipping test";
     return;
   }
-  WritableFileOptions opts;
-  opts.mmap_file = true;
-  ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(opts));
-  opts.mmap_file = false;
-  ASSERT_NO_FATAL_FAILURE(DoTestConsecutivePreallocate(opts));
+  LOG(INFO) << "Testing consecutive PreAllocate()";
+  string test_path = GetTestPath("test_env_wf");
+  shared_ptr<WritableFile> file;
+  ASSERT_OK(env_util::OpenFileForWrite(
+      WritableFileOptions(), env_.get(), test_path, &file));
+
+  // pre-allocate 64 MB
+  ASSERT_OK(file->PreAllocate(64 * kOneMb));
+  ASSERT_OK(file->Sync());
+
+  // the writable file size should report 0
+  ASSERT_EQ(file->Size(), 0);
+  // but the real size of the file on disk should report 64 MBs
+  uint64_t size;
+  ASSERT_OK(env_->GetFileSize(test_path, &size));
+  ASSERT_EQ(size, 64 * kOneMb);
+
+  // write 1 MB
+  uint8_t scratch[kOneMb];
+  Slice slice(scratch, kOneMb);
+  ASSERT_OK(file->Append(slice));
+  ASSERT_OK(file->Sync());
+
+  // the writable file size should now report 1 MB
+  ASSERT_EQ(kOneMb, file->Size());
+  ASSERT_OK(env_->GetFileSize(test_path, &size));
+  ASSERT_EQ(64 * kOneMb, size);
+
+  // pre-allocate 64 additional MBs
+  ASSERT_OK(file->PreAllocate(64 * kOneMb));
+  ASSERT_OK(file->Sync());
+
+  // the writable file size should now report 1 MB
+  ASSERT_EQ(kOneMb, file->Size());
+  // while the real file size should report 128 MB's
+  ASSERT_OK(env_->GetFileSize(test_path, &size));
+  ASSERT_EQ(128 * kOneMb, size);
+
+  // write another MB
+  ASSERT_OK(file->Append(slice));
+  ASSERT_OK(file->Sync());
+
+  // the writable file size should now report 2 MB
+  ASSERT_EQ(file->Size(), 2 * kOneMb);
+  // while the real file size should reamin at 128 MBs
+  ASSERT_OK(env_->GetFileSize(test_path, &size));
+  ASSERT_EQ(128 * kOneMb, size);
+
+  // close the file (which ftruncates it to the real size)
+  ASSERT_OK(file->Close());
+  // and the real size for the file on disk should match only the written size
+  ASSERT_OK(env_->GetFileSize(test_path, &size));
+  ASSERT_EQ(2* kOneMb, size);
+
 }
 
 TEST_F(TestEnv, TestHolePunch) {
@@ -490,10 +419,17 @@ TEST_F(TestEnv, TestReadFully) {
 
 TEST_F(TestEnv, TestAppendVector) {
   WritableFileOptions opts;
-  opts.mmap_file = true;
-  ASSERT_NO_FATAL_FAILURE(DoTestAppendVector(opts));
-  opts.mmap_file = false;
-  ASSERT_NO_FATAL_FAILURE(DoTestAppendVector(opts));
+  LOG(INFO) << "Testing AppendVector() only, NO pre-allocation";
+  ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, false, opts));
+
+  if (!fallocate_supported_) {
+    LOG(INFO) << "fallocate not supported, skipping preallocated runs";
+  } else {
+    LOG(INFO) << "Testing AppendVector() only, WITH pre-allocation";
+    ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, true, opts));
+    LOG(INFO) << "Testing AppendVector() together with Append() and Read(), WITH pre-allocation";
+    ASSERT_NO_FATAL_FAILURE(TestAppendVector(128, 4096, 5, false, true, opts));
+  }
 }
 
 TEST_F(TestEnv, TestGetExecutablePath) {
@@ -532,11 +468,39 @@ TEST_F(TestEnv, TestOverwrite) {
 }
 
 TEST_F(TestEnv, TestReopen) {
-  WritableFileOptions opts;
-  opts.mmap_file = true;
-  ASSERT_NO_FATAL_FAILURE(DoTestReopen(opts));
-  opts.mmap_file = false;
-  ASSERT_NO_FATAL_FAILURE(DoTestReopen(opts));
+  LOG(INFO) << "Testing reopening behavior";
+  string test_path = GetTestPath("test_env_wf");
+  string first = "The quick brown fox";
+  string second = "jumps over the lazy dog";
+
+  // Create the file and write to it.
+  shared_ptr<WritableFile> writer;
+  ASSERT_OK(env_util::OpenFileForWrite(WritableFileOptions(),
+                                       env_.get(), test_path, &writer));
+  ASSERT_OK(writer->Append(first));
+  ASSERT_EQ(first.length(), writer->Size());
+  ASSERT_OK(writer->Close());
+
+  // Reopen it and append to it.
+  WritableFileOptions reopen_opts;
+  reopen_opts.mode = Env::OPEN_EXISTING;
+  ASSERT_OK(env_util::OpenFileForWrite(reopen_opts,
+                                       env_.get(), test_path, &writer));
+  ASSERT_EQ(first.length(), writer->Size());
+  ASSERT_OK(writer->Append(second));
+  ASSERT_EQ(first.length() + second.length(), writer->Size());
+  ASSERT_OK(writer->Close());
+
+  // Check that the file has both strings.
+  shared_ptr<RandomAccessFile> reader;
+  ASSERT_OK(env_util::OpenFileForRandom(env_.get(), test_path, &reader));
+  uint64_t size;
+  ASSERT_OK(reader->Size(&size));
+  ASSERT_EQ(first.length() + second.length(), size);
+  Slice s;
+  uint8_t scratch[size];
+  ASSERT_OK(env_util::ReadFully(reader.get(), 0, size, &s, scratch));
+  ASSERT_EQ(first + second, s.ToString());
 }
 
 TEST_F(TestEnv, TestIsDirectory) {

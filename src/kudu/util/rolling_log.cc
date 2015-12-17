@@ -123,9 +123,6 @@ Status RollingLog::Open() {
                                    GetLogFileName(sequence));
 
     WritableFileOptions opts;
-    // No need to worry about mmap IO for performance, etc, and we'd
-    // rather not SIGBUS on an IO error.
-    opts.mmap_file = false;
     // Logs aren't worth the performance cost of durability.
     opts.sync_on_close = false;
     opts.mode = Env::CREATE_NON_EXISTING;

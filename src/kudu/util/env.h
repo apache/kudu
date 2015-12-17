@@ -321,9 +321,6 @@ class RandomAccessFile {
 
 // Creation-time options for WritableFile
 struct WritableFileOptions {
-  // Use memory-mapped I/O if supported.
-  bool mmap_file;
-
   // Call Sync() during Close().
   bool sync_on_close;
 
@@ -331,18 +328,13 @@ struct WritableFileOptions {
   Env::CreateMode mode;
 
   WritableFileOptions()
-    : mmap_file(true),
-      sync_on_close(false),
+    : sync_on_close(false),
       mode(Env::CREATE_IF_NON_EXISTING_TRUNCATE) { }
 };
 
 // Options specified when a file is opened for random access.
 struct RandomAccessFileOptions {
-  // Use memory-mapped I/O if supported.
-  bool mmap_file;
-
-  RandomAccessFileOptions()
-    : mmap_file(true) {}
+  RandomAccessFileOptions() {}
 };
 
 // A file abstraction for sequential writing.  The implementation

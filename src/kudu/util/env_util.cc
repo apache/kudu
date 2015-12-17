@@ -105,8 +105,6 @@ Status CreateDirIfMissing(Env* env, const string& path, bool* created) {
 
 Status CopyFile(Env* env, const string& source_path, const string& dest_path,
                 WritableFileOptions opts) {
-  opts.mmap_file = false;
-
   gscoped_ptr<SequentialFile> source;
   RETURN_NOT_OK(env->NewSequentialFile(source_path, &source));
   uint64_t size;

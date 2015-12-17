@@ -843,7 +843,6 @@ Status Log::PreAllocateNewSegment() {
   CHECK_EQ(allocation_state(), kAllocationInProgress);
 
   WritableFileOptions opts;
-  opts.mmap_file = false;
   opts.sync_on_close = force_sync_all_;
   RETURN_NOT_OK(CreatePlaceholderSegment(opts, &next_segment_path_, &next_segment_file_));
 
@@ -912,11 +911,7 @@ Status Log::SwitchToAllocatedSegment() {
   // Open the segment we just created in readable form and add it to the reader.
   gscoped_ptr<RandomAccessFile> readable_file;
 
-  // Don't allow mmapping the file. The mmapped IO path does
-  // not support reading from files which change length. In the case
-  // of reading from the in-progress segment, that's likely to happen.
   RandomAccessFileOptions opts;
-  opts.mmap_file = false;
   RETURN_NOT_OK(fs_manager_->env()->NewRandomAccessFile(opts, new_segment_path, &readable_file));
   scoped_refptr<ReadableLogSegment> readable_segment(
     new ReadableLogSegment(new_segment_path,
