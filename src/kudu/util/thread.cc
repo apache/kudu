@@ -432,9 +432,13 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
 
   // Temporary reference for the duration of this function.
   scoped_refptr<Thread> t(new Thread(category, name, functor));
-  int ret = pthread_create(&t->thread_, NULL, &Thread::SuperviseThread, t.get());
-  if (ret) {
-    return Status::RuntimeError("Could not create thread", strerror(ret), ret);
+
+  {
+    SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix, "creating pthread");
+    int ret = pthread_create(&t->thread_, NULL, &Thread::SuperviseThread, t.get());
+    if (ret) {
+      return Status::RuntimeError("Could not create thread", strerror(ret), ret);
+    }
   }
 
   // The thread has been created and is now joinable.
@@ -457,9 +461,13 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
   // 3. <value>: both the parent and the child are free to continue. If the
   //    value is INVALID_TID, the child could not discover its tid.
   Release_Store(&t->tid_, PARENT_WAITING_TID);
-  int loop_count = 0;
-  while (Acquire_Load(&t->tid_) == PARENT_WAITING_TID) {
-    boost::detail::yield(loop_count++);
+  {
+    SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix,
+                                     "waiting for new thread to publish its TID");
+    int loop_count = 0;
+    while (Acquire_Load(&t->tid_) == PARENT_WAITING_TID) {
+      boost::detail::yield(loop_count++);
+    }
   }
 
   VLOG(2) << "Started thread " << t->tid()<< " - " << category << ":" << name;
