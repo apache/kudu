@@ -257,7 +257,7 @@ if (${KUDU_USE_TSAN})
   add_definitions("-D_GLIBCXX_EXTERN_TEMPLATE=0")
 
   # Some of the above also need to be passed to the linker.
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -fsanitize=thread")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
 
   # Strictly speaking, TSAN doesn't require dynamic linking. But it does
   # require all code to be position independent, and the easiest way to
