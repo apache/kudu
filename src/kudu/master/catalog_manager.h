@@ -20,6 +20,7 @@
 #include <boost/optional/optional_fwd.hpp>
 #include <boost/thread/mutex.hpp>
 #include <map>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -37,6 +38,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/promise.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -512,6 +514,17 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // Loops through the "not created" tablets and sends a CreateTablet() request.
   Status ProcessPendingAssignments(const std::vector<scoped_refptr<TabletInfo> >& tablets);
 
+  // Given 'two_choices', which should be a vector of exactly two elements, select which
+  // one is the better choice for a new replica.
+  std::shared_ptr<TSDescriptor> PickBetterReplicaLocation(const TSDescriptorVector& two_choices);
+
+  // Select a tablet server from 'ts_descs' on which to place a new replica.
+  // Any tablet servers in 'excluded' are not considered.
+  // REQUIRES: 'ts_descs' must include at least one non-excluded server.
+  std::shared_ptr<TSDescriptor> SelectReplica(
+      const TSDescriptorVector& ts_descs,
+      const std::set<std::shared_ptr<TSDescriptor>>& excluded);
+
   // Select N Replicas from online tablet servers (as specified by
   // 'ts_descs') for the specified tablet and populate the consensus configuration
   // object. If 'ts_descs' does not specify enough online tablet
@@ -613,6 +626,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   Master *master_;
   Atomic32 closing_;
   ObjectIdGenerator oid_generator_;
+
+  // Random number generator used for selecting replica locations.
+  ThreadSafeRandom rng_;
 
   gscoped_ptr<SysCatalogTable> sys_catalog_;
 

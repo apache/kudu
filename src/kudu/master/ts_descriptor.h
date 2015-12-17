@@ -90,6 +90,36 @@ class TSDescriptor {
   Status GetConsensusProxy(const std::shared_ptr<rpc::Messenger>& messenger,
                            std::shared_ptr<consensus::ConsensusServiceProxy>* proxy);
 
+  void increment_recent_replica_creations() {
+    lock_guard<simple_spinlock> l(&lock_);
+    recent_replica_creations_ += 1;
+  }
+
+  // Decay the accounting of how many replicas have been recently
+  // created on this host.
+  void DecayRecentReplicaCreations(double secs_since_last_decay);
+
+  // Return the number of replicas which have recently been created on this
+  // TS. This number is incremented when replicas are placed on the TS, and
+  // then decayed over time.
+  double recent_replica_creations() const {
+    lock_guard<simple_spinlock> l(&lock_);
+    return recent_replica_creations_;
+  }
+
+  // Set the number of live replicas (i.e. running or bootstrapping).
+  void set_num_live_replicas(int n) {
+    DCHECK_GE(n, 0);
+    lock_guard<simple_spinlock> l(&lock_);
+    num_live_replicas_ = n;
+  }
+
+  // Return the number of live replicas (i.e running or bootstrapping).
+  int num_live_replicas() const {
+    lock_guard<simple_spinlock> l(&lock_);
+    return num_live_replicas_;
+  }
+
  private:
   explicit TSDescriptor(std::string perm_id);
 
@@ -106,6 +136,13 @@ class TSDescriptor {
 
   // Set to true once this instance has reported all of its tablets.
   bool has_tablet_report_;
+
+  // The number of times this tablet server has recently been selected to create a
+  // tablet replica. This value decays back to 0 over time.
+  double recent_replica_creations_;
+
+  // The number of live replicas on this host, from the last heartbeat.
+  int num_live_replicas_;
 
   gscoped_ptr<TSRegistrationPB> registration_;
 

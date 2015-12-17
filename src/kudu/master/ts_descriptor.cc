@@ -26,6 +26,7 @@
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 
+#include <math.h>
 #include <vector>
 
 using std::shared_ptr;
@@ -46,7 +47,10 @@ TSDescriptor::TSDescriptor(std::string perm_id)
     : permanent_uuid_(std::move(perm_id)),
       latest_seqno_(-1),
       last_heartbeat_(MonoTime::Now(MonoTime::FINE)),
-      has_tablet_report_(false) {}
+      has_tablet_report_(false),
+      recent_replica_creations_(0),
+      num_live_replicas_(0) {
+}
 
 TSDescriptor::~TSDescriptor() {
 }
@@ -104,6 +108,11 @@ bool TSDescriptor::has_tablet_report() const {
 void TSDescriptor::set_has_tablet_report(bool has_report) {
   boost::lock_guard<simple_spinlock> l(lock_);
   has_tablet_report_ = has_report;
+}
+
+void TSDescriptor::DecayRecentReplicaCreations(double secs_since_last_decay) {
+  const double kHalflifeSecs = 60;
+  recent_replica_creations_ *= pow(0.5, secs_since_last_decay / kHalflifeSecs);
 }
 
 void TSDescriptor::GetRegistration(TSRegistrationPB* reg) const {

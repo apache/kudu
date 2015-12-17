@@ -783,8 +783,21 @@ void TSTabletManager::MarkTabletDirty(const std::string& tablet_id, const std::s
 }
 
 int TSTabletManager::GetNumDirtyTabletsForTests() const {
-  boost::lock_guard<rw_spinlock> lock(lock_);
+  boost::shared_lock<rw_spinlock> lock(lock_);
   return dirty_tablets_.size();
+}
+
+int TSTabletManager::GetNumLiveTablets() const {
+  int count = 0;
+  boost::shared_lock<rw_spinlock> lock(lock_);
+  for (const auto& entry : tablet_map_) {
+    tablet::TabletStatePB state = entry.second->state();
+    if (state == tablet::BOOTSTRAPPING ||
+        state == tablet::RUNNING) {
+      count++;
+    }
+  }
+  return count;
 }
 
 void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id, const std::string& reason) {

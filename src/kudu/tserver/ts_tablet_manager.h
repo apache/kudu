@@ -178,6 +178,9 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Returns the number of tablets in the "dirty" map, for use by unit tests.
   int GetNumDirtyTabletsForTests() const;
 
+  // Return the number of tablets in RUNNING or BOOTSTRAPPING state.
+  int GetNumLiveTablets() const;
+
   Status RunAllLogGC();
 
  private:

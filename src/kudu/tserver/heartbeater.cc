@@ -339,6 +339,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
     server_->tablet_manager()->GenerateIncrementalTabletReport(
       req.mutable_tablet_report());
   }
+  req.set_num_live_tablets(server_->tablet_manager()->GetNumLiveTablets());
 
   RpcController rpc;
   rpc.set_timeout(MonoDelta::FromSeconds(10));

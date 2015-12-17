@@ -17,7 +17,9 @@
 
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 
 #include "kudu/client/client-test-util.h"
@@ -25,6 +27,8 @@
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/util/metrics.h"
 
+using std::multimap;
+using std::set;
 using std::string;
 using std::vector;
 
@@ -111,6 +115,76 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
     ASSERT_OK(client_->IsCreateTableInProgress(kTableName, &in_progress));
     SleepFor(MonoDelta::FromMilliseconds(100));
   }
+}
+
+// Regression test for KUDU-1317. Ensure that, when a table is created,
+// the tablets are well spread out across the machines in the cluster and
+// that recovery from failures will be well parallelized.
+TEST_F(CreateTableITest, TestSpreadReplicasEvenly) {
+  const int kNumServers = 10;
+  const int kNumTablets = 20;
+  vector<string> ts_flags;
+  vector<string> master_flags;
+  ts_flags.push_back("--never_fsync"); // run faster on slow disks
+  NO_FATALS(StartCluster(ts_flags, master_flags, kNumServers));
+
+  gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  client::KuduSchema client_schema(client::KuduSchemaFromSchema(GetSimpleTestSchema()));
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&client_schema)
+            .num_replicas(3)
+            .add_hash_partitions({ "key" }, kNumTablets)
+            .Create());
+
+  // Check that the replicas are fairly well spread by computing the standard
+  // deviation of the number of replicas per server.
+  const double kMeanPerServer = kNumTablets * 3.0 / kNumServers;
+  double sum_squared_deviation = 0;
+  vector<int> tablet_counts;
+  for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
+    int num_replicas = inspect_->ListTabletsOnTS(ts_idx).size();
+    LOG(INFO) << "TS " << ts_idx << " has " << num_replicas << " tablets";
+    double deviation = static_cast<double>(num_replicas) - kMeanPerServer;
+    sum_squared_deviation += deviation * deviation;
+  }
+  double stddev = sqrt(sum_squared_deviation / (kMeanPerServer - 1));
+  LOG(INFO) << "stddev = " << stddev;
+  // In 1000 runs of the test, only one run had stddev above 2.0. So, 3.0 should
+  // be a safe non-flaky choice.
+  ASSERT_LE(stddev, 3.0);
+
+  // Construct a map from tablet ID to the set of servers that each tablet is hosted on.
+  multimap<string, int> tablet_to_servers;
+  for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
+    vector<string> tablets = inspect_->ListTabletsOnTS(ts_idx);
+    for (const string& tablet_id : tablets) {
+      tablet_to_servers.insert(std::make_pair(tablet_id, ts_idx));
+    }
+  }
+
+  // For each server, count how many other servers it shares tablets with.
+  // This is highly correlated to how well parallelized recovery will be
+  // in the case the server crashes.
+  int sum_num_peers = 0;
+  for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
+    vector<string> tablets = inspect_->ListTabletsOnTS(ts_idx);
+    set<int> peer_servers;
+    for (const string& tablet_id : tablets) {
+      auto peer_indexes = tablet_to_servers.equal_range(tablet_id);
+      for (auto it = peer_indexes.first; it != peer_indexes.second; ++it) {
+        peer_servers.insert(it->second);
+      }
+    }
+
+    peer_servers.erase(ts_idx);
+    LOG(INFO) << "Server " << ts_idx << " has " << peer_servers.size() << " peers";
+    sum_num_peers += peer_servers.size();
+  }
+
+  // On average, servers should have at least half the other servers as peers.
+  double avg_num_peers = static_cast<double>(sum_num_peers) / kNumServers;
+  LOG(INFO) << "avg_num_peers = " << avg_num_peers;
+  ASSERT_GE(avg_num_peers, kNumServers / 2);
 }
 
 } // namespace kudu

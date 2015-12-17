@@ -43,6 +43,7 @@
 #include <glog/logging.h>
 
 #include <algorithm>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -76,6 +77,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
@@ -344,7 +346,20 @@ void CatalogManagerBgTasks::Shutdown() {
 }
 
 void CatalogManagerBgTasks::Run() {
+  MonoTime last_process_time = MonoTime::Now(MonoTime::FINE);
   while (!NoBarrier_Load(&closing_)) {
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    double since_last_process = now.GetDeltaSince(last_process_time).ToSeconds();
+    last_process_time = now;
+
+    // Decay load estimates on tablet servers.
+    TSDescriptorVector ts_descs;
+    catalog_manager_->master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
+    for (const auto& ts : ts_descs) {
+      ts->DecayRecentReplicaCreations(since_last_process);
+    }
+
+    // Perform assignment processing.
     if (!catalog_manager_->IsInitialized()) {
       LOG(WARNING) << "Catalog manager is not initialized!";
     } else if (catalog_manager_->CheckIsLeaderAndReady().ok()) {
@@ -422,6 +437,7 @@ void CheckIfNoLongerLeaderAndSetupError(Status s, RespClass* resp) {
 
 CatalogManager::CatalogManager(Master *master)
   : master_(master),
+    rng_(GetRandomSeed32()),
     state_(kConstructed),
     leader_ready_term_(-1) {
   CHECK_OK(ThreadPoolBuilder("leader-initialization")
@@ -2813,22 +2829,103 @@ void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets
   }
 }
 
+shared_ptr<TSDescriptor> CatalogManager::PickBetterReplicaLocation(
+    const TSDescriptorVector& two_choices) {
+  DCHECK_EQ(two_choices.size(), 2);
+
+  const auto& a = two_choices[0];
+  const auto& b = two_choices[1];
+
+  // When creating replicas, we consider two aspects of load:
+  //   (1) how many tablet replicas are already on the server, and
+  //   (2) how often we've chosen this server recently.
+  //
+  // The first factor will attempt to put more replicas on servers that
+  // are under-loaded (eg because they have newly joined an existing cluster, or have
+  // been reformatted and re-joined).
+  //
+  // The second factor will ensure that we take into account the recent selection
+  // decisions even if those replicas are still in the process of being created (and thus
+  // not yet reported by the server). This is important because, while creating a table,
+  // we batch the selection process before sending any creation commands to the
+  // servers themselves.
+  //
+  // TODO: in the future we may want to factor in other items such as available disk space,
+  // actual request load, etc.
+  double load_a = a->recent_replica_creations() + a->num_live_replicas();
+  double load_b = b->recent_replica_creations() + b->num_live_replicas();
+  if (load_a < load_b) {
+    return a;
+  } else if (load_b < load_a) {
+    return b;
+  } else {
+    // If the load is the same, we can just pick randomly.
+    return two_choices[rng_.Uniform(2)];
+  }
+}
+
+shared_ptr<TSDescriptor> CatalogManager::SelectReplica(
+    const TSDescriptorVector& ts_descs,
+    const set<shared_ptr<TSDescriptor>>& excluded) {
+  // The replica selection algorithm follows the idea from
+  // "Power of Two Choices in Randomized Load Balancing"[1]. For each replica,
+  // we randomly select two tablet servers, and then assign the replica to the
+  // less-loaded one of the two. This has some nice properties:
+  //
+  // 1) because the initial selection of two servers is random, we get good
+  //    spreading of replicas across the cluster. In contrast if we sorted by
+  //    load and always picked under-loaded servers first, we'd end up causing
+  //    all tablets of a new table to be placed on an empty server. This wouldn't
+  //    give good load balancing of that table.
+  //
+  // 2) because we pick the less-loaded of two random choices, we do end up with a
+  //    weighting towards filling up the underloaded one over time, without
+  //    the extreme scenario above.
+  //
+  // 3) because we don't follow any sequential pattern, every server is equally
+  //    likely to replicate its tablets to every other server. In contrast, a
+  //    round-robin design would enforce that each server only replicates to its
+  //    adjacent nodes in the TS sort order, limiting recovery bandwidth (see
+  //    KUDU-1317).
+  //
+  // [1] http://www.eecs.harvard.edu/~michaelm/postscripts/mythesis.pdf
+
+  // Pick two random servers, excluding those we've already picked.
+  // If we've only got one server left, 'two_choices' will actually
+  // just contain one element.
+  vector<shared_ptr<TSDescriptor> > two_choices;
+  rng_.ReservoirSample(ts_descs, 2, excluded, &two_choices);
+
+  if (two_choices.size() == 2) {
+    // Pick the better of the two.
+    return PickBetterReplicaLocation(two_choices);
+  }
+
+  // If we couldn't randomly sample two servers, it's because we only had one
+  // more non-excluded choice left.
+  CHECK_EQ(1, ts_descs.size() - excluded.size())
+      << "ts_descs: " << ts_descs.size() << " already_sel: " << excluded.size();
+  return two_choices[0];
+}
+
 void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
                                     int nreplicas,
                                     consensus::RaftConfigPB *config) {
-  // TODO: Select N Replicas
-  // at the moment we have to scan all the tablets to build a map TS -> tablets
-  // to know how many tablets a TS has... so, let's do a dumb assignment for now.
-  //
-  // Using a static variable here ensures that we round-robin our assignments.
-  // TODO: In the future we should do something smarter based on number of tablets currently
-  // running on each server, since round-robin may get unbalanced after moves/deletes.
-
   DCHECK_EQ(0, config->peers_size()) << "RaftConfig not empty: " << config->ShortDebugString();
+  DCHECK_LE(nreplicas, ts_descs.size());
 
-  static int index = rand();
+  // Keep track of servers we've already selected, so that we don't attempt to
+  // put two replicas on the same host.
+  set<shared_ptr<TSDescriptor> > already_selected;
   for (int i = 0; i < nreplicas; ++i) {
-    const TSDescriptor *ts = ts_descs[index++ % ts_descs.size()].get();
+    shared_ptr<TSDescriptor> ts = SelectReplica(ts_descs, already_selected);
+    InsertOrDie(&already_selected, ts);
+
+    // Increment the number of pending replicas so that we take this selection into
+    // account when assigning replicas for other tablets of the same table.
+    //
+    // This value gets decayed by the catalog manager background task.
+    ts->increment_recent_replica_creations();
 
     TSRegistrationPB reg;
     ts->GetRegistration(&reg);

@@ -186,6 +186,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   }
 
   ts_desc->UpdateHeartbeatTime();
+  ts_desc->set_num_live_replicas(req->num_live_tablets());
 
   if (req->has_tablet_report()) {
     s = server_->catalog_manager()->ProcessTabletReport(

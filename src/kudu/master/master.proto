@@ -247,6 +247,10 @@ message TSHeartbeatRequestPB {
 
   // TODO: perhaps add some very basic metrics reporting here, like
   // free space, reqs/sec, etc?
+
+  // The number of tablets that are BOOTSTRAPPING or RUNNING.
+  // Used by the master to determine load when creating new tablet replicas.
+  optional int32 num_live_tablets = 4;
 }
 
 message TSHeartbeatResponsePB {
