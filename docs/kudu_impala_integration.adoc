@@ -428,7 +428,7 @@ has no mechanism for automatically (or manually) splitting a pre-existing tablet
 Until this feature has been implemented, you must pre-split your table when you create
 it, When designing your table schema, consider primary keys that will allow you to
 pre-split your table into tablets which grow at similar rates. You can provide split
-points using the `kudu.split_keys` table property when creating a table using Impala:
+points using a `DISTRIBUTE BY` clause when creating a table using Impala:
 
 NOTE: Impala keywords, such as `group`, are enclosed by back-tick characters when
 they are not used in their keyword sense.
@@ -450,15 +450,14 @@ CREATE TABLE cust_behavior (
   rating INT,
   fulfilled_date BIGINT
 )
+DISTRIBUTE BY RANGE(_id)
+SPLIT ROWS((1439560049342), (1439566253755), (1439572458168), (1439578662581), (1439584866994), (1439591071407))
 TBLPROPERTIES(
 'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
 'kudu.table_name' = 'cust_behavior',
 'kudu.master_addresses' = 'a1216.halxg.cloudera.com:7051',
 'kudu.key_columns' = '_id',
 'kudu.num_tablet_replicas' = '3',
-'kudu.split_keys' =
-'[[1439560049342], [1439566253755], [1439572458168], [1439578662581], [1439584866994], [1439591071407]],'
-
 );
 ----
 
