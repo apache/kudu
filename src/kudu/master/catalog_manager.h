@@ -14,12 +14,12 @@
 #ifndef KUDU_MASTER_CATALOG_MANAGER_H
 #define KUDU_MASTER_CATALOG_MANAGER_H
 
-#include <boost/optional/optional_fwd.hpp>
 #include <boost/thread/mutex.hpp>
+#include <boost/optional/optional_fwd.hpp>
 #include <map>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <tr1/unordered_map>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "kudu/common/partition.h"
@@ -104,7 +104,7 @@ struct TabletReplica {
 class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
  public:
   typedef PersistentTabletInfo cow_state;
-  typedef std::unordered_map<std::string, TabletReplica> ReplicaMap;
+  typedef std::tr1::unordered_map<std::string, TabletReplica> ReplicaMap;
 
   TabletInfo(const scoped_refptr<TableInfo>& table, const std::string& tablet_id);
 
@@ -259,7 +259,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   CowObject<PersistentTableInfo> metadata_;
 
   // List of pending tasks (e.g. create/alter tablet requests)
-  std::unordered_set<MonitoredTask*> pending_tasks_;
+  std::tr1::unordered_set<MonitoredTask*> pending_tasks_;
 
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
 };
@@ -596,12 +596,12 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   mutable LockType lock_;
 
   // Table maps: table-id -> TableInfo and table-name -> TableInfo
-  typedef std::unordered_map<std::string, scoped_refptr<TableInfo> > TableInfoMap;
+  typedef std::tr1::unordered_map<std::string, scoped_refptr<TableInfo> > TableInfoMap;
   TableInfoMap table_ids_map_;
   TableInfoMap table_names_map_;
 
   // Tablet maps: tablet-id -> TabletInfo
-  typedef std::unordered_map<std::string, scoped_refptr<TabletInfo> > TabletInfoMap;
+  typedef std::tr1::unordered_map<std::string, scoped_refptr<TabletInfo> > TabletInfoMap;
   TabletInfoMap tablet_map_;
 
   Master *master_;

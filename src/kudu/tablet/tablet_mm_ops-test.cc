@@ -17,10 +17,12 @@
 #include "kudu/tablet/tablet_mm_ops.h"
 #include "kudu/tablet/tablet-test-base.h"
 
+using boost::assign::list_of;
+
 namespace kudu {
 namespace tablet {
 
-class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
+class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64> > {
  protected:
   typedef TabletTestBase<IntKeyTestSetup<INT64> > Superclass;
 
@@ -87,27 +89,30 @@ class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
 TEST_F(KuduTabletMmOpsTest, TestCompactRowSetsOpCacheStats) {
   CompactRowSetsOp op(tablet().get());
   NO_FATALS(TestFirstCall(&op));
-  NO_FATALS(TestAffectedMetrics(&op, { tablet()->metrics()->flush_mrs_duration,
-                                       tablet()->metrics()->compact_rs_duration }));
+  NO_FATALS(TestAffectedMetrics(&op, list_of
+                                (tablet()->metrics()->flush_mrs_duration)
+                                (tablet()->metrics()->compact_rs_duration)));
 }
 
 TEST_F(KuduTabletMmOpsTest, TestMinorDeltaCompactionOpCacheStats) {
   MinorDeltaCompactionOp op(tablet().get());
   NO_FATALS(TestFirstCall(&op));
-  NO_FATALS(TestAffectedMetrics(&op, { tablet()->metrics()->flush_mrs_duration,
-                                       tablet()->metrics()->flush_dms_duration,
-                                       tablet()->metrics()->compact_rs_duration,
-                                       tablet()->metrics()->delta_minor_compact_rs_duration }));
+  NO_FATALS(TestAffectedMetrics(&op, list_of
+                                (tablet()->metrics()->flush_mrs_duration)
+                                (tablet()->metrics()->flush_dms_duration)
+                                (tablet()->metrics()->compact_rs_duration)
+                                (tablet()->metrics()->delta_minor_compact_rs_duration)));
 }
 
 TEST_F(KuduTabletMmOpsTest, TestMajorDeltaCompactionOpCacheStats) {
   MajorDeltaCompactionOp op(tablet().get());
   NO_FATALS(TestFirstCall(&op));
-  NO_FATALS(TestAffectedMetrics(&op, { tablet()->metrics()->flush_mrs_duration,
-                                       tablet()->metrics()->flush_dms_duration,
-                                       tablet()->metrics()->compact_rs_duration,
-                                       tablet()->metrics()->delta_minor_compact_rs_duration,
-                                       tablet()->metrics()->delta_major_compact_rs_duration }));
+  NO_FATALS(TestAffectedMetrics(&op, list_of
+                                (tablet()->metrics()->flush_mrs_duration)
+                                (tablet()->metrics()->flush_dms_duration)
+                                (tablet()->metrics()->compact_rs_duration)
+                                (tablet()->metrics()->delta_minor_compact_rs_duration)
+                                (tablet()->metrics()->delta_major_compact_rs_duration)));
 }
 } // namespace tablet
 } // namespace kudu

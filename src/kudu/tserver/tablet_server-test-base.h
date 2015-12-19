@@ -15,19 +15,21 @@
 #ifndef KUDU_TSERVER_TABLET_SERVER_TEST_BASE_H_
 #define KUDU_TSERVER_TABLET_SERVER_TEST_BASE_H_
 
-#include <algorithm>
-#include <assert.h>
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
-#include <iostream>
-#include <memory>
-#include <signal.h>
-#include <stdint.h>
-#include <string>
-#include <sys/mman.h>
-#include <sys/types.h>
-#include <utility>
+
+#include <algorithm>
+#include <tr1/memory>
 #include <vector>
+#include <string>
+#include <assert.h>
+#include <stdint.h>
+#include <sys/mman.h>
+#include <iostream>
+#include <sys/types.h>
+#include <signal.h>
+#include <utility>
 
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus.proxy.h"
@@ -448,7 +450,7 @@ class TabletServerTestBase : public KuduTest {
   Schema key_schema_;
   gscoped_ptr<RowBuilder> rb_;
 
-  std::shared_ptr<rpc::Messenger> client_messenger_;
+  std::tr1::shared_ptr<rpc::Messenger> client_messenger_;
 
   gscoped_ptr<MiniTabletServer> mini_server_;
   scoped_refptr<tablet::TabletPeer> tablet_peer_;

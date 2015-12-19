@@ -14,11 +14,11 @@
 #ifndef KUDU_COMMON_MERGE_ITERATOR_H
 #define KUDU_COMMON_MERGE_ITERATOR_H
 
-#include <deque>
 #include <gtest/gtest_prod.h>
-#include <memory>
+#include <tr1/memory>
+#include <tr1/unordered_map>
+#include <deque>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "kudu/common/iterator.h"
@@ -38,7 +38,7 @@ class MergeIterator : public RowwiseIterator {
   // key columns. It should probably just be the required projection, which must be
   // a subset of the columns in 'iters'.
   MergeIterator(const Schema &schema,
-                const std::vector<std::shared_ptr<RowwiseIterator> > &iters);
+                const std::vector<std::tr1::shared_ptr<RowwiseIterator> > &iters);
 
   // The passed-in iterators should be already initialized.
   Status Init(ScanSpec *spec) OVERRIDE;
@@ -64,8 +64,8 @@ class MergeIterator : public RowwiseIterator {
 
   // Holds the subiterators until Init is called.
   // This is required because we can't create a MergeIterState of an uninitialized iterator.
-  std::deque<std::shared_ptr<RowwiseIterator> > orig_iters_;
-  std::vector<std::shared_ptr<MergeIterState> > iters_;
+  std::deque<std::tr1::shared_ptr<RowwiseIterator> > orig_iters_;
+  std::vector<std::tr1::shared_ptr<MergeIterState> > iters_;
 
   // When the underlying iterators are initialized, each needs its own
   // copy of the scan spec in order to do its own pushdown calculations, etc.
@@ -88,7 +88,7 @@ class UnionIterator : public RowwiseIterator {
   //
   // All passed-in iterators must be fully able to evaluate all predicates - i.e.
   // calling iter->Init(spec) should remove all predicates from the spec.
-  explicit UnionIterator(const std::vector<std::shared_ptr<RowwiseIterator> > &iters);
+  explicit UnionIterator(const std::vector<std::tr1::shared_ptr<RowwiseIterator> > &iters);
 
   Status Init(ScanSpec *spec) OVERRIDE;
 
@@ -115,11 +115,11 @@ class UnionIterator : public RowwiseIterator {
   // Schema: initialized during Init()
   gscoped_ptr<Schema> schema_;
   bool initted_;
-  std::deque<std::shared_ptr<RowwiseIterator> > iters_;
+  std::deque<std::tr1::shared_ptr<RowwiseIterator> > iters_;
 
   // Since we pop from 'iters_' this field is needed in order to keep
   // the underlying iterators available for GetIteratorStats.
-  std::vector<std::shared_ptr<RowwiseIterator> > all_iters_;
+  std::vector<std::tr1::shared_ptr<RowwiseIterator> > all_iters_;
 
   // When the underlying iterators are initialized, each needs its own
   // copy of the scan spec in order to do its own pushdown calculations, etc.
@@ -136,7 +136,7 @@ class UnionIterator : public RowwiseIterator {
 // an entire batch, then other columns may avoid doing any IO.
 class MaterializingIterator : public RowwiseIterator {
  public:
-  explicit MaterializingIterator(const std::shared_ptr<ColumnwiseIterator> &iter);
+  explicit MaterializingIterator(const std::tr1::shared_ptr<ColumnwiseIterator> &iter);
 
   // Initialize the iterator, performing predicate pushdown as described above.
   Status Init(ScanSpec *spec) OVERRIDE;
@@ -161,9 +161,9 @@ class MaterializingIterator : public RowwiseIterator {
 
   Status MaterializeBlock(RowBlock *dst);
 
-  std::shared_ptr<ColumnwiseIterator> iter_;
+  std::tr1::shared_ptr<ColumnwiseIterator> iter_;
 
-  std::unordered_multimap<size_t, ColumnRangePredicate> preds_by_column_;
+  std::tr1::unordered_multimap<size_t, ColumnRangePredicate> preds_by_column_;
 
   // The order in which the columns will be materialized.
   std::vector<size_t> materialization_order_;
@@ -185,7 +185,7 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
   //
   // POSTCONDITION: spec->predicates().empty()
   // POSTCONDITION: base_iter and its wrapper are initialized
-  static Status InitAndMaybeWrap(std::shared_ptr<RowwiseIterator> *base_iter,
+  static Status InitAndMaybeWrap(std::tr1::shared_ptr<RowwiseIterator> *base_iter,
                                  ScanSpec *spec);
 
   // Initialize the iterator.
@@ -210,12 +210,12 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
   // Construct the evaluating iterator.
   // This is only called from ::InitAndMaybeWrap()
   // REQUIRES: base_iter is already Init()ed.
-  explicit PredicateEvaluatingIterator(const std::shared_ptr<RowwiseIterator> &base_iter);
+  explicit PredicateEvaluatingIterator(const std::tr1::shared_ptr<RowwiseIterator> &base_iter);
 
 
   FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation);
 
-  std::shared_ptr<RowwiseIterator> base_iter_;
+  std::tr1::shared_ptr<RowwiseIterator> base_iter_;
   std::vector<ColumnRangePredicate> predicates_;
 };
 

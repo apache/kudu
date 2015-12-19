@@ -17,7 +17,8 @@
 
 #include <map>
 #include <string>
-#include <unordered_map>
+#include <tr1/memory>
+#include <tr1/unordered_map>
 #include <vector>
 
 #include "kudu/consensus/consensus.h"
@@ -145,7 +146,7 @@ struct ElectionResult {
 class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
  public:
   typedef Callback<void(const ElectionResult&)> ElectionDecisionCallback;
-  typedef std::unordered_map<std::string, PeerProxy*> ProxyMap;
+  typedef std::tr1::unordered_map<std::string, PeerProxy*> ProxyMap;
 
   // Set up a new leader election driver.
   //
@@ -175,7 +176,7 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
     VoteResponsePB response;
   };
 
-  typedef std::unordered_map<std::string, VoterState*> VoterStateMap;
+  typedef std::tr1::unordered_map<std::string, VoterState*> VoterStateMap;
   typedef simple_spinlock Lock;
 
   // This class is refcounted.

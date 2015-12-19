@@ -14,7 +14,7 @@
 
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
-#include <unordered_set>
+#include <tr1/unordered_set>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/flag_tags.h"
@@ -30,7 +30,7 @@ TAG_FLAG(flag_with_two_tags, evolving);
 TAG_FLAG(flag_with_two_tags, unsafe);
 
 using std::string;
-using std::unordered_set;
+using std::tr1::unordered_set;
 
 namespace kudu {
 

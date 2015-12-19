@@ -358,11 +358,11 @@ class DeltaProjector {
  private:
   DISALLOW_COPY_AND_ASSIGN(DeltaProjector);
 
-  std::unordered_map<size_t, size_t> base_cols_mapping_;     // [proj_idx] = base_idx
-  std::unordered_map<size_t, size_t> rbase_cols_mapping_;    // [id] = proj_idx
+  std::tr1::unordered_map<size_t, size_t> base_cols_mapping_;     // [proj_idx] = base_idx
+  std::tr1::unordered_map<size_t, size_t> rbase_cols_mapping_;    // [id] = proj_idx
 
-  std::unordered_map<size_t, size_t> adapter_cols_mapping_;  // [proj_idx] = base_idx
-  std::unordered_map<size_t, size_t> radapter_cols_mapping_; // [id] = proj_idx
+  std::tr1::unordered_map<size_t, size_t> adapter_cols_mapping_;  // [proj_idx] = base_idx
+  std::tr1::unordered_map<size_t, size_t> radapter_cols_mapping_; // [id] = proj_idx
 
   const Schema* delta_schema_;
   const Schema* projection_;

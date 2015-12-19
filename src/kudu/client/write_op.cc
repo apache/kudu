@@ -19,6 +19,8 @@
 #include "kudu/common/row.h"
 #include "kudu/common/wire_protocol.pb.h"
 
+using std::tr1::shared_ptr;
+
 namespace kudu {
 namespace client {
 
@@ -33,7 +35,7 @@ RowOperationsPB_Type ToInternalWriteType(KuduWriteOperation::Type type) {
 
 // WriteOperation --------------------------------------------------------------
 
-KuduWriteOperation::KuduWriteOperation(const sp::shared_ptr<KuduTable>& table)
+KuduWriteOperation::KuduWriteOperation(const shared_ptr<KuduTable>& table)
   : table_(table),
     row_(table->schema().schema_) {
 }
@@ -77,7 +79,7 @@ int64_t KuduWriteOperation::SizeInBuffer() const {
 
 // Insert -----------------------------------------------------------------------
 
-KuduInsert::KuduInsert(const sp::shared_ptr<KuduTable>& table)
+KuduInsert::KuduInsert(const shared_ptr<KuduTable>& table)
   : KuduWriteOperation(table) {
 }
 
@@ -85,7 +87,7 @@ KuduInsert::~KuduInsert() {}
 
 // Update -----------------------------------------------------------------------
 
-KuduUpdate::KuduUpdate(const sp::shared_ptr<KuduTable>& table)
+KuduUpdate::KuduUpdate(const shared_ptr<KuduTable>& table)
   : KuduWriteOperation(table) {
 }
 
@@ -93,7 +95,7 @@ KuduUpdate::~KuduUpdate() {}
 
 // Delete -----------------------------------------------------------------------
 
-KuduDelete::KuduDelete(const sp::shared_ptr<KuduTable>& table)
+KuduDelete::KuduDelete(const shared_ptr<KuduTable>& table)
   : KuduWriteOperation(table) {
 }
 

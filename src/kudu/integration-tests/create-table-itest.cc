@@ -14,8 +14,8 @@
 
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <memory>
 #include <string>
+#include <tr1/memory>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/common/wire_protocol-test-util.h"

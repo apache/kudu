@@ -15,6 +15,7 @@
 #include "kudu/consensus/log-test-base.h"
 
 #include <boost/thread/locks.hpp>
+#include <boost/assign/list_of.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
 
@@ -35,6 +36,7 @@ DEFINE_int32(num_ops_per_batch_avg, 5, "Target average number of ops per batch")
 namespace kudu {
 namespace log {
 
+using std::tr1::shared_ptr;
 using std::vector;
 using consensus::ReplicateRefPtr;
 using consensus::make_scoped_refptr_replicate;
@@ -165,7 +167,7 @@ TEST_F(MultiThreadedLogTest, TestAppends) {
   EntriesToIdList(&ids);
   DVLOG(1) << "Wrote total of " << current_index_ - start_current_id << " ops";
   ASSERT_EQ(current_index_ - start_current_id, ids.size());
-  ASSERT_TRUE(std::is_sorted(ids.begin(), ids.end()));
+  ASSERT_TRUE(util::gtl::is_sorted(ids.begin(), ids.end()));
 }
 
 } // namespace log

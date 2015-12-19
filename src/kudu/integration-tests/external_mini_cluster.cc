@@ -16,9 +16,9 @@
 
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
-#include <memory>
 #include <rapidjson/document.h>
 #include <string>
+#include <tr1/memory>
 
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.h"
@@ -44,16 +44,16 @@
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
+using rapidjson::Value;
+using std::string;
+using std::tr1::shared_ptr;
+using strings::Substitute;
 using kudu::master::GetLeaderMasterRpc;
 using kudu::master::MasterServiceProxy;
 using kudu::server::ServerStatusPB;
+using kudu::tserver::TabletServerServiceProxy;
 using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
-using kudu::tserver::TabletServerServiceProxy;
-using rapidjson::Value;
-using std::string;
-using strings::Substitute;
-
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 
 namespace kudu {
@@ -439,23 +439,23 @@ vector<ExternalDaemon*> ExternalMiniCluster::daemons() const {
   return results;
 }
 
-std::shared_ptr<rpc::Messenger> ExternalMiniCluster::messenger() {
+shared_ptr<rpc::Messenger> ExternalMiniCluster::messenger() {
   return messenger_;
 }
 
-std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
+shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
   CHECK_EQ(masters_.size(), 1);
   return master_proxy(0);
 }
 
-std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) {
+shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) {
   CHECK_LT(idx, masters_.size());
-  return std::shared_ptr<MasterServiceProxy>(
+  return shared_ptr<MasterServiceProxy>(
       new MasterServiceProxy(messenger_, CHECK_NOTNULL(master(idx))->bound_rpc_addr()));
 }
 
 Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder& builder,
-                                         client::sp::shared_ptr<client::KuduClient>* client) {
+                                         shared_ptr<client::KuduClient>* client) {
   CHECK(!masters_.empty());
   builder.clear_master_server_addrs();
   BOOST_FOREACH(const scoped_refptr<ExternalMaster>& master, masters_) {
@@ -489,7 +489,7 @@ Status ExternalMiniCluster::SetFlag(ExternalDaemon* daemon,
 // ExternalDaemon
 //------------------------------------------------------------
 
-ExternalDaemon::ExternalDaemon(const std::shared_ptr<rpc::Messenger>& messenger,
+ExternalDaemon::ExternalDaemon(const shared_ptr<rpc::Messenger>& messenger,
                                const string& exe,
                                const string& data_dir,
                                const vector<string>& extra_flags) :
@@ -771,7 +771,7 @@ ScopedResumeExternalDaemon::~ScopedResumeExternalDaemon() {
 // ExternalMaster
 //------------------------------------------------------------
 
-ExternalMaster::ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
+ExternalMaster::ExternalMaster(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
                                const string& exe,
                                const string& data_dir,
                                const vector<string>& extra_flags)
@@ -779,7 +779,7 @@ ExternalMaster::ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
       rpc_bind_address_("127.0.0.1:0") {
 }
 
-ExternalMaster::ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
+ExternalMaster::ExternalMaster(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
                                const string& exe,
                                const string& data_dir,
                                const string& rpc_bind_address,
@@ -822,7 +822,7 @@ Status ExternalMaster::Restart() {
 // ExternalTabletServer
 //------------------------------------------------------------
 
-ExternalTabletServer::ExternalTabletServer(const std::shared_ptr<rpc::Messenger>& messenger,
+ExternalTabletServer::ExternalTabletServer(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
                                            const string& exe,
                                            const string& data_dir,
                                            const string& bind_host,

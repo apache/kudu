@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/partial_row.h"
@@ -37,9 +38,10 @@ class RowKeyUtilTest : public KuduTest {
 };
 
 TEST_F(RowKeyUtilTest, TestIncrementNonCompositeKey) {
-  Schema schema({ ColumnSchema("key", INT32),
-                  ColumnSchema("other_col", INT32),
-                  ColumnSchema("other_col2", STRING, true) },
+  Schema schema(boost::assign::list_of
+                (ColumnSchema("key", INT32))
+                (ColumnSchema("other_col", INT32))
+                (ColumnSchema("other_col2", STRING, true)),
                 1);
   KuduPartialRow p_row(&schema);
   ContiguousRow row(&schema, row_data(&p_row));
@@ -56,10 +58,11 @@ TEST_F(RowKeyUtilTest, TestIncrementNonCompositeKey) {
 }
 
 TEST_F(RowKeyUtilTest, TestIncrementCompositeKey) {
-  Schema schema({ ColumnSchema("k1", INT32),
-                  ColumnSchema("k2", INT32),
-                  ColumnSchema("other_col", STRING, true) },
-                2);
+  Schema schema(boost::assign::list_of
+                   (ColumnSchema("k1", INT32))
+                   (ColumnSchema("k2", INT32))
+                   (ColumnSchema("other_col", STRING, true)),
+                   2);
 
   KuduPartialRow p_row(&schema);
   ContiguousRow row(&schema, row_data(&p_row));
@@ -84,10 +87,11 @@ TEST_F(RowKeyUtilTest, TestIncrementCompositeKey) {
 }
 
 TEST_F(RowKeyUtilTest, TestIncrementCompositeIntStringKey) {
-  Schema schema({ ColumnSchema("k1", INT32),
-                  ColumnSchema("k2", STRING),
-                  ColumnSchema("other_col", STRING, true) },
-                2);
+  Schema schema(boost::assign::list_of
+                   (ColumnSchema("k1", INT32))
+                   (ColumnSchema("k2", STRING))
+                   (ColumnSchema("other_col", STRING, true)),
+                   2);
 
   KuduPartialRow p_row(&schema);
   ContiguousRow row(&schema, row_data(&p_row));
@@ -105,10 +109,11 @@ TEST_F(RowKeyUtilTest, TestIncrementCompositeIntStringKey) {
 }
 
 TEST_F(RowKeyUtilTest, TestIncrementCompositeStringIntKey) {
-  Schema schema({ ColumnSchema("k1", STRING),
-                  ColumnSchema("k2", INT32),
-                  ColumnSchema("other_col", STRING, true) },
-                2);
+  Schema schema(boost::assign::list_of
+                   (ColumnSchema("k1", STRING))
+                   (ColumnSchema("k2", INT32))
+                   (ColumnSchema("other_col", STRING, true)),
+                   2);
 
   KuduPartialRow p_row(&schema);
   ContiguousRow row(&schema, row_data(&p_row));

@@ -14,8 +14,8 @@
 #ifndef KUDU_SERVER_SERVER_BASE_H
 #define KUDU_SERVER_SERVER_BASE_H
 
-#include <memory>
 #include <string>
+#include <tr1/memory>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -56,7 +56,7 @@ class ServerBase {
  public:
   const RpcServer *rpc_server() const { return rpc_server_.get(); }
   const Webserver *web_server() const { return web_server_.get(); }
-  const std::shared_ptr<rpc::Messenger>& messenger() const { return messenger_; }
+  const std::tr1::shared_ptr<rpc::Messenger>& messenger() const { return messenger_; }
 
   // Return the first RPC address that this server has bound to.
   // FATALs if the server is not started.
@@ -72,7 +72,7 @@ class ServerBase {
   // This may not be called until after the server is Initted.
   const NodeInstancePB& instance_pb() const;
 
-  const std::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
+  const std::tr1::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
 
   const scoped_refptr<MetricEntity>& metric_entity() const { return metric_entity_; }
 
@@ -97,13 +97,13 @@ class ServerBase {
 
   const std::string name_;
 
-  std::shared_ptr<MemTracker> mem_tracker_;
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
   gscoped_ptr<MetricRegistry> metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;
-  std::shared_ptr<rpc::Messenger> messenger_;
+  std::tr1::shared_ptr<rpc::Messenger> messenger_;
   bool is_first_run_;
 
   scoped_refptr<Clock> clock_;

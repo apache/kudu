@@ -34,7 +34,7 @@ using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::DriverType;
 using log::Log;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 
 static const char* kTimestampFieldName = "timestamp";
 

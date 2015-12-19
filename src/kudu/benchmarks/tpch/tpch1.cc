@@ -55,7 +55,7 @@
 // ====
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
-#include <unordered_map>
+#include <tr1/unordered_map>
 #include <stdlib.h>
 
 #include <glog/logging.h>
@@ -96,7 +96,7 @@ using client::KuduColumnSchema;
 using client::KuduRowResult;
 using client::KuduSchema;
 
-using std::unordered_map;
+using std::tr1::unordered_map;
 
 struct Result {
   int32_t l_quantity;

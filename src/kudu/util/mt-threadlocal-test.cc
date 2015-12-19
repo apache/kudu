@@ -14,7 +14,7 @@
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
-#include <unordered_set>
+#include <tr1/unordered_set>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
@@ -28,7 +28,7 @@
 #include "kudu/util/thread.h"
 #include "kudu/util/threadlocal.h"
 
-using std::unordered_set;
+using std::tr1::unordered_set;
 using std::vector;
 using strings::Substitute;
 

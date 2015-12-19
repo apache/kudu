@@ -15,7 +15,6 @@
 #include <boost/foreach.hpp>
 
 #include <algorithm>
-#include <memory>
 #include <string>
 #include <utility>
 
@@ -26,13 +25,12 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/memory/arena.h"
 
+using std::string;
+using std::tr1::shared_ptr;
 
 DEFINE_bool(materializing_iterator_do_pushdown, true,
             "Should MaterializingIterator do predicate pushdown");
 TAG_FLAG(materializing_iterator_do_pushdown, hidden);
-
-using std::string;
-using std::shared_ptr;
 
 namespace kudu {
 

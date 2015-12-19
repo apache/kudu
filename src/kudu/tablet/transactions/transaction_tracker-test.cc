@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
-#include <memory>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/ref_counted.h"
@@ -35,8 +35,8 @@ METRIC_DECLARE_gauge_uint64(write_transactions_inflight);
 METRIC_DECLARE_gauge_uint64(alter_schema_transactions_inflight);
 METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
 
-using std::shared_ptr;
 using std::vector;
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace tablet {

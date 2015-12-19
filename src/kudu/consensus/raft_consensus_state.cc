@@ -31,6 +31,8 @@ namespace kudu {
 namespace consensus {
 
 using std::string;
+using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 

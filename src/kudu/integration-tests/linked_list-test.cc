@@ -50,6 +50,7 @@ using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::itest::TServerDetails;
+using std::tr1::shared_ptr;
 
 DEFINE_int32(seconds_to_run, 5, "Number of seconds for which to run the test");
 
@@ -136,7 +137,7 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
     }
   }
 
-  client::sp::shared_ptr<KuduClient> client_;
+  std::tr1::shared_ptr<KuduClient> client_;
   gscoped_ptr<LinkedListTester> tester_;
 };
 

@@ -114,11 +114,13 @@
 
 
 #include <assert.h>
-#include <functional>
-#include <iosfwd>
-#include <limits>
 #include <stddef.h>
 #include <string.h>
+#include <ext/hash_map>
+using __gnu_cxx::hash;
+using __gnu_cxx::hash_map;
+#include <iosfwd>
+#include <limits>
 #include <string>
 
 #include "kudu/gutil/integral_types.h"
@@ -347,12 +349,20 @@ template <class X> struct GoodFastHash;
 
 // SWIG doesn't know how to parse this stuff properly. Omit it.
 #ifndef SWIG
+#include <ext/hash_set>
+namespace __gnu_cxx {
 
-namespace std {
 template<> struct hash<StringPiece> {
   size_t operator()(StringPiece s) const;
+  // Less than operator, for MSVC.
+  bool operator()(const StringPiece& s1, const StringPiece& s2) const {
+    return s1 < s2;
+  }
+  static const size_t bucket_size = 4;  // These are required by MSVC
+  static const size_t min_buckets = 8;  // 4 and 8 are defaults.
 };
-}  // namespace std
+
+}  // namespace __gnu_cxx
 
 
 // An implementation of GoodFastHash for StringPiece.  See

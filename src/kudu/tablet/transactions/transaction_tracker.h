@@ -15,9 +15,9 @@
 #ifndef KUDU_TABLET_TRANSACTION_TRACKER_H_
 #define KUDU_TABLET_TRANSACTION_TRACKER_H_
 
-#include <memory>
 #include <string>
-#include <unordered_map>
+#include <tr1/memory>
+#include <tr1/unordered_map>
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -64,7 +64,7 @@ class TransactionTracker {
   Status WaitForAllToFinish(const MonoDelta& timeout) const;
 
   void StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity);
-  void StartMemoryTracking(const std::shared_ptr<MemTracker>& parent_mem_tracker);
+  void StartMemoryTracking(const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker);
 
  private:
   struct Metrics {
@@ -94,7 +94,7 @@ class TransactionTracker {
   };
 
   // Protected by 'lock_'.
-  typedef std::unordered_map<scoped_refptr<TransactionDriver>,
+  typedef std::tr1::unordered_map<scoped_refptr<TransactionDriver>,
       State,
       ScopedRefPtrHashFunctor<TransactionDriver>,
       ScopedRefPtrEqualToFunctor<TransactionDriver> > TxnMap;
@@ -102,7 +102,7 @@ class TransactionTracker {
 
   gscoped_ptr<Metrics> metrics_;
 
-  std::shared_ptr<MemTracker> mem_tracker_;
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(TransactionTracker);
 };

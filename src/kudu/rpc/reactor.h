@@ -17,11 +17,12 @@
 #include <boost/intrusive/list.hpp>
 #include <boost/utility.hpp>
 #include <ev++.h>
+#include <stdint.h>
+#include <tr1/memory>
+
 #include <list>
 #include <map>
-#include <memory>
 #include <set>
-#include <stdint.h>
 #include <string>
 
 #include "kudu/gutil/ref_counted.h"
@@ -120,8 +121,8 @@ class ReactorThread {
   friend class Connection;
 
   // Client-side connection map.
-  typedef std::unordered_map<ConnectionId, scoped_refptr<Connection>,
-                             ConnectionIdHash, ConnectionIdEqual> conn_map_t;
+  typedef std::tr1::unordered_map<ConnectionId, scoped_refptr<Connection>,
+                                  ConnectionIdHash, ConnectionIdEqual> conn_map_t;
 
   ReactorThread(Reactor *reactor, const MessengerBuilder &bld);
 
@@ -216,7 +217,7 @@ class ReactorThread {
 
   // Assign a new outbound call to the appropriate connection object.
   // If this fails, the call is marked failed and completed.
-  void AssignOutboundCall(const std::shared_ptr<OutboundCall> &call);
+  void AssignOutboundCall(const std::tr1::shared_ptr<OutboundCall> &call);
 
   // Register a new connection.
   void RegisterConnection(const scoped_refptr<Connection>& conn);
@@ -266,7 +267,7 @@ class ReactorThread {
 // A Reactor manages a ReactorThread
 class Reactor {
  public:
-  Reactor(const std::shared_ptr<Messenger>& messenger,
+  Reactor(const std::tr1::shared_ptr<Messenger>& messenger,
           int index,
           const MessengerBuilder &bld);
   Status Init();
@@ -292,7 +293,7 @@ class Reactor {
 
   // Queue a new call to be sent. If the reactor is already shut down, marks
   // the call as failed.
-  void QueueOutboundCall(const std::shared_ptr<OutboundCall> &call);
+  void QueueOutboundCall(const std::tr1::shared_ptr<OutboundCall> &call);
 
   // Schedule the given task's Run() method to be called on the
   // reactor thread.
@@ -328,7 +329,7 @@ class Reactor {
   mutable LockType lock_;
 
   // parent messenger
-  std::shared_ptr<Messenger> messenger_;
+  std::tr1::shared_ptr<Messenger> messenger_;
 
   const std::string name_;
 

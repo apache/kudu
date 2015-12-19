@@ -15,9 +15,8 @@
 #ifndef KUDU_CODEGEN_JIT_WRAPPER_H
 #define KUDU_CODEGEN_JIT_WRAPPER_H
 
-#include <memory>
-
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
@@ -59,13 +58,13 @@ class JITWrapper : public RefCountedThreadSafe<JITWrapper> {
   virtual Status EncodeOwnKey(faststring* out) = 0;
 
  protected:
-  explicit JITWrapper(std::unique_ptr<JITCodeOwner> owner);
+  explicit JITWrapper(gscoped_ptr<JITCodeOwner> owner);
   virtual ~JITWrapper();
 
  private:
   friend class RefCountedThreadSafe<JITWrapper>;
 
-  std::unique_ptr<JITCodeOwner> owner_;
+  gscoped_ptr<JITCodeOwner> owner_;
 
   DISALLOW_COPY_AND_ASSIGN(JITWrapper);
 };

@@ -20,8 +20,8 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <glog/logging.h>
-#include <memory>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
@@ -125,7 +125,7 @@ using log::Log;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
 using std::string;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::TABLET_DATA_COPYING;

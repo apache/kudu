@@ -14,7 +14,9 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <tr1/memory>
 #include <algorithm>
+#include <vector>
 
 #include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_util.h"
@@ -37,7 +39,7 @@ namespace tablet {
 using cfile::ReaderOptions;
 using cfile::DefaultColumnValueIterator;
 using fs::ReadableBlock;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using strings::Substitute;
 
 ////////////////////////////////////////////////////////////

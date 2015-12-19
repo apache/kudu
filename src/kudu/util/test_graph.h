@@ -14,9 +14,9 @@
 #ifndef KUDU_TEST_GRAPH_COLLECTOR_H
 #define KUDU_TEST_GRAPH_COLLECTOR_H
 
-#include <memory>
+#include <tr1/memory>
+#include <tr1/unordered_map>
 #include <string>
-#include <unordered_map>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/macros.h"
@@ -58,7 +58,7 @@ class TimeSeriesCollector {
 
   ~TimeSeriesCollector();
 
-  std::shared_ptr<TimeSeries> GetTimeSeries(const std::string &key);
+  std::tr1::shared_ptr<TimeSeries> GetTimeSeries(const std::string &key);
   void StartDumperThread();
   void StopDumperThread();
 
@@ -70,7 +70,7 @@ class TimeSeriesCollector {
 
   std::string scope_;
 
-  typedef std::unordered_map<std::string, std::shared_ptr<TimeSeries> > SeriesMap;
+  typedef std::tr1::unordered_map<std::string, std::tr1::shared_ptr<TimeSeries> > SeriesMap;
   SeriesMap series_map_;
   mutable Mutex series_lock_;
 

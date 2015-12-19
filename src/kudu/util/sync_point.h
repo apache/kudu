@@ -19,8 +19,8 @@
 #pragma once
 
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <tr1/unordered_set>
+#include <tr1/unordered_map>
 #include <vector>
 
 #include "kudu/util/condition_variable.h"
@@ -76,13 +76,13 @@ class SyncPoint {
   bool PredecessorsAllCleared(const std::string& point);
 
   // successor/predecessor map loaded from LoadDependency
-  std::unordered_map<std::string, std::vector<std::string> > successors_;
-  std::unordered_map<std::string, std::vector<std::string> > predecessors_;
+  std::tr1::unordered_map<std::string, std::vector<std::string> > successors_;
+  std::tr1::unordered_map<std::string, std::vector<std::string> > predecessors_;
 
   Mutex mutex_;
   ConditionVariable cv_;
   // sync points that have been passed through
-  std::unordered_set<std::string> cleared_points_;
+  std::tr1::unordered_set<std::string> cleared_points_;
   bool enabled_;
 };
 

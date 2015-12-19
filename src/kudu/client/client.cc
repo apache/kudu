@@ -17,7 +17,8 @@
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <set>
-#include <unordered_map>
+#include <tr1/memory>
+#include <tr1/unordered_map>
 #include <vector>
 
 #include "kudu/client/batcher.h"
@@ -51,6 +52,10 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 
+using std::set;
+using std::string;
+using std::tr1::shared_ptr;
+using std::vector;
 using kudu::master::AlterTableRequestPB;
 using kudu::master::AlterTableRequestPB_Step;
 using kudu::master::AlterTableResponsePB;
@@ -60,20 +65,17 @@ using kudu::master::DeleteTableRequestPB;
 using kudu::master::DeleteTableResponsePB;
 using kudu::master::GetTableSchemaRequestPB;
 using kudu::master::GetTableSchemaResponsePB;
-using kudu::master::ListTablesRequestPB;
-using kudu::master::ListTablesResponsePB;
 using kudu::master::ListTabletServersRequestPB;
 using kudu::master::ListTabletServersResponsePB;
 using kudu::master::ListTabletServersResponsePB_Entry;
+using kudu::master::ListTablesRequestPB;
+using kudu::master::ListTablesResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletLocationsPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::tserver::ScanResponsePB;
-using std::set;
-using std::string;
-using std::vector;
 
 MAKE_ENUM_LIMITS(kudu::client::KuduSession::FlushMode,
                  kudu::client::KuduSession::AUTO_FLUSH_SYNC,
@@ -194,10 +196,10 @@ KuduClientBuilder& KuduClientBuilder::default_rpc_timeout(const MonoDelta& timeo
   return *this;
 }
 
-Status KuduClientBuilder::Build(sp::shared_ptr<KuduClient>* client) {
+Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   RETURN_NOT_OK(CheckCPUFlags());
 
-  sp::shared_ptr<KuduClient> c(new KuduClient());
+  shared_ptr<KuduClient> c(new KuduClient());
 
   // Init messenger.
   MessengerBuilder builder("client");
@@ -345,7 +347,7 @@ Status KuduClient::TableExists(const string& table_name, bool* exists) {
 }
 
 Status KuduClient::OpenTable(const string& table_name,
-                             sp::shared_ptr<KuduTable>* table) {
+                             shared_ptr<KuduTable>* table) {
   KuduSchema schema;
   string table_id;
   PartitionSchema partition_schema;
@@ -360,16 +362,16 @@ Status KuduClient::OpenTable(const string& table_name,
 
   // In the future, probably will look up the table in some map to reuse KuduTable
   // instances.
-  sp::shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, table_id,
-                                 schema, partition_schema));
+  shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, table_id,
+                                          schema, partition_schema));
   RETURN_NOT_OK(ret->data_->Open());
   table->swap(ret);
 
   return Status::OK();
 }
 
-sp::shared_ptr<KuduSession> KuduClient::NewSession() {
-  sp::shared_ptr<KuduSession> ret(new KuduSession(shared_from_this()));
+shared_ptr<KuduSession> KuduClient::NewSession() {
+  shared_ptr<KuduSession> ret(new KuduSession(shared_from_this()));
   ret->data_->Init(ret);
   return ret;
 }
@@ -519,7 +521,7 @@ Status KuduTableCreator::Create() {
 // KuduTable
 ////////////////////////////////////////////////////////////
 
-KuduTable::KuduTable(const sp::shared_ptr<KuduClient>& client,
+KuduTable::KuduTable(const shared_ptr<KuduClient>& client,
                      const string& name,
                      const string& table_id,
                      const KuduSchema& schema,
@@ -618,7 +620,7 @@ KuduError::~KuduError() {
 // KuduSession
 ////////////////////////////////////////////////////////////
 
-KuduSession::KuduSession(const sp::shared_ptr<KuduClient>& client)
+KuduSession::KuduSession(const shared_ptr<KuduClient>& client)
   : data_(new KuduSession::Data(client)) {
 }
 

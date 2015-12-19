@@ -14,9 +14,11 @@
 
 #include "kudu/tablet/delta_compaction.h"
 
-#include <algorithm>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <tr1/unordered_map>
+#include <tr1/unordered_set>
 
 #include "kudu/common/generic_iterators.h"
 #include "kudu/gutil/stl_util.h"
@@ -32,15 +34,14 @@
 #include "kudu/tablet/multi_column_writer.h"
 #include "kudu/tablet/mvcc.h"
 
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 
 namespace kudu {
 
-using cfile::CFileIterator;
 using cfile::CFileReader;
 using cfile::IndexTreeIterator;
+using cfile::CFileIterator;
 using fs::WritableBlock;
-using std::vector;
 using strings::Substitute;
 
 namespace tablet {

@@ -17,9 +17,9 @@
 #include <stdint.h>
 
 #include <map>
-#include <memory>
 #include <set>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
@@ -192,7 +192,7 @@ class MaintenanceOp {
 
   // The MaintenanceManager with which this op is registered, or null
   // if it is not registered.
-  std::shared_ptr<MaintenanceManager> manager_;
+  std::tr1::shared_ptr<MaintenanceManager> manager_;
 
   IOUsage io_usage_;
 };
@@ -215,13 +215,13 @@ struct CompletedOp {
 // as flushes or compactions.  It runs these operations in the background, in a
 // thread pool.  It uses information provided in MaintenanceOpStats objects to
 // decide which operations, if any, to run.
-class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManager> {
+class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceManager> {
  public:
   struct Options {
     int32_t num_threads;
     int32_t polling_interval_ms;
     uint32_t history_size;
-    std::shared_ptr<MemTracker> parent_mem_tracker;
+    std::tr1::shared_ptr<MemTracker> parent_mem_tracker;
   };
 
   explicit MaintenanceManager(const Options& options);
@@ -267,7 +267,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   // the completed_ops_count_ % the vector's size and then the count needs to be incremented.
   std::vector<CompletedOp> completed_ops_;
   int64_t completed_ops_count_;
-  std::shared_ptr<MemTracker> parent_mem_tracker_;
+  std::tr1::shared_ptr<MemTracker> parent_mem_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(MaintenanceManager);
 };

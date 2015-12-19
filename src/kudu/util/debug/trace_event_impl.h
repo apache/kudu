@@ -9,8 +9,8 @@
 #include <gtest/gtest_prod.h>
 #include <stack>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <tr1/unordered_set>
+#include <tr1/unordered_map>
 #include <vector>
 
 
@@ -652,14 +652,14 @@ class BASE_EXPORT TraceLog {
   std::vector<EnabledStateObserver*> enabled_state_observer_list_;
 
   std::string process_name_;
-  std::unordered_map<int, std::string> process_labels_;
+  std::tr1::unordered_map<int, std::string> process_labels_;
   int process_sort_index_;
-  std::unordered_map<int, int> thread_sort_indices_;
-  std::unordered_map<int, std::string> thread_names_;
+  std::tr1::unordered_map<int, int> thread_sort_indices_;
+  std::tr1::unordered_map<int, std::string> thread_names_;
 
   // The following two maps are used only when ECHO_TO_CONSOLE.
-  std::unordered_map<int, std::stack<MicrosecondsInt64> > thread_event_start_times_;
-  std::unordered_map<std::string, int> thread_colors_;
+  std::tr1::unordered_map<int, std::stack<MicrosecondsInt64> > thread_event_start_times_;
+  std::tr1::unordered_map<std::string, int> thread_colors_;
 
   // XORed with TraceID to make it unlikely to collide with other processes.
   uint64_t process_id_hash_;
@@ -695,7 +695,7 @@ class BASE_EXPORT TraceLog {
   Mutex active_threads_lock_;
   // Map of PID -> PerThreadInfo
   // Protected by active_threads_lock_.
-  typedef std::unordered_map<int64_t, PerThreadInfo*> ActiveThreadMap;
+  typedef std::tr1::unordered_map<int64_t, PerThreadInfo*> ActiveThreadMap;
   ActiveThreadMap active_threads_;
 
   // For events which can't be added into the thread local buffer, e.g. events

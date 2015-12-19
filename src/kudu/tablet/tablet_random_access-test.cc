@@ -74,8 +74,10 @@ const char* TestOp_names[] = {
 class TestRandomAccess : public KuduTabletTest {
  public:
   TestRandomAccess()
-    : KuduTabletTest(Schema({ ColumnSchema("key", INT32),
-                              ColumnSchema("val", INT32, true) }, 1)),
+    : KuduTabletTest(Schema(boost::assign::list_of
+                            (ColumnSchema("key", INT32))
+                            (ColumnSchema("val", INT32, true)),
+                            1)),
       done_(1) {
     OverrideFlagForSlowTests("keyspace_size", "30000");
     OverrideFlagForSlowTests("runtime_seconds", "10");

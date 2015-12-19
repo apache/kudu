@@ -14,8 +14,8 @@
 #ifndef KUDU_MASTER_TS_DESCRIPTOR_H
 #define KUDU_MASTER_TS_DESCRIPTOR_H
 
-#include <memory>
 #include <string>
+#include <tr1/memory>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/locks.h"
@@ -80,12 +80,12 @@ class TSDescriptor {
   void GetNodeInstancePB(NodeInstancePB* instance_pb) const;
 
   // Return an RPC proxy to the tablet server admin service.
-  Status GetTSAdminProxy(const std::shared_ptr<rpc::Messenger>& messenger,
-                         std::shared_ptr<tserver::TabletServerAdminServiceProxy>* proxy);
+  Status GetTSAdminProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                         std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy>* proxy);
 
   // Return an RPC proxy to the consensus service.
-  Status GetConsensusProxy(const std::shared_ptr<rpc::Messenger>& messenger,
-                           std::shared_ptr<consensus::ConsensusServiceProxy>* proxy);
+  Status GetConsensusProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                           std::tr1::shared_ptr<consensus::ConsensusServiceProxy>* proxy);
 
  private:
   explicit TSDescriptor(const std::string& perm_id);
@@ -106,8 +106,8 @@ class TSDescriptor {
 
   gscoped_ptr<TSRegistrationPB> registration_;
 
-  std::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_admin_proxy_;
-  std::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
+  std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_admin_proxy_;
+  std::tr1::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(TSDescriptor);
 };

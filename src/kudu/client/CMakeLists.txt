@@ -150,7 +150,6 @@ install(TARGETS kudu_client_exported
 install(FILES
   callbacks.h
   client.h
-  shared_ptr.h
   row_result.h
   scan_predicate.h
   schema.h

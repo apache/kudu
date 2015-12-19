@@ -16,8 +16,9 @@
 #define KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_ITEST_BASE_H_
 
 #include <gtest/gtest.h>
+#include <tr1/memory>
+#include <tr1/unordered_map>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -63,8 +64,8 @@ class ExternalMiniClusterITestBase : public KuduTest {
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
   gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;
-  client::sp::shared_ptr<client::KuduClient> client_;
-  std::unordered_map<std::string, itest::TServerDetails*> ts_map_;
+  std::tr1::shared_ptr<client::KuduClient> client_;
+  std::tr1::unordered_map<std::string, itest::TServerDetails*> ts_map_;
 };
 
 void ExternalMiniClusterITestBase::StartCluster(const std::vector<std::string>& extra_ts_flags,

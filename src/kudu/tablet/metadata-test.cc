@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <string>
@@ -25,6 +26,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
+using boost::assign::list_of;
 using std::vector;
 using std::string;
 using strings::Substitute;
@@ -35,7 +37,7 @@ namespace tablet {
 class MetadataTest : public KuduTest {
  public:
   MetadataTest() {
-    all_blocks_ = { BlockId(1), BlockId(2), BlockId(3), BlockId(4) };
+    all_blocks_ = list_of(BlockId(1))(BlockId(2))(BlockId(3))(BlockId(4));
 
     tablet_meta_ = new TabletMetadata(NULL, "fake-tablet");
     CHECK_OK(RowSetMetadata::CreateNew(tablet_meta_.get(), 0, &meta_));
@@ -59,8 +61,8 @@ TEST_F(MetadataTest, RSMD_TestReplaceDeltas_1) {
 
   ASSERT_OK(meta_->CommitUpdate(
               RowSetMetadataUpdate()
-              .ReplaceRedoDeltaBlocks(to_replace, { BlockId(123) })));
-  ASSERT_EQ(vector<BlockId>({ BlockId(1), BlockId(123), BlockId(4) }),
+              .ReplaceRedoDeltaBlocks(to_replace, list_of(BlockId(123)))));
+  ASSERT_EQ(list_of(BlockId(1))(BlockId(123))(BlockId(4)),
             meta_->redo_delta_blocks());
 }
 
@@ -72,8 +74,8 @@ TEST_F(MetadataTest, RSMD_TestReplaceDeltas_2) {
 
   ASSERT_OK(meta_->CommitUpdate(
               RowSetMetadataUpdate()
-              .ReplaceRedoDeltaBlocks(to_replace, { BlockId(123) })));
-  ASSERT_EQ(vector<BlockId>({ BlockId(123), BlockId(3), BlockId(4) }),
+              .ReplaceRedoDeltaBlocks(to_replace, list_of(BlockId(123)))));
+  ASSERT_EQ(list_of(BlockId(123))(BlockId(3))(BlockId(4)),
             meta_->redo_delta_blocks());
 }
 
@@ -85,8 +87,8 @@ TEST_F(MetadataTest, RSMD_TestReplaceDeltas_3) {
 
   ASSERT_OK(meta_->CommitUpdate(
               RowSetMetadataUpdate()
-              .ReplaceRedoDeltaBlocks(to_replace, { BlockId(123) })));
-  ASSERT_EQ(vector<BlockId>({ BlockId(1), BlockId(2), BlockId(123) }),
+              .ReplaceRedoDeltaBlocks(to_replace, list_of(BlockId(123)))));
+  ASSERT_EQ(list_of(BlockId(1))(BlockId(2))(BlockId(123)),
             meta_->redo_delta_blocks());
 }
 
@@ -98,7 +100,7 @@ TEST_F(MetadataTest, RSMD_TestReplaceDeltas_Bad_NonContiguous) {
 
   Status s = meta_->CommitUpdate(
     RowSetMetadataUpdate()
-    .ReplaceRedoDeltaBlocks(to_replace, { BlockId(123) }));
+    .ReplaceRedoDeltaBlocks(to_replace, list_of(BlockId(123))));
   EXPECT_EQ(Substitute("Invalid argument: Cannot find subsequence <$0> in <$1>",
                        BlockId::JoinStrings(to_replace),
                        BlockId::JoinStrings(all_blocks_)),
@@ -115,7 +117,7 @@ TEST_F(MetadataTest, RSMD_TestReplaceDeltas_Bad_DoesntExist) {
 
   Status s = meta_->CommitUpdate(
     RowSetMetadataUpdate()
-    .ReplaceRedoDeltaBlocks(to_replace, { BlockId(123) }));
+    .ReplaceRedoDeltaBlocks(to_replace, list_of(BlockId(123))));
   EXPECT_EQ(Substitute("Invalid argument: Cannot find subsequence <$0> in <$1>",
                        BlockId::JoinStrings(to_replace),
                        BlockId::JoinStrings(all_blocks_)),

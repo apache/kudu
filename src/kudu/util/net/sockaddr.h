@@ -17,6 +17,7 @@
 #include <netinet/in.h>
 #include <iosfwd>
 #include <string>
+#include <tr1/functional_hash.h>
 
 #include "kudu/util/status.h"
 
@@ -74,13 +75,14 @@ class Sockaddr {
 
 } // namespace kudu
 
-// Specialize std::hash for Sockaddr
-namespace std {
+// Specialize std::tr1::hash for Sockaddr
+namespace std { namespace tr1 {
 template<>
 struct hash<kudu::Sockaddr> {
   int operator()(const kudu::Sockaddr& addr) const {
     return addr.HashCode();
   }
 };
+} // namespace tr1
 } // namespace std
 #endif

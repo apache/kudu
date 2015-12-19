@@ -14,8 +14,8 @@
 #ifndef KUDU_TSERVER_TABLET_PEER_LOOKUP_H_
 #define KUDU_TSERVER_TABLET_PEER_LOOKUP_H_
 
-#include <memory>
 #include <string>
+#include <tr1/memory>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"

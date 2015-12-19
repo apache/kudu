@@ -15,7 +15,7 @@
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <memory>
+#include <tr1/memory>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/monotime.h"

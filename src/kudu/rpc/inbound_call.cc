@@ -15,7 +15,8 @@
 #include "kudu/rpc/inbound_call.h"
 
 #include <boost/foreach.hpp>
-#include <memory>
+#include <tr1/memory>
+#include <vector>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/connection.h"
@@ -31,7 +32,7 @@ using google::protobuf::FieldDescriptor;
 using google::protobuf::Message;
 using google::protobuf::MessageLite;
 using google::protobuf::io::CodedOutputStream;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 

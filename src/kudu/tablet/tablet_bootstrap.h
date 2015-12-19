@@ -15,7 +15,7 @@
 #define KUDU_TABLET_TABLET_BOOTSTRAP_H_
 
 #include <boost/thread/shared_mutex.hpp>
-#include <memory>
+#include <tr1/memory>
 #include <string>
 #include <vector>
 
@@ -90,10 +90,10 @@ extern const char* kLogRecoveryDir;
 // TSTabletManager.
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<server::Clock>& clock,
-                       const std::shared_ptr<MemTracker>& mem_tracker,
+                       const std::tr1::shared_ptr<MemTracker>& mem_tracker,
                        MetricRegistry* metric_registry,
                        TabletStatusListener* status_listener,
-                       std::shared_ptr<Tablet>* rebuilt_tablet,
+                       std::tr1::shared_ptr<Tablet>* rebuilt_tablet,
                        scoped_refptr<log::Log>* rebuilt_log,
                        const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,
                        consensus::ConsensusBootstrapInfo* consensus_info);

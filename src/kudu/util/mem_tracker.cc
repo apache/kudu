@@ -20,7 +20,6 @@
 #include <gperftools/malloc_extension.h>
 #include <limits>
 #include <list>
-#include <memory>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/once.h"
@@ -62,7 +61,7 @@ using std::deque;
 using std::list;
 using std::string;
 using std::stringstream;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::vector;
 
 using strings::Substitute;
@@ -228,7 +227,7 @@ shared_ptr<MemTracker> MemTracker::FindOrCreateTracker(int64_t byte_limit,
   return CreateTrackerUnlocked(byte_limit, id, real_parent);
 }
 
-void MemTracker::ListTrackers(vector<shared_ptr<MemTracker>>* trackers) {
+void MemTracker::ListTrackers(vector<shared_ptr<MemTracker> >* trackers) {
   trackers->clear();
   deque<shared_ptr<MemTracker> > to_process;
   to_process.push_front(GetRootTracker());

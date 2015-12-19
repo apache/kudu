@@ -14,13 +14,13 @@
 #ifndef KUDU_TABLET_COMPACTION_POLICY_H
 #define KUDU_TABLET_COMPACTION_POLICY_H
 
-#include <string>
-#include <unordered_set>
-#include <vector>
-
 #include "kudu/gutil/macros.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+
+#include <string>
+#include <vector>
+#include <tr1/unordered_set>
 
 namespace kudu {
 namespace tablet {
@@ -51,7 +51,7 @@ class CompactionPolicy {
   // If 'log' is not NULL, then a verbose log of the compaction selection
   // process will be appended to it.
   virtual Status PickRowSets(const RowSetTree &tree,
-                             std::unordered_set<RowSet*>* picked,
+                             std::tr1::unordered_set<RowSet*>* picked,
                              double* quality,
                              std::vector<std::string>* log) = 0;
 
@@ -76,7 +76,7 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
   explicit BudgetedCompactionPolicy(int size_budget_mb);
 
   virtual Status PickRowSets(const RowSetTree &tree,
-                             std::unordered_set<RowSet*>* picked,
+                             std::tr1::unordered_set<RowSet*>* picked,
                              double* quality,
                              std::vector<std::string>* log) OVERRIDE;
 

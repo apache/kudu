@@ -20,17 +20,18 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <llvm/LinkAllPasses.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Analysis/Passes.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/MCJIT.h>
-#include <llvm/IR/DerivedTypes.h>
-#include <llvm/IR/Function.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Function.h>
 #include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Module.h>
+#include <llvm/PassManager.h>
 #include <llvm/IR/Type.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
@@ -57,24 +58,22 @@ using llvm::ConstantInt;
 using llvm::EngineBuilder;
 using llvm::ExecutionEngine;
 using llvm::Function;
+using llvm::FunctionPassManager;
 using llvm::FunctionType;
 using llvm::IntegerType;
 using llvm::LLVMContext;
 using llvm::Module;
+using llvm::PassManager;
 using llvm::PassManagerBuilder;
 using llvm::PointerType;
+using llvm::raw_os_ostream;
 using llvm::SMDiagnostic;
 using llvm::TargetMachine;
 using llvm::Type;
 using llvm::Value;
-using llvm::legacy::FunctionPassManager;
-using llvm::legacy::PassManager;
-using llvm::raw_os_ostream;
-using std::move;
 using std::ostream;
 using std::string;
 using std::stringstream;
-using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -142,8 +141,8 @@ Status ModuleBuilder::Init() {
 
   // Parse IR.
   SMDiagnostic err;
-  unique_ptr<llvm::MemoryBuffer> ir_buf(llvm::MemoryBuffer::getMemBuffer(ir_data));
-  module_ = llvm::parseIR(ir_buf->getMemBufferRef(), err, *context_);
+  gscoped_ptr<llvm::MemoryBuffer> ir_buf(llvm::MemoryBuffer::getMemBuffer(ir_data));
+  module_.reset(llvm::ParseIR(ir_buf.release(), err, *context_));
   if (!module_) {
     return Status::ConfigurationError("Could not parse IR", ToString(err));
   }
@@ -227,6 +226,10 @@ void DoOptimizations(ExecutionEngine* engine,
 
   PassManager module_passes;
 
+  // Specifying the data layout is necessary for some optimizations (e.g. removing many of
+  // the loads/stores produced by structs).
+  // Transfers ownership of the data layout to module_passes.
+  module_passes.add(new llvm::DataLayout(module->getDataLayout()));
   // Internalize all functions that aren't explicitly specified with external linkage.
   module_passes.add(llvm::createInternalizePass(external_functions));
   pass_builder.populateModulePassManager(module_passes);
@@ -240,7 +243,7 @@ void DoOptimizations(ExecutionEngine* engine,
 
 } // anonymous namespace
 
-Status ModuleBuilder::Compile(unique_ptr<ExecutionEngine>* out) {
+Status ModuleBuilder::Compile(gscoped_ptr<ExecutionEngine>* out) {
   CHECK_EQ(state_, kBuilding);
 
   // Attempt to generate the engine
@@ -250,21 +253,20 @@ Status ModuleBuilder::Compile(unique_ptr<ExecutionEngine>* out) {
 #else
   Level opt_level = llvm::CodeGenOpt::None;
 #endif
-  Module* module = module_.get();
-  EngineBuilder ebuilder(move(module_));
+  EngineBuilder ebuilder(module_.get());
   ebuilder.setErrorStr(&str);
+  ebuilder.setUseMCJIT(true);
   ebuilder.setOptLevel(opt_level);
   target_ = ebuilder.selectTarget();
-  unique_ptr<ExecutionEngine> local_engine(ebuilder.create(target_));
+  gscoped_ptr<ExecutionEngine> local_engine(ebuilder.create(target_));
   if (!local_engine) {
     return Status::ConfigurationError("Code generation for module failed. "
                                       "Could not start ExecutionEngine",
                                       str);
   }
-  module->setDataLayout(target_->createDataLayout());
 
 #if CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS
-  DoOptimizations(local_engine.get(), module, GetFunctionNames());
+  DoOptimizations(local_engine.get(), module_.get(), GetFunctionNames());
 #endif
 
   // Compile the module
@@ -284,11 +286,10 @@ Status ModuleBuilder::Compile(unique_ptr<ExecutionEngine>* out) {
   // that created it does. Furthermore, if the module is removed from the
   // engine's ownership, neither the context nor the module have to stick
   // around for the jitted code to run. NOTE: this may change in LLVM 3.5
-  CHECK(local_engine->removeModule(module)); // releases ownership
-  module_.reset(module);
+  CHECK(local_engine->removeModule(module_.get())); // releases ownership
 
   // Upon success write to the output parameter
-  out->swap(local_engine);
+  *out = local_engine.Pass();
   state_ = kCompiled;
   return Status::OK();
 }

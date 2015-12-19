@@ -15,6 +15,7 @@
 #define KUDU_CLIENT_CLIENT_TEST_UTIL_H
 
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -29,12 +30,12 @@ class KuduSchema;
 
 // Log any pending errors in the given session, and then crash the current
 // process.
-void LogSessionErrorsAndDie(const sp::shared_ptr<KuduSession>& session,
+void LogSessionErrorsAndDie(const std::tr1::shared_ptr<KuduSession>& session,
                             const Status& s);
 
 // Flush the given session. If any errors occur, log them and crash
 // the process.
-inline void FlushSessionOrDie(const sp::shared_ptr<KuduSession>& session) {
+inline void FlushSessionOrDie(const std::tr1::shared_ptr<KuduSession>& session) {
   Status s = session->Flush();
   if (PREDICT_FALSE(!s.ok())) {
     LogSessionErrorsAndDie(session, s);

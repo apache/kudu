@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <string>
@@ -43,6 +44,7 @@ using client::KuduSchema;
 using client::KuduSchemaBuilder;
 using client::KuduTable;
 using std::string;
+using std::tr1::shared_ptr;
 using std::vector;
 
 class MasterFailoverTest : public KuduTest {
@@ -53,7 +55,7 @@ class MasterFailoverTest : public KuduTest {
   };
 
   MasterFailoverTest() {
-    opts_.master_rpc_ports = { 11010, 11011, 11012 };
+    opts_.master_rpc_ports = boost::assign::list_of(11010)(11011)(11012);
     opts_.num_masters = num_masters_ = opts_.master_rpc_ports.size();
     opts_.num_tablet_servers = kNumTabletServerReplicas;
 
@@ -126,7 +128,7 @@ class MasterFailoverTest : public KuduTest {
   // requires that the table and tablet exist both on the masters and
   // the tablet servers.
   Status OpenTableAndScanner(const std::string& table_name) {
-    client::sp::shared_ptr<KuduTable> table;
+    shared_ptr<KuduTable> table;
     RETURN_NOT_OK_PREPEND(client_->OpenTable(table_name, &table),
                           "Unable to open table " + table_name);
     KuduScanner scanner(table.get());
@@ -141,7 +143,7 @@ class MasterFailoverTest : public KuduTest {
   int num_masters_;
   ExternalMiniClusterOptions opts_;
   gscoped_ptr<ExternalMiniCluster> cluster_;
-  client::sp::shared_ptr<KuduClient> client_;
+  shared_ptr<KuduClient> client_;
 };
 
 // Test that synchronous CreateTable (issue CreateTable call and then
@@ -222,7 +224,7 @@ TEST_F(MasterFailoverTest, TestDeleteTableSync) {
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
   ASSERT_OK(client_->DeleteTable(table_name));
-  client::sp::shared_ptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   Status s = client_->OpenTable(table_name, &table);
   ASSERT_TRUE(s.IsNotFound());
 }
@@ -253,7 +255,7 @@ TEST_F(MasterFailoverTest, TestRenameTableSync) {
 
   string table_name_new = "testAlterTableSyncRenamed";
   ASSERT_OK(RenameTable(table_name_orig, table_name_new));
-  client::sp::shared_ptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(table_name_new, &table));
 
   Status s = client_->OpenTable(table_name_orig, &table);

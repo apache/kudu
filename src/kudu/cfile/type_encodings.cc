@@ -13,8 +13,8 @@
 // limitations under the License.
 #include "kudu/cfile/type_encodings.h"
 
-#include <unordered_map>
-#include <memory>
+#include <tr1/unordered_map>
+#include <tr1/memory>
 #include <utility>
 
 #include <glog/logging.h>
@@ -33,8 +33,8 @@
 namespace kudu {
 namespace cfile {
 
-using std::unordered_map;
-using std::shared_ptr;
+using std::tr1::unordered_map;
+using std::tr1::shared_ptr;
 
 
 template<DataType Type, EncodingType Encoding>
@@ -305,7 +305,7 @@ class TypeEncodingResolver {
       shared_ptr<const TypeEncodingInfo>,
       EncodingMapHash > mapping_;
 
-  unordered_map<DataType, EncodingType, std::hash<size_t> > default_mapping_;
+  unordered_map<DataType, EncodingType, std::tr1::hash<size_t> > default_mapping_;
 
   friend class Singleton<TypeEncodingResolver>;
   DISALLOW_COPY_AND_ASSIGN(TypeEncodingResolver);

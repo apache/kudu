@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <boost/foreach.hpp>
+#include <boost/assign/list_of.hpp>
 #include <google/protobuf/repeated_field.h>
 #include <gtest/gtest.h>
 
@@ -29,6 +30,7 @@
 namespace kudu {
 namespace fs {
 
+using boost::assign::list_of;
 using google::protobuf::RepeatedPtrField;
 using std::string;
 using std::vector;
@@ -42,7 +44,7 @@ TEST_F(KuduTest, Lifecycle) {
   // Test that the metadata file was created.
   {
     PathInstanceMetadataFile file(env_.get(), kType, kFileName);
-    ASSERT_OK(file.Create(kUuid, { kUuid }));
+    ASSERT_OK(file.Create(kUuid, list_of(kUuid)));
   }
   ASSERT_TRUE(env_->FileExists(kFileName));
 
@@ -72,7 +74,7 @@ TEST_F(KuduTest, Locking) {
   string kUuid = "a_uuid";
 
   PathInstanceMetadataFile file(env_.get(), kType, kFileName);
-  ASSERT_OK(file.Create(kUuid, { kUuid }));
+  ASSERT_OK(file.Create(kUuid, list_of(kUuid)));
 
   PathInstanceMetadataFile first(env_.get(), kType, kFileName);
   ASSERT_OK(first.LoadFromDisk());
@@ -121,8 +123,7 @@ static void RunCheckIntegrityTest(Env* env,
 }
 
 TEST_F(KuduTest, CheckIntegrity) {
-  vector<string> uuids = { "fee", "fi", "fo", "fum" };
-  RepeatedPtrField<string> kAllUuids(uuids.begin(), uuids.end());
+  RepeatedPtrField<string> kAllUuids = list_of("fee")("fi")("fo")("fum");
 
   // Initialize path_sets to be fully consistent.
   vector<PathSetPB> path_sets(kAllUuids.size());

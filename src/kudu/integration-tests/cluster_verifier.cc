@@ -14,7 +14,7 @@
 
 #include <gtest/gtest.h>
 #include <string>
-#include <memory>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -26,6 +26,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
 
+using std::tr1::shared_ptr;
 using std::string;
 using std::vector;
 
@@ -77,10 +78,10 @@ void ClusterVerifier::CheckCluster() {
 Status ClusterVerifier::DoKsck() {
   Sockaddr addr = cluster_->leader_master()->bound_rpc_addr();
 
-  std::shared_ptr<KsckMaster> master;
+  shared_ptr<KsckMaster> master;
   RETURN_NOT_OK(RemoteKsckMaster::Build(addr, &master));
-  std::shared_ptr<KsckCluster> cluster(new KsckCluster(master));
-  std::shared_ptr<Ksck> ksck(new Ksck(cluster));
+  shared_ptr<KsckCluster> cluster(new KsckCluster(master));
+  shared_ptr<Ksck> ksck(new Ksck(cluster));
 
   // This is required for everything below.
   RETURN_NOT_OK(ksck->CheckMasterRunning());
@@ -103,12 +104,12 @@ void ClusterVerifier::CheckRowCount(const std::string& table_name,
 Status ClusterVerifier::DoCheckRowCount(const std::string& table_name,
                                         ComparisonMode mode,
                                         int expected_row_count) {
-  client::sp::shared_ptr<client::KuduClient> client;
+  shared_ptr<client::KuduClient> client;
   client::KuduClientBuilder builder;
   RETURN_NOT_OK_PREPEND(cluster_->CreateClient(builder,
                                                &client),
                         "Unable to connect to cluster");
-  client::sp::shared_ptr<client::KuduTable> table;
+  shared_ptr<client::KuduTable> table;
   RETURN_NOT_OK_PREPEND(client->OpenTable(table_name, &table),
                         "Unable to open table");
   client::KuduScanner scanner(table.get());

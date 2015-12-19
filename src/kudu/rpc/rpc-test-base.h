@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <list>
 #include <string>
-#include <memory>
 
 #include "kudu/rpc/acceptor_pool.h"
 #include "kudu/rpc/messenger.h"
@@ -279,7 +278,7 @@ class RpcTestBase : public KuduTest {
   }
 
  protected:
-  std::shared_ptr<Messenger> CreateMessenger(const string &name,
+  std::tr1::shared_ptr<Messenger> CreateMessenger(const string &name,
                                         int n_reactors = 1) {
     MessengerBuilder bld(name);
     bld.set_num_reactors(n_reactors);
@@ -288,7 +287,7 @@ class RpcTestBase : public KuduTest {
     bld.set_coarse_timer_granularity(MonoDelta::FromMilliseconds(
                                        std::min(keepalive_time_ms_, 100)));
     bld.set_metric_entity(metric_entity_);
-    std::shared_ptr<Messenger> messenger;
+    std::tr1::shared_ptr<Messenger> messenger;
     CHECK_OK(bld.Build(&messenger));
     return messenger;
   }
@@ -393,7 +392,7 @@ class RpcTestBase : public KuduTest {
   template<class ServiceClass>
   void DoStartTestServer(Sockaddr *server_addr) {
     server_messenger_ = CreateMessenger("TestServer", n_server_reactor_threads_);
-    std::shared_ptr<AcceptorPool> pool;
+    std::tr1::shared_ptr<AcceptorPool> pool;
     ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), &pool));
     ASSERT_OK(pool->Start(2));
     *server_addr = pool->bind_address();
@@ -408,7 +407,7 @@ class RpcTestBase : public KuduTest {
 
  protected:
   string service_name_;
-  std::shared_ptr<Messenger> server_messenger_;
+  std::tr1::shared_ptr<Messenger> server_messenger_;
   scoped_refptr<ServicePool> service_pool_;
   int n_worker_threads_;
   int n_server_reactor_threads_;

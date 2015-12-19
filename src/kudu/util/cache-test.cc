@@ -19,7 +19,6 @@
 #include <glog/logging.h>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <memory>
 
 #include <vector>
 #include "kudu/util/cache.h"
@@ -59,7 +58,7 @@ class CacheTest : public KuduTest,
   }
   std::vector<int> deleted_keys_;
   std::vector<int> deleted_values_;
-  std::shared_ptr<MemTracker> mem_tracker_;
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
   gscoped_ptr<Cache> cache_;
   MetricRegistry metric_registry_;
 
@@ -80,7 +79,7 @@ class CacheTest : public KuduTest,
     // Since nvm cache does not have memtracker due to the use of
     // tcmalloc for this we only check for it in the DRAM case.
     if (GetParam() == DRAM_CACHE) {
-      ASSERT_TRUE(mem_tracker_.get());
+      ASSERT_TRUE(mem_tracker_);
     }
 
     scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(

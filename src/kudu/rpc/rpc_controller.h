@@ -15,7 +15,7 @@
 #define KUDU_RPC_RPC_CONTROLLER_H
 
 #include <glog/logging.h>
-#include <memory>
+#include <tr1/memory>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/locks.h"
@@ -116,7 +116,7 @@ class RpcController {
   mutable simple_spinlock lock_;
 
   // Once the call is sent, it is tracked here.
-  std::shared_ptr<OutboundCall> call_;
+  std::tr1::shared_ptr<OutboundCall> call_;
 
   DISALLOW_COPY_AND_ASSIGN(RpcController);
 };

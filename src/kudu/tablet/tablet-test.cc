@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <time.h>
 
@@ -27,8 +28,8 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/test_macros.h"
 
-using std::unordered_set;
-using std::shared_ptr;
+using std::tr1::unordered_set;
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace tablet {
@@ -915,10 +916,14 @@ TYPED_TEST(TestTablet, TestMetricsInit) {
   MetricRegistry* registry = this->harness()->metrics_registry();
   std::stringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
-  ASSERT_OK(registry->WriteAsJson(&writer, { "*" }, MetricJsonOptions()));
+  ASSERT_OK(registry->WriteAsJson(&writer,
+                                  boost::assign::list_of("*"),
+                                  MetricJsonOptions()));
   // Open tablet, should still work
   this->harness()->Open();
-  ASSERT_OK(registry->WriteAsJson(&writer, { "*" }, MetricJsonOptions()));
+  ASSERT_OK(registry->WriteAsJson(&writer,
+                                  boost::assign::list_of("*"),
+                                  MetricJsonOptions()));
 }
 
 // Test that we find the correct log segment size for different indexes.

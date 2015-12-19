@@ -16,6 +16,7 @@
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <vector>
+#include <tr1/memory>
 #include <utility>
 
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
@@ -34,6 +35,8 @@
 
 DEFINE_bool(tpch_cache_blocks_when_scanning, true,
             "Whether the scanners should cache the blocks that are read or not");
+
+using std::tr1::shared_ptr;
 
 namespace kudu {
 
@@ -57,7 +60,7 @@ namespace {
 
 class FlushCallback : public KuduStatusCallback {
  public:
-  FlushCallback(client::sp::shared_ptr<KuduSession> session, Semaphore *sem)
+  FlushCallback(shared_ptr<KuduSession> session, Semaphore *sem)
     : session_(session),
       sem_(sem) {
     sem_->Acquire();
@@ -88,7 +91,7 @@ class FlushCallback : public KuduStatusCallback {
     }
   }
 
-  client::sp::shared_ptr<KuduSession> session_;
+  shared_ptr<KuduSession> session_;
   Semaphore *sem_;
 };
 

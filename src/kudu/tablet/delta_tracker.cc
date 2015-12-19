@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
+#include <tr1/memory>
+#include <string>
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strip.h"
@@ -29,10 +32,11 @@
 namespace kudu {
 namespace tablet {
 
+using boost::assign::list_of;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 using std::string;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using strings::Substitute;
 
 DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
@@ -103,7 +107,7 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t en
                                                      const Schema* projection,
                                                      vector<shared_ptr<DeltaStore> > *target_stores,
                                                      vector<BlockId> *target_blocks,
-                                                     std::shared_ptr<DeltaIterator> *out) {
+                                                     std::tr1::shared_ptr<DeltaIterator> *out) {
   CHECK(open_);
   CHECK_LE(start_idx, end_idx);
   CHECK_LT(end_idx, redo_delta_stores_.size());
@@ -114,7 +118,7 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t en
     // In DEBUG mode, the following asserts that the object is of the right type
     // (using RTTI)
     ignore_result(down_cast<DeltaFileReader*>(delta_store.get()));
-    shared_ptr<DeltaFileReader> dfr = std::static_pointer_cast<DeltaFileReader>(delta_store);
+    shared_ptr<DeltaFileReader> dfr = std::tr1::static_pointer_cast<DeltaFileReader>(delta_store);
 
     LOG(INFO) << "Preparing to minor compact delta file: " << dfr->ToString();
 
@@ -217,12 +221,12 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
                 &compacted_stores, &compacted_blocks));
 
   // Update delta_stores_, removing the compacted delta files and inserted the new
-  RETURN_NOT_OK(AtomicUpdateStores(compacted_stores, { new_block_id }, REDO));
+  RETURN_NOT_OK(AtomicUpdateStores(compacted_stores, list_of(new_block_id), REDO));
   LOG(INFO) << "Opened delta block for read: " << new_block_id.ToString();
 
   // Update the metadata accordingly
   RowSetMetadataUpdate update;
-  update.ReplaceRedoDeltaBlocks(compacted_blocks, { new_block_id });
+  update.ReplaceRedoDeltaBlocks(compacted_blocks, list_of(new_block_id));
   // TODO: need to have some error handling here -- if we somehow can't persist the
   // metadata, do we end up losing data on recovery?
   CHECK_OK(rowset_metadata_->CommitUpdate(update));

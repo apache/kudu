@@ -17,9 +17,10 @@
 
 #include <algorithm>
 #include <boost/foreach.hpp>
+#include <boost/assign/list_of.hpp>
 #include <glog/stl_logging.h>
 #include <map>
-#include <memory>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/client/client-test-util.h"
@@ -38,6 +39,7 @@
 namespace kudu {
 namespace itest {
 
+using boost::assign::list_of;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
@@ -50,7 +52,8 @@ using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
 using client::KuduValue;
-using std::unordered_map;
+using std::tr1::unordered_map;
+using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -179,15 +182,15 @@ class FlexPartitioningITest : public KuduTest {
   gscoped_ptr<ExternalMiniCluster> cluster_;
   unordered_map<string, TServerDetails*> ts_map_;
 
-  client::sp::shared_ptr<KuduClient> client_;
-  client::sp::shared_ptr<KuduTable> table_;
+  shared_ptr<KuduClient> client_;
+  shared_ptr<KuduTable> table_;
   vector<KuduPartialRow*> inserted_rows_;
 };
 
 Status FlexPartitioningITest::InsertRandomRows() {
   CHECK(inserted_rows_.empty());
 
-  client::sp::shared_ptr<KuduSession> session(client_->NewSession());
+  shared_ptr<KuduSession> session(client_->NewSession());
   session->SetTimeoutMillis(10000);
   RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   for (uint64_t i = 0; i < kNumRows; i++) {
@@ -401,7 +404,7 @@ TEST_F(FlexPartitioningITest, TestSimplePartitioning) {
   NO_FATALS(CreateTable(1, // 2 columns
                         vector<string>(), 0, // No hash buckets
                         vector<string>(), 0, // No hash buckets
-                        { "c0" }, // no range partitioning
+                        list_of<string>("c0"), // no range partitioning
                         2)); // 1 split;
   ASSERT_EQ(2, CountTablets());
 
@@ -414,9 +417,9 @@ TEST_F(FlexPartitioningITest, TestSimplePartitioning) {
 // );
 TEST_F(FlexPartitioningITest, TestSinglePKBucketed) {
   NO_FATALS(CreateTable(1, // 1 column
-                        { "c0" }, 3, // bucket by "c0" in 3 buckets
+                        list_of("c0"), 3, // bucket by "c0" in 3 buckets
                         vector<string>(), 0, // no other buckets
-                        { "c0" }, // default range
+                        list_of<string>("c0"), // default range
                         2)); // one split
   ASSERT_EQ(6, CountTablets());
 
@@ -431,9 +434,9 @@ TEST_F(FlexPartitioningITest, TestSinglePKBucketed) {
 // );
 TEST_F(FlexPartitioningITest, TestCompositePK_BucketOnSecondColumn) {
   NO_FATALS(CreateTable(2, // 2 columns
-                        { "c1" }, 3, // bucket by "c0" in 3 buckets
+                        list_of("c1"), 3, // bucket by "c0" in 3 buckets
                         vector<string>(), 0, // no other buckets
-                        { "c0", "c1" }, // default range
+                        list_of<string>("c0")("c1"), // default range
                         1)); // no splits;
   ASSERT_EQ(3, CountTablets());
 
@@ -450,7 +453,7 @@ TEST_F(FlexPartitioningITest, TestCompositePK_RangePartitionByReversedPK) {
   NO_FATALS(CreateTable(2, // 2 columns
                         vector<string>(), 0, // no buckets
                         vector<string>(), 0, // no buckets
-                        { "c1", "c0" }, // range partition by reversed PK
+                        list_of<string>("c1")("c0"), // range partition by reversed PK
                         2)); // one split
   ASSERT_EQ(2, CountTablets());
 
@@ -467,7 +470,7 @@ TEST_F(FlexPartitioningITest, TestCompositePK_RangePartitionByPKPrefix) {
   NO_FATALS(CreateTable(2, // 2 columns
                         vector<string>(), 0, // no buckets
                         vector<string>(), 0, // no buckets
-                        { "c0" }, // range partition by c0
+                        list_of<string>("c0"), // range partition by c0
                         2)); // one split
   ASSERT_EQ(2, CountTablets());
 
@@ -484,7 +487,7 @@ TEST_F(FlexPartitioningITest, TestCompositePK_RangePartitionByPKSuffix) {
   NO_FATALS(CreateTable(2, // 2 columns
                         vector<string>(), 0, // no buckets
                         vector<string>(), 0, // no buckets
-                        { "c1" }, // range partition by c1
+                        list_of<string>("c1"), // range partition by c1
                         2)); // one split
   ASSERT_EQ(2, CountTablets());
 
@@ -500,9 +503,9 @@ TEST_F(FlexPartitioningITest, TestCompositePK_RangePartitionByPKSuffix) {
 // );
 TEST_F(FlexPartitioningITest, TestCompositePK_RangeAndBucket) {
   NO_FATALS(CreateTable(2, // 2 columns
-                        { "c1" }, 4, // BUCKET BY c1 INTO 4 BUCKETS
+                        list_of<string>("c1"), 4, // BUCKET BY c1 INTO 4 BUCKETS
                         vector<string>(), 0, // no buckets
-                        { "c0" }, // range partition by c0
+                        list_of<string>("c0"), // range partition by c0
                         2)); // 1 split;
   ASSERT_EQ(8, CountTablets());
 
@@ -518,9 +521,9 @@ TEST_F(FlexPartitioningITest, TestCompositePK_RangeAndBucket) {
 // );
 TEST_F(FlexPartitioningITest, TestCompositePK_MultipleBucketings) {
   NO_FATALS(CreateTable(2, // 2 columns
-                        { "c1" }, 4, // BUCKET BY c1 INTO 4 BUCKETS
-                        { "c0" }, 3, // BUCKET BY c0 INTO 3 BUCKETS
-                        { "c0", "c1" }, // default range partitioning
+                        list_of<string>("c1"), 4, // BUCKET BY c1 INTO 4 BUCKETS
+                        list_of<string>("c0"), 3, // BUCKET BY c0 INTO 3 BUCKETS
+                        list_of<string>("c0")("c1"), // default range partitioning
                         2)); // 1 split;
   ASSERT_EQ(4 * 3 * 2, CountTablets());
 
@@ -536,7 +539,7 @@ TEST_F(FlexPartitioningITest, TestCompositePK_MultipleBucketings) {
 // );
 TEST_F(FlexPartitioningITest, TestCompositePK_SingleBucketNoRange) {
   NO_FATALS(CreateTable(2, // 2 columns
-                        { "c0" }, 4, // BUCKET BY c0 INTO 4 BUCKETS
+                        list_of<string>("c0"), 4, // BUCKET BY c0 INTO 4 BUCKETS
                         vector<string>(), 0, // no buckets
                         vector<string>(), // no range partitioning
                         1)); // 0 splits;
@@ -555,8 +558,8 @@ TEST_F(FlexPartitioningITest, TestCompositePK_SingleBucketNoRange) {
 // );
 TEST_F(FlexPartitioningITest, TestCompositePK_MultipleBucketingsNoRange) {
   NO_FATALS(CreateTable(2, // 2 columns
-                        { "c0" }, 4, // BUCKET BY c0 INTO 4 BUCKETS
-                        { "c1" }, 5, // BUCKET BY c1 INTO 5 BUCKETS
+                        list_of<string>("c0"), 4, // BUCKET BY c0 INTO 4 BUCKETS
+                        list_of<string>("c1"), 5, // BUCKET BY c1 INTO 5 BUCKETS
                         vector<string>(), // no range partitioning
                         1)); // 0 splits;
   ASSERT_EQ(20, CountTablets());

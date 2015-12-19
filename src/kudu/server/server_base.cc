@@ -57,9 +57,9 @@ TAG_FLAG(num_reactor_threads, advanced);
 
 DECLARE_bool(use_hybrid_clock);
 
-using std::shared_ptr;
 using std::string;
 using std::stringstream;
+using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 

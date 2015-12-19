@@ -16,7 +16,7 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
-#include <unordered_map>
+#include <tr1/unordered_map>
 
 #include "kudu/client/schema-internal.h"
 #include "kudu/client/value-internal.h"
@@ -37,7 +37,7 @@ MAKE_ENUM_LIMITS(kudu::client::KuduColumnSchema::DataType,
                  kudu::client::KuduColumnSchema::INT8,
                  kudu::client::KuduColumnSchema::BOOL);
 
-using std::unordered_map;
+using std::tr1::unordered_map;
 using std::vector;
 using strings::Substitute;
 

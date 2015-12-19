@@ -15,7 +15,7 @@
 #define KUDU_TSERVER_TABLET_SERVICE_H
 
 #include <string>
-#include <memory>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/ref_counted.h"
@@ -88,7 +88,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
   Status HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                               const rpc::RpcContext* rpc_context,
                               const Schema& projection,
-                              const std::shared_ptr<tablet::Tablet>& tablet,
+                              const std::tr1::shared_ptr<tablet::Tablet>& tablet,
                               gscoped_ptr<RowwiseIterator>* iter,
                               Timestamp* snap_timestamp);
 

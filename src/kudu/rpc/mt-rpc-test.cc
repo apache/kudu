@@ -29,7 +29,7 @@ METRIC_DECLARE_counter(rpc_connections_accepted);
 METRIC_DECLARE_counter(rpcs_queue_overflow);
 
 using std::string;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using strings::Substitute;
 
 namespace kudu {

@@ -13,10 +13,11 @@
 // limitations under the License.
 #include "kudu/tablet/tablet-test-util.h"
 
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <memory>
+#include <tr1/memory>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
@@ -40,8 +41,8 @@
 
 METRIC_DECLARE_entity(tablet);
 
-using std::shared_ptr;
 using std::string;
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace tserver {
@@ -68,8 +69,10 @@ using tablet::WriteTransactionState;
 class RemoteBootstrapTest : public KuduTabletTest {
  public:
   RemoteBootstrapTest()
-    : KuduTabletTest(Schema({ ColumnSchema("key", STRING),
-                              ColumnSchema("val", INT32) }, 1)) {
+    : KuduTabletTest(Schema(boost::assign::list_of
+                              (ColumnSchema("key", STRING))
+                              (ColumnSchema("val", INT32)),
+                              1)) {
     CHECK_OK(ThreadPoolBuilder("test-exec").Build(&apply_pool_));
   }
 

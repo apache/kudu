@@ -17,10 +17,11 @@
 #include "kudu/tools/fs_tool.h"
 
 #include <iostream>
-#include <memory>
 #include <sstream>
+#include <tr1/memory>
 #include <vector>
 
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -73,19 +74,19 @@ struct CommandHandler {
   }
 };
 
-const vector<CommandHandler> kCommandHandlers = {
-    CommandHandler(DUMP_TABLET_DATA, "dump_tablet_data",
-                   "Dump a tablet's data (requires a tablet id)"),
-    CommandHandler(DUMP_TABLET_BLOCKS, "dump_tablet_blocks",
-                   "Dump a tablet's constituent blocks (requires a tablet id)"),
-    CommandHandler(DUMP_ROWSET, "dump_rowset",
-                   "Dump a rowset (requires a tablet id and an index)"),
-    CommandHandler(DUMP_CFILE_BLOCK, "dump_block",
-                   "Dump a cfile block (requires a block id)"),
-    CommandHandler(PRINT_TABLET_META, "print_meta",
-                   "Print a tablet metadata (requires a tablet id)"),
-    CommandHandler(PRINT_UUID, "print_uuid",
-                   "Print the UUID (master or TS) to whom the data belongs") };
+const vector<CommandHandler> kCommandHandlers = boost::assign::list_of
+    (CommandHandler(DUMP_TABLET_DATA, "dump_tablet_data",
+                    "Dump a tablet's data (requires a tablet id)"))
+    (CommandHandler(DUMP_TABLET_BLOCKS, "dump_tablet_blocks",
+                    "Dump a tablet's constituent blocks (requires a tablet id)"))
+    (CommandHandler(DUMP_ROWSET, "dump_rowset",
+                    "Dump a rowset (requires a tablet id and an index)"))
+    (CommandHandler(DUMP_CFILE_BLOCK, "dump_block",
+                    "Dump a cfile block (requires a block id)"))
+    (CommandHandler(PRINT_TABLET_META, "print_meta",
+                    "Print a tablet metadata (requires a tablet id)"))
+    (CommandHandler(PRINT_UUID, "print_uuid",
+                    "Print the UUID (master or TS) to whom the data belongs"));
 
 void PrintUsageToStream(const std::string& prog_name, std::ostream* out) {
   *out << "Usage: " << prog_name

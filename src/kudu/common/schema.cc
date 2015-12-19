@@ -27,8 +27,8 @@
 namespace kudu {
 
 using std::set;
-using std::unordered_map;
-using std::unordered_set;
+using std::tr1::unordered_set;
+using std::tr1::unordered_map;
 
 // In a new schema, we typically would start assigning column IDs at 0. However, this
 // makes it likely that in many test cases, the column IDs and the column indexes are

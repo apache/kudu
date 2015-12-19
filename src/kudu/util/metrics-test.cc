@@ -11,11 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
+#include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 #include <string>
-#include <unordered_set>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "kudu/gutil/bind.h"
@@ -26,8 +26,9 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
 
+using boost::assign::list_of;
 using std::string;
-using std::unordered_set;
+using std::tr1::unordered_set;
 using std::vector;
 
 DECLARE_int32(metrics_retirement_age_ms);
@@ -170,7 +171,7 @@ TEST_F(MetricsTest, JsonPrintTest) {
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
-  ASSERT_OK(entity_->WriteAsJson(&writer, { "*" }, MetricJsonOptions()));
+  ASSERT_OK(entity_->WriteAsJson(&writer, list_of("*"), MetricJsonOptions()));
 
   // Now parse it back out.
   JsonReader reader(out.str());
@@ -194,7 +195,7 @@ TEST_F(MetricsTest, JsonPrintTest) {
 
   // Verify that, if we filter for a metric that isn't in this entity, we get no result.
   out.str("");
-  ASSERT_OK(entity_->WriteAsJson(&writer, { "not_a_matching_metric" }, MetricJsonOptions()));
+  ASSERT_OK(entity_->WriteAsJson(&writer, list_of("not_a_matching_metric"), MetricJsonOptions()));
   ASSERT_EQ("", out.str());
 }
 

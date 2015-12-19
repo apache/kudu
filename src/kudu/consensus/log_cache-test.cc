@@ -14,7 +14,7 @@
 
 #include <gtest/gtest.h>
 #include <string>
-#include <memory>
+#include <tr1/memory>
 
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus-test-util.h"
@@ -28,7 +28,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
 
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 
 DECLARE_int32(log_cache_size_limit_mb);
 DECLARE_int32(global_log_cache_size_limit_mb);

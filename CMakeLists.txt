@@ -141,6 +141,12 @@ set(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 include(CompilerInfo)
 
 if ("${COMPILER_FAMILY}" STREQUAL "clang")
+  # Clang helpfully provides a few extensions from C++11 such as the 'override'
+  # keyword on methods. This doesn't change behavior, and we selectively enable
+  # it in src/gutil/port.h only on clang. So, we can safely use it, and don't want
+  # to trigger warnings when we do so.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c++11-extensions")
+
   # Using Clang with ccache causes a bunch of spurious warnings that are
   # purportedly fixed in the next version of ccache. See the following for details:
   #
@@ -163,6 +169,10 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
   else()
     message("Running without a controlling terminal or in a dumb terminal")
   endif()
+
+  # Use libstdc++ and not libc++. The latter lacks support for tr1 in OSX
+  # and since 10.9 is now the default.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
 endif()
 
 # Sanity check linking option.
@@ -213,7 +223,6 @@ endif()
 
 # For any C code, use the same flags.
 set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 # Flag to enable clang undefined behavior sanitizer
 # We explicitly don't enable all of the sanitizer flags:
@@ -248,9 +257,7 @@ if (${KUDU_USE_TSAN})
   add_definitions("-D_GLIBCXX_EXTERN_TEMPLATE=0")
 
   # Some of the above also need to be passed to the linker.
-  set(TSAN_LIB_DIR "${CMAKE_SOURCE_DIR}/thirdparty/installed/gcc.tsan/lib")
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,${TSAN_LIB_DIR} -fsanitize=thread")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -L${TSAN_LIB_DIR}")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
 
   # Strictly speaking, TSAN doesn't require dynamic linking. But it does
   # require all code to be position independent, and the easiest way to

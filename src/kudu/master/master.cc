@@ -19,8 +19,8 @@
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <list>
-#include <memory>
 #include <vector>
+#include <tr1/memory>
 
 #include "kudu/cfile/block_cache.h"
 #include "kudu/common/wire_protocol.h"
@@ -47,7 +47,7 @@ DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
 TAG_FLAG(master_registration_rpc_timeout_ms, experimental);
 
 using std::min;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::vector;
 
 using kudu::consensus::RaftPeerPB;

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <algorithm>
-#include <memory>
+#include <tr1/memory>
 
 #include <glog/logging.h>
 #include <string>
@@ -24,7 +24,7 @@
 #include "kudu/util/status.h"
 
 using strings::Substitute;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace env_util {

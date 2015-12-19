@@ -14,11 +14,13 @@
 #include "kudu/consensus/consensus_queue.h"
 
 #include <algorithm>
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
 #include <iostream>
 #include <string>
+#include <tr1/memory>
 #include <utility>
 
 #include "kudu/common/wire_protocol.h"
@@ -67,6 +69,8 @@ namespace consensus {
 using log::AsyncLogReader;
 using log::Log;
 using rpc::Messenger;
+using std::tr1::shared_ptr;
+using std::tr1::unordered_map;
 using strings::Substitute;
 
 METRIC_DEFINE_gauge_int64(tablet, majority_done_ops, "Leader Operations Acked by Majority",
@@ -237,7 +241,7 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
 }
 
 Status PeerMessageQueue::AppendOperation(const ReplicateRefPtr& msg) {
-  return AppendOperations({ msg }, Bind(DoNothingStatusCB));
+  return AppendOperations(boost::assign::list_of(msg), Bind(DoNothingStatusCB));
 }
 
 Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,

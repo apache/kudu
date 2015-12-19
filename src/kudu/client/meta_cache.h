@@ -19,8 +19,8 @@
 #include <boost/function.hpp>
 #include <map>
 #include <string>
-#include <memory>
-#include <unordered_map>
+#include <tr1/memory>
+#include <tr1/unordered_map>
 #include <vector>
 
 #include "kudu/common/partition.h"
@@ -77,7 +77,7 @@ class RemoteTabletServer {
 
   // Return the current proxy to this tablet server. Requires that RefreshProxy
   // be called prior to this.
-  std::shared_ptr<tserver::TabletServerServiceProxy> proxy() const;
+  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy() const;
 
   std::string ToString() const;
 
@@ -98,7 +98,7 @@ class RemoteTabletServer {
   const std::string uuid_;
 
   std::vector<HostPort> rpc_hostports_;
-  std::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
+  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteTabletServer);
 };
@@ -109,7 +109,7 @@ struct RemoteReplica {
   bool failed;
 };
 
-typedef std::unordered_map<std::string, RemoteTabletServer*> TabletServerMap;
+typedef std::tr1::unordered_map<std::string, RemoteTabletServer*> TabletServerMap;
 
 // The client's view of a given tablet. This object manages lookups of
 // the tablet's locations, status, etc.
@@ -271,12 +271,12 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   //
   // Protected by lock_.
   typedef std::map<std::string, scoped_refptr<RemoteTablet> > TabletMap;
-  std::unordered_map<std::string, TabletMap> tablets_by_table_and_key_;
+  std::tr1::unordered_map<std::string, TabletMap> tablets_by_table_and_key_;
 
   // Cache of tablets, keyed by tablet ID.
   //
   // Protected by lock_
-  std::unordered_map<std::string, scoped_refptr<RemoteTablet> > tablets_by_id_;
+  std::tr1::unordered_map<std::string, scoped_refptr<RemoteTablet> > tablets_by_id_;
 
   // Prevents master lookup "storms" by delaying master lookups when all
   // permits have been acquired.

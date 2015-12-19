@@ -17,7 +17,6 @@
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <memory>
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
@@ -58,7 +57,7 @@ using kudu::master::ListMastersResponsePB;
 using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
 using kudu::rpc::RpcController;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using strings::Substitute;
 
 namespace kudu {

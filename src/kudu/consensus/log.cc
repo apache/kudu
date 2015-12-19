@@ -112,7 +112,7 @@ using consensus::OpId;
 using consensus::ReplicateRefPtr;
 using env_util::OpenFileForRandom;
 using strings::Substitute;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 
 // This class is responsible for managing the thread that appends to
 // the log file.

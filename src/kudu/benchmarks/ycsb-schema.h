@@ -16,6 +16,7 @@
 #ifndef KUDU_BENCHMARKS_YCSB_SCHEMA_H
 #define KUDU_BENCHMARKS_YCSB_SCHEMA_H
 
+#include <boost/assign/list_of.hpp>
 #include "kudu/client/schema.h"
 
 namespace kudu {

@@ -13,10 +13,11 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <memory>
+#include <tr1/memory>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -46,7 +47,7 @@ DEFINE_int32(merge_benchmark_num_rows_per_rowset, 500000,
 DECLARE_string(block_manager);
 DECLARE_bool(enable_data_block_fsync);
 
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace tablet {
@@ -601,7 +602,11 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   string dummy_name = "";
 
-  ASSERT_OK(ReupdateMissedDeltas(dummy_name, input.get(), snap, snap2, { rs }));
+  ASSERT_OK(ReupdateMissedDeltas(dummy_name,
+                                        input.get(),
+                                        snap,
+                                        snap2,
+                                        boost::assign::list_of(rs)));
 
   // If we look at the contents of the DiskRowSet now, we should see the "re-updated" data.
   vector<string> out;
@@ -654,7 +659,11 @@ TEST_F(TestCompaction, TestKUDU102) {
   string dummy_name = "";
 
   // This would fail without KUDU-102
-  ASSERT_OK(ReupdateMissedDeltas(dummy_name, input.get(), snap, snap2, { rs, rs_b }));
+  ASSERT_OK(ReupdateMissedDeltas(dummy_name,
+                                        input.get(),
+                                        snap,
+                                        snap2,
+                                        boost::assign::list_of(rs) (rs_b)));
 }
 
 

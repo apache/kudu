@@ -14,6 +14,7 @@
 
 #include "kudu/common/encoded_key.h"
 
+#include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -46,7 +47,8 @@ class EncodedKeyTest : public ::testing::Test {
   }
 
   static Schema CreateSchema() {
-    return Schema({ ColumnSchema("key", UINT32) }, 1);
+    return Schema(boost::assign::list_of
+                  (ColumnSchema("key", UINT32)), 1);
   }
 
   EncodedKey* BuildEncodedKey(EncodedKeyBuilder& key_builder, int val) {
@@ -75,7 +77,8 @@ class EncodedKeyTest : public ::testing::Test {
   void ExpectDecodedKeyEq(const string& expected,
                           const Slice& encoded_form,
                           void* val) {
-    Schema schema({ ColumnSchema("key", Type) }, 1);
+    Schema schema(boost::assign::list_of
+                  (ColumnSchema("key", Type)), 1);
     EncodedKeyBuilder builder(&schema);
     builder.AddColumnKey(val);
     gscoped_ptr<EncodedKey> key(builder.BuildEncodedKey());
@@ -168,9 +171,10 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
   gscoped_ptr<EncodedKey> key;
   {
     // Integer type compound key.
-    Schema schema({ ColumnSchema("key0", UINT16),
-                    ColumnSchema("key1", UINT32),
-                    ColumnSchema("key2", UINT64) }, 3);
+    Schema schema(boost::assign::list_of
+                  (ColumnSchema("key0", UINT16))
+                  (ColumnSchema("key1", UINT32))
+                  (ColumnSchema("key2", UINT64)), 3);
 
     EncodedKeyBuilder builder(&schema);
     uint16_t key0 = 12345;
@@ -188,8 +192,9 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
 
   {
     // Mixed type compound key with STRING last.
-    Schema schema({ ColumnSchema("key0", UINT16),
-                    ColumnSchema("key1", STRING) }, 2);
+    Schema schema(boost::assign::list_of
+                  (ColumnSchema("key0", UINT16))
+                  (ColumnSchema("key1", STRING)), 2);
     EncodedKeyBuilder builder(&schema);
     uint16_t key0 = 12345;
     Slice key1("aKey");
@@ -202,9 +207,10 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
 
   {
     // Mixed type compound key with STRING in the middle
-    Schema schema({ ColumnSchema("key0", UINT16),
-                    ColumnSchema("key1", STRING),
-                    ColumnSchema("key2", UINT8) }, 3);
+    Schema schema(boost::assign::list_of
+                  (ColumnSchema("key0", UINT16))
+                  (ColumnSchema("key1", STRING))
+                  (ColumnSchema("key2", UINT8)), 3);
     EncodedKeyBuilder builder(&schema);
     uint16_t key0 = 12345;
     Slice key1("aKey");
@@ -224,9 +230,10 @@ TEST_F(EncodedKeyTest, TestConstructFromEncodedString) {
 
   {
     // Integer type compound key.
-    Schema schema({ ColumnSchema("key0", UINT16),
-                    ColumnSchema("key1", UINT32),
-                    ColumnSchema("key2", UINT64) }, 3);
+    Schema schema(boost::assign::list_of
+                  (ColumnSchema("key0", UINT16))
+                  (ColumnSchema("key1", UINT32))
+                  (ColumnSchema("key2", UINT64)), 3);
 
     // Prefix with only one full column specified
     ASSERT_OK(EncodedKey::DecodeEncodedString(

@@ -15,8 +15,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <memory>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include <boost/assign.hpp>
@@ -39,11 +39,11 @@ namespace kudu {
 namespace pb_util {
 
 using google::protobuf::FileDescriptorSet;
-using internal::WritableFileOutputStream;
 using std::ostringstream;
-using std::shared_ptr;
 using std::string;
+using std::tr1::shared_ptr;
 using std::vector;
+using internal::WritableFileOutputStream;
 
 static const char* kTestFileName = "pb_container.meta";
 static const char* kTestKeyvalName = "my-key";
@@ -158,7 +158,7 @@ TEST_F(TestPBUtil, TestWritableFileOutputStream) {
 TEST_F(TestPBUtil, TestPBContainerSimple) {
   // Exercise both the SYNC and NO_SYNC codepaths, despite the fact that we
   // aren't able to observe a difference in the test.
-  vector<SyncMode> modes = { SYNC, NO_SYNC };
+  vector<SyncMode> modes = boost::assign::list_of(SYNC)(NO_SYNC);
   BOOST_FOREACH(SyncMode mode, modes) {
 
     // Write the file.

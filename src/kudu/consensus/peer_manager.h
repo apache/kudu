@@ -21,7 +21,7 @@
 #include "kudu/util/status.h"
 
 #include <string>
-#include <unordered_map>
+#include <tr1/unordered_map>
 
 namespace kudu {
 
@@ -69,7 +69,7 @@ class PeerManager {
  private:
   std::string GetLogPrefix() const;
 
-  typedef std::unordered_map<std::string, Peer*> PeersMap;
+  typedef std::tr1::unordered_map<std::string, Peer*> PeersMap;
   const std::string tablet_id_;
   const std::string local_uuid_;
   PeerProxyFactory* peer_proxy_factory_;

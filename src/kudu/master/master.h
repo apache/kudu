@@ -15,7 +15,7 @@
 #define KUDU_MASTER_MASTER_H
 
 #include <string>
-#include <memory>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -125,7 +125,7 @@ class Master : public server::ServerBase {
   MasterOptions opts_;
 
   // The maintenance manager for this master.
-  std::shared_ptr<MaintenanceManager> maintenance_manager_;
+  std::tr1::shared_ptr<MaintenanceManager> maintenance_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(Master);
 };

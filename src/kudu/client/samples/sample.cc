@@ -15,6 +15,7 @@
 #include <ctime>
 #include <iostream>
 #include <sstream>
+#include <tr1/memory>
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
@@ -39,7 +40,6 @@ using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::client::KuduValue;
-using kudu::client::sp::shared_ptr;
 using kudu::KuduPartialRow;
 using kudu::MonoDelta;
 using kudu::Status;
@@ -47,6 +47,7 @@ using kudu::Status;
 using std::string;
 using std::stringstream;
 using std::vector;
+using std::tr1::shared_ptr;
 
 static Status CreateClient(const string& addr,
                            shared_ptr<KuduClient>* client) {

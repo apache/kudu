@@ -15,8 +15,9 @@
 #ifndef KUDU_RPC_SASL_SERVER_H
 #define KUDU_RPC_SASL_SERVER_H
 
-#include <set>
 #include <string>
+#include <tr1/memory>
+#include <set>
 #include <vector>
 
 #include <sasl/sasl.h>

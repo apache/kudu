@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <boost/assign/list_of.hpp>
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <memory>
 #include <string>
-#include <unordered_map>
+#include <tr1/memory>
+#include <tr1/unordered_map>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -26,14 +27,15 @@
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/test_workload.h"
 
+using boost::assign::list_of;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_READY;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tserver::ListTabletsResponsePB;
-using std::shared_ptr;
 using std::string;
-using std::unordered_map;
+using std::tr1::shared_ptr;
+using std::tr1::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -47,9 +49,9 @@ class TabletReplacementITest : public ExternalMiniClusterITestBase {
 // not part of the committed config yet (only the pending config).
 TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
-  vector<string> ts_flags = { "--enable_leader_failure_detection=false" };
+  vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
   int num_tservers = 5;
-  vector<string> master_flags = { "--master_add_server_when_underreplicated=false" };
+  vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
   master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags, num_tservers));
 
@@ -117,8 +119,8 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
 // than TestMasterTombstoneEvictedReplica does.
 TEST_F(TabletReplacementITest, TestMasterTombstoneOldReplicaOnReport) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
-  vector<string> ts_flags = { "--enable_leader_failure_detection=false" };
-  vector<string> master_flags = { "--master_add_server_when_underreplicated=false" };
+  vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
+  vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
   master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
@@ -175,9 +177,10 @@ TEST_F(TabletReplacementITest, TestEvictAndReplaceDeadFollower) {
   }
 
   MonoDelta timeout = MonoDelta::FromSeconds(30);
-  vector<string> ts_flags = { "--enable_leader_failure_detection=false",
-                              "--follower_unavailable_considered_failed_sec=5" };
-  vector<string> master_flags = { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false" };
+  vector<string> ts_flags = list_of("--enable_leader_failure_detection=false")
+                                   ("--follower_unavailable_considered_failed_sec=5");
+  vector<string> master_flags = list_of(
+      "--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
   TestWorkload workload(cluster_.get());

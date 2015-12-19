@@ -57,7 +57,7 @@ METRIC_DEFINE_counter(tablet, transaction_memory_pressure_rejections,
                       "Number of transactions rejected because the tablet's "
                       "transaction memory limit was reached.");
 
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::vector;
 
 namespace kudu {

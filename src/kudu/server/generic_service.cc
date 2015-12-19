@@ -16,7 +16,7 @@
 
 #include <gflags/gflags.h>
 #include <string>
-#include <unordered_set>
+#include <tr1/unordered_set>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/rpc/rpc_context.h"
@@ -29,7 +29,7 @@ DECLARE_bool(use_mock_wall_clock);
 DECLARE_bool(use_hybrid_clock);
 
 using std::string;
-using std::unordered_set;
+using std::tr1::unordered_set;
 
 #ifdef COVERAGE_BUILD
 extern "C" void __gcov_flush(void);

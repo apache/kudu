@@ -16,7 +16,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -27,7 +26,7 @@
 #include "kudu/util/slice.h"
 
 using std::vector;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace tablet {

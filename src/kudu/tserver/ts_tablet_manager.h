@@ -17,10 +17,10 @@
 #include <boost/optional/optional_fwd.hpp>
 #include <boost/thread/locks.hpp>
 #include <gtest/gtest_prod.h>
-#include <memory>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <tr1/memory>
+#include <tr1/unordered_map>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
@@ -61,7 +61,7 @@ namespace tserver {
 class TabletServer;
 
 // Map of tablet id -> transition reason string.
-typedef std::unordered_map<std::string, std::string> TransitionInProgressMap;
+typedef std::tr1::unordered_map<std::string, std::string> TransitionInProgressMap;
 
 class TransitionInProgressDeleter;
 
@@ -193,7 +193,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   struct TabletReportState {
     uint32_t change_seq;
   };
-  typedef std::unordered_map<std::string, TabletReportState> DirtyMap;
+  typedef std::tr1::unordered_map<std::string, TabletReportState> DirtyMap;
 
   // Standard log prefix, given a tablet id.
   std::string LogPrefix(const std::string& tablet_id) const;
@@ -305,7 +305,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   consensus::RaftPeerPB local_peer_pb_;
 
-  typedef std::unordered_map<std::string, scoped_refptr<tablet::TabletPeer> > TabletMap;
+  typedef std::tr1::unordered_map<std::string, scoped_refptr<tablet::TabletPeer> > TabletMap;
 
   // Lock protecting tablet_map_, dirty_tablets_, state_, and
   // transition_in_progress_.

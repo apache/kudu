@@ -46,7 +46,7 @@ class GetMasterRegistrationRpc : public rpc::Rpc {
   GetMasterRegistrationRpc(const StatusCallback& user_cb,
                            const Sockaddr& addr,
                            const MonoTime& deadline,
-                           const std::shared_ptr<rpc::Messenger>& messenger,
+                           const std::tr1::shared_ptr<rpc::Messenger>& messenger,
                            ServerEntryPB* out);
 
   ~GetMasterRegistrationRpc();
@@ -97,7 +97,7 @@ class GetLeaderMasterRpc : public rpc::Rpc,
   GetLeaderMasterRpc(const LeaderCallback& user_cb,
                      const std::vector<Sockaddr>& addrs,
                      const MonoTime& deadline,
-                     const std::shared_ptr<rpc::Messenger>& messenger);
+                     const std::tr1::shared_ptr<rpc::Messenger>& messenger);
 
   virtual void SendRpc() OVERRIDE;
 

@@ -16,9 +16,10 @@
 // This will eventually be replaced by a proper shell -- just a quick
 // hack for easy demo purposes.
 
-#include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <gflags/gflags.h>
 #include <iostream>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
@@ -33,13 +34,14 @@
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 
+using std::string;
+using std::tr1::shared_ptr;
+using std::vector;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduTableCreator;
 using kudu::rpc::RpcController;
-using std::string;
-using std::vector;
 
 DEFINE_string(master_address, "localhost",
               "Comma separated list of master addresses to run against.");
@@ -97,7 +99,7 @@ static int CreateDemoTable(int argc, char** argv) {
   CHECK_OK(GetDemoSchema(table_name, &schema));
 
   // Set up client.
-  client::sp::shared_ptr<KuduClient> client;
+  shared_ptr<KuduClient> client;
   CHECK_OK(KuduClientBuilder()
            .master_server_addrs(addrs)
            .Build(&client));

@@ -16,6 +16,7 @@
 
 #include "kudu/consensus/log.h"
 
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -217,13 +218,15 @@ class LogTestBase : public KuduTest {
                             bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;
-      ASSERT_OK(log_->AsyncAppendReplicates({ replicate }, s.AsStatusCallback()));
+      ASSERT_OK(log_->AsyncAppendReplicates(boost::assign::list_of(replicate),
+                                                   s.AsStatusCallback()));
       ASSERT_OK(s.Wait());
     } else {
       // AsyncAppendReplicates does not free the ReplicateMsg on completion, so we
       // need to pass it through to our callback.
-      ASSERT_OK(log_->AsyncAppendReplicates({ replicate },
-                                            Bind(&LogTestBase::CheckReplicateResult, replicate)));
+      ASSERT_OK(log_->AsyncAppendReplicates(boost::assign::list_of(replicate),
+                                                   Bind(&LogTestBase::CheckReplicateResult,
+                                                        replicate)));
     }
   }
 

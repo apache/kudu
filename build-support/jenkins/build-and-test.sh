@@ -61,7 +61,7 @@ if [ "x$DONT_BUILD" != "x" ]; then
     exit 1
 fi
 
-set -ex
+set -e
 # We pipe our build output to a log file with tee.
 # This bash setting ensures that the script exits if the build fails.
 set -o pipefail
@@ -75,10 +75,9 @@ BUILD_TYPE=$(echo "$BUILD_TYPE" | tr a-z A-Z) # capitalize
 DEFAULT_ALLOW_SLOW_TESTS=1
 
 # TSAN builds are pretty slow, so don't do SLOW tests unless explicitly
-# requested. Setting KUDU_USE_TSAN influences the thirdparty build.
+# requested
 if [ "$BUILD_TYPE" = "TSAN" ]; then
   DEFAULT_ALLOW_SLOW_TESTS=0
-  export KUDU_USE_TSAN=1
 fi
 
 export KUDU_FLAKY_TEST_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
@@ -132,7 +131,7 @@ if [ -d "$TOOLCHAIN_DIR" ]; then
   PATH=$TOOLCHAIN_DIR/apache-maven-3.0/bin:$PATH
 fi
 
-scl enable devtoolset-3 thirdparty/build-if-necessary.sh
+thirdparty/build-if-necessary.sh
 
 THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
 export PATH=$THIRDPARTY_BIN:$PATH
@@ -145,11 +144,13 @@ CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
 # ASAN/TSAN can't build the Python bindings because the exported Kudu client
 # library (which the bindings depend on) is missing ASAN/TSAN symbols.
 if [ "$BUILD_TYPE" = "ASAN" ]; then
-  scl enable devtoolset-3 "CC=$CLANG CXX=$CLANG++ cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 ."
+  CC=$CLANG CXX=$CLANG++ \
+   cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
   BUILD_TYPE=fastdebug
   BUILD_PYTHON=0
 elif [ "$BUILD_TYPE" = "TSAN" ]; then
-  scl enable devtoolset-3 "CC=$CLANG CXX=$CLANG++ cmake -DKUDU_USE_TSAN=1 ."
+  CC=$CLANG CXX=$CLANG++ \
+   cmake -DKUDU_USE_TSAN=1 .
   BUILD_TYPE=fastdebug
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
   BUILD_PYTHON=0
@@ -161,7 +162,7 @@ elif [ "$BUILD_TYPE" = "LEAKCHECK" ]; then
 elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   DO_COVERAGE=1
   BUILD_TYPE=debug
-  scl enable devtoolset-3 "cmake -DKUDU_GENERATE_COVERAGE=1 ."
+  cmake -DKUDU_GENERATE_COVERAGE=1 .
   # Reset coverage info from previous runs
   find src -name \*.gcda -o -name \*.gcno -exec rm {} \;
 elif [ "$BUILD_TYPE" = "LINT" ]; then
@@ -170,7 +171,7 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
   mkdir -p Testing/Temporary
   mkdir -p $TEST_LOGDIR
 
-  scl enable devtoolset-3 "cmake ."
+  cmake .
   make lint | tee $TEST_LOGDIR/lint.log
   exit $?
 fi
@@ -198,7 +199,7 @@ if [ "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
   fi
 fi
 
-scl enable devtoolset-3 "cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
+cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
 
 # our tests leave lots of data lying around, clean up before we run
 make clean
@@ -236,7 +237,7 @@ fi
 EXIT_STATUS=0
 
 # Run the C++ unit tests.
-./thirdparty/installed/bin/ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS || EXIT_STATUS=$?
+ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS || EXIT_STATUS=$?
 
 if [ $EXIT_STATUS != 0 ]; then
   # Tests that crash do not generate JUnit report XML files.

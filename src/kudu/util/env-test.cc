@@ -13,12 +13,13 @@
 // limitations under the License.
 
 #include <fcntl.h>
-#include <memory>
 #include <string>
 #include <sys/types.h>
+#include <tr1/memory>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 
 #include "kudu/gutil/bind.h"
@@ -48,7 +49,7 @@
 namespace kudu {
 
 using std::string;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::vector;
 
 static const uint64_t kOneMb = 1024 * 1024;
@@ -663,7 +664,10 @@ TEST_F(TestEnv, TestRWFile) {
 }
 
 TEST_F(TestEnv, TestCanonicalize) {
-  vector<string> synonyms = { GetTestPath("."), GetTestPath("./."), GetTestPath(".//./") };
+  vector<string> synonyms = boost::assign::list_of
+      (GetTestPath("."))
+      (GetTestPath("./."))
+      (GetTestPath(".//./"));
   BOOST_FOREACH(const string& synonym, synonyms) {
     string result;
     ASSERT_OK(env_->Canonicalize(synonym, &result));

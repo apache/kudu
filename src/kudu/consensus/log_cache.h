@@ -16,7 +16,8 @@
 
 #include <map>
 #include <string>
-#include <memory>
+#include <tr1/memory>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
@@ -190,10 +191,10 @@ class LogCache {
   // the parent tracker can be deleted if all log caches are
   // deleted (e.g., if all tablets are deleted from a server, or if
   // the server is shutdown).
-  std::shared_ptr<MemTracker> parent_tracker_;
+  std::tr1::shared_ptr<MemTracker> parent_tracker_;
 
   // A MemTracker for this instance.
-  std::shared_ptr<MemTracker> tracker_;
+  std::tr1::shared_ptr<MemTracker> tracker_;
 
   struct Metrics {
     explicit Metrics(const scoped_refptr<MetricEntity>& metric_entity);

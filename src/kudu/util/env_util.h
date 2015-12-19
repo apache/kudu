@@ -14,7 +14,7 @@
 #ifndef KUDU_UTIL_ENV_UTIL_H
 #define KUDU_UTIL_ENV_UTIL_H
 
-#include <memory>
+#include <tr1/memory>
 #include <string>
 
 #include "kudu/gutil/macros.h"
@@ -24,17 +24,17 @@ namespace kudu {
 namespace env_util {
 
 Status OpenFileForWrite(Env *env, const std::string &path,
-                        std::shared_ptr<WritableFile> *file);
+                        std::tr1::shared_ptr<WritableFile> *file);
 
 Status OpenFileForWrite(const WritableFileOptions& opts,
                         Env *env, const std::string &path,
-                        std::shared_ptr<WritableFile> *file);
+                        std::tr1::shared_ptr<WritableFile> *file);
 
 Status OpenFileForRandom(Env *env, const std::string &path,
-                         std::shared_ptr<RandomAccessFile> *file);
+                         std::tr1::shared_ptr<RandomAccessFile> *file);
 
 Status OpenFileForSequential(Env *env, const std::string &path,
-                             std::shared_ptr<SequentialFile> *file);
+                             std::tr1::shared_ptr<SequentialFile> *file);
 
 // Read exactly 'n' bytes from the given file. If fewer than 'n' bytes
 // are read, returns an IOError. This differs from the underlying

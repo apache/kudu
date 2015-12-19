@@ -17,7 +17,7 @@
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/util/countdown_latch.h"
 
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace rpc {

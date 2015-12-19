@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/generic_iterators.h"
@@ -55,7 +56,7 @@ using fs::ScopedWritableBlockCloser;
 using fs::WritableBlock;
 using log::LogAnchorRegistry;
 using std::string;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 
 const char *DiskRowSet::kMinKeyMetaEntryName = "min_key";
 const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";

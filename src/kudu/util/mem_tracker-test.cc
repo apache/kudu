@@ -15,9 +15,8 @@
 #include "kudu/util/mem_tracker.h"
 
 #include <string>
-#include <unordered_map>
+#include <tr1/unordered_map>
 #include <vector>
-#include <utility>
 
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
@@ -30,11 +29,10 @@ DECLARE_int32(memory_limit_soft_percentage);
 namespace kudu {
 
 using std::equal_to;
-using std::hash;
-using std::pair;
-using std::shared_ptr;
 using std::string;
-using std::unordered_map;
+using std::tr1::hash;
+using std::tr1::shared_ptr;
+using std::tr1::unordered_map;
 using std::vector;
 
 TEST(MemTrackerTest, SingleTrackerNoLimit) {
@@ -171,12 +169,11 @@ TEST(MemTrackerTest, GcFunctions) {
 
 TEST(MemTrackerTest, STLContainerAllocator) {
   shared_ptr<MemTracker> t = MemTracker::CreateTracker(-1, "t");
-  MemTrackerAllocator<int> vec_alloc(t);
-  MemTrackerAllocator<pair<const int, int>> map_alloc(t);
+  MemTrackerAllocator<int> alloc(t);
 
   // Simple test: use the allocator in a vector.
   {
-    vector<int, MemTrackerAllocator<int> > v(vec_alloc);
+    vector<int, MemTrackerAllocator<int> > v(alloc);
     ASSERT_EQ(0, t->consumption());
     v.reserve(5);
     ASSERT_EQ(5 * sizeof(int), t->consumption());
@@ -188,11 +185,11 @@ TEST(MemTrackerTest, STLContainerAllocator) {
   // Complex test: use it in an unordered_map, where it must be rebound in
   // order to allocate the map's buckets.
   {
-    unordered_map<int, int, hash<int>, equal_to<int>, MemTrackerAllocator<pair<const int, int>>> um(
+    unordered_map<int, int, equal_to<int>, hash<int>, MemTrackerAllocator<int> > um(
         10,
-        hash<int>(),
         equal_to<int>(),
-        map_alloc);
+        hash<int>(),
+        alloc);
 
     // Don't care about the value (it depends on map internals).
     ASSERT_GT(t->consumption(), 0);

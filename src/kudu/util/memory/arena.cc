@@ -25,9 +25,9 @@ using std::copy;
 using std::max;
 using std::min;
 using std::reverse;
-using std::shared_ptr;
 using std::sort;
 using std::swap;
+using std::tr1::shared_ptr;
 
 DEFINE_int64(arena_warn_threshold_bytes, 256*1024*1024,
              "Number of bytes beyond which to emit a warning for a large arena");

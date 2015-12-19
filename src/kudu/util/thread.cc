@@ -22,7 +22,7 @@
 #include <set>
 #include <sys/syscall.h>
 #include <sys/types.h>
-#include <memory>
+#include <tr1/memory>
 #include <unistd.h>
 #include <vector>
 
@@ -47,7 +47,7 @@
 
 using boost::bind;
 using boost::mem_fn;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::endl;
 using std::map;
 using std::stringstream;

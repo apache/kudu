@@ -47,6 +47,7 @@ namespace kudu {
 
 using std::string;
 using std::vector;
+using std::tr1::unordered_map;
 using strings::Substitute;
 
 //

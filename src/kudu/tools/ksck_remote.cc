@@ -33,9 +33,9 @@ static const std::string kMessengerName = "ksck";
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using rpc::RpcController;
-using std::shared_ptr;
-using std::string;
+using std::tr1::shared_ptr;
 using std::vector;
+using std::string;
 using strings::Substitute;
 
 MonoDelta GetDefaultTimeout() {

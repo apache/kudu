@@ -34,7 +34,7 @@ DEFINE_bool(is_panic_test_child, false, "Used by TestRpcPanic");
 DECLARE_bool(socket_inject_short_recvs);
 
 using boost::ptr_vector;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::vector;
 
 namespace kudu {

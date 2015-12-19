@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -37,9 +38,8 @@
 DEFINE_int32(num_rows, 2100, "the first row to update");
 DEFINE_int32(num_delta_files, 3, "number of delta files");
 
-using std::is_sorted;
-using std::shared_ptr;
 using std::string;
+using std::tr1::shared_ptr;
 using std::vector;
 
 namespace kudu {
@@ -47,6 +47,7 @@ namespace tablet {
 
 using fs::ReadableBlock;
 using fs::WritableBlock;
+using util::gtl::is_sorted;
 
 class TestDeltaCompaction : public KuduTest {
  public:

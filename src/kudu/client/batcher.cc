@@ -19,8 +19,8 @@
 #include <glog/logging.h>
 #include <set>
 #include <string>
-#include <memory>
-#include <unordered_map>
+#include <tr1/memory>
+#include <tr1/unordered_map>
 #include <utility>
 #include <vector>
 
@@ -48,7 +48,8 @@
 
 using std::pair;
 using std::set;
-using std::unordered_map;
+using std::tr1::shared_ptr;
+using std::tr1::unordered_map;
 using strings::Substitute;
 
 namespace kudu {
@@ -180,7 +181,7 @@ class WriteRpc : public Rpc {
            RemoteTablet* const tablet,
            const vector<InFlightOp*>& ops,
            const MonoTime& deadline,
-           const std::shared_ptr<Messenger>& messenger);
+           const shared_ptr<Messenger>& messenger);
   virtual ~WriteRpc();
   virtual void SendRpc() OVERRIDE;
   virtual string ToString() const OVERRIDE;
@@ -238,7 +239,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
                    RemoteTablet* const tablet,
                    const vector<InFlightOp*>& ops,
                    const MonoTime& deadline,
-                   const std::shared_ptr<Messenger>& messenger)
+                   const shared_ptr<Messenger>& messenger)
   : Rpc(deadline, messenger),
     batcher_(batcher),
     tablet_(tablet),
@@ -477,7 +478,7 @@ void WriteRpc::SendRpcCb(const Status& status) {
 
 Batcher::Batcher(KuduClient* client,
                  ErrorCollector* error_collector,
-                 const sp::shared_ptr<KuduSession>& session,
+                 const shared_ptr<KuduSession>& session,
                  kudu::client::KuduSession::ExternalConsistencyMode consistency_mode)
   : state_(kGatheringOps),
     client_(client),
@@ -550,7 +551,7 @@ int Batcher::CountBufferedOperations() const {
 }
 
 void Batcher::CheckForFinishedFlush() {
-  sp::shared_ptr<KuduSession> session;
+  shared_ptr<KuduSession> session;
   {
     lock_guard<simple_spinlock> l(&lock_);
     if (state_ != kFlushing || !ops_.empty()) {

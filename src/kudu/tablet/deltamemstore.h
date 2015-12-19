@@ -17,8 +17,8 @@
 #include <boost/thread/mutex.hpp>
 #include <deque>
 #include <gtest/gtest_prod.h>
-#include <memory>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/columnblock.h"
@@ -57,11 +57,12 @@ struct DMSTreeTraits : public btree::BTreeTraits {
 // modified columns.
 
 class DeltaMemStore : public DeltaStore,
-                      public std::enable_shared_from_this<DeltaMemStore> {
+                      public std::tr1::enable_shared_from_this<DeltaMemStore> {
  public:
-  DeltaMemStore(int64_t id, int64_t rs_id,
-                log::LogAnchorRegistry* log_anchor_registry,
-                const std::shared_ptr<MemTracker>& parent_tracker = std::shared_ptr<MemTracker>());
+  DeltaMemStore(
+      int64_t id, int64_t rs_id,
+      log::LogAnchorRegistry* log_anchor_registry,
+      const std::tr1::shared_ptr<MemTracker>& parent_tracker = std::tr1::shared_ptr<MemTracker>());
 
   virtual Status Init() OVERRIDE;
 
@@ -147,10 +148,10 @@ class DeltaMemStore : public DeltaStore,
   const int64_t id_;    // DeltaMemStore ID.
   const int64_t rs_id_; // Rowset ID.
 
-  std::shared_ptr<MemTracker> mem_tracker_;
-  std::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
+  std::tr1::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
 
-  std::shared_ptr<ThreadSafeMemoryTrackingArena> arena_;
+  std::tr1::shared_ptr<ThreadSafeMemoryTrackingArena> arena_;
 
   // Concurrent B-Tree storing <key index> -> RowChangeList
   gscoped_ptr<DMSTree> tree_;
@@ -211,11 +212,11 @@ class DMSIterator : public DeltaIterator {
   // The projection passed here must be the same as the schema of any
   // RowBlocks which are passed in, or else bad things will happen.
   // The pointer must also remain valid for the lifetime of the iterator.
-  DMSIterator(const std::shared_ptr<const DeltaMemStore> &dms,
+  DMSIterator(const std::tr1::shared_ptr<const DeltaMemStore> &dms,
               const Schema *projection,
               const MvccSnapshot &snapshot);
 
-  const std::shared_ptr<const DeltaMemStore> dms_;
+  const std::tr1::shared_ptr<const DeltaMemStore> dms_;
 
   // MVCC state which allows us to ignore uncommitted transactions.
   const MvccSnapshot mvcc_snapshot_;

@@ -19,7 +19,7 @@
 #include <cstddef>
 #include <stdint.h>
 #include <string>
-#include <memory>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/fs/block_id.h"
@@ -171,7 +171,7 @@ struct BlockManagerOptions {
 
   // The memory tracker under which all new memory trackers will be parented.
   // If NULL, new memory trackers will be parented to the root tracker.
-  std::shared_ptr<MemTracker> parent_mem_tracker;
+  std::tr1::shared_ptr<MemTracker> parent_mem_tracker;
 
   // The paths where data blocks will be stored. Cannot be empty.
   std::vector<std::string> root_paths;

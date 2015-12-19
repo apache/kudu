@@ -16,8 +16,8 @@
 
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
-#include <memory>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
@@ -42,7 +42,7 @@ namespace master {
 using consensus::RaftPeerPB;
 using std::string;
 using std::vector;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 
 namespace {
 
@@ -335,9 +335,9 @@ void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
     return;
   }
 
-  vector<std::shared_ptr<TSDescriptor> > descs;
+  vector<std::tr1::shared_ptr<TSDescriptor> > descs;
   server_->ts_manager()->GetAllDescriptors(&descs);
-  BOOST_FOREACH(const std::shared_ptr<TSDescriptor>& desc, descs) {
+  BOOST_FOREACH(const std::tr1::shared_ptr<TSDescriptor>& desc, descs) {
     ListTabletServersResponsePB::Entry* entry = resp->add_servers();
     desc->GetNodeInstancePB(entry->mutable_instance_id());
     desc->GetRegistration(entry->mutable_registration());

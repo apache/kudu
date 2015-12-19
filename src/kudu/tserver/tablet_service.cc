@@ -16,8 +16,8 @@
 
 #include <algorithm>
 #include <boost/optional.hpp>
-#include <memory>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/iterator.h"
@@ -103,7 +103,7 @@ using consensus::VoteResponsePB;
 
 using google::protobuf::RepeatedPtrField;
 using rpc::RpcContext;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::AlterSchemaTransactionState;

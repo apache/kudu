@@ -18,9 +18,9 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
-#include <memory>
 #include <stdlib.h>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/atomic_refcount.h"
@@ -47,7 +47,7 @@ Cache::~Cache() {
 
 namespace {
 
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::vector;
 
 typedef simple_spinlock MutexType;

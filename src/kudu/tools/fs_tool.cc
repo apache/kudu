@@ -15,8 +15,8 @@
 #include "kudu/tools/fs_tool.h"
 
 #include <algorithm>
+#include <tr1/memory>
 #include <iostream>
-#include <memory>
 #include <vector>
 
 #include <boost/foreach.hpp>
@@ -53,19 +53,19 @@ using cfile::ReaderOptions;
 using fs::ReadableBlock;
 using log::LogReader;
 using log::ReadableLogSegment;
-using std::shared_ptr;
 using std::string;
+using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
-using tablet::CFileSet;
 using tablet::DeltaFileReader;
 using tablet::DeltaIterator;
 using tablet::DeltaKeyAndUpdate;
 using tablet::DeltaType;
 using tablet::MvccSnapshot;
-using tablet::RowSetMetadata;
 using tablet::Tablet;
+using tablet::CFileSet;
 using tablet::TabletMetadata;
+using tablet::RowSetMetadata;
 
 static const char* const kSeparatorLine =
   "----------------------------------------------------------------------\n";

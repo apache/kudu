@@ -50,8 +50,8 @@
 #ifndef KUDU_UTIL_KERNEL_STACK_WATCHDOG_H
 #define KUDU_UTIL_KERNEL_STACK_WATCHDOG_H
 
+#include <tr1/unordered_map>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -171,7 +171,7 @@ class KernelStackWatchdog {
 
   DECLARE_STATIC_THREAD_LOCAL(TLS, tls_);
 
-  typedef std::unordered_map<pid_t, TLS*> TLSMap;
+  typedef std::tr1::unordered_map<pid_t, TLS*> TLSMap;
   TLSMap tls_by_tid_;
 
   // If non-NULL, warnings will be emitted into this vector instead of glog.

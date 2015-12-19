@@ -17,10 +17,10 @@
 // Helps make things like availability demos a little easier.
 
 #include <boost/foreach.hpp>
-#include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <gflags/gflags.h>
 #include <iostream>
-#include <memory>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -40,6 +40,7 @@ namespace kudu {
 namespace tools {
 
 using std::string;
+using std::tr1::shared_ptr;
 using std::vector;
 
 using client::KuduClient;
@@ -71,17 +72,17 @@ static int WriteRandomDataToTable(int argc, char** argv) {
 
   // Set up client.
   LOG(INFO) << "Connecting to Kudu Master...";
-  client::sp::shared_ptr<KuduClient> client;
+  shared_ptr<KuduClient> client;
   CHECK_OK(KuduClientBuilder()
            .master_server_addrs(addrs)
            .Build(&client));
 
   LOG(INFO) << "Opening table...";
-  client::sp::shared_ptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   CHECK_OK(client->OpenTable(table_name, &table));
   KuduSchema schema = table->schema();
 
-  client::sp::shared_ptr<KuduSession> session = client->NewSession();
+  shared_ptr<KuduSession> session = client->NewSession();
   session->SetTimeoutMillis(5000); // Time out after 5 seconds.
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 

@@ -29,7 +29,7 @@ namespace kudu {
 namespace tablet {
 
 using log::LogAnchorRegistry;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using strings::Substitute;
 
 ////////////////////////////////////////////////////////////

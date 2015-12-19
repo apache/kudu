@@ -15,9 +15,9 @@
 #define KUDU_TABLET_TABLET_METADATA_H
 
 #include <boost/optional/optional_fwd.hpp>
-#include <memory>
 #include <string>
-#include <unordered_set>
+#include <tr1/memory>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "kudu/common/partition.h"
@@ -40,8 +40,8 @@ namespace tablet {
 class RowSetMetadata;
 class RowSetMetadataUpdate;
 
-typedef std::vector<std::shared_ptr<RowSetMetadata> > RowSetMetadataVector;
-typedef std::unordered_set<int64_t> RowSetMetadataIds;
+typedef std::vector<std::tr1::shared_ptr<RowSetMetadata> > RowSetMetadataVector;
+typedef std::tr1::unordered_set<int64_t> RowSetMetadataIds;
 
 extern const int64 kNoDurableMemStore;
 
@@ -188,7 +188,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Create a new RowSetMetadata for this tablet.
   // Does not add the new rowset to the list of rowsets. Use one of the Update()
   // calls to do so.
-  Status CreateRowSet(std::shared_ptr<RowSetMetadata> *rowset, const Schema& schema);
+  Status CreateRowSet(std::tr1::shared_ptr<RowSetMetadata> *rowset, const Schema& schema);
 
   const RowSetMetadataVector& rowsets() const { return rowsets_; }
 
@@ -318,7 +318,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   std::vector<Schema*> old_schemas_;
 
   // Protected by 'data_lock_'.
-  std::unordered_set<BlockId, BlockIdHash, BlockIdEqual> orphaned_blocks_;
+  std::tr1::unordered_set<BlockId, BlockIdHash, BlockIdEqual> orphaned_blocks_;
 
   // The current state of remote bootstrap for the tablet.
   TabletDataState tablet_data_state_;

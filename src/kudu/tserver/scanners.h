@@ -14,12 +14,13 @@
 #ifndef KUDU_TSERVER_SCANNERS_H
 #define KUDU_TSERVER_SCANNERS_H
 
-#include <boost/thread/shared_mutex.hpp>
-#include <memory>
 #include <string>
-#include <unordered_map>
+#include <tr1/memory>
+#include <tr1/unordered_map>
 #include <utility>
 #include <vector>
+
+#include <boost/thread/shared_mutex.hpp>
 
 #include "kudu/common/iterator_stats.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -47,7 +48,7 @@ namespace tserver {
 
 class Scanner;
 struct ScannerMetrics;
-typedef std::shared_ptr<Scanner> SharedScanner;
+typedef std::tr1::shared_ptr<Scanner> SharedScanner;
 
 // Manages the live scanners within a Tablet Server.
 //
@@ -98,7 +99,7 @@ class ScannerManager {
     kNumScannerMapStripes = 32
   };
 
-  typedef std::unordered_map<std::string, SharedScanner> ScannerMap;
+  typedef std::tr1::unordered_map<std::string, SharedScanner> ScannerMap;
 
   typedef std::pair<std::string, SharedScanner> ScannerMapEntry;
 

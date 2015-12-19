@@ -14,8 +14,8 @@
 #ifndef KUDU_TABLET_MOCK_ROWSETS_H
 #define KUDU_TABLET_MOCK_ROWSETS_H
 
-#include <memory>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -78,9 +78,9 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return NULL;
   }
-  virtual std::shared_ptr<RowSetMetadata> metadata() OVERRIDE {
+  virtual std::tr1::shared_ptr<RowSetMetadata> metadata() OVERRIDE {
     LOG(FATAL) << "Unimplemented";
-    return std::shared_ptr<RowSetMetadata>(
+    return std::tr1::shared_ptr<RowSetMetadata>(
       reinterpret_cast<RowSetMetadata *>(NULL));
   }
 

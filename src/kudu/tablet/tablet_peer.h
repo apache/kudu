@@ -16,8 +16,8 @@
 #define KUDU_TABLET_TABLET_PEER_H_
 
 #include <map>
-#include <memory>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/consensus/consensus.h"
@@ -72,9 +72,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus.
-  Status Init(const std::shared_ptr<tablet::Tablet>& tablet,
+  Status Init(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
-              const std::shared_ptr<rpc::Messenger>& messenger,
+              const std::tr1::shared_ptr<rpc::Messenger>& messenger,
               const scoped_refptr<log::Log>& log,
               const scoped_refptr<MetricEntity>& metric_entity);
 
@@ -134,7 +134,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
     return tablet_.get();
   }
 
-  std::shared_ptr<Tablet> shared_tablet() const {
+  std::tr1::shared_ptr<Tablet> shared_tablet() const {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return tablet_;
   }
@@ -278,8 +278,8 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   TransactionTracker txn_tracker_;
   TransactionOrderVerifier txn_order_verifier_;
   scoped_refptr<log::Log> log_;
-  std::shared_ptr<Tablet> tablet_;
-  std::shared_ptr<rpc::Messenger> messenger_;
+  std::tr1::shared_ptr<Tablet> tablet_;
+  std::tr1::shared_ptr<rpc::Messenger> messenger_;
   scoped_refptr<consensus::Consensus> consensus_;
   gscoped_ptr<TabletStatusListener> status_listener_;
   simple_spinlock prepare_replicate_lock_;

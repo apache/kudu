@@ -15,8 +15,8 @@
 #include "kudu/server/rpcz-path-handler.h"
 
 #include <boost/bind.hpp>
+#include <tr1/memory>
 #include <fstream>
-#include <memory>
 #include <string>
 
 #include "kudu/gutil/map-util.h"
@@ -34,7 +34,7 @@ namespace kudu {
 
 namespace {
 
-void RpczPathHandler(const std::shared_ptr<Messenger>& messenger,
+void RpczPathHandler(const std::tr1::shared_ptr<Messenger>& messenger,
                      const Webserver::WebRequest& req, stringstream* output) {
   DumpRunningRpcsRequestPB dump_req;
   DumpRunningRpcsResponsePB dump_resp;
@@ -50,7 +50,7 @@ void RpczPathHandler(const std::shared_ptr<Messenger>& messenger,
 
 } // anonymous namespace
 
-void AddRpczPathHandlers(const std::shared_ptr<Messenger>& messenger, Webserver* webserver) {
+void AddRpczPathHandlers(const std::tr1::shared_ptr<Messenger>& messenger, Webserver* webserver) {
   webserver->RegisterPathHandler("/rpcz", "RPCs",
                                  boost::bind(RpczPathHandler, messenger, _1, _2),
                                  false, true);

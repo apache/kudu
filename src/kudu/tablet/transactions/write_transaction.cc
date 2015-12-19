@@ -43,6 +43,7 @@ namespace kudu {
 namespace tablet {
 
 using boost::bind;
+using boost::shared_lock;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::DriverType;
@@ -238,14 +239,12 @@ void WriteTransactionState::set_tablet_components(
 
 void WriteTransactionState::AcquireSchemaLock(rw_semaphore* schema_lock) {
   TRACE("Acquiring schema lock in shared mode");
-  shared_lock<rw_semaphore> temp(schema_lock);
-  schema_lock_.swap(temp);
+  schema_lock_ = boost::shared_lock<rw_semaphore>(*schema_lock);
   TRACE("Acquired schema lock");
 }
 
 void WriteTransactionState::ReleaseSchemaLock() {
-  shared_lock<rw_semaphore> temp;
-  schema_lock_.swap(temp);
+  schema_lock_ = boost::shared_lock<rw_semaphore>();
   TRACE("Released schema lock");
 }
 

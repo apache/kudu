@@ -223,6 +223,66 @@ typedef int uid_t;
 // Linux has this in <linux/errno.h>
 #define EXFULL      ENOMEM  // not really that great a translation...
 
+// Mach-O supports sections (albeit with small names), but doesn't have
+// vars at the beginning and end.  Instead you should call the function
+// getsectdata("__DATA", name, &size).
+#define HAVE_ATTRIBUTE_SECTION 1
+
+// Any function with ATTRIBUTE_SECTION must not be inlined, or it will
+// be placed into whatever section its caller is placed into.
+#define ATTRIBUTE_SECTION(name) \
+  __attribute__ ((section ("__DATA, " #name))) __attribute__ ((noinline))
+
+#define ENUM_DYLD_BOOL  // so that we don't pollute the global namespace
+extern "C" {
+  #include <mach-o/getsect.h>
+  #include <mach-o/dyld.h>
+}
+class AssignAttributeStartEnd {
+ public:
+  AssignAttributeStartEnd(const char* name, char** pstart, char** pend) {
+    // Find out what dynamic library name is defined in
+    for (int i = _dyld_image_count() - 1; i >= 0; --i) {
+      const mach_header* hdr = _dyld_get_image_header(i);
+      uint32_t len;
+      *pstart = getsectdatafromheader(hdr, "__DATA", name, &len);
+      if (*pstart) {   // NULL if not defined in this dynamic library
+        *pstart += _dyld_get_image_vmaddr_slide(i);   // correct for reloc
+        *pend = *pstart + len;
+        return;
+      }
+    }
+    // If we get here, not defined in a dll at all.  See if defined statically.
+    unsigned long len;    // don't ask me why this type isn't uint32_t too...
+    *pstart = getsectdata("__DATA", name, &len);
+    *pend = *pstart + len;
+  }
+};
+
+// 1) DEFINE_ATTRIBUTE_SECTION_VARS: must be called once per unique
+//    name.  You want to make sure this is executed before any
+//    DECLARE_ATTRIBUTE_SECTION_VARS; the easiest way is to put them
+//    in the same .cc file.  Put this call at the global level.
+// 2) INIT_ATTRIBUTE_SECTION_VARS: you can scatter calls to this in
+//    multiple places to help ensure execution before any
+//    DECLARE_ATTRIBUTE_SECTION_VARS.  You must have at least one
+//    DEFINE, but you can have many INITs.  Put each in its own scope.
+// 3) DECLARE_ATTRIBUTE_SECTION_VARS: must be called before using
+//    ATTRIBUTE_SECTION_START or ATTRIBUTE_SECTION_STOP on a name.
+//    Put this call at the global level.
+#define DECLARE_ATTRIBUTE_SECTION_VARS(name) \
+  extern char* __start_##name; \
+  extern char* __stop_##name;
+
+#define INIT_ATTRIBUTE_SECTION_VARS(name)               \
+  DECLARE_ATTRIBUTE_SECTION_VARS(name);                 \
+  static const AssignAttributeStartEnd __assign_##name( \
+    #name, &__start_##name, &__stop_##name)
+
+#define DEFINE_ATTRIBUTE_SECTION_VARS(name)             \
+  char* __start_##name, *__stop_##name;                 \
+  INIT_ATTRIBUTE_SECTION_VARS(name)
+
 // Darwin doesn't have strnlen. No comment.
 inline size_t strnlen(const char *s, size_t maxlen) {
   const char* end = (const char *)memchr(s, '\0', maxlen);
@@ -415,6 +475,49 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 #ifndef HAVE_ATTRIBUTE_SECTION  // may have been pre-set to 0, e.g. for Darwin
 #define HAVE_ATTRIBUTE_SECTION 1
 #endif
+
+#if HAVE_ATTRIBUTE_SECTION  // define section support for the case of GCC
+
+//
+// Tell the compiler/linker to put a given function into a section and define
+// "__start_ ## name" and "__stop_ ## name" symbols to bracket the section.
+// Sections can not span more than none compilation unit.
+// This functionality is supported by GNU linker.
+// Any function with ATTRIBUTE_SECTION must not be inlined, or it will
+// be placed into whatever section its caller is placed into.
+//
+#ifndef ATTRIBUTE_SECTION
+#define ATTRIBUTE_SECTION(name) \
+  __attribute__ ((section (#name))) __attribute__ ((noinline))
+#endif
+
+//
+// Weak section declaration to be used as a global declaration
+// for ATTRIBUTE_SECTION_START|STOP(name) to compile and link
+// even without functions with ATTRIBUTE_SECTION(name).
+// DEFINE_ATTRIBUTE_SECTION should be in the exactly one file; it's
+// a no-op on ELF but not on Mach-O.
+//
+#ifndef DECLARE_ATTRIBUTE_SECTION_VARS
+#define DECLARE_ATTRIBUTE_SECTION_VARS(name) \
+  extern char __start_##name[] ATTRIBUTE_WEAK; \
+  extern char __stop_##name[] ATTRIBUTE_WEAK
+#endif
+#ifndef DEFINE_ATTRIBUTE_SECTION_VARS
+#define INIT_ATTRIBUTE_SECTION_VARS(name)
+#define DEFINE_ATTRIBUTE_SECTION_VARS(name)
+#endif
+
+//
+// Return void* pointers to start/end of a section of code with
+// functions having ATTRIBUTE_SECTION(name).
+// Returns 0 if no such functions exits.
+// One must DECLARE_ATTRIBUTE_SECTION_VARS(name) for this to compile and link.
+//
+#define ATTRIBUTE_SECTION_START(name) (reinterpret_cast<void*>(__start_##name))
+#define ATTRIBUTE_SECTION_STOP(name) (reinterpret_cast<void*>(__stop_##name))
+
+#endif  // HAVE_ATTRIBUTE_SECTION
 
 //
 // The legacy prod71 libc does not provide the stack alignment required for use
@@ -654,6 +757,7 @@ inline void aligned_free(void *aligned_memory) {
 #define ATTRIBUTE_INITIAL_EXEC
 #define ATTRIBUTE_NONNULL(arg_index)
 #define ATTRIBUTE_NORETURN
+#define HAVE_ATTRIBUTE_SECTION 0
 #define ATTRIBUTE_STACK_ALIGN_FOR_OLD_LIBC
 #define REQUIRE_STACK_ALIGN_TRAMPOLINE (0)
 #define MUST_USE_RESULT
@@ -736,6 +840,18 @@ struct AlignType { typedef char result[Size]; };
 #else  // __cpluscplus
 #define ALIGNED_CHAR_ARRAY ALIGNED_CHAR_ARRAY_is_not_available_without_Cplusplus
 #endif // __cplusplus
+
+#if !HAVE_ATTRIBUTE_SECTION  // provide dummy definitions
+
+#define ATTRIBUTE_SECTION(name)
+#define INIT_ATTRIBUTE_SECTION_VARS(name)
+#define DEFINE_ATTRIBUTE_SECTION_VARS(name)
+#define DECLARE_ATTRIBUTE_SECTION_VARS(name)
+#define ATTRIBUTE_SECTION_START(name) (reinterpret_cast<void*>(0))
+#define ATTRIBUTE_SECTION_STOP(name) (reinterpret_cast<void*>(0))
+
+#endif  // !HAVE_ATTRIBUTE_SECTION
+
 
 #ifdef _MSC_VER     /* if Visual C++ */
 

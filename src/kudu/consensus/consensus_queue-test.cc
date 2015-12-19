@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
+#include <tr1/memory>
 
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -34,6 +35,8 @@ DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(consensus_max_batch_size_bytes);
 
 METRIC_DECLARE_entity(tablet);
+
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace consensus {
@@ -625,8 +628,8 @@ TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
   // Now rewrite some of the operations and wait for the log to append.
   Synchronizer synch;
   CHECK_OK(queue_->AppendOperations(
-        { make_scoped_refptr(new RefCountedReplicate(
-              CreateDummyReplicate(2, 5, clock_->Now(), 0).release())) },
+      boost::assign::list_of(make_scoped_refptr(new RefCountedReplicate(
+          CreateDummyReplicate(2, 5, clock_->Now(), 0).release()))),
       synch.AsStatusCallback()));
 
   // Wait for the operation to be in the log.
@@ -636,8 +639,8 @@ TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
   // in log cache.
   synch.Reset();
   CHECK_OK(queue_->AppendOperations(
-        { make_scoped_refptr(new RefCountedReplicate(
-              CreateDummyReplicate(2, 6, clock_->Now(), 0).release())) },
+      boost::assign::list_of(make_scoped_refptr(new RefCountedReplicate(
+          CreateDummyReplicate(2, 6, clock_->Now(), 0).release()))),
       synch.AsStatusCallback()));
 
   // Wait for the operation to be in the log.

@@ -41,7 +41,12 @@ add_definitions(${LLVM_DEFINITIONS})
 add_definitions(-DLLVM_SUPPORT_VALGRIND_H)
 
 ## Get the required libraries to link to in llvm
-llvm_map_components_to_libnames(llvm_LIBRARIES "${LLVM_REQ_COMPONENTS}")
+# as of llvm 3.5, there are two different functions for this
+if (${LLVM_PACKAGE_VERSION} VERSION_LESS 3.5)
+  llvm_map_components_to_libraries(llvm_LIBRARIES "${LLVM_REQ_COMPONENTS}")
+else()
+  llvm_map_components_to_libnames(llvm_LIBRARIES "${LLVM_REQ_COMPONENETS}")
+endif()
 
 #######################################
 # Precompiling to LLVM bytecode
@@ -59,14 +64,6 @@ set(IR_INCLUDES
   -I ${GTEST_INCLUDE_DIR}
   -I ${Boost_INCLUDE_DIR})
 
-if (APPLE)
-  # OS X keeps the libc++ headers in a non-standard location that the thirdparty
-  # Clang does not know about by default.
-  set(IR_INCLUDES
-    ${IR_INCLUDES}
-    -cxx-isystem "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1")
-endif()
-
 # Get preprocessing definitions, which enable directives for glog and gtest
 get_directory_property(IR_PP_DEFINITIONS
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -80,6 +77,7 @@ set(IR_FLAGS
   -DIR_BUILD
   ${CMAKE_CXX_FLAGS}
   ${PREFIXED_IR_PP_DEFS}
+  -Wno-c++11-extensions # OVERRIDE macro conflicts with c++11 override
   ${IR_INCLUDES})
 separate_arguments(IR_FLAGS)
 

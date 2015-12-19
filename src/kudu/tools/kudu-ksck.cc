@@ -36,7 +36,7 @@
 using std::cerr;
 using std::cout;
 using std::endl;
-using std::shared_ptr;
+using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 

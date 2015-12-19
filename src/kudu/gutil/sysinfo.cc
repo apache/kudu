@@ -42,6 +42,8 @@
 #include <unistd.h>   // for read()
 #endif
 #if defined __MACH__          // Mac OS X, almost certainly
+#include <mach-o/dyld.h>      // for iterating over dll's in ProcMapsIter
+#include <mach-o/loader.h>    // for iterating over dll's in ProcMapsIter
 #include <sys/types.h>
 #include <sys/sysctl.h>       // how we figure out numcpu's on OS X
 #elif defined __FreeBSD__

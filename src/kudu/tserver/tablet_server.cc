@@ -36,10 +36,10 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
+using std::tr1::shared_ptr;
+using std::vector;
 using kudu::rpc::ServiceIf;
 using kudu::tablet::TabletPeer;
-using std::shared_ptr;
-using std::vector;
 
 namespace kudu {
 namespace tserver {

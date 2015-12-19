@@ -18,9 +18,11 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <inttypes.h>
-#include <iostream>
 #include <pthread.h>
 #include <stdint.h>
+#include <tr1/memory>
+
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -35,6 +37,7 @@
 #include "kudu/util/thread.h"
 
 using google::protobuf::Message;
+using std::tr1::shared_ptr;
 using std::string;
 
 METRIC_DEFINE_counter(server, rpc_connections_accepted,
