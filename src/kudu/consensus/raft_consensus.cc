@@ -1107,11 +1107,16 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // that were actually prepared, and deleting the other ones since we've taken ownership
     // when we first deduped.
     if (iter != deduped_req.messages.end()) {
+      bool need_to_warn = true;
       while (iter != deduped_req.messages.end()) {
         ReplicateRefPtr msg = (*iter);
         iter = deduped_req.messages.erase(iter);
-        LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Could not prepare transaction for op: "
-            << msg->get()->id() << ". Status: " << prepare_status.ToString();
+        if (need_to_warn) {
+          need_to_warn = false;
+          LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Could not prepare transaction for op: "
+              << msg->get()->id() << ". Suppressed " << deduped_req.messages.size() <<
+              " other warnings. Status for this op: " << prepare_status.ToString();
+        }
       }
     }
 
