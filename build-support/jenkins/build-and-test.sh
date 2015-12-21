@@ -134,8 +134,7 @@ fi
 thirdparty/build-if-necessary.sh
 
 THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
-export PATH=$THIRDPARTY_BIN:$PATH
-export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
+export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
 CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
 
@@ -145,12 +144,12 @@ CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
 # library (which the bindings depend on) is missing ASAN/TSAN symbols.
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   CC=$CLANG CXX=$CLANG++ \
-   cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
+   $THIRDPARTY_BIN/cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
   BUILD_TYPE=fastdebug
   BUILD_PYTHON=0
 elif [ "$BUILD_TYPE" = "TSAN" ]; then
   CC=$CLANG CXX=$CLANG++ \
-   cmake -DKUDU_USE_TSAN=1 .
+   $THIRDPARTY_BIN/cmake -DKUDU_USE_TSAN=1 .
   BUILD_TYPE=fastdebug
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
   BUILD_PYTHON=0
@@ -162,7 +161,7 @@ elif [ "$BUILD_TYPE" = "LEAKCHECK" ]; then
 elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   DO_COVERAGE=1
   BUILD_TYPE=debug
-  cmake -DKUDU_GENERATE_COVERAGE=1 .
+  $THIRDPARTY_BIN/cmake -DKUDU_GENERATE_COVERAGE=1 .
   # Reset coverage info from previous runs
   find src -name \*.gcda -o -name \*.gcno -exec rm {} \;
 elif [ "$BUILD_TYPE" = "LINT" ]; then
@@ -171,7 +170,7 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
   mkdir -p Testing/Temporary
   mkdir -p $TEST_LOGDIR
 
-  cmake .
+  $THIRDPARTY_BIN/cmake .
   make lint | tee $TEST_LOGDIR/lint.log
   exit $?
 fi
@@ -199,7 +198,7 @@ if [ "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
   fi
 fi
 
-cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+$THIRDPARTY_BIN/cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
 
 # our tests leave lots of data lying around, clean up before we run
 make clean
@@ -237,7 +236,7 @@ fi
 EXIT_STATUS=0
 
 # Run the C++ unit tests.
-ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS || EXIT_STATUS=$?
+$THIRDPARTY_BIN/ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS || EXIT_STATUS=$?
 
 if [ $EXIT_STATUS != 0 ]; then
   # Tests that crash do not generate JUnit report XML files.

@@ -1091,7 +1091,7 @@ thirdparty/zlib-*/
   jloup@gzip.org          madler@alumni.caltech.edu
 
 --------------------------------------------------------------------------------
-thirdparty/asan_symbolize.py
+thirdparty/llvm-*
 
   ==============================================================================
   LLVM Release License

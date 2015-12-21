@@ -166,8 +166,8 @@ build_kudu() {
   thirdparty/build-if-necessary.sh
 
   # PATH=<thirdparty_stuff>:<toolchain_stuff>:$PATH
-  export PATH=$BASE_DIR/thirdparty/installed/bin:$PATH
-  export PPROF_PATH=$BASE_DIR/thirdparty/installed/bin/pprof
+  THIRDPARTY_BIN=$BASE_DIR/thirdparty/installed/bin
+  export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
   # Build Kudu
   rm -rf CMakeCache.txt CMakeFiles
@@ -176,7 +176,7 @@ build_kudu() {
   # Workaround for gperftools issue #497
   export LD_BIND_NOW=1
 
-  cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+  $THIRDPARTY_BIN/cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
   make clean
   # clean up before we run
   rm -Rf /tmp/kudutpch1-$UID

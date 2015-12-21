@@ -83,6 +83,12 @@ else
   pipe_cmd=cat
 fi
 
+# Suppressions require symbolization. We'll default to using the symbolizer in
+# thirdparty.
+if [ -z "$ASAN_SYMBOLIZER_PATH" ]; then
+  export ASAN_SYMBOLIZER_PATH=$ROOT/thirdparty/clang-toolchain/bin/llvm-symbolizer
+fi
+
 # Configure TSAN (ignored if this isn't a TSAN build).
 #
 # Deadlock detection (new in clang 3.5) is disabled because:
@@ -93,6 +99,7 @@ fi
 TSAN_OPTIONS="$TSAN_OPTIONS detect_deadlocks=0"
 TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.txt"
 TSAN_OPTIONS="$TSAN_OPTIONS history_size=7"
+TSAN_OPTIONS="$TSAN_OPTIONS external_symbolizer_path=$ASAN_SYMBOLIZER_PATH"
 export TSAN_OPTIONS
 
 # Enable leak detection even under LLVM 3.4, where it was disabled by default.
@@ -103,12 +110,6 @@ export ASAN_OPTIONS
 # Set up suppressions for LeakSanitizer
 LSAN_OPTIONS="$LSAN_OPTIONS suppressions=$ROOT/build-support/lsan-suppressions.txt"
 export LSAN_OPTIONS
-
-# Suppressions require symbolization. We'll default to using the symbolizer in
-# thirdparty.
-if [ -z "$ASAN_SYMBOLIZER_PATH" ]; then
-  export ASAN_SYMBOLIZER_PATH=$ROOT/thirdparty/installed/bin/llvm-symbolizer
-fi
 
 # Set a 15-minute timeout for tests run via 'make test'.
 # This keeps our jenkins builds from hanging in the case that there's
@@ -138,8 +139,6 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
   echo "Running $TEST_NAME, redirecting output into $LOGFILE" \
     "(attempt ${ATTEMPT_NUMBER}/$TEST_EXECUTION_ATTEMPTS)"
   $TEST_EXECUTABLE "$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
-    | $ROOT/thirdparty/asan_symbolize.py \
-    | c++filt \
     | $ROOT/build-support/stacktrace_addr2line.pl $TEST_EXECUTABLE \
     | $pipe_cmd > $LOGFILE
   STATUS=$?
