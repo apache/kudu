@@ -57,6 +57,10 @@ class SaslClient {
   // Must be called after Init().
   Status EnablePlain(const string& user, const string& pass);
 
+  // Enable GSSAPI authentication.
+  // Call after Init().
+  Status EnableGSSAPI();
+
   // Returns mechanism negotiated by this connection.
   // Must be called after Negotiate().
   SaslMechanism::Type negotiated_mechanism() const;

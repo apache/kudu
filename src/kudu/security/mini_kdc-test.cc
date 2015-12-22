@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/security/mini_kdc.h"
+#include "kudu/util/env.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
@@ -42,10 +43,16 @@ TEST(MiniKdcTest, TestBasicOperation) {
 
   string klist;
   ASSERT_OK(kdc.Klist(&klist));
-  SCOPED_TRACE(klist);
   ASSERT_STR_CONTAINS(klist, "alice@KRBTEST.COM");
   ASSERT_STR_CONTAINS(klist, "bob@KRBTEST.COM");
   ASSERT_STR_CONTAINS(klist, "krbtgt/KRBTEST.COM@KRBTEST.COM");
+
+  // Test keytab creation.
+  string kt_path;
+  ASSERT_OK(kdc.CreateServiceKeytab("kudu/foo.example.com", &kt_path));
+  SCOPED_TRACE(kt_path);
+  ASSERT_OK(kdc.KlistKeytab(kt_path, &klist));
+  ASSERT_STR_CONTAINS(klist, "kudu/foo.example.com@KRBTEST.COM");
 }
 
 // Regression test to ensure that dropping a stopped MiniKdc doesn't panic.

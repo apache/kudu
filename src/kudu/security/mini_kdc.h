@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -74,6 +75,12 @@ class MiniKdc {
   // The password is the same as the username.
   Status CreateUserPrincipal(const std::string& username) WARN_UNUSED_RESULT;
 
+  // Creates a new service principal and associated keytab, returning its
+  // path in 'path'. 'spn' is the desired service principal name
+  // (e.g. "kudu/foo.example.com"). If the principal already exists, its key
+  // will be reset and a new keytab will be generated.
+  Status CreateServiceKeytab(const std::string& spn, std::string* path);
+
   // Kinit a user to the mini KDC.
   Status Kinit(const std::string& username) WARN_UNUSED_RESULT;
 
@@ -81,7 +88,18 @@ class MiniKdc {
   // cache state.
   Status Klist(std::string* output) WARN_UNUSED_RESULT;
 
+  // Call the 'klist' utility to list the contents of a specific keytab.
+  Status KlistKeytab(const std::string& keytab_path,
+                     std::string* output) WARN_UNUSED_RESULT;
+
+  // Sets the environment variables used by the krb5 library
+  // in the current process. This points the SASL library at the
+  // configuration associated with this KDC.
+  Status SetKrb5Environment() const;
+
  private:
+  // Returns a map of the necessary Kerberos environment variables.
+  std::map<std::string, std::string> GetEnvVars() const;
 
   // Prepends required Kerberos environment variables to the process arguments.
   std::vector<std::string> MakeArgv(const std::vector<std::string>& in_argv);

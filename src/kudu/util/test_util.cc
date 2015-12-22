@@ -86,11 +86,28 @@ KuduTest::~KuduTest() {
 
 void KuduTest::SetUp() {
   InitSpinLockContentionProfiling();
+  OverrideKrb5Environment();
 }
 
 string KuduTest::GetTestPath(const string& relative_path) {
   CHECK(!test_dir_.empty()) << "Call SetUp() first";
   return JoinPathSegments(test_dir_, relative_path);
+}
+
+void KuduTest::OverrideKrb5Environment() {
+  // Set these variables to paths that definitely do not exist and
+  // couldn't be accidentally created.
+  //
+  // Note that if we were to set these to /dev/null, we end up triggering a leak in krb5
+  // when it tries to read an empty file as a ticket cache, whereas non-existent files
+  // don't have this issue. See MIT krb5 bug #8509.
+  //
+  // NOTE: we don't simply *unset* the variables, because then we'd still pick up
+  // the user's /etc/krb5.conf and other default locations.
+  const char* kInvalidPath = "/dev/invalid-path-for-kudu-tests";
+  setenv("KRB5_CONFIG", kInvalidPath, 1);
+  setenv("KRB5_KTNAME", kInvalidPath, 1);
+  setenv("KRB5CCNAME", kInvalidPath, 1);
 }
 
 ///////////////////////////////////////////////////

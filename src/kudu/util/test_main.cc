@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <stdlib.h>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -23,6 +25,7 @@
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_util.h"
 
 DEFINE_int32(test_timeout_after, 0,
              "Maximum total seconds allowed for all unit tests in the suite. Default: disabled");
@@ -71,6 +74,11 @@ int main(int argc, char **argv) {
   kudu::CreateAndStartTimeoutThread();
 
   StartStressThreads();
+
+  // This is called by the KuduTest setup method, but in case we have
+  // any tests that don't inherit from KuduTest, it's helpful to
+  // cover our bases and call it here too.
+  kudu::KuduTest::OverrideKrb5Environment();
 
   int ret = RUN_ALL_TESTS();
 

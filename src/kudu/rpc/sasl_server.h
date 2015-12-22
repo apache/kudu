@@ -57,6 +57,10 @@ class SaslServer {
   // Must be called after Init().
   Status EnablePlain(gscoped_ptr<AuthStore> authstore);
 
+  // Enable GSSAPI (Kerberos) authentication.
+  // Call after Init().
+  Status EnableGSSAPI();
+
   // Returns mechanism negotiated by this connection.
   // Must be called after Negotiate().
   SaslMechanism::Type negotiated_mechanism() const;
@@ -67,9 +71,9 @@ class SaslServer {
     return client_features_;
   }
 
-  // Name of the user that authenticated using plain auth.
-  // Must be called after Negotiate() only if the negotiated mechanism was PLAIN.
-  const std::string& plain_auth_user() const;
+  // Name of the user that was authenticated.
+  // Must be called after a successful Negotiate().
+  const std::string& authenticated_user() const;
 
   // Specify IP:port of local side of connection.
   // Must be called before Init(). Required for some mechanisms.
@@ -157,7 +161,7 @@ class SaslServer {
   std::set<RpcFeatureFlag> client_features_;
 
   // The successfully-authenticated user, if applicable.
-  string plain_auth_user_;
+  string authenticated_user_;
 
   SaslNegotiationState::Type server_state_;
 

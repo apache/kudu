@@ -620,10 +620,10 @@ std::string Connection::ToString() const {
 }
 
 Status Connection::InitSaslClient() {
-  RETURN_NOT_OK(sasl_client().Init(kSaslProtoName));
   RETURN_NOT_OK(sasl_client().EnableAnonymous());
   RETURN_NOT_OK(sasl_client().EnablePlain(user_credentials().real_user(),
                                           user_credentials().password()));
+  RETURN_NOT_OK(sasl_client().Init(kSaslProtoName));
   return Status::OK();
 }
 

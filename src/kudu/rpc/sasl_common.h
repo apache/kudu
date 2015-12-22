@@ -38,6 +38,7 @@ using std::string;
 // Constants
 extern const char* const kSaslMechAnonymous;
 extern const char* const kSaslMechPlain;
+extern const char* const kSaslMechGSSAPI;
 
 // Initialize the SASL library.
 // appname: Name of the application for logging messages & sasl plugin configuration.
@@ -89,7 +90,8 @@ struct SaslMechanism {
   enum Type {
     INVALID,
     ANONYMOUS,
-    PLAIN
+    PLAIN,
+    GSSAPI
   };
   static Type value_of(const std::string& mech);
 };

@@ -113,7 +113,7 @@ target_link_libraries(rtest_krpc
   rtest_diff_package_proto)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS rtest_krpc krpc rpc_header_proto ${KUDU_MIN_TEST_LIBS})
+set(KUDU_TEST_LINK_LIBS rtest_krpc krpc rpc_header_proto security-test ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(exactly_once_rpc-test)
 ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)
 ADD_KUDU_TEST(reactor-test)

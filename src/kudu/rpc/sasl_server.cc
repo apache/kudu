@@ -82,15 +82,19 @@ Status SaslServer::EnablePlain(gscoped_ptr<AuthStore> authstore) {
   return Status::OK();
 }
 
+Status SaslServer::EnableGSSAPI() {
+  DCHECK_EQ(server_state_, SaslNegotiationState::INITIALIZED);
+  return helper_.EnableGSSAPI();
+}
+
 SaslMechanism::Type SaslServer::negotiated_mechanism() const {
   DCHECK_EQ(server_state_, SaslNegotiationState::NEGOTIATED);
   return negotiated_mech_;
 }
 
-const std::string& SaslServer::plain_auth_user() const {
+const std::string& SaslServer::authenticated_user() const {
   DCHECK_EQ(server_state_, SaslNegotiationState::NEGOTIATED);
-  DCHECK_EQ(negotiated_mech_, SaslMechanism::PLAIN);
-  return plain_auth_user_;
+  return authenticated_user_;
 }
 
 void SaslServer::set_local_addr(const Sockaddr& addr) {
@@ -205,6 +209,14 @@ Status SaslServer::Negotiate() {
       }
     }
   }
+
+  const char* username = nullptr;
+  int rc = sasl_getprop(sasl_conn_.get(), SASL_USERNAME,
+                        reinterpret_cast<const void**>(&username));
+  // We expect that SASL_USERNAME will always get set.
+  CHECK(rc == SASL_OK && username != nullptr)
+      << "No username on authenticated connection";
+  authenticated_user_ = username;
 
   TRACE("SASL Server: Successful negotiation");
   server_state_ = SaslNegotiationState::NEGOTIATED;
@@ -459,7 +471,6 @@ int SaslServer::PlainAuthCb(sasl_conn_t *conn, const char *user, const char *pas
     LOG(INFO) << "Failed login for user: " << user;
     return SASL_FAIL;
   }
-  plain_auth_user_ = user; // Store username of authenticated user.
   return SASL_OK;
 }
 

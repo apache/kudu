@@ -93,6 +93,9 @@ class SaslHelper {
   // Enable the PLAIN SASL mechanism.
   Status EnablePlain();
 
+  // Enable the GSSAPI (Kerberos) mechanism.
+  Status EnableGSSAPI();
+
   // Check for the PLAIN SASL mechanism.
   bool IsPlainEnabled() const;
 
@@ -108,6 +111,8 @@ class SaslHelper {
       const google::protobuf::MessageLite& msg, const MonoTime& deadline);
 
  private:
+  Status EnableMechanism(const std::string& mech);
+
   string local_addr_;
   string remote_addr_;
   string server_fqdn_;
@@ -122,6 +127,7 @@ class SaslHelper {
 
   bool anonymous_enabled_;
   bool plain_enabled_;
+  bool gssapi_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(SaslHelper);
 };

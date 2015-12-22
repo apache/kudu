@@ -96,12 +96,12 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
   if (conn_context.has_user_info()) {
     // Validate real user against SASL impl.
     if (conn->sasl_server().negotiated_mechanism() == SaslMechanism::PLAIN) {
-      if (conn->sasl_server().plain_auth_user() != conn_context.user_info().real_user()) {
+      if (conn->sasl_server().authenticated_user() != conn_context.user_info().real_user()) {
         return Status::NotAuthorized(
             "ConnectionContextPB specified different real user than sent in SASL negotiation",
             StringPrintf("\"%s\" vs. \"%s\"",
                 conn_context.user_info().real_user().c_str(),
-                conn->sasl_server().plain_auth_user().c_str()));
+                conn->sasl_server().authenticated_user().c_str()));
       }
     }
     conn->mutable_user_credentials()->set_real_user(conn_context.user_info().real_user());
@@ -186,9 +186,17 @@ static Status DisableSocketTimeouts(Connection* conn) {
 // Perform client negotiation. We don't LOG() anything, we leave that to our caller.
 static Status DoClientNegotiation(Connection* conn,
                                   const MonoTime& deadline) {
+  // The SASL initialization on the client side can be relatively heavy-weight
+  // (it may result in DNS queries in the case of GSSAPI).
+  // So, we do it while the connect() is still in progress to reduce latency.
+  //
+  // TODO(todd): we should consider doing this even before connecting, since as soon
+  // as we connect, we are tying up a negotiation thread on the server side.
+
+  RETURN_NOT_OK(conn->InitSaslClient());
+
   RETURN_NOT_OK(WaitForClientConnect(conn, deadline));
   RETURN_NOT_OK(conn->SetNonBlocking(false));
-  RETURN_NOT_OK(conn->InitSaslClient());
   conn->sasl_client().set_deadline(deadline);
   RETURN_NOT_OK(conn->sasl_client().Negotiate());
   RETURN_NOT_OK(SendConnectionContext(conn, deadline));

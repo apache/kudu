@@ -38,6 +38,7 @@ namespace rpc {
 
 const char* const kSaslMechAnonymous = "ANONYMOUS";
 const char* const kSaslMechPlain = "PLAIN";
+const char* const kSaslMechGSSAPI = "GSSAPI";
 
 // Output Sasl messages.
 // context: not used.
@@ -119,6 +120,9 @@ static sasl_callback_t callbacks[] = {
   { SASL_CB_LOG, reinterpret_cast<int (*)()>(&SaslLogCallback), nullptr },
   { SASL_CB_GETOPT, reinterpret_cast<int (*)()>(&SaslGetOption), nullptr },
   { SASL_CB_LIST_END, nullptr, nullptr }
+  // TODO(todd): provide a CANON_USER callback? This is necessary if we want
+  // to support some kind of auth-to-local mapping of Kerberos principals
+  // to local usernames. See Impala's implementation for inspiration.
 };
 
 
@@ -234,8 +238,12 @@ sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context) {
 SaslMechanism::Type SaslMechanism::value_of(const string& mech) {
   if (boost::iequals(mech, "ANONYMOUS")) {
     return ANONYMOUS;
-  } else if (boost::iequals(mech, "PLAIN")) {
+  }
+  if (boost::iequals(mech, "PLAIN")) {
     return PLAIN;
+  }
+  if (boost::iequals(mech, "GSSAPI")) {
+    return GSSAPI;
   }
   return INVALID;
 }

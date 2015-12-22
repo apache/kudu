@@ -29,6 +29,7 @@
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -102,16 +103,21 @@ SaslClient::~SaslClient() {
 }
 
 Status SaslClient::EnableAnonymous() {
-  DCHECK_EQ(client_state_, SaslNegotiationState::INITIALIZED);
+  DCHECK_EQ(client_state_, SaslNegotiationState::NEW);
   return helper_.EnableAnonymous();
 }
 
 Status SaslClient::EnablePlain(const string& user, const string& pass) {
-  DCHECK_EQ(client_state_, SaslNegotiationState::INITIALIZED);
+  DCHECK_EQ(client_state_, SaslNegotiationState::NEW);
   RETURN_NOT_OK(helper_.EnablePlain());
   plain_auth_user_ = user;
   plain_pass_ = pass;
   return Status::OK();
+}
+
+Status SaslClient::EnableGSSAPI() {
+  DCHECK_EQ(client_state_, SaslNegotiationState::NEW);
+  return helper_.EnableGSSAPI();
 }
 
 SaslMechanism::Type SaslClient::negotiated_mechanism() const {
@@ -308,6 +314,10 @@ Status SaslClient::DoSaslStep(const string& in, const char** out, unsigned* out_
     nego_ok_ = true;
   }
   if (PREDICT_FALSE(res != SASL_OK && res != SASL_CONTINUE)) {
+    // TODO(todd): currently we just disconnect here without sending any message
+    // to the server as to why we failed. This results in a trace being logged
+    // on the server. It would be nicer to send a message before disconnecting
+    // so that the server can log the failed authentication attempt.
     return Status::NotAuthorized("Unable to negotiate SASL connection",
         SaslErrDesc(res, sasl_conn_.get()));
   }

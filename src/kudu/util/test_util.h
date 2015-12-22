@@ -41,6 +41,12 @@ class KuduTest : public ::testing::Test {
 
   virtual void SetUp() OVERRIDE;
 
+  // Tests assume that they run with no outside-provided kerberos credentials, and if the
+  // user happened to have some credentials available they might fail due to being already
+  // kinitted to a different realm, etc. This function overrides the relevant environment
+  // variables so that we don't pick up the user's credentials.
+  static void OverrideKrb5Environment();
+
  protected:
   // Returns absolute path based on a unit test-specific work directory, given
   // a relative path. Useful for writing test files that should be deleted after

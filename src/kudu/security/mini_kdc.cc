@@ -18,8 +18,10 @@
 #include "kudu/security/mini_kdc.h"
 
 #include <csignal>
+#include <stdlib.h>
 
 #include <limits>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -36,8 +38,10 @@
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
+using std::map;
 using std::string;
 using std::unique_ptr;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -65,13 +69,19 @@ MiniKdc::~MiniKdc() {
   }
 }
 
-vector<string> MiniKdc::MakeArgv(const vector<string>& in_argv) {
-  string krb5_config =
-    strings::Substitute("KRB5_CONFIG=$0", JoinPathSegments(options_.data_root, "krb5.conf"));
-  string krb5_kdc_profile =
-    strings::Substitute("KRB5_KDC_PROFILE=$0", JoinPathSegments(options_.data_root, "kdc.conf"));
+map<string, string> MiniKdc::GetEnvVars() const {
+  return {
+    {"KRB5_CONFIG", JoinPathSegments(options_.data_root, "krb5.conf")},
+    {"KRB5_KDC_PROFILE", JoinPathSegments(options_.data_root, "kdc.conf")},
+    {"KRB5CCNAME", "DIR:" + JoinPathSegments(options_.data_root, "krb5cc")}
+  };
+}
 
-  vector<string> real_argv = { "env", krb5_config, krb5_kdc_profile };
+vector<string> MiniKdc::MakeArgv(const vector<string>& in_argv) {
+  vector<string> real_argv = { "env" };
+  for (const auto& p : GetEnvVars()) {
+    real_argv.push_back(Substitute("$0=$1", p.first, p.second));
+  }
   for (const string& a : in_argv) {
     real_argv.push_back(a);
   }
@@ -206,7 +216,6 @@ Status MiniKdc::CreateKrb5Conf() const {
     kdc = STDERR
 
 [libdefaults]
-    default_ccache_name = $2
     default_realm = $1
     dns_lookup_kdc = false
     dns_lookup_realm = false
@@ -222,8 +231,7 @@ Status MiniKdc::CreateKrb5Conf() const {
         kdc = 127.0.0.1:$0
     }
   )";
-  string ccache = "DIR:" + JoinPathSegments(options_.data_root, "krb5cc");
-  string file_contents = strings::Substitute(kFileTemplate, options_.port, options_.realm, ccache);
+  string file_contents = strings::Substitute(kFileTemplate, options_.port, options_.realm);
   return WriteStringToFile(Env::Default(), file_contents,
                            JoinPathSegments(options_.data_root, "krb5.conf"));
 }
@@ -283,7 +291,23 @@ Status MiniKdc::CreateUserPrincipal(const string& username) {
   string kadmin;
   RETURN_NOT_OK(GetBinaryPath("kadmin.local", &kadmin));
   RETURN_NOT_OK(Subprocess::Call(MakeArgv({
-          kadmin, "-q", strings::Substitute("add_principal -pw $0 $0", username)})));
+          kadmin, "-q", Substitute("add_principal -pw $0 $0", username)})));
+  return Status::OK();
+}
+
+Status MiniKdc::CreateServiceKeytab(const string& spn,
+                                    string* path) {
+  string kt_path = spn;
+  StripString(&kt_path, "/", '_');
+  kt_path = JoinPathSegments(options_.data_root, kt_path) + ".keytab";
+
+  string kadmin;
+  RETURN_NOT_OK(GetBinaryPath("kadmin.local", &kadmin));
+  RETURN_NOT_OK(Subprocess::Call(MakeArgv({
+          kadmin, "-q", Substitute("add_principal -randkey $0", spn)})));
+  RETURN_NOT_OK(Subprocess::Call(MakeArgv({
+          kadmin, "-q", Substitute("ktadd -k $0 $1", kt_path, spn)})));
+  *path = kt_path;
   return Status::OK();
 }
 
@@ -298,6 +322,24 @@ Status MiniKdc::Klist(string* output) {
   string klist;
   RETURN_NOT_OK(GetBinaryPath("klist", &klist));
   RETURN_NOT_OK(Subprocess::Call(MakeArgv({ klist, "-A" }), "", output));
+  return Status::OK();
+}
+
+Status MiniKdc::KlistKeytab(const string& keytab_path, string* output) {
+  string klist;
+  RETURN_NOT_OK(GetBinaryPath("klist", &klist));
+  RETURN_NOT_OK(Subprocess::Call(MakeArgv({ klist, "-k", keytab_path }), "", output));
+  return Status::OK();
+}
+
+Status MiniKdc::SetKrb5Environment() const {
+  if (!kdc_process_) {
+    return Status::IllegalState("KDC not started");
+  }
+  for (const auto& p : GetEnvVars()) {
+    CHECK_ERR(setenv(p.first.c_str(), p.second.c_str(), 1 /*overwrite*/));
+  }
+
   return Status::OK();
 }
 
