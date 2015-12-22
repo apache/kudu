@@ -25,5 +25,8 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
 endif()
 
+# The Kudu client library always uses the old gcc ABI.
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+
 add_executable(sample sample.cc)
 target_link_libraries(sample kudu_client)
