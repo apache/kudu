@@ -494,12 +494,17 @@ Status TSTabletManager::DeleteTablet(
     }
   }
 
+  // If the tablet is already deleted, the CAS check isn't possible because
+  // consensus and therefore the log is not available.
+  TabletDataState data_state = tablet_peer->tablet_metadata()->tablet_data_state();
+  bool tablet_deleted = (data_state == TABLET_DATA_DELETED || data_state == TABLET_DATA_TOMBSTONED);
+
   // They specified an "atomic" delete. Check the committed config's opid_index.
   // TODO: There's actually a race here between the check and shutdown, but
   // it's tricky to fix. We could try checking again after the shutdown and
   // restarting the tablet if the local replica committed a higher config
   // change op during that time, or potentially something else more invasive.
-  if (cas_config_opid_index_less_or_equal) {
+  if (cas_config_opid_index_less_or_equal && !tablet_deleted) {
     scoped_refptr<consensus::Consensus> consensus = tablet_peer->shared_consensus();
     if (!consensus) {
       *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;

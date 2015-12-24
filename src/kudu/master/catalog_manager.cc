@@ -2108,7 +2108,8 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
       Status status = StatusFromPB(resp_.error().status());
 
       // Do not retry on a fatal error
-      switch (resp_.error().code()) {
+      TabletServerErrorPB::Code code = resp_.error().code();
+      switch (code) {
         case TabletServerErrorPB::TABLET_NOT_FOUND:
           LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
                        << " because the tablet was not found. No further retry: "
@@ -2122,6 +2123,7 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
           break;
         default:
           LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
+                       << " with error code " << TabletServerErrorPB::Code_Name(code)
                        << ": " << status.ToString();
           break;
       }

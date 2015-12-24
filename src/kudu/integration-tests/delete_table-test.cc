@@ -426,6 +426,18 @@ TEST_F(DeleteTableTest, TestAtomicDeleteTablet) {
   opid_index = -1;
   ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, opid_index, timeout,
                                 &error_code));
+  inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_TOMBSTONED);
+
+  // Now that the tablet is already tombstoned, our opid_index should be
+  // ignored (because it's impossible to check it).
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, -9999, timeout,
+                                &error_code));
+  inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_TOMBSTONED);
+
+  // Same with TOMBSTONED -> DELETED.
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_DELETED, -9999, timeout,
+                                &error_code));
+  inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_DELETED);
 }
 
 TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
