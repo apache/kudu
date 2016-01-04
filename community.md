@@ -5,18 +5,22 @@ active_nav: community
 single_col_extra_classes: community
 ---
 
-### Apache Kudu (incubating) Discussion Lists and Chat Rooms
+### Apache Kudu (incubating) Mailing Lists and Chat Rooms
 
-Discussion about Kudu can be found in the following locations:
+Get help using Kudu or contribute to the project on our mailing lists or our chat room:
 
-* [kudu-user](https://groups.google.com/forum/#!forum/kudu-user) mailing list:
-  for questions about how to use Kudu
-* [kudu-dev](https://groups.google.com/forum/#!forum/kudu-dev) mailing list:
-  for Kudu development discussion, patches, code reviews, etc.
-* [kudu-issues](https://groups.google.com/forum/#!forum/kudu-issues) mailing
-  list: for JIRA issue updates. This list is read-only.
-* [Kudu slack chat room](https://getkudu-slack.herokuapp.com/): you may find
-  other users and developers hanging out in there.
+* [user@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-user/)
+  is for usage questions, help, and announcements.
+  ([subscribe](mailto:user-subscribe@kudu.incubator.apache.org))
+  ([unsubscribe](mailto:user-unsubscribe@kudu.incubator.apache.org))
+  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-user/))
+* [dev@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/)
+  is for people who want to contribute code to Kudu.
+  ([subscribe](mailto:dev-subscribe@kudu.incubator.apache.org))
+  ([unsubscribe](mailto:dev-unsubscribe@kudu.incubator.apache.org))
+  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/))
+* The [Kudu slack chat room](https://getkudu-slack.herokuapp.com/) is where
+  many Kudu developers and users hang out to answer questions and chat.
 
 ### Contributions
 
