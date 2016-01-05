@@ -330,6 +330,7 @@ bool MvccManager::IsDoneWaitingUnlocked(const WaitingState& waiter) const {
     case NONE_APPLYING:
       return !AnyApplyingAtOrBeforeUnlocked(waiter.timestamp);
   }
+  LOG(FATAL); // unreachable
 }
 
 bool MvccManager::AreAllTransactionsCommittedUnlocked(Timestamp ts) const {
