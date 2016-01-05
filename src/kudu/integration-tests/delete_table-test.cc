@@ -12,34 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <boost/optional.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 #include <tr1/memory>
-#include <tr1/unordered_map>
 #include <string>
 
-#include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/curl_util.h"
-#include "kudu/util/pstack_watcher.h"
-#include "kudu/util/test_util.h"
 
-using boost::assign::list_of;
-using kudu::client::KuduClient;
-using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
@@ -58,34 +48,12 @@ using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerErrorPB;
 using std::numeric_limits;
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 
-class DeleteTableTest : public KuduTest {
- public:
-  virtual void TearDown() OVERRIDE {
-    if (HasFatalFailure()) {
-      for (int i = 0; i < 3; i++) {
-        if (!cluster_->tablet_server(i)->IsProcessAlive()) {
-          LOG(INFO) << "Tablet server " << i << " is not running. Cannot dump its stacks.";
-          continue;
-        }
-        LOG(INFO) << "Attempting to dump stacks of TS " << i
-                  << " with UUID " << cluster_->tablet_server(i)->uuid()
-                  << " and pid " << cluster_->tablet_server(i)->pid();
-        WARN_NOT_OK(PstackWatcher::DumpPidStacks(cluster_->tablet_server(i)->pid()),
-                    "Couldn't dump stacks");
-      }
-    }
-    if (cluster_) cluster_->Shutdown();
-    KuduTest::TearDown();
-    STLDeleteValues(&ts_map_);
-  }
-
+class DeleteTableTest : public ExternalMiniClusterITestBase {
  protected:
   enum IsCMetaExpected {
     CMETA_NOT_EXPECTED = 0,
@@ -96,10 +64,6 @@ class DeleteTableTest : public KuduTest {
     SUPERBLOCK_NOT_EXPECTED = 0,
     SUPERBLOCK_EXPECTED = 1
   };
-
-  void StartCluster(const vector<string>& extra_tserver_flags = vector<string>(),
-                    const vector<string>& extra_master_flags = vector<string>(),
-                    int num_tablet_servers = 3);
 
   // Get the UUID of the leader of the specified tablet, as seen by the TS with
   // the given 'ts_uuid'.
@@ -141,34 +105,7 @@ class DeleteTableTest : public KuduTest {
   // bootstrap, are running.
   void DeleteTabletWithRetries(const TServerDetails* ts, const string& tablet_id,
                                TabletDataState delete_type, const MonoDelta& timeout);
-
-  gscoped_ptr<ExternalMiniCluster> cluster_;
-  gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;
-  shared_ptr<KuduClient> client_;
-  unordered_map<string, TServerDetails*> ts_map_;
 };
-
-void DeleteTableTest::StartCluster(const vector<string>& extra_tserver_flags,
-                                   const vector<string>& extra_master_flags,
-                                   int num_tablet_servers) {
-  ExternalMiniClusterOptions opts;
-  opts.num_tablet_servers = num_tablet_servers;
-  opts.extra_tserver_flags = extra_tserver_flags;
-  opts.extra_master_flags = extra_master_flags;
-
-  // Disable fsyncing, since these tests do a lot of data writing and transfer,
-  // and the fsyncs (a) make them slower, and (b) make them flaky since the syncs
-  // can take a long time on loaded build slaves.
-  opts.extra_tserver_flags.push_back("--never_fsync");
-  cluster_.reset(new ExternalMiniCluster(opts));
-  ASSERT_OK(cluster_->Start());
-  inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
-  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
-                                          cluster_->messenger(),
-                                          &ts_map_));
-  KuduClientBuilder builder;
-  ASSERT_OK(cluster_->CreateClient(builder, &client_));
-}
 
 string DeleteTableTest::GetLeaderUUID(const string& ts_uuid, const string& tablet_id) {
   ConsensusStatePB cstate;
