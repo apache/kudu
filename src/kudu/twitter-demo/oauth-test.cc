@@ -18,6 +18,8 @@
 #include <gtest/gtest.h>
 #include <string>
 
+#include "kudu/util/debug/leakcheck_disabler.h"
+
 using std::string;
 
 namespace kudu {
@@ -30,6 +32,9 @@ TEST(OAuthTest, TestSignature) {
   const string kConsumerSecret = "kd94hf93k423kf44";
   const string kTokenKey = "nnch734d00sl2jdk";
   const string kTokenSecret = "pfkkdhi9sl3r4s00";
+
+  // Necessary to squelch a leak originating in the NSS SSL library.
+  debug::ScopedLeakCheckDisabler disabler;
 
   OAuthRequest req("GET", "http://photos.example.net/photos");
 
