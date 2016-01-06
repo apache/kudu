@@ -30,6 +30,7 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mutex.h"
@@ -55,6 +56,13 @@ DEFINE_int32(memory_limit_warn_threshold_percentage, 98,
              "consume before WARNING level messages are periodically logged.");
 TAG_FLAG(memory_limit_warn_threshold_percentage, advanced);
 
+#ifdef TCMALLOC_ENABLED
+DEFINE_int32(tcmalloc_max_free_bytes_percentage, 10,
+             "Maximum percentage of the RSS that tcmalloc is allowed to use for "
+             "reserved but unallocated memory.");
+TAG_FLAG(tcmalloc_max_free_bytes_percentage, advanced);
+#endif
+
 namespace kudu {
 
 // NOTE: this class has been adapted from Impala, so the code style varies
@@ -77,8 +85,8 @@ static GoogleOnceType root_tracker_once = GOOGLE_ONCE_INIT;
 // is greater than GC_RELEASE_SIZE, this will trigger a tcmalloc gc.
 static Atomic64 released_memory_since_gc;
 
-// Validate that soft limit is a percentage.
-static bool ValidateSoftLimit(const char* flagname, int value) {
+// Validate that various flags are percentages.
+static bool ValidatePercentage(const char* flagname, int value) {
   if (value >= 0 && value <= 100) {
     return true;
   }
@@ -86,17 +94,25 @@ static bool ValidateSoftLimit(const char* flagname, int value) {
                            flagname, value);
   return false;
 }
-static bool dummy = google::RegisterFlagValidator(
-    &FLAGS_memory_limit_soft_percentage, &ValidateSoftLimit);
+static bool dummy[] = {
+  google::RegisterFlagValidator(&FLAGS_memory_limit_soft_percentage, &ValidatePercentage),
+  google::RegisterFlagValidator(&FLAGS_memory_limit_warn_threshold_percentage, &ValidatePercentage)
+#ifdef TCMALLOC_ENABLED
+  ,google::RegisterFlagValidator(&FLAGS_tcmalloc_max_free_bytes_percentage, &ValidatePercentage)
+#endif
+};
 
 #ifdef TCMALLOC_ENABLED
-static uint64_t GetTCMallocCurrentAllocatedBytes() {
+static int64_t GetTCMallocProperty(const char* prop) {
   size_t value;
-  if (!MallocExtension::instance()->GetNumericProperty(
-      "generic.current_allocated_bytes", &value)) {
-    LOG(DFATAL) << "Failed to get tcmalloc current allocated bytes";
+  if (!MallocExtension::instance()->GetNumericProperty(prop, &value)) {
+    LOG(DFATAL) << "Failed to get tcmalloc property " << prop;
   }
   return value;
+}
+
+static int64_t GetTCMallocCurrentAllocatedBytes() {
+  return GetTCMallocProperty("generic.current_allocated_bytes");
 }
 #endif
 
@@ -473,7 +489,26 @@ bool MemTracker::GcMemory(int64_t max_consumption) {
 void MemTracker::GcTcmalloc() {
 #ifdef TCMALLOC_ENABLED
   released_memory_since_gc = 0;
-  MallocExtension::instance()->ReleaseFreeMemory();
+  TRACE_EVENT0("process", "MemTracker::GcTcmalloc");
+
+  // Number of bytes in the 'NORMAL' free list (i.e reserved by tcmalloc but
+  // not in use).
+  int64_t bytes_overhead = GetTCMallocProperty("tcmalloc.pageheap_free_bytes");
+  // Bytes allocated by the application.
+  int64_t bytes_used = GetTCMallocCurrentAllocatedBytes();
+
+  int64_t max_overhead = bytes_used * FLAGS_tcmalloc_max_free_bytes_percentage / 100.0;
+  if (bytes_overhead > max_overhead) {
+    int64_t extra = bytes_overhead - max_overhead;
+    while (extra > 0) {
+      // Release 1MB at a time, so that tcmalloc releases its page heap lock
+      // allowing other threads to make progress. This still disrupts the current
+      // thread, but is better than disrupting all.
+      MallocExtension::instance()->ReleaseToSystem(1024 * 1024);
+      extra -= 1024 * 1024;
+    }
+  }
+
 #else
   // Nothing to do if not using tcmalloc.
 #endif
