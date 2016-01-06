@@ -22,14 +22,20 @@
 
 import subprocess
 
-def check_output(cmd, **kwargs):
-  """ Simple backport of subprocess.check_output() from python 2.7. """
-  p = subprocess.Popen(cmd,
-                       stdout=subprocess.PIPE,
-                       stderr=subprocess.PIPE,
-                       **kwargs)
-  out, err = p.communicate()
-  if p.returncode != 0:
-    raise Exception("%s returned %d: %s" % (cmd, p.returncode, err))
-  return out
-
+def check_output(*popenargs, **kwargs):
+  r"""Run command with arguments and return its output as a byte string.
+  Backported from Python 2.7 as it's implemented as pure python on stdlib.
+  >>> check_output(['/usr/bin/python', '--version'])
+  Python 2.6.2
+  """
+  process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
+  output, unused_err = process.communicate()
+  retcode = process.poll()
+  if retcode:
+    cmd = kwargs.get("args")
+    if cmd is None:
+      cmd = popenargs[0]
+    error = subprocess.CalledProcessError(retcode, cmd)
+    error.output = output
+    raise error
+  return output
