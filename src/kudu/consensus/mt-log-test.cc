@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "kudu/consensus/log_index.h"
 #include "kudu/gutil/algorithm.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -158,8 +159,10 @@ TEST_F(MultiThreadedLogTest, TestAppends) {
   }
   ASSERT_OK(log_->Close());
 
+  gscoped_ptr<LogReader> reader;
+  ASSERT_OK(LogReader::Open(fs_manager_.get(), NULL, kTestTablet, NULL, &reader));
   SegmentSequence segments;
-  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  ASSERT_OK(reader->GetSegmentsSnapshot(&segments));
 
   for (const SegmentSequence::value_type& entry : segments) {
     ASSERT_OK(entry->ReadEntries(&entries_));

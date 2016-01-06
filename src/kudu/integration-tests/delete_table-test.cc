@@ -25,6 +25,7 @@
 #include "kudu/client/client-test-util.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
@@ -32,6 +33,7 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/subprocess.h"
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
@@ -820,6 +822,70 @@ TEST_F(DeleteTableTest, TestOrphanedBlocksClearedOnDelete) {
   ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(kFollowerIndex, tablet_id, &superblock_pb));
   ASSERT_EQ(0, superblock_pb.rowsets_size()) << superblock_pb.DebugString();
   ASSERT_EQ(0, superblock_pb.orphaned_blocks_size()) << superblock_pb.DebugString();
+}
+
+vector<const string*> Grep(const string& needle, const vector<string>& haystack) {
+  vector<const string*> results;
+  for (const string& s : haystack) {
+    if (s.find(needle) != string::npos) {
+      results.push_back(&s);
+    }
+  }
+  return results;
+}
+
+vector<string> ListOpenFiles(pid_t pid) {
+  string cmd = strings::Substitute("export PATH=$$PATH:/usr/bin:/usr/sbin; lsof -n -p $0", pid);
+  vector<string> argv = { "bash", "-c", cmd };
+  string out;
+  CHECK_OK(Subprocess::Call(argv, &out));
+  vector<string> lines = strings::Split(out, "\n");
+  return lines;
+}
+
+int PrintOpenTabletFiles(pid_t pid, const string& tablet_id) {
+  vector<string> lines = ListOpenFiles(pid);
+  vector<const string*> wal_lines = Grep(tablet_id, lines);
+  LOG(INFO) << "There are " << wal_lines.size() << " open WAL files for pid " << pid << ":";
+  for (const string* l : wal_lines) {
+    LOG(INFO) << *l;
+  }
+  return wal_lines.size();
+}
+
+// Regression test for tablet deletion FD leak. See KUDU-1288.
+TEST_F(DeleteTableTest, TestFDsNotLeakedOnTabletTombstone) {
+  const MonoDelta timeout = MonoDelta::FromSeconds(30);
+
+  vector<string> ts_flags, master_flags;
+  NO_FATALS(StartCluster(ts_flags, master_flags, 1));
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(1);
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < 1000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts_map_.begin()->second, 1, timeout, &tablets));
+  const string& tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Tombstone the tablet and then ensure that lsof does not list any
+  // tablet-related paths.
+  ExternalTabletServer* ets = cluster_->tablet_server(0);
+  ASSERT_OK(itest::DeleteTablet(ts_map_[ets->uuid()],
+                                tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+  ASSERT_EQ(0, PrintOpenTabletFiles(ets->pid(), tablet_id));
+
+  // Restart the TS after deletion and then do the same lsof check again.
+  ets->Shutdown();
+  ASSERT_OK(ets->Restart());
+  ASSERT_EQ(0, PrintOpenTabletFiles(ets->pid(), tablet_id));
 }
 
 // Parameterized test case for TABLET_DATA_DELETED deletions.

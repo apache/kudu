@@ -810,20 +810,24 @@ Status Log::Close() {
       RETURN_NOT_OK(ReplaceSegmentInReaderUnlocked());
       log_state_ = kLogClosed;
       VLOG(1) << "Log closed";
+
+      // Release FDs held by these objects.
+      log_index_.reset();
+      reader_.reset();
+
+      if (log_hooks_) {
+        RETURN_NOT_OK_PREPEND(log_hooks_->PostClose(),
+                              "PostClose hook failed");
+      }
       return Status::OK();
+
     case kLogClosed:
       VLOG(1) << "Log already closed";
       return Status::OK();
+
     default:
       return Status::IllegalState(Substitute("Bad state for Close() $0", log_state_));
   }
-
-  if (log_hooks_) {
-    RETURN_NOT_OK_PREPEND(log_hooks_->PostClose(),
-                          "PostClose hook failed");
-  }
-
-  return Status::OK();
 }
 
 Status Log::DeleteOnDiskData(FsManager* fs_manager, const string& tablet_id) {

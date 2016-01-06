@@ -360,7 +360,10 @@ TEST_F(LogTest, TestSegmentRollover) {
   ASSERT_FALSE(segments.back()->HasFooter());
   ASSERT_OK(log_->Close());
 
-  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  gscoped_ptr<LogReader> reader;
+  ASSERT_OK(LogReader::Open(fs_manager_.get(), NULL, kTestTablet, NULL, &reader));
+  ASSERT_OK(reader->GetSegmentsSnapshot(&segments));
+
   ASSERT_TRUE(segments.back()->HasFooter());
 
   for (const scoped_refptr<ReadableLogSegment>& entry : segments) {
@@ -690,7 +693,10 @@ TEST_F(LogTest, TestWriteManyBatches) {
     uint32_t num_entries = 0;
 
     vector<scoped_refptr<ReadableLogSegment> > segments;
-    ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+
+    gscoped_ptr<LogReader> reader;
+    ASSERT_OK(LogReader::Open(fs_manager_.get(), NULL, kTestTablet, NULL, &reader));
+    ASSERT_OK(reader->GetSegmentsSnapshot(&segments));
 
     for (const scoped_refptr<ReadableLogSegment> entry : segments) {
       STLDeleteElements(&entries_);
