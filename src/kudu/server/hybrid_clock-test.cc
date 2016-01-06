@@ -75,9 +75,7 @@ TEST(MockHybridClockTest, TestMockedSystemClock) {
 TEST_F(HybridClockTest, TestNow_ValuesIncreaseMonotonically) {
   const Timestamp now1 = clock_->Now();
   const Timestamp now2 = clock_->Now();
-  ASSERT_GE(HybridClock::GetLogicalValue(now1), HybridClock::GetLogicalValue(now2));
-  ASSERT_GE(HybridClock::GetPhysicalValueMicros(now1),
-            HybridClock::GetPhysicalValueMicros(now1));
+  ASSERT_LT(now1.value(), now2.value());
 }
 
 // Tests the clock updates with the incoming value if it is higher.
