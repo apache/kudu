@@ -265,47 +265,13 @@ void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
                            << "Trying to use lsof to find any processes listening "
                            << "on the same port:";
   LOG_STRING(INFO, log) << "$ " << cmd;
-  Subprocess p("/bin/bash",
-               boost::assign::list_of<string>("bash")("-c")(cmd));
-  p.ShareParentStdout(false);
-  Status s = p.Start();
-  if (!s.ok()) {
-    LOG_STRING(WARNING, log) << "Unable to fork bash: " << s.ToString();
-    return;
+  vector<string> argv = boost::assign::list_of<string>("/bin/bash")("-c")(cmd);
+  string results;
+  Status s = Subprocess::Call(argv, &results);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_STRING(WARNING, log) << s.ToString();
   }
-
-  close(p.ReleaseChildStdinFd());
-
-  faststring results;
-  char buf[1024];
-  while (true) {
-    ssize_t n = read(p.from_child_stdout_fd(), buf, arraysize(buf));
-    if (n == 0) {
-      // EOF
-      break;
-    }
-    if (n < 0) {
-      if (errno == EINTR) continue;
-      LOG_STRING(WARNING, log) << "IO error reading from bash: " <<
-        ErrnoToString(errno);
-      close(p.ReleaseChildStdoutFd());
-      break;
-    }
-
-    results.append(buf, n);
-  }
-
-  int rc;
-  s = p.Wait(&rc);
-  if (!s.ok()) {
-    LOG_STRING(WARNING, log) << "Unable to wait for lsof: " << s.ToString();
-    return;
-  }
-  if (rc != 0) {
-    LOG_STRING(WARNING, log) << "lsof failed";
-  }
-
-  LOG_STRING(WARNING, log) << results.ToString();
+  LOG_STRING(WARNING, log) << results;
 }
 
 } // namespace kudu

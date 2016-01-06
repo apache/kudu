@@ -387,6 +387,43 @@ Status Subprocess::Call(const vector<string>& argv) {
   }
 }
 
+Status Subprocess::Call(const vector<string>& argv, string* stdout_out) {
+  Subprocess p(argv[0], argv);
+  p.ShareParentStdout(false);
+  RETURN_NOT_OK_PREPEND(p.Start(), "Unable to fork " + argv[0]);
+  int err = close(p.ReleaseChildStdinFd());
+  if (PREDICT_FALSE(err != 0)) {
+    return Status::IOError("Unable to close child process stdin", ErrnoToString(errno), errno);
+  }
+
+  stdout_out->clear();
+  char buf[1024];
+  while (true) {
+    ssize_t n = read(p.from_child_stdout_fd(), buf, arraysize(buf));
+    if (n == 0) {
+      // EOF
+      break;
+    }
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      return Status::IOError("IO error reading from " + argv[0], ErrnoToString(errno), errno);
+    }
+
+    stdout_out->append(buf, n);
+  }
+
+  int retcode;
+  RETURN_NOT_OK_PREPEND(p.Wait(&retcode), "Unable to wait() for " + argv[0]);
+
+  if (PREDICT_FALSE(retcode != 0)) {
+    return Status::RuntimeError(Substitute(
+        "Subprocess '$0' terminated with non-zero exit status $1",
+        argv[0],
+        retcode));
+  }
+  return Status::OK();
+}
+
 int Subprocess::CheckAndOffer(int stdfd) const {
   CHECK_EQ(state_, kRunning);
   CHECK_EQ(fd_state_[stdfd], PIPED);

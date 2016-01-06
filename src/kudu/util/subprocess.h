@@ -97,6 +97,11 @@ class Subprocess {
   // executable as argv[0] and the arguments to the program in argv[1..n].
   static Status Call(const std::vector<std::string>& argv);
 
+  // Same as above, but collects the output from the child process stdout into
+  // 'stdout_out'.
+  static Status Call(const std::vector<std::string>& argv,
+                     std::string* stdout_out);
+
   // Return the pipe fd to the child's standard stream.
   // Stream should not be disabled or shared.
   int to_child_stdin_fd()    const { return CheckAndOffer(STDIN_FILENO); }
