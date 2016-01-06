@@ -2133,11 +2133,11 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
     } else {
       master_->catalog_manager()->NotifyTabletDeleteSuccess(permanent_uuid_, tablet_id_);
       if (table_) {
-        LOG(INFO) << "Tablet " << tablet_id_ << " (table " << table_->ToString() << ") "
-                  << "successfully deleted";
+        LOG(INFO) << "TS " << permanent_uuid_ << ": tablet " << tablet_id_
+                  << " (table " << table_->ToString() << ") successfully deleted";
       } else {
-        LOG(WARNING) << "Tablet " << tablet_id_ << " did not belong to a known table, but was "
-                        "successfully deleted";
+        LOG(WARNING) << "TS " << permanent_uuid_ << ": tablet " << tablet_id_
+                     << " did not belong to a known table, but was successfully deleted";
       }
       MarkComplete();
       VLOG(1) << "TS " << permanent_uuid_ << ": delete complete on tablet " << tablet_id_;
@@ -2297,8 +2297,9 @@ class AsyncAddServerTask : public RetryingTSRpcTask {
   virtual string type_name() const OVERRIDE { return "AddServer ChangeConfig"; }
 
   virtual string description() const OVERRIDE {
-    return Substitute("AddServer ChangeConfig RPC for tablet $0 with cas_config_opid_index $1",
-                      tablet_->tablet_id(), cstate_.config().opid_index());
+    return Substitute("AddServer ChangeConfig RPC for tablet $0 on peer $1 "
+                      "with cas_config_opid_index $2",
+                      tablet_->tablet_id(), permanent_uuid(), cstate_.config().opid_index());
   }
 
  protected:
@@ -2470,8 +2471,11 @@ void CatalogManager::SendAddServerRequest(const scoped_refptr<TabletInfo>& table
                                                     tablet,
                                                     cstate);
   tablet->table()->AddTask(task);
-  LOG(INFO) << "Starting AddServer task: " << task->description();
   WARN_NOT_OK(task->Run(), "Failed to send new AddServer request");
+
+  // Need to print this after Run() because that's where it picks the TS which description()
+  // needs.
+  LOG(INFO) << "Started AddServer task: " << task->description();
 }
 
 void CatalogManager::ExtractTabletsToProcess(
