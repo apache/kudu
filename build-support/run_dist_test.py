@@ -47,7 +47,7 @@ def main():
     p.print_help(sys.stderr)
     sys.exit(1)
   test_exe = args[0]
-  test_name = os.path.basename(test_exe)
+  test_name, _ = os.path.splitext(os.path.basename(test_exe))
 
   env = os.environ.copy()
   for env_pair in options.env:
