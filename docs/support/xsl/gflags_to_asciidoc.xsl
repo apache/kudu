@@ -1,6 +1,5 @@
 <?xml version="1.0"?>
 <!--
-Copyright 2015 Cloudera, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -31,7 +30,6 @@ limitations under the License.
 <xsl:template match="AllFlags">
 <!-- Inject the license text into the header of each file -->
 ////
-// Copyright 2015 Cloudera, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# Copyright 2015 Cloudera, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -105,7 +104,6 @@ def main():
     os.makedirs(d)
   with file(output_path, "w") as f:
     print >>f, """
-// Copyright 2015 Cloudera, Inc.
 // THIS FILE IS AUTO-GENERATED! DO NOT EDIT!
 //
 // id_hash=%(identifying_hash)s

@@ -1,5 +1,4 @@
 #!/bin/bash
-# Copyright 2014 Cloudera, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -47,7 +46,7 @@ cd $ROOT
 
 $ROOT/thirdparty/installed/bin/cpplint.py \
   --verbose=4 \
-  --filter=-whitespace/comments,-readability/todo,-build/header_guard,-build/include_order \
+  --filter=-whitespace/comments,-readability/todo,-build/header_guard,-build/include_order,-legal/copyright \
   $FILES 2>&1 | grep -v 'Done processing' | tee $TMP
 
 NUM_ERRORS=$(grep "Total errors found" $TMP | awk '{print $4}')

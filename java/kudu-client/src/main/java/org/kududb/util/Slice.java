@@ -1,6 +1,5 @@
 /*
  * Copyright 2009 Red Hat, Inc.
- * Portions copyright 2014 Cloudera, Inc.
  *
  * Red Hat licenses this file to you under the Apache License, version 2.0
  * (the "License"); you may not use this file except in compliance with the
