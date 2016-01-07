@@ -50,8 +50,7 @@ TEST_COMMAND_RE = re.compile('Test command: (.+)$')
 LDD_RE = re.compile(r'^\s+.+? => (\S+) \(0x.+\)')
 
 DEPS_FOR_ALL = \
-    ["thirdparty/asan_symbolize.py",
-     "build-support/stacktrace_addr2line.pl",
+    ["build-support/stacktrace_addr2line.pl",
      "build-support/run-test.sh",
      "build-support/run_dist_test.py",
      "build-support/tsan-suppressions.txt",
