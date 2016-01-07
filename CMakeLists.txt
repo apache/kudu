@@ -15,8 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Require cmake at least as new as the one in thirdparty/
-cmake_minimum_required(VERSION 3.2.3)
+# Require cmake that supports BYPRODUCTS in add_custom_command() [1].
+#
+# Note: cmake in thirdparty/ will always meet this minimum.
+#
+# 1. https://cmake.org/Bug/view.php?id=14963
+cmake_minimum_required(VERSION 3.2.0)
 
 # TODO: can we somehow pass this into the java build?
 set(KUDU_VERSION_NUMBER "0.7.0-SNAPSHOT")
