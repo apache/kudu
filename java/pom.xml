@@ -212,7 +212,6 @@
                         <artifactId>interface-annotations</artifactId>
                         <version>${project.version}</version>
                     </docletArtifact>
-                    <destDir>apidocs</destDir>
                     <name>User API</name>
                     <description>The Kudu Application Programmer's API</description>
                     <excludePackageNames>

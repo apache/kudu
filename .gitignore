@@ -62,9 +62,6 @@ python/kudu/*.so
 python/kudu/*.cpp
 *.py[ocd]
 
-# JavaDoc
-apidocs/
-
 # Docs-generation bundler metadata
 docs/support/scripts/.bundle/
 docs/support/scripts/.gem/
