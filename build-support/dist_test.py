@@ -56,10 +56,6 @@ DEPS_FOR_ALL = \
      "build-support/tsan-suppressions.txt",
      "build-support/lsan-suppressions.txt",
 
-     # TODO: should pick these up from ldd so that we don't
-     # distribute more than necessary.
-     "thirdparty/installed/lib/",
-
      # Tests that use the external minicluster require these.
      # TODO: declare these dependencies per-test.
      "build/latest/kudu-tserver",
@@ -187,7 +183,14 @@ def ldd_deps(exe):
     lib = m.group(1)
     if is_lib_blacklisted(lib):
       continue
+    path = m.group(1)
     ret.append(m.group(1))
+
+    # ldd will often point to symlinks. We need to upload the symlink
+    # as well as whatever it's pointing to, recursively.
+    while os.path.islink(path):
+      path = os.path.join(os.path.dirname(path), os.readlink(path))
+      ret.append(path)
   return ret
 
 
