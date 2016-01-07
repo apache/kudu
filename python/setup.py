@@ -71,6 +71,9 @@ RT_LIBRARY_DIRS = LIBRARY_DIRS
 
 client_ext = Extension('kudu.client', ['kudu/client.pyx'],
                        libraries=['kudu_client'],
+                       # Disable the 'new' gcc5 ABI; see the top-level
+                       # CMakeLists.txt for details.
+                       define_macros=[('_GLIBCXX_USE_CXX11_ABI', '0')],
                        include_dirs=INCLUDE_PATHS,
                        library_dirs=LIBRARY_DIRS,
                        runtime_library_dirs=RT_LIBRARY_DIRS)
