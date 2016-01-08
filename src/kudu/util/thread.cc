@@ -23,7 +23,9 @@
 #include <boost/foreach.hpp>
 #include <map>
 #include <set>
+#include <sys/resource.h>
 #include <sys/syscall.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <tr1/memory>
 #include <unistd.h>
@@ -67,7 +69,55 @@ METRIC_DEFINE_gauge_uint64(server, threads_running,
                            kudu::MetricUnit::kThreads,
                            "Current number of running threads");
 
+METRIC_DEFINE_gauge_uint64(server, cpu_utime,
+                           "User CPU Time",
+                           kudu::MetricUnit::kMilliseconds,
+                           "Total user CPU time of the process",
+                           kudu::EXPOSE_AS_COUNTER);
+
+METRIC_DEFINE_gauge_uint64(server, cpu_stime,
+                           "System CPU Time",
+                           kudu::MetricUnit::kMilliseconds,
+                           "Total system CPU time of the process",
+                           kudu::EXPOSE_AS_COUNTER);
+
+METRIC_DEFINE_gauge_uint64(server, voluntary_context_switches,
+                           "Voluntary Context Switches",
+                           kudu::MetricUnit::kContextSwitches,
+                           "Total voluntary context switches",
+                           kudu::EXPOSE_AS_COUNTER);
+
+METRIC_DEFINE_gauge_uint64(server, involuntary_context_switches,
+                           "Involuntary Context Switches",
+                           kudu::MetricUnit::kContextSwitches,
+                           "Total involuntary context switches",
+                           kudu::EXPOSE_AS_COUNTER);
+
 namespace kudu {
+
+static uint64_t GetCpuUTime() {
+  rusage ru;
+  CHECK_ERR(getrusage(RUSAGE_SELF, &ru));
+  return ru.ru_utime.tv_sec * 1000UL + ru.ru_utime.tv_usec / 1000UL;
+}
+
+static uint64_t GetCpuSTime() {
+  rusage ru;
+  CHECK_ERR(getrusage(RUSAGE_SELF, &ru));
+  return ru.ru_stime.tv_sec * 1000UL + ru.ru_stime.tv_usec / 1000UL;
+}
+
+static uint64_t GetVoluntaryContextSwitches() {
+  rusage ru;
+  CHECK_ERR(getrusage(RUSAGE_SELF, &ru));
+  return ru.ru_nvcsw;;
+}
+
+static uint64_t GetInVoluntaryContextSwitches() {
+  rusage ru;
+  CHECK_ERR(getrusage(RUSAGE_SELF, &ru));
+  return ru.ru_nivcsw;
+}
 
 class ThreadMgr;
 
@@ -201,6 +251,18 @@ Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metric
   metrics->NeverRetire(
       METRIC_threads_running.InstantiateFunctionGauge(metrics,
         Bind(&ThreadMgr::ReadThreadsRunning, Unretained(this))));
+  metrics->NeverRetire(
+      METRIC_cpu_utime.InstantiateFunctionGauge(metrics,
+        Bind(&GetCpuUTime)));
+  metrics->NeverRetire(
+      METRIC_cpu_stime.InstantiateFunctionGauge(metrics,
+        Bind(&GetCpuSTime)));
+  metrics->NeverRetire(
+      METRIC_voluntary_context_switches.InstantiateFunctionGauge(metrics,
+        Bind(&GetVoluntaryContextSwitches)));
+  metrics->NeverRetire(
+      METRIC_involuntary_context_switches.InstantiateFunctionGauge(metrics,
+        Bind(&GetInVoluntaryContextSwitches)));
 
   WebCallbackRegistry::PathHandlerCallback thread_callback =
       bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler), this, _1, _2);
