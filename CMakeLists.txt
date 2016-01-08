@@ -368,18 +368,8 @@ if ("${KUDU_LINK}" STREQUAL "d")
 endif()
 
 # set compile output directory
-string (TOLOWER ${CMAKE_BUILD_TYPE} BUILD_SUBDIR_NAME)
-set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/${BUILD_SUBDIR_NAME}/")
-
-# Link build/latest to the current build directory, to avoid developers
-# accidentally running the latest debug build when in fact they're building
-# release builds.
-FILE(MAKE_DIRECTORY ${BUILD_OUTPUT_ROOT_DIRECTORY})
-if (NOT APPLE)
-  set(MORE_ARGS "-T")
-endif()
-EXECUTE_PROCESS(COMMAND ln ${MORE_ARGS} -sf ${BUILD_OUTPUT_ROOT_DIRECTORY}
-  ${CMAKE_CURRENT_SOURCE_DIR}/build/latest)
+set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/latest")
+file(MAKE_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
 
 # where to put generated archives (.a files)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
@@ -391,6 +381,8 @@ set(LIBRARY_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
 
 # where to put generated binaries
 set(EXECUTABLE_OUTPUT_PATH "${BUILD_OUTPUT_ROOT_DIRECTORY}")
+
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/src)
 include_directories(src)
 
 ############################################################
@@ -553,7 +545,14 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
     target_link_libraries(${TEST_NAME} ${KUDU_TEST_LINK_LIBS})
   else()
     # No executable, just invoke the test (probably a script) directly.
-    set(TEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/${REL_TEST_NAME})
+    get_filename_component(TEST_NAME_WITH_EXT ${REL_TEST_NAME} NAME)
+    set(TEST_PATH "${EXECUTABLE_OUTPUT_PATH}/${TEST_NAME_WITH_EXT}")
+
+    # Ideally this would run only when the test is built, not when cmake runs,
+    # but add_test() doesn't yield a target (if it did, that target could depend
+    # on an add_custom_command() that copies the test file into place).
+    execute_process(COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/${REL_TEST_NAME}
+      ${EXECUTABLE_OUTPUT_PATH})
   endif()
 
   add_test(${TEST_NAME}
@@ -632,12 +631,14 @@ function(ADD_THIRDPARTY_LIB LIB_NAME)
 endfunction()
 
 # Look in thirdparty prefix paths before anywhere else for system dependencies.
-set(THIRDPARTY_PREFIX ${CMAKE_SOURCE_DIR}/thirdparty/installed)
+set(THIRDPARTY_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/installed)
 set(CMAKE_PREFIX_PATH ${THIRDPARTY_PREFIX} ${CMAKE_PREFIX_PATH})
 if (${KUDU_USE_TSAN})
-  set(CMAKE_PREFIX_PATH ${CMAKE_SOURCE_DIR}/thirdparty/installed-deps-tsan ${CMAKE_PREFIX_PATH})
+  set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/installed-deps-tsan
+      ${CMAKE_PREFIX_PATH})
 else()
-  set(CMAKE_PREFIX_PATH ${CMAKE_SOURCE_DIR}/thirdparty/installed-deps ${CMAKE_PREFIX_PATH})
+  set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/installed-deps
+      ${CMAKE_PREFIX_PATH})
 endif()
 
 ## Cyrus SASL
@@ -682,8 +683,6 @@ ADD_THIRDPARTY_LIB(gmock
   SHARED_LIB ${GMOCK_SHARED_LIBRARY})
 
 ## Protobuf
-set(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
-set(PROTO_DST_ROOT ${CMAKE_CURRENT_BINARY_DIR}/src)
 find_package(Protobuf REQUIRED)
 include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(protobuf
@@ -693,7 +692,6 @@ ADD_THIRDPARTY_LIB(protoc
   STATIC_LIB "${PROTOBUF_PROTOC_STATIC_LIBRARY}"
   SHARED_LIB "${PROTOBUF_PROTOC_LIBRARY}"
   DEPS protobuf)
-
 find_package(KRPC REQUIRED)
 
 ## Snappy
@@ -859,28 +857,34 @@ set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS})
 # "make ctags" target
 ############################################################
 if (UNIX)
-  add_custom_target(ctags ctags -R --languages=c++,c --exclude=thirdparty/installed)
+  add_custom_target(ctags ctags --languages=c++,c -L
+    `find ${CMAKE_CURRENT_SOURCE_DIR}/src
+          ${CMAKE_CURRENT_BINARY_DIR}/src`)
 endif (UNIX)
 
 ############################################################
 # "make etags" target
+#
+# Requires the exuberant-ctags system package.
 ############################################################
 if (UNIX)
-  add_custom_target(tags etags --members --declarations
-  `find ${CMAKE_CURRENT_SOURCE_DIR}/src
-   -name \\*.cc -or -name \\*.hh -or -name \\*.cpp -or -name \\*.h -or -name \\*.c -or
-   -name \\*.f`)
-  add_custom_target(etags DEPENDS tags)
+  add_custom_target(etags etags --members --declarations
+    `find ${CMAKE_CURRENT_SOURCE_DIR}/src
+          ${CMAKE_CURRENT_BINARY_DIR}/src
+          -name \\*.cc -or -name \\*.hh -or -name \\*.cpp -or
+          -name \\*.h -or -name \\*.c`)
 endif (UNIX)
 
 ############################################################
 # "make cscope" target
 ############################################################
 if (UNIX)
-  add_custom_target(cscope find ${CMAKE_CURRENT_SOURCE_DIR}
-  ( -name \\*.cc -or -name \\*.hh -or -name \\*.cpp -or
-    -name \\*.h -or -name \\*.c -or -name \\*.f )
-  -exec echo \"{}\" \; > cscope.files && cscope -q -b VERBATIM)
+  add_custom_target(cscope
+    find ${CMAKE_CURRENT_SOURCE_DIR}/src
+         ${CMAKE_CURRENT_BINARY_DIR}/src
+         -name \\*.cc -or -name \\*.hh -or -name \\*.cpp -or
+         -name \\*.h -or -name \\*.c
+    > cscope.files && cscope -q -b)
 endif (UNIX)
 
 ############################################################
@@ -898,11 +902,12 @@ endif (UNIX)
 # "make docs" target
 ############################################################
 if (UNIX)
-  set(DOCS_BUILD_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/docs)
+  set(DOCS_BUILD_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/docs)
   add_custom_command(
     OUTPUT ${DOCS_BUILD_DIRECTORY}
     # We want the docs output HTML to go in a docs/ subdir of the output dir
-    COMMAND docs/support/scripts/make_docs.sh)
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_docs.sh
+            --build_root ${CMAKE_CURRENT_BINARY_DIR})
   add_custom_target(docs
     DEPENDS ${DOCS_BUILD_DIRECTORY})
 endif (UNIX)

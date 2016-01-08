@@ -31,49 +31,8 @@
 set -e
 
 usage() {
-  echo usage: "$0 [--site <path to gh-pages checkout>]"
+  echo usage: "$0 --build_root <path to build root> [--site <path to gh-pages checkout>]"
 }
-
-ROOT=$(cd $(dirname $0)/../../..; pwd)
-
-GEN_DOC_DIR=$ROOT/build/gen-docs
-OUTPUT_DIR=$ROOT/build/docs
-
-if ! which ruby > /dev/null; then
-  echo "ruby must be installed in order to build the docs."
-  echo 1
-fi
-
-DOCS_SCRIPTS="$ROOT/docs/support/scripts"
-
-# We must set GEM_PATH because bundler depends on it to find its own libraries.
-export GEM_PATH="$DOCS_SCRIPTS/.gem"
-echo GEM_PATH="$DOCS_SCRIPTS/.gem"
-
-export PATH="$GEM_PATH/bin:$PATH"
-echo PATH="$GEM_PATH/bin:$PATH"
-
-BUNDLE="$GEM_PATH/bin/bundle"
-
-echo "Locally Installing ruby gems needed to build docs."
-if [ ! -x "$BUNDLE" ]; then
-  set -x
-  gem install --no-ri --no-rdoc -q --install-dir "$GEM_PATH" bundler
-  set +x
-fi
-
-set -x
-cd "$DOCS_SCRIPTS"
-"$BUNDLE" install --no-color --path "$GEM_PATH"
-set +x
-
-# We need the xsltproc package.
-for requirement in "xsltproc"; do
-  if ! which $requirement > /dev/null; then
-    echo "$requirement is required, but cannot be found. Make sure it is in your path."
-    exit 1
-  fi
-done
 
 while [[ $# > 0 ]] ; do
     arg=$1
@@ -81,6 +40,11 @@ while [[ $# > 0 ]] ; do
       --help)
         usage
         exit 1
+        ;;
+      --build_root)
+        BUILD_ROOT=$2
+        shift
+        shift
         ;;
       --site|-s)
         SITE=$2
@@ -108,6 +72,56 @@ while [[ $# > 0 ]] ; do
     esac
 done
 
+if [ -z "$BUILD_ROOT" ]; then
+  usage
+  exit 1
+fi
+
+if [ -z "$SITE" ]; then
+  OUTPUT_DIR=$BUILD_ROOT/docs
+fi
+
+GEN_DOC_DIR=$BUILD_ROOT/gen-docs
+SOURCE_ROOT=$(cd $(dirname $0)/../../..; pwd)
+
+if ! which ruby > /dev/null; then
+  echo "ruby must be installed in order to build the docs."
+  echo 1
+fi
+
+DOCS_SCRIPTS="$SOURCE_ROOT/docs/support/scripts"
+
+# We must set GEM_PATH because bundler depends on it to find its own libraries.
+export GEM_PATH="$BUILD_ROOT/gems"
+echo GEM_PATH=$GEM_PATH
+
+export PATH="$GEM_PATH/bin:$PATH"
+echo PATH="$GEM_PATH/bin:$PATH"
+
+BUNDLE="$GEM_PATH/bin/bundle"
+
+echo "Locally installing ruby gems needed to build docs."
+if [ ! -x "$BUNDLE" ]; then
+  set -x
+  gem install --no-ri --no-rdoc -q --install-dir "$GEM_PATH" bundler
+  set +x
+fi
+
+set -x
+cd "$BUILD_ROOT"
+cp $DOCS_SCRIPTS/Gemfile .
+cp $DOCS_SCRIPTS/Gemfile.lock .
+$BUNDLE install --no-color --path "$GEM_PATH"
+set +x
+
+# We need the xsltproc package.
+for requirement in "xsltproc"; do
+  if ! which $requirement > /dev/null; then
+    echo "$requirement is required, but cannot be found. Make sure it is in your path."
+    exit 1
+  fi
+done
+
 mkdir -p "$OUTPUT_DIR" "$GEN_DOC_DIR"
 
 # Create config flag references for each of the binaries below
@@ -115,7 +129,7 @@ binaries=("kudu-master" \
           "kudu-tserver")
 
 for binary in ${binaries[@]}; do
-  echo "Running $(basename $binary) --helpxml"
+  echo "Running $binary --helpxml"
 
   (
     # Reset environment to avoid affecting the default flag values.
@@ -126,7 +140,7 @@ for binary in ${binaries[@]}; do
 
     # Create the XML file.
     # This command exits with a nonzero value.
-    $ROOT/build/latest/$binary --helpxml > ${GEN_DOC_DIR}/$(basename $binary).xml || true
+    $BUILD_ROOT/latest/$binary --helpxml > ${GEN_DOC_DIR}/$(basename $binary).xml || true
   )
 
   # Create the supported config reference
@@ -134,7 +148,7 @@ for binary in ${binaries[@]}; do
     --stringparam binary $binary \
     --stringparam support-level stable \
     -o $GEN_DOC_DIR/${binary}_configuration_reference.adoc \
-      $ROOT/docs/support/xsl/gflags_to_asciidoc.xsl \
+      $SOURCE_ROOT/docs/support/xsl/gflags_to_asciidoc.xsl \
     ${GEN_DOC_DIR}/$binary.xml
   INCLUSIONS_SUPPORTED+="include::${binary}_configuration_reference.adoc[leveloffset=+1]\n"
 
@@ -143,29 +157,29 @@ for binary in ${binaries[@]}; do
     --stringparam binary $binary \
     --stringparam support-level unsupported \
     -o $GEN_DOC_DIR/${binary}_configuration_reference_unsupported.adoc \
-      $ROOT/docs/support/xsl/gflags_to_asciidoc.xsl \
+      $SOURCE_ROOT/docs/support/xsl/gflags_to_asciidoc.xsl \
     ${GEN_DOC_DIR}/$binary.xml
   INCLUSIONS_UNSUPPORTED+="include::${binary}_configuration_reference_unsupported.adoc[leveloffset=+1]\n"
 done
 
 # Add the includes to the configuration reference files, replacing the template lines
-cp $ROOT/docs/configuration_reference* $GEN_DOC_DIR/
+cp $SOURCE_ROOT/docs/configuration_reference* $GEN_DOC_DIR/
 sed -i "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_SUPPORTED}#" ${GEN_DOC_DIR}/configuration_reference.adoc
 sed -i "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_UNSUPPORTED}#" ${GEN_DOC_DIR}/configuration_reference_unsupported.adoc
 
 # If we're generating the web site, pass the template which causes us
 # to generate Jekyll templates instead of full HTML.
 if [ -n "$SITE" ]; then
-    TEMPLATE_FLAG="-T $ROOT/docs/support/jekyll-templates"
+    TEMPLATE_FLAG="-T $SOURCE_ROOT/docs/support/jekyll-templates"
 else
     TEMPLATE_FLAG=""
 fi
 
 bundle exec asciidoctor -d book $TEMPLATE_FLAG \
-    $ROOT/docs/*.adoc ${GEN_DOC_DIR}/*.adoc -D "$OUTPUT_DIR"
+    $SOURCE_ROOT/docs/*.adoc ${GEN_DOC_DIR}/*.adoc -D "$OUTPUT_DIR"
 
 mkdir -p "$OUTPUT_DIR/images"
-cp $ROOT/docs/images/* "$OUTPUT_DIR/images/"
+cp $SOURCE_ROOT/docs/images/* "$OUTPUT_DIR/images/"
 
 
 echo
@@ -192,4 +206,3 @@ if [ -n "$SITE" ] && [ -z "$NO_JEKYLL" ]; then
   echo $BASE_URL/index.html
   echo ----------------------
 fi
-

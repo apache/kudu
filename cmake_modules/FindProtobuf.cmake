@@ -113,10 +113,6 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS TGTS)
     list(APPEND ${SRCS} "${PROTO_CC_OUT}")
     list(APPEND ${HDRS} "${PROTO_H_OUT}")
 
-    if(NOT EXISTS ${PROTO_DST_ROOT}/${FIL_PT})
-        file(MAKE_DIRECTORY ${PROTO_DST_ROOT}/${FIL_PT})
-    endif()
-
     add_custom_command(
       OUTPUT "${PROTO_CC_OUT}" "${PROTO_H_OUT}"
       COMMAND  ${PROTOBUF_PROTOC_EXECUTABLE}

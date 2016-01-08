@@ -20,47 +20,34 @@
 #
 # This script generates site documentation and Javadocs.
 #
-# Usage: make_site.sh <output_dir>
+# Usage: make_site.sh
 ########################################################################
 set -e
 
-REL_OUTPUT_DIR=$1
-if [ -z "$REL_OUTPUT_DIR" ]; then
-  echo "usage: $0 <output_dir>"
-  exit 1
-fi
-
-# Ensure a clean build.
-mkdir -p "$REL_OUTPUT_DIR"
-ABS_OUTPUT_DIR=$(cd "$REL_OUTPUT_DIR"; pwd)
-SITE_OUTPUT_DIR="$ABS_OUTPUT_DIR/kudu-site"
-if [ -d "$SITE_OUTPUT_DIR" ]; then
-  echo "Error: Please remove the old site directory before running this script: $SITE_OUTPUT_DIR"
-  exit 1
-fi
-mkdir "$SITE_OUTPUT_DIR"
-
-ROOT=$(cd $(dirname $0)/../../..; pwd)
+SOURCE_ROOT=$(cd $(dirname $0)/../../..; pwd)
+BUILD_ROOT="$SOURCE_ROOT/build"
+SITE_OUTPUT_DIR="$BUILD_ROOT/site"
 set -x
 
-cd "$ROOT"
+cd "$SOURCE_ROOT"
 
 # Build Kudu thirdparty
-$ROOT/build-support/enable_devtoolset.sh ./thirdparty/build-if-necessary.sh
+$SOURCE_ROOT/build-support/enable_devtoolset.sh $SOURCE_ROOT/thirdparty/build-if-necessary.sh
 echo "Successfully built third-party dependencies."
 
 # Build the binaries so we can auto-generate the command-line references
-rm -rf CMakeCache.txt CMakeFiles
-$ROOT/build-support/enable_devtoolset.sh ./thirdparty/installed/bin/cmake -DNO_TESTS=1 .
+rm -rf "$BUILD_ROOT"
+mkdir -p "$BUILD_ROOT"
+cd "$BUILD_ROOT"
+$SOURCE_ROOT/build-support/enable_devtoolset.sh $SOURCE_ROOT/thirdparty/installed/bin/cmake -DNO_TESTS=1 $SOURCE_ROOT
 make -j$(getconf _NPROCESSORS_ONLN)
-rm -rf CMakeCache.txt CMakeFiles
 
 # Check out the gh-pages repo into $SITE_OUTPUT_DIR
-git clone -q $(git config --get remote.origin.url) --reference $(pwd) -b gh-pages --depth 1 "$SITE_OUTPUT_DIR"
+git clone -q $(git config --get remote.origin.url) --reference $SOURCE_ROOT -b gh-pages --depth 1 "$SITE_OUTPUT_DIR"
 
 # Build the docs using the styles from the Jekyll site
 rm -Rf "$SITE_OUTPUT_DIR/docs"
-./docs/support/scripts/make_docs.sh --site "$SITE_OUTPUT_DIR"
+$SOURCE_ROOT/docs/support/scripts/make_docs.sh --build_root $BUILD_ROOT --site "$SITE_OUTPUT_DIR"
 if [ -f "$SITE_OUTPUT_DIR/docs/index.html" ]; then
   echo "Successfully built docs."
 else
@@ -68,11 +55,11 @@ else
   exit 1
 fi
 
-cd "$ROOT/java"
+cd "$SOURCE_ROOT/java"
 mvn clean install -DskipTests
 mvn clean javadoc:aggregate
 
-if [ -f "$ROOT/java/target/site/apidocs/index.html" ]; then
+if [ -f "$SOURCE_ROOT/java/target/site/apidocs/index.html" ]; then
   echo "Successfully built Javadocs."
 else
   echo "Javadocs failed to build."
@@ -80,7 +67,7 @@ else
 fi
 
 rm -Rf "$SITE_OUTPUT_DIR/apidocs"
-cp -au "$ROOT/java/target/site/apidocs" "$SITE_OUTPUT_DIR/"
+cp -au "$SOURCE_ROOT/java/target/site/apidocs" "$SITE_OUTPUT_DIR/"
 
 cd "$SITE_OUTPUT_DIR"
 SITE_ARCHIVE="$SITE_OUTPUT_DIR/website_archive.zip"

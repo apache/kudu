@@ -61,7 +61,7 @@ ADD_EXPORTABLE_LIBRARY(version_info_proto
 # Version stamp
 ############################################################
 include_directories(${BUILD_OUTPUT_ROOT_DIRECTORY})
-set(VERSION_STAMP_FILE ${BUILD_OUTPUT_ROOT_DIRECTORY}kudu/generated/version_defines.h)
+set(VERSION_STAMP_FILE ${BUILD_OUTPUT_ROOT_DIRECTORY}/kudu/generated/version_defines.h)
 list(APPEND GEN_VERSION_INFO_COMMAND "${BUILD_SUPPORT_DIR}/gen_version_info.py")
 list(APPEND GEN_VERSION_INFO_COMMAND "--version=${KUDU_VERSION_NUMBER}")
 list(APPEND GEN_VERSION_INFO_COMMAND "--build-type=${CMAKE_BUILD_TYPE}")

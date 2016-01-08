@@ -100,30 +100,27 @@ if [ ! -w "$TEST_TMPDIR" ]; then
   exit 1
 fi
 
-ROOT=$(cd $(dirname "$BASH_SOURCE")/../..; pwd)
-cd $ROOT
+SOURCE_ROOT=$(cd $(dirname "$BASH_SOURCE")/../..; pwd)
+BUILD_ROOT=$SOURCE_ROOT/build
+
+# Remove testing artifacts from the previous run before we do anything
+# else. Otherwise, if we fail during the "build" step, Jenkins will
+# archive the test logs from the previous run, thinking they came from
+# this run, and confuse us when we look at the failed build.
+rm -rf $BUILD_ROOT
+mkdir -p $BUILD_ROOT
 
 list_flaky_tests() {
   curl -s "http://$TEST_RESULT_SERVER/list_failed_tests?num_days=3&build_pattern=%25kudu-test%25"
   return $?
 }
 
-TEST_LOGDIR="$ROOT/build/test-logs"
-TEST_DEBUGDIR="$ROOT/build/test-debug"
-
-# Remove testing artifacts from the previous run before we do anything
-# else. Otherwise, if we fail during the "build" step, Jenkins will
-# archive the test logs from the previous run, thinking they came from
-# this run, and confuse us when we look at the failed build.
-rm -Rf Testing/Temporary
-rm -f build.log
-rm -Rf $TEST_LOGDIR
-rm -Rf $TEST_DEBUGDIR
-rm -rf CMakeCache.txt CMakeFiles src/kudu/*/CMakeFiles
+TEST_LOGDIR="$BUILD_ROOT/test-logs"
+TEST_DEBUGDIR="$BUILD_ROOT/test-debug"
 
 cleanup() {
   echo Cleaning up all build artifacts...
-  $ROOT/build-support/jenkins/post-build-clean.sh
+  $SOURCE_ROOT/build-support/jenkins/post-build-clean.sh
 }
 # If we're running inside Jenkins (the BUILD_ID is set), then install
 # an exit handler which will clean up all of our build results.
@@ -136,7 +133,7 @@ if [ -d "$TOOLCHAIN_DIR" ]; then
   PATH=$TOOLCHAIN_DIR/apache-maven-3.0/bin:$PATH
 fi
 
-$ROOT/build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
+$SOURCE_ROOT/build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 
 THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
 export PPROF_PATH=$THIRDPARTY_BIN/pprof
@@ -147,18 +144,24 @@ else
   CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
 fi
 
+# Before running cmake below, clean out any errant cmake state from the source
+# tree. We need this to help transition into a world where out-of-tree builds
+# are required. Once that's done, the cleanup can be removed.
+rm -rf $SOURCE_ROOT/CMakeCache.txt $SOURCE_ROOT/CMakeFiles
+
 # Configure the build
 #
 # ASAN/TSAN can't build the Python bindings because the exported Kudu client
 # library (which the bindings depend on) is missing ASAN/TSAN symbols.
+cd $BUILD_ROOT
 if [ "$BUILD_TYPE" = "ASAN" ]; then
-  $ROOT/build-support/enable_devtoolset.sh \
-    "CC=$CLANG CXX=$CLANG++ $THIRDPARTY_BIN/cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 ."
+  $SOURCE_ROOT/build-support/enable_devtoolset.sh \
+    "CC=$CLANG CXX=$CLANG++ $THIRDPARTY_BIN/cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 $SOURCE_ROOT"
   BUILD_TYPE=fastdebug
   BUILD_PYTHON=0
 elif [ "$BUILD_TYPE" = "TSAN" ]; then
-  $ROOT/build-support/enable_devtoolset.sh \
-    "CC=$CLANG CXX=$CLANG++ $THIRDPARTY_BIN/cmake -DKUDU_USE_TSAN=1"
+  $SOURCE_ROOT/build-support/enable_devtoolset.sh \
+    "CC=$CLANG CXX=$CLANG++ $THIRDPARTY_BIN/cmake -DKUDU_USE_TSAN=1 $SOURCE_ROOT"
   BUILD_TYPE=fastdebug
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
   BUILD_PYTHON=0
@@ -170,7 +173,7 @@ elif [ "$BUILD_TYPE" = "LEAKCHECK" ]; then
 elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   DO_COVERAGE=1
   BUILD_TYPE=debug
-  $ROOT/build-support/enable_devtoolset.sh "$THIRDPARTY_BIN/cmake -DKUDU_GENERATE_COVERAGE=1 ."
+  $SOURCE_ROOT/build-support/enable_devtoolset.sh "$THIRDPARTY_BIN/cmake -DKUDU_GENERATE_COVERAGE=1 $SOURCE_ROOT"
   # Reset coverage info from previous runs
   find src -name \*.gcda -o -name \*.gcno -exec rm {} \;
 elif [ "$BUILD_TYPE" = "LINT" ]; then
@@ -179,7 +182,7 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
   mkdir -p Testing/Temporary
   mkdir -p $TEST_LOGDIR
 
-  $ROOT/build-support/enable_devtoolset.sh "$THIRDPARTY_BIN/cmake ."
+  $SOURCE_ROOT/build-support/enable_devtoolset.sh "$THIRDPARTY_BIN/cmake $SOURCE_ROOT"
   make lint | tee $TEST_LOGDIR/lint.log
   exit $?
 fi
@@ -193,7 +196,7 @@ fi
 # list of tests to ignore
 if [ "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
   echo Fetching flaky test list...
-  export KUDU_FLAKY_TEST_LIST=$ROOT/build/flaky-tests.txt
+  export KUDU_FLAKY_TEST_LIST=$BUILD_ROOT/flaky-tests.txt
   mkdir -p $(dirname $KUDU_FLAKY_TEST_LIST)
   echo -n > $KUDU_FLAKY_TEST_LIST
     if [ -n "$TEST_RESULT_SERVER" ] && \
@@ -207,10 +210,9 @@ if [ "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
   fi
 fi
 
-$ROOT/build-support/enable_devtoolset.sh "$THIRDPARTY_BIN/cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
+$SOURCE_ROOT/build-support/enable_devtoolset.sh "$THIRDPARTY_BIN/cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} $SOURCE_ROOT"
 
 # our tests leave lots of data lying around, clean up before we run
-make clean
 if [ -d "$TEST_TMPDIR" ]; then
   rm -Rf $TEST_TMPDIR/*
 fi
@@ -256,7 +258,7 @@ if [ $EXIT_STATUS != 0 ]; then
     if [ ! -f "$GTEST_XMLFILE" ]; then
       echo "JUnit report missing:" \
            "generating fake JUnit report file from $GTEST_OUTFILE and saving it to $GTEST_XMLFILE"
-      zcat $GTEST_OUTFILE | $ROOT/build-support/parse_test_failure.py -x > $GTEST_XMLFILE
+      zcat $GTEST_OUTFILE | $SOURCE_ROOT/build-support/parse_test_failure.py -x > $GTEST_XMLFILE
     fi
   done
 fi
@@ -283,8 +285,8 @@ if [ "$BUILD_JAVA" == "1" ]; then
   # Make sure we use JDK7
   export JAVA_HOME=$JAVA7_HOME
   export PATH=$JAVA_HOME/bin:$PATH
-  pushd java
-  export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.txt history_size=7"
+  pushd $SOURCE_ROOT/java
+  export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt history_size=7"
   set -x
   VALIDATE_CSD_FLAG=""
   if [ "$VALIDATE_CSD" == "1" ]; then
@@ -315,13 +317,14 @@ fi
 if [ "$BUILD_PYTHON" == "1" ]; then
   # Failing to compile the Python client should result in a build failure
   set -e
-  export KUDU_HOME=$(pwd)
-  pushd python
+  export KUDU_HOME=$SOURCE_ROOT
+  export KUDU_BUILD=$BUILD_ROOT
+  pushd $SOURCE_ROOT/python
 
   # Create a sane test environment
-  rm -Rf test_environment
-  virtualenv test_environment
-  source test_environment/bin/activate
+  rm -Rf $KUDU_BUILD/py_env
+  virtualenv $KUDU_BUILD/py_env
+  source $KUDU_BUILD/py_env/bin/activate
   pip install --upgrade pip
   CC=$CLANG CXX=$CLANG++ pip install --disable-pip-version-check -r requirements.txt
 
@@ -329,8 +332,8 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   CC=$CLANG CXX=$CLANG++ python setup.py build_ext
   set +e
   python setup.py test \
-    --addopts="kudu --junit-xml=$KUDU_HOME/build/test-logs/python_client.xml" \
-    2> $KUDU_HOME/build/test-logs/python_client.log || EXIT_STATUS=$?
+    --addopts="kudu --junit-xml=$KUDU_BUILD/test-logs/python_client.xml" \
+    2> $KUDU_BUILD/test-logs/python_client.log || EXIT_STATUS=$?
 fi
 
 set -e

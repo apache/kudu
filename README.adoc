@@ -21,6 +21,17 @@
 Follow the steps in the http://getkudu.io/docs/installation.html#_build_from_source[documentation]
 to build and install Kudu from source
 
+=== Building Kudu out of tree
+
+A single Kudu source tree may be used for multiple builds, each with its
+own build directory. Build directories may be placed anywhere in the
+filesystem with the exception of the root directory of the source tree. The
+Kudu build is invoked with a working directory of the build directory
+itself, so you must ensure it exists (i.e. create it with _mkdir -p_).
+
+The rest of this document assumes the build directory
+_<root directory of kudu source tree>/build/debug_.
+
 === Automatic rebuilding of dependencies
 
 The script `thirdparty/build-if-necessary.sh` is invoked by cmake, so
@@ -32,7 +43,8 @@ To disable the automatic invocation of `build-if-necessary.sh`, set the
 
 [source,bash]
 ----
-$ NO_REBUILD_THIRDPARTY=1 cmake .
+$ cd build/debug
+$ NO_REBUILD_THIRDPARTY=1 cmake ../..
 ----
 
 This can be particularly useful when trying to run tools like `git bisect`
@@ -46,45 +58,48 @@ between two commits which may have different dependencies.
 # Add <root of kudu tree>/thirdparty/installed/bin to your $PATH
 # before other parts of $PATH that may contain cmake, such as /usr/bin
 # For example: "export PATH=$HOME/git/kudu/thirdparty/installed/bin:$PATH"
-# if using bash
-$ cmake .
+# if using bash.
+$ mkdir -p build/debug
+$ cd build/debug
+$ cmake ../..
 $ make -j8  # or whatever level of parallelism your machine can handle
 ----
 
 The build artifacts, including the test binaries, will be stored in
-_build/latest/_, which itself is a symlink to a build-type specific
-directory such as _build/debug_ or _build/release_.
+_build/debug/latest/_.
 
 To omit the Kudu unit tests during the build, add -DNO_TESTS=1 to the
 invocation of cmake. For example:
 
 [source,bash]
 ----
-$ cmake -DNO_TESTS=1 .
+$ cd build/debug
+$ cmake -DNO_TESTS=1 ../..
 ----
 
 == Running unit/functional tests
 
 To run the Kudu unit tests, you can use the `ctest` command from within the
-root of the Kudu repository:
+_build/debug_ directory:
 
 [source,bash]
 ----
+$ cd build/debug
 $ ctest -j8
 ----
 
 This command will report any tests that failed, and the test logs will be
-written to _build/test-logs_.
+written to _build/debug/test-logs_.
 
 Individual tests can be run by directly invoking the test binaries in
-_build/latest_. Since Kudu uses the Google C++ Test Framework (gtest),
+_build/debug/latest_. Since Kudu uses the Google C++ Test Framework (gtest),
 specific test cases can be run with gtest flags:
 
 [source,bash]
 ----
 # List all the tests within a test binary, then run a single test
-$ ./build/latest/tablet-test --gtest_list_tests
-$ ./build/latest/tablet-test --gtest_filter=TestTablet/9.TestFlush
+$ build/debug/latest/tablet-test --gtest_list_tests
+$ build/debug/latest/tablet-test --gtest_filter=TestTablet/9.TestFlush
 ----
 
 gtest also allows more complex filtering patterns. See the upstream
@@ -100,12 +115,13 @@ before pushing. To do so, you'll need to build using `clang`:
 
 [source,bash]
 ----
-$ rm -Rf CMakeCache.txt CMakeFiles/
-$ CC=$(pwd)/thirdparty/clang-toolchain/bin/clang \
-  CXX=$(pwd)/thirdparty/clang-toolchain/bin/clang++ \
-  cmake -DKUDU_USE_ASAN=1 .
+$ mkdir -p build/asan
+$ cd build/asan
+$ CC=../../thirdparty/clang-toolchain/bin/clang \
+  CXX=../../thirdparty/clang-toolchain/bin/clang++ \
+  cmake -DKUDU_USE_ASAN=1 ../..
 $ make -j8
-$ make test
+$ ctest -j8
 ----
 
 The tests will run significantly slower than without ASAN enabled, and if any
@@ -115,10 +131,11 @@ command like:
 
 [source,bash]
 ----
-$ build/latest/failing-test 2>&1 | thirdparty/asan_symbolize.py | c++filt | less
+$ cd build/asan
+$ ctest -R failing-test
 ----
 
-to get a proper symbolized stack trace.
+to run just the failed test.
 
 NOTE: For more information on AddressSanitizer, please see the
 http://clang.llvm.org/docs/AddressSanitizer.html[ASAN web page].
@@ -149,11 +166,12 @@ and aborts if it detects memory leaks in your program.
 
 [source,bash]
 ----
-$ rm -Rf CMakeCache.txt CMakeFiles/
-$ cmake .
-$ make -j
+$ mkdir -p build/leakcheck
+$ cd build/leakcheck
+$ cmake ../..
+$ make -j8
 $ # Note: LP_BIND_NOW=1 required below, see: https://code.google.com/p/gperftools/issues/detail?id=497
-$ PPROF_PATH=thirdparty/installed/bin/pprof HEAPCHECK=normal LD_BIND_NOW=1 ctest -j8
+$ PPROF_PATH=../../thirdparty/installed/bin/pprof HEAPCHECK=normal LD_BIND_NOW=1 ctest -j8
 ----
 
 NOTE: For more information on the heap checker, please see:
@@ -173,9 +191,10 @@ recompile, and run tests. For example:
 
 [source,bash]
 ----
-$ rm -Rf CMakeCache.txt CMakeFiles/
-$ CC=$(pwd)/thirdparty/clang-toolchain/bin/clang \
-    CXX=$(pwd)/thirdparty/clang-toolchain/bin/clang++ \
+$ mkdir -p build/tsan
+$ cd build/tsan
+$ CC=../../thirdparty/clang-toolchain/bin/clang \
+    CXX=../../thirdparty/clang-toolchain/bin/clang++ \
     cmake -DKUDU_USE_TSAN=1 .
 $ make -j8
 $ ctest -j8
@@ -185,7 +204,7 @@ $ ctest -j8
 [NOTE]
 ====
 Note that we rely on a list of runtime suppressions in _build-support/tsan-suppressions.txt_.
-If you simply run a unit test like _build/latest/foo-test_, you won't get these suppressions.
+If you simply run a unit test like _build/tsan/latest/foo-test_, you won't get these suppressions.
 Instead, use a command like:
 
 [source,bash]
@@ -193,7 +212,7 @@ Instead, use a command like:
 $ ctest -R foo-test
 ----
 
-...and then view the logs in _build/test-logs/_
+...and then view the logs in _build/tsan/test-logs/_
 
 In order for all of the suppressions to work, you need libraries with debug
 symbols installed, particularly for libstdc\+\+. On Ubuntu 13.10, the package
@@ -222,7 +241,9 @@ and use the following flags:
 
 [source,bash]
 ----
-$ cmake -DKUDU_GENERATE_COVERAGE=1 .
+$ mkdir -p build/coverage
+$ cd build/coverage
+$ cmake -DKUDU_GENERATE_COVERAGE=1 ../..
 $ make -j4
 $ ctest -j4
 ----
@@ -284,7 +305,7 @@ including Javadoc documentation, you may run the following command:
 
 [source,bash]
 ----
-$ ./docs/support/script/make_site.sh build/site # here, build/site is your desired output directory
+$ ./docs/support/script/make_site.sh
 ----
 
 This script will use your local Git repository to check out a shallow clone of
@@ -292,6 +313,7 @@ the 'gh-pages' branch and use `make_docs.sh` to generate the HTML documentation
 for the web site. It will also build the Javadoc documentation. These will be
 placed inside the checked-out web site, along with a tarball containing only
 the generated documentation (the _docs/_ and _apidocs/_ paths on the web site).
+Everything can be found in the _build/site_ subdirectory.
 
 You can proceed to commit the changes in the pages repository and send a code
 review for your changes. In the future, this step may be automated whenever
@@ -329,7 +351,7 @@ dynamic linking explicitly, run:
 
 [source,bash]
 ----
-$ cmake -DKUDU_LINK=dynamic .
+$ cmake -DKUDU_LINK=dynamic ../..
 ----
 
 Subsequent builds will create shared objects instead of archives and use them when
@@ -348,7 +370,7 @@ Eclipse can be used as an IDE for Kudu. To generate Eclipse project files, run:
 [source,bash]
 ----
 $ rm -rf CMakeCache.txt CMakeFiles/
-$ cmake -G "Eclipse CDT4 - Unix Makefiles" .
+$ cmake -G "Eclipse CDT4 - Unix Makefiles" ../..
 ----
 
 It's critical that _CMakeCache.txt_ be removed prior to running the generator,

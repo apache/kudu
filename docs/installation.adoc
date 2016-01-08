@@ -230,13 +230,20 @@ $ cd kudu
 $ thirdparty/build-if-necessary.sh
 ----
 
-. Build Kudu, using the utilities installed in the previous step. Edit the install
-prefix to the location where you would like the Kudu binaries, libraries, and headers
-installed during the `make install` step. The default value is `/usr/local/`.
+. Build Kudu, using the utilities installed in the previous step. Choose a build
+directory for the intermediate output, which can be anywhere in your filesystem
+except for the `kudu` directory itself. Edit the install prefix to the location
+where you would like the Kudu binaries, libraries, and headers installed during
+the `make install` step. The default value is `/usr/local/`.
 +
 [source,bash]
 ----
-thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release -DCMAKE_INSTALL_PREFIX=/opt/kudu
+mkdir -p build
+cd build
+../thirdparty/installed/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  -DCMAKE_INSTALL_PREFIX=/opt/kudu \
+  ..
 make -j4
 ----
 [[build_install_kudu]]
@@ -269,7 +276,11 @@ sudo yum -y install boost-static boost-devel openssl-devel cyrus-sasl-devel \
   cyrus-sasl-plain patch pkg-config make rsync vim-common gdb
 cd kudu
 thirdparty/build-if-necessary.sh
-thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+mkdir -p build
+cd build
+../thirdparty/installed/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  ..
 make -j4
 make install
 ----
@@ -307,12 +318,29 @@ $ cd kudu
 $ thirdparty/build-if-necessary.sh
 ----
 
-. Build Kudu.
+. Build Kudu, using the utilities installed in the previous step. Choose a build
+directory for the intermediate output, which can be anywhere in your filesystem
+except for the `kudu` directory itself. Edit the install prefix to the location
+where you would like the Kudu binaries, libraries, and headers installed during
+the `make install` step. The default value is `/usr/local/`.
 +
 [source,bash]
 ----
-thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+mkdir -p build
+cd build
+../thirdparty/installed/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  -DCMAKE_INSTALL_PREFIX=/opt/kudu \
+  ..
 make -j4
+----
+[[build_install_kudu]]
+. Optional: Install Kudu binaries, libraries, and headers.
+If you do not specify a `DESTDIR`, `/usr/local/` is the default.
++
+[source,bash]
+----
+sudo make DESTDIR=/opt/kudu install
 ----
 
 . Optional: Build the documentation. NOTE: This command builds local documentation that
@@ -338,7 +366,11 @@ sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
 git clone http://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
-thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+mkdir -p build
+cd build
+../thirdparty/installed/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  ..
 make -j4
 make install
 ----
@@ -387,11 +419,14 @@ $ cd kudu
 $ thirdparty/build-if-necessary.sh
 ----
 
-. Build Kudu.
+. Build Kudu. Choose a build directory for the intermediate output, which can be
+anywhere in your filesystem except for the `kudu` directory itself.
 +
 [source,bash]
 ----
-thirdparty/installed/bin/cmake .
+mkdir -p build
+cd build
+../thirdparty/installed/bin/cmake ..
 make -j4
 ----
 
@@ -410,7 +445,9 @@ brew link -f openssl
 git clone http://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
-thirdparty/installed/bin/cmake .
+mkdir -p build
+cd build
+../thirdparty/installed/bin/cmake ..
 make -j4
 ----
 ====

@@ -77,10 +77,6 @@ function(KRPC_GENERATE SRCS HDRS TGTS)
     list(APPEND ${SRCS} "${PROTO_CC_OUT}" "${SERVICE_CC}" "${PROXY_CC}")
     list(APPEND ${HDRS} "${PROTO_H_OUT}" "${SERVICE_H}" "${PROXY_H}")
 
-    if(NOT EXISTS ${PROTO_DST_ROOT}/${FIL_PT})
-        file(MAKE_DIRECTORY ${PROTO_DST_ROOT}/${FIL_PT})
-    endif()
-
     add_custom_command(
       OUTPUT "${SERVICE_CC}" "${SERVICE_H}" "${PROXY_CC}" "${PROXY_H}"
              "${PROTO_CC_OUT}" "${PROTO_H_OUT}"

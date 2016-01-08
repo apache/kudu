@@ -174,23 +174,30 @@ build_kudu() {
   export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
   # Build Kudu
-  rm -rf CMakeCache.txt CMakeFiles
+  rm -rf build
+  mkdir -p build
+  pushd build
 
   BUILD_TYPE=release
   # Workaround for gperftools issue #497
   export LD_BIND_NOW=1
 
-  $BASE_DIR/build-support/enable_devtoolset.sh $THIRDPARTY_BIN/cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
-  make clean
+  $BASE_DIR/build-support/enable_devtoolset.sh $THIRDPARTY_BIN/cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
+
   # clean up before we run
   rm -Rf /tmp/kudutpch1-$UID
   mkdir -p /tmp/kudutpch1-$UID
 
   NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
   make -j${NUM_PROCS} 2>&1 | tee build.log
+  popd
+
 }
 
 run_benchmarks() {
+  # Create output directories if needed.
+  mkdir -p "$LOGDIR"
+  mkdir -p "$OUTDIR"
 
   # run all of the variations of mt-tablet-test
   ./build/latest/mt-tablet-test \
@@ -616,17 +623,6 @@ restore_governor() {
   ensure_cpu_scaling $old_governor >/dev/null
 }
 trap restore_governor EXIT
-
-# Create output directories if needed.
-[ -d "$LOGDIR" ] || mkdir -p "$LOGDIR"
-[ -d "$OUTDIR" ] || mkdir -p "$OUTDIR"
-
-# Clean up files from previous runs.
-rm -f $LOGDIR/*.log
-rm -f $LOGDIR/*.txt
-rm -f $OUTDIR/*.tsv
-rm -f $OUTDIR/*.png
-rm -f $OUTDIR/*.html
 
 # Kick off the benchmark script.
 run $*

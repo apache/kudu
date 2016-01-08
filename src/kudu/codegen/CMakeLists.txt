@@ -55,18 +55,20 @@ set(CLANG_EXEC ${THIRDPARTY_PREFIX}/bin/clang++)
 set(IR_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/precompiled.cc)
 set(IR_OUTPUT ${BUILD_OUTPUT_ROOT_DIRECTORY}/precompiled.ll)
 set(IR_OUTPUT_CC ${IR_OUTPUT}.cc)
+
 # Retrieve all includes directories needed for precompilation
-set(IR_INCLUDES
-  -I ${CMAKE_SOURCE_DIR}/src
-  -I ${GLOG_INCLUDE_DIR}
-  -I ${GTEST_INCLUDE_DIR}
-  -I ${Boost_INCLUDE_DIR})
+get_directory_property(IR_INCLUDES
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  INCLUDE_DIRECTORIES)
+foreach(noprefix ${IR_INCLUDES})
+  set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES} -I${noprefix})
+endforeach()
 
 if (APPLE)
   # OS X keeps the libc++ headers in a non-standard location that the thirdparty
   # Clang does not know about by default.
-  set(IR_INCLUDES
-    ${IR_INCLUDES}
+  set(PREFIXED_IR_INCLUDES
+    ${PREFIXED_IR_INCLUDES}
     -cxx-isystem "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1")
 endif()
 
@@ -77,13 +79,14 @@ get_directory_property(IR_PP_DEFINITIONS
 foreach(noprefix ${IR_PP_DEFINITIONS})
     set(PREFIXED_IR_PP_DEFS ${PREFIXED_IR_PP_DEFS} -D${noprefix})
 endforeach()
+
 # Get flags related to actually compiling the source
 set(IR_FLAGS
   -S -emit-llvm
   -DIR_BUILD
   ${CMAKE_CXX_FLAGS}
   ${PREFIXED_IR_PP_DEFS}
-  ${IR_INCLUDES})
+  ${PREFIXED_IR_INCLUDES})
 separate_arguments(IR_FLAGS)
 
 # Avoid enabling ASAN in the precompiled IR.

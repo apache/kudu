@@ -53,6 +53,10 @@ else()
       twitter_demo)
     target_link_libraries(parser-test
       twitter_demo)
+    execute_process(COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/example-tweets.txt
+      ${EXECUTABLE_OUTPUT_PATH})
+    execute_process(COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/example-deletes.txt
+      ${EXECUTABLE_OUTPUT_PATH})
   endif()
 
 endif() # library checks

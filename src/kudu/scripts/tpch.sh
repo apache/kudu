@@ -96,17 +96,19 @@ THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
 export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
 # Build Kudu
-rm -rf CMakeCache.txt CMakeFiles
+rm -rf build
+mkdir -p build
+pushd build
 
 BUILD_TYPE=release
 # Workaround for gperftools issue #497
 export LD_BIND_NOW=1
 
-$ROOT/build-support/enable_devtoolset.sh $THIRDPARTY_BIN/cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
-make clean
+$ROOT/build-support/enable_devtoolset.sh $THIRDPARTY_BIN/cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
 
 NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
 make -j${NUM_PROCS} tpch1 2>&1 | tee build.log
+popd
 
 # Warming up the OS buffer.
 cat $LINEITEM_TBL_PATH > /dev/null
@@ -115,11 +117,11 @@ cat $LINEITEM_TBL_PATH > /dev/null
 rm -Rf $KUDU_DATA_DIR   # Clean up data dir.
 mkdir -p $OUTDIR        # Create log file output dir.
 
-./build/release/tpch1 -logtostderr=1 \
-                      -tpch_path_to_data=$LINEITEM_TBL_PATH \
-                      -mini_cluster_base_dir=$KUDU_DATA_DIR \
-                      -tpch_num_query_iterations=$TPCH_NUM_QUERY_ITERS \
-                      >$OUTDIR/benchmark.log 2>&1
+./build/latest/tpch1 -logtostderr=1 \
+                     -tpch_path_to_data=$LINEITEM_TBL_PATH \
+                     -mini_cluster_base_dir=$KUDU_DATA_DIR \
+                     -tpch_num_query_iterations=$TPCH_NUM_QUERY_ITERS \
+                     >$OUTDIR/benchmark.log 2>&1
 
 cat $OUTDIR/benchmark.log
 INSERT_TIME=$(grep "Time spent loading" $OUTDIR/benchmark.log | \

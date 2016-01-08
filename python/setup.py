@@ -69,13 +69,11 @@ class clean(_clean):
 
 # If we're in the context of the Kudu git repository, build against the
 # latest in-tree build artifacts
-if ('KUDU_HOME' in os.environ and
-        os.path.exists(os.path.join(os.environ['KUDU_HOME'],
-                                    "build/latest"))):
+if 'KUDU_HOME' in os.environ and 'KUDU_BUILD' in os.environ:
     sys.stderr.write("Building from in-tree build artifacts\n")
-    kudu_include_dir = os.path.join(os.environ['KUDU_HOME'], 'src')
-    kudu_lib_dir = os.path.join(os.environ['KUDU_HOME'],
-                                'build/latest/exported')
+    kudu_include_dirs = [os.path.join(os.environ['KUDU_HOME'], 'src')]
+    kudu_include_dirs.append(os.path.join(os.environ['KUDU_BUILD'], 'src'))
+    kudu_lib_dir = os.path.join(os.environ['KUDU_BUILD'], 'latest/exported')
 else:
     if os.path.exists("/usr/local/include/kudu"):
         prefix = "/usr/local"
@@ -85,10 +83,10 @@ else:
         sys.stderr.write("Cannot find installed kudu client.\n")
         sys.exit(1)
     sys.stderr.write("Building from system prefix {0}\n".format(prefix))
-    kudu_include_dir = prefix + "/include"
+    kudu_include_dirs = [prefix + "/include"]
     kudu_lib_dir = prefix + "/lib"
 
-INCLUDE_PATHS = [kudu_include_dir]
+INCLUDE_PATHS = kudu_include_dirs
 LIBRARY_DIRS = [kudu_lib_dir]
 RT_LIBRARY_DIRS = LIBRARY_DIRS
 
