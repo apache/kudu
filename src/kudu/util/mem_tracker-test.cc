@@ -297,6 +297,9 @@ TEST(MemTrackerTest, TcMallocRootTracker) {
 
   // But if we allocate something really big, we should see a change.
   gscoped_ptr<char[]> big_alloc(new char[4*1024*1024]);
+  // clang in release mode can optimize out the above allocation unless
+  // we do something with the pointer... so we just log it.
+  VLOG(8) << static_cast<void*>(big_alloc.get());
   root->UpdateConsumption();
   ASSERT_GT(root->consumption(), value);
 }
