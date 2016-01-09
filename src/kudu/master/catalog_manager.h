@@ -401,7 +401,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   bool IsInitialized() const;
 
-  virtual Status StartRemoteBootstrap(const consensus::StartRemoteBootstrapRequestPB& req) OVERRIDE;
+  virtual Status StartRemoteBootstrap(
+      const consensus::StartRemoteBootstrapRequestPB& req,
+      boost::optional<kudu::tserver::TabletServerErrorPB::Code>* error_code) OVERRIDE;
 
   // Return OK if this CatalogManager is a leader in a consensus configuration and if
   // the required leader state (metadata for tables and tablets) has

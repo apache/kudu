@@ -85,6 +85,9 @@ message TabletServerErrorPB {
 
     // The compare-and-swap specified by an atomic RPC operation failed.
     CAS_FAILED = 17;
+
+    // The requested operation is already inprogress, e.g. RemoteBootstrap.
+    ALREADY_INPROGRESS = 18;
   }
 
   // The error code.

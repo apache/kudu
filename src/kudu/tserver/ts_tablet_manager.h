@@ -145,7 +145,9 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // See the StartRemoteBootstrap() RPC declaration in consensus.proto for details.
   // Currently this runs the entire procedure synchronously.
   // TODO: KUDU-921: Run this procedure on a background thread.
-  virtual Status StartRemoteBootstrap(const consensus::StartRemoteBootstrapRequestPB& req) OVERRIDE;
+  virtual Status StartRemoteBootstrap(
+      const consensus::StartRemoteBootstrapRequestPB& req,
+      boost::optional<TabletServerErrorPB::Code>* error_code) OVERRIDE;
 
   // Generate an incremental tablet report.
   //

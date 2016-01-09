@@ -17,10 +17,12 @@
 #ifndef KUDU_TSERVER_TABLET_PEER_LOOKUP_H_
 #define KUDU_TSERVER_TABLET_PEER_LOOKUP_H_
 
+#include <boost/optional/optional_fwd.hpp>
 #include <memory>
 #include <string>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -49,7 +51,8 @@ class TabletPeerLookupIf {
 
   virtual const NodeInstancePB& NodeInstance() const = 0;
 
-  virtual Status StartRemoteBootstrap(const consensus::StartRemoteBootstrapRequestPB& req) = 0;
+  virtual Status StartRemoteBootstrap(const consensus::StartRemoteBootstrapRequestPB& req,
+                                      boost::optional<TabletServerErrorPB::Code>* error_code) = 0;
 };
 
 } // namespace tserver
