@@ -109,7 +109,8 @@ def extract_failures(log_text):
       record_error(errors_by_test, cur_test_case, error_signature)
 
     # Look for test failures
-    m = TEST_FAILURE_RE.search(line)
+    # - slight micro-optimization to check for substring before running the regex
+    m = 'Failure' in line and TEST_FAILURE_RE.search(line)
     if m:
       error_signature = m.group(0) + "\n"
       error_signature += "\n".join(remove_glog_lines(
@@ -117,7 +118,8 @@ def extract_failures(log_text):
       record_error(errors_by_test, cur_test_case, error_signature)
 
     # Look for fatal log messages (including CHECK failures)
-    m = FATAL_LOG_RE.search(line)
+    # - slight micro-optimization to check for 'F' before running the regex
+    m = line and line[0] == 'F' and FATAL_LOG_RE.search(line)
     if m:
       error_signature = m.group(1) + "\n"
       remaining_lines = consume_rest(line_iter)
@@ -224,9 +226,14 @@ def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("-x", "--xml", help="Print output in JUnit report XML format (default: plain text)",
                       action="store_true")
+  parser.add_argument("path", nargs="?", help="File to parse. If not provided, parses stdin")
   args = parser.parse_args()
 
-  log_text = sys.stdin.read(MAX_MEMORY)
+  if args.path:
+    in_file = file(args.path)
+  else:
+    in_file = sys.stdin
+  log_text = in_file.read(MAX_MEMORY)
   (tests, errors_by_test) = extract_failures(log_text)
   print_failure_summary(tests, errors_by_test, args.xml)
 
