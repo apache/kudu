@@ -29,6 +29,7 @@
 
 import optparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -36,6 +37,57 @@ import sys
 ME = os.path.abspath(__file__)
 ROOT = os.path.abspath(os.path.join(os.path.dirname(ME), ".."))
 
+def is_elf_binary(path):
+  """ Determine if the given path is an ELF binary (executable or shared library) """
+  if not os.path.isfile(path) or os.path.islink(path):
+    return False
+  try:
+    with file(path, "rb") as f:
+      magic = f.read(4)
+      return magic == "\x7fELF"
+  except:
+    # Ignore unreadable files
+    return False
+
+def fix_rpath_component(bin_path, path):
+  """
+  Given an RPATH component 'path' of the binary located at 'bin_path',
+  fix the thirdparty dir to be relative to the binary rather than absolute.
+  """
+  rel_tp = os.path.relpath(os.path.join(ROOT, "thirdparty/"),
+                           os.path.dirname(bin_path))
+  path = re.sub(r".*thirdparty/", "$ORIGIN/"+rel_tp + "/", path)
+  return path
+
+def fix_rpath(path):
+  """
+  Fix the RPATH/RUNPATH of the binary located at 'path' so that
+  the thirdparty/ directory is properly found, even though we will
+  run the binary at a different path than it was originally built.
+  """
+  # Fetch the original rpath.
+  p = subprocess.Popen(["chrpath", path],
+                       stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE)
+  stdout, stderr = p.communicate()
+  if p.returncode != 0:
+    return
+  rpath = re.search("R(?:UN)?PATH=(.+)", stdout.strip()).group(1)
+  # Fix it to be relative.
+  new_path = ":".join(fix_rpath_component(path, c) for c in rpath.split(":"))
+  # Write the new rpath back into the binary.
+  subprocess.check_call(["chrpath", "-r", new_path, path])
+
+def fixup_rpaths(root):
+  """
+  Recursively walk the directory tree 'root' and fix the RPATH for any
+  ELF files (binaries/libraries) that are found.
+  """
+  for dirpath, dirnames, filenames in os.walk(root):
+    for f in filenames:
+      p = os.path.join(dirpath, f)
+      if is_elf_binary(p):
+        fix_rpath(p)
 
 def main():
   p = optparse.OptionParser(usage="usage: %prog [options] <test-name>")
@@ -54,15 +106,25 @@ def main():
     (k, v) = env_pair.split("=", 1)
     env[k] = v
 
+  # Fix the RPATHs of any binaries. During the build, we end up with
+  # absolute paths from the build machine. This fixes the paths to be
+  # binary-relative so that we can run it on the new location.
+  #
+  # It's important to do this rather than just putting all of the thirdparty
+  # lib directories into $LD_LIBRARY_PATH below because we need to make sure
+  # that non-TSAN-instrumented runtime tools (like 'llvm-symbolizer') do _NOT_
+  # pick up the TSAN-instrumented libraries, whereas TSAN-instrumented test
+  # binaries (like 'foo_test' or 'kudu-tserver') _DO_ pick them up.
+  fixup_rpaths(os.path.join(ROOT, "build"))
+  fixup_rpaths(os.path.join(ROOT, "thirdparty"))
+
   env['LD_LIBRARY_PATH'] = ":".join(
-      [os.path.join(ROOT, "thirdparty/installed/lib"),
-       os.path.join(ROOT, "build/dist-test-system-libs/"),
-       os.path.abspath(os.path.dirname(test_exe))])
+    [os.path.join(ROOT, "build/dist-test-system-libs/"),
+     os.path.abspath(os.path.dirname(test_exe))])
+  env['GTEST_OUTPUT'] = 'xml:' + os.path.join(ROOT, 'build/test-logs/')
+  env['ASAN_SYMBOLIZER_PATH'] = os.path.join(ROOT, "thirdparty/installed/bin/llvm-symbolizer")
   rc = subprocess.call([os.path.join(ROOT, "build-support/run-test.sh")] + args,
                        env=env)
-  # 'cat' the test logs to stdout so that the user can grab them.
-  with file(os.path.join(ROOT, "build/test-logs/%s.txt" % test_name), "r") as f:
-    shutil.copyfileobj(f, sys.stdout)
   sys.exit(rc)
 
 

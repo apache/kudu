@@ -62,7 +62,8 @@ popd
 # use the one from thirdparty.
 CMAKE=$(which cmake || :)
 if [ -z "$CMAKE" ]; then
-  CMAKE=$ROOT/thirdparty/installed/bin/cmake
+  # TODO: temporary hack which assumes this script is in src/build/latest
+  CMAKE=$OUTPUT_DIR/../../thirdparty/installed/bin/cmake
 fi
 
 # Build the client samples using the client library.

@@ -22,13 +22,13 @@
 #
 # See dist_test.py --help for usage information.
 
+import argparse
 import glob
 try:
   import simplejson as json
 except:
   import json
 import logging
-import optparse
 import os
 import pprint
 import re
@@ -38,11 +38,17 @@ import shutil
 import subprocess
 import time
 
-TEST_TIMEOUT_SECS = int(os.environ.get('TEST_TIMEOUT_SECS', '400'))
+TEST_TIMEOUT_SECS = int(os.environ.get('TEST_TIMEOUT_SECS', '900'))
+ARTIFACT_ARCHIVE_GLOBS = ["build/test-logs/*"]
 ISOLATE_SERVER = os.environ.get('ISOLATE_SERVER',
                                 "http://isolate.cloudera.org:4242/")
 DIST_TEST_HOME = os.environ.get('DIST_TEST_HOME',
                                 os.path.expanduser("~/dist_test"))
+
+# The number of times that flaky tests will be retried.
+# Our non-distributed implementation sets a number of _attempts_, not a number
+# of retries, so we have to subtract 1.
+FLAKY_TEST_RETRIES = int(os.environ.get('KUDU_FLAKY_TEST_ATTEMPTS', 1)) - 1
 
 PATH_TO_REPO = "../"
 
@@ -56,15 +62,20 @@ DEPS_FOR_ALL = \
      "build-support/tsan-suppressions.txt",
      "build-support/lsan-suppressions.txt",
 
+     # The LLVM symbolizer is necessary for suppressions to work
+     "thirdparty/installed/bin/llvm-symbolizer",
+
      # Tests that use the external minicluster require these.
      # TODO: declare these dependencies per-test.
      "build/latest/kudu-tserver",
      "build/latest/kudu-master",
+     "build/latest/kudu-ts-cli",
 
      # parser-test requires these data files.
      # TODO: again, we should do this with some per-test metadata file.
-     "src/kudu/twitter-demo/example-deletes.txt",
-     "src/kudu/twitter-demo/example-tweets.txt",
+     # TODO: these are broken now that we separate source and build trees.
+     #".../example-deletes.txt",
+     #".../example-tweets.txt",
 
      # Tests that require tooling require these.
      "build/latest/kudu-admin",
@@ -110,7 +121,7 @@ def abs_to_rel(abs_path, staging):
 
 def get_test_commandlines():
   ctest_bin = os.path.join(rel_to_abs("thirdparty/installed/bin/ctest"))
-  p = subprocess.Popen([ctest_bin, "-V", "-N"], stdout=subprocess.PIPE)
+  p = subprocess.Popen([ctest_bin, "-V", "-N", "-LE", "no_dist_test"], stdout=subprocess.PIPE)
   out, err = p.communicate()
   if p.returncode != 0:
     print >>sys.stderr, "Unable to list tests with ctest"
@@ -197,6 +208,10 @@ def ldd_deps(exe):
 def num_shards_for_test(test_name):
   if 'raft_consensus-itest' in test_name:
     return 8
+  if 'cfile-test' in test_name:
+    return 4
+  if 'mt-tablet-test' in test_name:
+    return 4
   return 1
 
 
@@ -246,7 +261,10 @@ def create_archive_input(staging, argv,
                '-e', 'GTEST_TOTAL_SHARDS=%d' % num_shards,
                '-e', 'KUDU_TEST_TIMEOUT=%d' % (TEST_TIMEOUT_SECS - 30),
                '-e', 'KUDU_ALLOW_SLOW_TESTS=%s' % os.environ.get('KUDU_ALLOW_SLOW_TESTS', 1),
-               "--"] + argv[1:]
+               '-e', 'KUDU_COMPRESS_TEST_OUTPUT=%s' % \
+                      os.environ.get('KUDU_COMPRESS_TEST_OUTPUT', 0)]
+    command.append('--')
+    command += argv[1:]
 
     archive_json = dict(args=["-i", out_isolate,
                               "-s", out_isolate + "d"],
@@ -262,7 +280,8 @@ def create_archive_input(staging, argv,
 
 
 def create_task_json(staging,
-                     replicate_tasks=1):
+                     replicate_tasks=1,
+                     flaky_test_set=set()):
   """
   Create a task JSON file suitable for submitting to the distributed
   test execution service.
@@ -278,9 +297,18 @@ def create_task_json(staging,
   # the dumped JSON. Others list it in an 'items' dictionary.
   items = inmap.get('items', inmap)
   for k, v in items.iteritems():
+    # The key is 'foo-test.<shard>'. So, chop off the last component
+    # to get the test name
+    test_name = ".".join(k.split(".")[:-1])
+    max_retries = 0
+    if test_name in flaky_test_set:
+      max_retries = FLAKY_TEST_RETRIES
+
     tasks += [{"isolate_hash": str(v),
                "description": str(k),
-               "timeout": TEST_TIMEOUT_SECS
+               "artifact_archive_globs": ARTIFACT_ARCHIVE_GLOBS,
+               "timeout": TEST_TIMEOUT_SECS + 30,
+               "max_retries": max_retries
                }] * replicate_tasks
 
   outmap = {"tasks": tasks}
@@ -307,7 +335,7 @@ def run_isolate(staging):
     print >>sys.stderr, "Failed to run", isolate_path
     raise
 
-def submit_tasks(staging):
+def submit_tasks(staging, options):
   """
   Runs the distributed testing tool to submit the tasks in the
   provided staging directory.
@@ -322,80 +350,79 @@ def submit_tasks(staging):
     raise OSError("Cannot find path to dist_test tools")
   client_py_path = os.path.join(DIST_TEST_HOME, "client.py")
   try:
-    subprocess.check_call([client_py_path,
-                           "submit",
-                           staging.tasks_json_path()])
+    cmd = [client_py_path, "submit"]
+    if options.no_wait:
+      cmd.append('--no-wait')
+    cmd.append(staging.tasks_json_path())
+    subprocess.check_call(cmd)
   except:
     print >>sys.stderr, "Failed to run", client_py_path
     raise
 
-def run_all_tests(argv):
+def get_flakies():
+  path = os.getenv('KUDU_FLAKY_TEST_LIST')
+  if not path:
+    return set()
+  return set(l.strip() for l in file(path))
+
+def run_all_tests(parser, options):
   """
   Gets all of the test command lines from 'ctest', isolates them,
   creates a task list, and submits the tasks to the testing service.
   """
-  if len(argv) != 1:
-    print >>sys.stderr, "run-all-tests takes no arguments"
-    sys.exit(1)
-
   commands = get_test_commandlines()
   staging = StagingDir.new()
   for command in commands:
-    create_archive_input(staging, command)
+    create_archive_input(staging, command,
+        disable_sharding=options.disable_sharding)
 
   run_isolate(staging)
-  create_task_json(staging)
-  submit_tasks(staging)
+  create_task_json(staging, flaky_test_set=get_flakies())
+  submit_tasks(staging, options)
 
+def add_run_all_subparser(subparsers):
+  p = subparsers.add_parser('run-all', help='Run all of the dist-test-enabled tests')
+  p.set_defaults(func=run_all_tests)
 
-def loop_test(argv):
+def loop_test(parser, options):
   """
   Runs many instances of a user-provided test case on the testing service.
   """
-  p = optparse.OptionParser(
-      usage="usage: %prog loop [--] <test-path> [<args>]",
-      epilog="if passing arguments to the test, you may want to use a '--' " +
-             "argument before <test-path>. e.g: loop -- foo-test --gtest_opt=123")
-  p.add_option("-n", "--num-instances", dest="num_instances", type="int",
-               help="number of test instances to start", metavar="NUM",
-               default=100)
-  p.add_option("--disable-sharding", dest="disable_sharding", action="store_true",
-               help="Disable automatic sharding of tests", default=False)
-  options, args = p.parse_args()
   if options.num_instances < 1:
-    p.error("--num-instances must be >= 1")
-  if len(args) < 1:
-    p.error("no test command specified")
-    sys.exit(1)
-
-  command = ["run-test.sh"] + args
+    parser.error("--num-instances must be >= 1")
+  command = ["run-test.sh", options.cmd] + options.args
   staging = StagingDir.new()
   create_archive_input(staging, command,
                        disable_sharding=options.disable_sharding)
   run_isolate(staging)
   create_task_json(staging, options.num_instances)
-  submit_tasks(staging)
+  submit_tasks(staging, options)
 
-
-def usage(argv):
-  print >>sys.stderr, "usage: %s <command> [<args>]" % os.path.basename(argv[0])
-  print >>sys.stderr, """Commands:
-    run-all Run all unit tests defined by ctest
-    loop    Run a single test many times"""
-  print >>sys.stderr, "%s <command> --help may provide further info" % argv[0]
+def add_loop_test_subparser(subparsers):
+  p = subparsers.add_parser('loop', help='Run many instances of the same test',
+      epilog="if passing arguments to the test, you may want to use a '--' " +
+             "argument before <test-path>. e.g: loop -- foo-test --gtest_opt=123")
+  p.add_argument("--num-instances", "-n", dest="num_instances", type=int,
+                 help="number of test instances to start", metavar="NUM",
+                 default=100)
+  p.add_argument("cmd", help="test binary")
+  p.add_argument("args", nargs=argparse.REMAINDER, help="test arguments")
+  p.set_defaults(func=loop_test)
 
 
 def main(argv):
-  if len(argv) < 2:
-    usage(argv)
-    sys.exit(1)
-  command = argv[1]
-  del argv[1]
-  if command == "run-all":
-    run_all_tests(argv)
-  elif command == "loop":
-    loop_test(argv)
+  logging.basicConfig(level=logging.INFO)
+  p = argparse.ArgumentParser()
+  p.add_argument("--disable-sharding", dest="disable_sharding", action="store_true",
+                 help="Disable automatic sharding of tests", default=False)
+  p.add_argument("--no-wait", dest="no_wait", action="store_true",
+                 help="Return without waiting for the job to complete", default=False)
+  sp = p.add_subparsers()
+  add_loop_test_subparser(sp)
+  add_run_all_subparser(sp)
+  args = p.parse_args(argv)
+  args.func(p, args)
 
 
 if __name__ == "__main__":
-  main(sys.argv)
+  main(sys.argv[1:])

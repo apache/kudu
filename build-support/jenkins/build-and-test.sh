@@ -47,6 +47,12 @@
 #     This must be configured for flaky test resistance or test result
 #     reporting to work.
 #
+#   ENABLE_DIST_TEST  Default: 0
+#     If set to 1, will submit C++ tests to be run by the distributed
+#     test runner instead of running them locally. This requires that
+#     $DIST_TEST_HOME be set to a working dist_test checkout (and that
+#     dist_test itself be appropriately configured to point to a cluster)
+#
 #   BUILD_JAVA        Default: 1
 #     Build and test java code if this is set to 1.
 #
@@ -156,12 +162,12 @@ rm -rf $SOURCE_ROOT/CMakeCache.txt $SOURCE_ROOT/CMakeFiles
 cd $BUILD_ROOT
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   $SOURCE_ROOT/build-support/enable_devtoolset.sh \
-    "CC=$CLANG CXX=$CLANG++ $THIRDPARTY_BIN/cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 $SOURCE_ROOT"
+    "env CC=$CLANG CXX=$CLANG++ $THIRDPARTY_BIN/cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 $SOURCE_ROOT"
   BUILD_TYPE=fastdebug
   BUILD_PYTHON=0
 elif [ "$BUILD_TYPE" = "TSAN" ]; then
   $SOURCE_ROOT/build-support/enable_devtoolset.sh \
-    "CC=$CLANG CXX=$CLANG++ $THIRDPARTY_BIN/cmake -DKUDU_USE_TSAN=1 $SOURCE_ROOT"
+    "env CC=$CLANG CXX=$CLANG++ $THIRDPARTY_BIN/cmake -DKUDU_USE_TSAN=1 $SOURCE_ROOT"
   BUILD_TYPE=fastdebug
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
   BUILD_PYTHON=0
@@ -210,7 +216,15 @@ if [ "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
   fi
 fi
 
-$SOURCE_ROOT/build-support/enable_devtoolset.sh "$THIRDPARTY_BIN/cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} $SOURCE_ROOT"
+# On distributed tests, force dynamic linking even for release builds. Otherwise,
+# the test binaries are too large and we spend way too much time uploading them
+# to the test slaves.
+LINK_FLAGS=
+if [ "$ENABLE_DIST_TEST" == "1" ]; then
+  LINK_FLAGS="-DKUDU_LINK=dynamic"
+fi
+
+$SOURCE_ROOT/build-support/enable_devtoolset.sh "$THIRDPARTY_BIN/cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} $LINK_FLAGS $SOURCE_ROOT"
 
 # our tests leave lots of data lying around, clean up before we run
 if [ -d "$TEST_TMPDIR" ]; then
@@ -247,6 +261,33 @@ fi
 EXIT_STATUS=0
 
 # Run the C++ unit tests.
+if [ "$ENABLE_DIST_TEST" == "1" ]; then
+  export DIST_TEST_JOB_PATH=$BUILD_ROOT/dist-test-job-id
+  $SOURCE_ROOT/build-support/dist_test.py run-all || EXIT_STATUS=$?
+  $DIST_TEST_HOME/client.py fetch --artifacts -d $TEST_LOGDIR
+  # Fetching the artifacts expands each log into its own directory.
+  # Move them back into the main log directory
+  rm -f $TEST_LOGDIR/*zip
+  for arch_dir in $TEST_LOGDIR/* ; do
+    # In the case of sharded tests, we'll have multiple subdirs
+    # which contain files of the same name. We need to disambiguate
+    # when we move back. We can grab the shard index from the task name
+    # which is in the archive directory name.
+    shard_idx=$(echo $arch_dir | perl -ne '
+      if (/(\d+)$/) {
+        print $1;
+      } else {
+        print "unknown_shard";
+      }')
+    for log_file in $arch_dir/build/test-logs/* ; do
+      mv $log_file $TEST_LOGDIR/${shard_idx}_$(basename $log_file)
+    done
+    rm -Rf $arch_dir
+  done
+  # Still need to run a few non-dist-test-capable tests locally.
+  EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -L no_dist_test"
+fi
+
 $THIRDPARTY_BIN/ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS || EXIT_STATUS=$?
 
 if [ $EXIT_STATUS != 0 ]; then

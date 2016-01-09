@@ -47,7 +47,9 @@ else()
 
   # Tests
   ADD_KUDU_TEST(oauth-test)
-  ADD_KUDU_TEST(parser-test)
+  # parser-test relies on symlinked data files which we can't currently copy correctly
+  # to the cluster.
+  ADD_KUDU_TEST(parser-test LABELS no_dist_test)
   if(NOT "${NO_TESTS}")
     target_link_libraries(oauth-test
       twitter_demo)
