@@ -1701,7 +1701,9 @@ const NodeInstancePB& CatalogManager::NodeInstance() const {
   return master_->instance_pb();
 }
 
-Status CatalogManager::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB& req) {
+Status CatalogManager::StartRemoteBootstrap(
+    const StartRemoteBootstrapRequestPB& req,
+    boost::optional<kudu::tserver::TabletServerErrorPB::Code>* error_code) {
   return Status::NotSupported("Remote bootstrap not yet implemented for the master tablet");
 }
 

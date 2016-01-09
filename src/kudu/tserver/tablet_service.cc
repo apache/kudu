@@ -956,10 +956,11 @@ void ConsensusServiceImpl::StartRemoteBootstrap(const StartRemoteBootstrapReques
   if (!CheckUuidMatchOrRespond(tablet_manager_, "StartRemoteBootstrap", req, resp, context)) {
     return;
   }
-  Status s = tablet_manager_->StartRemoteBootstrap(*req);
+  boost::optional<TabletServerErrorPB::Code> error_code;
+  Status s = tablet_manager_->StartRemoteBootstrap(*req, &error_code);
   if (!s.ok()) {
     SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         error_code.get_value_or(TabletServerErrorPB::UNKNOWN_ERROR),
                          context);
     return;
   }

@@ -90,8 +90,11 @@ Status RemoteBootstrapSession::Init() {
   // All subsequent requests should reuse the opened blocks.
   vector<BlockIdPB> data_blocks;
   TabletMetadata::CollectBlockIdPBs(tablet_superblock_, &data_blocks);
+  LOG(INFO) << "T " << tablet_peer_->tablet_id()
+            << " P " << tablet_peer_->consensus()->peer_uuid()
+            << ": Remote bootstrap: Opening " << data_blocks.size() << " blocks";
   for (const BlockIdPB& block_id : data_blocks) {
-    LOG(INFO) << "Opening block " << block_id.DebugString();
+    VLOG(1) << "Opening block " << block_id.DebugString();
     RETURN_NOT_OK(OpenBlockUnlocked(BlockId::FromPB(block_id)));
   }
 

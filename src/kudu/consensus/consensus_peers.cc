@@ -301,10 +301,15 @@ Status Peer::SendRemoteBootstrapRequest() {
 }
 
 void Peer::ProcessRemoteBootstrapResponse() {
-  // We treat remote bootstrap as fire-and-forget.
-  if (rb_response_.has_error()) {
-    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin remote bootstrap on peer: "
-                                      << rb_response_.ShortDebugString();
+  if (controller_.status().ok() && rb_response_.has_error()) {
+    // ALREADY_INPROGRESS is expected, so we do not log this error.
+    if (rb_response_.error().code() ==
+        kudu::tserver::TabletServerErrorPB::TabletServerErrorPB::ALREADY_INPROGRESS) {
+      queue_->NotifyPeerIsResponsiveDespiteError(peer_pb_.permanent_uuid());
+    } else {
+      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin remote bootstrap on peer: "
+                                        << rb_response_.ShortDebugString();
+    }
   }
   sem_.Release();
 }

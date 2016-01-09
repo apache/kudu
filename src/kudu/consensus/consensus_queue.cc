@@ -313,7 +313,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   }
 
   if (PREDICT_FALSE(peer->needs_remote_bootstrap)) {
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Peer needs remote bootstrap: " << peer->ToString();
+    VLOG_WITH_PREFIX_UNLOCKED(1) << "Peer needs remote bootstrap: " << peer->ToString();
     *needs_remote_bootstrap = true;
     return Status::OK();
   }
@@ -499,7 +499,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
           << response.ShortDebugString();
 
       peer->needs_remote_bootstrap = true;
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Marked peer as needing remote bootstrap: "
+      VLOG_WITH_PREFIX_UNLOCKED(1) << "Marked peer as needing remote bootstrap: "
                                      << peer->ToString();
       *more_pending = true;
       return;

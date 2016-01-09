@@ -337,7 +337,9 @@ Status TSTabletManager::CheckLeaderTermNotLower(const string& tablet_id,
   return Status::OK();
 }
 
-Status TSTabletManager::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB& req) {
+Status TSTabletManager::StartRemoteBootstrap(
+    const StartRemoteBootstrapRequestPB& req,
+    boost::optional<TabletServerErrorPB::Code>* error_code) {
   const string& tablet_id = req.tablet_id();
   const string& bootstrap_peer_uuid = req.bootstrap_peer_uuid();
   HostPort bootstrap_peer_addr;
@@ -356,8 +358,12 @@ Status TSTabletManager::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB
       meta = old_tablet_peer->tablet_metadata();
       replacing_tablet = true;
     }
-    RETURN_NOT_OK(StartTabletStateTransitionUnlocked(tablet_id, "remote bootstrapping tablet",
-                                                     &deleter));
+    Status ret = StartTabletStateTransitionUnlocked(tablet_id, "remote bootstrapping tablet",
+                                                    &deleter);
+    if (!ret.ok()) {
+      *error_code = TabletServerErrorPB::ALREADY_INPROGRESS;
+      return ret;
+    }
   }
 
   if (replacing_tablet) {
