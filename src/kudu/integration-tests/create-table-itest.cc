@@ -30,6 +30,7 @@ using std::vector;
 
 METRIC_DECLARE_entity(server);
 METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_CreateTablet);
+METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet);
 
 namespace kudu {
 
@@ -76,6 +77,20 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
         &num_create_attempts));
     LOG(INFO) << "Waiting for the master to retry creating the tablet 3 times... "
               << num_create_attempts << " RPCs seen so far";
+
+    int64_t num_delete_tablet_rpc;
+    ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
+        &METRIC_ENTITY_server,
+        "kudu.tabletserver",
+        &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
+        "total_count",
+        &num_delete_tablet_rpc));
+    // When attempting to replace old tablet and create new tablet,
+    // master should also send delete tablet rpc to tablet servers.
+    // There may be race for async create/delete rpcs, but there
+    // absolute difference should be less than or equal to 1.
+    ASSERT_GE(num_delete_tablet_rpc - num_create_attempts, -1);
+    ASSERT_LE(num_delete_tablet_rpc - num_create_attempts, 1);
 
     // The CreateTable operation should still be considered in progress, even though
     // we'll be successful at creating a single replica.

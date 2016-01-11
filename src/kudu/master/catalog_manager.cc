@@ -2409,6 +2409,19 @@ void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tab
   WARN_NOT_OK(call->Run(), "Failed to send alter table request");
 }
 
+void CatalogManager::DeleteTabletReplicas(
+    const TabletInfo* tablet,
+    const std::string& msg) {
+  TabletInfo::ReplicaMap locations;
+  tablet->GetReplicaLocations(&locations);
+  LOG(INFO) << "Sending DeleteTablet for " << locations.size()
+            << " replicas of tablet " << tablet->tablet_id();
+  for (const TabletInfo::ReplicaMap::value_type& r : locations) {
+    SendDeleteTabletRequest(tablet->tablet_id(), TABLET_DATA_DELETED,
+                            boost::none, tablet->table(), r.second.ts_desc, msg);
+  }
+}
+
 void CatalogManager::DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>& table) {
   vector<scoped_refptr<TabletInfo> > tablets;
   table->GetAllTablets(&tablets);
@@ -2416,14 +2429,7 @@ void CatalogManager::DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>
   string deletion_msg = "Table deleted at " + LocalTimeAsString();
 
   for (const scoped_refptr<TabletInfo>& tablet : tablets) {
-    TabletInfo::ReplicaMap locations;
-    tablet->GetReplicaLocations(&locations);
-    LOG(INFO) << "Sending DeleteTablet for " << locations.size()
-              << " replicas of tablet " << tablet->tablet_id();
-    for (const TabletInfo::ReplicaMap::value_type& r : locations) {
-      SendDeleteTabletRequest(tablet->tablet_id(), TABLET_DATA_DELETED,
-                              boost::none, table, r.second.ts_desc, deletion_msg);
-    }
+    DeleteTabletReplicas(tablet.get(), deletion_msg);
 
     TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::WRITE);
     tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::DELETED, deletion_msg);
@@ -2746,6 +2752,13 @@ Status CatalogManager::ProcessPendingAssignments(
     return s;
   }
 
+  // Send DeleteTablet requests to tablet servers serving deleted tablets.
+  // This is asynchronous / non-blocking.
+  for (const TabletInfo* tablet : deferred.tablets_to_update) {
+    if (tablet->metadata().dirty().is_deleted()) {
+      DeleteTabletReplicas(tablet, tablet->metadata().dirty().pb.state_msg());
+    }
+  }
   // Send the CreateTablet() requests to the servers. This is asynchronous / non-blocking.
   SendCreateTabletRequests(deferred.needs_create_rpc);
   return Status::OK();

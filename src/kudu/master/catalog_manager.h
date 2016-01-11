@@ -560,6 +560,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // tablet.
   void SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet);
 
+  // Request tablet servers to delete all replicas of the tablet.
+  void DeleteTabletReplicas(const TabletInfo* tablet, const std::string& msg);
+
   // Marks each of the tablets in the given table as deleted and triggers requests
   // to the tablet servers to delete them.
   void DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>& table);
