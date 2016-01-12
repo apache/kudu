@@ -214,9 +214,9 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   // Add multiple tablets to this table.
   void AddTablets(const std::vector<TabletInfo*>& tablets);
 
-  // Return true if tablet with 'tablet_id' has been removed from
-  // 'tablet_map_' below.
-  bool RemoveTablet(const std::string& tablet_id);
+  // Return true if tablet with 'partition_key_start' has been
+  // removed from 'tablet_map_' below.
+  bool RemoveTablet(const std::string& partition_key_start);
 
   // This only returns tablets which are in RUNNING state.
   void GetTabletsInRange(const GetTableLocationsRequestPB* req,

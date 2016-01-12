@@ -32,6 +32,7 @@ using strings::Substitute;
 TEST(TableInfoTest, TestAssignmentRanges) {
   const string table_id = CURRENT_TEST_NAME();
   scoped_refptr<TableInfo> table(new TableInfo(table_id));
+  vector<scoped_refptr<TabletInfo> > tablets;
 
   // Define & create the splits.
   const int kNumSplits = 3;
@@ -50,6 +51,8 @@ TEST(TableInfoTest, TestAssignmentRanges) {
     meta_lock.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
 
     table->AddTablet(tablet);
+    meta_lock.Commit();
+    tablets.push_back(make_scoped_refptr(tablet));
   }
 
   // Ensure they give us what we are expecting.
@@ -72,6 +75,11 @@ TEST(TableInfoTest, TestAssignmentRanges) {
     // The tablet with range start key matching 'start_key' should be the owner.
     ASSERT_EQ(tablet_id, (*tablets_in_range.begin())->tablet_id());
     LOG(INFO) << "Key " << start_key << " found in tablet " << tablet_id;
+  }
+
+  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+    ASSERT_TRUE(table->RemoveTablet(
+        tablet->metadata().state().pb.partition().partition_key_start()));
   }
 }
 

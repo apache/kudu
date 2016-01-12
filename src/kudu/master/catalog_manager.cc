@@ -2735,8 +2735,9 @@ Status CatalogManager::ProcessPendingAssignments(
     vector<string> tablet_ids_to_remove;
     for (scoped_refptr<TabletInfo>& new_tablet : new_tablets) {
       TableInfo* table = new_tablet->table().get();
-      TableMetadataLock l_table(table, TableMetadataLock::WRITE);
-      if (table->RemoveTablet(new_tablet->tablet_id())) {
+      TableMetadataLock l_table(table, TableMetadataLock::READ);
+      if (table->RemoveTablet(
+          new_tablet->metadata().dirty().pb.partition().partition_key_start())) {
         VLOG(1) << "Removed tablet " << new_tablet->tablet_id() << " from "
             "table " << l_table.data().name();
       }
@@ -3113,14 +3114,9 @@ std::string TableInfo::ToString() const {
   return Substitute("$0 [id=$1]", l.data().pb.name(), table_id_);
 }
 
-bool TableInfo::RemoveTablet(const string& tablet_id) {
+bool TableInfo::RemoveTablet(const std::string& partition_key_start) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  if (tablet_map_.find(tablet_id) != tablet_map_.end()) {
-    CHECK_EQ(tablet_map_.erase(tablet_id), 1)
-        << "Unable to erase tablet " << tablet_id << " from TableInfo.";
-    return true;
-  }
-  return false;
+  return EraseKeyReturnValuePtr(&tablet_map_, partition_key_start) != NULL;
 }
 
 void TableInfo::AddTablet(TabletInfo *tablet) {
