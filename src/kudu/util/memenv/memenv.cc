@@ -130,7 +130,9 @@ class FileState : public RefCountedThreadSafe<FileState> {
 
   size_t memory_footprint() const {
     size_t size = kudu_malloc_usable_size(this);
-    size += kudu_malloc_usable_size(blocks_.data());
+    if (blocks_.capacity() > 0) {
+      size += kudu_malloc_usable_size(blocks_.data());
+    }
     for (uint8_t* block : blocks_) {
       size += kudu_malloc_usable_size(block);
     }

@@ -349,13 +349,20 @@ string Schema::DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) co
 }
 
 size_t Schema::memory_footprint_excluding_this() const {
-  size_t size = kudu_malloc_usable_size(cols_.data());
+  size_t size = 0;
   for (const ColumnSchema& col : cols_) {
     size += col.memory_footprint_excluding_this();
   }
 
-  size += kudu_malloc_usable_size(col_ids_.data());
-  size += kudu_malloc_usable_size(col_offsets_.data());
+  if (cols_.capacity() > 0) {
+    size += kudu_malloc_usable_size(cols_.data());
+  }
+  if (col_ids_.capacity() > 0) {
+    size += kudu_malloc_usable_size(col_ids_.data());
+  }
+  if (col_offsets_.capacity() > 0) {
+    size += kudu_malloc_usable_size(col_offsets_.data());
+  }
   size += name_to_index_bytes_;
   size += id_to_index_.memory_footprint_excluding_this();
 
