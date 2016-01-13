@@ -59,8 +59,8 @@ done
 # We also enable -fno-omit-frame-pointer so that profiling tools which
 # use frame-pointer based stack unwinding can function correctly.
 EXTRA_CFLAGS="$CFLAGS $EXTRA_CFLAGS -fno-omit-frame-pointer"
-EXTRA_CXXFLAGS="$CXXFLAGS $EXTRA_CXXFLAGS -fno-omit-frame-pointer -O2"
-EXTRA_LDFLAGS="$LDFLAGS $EXTRA_LDFLAGS"
+EXTRA_CXXFLAGS="$CXXFLAGS $EXTRA_CXXFLAGS -I${PREFIX_COMMON}/include -fno-omit-frame-pointer -O2"
+EXTRA_LDFLAGS="$LDFLAGS $EXTRA_LDFLAGS -L${PREFIX_COMMON}/lib"
 EXTRA_LIBS="$LIBS $EXTRA_LIBS"
 
 if [[ "$OSTYPE" =~ ^linux ]]; then

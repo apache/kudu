@@ -111,7 +111,7 @@ build_gflags() {
   cd $GFLAGS_DIR
   CFLAGS="$EXTRA_CFLAGS" \
     CXXFLAGS="$EXTRA_CXXFLAGS" \
-    LDFLAGS="-L$PREFIX/lib $EXTRA_LDFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
     ./configure --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
@@ -128,8 +128,7 @@ build_libunwind() {
 build_glog() {
   cd $GLOG_DIR
   CXXFLAGS="$EXTRA_CXXFLAGS" \
-    LDFLAGS="-L$PREFIX/lib $EXTRA_LDFLAGS" \
-    CPPFLAGS="-I$PREFIX/include" \
+    LDFLAGS="$EXTRA_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
     ./configure --with-pic --prefix=$PREFIX --with-gflags=$PREFIX
   make -j$PARALLEL install
