@@ -89,7 +89,7 @@ if [ -f "$TOOLCHAIN" ]; then
 fi
 
 # Build thirdparty
-$ROOT/thirdparty/build-if-necessary.sh
+$ROOT/build-support/enable_devtoolset.sh $ROOT/thirdparty/build-if-necessary.sh
 
 # PATH=<thirdparty_stuff>:<toolchain_stuff>:$PATH
 THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
@@ -102,7 +102,7 @@ BUILD_TYPE=release
 # Workaround for gperftools issue #497
 export LD_BIND_NOW=1
 
-$THIRDPARTY_BIN/cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+$ROOT/build-support/enable_devtoolset.sh $THIRDPARTY_BIN/cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
 make clean
 
 NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)

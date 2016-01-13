@@ -167,7 +167,7 @@ build_kudu() {
   fi
 
   # Build thirdparty
-  thirdparty/build-if-necessary.sh
+  $BASE_DIR/build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 
   # PATH=<thirdparty_stuff>:<toolchain_stuff>:$PATH
   THIRDPARTY_BIN=$BASE_DIR/thirdparty/installed/bin
@@ -180,7 +180,7 @@ build_kudu() {
   # Workaround for gperftools issue #497
   export LD_BIND_NOW=1
 
-  $THIRDPARTY_BIN/cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+  $BASE_DIR/build-support/enable_devtoolset.sh $THIRDPARTY_BIN/cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
   make clean
   # clean up before we run
   rm -Rf /tmp/kudutpch1-$UID
