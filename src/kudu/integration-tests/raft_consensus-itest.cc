@@ -2417,6 +2417,50 @@ TEST_F(RaftConsensusITest, TestChangeConfigRejectedUnlessNoopReplicated) {
   ASSERT_STR_CONTAINS(s.ToString(), "Latest committed op is not from this term");
 }
 
+// Test that if for some reason none of the transactions can be prepared, that it will come
+// back as an error in UpdateConsensus().
+TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
+  const int kNumOps = 10;
+
+  vector<string> ts_flags, master_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  BuildAndStart(ts_flags, master_flags);
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(3, tservers.size());
+
+  // Shutdown the other servers so they don't get chatty.
+  cluster_->tablet_server_by_uuid(tservers[1]->uuid())->Shutdown();
+  cluster_->tablet_server_by_uuid(tservers[2]->uuid())->Shutdown();
+
+  // Configure the first server to fail all on prepare.
+  TServerDetails *replica_ts = tservers[0];
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+                "follower_fail_all_prepare", "true"));
+
+  // Pretend to be the leader and send a request that should return an error.
+  ConsensusRequestPB req;
+  ConsensusResponsePB resp;
+  RpcController rpc;
+  req.set_dest_uuid(replica_ts->uuid());
+  req.set_tablet_id(tablet_id_);
+  req.set_caller_uuid(tservers[2]->instance_id.permanent_uuid());
+  req.set_caller_term(0);
+  req.mutable_committed_index()->CopyFrom(MakeOpId(0, 0));
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(0, 0));
+  for (int i = 0; i < kNumOps; i++) {
+    AddOp(MakeOpId(0, 1 + i), &req);
+  }
+
+  ASSERT_OK(replica_ts->consensus_proxy->UpdateConsensus(req, &resp, &rpc));
+  LOG(INFO) << resp.ShortDebugString();
+  ASSERT_TRUE(resp.status().has_error());
+  ASSERT_EQ(consensus::ConsensusErrorPB::CANNOT_PREPARE, resp.status().error().code());
+  ASSERT_STR_CONTAINS(resp.ShortDebugString(), "Could not prepare a single transaction");
+}
+
 }  // namespace tserver
 }  // namespace kudu
 

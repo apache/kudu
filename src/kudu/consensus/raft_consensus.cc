@@ -95,6 +95,11 @@ DEFINE_bool(follower_reject_update_consensus_requests, false,
             "Warning! This is only intended for testing.");
 TAG_FLAG(follower_reject_update_consensus_requests, unsafe);
 
+DEFINE_bool(follower_fail_all_prepare, false,
+            "Whether a follower will fail preparing all transactions. "
+            "Warning! This is only intended for testing.");
+TAG_FLAG(follower_fail_all_prepare, unsafe);
+
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 
 METRIC_DEFINE_counter(tablet, follower_memory_pressure_rejections,
@@ -690,6 +695,11 @@ Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg
     return StartConsensusOnlyRoundUnlocked(msg);
   }
 
+  if (PREDICT_FALSE(FLAGS_follower_fail_all_prepare)) {
+    return Status::IllegalState("Rejected: --follower_fail_all_prepare "
+                                "is set to true.");
+  }
+
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting transaction: " << msg->get()->id().ShortDebugString();
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
   ConsensusRound* round_ptr = round.get();
@@ -1113,6 +1123,21 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
               << msg->get()->id() << ". Suppressed " << deduped_req.messages.size() <<
               " other warnings. Status for this op: " << prepare_status.ToString();
         }
+      }
+
+      // If this is empty, it means we couldn't prepare a single de-duped message. There is nothing
+      // else we can do. The leader will detect this and retry later.
+      if (deduped_req.messages.empty()) {
+        string msg = Substitute("Rejecting Update request from peer $0 for term $1. "
+                                "Could not prepare a single transaction due to: $2",
+                                request->caller_uuid(),
+                                request->caller_term(),
+                                prepare_status.ToString());
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << msg;
+        FillConsensusResponseError(response, ConsensusErrorPB::CANNOT_PREPARE,
+                                   Status::IllegalState(msg));
+        FillConsensusResponseOKUnlocked(response);
+        return Status::OK();
       }
     }
 

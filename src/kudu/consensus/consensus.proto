@@ -65,6 +65,9 @@ message ConsensusErrorPB {
     // The local replica is in the middle of servicing either another vote
     // or an update from a valid leader.
     CONSENSUS_BUSY = 8;
+
+    // The local replica was unable to prepare a single transaction.
+    CANNOT_PREPARE = 9;
   }
 
   // The error code.

@@ -244,8 +244,10 @@ void Peer::ProcessResponse() {
 
   // Pass through errors we can respond to, like not found, since in that case
   // we will need to remotely bootstrap. TODO: Handle DELETED response once implemented.
-  if (response_.has_error() &&
-      response_.error().code() != tserver::TabletServerErrorPB::TABLET_NOT_FOUND) {
+  if ((response_.has_error() &&
+      response_.error().code() != tserver::TabletServerErrorPB::TABLET_NOT_FOUND) ||
+      (response_.status().has_error() &&
+          response_.status().error().code() == consensus::ConsensusErrorPB::CANNOT_PREPARE)) {
     // Again, let the queue know that the remote is still responsive, since we
     // will not be sending this error response through to the queue.
     queue_->NotifyPeerIsResponsiveDespiteError(peer_pb_.permanent_uuid());
