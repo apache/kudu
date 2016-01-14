@@ -16,7 +16,8 @@
 // under the License.
 
 #include <algorithm>
-#include <boost/thread/thread.hpp>
+#include <boost/thread/locks.hpp>
+#include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <memory>

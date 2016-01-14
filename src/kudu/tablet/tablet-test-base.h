@@ -18,7 +18,6 @@
 #define KUDU_TABLET_TABLET_TEST_BASE_H
 
 #include <algorithm>
-#include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <limits>

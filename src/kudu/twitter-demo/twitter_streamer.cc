@@ -18,12 +18,12 @@
 #include "kudu/twitter-demo/twitter_streamer.h"
 
 #include <boost/thread/locks.hpp>
-#include <boost/thread/thread.hpp>
 #include <curl/curl.h>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <string>
 #include <string.h>
+#include <string>
+#include <thread>
 
 #include "kudu/twitter-demo/oauth.h"
 #include "kudu/gutil/macros.h"
@@ -111,7 +111,7 @@ Status TwitterStreamer::Init() {
 Status TwitterStreamer::Start() {
   CHECK(!thread_.joinable());
 
-  thread_ = boost::thread(&TwitterStreamer::StreamThread, this);
+  thread_ = thread(&TwitterStreamer::StreamThread, this);
   return Status::OK();
 }
 

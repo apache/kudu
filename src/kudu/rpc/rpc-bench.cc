@@ -15,13 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/bind.hpp>
-#include <boost/ptr_container/ptr_vector.hpp>
-#include <boost/thread/thread.hpp>
+#include <functional>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/rpc/rpc-test-base.h"
@@ -29,8 +28,10 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/test_util.h"
 
-using std::string;
+using std::bind;
 using std::shared_ptr;
+using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 
@@ -113,7 +114,7 @@ class ClientThread {
   }
 
   void Start() {
-    thread_.reset(new boost::thread(&ClientThread::Run, this));
+    thread_.reset(new thread(&ClientThread::Run, this));
   }
 
   void Join() {
@@ -138,7 +139,7 @@ class ClientThread {
     }
   }
 
-  gscoped_ptr<boost::thread> thread_;
+  unique_ptr<thread> thread_;
   RpcBench *bench_;
   int request_count_;
 };
@@ -149,11 +150,10 @@ TEST_F(RpcBench, BenchmarkCalls) {
   Stopwatch sw(Stopwatch::ALL_THREADS);
   sw.start();
 
-  boost::ptr_vector<ClientThread> threads;
+  vector<unique_ptr<ClientThread>> threads;
   for (int i = 0; i < FLAGS_client_threads; i++) {
-    auto thr = new ClientThread(this);
-    thr->Start();
-    threads.push_back(thr);
+    threads.emplace_back(new ClientThread(this));
+    threads.back()->Start();
   }
 
   SleepFor(MonoDelta::FromSeconds(FLAGS_run_seconds));
@@ -161,9 +161,9 @@ TEST_F(RpcBench, BenchmarkCalls) {
 
   int total_reqs = 0;
 
-  for (ClientThread &thr : threads) {
-    thr.Join();
-    total_reqs += thr.request_count_;
+  for (auto& thr : threads) {
+    thr->Join();
+    total_reqs += thr->request_count_;
   }
   sw.stop();
 
@@ -196,7 +196,7 @@ class ClientAsyncWorkload {
     proxy_->AddAsync(req_,
                      &resp_,
                      &controller_,
-                     boost::bind(&ClientAsyncWorkload::CallOneRpc, this));
+                     bind(&ClientAsyncWorkload::CallOneRpc, this));
   }
 
   void Start() {

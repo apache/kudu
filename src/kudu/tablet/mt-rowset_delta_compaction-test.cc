@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/thread/thread.hpp>
 #include <memory>
 
 #include "kudu/gutil/atomicops.h"

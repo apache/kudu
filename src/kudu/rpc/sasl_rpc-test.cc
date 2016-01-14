@@ -18,8 +18,8 @@
 #include "kudu/rpc/rpc-test-base.h"
 
 #include <string>
+#include <thread>
 
-#include <boost/thread/thread.hpp>
 #include <gtest/gtest.h>
 #include <sasl/sasl.h>
 
@@ -35,6 +35,7 @@
 #include "kudu/util/net/socket.h"
 
 using std::string;
+using std::thread;
 
 namespace kudu {
 namespace rpc {
@@ -74,12 +75,12 @@ static void RunNegotiationTest(socket_callable_t server_runner, socket_callable_
   ASSERT_OK(server_sock.BindAndListen(Sockaddr(), 1));
   Sockaddr server_bind_addr;
   ASSERT_OK(server_sock.GetSocketAddress(&server_bind_addr));
-  boost::thread server(RunAcceptingDelegator, &server_sock, server_runner);
+  thread server(RunAcceptingDelegator, &server_sock, server_runner);
 
   Socket client_sock;
   CHECK_OK(client_sock.Init(0));
   ASSERT_OK(client_sock.Connect(server_bind_addr));
-  boost::thread client(client_runner, &client_sock);
+  thread client(client_runner, &client_sock);
 
   LOG(INFO) << "Waiting for test threads to terminate...";
   client.join();

@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
-#include <boost/thread/thread.hpp>
 #include <boost/thread/locks.hpp>
+#include <gtest/gtest.h>
+#include <thread>
 #include <vector>
 
 #include "kudu/util/monotime.h"
 #include "kudu/util/rw_semaphore.h"
 
-using boost::thread;
+using std::thread;
 using std::vector;
 
 namespace kudu {

@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/thread/thread.hpp>
 #include <curl/curl.h>
 #include <fstream>
 #include <gflags/gflags.h>

@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/thread/thread.hpp>
+#include <boost/thread/locks.hpp>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "kudu/gutil/atomicops.h"
@@ -29,6 +30,7 @@ namespace kudu {
 using base::subtle::NoBarrier_Load;
 using base::subtle::Release_Store;
 using std::string;
+using std::thread;
 using std::vector;
 
 class RWCLockTest : public KuduTest {};
@@ -113,16 +115,16 @@ TEST_F(RWCLockTest, TestCorrectBehavior) {
   SharedState state;
   Release_Store(&state.stop, 0);
 
-  vector<boost::thread*> threads;
+  vector<thread> threads;
 
   const int kNumWriters = 5;
   const int kNumReaders = 5;
 
   for (int i = 0; i < kNumWriters; i++) {
-    threads.push_back(new boost::thread(WriterThread, &state));
+    threads.emplace_back(WriterThread, &state);
   }
   for (int i = 0; i < kNumReaders; i++) {
-    threads.push_back(new boost::thread(ReaderThread, &state));
+    threads.emplace_back(ReaderThread, &state);
   }
 
   if (AllowSlowTests()) {
@@ -133,11 +135,9 @@ TEST_F(RWCLockTest, TestCorrectBehavior) {
 
   Release_Store(&state.stop, 1);
 
-  for (boost::thread* t : threads) {
-    t->join();
-    delete t;
+  for (thread& t : threads) {
+    t.join();
   }
-
 }
 
 } // namespace kudu
