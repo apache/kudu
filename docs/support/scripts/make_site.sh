@@ -46,12 +46,12 @@ set -x
 cd "$ROOT"
 
 # Build Kudu thirdparty
-./thirdparty/build-if-necessary.sh
+$ROOT/build-support/enable_devtoolset.sh ./thirdparty/build-if-necessary.sh
 echo "Successfully built third-party dependencies."
 
 # Build the binaries so we can auto-generate the command-line references
 rm -rf CMakeCache.txt CMakeFiles
-./thirdparty/installed/bin/cmake -DNO_TESTS=1 .
+$ROOT/build-support/enable_devtoolset.sh ./thirdparty/installed/bin/cmake -DNO_TESTS=1 .
 make -j$(getconf _NPROCESSORS_ONLN)
 rm -rf CMakeCache.txt CMakeFiles
 
