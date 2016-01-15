@@ -55,10 +55,18 @@ else
 fi
 popd
 
+# Prefer the cmake on the system path, since we expect our client library
+# to be usable with older versions of cmake. But if it isn't there,
+# use the one from thirdparty.
+CMAKE=$(which cmake || :)
+if [ -z "$CMAKE" ]; then
+  CMAKE=$ROOT/thirdparty/installed/bin/cmake
+fi
+
 # Build the client samples using the client library.
 # We can just always use Make here, since we're calling cmake ourselves.
 pushd $SAMPLES_DIR
-CMAKE_PREFIX_PATH=$PREFIX_DIR cmake .
+CMAKE_PREFIX_PATH=$PREFIX_DIR $CMAKE .
 make -j$(getconf _NPROCESSORS_ONLN)
 popd
 
