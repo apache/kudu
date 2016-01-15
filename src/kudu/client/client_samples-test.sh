@@ -26,9 +26,11 @@ set -e
 cleanup() {
   if [ -n "$TS_PID" ]; then
       kill -9 "$TS_PID" || :
+      wait $TS_PID || :
   fi
   if [ -n "$MASTER_PID" ]; then
       kill -9 "$MASTER_PID" || :
+      wait $MASTER_PID || :
   fi
   if [ -n "$BASE_DIR" -a -d "$BASE_DIR" ]; then
       rm -rf "$BASE_DIR"
