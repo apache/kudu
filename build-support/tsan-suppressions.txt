@@ -47,6 +47,7 @@ race:_ULx86_64_init
 # for examples.
 race:evpipe_write
 race:evpipe_init
+race:epoll_ctl
 
 # concurrent btree uses optimistic concurrency, needs to be annotated a bunch
 # more before it would pass. Relatively confident that it is correct based on

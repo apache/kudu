@@ -24,6 +24,7 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/algorithm.h"
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -476,7 +477,9 @@ void CFileSet::Iterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   stats->clear();
   stats->reserve(col_iters_.size());
   for (const ColumnIterator* iter : col_iters_) {
+    ANNOTATE_IGNORE_READS_BEGIN();
     stats->push_back(iter->io_statistics());
+    ANNOTATE_IGNORE_READS_END();
   }
 }
 

@@ -73,7 +73,7 @@ class ExternalMiniClusterFsInspector {
   Status WaitForMinFilesInTabletWalDirOnTS(int index,
                                            const std::string& tablet_id,
                                            int count,
-                                           const MonoDelta& timeout = MonoDelta::FromSeconds(30));
+                                           const MonoDelta& timeout = MonoDelta::FromSeconds(60));
   Status WaitForReplicaCount(int expected, const MonoDelta& timeout = MonoDelta::FromSeconds(30));
   Status WaitForTabletDataStateOnTS(int index,
                                     const std::string& tablet_id,
