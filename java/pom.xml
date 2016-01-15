@@ -73,6 +73,7 @@
         <module>kudu-client</module>
         <module>kudu-client-tools</module>
         <module>kudu-mapreduce</module>
+        <module>kudu-spark</module>
     </modules>
 
     <build>
