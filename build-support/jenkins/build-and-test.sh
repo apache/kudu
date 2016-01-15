@@ -141,7 +141,11 @@ $ROOT/build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
 export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
-CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
+if which ccache >/dev/null ; then
+  CLANG=$(pwd)/build-support/ccache-clang/clang
+else
+  CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
+fi
 
 # Configure the build
 #
