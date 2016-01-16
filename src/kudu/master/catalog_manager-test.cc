@@ -77,7 +77,7 @@ TEST(TableInfoTest, TestAssignmentRanges) {
     LOG(INFO) << "Key " << start_key << " found in tablet " << tablet_id;
   }
 
-  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+  for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     ASSERT_TRUE(table->RemoveTablet(
         tablet->metadata().state().pb.partition().partition_key_start()));
   }
