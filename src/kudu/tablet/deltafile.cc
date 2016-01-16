@@ -123,7 +123,7 @@ Status DeltaFileWriter::AppendDelta<REDO>(
       << last_key_.ToString();
   }
   has_appended_ = true;
-  last_key_= key;
+  last_key_ = key;
 #endif
 
   return DoAppendDelta(key, delta);
@@ -142,7 +142,7 @@ Status DeltaFileWriter::AppendDelta<UNDO>(
       << last_key_.ToString();
   }
   has_appended_ = true;
-  last_key_= key;
+  last_key_ = key;
 #endif
 
   return DoAppendDelta(key, delta);

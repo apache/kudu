@@ -33,7 +33,7 @@ class Messenger;
 }
 
 namespace server {
-  class GenericServiceProxy;
+class GenericServiceProxy;
 }
 
 namespace tserver {

@@ -42,8 +42,8 @@ struct WriterOptions;
 //
 class PlainBitMapBlockBuilder : public BlockBuilder {
  public:
-  explicit PlainBitMapBlockBuilder()
-  : writer_(&buf_) {
+  PlainBitMapBlockBuilder()
+      : writer_(&buf_) {
     Reset();
   }
 

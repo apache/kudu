@@ -152,7 +152,7 @@ inline ColumnBlockCell ColumnBlock::cell(size_t idx) const {
 // Used by the reader and block encoders to read/write raw data.
 class ColumnDataView {
  public:
-  ColumnDataView(ColumnBlock *column_block, size_t first_row_idx = 0)
+  explicit ColumnDataView(ColumnBlock *column_block, size_t first_row_idx = 0)
     : column_block_(column_block), row_offset_(0) {
     Advance(first_row_idx);
   }

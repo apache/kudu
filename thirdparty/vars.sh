@@ -79,10 +79,11 @@ RAPIDJSON_DIR=$TP_DIR/rapidjson-${RAPIDJSON_VERSION}
 SQUEASEL_VERSION=8ac777a122fccf0358cb8562e900f8e9edd9ed11
 SQUEASEL_DIR=$TP_DIR/squeasel-${SQUEASEL_VERSION}
 
-# SVN revision of google style guide:
-# https://code.google.com/p/google-styleguide/source/list
-GSG_REVISION=134
-GSG_DIR=$TP_DIR/google-styleguide-r${GSG_REVISION}
+# git revision of google style guide:
+# https://github.com/google/styleguide
+# git archive --prefix=google-styleguide-$(git rev-parse HEAD)/ -o /tmp/google-styleguide-$(git rev-parse HEAD).tgz HEAD
+GSG_VERSION=7a179d1ac2e08a5cc1622bec900d1e0452776713
+GSG_DIR=$TP_DIR/google-styleguide-${GSG_VERSION}
 
 GCOVR_VERSION=3.0
 GCOVR_DIR=$TP_DIR/gcovr-${GCOVR_VERSION}

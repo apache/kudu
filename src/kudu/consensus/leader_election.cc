@@ -29,7 +29,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/rpc/rpc_controller.cc"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"

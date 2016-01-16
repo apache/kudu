@@ -795,7 +795,7 @@ class Schema {
 //   Schema new_schema = builder.Build();
 class SchemaBuilder {
  public:
-  explicit SchemaBuilder() { Reset(); }
+  SchemaBuilder() { Reset(); }
   explicit SchemaBuilder(const Schema& schema) { Reset(schema); }
 
   void Reset();

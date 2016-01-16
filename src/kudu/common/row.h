@@ -467,7 +467,7 @@ class ContiguousRow {
  public:
   typedef ContiguousRowCell<ContiguousRow> Cell;
 
-  ContiguousRow(const Schema* schema, uint8_t *row_data = NULL)
+  explicit ContiguousRow(const Schema* schema, uint8_t *row_data = NULL)
     : schema_(schema), row_data_(row_data) {
   }
 

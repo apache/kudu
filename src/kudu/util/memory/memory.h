@@ -476,7 +476,7 @@ class MemoryLimit : public BufferAllocator {
  public:
   // Creates a limiter based on the default, heap allocator. Quota is infinite.
   // (Can be set using SetQuota).
-  explicit MemoryLimit()
+  MemoryLimit()
       : quota_(std::numeric_limits<size_t>::max()),
         allocator_(HeapBufferAllocator::Get(), &quota_) {}
 

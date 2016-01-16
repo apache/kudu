@@ -2390,78 +2390,78 @@ TEST_F(ClientTest, TestMasterLookupPermits) {
 
 // Define callback for deadlock simulation, as well as various helper methods.
 namespace {
-  class DLSCallback : public KuduStatusCallback {
-   public:
-    explicit DLSCallback(Atomic32* i) : i(i) {
-    }
+class DLSCallback : public KuduStatusCallback {
+ public:
+  explicit DLSCallback(Atomic32* i) : i(i) {
+  }
 
-    virtual void Run(const Status& s) OVERRIDE {
-      CHECK_OK(s);
-      NoBarrier_AtomicIncrement(i, 1);
-      delete this;
-    }
-   private:
-    Atomic32* const i;
-  };
+  virtual void Run(const Status& s) OVERRIDE {
+    CHECK_OK(s);
+    NoBarrier_AtomicIncrement(i, 1);
+    delete this;
+  }
+ private:
+  Atomic32* const i;
+};
 
-  // Returns col1 value of first row.
-  int32_t ReadFirstRowKeyFirstCol(const shared_ptr<KuduTable>& tbl) {
-    KuduScanner scanner(tbl.get());
+// Returns col1 value of first row.
+int32_t ReadFirstRowKeyFirstCol(const shared_ptr<KuduTable>& tbl) {
+  KuduScanner scanner(tbl.get());
 
-    scanner.Open();
-    KuduScanBatch batch;
-    CHECK(scanner.HasMoreRows());
+  scanner.Open();
+  KuduScanBatch batch;
+  CHECK(scanner.HasMoreRows());
+  CHECK_OK(scanner.NextBatch(&batch));
+  KuduRowResult row = batch.Row(0);
+  int32_t val;
+  CHECK_OK(row.GetInt32(1, &val));
+  return val;
+}
+
+// Checks that all rows have value equal to expected, return number of rows.
+int CheckRowsEqual(const shared_ptr<KuduTable>& tbl, int32_t expected) {
+  KuduScanner scanner(tbl.get());
+  scanner.Open();
+  KuduScanBatch batch;
+  int cnt = 0;
+  while (scanner.HasMoreRows()) {
     CHECK_OK(scanner.NextBatch(&batch));
-    KuduRowResult row = batch.Row(0);
-    int32_t val;
-    CHECK_OK(row.GetInt32(1, &val));
-    return val;
-  }
-
-  // Checks that all rows have value equal to expected, return number of rows.
-  int CheckRowsEqual(const shared_ptr<KuduTable>& tbl, int32_t expected) {
-    KuduScanner scanner(tbl.get());
-    scanner.Open();
-    KuduScanBatch batch;
-    int cnt = 0;
-    while (scanner.HasMoreRows()) {
-      CHECK_OK(scanner.NextBatch(&batch));
-      for (const KuduScanBatch::RowPtr& row : batch) {
-        // Check that for every key:
-        // 1. Column 1 int32_t value == expected
-        // 2. Column 2 string value is empty
-        // 3. Column 3 int32_t value is default, 12345
-        int32_t key;
-        int32_t val;
-        Slice strval;
-        int32_t val2;
-        CHECK_OK(row.GetInt32(0, &key));
-        CHECK_OK(row.GetInt32(1, &val));
-        CHECK_OK(row.GetString(2, &strval));
-        CHECK_OK(row.GetInt32(3, &val2));
-        CHECK_EQ(expected, val) << "Incorrect int value for key " << key;
-        CHECK_EQ(strval.size(), 0) << "Incorrect string value for key " << key;
-        CHECK_EQ(12345, val2);
-        ++cnt;
-      }
+    for (const KuduScanBatch::RowPtr& row : batch) {
+      // Check that for every key:
+      // 1. Column 1 int32_t value == expected
+      // 2. Column 2 string value is empty
+      // 3. Column 3 int32_t value is default, 12345
+      int32_t key;
+      int32_t val;
+      Slice strval;
+      int32_t val2;
+      CHECK_OK(row.GetInt32(0, &key));
+      CHECK_OK(row.GetInt32(1, &val));
+      CHECK_OK(row.GetString(2, &strval));
+      CHECK_OK(row.GetInt32(3, &val2));
+      CHECK_EQ(expected, val) << "Incorrect int value for key " << key;
+      CHECK_EQ(strval.size(), 0) << "Incorrect string value for key " << key;
+      CHECK_EQ(12345, val2);
+      ++cnt;
     }
-    return cnt;
   }
+  return cnt;
+}
 
-  // Return a session "loaded" with updates. Sets the session timeout
-  // to the parameter value. Larger timeouts decrease false positives.
-  shared_ptr<KuduSession> LoadedSession(const shared_ptr<KuduClient>& client,
-                                        const shared_ptr<KuduTable>& tbl,
-                                        bool fwd, int max, int timeout) {
-    shared_ptr<KuduSession> session = client->NewSession();
-    session->SetTimeoutMillis(timeout);
-    CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    for (int i = 0; i < max; ++i) {
-      int key = fwd ? i : max - i;
-      CHECK_OK(ApplyUpdateToSession(session.get(), tbl, key, fwd));
-    }
-    return session;
+// Return a session "loaded" with updates. Sets the session timeout
+// to the parameter value. Larger timeouts decrease false positives.
+shared_ptr<KuduSession> LoadedSession(const shared_ptr<KuduClient>& client,
+                                      const shared_ptr<KuduTable>& tbl,
+                                      bool fwd, int max, int timeout) {
+  shared_ptr<KuduSession> session = client->NewSession();
+  session->SetTimeoutMillis(timeout);
+  CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  for (int i = 0; i < max; ++i) {
+    int key = fwd ? i : max - i;
+    CHECK_OK(ApplyUpdateToSession(session.get(), tbl, key, fwd));
   }
+  return session;
+}
 } // anonymous namespace
 
 // Starts many clients which update a table in parallel.

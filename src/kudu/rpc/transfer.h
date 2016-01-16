@@ -33,10 +33,10 @@
 DECLARE_int32(rpc_max_message_size);
 
 namespace google {
-  namespace protobuf {
-    class Message;
-  }
-}
+namespace protobuf {
+class Message;
+} // namespace protobuf
+} // namespace google
 
 namespace kudu {
 

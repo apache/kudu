@@ -15,6 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/delta_tracker.h"
+
+#include <set>
+
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"

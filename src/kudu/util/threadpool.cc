@@ -40,7 +40,7 @@ using strings::Substitute;
 
 class FunctionRunnable : public Runnable {
  public:
-  FunctionRunnable(boost::function<void()> func) : func_(std::move(func)) {}
+  explicit FunctionRunnable(boost::function<void()> func) : func_(std::move(func)) {}
 
   void Run() OVERRIDE {
     func_();

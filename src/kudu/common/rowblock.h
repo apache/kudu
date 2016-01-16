@@ -256,12 +256,12 @@ class RowBlockRow {
  public:
   typedef ColumnBlock::Cell Cell;
 
-  RowBlockRow(const RowBlock *row_block = NULL, size_t row_index = 0)
+  explicit RowBlockRow(const RowBlock *row_block = NULL, size_t row_index = 0)
     : row_block_(row_block), row_index_(row_index) {
   }
 
   RowBlockRow *Reset(const RowBlock *row_block, size_t row_index) {
-    row_block_= row_block;
+    row_block_ = row_block;
     row_index_ = row_index;
     return this;
   }

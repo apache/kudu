@@ -419,7 +419,7 @@ void HybridClock::SetMockClockWallTimeForTests(uint64_t now_usec) {
   CHECK(FLAGS_use_mock_wall_clock);
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_GE(now_usec, mock_clock_time_usec_);
-  mock_clock_time_usec_= now_usec;
+  mock_clock_time_usec_ = now_usec;
 }
 
 void HybridClock::SetMockMaxClockErrorForTests(uint64_t max_error_usec) {

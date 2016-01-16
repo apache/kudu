@@ -417,7 +417,7 @@ class ScopedTransaction {
   // instead of MvccManager::StartTransaction().
   //
   // The MvccManager must remain valid for the lifetime of this object.
-  ScopedTransaction(MvccManager *manager, TimestampAssignmentType assignment_type = NOW);
+  explicit ScopedTransaction(MvccManager *manager, TimestampAssignmentType assignment_type = NOW);
 
   // Like the ctor above but starts the transaction at a pre-defined timestamp.
   // When this transaction is committed it will use MvccManager::OfflineCommitTransaction()

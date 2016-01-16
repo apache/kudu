@@ -163,7 +163,7 @@ if [ ! -d $SQUEASEL_DIR ]; then
 fi
 
 if [ ! -d $GSG_DIR ]; then
-  fetch_and_expand google-styleguide-r${GSG_REVISION}.tar.gz
+  fetch_and_expand google-styleguide-${GSG_VERSION}.tar.gz
 fi
 
 if [ ! -d $GCOVR_DIR ]; then

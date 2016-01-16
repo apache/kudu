@@ -99,8 +99,7 @@ class LockTable {
   };
 
  public:
-  explicit LockTable()
-      : mask_(0), size_(0), item_count_(0) {
+  LockTable() : mask_(0), size_(0), item_count_(0) {
     Resize();
   }
 

@@ -14,22 +14,35 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_ERRNO_H
-#define KUDU_ERRNO_H
 
 #include <string>
 
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/macros.h"
+#include "kudu/util/errno.h"
+
+using std::string;
+
 namespace kudu {
 
-void ErrnoToCString(int err, char *buf, size_t buf_len);
+TEST(OsUtilTest, TestErrnoToString) {
+  int err = ENOENT;
 
-// Return a string representing an errno.
-inline static std::string ErrnoToString(int err) {
-  char buf[512];
-  ErrnoToCString(err, buf, sizeof(buf));
-  return std::string(buf);
+  // Non-truncated result.
+  ASSERT_EQ("No such file or directory", ErrnoToString(err));
+
+  // Truncated because of a short buffer.
+  char buf[2];
+  ErrnoToCString(err, buf, arraysize(buf));
+  ASSERT_EQ("N", string(buf));
+
+  // Unknown error.
+  ASSERT_EQ("Unknown error -1", ErrnoToString(-1));
+
+  // Unknown error (truncated).
+  ErrnoToCString(-1, buf, arraysize(buf));
+  ASSERT_EQ("U", string(buf));
 }
 
 } // namespace kudu
-
-#endif

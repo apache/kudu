@@ -15,24 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-/*
- * Get the POSIX strerror_r.
- *
- * By default, glibc uses its own, non-POSIX, definition of strerror_r.  We want
- * the POSIX version. 
- *
- * Note: This must come first!  If you include anything before this point, you
- * might get the non-standard strerror_r definition.
- */
-#undef _GNU_SOURCE
-#define _XOPEN_SOURCE 600
+#include "kudu/util/errno.h"
+
+#include <errno.h>
 #include <string.h>
-#define _GNU_SOURCE
-#undef _XOPEN_SOURCE
+
+#include "kudu/util/logging.h"
 
 namespace kudu {
 
 void ErrnoToCString(int err, char *buf, size_t buf_len) {
+  CHECK_GT(buf_len, 0);
+#if !defined(__GLIBC__) || \
+  ((_POSIX_C_SOURCE >= 200112 || _XOPEN_SOURCE >= 600) && !defined(_GNU_SOURCE))
+  // Using POSIX version 'int strerror_r(...)'.
   if (strerror_r(err, buf, buf_len)) {
     static const char UNKNOWN_ERROR[] = "unknown error";
     if (buf_len >= sizeof(UNKNOWN_ERROR)) {
@@ -41,5 +37,13 @@ void ErrnoToCString(int err, char *buf, size_t buf_len) {
       memset(buf, 0, buf_len);
     }
   }
+#else
+  // Using GLIBC version
+  char* ret = strerror_r(err, buf, buf_len);
+  if (ret != buf) {
+    strncpy(buf, ret, buf_len);
+    buf[buf_len - 1] = '\0';
+  }
+#endif
 }
 } // namespace kudu

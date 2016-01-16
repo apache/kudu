@@ -302,7 +302,7 @@ class unique_lock {
 template <typename Mutex>
 class shared_lock {
  public:
-  explicit shared_lock()
+  shared_lock()
     : m_(NULL) {
   }
 

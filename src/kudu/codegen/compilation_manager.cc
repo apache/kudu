@@ -78,7 +78,7 @@ class CompilationTask : public Runnable {
       generator_(generator) {}
 
   // Can only be run once.
-  virtual void Run() override {
+  void Run() override {
     // We need to fail softly because the user could have just given
     // a malformed projection schema pair, but could be long gone by
     // now so there's nowhere to return the status to.

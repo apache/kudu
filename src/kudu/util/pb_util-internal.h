@@ -31,7 +31,8 @@ namespace internal {
 // Input Stream used by ParseFromSequentialFile()
 class SequentialFileFileInputStream : public google::protobuf::io::ZeroCopyInputStream {
  public:
-  SequentialFileFileInputStream(SequentialFile *rfile, size_t buffer_size = kDefaultBufferSize)
+  explicit SequentialFileFileInputStream(SequentialFile *rfile,
+                                         size_t buffer_size = kDefaultBufferSize)
     : buffer_used_(0), buffer_offset_(0),
       buffer_size_(buffer_size), buffer_(new uint8[buffer_size_]),
       total_read_(0), rfile_(rfile) {
@@ -72,7 +73,7 @@ class SequentialFileFileInputStream : public google::protobuf::io::ZeroCopyInput
 // Output Stream used by SerializeToWritableFile()
 class WritableFileOutputStream : public google::protobuf::io::ZeroCopyOutputStream {
  public:
-  WritableFileOutputStream(WritableFile *wfile, size_t buffer_size = kDefaultBufferSize)
+  explicit WritableFileOutputStream(WritableFile *wfile, size_t buffer_size = kDefaultBufferSize)
     : buffer_offset_(0), buffer_size_(buffer_size), buffer_(new uint8[buffer_size_]),
       flushed_(0), wfile_(wfile) {
     CHECK_GT(buffer_size, 0);
