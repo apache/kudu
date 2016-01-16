@@ -26,11 +26,17 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.management.ManagementFactory;
+import java.lang.management.RuntimeMXBean;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+
+import sun.management.VMManagement;
 
 /**
  * Utility class to start and manipulate Kudu clusters. Relies on being IN the Kudu source code with
@@ -63,6 +69,45 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
+   * @return the local PID of this process.
+   * This is used to generate unique loopback IPs for parallel test running.
+   */
+  private static int getPid() {
+    try {
+      RuntimeMXBean runtime = ManagementFactory.getRuntimeMXBean();
+      java.lang.reflect.Field jvm = runtime.getClass().getDeclaredField("jvm");
+      jvm.setAccessible(true);
+      VMManagement mgmt = (VMManagement)jvm.get(runtime);
+      Method pid_method = mgmt.getClass().getDeclaredMethod("getProcessId");
+      pid_method.setAccessible(true);
+
+      return (Integer)pid_method.invoke(mgmt);
+    } catch (Exception e) {
+      LOG.warn("Cannot get PID", e);
+      return 1;
+    }
+  }
+
+  /**
+   * @return a unique loopback IP address for this PID. This allows running
+   * tests in parallel, since 127.0.0.0/8 all act as loopbacks on Linux.
+   *
+   * The generated IP is based on pid, so this requires that the parallel tests
+   * run in separate VMs.
+   *
+   * On OSX, the above trick doesn't work, so we can't run parallel tests on OSX.
+   * Given that, we just return the normal localhost IP.
+   */
+  private static String getUniqueLocalhost() {
+    if ("Mac OS X".equals(System.getProperty("os.name"))) {
+      return "127.0.0.1";
+    }
+
+    int pid = getPid();
+    return "127." + ((pid & 0xff00) >> 8) + "." + (pid & 0xff) + ".1";
+  }
+
+  /**
    * Starts a Kudu cluster composed of the provided masters and tablet servers.
    * @param numMasters how many masters to start
    * @param numTservers how many tablet servers to start
@@ -73,6 +118,7 @@ public class MiniKuduCluster implements AutoCloseable {
     Preconditions.checkArgument(numTservers > 0, "Need at least one tablet server");
     // The following props are set via kudu-client's pom.
     String baseDirPath = TestUtils.getBaseDir();
+    String localhost = getUniqueLocalhost();
 
     long now = System.currentTimeMillis();
     LOG.info("Starting {} masters...", numMasters);
@@ -88,7 +134,9 @@ public class MiniKuduCluster implements AutoCloseable {
           "--fs_wal_dir=" + dataDirPath,
           "--fs_data_dirs=" + dataDirPath,
           "--tserver_master_addrs=" + masterAddresses,
-          "--rpc_bind_addresses=127.0.0.1:" + port};
+          "--webserver_interface=" + localhost,
+          "--local_ip_for_outbound_sockets=" + localhost,
+          "--rpc_bind_addresses=" + localhost + ":" + port};
       tserverProcesses.put(port, configureAndStartProcess(tsCmdLine));
       port++;
 
@@ -116,6 +164,7 @@ public class MiniKuduCluster implements AutoCloseable {
     // Get the list of web and RPC ports to use for the master consensus configuration:
     // request NUM_MASTERS * 2 free ports as we want to also reserve the web
     // ports for the consensus configuration.
+    String localhost = getUniqueLocalhost();
     List<Integer> ports = TestUtils.findFreePorts(masterStartPort, numMasters * 2);
     int lastFreePort = ports.get(ports.size() - 1);
     List<Integer> masterRpcPorts = Lists.newArrayListWithCapacity(numMasters);
@@ -123,7 +172,7 @@ public class MiniKuduCluster implements AutoCloseable {
     for (int i = 0; i < numMasters * 2; i++) {
       if (i % 2 == 0) {
         masterRpcPorts.add(ports.get(i));
-        masterHostPorts.add(HostAndPort.fromParts("127.0.0.1", ports.get(i)));
+        masterHostPorts.add(HostAndPort.fromParts(localhost, ports.get(i)));
       } else {
         masterWebPorts.add(ports.get(i));
       }
@@ -145,7 +194,9 @@ public class MiniKuduCluster implements AutoCloseable {
           "--flagfile=" + flagsPath,
           "--fs_wal_dir=" + dataDirPath,
           "--fs_data_dirs=" + dataDirPath,
-          "--rpc_bind_addresses=127.0.0.1:" + masterRpcPorts.get(i),
+          "--webserver_interface=" + localhost,
+          "--local_ip_for_outbound_sockets=" + localhost,
+          "--rpc_bind_addresses=" + localhost + ":" + masterRpcPorts.get(i),
           "--webserver_port=" + masterWebPorts.get(i));
       if (numMasters > 1) {
         masterCmdLine.add("--master_addresses=" + masterAddresses);
