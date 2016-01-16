@@ -237,6 +237,9 @@ if [ -d "$TEST_TMPDIR" ]; then
 fi
 
 # actually do the build
+echo
+echo Building C++ code.
+echo ------------------------------------------------------------
 NUM_PROCS=$(getconf _NPROCESSORS_ONLN)
 make -j$NUM_PROCS 2>&1 | tee build.log
 
@@ -250,7 +253,9 @@ if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
     echo Must set TEST_RESULT_SERVER to use RUN_FLAKY_ONLY
     exit 1
   fi
+  echo
   echo Running flaky tests only:
+  echo ------------------------------------------------------------
   list_flaky_tests | tee build/flaky-tests.txt
   test_regex=$(perl -e '
     chomp(my @lines = <>);
@@ -264,26 +269,44 @@ if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
 fi
 
 EXIT_STATUS=0
+FAILURES=""
 
 # If we're running distributed tests, submit them asynchronously while
 # we run the Java and Python tests.
 if [ "$ENABLE_DIST_TEST" == "1" ]; then
+  echo
+  echo Submitting distributed-test job.
+  echo ------------------------------------------------------------
   export DIST_TEST_JOB_PATH=$BUILD_ROOT/dist-test-job-id
   rm -f $DIST_TEST_JOB_PATH
-  $SOURCE_ROOT/build-support/dist_test.py --no-wait run-all || EXIT_STATUS=$?
+  if ! $SOURCE_ROOT/build-support/dist_test.py --no-wait run-all ; then
+    EXIT_STATUS=1
+    FAILURES="$FAILURES"$'Could not submit distributed test job\n'
+  fi
   # Still need to run a few non-dist-test-capable tests locally.
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -L no_dist_test"
 fi
 
-$THIRDPARTY_BIN/ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS || EXIT_STATUS=$?
+if ! $THIRDPARTY_BIN/ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS ; then
+  EXIT_STATUS=1
+  FAILURES="$FAILURES"$'C++ tests failed\n'
+fi
 
 if [ "$DO_COVERAGE" == "1" ]; then
+  echo
   echo Generating coverage report...
-  ./thirdparty/gcovr-3.0/scripts/gcovr -r .  -e '.*\.pb\..*' --xml \
-      > build/coverage.xml || EXIT_STATUS=$?
+  echo ------------------------------------------------------------
+  if ! ./thirdparty/gcovr-3.0/scripts/gcovr -r .  -e '.*\.pb\..*' --xml \
+      > build/coverage.xml ; then
+    EXIT_STATUS=1
+    FAILURES="$FAILURES"$'Coverage report failed\n'
+  fi
 fi
 
 if [ "$BUILD_JAVA" == "1" ]; then
+  echo
+  echo Building and testing java...
+  echo ------------------------------------------------------------
   # Make sure we use JDK7
   export JAVA_HOME=$JAVA7_HOME
   export PATH=$JAVA_HOME/bin:$PATH
@@ -294,17 +317,24 @@ if [ "$BUILD_JAVA" == "1" ]; then
   if [ "$VALIDATE_CSD" == "1" ]; then
     VALIDATE_CSD_FLAG="-PvalidateCSD"
   fi
-  mvn $MVN_FLAGS -PbuildCSD \
+  if ! mvn $MVN_FLAGS -PbuildCSD \
       $VALIDATE_CSD_FLAG \
       -Dsurefire.rerunFailingTestsCount=3 \
       -Dfailsafe.rerunFailingTestsCount=3 \
-      clean verify || EXIT_STATUS=$?
+      clean verify ; then
+    EXIT_STATUS=1
+    FAILURES="$FAILURES"$'Java build/test failed\n'
+  fi
   set +x
   popd
 fi
 
 
 if [ "$BUILD_PYTHON" == "1" ]; then
+  echo
+  echo Building and testing python.
+  echo ------------------------------------------------------------
+
   # Failing to compile the Python client should result in a build failure
   set -e
   export KUDU_HOME=$SOURCE_ROOT
@@ -321,17 +351,24 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # Assuming we run this script from base dir
   CC=$CLANG CXX=$CLANG++ python setup.py build_ext
   set +e
-  python setup.py test \
-    --addopts="kudu --junit-xml=$KUDU_BUILD/test-logs/python_client.xml" \
-    2> $KUDU_BUILD/test-logs/python_client.log || EXIT_STATUS=$?
-
+  if ! python setup.py test \
+      --addopts="kudu --junit-xml=$KUDU_BUILD/test-logs/python_client.xml" \
+      2> $KUDU_BUILD/test-logs/python_client.log ; then
+    EXIT_STATUS=1
+    FAILURES="$FAILURES"$'Python tests failed\n'
+  fi
   popd
 fi
 
 # If we submitted the tasks earlier, go fetch the results now
 if [ "$ENABLE_DIST_TEST" == "1" ]; then
+  echo
   echo Fetching previously submitted dist-test results...
-  $DIST_TEST_HOME/client.py watch || EXIT_STATUS=$?
+  echo ------------------------------------------------------------
+  if ! $DIST_TEST_HOME/client.py watch ; then
+    EXIT_STATUS=1
+    FAILURES="$FAILURES"$'Distributed tests failed\n'
+  fi
   DT_DIR=$TEST_LOGDIR/dist-test-out
   rm -Rf $DT_DIR
   $DIST_TEST_HOME/client.py fetch --artifacts -d $DT_DIR
@@ -357,6 +394,9 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
 fi
 
 if [ "$HEAPCHECK" = normal ]; then
+  echo
+  echo Checking that heap checker ran correctly
+  echo ------------------------------------------------------------
   FAILED_TESTS=$(zgrep -L -- "WARNING: Perftools heap leak checker is active -- Performance may suffer" build/test-logs/*-test.txt*)
   if [ -n "$FAILED_TESTS" ]; then
     echo "Some tests didn't heap check properly:"
@@ -364,12 +404,17 @@ if [ "$HEAPCHECK" = normal ]; then
       echo $FTEST
     done
     EXIT_STATUS=1
+    FAILURES="$FAILURES"$'Heap checker did not run properly\n'
   else
     echo "All tests heap checked properly"
   fi
 fi
 
 if [ $EXIT_STATUS != 0 ]; then
+  echo
+  echo Tests failed, making sure we have XML files for all tests.
+  echo ------------------------------------------------------------
+
   # Tests that crash do not generate JUnit report XML files.
   # We go through and generate a kind of poor-man's version of them in those cases.
   for GTEST_OUTFILE in $TEST_LOGDIR/*.txt.gz; do
@@ -400,5 +445,11 @@ fi
 # fi
 
 set -e
+
+if [ -n "$FAILURES" ]; then
+  echo Failure summary
+  echo ------------------------------------------------------------
+  echo $FAILURES
+fi
 
 exit $EXIT_STATUS
