@@ -260,15 +260,80 @@ fi
 
 EXIT_STATUS=0
 
-# Run the C++ unit tests.
+# If we're running distributed tests, submit them asynchronously while
+# we run the Java and Python tests.
 if [ "$ENABLE_DIST_TEST" == "1" ]; then
   export DIST_TEST_JOB_PATH=$BUILD_ROOT/dist-test-job-id
-  $SOURCE_ROOT/build-support/dist_test.py run-all || EXIT_STATUS=$?
-  $DIST_TEST_HOME/client.py fetch --artifacts -d $TEST_LOGDIR
+  rm -f $DIST_TEST_JOB_PATH
+  $SOURCE_ROOT/build-support/dist_test.py --no-wait run-all || EXIT_STATUS=$?
+  # Still need to run a few non-dist-test-capable tests locally.
+  EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -L no_dist_test"
+fi
+
+$THIRDPARTY_BIN/ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS || EXIT_STATUS=$?
+
+if [ "$DO_COVERAGE" == "1" ]; then
+  echo Generating coverage report...
+  ./thirdparty/gcovr-3.0/scripts/gcovr -r .  -e '.*\.pb\..*' --xml \
+      > build/coverage.xml || EXIT_STATUS=$?
+fi
+
+if [ "$BUILD_JAVA" == "1" ]; then
+  # Make sure we use JDK7
+  export JAVA_HOME=$JAVA7_HOME
+  export PATH=$JAVA_HOME/bin:$PATH
+  pushd $SOURCE_ROOT/java
+  export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt history_size=7"
+  set -x
+  VALIDATE_CSD_FLAG=""
+  if [ "$VALIDATE_CSD" == "1" ]; then
+    VALIDATE_CSD_FLAG="-PvalidateCSD"
+  fi
+  mvn -PbuildCSD \
+      $VALIDATE_CSD_FLAG \
+      -Dsurefire.rerunFailingTestsCount=3 \
+      -Dfailsafe.rerunFailingTestsCount=3 \
+      clean verify || EXIT_STATUS=$?
+  set +x
+  popd
+fi
+
+
+if [ "$BUILD_PYTHON" == "1" ]; then
+  # Failing to compile the Python client should result in a build failure
+  set -e
+  export KUDU_HOME=$SOURCE_ROOT
+  export KUDU_BUILD=$BUILD_ROOT
+  pushd $SOURCE_ROOT/python
+
+  # Create a sane test environment
+  rm -Rf $KUDU_BUILD/py_env
+  virtualenv $KUDU_BUILD/py_env
+  source $KUDU_BUILD/py_env/bin/activate
+  pip install --upgrade pip
+  CC=$CLANG CXX=$CLANG++ pip install --disable-pip-version-check -r requirements.txt
+
+  # Assuming we run this script from base dir
+  CC=$CLANG CXX=$CLANG++ python setup.py build_ext
+  set +e
+  python setup.py test \
+    --addopts="kudu --junit-xml=$KUDU_BUILD/test-logs/python_client.xml" \
+    2> $KUDU_BUILD/test-logs/python_client.log || EXIT_STATUS=$?
+
+  popd
+fi
+
+# If we submitted the tasks earlier, go fetch the results now
+if [ "$ENABLE_DIST_TEST" == "1" ]; then
+  echo Fetching previously submitted dist-test results...
+  $DIST_TEST_HOME/client.py watch || EXIT_STATUS=$?
+  DT_DIR=$TEST_LOGDIR/dist-test-out
+  rm -Rf $DT_DIR
+  $DIST_TEST_HOME/client.py fetch --artifacts -d $DT_DIR
   # Fetching the artifacts expands each log into its own directory.
   # Move them back into the main log directory
-  rm -f $TEST_LOGDIR/*zip
-  for arch_dir in $TEST_LOGDIR/* ; do
+  rm -f $DT_DIR/*zip
+  for arch_dir in $DT_DIR/* ; do
     # In the case of sharded tests, we'll have multiple subdirs
     # which contain files of the same name. We need to disambiguate
     # when we move back. We can grab the shard index from the task name
@@ -284,11 +349,20 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
     done
     rm -Rf $arch_dir
   done
-  # Still need to run a few non-dist-test-capable tests locally.
-  EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -L no_dist_test"
 fi
 
-$THIRDPARTY_BIN/ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS || EXIT_STATUS=$?
+if [ "$HEAPCHECK" = normal ]; then
+  FAILED_TESTS=$(zgrep -L -- "WARNING: Perftools heap leak checker is active -- Performance may suffer" build/test-logs/*-test.txt*)
+  if [ -n "$FAILED_TESTS" ]; then
+    echo "Some tests didn't heap check properly:"
+    for FTEST in $FAILED_TESTS; do
+      echo $FTEST
+    done
+    EXIT_STATUS=1
+  else
+    echo "All tests heap checked properly"
+  fi
+fi
 
 if [ $EXIT_STATUS != 0 ]; then
   # Tests that crash do not generate JUnit report XML files.
@@ -319,67 +393,6 @@ fi
 #     EXIT_STATUS=1
 #   fi
 # fi
-
-if [ "$DO_COVERAGE" == "1" ]; then
-  echo Generating coverage report...
-  ./thirdparty/gcovr-3.0/scripts/gcovr -r .  -e '.*\.pb\..*' --xml \
-      > build/coverage.xml || EXIT_STATUS=$?
-fi
-
-if [ "$BUILD_JAVA" == "1" ]; then
-  # Make sure we use JDK7
-  export JAVA_HOME=$JAVA7_HOME
-  export PATH=$JAVA_HOME/bin:$PATH
-  pushd $SOURCE_ROOT/java
-  export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt history_size=7"
-  set -x
-  VALIDATE_CSD_FLAG=""
-  if [ "$VALIDATE_CSD" == "1" ]; then
-    VALIDATE_CSD_FLAG="-PvalidateCSD"
-  fi
-  mvn -PbuildCSD \
-      $VALIDATE_CSD_FLAG \
-      -Dsurefire.rerunFailingTestsCount=3 \
-      -Dfailsafe.rerunFailingTestsCount=3 \
-      clean verify || EXIT_STATUS=$?
-  set +x
-  popd
-fi
-
-if [ "$HEAPCHECK" = normal ]; then
-  FAILED_TESTS=$(zgrep -L -- "WARNING: Perftools heap leak checker is active -- Performance may suffer" build/test-logs/*-test.txt*)
-  if [ -n "$FAILED_TESTS" ]; then
-    echo "Some tests didn't heap check properly:"
-    for FTEST in $FAILED_TESTS; do
-      echo $FTEST
-    done
-    EXIT_STATUS=1
-  else
-    echo "All tests heap checked properly"
-  fi
-fi
-
-if [ "$BUILD_PYTHON" == "1" ]; then
-  # Failing to compile the Python client should result in a build failure
-  set -e
-  export KUDU_HOME=$SOURCE_ROOT
-  export KUDU_BUILD=$BUILD_ROOT
-  pushd $SOURCE_ROOT/python
-
-  # Create a sane test environment
-  rm -Rf $KUDU_BUILD/py_env
-  virtualenv $KUDU_BUILD/py_env
-  source $KUDU_BUILD/py_env/bin/activate
-  pip install --upgrade pip
-  CC=$CLANG CXX=$CLANG++ pip install --disable-pip-version-check -r requirements.txt
-
-  # Assuming we run this script from base dir
-  CC=$CLANG CXX=$CLANG++ python setup.py build_ext
-  set +e
-  python setup.py test \
-    --addopts="kudu --junit-xml=$KUDU_BUILD/test-logs/python_client.xml" \
-    2> $KUDU_BUILD/test-logs/python_client.log || EXIT_STATUS=$?
-fi
 
 set -e
 
