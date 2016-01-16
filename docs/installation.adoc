@@ -205,8 +205,9 @@ need, you can build Kudu from source. You can build from source on any supported
 . Install the prerequisite libraries, if they are not installed:
 +
 ----
-$ sudo yum install boost-static boost-devel openssl-devel cyrus-sasl-devel \
-  cyrus-sasl-plain patch pkg-config make rsync vim-common gdb
+$ sudo yum install gcc gcc-c++ autoconf automake libtool \
+  boost-static boost-devel openssl-devel cyrus-sasl-devel \
+  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb
 ----
 
 . Optional: Install the `asciidoctor` gem if you plan to build documentation.
@@ -272,8 +273,9 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 ----
 #!/bin/bash
 
-sudo yum -y install boost-static boost-devel openssl-devel cyrus-sasl-devel \
-  cyrus-sasl-plain patch pkg-config make rsync vim-common gdb
+sudo yum -y install gcc gcc-c++ autoconf automake libtool \
+  boost-static boost-devel openssl-devel cyrus-sasl-devel \
+  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb
 cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build
@@ -292,15 +294,15 @@ make install
 . Install the prerequisite libraries, if they are not installed:
 +
 ----
-$ sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
-  libssl-dev libsasl2-dev libsasl2-modules libtool ntp patch pkg-config make rsync \
-  unzip vim-common gdb python
+$ sudo apt-get install git autoconf automake libboost-thread-dev \
+  libboost-system-dev curl gcc g++ libssl-dev libsasl2-dev libsasl2-modules \
+  libtool ntp patch pkg-config make rsync unzip vim-common gdb python
 ----
 
 . Optional: Install the `asciidoctor` gem and xsltproc if you plan to build documentation.
 +
 ----
-$ sudo apt-get -y install asciidoctor xsltproc
+$ sudo apt-get install asciidoctor xsltproc
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -360,9 +362,9 @@ the steps marked *Optional* above.
 ----
 #!/bin/bash
 
-sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
-  libssl-dev libsasl2-dev libsasl2-modules libtool ntp patch pkg-config make rsync \
-  unzip vim-common gdb python
+sudo apt-get -y install git autoconf automake libboost-thread-dev \
+  libboost-system-dev curl gcc g++ libssl-dev libsasl2-dev libsasl2-modules \
+  libtool ntp patch pkg-config make rsync unzip vim-common gdb python
 git clone http://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
