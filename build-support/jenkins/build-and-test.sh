@@ -328,9 +328,9 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # Assuming we run this script from base dir
   python setup.py build_ext
   set +e
-  python setup.py nosetests --with-xunit \
-    --xunit-file=$KUDU_HOME/build/test-logs/python_client.xml 2> \
-    $KUDU_HOME/build/test-logs/python_client.log || EXIT_STATUS=$?
+  python setup.py test \
+    --addopts="kudu --junit-xml=$KUDU_HOME/build/test-logs/python_client.xml" \
+    2> $KUDU_HOME/build/test-logs/python_client.log || EXIT_STATUS=$?
 fi
 
 set -e
