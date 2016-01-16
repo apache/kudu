@@ -259,9 +259,15 @@ if [ -n "$F_TSAN" ]; then
   #   * -Wl,-rpath,... - Add instrumented libstdc++ location to the rpath so that
   #                      it can be found at runtime.
 
-  # TODO(KUDU-1285): Fix thirdparty TSAN builds to allow ccache
-  export CC="$TP_DIR/clang-toolchain/bin/clang"
-  export CXX="$TP_DIR/clang-toolchain/bin/clang++"
+  if which ccache >/dev/null ; then
+    CLANG="$TP_DIR/../build-support/ccache-clang/clang"
+    CLANGXX="$TP_DIR/../build-support/ccache-clang/clang++"
+  else
+    CLANG="$TP_DIR/clang-toolchain/bin/clang"
+    CLANGXX="$TP_DIR/clang-toolchain/bin/clang++"
+  fi
+  export CC=$CLANG
+  export CXX=$CLANGXX
 
   PREFIX=$PREFIX_DEPS_TSAN
 
@@ -298,7 +304,7 @@ if [ -n "$F_TSAN" ]; then
   fi
   restore_env
 
-  # Build dependencies that do no require TSAN instrumentation
+  # Build dependencies that do not require TSAN instrumentation
 
   EXTRA_CXXFLAGS="-nostdinc++ $EXTRA_CXXFLAGS"
   EXTRA_CXXFLAGS="-isystem $PREFIX_LIBSTDCXX/include/c++/$GCC_VERSION/backward $EXTRA_CXXFLAGS"
