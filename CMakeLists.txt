@@ -726,15 +726,10 @@ ADD_THIRDPARTY_LIB(zlib
   SHARED_LIB "${ZLIB_SHARED_LIB}")
 
 ## Squeasel
-## Doesn't build on OSX, skipping it means Kudu doesn't build!
-## TODO Make it work.
-if (NOT APPLE)
-  find_package(Squeasel REQUIRED)
-  include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
-  ADD_THIRDPARTY_LIB(squeasel
-    STATIC_LIB "${SQUEASEL_STATIC_LIB}"
-    DEPS ${SQUEASEL_STATIC_LIB_DEPS})
-endif()
+find_package(Squeasel REQUIRED)
+include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(squeasel
+  STATIC_LIB "${SQUEASEL_STATIC_LIB}")
 
 ## Google PerfTools
 ##

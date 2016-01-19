@@ -19,7 +19,6 @@
 #  SQUEASEL_INCLUDE_DIR, directory containing headers
 #  SQUEASEL_STATIC_LIB, path to libsqueasel.a
 #  SQUEASEL_FOUND, whether squeasel has been found
-#  SQUEASEL_STATIC_LIB_DEPS other libraries that are dependencies for SQUEASEL_STATIC_LIB
 
 find_path(SQUEASEL_INCLUDE_DIR squeasel.h
   # make sure we don't accidentally pick up a different version
@@ -33,14 +32,3 @@ find_library(SQUEASEL_STATIC_LIB libsqueasel.a
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(SQUEASEL REQUIRED_VARS
   SQUEASEL_STATIC_LIB SQUEASEL_INCLUDE_DIR)
-
-# Add OpenSSL libs to the linker path
-find_package(OpenSSL REQUIRED)
-if (OPENSSL_FOUND)
-  set(SQUEASEL_STATIC_LIB_DEPS ${OPENSSL_LIBRARIES})
-else ()
-  if (NOT Squeasel_FIND_QUIETLY)
-    message(FATAL_ERROR "Cannot find OpenSSL library")
-  endif ()
-endif ()
-

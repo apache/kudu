@@ -225,7 +225,7 @@ build_squeasel() {
   # Mongoose's Makefile builds a standalone web server, whereas we just want
   # a static lib
   cd $SQUEASEL_DIR
-  ${CC:-gcc} $EXTRA_CFLAGS -std=c99 -O3 -DNDEBUG -DNO_SSL_DL -fPIC -c squeasel.c
+  ${CC:-gcc} $EXTRA_CFLAGS -std=c99 -O3 -DNDEBUG -fPIC -c squeasel.c
   ar rs libsqueasel.a squeasel.o
   cp libsqueasel.a $PREFIX/lib/
   cp squeasel.h $PREFIX/include/
