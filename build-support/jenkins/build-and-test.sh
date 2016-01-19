@@ -305,16 +305,20 @@ if [ $EXIT_STATUS != 0 ]; then
 fi
 
 # If all tests passed, ensure that they cleaned up their test output.
-if [ $EXIT_STATUS == 0 ]; then
-  TEST_TMPDIR_CONTENTS=$(ls $TEST_TMPDIR)
-  if [ -n "$TEST_TMPDIR_CONTENTS" ]; then
-    echo "All tests passed, yet some left behind their test output:"
-    for SUBDIR in $TEST_TMPDIR_CONTENTS; do
-      echo $SUBDIR
-    done
-    EXIT_STATUS=1
-  fi
-fi
+#
+# TODO: Python is currently leaking a tmp directory sometimes (KUDU-1301).
+# Temporarily disabled until that's fixed.
+#
+# if [ $EXIT_STATUS == 0 ]; then
+#   TEST_TMPDIR_CONTENTS=$(ls $TEST_TMPDIR)
+#   if [ -n "$TEST_TMPDIR_CONTENTS" ]; then
+#     echo "All tests passed, yet some left behind their test output:"
+#     for SUBDIR in $TEST_TMPDIR_CONTENTS; do
+#       echo $SUBDIR
+#     done
+#     EXIT_STATUS=1
+#   fi
+# fi
 
 if [ "$DO_COVERAGE" == "1" ]; then
   echo Generating coverage report...
