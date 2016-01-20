@@ -118,7 +118,7 @@ struct VersionField {
   static AtomicVersion StableVersion(volatile AtomicVersion *version) {
     for (int loop_count = 0; true; loop_count++) {
       AtomicVersion v_acq = base::subtle::Acquire_Load(version);
-      if (!IsLocked(v_acq)) {
+      if (PREDICT_TRUE(!IsLocked(v_acq))) {
         return v_acq;
       }
       boost::detail::yield(loop_count++);
@@ -130,9 +130,9 @@ struct VersionField {
 
     while (true) {
       AtomicVersion v_acq = base::subtle::Acquire_Load(version);
-      if (!IsLocked(v_acq)) {
+      if (PREDICT_TRUE(!IsLocked(v_acq))) {
         AtomicVersion v_locked = SetLockBit(v_acq, 1);
-        if (base::subtle::Acquire_CompareAndSwap(version, v_acq, v_locked) == v_acq) {
+        if (PREDICT_TRUE(base::subtle::Acquire_CompareAndSwap(version, v_acq, v_locked) == v_acq)) {
           return;
         }
       }

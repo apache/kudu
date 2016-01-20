@@ -75,7 +75,7 @@ class InlineSlice {
   InlineSlice() {
   }
 
-  const Slice as_slice() const {
+  inline const Slice as_slice() const ATTRIBUTE_ALWAYS_INLINE {
     DiscriminatedPointer dptr = LoadValue();
 
     if (dptr.is_indirect()) {
