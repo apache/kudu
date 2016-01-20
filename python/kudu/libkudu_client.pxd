@@ -29,7 +29,7 @@ cdef extern from "<iostream>":
 #----------------------------------------------------------------------
 # Smart pointers and such
 
-cdef extern from "<tr1/memory>" namespace "std::tr1" nogil:
+cdef extern from "kudu/client/shared_ptr.h" namespace "kudu::client::sp" nogil:
 
     cdef cppclass shared_ptr[T]:
         T* get()
