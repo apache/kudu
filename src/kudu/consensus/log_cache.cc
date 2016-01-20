@@ -145,8 +145,8 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
 
 
   int64_t mem_required = 0;
-  for (int i = 0; i < msgs.size(); i++) {
-    mem_required += msgs[i]->get()->SpaceUsed();
+  for (const auto& msg : msgs) {
+    mem_required += msg->get()->SpaceUsed();
   }
 
   // Try to consume the memory. If it can't be consumed, we may need to evict.
@@ -173,8 +173,8 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
     borrowed_memory = parent_tracker_->LimitExceeded();
   }
 
-  for (int i = 0; i < msgs.size(); i++) {
-    InsertOrDie(&cache_,  msgs[i]->get()->id().index(), msgs[i]);
+  for (const auto& msg : msgs) {
+    InsertOrDie(&cache_,  msg->get()->id().index(), msg);
   }
 
   // We drop the lock during the AsyncAppendReplicates call, since it may block

@@ -74,9 +74,9 @@ void StripString(char* str, int len, StringPiece remove, char replacewith) {
 }
 
 void StripString(string* s, StringPiece remove, char replacewith) {
-  for (string::iterator it = s->begin(), end = s->end(); it != end; ++it) {
-    if (remove.find(*it) != StringPiece::npos) {
-      *it = replacewith;
+  for (char& c : *s) {
+    if (remove.find(c) != StringPiece::npos) {
+      c = replacewith;
     }
   }
 }

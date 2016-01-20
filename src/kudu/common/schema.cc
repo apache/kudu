@@ -388,8 +388,8 @@ void SchemaBuilder::Reset(const Schema& schema) {
   cols_ = schema.cols_;
   col_ids_ = schema.col_ids_;
   num_key_columns_ = schema.num_key_columns_;
-  for (int i = 0; i < cols_.size(); ++i) {
-    col_names_.insert(cols_[i].name());
+  for (const auto& column : cols_) {
+    col_names_.insert(column.name());
   }
 
   if (col_ids_.empty()) {

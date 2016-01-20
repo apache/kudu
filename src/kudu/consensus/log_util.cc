@@ -777,11 +777,10 @@ void CreateBatchFromAllocatedOperations(const vector<consensus::ReplicateRefPtr>
                                         gscoped_ptr<LogEntryBatchPB>* batch) {
   gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
   entry_batch->mutable_entry()->Reserve(msgs.size());
-  for (size_t i = 0; i < msgs.size(); i++) {
-    consensus::ReplicateMsg* msg = msgs[i]->get();
+  for (const auto& msg : msgs) {
     LogEntryPB* entry_pb = entry_batch->add_entry();
     entry_pb->set_type(log::REPLICATE);
-    entry_pb->set_allocated_replicate(msg);
+    entry_pb->set_allocated_replicate(msg->get());
   }
   batch->reset(entry_batch.release());
 }

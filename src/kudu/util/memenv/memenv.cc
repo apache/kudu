@@ -437,8 +437,8 @@ class InMemoryEnv : public EnvWrapper {
     MutexLock lock(mutex_);
     result->clear();
 
-    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ++i) {
-      const std::string& filename = i->first;
+    for (const auto& file : file_map_) {
+      const std::string& filename = file.first;
 
       if (filename.size() >= dir.size() + 1 && filename[dir.size()] == '/' &&
           Slice(filename).starts_with(Slice(dir))) {

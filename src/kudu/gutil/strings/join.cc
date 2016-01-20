@@ -172,17 +172,17 @@ void JoinCSVLineWithDelimiter(const vector<string>& cols, char delimiter,
   // whitespace (ie ascii_isspace() returns true), escape all double-quotes and
   // bracket the string in double quotes. string.rbegin() evaluates to the last
   // character of the string.
-  for (int i = 0; i < cols.size(); ++i) {
-    if ((cols[i].find_first_of(escape_chars) != string::npos) ||
-        (!cols[i].empty() && (ascii_isspace(*cols[i].begin()) ||
-                              ascii_isspace(*cols[i].rbegin())))) {
+  for (const auto& col : cols) {
+    if ((col.find_first_of(escape_chars) != string::npos) ||
+        (!col.empty() && (ascii_isspace(*col.begin()) ||
+                              ascii_isspace(*col.rbegin())))) {
       // Double the original size, for escaping, plus two bytes for
       // the bracketing double-quotes, and one byte for the closing \0.
-      int size = 2 * cols[i].size() + 3;
+      int size = 2 * col.size() + 3;
       gscoped_array<char> buf(new char[size]);
 
       // Leave space at beginning and end for bracketing double-quotes.
-      int escaped_size = strings::EscapeStrForCSV(cols[i].c_str(),
+      int escaped_size = strings::EscapeStrForCSV(col.c_str(),
                                                   buf.get() + 1, size - 2);
       CHECK_GE(escaped_size, 0) << "Buffer somehow wasn't large enough.";
       CHECK_GE(size, escaped_size + 3)
@@ -194,7 +194,7 @@ void JoinCSVLineWithDelimiter(const vector<string>& cols, char delimiter,
       *((buf.get() + 1) + escaped_size + 1) = '\0';
       quoted_cols.push_back(string(buf.get(), buf.get() + escaped_size + 2));
     } else {
-      quoted_cols.push_back(cols[i]);
+      quoted_cols.push_back(col);
     }
   }
   JoinStrings(quoted_cols, delimiter_str, output);

@@ -280,8 +280,8 @@ Status MiniCluster::WaitForTabletServerCount(int count,
       // are aligned (same uuid/seqno) with the TSs that we have in the cluster.
       int match_count = 0;
       for (const shared_ptr<TSDescriptor>& desc : *descs) {
-        for (int i = 0; i < mini_tablet_servers_.size(); ++i) {
-          TabletServer *ts = mini_tablet_servers_[i]->server();
+        for (auto mini_tablet_server : mini_tablet_servers_) {
+          auto ts = mini_tablet_server->server();
           if (ts->instance_pb().permanent_uuid() == desc->permanent_uuid() &&
               ts->instance_pb().instance_seqno() == desc->latest_seqno()) {
             match_count++;

@@ -1156,9 +1156,9 @@ bool SplitStringAndParseToInserter(
   vector<StringPiece> pieces = strings::Split(source,
                                               strings::delimiter::AnyOf(delim),
                                               strings::SkipEmpty());
-  for (size_t i = 0; i < pieces.size(); ++i) {
+  for (const auto& piece : pieces) {
     typename Container::value_type t;
-    if (parse(pieces[i].as_string(), &t)) {
+    if (parse(piece.as_string(), &t)) {
       insert_policy(result, t);
     } else {
       retval = false;

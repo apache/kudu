@@ -64,8 +64,8 @@ class Charmap {
   }
 
   bool IsZero() const {
-    for (int i = 0; i < 8; ++i) {
-      if (m_[i] != 0)
+    for (uint32 c : m_) {
+      if (c != 0)
         return false;
     }
     return true;

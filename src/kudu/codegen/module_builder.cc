@@ -110,8 +110,8 @@ string ToString(const Function* f) {
 }
 
 bool ModuleContains(const Module& m, const Function* fptr) {
-  for (Module::const_iterator it = m.begin(); it != m.end(); ++it) {
-    if (&*it == fptr) return true;
+  for (const auto& function : m) {
+    if (&function == fptr) return true;
   }
   return false;
 }

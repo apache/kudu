@@ -133,8 +133,8 @@ void AppendToImpl(vector<string>* container, Splitter splitter) {
   vector<StringPiece> vsp = splitter;  // Calls implicit conversion operator.
   size_t container_size = container->size();
   container->resize(container_size + vsp.size());
-  for (size_t i = 0; i < vsp.size(); ++i) {
-    vsp[i].CopyToString(&(*container)[container_size++]);
+  for (const auto& sp : vsp) {
+    sp.CopyToString(&(*container)[container_size++]);
   }
 }
 
@@ -1004,10 +1004,10 @@ bool SplitStringIntoKeyValuePairs(const string& line,
   SplitStringUsing(line, key_value_pair_delimiters.c_str(), &pairs);
 
   bool success = true;
-  for (size_t i = 0; i < pairs.size(); ++i) {
+  for (const auto& pair : pairs) {
     string key;
     vector<string> value;
-    if (!SplitStringIntoKeyValues(pairs[i],
+    if (!SplitStringIntoKeyValues(pair,
                                   key_value_delimiters,
                                   "", &key, &value)) {
       // Don't return here, to allow for keys without associated

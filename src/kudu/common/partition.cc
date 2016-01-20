@@ -407,7 +407,7 @@ Status PartitionSchema::DecodeHashBuckets(Slice* encoded_key,
         Substitute("expected encoded hash key to be at least $0 bytes (only found $1)",
                    hash_components_size, encoded_key->size()));
   }
-  for (int i = 0; i < hash_bucket_schemas_.size(); i++) {
+  for (const auto& schema : hash_bucket_schemas_) {
     uint32_t big_endian;
     memcpy(&big_endian, encoded_key->data(), sizeof(uint32_t));
     buckets->push_back(BigEndian::ToHost32(big_endian));

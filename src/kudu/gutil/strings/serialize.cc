@@ -223,9 +223,8 @@ int64 ReverseOrderedStringToInt64(const StringPiece& key) {
 
 string DictionaryInt32Encode(const hash_map<string, int32>* dictionary) {
   vector<string> entries;
-  for (hash_map<string, int32>::const_iterator iter = dictionary->begin();
-       iter != dictionary->end(); ++iter) {
-    entries.push_back(StringPrintf("%s:%d", iter->first.c_str(), iter->second));
+  for (const auto& entry : *dictionary) {
+    entries.push_back(StringPrintf("%s:%d", entry.first.c_str(), entry.second));
   }
 
   string result;
@@ -235,10 +234,9 @@ string DictionaryInt32Encode(const hash_map<string, int32>* dictionary) {
 
 string DictionaryInt64Encode(const hash_map<string, int64>* dictionary) {
   vector<string> entries;
-  for (hash_map<string, int64>::const_iterator iter = dictionary->begin();
-       iter != dictionary->end(); ++iter) {
+  for (const auto& entry : *dictionary) {
     entries.push_back(StringPrintf("%s:%" PRId64,
-                                   iter->first.c_str(), iter->second));
+                                   entry.first.c_str(), entry.second));
   }
 
   string result;
@@ -248,9 +246,8 @@ string DictionaryInt64Encode(const hash_map<string, int64>* dictionary) {
 
 string DictionaryDoubleEncode(const hash_map<string, double>* dictionary) {
   vector<string> entries;
-  for (hash_map<string, double>::const_iterator iter = dictionary->begin();
-       iter != dictionary->end(); ++iter) {
-    entries.push_back(StringPrintf("%s:%g", iter->first.c_str(), iter->second));
+  for (const auto& entry : *dictionary) {
+    entries.push_back(StringPrintf("%s:%g", entry.first.c_str(), entry.second));
   }
 
   string result;
@@ -259,12 +256,12 @@ string DictionaryDoubleEncode(const hash_map<string, double>* dictionary) {
 }
 
 bool DictionaryParse(const string& encoded_str,
-                      vector<pair<string, string> >* items) {
+                     vector<pair<string, string> >* items) {
   vector<string> entries;
   SplitStringUsing(encoded_str, ",", &entries);
-  for (int i = 0; i < entries.size(); ++i) {
+  for (const auto& entry : entries) {
     vector<string> fields;
-    SplitStringAllowEmpty(entries[i], ":", &fields);
+    SplitStringAllowEmpty(entry, ":", &fields);
     if (fields.size() != 2)  // parsing error
       return false;
     items->push_back(make_pair(fields[0], fields[1]));
@@ -279,14 +276,14 @@ bool DictionaryInt32Decode(hash_map<string, int32>* dictionary,
     return false;
 
   dictionary->clear();
-  for (int i = 0; i < items.size(); ++i) {
+  for (const auto& item : items) {
     char *error = nullptr;
-    const int32 value = strto32(items[i].second.c_str(), &error, 0);
-    if (error == items[i].second.c_str() || *error != '\0') {
+    const int32 value = strto32(item.second.c_str(), &error, 0);
+    if (error == item.second.c_str() || *error != '\0') {
       // parsing error
       return false;
     }
-    (*dictionary)[items[i].first] = value;
+    (*dictionary)[item.first] = value;
   }
   return true;
 }
@@ -298,14 +295,14 @@ bool DictionaryInt64Decode(hash_map<string, int64>* dictionary,
     return false;
 
   dictionary->clear();
-  for (int i = 0; i < items.size(); ++i) {
+  for (const auto& item : items) {
     char *error = nullptr;
-    const int64 value = strto64(items[i].second.c_str(), &error, 0);
-    if (error == items[i].second.c_str() || *error != '\0')  {
+    const int64 value = strto64(item.second.c_str(), &error, 0);
+    if (error == item.second.c_str() || *error != '\0')  {
       // parsing error
       return false;
     }
-    (*dictionary)[items[i].first] = value;
+    (*dictionary)[item.first] = value;
   }
   return true;
 }
@@ -318,14 +315,14 @@ bool DictionaryDoubleDecode(hash_map<string, double>* dictionary,
     return false;
 
   dictionary->clear();
-  for (int i = 0; i < items.size(); ++i) {
+  for (const auto& item : items) {
     char *error = nullptr;
-    const double value = strtod(items[i].second.c_str(), &error);
-    if (error == items[i].second.c_str() || *error != '\0') {
+    const double value = strtod(item.second.c_str(), &error);
+    if (error == item.second.c_str() || *error != '\0') {
       // parsing error
       return false;
     }
-    (*dictionary)[items[i].first] = value;
+    (*dictionary)[item.first] = value;
   }
   return true;
 }

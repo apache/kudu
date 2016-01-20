@@ -329,8 +329,8 @@ class Splitter {
     Container c;
     ReserveCapacity(&c, v.size());
     std::insert_iterator<Container> inserter(c, c.begin());
-    for (size_t i = 0; i < v.size(); ++i) {
-      *inserter++ = converter(v[i]);
+    for (const auto& sp : v) {
+      *inserter++ = converter(sp);
     }
     return c;
   }

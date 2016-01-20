@@ -372,12 +372,11 @@ Status ReplicaState::CancelPendingTransactions() {
 
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Trying to abort " << pending_txns_.size()
                                    << " pending transactions.";
-    for (IndexToRoundMap::iterator iter = pending_txns_.begin();
-         iter != pending_txns_.end(); iter++) {
-      const scoped_refptr<ConsensusRound>& round = (*iter).second;
+    for (const auto& txn : pending_txns_) {
+      const scoped_refptr<ConsensusRound>& round = txn.second;
       // We cancel only transactions whose applies have not yet been triggered.
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting transaction as it isn't in flight: "
-                            << (*iter).second->replicate_msg()->ShortDebugString();
+                            << txn.second->replicate_msg()->ShortDebugString();
       round->NotifyReplicationFinished(Status::Aborted("Transaction aborted"));
     }
   }

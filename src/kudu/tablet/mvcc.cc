@@ -241,9 +241,9 @@ void MvccManager::OfflineAdjustSafeTime(Timestamp safe_time) {
 static void FilterTimestamps(std::vector<Timestamp::val_type>* v,
                              Timestamp::val_type watermark) {
   int j = 0;
-  for (int i = 0; i < v->size(); i++) {
-    if ((*v)[i] >= watermark) {
-      (*v)[j++] = (*v)[i];
+  for (const auto& ts : *v) {
+    if (ts >= watermark) {
+      (*v)[j++] = ts;
     }
   }
   v->resize(j);

@@ -40,8 +40,8 @@ LogAnchorRegistry::~LogAnchorRegistry() {
 }
 
 void LogAnchorRegistry::Register(int64_t log_index,
-                                  const string& owner,
-                                  LogAnchor* anchor) {
+                                 const string& owner,
+                                 LogAnchor* anchor) {
   boost::lock_guard<simple_spinlock> l(lock_);
   RegisterUnlocked(log_index, owner, anchor);
 }

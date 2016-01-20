@@ -1648,8 +1648,7 @@ void EscapeFileName(const StringPiece& src, string* dst) {
   // Reserve at least src.size() chars
   dst->reserve(dst->size() + src.size());
 
-  for (int i = 0; i < src.size(); ++i) {
-    const char c = src[i];
+  for (char c : src) {
     // We do not use "isalpha" because we want the behavior to be
     // independent of the current locale settings.
     if (escape_file_name_exceptions.contains(c)) {
@@ -1751,10 +1750,10 @@ static void b2a_hex_t(const unsigned char* b, T a, int num) {
 
 string b2a_bin(const string& b, bool byte_order_msb) {
   string result;
-  for (int byte_offset = 0; byte_offset < b.size(); ++byte_offset) {
+  for (char c : b) {
     for (int bit_offset = 0; bit_offset < 8; ++bit_offset) {
       int x = (byte_order_msb) ? 7-bit_offset : bit_offset;
-      result.append(1, (b[byte_offset] & (1 << x)) ? '1' : '0');
+      result.append(1, (c & (1 << x)) ? '1' : '0');
     }
   }
   return result;
@@ -1814,15 +1813,15 @@ string ShellEscape(StringPiece src) {
   } else {
     // needs double quote escaping
     string result = "\"";
-    for (size_t i = 0; i < src.size(); ++i) {
-      switch (src[i]) {
+    for (char c : src) {
+      switch (c) {
         case '\\':
         case '$':
         case '"':
         case '`':
           result.push_back('\\');
       };
-      result.push_back(src[i]);
+      result.push_back(c);
     }
     result.push_back('"');
     return result;

@@ -205,13 +205,12 @@ void Tpch1(RpcLineItemDAO *dao) {
     }
   }
   LOG(INFO) << "Result: ";
-  for (slice_map_map::iterator ii = results.begin();
-       ii != results.end(); ++ii) {
-    const SliceMapKey returnflag = ii->first;
-    slice_map *maps = ii->second;
-    for (slice_map::iterator jj = maps->begin(); jj != maps->end(); ++jj) {
-      const SliceMapKey linestatus = jj->first;
-      Result *r = jj->second;
+  for (const auto& result : results) {
+    const SliceMapKey returnflag = result.first;
+    const auto* maps = result.second;
+    for (const auto& map : *maps) {
+      const SliceMapKey linestatus = map.first;
+      Result* r = map.second;
       double avg_q = static_cast<double>(r->l_quantity) / r->count;
       double avg_ext_p = r->l_extendedprice / r->count;
       double avg_discount = r->l_discount / r->count;
@@ -219,7 +218,7 @@ void Tpch1(RpcLineItemDAO *dao) {
                    linestatus.slice.ToString() << ", " <<
                    r->l_quantity << ", " <<
                    StringPrintf("%.2f", r->l_extendedprice) << ", " <<
-                   // TODO those two are missing at the moment, might want to chagne Result
+                   // TODO those two are missing at the moment, might want to change Result
                    // sum(l_extendedprice * (1 - l_discount))
                    // sum(l_extendedprice * (1 - l_discount) * (1 + l_tax))
                    StringPrintf("%.2f", avg_q) << ", " <<

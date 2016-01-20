@@ -145,16 +145,16 @@ class IdMapping {
     mask_ = new_capacity - 1;
     entries.swap(entries_);
 
-    for (int i = 0; i < entries.size(); i++) {
-      if (entries[i].first != kNoEntry) {
-        set(entries[i].first, entries[i].second);
+    for (const auto& entry : entries) {
+      if (entry.first != kNoEntry) {
+        set(entry.first, entry.second);
       }
     }
   }
 
   static void ClearMap(std::vector<value_type>* v) {
-    for (int i = 0; i < v->size(); i++) {
-      (*v)[i] = std::make_pair(kNoEntry, kNoEntry);
+    for (auto& entry : *v) {
+      entry = std::make_pair(kNoEntry, kNoEntry);
     }
   }
 

@@ -31,8 +31,7 @@ void SnakeToCamelCase(const std::string &snake_case,
   camel_case->reserve(snake_case.size());
 
   bool uppercase_next = true;
-  for (int i = 0; i < snake_case.size(); i++) {
-    char c = snake_case[i];
+  for (char c : snake_case) {
     if ((c == '_') ||
         (c == '-')) {
       uppercase_next = true;
@@ -53,8 +52,8 @@ void ToUpperCase(const std::string &string,
     *out = string;
   }
 
-  for (int i = 0; i < out->size(); i++) {
-    (*out)[i] = toupper((*out)[i]);
+  for (char& c : *out) {
+    c = toupper(c);
   }
 }
 

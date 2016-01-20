@@ -762,9 +762,8 @@ void AppendValuesFromMap(const MapContainer& map_container,
   if (value_container->empty()) {
     value_container->reserve(map_container.size());
   }
-  for (typename MapContainer::const_iterator it = map_container.begin();
-       it != map_container.end(); ++it) {
-    value_container->push_back(it->second);
+  for (const auto& entry : map_container) {
+    value_container->push_back(entry.second);
   }
 }
 

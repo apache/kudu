@@ -284,11 +284,10 @@ void MemTracker::Consume(int64_t bytes) {
   if (PREDICT_FALSE(enable_logging_)) {
     LogUpdate(true, bytes);
   }
-  for (vector<MemTracker*>::iterator tracker = all_trackers_.begin();
-       tracker != all_trackers_.end(); ++tracker) {
-    (*tracker)->consumption_.IncrementBy(bytes);
-    if (!(*tracker)->consumption_func_.empty()) {
-      DCHECK_GE((*tracker)->consumption_.current_value(), 0);
+  for (auto& tracker : all_trackers_) {
+    tracker->consumption_.IncrementBy(bytes);
+    if (!tracker->consumption_func_.empty()) {
+      DCHECK_GE(tracker->consumption_.current_value(), 0);
     }
   }
 }
@@ -370,25 +369,23 @@ void MemTracker::Release(int64_t bytes) {
     LogUpdate(false, bytes);
   }
 
-  for (vector<MemTracker*>::iterator tracker = all_trackers_.begin();
-       tracker != all_trackers_.end(); ++tracker) {
-    (*tracker)->consumption_.IncrementBy(-bytes);
+  for (auto& tracker : all_trackers_) {
+    tracker->consumption_.IncrementBy(-bytes);
     // If a UDF calls FunctionContext::TrackAllocation() but allocates less than the
     // reported amount, the subsequent call to FunctionContext::Free() may cause the
     // process mem tracker to go negative until it is synced back to the tcmalloc
     // metric. Don't blow up in this case. (Note that this doesn't affect non-process
     // trackers since we can enforce that the reported memory usage is internally
     // consistent.)
-    if (!(*tracker)->consumption_func_.empty()) {
-      DCHECK_GE((*tracker)->consumption_.current_value(), 0);
+    if (!tracker->consumption_func_.empty()) {
+      DCHECK_GE(tracker->consumption_.current_value(), 0);
     }
   }
 }
 
 bool MemTracker::AnyLimitExceeded() {
-  for (vector<MemTracker*>::iterator tracker = limit_trackers_.begin();
-       tracker != limit_trackers_.end(); ++tracker) {
-    if ((*tracker)->LimitExceeded()) {
+  for (const auto& tracker : limit_trackers_) {
+    if (tracker->LimitExceeded()) {
       return true;
     }
   }
@@ -446,9 +443,8 @@ bool MemTracker::AnySoftLimitExceeded(double* current_capacity_pct) {
 
 int64_t MemTracker::SpareCapacity() const {
   int64_t result = std::numeric_limits<int64_t>::max();
-  for (vector<MemTracker*>::const_iterator tracker = limit_trackers_.begin();
-       tracker != limit_trackers_.end(); ++tracker) {
-    int64_t mem_left = (*tracker)->limit() - (*tracker)->consumption();
+  for (const auto& tracker : limit_trackers_) {
+    int64_t mem_left = tracker->limit() - tracker->consumption();
     result = std::min(result, mem_left);
   }
   return result;
@@ -471,8 +467,8 @@ bool MemTracker::GcMemory(int64_t max_consumption) {
   }
 
   // Try to free up some memory
-  for (int i = 0; i < gc_functions_.size(); ++i) {
-    gc_functions_[i]();
+  for (const auto& gc_function : gc_functions_) {
+    gc_function();
     if (!consumption_func_.empty()) {
       UpdateConsumption();
     }

@@ -366,11 +366,11 @@ struct MirrorTable {
       case UPDATE: op.reset(table->NewUpdate()); break;
       case DELETE: op.reset(table->NewDelete()); break;
     }
-    for (int i = 0; i < data.size(); i++) {
-      if (data[i].second == RowState::kNullValue) {
-        CHECK_OK(op->mutable_row()->SetNull(data[i].first));
+    for (const auto& d : data) {
+      if (d.second == RowState::kNullValue) {
+        CHECK_OK(op->mutable_row()->SetNull(d.first));
       } else {
-        CHECK_OK(op->mutable_row()->SetInt32(data[i].first, data[i].second));
+        CHECK_OK(op->mutable_row()->SetInt32(d.first, d.second));
       }
     }
     RETURN_NOT_OK(session->Apply(op.release()));
