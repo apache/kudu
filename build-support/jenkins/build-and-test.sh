@@ -323,10 +323,10 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   virtualenv test_environment
   source test_environment/bin/activate
   pip install --upgrade pip
-  pip install --disable-pip-version-check -r requirements.txt
+  CC=$CLANG CXX=$CLANG++ pip install --disable-pip-version-check -r requirements.txt
 
   # Assuming we run this script from base dir
-  python setup.py build_ext
+  CC=$CLANG CXX=$CLANG++ python setup.py build_ext
   set +e
   python setup.py test \
     --addopts="kudu --junit-xml=$KUDU_HOME/build/test-logs/python_client.xml" \
