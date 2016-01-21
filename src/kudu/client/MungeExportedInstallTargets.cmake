@@ -25,5 +25,7 @@ endif()
 file(GLOB CMAKE_FILES "${CMAKE_FILES_DIR}/*.cmake")
 foreach(CMAKE_FILE ${CMAKE_FILES})
   message(STATUS "Munging kudu client targets in ${CMAKE_FILE}")
-  execute_process(COMMAND sed -i'' s/kudu_client_exported/kudu_client/g ${CMAKE_FILE})
+  execute_process(COMMAND sed s/kudu_client_exported/kudu_client/g ${CMAKE_FILE}
+    OUTPUT_FILE ${CMAKE_FILE}.new)
+  execute_process(COMMAND mv -f ${CMAKE_FILE}.new ${CMAKE_FILE})
 endforeach()
