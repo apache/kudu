@@ -46,7 +46,7 @@ three tablet servers is necessary.
 
 .Operating System Requirements
 Linux::
-    - RHEL 6 or Ubuntu 14.04 Trusty.
+    - RHEL 6, Ubuntu 14.04 Trusty, or SLES 12.
     - A kernel and fileystem that support _hole punching_. Hole punching is the use of the
       `fallocate(2)` system call with the `FALLOC_FL_PUNCH_HOLE` option set. See
       link:troubleshooting.html#req_hole_punching[troubleshooting hole punching] for more
@@ -81,6 +81,8 @@ You can install Kudu using packages managed by the operating system.
 |===
 
 NOTE: For later versions of Ubuntu, the Ubuntu Trusty packages are reported to install, though they have not been extensively tested.
+
+NOTE: packages are not yet provided for SLES.
 
 === Install On RHEL Hosts
 
@@ -234,7 +236,7 @@ $ sudo gem install asciidoctor
 +
 [source,bash]
 ----
-$ git clone http://github.com/cloudera/kudu
+$ git clone https://github.com/cloudera/kudu
 $ cd kudu
 ----
 
@@ -312,7 +314,7 @@ make install
 [[ubuntu_from_source]]
 === Ubuntu or Debian
 
-. Install the prerequisite libraries, if they are not installed:
+. Install the prerequisite libraries, if they are not installed.
 +
 ----
 $ sudo apt-get install git autoconf automake libboost-thread-dev \
@@ -330,7 +332,7 @@ $ sudo apt-get install asciidoctor xsltproc
 +
 [source,bash]
 ----
-$ git clone http://github.com/cloudera/kudu
+$ git clone https://github.com/cloudera/kudu
 $ cd kudu
 ----
 
@@ -386,12 +388,111 @@ the steps marked *Optional* above.
 sudo apt-get -y install git autoconf automake libboost-thread-dev \
   libboost-system-dev curl gcc g++ libssl-dev libsasl2-dev libsasl2-modules \
   libtool ntp patch pkg-config make rsync unzip vim-common gdb python
-git clone http://github.com/cloudera/kudu
+git clone https://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build
 cd build
 ../thirdparty/installed/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  ..
+make -j4
+make install
+----
+====
+
+[[sles_from_source]]
+=== SUSE Linux Enterprise Server
+Building Kudu on SLES requires building Boost from source, since SLES does not
+have system packages containing Boost static libraries. Boost may be built
+anywhere, provided that the `BOOST_ROOT` environment variable is set to the
+location while invoking CMake to build Kudu. In the instructions below, Boost is
+built alongside Kudu.
+
+. Install the prerequisite libraries, if they are not installed.
++
+----
+$ sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
+  gdb git libtool make ntp openssl-devel patch pkg-config python rsync unzip vim
+----
+
+. Install Boost.
++
+----
+wget https://downloads.sourceforge.net/project/boost/boost/1.59.0/boost_1_59_0.tar.gz
+tar xzf boost_1_59_0.tar.gz
+pushd boost_1_59_0
+./bootstrap.sh
+./b2 --with-system --with-threads
+export BOOST_ROOT=$(pwd)
+popd
+----
+
+. Clone the Git repository and change to the new `kudu` directory.
++
+[source,bash]
+----
+$ git clone https://github.com/cloudera/kudu
+$ cd kudu
+----
+
+. Build any missing third-party requirements using the `build-if-necessary.sh` script.
++
+[source,bash]
+----
+$ thirdparty/build-if-necessary.sh
+----
+
+. Build Kudu, using the utilities installed in the previous step. Choose a build
+directory for the intermediate output, which can be anywhere in your filesystem
+except for the `kudu` directory itself. Edit the install prefix to the location
+where you would like the Kudu binaries, libraries, and headers installed during
+the `make install` step. The default value is `/usr/local/`.
++
+[source,bash]
+----
+mkdir -p build
+cd build
+BOOST_ROOT=../../boost_1_59_0 \
+  ../thirdparty/installed/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  -DCMAKE_INSTALL_PREFIX=/opt/kudu \
+  ..
+make -j4
+----
+[[build_install_kudu]]
+. Optional: Install Kudu binaries, libraries, and headers.
+If you do not specify a `DESTDIR`, `/usr/local/` is the default.
++
+[source,bash]
+----
+sudo make DESTDIR=/opt/kudu install
+----
+
+.SLES Build Script
+====
+This script provides an overview of the procedure to build Kudu on SLES, and
+can be used as the basis for an automated deployment scenario.
+
+[source,bash]
+----
+#!/bin/bash
+
+sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
+  gdb git libtool make ntp openssl-devel patch pkg-config python rsync unzip vim
+wget https://downloads.sourceforge.net/project/boost/boost/1.59.0/boost_1_59_0.tar.gz
+tar xzf boost_1_59_0.tar.gz
+pushd boost_1_59_0
+./bootstrap.sh
+./b2 --with-system --with-threads
+popd
+git clone https://github.com/cloudera/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+mkdir -p build
+cd build
+BOOST_ROOT=../../boost_1_59_0 \
+  ../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ..
 make -j4
@@ -414,7 +515,7 @@ See link:https://issues.cloudera.org/browse/KUDU-1219[OS X Limitations & Known I
 for more information.
 ====
 
-. Install the prerequisite libraries, if they are not installed:
+. Install the prerequisite libraries, if they are not installed.
 +
 ----
 $ brew install autoconf automake cmake libtool pkg-config boost pstree
@@ -431,7 +532,7 @@ $ brew link -f openssl
 +
 [source,bash]
 ----
-$ git clone http://github.com/cloudera/kudu
+$ git clone https://github.com/cloudera/kudu
 $ cd kudu
 ----
 
@@ -465,7 +566,7 @@ are installed.
 brew install autoconf automake cmake libtool pkg-config boost pstree
 brew install openssl
 brew link -f openssl
-git clone http://github.com/cloudera/kudu
+git clone https://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build
