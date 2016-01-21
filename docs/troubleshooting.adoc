@@ -95,7 +95,7 @@ To install NTP, use the appropriate command for your operating system:
 |===
 | OS | Command
 | Debian/Ubuntu | `sudo apt-get install ntp`
-| RHEL/Centos | `sudo yum install ntp`
+| RHEL/CentOS | `sudo yum install ntp`
 |===
 
 If NTP is installed but not running, start it using one of these commands:
@@ -103,7 +103,7 @@ If NTP is installed but not running, start it using one of these commands:
 |===
 | OS | Command
 | Debian/Ubuntu | `sudo service ntp restart`
-| RHEL/Centos | `sudo /etc/init.d/ntpd restart`
+| RHEL/CentOS | `sudo /etc/init.d/ntpd restart`
 |===
 
 TIP: NTP requires a network connection and may take a few minutes to synchronize the clock.

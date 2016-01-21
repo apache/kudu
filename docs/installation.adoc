@@ -197,17 +197,31 @@ need, you can build Kudu from source. You can build from source on any supported
 .Known Build Issues
 ====
 * It is not possible to build Kudu on Microsoft Windows.
-* Do not build Kudu using `gcc` 4.6. It is known to cause runtime and test failures.
+* A C++11 capable compiler (GCC 4.8+) is required.
 ====
 
 [[rhel_from_source]]
 === RHEL or CentOS
-. Install the prerequisite libraries, if they are not installed:
+RHEL or CentOS 6.6 or later is required to build Kudu from source. The Red Hat
+Developer Toolset is required in order to have access to a C++11 capable
+compiler.
+
+. Install the prerequisite libraries, if they are not installed.
 +
 ----
 $ sudo yum install gcc gcc-c++ autoconf automake libtool \
   boost-static boost-devel openssl-devel cyrus-sasl-devel \
   cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb
+----
+
+. Install the Red Hat Developer Toolset.
++
+----
+$ DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64.noarch.rpm
+$ DTLS_RPM_URL=https://www.softwarecollections.org/en/scls/rhscl/devtoolset-3/epel-6-x86_64/download/${DTLS_RPM}
+$ wget ${DTLS_RPM_URL} -O ${DTLS_RPM}
+$ sudo yum install -y scl-utils ${DTLS_RPM}
+$ sudo yum install -y devtoolset-3-toolchain
 ----
 
 . Optional: Install the `asciidoctor` gem if you plan to build documentation.
@@ -228,7 +242,7 @@ $ cd kudu
 +
 [source,bash]
 ----
-$ thirdparty/build-if-necessary.sh
+$ build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 ----
 
 . Build Kudu, using the utilities installed in the previous step. Choose a build
@@ -241,7 +255,8 @@ the `make install` step. The default value is `/usr/local/`.
 ----
 mkdir -p build
 cd build
-../thirdparty/installed/bin/cmake \
+../build-support/enable_devtoolset.sh \
+  ../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   -DCMAKE_INSTALL_PREFIX=/opt/kudu \
   ..
@@ -276,11 +291,17 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 sudo yum -y install gcc gcc-c++ autoconf automake libtool \
   boost-static boost-devel openssl-devel cyrus-sasl-devel \
   cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb
+DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64.noarch.rpm
+DTLS_RPM_URL=https://www.softwarecollections.org/en/scls/rhscl/devtoolset-3/epel-6-x86_64/download/${DTLS_RPM}
+wget ${DTLS_RPM_URL} -O ${DTLS_RPM}
+sudo yum install -y scl-utils ${DTLS_RPM}
+sudo yum install -y devtoolset-3-toolchain
 cd kudu
-thirdparty/build-if-necessary.sh
+build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 mkdir -p build
 cd build
-../thirdparty/installed/bin/cmake \
+../build-support/enable_devtoolset.sh \
+  ../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ..
 make -j4
