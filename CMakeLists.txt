@@ -897,14 +897,10 @@ endif (UNIX)
 # "make docs" target
 ############################################################
 if (UNIX)
-  set(DOCS_BUILD_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/docs)
-  add_custom_command(
-    OUTPUT ${DOCS_BUILD_DIRECTORY}
-    # We want the docs output HTML to go in a docs/ subdir of the output dir
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_docs.sh
-            --build_root ${CMAKE_CURRENT_BINARY_DIR})
   add_custom_target(docs
-    DEPENDS ${DOCS_BUILD_DIRECTORY})
+    # The docs output HTML will end up in a docs/ subdir.
+    ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_docs.sh
+      --build_root ${CMAKE_CURRENT_BINARY_DIR})
 endif (UNIX)
 
 ############################################################
