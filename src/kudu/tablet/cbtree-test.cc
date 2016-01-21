@@ -69,6 +69,9 @@ class TestCBTree : public KuduTest {
               InsertInLeaf(&lnode, &arena, key, val));
   }
 
+  template<class Traits>
+  void DoTestConcurrentInsert();
+
 };
 
 // Ensure that the template magic to make the nodes sized
@@ -153,6 +156,13 @@ struct SmallFanoutTraits : public BTreeTraits {
 
   static const size_t internal_node_size = 84;
   static const size_t leaf_node_size = 92;
+};
+
+// Enables yield() calls at interesting points of the btree
+// implementation to ensure that we are still correct even
+// with adversarial scheduling.
+struct RacyTraits : public SmallFanoutTraits {
+  static const size_t debug_raciness = 100;
 };
 
 void MakeKey(char *kbuf, size_t len, int i) {
@@ -400,7 +410,17 @@ TEST_F(TestCBTree, TestVersionLockConcurrent) {
 // Each thread inserts a number of elements and then verifies that it can
 // read them back.
 TEST_F(TestCBTree, TestConcurrentInsert) {
-  gscoped_ptr<CBTree<SmallFanoutTraits> > tree;
+  DoTestConcurrentInsert<SmallFanoutTraits>();
+}
+
+// Same, but with a tree that tries to provoke race conditions.
+TEST_F(TestCBTree, TestRacyConcurrentInsert) {
+  DoTestConcurrentInsert<RacyTraits>();
+}
+
+template<class TraitsClass>
+void TestCBTree::DoTestConcurrentInsert() {
+  gscoped_ptr<CBTree<TraitsClass> > tree;
 
   int num_threads = 16;
   int ins_per_thread = 30;
@@ -417,7 +437,7 @@ TEST_F(TestCBTree, TestConcurrentInsert) {
 
   for (int i = 0; i < num_threads; i++) {
     threads.push_back(new boost::thread(
-                        InsertAndVerify<SmallFanoutTraits>,
+                        InsertAndVerify<TraitsClass>,
                         &go_barrier,
                         &done_barrier,
                         &tree,
@@ -432,7 +452,7 @@ TEST_F(TestCBTree, TestConcurrentInsert) {
   // on areas of the key space diminishes.
 
   for (int trial = 0; trial < n_trials; trial++) {
-    tree.reset(new CBTree<SmallFanoutTraits>());
+    tree.reset(new CBTree<TraitsClass>());
     go_barrier.wait();
 
     done_barrier.wait();

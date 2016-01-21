@@ -92,6 +92,18 @@ inline void PrefetchMemory(const T *addr) {
   }
 }
 
+// Utility function that, when Traits::debug_raciness is non-zero
+// (i.e only in debug code), will spin for some amount of time
+// related to that setting.
+// This can be used when trying to debug race conditions, but
+// will compile away in production code.
+template<class Traits>
+void DebugRacyPoint() {
+  if (Traits::debug_raciness > 0) {
+    boost::detail::yield(Traits::debug_raciness);
+  }
+}
+
 template<class Traits> class NodeBase;
 template<class Traits> class InternalNode;
 template<class Traits> class LeafNode;
@@ -702,9 +714,10 @@ class LeafNode : public NodeBase<Traits> {
     this->SetInserting();
 
     // The following inserts should always succeed because we
-    // verified space_available above
+    // verified that there is space available above.
     num_entries_++;
     InsertInSliceArray(keys_, num_entries_, key, idx, arena);
+    DebugRacyPoint<Traits>();
     InsertInSliceArray(vals_, num_entries_, val, idx, arena);
 
     return INSERT_SUCCESS;
@@ -739,12 +752,12 @@ class LeafNode : public NodeBase<Traits> {
   //
   // NOTE: the value slice may include an *invalid pointer*, not
   // just invalid data, so any readers should check for conflicts
-  // before accessing any referred-to data in the value slice.
+  // before accessing the value slice.
   // The key, on the other hand, will always be a valid pointer, but
   // may be invalid data.
-  void Get(size_t idx, Slice *k, Slice *v) const {
+  void Get(size_t idx, Slice *k, ValueSlice *v) const {
     *k = keys_[idx].as_slice();
-    *v = vals_[idx].as_slice();
+    *v = vals_[idx];
   }
 
   // Truncates the node, removing entries from the right to reduce
@@ -855,10 +868,11 @@ class PreparedMutation {
   // has the same size as the original data.
   Slice current_mutable_value() {
     CHECK(prepared());
-    Slice k, v;
+    Slice k;
+    ValueSlice v;
     leaf_->Get(idx_, &k, &v);
     leaf_->SetInserting();
-    return v;
+    return v.as_slice();
   }
 
   // Accessors
@@ -990,7 +1004,8 @@ class CBTree {
       retry_in_leaf:
       {
         GetResult ret;
-        Slice key_in_node, val_in_node;
+        Slice key_in_node;
+        ValueSlice val_in_node;
         bool exact;
         size_t idx = leaf->Find(key, &exact);
         DebugRacyPoint();
@@ -999,13 +1014,7 @@ class CBTree {
           ret = GET_NOT_FOUND;
         } else {
           leaf->Get(idx, &key_in_node, &val_in_node);
-          *buf_len = val_in_node.size();
-
-          if (PREDICT_FALSE(val_in_node.size() > in_buf_len)) {
-            ret = GET_TOO_BIG;
-          } else {
-            ret = GET_SUCCESS;
-          }
+          ret = GET_SUCCESS;
         }
 
         // Got some kind of result, but may be based on racy data.
@@ -1017,8 +1026,18 @@ class CBTree {
           version = new_version;
           goto retry_in_leaf;
         }
+
+        // If we found a matching key earlier, and the read of the node
+        // wasn't racy, we can safely work with the ValueSlice.
         if (ret == GET_SUCCESS) {
-          memcpy(buf, val_in_node.data(), val_in_node.size());
+          Slice val = val_in_node.as_slice();
+          *buf_len = val.size();
+
+          if (PREDICT_FALSE(val.size() > in_buf_len)) {
+            ret = GET_TOO_BIG;
+          } else {
+            memcpy(buf, val.data(), val.size());
+          }
         }
         return ret;
       }
@@ -1179,16 +1198,8 @@ class CBTree {
     return node.leaf_node_ptr();
   }
 
-
-  // Utility function that, when Traits::debug_raciness is non-zero
-  // (i.e only in debug code), will spin for some amount of time
-  // related to that setting.
-  // This can be used when trying to debug race conditions, but
-  // will compile away in production code.
   void DebugRacyPoint() const {
-    if (Traits::debug_raciness > 0) {
-      boost::detail::yield(Traits::debug_raciness);
-    }
+    btree::DebugRacyPoint<Traits>();
   }
 
   // Dump the tree.
@@ -1616,7 +1627,9 @@ class CBTreeIterator {
 
   void GetCurrentEntry(Slice *key, Slice *val) const {
     DCHECK(seeked_);
-    leaf_to_scan_->Get(idx_in_leaf_, key, val);
+    ValueSlice val_slice;
+    leaf_to_scan_->Get(idx_in_leaf_, key, &val_slice);
+    *val = val_slice.as_slice();
   }
 
   Slice GetCurrentKey() const {
