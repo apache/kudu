@@ -159,7 +159,7 @@ class percpu_rwlock {
  public:
   percpu_rwlock() {
     errno = 0;
-    n_cpus_ = base::NumCPUs();
+    n_cpus_ = base::MaxCPUIndex() + 1;
     CHECK_EQ(errno, 0) << ErrnoToString(errno);
     CHECK_GT(n_cpus_, 0);
     locks_ = new padded_lock[n_cpus_];

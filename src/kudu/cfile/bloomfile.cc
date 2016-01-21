@@ -194,7 +194,7 @@ Status BloomFileReader::InitOnce() {
   // Ugly hack: create a per-cpu iterator.
   // Instead this should be threadlocal, or allow us to just
   // stack-allocate these things more smartly!
-  int n_cpus = base::NumCPUs();
+  int n_cpus = base::MaxCPUIndex() + 1;
   for (int i = 0; i < n_cpus; i++) {
     index_iters_.push_back(
       IndexTreeIterator::Create(reader_.get(), validx_root));
