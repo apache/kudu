@@ -236,7 +236,7 @@ def create_archive_input(staging, argv,
   files.append(rel_test_exe)
   deps = ldd_deps(abs_test_exe)
   for d in DEPS_FOR_ALL:
-    d = os.path.realpath(d)
+    d = os.path.realpath(rel_to_abs(d))
     if os.path.isdir(d):
       d += "/"
     deps.append(d)

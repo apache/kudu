@@ -33,13 +33,14 @@
 # central test server.
 
 # Path to the test executable or script to be run.
+# May be relative or absolute.
 TEST_PATH=$1
 
-# Path to the root source directory. This script is expected to live within it.
-SOURCE_ROOT=$(dirname "$BASH_SOURCE")/..
+# Absolute path to the root source directory. This script is expected to live within it.
+SOURCE_ROOT=$(cd $(dirname "$BASH_SOURCE")/.. ; pwd)
 
-# Path to the root build directory. The test path is expected to be within it.
-BUILD_ROOT=$(dirname "$TEST_PATH")/..
+# Absolute path to the root build directory. The test path is expected to be within it.
+BUILD_ROOT=$(cd $(dirname "$TEST_PATH")/.. ; pwd)
 
 TEST_LOGDIR=$BUILD_ROOT/test-logs
 mkdir -p $TEST_LOGDIR
@@ -49,6 +50,7 @@ mkdir -p $TEST_DEBUGDIR
 
 TEST_DIRNAME=$(cd $(dirname $TEST_PATH); pwd)
 TEST_FILENAME=$(basename $TEST_PATH)
+ABS_TEST_PATH=$TEST_DIRNAME/$TEST_FILENAME
 shift
 TEST_NAME=$(echo $TEST_FILENAME | perl -pe 's/\..+?$//') # Remove path and extension (if any).
 
@@ -148,8 +150,8 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
 
   echo "Running $TEST_NAME, redirecting output into $LOGFILE" \
     "(attempt ${ATTEMPT_NUMBER}/$TEST_EXECUTION_ATTEMPTS)"
-  $TEST_PATH "$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
-    | $SOURCE_ROOT/build-support/stacktrace_addr2line.pl $TEST_PATH \
+  $ABS_TEST_PATH "$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
+    | $SOURCE_ROOT/build-support/stacktrace_addr2line.pl $ABS_TEST_PATH \
     | $pipe_cmd > $LOGFILE
   STATUS=$?
 
@@ -189,7 +191,7 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
 
   if [ -n "$KUDU_REPORT_TEST_RESULTS" ]; then
     echo Reporting results
-    $SOURCE_ROOT/build-support/report-test.sh "$TEST_PATH" "$LOGFILE" "$STATUS" &
+    $SOURCE_ROOT/build-support/report-test.sh "$ABS_TEST_PATH" "$LOGFILE" "$STATUS" &
 
     # On success, we'll do "best effort" reporting, and disown the subprocess.
     # On failure, we want to upload the failed test log. So, in that case,
@@ -229,12 +231,12 @@ fi
 COREFILES=$(ls | grep ^core)
 if [ -n "$COREFILES" ]; then
   echo Found core dump. Saving executable and core files.
-  gzip < $TEST_PATH > "$TEST_DEBUGDIR/$TEST_NAME.gz" || exit $?
+  gzip < $ABS_TEST_PATH > "$TEST_DEBUGDIR/$TEST_NAME.gz" || exit $?
   for COREFILE in $COREFILES; do
     gzip < $COREFILE > "$TEST_DEBUGDIR/$TEST_NAME.$COREFILE.gz" || exit $?
   done
   # Pull in any .so files as well.
-  for LIB in $(ldd $TEST_PATH | grep $BUILD_ROOT | awk '{print $3}'); do
+  for LIB in $(ldd $ABS_TEST_PATH | grep $BUILD_ROOT | awk '{print $3}'); do
     LIB_NAME=$(basename $LIB)
     gzip < $LIB > "$TEST_DEBUGDIR/$LIB_NAME.gz" || exit $?
   done

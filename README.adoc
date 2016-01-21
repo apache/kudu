@@ -212,6 +212,14 @@ Instead, use a command like:
 $ ctest -R foo-test
 ----
 
+or
+
+[source,bash]
+----
+$ build-support/run-test.sh build/tsan/latest/foo-test [--test-arguments-here]
+----
+
+
 ...and then view the logs in _build/tsan/test-logs/_
 
 In order for all of the suppressions to work, you need libraries with debug
