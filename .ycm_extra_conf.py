@@ -65,6 +65,8 @@ flags = [
 'src',
 '-isystem',
 'thirdparty/installed/include',
+'-isystem',
+'thirdparty/installed-deps/include',
 ]
 
 # Set this to the absolute path to the folder (NOT the file!) containing the
