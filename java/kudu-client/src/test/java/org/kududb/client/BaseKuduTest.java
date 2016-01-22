@@ -45,9 +45,6 @@ public class BaseKuduTest {
 
   private static final Logger LOG = LoggerFactory.getLogger(BaseKuduTest.class);
 
-  private static final int DEFAULT_MASTER_RPC_PORT = 7051;
-  private static final String START_CLUSTER = "startCluster";
-
   private static final String NUM_MASTERS_PROP = "NUM_MASTERS";
   private static final int NUM_TABLET_SERVERS = 3;
   private static final int DEFAULT_NUM_MASTERS = 1;
@@ -70,7 +67,6 @@ public class BaseKuduTest {
   protected static KuduClient syncClient;
   protected static Schema basicSchema = getBasicSchema();
   protected static Schema allTypesSchema = getSchemaWithAllTypes();
-  protected static boolean startCluster;
 
   private static List<String> tableNames = new ArrayList<>();
 
@@ -78,19 +74,13 @@ public class BaseKuduTest {
   public static void setUpBeforeClass() throws Exception {
     LOG.info("Setting up before class...");
 
-    startCluster = Boolean.parseBoolean(System.getProperty(START_CLUSTER, "true"));
+    miniCluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+        .numMasters(NUM_MASTERS)
+        .numTservers(NUM_TABLET_SERVERS)
+        .build();
+    masterAddresses = miniCluster.getMasterAddresses();
+    masterHostPorts = miniCluster.getMasterHostPorts();
 
-    if (startCluster) {
-      miniCluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-          .numMasters(NUM_MASTERS)
-          .numTservers(NUM_TABLET_SERVERS)
-          .build();
-      masterAddresses = miniCluster.getMasterAddresses();
-      masterHostPorts = miniCluster.getMasterHostPorts();
-    } else {
-      masterAddresses = TestUtils.getMasterAddresses();
-      masterHostPorts = NetUtil.parseStrings(masterAddresses, DEFAULT_MASTER_RPC_PORT);
-    }
     LOG.info("Creating new Kudu client...");
     client = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses).build();
     syncClient = new KuduClient(client);
@@ -128,9 +118,7 @@ public class BaseKuduTest {
         // shutting down the async client effectively does that.
       }
     } finally {
-      if (startCluster) {
-        miniCluster.shutdown();
-      }
+      miniCluster.shutdown();
     }
   }
 
