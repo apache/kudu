@@ -95,6 +95,12 @@ build_llvm() {
 }
 
 build_libstdcxx() {
+  # Configure libstdcxx to use posix threads by default. Normally this symlink
+  # would be created automatically while building libgcc as part of the overall
+  # GCC build, but since we are only building libstdcxx we must configure it
+  # manually.
+  ln -sf $GCC_DIR/libgcc/gthr-posix.h $GCC_DIR/libgcc/gthr-default.h
+
   # Remove the GCC build directory to remove cached build configuration.
   rm -rf $GCC_BUILD_DIR
   mkdir -p $GCC_BUILD_DIR
