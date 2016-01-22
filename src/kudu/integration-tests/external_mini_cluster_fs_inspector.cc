@@ -18,6 +18,7 @@
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 
 #include <algorithm>
+#include <set>
 
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/strings/join.h"
@@ -32,6 +33,7 @@
 namespace kudu {
 namespace itest {
 
+using std::set;
 using std::string;
 using std::vector;
 
@@ -81,6 +83,14 @@ int ExternalMiniClusterFsInspector::CountWALSegmentsOnTS(int index) {
   return total_segments;
 }
 
+vector<string> ExternalMiniClusterFsInspector::ListTablets() {
+  set<string> tablets;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    auto ts_tablets = ListTabletsOnTS(i);
+    tablets.insert(ts_tablets.begin(), ts_tablets.end());
+  }
+  return vector<string>(tablets.begin(), tablets.end());
+}
 vector<string> ExternalMiniClusterFsInspector::ListTabletsOnTS(int index) {
   string data_dir = cluster_->tablet_server(index)->data_dir();
   string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);

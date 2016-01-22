@@ -1033,7 +1033,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
     if (tservers.size() == 3) {
       break;
     }
-    rt->InvalidateCachedReplicas();
+    rt->MarkStale();
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
 

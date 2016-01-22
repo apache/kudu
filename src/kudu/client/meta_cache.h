@@ -123,13 +123,23 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   RemoteTablet(std::string tablet_id,
                Partition partition)
       : tablet_id_(std::move(tablet_id)),
-        partition_(std::move(partition)) {
+        partition_(std::move(partition)),
+        stale_(false) {
   }
 
   // Updates this tablet's replica locations.
   void Refresh(const TabletServerMap& tservers,
                const google::protobuf::RepeatedPtrField
                  <master::TabletLocationsPB_ReplicaPB>& replicas);
+
+  // Mark this tablet as stale, indicating that the cached tablet metadata is
+  // out of date. Staleness is checked by the MetaCache when
+  // LookupTabletByKey() is called to determine whether the fast (non-network)
+  // path can be used or whether the metadata must be refreshed from the Master.
+  void MarkStale();
+
+  // Whether the tablet has been marked as stale.
+  bool stale() const;
 
   // Mark any replicas of this tablet hosted by 'ts' as failed. They will
   // not be returned in future cache lookups.
@@ -173,10 +183,6 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   // Return stringified representation of the list of replicas for this tablet.
   std::string ReplicasAsString() const;
 
-  // Invalidate the current set of replicas. This will result in a new lookup of the
-  // replicas from the master on the next access.
-  void InvalidateCachedReplicas();
-
  private:
   // Same as ReplicasAsString(), except that the caller must hold lock_.
   std::string ReplicasAsStringUnlocked() const;
@@ -186,6 +192,7 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
 
   // All non-const members are protected by 'lock_'.
   mutable simple_spinlock lock_;
+  bool stale_;
   std::vector<RemoteReplica> replicas_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteTablet);
@@ -254,13 +261,13 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
 
   rw_spinlock lock_;
 
-  // Cache of tablet servers, by UUID.
+  // Cache of Tablet Server locations: TS UUID -> RemoteTabletServer*.
   //
   // Given that the set of tablet servers is bounded by physical machines, we never
   // evict entries from this map until the MetaCache is destructed. So, no need to use
   // shared_ptr, etc.
   //
-  // Protected by lock_
+  // Protected by lock_.
   TabletServerMap ts_cache_;
 
   // Cache of tablets, keyed by table ID, then by start partition key.

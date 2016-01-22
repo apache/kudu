@@ -44,7 +44,11 @@ inline void FlushSessionOrDie(const sp::shared_ptr<KuduSession>& session) {
   }
 }
 
+// Scans in LEADER_ONLY mode, returning stringified rows in the given vector.
 void ScanTableToStrings(KuduTable* table, std::vector<std::string>* row_strings);
+
+// Count the number of rows in the table in LEADER_ONLY mode.
+int64_t CountTableRows(KuduTable* table);
 
 void ScanToStrings(KuduScanner* scanner, std::vector<std::string>* row_strings);
 

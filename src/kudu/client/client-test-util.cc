@@ -16,7 +16,6 @@
 // under the License.
 
 #include "kudu/client/client-test-util.h"
-#include "kudu/client/row_result.h"
 
 #include <vector>
 
@@ -55,6 +54,12 @@ void ScanTableToStrings(KuduTable* table, vector<string>* row_strings) {
   ASSERT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
   scanner.SetTimeoutMillis(60000);
   ScanToStrings(&scanner, row_strings);
+}
+
+int64_t CountTableRows(KuduTable* table) {
+  vector<string> rows;
+  client::ScanTableToStrings(table, &rows);
+  return rows.size();
 }
 
 void ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {

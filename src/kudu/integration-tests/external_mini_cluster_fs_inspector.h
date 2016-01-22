@@ -52,6 +52,7 @@ class ExternalMiniClusterFsInspector {
   Status ListFilesInDir(const std::string& path, std::vector<std::string>* entries);
   int CountFilesInDir(const std::string& path);
   int CountWALSegmentsOnTS(int index);
+  std::vector<std::string> ListTablets();
   std::vector<std::string> ListTabletsOnTS(int index);
   int CountWALSegmentsForTabletOnTS(int index, const std::string& tablet_id);
   bool DoesConsensusMetaExistForTabletOnTS(int index, const std::string& tablet_id);

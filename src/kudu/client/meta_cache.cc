@@ -169,11 +169,17 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
     rep.failed = false;
     replicas_.push_back(rep);
   }
+  stale_ = false;
 }
 
-void RemoteTablet::InvalidateCachedReplicas() {
+void RemoteTablet::MarkStale() {
   lock_guard<simple_spinlock> l(&lock_);
-  replicas_.clear();
+  stale_ = true;
+}
+
+bool RemoteTablet::stale() const {
+  lock_guard<simple_spinlock> l(&lock_);
+  return stale_;
 }
 
 bool RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
@@ -584,9 +590,14 @@ bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
     return false;
   }
 
+  // Stale entries must be re-fetched.
+  if ((*r)->stale()) {
+    return false;
+  }
+
   if ((*r)->partition().partition_key_end().compare(partition_key) > 0 ||
       (*r)->partition().partition_key_end().empty()) {
-    // partition_key < partition.end OR tablet doesn't end
+    // partition_key < partition.end OR tablet doesn't end.
     *remote_tablet = *r;
     return true;
   }

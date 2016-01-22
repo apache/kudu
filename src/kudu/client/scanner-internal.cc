@@ -154,29 +154,47 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
   //   - TABLET_NOT_RUNNING : The scan can be retried at a different tablet server, subject
   //                          to the client's specified selection criteria.
   //
+  //   - TABLET_NOT_FOUND   : The scan can be retried at a different tablet server, subject
+  //                          to the client's specified selection criteria.
+  //                          The metadata for this tablet should be refreshed.
+  //
   //   - Any other error    : Fatal. This indicates an unexpected error while processing the scan
   //                          request.
   if (rpc_status.ok() && !server_status.ok()) {
     const tserver::TabletServerErrorPB& error = last_response_.error();
-    if (error.code() == tserver::TabletServerErrorPB::SCANNER_EXPIRED) {
-      VLOG(1) << "Got SCANNER_EXPIRED error code, non-fatal error.";
-    } else if (error.code() == tserver::TabletServerErrorPB::TABLET_NOT_RUNNING) {
-      VLOG(1) << "Got TABLET_NOT_RUNNING error code, temporarily blacklisting node "
-          << ts_->permanent_uuid();
-      blacklist->insert(ts_->permanent_uuid());
-      // We've blacklisted all the live candidate tservers.
-      // Do a short random sleep, clear the temp blacklist, then do another round of retries.
-      if (!candidates.empty() && candidates.size() == blacklist->size()) {
-        MonoDelta sleep_delta = MonoDelta::FromMilliseconds((random() % 5000) + 1000);
-        LOG(INFO) << "All live candidate nodes are unavailable because of transient errors."
-            << " Sleeping for " << sleep_delta.ToMilliseconds() << " ms before trying again.";
-        SleepFor(sleep_delta);
-        blacklist->clear();
+    switch (error.code()) {
+      case tserver::TabletServerErrorPB::SCANNER_EXPIRED:
+        VLOG(1) << "Got SCANNER_EXPIRED error code, non-fatal error.";
+        break;
+      case tserver::TabletServerErrorPB::TABLET_NOT_RUNNING:
+        VLOG(1) << "Got error code " << tserver::TabletServerErrorPB::Code_Name(error.code())
+            << ": temporarily blacklisting node " << ts_->permanent_uuid();
+        blacklist->insert(ts_->permanent_uuid());
+        // We've blacklisted all the live candidate tservers.
+        // Do a short random sleep, clear the temp blacklist, then do another round of retries.
+        if (!candidates.empty() && candidates.size() == blacklist->size()) {
+          MonoDelta sleep_delta = MonoDelta::FromMilliseconds((random() % 5000) + 1000);
+          LOG(INFO) << "All live candidate nodes are unavailable because of transient errors."
+              << " Sleeping for " << sleep_delta.ToMilliseconds() << " ms before trying again.";
+          SleepFor(sleep_delta);
+          blacklist->clear();
+        }
+        break;
+      case tserver::TabletServerErrorPB::TABLET_NOT_FOUND: {
+        // There was either a tablet configuration change or the table was
+        // deleted, since at the time of this writing we don't support splits.
+        // Backoff, then force a re-fetch of the tablet metadata.
+        remote_->MarkStale();
+        // TODO: Only backoff on the second time we hit TABLET_NOT_FOUND on the
+        // same tablet (see KUDU-1314).
+        MonoDelta backoff_time = MonoDelta::FromMilliseconds((random() % 1000) + 500);
+        SleepFor(backoff_time);
+        break;
       }
-    } else {
-      // All other server errors are fatal. Usually indicates a malformed request, e.g. a bad scan
-      // specification.
-      return server_status;
+      default:
+        // All other server errors are fatal. Usually indicates a malformed request, e.g. a bad scan
+        // specification.
+        return server_status;
     }
   }
 
