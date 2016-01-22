@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <vector>
 #include "kudu/util/status.h"
+#include "kudu/util/test_util.h"
 
 using std::string;
 
@@ -60,5 +61,55 @@ TEST(StatusTest, TestMemoryUsage) {
   ASSERT_GT(Status::IOError(
       "file error", "some other thing", ENOTDIR).memory_footprint_excluding_this(), 0);
 }
+
+TEST(StatusTest, TestMoveConstructor) {
+  // OK->OK move should do nothing.
+  {
+    Status src = Status::OK();
+    Status dst = std::move(src);
+    ASSERT_OK(src);
+    ASSERT_OK(dst);
+  }
+
+  // Moving a not-OK status into a new one should make the moved status
+  // "OK".
+  {
+    Status src = Status::NotFound("foo");
+    Status dst = std::move(src);
+    ASSERT_OK(src);
+    ASSERT_EQ("Not found: foo", dst.ToString());
+  }
+}
+
+TEST(StatusTest, TestMoveAssignment) {
+  // OK->Bad move should clear the source status and also make the
+  // destination status OK.
+  {
+    Status src = Status::OK();
+    Status dst = Status::NotFound("orig dst");
+    dst = std::move(src);
+    ASSERT_OK(src);
+    ASSERT_OK(dst);
+  }
+
+  // Bad->Bad move.
+  {
+    Status src = Status::NotFound("orig src");
+    Status dst = Status::NotFound("orig dst");
+    dst = std::move(src);
+    ASSERT_OK(src);
+    ASSERT_EQ("Not found: orig src", dst.ToString());
+  }
+
+  // Bad->OK move
+  {
+    Status src = Status::NotFound("orig src");
+    Status dst = Status::OK();
+    dst = std::move(src);
+    ASSERT_OK(src);
+    ASSERT_EQ("Not found: orig src", dst.ToString());
+  }
+}
+
 
 }  // namespace kudu
