@@ -245,6 +245,11 @@ class scoped_refptr {
       ptr_->AddRef();
   }
 
+  template <typename U>
+  scoped_refptr(scoped_refptr<U>&& r) : ptr_(r.get()) {
+    r.ptr_ = nullptr;
+  }
+
   ~scoped_refptr() {
     if (ptr_)
       ptr_->Release();
@@ -289,6 +294,17 @@ class scoped_refptr {
     return *this = r.get();
   }
 
+  scoped_refptr<T>& operator=(scoped_refptr<T>&& r) {
+    scoped_refptr<T>(r).swap(*this);
+    return *this;
+  }
+
+  template <typename U>
+  scoped_refptr<T>& operator=(scoped_refptr<U>&& r) {
+    scoped_refptr<T>(r).swap(*this);
+    return *this;
+  }
+
   void swap(T** pp) {
     T* p = ptr_;
     ptr_ = *pp;
@@ -307,6 +323,9 @@ class scoped_refptr {
 
  protected:
   T* ptr_;
+
+ private:
+  template <typename U> friend class scoped_refptr;
 };
 
 // Handy utility for creating a scoped_refptr<T> out of a T* explicitly without
