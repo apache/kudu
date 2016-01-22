@@ -53,7 +53,7 @@ class KuduClient::Data {
   Data();
   ~Data();
 
-  // Returns a ts that hosts a tablet with the given tablet ID, subject
+  // Selects a TS replica from the given RemoteTablet subject
   // to liveness and the provided selection criteria and blacklist.
   //
   // If no appropriate replica can be found, a non-OK status is returned and 'ts' is untouched.
@@ -62,7 +62,7 @@ class KuduClient::Data {
   // criteria, but are possibly filtered by the blacklist. This is useful for implementing
   // retry logic.
   Status GetTabletServer(KuduClient* client,
-                         const std::string& tablet_id,
+                         const scoped_refptr<internal::RemoteTablet>& rt,
                          ReplicaSelection selection,
                          const std::set<std::string>& blacklist,
                          std::vector<internal::RemoteTabletServer*>* candidates,

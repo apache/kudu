@@ -268,7 +268,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     vector<RemoteTabletServer*> candidates;
     Status lookup_status = table_->client()->data_->GetTabletServer(
         table_->client(),
-        remote_->tablet_id(),
+        remote_,
         selection_,
         *blacklist,
         &candidates,

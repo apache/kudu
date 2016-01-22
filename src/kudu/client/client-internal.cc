@@ -295,16 +295,13 @@ RemoteTabletServer* KuduClient::Data::SelectTServer(const scoped_refptr<RemoteTa
 }
 
 Status KuduClient::Data::GetTabletServer(KuduClient* client,
-                                         const string& tablet_id,
+                                         const scoped_refptr<RemoteTablet>& rt,
                                          ReplicaSelection selection,
                                          const set<string>& blacklist,
                                          vector<RemoteTabletServer*>* candidates,
                                          RemoteTabletServer** ts) {
   // TODO: write a proper async version of this for async client.
-  scoped_refptr<RemoteTablet> remote_tablet;
-  meta_cache_->LookupTabletByID(tablet_id, &remote_tablet);
-
-  RemoteTabletServer* ret = SelectTServer(remote_tablet, selection, blacklist, candidates);
+  RemoteTabletServer* ret = SelectTServer(rt, selection, blacklist, candidates);
   if (PREDICT_FALSE(ret == nullptr)) {
     // Construct a blacklist string if applicable.
     string blacklist_string = "";
@@ -314,11 +311,11 @@ Status KuduClient::Data::GetTabletServer(KuduClient* client,
     return Status::ServiceUnavailable(
         Substitute("No $0 for tablet $1 $2",
                    selection == LEADER_ONLY ? "LEADER" : "replicas",
-                   tablet_id,
+                   rt->tablet_id(),
                    blacklist_string));
   }
   Synchronizer s;
-  ret->RefreshProxy(client, s.AsStatusCallback(), false);
+  ret->InitProxy(client, s.AsStatusCallback());
   RETURN_NOT_OK(s.Wait());
 
   *ts = ret;

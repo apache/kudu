@@ -69,16 +69,16 @@ class RemoteTabletServer {
  public:
   explicit RemoteTabletServer(const master::TSInfoPB& pb);
 
-  // Refresh the RPC proxy to this tablet server. This may involve a DNS
-  // lookup if there is not already an active proxy.
-  void RefreshProxy(KuduClient* client, const StatusCallback& cb,
-                    bool force);
+  // Initialize the RPC proxy to this tablet server, if it is not already set up.
+  // This will involve a DNS lookup if there is not already an active proxy.
+  // If there is an active proxy, does nothing.
+  void InitProxy(KuduClient* client, const StatusCallback& cb);
 
   // Update information from the given pb.
   // Requires that 'pb''s UUID matches this server.
   void Update(const master::TSInfoPB& pb);
 
-  // Return the current proxy to this tablet server. Requires that RefreshProxy
+  // Return the current proxy to this tablet server. Requires that InitProxy()
   // be called prior to this.
   std::shared_ptr<tserver::TabletServerServiceProxy> proxy() const;
 
@@ -215,13 +215,6 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                          const MonoTime& deadline,
                          scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
-
-  // Look up the RemoteTablet object for the given tablet ID. Will die if not
-  // found.
-  //
-  // This is always a local operation (no network round trips or DNS resolution, etc).
-  void LookupTabletByID(const std::string& tablet_id,
-                        scoped_refptr<RemoteTablet>* remote_tablet);
 
   // Mark any replicas of any tablets hosted by 'ts' as failed. They will
   // not be returned in future cache lookups.

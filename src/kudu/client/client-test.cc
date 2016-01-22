@@ -1042,25 +1042,25 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   set<string> blacklist;
   vector<internal::RemoteTabletServer*> candidates;
   vector<internal::RemoteTabletServer*> tservers;
-  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
+  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt,
                                             KuduClient::LEADER_ONLY,
                                             blacklist, &candidates, &rts));
   tservers.push_back(rts);
   // Blacklist the leader, should not work.
   blacklist.insert(rts->permanent_uuid());
   {
-    Status s = client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
+    Status s = client_->data_->GetTabletServer(client_.get(), rt,
                                                KuduClient::LEADER_ONLY,
                                                blacklist, &candidates, &rts);
     ASSERT_TRUE(s.IsServiceUnavailable());
   }
   // Keep blacklisting replicas until we run out.
-  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
+  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt,
                                             KuduClient::CLOSEST_REPLICA,
                                             blacklist, &candidates, &rts));
   tservers.push_back(rts);
   blacklist.insert(rts->permanent_uuid());
-  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
+  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt,
                                             KuduClient::FIRST_REPLICA,
                                             blacklist, &candidates, &rts));
   tservers.push_back(rts);
@@ -1072,7 +1072,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   selections.push_back(KuduClient::CLOSEST_REPLICA);
   selections.push_back(KuduClient::FIRST_REPLICA);
   for (KuduClient::ReplicaSelection selection : selections) {
-    Status s = client_->data_->GetTabletServer(client_.get(), rt->tablet_id(), selection,
+    Status s = client_->data_->GetTabletServer(client_.get(), rt, selection,
                                                blacklist, &candidates, &rts);
     ASSERT_TRUE(s.IsServiceUnavailable());
   }
@@ -1083,7 +1083,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   }
   blacklist.clear();
   for (KuduClient::ReplicaSelection selection : selections) {
-    Status s = client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
+    Status s = client_->data_->GetTabletServer(client_.get(), rt,
                                                selection,
                                                blacklist, &candidates, &rts);
     ASSERT_TRUE(s.IsServiceUnavailable());
@@ -2155,7 +2155,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   set<string> blacklist;
   vector<internal::RemoteTabletServer*> candidates;
   ASSERT_OK(client_->data_->GetTabletServer(client_.get(),
-                                            rt->tablet_id(),
+                                            rt,
                                             KuduClient::LEADER_ONLY,
                                             blacklist,
                                             &candidates,

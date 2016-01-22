@@ -203,9 +203,9 @@ class WriteRpc : public Rpc {
   // the rpc after a short delay.
   void LookupTabletCb(const Status& status);
 
-  // Called when we finish refreshing a TS proxy. Sends the RPC, provided
-  // there was no error.
-  void RefreshTSProxyCb(const Status& status);
+  // Called when we finish initializing a TS proxy.
+  // Sends the RPC, provided there was no error.
+  void InitTSProxyCb(const Status& status);
 
   // Marks all replicas on current_ts_ as failed and retries the write on a
   // new replica.
@@ -381,9 +381,8 @@ void WriteRpc::SendRpc() {
   }
 
   // Make sure we have a working proxy before sending out the RPC.
-  current_ts_->RefreshProxy(batcher_->client_,
-                            Bind(&WriteRpc::RefreshTSProxyCb, Unretained(this)),
-                            false);
+  current_ts_->InitProxy(batcher_->client_,
+                         Bind(&WriteRpc::InitTSProxyCb, Unretained(this)));
 }
 
 string WriteRpc::ToString() const {
@@ -402,7 +401,7 @@ void WriteRpc::LookupTabletCb(const Status& status) {
   mutable_retrier()->DelayedRetry(this, status);
 }
 
-void WriteRpc::RefreshTSProxyCb(const Status& status) {
+void WriteRpc::InitTSProxyCb(const Status& status) {
   // Fail to a replica in the event of a DNS resolution failure.
   if (!status.ok()) {
     FailToNewReplica(status);

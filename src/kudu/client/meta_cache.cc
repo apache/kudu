@@ -94,14 +94,12 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
   user_callback.Run(s);
 }
 
-void RemoteTabletServer::RefreshProxy(KuduClient* client,
-                                      const StatusCallback& cb,
-                                      bool force) {
+void RemoteTabletServer::InitProxy(KuduClient* client, const StatusCallback& cb) {
   HostPort hp;
   {
     unique_lock<simple_spinlock> l(&lock_);
 
-    if (proxy_ && !force) {
+    if (proxy_) {
       // Already have a proxy created.
       l.unlock();
       cb.Run(Status::OK());
@@ -609,12 +607,6 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
                                  deadline,
                                  client_->data_->messenger_);
   rpc->SendRpc();
-}
-
-void MetaCache::LookupTabletByID(const string& tablet_id,
-                                 scoped_refptr<RemoteTablet>* remote_tablet) {
-  shared_lock<rw_spinlock> l(&lock_);
-  *remote_tablet = FindOrDie(tablets_by_id_, tablet_id);
 }
 
 void MetaCache::MarkTSFailed(RemoteTabletServer* ts,
