@@ -62,6 +62,11 @@
 #
 #   BUILD_PYTHON       Default: 1
 #     Build and test the Python wrapper of the client API.
+#
+#   MVN_FLAGS          Default: ""
+#     Extra flags which are passed to 'mvn' when building and running Java
+#     tests. This can be useful, for example, to choose a different maven
+#     repository location.
 
 # If a commit messages contains a line that says 'DONT_BUILD', exit
 # immediately.
@@ -289,7 +294,7 @@ if [ "$BUILD_JAVA" == "1" ]; then
   if [ "$VALIDATE_CSD" == "1" ]; then
     VALIDATE_CSD_FLAG="-PvalidateCSD"
   fi
-  mvn -PbuildCSD \
+  mvn $MVN_FLAGS -PbuildCSD \
       $VALIDATE_CSD_FLAG \
       -Dsurefire.rerunFailingTestsCount=3 \
       -Dfailsafe.rerunFailingTestsCount=3 \
