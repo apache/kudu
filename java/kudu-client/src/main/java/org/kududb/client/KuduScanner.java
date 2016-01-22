@@ -17,8 +17,11 @@
 package org.kududb.client;
 
 import com.stumbleupon.async.Deferred;
+
+import org.kududb.Schema;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
+import org.kududb.client.AsyncKuduScanner.ReadMode;
 
 /**
  * Synchronous version of {@link AsyncKuduScanner}. Offers the same API but with blocking methods.
@@ -63,6 +66,48 @@ public class KuduScanner {
   public RowResultIterator close() throws Exception {
     Deferred<RowResultIterator> d = asyncScanner.close();
     return d.join(asyncScanner.scanRequestTimeout);
+  }
+
+  /**
+   * Returns the maximum number of rows that this scanner was configured to return.
+   * @return a long representing the maximum number of rows that can be returned
+   */
+  public long getLimit() {
+    return asyncScanner.getLimit();
+  }
+
+  /**
+   * Returns if this scanner was configured to cache data blocks or not.
+   * @return true if this scanner will cache blocks, else else.
+   */
+  public boolean getCacheBlocks() {
+    return asyncScanner.getCacheBlocks();
+  }
+
+  /**
+   * Returns the maximum number of bytes returned by the scanner, on each batch.
+   * @return a long representing the maximum number of bytes that a scanner can receive at once
+   * from a tablet server
+   */
+  public long getBatchSizeBytes() {
+    return asyncScanner.getBatchSizeBytes();
+  }
+
+  /**
+   * Returns the ReadMode for this scanner.
+   * @return the configured read mode for this scanner
+   */
+  public ReadMode getReadMode() {
+    return asyncScanner.getReadMode();
+  }
+
+  /**
+   * Returns the projection schema of this scanner. If specific columns were
+   * not specified during scanner creation, the table schema is returned.
+   * @return the projection schema for this scanner
+   */
+  public Schema getProjectionSchema() {
+    return asyncScanner.getProjectionSchema();
   }
 
   /**

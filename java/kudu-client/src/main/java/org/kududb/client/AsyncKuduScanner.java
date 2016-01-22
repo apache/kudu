@@ -321,7 +321,7 @@ public final class AsyncKuduScanner {
    * @return a long representing the maximum number of rows that can be returned
    */
   public long getLimit() {
-    return limit;
+    return this.limit;
   }
 
   /**
@@ -346,7 +346,7 @@ public final class AsyncKuduScanner {
    * from a tablet server
    */
   public long getBatchSizeBytes() {
-    return batchSizeBytes;
+    return this.batchSizeBytes;
   }
 
   /**
@@ -355,6 +355,15 @@ public final class AsyncKuduScanner {
    */
   public ReadMode getReadMode() {
     return this.readMode;
+  }
+
+  /**
+   * Returns the projection schema of this scanner. If specific columns were
+   * not specified during scanner creation, the table schema is returned.
+   * @return the projection schema for this scanner
+   */
+  public Schema getProjectionSchema() {
+    return this.schema;
   }
 
   long getSnapshotTimestamp() {
