@@ -249,9 +249,7 @@ $ build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 
 . Build Kudu, using the utilities installed in the previous step. Choose a build
 directory for the intermediate output, which can be anywhere in your filesystem
-except for the `kudu` directory itself. Edit the install prefix to the location
-where you would like the Kudu binaries, libraries, and headers installed during
-the `make install` step. The default value is `/usr/local/`.
+except for the `kudu` directory itself.
 +
 [source,bash]
 ----
@@ -260,13 +258,13 @@ cd build
 ../build-support/enable_devtoolset.sh \
   ../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
-  -DCMAKE_INSTALL_PREFIX=/opt/kudu \
   ..
 make -j4
 ----
-[[build_install_kudu]]
+
 . Optional: Install Kudu binaries, libraries, and headers.
-If you do not specify a `DESTDIR`, `/usr/local/` is the default.
+If you do not specify an installation directory through the `DESTDIR`
+environment variable, `/usr/local/` is the default.
 +
 [source,bash]
 ----
@@ -307,7 +305,6 @@ cd build
   -DCMAKE_BUILD_TYPE=release \
   ..
 make -j4
-make install
 ----
 ====
 
@@ -345,23 +342,19 @@ $ thirdparty/build-if-necessary.sh
 
 . Build Kudu, using the utilities installed in the previous step. Choose a build
 directory for the intermediate output, which can be anywhere in your filesystem
-except for the `kudu` directory itself. Edit the install prefix to the location
-where you would like the Kudu binaries, libraries, and headers installed during
-the `make install` step. The default value is `/usr/local/`.
+except for the `kudu` directory itself.
 +
 [source,bash]
 ----
 mkdir -p build
 cd build
-../thirdparty/installed/bin/cmake \
-  -DCMAKE_BUILD_TYPE=release \
-  -DCMAKE_INSTALL_PREFIX=/opt/kudu \
-  ..
+../thirdparty/installed/bin/cmake -DCMAKE_BUILD_TYPE=release ..
 make -j4
 ----
-[[build_install_kudu]]
+
 . Optional: Install Kudu binaries, libraries, and headers.
-If you do not specify a `DESTDIR`, `/usr/local/` is the default.
+If you do not specify an installation directory through the `DESTDIR`
+environment variable, `/usr/local/` is the default.
 +
 [source,bash]
 ----
@@ -397,7 +390,6 @@ cd build
   -DCMAKE_BUILD_TYPE=release \
   ..
 make -j4
-make install
 ----
 ====
 
@@ -445,9 +437,7 @@ $ thirdparty/build-if-necessary.sh
 
 . Build Kudu, using the utilities installed in the previous step. Choose a build
 directory for the intermediate output, which can be anywhere in your filesystem
-except for the `kudu` directory itself. Edit the install prefix to the location
-where you would like the Kudu binaries, libraries, and headers installed during
-the `make install` step. The default value is `/usr/local/`.
+except for the `kudu` directory itself.
 +
 [source,bash]
 ----
@@ -456,13 +446,13 @@ cd build
 BOOST_ROOT=../../boost_1_59_0 \
   ../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
-  -DCMAKE_INSTALL_PREFIX=/opt/kudu \
   ..
 make -j4
 ----
-[[build_install_kudu]]
+
 . Optional: Install Kudu binaries, libraries, and headers.
-If you do not specify a `DESTDIR`, `/usr/local/` is the default.
+If you do not specify an installation directory through the `DESTDIR`
+environment variable, `/usr/local/` is the default.
 +
 [source,bash]
 ----
@@ -472,7 +462,8 @@ sudo make DESTDIR=/opt/kudu install
 .SLES Build Script
 ====
 This script provides an overview of the procedure to build Kudu on SLES, and
-can be used as the basis for an automated deployment scenario.
+can be used as the basis for an automated deployment scenario. It skips
+the steps marked *Optional* above.
 
 [source,bash]
 ----
@@ -496,7 +487,6 @@ BOOST_ROOT=../../boost_1_59_0 \
   -DCMAKE_BUILD_TYPE=release \
   ..
 make -j4
-make install
 ----
 ====
 
