@@ -15,6 +15,7 @@ package org.kududb.client;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Stopwatch;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import org.apache.commons.io.FileUtils;
@@ -28,7 +29,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -62,10 +62,37 @@ public class MiniKuduCluster implements AutoCloseable {
   private final List<String> pathsToDelete = new ArrayList<>();
   private final List<HostAndPort> masterHostPorts = new ArrayList<>();
 
+  // Client we can use for common operations.
+  private final KuduClient syncClient;
+  private final int defaultTimeoutMs;
+
   private String masterAddresses;
 
-  private MiniKuduCluster(int numMasters, int numTservers) throws Exception {
+  private MiniKuduCluster(int numMasters, int numTservers, int defaultTimeoutMs) throws Exception {
+    this.defaultTimeoutMs = defaultTimeoutMs;
+
     startCluster(numMasters, numTservers);
+
+    syncClient = new KuduClient.KuduClientBuilder(getMasterAddresses())
+        .defaultAdminOperationTimeoutMs(defaultTimeoutMs)
+        .defaultOperationTimeoutMs(defaultTimeoutMs)
+        .build();
+  }
+
+  /**
+   * Wait up to this instance's "default timeout" for an expected count of TS to
+   * connect to the master.
+   * @param expected How many TS are expected
+   * @return true if there are at least as many TS as expected, otherwise false
+   */
+  public boolean waitForTabletServers(int expected) throws Exception {
+    int count = 0;
+    Stopwatch stopwatch = new Stopwatch().start();
+    while (count < expected && stopwatch.elapsedMillis() < defaultTimeoutMs) {
+      Thread.sleep(200);
+      count = syncClient.listTabletServers().getTabletServersCount();
+    }
+    return count >= expected;
   }
 
   /**
@@ -369,6 +396,7 @@ public class MiniKuduCluster implements AutoCloseable {
 
     private int numMasters = 1;
     private int numTservers = 3;
+    private int defaultTimeoutMs = 50000;
 
     public MiniKuduClusterBuilder numMasters(int numMasters) {
       this.numMasters = numMasters;
@@ -380,8 +408,19 @@ public class MiniKuduCluster implements AutoCloseable {
       return this;
     }
 
+    /**
+     * Configures the internal client to use the given timeout for all operations. Also uses the
+     * timeout for tasks like waiting for tablet servers to check in with the master.
+     * @param defaultTimeoutMs timeout in milliseconds
+     * @return this instance
+     */
+    public MiniKuduClusterBuilder defaultTimeoutMs(int defaultTimeoutMs) {
+      this.defaultTimeoutMs = defaultTimeoutMs;
+      return this;
+    }
+
     public MiniKuduCluster build() throws Exception {
-      return new MiniKuduCluster(numMasters, numTservers);
+      return new MiniKuduCluster(numMasters, numTservers, defaultTimeoutMs);
     }
   }
 

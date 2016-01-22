@@ -77,6 +77,7 @@ public class BaseKuduTest {
     miniCluster = new MiniKuduCluster.MiniKuduClusterBuilder()
         .numMasters(NUM_MASTERS)
         .numTservers(NUM_TABLET_SERVERS)
+        .defaultTimeoutMs(DEFAULT_SLEEP)
         .build();
     masterAddresses = miniCluster.getMasterAddresses();
     masterHostPorts = miniCluster.getMasterHostPorts();
@@ -85,26 +86,9 @@ public class BaseKuduTest {
     client = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses).build();
     syncClient = new KuduClient(client);
     LOG.info("Waiting for tablet servers...");
-    if (!waitForTabletServers(NUM_TABLET_SERVERS)) {
+    if (!miniCluster.waitForTabletServers(NUM_TABLET_SERVERS)) {
       fail("Couldn't get " + NUM_TABLET_SERVERS + " tablet servers running, aborting");
     }
-  }
-
-  /**
-   * Wait up to DEFAULT_SLEEP for an expected count of TS to connect to the master
-   * @param expected How many TS are expected
-   * @return true if there are at least as many TS as expected, otherwise false
-   */
-  static boolean waitForTabletServers(int expected) throws Exception {
-    int count = 0;
-    Stopwatch stopwatch = new Stopwatch().start();
-    while (count < expected && stopwatch.elapsedMillis() < DEFAULT_SLEEP) {
-      Thread.sleep(200);
-      Deferred<ListTabletServersResponse> d = client.listTabletServers();
-      d.addErrback(defaultErrorCB);
-      count = d.join(DEFAULT_SLEEP).getTabletServersCount();
-    }
-    return count >= expected;
   }
 
   @AfterClass
