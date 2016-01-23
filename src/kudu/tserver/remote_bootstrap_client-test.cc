@@ -146,7 +146,7 @@ TEST_F(RemoteBootstrapClientTest, TestVerifyData) {
   string bad = "This is a known bad! string";
   const int kGoodOffset = 0;
   const int kBadOffset = 1;
-  const int kDataTotalLen = std::numeric_limits<uint64_t>::max(); // Ignored.
+  const int64_t kDataTotalLen = std::numeric_limits<int64_t>::max(); // Ignored.
 
   // Create a known-good PB.
   DataChunkPB valid_chunk;
