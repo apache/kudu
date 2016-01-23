@@ -204,9 +204,9 @@ need, you can build Kudu from source. You can build from source on any supported
 
 [[rhel_from_source]]
 === RHEL or CentOS
-RHEL or CentOS 6.6 or later is required to build Kudu from source. The Red Hat
-Developer Toolset is required in order to have access to a C++11 capable
-compiler.
+RHEL or CentOS 6.6 or later is required to build Kudu from source. To build
+on a version older than 7.0, the Red Hat Developer Toolset must be installed
+(in order to have access to a C++11 capable compiler).
 
 . Install the prerequisite libraries, if they are not installed.
 +
@@ -216,7 +216,8 @@ $ sudo yum install gcc gcc-c++ autoconf automake libtool \
   cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb
 ----
 
-. Install the Red Hat Developer Toolset.
+. If building on RHEL or CentOS older than 7.0, install the Red Hat Developer
+Toolset.
 +
 ----
 $ DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64.noarch.rpm
