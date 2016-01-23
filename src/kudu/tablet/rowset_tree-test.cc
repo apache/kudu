@@ -140,7 +140,7 @@ TEST_F(TestRowSetTree, TestEndpointsConsistency) {
                                                       StringPrintf("%04d", 12000))));
   // Make tree
   RowSetTree tree;
-  tree.Reset(vec);
+  ASSERT_OK(tree.Reset(vec));
   // Keep track of "currently open" intervals defined by the endpoints
   unordered_set<RowSet*> open;
   // Keep track of all rowsets that have been visited

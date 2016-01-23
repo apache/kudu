@@ -44,7 +44,8 @@ bool RSEndpointBySliceCompare(const RowSetTree::RSEndpoint& a,
   if (slice_cmp) return slice_cmp < 0;
   ptrdiff_t rs_cmp = a.rowset_ - b.rowset_;
   if (rs_cmp) return rs_cmp < 0;
-  return b.endpoint_ == RowSetTree::STOP;
+  if (a.endpoint_ != b.endpoint_) return a.endpoint_ == RowSetTree::START;
+  return false;
 }
 
 } // anonymous namespace
