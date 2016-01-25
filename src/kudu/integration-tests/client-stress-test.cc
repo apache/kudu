@@ -222,7 +222,14 @@ class ClientStressTest_LowMemory : public ClientStressTest {
 // Stress test where, due to absurdly low memory limits, many client requests
 // are rejected, forcing the client to retry repeatedly.
 TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
+#ifdef THREAD_SANITIZER
+  // TSAN tests run much slower, so we don't want to wait for as many
+  // rejections before declaring the test to be passed.
+  const int64_t kMinRejections = 20;
+#else
   const int64_t kMinRejections = 100;
+#endif
+
   const MonoDelta kMaxWaitTime = MonoDelta::FromSeconds(60);
 
   TestWorkload work(cluster_.get());
@@ -265,7 +272,8 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
     if (total_num_rejections >= kMinRejections) {
       break;
     } else if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
-      FAIL() << "Ran for " << kMaxWaitTime.ToString() << ", deadline expired";
+      FAIL() << "Ran for " << kMaxWaitTime.ToString() << ", deadline expired and only saw "
+             << total_num_rejections << " memory rejections";
     }
     SleepFor(MonoDelta::FromMilliseconds(200));
   }
