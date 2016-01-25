@@ -17,10 +17,9 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# Tests that the Kudu client sample code can be built out-of-tree and runs
-# properly.
-
-set -e
+# Tests that the Kudu client library can be installed outside
+# the build tree, that the installed headers are sane, and that
+# the sample code can be built and runs correctly.
 
 # Clean up after the test. Must be idempotent.
 cleanup() {
@@ -57,6 +56,21 @@ else
 fi
 popd
 
+# Test that all of the installed headers can be compiled on their own.
+# This catches bugs where we've made a mistake in 'include-what-you-use'
+# within the library.
+for include_file in $(find $LIBRARY_DIR -name \*.h) ; do
+  echo Checking standalone compilation of $include_file...
+  if ! ${CXX:-g++} -o /dev/null -I$LIBRARY_DIR/usr/local/include $include_file ; then
+    set +x
+    echo
+    echo -----------------------------------------
+    echo $include_file fails to build on its own.
+    echo See log above for details.
+    echo -----------------------------------------
+    exit 1
+  fi
+done
 # Prefer the cmake on the system path, since we expect our client library
 # to be usable with older versions of cmake. But if it isn't there,
 # use the one from thirdparty.

@@ -19,6 +19,13 @@
 
 #include <string>
 
+#ifdef KUDU_HEADERS_NO_STUBS
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#else
+#include "kudu/client/stubs.h"
+#endif
+
 #include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
 
