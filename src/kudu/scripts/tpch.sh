@@ -67,6 +67,10 @@ record_result() {
   fi
 }
 
+ensure_cpu_scaling() {
+  $(dirname $BASH_SOURCE)/ensure_cpu_scaling.sh "$@"
+}
+
 ##########################################################
 # Main
 ##########################################################
@@ -81,6 +85,13 @@ cd $ROOT
 set -o pipefail
 ulimit -m $[3000*1000]
 ulimit -c unlimited # gather core dumps
+
+# Set CPU governor, and restore it on exit.
+old_governor=$(ensure_cpu_scaling performance)
+restore_governor() {
+  ensure_cpu_scaling $old_governor >/dev/null
+}
+trap restore_governor EXIT
 
 # PATH=<toolchain_stuff>:$PATH
 export TOOLCHAIN=/mnt/toolchain/toolchain.sh
