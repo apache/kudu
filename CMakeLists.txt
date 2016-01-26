@@ -181,6 +181,15 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
   else()
     message("Running without a controlling terminal or in a dumb terminal")
   endif()
+elseif("${COMPILER_FAMILY}" STREQUAL "gcc")
+  # Blacklist gcc versions known to generate broken optimized code.
+  #
+  # See KUDU-1030 for more details.
+  if ("${COMPILER_VERSION}" MATCHES "^4.[67]")
+    message(FATAL_ERROR "Building with gcc version ${COMPILER_VERSION} is "
+      "forbidden as it is known to produce broken code in release mode. "
+      "Upgrade gcc, or build with clang from the thirdparty directory.")
+  endif()
 endif()
 
 # Sanity check linking option.
