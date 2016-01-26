@@ -518,3 +518,16 @@ Linux is required to run Kudu. See the [installation
 guide](docs/installation.html#_prerequisites_and_requirements) for details. OSX
 is supported as a development platform in Kudu 0.6.0 and newer. The Java client
 can be used on any JVM 7+ platform.
+
+### What Linux-based operating systems are known NOT to work with Kudu?
+
+**RHEL 5**: the kernel is missing critical features for handling disk space
+reclamation (such as hole punching), and it is not possible to run applications
+which use C++11 language features.
+
+**Debian 7**: ships with gcc 4.7.2 which produces broken Kudu optimized code,
+and there is insufficient support for applications which use C++11 language
+features.
+
+**SLES 11**: it is not possible to run applications which use C++11 language
+features.
