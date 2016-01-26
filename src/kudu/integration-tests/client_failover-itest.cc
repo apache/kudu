@@ -27,7 +27,10 @@
 #include "kudu/integration-tests/test_workload.h"
 
 using kudu::client::CountTableRows;
+using kudu::client::KuduInsert;
+using kudu::client::KuduSession;
 using kudu::client::KuduTable;
+using kudu::client::KuduUpdate;
 using kudu::client::sp::shared_ptr;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
@@ -38,14 +41,22 @@ using std::unordered_map;
 
 namespace kudu {
 
+enum ClientTestBehavior {
+  kWrite,
+  kRead,
+  kReadWrite
+};
+
 // Integration test for client failover behavior.
-class ClientFailoverITest : public ExternalMiniClusterITestBase {
+class ClientFailoverParamITest : public ExternalMiniClusterITestBase,
+                                 public ::testing::WithParamInterface<ClientTestBehavior> {
 };
 
 // Test that we can delete the leader replica while scanning it and still get
 // results back.
-TEST_F(ClientFailoverITest, TestDeleteLeaderWhileScanning) {
-  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
+  ClientTestBehavior test_type = GetParam();
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(20);
 
   vector<string> ts_flags = { "--enable_leader_failure_detection=false",
                               "--enable_remote_bootstrap=false" };
@@ -84,6 +95,24 @@ TEST_F(ClientFailoverITest, TestDeleteLeaderWhileScanning) {
   int leader_index = *replica_indexes.begin();
   TServerDetails* leader = ts_map_[cluster_->tablet_server(leader_index)->uuid()];
   ASSERT_OK(itest::StartElection(leader, tablet_id, kTimeout));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, active_ts_map, tablet_id,
+                                  workload.batches_completed() + 1));
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(TestWorkload::kDefaultTableName, &table));
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  session->SetTimeoutMillis(kTimeout.ToMilliseconds());
+
+  // The row we will update later when testing writes.
+  // Note that this counts as an OpId.
+  KuduInsert* insert = table->NewInsert();
+  ASSERT_OK(insert->mutable_row()->SetInt32(0, 0));
+  ASSERT_OK(insert->mutable_row()->SetInt32(1, 1));
+  ASSERT_OK(insert->mutable_row()->SetString(2, "a"));
+  ASSERT_OK(session->Apply(insert));
+  ASSERT_OK(session->Flush());
+  ASSERT_EQ(1, CountTableRows(table.get()));
 
   // Write data to a tablet.
   workload.Start();
@@ -95,14 +124,15 @@ TEST_F(ClientFailoverITest, TestDeleteLeaderWhileScanning) {
   // We don't want the leader that takes over after we kill the first leader to
   // be unsure whether the writes have been committed, so wait until all
   // replicas have all of the writes.
+  //
+  // We should have # opids equal to number of batches written by the workload,
+  // plus the initial "manual" write we did, plus the no-op written when the
+  // first leader was elected.
   ASSERT_OK(WaitForServersToAgree(kTimeout, active_ts_map, tablet_id,
-                                  workload.batches_completed() + 1));
+                                  workload.batches_completed() + 2));
 
   // Open the scanner and count the rows.
-  shared_ptr<KuduTable> table;
-  ASSERT_OK(client_->OpenTable(TestWorkload::kDefaultTableName, &table));
-  ASSERT_EQ(workload.rows_inserted(), CountTableRows(table.get()));
-  LOG(INFO) << "Number of rows: " << workload.rows_inserted();
+  ASSERT_EQ(workload.rows_inserted() + 1, CountTableRows(table.get()));
 
   // Delete the leader replica. This will cause the next scan to the same
   // leader to get a TABLET_NOT_FOUND error.
@@ -119,14 +149,14 @@ TEST_F(ClientFailoverITest, TestDeleteLeaderWhileScanning) {
 
   // We need to elect a new leader to remove the old node.
   ASSERT_OK(itest::StartElection(leader, tablet_id, kTimeout));
-  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(workload.batches_completed() + 2, leader, tablet_id,
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(workload.batches_completed() + 3, leader, tablet_id,
                                           kTimeout));
 
   // Do a config change to remove the old replica and add a new one.
   // Cause the new replica to become leader, then do the scan again.
   ASSERT_OK(RemoveServer(leader, tablet_id, old_leader, boost::none, kTimeout));
   // Wait until the config is committed, otherwise AddServer() will fail.
-  ASSERT_OK(WaitUntilCommittedConfigOpIdIndexIs(workload.batches_completed() + 3, leader, tablet_id,
+  ASSERT_OK(WaitUntilCommittedConfigOpIdIndexIs(workload.batches_completed() + 4, leader, tablet_id,
                                                 kTimeout));
 
   TServerDetails* to_add = ts_map_[cluster_->tablet_server(missing_replica_index)->uuid()];
@@ -142,14 +172,30 @@ TEST_F(ClientFailoverITest, TestDeleteLeaderWhileScanning) {
 
   // Wait for remote bootstrap to complete. Then elect the new node.
   ASSERT_OK(WaitForServersToAgree(kTimeout, active_ts_map, tablet_id,
-                                  workload.batches_completed() + 4));
+                                  workload.batches_completed() + 5));
   leader_index = missing_replica_index;
   leader = ts_map_[cluster_->tablet_server(leader_index)->uuid()];
   ASSERT_OK(itest::StartElection(leader, tablet_id, kTimeout));
-  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(workload.batches_completed() + 5, leader, tablet_id,
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(workload.batches_completed() + 6, leader, tablet_id,
                                           kTimeout));
 
-  ASSERT_EQ(workload.rows_inserted(), CountTableRows(table.get()));
+  if (test_type == kWrite || test_type == kReadWrite) {
+    KuduUpdate* update = table->NewUpdate();
+    ASSERT_OK(update->mutable_row()->SetInt32(0, 0));
+    ASSERT_OK(update->mutable_row()->SetInt32(1, 2));
+    ASSERT_OK(update->mutable_row()->SetString(2, "b"));
+    ASSERT_OK(session->Apply(update));
+    ASSERT_OK(session->Flush());
+  }
+
+  if (test_type == kRead || test_type == kReadWrite) {
+    ASSERT_EQ(workload.rows_inserted() + 1, CountTableRows(table.get()));
+  }
 }
+
+ClientTestBehavior test_type[] = { kWrite, kRead, kReadWrite };
+
+INSTANTIATE_TEST_CASE_P(ClientBehavior, ClientFailoverParamITest,
+                        ::testing::ValuesIn(test_type));
 
 } // namespace kudu

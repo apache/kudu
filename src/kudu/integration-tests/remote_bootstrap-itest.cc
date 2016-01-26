@@ -633,9 +633,6 @@ TEST_F(RemoteBootstrapITest, TestDisableRemoteBootstrap_NoTightLoopWhenTabletDel
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
   TestWorkload workload(cluster_.get());
-  // TODO(KUDU-1054): the client should handle retrying on different replicas
-  // if the tablet isn't found, rather than giving us this error.
-  workload.set_not_found_allowed(true);
   workload.set_write_batch_size(1);
   workload.Setup();
 
@@ -695,9 +692,6 @@ TEST_F(RemoteBootstrapITest, TestSlowBootstrapDoesntFail) {
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
   TestWorkload workload(cluster_.get());
-  // TODO(KUDU-1322): the client should handle retrying on different replicas
-  // if the tablet isn't found, rather than giving us this error.
-  workload.set_not_found_allowed(true);
   workload.set_write_batch_size(1);
   workload.Setup();
 

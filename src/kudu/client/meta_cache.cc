@@ -477,14 +477,19 @@ void LookupRpc::NewLeaderMasterDeterminedCb(const Status& status) {
 void LookupRpc::SendRpcCb(const Status& status) {
   gscoped_ptr<LookupRpc> delete_me(this); // delete on scope exit
 
-  // Prefer early failures over controller failures.
+  if (!status.ok()) {
+    // Non-RPC failure. We only support TimedOut for LookupRpc.
+    CHECK(status.IsTimedOut()) << status.ToString();
+  }
+
   Status new_status = status;
+  // Check for generic RPC errors.
   if (new_status.ok() && mutable_retrier()->HandleResponse(this, &new_status)) {
     ignore_result(delete_me.release());
     return;
   }
 
-  // Prefer controller failures over response failures.
+  // Check for specific application response errors.
   if (new_status.ok() && resp_.has_error()) {
     if (resp_.error().code() == master::MasterErrorPB::NOT_THE_LEADER ||
         resp_.error().code() == master::MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
@@ -498,6 +503,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
     new_status = StatusFromPB(resp_.error().status());
   }
 
+  // Check for more generic errors (TimedOut can come from multiple places).
   if (new_status.IsTimedOut()) {
     if (MonoTime::Now(MonoTime::FINE).ComesBefore(retrier().deadline())) {
       if (meta_cache_->client_->IsMultiMaster()) {
@@ -523,7 +529,8 @@ void LookupRpc::SendRpcCb(const Status& status) {
     }
   }
 
-  // Prefer response failures over no tablets found.
+  // Finally, ensure that there were tablet replicas found. If not, consider
+  // that an error.
   if (new_status.ok() && resp_.tablet_locations_size() == 0) {
     new_status = Status::NotFound("No such tablet found");
   }

@@ -307,54 +307,58 @@ WriteRpc::~WriteRpc() {
 
 void WriteRpc::SendRpc() {
   // Choose a destination TS according to the following algorithm:
-  // 1. Select the leader, provided:
-  //    a. One exists, and
+  // 1. If the tablet metadata is stale, refresh it (goto step 5).
+  // 2. Select the leader, provided:
+  //    a. The current leader is known,
   //    b. It hasn't failed, and
   //    c. It isn't currently marked as a follower.
-  // 2. If there's no good leader select another replica, provided:
+  // 3. If there's no good leader select another replica, provided:
   //    a. It hasn't failed, and
   //    b. It hasn't rejected our write due to being a follower.
-  // 3. Preemptively mark the replica we selected in step 2 as "leader" in the
+  // 4. Preemptively mark the replica we selected in step 3 as "leader" in the
   //    meta cache, so that our selection remains sticky until the next Master
   //    metadata refresh.
-  // 4. If we're out of appropriate replicas, force a lookup to the master
+  // 5. If we're out of appropriate replicas, force a lookup to the master
   //    to fetch new consensus configuration information.
-  // 5. When the lookup finishes, forget which replicas were followers and
-  //    retry the write (i.e. goto 1).
-  // 6. If we issue the write and it fails because the destination was a
-  //    follower, remember that fact and retry the write (i.e. goto 1).
-  // 7. Repeat steps 1-6 until the write succeeds, fails for other reasons,
+  // 6. When the lookup finishes, forget which replicas were followers and
+  //    retry the write (i.e. goto 2).
+  // 7. If we issue the write and it fails because the destination was a
+  //    follower, remember that fact and retry the write (i.e. goto 2).
+  // 8. Repeat steps 1-7 until the write succeeds, fails for other reasons,
   //    or the write's deadline expires.
-  current_ts_ = tablet_->LeaderTServer();
-  if (current_ts_ && ContainsKey(followers_, current_ts_)) {
-    VLOG(2) << "Tablet " << tablet_->tablet_id() << ": We have a follower for a leader: "
-            << current_ts_->ToString();
+  current_ts_ = nullptr;
+  if (!tablet_->stale()) {
+    current_ts_ = tablet_->LeaderTServer();
+    if (current_ts_ && ContainsKey(followers_, current_ts_)) {
+      VLOG(2) << "Tablet " << tablet_->tablet_id() << ": We have a follower for a leader: "
+              << current_ts_->ToString();
 
-    // Mark the node as a follower in the cache so that on the next go-round,
-    // LeaderTServer() will not return it as a leader unless a full metadata
-    // refresh has occurred. This also avoids LookupTabletByKey() going into
-    // "fast path" mode and not actually performing a metadata refresh from the
-    // Master when it needs to.
-    tablet_->MarkTServerAsFollower(current_ts_);
-    current_ts_ = NULL;
-  }
-  if (!current_ts_) {
-    // Try to "guess" the next leader.
-    vector<RemoteTabletServer*> replicas;
-    tablet_->GetRemoteTabletServers(&replicas);
-    for (RemoteTabletServer* ts : replicas) {
-      if (!ContainsKey(followers_, ts)) {
-        current_ts_ = ts;
-        break;
-      }
+      // Mark the node as a follower in the cache so that on the next go-round,
+      // LeaderTServer() will not return it as a leader unless a full metadata
+      // refresh has occurred. This also avoids LookupTabletByKey() going into
+      // "fast path" mode and not actually performing a metadata refresh from the
+      // Master when it needs to.
+      tablet_->MarkTServerAsFollower(current_ts_);
+      current_ts_ = NULL;
     }
-    if (current_ts_) {
-      // Mark this next replica "preemptively" as the leader in the meta cache,
-      // so we go to it first on the next write if writing was successful.
-      VLOG(1) << "Tablet " << tablet_->tablet_id() << ": Previous leader failed. "
-              << "Preemptively marking tserver " << current_ts_->ToString()
-              << " as leader in the meta cache.";
-      tablet_->MarkTServerAsLeader(current_ts_);
+    if (!current_ts_) {
+      // Try to "guess" the next leader.
+      vector<RemoteTabletServer*> replicas;
+      tablet_->GetRemoteTabletServers(&replicas);
+      for (RemoteTabletServer* ts : replicas) {
+        if (!ContainsKey(followers_, ts)) {
+          current_ts_ = ts;
+          break;
+        }
+      }
+      if (current_ts_) {
+        // Mark this next replica "preemptively" as the leader in the meta cache,
+        // so we go to it first on the next write if writing was successful.
+        VLOG(1) << "Tablet " << tablet_->tablet_id() << ": Previous leader failed. "
+                << "Preemptively marking tserver " << current_ts_->ToString()
+                << " as leader in the meta cache.";
+        tablet_->MarkTServerAsLeader(current_ts_);
+      }
     }
   }
 
@@ -391,6 +395,14 @@ string WriteRpc::ToString() const {
 }
 
 void WriteRpc::LookupTabletCb(const Status& status) {
+  // If the table was deleted, the master will return TABLE_DELETED and the
+  // meta cache will return Status::NotFound.
+  if (status.IsNotFound()) {
+    batcher_->ProcessWriteResponse(*this, status);
+    delete this;
+    return;
+  }
+
   // We should retry the RPC regardless of the outcome of the lookup, as
   // leader election doesn't depend on the existence of a master at all.
   //
@@ -447,13 +459,24 @@ void WriteRpc::SendRpcCb(const Status& status) {
     new_status = StatusFromPB(resp_.error().status());
   }
 
-  // Oops, we failed over to a replica that wasn't a LEADER. Unlikely as
-  // we're using consensus configuration information from the master, but still possible
-  // (e.g. leader restarted and became a FOLLOWER). Try again.
-  //
-  // TODO: IllegalState is obviously way too broad an error category for
-  // this case.
-  if (new_status.IsIllegalState() || new_status.IsAborted()) {
+  if (resp_.has_error() && resp_.error().code() == tserver::TabletServerErrorPB::TABLET_NOT_FOUND) {
+    // If we get TABLET_NOT_FOUND, the replica we thought was leader has been
+    // deleted. We mark our tablet cache as stale, forcing a master lookup on
+    // the next attempt.
+    tablet_->MarkStale();
+    // TODO: Don't backoff the first time we hit this error (see KUDU-1314).
+    mutable_retrier()->DelayedRetry(this, StatusFromPB(resp_.error().status()));
+    return;
+  } else if (new_status.IsIllegalState() || new_status.IsAborted()) {
+    // Alternatively, when we get a status code of IllegalState or Aborted, we
+    // assume this means that the replica we attempted to write to is not the
+    // current leader (maybe it got partitioned or slow and another node took
+    // over). We attempt to fail over to another replica in the config.
+    //
+    // TODO: This error handling block should really be rewritten to handle
+    // specific error codes exclusively instead of Status codes (this may
+    // require some server-side changes). For example, IllegalState is
+    // obviously way too broad an error category for this case.
     followers_.insert(current_ts_);
     mutable_retrier()->DelayedRetry(this, new_status);
     return;
