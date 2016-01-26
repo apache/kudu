@@ -148,7 +148,13 @@ static bool ReadIntFromFile(const char *file, int *value) {
 static int ReadMaxCPUIndex() {
   char buf[1024];
   CHECK(SlurpSmallTextFile("/sys/devices/system/cpu/present", buf, arraysize(buf)));
-  // 'buf' should contain a string like '0-7'.
+
+  // On a single-core machine, 'buf' will contain the string '0' with a newline.
+  if (strcmp(buf, "0\n") == 0) {
+    return 0;
+  }
+
+  // On multi-core, it will have a CPU range like '0-7'.
   CHECK_EQ(0, memcmp(buf, "0-", 2)) << "bad list of possible CPUs: " << buf;
 
   char* max_cpu_str = &buf[2];
@@ -216,11 +222,7 @@ static void InitializeSystemInfo() {
   const char* pname = "/proc/cpuinfo";
   int fd = open(pname, O_RDONLY);
   if (fd == -1) {
-    perror(pname);
-    if (!saw_mhz) {
-      cpuinfo_cycles_per_second = EstimateCyclesPerSecond(1000);
-    }
-    return;          // TODO: use generic tester instead?
+    PLOG(FATAL) << "Unable to read CPU info from /proc. procfs must be mounted.";
   }
 
   double bogo_clock = 1.0;
