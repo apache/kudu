@@ -51,6 +51,15 @@
 #include "kudu/util/status.h"
 #include "kudu/util/net/socket.h"
 
+// When compiling on Mac OS X, use 'kqueue' instead of the default, 'select', for the event loop.
+// Otherwise we run into problems because 'select' can't handle connections when more than 1024
+// file descriptors are open by the process.
+#if defined(__APPLE__)
+static const int kDefaultLibEvFlags = ev::KQUEUE;
+#else
+static const int kDefaultLibEvFlags = ev::AUTO;
+#endif
+
 using std::string;
 using std::shared_ptr;
 
@@ -72,7 +81,7 @@ Status ShutdownError(bool aborted) {
 } // anonymous namespace
 
 ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder &bld)
-  : loop_(0),
+  : loop_(kDefaultLibEvFlags),
     cur_time_(MonoTime::Now(MonoTime::COARSE)),
     last_unused_tcp_scan_(cur_time_),
     reactor_(reactor),
