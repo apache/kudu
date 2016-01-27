@@ -100,6 +100,7 @@ def main():
     sys.exit(1)
   test_exe = args[0]
   test_name, _ = os.path.splitext(os.path.basename(test_exe))
+  test_dir = os.path.dirname(test_exe)
 
   env = os.environ.copy()
   for env_pair in options.env:
@@ -120,8 +121,13 @@ def main():
 
   env['LD_LIBRARY_PATH'] = ":".join(
     [os.path.join(ROOT, "build/dist-test-system-libs/"),
-     os.path.abspath(os.path.dirname(test_exe))])
-  env['GTEST_OUTPUT'] = 'xml:' + os.path.join(ROOT, 'build/test-logs/')
+     os.path.abspath(os.path.join(test_dir, "..", "lib"))])
+
+  # GTEST_OUTPUT must be canonicalized and have a trailing slash for gtest to
+  # properly interpret it as a directory.
+  env['GTEST_OUTPUT'] = 'xml:' + os.path.abspath(
+    os.path.join(test_dir, "..", "test-logs")) + '/'
+
   env['ASAN_SYMBOLIZER_PATH'] = os.path.join(ROOT, "thirdparty/installed/bin/llvm-symbolizer")
   rc = subprocess.call([os.path.join(ROOT, "build-support/run-test.sh")] + args,
                        env=env)

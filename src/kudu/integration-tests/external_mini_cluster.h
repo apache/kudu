@@ -96,7 +96,7 @@ struct ExternalMiniClusterOptions {
 
   // The path where the kudu daemons should be run from.
   // Default: "", which uses the same path as the currently running executable.
-  // This works for unit tests, since they all end up in build/latest/.
+  // This works for unit tests, since they all end up in build/latest/bin.
   std::string daemon_bin_path;
 
   // Extra flags for tablet servers and masters respectively.

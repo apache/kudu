@@ -41,8 +41,11 @@ class KuduTestBase(object):
 
     @classmethod
     def start_cluster(cls):
-        local_path = tempfile.mkdtemp(dir=os.getenv("TEST_TMPDIR", None))
-        bin_path = "{0}/latest".format(os.getenv("KUDU_BUILD"))
+        local_path = tempfile.mkdtemp(dir=os.getenv("TEST_TMPDIR"))
+        kudu_build = os.getenv("KUDU_BUILD")
+        if not kudu_build:
+            kudu_build = os.path.join(os.getenv("KUDU_HOME"), "build", "latest")
+        bin_path = "{0}/bin".format(kudu_build)
 
         os.makedirs("{0}/master/".format(local_path))
         os.makedirs("{0}/master/data".format(local_path))

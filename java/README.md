@@ -58,7 +58,7 @@ is also possible to provide your own.
 By default, the unit tests will start a master and a tablet
 server using the flags file located in the src/test/resources/
 directory. The tests will locate the master and tablet server
-binaries by looking in 'build/latest/' from the root of
+binaries by looking in 'build/latest/bin' from the root of
 the git repository. If you have recently built the C++ code
 for Kudu, those should be present already.
 

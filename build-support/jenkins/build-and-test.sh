@@ -85,6 +85,7 @@ ulimit -c unlimited
 
 BUILD_TYPE=${BUILD_TYPE:-DEBUG}
 BUILD_TYPE=$(echo "$BUILD_TYPE" | tr a-z A-Z) # capitalize
+BUILD_TYPE_LOWER=$(echo "$BUILD_TYPE" | tr A-Z a-z)
 
 # Set up defaults for environment variables.
 DEFAULT_ALLOW_SLOW_TESTS=1
@@ -112,7 +113,7 @@ if [ ! -w "$TEST_TMPDIR" ]; then
 fi
 
 SOURCE_ROOT=$(cd $(dirname "$BASH_SOURCE")/../..; pwd)
-BUILD_ROOT=$SOURCE_ROOT/build
+BUILD_ROOT=$SOURCE_ROOT/build/$BUILD_TYPE_LOWER
 
 # Remove testing artifacts from the previous run before we do anything
 # else. Otherwise, if we fail during the "build" step, Jenkins will
@@ -296,8 +297,8 @@ if [ "$DO_COVERAGE" == "1" ]; then
   echo
   echo Generating coverage report...
   echo ------------------------------------------------------------
-  if ! ./thirdparty/gcovr-3.0/scripts/gcovr -r .  -e '.*\.pb\..*' --xml \
-      > build/coverage.xml ; then
+  if ! ./thirdparty/gcovr-3.0/scripts/gcovr -r $SOURCE_ROOT --xml \
+      > $BUILD_ROOT/coverage.xml ; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Coverage report failed\n'
   fi
@@ -389,7 +390,7 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
       } else {
         print "unknown_shard";
       }')
-    for log_file in $arch_dir/build/test-logs/* ; do
+    for log_file in $arch_dir/build/$BUILD_TYPE_LOWER/test-logs/* ; do
       mv $log_file $TEST_LOGDIR/${shard_idx}_$(basename $log_file)
     done
     rm -Rf $arch_dir
@@ -400,7 +401,7 @@ if [ "$HEAPCHECK" = normal ]; then
   echo
   echo Checking that heap checker ran correctly
   echo ------------------------------------------------------------
-  FAILED_TESTS=$(zgrep -L -- "WARNING: Perftools heap leak checker is active -- Performance may suffer" build/test-logs/*-test.txt*)
+  FAILED_TESTS=$(zgrep -L -- "WARNING: Perftools heap leak checker is active -- Performance may suffer" $BUILD_ROOT/test-logs/*-test.txt*)
   if [ -n "$FAILED_TESTS" ]; then
     echo "Some tests didn't heap check properly:"
     for FTEST in $FAILED_TESTS; do

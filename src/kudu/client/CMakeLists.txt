@@ -64,7 +64,7 @@ ADD_EXPORTABLE_LIBRARY(kudu_client
   DEPS ${CLIENT_LIBS}
   EXPORTED_SHARED
   EXPORTED_OUTPUT_NAME kudu_client
-  EXPORTED_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}/exported"
+  EXPORTED_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/exported"
   EXPORTED_DEPS ${EXPORTED_CLIENT_LIBS})
 
 ################################################################################

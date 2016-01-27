@@ -96,7 +96,7 @@ public class TestUtils {
     File myPath = new File(urlToPath(myUrl));
     while (myPath != null) {
       if (new File(myPath, ".git").isDirectory()) {
-        return new File(myPath, "build/latest").getAbsolutePath();
+        return new File(myPath, "build/latest/bin").getAbsolutePath();
       }
       myPath = myPath.getParentFile();
     }

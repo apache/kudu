@@ -39,7 +39,7 @@ import subprocess
 import time
 
 TEST_TIMEOUT_SECS = int(os.environ.get('TEST_TIMEOUT_SECS', '900'))
-ARTIFACT_ARCHIVE_GLOBS = ["build/test-logs/*"]
+ARTIFACT_ARCHIVE_GLOBS = ["build/*/test-logs/*"]
 ISOLATE_SERVER = os.environ.get('ISOLATE_SERVER',
                                 "http://isolate.cloudera.org:4242/")
 DIST_TEST_HOME = os.environ.get('DIST_TEST_HOME',
@@ -67,9 +67,9 @@ DEPS_FOR_ALL = \
 
      # Tests that use the external minicluster require these.
      # TODO: declare these dependencies per-test.
-     "build/latest/kudu-tserver",
-     "build/latest/kudu-master",
-     "build/latest/kudu-ts-cli",
+     "build/latest/bin/kudu-tserver",
+     "build/latest/bin/kudu-master",
+     "build/latest/bin/kudu-ts-cli",
 
      # parser-test requires these data files.
      # TODO: again, we should do this with some per-test metadata file.
@@ -78,7 +78,7 @@ DEPS_FOR_ALL = \
      #".../example-tweets.txt",
 
      # Tests that require tooling require these.
-     "build/latest/kudu-admin",
+     "build/latest/bin/kudu-admin",
      ]
 
 

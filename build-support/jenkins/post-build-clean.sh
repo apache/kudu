@@ -32,10 +32,10 @@ cd $ROOT
 # up partially compiling, etc.
 
 # Clean up intermediate object files in the src tree
-find src -name \*.o -exec rm -f {} \;
+find build/latest/src -name \*.o -exec rm -f {} \;
 
 # Clean up the actual build artifacts
-rm -Rf build/latest/
+rm -Rf build/latest/bin build/latest/lib
 
 # Clean up any java build artifacts
 find java -name \*.jar -delete -o -name \*.class -delete 

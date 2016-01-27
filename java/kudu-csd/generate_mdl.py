@@ -21,7 +21,7 @@
 # metadata dumped by our daemon processes.
 #
 # Requires that the daemon processes have already been built and available
-# in the build/latest directory.
+# in the build/latest/bin directory.
 #
 # Outputs the MDL file on stdout by default or to a file specified in the first
 # argument.
@@ -37,7 +37,7 @@ import sys
 
 BINARIES=["kudu-master", "kudu-tserver"]
 
-RELATIVE_BUILD_DIR="../../build/latest"
+RELATIVE_BUILD_DIR="../../build/latest/bin"
 
 def find_binary(bin_name):
   dirname, _ = os.path.split(os.path.abspath(__file__))

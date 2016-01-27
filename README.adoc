@@ -27,7 +27,9 @@ A single Kudu source tree may be used for multiple builds, each with its
 own build directory. Build directories may be placed anywhere in the
 filesystem with the exception of the root directory of the source tree. The
 Kudu build is invoked with a working directory of the build directory
-itself, so you must ensure it exists (i.e. create it with _mkdir -p_).
+itself, so you must ensure it exists (i.e. create it with _mkdir -p_). It's
+recommended to place all build directories within the _build_ subdirectory;
+_build/latest_ will be symlinked to most recently created one.
 
 The rest of this document assumes the build directory
 _<root directory of kudu source tree>/build/debug_.
@@ -66,7 +68,7 @@ $ make -j8  # or whatever level of parallelism your machine can handle
 ----
 
 The build artifacts, including the test binaries, will be stored in
-_build/debug/latest/_.
+_build/debug/bin/_.
 
 To omit the Kudu unit tests during the build, add -DNO_TESTS=1 to the
 invocation of cmake. For example:
@@ -92,14 +94,14 @@ This command will report any tests that failed, and the test logs will be
 written to _build/debug/test-logs_.
 
 Individual tests can be run by directly invoking the test binaries in
-_build/debug/latest_. Since Kudu uses the Google C++ Test Framework (gtest),
+_build/debug/bin_. Since Kudu uses the Google C++ Test Framework (gtest),
 specific test cases can be run with gtest flags:
 
 [source,bash]
 ----
 # List all the tests within a test binary, then run a single test
-$ build/debug/latest/tablet-test --gtest_list_tests
-$ build/debug/latest/tablet-test --gtest_filter=TestTablet/9.TestFlush
+$ build/debug/bin/tablet-test --gtest_list_tests
+$ build/debug/bin/tablet-test --gtest_filter=TestTablet/9.TestFlush
 ----
 
 gtest also allows more complex filtering patterns. See the upstream
@@ -204,7 +206,7 @@ $ ctest -j8
 [NOTE]
 ====
 Note that we rely on a list of runtime suppressions in _build-support/tsan-suppressions.txt_.
-If you simply run a unit test like _build/tsan/latest/foo-test_, you won't get these suppressions.
+If you simply run a unit test like _build/tsan/bin/foo-test_, you won't get these suppressions.
 Instead, use a command like:
 
 [source,bash]
@@ -216,16 +218,12 @@ or
 
 [source,bash]
 ----
-$ build-support/run-test.sh build/tsan/latest/foo-test [--test-arguments-here]
+$ build-support/run-test.sh build/tsan/bin/foo-test [--test-arguments-here]
 ----
 
 
 ...and then view the logs in _build/tsan/test-logs/_
 
-In order for all of the suppressions to work, you need libraries with debug
-symbols installed, particularly for libstdc\+\+. On Ubuntu 13.10, the package
-libstdc++6-4.8-dbg is needed for TSAN builds to pass. It's not a bad idea to
-install debug symbol packages for libboost, libc, and cyrus-sasl as well.
 ====
 
 TSAN may truncate a few lines of the stack trace when reporting where the error
@@ -377,17 +375,22 @@ Eclipse can be used as an IDE for Kudu. To generate Eclipse project files, run:
 
 [source,bash]
 ----
+$ mkdir -p <sibling directory to source tree>
+$ cd <sibling directory to source tree>
 $ rm -rf CMakeCache.txt CMakeFiles/
-$ cmake -G "Eclipse CDT4 - Unix Makefiles" -DCMAKE_CXX_COMPILER_ARG1=-std=c++11 ../..
+$ cmake -G "Eclipse CDT4 - Unix Makefiles" -DCMAKE_CXX_COMPILER_ARG1=-std=c++11 <source tree>
 ----
+
+When the Eclipse generator is run in a subdirectory of the source tree, the
+resulting project is incomplete. That's why it's recommended to use a directory
+that's a sibling to the source tree. See [1] for more details.
 
 It's critical that _CMakeCache.txt_ be removed prior to running the generator,
 otherwise the extra Eclipse generator logic (the CMakeFindEclipseCDT4.make module)
 won't run and standard system includes will be missing from the generated project.
 
-Thanks to http://public.kitware.com/Bug/view.php?id=15102, the Eclipse generator
-ignores the -std=c++11 definition and we must add it manually on the command line
-via CMAKE_CXX_COMPILER_ARG1.
+Thanks to [2], the Eclipse generator ignores the `-std=c++11` definition and we must
+add it manually on the command line via `CMAKE_CXX_COMPILER_ARG1`.
 
 By default, the Eclipse CDT indexer will index everything under the _kudu/_
 source tree. It tends to choke on certain complicated source files within
@@ -401,7 +404,7 @@ the dialog box, select "C/C++ Project Paths", select the Source tab, highlight
 "Exclusion filter: (None)", and click "Edit...". In the new dialog box, click
 "Add Multiple...". Select every subdirectory inside _thirdparty_ except _installed_
 and _installed-deps_. Click OK all the way out and rebuild the project index by
-right clicking the project in the Project Explorer and selecting Index --> Rebuild.
+right clicking the project in the Project Explorer and selecting Index -> Rebuild.
 
 With this exclusion, the only false positives (shown as "red squigglies") that
 CDT presents appear to be in atomicops functions (`NoBarrier_CompareAndSwap` for
@@ -413,3 +416,6 @@ but one side effect is that nearly every source file appears in the indexer twic
 once via a target and once via the raw source file. To fix this, simply delete the
 [Targets] linked resource via the Project Explorer. Doing this should have no effect
 on writing code, though it may affect your ability to build from within Eclipse.
+
+1. https://cmake.org/pipermail/cmake-developers/2011-November/014153.html
+2. http://public.kitware.com/Bug/view.php?id=15102

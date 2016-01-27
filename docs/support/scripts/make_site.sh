@@ -24,8 +24,9 @@
 ########################################################################
 set -e
 
+BUILD_TYPE=release
 SOURCE_ROOT=$(cd $(dirname $0)/../../..; pwd)
-BUILD_ROOT="$SOURCE_ROOT/build"
+BUILD_ROOT="$SOURCE_ROOT/build/$BUILD_TYPE"
 SITE_OUTPUT_DIR="$BUILD_ROOT/site"
 set -x
 
@@ -36,10 +37,14 @@ $SOURCE_ROOT/build-support/enable_devtoolset.sh $SOURCE_ROOT/thirdparty/build-if
 echo "Successfully built third-party dependencies."
 
 # Build the binaries so we can auto-generate the command-line references
-rm -rf "$BUILD_ROOT"
 mkdir -p "$BUILD_ROOT"
 cd "$BUILD_ROOT"
-$SOURCE_ROOT/build-support/enable_devtoolset.sh $SOURCE_ROOT/thirdparty/installed/bin/cmake -DNO_TESTS=1 $SOURCE_ROOT
+rm -rf CMakeCache CMakeFiles/
+$SOURCE_ROOT/build-support/enable_devtoolset.sh \
+    $SOURCE_ROOT/thirdparty/installed/bin/cmake \
+    -DNO_TESTS=1 \
+    -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+    $SOURCE_ROOT
 make -j$(getconf _NPROCESSORS_ONLN)
 
 # Check out the gh-pages repo into $SITE_OUTPUT_DIR

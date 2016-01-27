@@ -57,8 +57,8 @@ SCAN_ALL_COMMITTED=ScanAllCommitted
 FS_SCANINSERT_MRS=FullStackScanInsertMRSOnly
 FS_SCANINSERT_DISK=FullStackScanInsertWithDisk
 
-LOG_DIR_NAME=build/bench-logs
-OUT_DIR_NAME=build/bench-out
+LOG_DIR_NAME=build/latest/bench-logs
+OUT_DIR_NAME=build/latest/bench-out
 HTML_FILE="benchmarks.html"
 
 # Most tests will run this many times.
@@ -151,16 +151,16 @@ build_kudu() {
   THIRDPARTY_BIN=$BASE_DIR/thirdparty/installed/bin
   export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
-  # Build Kudu
-  rm -rf build
-  mkdir -p build
-  pushd build
-
   BUILD_TYPE=release
   # Workaround for gperftools issue #497
   export LD_BIND_NOW=1
 
-  $BASE_DIR/build-support/enable_devtoolset.sh $THIRDPARTY_BIN/cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
+  # Build Kudu
+  mkdir -p build/$BUILD_TYPE
+  pushd build/$BUILD_TYPE
+  rm -rf CMakeCache.txt CMakeFiles/
+
+  $BASE_DIR/build-support/enable_devtoolset.sh $THIRDPARTY_BIN/cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ../..
 
   # clean up before we run
   rm -Rf /tmp/kudutpch1-$UID
@@ -178,7 +178,7 @@ run_benchmarks() {
   mkdir -p "$OUTDIR"
 
   # run all of the variations of mt-tablet-test
-  ./build/latest/mt-tablet-test \
+  ./build/latest/bin/mt-tablet-test \
     --gtest_filter=\*DoTestAllAtOnce\* \
     --num_counter_threads=0 \
     --tablet_test_flush_threshold_mb=32 \
@@ -190,49 +190,49 @@ run_benchmarks() {
 
   # run rpc-bench test 5 times. 10 seconds per run
   for i in $(seq 1 $NUM_SAMPLES); do
-    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/rpc-bench &> $LOGDIR/$RPC_BENCH_TEST$i.log
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/rpc-bench &> $LOGDIR/$RPC_BENCH_TEST$i.log
   done
 
   # run cbtree-test 5 times. 20 seconds per run
   for i in $(seq 1 $NUM_SAMPLES); do
-    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/cbtree-test \
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/cbtree-test \
       --gtest_filter=TestCBTree.TestScanPerformance &> $LOGDIR/${CBTREE_TEST}$i.log
   done
 
   # run bloomfile-test 5 times. ~3.3 seconds per run
   for i in $(seq 1 $NUM_SAMPLES); do
-    ./build/latest/bloomfile-test --benchmark_queries=10000000 --bloom_size_bytes=32768 \
+    ./build/latest/bin/bloomfile-test --benchmark_queries=10000000 --bloom_size_bytes=32768 \
       --n_keys=100000 --gtest_filter=*Benchmark &> $LOGDIR/$BLOOM_TEST$i.log
   done
 
   # run mt-bloomfile-test 5 times. 20-30 seconds per run.
   # The block cache is set to 1MB to generate churn.
   for i in $(seq 1 $NUM_SAMPLES); do
-    ./build/latest/mt-bloomfile-test --benchmark_queries=2000000 --bloom_size_bytes=32768 \
+    ./build/latest/bin/mt-bloomfile-test --benchmark_queries=2000000 --bloom_size_bytes=32768 \
       --n_keys=5000000 --block_cache_capacity_mb=1 &> $LOGDIR/$MT_BLOOM_TEST$i.log
   done
 
   # run wire_protocol-test 5 times. 6 seconds per run
   for i in $(seq 1 $NUM_SAMPLES); do
-    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/wire_protocol-test --gtest_filter=*Benchmark \
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/wire_protocol-test --gtest_filter=*Benchmark \
       &> $LOGDIR/$WIRE_PROTOCOL_TEST$i.log
   done
 
   # run compaction-test 5 times, 6 seconds each
   for i in $(seq 1 $NUM_SAMPLES); do
-    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/compaction-test \
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/compaction-test \
       --gtest_filter=TestCompaction.BenchmarkMerge* &> $LOGDIR/${COMPACT_MERGE_BENCH}$i.log
   done
 
   # run memrowset benchmark 5 times, ~10 seconds per run
   for i in $(seq 1 $NUM_SAMPLES) ; do
-    ./build/latest/memrowset-test --roundtrip_num_rows=10000000 \
+    ./build/latest/bin/memrowset-test --roundtrip_num_rows=10000000 \
         --gtest_filter=\*InsertCount\* &> $LOGDIR/${MEMROWSET_BENCH}$i.log
   done
 
   # Run single-threaded TS insert latency benchmark, 5-6 seconds per run
   for i in $(seq 1 $NUM_SAMPLES) ; do
-    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/tablet_server-test \
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/tablet_server-test \
       --gtest_filter=*MicroBench* \
       --single_threaded_insert_latency_bench_warmup_rows=1000 \
       --single_threaded_insert_latency_bench_insert_rows=10000 &> $LOGDIR/${TS_INSERT_LATENCY}$i.log
@@ -240,13 +240,13 @@ run_benchmarks() {
 
   # Run multi-threaded TS insert benchmark
   for i in $(seq 1 $NUM_SAMPLES) ; do
-    KUDU_ALLOW_SLOW_TESTS=1 build/latest/tablet_server-stress-test \
+    KUDU_ALLOW_SLOW_TESTS=1 build/latest/bin/tablet_server-stress-test \
       --num_inserts_per_thread=30000 &> $LOGDIR/${TS_8THREAD_BENCH}$i.log
   done
 
   # Run full stack scan/insert test using MRS only, ~26s each
   for i in $(seq 1 $NUM_SAMPLES) ; do
-    ./build/latest/full_stack-insert-scan-test \
+    ./build/latest/bin/full_stack-insert-scan-test \
       --gtest_filter=FullStackInsertScanTest.MRSOnlyStressTest \
       --concurrent_inserts=50 \
       --inserts_per_client=200000 \
@@ -256,7 +256,7 @@ run_benchmarks() {
 
   # Run full stack scan/insert test with disk, ~50s each
   for i in $(seq 1 $NUM_SAMPLES) ; do
-    ./build/latest/full_stack-insert-scan-test \
+    ./build/latest/bin/full_stack-insert-scan-test \
       --gtest_filter=FullStackInsertScanTest.WithDiskStressTest \
       --concurrent_inserts=50 \
       --inserts_per_client=200000 \

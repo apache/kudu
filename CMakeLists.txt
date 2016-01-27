@@ -22,6 +22,23 @@
 # 1. https://cmake.org/Bug/view.php?id=14963
 cmake_minimum_required(VERSION 3.2.0)
 
+# Provide a 'latest' symlink to this build directory if the "blessed"
+# multi-build layout is detected:
+#
+# build/
+# build/<first build directory>
+# build/<second build directory>
+# ...
+if ("${CMAKE_CURRENT_BINARY_DIR}" MATCHES "^${CMAKE_CURRENT_SOURCE_DIR}/build/[^/]+$")
+  if (NOT APPLE)
+    set(MORE_ARGS "-T")
+  endif()
+  add_custom_target(latest_symlink ALL
+    ln ${MORE_ARGS} -sf ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/build/latest
+    COMMENT "Recreating ../build/latest symlink")
+endif()
+
 # TODO: can we somehow pass this into the java build?
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" KUDU_VERSION_NUMBER)
 
@@ -378,20 +395,17 @@ if ("${KUDU_LINK}" STREQUAL "d")
   add_definitions(-fPIC)
 endif()
 
-# set compile output directory
-set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/latest")
-file(MAKE_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
-
 # where to put generated archives (.a files)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
-set(ARCHIVE_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib")
+file(MAKE_DIRECTORY "${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}")
 
 # where to put generated libraries (.so files)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
-set(LIBRARY_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib")
+file(MAKE_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
 
 # where to put generated binaries
-set(EXECUTABLE_OUTPUT_PATH "${BUILD_OUTPUT_ROOT_DIRECTORY}")
+set(EXECUTABLE_OUTPUT_PATH "${CMAKE_CURRENT_BINARY_DIR}/bin")
+file(MAKE_DIRECTORY "${EXECUTABLE_OUTPUT_PATH}")
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/src)
 include_directories(src)
@@ -912,6 +926,14 @@ if (UNIX)
     # The docs output HTML will end up in a docs/ subdir.
     ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_docs.sh
       --build_root ${CMAKE_CURRENT_BINARY_DIR})
+endif (UNIX)
+
+############################################################
+# "make site" target
+############################################################
+if (UNIX)
+  add_custom_target(site
+    ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_site.sh)
 endif (UNIX)
 
 ############################################################

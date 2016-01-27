@@ -140,7 +140,7 @@ for binary in ${binaries[@]}; do
 
     # Create the XML file.
     # This command exits with a nonzero value.
-    $BUILD_ROOT/latest/$binary --helpxml > ${GEN_DOC_DIR}/$(basename $binary).xml || true
+    $BUILD_ROOT/bin/$binary --helpxml > ${GEN_DOC_DIR}/$(basename $binary).xml || true
   )
 
   # Create the supported config reference
