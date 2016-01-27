@@ -122,6 +122,18 @@ they will be announced to the user group when they occur.
 While multiple drops of beta code are planned, we can't guarantee their schedules
 or contents.
 
+== Disclaimer on Apache Incubation
+
+Apache Kudu is an effort undergoing incubation at The Apache Software
+Foundation (ASF), sponsored by the Apache Incubator PMC. Incubation is
+required of all newly accepted projects until a further review
+indicates that the infrastructure, communications, and decision making
+process have stabilized in a manner consistent with other successful
+ASF projects. While incubation status is not necessarily a reflection
+of the completeness or stability of the code, it does indicate that
+the project has yet to be fully endorsed by the ASF.
+
+
 == Resources
 
 - link:http://getkudu.io[Kudu Website]
