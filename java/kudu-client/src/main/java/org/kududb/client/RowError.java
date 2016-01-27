@@ -32,7 +32,10 @@ public class RowError {
   private final Operation operation;
   private final String tsUUID;
 
-  private RowError(String errorStatus, String errorMessage, Operation operation, String tsUUID) {
+  /**
+   * Package-private for unit tests.
+   */
+  RowError(String errorStatus, String errorMessage, Operation operation, String tsUUID) {
     this.status = errorStatus;
     this.message = errorMessage;
     this.operation = operation;
