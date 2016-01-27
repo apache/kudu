@@ -23,7 +23,7 @@
 cmake_minimum_required(VERSION 3.2.0)
 
 # TODO: can we somehow pass this into the java build?
-set(KUDU_VERSION_NUMBER "0.7.0-SNAPSHOT")
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" KUDU_VERSION_NUMBER)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 include(CMakeParseArguments)

@@ -38,16 +38,16 @@ import re
 import subprocess
 import sys
 
-from kudu_util import check_output
+from kudu_util import check_output, confirm_prompt, Colors, get_my_email
 
 APACHE_REPO = "https://git-wip-us.apache.org/repos/asf/incubator-kudu.git"
 GERRIT_URL_RE = re.compile(r"ssh://.+@gerrit.cloudera.org:29418/kudu")
 
 # ANSI color codes.
-RED = "\x1b[31m"
-GREEN = "\x1b[32m"
-YELLOW = "\x1b[33m"
-RESET = "\x1b[m"
+Colors.RED = "\x1b[31m"
+Colors.GREEN = "\x1b[32m"
+Colors.YELLOW = "\x1b[33m"
+Colors.RESET = "\x1b[m"
 
 # Parsed options, filled in by main().
 OPTIONS = None
@@ -144,24 +144,6 @@ def get_committer_email(rev):
   return check_output(['git', 'log', '-n1', '--pretty=format:%ce', rev]).strip()
 
 
-def get_my_email():
-  """ Return the email address in the user's git config. """
-  return check_output(['git', 'config', '--get', 'user.email']).strip()
-
-
-def confirm_prompt(prompt):
-  """
-  Issue the given prompt, and ask the user to confirm yes/no. Returns true
-  if the user confirms.
-  """
-  while True:
-    print prompt, "[Y/n]:",
-    r = raw_input().strip().lower()
-    if r in ['y', 'yes', '']:
-      return True
-    elif r in ['n', 'no']:
-      return False
-
 def do_update(branch, gerrit_sha, apache_sha):
   """
   Displays and performs a proposed update of the Apache repository
@@ -183,16 +165,16 @@ def do_update(branch, gerrit_sha, apache_sha):
   commits = rev_list("%s..%s" % (apache_sha, gerrit_sha))
   commits.reverse()  # Display from oldest to newest.
   print "-" * 60
-  print GREEN + ("%d commit(s) need to be pushed from Gerrit to ASF:" % len(commits)) + RESET
+  print Colors.GREEN + ("%d commit(s) need to be pushed from Gerrit to ASF:" % len(commits)) + Colors.RESET
   push_sha = None
   for sha in commits:
     oneline = describe_commit(sha)
     print "  ", oneline
     committer = get_committer_email(sha)
     if committer != get_my_email():
-      print RED + "   !!! Committed by someone else (%s) !!!" % committer, RESET
+      print Colors.RED + "   !!! Committed by someone else (%s) !!!" % committer, Colors.RESET
       if not confirm_prompt(
-          RED + "   !!! Are you sure you want to push on behalf of another committer?" + RESET):
+          Colors.RED + "   !!! Are you sure you want to push on behalf of another committer?" + Colors.RESET):
         # Even if they don't want to push this commit, we could still push any
         # earlier commits that the user _did_ author.
         if push_sha is not None:
@@ -208,9 +190,9 @@ def do_update(branch, gerrit_sha, apache_sha):
   if OPTIONS.dry_run:
     cmd.append('--dry-run')
   cmd.append('%s:refs/heads/%s' % (push_sha, branch))
-  print GREEN + "Running: " + RESET + " ".join(cmd)
+  print Colors.GREEN + "Running: " + Colors.RESET + " ".join(cmd)
   subprocess.check_call(cmd)
-  print GREEN + "Successfully updated %s to %s" % (branch, gerrit_sha) + RESET
+  print Colors.GREEN + "Successfully updated %s to %s" % (branch, gerrit_sha) + Colors.RESET
   print
 
 
@@ -240,12 +222,12 @@ def main():
     gerrit_sha = rev_parse("remotes/gerrit/" + branch)
     print "Branch '%s':\t" % branch,
     if gerrit_sha is None:
-      print YELLOW, "found on Apache but not in gerrit", RESET
+      print Colors.YELLOW, "found on Apache but not in gerrit", Colors.RESET
       continue
     if gerrit_sha == apache_sha:
-      print GREEN, "up to date", RESET
+      print Colors.GREEN, "up to date", Colors.RESET
       continue
-    print YELLOW, "needs update", RESET
+    print Colors.YELLOW, "needs update", Colors.RESET
     do_update(branch, gerrit_sha, apache_sha)
 
 

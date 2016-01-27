@@ -20,7 +20,23 @@
 # This script generates a header file which contains definitions
 # for the current Kudu build (eg timestamp, git hash, etc)
 
+import os
 import subprocess
+import sys
+
+class Colors(object):
+  """ ANSI color codes. """
+
+  def __on_tty(x):
+    if not os.isatty(sys.stdout.fileno()):
+      return ""
+    return x
+
+  RED = __on_tty("\x1b[31m")
+  GREEN = __on_tty("\x1b[32m")
+  YELLOW = __on_tty("\x1b[33m")
+  RESET = __on_tty("\x1b[m")
+
 
 def check_output(*popenargs, **kwargs):
   r"""Run command with arguments and return its output as a byte string.
@@ -39,3 +55,28 @@ def check_output(*popenargs, **kwargs):
     error.output = output
     raise error
   return output
+
+
+def confirm_prompt(prompt):
+  """
+  Issue the given prompt, and ask the user to confirm yes/no. Returns true
+  if the user confirms.
+  """
+  while True:
+    print prompt, "[Y/n]:",
+
+    if not os.isatty(sys.stdout.fileno()):
+      print "Not running interactively. Assuming 'N'."
+      return False
+      pass
+
+    r = raw_input().strip().lower()
+    if r in ['y', 'yes', '']:
+      return True
+    elif r in ['n', 'no']:
+      return False
+
+
+def get_my_email():
+  """ Return the email address in the user's git config. """
+  return check_output(['git', 'config', '--get', 'user.email']).strip()
