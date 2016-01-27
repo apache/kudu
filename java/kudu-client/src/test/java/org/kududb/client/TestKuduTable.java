@@ -172,28 +172,35 @@ public class TestKuduTable extends BaseKuduTest {
 
     List<LocatedTablet>tablets = table.getTabletsLocations(null, getKeyInBytes(9), DEFAULT_SLEEP);
     assertEquals(10, tablets.size());
+    assertEquals(10, table.asyncGetTabletsLocations(null, getKeyInBytes(9), DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(0), getKeyInBytes(9), DEFAULT_SLEEP);
     assertEquals(10, tablets.size());
+    assertEquals(10, table.asyncGetTabletsLocations(getKeyInBytes(0), getKeyInBytes(9), DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(5), getKeyInBytes(9), DEFAULT_SLEEP);
     assertEquals(5, tablets.size());
+    assertEquals(5, table.asyncGetTabletsLocations(getKeyInBytes(5), getKeyInBytes(9), DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(5), getKeyInBytes(14), DEFAULT_SLEEP);
     assertEquals(10, tablets.size());
+    assertEquals(10, table.asyncGetTabletsLocations(getKeyInBytes(5), getKeyInBytes(14), DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(5), getKeyInBytes(31), DEFAULT_SLEEP);
     assertEquals(26, tablets.size());
+    assertEquals(26, table.asyncGetTabletsLocations(getKeyInBytes(5), getKeyInBytes(31), DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(5), null, DEFAULT_SLEEP);
     assertEquals(26, tablets.size());
+    assertEquals(26, table.asyncGetTabletsLocations(getKeyInBytes(5), null, DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(null, getKeyInBytes(10000), DEFAULT_SLEEP);
     assertEquals(31, tablets.size());
+    assertEquals(31, table.asyncGetTabletsLocations(null, getKeyInBytes(10000), DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(20), getKeyInBytes(10000), DEFAULT_SLEEP);
     assertEquals(11, tablets.size());
-
+    assertEquals(11, table.asyncGetTabletsLocations(getKeyInBytes(20), getKeyInBytes(10000), DEFAULT_SLEEP).join().size());
 
     // Test listing tables.
     assertEquals(0, client.getTablesList(table1).join(DEFAULT_SLEEP).getTablesList().size());
@@ -232,6 +239,7 @@ public class TestKuduTable extends BaseKuduTest {
 
     List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
     assertEquals(splitsCount + 1, tablets.size());
+    assertEquals(splitsCount + 1, table.asyncGetTabletsLocations(DEFAULT_SLEEP).join().size());
     for (LocatedTablet tablet : tablets) {
       assertEquals(1, tablet.getReplicas().size());
     }
