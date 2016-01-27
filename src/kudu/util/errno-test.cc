@@ -38,7 +38,8 @@ TEST(OsUtilTest, TestErrnoToString) {
   ASSERT_EQ("N", string(buf));
 
   // Unknown error.
-  ASSERT_EQ("Unknown error -1", ErrnoToString(-1));
+  string expected = "Unknown error";
+  ASSERT_EQ(ErrnoToString(-1).compare(0, expected.length(), expected), 0);
 
   // Unknown error (truncated).
   ErrnoToCString(-1, buf, arraysize(buf));

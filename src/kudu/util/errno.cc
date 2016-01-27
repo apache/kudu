@@ -29,13 +29,10 @@ void ErrnoToCString(int err, char *buf, size_t buf_len) {
 #if !defined(__GLIBC__) || \
   ((_POSIX_C_SOURCE >= 200112 || _XOPEN_SOURCE >= 600) && !defined(_GNU_SOURCE))
   // Using POSIX version 'int strerror_r(...)'.
-  if (strerror_r(err, buf, buf_len)) {
-    static const char UNKNOWN_ERROR[] = "unknown error";
-    if (buf_len >= sizeof(UNKNOWN_ERROR)) {
-      strcpy(buf, UNKNOWN_ERROR); // NOLINT(runtime/printf)
-    } else {
-      memset(buf, 0, buf_len);
-    }
+  int ret = strerror_r(err, buf, buf_len);
+  if (ret && ret != ERANGE && ret != EINVAL) {
+    strncpy(buf, "unknown error", buf_len);
+    buf[buf_len - 1] = '\0';
   }
 #else
   // Using GLIBC version
