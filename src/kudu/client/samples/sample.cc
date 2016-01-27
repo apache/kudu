@@ -234,6 +234,11 @@ int main(int argc, char* argv[]) {
   kudu::client::KuduLoggingFunctionCallback<void*> log_cb(&LogCb, NULL);
   kudu::client::InstallLoggingCallback(&log_cb);
 
+  if (argc != 2) {
+    KUDU_LOG(FATAL) << "usage: " << argv[0] << " <master host>";
+  }
+  const string master_host = argv[1];
+
   const string kTableName = "test_table";
 
   // Enable verbose debugging for the client library.
@@ -241,7 +246,7 @@ int main(int argc, char* argv[]) {
 
   // Create and connect a client.
   shared_ptr<KuduClient> client;
-  KUDU_CHECK_OK(CreateClient("127.0.0.1", &client));
+  KUDU_CHECK_OK(CreateClient(master_host, &client));
   KUDU_LOG(INFO) << "Created a client connection";
 
   // Disable the verbose logging.

@@ -87,6 +87,15 @@ CMAKE_PREFIX_PATH=$PREFIX_DIR $CMAKE .
 make -j$(getconf _NPROCESSORS_ONLN)
 popd
 
+# Pick a unique localhost IP address so this can run in parallel with other
+# tests. This only works on Linux.
+LOCALHOST_IP=127.0.0.1
+if [ "$(uname)" == "Linux" ]; then
+  LOCALHOST_IP=127.$[($$ >> 8) & 0xff].$[$$ & 0xff].1
+  echo Using unique localhost IP $LOCALHOST_IP
+fi
+
+
 # Start master+ts
 export TMPDIR=${TMPDIR:-/tmp}
 export TEST_TMPDIR=${TEST_TMPDIR:-$TMPDIR/kudutest-$UID}
@@ -95,16 +104,24 @@ BASE_DIR=$(mktemp -d $TEST_TMPDIR/client_samples-test.XXXXXXXX)
 $OUTPUT_DIR/kudu-master \
   --log_dir=$BASE_DIR \
   --fs_wal_dir=$BASE_DIR/master \
-  --fs_data_dirs=$BASE_DIR/master &
+  --fs_data_dirs=$BASE_DIR/master \
+  --webserver_interface=localhost \
+  --webserver_port=0 \
+  --rpc_bind_addresses=$LOCALHOST_IP &
 MASTER_PID=$!
 $OUTPUT_DIR/kudu-tserver \
   --log_dir=$BASE_DIR \
   --fs_wal_dir=$BASE_DIR/ts \
-  --fs_data_dirs=$BASE_DIR/ts &
+  --fs_data_dirs=$BASE_DIR/ts \
+  --rpc_bind_addresses=$LOCALHOST_IP \
+  --local_ip_for_outbound_sockets=$LOCALHOST_IP \
+  --webserver_interface=localhost \
+  --webserver_port=0 \
+  --tserver_master_addrs=$LOCALHOST_IP &
 TS_PID=$!
 
 # Let them run for a bit.
 sleep 5
 
 # Run the samples.
-$SAMPLES_DIR/sample
+$SAMPLES_DIR/sample $LOCALHOST_IP
