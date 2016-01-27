@@ -54,9 +54,10 @@ public class KuduSession implements SessionConfiguration {
    * <li>AUTO_FLUSH_SYNC: the call returns when the operation is persisted,
    * else it throws an exception.
    * <li>AUTO_FLUSH_BACKGROUND: the call returns when the operation has been added to the buffer.
-   * The operation's state is then unreachable, meaning that there's no way to know if the
-   * operation is persisted. This call should normally perform only fast in-memory operations but
-   * it may have to wait when the buffer is full and there's another buffer being flushed.
+   * This call should normally perform only fast in-memory operations but
+   * it may have to wait when the buffer is full and there's another buffer being flushed. Row
+   * errors can be checked by calling {@link #countPendingErrors()} and can be retrieved by calling
+   * {@link #getPendingErrors()}.
    * <li>MANUAL_FLUSH: the call returns when the operation has been added to the buffer,
    * else it throws an exception such as a NonRecoverableException if the buffer is full.
    * </ul>
@@ -167,5 +168,15 @@ public class KuduSession implements SessionConfiguration {
   @Override
   public void setIgnoreAllDuplicateRows(boolean ignoreAllDuplicateRows) {
     session.setIgnoreAllDuplicateRows(ignoreAllDuplicateRows);
+  }
+
+  @Override
+  public int countPendingErrors() {
+    return session.countPendingErrors();
+  }
+
+  @Override
+  public RowErrorsAndOverflowStatus getPendingErrors() {
+    return session.getPendingErrors();
   }
 }

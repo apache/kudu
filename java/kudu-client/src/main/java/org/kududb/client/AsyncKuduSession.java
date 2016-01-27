@@ -87,6 +87,7 @@ public class AsyncKuduSession implements SessionConfiguration {
 
   private final AsyncKuduClient client;
   private final Random randomizer = new Random();
+  private final ErrorCollector errorCollector;
   private int interval = 1000;
   private int mutationBufferSpace = 1000; // TODO express this in terms of data size.
   private float mutationBufferLowWatermarkPercentage = 0.5f;
@@ -143,6 +144,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     this.consistencyMode = CLIENT_PROPAGATED;
     this.timeoutMs = client.getDefaultOperationTimeoutMs();
     setMutationBufferLowWatermark(this.mutationBufferLowWatermarkPercentage);
+    errorCollector = new ErrorCollector(mutationBufferSpace);
   }
 
   @Override
@@ -228,6 +230,16 @@ public class AsyncKuduSession implements SessionConfiguration {
   @Override
   public void setIgnoreAllDuplicateRows(boolean ignoreAllDuplicateRows) {
     this.ignoreAllDuplicateRows = ignoreAllDuplicateRows;
+  }
+
+  @Override
+  public int countPendingErrors() {
+    return errorCollector.countErrors();
+  }
+
+  @Override
+  public RowErrorsAndOverflowStatus getPendingErrors() {
+    return errorCollector.getErrors();
   }
 
   /**
@@ -559,7 +571,7 @@ public class AsyncKuduSession implements SessionConfiguration {
 
   /**
    * Creates callbacks to handle a multi-put and adds them to the request.
-   * @param request The request for which we must handle the response.
+   * @param request the request for which we must handle the response
    */
   private void addBatchCallbacks(final Batch request) {
     final class BatchCallback implements
@@ -573,7 +585,11 @@ public class AsyncKuduSession implements SessionConfiguration {
         // Send individualized responses to all the operations in this batch.
         for (OperationResponse operationResponse : response.getIndividualResponses()) {
           operationResponse.getOperation().callback(operationResponse);
+          if (flushMode == FlushMode.AUTO_FLUSH_BACKGROUND && operationResponse.hasRowError()) {
+            errorCollector.addError(operationResponse.getRowError());
+          }
         }
+
         return response;
       }
 

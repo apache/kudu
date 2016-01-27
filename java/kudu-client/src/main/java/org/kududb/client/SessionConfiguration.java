@@ -29,7 +29,7 @@ public interface SessionConfiguration {
 
   @InterfaceAudience.Public
   @InterfaceStability.Evolving
-  public enum FlushMode {
+  enum FlushMode {
     // Every write will be sent to the server in-band with the Apply()
     // call. No batching will occur. This is the default flush mode. In this
     // mode, the Flush() call never has any effect, since each Apply() call
@@ -58,21 +58,21 @@ public interface SessionConfiguration {
    * Get the current flush mode.
    * @return flush mode, AUTO_FLUSH_SYNC by default
    */
-  public FlushMode getFlushMode();
+  FlushMode getFlushMode();
 
   /**
    * Set the new flush mode for this session.
    * @param flushMode new flush mode, can be the same as the previous one.
    * @throws IllegalArgumentException if the buffer isn't empty.
    */
-  public void setFlushMode(FlushMode flushMode);
+  void setFlushMode(FlushMode flushMode);
 
   /**
    * Set the number of operations that can be buffered.
    * @param size number of ops.
    * @throws IllegalArgumentException if the buffer isn't empty.
    */
-  public void setMutationBufferSpace(int size);
+  void setMutationBufferSpace(int size);
 
   /**
    * Set the low watermark for this session. The default is set to half the mutation buffer space.
@@ -85,51 +85,51 @@ public interface SessionConfiguration {
    * @throws IllegalArgumentException if the buffer isn't empty or if the watermark isn't between
    * 0 and 1
    */
-  public void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage);
+  void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage);
 
   /**
    * Set the flush interval, which will be used for the next scheduling decision.
    * @param interval interval in milliseconds.
    */
-  public void setFlushInterval(int interval);
+  void setFlushInterval(int interval);
 
   /**
    * Get the current timeout.
    * @return operation timeout in milliseconds, 0 if none was configured.
    */
-  public long getTimeoutMillis();
+  long getTimeoutMillis();
 
   /**
    * Sets the timeout for the next applied operations.
    * The default timeout is 0, which disables the timeout functionality.
    * @param timeout Timeout in milliseconds.
    */
-  public void setTimeoutMillis(long timeout);
+  void setTimeoutMillis(long timeout);
 
   /**
    * Returns true if this session has already been closed.
    */
-  public boolean isClosed();
+  boolean isClosed();
 
   /**
    * Check if there are operations that haven't been completely applied.
    * @return true if operations are pending, else false.
    */
-  public boolean hasPendingOperations();
+  boolean hasPendingOperations();
 
   /**
    * Set the new external consistency mode for this session.
    * @param consistencyMode new external consistency mode, can the same as the previous one.
    * @throws IllegalArgumentException if the buffer isn't empty.
    */
-  public void setExternalConsistencyMode(ExternalConsistencyMode consistencyMode);
+  void setExternalConsistencyMode(ExternalConsistencyMode consistencyMode);
 
   /**
    * Tells if the session is currently ignoring row errors when the whole list returned by a tablet
    * server is of the AlreadyPresent type.
    * @return true if the session is enforcing this, else false
    */
-  public boolean isIgnoreAllDuplicateRows();
+  boolean isIgnoreAllDuplicateRows();
 
   /**
    * Configures the option to ignore all the row errors if they are all of the AlreadyPresent type.
@@ -139,5 +139,20 @@ public interface SessionConfiguration {
    * This is disabled by default.
    * @param ignoreAllDuplicateRows true if this session should enforce this, else false
    */
-  public void setIgnoreAllDuplicateRows(boolean ignoreAllDuplicateRows);
+  void setIgnoreAllDuplicateRows(boolean ignoreAllDuplicateRows);
+
+  /**
+   * Return the number of errors which are pending. Errors may accumulate when
+   * using the AUTO_FLUSH_BACKGROUND mode.
+   * @return a count of errors
+   */
+  int countPendingErrors();
+
+  /**
+   * Return any errors from previous calls. If there were more errors
+   * than could be held in the session's error storage, the overflow state is set to true.
+   * Resets the pending errors.
+   * @return an object that contains the errors and the overflow status
+   */
+  RowErrorsAndOverflowStatus getPendingErrors();
 }

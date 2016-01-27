@@ -25,23 +25,20 @@ import static org.junit.Assert.*;
 
 public class TestRowErrors extends BaseKuduTest {
 
-  // Generate a unique table name
-  private static final String TABLE_NAME =
-      TestRowErrors.class.getName() + "-" + System.currentTimeMillis();
-
   private static KuduTable table;
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    createTable(TABLE_NAME, basicSchema, new CreateTableOptions());
 
-    table = openTable(TABLE_NAME);
   }
 
 
   @Test(timeout = 100000)
-  public void test() throws Exception {
+  public void singleTabletTest() throws Exception {
+    String tableName = TestRowErrors.class.getName() + "-" + System.currentTimeMillis();
+    createTable(tableName, basicSchema, new CreateTableOptions());
+    table = openTable(tableName);
     AsyncKuduSession session = client.newSession();
 
     // Insert 3 rows to play with.
@@ -68,6 +65,30 @@ public class TestRowErrors extends BaseKuduTest {
     assertEquals(2, errors.size());
     assertTrue(errors.get(0).getOperation() == dupeForZero);
     assertTrue(errors.get(1).getOperation() == dupeForTwo);
+  }
+
+  /**
+   * Test collecting errors from multiple tablets.
+   * @throws Exception
+   */
+  @Test(timeout = 100000)
+  public void multiTabletTest() throws Exception {
+    String tableName = TestRowErrors.class.getName() + "-" + System.currentTimeMillis();
+    createFourTabletsTableWithNineRows(tableName);
+    table = openTable(tableName);
+    KuduSession session = syncClient.newSession();
+    session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
+
+    int dupRows = 3;
+    session.apply(createInsert(12));
+    session.apply(createInsert(22));
+    session.apply(createInsert(32));
+
+    session.flush();
+
+    RowErrorsAndOverflowStatus reos = session.getPendingErrors();
+    assertEquals(dupRows, reos.getRowErrors().length);
+    assertEquals(0, session.countPendingErrors());
   }
 
   private Insert createInsert(int key) {
