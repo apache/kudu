@@ -804,7 +804,6 @@ if(${LLVM_PACKAGE_VERSION} VERSION_LESS 3.4)
 endif()
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
-link_directories(${LLVM_LIBRARY_DIRS})
 
 ## librt
 if (NOT APPLE)
