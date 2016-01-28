@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+#include "kudu/integration-tests/cluster_itest_util.h"
 
 #include <algorithm>
 #include <boost/optional.hpp>
@@ -30,7 +31,6 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.proxy.h"
@@ -106,6 +106,8 @@ client::KuduSchema SimpleIntKeyKuduSchema() {
 
 Status GetLastOpIdForEachReplica(const string& tablet_id,
                                  const vector<TServerDetails*>& replicas,
+                                 consensus::OpIdType opid_type,
+                                 const MonoDelta& timeout,
                                  vector<OpId>* op_ids) {
   GetLastOpIdRequestPB opid_req;
   GetLastOpIdResponsePB opid_resp;
@@ -115,10 +117,11 @@ Status GetLastOpIdForEachReplica(const string& tablet_id,
   op_ids->clear();
   for (TServerDetails* ts : replicas) {
     controller.Reset();
-    controller.set_timeout(MonoDelta::FromSeconds(3));
+    controller.set_timeout(timeout);
     opid_resp.Clear();
     opid_req.set_dest_uuid(ts->uuid());
     opid_req.set_tablet_id(tablet_id);
+    opid_req.set_opid_type(opid_type);
     RETURN_NOT_OK_PREPEND(
       ts->consensus_proxy->GetLastOpId(opid_req, &opid_resp, &controller),
       Substitute("Failed to fetch last op id from $0",
@@ -131,11 +134,13 @@ Status GetLastOpIdForEachReplica(const string& tablet_id,
 
 Status GetLastOpIdForReplica(const std::string& tablet_id,
                              TServerDetails* replica,
+                             consensus::OpIdType opid_type,
+                             const MonoDelta& timeout,
                              consensus::OpId* op_id) {
   vector<TServerDetails*> replicas;
   replicas.push_back(replica);
   vector<OpId> op_ids;
-  RETURN_NOT_OK(GetLastOpIdForEachReplica(tablet_id, replicas, &op_ids));
+  RETURN_NOT_OK(GetLastOpIdForEachReplica(tablet_id, replicas, opid_type, timeout, &op_ids));
   CHECK_EQ(1, op_ids.size());
   *op_id = op_ids[0];
   return Status::OK();
@@ -153,7 +158,8 @@ Status WaitForServersToAgree(const MonoDelta& timeout,
     vector<TServerDetails*> servers;
     AppendValuesFromMap(tablet_servers, &servers);
     vector<OpId> ids;
-    Status s = GetLastOpIdForEachReplica(tablet_id, servers, &ids);
+    Status s = GetLastOpIdForEachReplica(tablet_id, servers, consensus::RECEIVED_OPID, timeout,
+                                         &ids);
     if (s.ok()) {
       bool any_behind = false;
       bool any_disagree = false;
@@ -196,7 +202,8 @@ Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
   MonoDelta passed = MonoDelta::FromMilliseconds(0);
   while (true) {
     vector<OpId> op_ids;
-    Status s = GetLastOpIdForEachReplica(tablet_id, replicas, &op_ids);
+    Status s = GetLastOpIdForEachReplica(tablet_id, replicas, consensus::RECEIVED_OPID, timeout,
+                                         &op_ids);
     if (s.ok()) {
       bool any_behind = false;
       for (const OpId& op_id : op_ids) {
@@ -317,7 +324,7 @@ Status WaitUntilCommittedConfigNumVotersIs(int config_size,
                                      cstate.ShortDebugString(), s.ToString()));
 }
 
-Status WaitUntilCommittedConfigOpidIndexIs(int64_t opid_index,
+Status WaitUntilCommittedConfigOpIdIndexIs(int64_t opid_index,
                                            const TServerDetails* replica,
                                            const std::string& tablet_id,
                                            const MonoDelta& timeout) {
@@ -337,12 +344,39 @@ Status WaitUntilCommittedConfigOpidIndexIs(int64_t opid_index,
     if (MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).MoreThan(timeout)) break;
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  return Status::TimedOut(Substitute("Committed consensus opid_index does not equal $0 "
+  return Status::TimedOut(Substitute("Committed config opid_index does not equal $0 "
                                      "after waiting for $1. "
                                      "Last consensus state: $2. Last status: $3",
                                      opid_index,
                                      MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
                                      cstate.ShortDebugString(), s.ToString()));
+}
+
+Status WaitUntilCommittedOpIdIndexIs(int64_t opid_index,
+                                     TServerDetails* replica,
+                                     const string& tablet_id,
+                                     const MonoDelta& timeout) {
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = start;
+  deadline.AddDelta(timeout);
+
+  Status s;
+  OpId op_id;
+  while (true) {
+    MonoDelta remaining_timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    s = GetLastOpIdForReplica(tablet_id, replica, consensus::COMMITTED_OPID, remaining_timeout,
+                              &op_id);
+    if (s.ok() && op_id.index() == opid_index) {
+      return Status::OK();
+    }
+    if (MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).MoreThan(timeout)) break;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  return Status::TimedOut(Substitute("Committed consensus opid_index does not equal $0 "
+                                     "after waiting for $1. Last status: $2",
+                                     opid_index,
+                                     MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
+                                     s.ToString()));
 }
 
 Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,

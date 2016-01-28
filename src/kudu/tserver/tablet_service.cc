@@ -93,6 +93,7 @@ using consensus::Consensus;
 using consensus::ConsensusConfigType;
 using consensus::ConsensusRequestPB;
 using consensus::ConsensusResponsePB;
+using consensus::GetLastOpIdRequestPB;
 using consensus::GetNodeInstanceRequestPB;
 using consensus::GetNodeInstanceResponsePB;
 using consensus::LeaderStepDownRequestPB;
@@ -908,7 +909,12 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
   }
   scoped_refptr<Consensus> consensus;
   if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
-  Status s = consensus->GetLastReceivedOpId(resp->mutable_opid());
+  if (PREDICT_FALSE(req->opid_type() == consensus::UNKNOWN_OPID_TYPE)) {
+    HandleUnknownError(Status::InvalidArgument("Invalid opid_type specified to GetLastOpId()"),
+                       resp, context);
+    return;
+  }
+  Status s = consensus->GetLastOpId(req->opid_type(), resp->mutable_opid());
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

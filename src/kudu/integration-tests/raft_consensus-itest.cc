@@ -661,10 +661,10 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
 void RaftConsensusITest::CauseFollowerToFallBehindLogGC(string* leader_uuid,
                                                         int64_t* orig_term,
                                                         string* fell_behind_uuid) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(10);
   // Wait for all of the replicas to have acknowledged the elected
   // leader and logged the first NO_OP.
-  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_,
-                                  tablet_id_, 1));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_, tablet_id_, 1));
 
   // Pause one server. This might be the leader, but pausing it will cause
   // a leader election to happen.
@@ -718,7 +718,8 @@ void RaftConsensusITest::CauseFollowerToFallBehindLogGC(string* leader_uuid,
   // before we resume the follower.
   {
     OpId op_id;
-    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, &op_id));
+    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, consensus::RECEIVED_OPID, kTimeout,
+                                    &op_id));
     *orig_term = op_id.term();
     LOG(INFO) << "Servers converged with original term " << *orig_term;
   }
@@ -776,7 +777,8 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
     SleepFor(MonoDelta::FromSeconds(5));
     OpId op_id;
     TServerDetails* leader = tablet_servers_[leader_uuid];
-    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, &op_id));
+    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, consensus::RECEIVED_OPID,
+                                    MonoDelta::FromSeconds(10), &op_id));
     ASSERT_EQ(orig_term, op_id.term())
       << "expected the leader to have not advanced terms but has op " << op_id;
   }
@@ -1529,6 +1531,7 @@ void RaftConsensusITest::WaitForReplicasReportedToMaster(
 
 // Basic test of adding and removing servers from a configuration.
 TEST_F(RaftConsensusITest, TestAddRemoveServer) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(10);
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 3;
   vector<string> ts_flags = { "--enable_leader_failure_detection=false" };
@@ -1543,19 +1546,17 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   // Elect server 0 as leader and wait for log index 1 to propagate to all servers.
   TServerDetails* leader_tserver = tservers[0];
   const string& leader_uuid = tservers[0]->uuid();
-  ASSERT_OK(StartElection(leader_tserver, tablet_id_, MonoDelta::FromSeconds(10)));
-  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+  ASSERT_OK(StartElection(leader_tserver, tablet_id_, kTimeout));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_, tablet_id_, 1));
 
   // Make sure the server rejects removal of itself from the configuration.
-  Status s = RemoveServer(leader_tserver, tablet_id_, leader_tserver, boost::none,
-                          MonoDelta::FromSeconds(10));
+  Status s = RemoveServer(leader_tserver, tablet_id_, leader_tserver, boost::none, kTimeout);
   ASSERT_TRUE(s.IsInvalidArgument()) << "Should not be able to remove self from config: "
                                      << s.ToString();
 
   // Insert the row that we will update throughout the test.
   ASSERT_OK(WriteSimpleTestRow(leader_tserver, tablet_id_, RowOperationsPB::INSERT,
-                               kTestRowKey, kTestRowIntVal, "initial insert",
-                               MonoDelta::FromSeconds(10)));
+                               kTestRowKey, kTestRowIntVal, "initial insert", kTimeout));
 
   // Kill the master, so we can change the config without interference.
   cluster_->master()->Shutdown();
@@ -1565,7 +1566,8 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   // Do majority correctness check for 3 servers.
   NO_FATALS(AssertMajorityRequiredForElectionsAndWrites(active_tablet_servers, leader_uuid));
   OpId opid;
-  ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver, &opid));
+  ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver, consensus::RECEIVED_OPID, kTimeout,
+                                  &opid));
   int64_t cur_log_index = opid.index();
 
   // Go from 3 tablet servers down to 1 in the configuration.
@@ -1576,15 +1578,14 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
 
     TServerDetails* tserver_to_remove = tservers[to_remove_idx];
     LOG(INFO) << "Removing tserver with uuid " << tserver_to_remove->uuid();
-    ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tserver_to_remove, boost::none,
-                           MonoDelta::FromSeconds(10)));
+    ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tserver_to_remove, boost::none, kTimeout));
     ASSERT_EQ(1, active_tablet_servers.erase(tserver_to_remove->uuid()));
-    ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
-                                    active_tablet_servers, tablet_id_, ++cur_log_index));
+    ASSERT_OK(WaitForServersToAgree(kTimeout, active_tablet_servers, tablet_id_, ++cur_log_index));
 
     // Do majority correctness check for each incremental decrease.
     NO_FATALS(AssertMajorityRequiredForElectionsAndWrites(active_tablet_servers, leader_uuid));
-    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver, &opid));
+    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver, consensus::RECEIVED_OPID, kTimeout,
+                                    &opid));
     cur_log_index = opid.index();
   }
 
@@ -1597,14 +1598,14 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
     TServerDetails* tserver_to_add = tservers[to_add_idx];
     LOG(INFO) << "Adding tserver with uuid " << tserver_to_add->uuid();
     ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add, RaftPeerPB::VOTER, boost::none,
-                        MonoDelta::FromSeconds(10)));
+                        kTimeout));
     InsertOrDie(&active_tablet_servers, tserver_to_add->uuid(), tserver_to_add);
-    ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
-                                    active_tablet_servers, tablet_id_, ++cur_log_index));
+    ASSERT_OK(WaitForServersToAgree(kTimeout, active_tablet_servers, tablet_id_, ++cur_log_index));
 
     // Do majority correctness check for each incremental increase.
     NO_FATALS(AssertMajorityRequiredForElectionsAndWrites(active_tablet_servers, leader_uuid));
-    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver, &opid));
+    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver, consensus::RECEIVED_OPID, kTimeout,
+                                    &opid));
     cur_log_index = opid.index();
   }
 }

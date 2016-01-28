@@ -324,7 +324,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   int64_t GetFurthestAheadReplicaIdx(const std::string& tablet_id,
                                      const std::vector<TServerDetails*>& replicas) {
     std::vector<OpId> op_ids;
-    CHECK_OK(GetLastOpIdForEachReplica(tablet_id, replicas, &op_ids));
+    CHECK_OK(GetLastOpIdForEachReplica(tablet_id, replicas, consensus::RECEIVED_OPID,
+                                       MonoDelta::FromSeconds(10), &op_ids));
 
     int64 max_index = 0;
     int max_replica_index = -1;
