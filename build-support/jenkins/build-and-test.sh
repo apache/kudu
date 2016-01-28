@@ -348,6 +348,9 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   pip install --upgrade pip
   CC=$CLANG CXX=$CLANG++ pip install --disable-pip-version-check -r requirements.txt
 
+  # Delete old Cython extensions to force them to be rebuilt.
+  rm -Rf build kudu_python.egg-info kudu/*.so
+
   # Assuming we run this script from base dir
   CC=$CLANG CXX=$CLANG++ python setup.py build_ext
   set +e
