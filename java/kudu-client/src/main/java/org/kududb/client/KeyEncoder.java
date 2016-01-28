@@ -160,10 +160,6 @@ class KeyEncoder {
    */
   private void addComponent(byte[] value, int offset, int len, Type type) {
     switch (type) {
-      case BOOL:
-        assert len == 1;
-        buf.write(value[0]);
-        break;
       case INT8:
       case INT16:
       case INT32:

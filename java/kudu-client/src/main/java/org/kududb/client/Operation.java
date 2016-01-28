@@ -30,7 +30,6 @@ import org.kududb.tserver.Tserver;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -149,6 +148,14 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
    */
   public PartialRow getRow() {
     return this.row;
+  }
+
+  @Override
+  public String toString() {
+    StringBuilder sb = new StringBuilder(super.toString());
+    sb.append(" row_key=");
+    sb.append(row.stringifyRowKey());
+    return sb.toString();
   }
 
   /**

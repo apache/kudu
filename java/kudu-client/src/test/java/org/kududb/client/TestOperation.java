@@ -17,6 +17,7 @@
 package org.kududb.client;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
 
@@ -118,4 +119,45 @@ public class TestOperation {
     }
   }
 
+  private Schema createAllTypesKeySchema() {
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(7);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT8).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT16).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.INT32).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.INT64).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c4", Type.TIMESTAMP).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c5", Type.STRING).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c6", Type.BINARY).key(true).build());
+    return new Schema(columns);
+  }
+
+  @Test
+  public void testRowKeyStringify() {
+    KuduTable table = Mockito.mock(KuduTable.class);
+    Mockito.doReturn(createAllTypesKeySchema()).when(table).getSchema();
+    Insert insert = new Insert(table);
+    PartialRow row = insert.getRow();
+    row.addByte("c0", (byte) 1);
+    row.addShort("c1", (short) 2);
+    row.addInt("c2", 3);
+    row.addLong("c3", 4);
+    row.addLong("c4", 5);
+    row.addString("c5", "c5_val");
+    row.addBinary("c6", Bytes.fromString("c6_val"));
+
+    assertEquals("(int8 c0=1, int16 c1=2, int32 c2=3, int64 c3=4, timestamp c4=5, string" +
+            " c5=c5_val, binary c6=\"c6_val\")",
+        insert.getRow().stringifyRowKey());
+
+    // Test an incomplete row key.
+    insert = new Insert(table);
+    row = insert.getRow();
+    row.addByte("c0", (byte) 1);
+    try {
+      row.stringifyRowKey();
+      fail("Should not be able to stringifyRowKey when not all keys are specified");
+    } catch (IllegalStateException ise) {
+      // Expected.
+    }
+  }
 }
