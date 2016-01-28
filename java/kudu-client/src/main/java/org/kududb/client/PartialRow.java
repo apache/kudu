@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
@@ -510,6 +511,68 @@ public class PartialRow {
    */
   public byte[] encodePrimaryKey() {
     return new KeyEncoder().encodePrimaryKey(this);
+  }
+
+  /**
+   * Transforms the row key into a string representation where each column is in the format:
+   * "type col_name=value".
+   * @return a string representation of the operation's row key
+   */
+  public String stringifyRowKey() {
+    int numRowKeys = schema.getPrimaryKeyColumnCount();
+    StringBuilder sb = new StringBuilder();
+    sb.append("(");
+    for (int i = 0; i < numRowKeys; i++) {
+      if (i > 0) {
+        sb.append(", ");
+      }
+
+      ColumnSchema col = schema.getColumnByIndex(i);
+      assert !col.isNullable();
+      Preconditions.checkState(columnsBitSet.get(i),
+          "Full row key not specified, missing at least col: " + col.getName());
+      Type type = col.getType();
+      sb.append(type.getName());
+      sb.append(" ");
+      sb.append(col.getName());
+      sb.append("=");
+
+      if (type == Type.STRING || type == Type.BINARY) {
+        ByteBuffer value = getVarLengthData().get(i).duplicate();
+        value.reset(); // Make sure we start at the beginning.
+        byte[] data = new byte[value.limit()];
+        value.get(data);
+        if (type == Type.STRING) {
+          sb.append(Bytes.getString(data));
+        } else {
+          sb.append(Bytes.pretty(data));
+        }
+      } else {
+        switch (type) {
+          case INT8:
+            sb.append(Bytes.getByte(rowAlloc, schema.getColumnOffset(i)));
+            break;
+          case INT16:
+            sb.append(Bytes.getShort(rowAlloc, schema.getColumnOffset(i)));
+            break;
+          case INT32:
+            sb.append(Bytes.getInt(rowAlloc, schema.getColumnOffset(i)));
+            break;
+          case INT64:
+            sb.append(Bytes.getLong(rowAlloc, schema.getColumnOffset(i)));
+            break;
+          case TIMESTAMP:
+            sb.append(Bytes.getLong(rowAlloc, schema.getColumnOffset(i)));
+            break;
+          default:
+            throw new IllegalArgumentException(String.format(
+                "The column type %s is not a valid key component type", type));
+        }
+      }
+    }
+    sb.append(")");
+
+    return sb.toString();
   }
 
   /**
