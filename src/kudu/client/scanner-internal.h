@@ -90,6 +90,10 @@ class KuduScanner::Data {
   // Modifies fields in 'next_req_' in preparation for a new request.
   void PrepareRequest(RequestType state);
 
+  // Update 'last_error_' if need be. Should be invoked whenever a
+  // non-fatal (i.e. retriable) scan error is encountered.
+  void UpdateLastError(const Status& error);
+
   bool open_;
   bool data_in_open_;
   bool has_batch_size_bytes_;
@@ -146,6 +150,13 @@ class KuduScanner::Data {
   // storage for the actual row data. If that API is used, this member keeps the
   // actual storage for the batch that is returned.
   KuduScanBatch batch_for_old_api_;
+
+  // The latest error experienced by this scan that provoked a retry. If the
+  // scan times out, this error will be incorporated into the status that is
+  // passed back to the client.
+  //
+  // TODO: This and the overall scan retry logic duplicates much of RpcRetrier.
+  Status last_error_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

@@ -38,6 +38,8 @@ using std::string;
 namespace kudu {
 
 using rpc::RpcController;
+using strings::Substitute;
+using strings::SubstituteAndAppend;
 using tserver::ColumnRangePredicatePB;
 using tserver::NewScanRequestPB;
 using tserver::ScanResponsePB;
@@ -106,6 +108,7 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
       !rpc_status.ok() &&
       controller_.error_response() &&
       controller_.error_response()->code() == rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY) {
+    UpdateLastError(rpc_status);
 
     // Exponential backoff with jitter anchored between 10ms and 20ms, and an
     // upper bound between 2.5s and 5s.
@@ -114,7 +117,10 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
     MonoTime now = MonoTime::Now(MonoTime::FINE);
     now.AddDelta(sleep);
     if (deadline.ComesBefore(now)) {
-      return Status::TimedOut("unable to retry before timeout", rpc_status.ToString());
+      Status ret = Status::TimedOut("unable to retry before timeout",
+                                    rpc_status.ToString());
+      return last_error_.ok() ?
+          ret : ret.CloneAndAppend(last_error_.ToString());
     }
     LOG(INFO) << "Retrying scan to busy tablet server " << ts_->ToString()
               << " after " << sleep.ToString() << "; attempt " << scan_attempts_;
@@ -129,9 +135,11 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
       // We didn't wait a full RPC timeout though, so don't mark the tserver as failed.
       LOG(INFO) << "Scan of tablet " << remote_->tablet_id() << " at "
           << ts_->ToString() << " deadline expired.";
-      return rpc_status;
+      return last_error_.ok()
+          ? rpc_status : rpc_status.CloneAndAppend(last_error_.ToString());
     } else {
       // All other types of network errors are retriable, and also indicate the tserver is failed.
+      UpdateLastError(rpc_status);
       table_->client()->data_->meta_cache_->MarkTSFailed(ts_, rpc_status);
     }
   }
@@ -161,6 +169,8 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
   //   - Any other error    : Fatal. This indicates an unexpected error while processing the scan
   //                          request.
   if (rpc_status.ok() && !server_status.ok()) {
+    UpdateLastError(server_status);
+
     const tserver::TabletServerErrorPB& error = last_response_.error();
     switch (error.code()) {
       case tserver::TabletServerErrorPB::SCANNER_EXPIRED:
@@ -430,6 +440,12 @@ void KuduScanner::Data::PrepareRequest(RequestType state) {
     next_req_.set_call_seq_id(0);
   } else {
     next_req_.set_call_seq_id(next_req_.call_seq_id() + 1);
+  }
+}
+
+void KuduScanner::Data::UpdateLastError(const Status& error) {
+  if (last_error_.ok() || last_error_.IsTimedOut()) {
+    last_error_ = error;
   }
 }
 

@@ -65,14 +65,12 @@ DECLARE_int32(log_inject_latency_ms_mean);
 DECLARE_int32(log_inject_latency_ms_stddev);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 DECLARE_int32(max_create_tablets_per_ts);
-DECLARE_int32(rpc_service_queue_length);
 DECLARE_int32(scanner_gc_check_interval_us);
 DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(scanner_max_batch_size_bytes);
 DECLARE_int32(scanner_ttl_ms);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
-METRIC_DECLARE_counter(scans_started);
 METRIC_DECLARE_counter(rpcs_queue_overflow);
 
 using std::string;
@@ -2685,6 +2683,36 @@ TEST_F(ClientTest, TestServerTooBusyRetry) {
 
   for (const scoped_refptr<kudu::Thread>& thread : threads) {
     thread->Join();
+  }
+}
+
+TEST_F(ClientTest, TestLastErrorEmbeddedInScanTimeoutStatus) {
+  // For the random() calls that take place during scan retries.
+  SeedRandom();
+
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
+
+  {
+    // Revert the latency injection flags at the end so the test exits faster.
+    google::FlagSaver saver;
+
+    // Restart, but inject latency so that startup is very slow.
+    FLAGS_log_inject_latency = true;
+    FLAGS_log_inject_latency_ms_mean = 1000;
+    FLAGS_log_inject_latency_ms_stddev = 0;
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+      ASSERT_OK(ts->Restart());
+    }
+
+    // As the tservers are still starting up, the scan will retry until it
+    // times out. The actual error should be embedded in the returned status.
+    KuduScanner scan(client_table_.get());
+    ASSERT_OK(scan.SetTimeoutMillis(1000));
+    Status s = scan.Open();
+    SCOPED_TRACE(s.ToString());
+    ASSERT_TRUE(s.IsTimedOut());
+    ASSERT_STR_CONTAINS(s.ToString(), "Illegal state: Tablet not RUNNING");
   }
 }
 
