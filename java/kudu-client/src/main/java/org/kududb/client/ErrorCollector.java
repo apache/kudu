@@ -57,7 +57,7 @@ public class ErrorCollector {
   }
 
   /**
-   * Get the current count collected row errors. Cannot be greater than the max capacity this
+   * Get the current count of collected row errors. Cannot be greater than the max capacity this
    * instance was configured with.
    * @return the count of errors
    */
