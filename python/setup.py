@@ -33,7 +33,7 @@ if Cython.__version__ < '0.19.1':
 
 MAJOR = 0
 MINOR = 1
-MICRO = 0
+MICRO = 1
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 ISRELEASED = True
 
@@ -141,6 +141,8 @@ CLASSIFIERS = [
     'Programming Language :: Cython'
 ]
 
+URL = 'http://getkudu.io'
+
 setup(
     name="kudu-python",
     packages=['kudu', 'kudu.tests'],
@@ -158,7 +160,8 @@ setup(
     long_description=LONG_DESCRIPTION,
     license='Apache License, Version 2.0',
     classifiers=CLASSIFIERS,
-    author="Apache Kudu (incubating) team",
+    maintainer="Apache Kudu (incubating) team",
     maintainer_email="dev@kudu.incubator.apache.org",
+    url=URL,
     test_suite="kudu.tests"
 )
