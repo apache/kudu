@@ -104,7 +104,8 @@ int SaslHelper::GetOptionCb(const char* plugin_name, const char* option,
   }
 
   DVLOG(4) << tag_ << ": GetOption Callback called. ";
-  DVLOG(4) << tag_ << ": GetOption Plugin name: " << plugin_name;
+  DVLOG(4) << tag_ << ": GetOption Plugin name: "
+                   << (plugin_name == nullptr ? "NULL" : plugin_name);
   DVLOG(4) << tag_ << ": GetOption Option name: " << option;
 
   if (PREDICT_FALSE(result == nullptr)) {
@@ -117,7 +118,7 @@ int SaslHelper::GetOptionCb(const char* plugin_name, const char* option,
     if (cb_name == option) {
       *result = LocalMechListString();
       if (len != nullptr) *len = strlen(*result);
-      DVLOG(3) << tag_ << ": Enabled mech list: " << *result;
+      DVLOG(3) << tag_ << ": Enabled mech list: " << (*result == nullptr ? "NULL" : *result);
       return SASL_OK;
     }
     VLOG(4) << tag_ << ": GetOptionCb: Unknown library option: " << option;
