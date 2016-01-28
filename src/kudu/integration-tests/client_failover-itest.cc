@@ -49,7 +49,8 @@ TEST_F(ClientFailoverITest, TestDeleteLeaderWhileScanning) {
 
   vector<string> ts_flags = { "--enable_leader_failure_detection=false",
                               "--enable_remote_bootstrap=false" };
-  vector<string> master_flags = { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false" };
+  vector<string> master_flags = { "--master_add_server_when_underreplicated=false",
+                                  "--catalog_manager_wait_for_new_tablets_to_elect_leader=false" };
 
   // Start up with 4 tablet servers.
   NO_FATALS(StartCluster(ts_flags, master_flags, 4));
@@ -118,12 +119,15 @@ TEST_F(ClientFailoverITest, TestDeleteLeaderWhileScanning) {
 
   // We need to elect a new leader to remove the old node.
   ASSERT_OK(itest::StartElection(leader, tablet_id, kTimeout));
-  ASSERT_OK(WaitForServersToAgree(kTimeout, active_ts_map, tablet_id,
-                                  workload.batches_completed() + 2));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(workload.batches_completed() + 2, leader, tablet_id,
+                                          kTimeout));
 
   // Do a config change to remove the old replica and add a new one.
   // Cause the new replica to become leader, then do the scan again.
   ASSERT_OK(RemoveServer(leader, tablet_id, old_leader, boost::none, kTimeout));
+  // Wait until the config is committed, otherwise AddServer() will fail.
+  ASSERT_OK(WaitUntilCommittedConfigOpIdIndexIs(workload.batches_completed() + 3, leader, tablet_id,
+                                                kTimeout));
 
   TServerDetails* to_add = ts_map_[cluster_->tablet_server(missing_replica_index)->uuid()];
   ASSERT_OK(AddServer(leader, tablet_id, to_add, consensus::RaftPeerPB::VOTER,
@@ -142,8 +146,8 @@ TEST_F(ClientFailoverITest, TestDeleteLeaderWhileScanning) {
   leader_index = missing_replica_index;
   leader = ts_map_[cluster_->tablet_server(leader_index)->uuid()];
   ASSERT_OK(itest::StartElection(leader, tablet_id, kTimeout));
-  ASSERT_OK(WaitForServersToAgree(kTimeout, active_ts_map, tablet_id,
-                                  workload.batches_completed() + 5));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(workload.batches_completed() + 5, leader, tablet_id,
+                                          kTimeout));
 
   ASSERT_EQ(workload.rows_inserted(), CountTableRows(table.get()));
 }

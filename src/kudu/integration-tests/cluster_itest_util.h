@@ -35,6 +35,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -105,11 +106,15 @@ Status CreateTabletServerMap(master::MasterServiceProxy* master_proxy,
 // Returns a bad Status if any replica cannot be reached.
 Status GetLastOpIdForEachReplica(const std::string& tablet_id,
                                  const std::vector<TServerDetails*>& replicas,
+                                 consensus::OpIdType opid_type,
+                                 const MonoDelta& timeout,
                                  std::vector<consensus::OpId>* op_ids);
 
 // Like the above, but for a single replica.
 Status GetLastOpIdForReplica(const std::string& tablet_id,
                              TServerDetails* replica,
+                             consensus::OpIdType opid_type,
+                             const MonoDelta& timeout,
                              consensus::OpId* op_id);
 
 // Wait until all of the servers have converged on the same log index.
@@ -144,12 +149,18 @@ Status WaitUntilCommittedConfigNumVotersIs(int config_size,
                                            const std::string& tablet_id,
                                            const MonoDelta& timeout);
 
-// Wait until the the opid_index of the committed consensus config on the
+// Wait until the opid_index of the committed consensus config on the
 // specified tablet is 'opid_index'.
-Status WaitUntilCommittedConfigOpidIndexIs(int64_t opid_index,
+Status WaitUntilCommittedConfigOpIdIndexIs(int64_t opid_index,
                                            const TServerDetails* replica,
                                            const std::string& tablet_id,
                                            const MonoDelta& timeout);
+
+// Wait until the last commited OpId has index exactly 'opid_index'.
+Status WaitUntilCommittedOpIdIndexIs(int64_t opid_index,
+                                     TServerDetails* replica,
+                                     const std::string& tablet_id,
+                                     const MonoDelta& timeout);
 
 // Returns:
 // Status::OK() if the replica is alive and leader of the consensus configuration.

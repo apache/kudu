@@ -1839,10 +1839,16 @@ void RaftConsensus::DoElectionCallback(const ElectionResult& result) {
   CHECK_OK(BecomeLeaderUnlocked());
 }
 
-Status RaftConsensus::GetLastReceivedOpId(OpId* id) {
+Status RaftConsensus::GetLastOpId(OpIdType type, OpId* id) {
   ReplicaState::UniqueLock lock;
   RETURN_NOT_OK(state_->LockForRead(&lock));
-  DCHECK_NOTNULL(id)->CopyFrom(state_->GetLastReceivedOpIdUnlocked());
+  if (type == RECEIVED_OPID) {
+    *DCHECK_NOTNULL(id) = state_->GetLastReceivedOpIdUnlocked();
+  } else if (type == COMMITTED_OPID) {
+    *DCHECK_NOTNULL(id) = state_->GetCommittedOpIdUnlocked();
+  } else {
+    return Status::InvalidArgument("Unsupported OpIdType", OpIdType_Name(type));
+  }
   return Status::OK();
 }
 

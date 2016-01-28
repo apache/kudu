@@ -160,7 +160,7 @@ class RaftConsensus : public Consensus,
                                     int64_t term,
                                     const std::string& reason) OVERRIDE;
 
-  virtual Status GetLastReceivedOpId(OpId* id) OVERRIDE;
+  virtual Status GetLastOpId(OpIdType type, OpId* id) OVERRIDE;
 
  protected:
   // Trigger that a non-Transaction ConsensusRound has finished replication.
