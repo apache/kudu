@@ -105,8 +105,8 @@ DEFINE_int32(unresponsive_ts_rpc_timeout_ms, 60 * 60 * 1000, // 1 hour
              "a tablet server in order to perform operations such as deleting a tablet.");
 TAG_FLAG(unresponsive_ts_rpc_timeout_ms, advanced);
 
-DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas()
-             "Default number of replicas for tables that do have the num_replicas set.");
+DEFINE_int32(default_num_replicas, 3,
+             "Default number of replicas for tables that do not have the num_replicas set.");
 TAG_FLAG(default_num_replicas, advanced);
 
 DEFINE_int32(catalog_manager_bg_task_wait_ms, 1000,

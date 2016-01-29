@@ -36,7 +36,9 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    table = createTable(TABLE_NAME, basicSchema, new CreateTableOptions());
+    // Set to 1 for testDisconnect to always test disconnecting the right server.
+    CreateTableOptions options = new CreateTableOptions().setNumReplicas(1);
+    table = createTable(TABLE_NAME, basicSchema, options);
   }
 
   @Test(timeout = 100000)

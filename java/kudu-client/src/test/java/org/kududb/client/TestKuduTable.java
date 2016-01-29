@@ -241,7 +241,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals(splitsCount + 1, tablets.size());
     assertEquals(splitsCount + 1, table.asyncGetTabletsLocations(DEFAULT_SLEEP).join().size());
     for (LocatedTablet tablet : tablets) {
-      assertEquals(1, tablet.getReplicas().size());
+      assertEquals(3, tablet.getReplicas().size());
     }
     return table;
   }

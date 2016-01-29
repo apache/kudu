@@ -598,13 +598,8 @@ TEST_F(ClientTest, TestScanMultiTablet) {
     rows.push_back(row);
   }
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-  ASSERT_OK(table_creator->table_name("TestScanMultiTablet")
-            .schema(&schema_)
-            .split_rows(rows)
-            .Create());
-
   shared_ptr<KuduTable> table;
-  ASSERT_OK(client_->OpenTable("TestScanMultiTablet", &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable("TestScanMultiTablet", 1, rows, &table));
 
   // Insert rows with keys 12, 13, 15, 17, 22, 23, 25, 27...47 into each
   // tablet, except the first which is empty.
@@ -2544,6 +2539,7 @@ TEST_F(ClientTest, TestCreateDuplicateTable) {
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_TRUE(table_creator->table_name(kTableName)
               .schema(&schema_)
+              .num_replicas(1)
               .Create().IsAlreadyPresent());
 }
 

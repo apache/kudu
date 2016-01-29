@@ -112,8 +112,9 @@ public class CreateTableOptions {
   }
 
   /**
-   * Sets the number of replicas that each tablet will have. If not specified, it defaults to 1
-   * replica which isn't safe for production usage.
+   * Sets the number of replicas that each tablet will have. If not specified, it uses the
+   * server-side default which is usually 3 unless changed by an administrator.
+   *
    * @param numReplicas the number of replicas to use
    * @return this instance
    */

@@ -110,6 +110,7 @@ void RpcLineItemDAO::Init() {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     CHECK_OK(table_creator->table_name(table_name_)
              .schema(&schema)
+             .num_replicas(1)
              .split_rows(tablet_splits_)
              .Create());
     CHECK_OK(client_->OpenTable(table_name_, &client_table_));
