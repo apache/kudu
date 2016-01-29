@@ -408,6 +408,7 @@ Status PartitionSchema::DecodeHashBuckets(Slice* encoded_key,
                    hash_components_size, encoded_key->size()));
   }
   for (const auto& schema : hash_bucket_schemas_) {
+    (void) schema; // quiet unused variable warning
     uint32_t big_endian;
     memcpy(&big_endian, encoded_key->data(), sizeof(uint32_t));
     buckets->push_back(BigEndian::ToHost32(big_endian));
