@@ -131,7 +131,7 @@ possibly assign a lower timestamp to a following write.
 For the moment, Kudu's experimental implementation of `Commit Wait` is only available
 in the java client, by setting `KuduSession#setExternalConsistencyMode()`
 to `COMMIT_WAIT`. When using this mode, the latency of writes is tightly
-tied to how accurate the clocks on all the cluster nodes are, and using this mode
+tied to the accuracy of clocks on all the cluster hosts, and using this mode
 with loose clock synchronization causes writes to take a long time to complete or even time
 out. See <<known_issues>>.
 

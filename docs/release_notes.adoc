@@ -67,7 +67,7 @@ batchSizeBytes as is the corresponding property in AsyncKuduScanner. This makes 
 consistent with the C++ client.
 . The "kudu-admin" tool can now list and delete tables via its new subcommands
 "list_tables" and "delete_table <table_name>".
-. OSX is now supported for single node development. Please consult its specific installation
+. OSX is now supported for single-host development. Please consult its specific installation
 instructions in link:installation.html#osx_from_source[OS X].
 
 The upgrade instructions are situated at link:installation.html#upgrade[Upgrade from 0.5.0 to 0.6.0].
@@ -196,7 +196,7 @@ link:kudu_impala_integration.html[Impala Integration] documentation.
 * To use Impala_Kudu alongside an existing Impala instance, you must install using parcels.
 * Updates, inserts, and deletes via Impala are non-transactional. If a query
 fails part of the way through, its partial effects will not be rolled back.
-* All queries will be distributed across all Impala nodes which host a replica
+* All queries will be distributed across all Impala hosts which host a replica
 of the target table(s), even if a predicate on a primary key could correctly
 restrict the query to a single tablet. This limits the maximum concurrency of
 short queries made via Impala.
