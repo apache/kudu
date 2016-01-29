@@ -46,6 +46,10 @@ endif()
 # build/<second build directory>
 # ...
 if ("${CMAKE_CURRENT_BINARY_DIR}" MATCHES "^${CMAKE_CURRENT_SOURCE_DIR}/build/[^/]+$")
+  if ("${CMAKE_CURRENT_BINARY_DIR}" MATCHES "^${CMAKE_CURRENT_SOURCE_DIR}/build/latest")
+    message(FATAL_ERROR "Should not run cmake inside the build/latest symlink. "
+            "First change directories into the destination of the symlink.")
+  endif()
   if (NOT APPLE)
     set(MORE_ARGS "-T")
   endif()
@@ -53,6 +57,15 @@ if ("${CMAKE_CURRENT_BINARY_DIR}" MATCHES "^${CMAKE_CURRENT_SOURCE_DIR}/build/[^
     ln ${MORE_ARGS} -sf ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/build/latest
     COMMENT "Recreating ../build/latest symlink")
+
+  # 'ALL' above doesn't actually add 'latest_symlink' as a dependency to all
+  # targets. So, we override add_executable to ensure that whenever any executable
+  # is built, the symlink is re-created.
+  function(add_executable name)
+    # Call through to the original add_executable function.
+    _add_executable(${name} ${ARGN})
+    add_dependencies(${name} latest_symlink)
+  endfunction()
 endif()
 
 # TODO: can we somehow pass this into the java build?
