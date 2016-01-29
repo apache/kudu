@@ -151,7 +151,7 @@ substantial reduction in network traffic for heavy write scenarios.
 == Architectural Overview
 
 The following diagram shows a Kudu cluster with three masters and multiple tablet
-servers, each serving multiple tablets. It illustrates how RAFT consensus is used
+servers, each serving multiple tablets. It illustrates how Raft consensus is used
 to allow for both leaders and followers for both the masters and tablet servers. In
 addition, a tablet server can be a leader for some tablets, and a follower for others.
 Leaders are shown in gold, while followers are shown in blue.
