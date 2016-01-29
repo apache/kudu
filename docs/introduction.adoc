@@ -41,10 +41,13 @@ Kudu's design sets it apart. Some of Kudu's benefits include:
   requirements on a per-request basis, including the option for strict-serializable consistency.
 - Strong performance for running sequential and random workloads simultaneously.
 - Easy to administer and manage with Cloudera Manager.
-- High availability. Tablet Servers and Master use the <<raft>>, which ensures
-  availability even if _f_ nodes failing, given _2f+1_ nodes in the cluster.
-  Reads can be serviced by read-only follower tablets, even in the event of a
-  leader tablet failure.
+- High availability. Tablet Servers and Masters use the <<raft>>, which ensures that
+  as long as more than half the total number of replicas is available, the tablet is available for
+  reads and writes. For instance, if 2 out of 3 replicas or 3 out of 5 replicas are available, the tablet
+  is available.
++
+Reads can be serviced by read-only follower tablets, even in the event of a
+leader tablet failure.
 - Structured data model.
 
 By combining all of these properties, Kudu targets support for families of

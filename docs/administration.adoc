@@ -108,7 +108,7 @@ and label in the JSON output. This information is typically elided to save space
 bandwidth when fetching this page from a remote host.
 
 - `/metrics?include_raw_histograms=1` - include the raw buckets and values for histogram metrics,
-enabling accurate aggregation of percentile metrics over time and across nodes.
+enabling accurate aggregation of percentile metrics over time and across hosts.
 
 For example:
 
