@@ -128,11 +128,11 @@ OUTDIR=$ROOT/build/$BUILD_TYPE/tpch
 rm -Rf $KUDU_DATA_DIR   # Clean up data dir.
 mkdir -p $OUTDIR        # Create log file output dir.
 
-./build/latest/bin/tpch1 -logtostderr=1 \
-                         -tpch_path_to_data=$LINEITEM_TBL_PATH \
-                         -mini_cluster_base_dir=$KUDU_DATA_DIR \
-                         -tpch_num_query_iterations=$TPCH_NUM_QUERY_ITERS \
-                         >$OUTDIR/benchmark.log 2>&1
+./build/$BUILD_TYPE/bin/tpch1 -logtostderr=1 \
+                              -tpch_path_to_data=$LINEITEM_TBL_PATH \
+                              -mini_cluster_base_dir=$KUDU_DATA_DIR \
+                              -tpch_num_query_iterations=$TPCH_NUM_QUERY_ITERS \
+                              >$OUTDIR/benchmark.log 2>&1
 
 cat $OUTDIR/benchmark.log
 INSERT_TIME=$(grep "Time spent loading" $OUTDIR/benchmark.log | \
