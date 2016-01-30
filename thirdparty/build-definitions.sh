@@ -115,11 +115,14 @@ build_libstdcxx() {
 
 build_gflags() {
   cd $GFLAGS_DIR
-  CFLAGS="$EXTRA_CFLAGS" \
-    CXXFLAGS="$EXTRA_CXXFLAGS" \
-    LDFLAGS="$EXTRA_LDFLAGS" \
-    LIBS="$EXTRA_LIBS" \
-    ./configure --with-pic --prefix=$PREFIX
+  rm -rf CMakeCache.txt CMakeFiles/
+  CXXFLAGS="$EXTRA_CFLAGS $EXTRA_CXXFLAGS $EXTRA_LDFLAGS $EXTRA_LIBS" \
+    cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=On \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    -DBUILD_SHARED_LIBS=On \
+    -DBUILD_STATIC_LIBS=On
   make -j$PARALLEL install
 }
 

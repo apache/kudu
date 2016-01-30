@@ -80,7 +80,7 @@ if [ ! -d $GMOCK_DIR ]; then
 fi
 
 if [ ! -d $GFLAGS_DIR ]; then
-  fetch_and_expand gflags-${GFLAGS_VERSION}.zip
+  fetch_and_expand gflags-${GFLAGS_VERSION}.tar.gz
 fi
 
 # Check that the gperftools patch has been applied.

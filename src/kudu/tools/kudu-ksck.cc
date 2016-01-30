@@ -19,8 +19,8 @@
 // on the default RPC port. It verifies that all the reported Tablet Servers are running and that
 // the tablets are in a consistent state.
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <google/gflags.h>
 #include <iostream>
 
 #include "kudu/gutil/strings/split.h"
