@@ -17,6 +17,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# autoreconf calls are necessary to fix hard-coded aclocal versions in the
+# configure scripts that ship with the projects.
+
 set -e
 
 TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
@@ -71,6 +74,7 @@ if [ ! -d $GLOG_DIR ]; then
   pushd $GLOG_DIR
   patch -p0 < $TP_DIR/patches/glog-issue-198-fix-unused-warnings.patch
   touch patchlevel-$GLOG_PATCHLEVEL
+  autoreconf -fvi
   popd
   echo
 fi
@@ -95,12 +99,16 @@ if [ ! -d $GPERFTOOLS_DIR ]; then
   patch -p1 < $TP_DIR/patches/gperftools-Change-default-TCMALLOC_TRANSFER_NUM_OBJ-to-40.patch
   patch -p1 < $TP_DIR/patches/gperftools-hook-mi_force_unlock-on-OSX-instead-of-pthread_atfork.patch
   touch patchlevel-$GPERFTOOLS_PATCHLEVEL
+  autoreconf -fvi
   popd
   echo
 fi
 
 if [ ! -d $PROTOBUF_DIR ]; then
   fetch_and_expand protobuf-${PROTOBUF_VERSION}.tar.gz
+  pushd $PROTOBUF_DIR
+  autoreconf -fvi
+  popd
 fi
 
 if [ ! -d $CMAKE_DIR ]; then
@@ -109,6 +117,9 @@ fi
 
 if [ ! -d $SNAPPY_DIR ]; then
   fetch_and_expand snappy-${SNAPPY_VERSION}.tar.gz
+  pushd $SNAPPY_DIR
+  autoreconf -fvi
+  popd
 fi
 
 if [ ! -d $ZLIB_DIR ]; then
