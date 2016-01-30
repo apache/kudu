@@ -91,11 +91,20 @@ vector<string> ExternalMiniClusterFsInspector::ListTablets() {
   }
   return vector<string>(tablets.begin(), tablets.end());
 }
+
 vector<string> ExternalMiniClusterFsInspector::ListTabletsOnTS(int index) {
   string data_dir = cluster_->tablet_server(index)->data_dir();
   string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
   vector<string> tablets;
   CHECK_OK(ListFilesInDir(meta_dir, &tablets));
+  return tablets;
+}
+
+vector<string> ExternalMiniClusterFsInspector::ListTabletsWithDataOnTS(int index) {
+  string data_dir = cluster_->tablet_server(index)->data_dir();
+  string wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
+  vector<string> tablets;
+  CHECK_OK(ListFilesInDir(wal_dir, &tablets));
   return tablets;
 }
 

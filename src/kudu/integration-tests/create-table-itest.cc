@@ -16,6 +16,7 @@
 // under the License.
 
 #include <gflags/gflags.h>
+#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
@@ -82,20 +83,6 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
     LOG(INFO) << "Waiting for the master to retry creating the tablet 3 times... "
               << num_create_attempts << " RPCs seen so far";
 
-    int64_t num_delete_tablet_rpc;
-    ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
-        &METRIC_ENTITY_server,
-        "kudu.tabletserver",
-        &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
-        "total_count",
-        &num_delete_tablet_rpc));
-    // When attempting to replace old tablet and create new tablet,
-    // master should also send delete tablet rpc to tablet servers.
-    // There may be race for async create/delete rpcs, but there
-    // absolute difference should be less than or equal to 1.
-    ASSERT_GE(num_delete_tablet_rpc - num_create_attempts, -1);
-    ASSERT_LE(num_delete_tablet_rpc - num_create_attempts, 1);
-
     // The CreateTable operation should still be considered in progress, even though
     // we'll be successful at creating a single replica.
     bool in_progress = false;
@@ -115,6 +102,19 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
     ASSERT_OK(client_->IsCreateTableInProgress(kTableName, &in_progress));
     SleepFor(MonoDelta::FromMilliseconds(100));
   }
+
+  // The server that was up from the beginning should be left with only
+  // one tablet, eventually, since the tablets which failed to get created
+  // properly should get deleted.
+  vector<string> tablets;
+  int wait_iter = 0;
+  while (tablets.size() != 1 && wait_iter++ < 100) {
+    LOG(INFO) << "Waiting for only one tablet to be left on TS 0. Currently have: "
+              << tablets;
+    SleepFor(MonoDelta::FromMilliseconds(100));
+    tablets = inspect_->ListTabletsWithDataOnTS(0);
+  }
+  ASSERT_EQ(1, tablets.size()) << "Tablets on TS0: " << tablets;
 }
 
 // Regression test for KUDU-1317. Ensure that, when a table is created,

@@ -52,8 +52,18 @@ class ExternalMiniClusterFsInspector {
   Status ListFilesInDir(const std::string& path, std::vector<std::string>* entries);
   int CountFilesInDir(const std::string& path);
   int CountWALSegmentsOnTS(int index);
+
+  // List all of the tablets with tablet metadata in the cluster.
   std::vector<std::string> ListTablets();
+
+  // List all of the tablets with tablet metadata on the given tablet server index.
+  // This may include tablets that are tombstoned and not running.
   std::vector<std::string> ListTabletsOnTS(int index);
+
+  // List the tablet IDs on the given tablet which actually have data (as
+  // evidenced by their having a WAL). This excludes those that are tombstoned.
+  std::vector<std::string> ListTabletsWithDataOnTS(int index);
+
   int CountWALSegmentsForTabletOnTS(int index, const std::string& tablet_id);
   bool DoesConsensusMetaExistForTabletOnTS(int index, const std::string& tablet_id);
 
