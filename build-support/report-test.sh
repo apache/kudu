@@ -73,6 +73,13 @@ if [ -n "$HEAPCHECK" ]; then
   BUILD_CONFIG="$BUILD_CONFIG heapcheck"
 fi
 
+# We sometimes have flaky infrastructure where NTP is broken. In that case
+# do not report it as a failed test.
+if grep -q 'Clock considered unsynchronized' $LOGFILE ; then
+  echo Not reporting test that failed due to NTP issues.
+  exit 1
+fi
+
 # Only upload a log if the test failed.
 # This saves some space on S3, network bandwidth, etc, and we don't
 # have a lot of use for the logs of successful tests anyway.
