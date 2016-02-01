@@ -1121,12 +1121,9 @@ class PosixEnv : public Env {
         return Status::OK();
     }
   }
-
-  size_t page_size_;
 };
 
-PosixEnv::PosixEnv() : page_size_(getpagesize()) {
-}
+PosixEnv::PosixEnv() {}
 
 }  // namespace
 
