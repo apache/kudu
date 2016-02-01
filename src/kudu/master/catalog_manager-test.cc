@@ -18,6 +18,7 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
+#include "kudu/master/ts_descriptor.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
@@ -80,6 +81,28 @@ TEST(TableInfoTest, TestAssignmentRanges) {
   for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     ASSERT_TRUE(table->RemoveTablet(
         tablet->metadata().state().pb.partition().partition_key_start()));
+  }
+}
+
+TEST(TestTSDescriptor, TestReplicaCreationsDecay) {
+  TSDescriptor ts("test");
+  ASSERT_EQ(0, ts.RecentReplicaCreations());
+  ts.IncrementRecentReplicaCreations();
+
+  // The load should start at close to 1.0.
+  double val_a = ts.RecentReplicaCreations();
+  ASSERT_NEAR(1.0, val_a, 0.05);
+
+  // After 10ms it should have dropped a bit, but still be close to 1.0.
+  SleepFor(MonoDelta::FromMilliseconds(10));
+  double val_b = ts.RecentReplicaCreations();
+  ASSERT_LT(val_b, val_a);
+  ASSERT_NEAR(0.99, val_a, 0.05);
+
+  if (AllowSlowTests()) {
+    // After 10 seconds, we should have dropped to 0.5^(10/60) = 0.891
+    SleepFor(MonoDelta::FromSeconds(10));
+    ASSERT_NEAR(0.891, ts.RecentReplicaCreations(), 0.05);
   }
 }
 

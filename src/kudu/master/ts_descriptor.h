@@ -90,22 +90,15 @@ class TSDescriptor {
   Status GetConsensusProxy(const std::shared_ptr<rpc::Messenger>& messenger,
                            std::shared_ptr<consensus::ConsensusServiceProxy>* proxy);
 
-  void increment_recent_replica_creations() {
-    lock_guard<simple_spinlock> l(&lock_);
-    recent_replica_creations_ += 1;
-  }
-
-  // Decay the accounting of how many replicas have been recently
-  // created on this host.
-  void DecayRecentReplicaCreations(double secs_since_last_decay);
+  // Increment the accounting of the number of replicas recently created on this
+  // server. This value will automatically decay over time.
+  void IncrementRecentReplicaCreations();
 
   // Return the number of replicas which have recently been created on this
   // TS. This number is incremented when replicas are placed on the TS, and
-  // then decayed over time.
-  double recent_replica_creations() const {
-    lock_guard<simple_spinlock> l(&lock_);
-    return recent_replica_creations_;
-  }
+  // then decayed over time. This method is not 'const' because each call
+  // actually performs the time-based decay.
+  double RecentReplicaCreations();
 
   // Set the number of live replicas (i.e. running or bootstrapping).
   void set_num_live_replicas(int n) {
@@ -121,10 +114,14 @@ class TSDescriptor {
   }
 
  private:
+  FRIEND_TEST(TestTSDescriptor, TestReplicaCreationsDecay);
+
   explicit TSDescriptor(std::string perm_id);
 
   // Uses DNS to resolve registered hosts to a single Sockaddr.
   Status ResolveSockaddr(Sockaddr* addr) const;
+
+  void DecayRecentReplicaCreationsUnlocked();
 
   mutable simple_spinlock lock_;
 
@@ -140,6 +137,7 @@ class TSDescriptor {
   // The number of times this tablet server has recently been selected to create a
   // tablet replica. This value decays back to 0 over time.
   double recent_replica_creations_;
+  MonoTime last_replica_creations_decay_;
 
   // The number of live replicas on this host, from the last heartbeat.
   int num_live_replicas_;

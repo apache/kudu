@@ -346,19 +346,7 @@ void CatalogManagerBgTasks::Shutdown() {
 }
 
 void CatalogManagerBgTasks::Run() {
-  MonoTime last_process_time = MonoTime::Now(MonoTime::FINE);
   while (!NoBarrier_Load(&closing_)) {
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
-    double since_last_process = now.GetDeltaSince(last_process_time).ToSeconds();
-    last_process_time = now;
-
-    // Decay load estimates on tablet servers.
-    TSDescriptorVector ts_descs;
-    catalog_manager_->master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
-    for (const auto& ts : ts_descs) {
-      ts->DecayRecentReplicaCreations(since_last_process);
-    }
-
     // Perform assignment processing.
     if (!catalog_manager_->IsInitialized()) {
       LOG(WARNING) << "Catalog manager is not initialized!";
@@ -2852,8 +2840,8 @@ shared_ptr<TSDescriptor> CatalogManager::PickBetterReplicaLocation(
   //
   // TODO: in the future we may want to factor in other items such as available disk space,
   // actual request load, etc.
-  double load_a = a->recent_replica_creations() + a->num_live_replicas();
-  double load_b = b->recent_replica_creations() + b->num_live_replicas();
+  double load_a = a->RecentReplicaCreations() + a->num_live_replicas();
+  double load_b = b->RecentReplicaCreations() + b->num_live_replicas();
   if (load_a < load_b) {
     return a;
   } else if (load_b < load_a) {
@@ -2922,10 +2910,9 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
     InsertOrDie(&already_selected, ts);
 
     // Increment the number of pending replicas so that we take this selection into
-    // account when assigning replicas for other tablets of the same table.
-    //
-    // This value gets decayed by the catalog manager background task.
-    ts->increment_recent_replica_creations();
+    // account when assigning replicas for other tablets of the same table. This
+    // value decays back to 0 over time.
+    ts->IncrementRecentReplicaCreations();
 
     TSRegistrationPB reg;
     ts->GetRegistration(&reg);

@@ -271,7 +271,6 @@ TEST_F(MasterTest, TestCatalog) {
   ASSERT_EQ(1, tables.tables_size());
   ASSERT_EQ(kTableName, tables.tables(0).name());
 
-
   // Delete the table
   {
     DeleteTableRequestPB req;

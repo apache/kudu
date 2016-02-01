@@ -49,6 +49,7 @@ TSDescriptor::TSDescriptor(std::string perm_id)
       last_heartbeat_(MonoTime::Now(MonoTime::FINE)),
       has_tablet_report_(false),
       recent_replica_creations_(0),
+      last_replica_creations_decay_(MonoTime::Now(MonoTime::FINE)),
       num_live_replicas_(0) {
 }
 
@@ -110,9 +111,33 @@ void TSDescriptor::set_has_tablet_report(bool has_report) {
   has_tablet_report_ = has_report;
 }
 
-void TSDescriptor::DecayRecentReplicaCreations(double secs_since_last_decay) {
+void TSDescriptor::DecayRecentReplicaCreationsUnlocked() {
+  // In most cases, we won't have any recent replica creations, so
+  // we don't need to bother calling the clock, etc.
+  if (recent_replica_creations_ == 0) return;
+
   const double kHalflifeSecs = 60;
+  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  double secs_since_last_decay = now.GetDeltaSince(last_replica_creations_decay_).ToSeconds();
   recent_replica_creations_ *= pow(0.5, secs_since_last_decay / kHalflifeSecs);
+
+  // If sufficiently small, reset down to 0 to take advantage of the fast path above.
+  if (recent_replica_creations_ < 1e-12) {
+    recent_replica_creations_ = 0;
+  }
+  last_replica_creations_decay_ = now;
+}
+
+void TSDescriptor::IncrementRecentReplicaCreations() {
+  lock_guard<simple_spinlock> l(&lock_);
+  DecayRecentReplicaCreationsUnlocked();
+  recent_replica_creations_ += 1;
+}
+
+double TSDescriptor::RecentReplicaCreations() {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  DecayRecentReplicaCreationsUnlocked();
+  return recent_replica_creations_;
 }
 
 void TSDescriptor::GetRegistration(TSRegistrationPB* reg) const {
