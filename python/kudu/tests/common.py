@@ -60,6 +60,9 @@ class KuduTestBase(object):
             "-log_dir={0}/master/logs".format(local_path),
             "-logtostderr",
             "-webserver_port=0",
+            # Only make one replica so that our tests don't need to worry about
+            # setting consistency modes.
+            "-default_num_replicas=1",
             "-server_dump_info_path={0}/master/config.json".format(local_path)
         ]
 
