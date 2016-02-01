@@ -184,8 +184,17 @@ if [ ! -d $LLVM_DIR ]; then
   echo
 fi
 
+GCC_PATCHLEVEL=2
+delete_if_wrong_patchlevel $GCC_DIR $GCC_PATCHLEVEL
 if [[ "$OSTYPE" =~ ^linux ]] && [[ ! -d $GCC_DIR ]]; then
   fetch_and_expand gcc-${GCC_VERSION}.tar.gz
+  pushd $GCC_DIR/libstdc++-v3
+  patch -p0 < $TP_DIR/patches/libstdcxx-fix-string-dtor.patch
+  patch -p0 < $TP_DIR/patches/libstdcxx-fix-tr1-shared-ptr.patch
+  cd ..
+  touch patchlevel-$GCC_PATCHLEVEL
+  popd
+  echo
 fi
 
 LZ4_PATCHLEVEL=1

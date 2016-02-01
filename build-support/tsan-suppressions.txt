@@ -17,16 +17,6 @@
 race:_dl_deallocate_tls
 race:kudu::tablet::ScopedRowLock::Release
 
-# Even with newer versions of libstdc++, there appear to be some races
-# which are false positives with the stock version. Rather than rebuilding
-# libstdc++ with TSAN, we just suppress them here.
-race:~basic_string
-race:std::tr1::_Sp_counted_base
-race:std::string::_Rep::_M_is_shared
-race:std::string::_Rep::_M_refcopy
-race:std::string::_Rep::_M_grab
-race:std::string::_Rep::_M_dispose
-race:std::string::_Rep::_M_set_length_and_sharable
 
 # Protobuf's implementation of GoogleOnce doesn't properly annotate itself
 race:google::protobuf::GoogleOnceInitImpl
