@@ -1459,7 +1459,7 @@ TEST_F(ClientTest, TestWriteTimeout) {
     ASSERT_TRUE(error->status().IsTimedOut()) << error->status().ToString();
     ASSERT_STR_CONTAINS(error->status().ToString(),
                         "GetTableLocations(client-testtb, int32 key=1, 1) "
-                        "failed: GetTableLocations RPC");
+                        "failed: timed out after deadline expired");
   }
 
   // Next time out the actual write on the tablet server.

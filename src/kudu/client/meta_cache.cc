@@ -433,7 +433,12 @@ void LookupRpc::SendRpc() {
   // some additional tablets.
 
   // See KuduClient::Data::SyncLeaderMasterRpc().
-  MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  if (retrier().deadline().ComesBefore(now)) {
+    SendRpcCb(Status::TimedOut("timed out after deadline expired"));
+    return;
+  }
+  MonoTime rpc_deadline = now;
   rpc_deadline.AddDelta(meta_cache_->client_->default_rpc_timeout());
   mutable_retrier()->mutable_controller()->set_deadline(
       MonoTime::Earliest(rpc_deadline, retrier().deadline()));
@@ -493,13 +498,18 @@ void LookupRpc::SendRpcCb(const Status& status) {
     new_status = StatusFromPB(resp_.error().status());
   }
 
-  if (new_status.IsTimedOut() &&
-      MonoTime::Now(MonoTime::FINE).ComesBefore(retrier().deadline())) {
-    if (meta_cache_->client_->IsMultiMaster()) {
-      LOG(WARNING) << "Leader Master timed out, re-trying...";
-      ResetMasterLeaderAndRetry();
-      ignore_result(delete_me.release());
-      return;
+  if (new_status.IsTimedOut()) {
+    if (MonoTime::Now(MonoTime::FINE).ComesBefore(retrier().deadline())) {
+      if (meta_cache_->client_->IsMultiMaster()) {
+        LOG(WARNING) << "Leader Master timed out, re-trying...";
+        ResetMasterLeaderAndRetry();
+        ignore_result(delete_me.release());
+        return;
+      }
+    } else {
+      // Operation deadline expired during this latest RPC.
+      new_status = new_status.CloneAndPrepend(
+          "timed out after deadline expired");
     }
   }
 

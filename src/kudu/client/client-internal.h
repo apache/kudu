@@ -172,7 +172,8 @@ class KuduClient::Data {
   //
   // NOTE: 'rpc_timeout' is a per-call timeout, while 'deadline' is a
   // per operation deadline. If 'deadline' is not initialized, 'func' is
-  // retried forever.
+  // retried forever. If 'deadline' expires, 'func_name' is included in
+  // the resulting Status.
   template<class ReqClass, class RespClass>
   Status SyncLeaderMasterRpc(
       const MonoTime& deadline,
@@ -180,6 +181,7 @@ class KuduClient::Data {
       const ReqClass& req,
       RespClass* resp,
       int* num_attempts,
+      const char* func_name,
       const boost::function<Status(master::MasterServiceProxy*,
                                    const ReqClass&, RespClass*,
                                    rpc::RpcController*)>& func);

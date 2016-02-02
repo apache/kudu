@@ -292,6 +292,7 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
           req,
           &resp,
           nullptr,
+          "ListTabletServers",
           &MasterServiceProxy::ListTabletServers);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
@@ -324,6 +325,7 @@ Status KuduClient::ListTables(vector<string>* tables,
           req,
           &resp,
           nullptr,
+          "ListTables",
           &MasterServiceProxy::ListTables);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {

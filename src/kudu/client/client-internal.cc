@@ -131,6 +131,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     const ReqClass& req,
     RespClass* resp,
     int* num_attempts,
+    const char* func_name,
     const boost::function<Status(MasterServiceProxy*,
                                  const ReqClass&,
                                  RespClass*,
@@ -143,7 +144,8 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     // Have we already exceeded our deadline?
     MonoTime now = MonoTime::Now(MonoTime::FINE);
     if (deadline.ComesBefore(now)) {
-      return Status::TimedOut("timed out waiting for a reply from a leader master");
+      return Status::TimedOut(Substitute("$0 timed out after deadline expired",
+                                         func_name));
     }
 
     // The RPC's deadline is intentionally earlier than the overall
@@ -171,15 +173,21 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
       }
     }
 
-    if (s.IsTimedOut() && MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
-      LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
-                   << ") to leader Master (" << leader_master_hostport().ToString()
-                   << "): " << s.ToString();
-      if (client->IsMultiMaster()) {
-        LOG(INFO) << "Determining the new leader Master and retrying...";
-        WARN_NOT_OK(SetMasterServerProxy(client, deadline),
-                    "Unable to determine the new leader Master");
-        continue;
+    if (s.IsTimedOut()) {
+      if (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+        LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
+                     << ") to leader Master (" << leader_master_hostport().ToString()
+                     << "): " << s.ToString();
+        if (client->IsMultiMaster()) {
+          LOG(INFO) << "Determining the new leader Master and retrying...";
+          WARN_NOT_OK(SetMasterServerProxy(client, deadline),
+                      "Unable to determine the new leader Master");
+          continue;
+        }
+      } else {
+        // Operation deadline expired during this latest RPC.
+        s = s.CloneAndPrepend(Substitute("$0 timed out after deadline expired",
+                                         func_name));
       }
     }
 
@@ -206,6 +214,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     const ListTablesRequestPB& req,
     ListTablesResponsePB* resp,
     int* num_attempts,
+    const char* func_name,
     const boost::function<Status(MasterServiceProxy*,
                                  const ListTablesRequestPB&,
                                  ListTablesResponsePB*,
@@ -217,6 +226,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     const ListTabletServersRequestPB& req,
     ListTabletServersResponsePB* resp,
     int* num_attempts,
+    const char* func_name,
     const boost::function<Status(MasterServiceProxy*,
                                  const ListTabletServersRequestPB&,
                                  ListTabletServersResponsePB*,
@@ -330,7 +340,7 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
 
   int attempts = 0;
   Status s = SyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB>(
-      deadline, client, req, &resp, &attempts, &MasterServiceProxy::CreateTable);
+      deadline, client, req, &resp, &attempts, "CreateTable", &MasterServiceProxy::CreateTable);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
     if (resp.error().code() == MasterErrorPB::TABLE_ALREADY_PRESENT && attempts > 1) {
@@ -391,6 +401,7 @@ Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
           req,
           &resp,
           nullptr,
+          "IsCreateTableDone",
           &MasterServiceProxy::IsCreateTableDone);
   // RETURN_NOT_OK macro can't take templated function call as param,
   // and SyncLeaderMasterRpc must be explicitly instantiated, else the
@@ -424,7 +435,7 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
   req.mutable_table()->set_table_name(table_name);
   Status s = SyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB>(
       deadline, client, req, &resp,
-      &attempts, &MasterServiceProxy::DeleteTable);
+      &attempts, "DeleteTable", &MasterServiceProxy::DeleteTable);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
     if (resp.error().code() == MasterErrorPB::TABLE_NOT_FOUND && attempts > 1) {
@@ -449,6 +460,7 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
           req,
           &resp,
           nullptr,
+          "AlterTable",
           &MasterServiceProxy::AlterTable);
   RETURN_NOT_OK(s);
   // TODO: Consider the situation where the request is sent to the
@@ -477,6 +489,7 @@ Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
           req,
           &resp,
           nullptr,
+          "IsAlterTableDone",
           &MasterServiceProxy::IsAlterTableDone);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
@@ -604,8 +617,14 @@ GetTableSchemaRpc::~GetTableSchemaRpc() {
 }
 
 void GetTableSchemaRpc::SendRpc() {
+  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  if (retrier().deadline().ComesBefore(now)) {
+    SendRpcCb(Status::TimedOut("GetTableSchema timed out after deadline expired"));
+    return;
+  }
+
   // See KuduClient::Data::SyncLeaderMasterRpc().
-  MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime rpc_deadline = now;
   rpc_deadline.AddDelta(client_->default_rpc_timeout());
   mutable_retrier()->mutable_controller()->set_deadline(
       MonoTime::Earliest(rpc_deadline, retrier().deadline()));
@@ -661,14 +680,19 @@ void GetTableSchemaRpc::SendRpcCb(const Status& status) {
     new_status = StatusFromPB(resp_.error().status());
   }
 
-  if (new_status.IsTimedOut() &&
-      MonoTime::Now(MonoTime::FINE).ComesBefore(retrier().deadline())) {
-    if (client_->IsMultiMaster()) {
-      LOG(WARNING) << "Leader Master ("
-                   << client_->data_->leader_master_hostport().ToString()
-                   << ") timed out, re-trying...";
-      ResetLeaderMasterAndRetry();
-      return;
+  if (new_status.IsTimedOut()) {
+    if (MonoTime::Now(MonoTime::FINE).ComesBefore(retrier().deadline())) {
+      if (client_->IsMultiMaster()) {
+        LOG(WARNING) << "Leader Master ("
+            << client_->data_->leader_master_hostport().ToString()
+            << ") timed out, re-trying...";
+        ResetLeaderMasterAndRetry();
+        return;
+      }
+    } else {
+      // Operation deadline expired during this latest RPC.
+      new_status = new_status.CloneAndPrepend(
+          "GetTableSchema timed out after deadline expired");
     }
   }
 

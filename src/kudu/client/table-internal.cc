@@ -73,8 +73,7 @@ Status KuduTable::Data::Open() {
     // Have we already exceeded our deadline?
     MonoTime now = MonoTime::Now(MonoTime::FINE);
     if (deadline.ComesBefore(now)) {
-      const char* msg = "Timed out waiting for non-empty GetTableLocations "
-          "reply from a leader Master";
+      const char* msg = "OpenTable timed out after deadline expired";
       LOG(ERROR) << msg;
       return Status::TimedOut(msg);
     }
@@ -104,6 +103,8 @@ Status KuduTable::Data::Open() {
 
       if (s.IsTimedOut()
           && MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+        // If the RPC timed out and the operation deadline expired, we'll loop
+        // again and time out for good above.
         LOG(WARNING) << "Timed out talking to the leader master ("
                      << client_->data_->leader_master_hostport().ToString() << "): "
                      << s.ToString();

@@ -316,6 +316,13 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     }
     RETURN_NOT_OK(lookup_status);
 
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    if (deadline.ComesBefore(now)) {
+      Status ret = Status::TimedOut("Scan timed out, deadline expired");
+      return last_error_.ok() ?
+          ret : ret.CloneAndAppend(last_error_.ToString());
+    }
+
     // Recalculate the deadlines.
     // If we have other replicas beyond this one to try, then we'll try to
     // open the scanner with the default RPC timeout. That gives us time to
@@ -323,7 +330,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     // full remaining deadline for the user's call.
     MonoTime rpc_deadline;
     if (static_cast<int>(candidates.size()) - blacklist->size() > 1) {
-      rpc_deadline = MonoTime::Now(MonoTime::FINE);
+      rpc_deadline = now;
       rpc_deadline.AddDelta(table_->client()->default_rpc_timeout());
       rpc_deadline = MonoTime::Earliest(deadline, rpc_deadline);
     } else {
