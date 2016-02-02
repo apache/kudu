@@ -212,7 +212,7 @@ on a version older than 7.0, the Red Hat Developer Toolset must be installed
 +
 ----
 $ sudo yum install gcc gcc-c++ autoconf automake libtool \
-  boost-static boost-devel openssl-devel cyrus-sasl-devel \
+  boost-static boost-devel cyrus-sasl-devel \
   cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb
 ----
 
@@ -254,12 +254,12 @@ except for the `kudu` directory itself.
 +
 [source,bash]
 ----
-mkdir -p build
-cd build
-../build-support/enable_devtoolset.sh \
-  ../thirdparty/installed/bin/cmake \
+mkdir -p build/release
+cd build/release
+../../build-support/enable_devtoolset.sh \
+  ../../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
-  ..
+  ../..
 make -j4
 ----
 
@@ -290,7 +290,7 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 #!/bin/bash
 
 sudo yum -y install gcc gcc-c++ autoconf automake libtool \
-  boost-static boost-devel openssl-devel cyrus-sasl-devel \
+  boost-static boost-devel cyrus-sasl-devel \
   cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb
 DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64.noarch.rpm
 DTLS_RPM_URL=https://www.softwarecollections.org/en/scls/rhscl/devtoolset-3/epel-6-x86_64/download/${DTLS_RPM}
@@ -299,12 +299,12 @@ sudo yum install -y scl-utils ${DTLS_RPM}
 sudo yum install -y devtoolset-3-toolchain
 cd kudu
 build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
-mkdir -p build
-cd build
-../build-support/enable_devtoolset.sh \
-  ../thirdparty/installed/bin/cmake \
+mkdir -p build/release
+cd build/release
+../../build-support/enable_devtoolset.sh \
+  ../../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
-  ..
+  ../..
 make -j4
 ----
 ====
@@ -316,7 +316,7 @@ make -j4
 +
 ----
 $ sudo apt-get install git autoconf automake libboost-thread-dev \
-  libboost-system-dev curl gcc g++ libssl-dev libsasl2-dev libsasl2-modules \
+  libboost-system-dev curl gcc g++ libsasl2-dev libsasl2-modules \
   libtool ntp patch pkg-config make rsync unzip vim-common gdb python
 ----
 
@@ -347,9 +347,9 @@ except for the `kudu` directory itself.
 +
 [source,bash]
 ----
-mkdir -p build
-cd build
-../thirdparty/installed/bin/cmake -DCMAKE_BUILD_TYPE=release ..
+mkdir -p build/release
+cd build/release
+../../thirdparty/installed/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
 
@@ -380,16 +380,16 @@ the steps marked *Optional* above.
 #!/bin/bash
 
 sudo apt-get -y install git autoconf automake libboost-thread-dev \
-  libboost-system-dev curl gcc g++ libssl-dev libsasl2-dev libsasl2-modules \
+  libboost-system-dev curl gcc g++ libsasl2-dev libsasl2-modules \
   libtool ntp patch pkg-config make rsync unzip vim-common gdb python
 git clone https://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
-mkdir -p build
-cd build
-../thirdparty/installed/bin/cmake \
+mkdir -p build/release
+cd build/release
+../../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
-  ..
+  ../..
 make -j4
 ----
 ====
@@ -406,7 +406,7 @@ built alongside Kudu.
 +
 ----
 $ sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
-  gdb git libtool make ntp openssl-devel patch pkg-config python rsync unzip vim
+  gdb git libtool make ntp patch pkg-config python rsync unzip vim
 ----
 
 . Install Boost.
@@ -442,12 +442,12 @@ except for the `kudu` directory itself.
 +
 [source,bash]
 ----
-mkdir -p build
-cd build
+mkdir -p build/release
+cd build/release
 BOOST_ROOT=../../boost_1_59_0 \
-  ../thirdparty/installed/bin/cmake \
+  ../../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
-  ..
+  ../..
 make -j4
 ----
 
@@ -471,7 +471,7 @@ the steps marked *Optional* above.
 #!/bin/bash
 
 sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
-  gdb git libtool make ntp openssl-devel patch pkg-config python rsync unzip vim
+  gdb git libtool make ntp patch pkg-config python rsync unzip vim
 wget https://downloads.sourceforge.net/project/boost/boost/1.59.0/boost_1_59_0.tar.gz
 tar xzf boost_1_59_0.tar.gz
 pushd boost_1_59_0
@@ -481,12 +481,12 @@ popd
 git clone https://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
-mkdir -p build
-cd build
+mkdir -p build/release
+cd build/release
 BOOST_ROOT=../../boost_1_59_0 \
-  ../thirdparty/installed/bin/cmake \
+  ../../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
-  ..
+  ../..
 make -j4
 ----
 ====
@@ -512,13 +512,6 @@ for more information.
 $ brew install autoconf automake cmake libtool pkg-config boost pstree
 ----
 
-. OS X 10.11 El Capitan only: install OpenSSL.
-+
-----
-$ brew install openssl
-$ brew link -f openssl
-----
-
 . Clone the Git repository and change to the new `kudu` directory.
 +
 [source,bash]
@@ -539,9 +532,9 @@ anywhere in your filesystem except for the `kudu` directory itself.
 +
 [source,bash]
 ----
-mkdir -p build
-cd build
-../thirdparty/installed/bin/cmake ..
+mkdir -p build/release
+cd build/release
+../../thirdparty/installed/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
 
@@ -555,14 +548,12 @@ are installed.
 #!/bin/bash
 
 brew install autoconf automake cmake libtool pkg-config boost pstree
-brew install openssl
-brew link -f openssl
 git clone https://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
-mkdir -p build
-cd build
-../thirdparty/installed/bin/cmake ..
+mkdir -p build/release
+cd build/release
+../../thirdparty/installed/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
 ====
