@@ -808,9 +808,13 @@ cdef class Row:
         k = self.table.num_columns
         tup = cpython.PyTuple_New(k)
         for i in range(k):
-            val = self.get_slot(i)
-            cpython.PyTuple_SET_ITEM(tup, i, val)
+            val = None
+
+            if not self.is_null(i):
+                val = self.get_slot(i)
+
             cpython.Py_INCREF(val)
+            cpython.PyTuple_SET_ITEM(tup, i, val)
 
         return tup
 
@@ -879,6 +883,9 @@ cdef class Row:
             return frombytes(self.get_string(i))
         else:
             raise TypeError(t)
+
+    cdef inline bint is_null(self, int i):
+        return self.row.IsNull(i)
 
 
 cdef class RowBatch:

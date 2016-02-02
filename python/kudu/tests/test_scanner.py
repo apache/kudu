@@ -36,10 +36,11 @@ class TestScanner(KuduTestBase, unittest.TestCase):
         tuples = []
         for i in range(cls.nrows):
             op = table.new_insert()
-            tup = i, i * 2, 'hello_%d' % i
+            tup = i, i * 2, 'hello_%d' % i if i % 2 == 0 else None
             op['key'] = tup[0]
             op['int_val'] = tup[1]
-            op['string_val'] = tup[2]
+            if i % 2 == 0:
+                op['string_val'] = tup[2]
             session.apply(op)
             tuples.append(tup)
         session.flush()
@@ -84,12 +85,12 @@ class TestScanner(KuduTestBase, unittest.TestCase):
         sv = self.table['string_val']
 
         scanner.add_predicates([sv >= 'hello_20',
-                                sv <= 'hello_25'])
+                                sv <= 'hello_22'])
         scanner.open()
 
         tuples = scanner.read_all_tuples()
 
-        self.assertEqual(sorted(tuples), self.tuples[20:26])
+        self.assertEqual(sorted(tuples), [(20, 40, 'hello_20'), (22, 44, 'hello_22')])
 
     def test_scan_invalid_predicates(self):
         scanner = self.table.scanner()
