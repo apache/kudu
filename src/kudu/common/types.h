@@ -416,8 +416,8 @@ struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
   }
 };
 
-static const char* kDateFormat = "%Y-%m-%d %H:%M:%S";
-static const char* kDateMicrosAndTzFormat = "%s.%06d GMT";
+static const char* kDateFormat = "%Y-%m-%dT%H:%M:%S";
+static const char* kDateMicrosAndTzFormat = "%s.%06dZ";
 
 template<>
 struct DataTypeTraits<UNIXTIME_MICROS> : public DerivedTypeTraits<INT64>{

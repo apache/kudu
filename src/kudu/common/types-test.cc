@@ -41,13 +41,13 @@ TEST(TestTypes, TestTimestampPrinting) {
   info->CopyMinValue(&time);
   string result;
   info->AppendDebugStringForValue(&time, &result);
-  ASSERT_EQ("-290308-12-21 19:59:05.224192 GMT", result);
+  ASSERT_EQ("-290308-12-21T19:59:05.224192Z", result);
   result = "";
 
   // Test a regular negative timestamp.
   time = -1454368523123456;
   info->AppendDebugStringForValue(&time, &result);
-  ASSERT_EQ("1923-12-01 00:44:36.876544 GMT", result);
+  ASSERT_EQ("1923-12-01T00:44:36.876544Z", result);
   result = "";
 
   // Test that passing 0 microseconds returns the correct time (0 msecs after the epoch).
@@ -55,19 +55,19 @@ TEST(TestTypes, TestTimestampPrinting) {
   // current time instead.
   time = 0;
   info->AppendDebugStringForValue(&time, &result);
-  ASSERT_EQ("1970-01-01 00:00:00.000000 GMT", result);
+  ASSERT_EQ("1970-01-01T00:00:00.000000Z", result);
   result = "";
 
   // Test a regular positive timestamp.
   time = 1454368523123456;
   info->AppendDebugStringForValue(&time, &result);
-  ASSERT_EQ("2016-02-01 23:15:23.123456 GMT", result);
+  ASSERT_EQ("2016-02-01T23:15:23.123456Z", result);
   result = "";
 
   // Test the maximum value.
   time = MathLimits<int64>::kMax;
   info->AppendDebugStringForValue(&time, &result);
-  ASSERT_EQ("294247-01-10 04:00:54.775807 GMT", result);
+  ASSERT_EQ("294247-01-10T04:00:54.775807Z", result);
 }
 
 namespace {
