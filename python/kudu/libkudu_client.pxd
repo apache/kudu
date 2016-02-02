@@ -593,6 +593,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status SetReadMode(ReadMode read_mode)
         Status SetSnapshot(uint64_t snapshot_timestamp_micros)
         Status SetTimeoutMillis(int millis)
+        Status SetFaultTolerant()
 
         string ToString()
 
