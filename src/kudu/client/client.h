@@ -1010,7 +1010,8 @@ class KUDU_EXPORT KuduScanner {
   // in the case of failure.
   //
   // Fault tolerant scans typically have lower throughput than non
-  // fault-tolerant scans. Fault tolerant scans must use READ_AT_SNAPSHOT mode.
+  // fault-tolerant scans. Fault tolerant scans use READ_AT_SNAPSHOT mode,
+  // if no snapshot timestamp is provided, the server will pick one.
   Status SetFaultTolerant() WARN_UNUSED_RESULT;
 
   // Sets the snapshot timestamp, in microseconds since the epoch, for scans in

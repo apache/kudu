@@ -912,6 +912,7 @@ Status KuduScanner::SetFaultTolerant() {
   if (data_->open_) {
     return Status::IllegalState("Fault-tolerance must be set before Open()");
   }
+  RETURN_NOT_OK(SetReadMode(READ_AT_SNAPSHOT));
   data_->is_fault_tolerant_ = true;
   return Status::OK();
 }

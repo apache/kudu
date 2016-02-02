@@ -897,7 +897,6 @@ static void DoScanWithCallback(KuduTable* table,
   // Initialize fault-tolerant snapshot scanner.
   KuduScanner scanner(table);
   ASSERT_OK(scanner.SetFaultTolerant());
-  ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
   // Set a small batch size so it reads in multiple batches.
   ASSERT_OK(scanner.SetBatchSizeBytes(1));
 
