@@ -1002,9 +1002,21 @@ cdef class Scanner:
         clone = pred.pred.Clone()
         check_status(self.scanner.AddConjunctPredicate(clone))
 
+    def set_fault_tolerant(self):
+        """
+        Makes the underlying KuduScanner fault tolerant.
+        Returns a reference to itself to facilitate chaining.
+
+        Returns
+        -------
+        self : Scanner
+        """
+        check_status(self.scanner.SetFaultTolerant())
+        return self
+
     def open(self):
         """
-        Returns a reference to itself to faciliate chaining
+        Returns a reference to itself to facilitate chaining
 
         Returns
         -------

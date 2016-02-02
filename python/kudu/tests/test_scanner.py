@@ -86,6 +86,8 @@ class TestScanner(KuduTestBase, unittest.TestCase):
 
         scanner.add_predicates([sv >= 'hello_20',
                                 sv <= 'hello_22'])
+
+        scanner.set_fault_tolerant()
         scanner.open()
 
         tuples = scanner.read_all_tuples()
