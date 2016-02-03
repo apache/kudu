@@ -186,8 +186,7 @@ if(NOT APPLE)
     vmem)
 endif()
 
-# We use MallocExtension and HeapChecker, but not in the exported version of
-# the library.
+# We use MallocExtension, but not in the exported version of the library.
 set(EXPORTED_UTIL_LIBS ${UTIL_LIBS})
 if(${KUDU_TCMALLOC_AVAILABLE})
   list(APPEND UTIL_LIBS tcmalloc)

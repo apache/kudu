@@ -22,7 +22,7 @@
 #
 # Environment variables may be used to customize operation:
 #   BUILD_TYPE: Default: DEBUG
-#     Maybe be one of ASAN|TSAN|LEAKCHECK|DEBUG|RELEASE|COVERAGE|LINT
+#     Maybe be one of ASAN|TSAN|DEBUG|RELEASE|COVERAGE|LINT
 #
 #   KUDU_ALLOW_SLOW_TESTS   Default: 1
 #     Runs the "slow" version of the unit tests. Set to 0 to
@@ -177,11 +177,6 @@ elif [ "$BUILD_TYPE" = "TSAN" ]; then
   BUILD_TYPE=fastdebug
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
   BUILD_PYTHON=0
-elif [ "$BUILD_TYPE" = "LEAKCHECK" ]; then
-  BUILD_TYPE=release
-  export HEAPCHECK=normal
-  # Workaround for gperftools issue #497
-  export LD_BIND_NOW=1
 elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   DO_COVERAGE=1
   BUILD_TYPE=debug
@@ -395,23 +390,6 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
     done
     rm -Rf $arch_dir
   done
-fi
-
-if [ "$HEAPCHECK" = normal ]; then
-  echo
-  echo Checking that heap checker ran correctly
-  echo ------------------------------------------------------------
-  FAILED_TESTS=$(zgrep -L -- "WARNING: Perftools heap leak checker is active -- Performance may suffer" $BUILD_ROOT/test-logs/*-test.txt*)
-  if [ -n "$FAILED_TESTS" ]; then
-    echo "Some tests didn't heap check properly:"
-    for FTEST in $FAILED_TESTS; do
-      echo $FTEST
-    done
-    EXIT_STATUS=1
-    FAILURES="$FAILURES"$'Heap checker did not run properly\n'
-  else
-    echo "All tests heap checked properly"
-  fi
 fi
 
 if [ $EXIT_STATUS != 0 ]; then

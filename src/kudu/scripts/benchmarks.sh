@@ -152,8 +152,6 @@ build_kudu() {
   export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
   BUILD_TYPE=release
-  # Workaround for gperftools issue #497
-  export LD_BIND_NOW=1
 
   # Build Kudu
   mkdir -p build/$BUILD_TYPE

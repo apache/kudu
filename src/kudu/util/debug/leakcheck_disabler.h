@@ -24,17 +24,13 @@
 namespace kudu {
 namespace debug {
 
-// Scoped object that generically disables leak checking in a given scope,
-// supporting both the tcmalloc heap leak checker and LSAN.
+// Scoped object that generically disables LSAN leak checking in a given scope.
 // While this object is alive, calls to "new" will not be checked for leaks.
 class ScopedLeakCheckDisabler {
  public:
   ScopedLeakCheckDisabler() {}
 
  private:
-#ifdef TCMALLOC_ENABLED
-  HeapLeakChecker::Disabler hlc_disabler;
-#endif
 
 #if defined(__has_feature)
 #  if __has_feature(address_sanitizer)

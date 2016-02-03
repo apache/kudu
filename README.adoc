@@ -160,30 +160,6 @@ set a breakpoint as follows:
 
 Then, when the breakpoint fires, gather a backtrace as usual using the `bt` command.
 
-=== Running tests with the tcmalloc memory leak checker enabled
-
-
-You can also run the tests with a tcmalloc feature that prints an error message
-and aborts if it detects memory leaks in your program.
-
-[source,bash]
-----
-$ mkdir -p build/leakcheck
-$ cd build/leakcheck
-$ cmake ../..
-$ make -j8
-$ # Note: LP_BIND_NOW=1 required below, see: https://code.google.com/p/gperftools/issues/detail?id=497
-$ PPROF_PATH=../../thirdparty/installed/bin/pprof HEAPCHECK=normal LD_BIND_NOW=1 ctest -j8
-----
-
-NOTE: For more information on the heap checker, please see:
-  http://google-perftools.googlecode.com/svn/trunk/doc/heap_checker.html
-
-NOTE: The AddressSanitizer doesn't play nice with tcmalloc, so sadly the
-HEAPCHECK environment has no effect if you have enabled ASAN. However, recent
-versions of ASAN will also detect leaks, so the tcmalloc leak checker is of
-limited utility.
-
 === Running tests with ThreadSanitizer enabled
 
 ThreadSanitizer (TSAN) is a feature of recent Clang and GCC compilers which can
