@@ -248,6 +248,7 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
   RETURN_NOT_OK(GetTabletSchema(tablet_id, &schema_pb));
   Schema schema;
   RETURN_NOT_OK(SchemaFromPB(schema_pb, &schema));
+  kudu::client::KuduSchema client_schema(schema);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -274,7 +275,10 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
 
     rows.clear();
     KuduScanBatch::Data results;
-    RETURN_NOT_OK(results.Reset(&rpc, &schema, make_gscoped_ptr(resp.release_data())));
+    RETURN_NOT_OK(results.Reset(&rpc,
+                                &schema,
+                                &client_schema,
+                                make_gscoped_ptr(resp.release_data())));
     results.ExtractRows(&rows);
     for (const KuduRowResult& r : rows) {
       std::cout << r.ToString() << std::endl;

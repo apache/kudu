@@ -37,6 +37,7 @@ class TsAdminClient;
 } // namespace tools
 
 namespace client {
+class KuduSchema;
 
 // A batch of zero or more rows returned from a KuduScanner.
 //
@@ -77,6 +78,10 @@ class KUDU_EXPORT KuduScanBatch {
 
   const_iterator begin() const;
   const_iterator end() const;
+
+  // Returns the projection schema for this batch.
+  // All KuduScanBatch::RowPtr returned by this batch are guaranteed to have this schema.
+  const KuduSchema* projection_schema() const;
 
  private:
   class KUDU_NO_EXPORT Data;
@@ -138,6 +143,8 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   // Raw cell access. Should be avoided unless absolutely necessary.
   const void* cell(int col_idx) const;
 
+  const KuduSchema* row_schema() const;
+
   std::string ToString() const;
 
  private:
@@ -146,9 +153,12 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   template<typename KeyTypeWrapper> friend struct IntKeysTestSetup;
 
   // Only invoked by KuduScanner.
-  RowPtr(const Schema* schema, const uint8_t* row_data)
+  RowPtr(const Schema* schema,
+         const KuduSchema* client_projection,
+         const uint8_t* row_data)
       : schema_(schema),
-      row_data_(row_data) {
+        client_schema_(client_projection),
+        row_data_(row_data) {
   }
 
   template<typename T>
@@ -158,6 +168,7 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   Status Get(int col_idx, typename T::cpp_type* val) const;
 
   const Schema* schema_;
+  const KuduSchema* client_schema_;
   const uint8_t* row_data_;
 };
 

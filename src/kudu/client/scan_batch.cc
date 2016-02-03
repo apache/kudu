@@ -18,6 +18,7 @@
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/client/schema.h"
 
 #include <string>
 
@@ -47,6 +48,10 @@ int KuduScanBatch::NumRows() const {
 
 KuduRowResult KuduScanBatch::Row(int idx) const {
   return data_->row(idx);
+}
+
+const KuduSchema* KuduScanBatch::projection_schema() const {
+  return data_->client_projection_;
 }
 
 ////////////////////////////////////////////////////////////
@@ -210,6 +215,10 @@ Status KuduScanBatch::RowPtr::Get(int col_idx, typename T::cpp_type* val) const 
 
 const void* KuduScanBatch::RowPtr::cell(int col_idx) const {
   return row_data_ + schema_->column_offset(col_idx);
+}
+
+const KuduSchema* KuduScanBatch::RowPtr::row_schema() const {
+  return client_schema_;
 }
 
 //------------------------------------------------------------

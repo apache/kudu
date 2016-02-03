@@ -60,11 +60,11 @@ KuduScanner::Data::Data(KuduTable* table)
     is_fault_tolerant_(false),
     snapshot_timestamp_(kNoTimestamp),
     table_(DCHECK_NOTNULL(table)),
-    projection_(table->schema().schema_),
     arena_(1024, 1024*1024),
     spec_encoder_(table->schema().schema_, &arena_),
     timeout_(MonoDelta::FromMilliseconds(kScanTimeoutMillis)),
     scan_attempts_(0) {
+  SetProjectionSchema(table->schema().schema_);
 }
 
 KuduScanner::Data::~Data() {
@@ -456,6 +456,12 @@ void KuduScanner::Data::UpdateLastError(const Status& error) {
   }
 }
 
+void KuduScanner::Data::SetProjectionSchema(const Schema* schema) {
+  projection_ = schema;
+  client_projection_ = KuduSchema(*schema);
+}
+
+
 
 ////////////////////////////////////////////////////////////
 // KuduScanBatch
@@ -472,10 +478,12 @@ size_t KuduScanBatch::Data::CalculateProjectedRowSize(const Schema& proj) {
 
 Status KuduScanBatch::Data::Reset(RpcController* controller,
                                   const Schema* projection,
+                                  const KuduSchema* client_projection,
                                   gscoped_ptr<RowwiseRowBlockPB> data) {
   CHECK(controller->finished());
   controller_.Swap(controller);
   projection_ = projection;
+  client_projection_ = client_projection;
   resp_data_.Swap(data.get());
 
   // First, rewrite the relative addresses into absolute ones.
@@ -520,7 +528,7 @@ void KuduScanBatch::Data::ExtractRows(vector<KuduScanBatch::RowPtr>* rows) {
   const uint8_t* src = direct_data_.data();
   KuduScanBatch::RowPtr* dst = &(*rows)[0];
   while (n_rows > 0) {
-    *dst = KuduScanBatch::RowPtr(projection_, src);
+    *dst = KuduScanBatch::RowPtr(projection_, client_projection_,src);
     dst++;
     src += projected_row_size_;
     n_rows--;

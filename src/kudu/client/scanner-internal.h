@@ -94,6 +94,9 @@ class KuduScanner::Data {
   // non-fatal (i.e. retriable) scan error is encountered.
   void UpdateLastError(const Status& error);
 
+  // Sets the projection schema.
+  void SetProjectionSchema(const Schema* schema);
+
   bool open_;
   bool data_in_open_;
   bool has_batch_size_bytes_;
@@ -128,6 +131,10 @@ class KuduScanner::Data {
 
   // The projection schema used in the scan.
   const Schema* projection_;
+
+  // 'projection_' after it is converted to KuduSchema, so that users can obtain
+  // the projection without having to include common/schema.h.
+  KuduSchema client_projection_;
 
   Arena arena_;
   AutoReleasePool pool_;
@@ -168,6 +175,7 @@ class KuduScanBatch::Data {
 
   Status Reset(rpc::RpcController* controller,
                const Schema* projection,
+               const KuduSchema* client_projection,
                gscoped_ptr<RowwiseRowBlockPB> resp_data);
 
   int num_rows() const {
@@ -178,7 +186,7 @@ class KuduScanBatch::Data {
     DCHECK_GE(idx, 0);
     DCHECK_LT(idx, num_rows());
     int offset = idx * projected_row_size_;
-    return KuduRowResult(projection_, &direct_data_[offset]);
+    return KuduRowResult(projection_, client_projection_, &direct_data_[offset]);
   }
 
   void ExtractRows(vector<KuduScanBatch::RowPtr>* rows);
@@ -202,6 +210,8 @@ class KuduScanBatch::Data {
 
   // The projection being scanned.
   const Schema* projection_;
+  // The KuduSchema version of 'projection_'
+  const KuduSchema* client_projection_;
 
   // The number of bytes of direct data for each row.
   size_t projected_row_size_;
