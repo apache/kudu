@@ -37,10 +37,26 @@ your city, get in touch by emailing the
 
 [comment]: # (Note: we are using an ordered list here to allow for special styling of it)
 
+1. Thu, Mar 31, 2016. [Strata Hadoop World](http://conferences.oreilly.com/strata/hadoop-big-data-ca/public/schedule/detail/47055). San Jose, CA, USA.<br/>
+   _Fast data made easy with Apache Kafka and Apache Kudu (incubating)_. Presented by Ted Malaska and Jeff Holoman.
+1. Wed, Mar 30, 2016. [Strata Hadoop World](http://conferences.oreilly.com/strata/hadoop-big-data-ca/public/schedule/detail/46916). San Jose, CA, USA.<br/>
+   Hadoop's storage gap: Resolving transactional-access and analytic-performance tradeoffs with Apache Kudu (incubating). Presented by Todd Lipcon.
+1. Thu, Feb 18, 2016. [DataKRK Meetup](http://www.meetup.com/datakrk/events/228548317/). Krakow, Poland. <br/>
+   _Are you KUDUing me?_. Presented by Przemek Maciołek.
+1. Wed, Feb 17, 2016. [Bay Area Hadoop User Group](http://www.meetup.com/hadoop/events/228573587/). Sunnyvale, CA, USA. <br/>
+   _Apache Kudu (incubating): New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by David Alves.
+1. Wed, Feb 10, 2016. [San Francisco Python Meetup Group](http://www.meetup.com/sfpython/events/228213876/). San Francisco, CA, USA. <br/>
+   _Using Python at Scale for Data Science_ (Python + Kudu + Ibis). Presented by Wes McKinney.
+1. Mon, Feb 8, 2016. [Hadoop / Spark Conference Japan 2016](http://www.eventbrite.com/e/hadoop-spark-conference-japan-2016-tickets-20809016328). Tokyo, Japan. <br/>
+   _KuduによるHadoopのトランザクションアクセスと分析パフォーマンスのトレードオフ解消_. Presented by Todd Lipcon.
+1. Wed, Jan 27, 2015. [Big Data Application Meetup](http://www.meetup.com/BigDataApps/events/227191025/). Palo Alto, CA, USA. <br/>
+   _Simplifying big data analytics with Apache Kudu_. Presented by Mike Percy. ([video](https://www.youtube.com/watch?v=XzT1vDaAhys))
+1. Tue, Dec 15, 2015. [San Francisco Spark Hackers](http://www.meetup.com/San-Francisco-Spark-Hackers/events/226999521/). San Francisco, CA, USA. <br/>
+   _Faster than Parquet! A deep dive into Kudu_. Presented by Jean-Daniel Cryans. ([video](https://www.youtube.com/watch?v=apJM46uH3oY))
 1. Thu, Dec 10, 2015. [Big Data Technology Conference Beijing](http://bdtc2015.hadooper.cn/). Beijing, China. <br/>
    _Kudu: Fast analytics on fast data_. Presented by Todd Lipcon (Cloudera).
 1. Wed, Dec 09, 2015. [The Hive Big Data Think Tank](http://www.meetup.com/SF-Bay-Areas-Big-Data-Think-Tank/events/226497046/). Palo Alto, CA, USA. <br/>
-   _Kudu: New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Mike Percy (Cloudera).
+   _Kudu: New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Mike Percy (Cloudera). ([video](https://www.youtube.com/watch?v=ifFg_o5bf6c))
 1. Tue, Dec 08, 2015. [Korea Big Data Think Tank](http://www.meetup.com/Korea-Big-Data-Think-Tank/events/226876563/). Seoul, Korea (South). <br/>
    _Kudu: New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Todd Lipcon (Cloudera).
 1. Sun, Dec 06, 2015. [Shanghai Big Data Streaming Meetup](http://www.meetup.com/Shanghai-Big-Data-Streaming-Meetup/events/226970213/). Shanghai, China. <br/>
