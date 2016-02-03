@@ -176,6 +176,7 @@ TEST(TestThreadPool, TestRace) {
     // the bug.
     SleepFor(MonoDelta::FromMicroseconds(i));
   }
+  alarm(0);
 }
 
 TEST(TestThreadPool, TestVariableSizeThreadPool) {
@@ -288,6 +289,31 @@ TEST(TestThreadPool, TestMetrics) {
   ASSERT_EQ(kNumItems, queue_length->TotalCount());
   ASSERT_EQ(kNumItems, queue_time->TotalCount());
   ASSERT_EQ(kNumItems, run_time->TotalCount());
+}
+
+TEST(TestThreadPool, TestDeadlocks) {
+  const char* death_msg = "called pool function that would result in deadlock";
+  ASSERT_DEATH({
+    gscoped_ptr<ThreadPool> thread_pool;
+    ASSERT_OK(ThreadPoolBuilder("test")
+              .set_min_threads(1)
+              .set_max_threads(1)
+              .Build(&thread_pool));
+    ASSERT_OK(thread_pool->SubmitClosure(
+        Bind(&ThreadPool::Shutdown, Unretained(thread_pool.get()))));
+    thread_pool->Wait();
+  }, death_msg);
+
+  ASSERT_DEATH({
+    gscoped_ptr<ThreadPool> thread_pool;
+    ASSERT_OK(ThreadPoolBuilder("test")
+              .set_min_threads(1)
+              .set_max_threads(1)
+              .Build(&thread_pool));
+    ASSERT_OK(thread_pool->SubmitClosure(
+        Bind(&ThreadPool::Wait, Unretained(thread_pool.get()))));
+    thread_pool->Wait();
+  }, death_msg);
 }
 
 } // namespace kudu

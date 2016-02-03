@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/threadpool.h"
+
 #include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -27,7 +29,6 @@
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/thread.h"
-#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
 namespace kudu {
@@ -141,6 +142,8 @@ void ThreadPool::ClearQueue() {
 
 void ThreadPool::Shutdown() {
   MutexLock unique_lock(lock_);
+  CheckNotPoolThreadUnlocked();
+
   pool_status_ = Status::ServiceUnavailable("The pool has been shut down.");
   ClearQueue();
   not_empty_.Broadcast();
@@ -227,6 +230,7 @@ Status ThreadPool::Submit(const std::shared_ptr<Runnable>& task) {
 
 void ThreadPool::Wait() {
   MutexLock unique_lock(lock_);
+  CheckNotPoolThreadUnlocked();
   while ((!queue_.empty()) || (active_threads_ > 0)) {
     idle_cond_.Wait();
   }
@@ -239,6 +243,7 @@ bool ThreadPool::WaitUntil(const MonoTime& until) {
 
 bool ThreadPool::WaitFor(const MonoDelta& delta) {
   MutexLock unique_lock(lock_);
+  CheckNotPoolThreadUnlocked();
   while ((!queue_.empty()) || (active_threads_ > 0)) {
     if (!idle_cond_.TimedWait(delta)) {
       return false;
@@ -327,6 +332,7 @@ void ThreadPool::DispatchThread(bool permanent) {
   // and add a new task just as the last running thread is about to exit.
   CHECK(unique_lock.OwnsLock());
 
+  CHECK_EQ(threads_.erase(Thread::current_thread()), 1);
   if (--num_threads_ == 0) {
     no_threads_cond_.Broadcast();
 
@@ -340,12 +346,23 @@ void ThreadPool::DispatchThread(bool permanent) {
 Status ThreadPool::CreateThreadUnlocked() {
   // The first few threads are permanent, and do not time out.
   bool permanent = (num_threads_ < min_threads_);
+  scoped_refptr<Thread> t;
   Status s = kudu::Thread::Create("thread pool", strings::Substitute("$0 [worker]", name_),
-                                  &ThreadPool::DispatchThread, this, permanent, nullptr);
+                                  &ThreadPool::DispatchThread, this, permanent, &t);
   if (s.ok()) {
+    InsertOrDie(&threads_, t.get());
     num_threads_++;
   }
   return s;
+}
+
+void ThreadPool::CheckNotPoolThreadUnlocked() {
+  Thread* current = Thread::current_thread();
+  if (ContainsKey(threads_, current)) {
+    LOG(FATAL) << Substitute("Thread belonging to thread pool '$0' with "
+        "name '$1' called pool function that would result in deadlock",
+        name_, current->name());
+  }
 }
 
 } // namespace kudu

@@ -21,6 +21,7 @@
 #include <gtest/gtest_prod.h>
 #include <list>
 #include <memory>
+#include <unordered_set>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,7 @@
 namespace kudu {
 
 class Histogram;
+class Thread;
 class ThreadPool;
 class Trace;
 
@@ -185,6 +187,9 @@ class ThreadPool {
   // Create new thread. Required that lock_ is held.
   Status CreateThreadUnlocked();
 
+  // Aborts if the current thread is a member of this thread pool.
+  void CheckNotPoolThreadUnlocked();
+
  private:
   FRIEND_TEST(TestThreadPool, TestThreadPoolWithNoMinimum);
   FRIEND_TEST(TestThreadPool, TestVariableSizeThreadPool);
@@ -212,6 +217,12 @@ class ThreadPool {
   int active_threads_;
   int queue_size_;
   std::list<QueueEntry> queue_;
+
+  // Pointers to all running threads. Raw pointers are safe because a Thread
+  // may only go out of scope after being removed from threads_.
+  //
+  // Protected by lock_.
+  std::unordered_set<Thread*> threads_;
 
   scoped_refptr<Histogram> queue_length_histogram_;
   scoped_refptr<Histogram> queue_time_us_histogram_;
