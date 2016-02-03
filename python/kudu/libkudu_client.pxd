@@ -230,6 +230,7 @@ cdef extern from "kudu/client/row_result.h" namespace "kudu::client" nogil:
         Status GetBinary(int col_idx, Slice* val)
 
         const void* cell(int col_idx)
+        const KuduSchema* row_schema();
         string ToString()
 
 
@@ -593,6 +594,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status SetReadMode(ReadMode read_mode)
         Status SetSnapshot(uint64_t snapshot_timestamp_micros)
         Status SetTimeoutMillis(int millis)
+        Status SetProjectedColumnNames(const vector[string]& col_names)
         Status SetFaultTolerant()
 
         string ToString()

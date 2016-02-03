@@ -79,8 +79,9 @@ class TestScanner(KuduTestBase, unittest.TestCase):
         tuples = _read_predicates(preds)
         self.assertEqual(sorted(tuples), self.tuples[20:50])
 
-    def test_scan_rows_string_predicate(self):
+    def test_scan_rows_string_predicate_and_projection(self):
         scanner = self.table.scanner()
+        scanner.set_projected_column_names(['key', 'string_val'])
 
         sv = self.table['string_val']
 
@@ -92,7 +93,7 @@ class TestScanner(KuduTestBase, unittest.TestCase):
 
         tuples = scanner.read_all_tuples()
 
-        self.assertEqual(sorted(tuples), [(20, 40, 'hello_20'), (22, 44, 'hello_22')])
+        self.assertEqual(sorted(tuples), [(20, 'hello_20'), (22, 'hello_22')])
 
     def test_scan_invalid_predicates(self):
         scanner = self.table.scanner()
