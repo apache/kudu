@@ -30,6 +30,11 @@ namespace kudu {
 class ColumnSchema;
 class KuduPartialRow;
 class Schema;
+class TestWorkload;
+
+namespace tools {
+class TsAdminClient;
+}
 
 namespace client {
 
@@ -283,7 +288,6 @@ class KUDU_EXPORT KuduSchemaBuilder {
   Data* data_;
 };
 
-
 class KUDU_EXPORT KuduSchema {
  public:
   KuduSchema();
@@ -326,6 +330,7 @@ class KUDU_EXPORT KuduSchema {
   friend class internal::GetTableSchemaRpc;
   friend class internal::LookupRpc;
   friend class internal::WriteRpc;
+  friend class kudu::tools::TsAdminClient;
 
   friend KuduSchema KuduSchemaFromSchema(const Schema& schema);
 

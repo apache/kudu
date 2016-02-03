@@ -876,7 +876,7 @@ Status KuduScanner::SetProjectedColumnIndexes(const vector<int>& col_indexes) {
 
   gscoped_ptr<Schema> s(new Schema());
   RETURN_NOT_OK(s->Reset(cols, 0));
-  data_->projection_ = data_->pool_.Add(s.release());
+  data_->SetProjectionSchema(data_->pool_.Add(s.release()));
   return Status::OK();
 }
 
@@ -1156,6 +1156,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* result) {
     data_->data_in_open_ = false;
     return result->data_->Reset(&data_->controller_,
                                 data_->projection_,
+                                &data_->client_projection_,
                                 make_gscoped_ptr(data_->last_response_.release_data()));
   } else if (data_->last_response_.has_more_results()) {
     // More data is available in this tablet.
@@ -1197,6 +1198,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* result) {
       data_->scan_attempts_ = 0;
       return result->data_->Reset(&data_->controller_,
                                   data_->projection_,
+                                  &data_->client_projection_,
                                   make_gscoped_ptr(data_->last_response_.release_data()));
     }
 
