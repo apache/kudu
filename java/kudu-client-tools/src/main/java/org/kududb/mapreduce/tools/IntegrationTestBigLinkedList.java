@@ -877,7 +877,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       //assert
       if (expectedReferenced != referenced.getValue()) {
         LOG.error("Expected referenced count does not match with actual referenced count. " +
-            "expected referenced=" + expectedReferenced + " ,actual=" + referenced.getValue());
+            "Expected referenced=" + expectedReferenced + ", actual=" + referenced.getValue());
         success = false;
       }
 
@@ -948,31 +948,43 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
 
     protected void runVerify(String outputDir,
-                             int numReducers, long expectedNumNodes) throws Exception {
-      Path outputPath = new Path(outputDir);
-      UUID uuid = UUID.randomUUID(); //create a random UUID.
-      Path iterationOutput = new Path(outputPath, uuid.toString());
+                             int numReducers,
+                             long expectedNumNodes,
+                             int retries) throws Exception {
+      // Kudu doesn't fully support snapshot consistency so we might start reading from a node that
+      // doesn't have all the data. This happens often with under "chaos monkey"-type of setups.
+      for (int i = 0; i < retries; i++) {
+        if (i > 0) {
+          long sleep = 60 * 1000;
+          LOG.info("Retrying in " + sleep + "ms");
+          Thread.sleep(sleep);
+        }
 
-      Verify verify = new Verify();
-      verify.setConf(getConf());
-      int retCode = verify.run(iterationOutput, numReducers);
-      if (retCode > 0) {
-        throw new RuntimeException("Verify.run failed with return code: " + retCode);
+        Path outputPath = new Path(outputDir);
+        UUID uuid = UUID.randomUUID(); //create a random UUID.
+        Path iterationOutput = new Path(outputPath, uuid.toString());
+
+        Verify verify = new Verify();
+        verify.setConf(getConf());
+        int retCode = verify.run(iterationOutput, numReducers);
+        if (retCode > 0) {
+          LOG.warn("Verify.run failed with return code: " + retCode);
+        } else if (!verify.verify(expectedNumNodes)) {
+          LOG.warn("Verify.verify failed");
+        } else {
+          fs.delete(iterationOutput, true);
+          LOG.info("Verify finished with success. Total nodes=" + expectedNumNodes);
+        }
       }
-
-      if (!verify.verify(expectedNumNodes)) {
-        throw new RuntimeException("Verify.verify failed");
-      }
-
-      fs.delete(iterationOutput, true);
-      LOG.info("Verify finished with success. Total nodes=" + expectedNumNodes);
+      throw new RuntimeException("Ran out of retries to verify");
     }
 
     @Override
     public int run(String[] args) throws Exception {
       if (args.length < 6) {
         System.err.println("Usage: Loop <num iterations> <num mappers> <num nodes per mapper> " +
-            "<output dir> <num reducers> [<width> <wrap multiplier> <start expected nodes>]");
+            "<output dir> <num reducers> [<width> <wrap multiplier> <start expected nodes>" +
+            "<num_verify_retries>]");
         return 1;
       }
       LOG.info("Running Loop with args:" + Arrays.deepToString(args));
@@ -983,9 +995,10 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       int numTablets = Integer.parseInt(args[3]);
       String outputDir = args[4];
       int numReducers = Integer.parseInt(args[5]);
-      Integer width = (args.length < 6) ? null : Integer.parseInt(args[6]);
-      Integer wrapMuplitplier = (args.length < 8) ? null : Integer.parseInt(args[7]);
+      int width = (args.length < 6) ? null : Integer.parseInt(args[6]);
+      int wrapMuplitplier = (args.length < 8) ? null : Integer.parseInt(args[7]);
       long expectedNumNodes = (args.length < 9) ? 0 : Long.parseLong(args[8]);
+      int numVerifyRetries = (args.length < 10) ? 3 : Integer.parseInt(args[9]);
 
       if (numIterations < 0) {
         numIterations = Integer.MAX_VALUE; // run indefinitely (kind of)
@@ -998,7 +1011,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         runGenerator(numMappers, numNodes, numTablets, outputDir, width, wrapMuplitplier);
         expectedNumNodes += numMappers * numNodes;
 
-        runVerify(outputDir, numReducers, expectedNumNodes);
+        runVerify(outputDir, numReducers, expectedNumNodes, numVerifyRetries);
       }
 
       return 0;
