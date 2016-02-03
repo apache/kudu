@@ -781,17 +781,13 @@ cdef class Row:
     """
 
     cdef:
-        # So we can access the schema information
-        Table table
-
         RowBatch parent
 
         # This object is owned by the parent RowBatch
         KuduRowResult* row
 
-    def __cinit__(self, batch, table):
+    def __cinit__(self, batch):
         self.parent = batch
-        self.table = table
         self.row = NULL
 
     def __dealloc__(self):
@@ -805,7 +801,7 @@ cdef class Row:
             int i, k
             tuple tup
 
-        k = self.table.num_columns
+        k = self.row.row_schema().num_columns()
         tup = cpython.PyTuple_New(k)
         for i in range(k):
             val = None
@@ -863,7 +859,7 @@ cdef class Row:
     cdef inline get_slot(self, int i):
         cdef:
             Status s
-            DataType t = self.table.schema.loc_type(i)
+            DataType t = self.row.row_schema().Column(i).type()
 
         if t == KUDU_BOOL:
             return self.get_bool(i)
@@ -894,11 +890,7 @@ cdef class RowBatch:
     """
     # This class owns the KuduRowResult data
     cdef:
-        Table table
         vector[KuduRowResult] rows
-
-    def __cinit__(self, Table table):
-        self.table = table
 
     def __len__(self):
         return self.rows.size()
@@ -932,7 +924,7 @@ cdef class RowBatch:
         #
         # One alternative is to copy the KuduRowResult into the Row, but that
         # doesn't feel right.
-        cdef Row row = Row(self, self.table)
+        cdef Row row = Row(self)
         row.row = &self.rows[i]
 
         return row
@@ -1002,6 +994,24 @@ cdef class Scanner:
         clone = pred.pred.Clone()
         check_status(self.scanner.AddConjunctPredicate(clone))
 
+    def set_projected_column_names(self, names):
+        """
+        Sets the columns to be scanned.
+
+        Parameters
+        ----------
+        names : list of string
+
+        Returns
+        -------
+        self : Scanner
+        """
+        cdef vector[string] v_names
+        for name in names:
+            v_names.push_back(tobytes(name))
+        check_status(self.scanner.SetProjectedColumnNames(v_names))
+        return self
+
     def set_fault_tolerant(self):
         """
         Makes the underlying KuduScanner fault tolerant.
@@ -1064,7 +1074,7 @@ cdef class Scanner:
         if not self.has_more_rows():
             raise StopIteration
 
-        cdef RowBatch batch = RowBatch(self.table)
+        cdef RowBatch batch = RowBatch()
         check_status(self.scanner.NextBatch(&batch.rows))
         return batch
 
