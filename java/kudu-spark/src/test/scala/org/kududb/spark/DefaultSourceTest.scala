@@ -16,17 +16,25 @@
  */
 package org.kududb.spark
 
+import org.apache.spark.sql.SQLContext
+import org.junit.runner.RunWith
 import org.scalatest.FunSuite
+import org.scalatest.junit.JUnitRunner
 
-class KuduContextSuite extends FunSuite with TestContext {
-  test("Test basic kuduRDD") {
+@RunWith(classOf[JUnitRunner])
+class DefaultSourceTest extends FunSuite with TestContext {
+
+  test("Test basic SparkSQL") {
     val rowCount = 10
 
     insertRows(rowCount)
 
-    val scanRdd = kuduContext.kuduRDD(sc, "test")
+    val sqlContext = new SQLContext(sc)
 
-    val scanList = scanRdd.map(r => r.getInt(0)).collect()
-    assert(scanList.length == rowCount)
+    sqlContext.load("org.kududb.spark",
+      Map("kudu.table" -> tableName, "kudu.master" -> miniCluster.getMasterAddresses))
+      .registerTempTable(tableName)
+
+    assert(sqlContext.sql("SELECT * FROM " + tableName).collectAsList().size() == rowCount)
   }
 }
