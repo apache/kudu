@@ -181,8 +181,6 @@ elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   DO_COVERAGE=1
   BUILD_TYPE=debug
   $SOURCE_ROOT/build-support/enable_devtoolset.sh "$THIRDPARTY_BIN/cmake -DKUDU_GENERATE_COVERAGE=1 $SOURCE_ROOT"
-  # Reset coverage info from previous runs
-  find src -name \*.gcda -o -name \*.gcno -exec rm {} \;
 elif [ "$BUILD_TYPE" = "LINT" ]; then
   # Create empty test logs or else Jenkins fails to archive artifacts, which
   # results in the build failing.
@@ -292,7 +290,7 @@ if [ "$DO_COVERAGE" == "1" ]; then
   echo
   echo Generating coverage report...
   echo ------------------------------------------------------------
-  if ! ./thirdparty/gcovr-3.0/scripts/gcovr -r $SOURCE_ROOT --xml \
+  if ! $SOURCE_ROOT/thirdparty/gcovr-3.0/scripts/gcovr -r $SOURCE_ROOT --xml \
       > $BUILD_ROOT/coverage.xml ; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Coverage report failed\n'
