@@ -793,7 +793,7 @@ cdef class Row:
     def __dealloc__(self):
         pass
 
-    cdef tuple as_tuple(self):
+    cpdef tuple as_tuple(self):
         """
         Return the row as a Python tuple
         """
@@ -1098,7 +1098,7 @@ cdef class Scanner:
     def read_next_batch_tuples(self):
         return self.next_batch().as_tuples()
 
-    cdef RowBatch next_batch(self):
+    cpdef RowBatch next_batch(self):
         """
         Retrieve the next batch of rows from the scanner.
 

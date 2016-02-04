@@ -121,3 +121,21 @@ class TestScanner(KuduTestBase, unittest.TestCase):
 
         with self.assertRaises(kudu.KuduInvalidArgument):
             scanner.add_predicates([sv >= 1])
+
+    def test_scan_batch_by_batch(self):
+        scanner = self.table.scanner()
+        scanner.set_fault_tolerant()
+        lower_bound = scanner.new_bound()
+        lower_bound['key'] = 10
+        scanner.add_lower_bound(lower_bound)
+        upper_bound = scanner.new_bound()
+        upper_bound['key'] = 90
+        scanner.add_exclusive_upper_bound(upper_bound)
+        scanner.open()
+
+        tuples = []
+        while scanner.has_more_rows():
+            batch = scanner.next_batch()
+            tuples.extend(batch.as_tuples())
+
+        self.assertEqual(sorted(tuples), self.tuples[10:90])
