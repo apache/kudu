@@ -63,6 +63,8 @@ flags = [
 '-fPIC',
 '-I',
 'src',
+'-I',
+'build/latest/src',
 '-isystem',
 'thirdparty/installed/include',
 '-isystem',
