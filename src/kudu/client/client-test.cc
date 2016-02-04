@@ -721,6 +721,7 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
                                          FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
   ASSERT_OK(scanner.SetProjectedColumns(vector<string>()));
+  ASSERT_EQ(scanner.GetProjectionSchema().num_columns(), 0);
   LOG_TIMING(INFO, "Scanning with no projected columns") {
     ASSERT_OK(scanner.Open());
 
@@ -755,6 +756,8 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
                                          FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
   ASSERT_OK(scanner.SetProjectedColumns({ "int_val" }));
+  ASSERT_EQ(scanner.GetProjectionSchema().num_columns(), 1);
+  ASSERT_EQ(scanner.GetProjectionSchema().Column(0).type(), KuduColumnSchema::INT32);
   ASSERT_OK(scanner.AddConjunctPredicate(
                 client_table_->NewComparisonPredicate("key", KuduPredicate::GREATER_EQUAL,
                                                       KuduValue::FromInt(5))));
