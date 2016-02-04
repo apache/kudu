@@ -1024,6 +1024,41 @@ cdef class Scanner:
         check_status(self.scanner.SetFaultTolerant())
         return self
 
+    def new_bound(self):
+        """
+        Returns a new instance of a ScanBound (subclass of PartialRow) to be
+        later set with add_lower_bound()/add_exclusive_upper_bound().
+
+        Returns
+        -------
+        bound : ScanBound
+        """
+        return ScanBound(self.table)
+
+    def add_lower_bound(self, ScanBound bound):
+        """
+        Sets the (inclusive) lower bound of the scan.
+        Returns a reference to itself to facilitate chaining.
+
+        Returns
+        -------
+        self : Scanner
+        """
+        check_status(self.scanner.AddLowerBound(deref(bound.row)))
+        return self
+
+    def add_exclusive_upper_bound(self, ScanBound bound):
+        """
+        Sets the (exclusive) upper bound of the scan.
+        Returns a reference to itself to facilitate chaining.
+
+        Returns
+        -------
+        self : Scanner
+        """
+        check_status(self.scanner.AddExclusiveUpperBound(deref(bound.row)))
+        return self
+
     def open(self):
         """
         Returns a reference to itself to facilitate chaining
@@ -1104,16 +1139,14 @@ cdef class KuduError:
         return "KuduError('%s')" % (self.error.status().ToString())
 
 
-cdef class WriteOperation:
+cdef class PartialRow:
     cdef:
         Table table
         KuduPartialRow* row
-        bint applied
 
     def __cinit__(self, Table table):
         # This gets called before any subclass cinit methods
         self.table = table
-        self.applied = 0
 
     def __setitem__(self, key, value):
         if isinstance(key, basestring):
@@ -1166,6 +1199,22 @@ cdef class WriteOperation:
 
     cdef add_to_session(self, Session s):
         pass
+
+cdef class ScanBound(PartialRow):
+    def __cinit__(self, Table table):
+        self.row = self.table.schema.new_row()
+
+    def __dealloc__(self):
+        del self.row
+
+cdef class WriteOperation(PartialRow):
+    cdef:
+        # Whether the WriteOperation has been applied.
+        # Set by subclasses.
+        bint applied
+
+    def __cinit__(self, Table table):
+        self.applied = 0
 
 
 cdef class Insert(WriteOperation):

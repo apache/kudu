@@ -57,3 +57,6 @@ cdef class Schema:
 
     cdef inline DataType loc_type(self, int i):
         return self.schema.Column(i).type()
+
+    cdef inline KuduPartialRow* new_row(self):
+        return self.schema.NewRow()
