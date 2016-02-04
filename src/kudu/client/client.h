@@ -1025,6 +1025,9 @@ class KUDU_EXPORT KuduScanner {
   // Sets the maximum time that Open() and NextBatch() are allowed to take.
   Status SetTimeoutMillis(int millis);
 
+  // Returns the schema of the projection being scanned.
+  KuduSchema GetProjectionSchema() const;
+
   // Returns a string representation of this scan.
   std::string ToString() const;
  private:

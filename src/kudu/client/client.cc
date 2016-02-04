@@ -1014,6 +1014,10 @@ Status KuduScanner::SetCacheBlocks(bool cache_blocks) {
   return Status::OK();
 }
 
+KuduSchema KuduScanner::GetProjectionSchema() const {
+  return data_->client_projection_;
+}
+
 namespace {
 // Callback for the RPC sent by Close().
 // We can't use the KuduScanner response and RPC controller members for this
