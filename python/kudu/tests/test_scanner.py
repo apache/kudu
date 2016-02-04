@@ -41,6 +41,8 @@ class TestScanner(KuduTestBase, unittest.TestCase):
             op['int_val'] = tup[1]
             if i % 2 == 0:
                 op['string_val'] = tup[2]
+            elif i % 3 == 0:
+                op['string_val'] = None
             session.apply(op)
             tuples.append(tup)
         session.flush()

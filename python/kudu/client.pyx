@@ -1155,6 +1155,10 @@ cdef class PartialRow:
             DataType t = self.table.schema.loc_type(i)
             cdef Slice* slc
 
+        if value is None:
+            self.row.SetNull(i)
+            return
+
         # Leave it to Cython to do the coercion and complain if it doesn't
         # work. Cython will catch many casting problems but we should verify
         # with unit tests.
@@ -1267,7 +1271,6 @@ cdef class Delete(WriteOperation):
         check_status(s.s.get().Apply(self.op))
         self.applied = 1
         self.op = NULL
-
 
 
 cdef inline cast_pyvalue(DataType t, object o):
