@@ -596,6 +596,8 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status SetTimeoutMillis(int millis)
         Status SetProjectedColumnNames(const vector[string]& col_names)
         Status SetFaultTolerant()
+        Status AddLowerBound(const KuduPartialRow& key)
+        Status AddExclusiveUpperBound(const KuduPartialRow& key)
 
         string ToString()
 
