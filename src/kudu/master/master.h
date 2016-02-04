@@ -17,8 +17,9 @@
 #ifndef KUDU_MASTER_MASTER_H
 #define KUDU_MASTER_MASTER_H
 
-#include <string>
+#include <atomic>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -36,7 +37,6 @@ class MaintenanceManager;
 class RpcServer;
 struct RpcServerOptions;
 class ServerEntryPB;
-class ServerRegistrationPB;
 class ThreadPool;
 
 namespace rpc {
@@ -103,14 +103,18 @@ class Master : public server::ServerBase {
  private:
   friend class MasterTest;
 
+  void InitCatalogManagerTask();
+  Status InitCatalogManager();
+
+  // Initialize registration_.
+  // Requires that the web server and RPC server have been started.
+  Status InitMasterRegistration();
+
   enum MasterState {
     kStopped,
     kInitialized,
     kRunning
   };
-
-  void InitCatalogManagerTask();
-  Status InitCatalogManager();
 
   MasterState state_;
 
@@ -126,6 +130,10 @@ class Master : public server::ServerBase {
   Promise<Status> init_status_;
 
   MasterOptions opts_;
+
+  ServerRegistrationPB registration_;
+  // True once registration_ has been initialized.
+  std::atomic<bool> registration_initialized_;
 
   // The maintenance manager for this master.
   std::shared_ptr<MaintenanceManager> maintenance_manager_;

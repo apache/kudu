@@ -67,6 +67,7 @@ Master::Master(const MasterOptions& opts)
     catalog_manager_(new CatalogManager(this)),
     path_handlers_(new MasterPathHandlers(this)),
     opts_(opts),
+    registration_initialized_(false),
     maintenance_manager_(new MaintenanceManager(MaintenanceManager::DEFAULT_OPTIONS)) {
 }
 
@@ -115,6 +116,9 @@ Status Master::StartAsync() {
   RETURN_NOT_OK(ServerBase::RegisterService(impl.Pass()));
   RETURN_NOT_OK(ServerBase::RegisterService(consensus_service.Pass()));
   RETURN_NOT_OK(ServerBase::Start());
+
+  // Now that we've bound, construct our ServerRegistrationPB.
+  RETURN_NOT_OK(InitMasterRegistration());
 
   // Start initializing the catalog manager.
   RETURN_NOT_OK(init_pool_->SubmitClosure(Bind(&Master::InitCatalogManagerTask,
@@ -178,13 +182,28 @@ void Master::Shutdown() {
 }
 
 Status Master::GetMasterRegistration(ServerRegistrationPB* reg) const {
+  if (!registration_initialized_.load(std::memory_order_acquire)) {
+    return Status::ServiceUnavailable("Master startup not complete");
+  }
+  reg->CopyFrom(registration_);
+  return Status::OK();
+}
+
+Status Master::InitMasterRegistration() {
+  CHECK(!registration_initialized_.load());
+
+  ServerRegistrationPB reg;
   vector<Sockaddr> rpc_addrs;
   RETURN_NOT_OK_PREPEND(rpc_server()->GetBoundAddresses(&rpc_addrs),
                         "Couldn't get RPC addresses");
-  RETURN_NOT_OK(AddHostPortPBs(rpc_addrs, reg->mutable_rpc_addresses()));
+  RETURN_NOT_OK(AddHostPortPBs(rpc_addrs, reg.mutable_rpc_addresses()));
   vector<Sockaddr> http_addrs;
   web_server()->GetBoundAddresses(&http_addrs);
-  RETURN_NOT_OK(AddHostPortPBs(http_addrs, reg->mutable_http_addresses()));
+  RETURN_NOT_OK(AddHostPortPBs(http_addrs, reg.mutable_http_addresses()));
+
+  registration_.Swap(&reg);
+  registration_initialized_.store(true);
+
   return Status::OK();
 }
 
