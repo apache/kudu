@@ -683,4 +683,64 @@ TEST_F(RemoteBootstrapITest, TestDisableRemoteBootstrap_NoTightLoopWhenTabletDel
   EXPECT_LT(num_logs_per_second, 20);
 }
 
+// Test that if a remote bootstrap is taking a long time but the client peer is still responsive,
+// the leader won't mark it as failed.
+TEST_F(RemoteBootstrapITest, DISABLED_TestSlowBootstrapDoesntFail) {
+  MonoDelta timeout = MonoDelta::FromSeconds(10);
+  vector<string> ts_flags, master_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  ts_flags.push_back("--remote_bootstrap_dowload_file_inject_latency_ms=5000");
+  ts_flags.push_back("--follower_unavailable_considered_failed_sec=2");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags));
+
+  TestWorkload workload(cluster_.get());
+  // TODO(KUDU-1322): the client should handle retrying on different replicas
+  // if the tablet isn't found, rather than giving us this error.
+  workload.set_not_found_allowed(true);
+  workload.set_write_batch_size(1);
+  workload.Setup();
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ExternalTabletServer* replica_ets = cluster_->tablet_server(1);
+  TServerDetails* replica_ts = ts_map_[replica_ets->uuid()];
+  ASSERT_OK(WaitForNumTabletsOnTS(replica_ts, 1, timeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, timeout));
+  }
+
+  // Elect a leader (TS 0)
+  ExternalTabletServer* leader_ts = cluster_->tablet_server(0);
+  ASSERT_OK(itest::StartElection(ts_map_[leader_ts->uuid()], tablet_id, timeout));
+
+  // Start writing, wait for some rows to be inserted.
+  workload.Start();
+  while (workload.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+
+  // Tombstone the follower.
+  LOG(INFO) << "Tombstoning follower tablet " << tablet_id << " on TS " << replica_ts->uuid();
+  ASSERT_OK(itest::DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
+                                timeout));
+
+  // Wait for remote bootstrap to start.
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(1, tablet_id,
+                                                 tablet::TABLET_DATA_COPYING, timeout));
+
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 1));
+
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
+                            workload.rows_inserted()));
+}
+
 } // namespace kudu
