@@ -56,6 +56,11 @@ TAG_FLAG(remote_bootstrap_save_downloaded_metadata, advanced);
 TAG_FLAG(remote_bootstrap_save_downloaded_metadata, hidden);
 TAG_FLAG(remote_bootstrap_save_downloaded_metadata, runtime);
 
+DEFINE_int32(remote_bootstrap_dowload_file_inject_latency_ms, 0,
+             "Injects latency into the loop that downloads files, causing remote bootstrap "
+             "to take much longer. For use in tests only.");
+TAG_FLAG(remote_bootstrap_dowload_file_inject_latency_ms, hidden);
+
 // RETURN_NOT_OK_PREPEND() with a remote-error unwinding step.
 #define RETURN_NOT_OK_UNWIND_PREPEND(status, controller, msg) \
   RETURN_NOT_OK_PREPEND(UnwindRemoteError(status, controller), msg)
@@ -517,6 +522,12 @@ Status RemoteBootstrapClient::DownloadFile(const DataIdPB& data_id,
 
     // Write the data.
     RETURN_NOT_OK(appendable->Append(resp.chunk().data()));
+
+    if (PREDICT_FALSE(FLAGS_remote_bootstrap_dowload_file_inject_latency_ms > 0)) {
+      LOG_WITH_PREFIX(INFO) << "Injecting latency into file download: " <<
+          FLAGS_remote_bootstrap_dowload_file_inject_latency_ms;
+      SleepFor(MonoDelta::FromMilliseconds(FLAGS_remote_bootstrap_dowload_file_inject_latency_ms));
+    }
 
     if (offset + resp.chunk().data().size() == resp.chunk().total_data_length()) {
       done = true;
