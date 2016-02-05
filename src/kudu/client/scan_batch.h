@@ -143,8 +143,6 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   // Raw cell access. Should be avoided unless absolutely necessary.
   const void* cell(int col_idx) const;
 
-  const KuduSchema* row_schema() const;
-
   std::string ToString() const;
 
  private:
@@ -154,10 +152,8 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
 
   // Only invoked by KuduScanner.
   RowPtr(const Schema* schema,
-         const KuduSchema* client_projection,
          const uint8_t* row_data)
       : schema_(schema),
-        client_schema_(client_projection),
         row_data_(row_data) {
   }
 
@@ -168,7 +164,6 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   Status Get(int col_idx, typename T::cpp_type* val) const;
 
   const Schema* schema_;
-  const KuduSchema* client_schema_;
   const uint8_t* row_data_;
 };
 

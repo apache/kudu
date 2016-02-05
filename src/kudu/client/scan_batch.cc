@@ -217,10 +217,6 @@ const void* KuduScanBatch::RowPtr::cell(int col_idx) const {
   return row_data_ + schema_->column_offset(col_idx);
 }
 
-const KuduSchema* KuduScanBatch::RowPtr::row_schema() const {
-  return client_schema_;
-}
-
 //------------------------------------------------------------
 // Template instantiations: We instantiate all possible templates to avoid linker issues.
 // see: https://isocpp.org/wiki/faq/templates#separate-template-fn-defn-from-decl
