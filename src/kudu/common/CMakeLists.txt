@@ -40,6 +40,7 @@ ADD_EXPORTABLE_LIBRARY(wire_protocol_proto
   NONLINK_DEPS ${WIRE_PROTOCOL_PROTO_TGTS})
 
 set(COMMON_SRCS
+  column_predicate.cc
   encoded_key.cc
   generic_iterators.cc
   id_mapping.cc
@@ -77,6 +78,7 @@ ADD_EXPORTABLE_LIBRARY(kudu_common
   DEPS ${COMMON_LIBS})
 
 set(KUDU_TEST_LINK_LIBS kudu_common ${KUDU_MIN_TEST_LIBS})
+ADD_KUDU_TEST(column_predicate-test)
 ADD_KUDU_TEST(encoded_key-test)
 ADD_KUDU_TEST(generic_iterators-test)
 ADD_KUDU_TEST(id_mapping-test)

@@ -24,6 +24,7 @@
 namespace kudu {
 
 class Arena;
+class ColumnSchema;
 class ContiguousRow;
 
 namespace row_key_util {
@@ -67,6 +68,9 @@ bool IncrementKey(ContiguousRow* row, Arena* arena) WARN_UNUSED_RESULT;
 // (1,2,3), IncrementKeyPrefix(2) will return (1,3,3).
 bool IncrementKeyPrefix(ContiguousRow* row, int prefix_len,
                         Arena* arena) WARN_UNUSED_RESULT;
+
+// Increments the provided cell in place.
+bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena);
 
 } // namespace row_key_util
 } // namespace kudu

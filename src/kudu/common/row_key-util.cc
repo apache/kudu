@@ -63,6 +63,8 @@ bool IncrementStringCell(void* cell_ptr, Arena* arena) {
   return true;
 }
 
+} // anonymous namespace
+
 bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena) {
   DataType type = col.type_info()->physical_type();
   switch (type) {
@@ -89,8 +91,6 @@ bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena) {
   return false; // unreachable
 #undef HANDLE_TYPE
 }
-
-} // anonymous namespace
 
 void SetKeyToMinValues(ContiguousRow* row) {
   for (int i = 0; i < row->schema()->num_key_columns(); i++) {
