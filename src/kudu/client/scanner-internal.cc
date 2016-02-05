@@ -528,7 +528,7 @@ void KuduScanBatch::Data::ExtractRows(vector<KuduScanBatch::RowPtr>* rows) {
   const uint8_t* src = direct_data_.data();
   KuduScanBatch::RowPtr* dst = &(*rows)[0];
   while (n_rows > 0) {
-    *dst = KuduScanBatch::RowPtr(projection_, client_projection_,src);
+    *dst = KuduScanBatch::RowPtr(projection_, src);
     dst++;
     src += projected_row_size_;
     n_rows--;

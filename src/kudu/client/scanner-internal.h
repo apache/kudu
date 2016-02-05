@@ -186,7 +186,7 @@ class KuduScanBatch::Data {
     DCHECK_GE(idx, 0);
     DCHECK_LT(idx, num_rows());
     int offset = idx * projected_row_size_;
-    return KuduRowResult(projection_, client_projection_, &direct_data_[offset]);
+    return KuduRowResult(projection_, &direct_data_[offset]);
   }
 
   void ExtractRows(vector<KuduScanBatch::RowPtr>* rows);
