@@ -1774,9 +1774,7 @@ Tablet::Iterator::Iterator(const Tablet* tablet, const Schema& projection,
     : tablet_(tablet),
       projection_(projection),
       snap_(std::move(snap)),
-      order_(order),
-      arena_(256, 4096),
-      encoder_(&tablet_->key_schema(), &arena_) {}
+      order_(order) {}
 
 Tablet::Iterator::~Iterator() {}
 
@@ -1785,15 +1783,9 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));
 
-  vector<shared_ptr<RowwiseIterator> > iters;
-  if (spec != nullptr) {
-    VLOG(3) << "Before encoding range preds: " << spec->ToString();
-    encoder_.EncodeRangePredicates(spec, true);
-    VLOG(3) << "After encoding range preds: " << spec->ToString();
-  }
+  vector<shared_ptr<RowwiseIterator>> iters;
 
-  RETURN_NOT_OK(tablet_->CaptureConsistentIterators(
-      &projection_, snap_, spec, &iters));
+  RETURN_NOT_OK(tablet_->CaptureConsistentIterators(&projection_, snap_, spec, &iters));
 
   switch (order_) {
     case ORDERED:

@@ -702,7 +702,7 @@ public final class AsyncKuduScanner {
           }
 
           if (!columnRangePredicates.isEmpty()) {
-            newBuilder.addAllRangePredicates(columnRangePredicates);
+            newBuilder.addAllDEPRECATEDRangePredicates(columnRangePredicates);
           }
           builder.setNewScanRequest(newBuilder.build())
                  .setBatchSizeBytes(batchSizeBytes);

@@ -23,6 +23,7 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
@@ -35,8 +36,8 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/rpc_context.h"
-#include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
@@ -435,8 +436,7 @@ Status SysCatalogTable::VisitTables(TableVisitor* visitor) {
   const int type_col_idx = schema_.find_column(kSysCatalogTableColType);
   CHECK(type_col_idx != Schema::kColumnNotFound);
 
-  ColumnRangePredicate pred_tables(schema_.column(type_col_idx),
-                                   &tables_entry, &tables_entry);
+  auto pred_tables = ColumnPredicate::Equality(schema_.column(type_col_idx), &tables_entry);
   ScanSpec spec;
   spec.AddPredicate(pred_tables);
 
@@ -583,8 +583,7 @@ Status SysCatalogTable::VisitTablets(TabletVisitor* visitor) {
   const int type_col_idx = schema_.find_column(kSysCatalogTableColType);
   CHECK(type_col_idx != Schema::kColumnNotFound);
 
-  ColumnRangePredicate pred_tablets(schema_.column(type_col_idx),
-                                   &tablets_entry, &tablets_entry);
+  auto pred_tablets = ColumnPredicate::Equality(schema_.column(type_col_idx), &tablets_entry);
   ScanSpec spec;
   spec.AddPredicate(pred_tablets);
 

@@ -16,18 +16,24 @@
 // under the License.
 
 #include "kudu/client/scan_predicate.h"
+
+#include <boost/optional.hpp>
+#include <utility>
+
 #include "kudu/client/scan_predicate-internal.h"
-#include "kudu/client/value.h"
 #include "kudu/client/value-internal.h"
-
-#include "kudu/common/scan_spec.h"
+#include "kudu/client/value.h"
 #include "kudu/common/scan_predicate.h"
-
+#include "kudu/common/scan_spec.h"
 #include "kudu/gutil/strings/substitute.h"
+
+using std::move;
+using boost::optional;
+
+namespace kudu {
 
 using strings::Substitute;
 
-namespace kudu {
 namespace client {
 
 KuduPredicate::KuduPredicate(Data* d)
@@ -51,7 +57,7 @@ KuduPredicate* KuduPredicate::Clone() const {
 ComparisonPredicateData::ComparisonPredicateData(ColumnSchema col,
                                                  KuduPredicate::ComparisonOp op,
                                                  KuduValue* val)
-    : col_(std::move(col)),
+    : col_(move(col)),
       op_(op),
       val_(val) {
 }
@@ -59,31 +65,31 @@ ComparisonPredicateData::~ComparisonPredicateData() {
 }
 
 
-Status ComparisonPredicateData::AddToScanSpec(ScanSpec* spec) {
+Status ComparisonPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
   void* val_void;
   RETURN_NOT_OK(val_->data_->CheckTypeAndGetPointer(col_.name(),
                                                     col_.type_info()->physical_type(),
                                                     &val_void));
-
-  void* lower_bound = nullptr;
-  void* upper_bound = nullptr;
   switch (op_) {
-    case KuduPredicate::LESS_EQUAL:
-      upper_bound = val_void;
+    case KuduPredicate::LESS_EQUAL: {
+      optional<ColumnPredicate> pred =
+        ColumnPredicate::InclusiveRange(col_, nullptr, val_void, arena);
+      if (pred) {
+        spec->AddPredicate(*pred);
+      }
       break;
-    case KuduPredicate::GREATER_EQUAL:
-      lower_bound = val_void;
+    };
+    case KuduPredicate::GREATER_EQUAL: {
+      spec->AddPredicate(ColumnPredicate::Range(col_, val_void, nullptr));
       break;
-    case KuduPredicate::EQUAL:
-      lower_bound = upper_bound = val_void;
+    };
+    case KuduPredicate::EQUAL: {
+      spec->AddPredicate(ColumnPredicate::Equality(col_, val_void));
       break;
+    };
     default:
       return Status::InvalidArgument(Substitute("invalid comparison op: $0", op_));
   }
-
-  ColumnRangePredicate p(col_, lower_bound, upper_bound);
-  spec->AddPredicate(p);
-
   return Status::OK();
 }
 

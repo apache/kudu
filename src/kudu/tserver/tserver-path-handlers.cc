@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/common/scan_spec.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
@@ -444,8 +445,13 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
       range_pred_str = EncodedKey::RangeToString(spec.lower_bound_key(),
                                                  spec.exclusive_upper_bound_key());
     }
-    for (const ColumnRangePredicate& pred : scanner.spec().predicates()) {
-      other_preds.push_back(pred.ToString());
+    for (const auto& col_pred : scanner.spec().predicates()) {
+      int32_t col_idx = projection->find_column(col_pred.first);
+      if (col_idx == Schema::kColumnNotFound) {
+        other_preds.emplace_back("unknown column");
+      } else {
+        other_preds.push_back(col_pred.second.ToString());
+      }
     }
     string other_pred_str = JoinStrings(other_preds, "\n");
     html << Substitute("<td>$0</td><td>$1</td></tr>\n",

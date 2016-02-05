@@ -80,10 +80,9 @@ class TestCFileSet : public KuduRowSetTest {
 
     // Create a scan with a range predicate on the key column.
     ScanSpec spec;
-    ColumnRangePredicate pred1(
-      schema_.column(0),
-      lower != kNoBound ? &lower : nullptr,
-      upper != kNoBound ? &upper : nullptr);
+    auto pred1 = ColumnPredicate::Range(schema_.column(0),
+                                        lower != kNoBound ? &lower : nullptr,
+                                        upper != kNoBound ? &upper : nullptr);
     spec.AddPredicate(pred1);
     ASSERT_OK(iter->Init(&spec));
 
@@ -96,7 +95,7 @@ class TestCFileSet : public KuduRowSetTest {
         if (block.selection_vector()->IsRowSelected(i)) {
           RowBlockRow row = block.row(i);
           if ((lower != kNoBound && *schema_.ExtractColumnFromRow<UINT32>(row, 0) < lower) ||
-              (upper != kNoBound && *schema_.ExtractColumnFromRow<UINT32>(row, 0) > upper)) {
+              (upper != kNoBound && *schema_.ExtractColumnFromRow<UINT32>(row, 0) >= upper)) {
             FAIL() << "Row " << schema_.DebugRow(row) << " should not have "
                    << "passed predicate " << pred1.ToString();
           }
@@ -245,23 +244,22 @@ TEST_F(TestCFileSet, TestRangeScan) {
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
   Schema key_schema = schema_.CreateKeyProjection();
   Arena arena(1024, 256 * 1024);
-  RangePredicateEncoder encoder(&key_schema, &arena);
+  AutoReleasePool pool;
 
   // Create a scan with a range predicate on the key column.
   ScanSpec spec;
   uint32_t lower = 2000;
-  uint32_t upper = 2009;
-  ColumnRangePredicate pred1(schema_.column(0), &lower, &upper);
+  uint32_t upper = 2010;
+  auto pred1 = ColumnPredicate::Range(schema_.column(0), &lower, &upper);
   spec.AddPredicate(pred1);
-  encoder.EncodeRangePredicates(&spec, true);
+  spec.OptimizeScan(schema_, &arena, &pool, true);
   ASSERT_OK(iter->Init(&spec));
 
   // Check that the bounds got pushed as index bounds.
   // Since the key column is the rowidx * 2, we need to divide the integer bounds
   // back down.
   EXPECT_EQ(lower / 2, cfile_iter->lower_bound_idx_);
-  // + 1 because the upper bound is exclusive
-  EXPECT_EQ(upper / 2 + 1, cfile_iter->upper_bound_idx_);
+  EXPECT_EQ(upper / 2, cfile_iter->upper_bound_idx_);
 
   // Read all the results.
   vector<string> results;

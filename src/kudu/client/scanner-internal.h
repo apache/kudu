@@ -21,12 +21,12 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/common/scan_spec.h"
-#include "kudu/common/predicate_encoder.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/auto_release_pool.h"
 
 namespace kudu {
 
@@ -107,6 +107,10 @@ class KuduScanner::Data {
   bool is_fault_tolerant_;
   int64_t snapshot_timestamp_;
 
+  // Set to true if the scan is known to be empty based on predicates and
+  // primary key bounds.
+  bool short_circuit_;
+
   // The encoded last primary key from the most recent tablet scan response.
   std::string last_primary_key_;
 
@@ -142,7 +146,6 @@ class KuduScanner::Data {
   // Machinery to store and encode raw column range predicates into
   // encoded keys.
   ScanSpec spec_;
-  RangePredicateEncoder spec_encoder_;
 
   // The tablet we're scanning.
   scoped_refptr<internal::RemoteTablet> remote_;

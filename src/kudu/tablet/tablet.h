@@ -26,7 +26,6 @@
 #include <boost/thread/shared_mutex.hpp>
 
 #include "kudu/common/iterator.h"
-#include "kudu/common/predicate_encoder.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -624,11 +623,6 @@ class Tablet::Iterator : public RowwiseIterator {
   const MvccSnapshot snap_;
   const OrderMode order_;
   gscoped_ptr<RowwiseIterator> iter_;
-
-  // TODO: we could probably share an arena with the Scanner object inside the
-  // tserver, but piping it in would require changing a lot of call-sites.
-  Arena arena_;
-  RangePredicateEncoder encoder_;
 };
 
 // Structure which represents the components of the tablet's storage.

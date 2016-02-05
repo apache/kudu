@@ -112,10 +112,10 @@ TEST_F(CompositePushdownTest, TestPushDownExactEquality) {
   int8_t month = 9;
   int8_t day = 7;
   Slice host(kTestHostnames[0]);
-  ColumnRangePredicate pred_year(schema_.column(0), &year, &year);
-  ColumnRangePredicate pred_month(schema_.column(1), &month, &month);
-  ColumnRangePredicate pred_day(schema_.column(2), &day, &day);
-  ColumnRangePredicate pred_host(schema_.column(3), &host, &host);
+  auto pred_year = ColumnPredicate::Equality(schema_.column(0), &year);
+  auto pred_month = ColumnPredicate::Equality(schema_.column(1), &month);
+  auto pred_day = ColumnPredicate::Equality(schema_.column(2), &day);
+  auto pred_host = ColumnPredicate::Equality(schema_.column(3), &host);
   spec.AddPredicate(pred_year);
   spec.AddPredicate(pred_month);
   spec.AddPredicate(pred_day);
@@ -133,19 +133,20 @@ TEST_F(CompositePushdownTest, TestPushDownExactEquality) {
 // Test for "host <= 'foo'" which should reject 'foobaz'.
 // Regression test for a bug in an earlier implementation of predicate pushdown.
 TEST_F(CompositePushdownTest, TestPushDownStringInequality) {
+  Arena arena(256, 1024);
   ScanSpec spec;
   int16_t year = 2001;
   int8_t month = 9;
   int8_t day = 7;
   Slice host("foo");
-  ColumnRangePredicate pred_year(schema_.column(0), &year, &year);
-  ColumnRangePredicate pred_month(schema_.column(1), &month, &month);
-  ColumnRangePredicate pred_day(schema_.column(2), &day, &day);
-  ColumnRangePredicate pred_host(schema_.column(3), nullptr, &host);
+  auto pred_year = ColumnPredicate::Equality(schema_.column(0), &year);
+  auto pred_month = ColumnPredicate::Equality(schema_.column(1), &month);
+  auto pred_day = ColumnPredicate::Equality(schema_.column(2), &day);
+  auto pred_host = ColumnPredicate::InclusiveRange(schema_.column(3), nullptr, &host, &arena);
   spec.AddPredicate(pred_year);
   spec.AddPredicate(pred_month);
   spec.AddPredicate(pred_day);
-  spec.AddPredicate(pred_host);
+  spec.AddPredicate(*pred_host);
   vector<string> results;
 
   ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Exact match using compound key"));
@@ -164,9 +165,9 @@ TEST_F(CompositePushdownTest, TestPushDownDateEquality) {
   int16_t year = 2001;
   int8_t month = 9;
   int8_t day = 7;
-  ColumnRangePredicate pred_year(schema_.column(0), &year, &year);
-  ColumnRangePredicate pred_month(schema_.column(1), &month, &month);
-  ColumnRangePredicate pred_day(schema_.column(2), &day, &day);
+  auto pred_year = ColumnPredicate::Equality(schema_.column(0), &year);
+  auto pred_month = ColumnPredicate::Equality(schema_.column(1), &month);
+  auto pred_day = ColumnPredicate::Equality(schema_.column(2), &day);
   spec.AddPredicate(pred_year);
   spec.AddPredicate(pred_month);
   spec.AddPredicate(pred_day);
@@ -188,8 +189,8 @@ TEST_F(CompositePushdownTest, TestPushDownDateEquality) {
 TEST_F(CompositePushdownTest, TestPushDownPrefixEquality) {
   int16_t year = 2001;
   int8_t month = 9;
-  ColumnRangePredicate pred_year(schema_.column(0), &year, &year);
-  ColumnRangePredicate pred_month(schema_.column(1), &month, &month);
+  ColumnPredicate pred_year = ColumnPredicate::Equality(schema_.column(0), &year);
+  ColumnPredicate pred_month = ColumnPredicate::Equality(schema_.column(1), &month);
 
   {
     ScanSpec spec;
@@ -229,26 +230,26 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEquality) {
 TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
   int16_t year = 2001;
   int8_t month_l = 9;
-  int8_t month_u = 11;
+  int8_t month_u = 12;
   int8_t day_l = 1;
-  int8_t day_u = 15;
+  int8_t day_u = 16;
 
-  ColumnRangePredicate pred_year(schema_.column(0), &year, &year);
+  auto pred_year = ColumnPredicate::Equality(schema_.column(0), &year);
 
-  ColumnRangePredicate pred_month_eq(schema_.column(1), &month_l, &month_l);
-  ColumnRangePredicate pred_month_ge_le(schema_.column(1), &month_l, &month_u);
-  ColumnRangePredicate pred_month_le(schema_.column(1), nullptr, &month_l);
+  auto pred_month_eq = ColumnPredicate::Equality(schema_.column(1), &month_l);
+  auto pred_month_ge_lt = ColumnPredicate::Range(schema_.column(1), &month_l, &month_u);
+  auto pred_month_lt = ColumnPredicate::Range(schema_.column(1), nullptr, &month_l);
 
-  ColumnRangePredicate pred_day_ge_le(schema_.column(2), &day_l, &day_u);
-  ColumnRangePredicate pred_day_ge(schema_.column(2), &day_l, nullptr);
-  ColumnRangePredicate pred_day_le(schema_.column(2), nullptr, &day_u);
+  auto pred_day_ge_lt = ColumnPredicate::Range(schema_.column(2), &day_l, &day_u);
+  auto pred_day_ge = ColumnPredicate::Range(schema_.column(2), &day_l, nullptr);
+  auto pred_day_lt = ColumnPredicate::Range(schema_.column(2), nullptr, &day_u);
 
   {
-    // year=2001, month=9, day >= 1 && day <= 15
+    // year=2001, month=9, day >= 1 && day < 16
     ScanSpec spec;
     spec.AddPredicate(pred_year);
     spec.AddPredicate(pred_month_eq);
-    spec.AddPredicate(pred_day_ge_le);
+    spec.AddPredicate(pred_day_ge_lt);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
     ASSERT_EQ(15 * 3, results.size());
@@ -278,11 +279,11 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
   }
 
   {
-    // year=2001, month=9, day <= 15
+    // year=2001, month=9, day < 16
     ScanSpec spec;
     spec.AddPredicate(pred_year);
     spec.AddPredicate(pred_month_eq);
-    spec.AddPredicate(pred_day_le);
+    spec.AddPredicate(pred_day_lt);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
     ASSERT_EQ(15 * 3, results.size());
@@ -295,10 +296,10 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
   }
 
   {
-    // year=2001, month >= 9 && month <= 11
+    // year=2001, month >= 9 && month < 12
     ScanSpec spec;
     spec.AddPredicate(pred_year);
-    spec.AddPredicate(pred_month_ge_le);
+    spec.AddPredicate(pred_month_ge_lt);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
     ASSERT_EQ(3 * 28 * 3, results.size());
@@ -311,18 +312,18 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
   }
 
   {
-    // year=2001, month <= 9
+    // year=2001, month < 9
     ScanSpec spec;
     spec.AddPredicate(pred_year);
-    spec.AddPredicate(pred_month_le);
+    spec.AddPredicate(pred_month_lt);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
-    ASSERT_EQ(9 * 28 * 3, results.size());
+    ASSERT_EQ(8 * 28 * 3, results.size());
     EXPECT_EQ("(int16 year=2001, int8 month=1, int8 day=1, "
               "string hostname=baz, string data=2001/01/01-baz)",
               results.front());
-    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=28, "
-              "string hostname=foobar, string data=2001/09/28-foobar)",
+    EXPECT_EQ("(int16 year=2001, int8 month=8, int8 day=28, "
+              "string hostname=foobar, string data=2001/08/28-foobar)",
               results.back());
   }
 }
@@ -330,10 +331,10 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
 TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
 
   int16_t year_2001 = 2001;
-  int16_t year_2003 = 2003;
+  int16_t year_2004 = 2004;
   {
-    // year >= 2001 && year <= 2003
-    ColumnRangePredicate pred_year(schema_.column(0), &year_2001, &year_2003);
+    // year >= 2001 && year < 2004
+    auto pred_year = ColumnPredicate::Range(schema_.column(0), &year_2001, &year_2004);
     ScanSpec spec;
     spec.AddPredicate(pred_year);
     vector<string> results;
@@ -349,7 +350,7 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
 
   {
     // year >= 2001
-    ColumnRangePredicate pred_year(schema_.column(0), &year_2001, nullptr);
+    auto pred_year = ColumnPredicate::Range(schema_.column(0), &year_2001, nullptr);
     ScanSpec spec;
     spec.AddPredicate(pred_year);
     vector<string> results;
@@ -366,8 +367,8 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
   }
 
   {
-    // year <= 2003
-    ColumnRangePredicate pred_year(schema_.column(0), nullptr, &year_2003);
+    // year < 2004
+    auto pred_year = ColumnPredicate::Range(schema_.column(0), nullptr, &year_2004);
     ScanSpec spec;
     spec.AddPredicate(pred_year);
     vector<string> results;

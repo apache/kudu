@@ -15,20 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/common/key_util.h"
+
 #include <gtest/gtest.h>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
-#include "kudu/common/row_key-util.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
 
-class RowKeyUtilTest : public KuduTest {
+class KeyUtilTest : public KuduTest {
  public:
-  RowKeyUtilTest()
+  KeyUtilTest()
     : arena_(1024, 4096) {}
 
  protected:
@@ -39,7 +40,7 @@ class RowKeyUtilTest : public KuduTest {
   Arena arena_;
 };
 
-TEST_F(RowKeyUtilTest, TestIncrementNonCompositeKey) {
+TEST_F(KeyUtilTest, TestIncrementNonCompositePrimaryKey) {
   Schema schema({ ColumnSchema("key", INT32),
                   ColumnSchema("other_col", INT32),
                   ColumnSchema("other_col2", STRING, true) },
@@ -49,16 +50,16 @@ TEST_F(RowKeyUtilTest, TestIncrementNonCompositeKey) {
 
   // Normal increment.
   EXPECT_OK(p_row.SetInt32(0, 1000));
-  EXPECT_TRUE(row_key_util::IncrementKey(&row, &arena_));
+  EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("int32 key=1001", p_row.ToString());
 
   // Overflow increment.
   EXPECT_OK(p_row.SetInt32(0, MathLimits<int32_t>::kMax));
-  EXPECT_FALSE(row_key_util::IncrementKey(&row, &arena_));
+  EXPECT_FALSE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("int32 key=-2147483648", p_row.ToString());
 }
 
-TEST_F(RowKeyUtilTest, TestIncrementCompositeKey) {
+TEST_F(KeyUtilTest, TestIncrementCompositePrimaryKey) {
   Schema schema({ ColumnSchema("k1", INT32),
                   ColumnSchema("k2", INT32),
                   ColumnSchema("other_col", STRING, true) },
@@ -70,23 +71,23 @@ TEST_F(RowKeyUtilTest, TestIncrementCompositeKey) {
   // Normal increment.
   EXPECT_OK(p_row.SetInt32(0, 1000));
   EXPECT_OK(p_row.SetInt32(1, 1000));
-  EXPECT_TRUE(row_key_util::IncrementKey(&row, &arena_));
+  EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("int32 k1=1000, int32 k2=1001", p_row.ToString());
 
   // Overflow a later part of the key, carrying into the earlier
   // part..
   EXPECT_OK(p_row.SetInt32(1, MathLimits<int32_t>::kMax));
-  EXPECT_TRUE(row_key_util::IncrementKey(&row, &arena_));
+  EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("int32 k1=1001, int32 k2=-2147483648", p_row.ToString());
 
   // Overflow the whole key.
   EXPECT_OK(p_row.SetInt32(0, MathLimits<int32_t>::kMax));
   EXPECT_OK(p_row.SetInt32(1, MathLimits<int32_t>::kMax));
-  EXPECT_FALSE(row_key_util::IncrementKey(&row, &arena_));
+  EXPECT_FALSE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("int32 k1=-2147483648, int32 k2=-2147483648", p_row.ToString());
 }
 
-TEST_F(RowKeyUtilTest, TestIncrementCompositeIntStringKey) {
+TEST_F(KeyUtilTest, TestIncrementCompositeIntStringPrimaryKey) {
   Schema schema({ ColumnSchema("k1", INT32),
                   ColumnSchema("k2", STRING),
                   ColumnSchema("other_col", STRING, true) },
@@ -98,16 +99,16 @@ TEST_F(RowKeyUtilTest, TestIncrementCompositeIntStringKey) {
   // Normal increment.
   EXPECT_OK(p_row.SetInt32(0, 1000));
   EXPECT_OK(p_row.SetString(1, "hello"));
-  EXPECT_TRUE(row_key_util::IncrementKey(&row, &arena_));
+  EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("int32 k1=1000, string k2=hello\\000", p_row.ToString());
 
   // There's no way to overflow a string key - you can always make it higher
   // by tacking on more \x00.
-  EXPECT_TRUE(row_key_util::IncrementKey(&row, &arena_));
+  EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("int32 k1=1000, string k2=hello\\000\\000", p_row.ToString());
 }
 
-TEST_F(RowKeyUtilTest, TestIncrementCompositeStringIntKey) {
+TEST_F(KeyUtilTest, TestIncrementCompositeStringIntPrimaryKey) {
   Schema schema({ ColumnSchema("k1", STRING),
                   ColumnSchema("k2", INT32),
                   ColumnSchema("other_col", STRING, true) },
@@ -119,17 +120,14 @@ TEST_F(RowKeyUtilTest, TestIncrementCompositeStringIntKey) {
   // Normal increment.
   EXPECT_OK(p_row.SetString(0, "hello"));
   EXPECT_OK(p_row.SetInt32(1, 1000));
-  EXPECT_TRUE(row_key_util::IncrementKey(&row, &arena_));
+  EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("string k1=hello, int32 k2=1001", p_row.ToString());
 
   // Overflowing the int32 portion should tack \x00 onto the
   // string portion.
   EXPECT_OK(p_row.SetInt32(1, MathLimits<int32_t>::kMax));
-  EXPECT_TRUE(row_key_util::IncrementKey(&row, &arena_));
+  EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("string k1=hello\\000, int32 k2=-2147483648", p_row.ToString());
 }
-
-
-
 
 } // namespace kudu

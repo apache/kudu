@@ -19,8 +19,8 @@
 
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/key_encoder.h"
+#include "kudu/common/key_util.h"
 #include "kudu/common/row.h"
-#include "kudu/common/row_key-util.h"
 
 namespace kudu {
 
@@ -95,7 +95,7 @@ Status EncodedKey::IncrementEncodedKey(const Schema& tablet_schema,
 
   // Increment the new key
   ContiguousRow new_row(&tablet_schema, new_row_key);
-  if (!row_key_util::IncrementKey(&new_row, arena)) {
+  if (!key_util::IncrementPrimaryKey(&new_row, arena)) {
     return Status::IllegalState("No lexicographically greater key exists");
   }
 

@@ -112,7 +112,7 @@ TEST(TestMergeIterator, TestMergeEmpty) {
     new MaterializingIterator(
       shared_ptr<ColumnwiseIterator>(new VectorIterator(empty_vec))));
 
-  vector<shared_ptr<RowwiseIterator> > to_merge;
+  vector<shared_ptr<RowwiseIterator>> to_merge;
   to_merge.push_back(iter);
 
   MergeIterator merger(kIntSchema, to_merge);
@@ -126,14 +126,14 @@ class TestIntRangePredicate {
   TestIntRangePredicate(uint32_t lower, uint32_t upper) :
     lower_(lower),
     upper_(upper),
-    pred_(kIntSchema.column(0), &lower_, &upper_) {}
+    pred_(ColumnPredicate::Range(kIntSchema.column(0), &lower_, &upper_)) {}
 
   uint32_t lower_, upper_;
-  ColumnRangePredicate pred_;
+  ColumnPredicate pred_;
 };
 
 void TestMerge(const TestIntRangePredicate &predicate) {
-  vector<shared_ptr<RowwiseIterator> > to_merge;
+  vector<shared_ptr<RowwiseIterator>> to_merge;
   vector<uint32_t> ints;
   vector<uint32_t> all_ints;
   all_ints.reserve(FLAGS_num_rows * FLAGS_num_lists);
@@ -213,7 +213,7 @@ TEST(TestMergeIterator, TestPredicate) {
 // to single columns.
 TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   ScanSpec spec;
-  TestIntRangePredicate pred1(20, 29);
+  TestIntRangePredicate pred1(20, 30);
   spec.AddPredicate(pred1.pred_);
   LOG(INFO) << "Predicate: " << pred1.pred_.ToString();
 
@@ -225,8 +225,7 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   shared_ptr<VectorIterator> colwise(new VectorIterator(ints));
   MaterializingIterator materializing(colwise);
   ASSERT_OK(materializing.Init(&spec));
-  ASSERT_EQ(0, spec.predicates().size())
-    << "Iterator should have pushed down predicate";
+  ASSERT_EQ(0, spec.predicates().size()) << "Iterator should have pushed down predicate";
 
   Arena arena(1024, 1024);
   RowBlock dst(kIntSchema, 100, &arena);
@@ -245,7 +244,7 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
 // input.
 TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
   ScanSpec spec;
-  TestIntRangePredicate pred1(20, 29);
+  TestIntRangePredicate pred1(20, 30);
   spec.AddPredicate(pred1.pred_);
   LOG(INFO) << "Predicate: " << pred1.pred_.ToString();
 
@@ -273,7 +272,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
 
   ASSERT_EQ(0, spec.predicates().size())
     << "Iterator tree should have accepted predicate";
-  ASSERT_EQ(1, pred_eval->predicates_.size())
+  ASSERT_EQ(1, pred_eval->col_idx_predicates_.size())
     << "Predicate should be evaluated by the outer iterator";
 
   Arena arena(1024, 1024);

@@ -19,7 +19,7 @@
 
 #include <utility>
 
-#include "kudu/common/row_key-util.h"
+#include "kudu/common/key_util.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
@@ -65,7 +65,7 @@ boost::optional<ColumnPredicate> ColumnPredicate::InclusiveRange(ColumnSchema co
     size_t size = column.type_info()->size();
     void*  buf = CHECK_NOTNULL(arena->AllocateBytes(size));
     memcpy(buf, upper, size);
-    if (!row_key_util::IncrementCell(column, buf, arena)) {
+    if (!key_util::IncrementCell(column, buf, arena)) {
       if (lower == nullptr) {
         return boost::none;
       } else {

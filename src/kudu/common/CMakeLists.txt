@@ -46,12 +46,11 @@ set(COMMON_SRCS
   id_mapping.cc
   iterator_stats.cc
   key_encoder.cc
+  key_util.cc
   partial_row.cc
   partition.cc
-  predicate_encoder.cc
   rowblock.cc
   row_changelist.cc
-  row_key-util.cc
   row_operations.cc
   scan_predicate.cc
   scan_spec.cc
@@ -61,9 +60,9 @@ set(COMMON_SRCS
   wire_protocol.cc)
 
 # Workaround for clang bug https://llvm.org/bugs/show_bug.cgi?id=23757
-# in which it incorrectly optimizes row_key-util.cc and causes incorrect results.
+# in which it incorrectly optimizes key_util.cc and causes incorrect results.
 if ("${COMPILER_FAMILY}" STREQUAL "clang")
-  set_source_files_properties(row_key-util.cc PROPERTIES COMPILE_FLAGS -fwrapv)
+  set_source_files_properties(key_util.cc PROPERTIES COMPILE_FLAGS -fwrapv)
 endif()
 
 set(COMMON_LIBS
@@ -85,10 +84,10 @@ ADD_KUDU_TEST(id_mapping-test)
 ADD_KUDU_TEST(partial_row-test)
 ADD_KUDU_TEST(partition-test)
 ADD_KUDU_TEST(predicate-test)
-ADD_KUDU_TEST(predicate_encoder-test)
 ADD_KUDU_TEST(row_changelist-test)
-ADD_KUDU_TEST(row_key-util-test)
+ADD_KUDU_TEST(key_util-test)
 ADD_KUDU_TEST(row_operations-test)
+ADD_KUDU_TEST(scan_spec-test)
 ADD_KUDU_TEST(schema-test)
 ADD_KUDU_TEST(types-test)
 ADD_KUDU_TEST(wire_protocol-test)

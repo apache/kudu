@@ -59,7 +59,7 @@ public class ColumnRangePredicate {
 
   private void setUpperBoundInternal(byte[] value) {
     this.upperBound = value;
-    pb.setUpperBound(ZeroCopyLiteralByteString.wrap(this.upperBound));
+    pb.setInclusiveUpperBound(ZeroCopyLiteralByteString.wrap(this.upperBound));
   }
 
   /**

@@ -168,6 +168,8 @@ message ListTabletsResponsePB {
   repeated StatusAndSchemaPB status_and_schema = 2;
 }
 
+// DEPRECATED: Use ColumnPredicatePB
+//
 // A range predicate on one of the columns in the underlying
 // data.
 message ColumnRangePredicatePB {
@@ -182,8 +184,10 @@ message ColumnRangePredicatePB {
   // NULL is defined to neither be greater than or less than other values
   // for the comparison operator. We will eventually add a special
   // predicate type for null-ness.
+  //
+  // Both bounds are inclusive.
   optional bytes lower_bound = 2;
-  optional bytes upper_bound = 3;
+  optional bytes inclusive_upper_bound = 3;
 }
 
 // List of predicates used by the Java client. Will rapidly evolve into something more reusable
@@ -201,8 +205,13 @@ message NewScanRequestPB {
   // itself after reaching this number of result rows.
   optional uint64 limit = 2;
 
+  // DEPRECATED: use column_predicates field.
+  //
   // Any column range predicates to enforce.
-  repeated ColumnRangePredicatePB range_predicates = 3;
+  repeated ColumnRangePredicatePB DEPRECATED_range_predicates = 3;
+
+  // Column predicates to enforce.
+  repeated ColumnPredicatePB column_predicates = 13;
 
   // Encoded primary key to begin scanning at (inclusive).
   optional bytes start_primary_key = 8;
@@ -329,4 +338,9 @@ message ScannerKeepAliveRequestPB {
 message ScannerKeepAliveResponsePB {
   // The error, if an error occurred with this request.
   optional TabletServerErrorPB error = 1;
+}
+
+enum TabletServerFeatures {
+  UNKNOWN_FEATURE = 0;
+  COLUMN_PREDICATES = 1;
 }

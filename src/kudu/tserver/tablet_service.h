@@ -71,6 +71,8 @@ class TabletServiceImpl : public TabletServerServiceIf {
                         ChecksumResponsePB* resp,
                         rpc::RpcContext* context) OVERRIDE;
 
+  bool SupportsFeature(uint32_t feature) const override;
+
   virtual void Shutdown() OVERRIDE;
 
  private:

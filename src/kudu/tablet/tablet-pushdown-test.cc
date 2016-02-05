@@ -22,8 +22,10 @@
 #include <vector>
 
 #include "kudu/common/schema.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet-test-base.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/util/auto_release_pool.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -81,6 +83,10 @@ class TabletPushdownTest : public KuduTabletTest,
   // the same set of rows. Run the scan and verify that the
   // expected rows are returned.
   void TestScanYieldsExpectedResults(ScanSpec spec) {
+    Arena arena(128, 1028);
+    AutoReleasePool pool;
+    spec.OptimizeScan(schema_, &arena, &pool, true);
+
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
     ASSERT_OK(iter->Init(&spec));
@@ -144,6 +150,10 @@ class TabletPushdownTest : public KuduTabletTest,
   // returns the expected number of rows. The rows themselves
   // should be empty.
   void TestCountOnlyScanYieldsExpectedResults(ScanSpec spec) {
+    Arena arena(128, 1028);
+    AutoReleasePool pool;
+    spec.OptimizeScan(schema_, &arena, &pool, true);
+
     Schema empty_schema(std::vector<ColumnSchema>(), 0);
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(empty_schema, &iter));
@@ -164,8 +174,8 @@ class TabletPushdownTest : public KuduTabletTest,
 TEST_P(TabletPushdownTest, TestPushdownIntKeyRange) {
   ScanSpec spec;
   int32_t lower = 200;
-  int32_t upper = 210;
-  ColumnRangePredicate pred0(schema_.column(0), &lower, &upper);
+  int32_t upper = 211;
+  auto pred0 = ColumnPredicate::Range(schema_.column(0), &lower, &upper);
   spec.AddPredicate(pred0);
 
   TestScanYieldsExpectedResults(spec);
@@ -177,8 +187,8 @@ TEST_P(TabletPushdownTest, TestPushdownIntValueRange) {
 
   ScanSpec spec;
   int32_t lower = 2000;
-  int32_t upper = 2100;
-  ColumnRangePredicate pred1(schema_.column(1), &lower, &upper);
+  int32_t upper = 2101;
+  auto pred1 = ColumnPredicate::Range(schema_.column(1), &lower, &upper);
   spec.AddPredicate(pred1);
 
   TestScanYieldsExpectedResults(spec);

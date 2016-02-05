@@ -252,11 +252,11 @@ class TestRowSet : public KuduRowSetTest {
   void VerifyRandomRead(const DiskRowSet& rs, const Slice& row_key,
                         const string& expected_val) {
     Arena arena(256, 1024);
+    AutoReleasePool pool;
     ScanSpec spec;
-    ColumnRangePredicate pred(schema_.column(0), &row_key, &row_key);
+    auto pred = ColumnPredicate::Equality(schema_.column(0), &row_key);
     spec.AddPredicate(pred);
-    RangePredicateEncoder enc(&schema_, &arena);
-    enc.EncodeRangePredicates(&spec, true);
+    spec.OptimizeScan(schema_, &arena, &pool, true);
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter;

@@ -187,7 +187,7 @@ class TestRandomAccess : public KuduTabletTest {
     const Schema& schema = this->client_schema_;
     gscoped_ptr<RowwiseIterator> iter;
     CHECK_OK(this->tablet()->NewRowIterator(schema, &iter));
-    ColumnRangePredicate pred_one(schema.column(0), &key, &key);
+    auto pred_one = ColumnPredicate::Equality(schema.column(0), &key);
     spec.AddPredicate(pred_one);
     CHECK_OK(iter->Init(&spec));
 

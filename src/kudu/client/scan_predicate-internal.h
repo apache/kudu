@@ -17,10 +17,12 @@
 #ifndef KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H
 #define KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H
 
+#include "kudu/client/scan_predicate.h"
 #include "kudu/client/value.h"
 #include "kudu/client/value-internal.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -30,7 +32,7 @@ class KuduPredicate::Data {
  public:
   Data();
   virtual ~Data();
-  virtual Status AddToScanSpec(ScanSpec* spec) = 0;
+  virtual Status AddToScanSpec(ScanSpec* spec, Arena* arena) = 0;
   virtual Data* Clone() const = 0;
 };
 
@@ -50,11 +52,11 @@ class ErrorPredicateData : public KuduPredicate::Data {
   virtual ~ErrorPredicateData() {
   }
 
-  virtual Status AddToScanSpec(ScanSpec* spec) OVERRIDE {
+  Status AddToScanSpec(ScanSpec* spec, Arena* arena) override {
     return status_;
   }
 
-  virtual ErrorPredicateData* Clone() const OVERRIDE {
+  ErrorPredicateData* Clone() const override {
     return new ErrorPredicateData(status_);
   }
 
@@ -72,9 +74,9 @@ class ComparisonPredicateData : public KuduPredicate::Data {
                           KuduValue* value);
   virtual ~ComparisonPredicateData();
 
-  virtual Status AddToScanSpec(ScanSpec* spec) OVERRIDE;
+  Status AddToScanSpec(ScanSpec* spec, Arena* arena) override;
 
-  virtual ComparisonPredicateData* Clone() const OVERRIDE {
+  ComparisonPredicateData* Clone() const override {
       return new ComparisonPredicateData(col_, op_, val_->Clone());
   }
 
@@ -84,9 +86,6 @@ class ComparisonPredicateData : public KuduPredicate::Data {
   ColumnSchema col_;
   KuduPredicate::ComparisonOp op_;
   gscoped_ptr<KuduValue> val_;
-
-  // Owned.
-  ColumnRangePredicate* pred_;
 };
 
 } // namespace client

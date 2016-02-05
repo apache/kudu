@@ -20,7 +20,6 @@
 #include <boost/optional.hpp>
 #include <string>
 
-#include "kudu/common/row_key-util.h"
 #include "kudu/common/schema.h"
 
 namespace kudu {

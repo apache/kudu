@@ -1393,11 +1393,11 @@ TEST_F(TabletServerTest, TestScanWithStringPredicates) {
   ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
 
   // Set up a range predicate: "hello 50" < string_val <= "hello 59"
-  ColumnRangePredicatePB* pred = scan->add_range_predicates();
+  ColumnRangePredicatePB* pred = scan->add_deprecated_range_predicates();
   pred->mutable_column()->CopyFrom(scan->projected_columns(2));
 
   pred->set_lower_bound("hello 50");
-  pred->set_upper_bound("hello 59");
+  pred->set_inclusive_upper_bound("hello 59");
 
   // Send the call
   {
@@ -1434,15 +1434,15 @@ TEST_F(TabletServerTest, TestScanWithPredicates) {
   ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
 
   // Set up a range predicate: 51 <= key <= 100
-  ColumnRangePredicatePB* pred = scan->add_range_predicates();
+  ColumnRangePredicatePB* pred = scan->add_deprecated_range_predicates();
   pred->mutable_column()->CopyFrom(scan->projected_columns(0));
 
   int32_t lower_bound_int = 51;
   int32_t upper_bound_int = 100;
   pred->mutable_lower_bound()->append(reinterpret_cast<char*>(&lower_bound_int),
                                       sizeof(lower_bound_int));
-  pred->mutable_upper_bound()->append(reinterpret_cast<char*>(&upper_bound_int),
-                                      sizeof(upper_bound_int));
+  pred->mutable_inclusive_upper_bound()->append(reinterpret_cast<char*>(&upper_bound_int),
+                                                sizeof(upper_bound_int));
 
   // Send the call
   {

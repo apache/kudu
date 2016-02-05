@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "kudu/common/iterator.h"
+#include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.h"
@@ -35,13 +36,13 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/server/hybrid_clock.h"
-#include "kudu/tablet/tablet_bootstrap.h"
-#include "kudu/tserver/remote_bootstrap_service.h"
 #include "kudu/tablet/metadata.pb.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metrics.h"
+#include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
+#include "kudu/tserver/remote_bootstrap_service.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
@@ -1153,6 +1154,10 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
   context->RespondSuccess();
 }
 
+bool TabletServiceImpl::SupportsFeature(uint32_t feature) const {
+  return feature == TabletServerFeatures::COLUMN_PREDICATES;
+}
+
 void TabletServiceImpl::Shutdown() {
 }
 
@@ -1243,15 +1248,72 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
 
   unordered_set<string> missing_col_names;
 
-  // First the column range predicates.
-  for (const ColumnRangePredicatePB& pred_pb : scan_pb.range_predicates()) {
-    if (!pred_pb.has_lower_bound() && !pred_pb.has_upper_bound()) {
+  // First the column predicates.
+  for (const ColumnPredicatePB& pred_pb : scan_pb.column_predicates()) {
+    if (!pred_pb.has_column()) {
+      return Status::InvalidArgument("Column predicate must include a column",
+                                     pred_pb.DebugString());
+    }
+
+    const string& column = pred_pb.column();
+    int32_t idx = tablet_schema.find_column(column);
+    if (idx == Schema::kColumnNotFound) {
+      return Status::InvalidArgument("Unknown column in predicate", pred_pb.DebugString());
+    }
+    const ColumnSchema& col = tablet_schema.column(idx);
+
+    if (projection.find_column(column) == Schema::kColumnNotFound &&
+        !ContainsKey(missing_col_names, column)) {
+      InsertOrDie(&missing_col_names, column);
+      missing_cols->push_back(col);
+    }
+
+    switch (pred_pb.predicate_case()) {
+      case ColumnPredicatePB::kRange: {
+        const auto& range = pred_pb.range();
+        if (!range.has_lower() && !range.has_upper()) {
+          return Status::InvalidArgument("Invalid range predicate on column: no bounds",
+                                         col.name());
+        }
+
+        const void* lower = nullptr;
+        const void* upper = nullptr;
+        if (range.has_lower()) {
+          RETURN_NOT_OK(ExtractPredicateValue(col, range.lower(), scanner->arena(), &lower));
+        }
+        if (range.has_upper()) {
+          RETURN_NOT_OK(ExtractPredicateValue(col, range.upper(), scanner->arena(), &upper));
+        }
+
+        ret->AddPredicate(ColumnPredicate::Range(col, lower, upper));
+        break;
+      };
+      case ColumnPredicatePB::kEquality: {
+        const auto& equality = pred_pb.equality();
+        if (!equality.has_value()) {
+          return Status::InvalidArgument("Invalid equality predicate on column: no value",
+                                         col.name());
+        }
+        const void* value = nullptr;
+        RETURN_NOT_OK(ExtractPredicateValue(col, equality.value(), scanner->arena(), &value));
+        ret->AddPredicate(ColumnPredicate::Equality(col, value));
+        break;
+      };
+      default: return Status::InvalidArgument("Unknown predicate type for column", col.name());
+    }
+  }
+
+  // Then the column range predicates.
+  // TODO: remove this once all clients have moved to ColumnPredicatePB and
+  // backwards compatibility can be broken.
+  for (const ColumnRangePredicatePB& pred_pb : scan_pb.deprecated_range_predicates()) {
+    if (!pred_pb.has_lower_bound() && !pred_pb.has_inclusive_upper_bound()) {
       return Status::InvalidArgument(
         string("Invalid predicate ") + pred_pb.ShortDebugString() +
         ": has no lower or upper bound.");
     }
     ColumnSchema col(ColumnSchemaFromPB(pred_pb.column()));
-    if (projection.find_column(col.name()) == -1 &&
+    if (projection.find_column(col.name()) == Schema::kColumnNotFound &&
         !ContainsKey(missing_col_names, col.name())) {
       missing_cols->push_back(col);
       InsertOrDie(&missing_col_names, col.name());
@@ -1265,24 +1327,23 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
                                           scanner->arena(),
                                           &val));
       lower_bound = val;
-    } else {
-      lower_bound = nullptr;
     }
-    if (pred_pb.has_upper_bound()) {
+    if (pred_pb.has_inclusive_upper_bound()) {
       const void* val;
-      RETURN_NOT_OK(ExtractPredicateValue(col, pred_pb.upper_bound(),
+      RETURN_NOT_OK(ExtractPredicateValue(col, pred_pb.inclusive_upper_bound(),
                                           scanner->arena(),
                                           &val));
       upper_bound = val;
-    } else {
-      upper_bound = nullptr;
     }
 
-    ColumnRangePredicate pred(col, lower_bound, upper_bound);
-    if (VLOG_IS_ON(3)) {
-      VLOG(3) << "Parsed predicate " << pred.ToString() << " from " << scan_pb.ShortDebugString();
+    auto pred = ColumnPredicate::InclusiveRange(col, lower_bound, upper_bound, scanner->arena());
+    if (pred) {
+      if (VLOG_IS_ON(3)) {
+        VLOG(3) << "Parsed predicate " << pred->ToString()
+                << " from " << scan_pb.ShortDebugString();
+      }
+      ret->AddPredicate(*pred);
     }
-    ret->AddPredicate(pred);
   }
 
   // When doing an ordered scan, we need to include the key columns to be able to encode
@@ -1365,6 +1426,16 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   if (PREDICT_FALSE(!s.ok())) {
     *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
     return s;
+  }
+
+  VLOG(3) << "Before optimizing scan spec: " << spec->ToString(tablet_schema);
+  spec->OptimizeScan(tablet_schema, scanner->arena(), scanner->autorelease_pool(), true);
+  VLOG(3) << "After optimizing scan spec: " << spec->ToString(tablet_schema);
+
+  if (spec->CanShortCircuit()) {
+    VLOG(1) << "short-circuiting without creating a server-side scanner.";
+    *has_more_results = false;
+    return Status::OK();
   }
 
   // Store the original projection.

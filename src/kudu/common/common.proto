@@ -268,3 +268,39 @@ message PartitionPB {
   // The encoded end partition key (exclusive).
   optional bytes partition_key_end = 3;
 }
+
+// A predicate that can be applied on a Kudu column.
+message ColumnPredicatePB {
+  // The predicate column name.
+  optional string column = 1;
+
+  message Range {
+
+    // Bounds should be encoded as follows:
+    // - STRING/BINARY values: simply the exact string value for the bound.
+    // - other type: the canonical x86 in-memory representation -- eg for
+    //   uint32s, a little-endian value.
+    //
+    // Note that this predicate type should not be used for NULL data --
+    // NULL is defined to neither be greater than or less than other values
+    // for the comparison operator. We will eventually add a special
+    // predicate type for null-ness.
+
+    // The inclusive lower bound.
+    optional bytes lower = 1;
+
+    // The exclusive upper bound.
+    optional bytes upper = 2;
+  }
+
+  message Equality {
+    // The inclusive lower bound. See comment in Range for notes on the
+    // encoding.
+    optional bytes value = 1;
+  }
+
+  oneof predicate {
+    Range range = 2;
+    Equality equality = 3;
+  }
+}
