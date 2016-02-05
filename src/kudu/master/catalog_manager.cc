@@ -2476,9 +2476,9 @@ void CatalogManager::SendAddServerRequest(const scoped_refptr<TabletInfo>& table
   tablet->table()->AddTask(task);
   WARN_NOT_OK(task->Run(), "Failed to send new AddServer request");
 
-  // Need to print this after Run() because that's where it picks the TS which description()
-  // needs.
-  LOG(INFO) << "Started AddServer task: " << task->description();
+  // We can't access 'task' here because it may delete itself inside Run() in the
+  // case that the tablet has no known leader.
+  LOG(INFO) << "Started AddServer task for tablet " << tablet->tablet_id();
 }
 
 void CatalogManager::ExtractTabletsToProcess(
