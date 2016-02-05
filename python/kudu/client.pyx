@@ -784,11 +784,10 @@ cdef class Row:
         RowBatch parent
 
         # This object is owned by the parent RowBatch
-        KuduRowResult* row
+        KuduRowPtr row
 
     def __cinit__(self, batch):
         self.parent = batch
-        self.row = NULL
 
     def __dealloc__(self):
         pass
@@ -801,7 +800,7 @@ cdef class Row:
             int i, k
             tuple tup
 
-        k = self.row.row_schema().num_columns()
+        k = self.parent.batch.projection_schema().num_columns()
         tup = cpython.PyTuple_New(k)
         for i in range(k):
             val = None
@@ -859,7 +858,7 @@ cdef class Row:
     cdef inline get_slot(self, int i):
         cdef:
             Status s
-            DataType t = self.row.row_schema().Column(i).type()
+            DataType t = self.parent.batch.projection_schema().Column(i).type()
 
         if t == KUDU_BOOL:
             return self.get_bool(i)
@@ -888,12 +887,12 @@ cdef class RowBatch:
     """
     Class holding a batch of rows from a Scanner
     """
-    # This class owns the KuduRowResult data
+    # This class owns the KuduScanBatch data
     cdef:
-        vector[KuduRowResult] rows
+        KuduScanBatch batch
 
     def __len__(self):
-        return self.rows.size()
+        return self.batch.NumRows()
 
     def __getitem__(self, i):
         return self.get_row(i).as_tuple()
@@ -910,7 +909,7 @@ cdef class RowBatch:
         To simplify testing for the moment.
         """
         cdef list tuples = []
-        for i in range(self.rows.size()):
+        for i in range(self.batch.NumRows()):
             tuples.append(self.get_row(i).as_tuple())
         return tuples
 
@@ -921,12 +920,8 @@ cdef class RowBatch:
         # on to a reference internally so that if the RowBatch goes out of
         # scope we won't end up with orphaned Row objects. This isn't the best,
         # but an intermediate solution until we can do something better..
-        #
-        # One alternative is to copy the KuduRowResult into the Row, but that
-        # doesn't feel right.
         cdef Row row = Row(self)
-        row.row = &self.rows[i]
-
+        row.row = self.batch.Row(i)
         return row
 
 
@@ -1110,7 +1105,7 @@ cdef class Scanner:
             raise StopIteration
 
         cdef RowBatch batch = RowBatch()
-        check_status(self.scanner.NextBatch(&batch.rows))
+        check_status(self.scanner.NextBatch(&batch.batch))
         return batch
 
 

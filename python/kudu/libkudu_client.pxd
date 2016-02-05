@@ -190,10 +190,14 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
 
         Status Build(KuduSchema* schema)
 
+cdef extern from "kudu/client/scan_batch.h" namespace "kudu::client" nogil:
 
-cdef extern from "kudu/client/row_result.h" namespace "kudu::client" nogil:
+    cdef cppclass KuduScanBatch:
+        int NumRows() const;
+        KuduRowPtr Row(int idx) const;
+        const KuduSchema* projection_schema() const;
 
-    cdef cppclass KuduRowResult:
+    cdef cppclass KuduRowPtr " kudu::client::KuduScanBatch::RowPtr":
         c_bool IsNull(Slice& col_name)
         c_bool IsNull(int col_idx)
 
@@ -230,9 +234,7 @@ cdef extern from "kudu/client/row_result.h" namespace "kudu::client" nogil:
         Status GetBinary(int col_idx, Slice* val)
 
         const void* cell(int col_idx)
-        const KuduSchema* row_schema();
         string ToString()
-
 
 cdef extern from "kudu/util/slice.h" namespace "kudu" nogil:
 
@@ -585,7 +587,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         void Close()
 
         c_bool HasMoreRows()
-        Status NextBatch(vector[KuduRowResult]* rows)
+        Status NextBatch(KuduScanBatch* batch)
         Status SetBatchSizeBytes(uint32_t batch_size)
 
         # Pending definition of ReplicaSelection enum
