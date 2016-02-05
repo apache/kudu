@@ -20,6 +20,7 @@
 
 #include <glog/logging.h>
 
+#include <cmath>
 #include <stdint.h>
 #include <string>
 
@@ -54,6 +55,8 @@ class TypeInfo {
   const size_t size() const { return size_; }
   void AppendDebugStringForValue(const void *ptr, string *str) const;
   int Compare(const void *lhs, const void *rhs) const;
+  // Returns true if increment(a) is equal to b.
+  bool AreConsecutive(const void* a, const void* b) const;
   void CopyMinValue(void* dst) const {
     memcpy(dst, min_value_, size_);
   }
@@ -73,6 +76,9 @@ class TypeInfo {
 
   typedef int (*CompareFunc)(const void *, const void *);
   const CompareFunc compare_func_;
+
+  typedef bool (*AreConsecutiveFunc)(const void*, const void*);
+  const AreConsecutiveFunc are_consecutive_func_;
 };
 
 template<DataType Type> struct DataTypeTraits {};
@@ -91,6 +97,23 @@ static int GenericCompare(const void *lhs, const void *rhs) {
   }
 }
 
+template<DataType Type>
+static int AreIntegersConsecutive(const void* a, const void* b) {
+  typedef typename DataTypeTraits<Type>::cpp_type CppType;
+  CppType a_int = *reinterpret_cast<const CppType*>(a);
+  CppType b_int = *reinterpret_cast<const CppType*>(b);
+  // Avoid overflow by checking relative position first.
+  return a_int < b_int && a_int + 1 == b_int;
+}
+
+template<DataType Type>
+static int AreFloatsConsecutive(const void* a, const void* b) {
+  typedef typename DataTypeTraits<Type>::cpp_type CppType;
+  CppType a_float = *reinterpret_cast<const CppType*>(a);
+  CppType b_float = *reinterpret_cast<const CppType*>(b);
+  return a_float < b_float && std::nextafter(a_float, b_float) == b_float;
+}
+
 template<>
 struct DataTypeTraits<UINT8> {
   static const DataType physical_type = UINT8;
@@ -103,6 +126,9 @@ struct DataTypeTraits<UINT8> {
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT8>(lhs, rhs);
+  }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreIntegersConsecutive<UINT8>(a, b);
   }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
@@ -122,6 +148,9 @@ struct DataTypeTraits<INT8> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<INT8>(lhs, rhs);
   }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreIntegersConsecutive<INT8>(a, b);
+  }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
   }
@@ -139,6 +168,9 @@ struct DataTypeTraits<UINT16> {
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT16>(lhs, rhs);
+  }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreIntegersConsecutive<UINT16>(a, b);
   }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
@@ -158,6 +190,9 @@ struct DataTypeTraits<INT16> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<INT16>(lhs, rhs);
   }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreIntegersConsecutive<INT16>(a, b);
+  }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
   }
@@ -175,6 +210,9 @@ struct DataTypeTraits<UINT32> {
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT32>(lhs, rhs);
+  }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreIntegersConsecutive<UINT32>(a, b);
   }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
@@ -194,6 +232,9 @@ struct DataTypeTraits<INT32> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<INT32>(lhs, rhs);
   }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreIntegersConsecutive<INT32>(a, b);
+  }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
   }
@@ -211,6 +252,9 @@ struct DataTypeTraits<UINT64> {
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT64>(lhs, rhs);
+  }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreIntegersConsecutive<UINT64>(a, b);
   }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
@@ -230,6 +274,9 @@ struct DataTypeTraits<INT64> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<INT64>(lhs, rhs);
   }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreIntegersConsecutive<INT64>(a, b);
+  }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
   }
@@ -247,6 +294,9 @@ struct DataTypeTraits<FLOAT> {
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<FLOAT>(lhs, rhs);
+  }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreFloatsConsecutive<FLOAT>(a, b);
   }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
@@ -266,6 +316,9 @@ struct DataTypeTraits<DOUBLE> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<DOUBLE>(lhs, rhs);
   }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreFloatsConsecutive<DOUBLE>(a, b);
+  }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
   }
@@ -282,11 +335,23 @@ struct DataTypeTraits<BINARY> {
     const Slice *s = reinterpret_cast<const Slice *>(val);
     str->append(strings::CHexEscape(s->ToString()));
   }
-
   static int Compare(const void *lhs, const void *rhs) {
     const Slice *lhs_slice = reinterpret_cast<const Slice *>(lhs);
     const Slice *rhs_slice = reinterpret_cast<const Slice *>(rhs);
     return lhs_slice->compare(*rhs_slice);
+  }
+  static bool AreConsecutive(const void* a, const void* b) {
+    const Slice *a_slice = reinterpret_cast<const Slice *>(a);
+    const Slice *b_slice = reinterpret_cast<const Slice *>(b);
+    size_t a_size = a_slice->size();
+    size_t b_size = b_slice->size();
+
+    // Strings are consecutive if the larger is equal to the lesser with an
+    // additional null byte.
+
+    return a_size + 1 == b_size
+        && (*b_slice)[a_size] == 0
+        && a_slice->compare(Slice(b_slice->data(), a_size)) == 0;
   }
   static const cpp_type* min_value() {
     static Slice s("");
@@ -304,9 +369,11 @@ struct DataTypeTraits<BOOL> {
   static void AppendDebugStringForValue(const void* val, string* str) {
     str->append(*reinterpret_cast<const bool *>(val) ? "true" : "false");
   }
-
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<BOOL>(lhs, rhs);
+  }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreIntegersConsecutive<BOOL>(a, b);
   }
   static const cpp_type* min_value() {
     static bool b = false;
@@ -327,6 +394,10 @@ struct DerivedTypeTraits {
 
   static int Compare(const void *lhs, const void *rhs) {
     return DataTypeTraits<PhysicalType>::Compare(lhs, rhs);
+  }
+
+  static bool AreConsecutive(const void* a, const void* b) {
+    return DataTypeTraits<PhysicalType>::AreConsecutive(a, b);
   }
 
   static const cpp_type* min_value() {
