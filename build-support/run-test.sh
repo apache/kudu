@@ -114,11 +114,6 @@ TSAN_OPTIONS="$TSAN_OPTIONS history_size=7"
 TSAN_OPTIONS="$TSAN_OPTIONS external_symbolizer_path=$ASAN_SYMBOLIZER_PATH"
 export TSAN_OPTIONS
 
-# Enable leak detection even under LLVM 3.4, where it was disabled by default.
-# This flag only takes effect when running an ASAN build.
-ASAN_OPTIONS="$ASAN_OPTIONS detect_leaks=1"
-export ASAN_OPTIONS
-
 # Set up suppressions for LeakSanitizer
 LSAN_OPTIONS="$LSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/lsan-suppressions.txt"
 export LSAN_OPTIONS

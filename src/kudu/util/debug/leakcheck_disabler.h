@@ -34,7 +34,9 @@ class ScopedLeakCheckDisabler {
 
 #if defined(__has_feature)
 #  if __has_feature(address_sanitizer)
+#    if defined(__linux__)
   ScopedLSANDisabler lsan_disabler;
+#    endif
 #  endif
 #endif
 
