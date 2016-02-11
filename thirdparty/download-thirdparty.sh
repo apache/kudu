@@ -48,21 +48,49 @@ fetch_and_expand() {
     exit 1
   fi
 
-  echo "Fetching $FILENAME"
-  curl -O "${CLOUDFRONT_URL_PREFIX}/${FILENAME}"
+  FULL_URL="${CLOUDFRONT_URL_PREFIX}/${FILENAME}"
+  SUCCESS=0
+  # Loop in case we encounter a corrupted archive and we need to re-download it.
+  for attempt in 1 2; do
+    if [ -r "$FILENAME" ]; then
+      echo "Archive $FILENAME already exists. Not re-downloading archive."
+    else
+      echo "Fetching $FILENAME from $FULL_URL"
+      curl -O "$FULL_URL"
+    fi
 
-  echo "Unpacking $FILENAME"
-  if echo "$FILENAME" | egrep -q '\.zip$'; then
-    unzip -q $FILENAME
-  elif echo "$FILENAME" | egrep -q '(\.tar\.gz|\.tgz)$'; then
-    tar xf $FILENAME
-  else
-    echo "Error: unknown file format: $FILENAME"
-    exit 1
+    echo "Unpacking $FILENAME"
+    if echo "$FILENAME" | egrep -q '\.zip$'; then
+      if ! unzip -q "$FILENAME"; then
+        echo "Error unzipping $FILENAME, removing file"
+        rm "$FILENAME"
+        continue
+      fi
+    elif echo "$FILENAME" | egrep -q '(\.tar\.gz|\.tgz)$'; then
+      if ! tar xf "$FILENAME"; then
+        echo "Error untarring $FILENAME, removing file"
+        rm "$FILENAME"
+        continue
+      fi
+    else
+      echo "Error: unknown file format: $FILENAME"
+      exit 1
+    fi
+
+    SUCCESS=1
+    break
+  done
+
+  if [ $SUCCESS -ne 1 ]; then
+    echo "Error: failed to fetch and unpack $FILENAME"
   fi
 
-  echo "Removing $FILENAME"
-  rm $FILENAME
+  # Allow for not removing previously-downloaded artifacts.
+  # Useful on a low-bandwidth connection.
+  if [ -z "$NO_REMOVE_THIRDPARTY_ARCHIVES" ]; then
+    echo "Removing $FILENAME"
+    rm $FILENAME
+  fi
   echo
 }
 
