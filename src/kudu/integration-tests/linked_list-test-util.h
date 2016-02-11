@@ -177,11 +177,12 @@ class LinkedListChainGenerator {
   // 'chain_idx' is a unique ID for this chain. Chains with different indexes
   // will always generate distinct sets of keys (thus avoiding the possibility of
   // a collision even in a longer run).
-  explicit LinkedListChainGenerator(uint8_t chain_idx)
+  explicit LinkedListChainGenerator(int chain_idx)
     : chain_idx_(chain_idx),
       rand_(chain_idx * 0xDEADBEEF),
       prev_key_(0) {
-    CHECK_LT(chain_idx, 256);
+    CHECK_GE(chain_idx, 0);
+    CHECK_LT(chain_idx, 65536);
   }
 
   ~LinkedListChainGenerator() {
@@ -193,9 +194,9 @@ class LinkedListChainGenerator {
   }
 
   Status GenerateNextInsert(client::KuduTable* table, client::KuduSession* session) {
-    // Encode the chain index in the lowest 8 bits so that different chains never
+    // Encode the chain index in the lowest 16 bits so that different chains never
     // intersect.
-    int64_t this_key = (Rand64() << 8) | chain_idx_;
+    int64_t this_key = (Rand64() << 16) | chain_idx_;
     int64_t ts = GetCurrentTimeMicros();
 
     gscoped_ptr<client::KuduInsert> insert(table->NewInsert());
@@ -214,7 +215,7 @@ class LinkedListChainGenerator {
   }
 
  private:
-  const uint8_t chain_idx_;
+  const int chain_idx_;
 
   // This is a linear congruential random number generator, so it won't repeat until
   // it has exhausted its period (which is quite large)
