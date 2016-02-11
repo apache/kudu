@@ -154,6 +154,19 @@ fi
 EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
 EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
 
+save_env
+
+# Specifying -Wl,-rpath has different default behavior on GNU binutils ld vs.
+# the GNU gold linker. ld sets RPATH (due to defaulting to --disable-new-dtags)
+# and gold sets RUNPATH (due to defaulting to --enable-new-dtags). At the time
+# of this writing, contrary to the way RPATH is treated, when RUNPATH is
+# specified on a binary, glibc doesn't respect it for transitive (non-direct)
+# library dependencies (see https://sourceware.org/bugzilla/show_bug.cgi?id=13945).
+# So we must set RUNPATH for all deps-of-deps on the dep libraries themselves.
+# This applies both here and the locations elsewhere in this script where we
+# add $PREFIX/lib to -Wl,-rpath.
+EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
+
 if [ -n "$OS_LINUX" ] && [ -n "$F_ALL" -o -n "$F_LIBUNWIND" ]; then
   build_libunwind
 fi
@@ -204,9 +217,14 @@ if [ -n "$OS_LINUX" ] && [ -n "$F_ALL" -o -n "$F_NVML" ]; then
   build_nvml
 fi
 
+restore_env
+
 ### Build C++ dependencies
 
 PREFIX=$PREFIX_DEPS
+
+save_env
+EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
 
 if [ -n "$F_ALL" -o -n "$F_GFLAGS" ]; then
   build_gflags
@@ -235,6 +253,8 @@ fi
 if [ -n "$F_ALL" -o -n "$F_CRCUTIL" ]; then
   build_crcutil
 fi
+
+restore_env
 
 ## Build C++ dependencies with TSAN instrumentation
 
@@ -298,7 +318,7 @@ if [ -n "$F_TSAN" ]; then
   EXTRA_CXXFLAGS="-isystem $PREFIX_LIBSTDCXX_TSAN/include/c++/$GCC_VERSION/backward $EXTRA_CXXFLAGS"
   EXTRA_CXXFLAGS="-isystem $PREFIX_LIBSTDCXX_TSAN/include/c++/$GCC_VERSION $EXTRA_CXXFLAGS"
   EXTRA_CXXFLAGS="-L$PREFIX_LIBSTDCXX_TSAN/lib $EXTRA_CXXFLAGS"
-  EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX_LIBSTDCXX_TSAN/lib $EXTRA_LDFLAGS"
+  EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX_LIBSTDCXX_TSAN/lib,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
 
   if [ -n "$F_ALL" -o -n "$F_PROTOBUF" ]; then
     build_protobuf
@@ -311,7 +331,7 @@ if [ -n "$F_TSAN" ]; then
   EXTRA_CXXFLAGS="-isystem $PREFIX_LIBSTDCXX/include/c++/$GCC_VERSION/backward $EXTRA_CXXFLAGS"
   EXTRA_CXXFLAGS="-isystem $PREFIX_LIBSTDCXX/include/c++/$GCC_VERSION $EXTRA_CXXFLAGS"
   EXTRA_CXXFLAGS="-L$PREFIX_LIBSTDCXX/lib $EXTRA_CXXFLAGS"
-  EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX_LIBSTDCXX/lib $EXTRA_LDFLAGS"
+  EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX_LIBSTDCXX/lib,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
 
   if [ -n "$F_ALL" -o -n "$F_GFLAGS" ]; then
     build_gflags
