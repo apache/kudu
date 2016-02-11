@@ -101,7 +101,7 @@ if [ "$#" = "0" ]; then
   F_ALL=1
 else
   # Allow passing specific libs to build on the command line
-  for arg in "$*"; do
+  for arg in $*; do
     case $arg in
       "cmake")      F_CMAKE=1 ;;
       "gflags")     F_GFLAGS=1 ;;
