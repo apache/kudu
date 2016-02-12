@@ -771,8 +771,6 @@ The example creates 16 buckets. You could also use `HASH (id, sku) INTO 16 BUCKE
 However, a scan for `sku` values would almost always impact all 16 buckets, rather
 than possibly being limited to 4.
 
-----
-
 [[partitioning_rules_of_thumb]]
 ==== Partitioning Rules of Thumb
 
@@ -803,6 +801,7 @@ This example inserts three rows using a single statement.
 [source,sql]
 ----
 INSERT INTO my_first_table VALUES (1, "john"), (2, "jane"), (3, "jim");
+----
 
 [[kudu_impala_insert_bulk]]
 ==== Inserting In Bulk
