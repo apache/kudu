@@ -974,6 +974,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         } else {
           fs.delete(iterationOutput, true);
           LOG.info("Verify finished with success. Total nodes=" + expectedNumNodes);
+          return;
         }
       }
       throw new RuntimeException("Ran out of retries to verify");
