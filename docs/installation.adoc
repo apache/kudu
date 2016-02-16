@@ -241,7 +241,8 @@ $ git clone https://github.com/cloudera/kudu
 $ cd kudu
 ----
 
-. Build any missing third-party requirements using the `build-if-necessary.sh` script.
+. Build any missing third-party requirements using the `build-if-necessary.sh` script. Not using
+the devtoolset will result in `Host compiler appears to require libatomic, but cannot find it.`
 +
 [source,bash]
 ----
@@ -250,7 +251,8 @@ $ build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 
 . Build Kudu, using the utilities installed in the previous step. Choose a build
 directory for the intermediate output, which can be anywhere in your filesystem
-except for the `kudu` directory itself.
+except for the `kudu` directory itself. Notice that the devtoolset must still be specified,
+else you'll get `cc1plus: error: unrecognized command line option "-std=c++11"`.
 +
 [source,bash]
 ----
