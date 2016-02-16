@@ -213,7 +213,7 @@ on a version older than 7.0, the Red Hat Developer Toolset must be installed
 ----
 $ sudo yum install gcc gcc-c++ autoconf automake libtool \
   boost-static boost-devel cyrus-sasl-devel \
-  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb
+  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb git
 ----
 
 . If building on RHEL or CentOS older than 7.0, install the Red Hat Developer
@@ -227,9 +227,10 @@ $ sudo yum install -y scl-utils ${DTLS_RPM}
 $ sudo yum install -y devtoolset-3-toolchain
 ----
 
-. Optional: Install the `asciidoctor` gem if you plan to build documentation.
+. Optional: Install the gem and ruby-devel packages, and the `asciidoctor` gem if you plan to build documentation.
 +
 ----
+$ sudo yum install gem ruby-devel
 $ sudo gem install asciidoctor
 ----
 
@@ -293,7 +294,7 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 
 sudo yum -y install gcc gcc-c++ autoconf automake libtool \
   boost-static boost-devel cyrus-sasl-devel \
-  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb
+  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb git
 DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64.noarch.rpm
 DTLS_RPM_URL=https://www.softwarecollections.org/en/scls/rhscl/devtoolset-3/epel-6-x86_64/download/${DTLS_RPM}
 wget ${DTLS_RPM_URL} -O ${DTLS_RPM}
