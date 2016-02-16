@@ -1,0 +1,27 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= How to run RAT on a release tarball
+
+Kudu has a script and an excludes file to allow for running RAT on a release
+artifact. You can use the following steps to verify a source tarball.
+
+1. Download a binary artifact of RAT from
+   http://creadur.apache.org/rat/download_rat.cgi and unpack it.
+2. Run RAT: `java -jar apache-rat-0.11.jar -x apache-kudu-X.Y.Z.tar.gz > rat-report.xml`
+3. ./build-support/release/check-rat-report.py build-support/release/rat_exclude_files.txt rat-report.xml
+
