@@ -8,3 +8,4 @@ made.
 
 | Document | Component(s) | Discussion |
 | -------- | ------------ | ---------- |
+| [Scan Optimization & Partition Pruning](scan-optimization-partition-pruning.md) | Client, Tablet | [gerrit](http://gerrit.cloudera.org:8080/#/c/2149/) |
