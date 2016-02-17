@@ -984,8 +984,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     public int run(String[] args) throws Exception {
       if (args.length < 6) {
         System.err.println("Usage: Loop <num iterations> <num mappers> <num nodes per mapper> " +
-            "<output dir> <num reducers> [<width> <wrap multiplier> <start expected nodes>" +
-            "<num_verify_retries>]");
+            "<num_tablets> <output dir> <num reducers> [<width> <wrap multiplier>" +
+            "<start expected nodes> <num_verify_retries>]");
         return 1;
       }
       LOG.info("Running Loop with args:" + Arrays.deepToString(args));
@@ -996,8 +996,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       int numTablets = Integer.parseInt(args[3]);
       String outputDir = args[4];
       int numReducers = Integer.parseInt(args[5]);
-      int width = (args.length < 6) ? null : Integer.parseInt(args[6]);
-      int wrapMuplitplier = (args.length < 8) ? null : Integer.parseInt(args[7]);
+      Integer width = (args.length < 7) ? null : Integer.parseInt(args[6]);
+      Integer wrapMuplitplier = (args.length < 8) ? null : Integer.parseInt(args[7]);
       long expectedNumNodes = (args.length < 9) ? 0 : Long.parseLong(args[8]);
       int numVerifyRetries = (args.length < 10) ? 3 : Integer.parseInt(args[9]);
 
