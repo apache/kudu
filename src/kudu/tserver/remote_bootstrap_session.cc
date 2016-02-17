@@ -90,9 +90,6 @@ Status RemoteBootstrapSession::Init() {
   // All subsequent requests should reuse the opened blocks.
   vector<BlockIdPB> data_blocks;
   TabletMetadata::CollectBlockIdPBs(tablet_superblock_, &data_blocks);
-  LOG(INFO) << "T " << tablet_peer_->tablet_id()
-            << " P " << tablet_peer_->consensus()->peer_uuid()
-            << ": Remote bootstrap: Opening " << data_blocks.size() << " blocks";
   for (const BlockIdPB& block_id : data_blocks) {
     VLOG(1) << "Opening block " << block_id.DebugString();
     RETURN_NOT_OK(OpenBlockUnlocked(BlockId::FromPB(block_id)));
@@ -109,7 +106,6 @@ Status RemoteBootstrapSession::Init() {
   for (const scoped_refptr<ReadableLogSegment>& segment : log_segments_) {
     RETURN_NOT_OK(OpenLogSegmentUnlocked(segment->header().sequence_number()));
   }
-  LOG(INFO) << "Got snapshot of " << log_segments_.size() << " log segments";
 
   // Look up the committed consensus state.
   // We do this after snapshotting the log to avoid a scenario where the latest
@@ -132,6 +128,9 @@ Status RemoteBootstrapSession::Init() {
   RETURN_NOT_OK(tablet_peer_->log_anchor_registry()->UpdateRegistration(
       last_logged_opid.index(), anchor_owner_token, &log_anchor_));
 
+  LOG(INFO) << Substitute(
+      "T $0 P $1: Remote bootstrap: opened $2 blocks and $3 log segments",
+      tablet_id, consensus->peer_uuid(), data_blocks.size(), log_segments_.size());
   return Status::OK();
 }
 
