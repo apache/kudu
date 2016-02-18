@@ -785,15 +785,17 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     for (const Partition& partition : partitions) {
       PartitionPB partition_pb;
       partition.ToPB(&partition_pb);
-      tablets.push_back(CreateTabletInfo(table.get(), partition_pb));
+      scoped_refptr<TabletInfo> t = CreateTabletInfo(table.get(), partition_pb);
+      tablets.push_back(t.get());
+
+      // Add the new tablet to the catalog-manager-wide map by tablet ID.
+      InsertOrDie(&tablet_map_, t->tablet_id(), std::move(t));
     }
 
-    // Add the table/tablets to the in-memory map for the assignment.
     resp->set_table_id(table->id());
+
+    // Add the tablets to the table's map.
     table->AddTablets(tablets);
-    for (TabletInfo* tablet : tablets) {
-      InsertOrDie(&tablet_map_, tablet->tablet_id(), tablet);
-    }
   }
   TRACE("Inserted new table and tablet info into CatalogManager maps");
 
@@ -892,9 +894,9 @@ TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB& req,
   return table;
 }
 
-TabletInfo* CatalogManager::CreateTabletInfo(TableInfo* table,
-                                             const PartitionPB& partition) {
-  TabletInfo* tablet = new TabletInfo(table, GenerateId());
+scoped_refptr<TabletInfo> CatalogManager::CreateTabletInfo(TableInfo* table,
+                                                           const PartitionPB& partition) {
+  scoped_refptr<TabletInfo> tablet(new TabletInfo(table, GenerateId()));
   tablet->mutable_metadata()->StartMutation();
   SysTabletsEntryPB *metadata = &tablet->mutable_metadata()->mutable_dirty()->pb;
   metadata->set_state(SysTabletsEntryPB::PREPARING);
@@ -2556,13 +2558,13 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
 
   // The "tablet creation" was already sent, but we didn't receive an answer
   // within the timeout. So the tablet will be replaced by a new one.
-  TabletInfo *replacement = CreateTabletInfo(tablet->table().get(),
+  scoped_refptr<TabletInfo> replacement = CreateTabletInfo(tablet->table().get(),
                                              old_info.pb.partition());
   LOG(WARNING) << "Tablet " << tablet->ToString() << " was not created within "
                << "the allowed timeout. Replacing with a new tablet "
                << replacement->tablet_id();
 
-  tablet->table()->AddTablet(replacement);
+  tablet->table()->AddTablet(replacement.get());
   {
     boost::lock_guard<LockType> l_maps(lock_);
     tablet_map_[replacement->tablet_id()] = replacement;
@@ -2580,13 +2582,13 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
     Substitute("Replacement for $0", tablet->tablet_id()));
 
   deferred->tablets_to_update.push_back(tablet);
-  deferred->tablets_to_add.push_back(replacement);
-  deferred->needs_create_rpc.push_back(replacement);
+  deferred->tablets_to_add.push_back(replacement.get());
+  deferred->needs_create_rpc.push_back(replacement.get());
   VLOG(1) << "Replaced tablet " << tablet->tablet_id()
           << " with " << replacement->tablet_id()
           << " (Table " << tablet->table()->ToString() << ")";
 
-  new_tablets->push_back(replacement);
+  new_tablets->emplace_back(std::move(replacement));
 }
 
 // TODO: we could batch the IO onto a background thread.
