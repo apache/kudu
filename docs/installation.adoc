@@ -419,8 +419,7 @@ wget https://downloads.sourceforge.net/project/boost/boost/1.59.0/boost_1_59_0.t
 tar xzf boost_1_59_0.tar.gz
 pushd boost_1_59_0
 ./bootstrap.sh
-./b2 --with-system --with-threads
-export BOOST_ROOT=$(pwd)
+./b2 --with-system --with-thread
 popd
 ----
 
@@ -447,7 +446,7 @@ except for the `kudu` directory itself.
 ----
 mkdir -p build/release
 cd build/release
-BOOST_ROOT=../../boost_1_59_0 \
+BOOST_ROOT=../../../boost_1_59_0 \
   ../../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ../..
@@ -479,14 +478,14 @@ wget https://downloads.sourceforge.net/project/boost/boost/1.59.0/boost_1_59_0.t
 tar xzf boost_1_59_0.tar.gz
 pushd boost_1_59_0
 ./bootstrap.sh
-./b2 --with-system --with-threads
+./b2 --with-system --with-thread
 popd
 git clone https://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build/release
 cd build/release
-BOOST_ROOT=../../boost_1_59_0 \
+BOOST_ROOT=../../../boost_1_59_0 \
   ../../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ../..
