@@ -187,4 +187,108 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenly) {
   ASSERT_GE(avg_num_peers, kNumServers / 2);
 }
 
+static void LookUpRandomKeysLoop(std::shared_ptr<master::MasterServiceProxy> master,
+                                 const char* table_name,
+                                 AtomicBool* quit) {
+  Schema schema(GetSimpleTestSchema());
+  client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));
+  gscoped_ptr<KuduPartialRow> r(client_schema.NewRow());
+
+  while (!quit->Load()) {
+    master::GetTableLocationsRequestPB req;
+    master::GetTableLocationsResponsePB resp;
+    req.mutable_table()->set_table_name(table_name);
+
+    // Look up random start and end keys, allowing start > end to ensure that
+    // the master correctly handles this case too.
+    string start_key;
+    string end_key;
+    CHECK_OK(r->SetInt32("key", rand() % MathLimits<int32_t>::kMax));
+    CHECK_OK(r->EncodeRowKey(req.mutable_partition_key_start()));
+    CHECK_OK(r->SetInt32("key", rand() % MathLimits<int32_t>::kMax));
+    CHECK_OK(r->EncodeRowKey(req.mutable_partition_key_end()));
+
+    rpc::RpcController rpc;
+
+    // Value doesn't matter; just need something to avoid ugly log messages.
+    rpc.set_timeout(MonoDelta::FromSeconds(10));
+
+    Status s = master->GetTableLocations(req, &resp, &rpc);
+
+    // Either the lookup was successful or the master crashed.
+    CHECK(s.ok() || s.IsNetworkError());
+  }
+}
+
+// Regression test for a couple of bugs involving tablet lookups
+// concurrent with tablet replacements during table creation.
+//
+// The first bug would crash the master if the table's key range was
+// not fully populated. This corner case can occur when:
+// 1. Tablet creation tasks time out because their tservers died, and
+// 2. The master fails in replica selection when sending tablet creation tasks
+//    for tablets replaced because of #1.
+//
+// The second bug involved a race condition where a tablet is looked up
+// halfway through the process of its being added to the table.
+//
+// This test replicates these conditions and hammers the master with key
+// lookups, attempting to reproduce the master crashes.
+TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipping slow test";
+    return;
+  }
+
+  const char* kTableName = "test";
+
+  // Start up a cluster and immediately kill the tservers. The master will
+  // consider them alive long enough to respond successfully to the client's
+  // create table request, but won't actually be able to create the tablets.
+  NO_FATALS(StartCluster(
+      {},
+      {
+          // The master should quickly time out create tablet tasks. The
+          // tservers will all be dead, so there's no point in waiting long.
+          "--tablet_creation_timeout_ms=1000",
+          // This timeout needs to be long enough that we don't immediately
+          // fail the client's create table request, but short enough that the
+          // master considers the tservers unresponsive (and recreates the
+          // outstanding table's tablets) during the test.
+          "--tserver_unresponsive_timeout_ms=5000" }));
+  cluster_->Shutdown(ExternalMiniCluster::TS_ONLY);
+
+  Schema schema(GetSimpleTestSchema());
+  client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));
+  gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  CHECK_OK(table_creator->table_name(kTableName)
+           .schema(&client_schema)
+           .Create());
+
+  // Spin off a bunch of threads that repeatedly look up random key ranges in the table.
+  AtomicBool quit(false);
+  vector<scoped_refptr<Thread>> threads;
+  for (int i = 0; i < 16; i++) {
+    scoped_refptr<Thread> t;
+    ASSERT_OK(Thread::Create("test", "lookup_thread",
+                             &LookUpRandomKeysLoop, cluster_->master_proxy(),
+                             kTableName, &quit, &t));
+    threads.push_back(t);
+  }
+
+  // Give the lookup threads some time to crash the master.
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromSeconds(15));
+  while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+    ASSERT_TRUE(cluster_->master()->IsProcessAlive()) << "Master crashed!";
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+
+  quit.Store(true);
+
+  for (const auto& t : threads) {
+    t->Join();
+  }
+}
+
 } // namespace kudu
