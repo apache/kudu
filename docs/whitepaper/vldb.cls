@@ -1,3 +1,7 @@
+% Derived from the ACM's vldb.cls class file.
+% Copyright 1999-2005 Association for Computing Machinery.
+% Re-use and modification permitted.
+%
 % VLDB.CLS - Version 1.8c
 %
 % based on:
