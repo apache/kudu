@@ -72,7 +72,7 @@ fi
 
 # We sometimes have flaky infrastructure where NTP is broken. In that case
 # do not report it as a failed test.
-if grep -q 'Clock considered unsynchronized' $LOGFILE ; then
+if zgrep -q 'Clock considered unsynchronized' $LOGFILE ; then
   echo Not reporting test that failed due to NTP issues.
   exit 1
 fi
