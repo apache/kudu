@@ -267,13 +267,13 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
   // Adds tracker to child_trackers_.
   //
   // child_trackers_lock_ must be held.
-  void AddChildTrackerUnlocked(MemTracker* tracker);
+  void AddChildTrackerUnlocked(const std::shared_ptr<MemTracker>& tracker);
 
   // Logs the stack of the current consume/release. Used for debugging only.
   void LogUpdate(bool is_consume, int64_t bytes) const;
 
   static std::string LogUsage(const std::string& prefix,
-      const std::list<MemTracker*>& trackers);
+                              const std::list<std::weak_ptr<MemTracker>>& trackers);
 
   // Variant of CreateTracker() that:
   // 1. Must be called with a non-NULL parent, and
@@ -322,11 +322,11 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
   // listing only (i.e. updating the consumption of a parent tracker does not
   // update that of its children).
   mutable Mutex child_trackers_lock_;
-  std::list<MemTracker*> child_trackers_;
+  std::list<std::weak_ptr<MemTracker>> child_trackers_;
 
   // Iterator into parent_->child_trackers_ for this object. Stored to have O(1)
   // remove.
-  std::list<MemTracker*>::iterator child_tracker_it_;
+  std::list<std::weak_ptr<MemTracker>>::iterator child_tracker_it_;
 
   // Functions to call after the limit is reached to free memory.
   std::vector<GcFunction> gc_functions_;

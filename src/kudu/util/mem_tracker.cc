@@ -74,6 +74,7 @@ using std::string;
 using std::stringstream;
 using std::shared_ptr;
 using std::vector;
+using std::weak_ptr;
 
 using strings::Substitute;
 
@@ -153,7 +154,7 @@ shared_ptr<MemTracker> MemTracker::CreateTrackerUnlocked(int64_t byte_limit,
                                                          const shared_ptr<MemTracker>& parent) {
   DCHECK(parent);
   shared_ptr<MemTracker> tracker(new MemTracker(ConsumptionFunction(), byte_limit, id, parent));
-  parent->AddChildTrackerUnlocked(tracker.get());
+  parent->AddChildTrackerUnlocked(tracker);
   tracker->Init();
 
   return tracker;
@@ -223,9 +224,10 @@ bool MemTracker::FindTrackerUnlocked(const string& id,
                                      const shared_ptr<MemTracker>& parent) {
   DCHECK(parent != NULL);
   parent->child_trackers_lock_.AssertAcquired();
-  for (MemTracker* child : parent->child_trackers_) {
-    if (child->id() == id) {
-      *tracker = child->shared_from_this();
+  for (const auto& child_weak : parent->child_trackers_) {
+    shared_ptr<MemTracker> child = child_weak.lock();
+    if (child && child->id() == id) {
+      *tracker = std::move(child);
       return true;
     }
   }
@@ -255,8 +257,11 @@ void MemTracker::ListTrackers(vector<shared_ptr<MemTracker>>* trackers) {
     trackers->push_back(t);
     {
       MutexLock l(t->child_trackers_lock_);
-      for (MemTracker* child : t->child_trackers_) {
-        to_process.push_back(child->shared_from_this());
+      for (const auto& child_weak : t->child_trackers_) {
+        shared_ptr<MemTracker> child = child_weak.lock();
+        if (child) {
+          to_process.emplace_back(std::move(child));
+        }
       }
     }
   }
@@ -541,7 +546,7 @@ void MemTracker::Init() {
   DCHECK_EQ(all_trackers_[0], this);
 }
 
-void MemTracker::AddChildTrackerUnlocked(MemTracker* tracker) {
+void MemTracker::AddChildTrackerUnlocked(const shared_ptr<MemTracker>& tracker) {
   child_trackers_lock_.AssertAcquired();
 #ifndef NDEBUG
   shared_ptr<MemTracker> found;
@@ -563,10 +568,13 @@ void MemTracker::LogUpdate(bool is_consume, int64_t bytes) const {
 }
 
 string MemTracker::LogUsage(const string& prefix,
-                            const list<MemTracker*>& trackers) {
+                            const list<weak_ptr<MemTracker>>& trackers) {
   vector<string> usage_strings;
-  for (const MemTracker* child : trackers) {
-    usage_strings.push_back(child->LogUsage(prefix));
+  for (const auto& child_weak : trackers) {
+    shared_ptr<MemTracker> child = child_weak.lock();
+    if (child) {
+      usage_strings.push_back(child->LogUsage(prefix));
+    }
   }
   return JoinStrings(usage_strings, "\n");
 }

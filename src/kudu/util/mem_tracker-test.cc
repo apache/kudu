@@ -17,7 +17,9 @@
 
 #include "kudu/util/mem_tracker.h"
 
+#include <atomic>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -335,6 +337,24 @@ TEST(MemTrackerTest, UnregisterFromParent) {
 
   // And this should no-op.
   c->UnregisterFromParent();
+}
+
+TEST(MemTrackerTest, TestMultiThreadedRegisterAndDestroy) {
+  std::atomic<bool> done(false);
+  vector<std::thread> threads;
+  for (int i = 0; i < 10; i++) {
+    threads.emplace_back([&done]{
+        while (!done.load()) {
+          shared_ptr<MemTracker> t = MemTracker::FindOrCreateTracker(1000, "foo");
+        }
+      });
+  }
+
+  SleepFor(MonoDelta::FromSeconds(AllowSlowTests() ? 5 : 1));
+  done.store(true);
+  for (auto& t : threads) {
+    t.join();
+  }
 }
 
 } // namespace kudu
