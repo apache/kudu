@@ -1,4 +1,4 @@
-
+<!---
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -10,6 +10,7 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+-->
 
 ===============================================================================
 RPC
@@ -37,7 +38,7 @@ For some code examples, look in rpc-test.cc and rpc_stub-test.
 -------------------------------------------------------------------------------
 Overview
 -------------------------------------------------------------------------------
-
+```
                                         +------------------------------------+
                                         | AcceptorPool                       |
                                         |   a pool of threads which          |
@@ -68,7 +69,7 @@ Overview
                                         |   user-implemented class which     | /
                                         |   handles new inbound RPCs         |
                                         +------------------------------------+
-
+```
 Each reactor has a thread which uses epoll to handle many sockets using
 non-blocking I/O.  Blocking calls are implemented by the Proxy using
 non-blocking calls-- from the point of view of the Messenger, all calls are
@@ -188,7 +189,7 @@ protobuf), the sidecar's data is directly written to the socket.
 
 The data is appended directly after the main message protobuf. Here's what
 a typical message looks like without sidecars:
-
+```
 +------------------------------------------------+
 | Total message length (4 bytes)                 |
 +------------------------------------------------+
@@ -200,13 +201,13 @@ a typical message looks like without sidecars:
 +------------------------------------------------+
 | Main message protobuf                          |
 +------------------------------------------------+
-
+```
 In this case, the main message length is equal to the protobuf's byte size.
 Since there are no sidecars, the header protobuf's sidecar_offsets list
 will will be empty.
 
 Here's what it looks like with the sidecars:
-
+```
 +------------------------------------------------+
 | Total message length (4 bytes)                 |
 +------------------------------------------------+
@@ -226,7 +227,7 @@ Here's what it looks like with the sidecars:
 +------------------------------------------------+ --- ...
 | ...                                            |
 +------------------------------------------------+
-
+```
 When there are sidecars, the sidecar_offsets member in the header will be a
 nonempty list, whose values indicate the offset, measured from the beginning
 of the main message protobuf, of the start of each sidecar. The number
@@ -249,7 +250,7 @@ Connection establishment and connection header
 After the client connects to a server, the client first sends a connection header.
 The connection header consists of a magic number "hrpc" and three byte flags,
 for a total of 7 bytes:
-
+```
 +----------------------------------+
 |  "hrpc" 4 bytes                  |
 +----------------------------------+
@@ -259,7 +260,7 @@ for a total of 7 bytes:
 +----------------------------------+
 |  AuthProtocol (1 byte)           |
 +----------------------------------+
-
+```
 Currently, the RPC version is 9. The ServiceClass and AuthProtocol fields are unused.
 
 
@@ -267,7 +268,7 @@ Message framing and request/response headers
 --------------------------------------------
 Aside from the initial connection header described above, all other messages are
 serialized as follows:
-
+```
   total_size: (32-bit big-endian integer)
     the size of the rest of the message, not including this 4-byte header
 
@@ -280,12 +281,12 @@ serialized as follows:
       protobuf
     - for RPC calls which caused an error, the response is a ErrorResponsePB
     - during SASL negotiation, this is a SaslMessagePB
-
+```
 
 Example packet capture
 --------------------------
 An example call (captured with strace on rpc-test.cc) follows:
-
+```
    "\x00\x00\x00\x17"   (total_size: 23 bytes to follow)
    "\x09"  RequestHeader varint: 9 bytes
     "\x08\x0a\x1a\x03\x41\x64\x64\x20\x01" (RequestHeader protobuf)
@@ -299,7 +300,7 @@ An example call (captured with strace on rpc-test.cc) follows:
       Decoded with protoc --decode=kudu.rpc_test.AddRequestPB rpc/rtest.proto
       x: 304089172
       y: 1303455736
-
+```
 
 
 SASL negotiation
@@ -310,7 +311,7 @@ no strong authentication is required, SASL PLAIN is used with no password.
 
 This SASL negotiation protocol matches the Hadoop protocol.
 The negotiation proceeds as described in this diagram:
-
+```
                                 CLIENT |        | SERVER
                                        |        |
 (1) SaslMessagePB }                    |        |
@@ -336,7 +337,7 @@ token=<challenge response> } -----------------> |
                                        |        | { GOTO (4) above
                                        |        |
 
-
+```
 Each of the SaslMessagePBs above is framed as usual using RequestHeader or ResponseHeader
 protobufs. For each SASL message, the CallId should be set to '-33'.
 

@@ -1,4 +1,4 @@
-
+<!---
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -10,6 +10,7 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+-->
 
 A Tablet is a horizontal partition of a Kudu table, similar to tablets
 in BigTable or regions in HBase. Each tablet hosts a contiguous range
@@ -92,7 +93,7 @@ inserted the row. Additionally, the row contains a singly linked list containing
 mutations that were made to the row after its insertion, each tagged with the mutation's
 timestamp:
 
-
+```
                MemRowSet Row
 +----------------------------------------------------+
 | insertion timestamp  | mutation head | row data... |
@@ -111,7 +112,7 @@ timestamp:
                             __________/
                            /
                            ...
-
+```
 
 In traditional database terms, one can think of the mutation list forming a sort of
 "REDO log" containing all changes which affect this row.
@@ -144,7 +145,7 @@ As a concrete example, consider the following sequence on a table with schema
   INSERT INTO t VALUES ("row", 3);         [timestamp 4]
 
 This would result in the following structure in the MemRowSet:
-
+```
   +-----------------------------------+
   | tx 1 | mutation head | ("row", 1) |
   +----------|------------------------+
@@ -163,7 +164,7 @@ This would result in the following structure in the MemRowSet:
          +---v------------------------------------+
          | tx 4 | next ptr | REINSERT ("row", 3)  |
          +----------------------------------------+
-
+```
 
 Note that this has a couple of undesirable properties when update frequency is high:
 - readers must chase pointers through a singly linked list, likely causing many CPU cache
@@ -186,7 +187,7 @@ MemRowSet Flushes
 ============================================================
 
 When the MemRowSet fills up, a Flush occurs, which persists the data to disk.
-
+```
 +------------+
 | MemRowSet  |
 +------------+
@@ -196,7 +197,7 @@ When the MemRowSet fills up, a Flush occurs, which persists the data to disk.
 +--------------+  +--------------+    +--------------+
 | DiskRowSet 0 |  | DiskRowSet 1 | .. | DiskRowSet N |
 +-------------+-  +--------------+    +--------------+
-
+```
 When the data is flushed, it is stored as a set of CFiles (see src/kudu/cfile/README).
 Each of the rows in the data is addressable by a sequential "rowid", which is
 dense, immutable, and unique within this DiskRowSet. For example, if a given
@@ -224,12 +225,12 @@ Historical MVCC in DiskRowSets
 In order to continue to provide MVCC for on-disk data, each on-disk RowSet
 consists not only of the current columnar data, but also "UNDO" records which
 provide the ability to rollback a row's data to an earlier version.
-
+```
 +--------------+       +-----------+
 | UNDO records | <---  | base data |
 +--------------+       +-----------+
 - time of data progresses to the right --->
-
+```
 When a user wants to read the most recent version of the data immediately after
 a flush, only the base data is required. Because the base data is stored in a
 columnar format, this common case is very efficient. If instead, the user wants
@@ -242,14 +243,14 @@ When a scanner encounters a row, it processes the MVCC information as follows:
   -- If the associated timestamp is NOT committed, execute rollback change.
 
 For example, recall the series of mutations used in "MVCC Mutations in MemRowSet" above:
-
+```
   INSERT INTO t VALUES ("row", 1);         [timestamp 1]
   UPDATE t SET val = 2 WHERE key = "row";  [timestamp 2]
   DELETE FROM t WHERE key = "row";         [timestamp 3]
   INSERT INTO t VALUES ("row", 3);         [timestamp 4]
-
+```
 When this row is flushed to disk, we store it on disk in the following way:
-
+```
     Base data:
        ("row", 3)
     UNDO records (roll-back):
@@ -257,7 +258,7 @@ When this row is flushed to disk, we store it on disk in the following way:
        Before Tx 3: INSERT ("row", 2")
        Before Tx 2: SET row=1
        Before Tx 1: DELETE
-
+```
 Each UNDO record is the inverse of the transaction which triggered it -- for example
 the INSERT at transaction 1 turns into a "DELETE" when it is saved as an UNDO record.
 
@@ -266,7 +267,7 @@ queries whose MVCC snapshot indicates Tx 1 is not yet committed will execute
 the DELETE "UNDO" record, such that the row is made invisible.
 
 For example, consider two different example scanners:
-
+```
   Current time scanner (all txns committed)
   -----------------------------------------
   - Read base data
@@ -282,7 +283,7 @@ For example, consider two different example scanners:
   - Rollback Tx 3:  Buffer = ("row", 2)
   - Rollback Tx 2:  Buffer = ("row", 1)
   Result: ("row", 1)
-
+```
 Each case processes the correct set of UNDO records to yield the state of the row as of
 the desired point of time.
 
@@ -317,11 +318,11 @@ are processed in the same manner as the mutations for newly inserted data.
 
 When the Delta MemStore grows too large, it performs a flush to an
 on-disk DeltaFile, and resets itself to become empty:
-
+```
 +------------+      +---------+     +---------+     +----------------+
 | base data  | <--- | delta 0 | <-- | delta N | <-- | delta memstore |
 +------------+      +---------+     +---------+     +----------------+
-
+```
 The DeltaFiles contain the same type of information as the Delta MemStore,
 but compacted to a dense on-disk serialized format. Because these delta files
 contain records of transactions that need to be re-applied to the base data
@@ -345,11 +346,11 @@ Summary of delta file processing
 ============================================================
 
 In summary, each DiskRowSet consists of three logical components:
-
+```
 +--------------+       +-----------+      +--------------+
 | UNDO records | <---  | base data | ---> | REDO records |
 +--------------+       +-----------+      +--------------+
-
+```
 Base data:    the columnar data for the RowSet, at the time the RowSet was flushed
 
 UNDO records: historical data which needs to be processed to rollback rows to
@@ -418,7 +419,7 @@ Minor delta compaction:
 
 A 'minor' compaction is one that does not include the base data. In this
 type of compaction, the resulting file is itself a delta file.
-
+```
 +------------+      +---------+     +---------+     +---------+     +---------+
 | base data  | <--- | delta 0 + <-- | delta 1 + <-- | delta 2 + <-- | delta 3 +
 +------------+      +---------+     +---------+     +---------+     +---------+
@@ -432,7 +433,7 @@ type of compaction, the resulting file is itself a delta file.
 +------------+      +---------+     +-----------------------+
                     \_________/
                   compaction result
-
+```
 
 Minor delta compactions serve only goals 1 and 3: because they do not read or re-write
 base data, they cannot transform REDO records into UNDO.
@@ -442,7 +443,7 @@ Major delta compaction:
 
 A 'major' compaction is one that includes the base data along with any number
 of delta files.
-
+```
 +------------+      +---------+     +---------+     +---------+     +---------+
 | base data  | <--- | delta 0 + <-- | delta 1 + <-- | delta 2 + <-- | delta 3 +
 +------------+      +---------+     +---------+     +---------+     +---------+
@@ -456,7 +457,7 @@ of delta files.
 +------------+      +----------------+      +-----------------------+     +-----------------------+
 \____________________________________/
            compaction result
-
+```
 Major delta compactions can satisfy all three goals of delta compactions, but cost
 more than than minor delta compactions since they must read and re-write the base data,
 which is typically larger than the delta data.
@@ -501,7 +502,7 @@ becomes more expensive.
 
 Given the above, it is desirable to merge RowSets together to reduce the number of
 RowSets:
-
+```
 +------------+
 | RowSet 0   |
 +------------+
@@ -517,7 +518,7 @@ RowSets:
 +------------+ |
 | RowSet 3   | |
 +------------+ /
-
+```
 
 Unlike Delta Compactions described above, note that row ids are _not_ maintained
 in a Merging Compaction. This makes the handling of concurrent mutations a somewhat
@@ -529,7 +530,7 @@ Overall picture
 ============================================================
 
 Go go gadget ASCII art!
-
+```
 +-----------+
 | MemRowSet |
 +-----------+
@@ -579,7 +580,7 @@ DiskRowSet 2:
 +-----------------+ |
 | DiskRowSet 5    | |
 +-----------------+ /
-
+```
 
 ============================================================
 Comparison to BigTable approach
