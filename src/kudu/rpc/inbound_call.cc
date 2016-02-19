@@ -30,9 +30,9 @@
 #include "kudu/util/trace.h"
 
 using google::protobuf::FieldDescriptor;
+using google::protobuf::io::CodedOutputStream;
 using google::protobuf::Message;
 using google::protobuf::MessageLite;
-using google::protobuf::io::CodedOutputStream;
 using std::shared_ptr;
 using std::vector;
 using strings::Substitute;
@@ -41,7 +41,6 @@ DEFINE_bool(rpc_dump_all_traces, false,
             "If true, dump all RPC traces at INFO level");
 TAG_FLAG(rpc_dump_all_traces, advanced);
 TAG_FLAG(rpc_dump_all_traces, runtime);
-
 
 namespace kudu {
 namespace rpc {
@@ -78,6 +77,18 @@ Status InboundCall::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
 void InboundCall::RespondSuccess(const MessageLite& response) {
   TRACE_EVENT0("rpc", "InboundCall::RespondSuccess");
   Respond(response, true);
+}
+
+void InboundCall::RespondUnsupportedFeature(const vector<uint32_t>& unsupported_features) {
+  TRACE_EVENT0("rpc", "InboundCall::RespondUnsupportedFeature");
+  ErrorStatusPB err;
+  err.set_message("unsupported feature flags");
+  err.set_code(ErrorStatusPB::ERROR_INVALID_REQUEST);
+  for (uint32_t feature : unsupported_features) {
+    err.add_unsupported_feature_flags(feature);
+  }
+
+  Respond(err, false);
 }
 
 void InboundCall::RespondFailure(ErrorStatusPB::RpcErrorCodePB error_code,
@@ -272,6 +283,14 @@ MonoTime InboundCall::GetClientDeadline() const {
   MonoTime deadline = timing_.time_received;
   deadline.AddDelta(MonoDelta::FromMilliseconds(header_.timeout_millis()));
   return deadline;
+}
+
+vector<uint32_t> InboundCall::GetRequiredFeatures() const {
+  vector<uint32_t> features;
+  for (uint32_t feature : header_.required_feature_flags()) {
+    features.push_back(feature);
+  }
+  return features;
 }
 
 } // namespace rpc

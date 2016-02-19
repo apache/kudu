@@ -118,7 +118,7 @@ static void RunPlainNegotiationServer(Socket* conn) {
   CHECK_OK(sasl_server.Init(kSaslAppName));
   CHECK_OK(sasl_server.EnablePlain(std::move(authstore)));
   CHECK_OK(sasl_server.Negotiate());
-  CHECK(ContainsKey(sasl_server.client_features(), TMP_TEST_FEATURE_FLAG));
+  CHECK(ContainsKey(sasl_server.client_features(), APPLICATION_FEATURE_FLAGS));
 }
 
 static void RunPlainNegotiationClient(Socket* conn) {
@@ -126,7 +126,7 @@ static void RunPlainNegotiationClient(Socket* conn) {
   CHECK_OK(sasl_client.Init(kSaslAppName));
   CHECK_OK(sasl_client.EnablePlain("danger", "burrito"));
   CHECK_OK(sasl_client.Negotiate());
-  CHECK(ContainsKey(sasl_client.server_features(), TMP_TEST_FEATURE_FLAG));
+  CHECK(ContainsKey(sasl_client.server_features(), APPLICATION_FEATURE_FLAGS));
 }
 
 // Test SASL negotiation using the PLAIN mechanism over a socket.

@@ -17,6 +17,7 @@
 #ifndef KUDU_RPC_CLIENT_CALL_H
 #define KUDU_RPC_CLIENT_CALL_H
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -204,6 +205,8 @@ class OutboundCall {
 
   // Fill in the call response.
   void SetResponse(gscoped_ptr<CallResponse> resp);
+
+  std::set<RpcFeatureFlag> RequiredRpcFeatures() const;
 
   std::string ToString() const;
 

@@ -53,6 +53,10 @@ class ServiceIf {
   virtual void Shutdown();
   virtual std::string service_name() const = 0;
 
+  // The service should return true if it supports the provided application
+  // specific feature flag.
+  virtual bool SupportsFeature(uint32_t feature) const;
+
  protected:
   bool ParseParam(InboundCall* call, google::protobuf::Message* message);
   void RespondBadMethod(InboundCall* call);

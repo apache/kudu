@@ -106,6 +106,18 @@ void ServicePool::Shutdown() {
 Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   InboundCall* c = call.release();
 
+  vector<uint32_t> unsupported_features;
+  for (uint32_t feature : c->GetRequiredFeatures()) {
+    if (!service_->SupportsFeature(feature)) {
+      unsupported_features.push_back(feature);
+    }
+  }
+
+  if (!unsupported_features.empty()) {
+    c->RespondUnsupportedFeature(unsupported_features);
+    return Status::NotSupported("call requires unsupported application feature flags");
+  }
+
   TRACE_TO(c->trace(), "Inserting onto call queue");
   // Queue message on service queue
   QueueStatus queue_status = service_queue_.Put(c);

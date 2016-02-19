@@ -18,10 +18,11 @@
 #ifndef KUDU_RPC_TRANSFER_H
 #define KUDU_RPC_TRANSFER_H
 
-#include <boost/intrusive/list.hpp>
 #include <boost/function.hpp>
+#include <boost/intrusive/list.hpp>
 #include <boost/utility.hpp>
 #include <gflags/gflags.h>
+#include <set>
 #include <stdint.h>
 #include <string>
 #include <vector>
@@ -87,7 +88,6 @@ class InboundTransfer {
   DISALLOW_COPY_AND_ASSIGN(InboundTransfer);
 };
 
-
 // When the connection wants to send data, it creates an OutboundTransfer object
 // to encompass it. This sits on a queue within the Connection, so that each time
 // the Connection wakes up with a writable socket, it consumes more bytes off
@@ -106,9 +106,17 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
   // memory of the slices. The slices must remain valid until the callback
   // is triggered.
   //
+  // When the transfer starts, the required features are checked against the set
+  // of features which the server supports. The check is delayed until just
+  // before the transfer starts because it depends on the negotiation with the
+  // server being complete. The call_id allows the call to be canceled if
+  // required features are not supported.
+  //
   // NOTE: 'payload' is currently restricted to a maximum of kMaxPayloadSlices
   // slices.
-  OutboundTransfer(const std::vector<Slice> &payload,
+  OutboundTransfer(int32_t call_id,
+                   const std::vector<Slice> &payload,
+                   std::set<RpcFeatureFlag> required_features,
                    TransferCallbacks *callbacks);
 
   // Destruct the transfer. A transfer object should never be deallocated
@@ -128,10 +136,18 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
   // Return true if the entire transfer has been sent.
   bool TransferFinished() const;
 
+  const std::set<RpcFeatureFlag>& required_features() const {
+    return required_features_;
+  }
+
   // Return the total number of bytes to be sent (including those already sent)
   int32_t TotalLength() const;
 
   std::string HexDump() const;
+
+  int32_t call_id() const {
+    return call_id_;
+  }
 
  private:
   // Slices to send. Uses an array here instead of a vector to avoid an expensive
@@ -144,7 +160,11 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
   // The number of bytes in the above slice which has already been sent.
   int32_t cur_offset_in_slice_;
 
+  std::set<RpcFeatureFlag> required_features_;
+
   TransferCallbacks *callbacks_;
+
+  int32_t call_id_;
 
   bool aborted_;
 

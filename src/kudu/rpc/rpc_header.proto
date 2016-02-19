@@ -21,7 +21,6 @@ package kudu.rpc;
 
 option java_package = "org.kududb.rpc";
 
-
 // The Kudu RPC protocol is similar to the RPC protocol of Hadoop and HBase.
 // See the following for reference on those other protocols:
 //  - https://issues.apache.org/jira/browse/HBASE-7898
@@ -61,9 +60,9 @@ message ConnectionContextPB {
 enum RpcFeatureFlag {
   UNKNOWN = 0;
 
-  // TODO: as soon as we have any real feature flag, we can get rid of this
-  // feature flag. For now, we just need something to assert on for tests.
-  TMP_TEST_FEATURE_FLAG = 1000;
+  // The RPC system is required to support application feature flags in the
+  // request and response headers.
+  APPLICATION_FEATURE_FLAGS = 1;
 };
 
 // Message type passed back & forth for the SASL negotiation.
@@ -130,6 +129,17 @@ message RequestHeader {
   // transit time between the client and server, if you wait exactly this amount of
   // time and then respond, you are likely to cause a timeout on the client.
   optional uint32 timeout_millis = 10;
+
+  // Feature flags that the service must support in order to properly interpret this
+  // request. The client can pass any set of flags, and if the server doesn't
+  // support any of them, then it will fail the request.
+  //
+  // NOTE: these are for evolving features at the level of the application, not
+  // the RPC framework. Hence, we have to use a generic int type rather than a
+  // particular enum.
+  // NOTE: the server will only interpret this field if it supports the
+  // APPLICATION_FEATURE_FLAGS flag.
+  repeated uint32 required_feature_flags = 11;
 }
 
 message ResponseHeader {
@@ -169,7 +179,8 @@ message ErrorStatusPB {
     // The server is overloaded - the client should try again shortly.
     ERROR_SERVER_TOO_BUSY = 4;
 
-    // The request parameter was not parseable or was missing required fields.
+    // The request parameter was not parseable, was missing required fields,
+    // or the server does not support the required feature flags.
     ERROR_INVALID_REQUEST = 5;
 
     // FATAL_* errors indicate that the client should shut down the connection.
@@ -190,6 +201,10 @@ message ErrorStatusPB {
 
   // TODO: Make code required?
   optional RpcErrorCodePB code = 2;  // Specific error identifier.
+
+  // If the request is failed due to an unsupported feature flag, the particular
+  // flag(s) that were not supported will be sent back to the client.
+  repeated uint32 unsupported_feature_flags = 3;
 
   // Allow extensions. When the RPC returns ERROR_APPLICATION, the server
   // should also fill in exactly one of these extension fields, which contains

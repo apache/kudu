@@ -90,6 +90,11 @@ message CalculatorError {
 message PanicRequestPB {}
 message PanicResponsePB {}
 
+enum FeatureFlags {
+  UNKNOWN=0;
+  FOO=1;
+}
+
 service CalculatorService {
   rpc Add(AddRequestPB) returns(AddResponsePB);
   rpc Sleep(SleepRequestPB) returns(SleepResponsePB);

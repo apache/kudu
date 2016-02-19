@@ -87,6 +87,11 @@ void RpcController::set_deadline(const MonoTime& deadline) {
   set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
 }
 
+void RpcController::RequireServerFeature(uint32_t feature) {
+  DCHECK(!call_ || call_->state() == OutboundCall::READY);
+  required_server_features_.insert(feature);
+}
+
 MonoDelta RpcController::timeout() const {
   lock_guard<simple_spinlock> l(&lock_);
   return timeout_;

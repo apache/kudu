@@ -102,6 +102,8 @@ class InboundCall {
   void RespondFailure(ErrorStatusPB::RpcErrorCodePB error_code,
                       const Status &status);
 
+  void RespondUnsupportedFeature(const std::vector<uint32_t>& unsupported_features);
+
   void RespondApplicationError(int error_ext_id, const std::string& message,
                                const google::protobuf::MessageLite& app_error_pb);
 
@@ -156,6 +158,10 @@ class InboundCall {
   // account for transmission delays between the client and the server.
   // If the client did not specify a deadline, returns MonoTime::Max().
   MonoTime GetClientDeadline() const;
+
+  // Returns the set of application-specific feature flags required to service
+  // the RPC.
+  std::vector<uint32_t> GetRequiredFeatures() const;
 
  private:
   // Serialize and queue the response.

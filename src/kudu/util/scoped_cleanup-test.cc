@@ -15,18 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/rpc/constants.h"
+#include "kudu/util/scoped_cleanup.h"
 
-using std::set;
+#include <gtest/gtest.h>
 
 namespace kudu {
-namespace rpc {
 
-const char* const kMagicNumber = "hrpc";
-const char* const kSaslAppName = "Kudu";
-const char* const kSaslProtoName = "kudu";
-set<RpcFeatureFlag> kSupportedServerRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS };
-set<RpcFeatureFlag> kSupportedClientRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS };
+TEST(ScopedCleanup, TestCleanup) {
+  int var = 0;
+  {
+    auto saved = var;
+    auto cleanup = MakeScopedCleanup([&] () { var = saved; });
+    var = 42;
+  }
+  ASSERT_EQ(var, 0);
+}
 
-} // namespace rpc
 } // namespace kudu

@@ -17,8 +17,10 @@
 #ifndef KUDU_RPC_RPC_CONTROLLER_H
 #define KUDU_RPC_RPC_CONTROLLER_H
 
+#include <functional>
 #include <glog/logging.h>
 #include <memory>
+#include <unordered_set>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/locks.h"
@@ -102,6 +104,54 @@ class RpcController {
   // Using an uninitialized deadline means the call won't time out.
   void set_deadline(const MonoTime& deadline);
 
+  // Add a requirement that the server side must support a feature with the
+  // given identifier. The set of required features is sent to the server
+  // with the RPC call, and if any required feature is not supported, the
+  // call will fail with a NotSupported() status.
+  //
+  // This can be used when an RPC call changes in a way that is protobuf-compatible,
+  // but for which it would not be appropriate for the server to simply ignore
+  // an added field. For example, consider an API call like:
+  //
+  //   message DeleteAccount {
+  //     optional string username = 1;
+  //     optional bool dry_run = 2; // ADDED LATER!
+  //   }
+  //
+  // In this case, if a new client which supports the 'dry_run' flag sends the RPC
+  // to an old server, the old server will simply ignore the unrecognized parameter,
+  // with highly problematic results. To solve this problem, the new version can
+  // add a feature flag:
+  //
+  //   In .proto file
+  //   ----------------
+  //   enum MyFeatureFlags {
+  //     UNKNOWN = 0;
+  //     DELETE_ACCOUNT_SUPPORTS_DRY_RUN = 1;
+  //   }
+  //
+  //   In client code:
+  //   ---------------
+  //   if (dry_run) {
+  //     rpc.RequireServerFeature(DELETE_ACCOUNT_SUPPORTS_DRY_RUN);
+  //     req.set_dry_run(true);
+  //   }
+  //
+  // This has the effect of (a) maintaining compatibility when dry_run is not specified
+  // and (b) rejecting the RPC with a "NotSupported" error when it is.
+  //
+  // NOTE: 'feature' is an int rather than an enum type because each service
+  // must define its own enum of supported features, and protobuf doesn't support
+  // any ability to 'extend' enum types. Implementers should define an enum in the
+  // service's protobuf definition as shown above.
+  void RequireServerFeature(uint32_t feature);
+
+  // Executes the provided function with a reference to the required server
+  // features.
+  const std::unordered_set<uint32_t>& required_server_features() const {
+    return required_server_features_;
+  }
+
   // Return the configured timeout.
   MonoDelta timeout() const;
 
@@ -119,6 +169,7 @@ class RpcController {
   friend class Proxy;
 
   MonoDelta timeout_;
+  std::unordered_set<uint32_t> required_server_features_;
 
   mutable simple_spinlock lock_;
 

@@ -44,6 +44,10 @@ ServiceIf::~ServiceIf() {
 void ServiceIf::Shutdown() {
 }
 
+bool ServiceIf::SupportsFeature(uint32_t feature) const {
+  return false;
+}
+
 bool ServiceIf::ParseParam(InboundCall *call, google::protobuf::Message *message) {
   Slice param(call->serialized_request());
   if (PREDICT_FALSE(!message->ParseFromArray(param.data(), param.size()))) {

@@ -15,18 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/rpc/constants.h"
+#pragma once
 
-using std::set;
+#include <utility>
 
 namespace kudu {
-namespace rpc {
 
-const char* const kMagicNumber = "hrpc";
-const char* const kSaslAppName = "Kudu";
-const char* const kSaslProtoName = "kudu";
-set<RpcFeatureFlag> kSupportedServerRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS };
-set<RpcFeatureFlag> kSupportedClientRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS };
+// A scoped object which runs a cleanup function when going out of scope. Can
+// be used for scoped resource cleanup.
+template<typename F>
+class ScopedCleanup {
+ public:
+  explicit ScopedCleanup(F f) : f_(std::move(f)) {}
+  ~ScopedCleanup() { f_(); }
+ private:
+  F f_;
+};
 
-} // namespace rpc
+// Creates a new scoped cleanup instance with the provided function.
+template<typename F>
+ScopedCleanup<F> MakeScopedCleanup(F f) {
+  return ScopedCleanup<F>(f);
+}
 } // namespace kudu

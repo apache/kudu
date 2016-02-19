@@ -26,9 +26,11 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/rpc/constants.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_util.h"
 
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
@@ -509,6 +511,81 @@ TEST_F(TestRpc, TestRpcContextClientDeadline) {
   controller.Reset();
   controller.set_timeout(MonoDelta::FromMilliseconds(1000));
   ASSERT_OK(p.SyncRequest("Sleep", req, &resp, &controller));
+}
+
+// Test that setting an call-level application feature flag to an unknown value
+// will make the server reject the call.
+TEST_F(TestRpc, TestApplicationFeatureFlag) {
+  // Set up server.
+  Sockaddr server_addr;
+  StartTestServerWithGeneratedCode(&server_addr);
+
+  // Set up client.
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
+
+  { // Supported flag
+    AddRequestPB req;
+    req.set_x(1);
+    req.set_y(2);
+    AddResponsePB resp;
+    RpcController controller;
+    controller.RequireServerFeature(FeatureFlags::FOO);
+    Status s = p.SyncRequest("Add", req, &resp, &controller);
+    SCOPED_TRACE(strings::Substitute("supported response: $0", s.ToString()));
+    ASSERT_TRUE(s.ok());
+    ASSERT_EQ(resp.result(), 3);
+  }
+
+  { // Unsupported flag
+    AddRequestPB req;
+    req.set_x(1);
+    req.set_y(2);
+    AddResponsePB resp;
+    RpcController controller;
+    controller.RequireServerFeature(FeatureFlags::FOO);
+    controller.RequireServerFeature(99);
+    Status s = p.SyncRequest("Add", req, &resp, &controller);
+    SCOPED_TRACE(strings::Substitute("unsupported response: $0", s.ToString()));
+    ASSERT_TRUE(s.IsRemoteError());
+  }
+}
+
+TEST_F(TestRpc, TestApplicationFeatureFlagUnsupportedServer) {
+  auto savedFlags = kSupportedServerRpcFeatureFlags;
+  auto cleanup = MakeScopedCleanup([&] () { kSupportedServerRpcFeatureFlags = savedFlags; });
+  kSupportedServerRpcFeatureFlags = {};
+
+  // Set up server.
+  Sockaddr server_addr;
+  StartTestServerWithGeneratedCode(&server_addr);
+
+  // Set up client.
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
+
+  { // Required flag
+    AddRequestPB req;
+    req.set_x(1);
+    req.set_y(2);
+    AddResponsePB resp;
+    RpcController controller;
+    controller.RequireServerFeature(FeatureFlags::FOO);
+    Status s = p.SyncRequest("Add", req, &resp, &controller);
+    SCOPED_TRACE(strings::Substitute("supported response: $0", s.ToString()));
+    ASSERT_TRUE(s.IsNotSupported());
+  }
+
+  { // No required flag
+    AddRequestPB req;
+    req.set_x(1);
+    req.set_y(2);
+    AddResponsePB resp;
+    RpcController controller;
+    Status s = p.SyncRequest("Add", req, &resp, &controller);
+    SCOPED_TRACE(strings::Substitute("supported response: $0", s.ToString()));
+    ASSERT_TRUE(s.ok());
+  }
 }
 
 } // namespace rpc

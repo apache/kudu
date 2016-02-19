@@ -42,6 +42,7 @@ namespace kudu {
 namespace rpc {
 
 using std::ostringstream;
+using std::set;
 using std::string;
 
 #define RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status) \
@@ -122,11 +123,15 @@ string InboundTransfer::StatusAsString() const {
   return strings::Substitute("$0/$1 bytes received", cur_offset_, total_length_);
 }
 
-OutboundTransfer::OutboundTransfer(const std::vector<Slice> &payload,
+OutboundTransfer::OutboundTransfer(int32_t call_id,
+                                   const std::vector<Slice> &payload,
+                                   set<RpcFeatureFlag> required_features,
                                    TransferCallbacks *callbacks)
   : cur_slice_idx_(0),
     cur_offset_in_slice_(0),
+    required_features_(std::move(required_features)),
     callbacks_(callbacks),
+    call_id_(call_id),
     aborted_(false) {
   CHECK(!payload.empty());
 
