@@ -556,7 +556,7 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
 
   tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback<AlterSchemaResponsePB>(context,
-                                                                  resp)).Pass());
+                                                                  resp)));
 
   // Submit the alter schema op. The RPC will be responded to asynchronously.
   Status s = tablet_peer->SubmitAlterSchema(std::move(tx_state));
@@ -728,7 +728,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
 
   tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback<WriteResponsePB>(context,
-                                                            resp)).Pass());
+                                                            resp)));
 
   // Submit the write. The RPC will be responded to asynchronously.
   s = tablet_peer->SubmitWrite(tx_state);

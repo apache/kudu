@@ -162,7 +162,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
 
       auto state = new WriteTransactionState(tablet_peer_.get(), &req, &resp);
       state->set_completion_callback(gscoped_ptr<tablet::TransactionCompletionCallback>(
-          new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)).Pass());
+          new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)));
       ASSERT_OK(tablet_peer_->SubmitWrite(state));
       latch.Wait();
       ASSERT_FALSE(resp.has_error()) << "Request failed: " << resp.error().ShortDebugString();

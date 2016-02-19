@@ -192,7 +192,7 @@ class TabletPeerTest : public KuduTabletTest {
 
     CountDownLatch rpc_latch(1);
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
-        new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())).Pass());
+        new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
 
     CHECK_OK(tablet_peer->SubmitWrite(tx_state));
     rpc_latch.Wait();
@@ -460,7 +460,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
     auto tx_state = new WriteTransactionState(tablet_peer_.get(), req.get(), resp.get());
 
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
-          new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())).Pass());
+        new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
 
     gscoped_ptr<DelayedApplyTransaction> transaction(new DelayedApplyTransaction(&apply_started,
                                                                                  &apply_continue,

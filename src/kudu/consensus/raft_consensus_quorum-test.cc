@@ -138,10 +138,8 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   void BuildPeers() {
-    vector<LocalTestPeerProxyFactory*> proxy_factories;
     for (int i = 0; i < config_.peers_size(); i++) {
       auto proxy_factory = new LocalTestPeerProxyFactory(peers_.get());
-      proxy_factories.push_back(proxy_factory);
 
       auto txn_factory = new TestTransactionFactory(logs_[i].get());
 
@@ -173,7 +171,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       scoped_refptr<RaftConsensus> peer(
           new RaftConsensus(options_,
                             std::move(cmeta),
-                            gscoped_ptr<PeerProxyFactory>(proxy_factory).Pass(),
+                            gscoped_ptr<PeerProxyFactory>(proxy_factory),
                             std::move(queue),
                             std::move(peer_manager),
                             std::move(thread_pool),

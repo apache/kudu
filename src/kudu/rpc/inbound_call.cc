@@ -125,7 +125,7 @@ void InboundCall::Respond(const MessageLite& response,
   TRACE_TO(trace_, "Queueing $0 response", is_success ? "success" : "failure");
 
   LogTrace();
-  conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this).Pass());
+  conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this));
 }
 
 Status InboundCall::SerializeResponseBuffer(const MessageLite& response,

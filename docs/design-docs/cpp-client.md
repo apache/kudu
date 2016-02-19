@@ -44,13 +44,13 @@ void ExplicitBatchingExample() {
 
   // Insert 100 rows.
   for (int i = 0; i < 100; i++) {
-    gscoped_ptr<Insert> ins = t->NewInsert();
+    Insert* ins = t->NewInsert();
     ins->mutable_row()->SetInt64("key", i);
     ins->mutable_row()->SetInt64("val", i * 2);
     // The insert should return immediately after moving the insert
     // into the appropriate buffers. This always returns OK unless the
     // Insert itself is invalid (eg missing a key column).
-    CHECK_OK(session->Apply(ins.Pass()));
+    CHECK_OK(session->Apply(ins));
   }
 
   // Update a row.

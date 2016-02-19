@@ -1663,7 +1663,7 @@ void TraceLog::FlushButLeaveBufferIntact(
       logged_events_->ReturnChunk(thread_shared_chunk_index_,
                                   std::move(thread_shared_chunk_));
     }
-    previous_logged_events = logged_events_->CloneForIteration().Pass();
+    previous_logged_events = logged_events_->CloneForIteration();
   }
 
   ConvertTraceEventsToTraceFormat(std::move(previous_logged_events),
