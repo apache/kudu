@@ -264,16 +264,16 @@ class LogTestBase : public KuduTest {
     MemStoreTargetPB* target = mutate->add_mutated_stores();
     target->set_dms_id(dms_id);
     target->set_rs_id(rs_id);
-    AppendCommit(commit.Pass(), sync);
+    AppendCommit(std::move(commit), sync);
   }
 
   void AppendCommit(gscoped_ptr<CommitMsg> commit, bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;
-      ASSERT_OK(log_->AsyncAppendCommit(commit.Pass(), s.AsStatusCallback()));
+      ASSERT_OK(log_->AsyncAppendCommit(std::move(commit), s.AsStatusCallback()));
       ASSERT_OK(s.Wait());
     } else {
-      ASSERT_OK(log_->AsyncAppendCommit(commit.Pass(),
+      ASSERT_OK(log_->AsyncAppendCommit(std::move(commit),
                                                Bind(&LogTestBase::CheckCommitResult)));
     }
   }

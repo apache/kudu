@@ -235,7 +235,7 @@ Status MajorDeltaCompaction::OpenRedoDeltaFileWriter() {
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
                         "Unable to create REDO delta output block");
   new_redo_delta_block_ = block->id();
-  new_redo_delta_writer_.reset(new DeltaFileWriter(block.Pass()));
+  new_redo_delta_writer_.reset(new DeltaFileWriter(std::move(block)));
   return new_redo_delta_writer_->Start();
 }
 
@@ -244,7 +244,7 @@ Status MajorDeltaCompaction::OpenUndoDeltaFileWriter() {
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
                         "Unable to create UNDO delta output block");
   new_undo_delta_block_ = block->id();
-  new_undo_delta_writer_.reset(new DeltaFileWriter(block.Pass()));
+  new_undo_delta_writer_.reset(new DeltaFileWriter(std::move(block)));
   return new_undo_delta_writer_->Start();
 }
 

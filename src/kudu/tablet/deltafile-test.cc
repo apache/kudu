@@ -76,7 +76,7 @@ class TestDeltaFile : public ::testing::Test {
     gscoped_ptr<WritableBlock> block;
     ASSERT_OK(fs_manager_->CreateNewBlock(&block));
     test_block_ = block->id();
-    DeltaFileWriter dfw(block.Pass());
+    DeltaFileWriter dfw(std::move(block));
     ASSERT_OK(dfw.Start());
 
     // Update even numbered rows.
@@ -113,7 +113,7 @@ class TestDeltaFile : public ::testing::Test {
   Status OpenDeltaFileReader(const BlockId& block_id, shared_ptr<DeltaFileReader>* out) {
     gscoped_ptr<ReadableBlock> block;
     RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block));
-    return DeltaFileReader::Open(block.Pass(), block_id, out, REDO);
+    return DeltaFileReader::Open(std::move(block), block_id, out, REDO);
   }
 
   // TODO handle UNDO deltas
@@ -228,7 +228,7 @@ TEST_F(TestDeltaFile, TestWriteDeltaFileIteratorToFile) {
   gscoped_ptr<WritableBlock> block;
   ASSERT_OK(fs_manager_->CreateNewBlock(&block));
   BlockId block_id(block->id());
-  DeltaFileWriter dfw(block.Pass());
+  DeltaFileWriter dfw(std::move(block));
   ASSERT_OK(dfw.Start());
   ASSERT_OK(WriteDeltaIteratorToFile<REDO>(it.get(),
                                            ITERATE_OVER_ALL_ROWS,
@@ -344,12 +344,12 @@ TEST_F(TestDeltaFile, TestLazyInit) {
   ASSERT_OK(fs_manager_->OpenBlock(test_block_, &block));
   size_t bytes_read = 0;
   gscoped_ptr<ReadableBlock> count_block(
-      new CountingReadableBlock(block.Pass(), &bytes_read));
+      new CountingReadableBlock(std::move(block), &bytes_read));
 
   // Lazily opening the delta file should not trigger any reads.
   shared_ptr<DeltaFileReader> reader;
   ASSERT_OK(DeltaFileReader::OpenNoInit(
-      count_block.Pass(), test_block_, &reader, REDO));
+      std::move(count_block), test_block_, &reader, REDO));
   ASSERT_EQ(0, bytes_read);
 
   // But initializing it should (only the first time).
@@ -363,8 +363,8 @@ TEST_F(TestDeltaFile, TestLazyInit) {
   // same number of bytes read.
   ASSERT_OK(fs_manager_->OpenBlock(test_block_, &block));
   bytes_read = 0;
-  count_block.reset(new CountingReadableBlock(block.Pass(), &bytes_read));
-  ASSERT_OK(DeltaFileReader::Open(count_block.Pass(), test_block_, &reader, REDO));
+  count_block.reset(new CountingReadableBlock(std::move(block), &bytes_read));
+  ASSERT_OK(DeltaFileReader::Open(std::move(count_block), test_block_, &reader, REDO));
   ASSERT_EQ(bytes_read_after_init, bytes_read);
 }
 

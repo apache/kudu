@@ -115,7 +115,7 @@ static void RunPlainNegotiationServer(Socket* conn) {
   gscoped_ptr<AuthStore> authstore(new AuthStore());
   CHECK_OK(authstore->Add("danger", "burrito"));
   CHECK_OK(sasl_server.Init(kSaslAppName));
-  CHECK_OK(sasl_server.EnablePlain(authstore.Pass()));
+  CHECK_OK(sasl_server.EnablePlain(std::move(authstore)));
   CHECK_OK(sasl_server.Negotiate());
 }
 
@@ -138,7 +138,7 @@ static void RunPlainFailingNegotiationServer(Socket* conn) {
   gscoped_ptr<AuthStore> authstore(new AuthStore());
   CHECK_OK(authstore->Add("danger", "burrito"));
   CHECK_OK(sasl_server.Init(kSaslAppName));
-  CHECK_OK(sasl_server.EnablePlain(authstore.Pass()));
+  CHECK_OK(sasl_server.EnablePlain(std::move(authstore)));
   Status s = sasl_server.Negotiate();
   ASSERT_TRUE(s.IsNotAuthorized()) << "Expected auth failure! Got: " << s.ToString();
 }

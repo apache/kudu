@@ -132,9 +132,9 @@ class GenericCalculatorService : public ServiceIf {
     SendTwoStringsResponsePB resp;
     int idx1, idx2;
     CHECK_OK(incoming->AddRpcSidecar(
-        make_gscoped_ptr(new RpcSidecar(first.Pass())), &idx1));
+        make_gscoped_ptr(new RpcSidecar(std::move(first))), &idx1));
     CHECK_OK(incoming->AddRpcSidecar(
-        make_gscoped_ptr(new RpcSidecar(second.Pass())), &idx2));
+        make_gscoped_ptr(new RpcSidecar(std::move(second))), &idx2));
     resp.set_sidecar1(idx1);
     resp.set_sidecar2(idx2);
 
@@ -404,7 +404,7 @@ class RpcTestBase : public KuduTest {
     gscoped_ptr<ServiceIf> service(new ServiceClass(metric_entity_));
     service_name_ = service->service_name();
     scoped_refptr<MetricEntity> metric_entity = server_messenger_->metric_entity();
-    service_pool_ = new ServicePool(service.Pass(), metric_entity, 50);
+    service_pool_ = new ServicePool(std::move(service), metric_entity, 50);
     server_messenger_->RegisterService(service_name_, service_pool_);
     ASSERT_OK(service_pool_->Init(n_worker_threads_));
   }

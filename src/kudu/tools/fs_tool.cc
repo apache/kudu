@@ -450,7 +450,7 @@ Status FsTool::DumpCFileBlockInternal(const BlockId& block_id,
   gscoped_ptr<ReadableBlock> block;
   RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block));
   gscoped_ptr<CFileReader> reader;
-  RETURN_NOT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
+  RETURN_NOT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
   std::cout << Indent(indent) << "CFile Header: "
             << reader->header().ShortDebugString() << std::endl;
@@ -477,7 +477,7 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
   gscoped_ptr<ReadableBlock> readable_block;
   RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &readable_block));
   shared_ptr<DeltaFileReader> delta_reader;
-  RETURN_NOT_OK(DeltaFileReader::Open(readable_block.Pass(),
+  RETURN_NOT_OK(DeltaFileReader::Open(std::move(readable_block),
                                       block_id,
                                       &delta_reader,
                                       delta_type));

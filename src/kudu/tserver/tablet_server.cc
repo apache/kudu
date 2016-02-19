@@ -116,10 +116,10 @@ Status TabletServer::Start() {
   gscoped_ptr<ServiceIf> remote_bootstrap_service(
       new RemoteBootstrapServiceImpl(fs_manager_.get(), tablet_manager_.get(), metric_entity()));
 
-  RETURN_NOT_OK(ServerBase::RegisterService(ts_service.Pass()));
-  RETURN_NOT_OK(ServerBase::RegisterService(admin_service.Pass()));
-  RETURN_NOT_OK(ServerBase::RegisterService(consensus_service.Pass()));
-  RETURN_NOT_OK(ServerBase::RegisterService(remote_bootstrap_service.Pass()));
+  RETURN_NOT_OK(ServerBase::RegisterService(std::move(ts_service)));
+  RETURN_NOT_OK(ServerBase::RegisterService(std::move(admin_service)));
+  RETURN_NOT_OK(ServerBase::RegisterService(std::move(consensus_service)));
+  RETURN_NOT_OK(ServerBase::RegisterService(std::move(remote_bootstrap_service)));
   RETURN_NOT_OK(ServerBase::Start());
 
   RETURN_NOT_OK(heartbeater_->Start());

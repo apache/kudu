@@ -116,7 +116,7 @@ class MultiThreadedLogTest : public LogTestBase {
         CreateBatchFromAllocatedOperations(batch_replicates,
                                            &entry_batch_pb);
 
-        ASSERT_OK(log_->Reserve(REPLICATE, entry_batch_pb.Pass(), &entry_batch));
+        ASSERT_OK(log_->Reserve(REPLICATE, std::move(entry_batch_pb), &entry_batch));
       } // lock_guard scope
       auto cb = new CustomLatchCallback(&latch, &errors);
       entry_batch->SetReplicates(batch_replicates);

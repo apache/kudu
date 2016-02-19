@@ -236,7 +236,7 @@ Status ServerBase::DumpServerInfo(const string& path,
 }
 
 Status ServerBase::RegisterService(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
-  return rpc_server_->RegisterService(rpc_impl.Pass());
+  return rpc_server_->RegisterService(std::move(rpc_impl));
 }
 
 Status ServerBase::StartMetricsLogging() {

@@ -84,7 +84,7 @@ Status Peer::NewRemotePeer(const RaftPeerPB& peer_pb,
   gscoped_ptr<Peer> new_peer(new Peer(peer_pb,
                                       tablet_id,
                                       leader_uuid,
-                                      proxy.Pass(),
+                                      std::move(proxy),
                                       queue,
                                       thread_pool));
   RETURN_NOT_OK(new_peer->Init());
@@ -98,7 +98,7 @@ Peer::Peer(const RaftPeerPB& peer_pb, string tablet_id, string leader_uuid,
     : tablet_id_(std::move(tablet_id)),
       leader_uuid_(std::move(leader_uuid)),
       peer_pb_(peer_pb),
-      proxy_(proxy.Pass()),
+      proxy_(std::move(proxy)),
       queue_(queue),
       failed_attempts_(0),
       sem_(1),
@@ -357,8 +357,8 @@ Peer::~Peer() {
 
 RpcPeerProxy::RpcPeerProxy(gscoped_ptr<HostPort> hostport,
                            gscoped_ptr<ConsensusServiceProxy> consensus_proxy)
-    : hostport_(hostport.Pass()),
-      consensus_proxy_(consensus_proxy.Pass()) {
+    : hostport_(std::move(hostport)),
+      consensus_proxy_(std::move(consensus_proxy)) {
 }
 
 void RpcPeerProxy::UpdateAsync(const ConsensusRequestPB* request,
@@ -412,7 +412,7 @@ Status RpcPeerProxyFactory::NewProxy(const RaftPeerPB& peer_pb,
   RETURN_NOT_OK(HostPortFromPB(peer_pb.last_known_addr(), hostport.get()));
   gscoped_ptr<ConsensusServiceProxy> new_proxy;
   RETURN_NOT_OK(CreateConsensusServiceProxyForHost(messenger_, *hostport, &new_proxy));
-  proxy->reset(new RpcPeerProxy(hostport.Pass(), new_proxy.Pass()));
+  proxy->reset(new RpcPeerProxy(std::move(hostport), std::move(new_proxy)));
   return Status::OK();
 }
 

@@ -42,7 +42,7 @@ void RowOp::SetInsertSucceeded(int mrs_id) {
 
 void RowOp::SetMutateSucceeded(gscoped_ptr<OperationResultPB> result) {
   DCHECK(!this->result) << result->DebugString();
-  this->result = result.Pass();
+  this->result = std::move(result);
 }
 
 string RowOp::ToString(const Schema& schema) const {

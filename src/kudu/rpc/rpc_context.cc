@@ -136,7 +136,7 @@ void RpcContext::RespondApplicationError(int error_ext_id, const std::string& me
 }
 
 Status RpcContext::AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx) {
-  return call_->AddRpcSidecar(car.Pass(), idx);
+  return call_->AddRpcSidecar(std::move(car), idx);
 }
 
 const UserCredentials& RpcContext::user_credentials() const {

@@ -54,7 +54,7 @@ BloomFileWriter::BloomFileWriter(gscoped_ptr<WritableBlock> block,
   // bloom filters are high-entropy data structures by their nature.
   opts.storage_attributes.encoding  = PLAIN_ENCODING;
   opts.storage_attributes.compression = NO_COMPRESSION;
-  writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, block.Pass()));
+  writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, std::move(block)));
 }
 
 Status BloomFileWriter::Start() {
@@ -141,10 +141,10 @@ Status BloomFileReader::Open(gscoped_ptr<ReadableBlock> block,
                              const ReaderOptions& options,
                              gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<BloomFileReader> bf_reader;
-  RETURN_NOT_OK(OpenNoInit(block.Pass(), options, &bf_reader));
+  RETURN_NOT_OK(OpenNoInit(std::move(block), options, &bf_reader));
   RETURN_NOT_OK(bf_reader->Init());
 
-  *reader = bf_reader.Pass();
+  *reader = std::move(bf_reader);
   return Status::OK();
 }
 
@@ -152,20 +152,20 @@ Status BloomFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
                                    const ReaderOptions& options,
                                    gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::OpenNoInit(block.Pass(), options, &cf_reader));
+  RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block), options, &cf_reader));
   gscoped_ptr<BloomFileReader> bf_reader(new BloomFileReader(
-      cf_reader.Pass(), options));
+      std::move(cf_reader), options));
   if (!FLAGS_cfile_lazy_open) {
     RETURN_NOT_OK(bf_reader->Init());
   }
 
-  *reader = bf_reader.Pass();
+  *reader = std::move(bf_reader);
   return Status::OK();
 }
 
 BloomFileReader::BloomFileReader(gscoped_ptr<CFileReader> reader,
                                  const ReaderOptions& options)
-  : reader_(reader.Pass()),
+  : reader_(std::move(reader)),
     mem_consumption_(options.parent_mem_tracker,
                      memory_footprint_excluding_reader()) {
 }

@@ -190,7 +190,7 @@ void OutboundCall::CallCallback() {
 }
 
 void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
-  call_response_ = resp.Pass();
+  call_response_ = std::move(resp);
   Slice r(call_response_->serialized_response());
 
   if (call_response_->is_success()) {

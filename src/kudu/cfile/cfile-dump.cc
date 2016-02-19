@@ -52,7 +52,7 @@ Status DumpFile(const string& block_id_str) {
   RETURN_NOT_OK(fs_manager.OpenBlock(block_id, &block));
 
   gscoped_ptr<CFileReader> reader;
-  RETURN_NOT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
+  RETURN_NOT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
   if (FLAGS_print_meta) {
     cout << "Header:\n" << reader->header().DebugString() << endl;

@@ -301,7 +301,7 @@ struct ResponseTransferCallbacks : public TransferCallbacks {
  public:
   ResponseTransferCallbacks(gscoped_ptr<InboundCall> call,
                             Connection *conn) :
-    call_(call.Pass()),
+    call_(std::move(call)),
     conn_(conn)
   {}
 
@@ -332,12 +332,12 @@ class QueueTransferTask : public ReactorTask {
  public:
   QueueTransferTask(gscoped_ptr<OutboundTransfer> transfer,
                     Connection *conn)
-    : transfer_(transfer.Pass()),
+    : transfer_(std::move(transfer)),
       conn_(conn)
   {}
 
   virtual void Run(ReactorThread *thr) OVERRIDE {
-    conn_->QueueOutbound(transfer_.Pass());
+    conn_->QueueOutbound(std::move(transfer_));
     delete this;
   }
 
@@ -365,11 +365,11 @@ void Connection::QueueResponseForCall(gscoped_ptr<InboundCall> call) {
   std::vector<Slice> slices;
   call->SerializeResponseTo(&slices);
 
-  TransferCallbacks *cb = new ResponseTransferCallbacks(call.Pass(), this);
+  TransferCallbacks *cb = new ResponseTransferCallbacks(std::move(call), this);
   // After the response is sent, can delete the InboundCall object.
   gscoped_ptr<OutboundTransfer> t(new OutboundTransfer(slices, cb));
 
-  QueueTransferTask *task = new QueueTransferTask(t.Pass(), this);
+  QueueTransferTask *task = new QueueTransferTask(std::move(t), this);
   reactor_thread_->reactor()->ScheduleReactorTask(task);
 }
 
@@ -409,9 +409,9 @@ void Connection::ReadHandler(ev::io &watcher, int revents) {
     DVLOG(3) << ToString() << ": finished reading " << inbound_->data().size() << " bytes";
 
     if (direction_ == CLIENT) {
-      HandleCallResponse(inbound_.Pass());
+      HandleCallResponse(std::move(inbound_));
     } else if (direction_ == SERVER) {
-      HandleIncomingCall(inbound_.Pass());
+      HandleIncomingCall(std::move(inbound_));
     } else {
       LOG(FATAL) << "Invalid direction: " << direction_;
     }
@@ -431,7 +431,7 @@ void Connection::HandleIncomingCall(gscoped_ptr<InboundTransfer> transfer) {
   DCHECK(reactor_thread_->IsCurrentThread());
 
   gscoped_ptr<InboundCall> call(new InboundCall(this));
-  Status s = call->ParseFrom(transfer.Pass());
+  Status s = call->ParseFrom(std::move(transfer));
   if (!s.ok()) {
     LOG(WARNING) << ToString() << ": received bad data: " << s.ToString();
     // TODO: shutdown? probably, since any future stuff on this socket will be
@@ -448,13 +448,13 @@ void Connection::HandleIncomingCall(gscoped_ptr<InboundTransfer> transfer) {
     return;
   }
 
-  reactor_thread_->reactor()->messenger()->QueueInboundCall(call.Pass());
+  reactor_thread_->reactor()->messenger()->QueueInboundCall(std::move(call));
 }
 
 void Connection::HandleCallResponse(gscoped_ptr<InboundTransfer> transfer) {
   DCHECK(reactor_thread_->IsCurrentThread());
   gscoped_ptr<CallResponse> resp(new CallResponse);
-  CHECK_OK(resp->ParseFrom(transfer.Pass()));
+  CHECK_OK(resp->ParseFrom(std::move(transfer)));
 
   CallAwaitingResponse *car_ptr =
     EraseKeyReturnValuePtr(&awaiting_response_, resp->call_id());
@@ -473,7 +473,7 @@ void Connection::HandleCallResponse(gscoped_ptr<InboundTransfer> transfer) {
     return;
   }
 
-  car->call->SetResponse(resp.Pass());
+  car->call->SetResponse(std::move(resp));
 }
 
 void Connection::WriteHandler(ev::io &watcher, int revents) {
@@ -543,7 +543,7 @@ Status Connection::InitSaslServer() {
   // Right now we just enable PLAIN with a "dummy" auth store, which allows everyone in.
   RETURN_NOT_OK(sasl_server().Init(kSaslProtoName));
   gscoped_ptr<AuthStore> auth_store(new DummyAuthStore());
-  RETURN_NOT_OK(sasl_server().EnablePlain(auth_store.Pass()));
+  RETURN_NOT_OK(sasl_server().EnablePlain(std::move(auth_store)));
   return Status::OK();
 }
 

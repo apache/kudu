@@ -219,7 +219,7 @@ void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   }
 
   // The RpcService will respond to the client on success or failure.
-  WARN_NOT_OK((*service)->QueueInboundCall(call.Pass()), "Unable to handle RPC call");
+  WARN_NOT_OK((*service)->QueueInboundCall(std::move(call)), "Unable to handle RPC call");
 }
 
 void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote) {

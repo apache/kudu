@@ -315,7 +315,7 @@ Status SysCatalogTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *re
   gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
     new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, resp));
   auto tx_state = new tablet::WriteTransactionState(tablet_peer_.get(), req, resp);
-  tx_state->set_completion_callback(txn_callback.Pass());
+  tx_state->set_completion_callback(std::move(txn_callback));
 
   RETURN_NOT_OK(tablet_peer_->SubmitWrite(tx_state));
   latch.Wait();

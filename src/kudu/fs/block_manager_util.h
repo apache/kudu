@@ -68,7 +68,7 @@ class PathInstanceMetadataFile {
   Status Unlock();
 
   void SetMetadataForTests(gscoped_ptr<PathInstanceMetadataPB> metadata) {
-    metadata_ = metadata.Pass();
+    metadata_ = std::move(metadata);
   }
 
   std::string path() const { return DirName(filename_); }

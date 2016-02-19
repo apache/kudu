@@ -350,7 +350,7 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
   } else {
     mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW));
   }
-  tx_state->SetMvccTxAndTimestamp(mvcc_tx.Pass());
+  tx_state->SetMvccTxAndTimestamp(std::move(mvcc_tx));
 }
 
 Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
@@ -446,7 +446,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
                             &stats,
                             result.get());
   if (s.ok()) {
-    mutate->SetMutateSucceeded(result.Pass());
+    mutate->SetMutateSucceeded(std::move(result));
     return s;
   }
   if (!s.IsNotFound()) {
@@ -470,7 +470,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
                       &stats,
                       result.get());
     if (s.ok()) {
-      mutate->SetMutateSucceeded(result.Pass());
+      mutate->SetMutateSucceeded(std::move(result));
       return s;
     }
     if (!s.IsNotFound()) {

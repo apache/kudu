@@ -65,7 +65,7 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
     }
 
     shared_ptr<DeltaFileReader> dfr;
-    s = DeltaFileReader::OpenNoInit(block.Pass(), block_id, &dfr, type);
+    s = DeltaFileReader::OpenNoInit(std::move(block), block_id, &dfr, type);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
                  << " delta file reader " << block_id.ToString() << ": "
@@ -217,7 +217,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   // Merge and compact the stores and write and output to "data_writer"
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
-  RETURN_NOT_OK(DoCompactStores(start_idx, end_idx, block.Pass(),
+  RETURN_NOT_OK(DoCompactStores(start_idx, end_idx, std::move(block),
                 &compacted_stores, &compacted_blocks));
 
   // Update delta_stores_, removing the compacted delta files and inserted the new
@@ -257,7 +257,7 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
   RETURN_NOT_OK(MakeDeltaIteratorMergerUnlocked(start_idx, end_idx, &empty_schema, compacted_stores,
                                                 compacted_blocks, &inputs_merge));
   LOG(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
-  DeltaFileWriter dfw(block.Pass());
+  DeltaFileWriter dfw(std::move(block));
   RETURN_NOT_OK(dfw.Start());
   RETURN_NOT_OK(WriteDeltaIteratorToFile<REDO>(inputs_merge.get(),
                                                ITERATE_OVER_ALL_ROWS,
@@ -399,7 +399,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                         "Unable to allocate new delta data writable_block");
   BlockId block_id(writable_block->id());
 
-  DeltaFileWriter dfw(writable_block.Pass());
+  DeltaFileWriter dfw(std::move(writable_block));
   RETURN_NOT_OK_PREPEND(dfw.Start(),
                         Substitute("Unable to start writing to delta block $0",
                                    block_id.ToString()));
@@ -412,7 +412,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   // Now re-open for read
   gscoped_ptr<ReadableBlock> readable_block;
   RETURN_NOT_OK(fs->OpenBlock(block_id, &readable_block));
-  RETURN_NOT_OK(DeltaFileReader::OpenNoInit(readable_block.Pass(), block_id, dfr, REDO));
+  RETURN_NOT_OK(DeltaFileReader::OpenNoInit(std::move(readable_block), block_id, dfr, REDO));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));

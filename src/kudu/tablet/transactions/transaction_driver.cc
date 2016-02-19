@@ -69,7 +69,7 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
 
 Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
                                DriverType type) {
-  transaction_ = transaction.Pass();
+  transaction_ = std::move(transaction);
 
   if (type == consensus::REPLICA) {
     boost::lock_guard<simple_spinlock> lock(opid_lock_);
@@ -83,7 +83,7 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
     if (consensus_) { // sometimes NULL in tests
       // Unretained is required to avoid a refcount cycle.
       mutable_state()->set_consensus_round(
-        consensus_->NewRound(replicate_msg.Pass(),
+        consensus_->NewRound(std::move(replicate_msg),
                              Bind(&TransactionDriver::ReplicationFinished, Unretained(this))));
     }
   }
@@ -384,7 +384,7 @@ void TransactionDriver::ApplyTask() {
     transaction_->PreCommit();
     {
       TRACE_EVENT1("txn", "AsyncAppendCommit", "txn", this);
-      CHECK_OK(log_->AsyncAppendCommit(commit_msg.Pass(), Bind(DoNothingStatusCB)));
+      CHECK_OK(log_->AsyncAppendCommit(std::move(commit_msg), Bind(DoNothingStatusCB)));
     }
     Finalize();
   }

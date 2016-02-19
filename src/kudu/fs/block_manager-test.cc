@@ -161,7 +161,7 @@ void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& p
       gscoped_ptr<WritableBlock> block;
       ASSERT_OK(bm_->CreateBlock(&block));
       ASSERT_OK(block->Append(kTestData));
-      closer.AddBlock(block.Pass());
+      closer.AddBlock(std::move(block));
     }
     ASSERT_OK(closer.CloseBlocks());
   }
@@ -237,7 +237,7 @@ void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
         data[i] = rand.Next();
       }
       b->Append(Slice(data, sizeof(data)));
-      closer.AddBlock(b.Pass());
+      closer.AddBlock(std::move(b));
     }
     ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 1, 10, 0));
 
@@ -709,7 +709,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
       gscoped_ptr<WritableBlock> writer;
       ASSERT_OK(bm_->CreateBlock(&writer));
       block_ids.push_back(writer->id());
-      closer.AddBlock(writer.Pass());
+      closer.AddBlock(std::move(writer));
     }
     ASSERT_OK(closer.CloseBlocks());
   }

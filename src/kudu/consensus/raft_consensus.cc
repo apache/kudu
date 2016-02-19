@@ -187,11 +187,11 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
 
   return make_scoped_refptr(new RaftConsensus(
                               options,
-                              cmeta.Pass(),
-                              rpc_factory.Pass(),
-                              queue.Pass(),
-                              peer_manager.Pass(),
-                              thread_pool.Pass(),
+                              std::move(cmeta),
+                              std::move(rpc_factory),
+                              std::move(queue),
+                              std::move(peer_manager),
+                              std::move(thread_pool),
                               metric_entity,
                               peer_uuid,
                               clock,
@@ -211,12 +211,12 @@ RaftConsensus::RaftConsensus(
     ReplicaTransactionFactory* txn_factory, const scoped_refptr<log::Log>& log,
     shared_ptr<MemTracker> parent_mem_tracker,
     Callback<void(const std::string& reason)> mark_dirty_clbk)
-    : thread_pool_(thread_pool.Pass()),
+    : thread_pool_(std::move(thread_pool)),
       log_(log),
       clock_(clock),
-      peer_proxy_factory_(proxy_factory.Pass()),
-      peer_manager_(peer_manager.Pass()),
-      queue_(queue.Pass()),
+      peer_proxy_factory_(std::move(proxy_factory)),
+      peer_manager_(std::move(peer_manager)),
+      queue_(std::move(queue)),
       rng_(GetRandomSeed32()),
       failure_monitor_(GetRandomSeed32(), GetFailureMonitorCheckMeanMs(),
                        GetFailureMonitorCheckStddevMs()),
@@ -234,7 +234,7 @@ RaftConsensus::RaftConsensus(
   DCHECK_NOTNULL(log_.get());
   state_.reset(new ReplicaState(options,
                                 peer_uuid,
-                                cmeta.Pass(),
+                                std::move(cmeta),
                                 DCHECK_NOTNULL(txn_factory)));
 }
 
@@ -401,7 +401,7 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
 
     election.reset(new LeaderElection(active_config,
                                       peer_proxy_factory_.get(),
-                                      request, counter.Pass(), timeout,
+                                      request, std::move(counter), timeout,
                                       Bind(&RaftConsensus::ElectionCallback, this)));
   }
 
@@ -1885,7 +1885,7 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   commit_msg->set_op_type(round->replicate_msg()->op_type());
   *commit_msg->mutable_commited_op_id() = round->id();
 
-  WARN_NOT_OK(log_->AsyncAppendCommit(commit_msg.Pass(), Bind(&DoNothingStatusCB)),
+  WARN_NOT_OK(log_->AsyncAppendCommit(std::move(commit_msg), Bind(&DoNothingStatusCB)),
               "Unable to append commit message");
   client_cb.Run(status);
 }

@@ -156,14 +156,14 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 
     if (cmeta->committed_config().local()) {
       consensus_.reset(new LocalConsensus(options,
-                                          cmeta.Pass(),
+                                          std::move(cmeta),
                                           meta_->fs_manager()->uuid(),
                                           clock_,
                                           this,
                                           log_.get()));
     } else {
       consensus_ = RaftConsensus::Create(options,
-                                         cmeta.Pass(),
+                                         std::move(cmeta),
                                          local_peer_pb_,
                                          metric_entity,
                                          clock_,
@@ -519,7 +519,7 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
   clock_->Update(ts);
 
   scoped_refptr<TransactionDriver> driver;
-  RETURN_NOT_OK(NewReplicaTransactionDriver(transaction.Pass(), &driver));
+  RETURN_NOT_OK(NewReplicaTransactionDriver(std::move(transaction), &driver));
 
   // Unretained is required to avoid a refcount cycle.
   state->consensus_round()->SetConsensusReplicatedCallback(
@@ -538,7 +538,7 @@ Status TabletPeer::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transacti
     prepare_pool_.get(),
     apply_pool_,
     &txn_order_verifier_);
-  RETURN_NOT_OK(tx_driver->Init(transaction.Pass(), consensus::LEADER));
+  RETURN_NOT_OK(tx_driver->Init(std::move(transaction), consensus::LEADER));
   driver->swap(tx_driver);
 
   return Status::OK();
@@ -553,7 +553,7 @@ Status TabletPeer::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transact
     prepare_pool_.get(),
     apply_pool_,
     &txn_order_verifier_);
-  RETURN_NOT_OK(tx_driver->Init(transaction.Pass(), consensus::REPLICA));
+  RETURN_NOT_OK(tx_driver->Init(std::move(transaction), consensus::REPLICA));
   driver->swap(tx_driver);
 
   return Status::OK();

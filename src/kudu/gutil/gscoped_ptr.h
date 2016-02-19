@@ -50,15 +50,15 @@
 //     return gscoped_ptr<Foo>(new Foo("new"));
 //   }
 //   gscoped_ptr<Foo> PassThru(gscoped_ptr<Foo> arg) {
-//     return arg.Pass();
+//     return std::move(arg);
 //   }
 //
 //   {
 //     gscoped_ptr<Foo> ptr(new Foo("yay"));  // ptr manages Foo("yay").
-//     TakesOwnership(ptr.Pass());           // ptr no longer owns Foo("yay").
+//     TakesOwnership(std::move(ptr));           // ptr no longer owns Foo("yay").
 //     gscoped_ptr<Foo> ptr2 = CreateFoo();   // ptr2 owns the return Foo.
 //     gscoped_ptr<Foo> ptr3 =                // ptr3 now owns what was in ptr2.
-//         PassThru(ptr2.Pass());            // ptr2 is correspondingly NULL.
+//         PassThru(std::move(ptr2));            // ptr2 is correspondingly NULL.
 //   }
 //
 // Notice that if you do not call Pass() when returning from PassThru(), or
@@ -72,7 +72,7 @@
 // gscoped_ptr<Child> to gscoped_ptr<Parent>:
 //
 //   gscoped_ptr<Foo> foo(new Foo());
-//   gscoped_ptr<FooParent> parent = foo.Pass();
+//   gscoped_ptr<FooParent> parent = std::move(foo);
 //
 // PassAs<>() should be used to upcast return value in return statement:
 //

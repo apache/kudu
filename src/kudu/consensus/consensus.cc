@@ -74,7 +74,7 @@ Status ConsensusRound::CheckBoundTerm(int64_t current_term) const {
 scoped_refptr<ConsensusRound> Consensus::NewRound(
     gscoped_ptr<ReplicateMsg> replicate_msg,
     const ConsensusReplicatedCallback& replicated_cb) {
-  return make_scoped_refptr(new ConsensusRound(this, replicate_msg.Pass(), replicated_cb));
+  return make_scoped_refptr(new ConsensusRound(this, std::move(replicate_msg), replicated_cb));
 }
 
 void Consensus::SetFaultHooks(const shared_ptr<ConsensusFaultHooks>& hooks) {

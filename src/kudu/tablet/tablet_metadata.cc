@@ -286,7 +286,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), schema.get()),
                           "Failed to parse Schema from superblock " +
                           superblock.ShortDebugString());
-    SetSchemaUnlocked(schema.Pass(), schema_version);
+    SetSchemaUnlocked(std::move(schema), schema_version);
 
     // This check provides backwards compatibility with the
     // flexible-partitioning changes introduced in KUDU-818.
@@ -584,7 +584,7 @@ RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
 void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
   gscoped_ptr<Schema> new_schema(new Schema(schema));
   boost::lock_guard<LockType> l(data_lock_);
-  SetSchemaUnlocked(new_schema.Pass(), version);
+  SetSchemaUnlocked(std::move(new_schema), version);
 }
 
 void TabletMetadata::SetSchemaUnlocked(gscoped_ptr<Schema> new_schema, uint32_t version) {

@@ -85,7 +85,7 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_OK(this->fs_manager()->OpenBlock(undo_blocks[0], &block));
 
   shared_ptr<DeltaFileReader> dfr;
-  ASSERT_OK(DeltaFileReader::Open(block.Pass(), undo_blocks[0], &dfr, UNDO));
+  ASSERT_OK(DeltaFileReader::Open(std::move(block), undo_blocks[0], &dfr, UNDO));
   // Assert there were 'max_rows' deletions in the undo delta (one for each inserted row)
   ASSERT_EQ(dfr->delta_stats().delete_count(), max_rows);
 }

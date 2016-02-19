@@ -256,7 +256,7 @@ gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
                                                      FLAGS_tpch_test_client_timeout_msec,
                                                      split_rows));
   dao->Init();
-  return dao.Pass();
+  return std::move(dao);
 }
 
 void TpchRealWorld::LoadLineItemsThread(int i) {

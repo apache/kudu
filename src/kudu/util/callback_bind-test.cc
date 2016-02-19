@@ -84,7 +84,7 @@ TEST(CallbackBindTest, TestCallScopedPtrArg) {
   // function which takes gscoped_ptr:
   gscoped_ptr<char> foo(new char('x'));
   Callback<char(gscoped_ptr<char>)> cb = Bind(&IncrementChar);
-  ASSERT_EQ('y', cb.Run(foo.Pass()));
+  ASSERT_EQ('y', cb.Run(std::move(foo)));
 }
 
 TEST(CallbackBindTest, TestBindScopedPtrArg) {

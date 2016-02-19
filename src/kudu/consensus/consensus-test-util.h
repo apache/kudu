@@ -67,7 +67,7 @@ static gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int term,
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->mutable_payload_for_tests()->resize(payload_size);
     msg->set_timestamp(timestamp.ToUint64());
-    return msg.Pass();
+    return std::move(msg);
 }
 
 // Returns RaftPeerPB with given UUID and obviously-fake hostname / port combo.
@@ -618,7 +618,7 @@ class TestDriver {
     gscoped_ptr<CommitMsg> msg(new CommitMsg);
     msg->set_op_type(round_->replicate_msg()->op_type());
     msg->mutable_commited_op_id()->CopyFrom(round_->id());
-    CHECK_OK(log_->AsyncAppendCommit(msg.Pass(),
+    CHECK_OK(log_->AsyncAppendCommit(std::move(msg),
                                      Bind(&TestDriver::CommitCallback, Unretained(this))));
   }
 

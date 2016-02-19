@@ -35,7 +35,7 @@ namespace fs {
 //   gscoped_ptr<ReadableBlock> block;
 //   fs_manager->OpenBlock("some block id", &block);
 //   size_t bytes_read = 0;
-//   gscoped_ptr<ReadableBlock> tr_block(new CountingReadableBlock(block.Pass(), &bytes_read));
+//   gscoped_ptr<ReadableBlock> tr_block(new CountingReadableBlock(std::move(block), &bytes_read));
 //   tr_block->Read(0, 100, ...);
 //   tr_block->Read(0, 200, ...);
 //   ASSERT_EQ(300, bytes_read);
@@ -43,7 +43,7 @@ namespace fs {
 class CountingReadableBlock : public ReadableBlock {
  public:
   CountingReadableBlock(gscoped_ptr<ReadableBlock> block, size_t* bytes_read)
-    : block_(block.Pass()),
+    : block_(std::move(block)),
       bytes_read_(bytes_read) {
   }
 

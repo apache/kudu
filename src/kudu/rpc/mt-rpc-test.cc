@@ -154,7 +154,7 @@ class BogusServicePool : public ServicePool {
   BogusServicePool(gscoped_ptr<ServiceIf> service,
                    const scoped_refptr<MetricEntity>& metric_entity,
                    size_t service_queue_length)
-    : ServicePool(service.Pass(), metric_entity, service_queue_length) {
+    : ServicePool(std::move(service), metric_entity, service_queue_length) {
   }
   virtual Status Init(int num_threads) OVERRIDE {
     // Do nothing
@@ -191,7 +191,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
 
   gscoped_ptr<ServiceIf> service(new GenericCalculatorService());
   service_name_ = service->service_name();
-  service_pool_ = new BogusServicePool(service.Pass(),
+  service_pool_ = new BogusServicePool(std::move(service),
                                       server_messenger_->metric_entity(),
                                       kMaxConcurrency);
   ASSERT_OK(service_pool_->Init(n_worker_threads_));

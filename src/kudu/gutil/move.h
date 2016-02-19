@@ -105,8 +105,8 @@
 //
 //
 //    Foo f(MakeFoo());      // R-value so alternate conversion executed.
-//    Foo f_copy(f.Pass());  // R-value so alternate conversion executed.
-//    f = f_copy.Pass();     // R-value so alternate conversion executed.
+//    Foo f_copy(std::move(f));  // R-value so alternate conversion executed.
+//    f = std::move(f_copy);     // R-value so alternate conversion executed.
 //
 //
 // IMPLEMENTATION SUBTLETIES WITH RValue

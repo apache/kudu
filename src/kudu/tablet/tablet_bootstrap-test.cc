@@ -415,7 +415,7 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
   MemStoreTargetPB* target = mutate->add_mutated_stores();
   target->set_mrs_id(1);
 
-  AppendCommit(mutate_commit.Pass());
+  AppendCommit(std::move(mutate_commit));
 
   gscoped_ptr<consensus::CommitMsg> insert_commit(new consensus::CommitMsg);
   insert_commit->set_op_type(consensus::WRITE_OP);
@@ -425,7 +425,7 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
   target = insert->add_mutated_stores();
   target->set_mrs_id(1);
 
-  AppendCommit(insert_commit.Pass());
+  AppendCommit(std::move(insert_commit));
 
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;
@@ -479,7 +479,7 @@ TEST_F(BootstrapTest, TestMissingCommitMessage) {
   MemStoreTargetPB* target = mutate->add_mutated_stores();
   target->set_mrs_id(1);
 
-  AppendCommit(mutate_commit.Pass());
+  AppendCommit(std::move(mutate_commit));
 
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;
@@ -526,7 +526,7 @@ TEST_F(BootstrapTest, TestConsensusOnlyOperationOutOfOrderTimestamp) {
   mutate_commit->set_op_type(consensus::NO_OP);
   *mutate_commit->mutable_commited_op_id() = noop_replicate->get()->id();
 
-  AppendCommit(mutate_commit.Pass());
+  AppendCommit(std::move(mutate_commit));
 
   // ...and WRITE_OP...
   mutate_commit.reset(new consensus::CommitMsg);
@@ -537,7 +537,7 @@ TEST_F(BootstrapTest, TestConsensusOnlyOperationOutOfOrderTimestamp) {
   MemStoreTargetPB* target = mutate->add_mutated_stores();
   target->set_mrs_id(1);
 
-  AppendCommit(mutate_commit.Pass());
+  AppendCommit(std::move(mutate_commit));
 
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;

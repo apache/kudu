@@ -45,7 +45,7 @@ ReplicaState::ReplicaState(ConsensusOptions options, string peer_uuid,
                            ReplicaTransactionFactory* txn_factory)
     : options_(std::move(options)),
       peer_uuid_(std::move(peer_uuid)),
-      cmeta_(cmeta.Pass()),
+      cmeta_(std::move(cmeta)),
       next_index_(0),
       txn_factory_(txn_factory),
       last_received_op_id_(MinimumOpId()),

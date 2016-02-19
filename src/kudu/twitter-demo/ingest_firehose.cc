@@ -75,7 +75,7 @@ gscoped_ptr<TwitterConsumer> CreateInsertConsumer() {
 
   gscoped_ptr<InsertConsumer> ret(new InsertConsumer(client));
   CHECK_OK(ret->Init());
-  return gscoped_ptr<TwitterConsumer>(ret.Pass()); // up-cast
+  return gscoped_ptr<TwitterConsumer>(std::move(ret)); // up-cast
 }
 
 static void IngestFromFile(const string& file, gscoped_ptr<TwitterConsumer> consumer) {
@@ -110,7 +110,7 @@ static int main(int argc, char** argv) {
     CHECK_OK(streamer.Start());
     CHECK_OK(streamer.Join());
   } else if (FLAGS_twitter_firehose_source == "file") {
-    IngestFromFile(FLAGS_twitter_firehose_file, consumer.Pass());
+    IngestFromFile(FLAGS_twitter_firehose_file, std::move(consumer));
   } else {
     LOG(FATAL) << "Unknown source: " << FLAGS_twitter_firehose_source;
   }

@@ -60,7 +60,7 @@ namespace rpc {
 ServicePool::ServicePool(gscoped_ptr<ServiceIf> service,
                          const scoped_refptr<MetricEntity>& entity,
                          size_t service_queue_length)
-  : service_(service.Pass()),
+  : service_(std::move(service)),
     service_queue_(service_queue_length),
     incoming_queue_time_(METRIC_rpc_incoming_queue_time.Instantiate(entity)),
     rpcs_timed_out_in_queue_(METRIC_rpcs_timed_out_in_queue.Instantiate(entity)),

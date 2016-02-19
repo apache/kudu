@@ -113,7 +113,7 @@ static void RunCheckIntegrityTest(Env* env,
     metadata->set_block_manager_type("asdf");
     metadata->set_filesystem_block_size_bytes(1);
     metadata->mutable_path_set()->CopyFrom(ps);
-    instance->SetMetadataForTests(metadata.Pass());
+    instance->SetMetadataForTests(std::move(metadata));
     instances.push_back(instance.release());
     i++;
   }

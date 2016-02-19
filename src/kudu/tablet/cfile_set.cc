@@ -58,7 +58,7 @@ static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata,
 
   // TODO: somehow pass reader options in schema
   ReaderOptions opts;
-  return CFileReader::OpenNoInit(block.Pass(), opts, new_reader);
+  return CFileReader::OpenNoInit(std::move(block), opts, new_reader);
 }
 
 ////////////////////////////////////////////////////////////
@@ -113,7 +113,7 @@ Status CFileSet::OpenAdHocIndexReader() {
   RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->adhoc_index_block(), &block));
 
   ReaderOptions opts;
-  return CFileReader::Open(block.Pass(), opts, &ad_hoc_idx_reader_);
+  return CFileReader::Open(std::move(block), opts, &ad_hoc_idx_reader_);
 }
 
 
@@ -127,7 +127,7 @@ Status CFileSet::OpenBloomReader() {
   RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->bloom_block(), &block));
 
   ReaderOptions opts;
-  Status s = BloomFileReader::OpenNoInit(block.Pass(), opts, &bloom_reader_);
+  Status s = BloomFileReader::OpenNoInit(std::move(block), opts, &bloom_reader_);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open bloom file in " << rowset_metadata_->ToString() << ": "
                  << s.ToString();

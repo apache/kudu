@@ -322,8 +322,8 @@ void FullStackInsertScanTest::DoTestScans() {
   NO_FATALS(ScanProjection(Int32ColumnNames(), "Int32 projection, 4 col"));
   NO_FATALS(ScanProjection(Int64ColumnNames(), "Int64 projection, 4 col"));
 
-  NO_FATALS(InterruptNotNull(record.Pass()));
-  NO_FATALS(InterruptNotNull(stat.Pass()));
+  NO_FATALS(InterruptNotNull(std::move(record)));
+  NO_FATALS(InterruptNotNull(std::move(stat)));
 }
 
 void FullStackInsertScanTest::FlushToDisk() {

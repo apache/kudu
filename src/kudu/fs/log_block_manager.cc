@@ -314,8 +314,8 @@ LogBlockContainer::LogBlockContainer(
     gscoped_ptr<RWFile> data_file)
     : block_manager_(block_manager),
       path_(std::move(path)),
-      metadata_pb_writer_(metadata_writer.Pass()),
-      data_file_(data_file.Pass()),
+      metadata_pb_writer_(std::move(metadata_writer)),
+      data_file_(std::move(data_file)),
       total_bytes_written_(0),
       metrics_(block_manager->metrics()),
       instance_(instance) {}
@@ -359,13 +359,13 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
                          data_status.IsAlreadyPresent()));
   if (metadata_status.ok() && data_status.ok()) {
     gscoped_ptr<WritablePBContainerFile> metadata_pb_writer(
-        new WritablePBContainerFile(metadata_writer.Pass()));
+        new WritablePBContainerFile(std::move(metadata_writer)));
     RETURN_NOT_OK(metadata_pb_writer->Init(BlockRecordPB()));
     container->reset(new LogBlockContainer(block_manager,
                                            instance,
                                            common_path,
-                                           metadata_pb_writer.Pass(),
-                                           data_file.Pass()));
+                                           std::move(metadata_pb_writer),
+                                           std::move(data_file)));
     VLOG(1) << "Created log block container " << (*container)->ToString();
   }
 
@@ -389,7 +389,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
                                                       metadata_path,
                                                       &metadata_writer));
   gscoped_ptr<WritablePBContainerFile> metadata_pb_writer(
-      new WritablePBContainerFile(metadata_writer.Pass()));
+      new WritablePBContainerFile(std::move(metadata_writer)));
   // No call to metadata_pb_writer->Init() because we're reopening an
   // existing pb container (that should already have a valid header).
 
@@ -405,8 +405,8 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   gscoped_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
                                                                       instance,
                                                                       common_path,
-                                                                      metadata_pb_writer.Pass(),
-                                                                      data_file.Pass()));
+                                                                      std::move(metadata_pb_writer),
+                                                                      std::move(data_file)));
   VLOG(1) << "Opened log block container " << open_container->ToString();
   container->reset(open_container.release());
   return Status::OK();
@@ -416,7 +416,7 @@ Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) co
   string metadata_path = StrCat(path_, kMetadataFileSuffix);
   gscoped_ptr<RandomAccessFile> metadata_reader;
   RETURN_NOT_OK(block_manager()->env()->NewRandomAccessFile(metadata_path, &metadata_reader));
-  ReadablePBContainerFile pb_reader(metadata_reader.Pass());
+  ReadablePBContainerFile pb_reader(std::move(metadata_reader));
   RETURN_NOT_OK(pb_reader.Init());
 
   uint64_t data_file_size;

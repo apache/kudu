@@ -89,7 +89,7 @@ CFileWriter::CFileWriter(const WriterOptions &options,
                          const TypeInfo* typeinfo,
                          bool is_nullable,
                          gscoped_ptr<WritableBlock> block)
-  : block_(block.Pass()),
+  : block_(std::move(block)),
     off_(0),
     value_count_(0),
     options_(options),
@@ -243,11 +243,11 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   // Done with this block.
   if (FLAGS_cfile_do_on_finish == "flush") {
     RETURN_NOT_OK(block_->FlushDataAsync());
-    closer->AddBlock(block_.Pass());
+    closer->AddBlock(std::move(block_));
   } else if (FLAGS_cfile_do_on_finish == "close") {
     RETURN_NOT_OK(block_->Close());
   } else if (FLAGS_cfile_do_on_finish == "nothing") {
-    closer->AddBlock(block_.Pass());
+    closer->AddBlock(std::move(block_));
   } else {
     LOG(FATAL) << "Unknown value for cfile_do_on_finish: "
                << FLAGS_cfile_do_on_finish;

@@ -254,7 +254,7 @@ TEST_F(TestPBUtil, TestMultipleMessages) {
 
   gscoped_ptr<WritableFile> writer;
   ASSERT_OK(env_->NewWritableFile(path_, &writer));
-  WritablePBContainerFile pb_writer(writer.Pass());
+  WritablePBContainerFile pb_writer(std::move(writer));
   ASSERT_OK(pb_writer.Init(pb));
 
   for (int i = 0; i < 10; i++) {
@@ -266,7 +266,7 @@ TEST_F(TestPBUtil, TestMultipleMessages) {
   int pbs_read = 0;
   gscoped_ptr<RandomAccessFile> reader;
   ASSERT_OK(env_->NewRandomAccessFile(path_, &reader));
-  ReadablePBContainerFile pb_reader(reader.Pass());
+  ReadablePBContainerFile pb_reader(std::move(reader));
   ASSERT_OK(pb_reader.Init());
   for (int i = 0;; i++) {
     ProtoContainerTestPB read_pb;
@@ -292,10 +292,10 @@ TEST_F(TestPBUtil, TestInterleavedReadWrite) {
   // Open the file for writing and reading.
   gscoped_ptr<WritableFile> writer;
   ASSERT_OK(env_->NewWritableFile(path_, &writer));
-  WritablePBContainerFile pb_writer(writer.Pass());
+  WritablePBContainerFile pb_writer(std::move(writer));
   gscoped_ptr<RandomAccessFile> reader;
   ASSERT_OK(env_->NewRandomAccessFile(path_, &reader));
-  ReadablePBContainerFile pb_reader(reader.Pass());
+  ReadablePBContainerFile pb_reader(std::move(reader));
 
   // Write the header (writer) and validate it (reader).
   ASSERT_OK(pb_writer.Init(pb));
@@ -349,7 +349,7 @@ void TestPBUtil::DumpPBCToString(const string& path, bool oneline_output,
                                  string* ret) {
   gscoped_ptr<RandomAccessFile> reader;
   ASSERT_OK(env_->NewRandomAccessFile(path, &reader));
-  ReadablePBContainerFile pb_reader(reader.Pass());
+  ReadablePBContainerFile pb_reader(std::move(reader));
   ASSERT_OK(pb_reader.Init());
   ostringstream oss;
   ASSERT_OK(pb_reader.Dump(&oss, oneline_output));
@@ -395,7 +395,7 @@ TEST_F(TestPBUtil, TestDumpPBContainer) {
 
   gscoped_ptr<WritableFile> writer;
   ASSERT_OK(env_->NewWritableFile(path_, &writer));
-  WritablePBContainerFile pb_writer(writer.Pass());
+  WritablePBContainerFile pb_writer(std::move(writer));
   ASSERT_OK(pb_writer.Init(pb));
 
   for (int i = 0; i < 2; i++) {

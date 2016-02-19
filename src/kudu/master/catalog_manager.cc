@@ -1785,7 +1785,7 @@ class RetryingTSRpcTask : public MonitoredTask {
                     const scoped_refptr<TableInfo>& table)
     : master_(master),
       callback_pool_(callback_pool),
-      replica_picker_(replica_picker.Pass()),
+      replica_picker_(std::move(replica_picker)),
       table_(table),
       start_ts_(MonoTime::Now(MonoTime::FINE)),
       attempt_(0),

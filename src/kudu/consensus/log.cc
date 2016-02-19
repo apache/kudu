@@ -402,7 +402,8 @@ Status Log::Reserve(LogEntryTypePB type,
   #endif
 
   int num_ops = entry_batch->entry_size();
-  gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(type, entry_batch.Pass(), num_ops));
+  gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(
+      type, std::move(entry_batch), num_ops));
   new_entry_batch->MarkReserved();
 
   if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(new_entry_batch.get()))) {
@@ -440,7 +441,7 @@ Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& msgs,
   CreateBatchFromAllocatedOperations(msgs, &batch);
 
   LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(Reserve(REPLICATE, batch.Pass(), &reserved_entry_batch));
+  RETURN_NOT_OK(Reserve(REPLICATE, std::move(batch), &reserved_entry_batch));
   // If we're able to reserve set the vector of replicate scoped ptrs in
   // the LogEntryBatch. This will make sure there's a reference for each
   // replicate while we're appending.
@@ -460,7 +461,7 @@ Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
   entry->set_allocated_commit(commit_msg.release());
 
   LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(Reserve(COMMIT, batch.Pass(), &reserved_entry_batch));
+  RETURN_NOT_OK(Reserve(COMMIT, std::move(batch), &reserved_entry_batch));
 
   RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
   return Status::OK();
@@ -670,7 +671,7 @@ Status Log::GetSegmentsToGCUnlocked(int64_t min_op_idx, SegmentSequence* segment
 Status Log::Append(LogEntryPB* phys_entry) {
   gscoped_ptr<LogEntryBatchPB> entry_batch_pb(new LogEntryBatchPB);
   entry_batch_pb->mutable_entry()->AddAllocated(phys_entry);
-  LogEntryBatch entry_batch(phys_entry->type(), entry_batch_pb.Pass(), 1);
+  LogEntryBatch entry_batch(phys_entry->type(), std::move(entry_batch_pb), 1);
   entry_batch.state_ = LogEntryBatch::kEntryReserved;
   Status s = entry_batch.Serialize();
   if (s.ok()) {
@@ -690,7 +691,7 @@ Status Log::WaitUntilAllFlushed() {
   gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
   entry_batch->add_entry()->set_type(log::FLUSH_MARKER);
   LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(Reserve(FLUSH_MARKER, entry_batch.Pass(), &reserved_entry_batch));
+  RETURN_NOT_OK(Reserve(FLUSH_MARKER, std::move(entry_batch), &reserved_entry_batch));
   Synchronizer s;
   RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, s.AsStatusCallback()));
   return s.Wait();
@@ -969,7 +970,7 @@ Log::~Log() {
 LogEntryBatch::LogEntryBatch(LogEntryTypePB type,
                              gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count)
     : type_(type),
-      entry_batch_pb_(entry_batch_pb.Pass()),
+      entry_batch_pb_(std::move(entry_batch_pb)),
       total_size_bytes_(
           PREDICT_FALSE(count == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER) ?
           0 : entry_batch_pb_->ByteSize()),

@@ -113,8 +113,8 @@ Status Master::StartAsync() {
   gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_entity(),
                                                                     catalog_manager_.get()));
 
-  RETURN_NOT_OK(ServerBase::RegisterService(impl.Pass()));
-  RETURN_NOT_OK(ServerBase::RegisterService(consensus_service.Pass()));
+  RETURN_NOT_OK(ServerBase::RegisterService(std::move(impl)));
+  RETURN_NOT_OK(ServerBase::RegisterService(std::move(consensus_service)));
   RETURN_NOT_OK(ServerBase::Start());
 
   // Now that we've bound, construct our ServerRegistrationPB.

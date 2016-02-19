@@ -158,7 +158,7 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
                                ElectionDecisionCallback decision_callback)
     : has_responded_(false),
       request_(request),
-      vote_counter_(vote_counter.Pass()),
+      vote_counter_(std::move(vote_counter)),
       timeout_(std::move(timeout)),
       decision_callback_(std::move(decision_callback)) {
   for (const RaftPeerPB& peer : config.peers()) {

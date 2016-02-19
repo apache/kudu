@@ -427,7 +427,7 @@ gscoped_ptr<TraceBufferChunk> TraceBufferChunk::Clone() const {
   cloned_chunk->next_free_ = next_free_;
   for (size_t i = 0; i < next_free_; ++i)
     cloned_chunk->chunk_[i].CopyFrom(chunk_[i]);
-  return cloned_chunk.Pass();
+  return std::move(cloned_chunk);
 }
 
 // A helper class that allows the lock to be acquired in the middle of the scope
@@ -1092,7 +1092,7 @@ void TraceLog::ThreadLocalEventBuffer::Flush(int64_t tid) {
 
   if (trace_log_->CheckGeneration(generation_)) {
     // Return the chunk to the buffer only if the generation matches.
-    trace_log_->logged_events_->ReturnChunk(chunk_index_, chunk_.Pass());
+    trace_log_->logged_events_->ReturnChunk(chunk_index_, std::move(chunk_));
   }
 }
 
@@ -1468,7 +1468,7 @@ TraceEvent* TraceLog::AddEventToThreadSharedChunkWhileLocked(
 
   if (thread_shared_chunk_ && thread_shared_chunk_->IsFull()) {
     logged_events_->ReturnChunk(thread_shared_chunk_index_,
-                                thread_shared_chunk_.Pass());
+                                std::move(thread_shared_chunk_));
   }
 
   if (!thread_shared_chunk_) {
@@ -1589,7 +1589,7 @@ void TraceLog::Flush(const TraceLog::OutputCallback& cb) {
 
     if (thread_shared_chunk_) {
       logged_events_->ReturnChunk(thread_shared_chunk_index_,
-                                  thread_shared_chunk_.Pass());
+                                  std::move(thread_shared_chunk_));
     }
   }
 
@@ -1641,7 +1641,7 @@ void TraceLog::FinishFlush(int generation,
     UseNextTraceBuffer();
   }
 
-  ConvertTraceEventsToTraceFormat(previous_logged_events.Pass(),
+  ConvertTraceEventsToTraceFormat(std::move(previous_logged_events),
                                   flush_output_callback);
 }
 
@@ -1661,12 +1661,12 @@ void TraceLog::FlushButLeaveBufferIntact(
     if (thread_shared_chunk_) {
       // Return the chunk to the main buffer to flush the sampling data.
       logged_events_->ReturnChunk(thread_shared_chunk_index_,
-                                  thread_shared_chunk_.Pass());
+                                  std::move(thread_shared_chunk_));
     }
     previous_logged_events = logged_events_->CloneForIteration().Pass();
   }
 
-  ConvertTraceEventsToTraceFormat(previous_logged_events.Pass(),
+  ConvertTraceEventsToTraceFormat(std::move(previous_logged_events),
                                   flush_output_callback);
 }
 

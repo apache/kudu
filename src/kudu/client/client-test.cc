@@ -227,7 +227,7 @@ class ClientTest : public KuduTest {
     CHECK_OK(row->SetInt32(1, index * 2));
     CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello %d", index))));
     CHECK_OK(row->SetInt32(3, index * 3));
-    return insert.Pass();
+    return std::move(insert);
   }
 
   gscoped_ptr<KuduUpdate> UpdateTestRow(KuduTable* table, int index) {
@@ -236,14 +236,14 @@ class ClientTest : public KuduTest {
     CHECK_OK(row->SetInt32(0, index));
     CHECK_OK(row->SetInt32(1, index * 2 + 1));
     CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello again %d", index))));
-    return update.Pass();
+    return std::move(update);
   }
 
   gscoped_ptr<KuduDelete> DeleteTestRow(KuduTable* table, int index) {
     gscoped_ptr<KuduDelete> del(table->NewDelete());
     KuduPartialRow* row = del->mutable_row();
     CHECK_OK(row->SetInt32(0, index));
-    return del.Pass();
+    return std::move(del);
   }
 
   void DoTestScanWithoutPredicates() {

@@ -91,7 +91,7 @@ class ConsensusPeersTest : public KuduTest {
                                  kLeaderUuid,
                                  message_queue_.get(),
                                  pool_.get(),
-                                 proxy.Pass(),
+                                 std::move(proxy),
                                  peer));
     return proxy_ptr;
   }

@@ -72,7 +72,7 @@ DeltaFileWriter::DeltaFileWriter(gscoped_ptr<WritableBlock> block)
   opts.write_validx = true;
   opts.storage_attributes.cfile_block_size = FLAGS_deltafile_default_block_size;
   opts.storage_attributes.encoding = PLAIN_ENCODING;
-  writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, block.Pass()));
+  writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, std::move(block)));
 }
 
 
@@ -171,7 +171,7 @@ Status DeltaFileReader::Open(gscoped_ptr<ReadableBlock> block,
                              shared_ptr<DeltaFileReader>* reader_out,
                              DeltaType delta_type) {
   shared_ptr<DeltaFileReader> df_reader;
-  RETURN_NOT_OK(DeltaFileReader::OpenNoInit(block.Pass(),
+  RETURN_NOT_OK(DeltaFileReader::OpenNoInit(std::move(block),
                                             block_id, &df_reader, delta_type));
   RETURN_NOT_OK(df_reader->Init());
 
@@ -184,7 +184,7 @@ Status DeltaFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
                                    shared_ptr<DeltaFileReader>* reader_out,
                                    DeltaType delta_type) {
   gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::OpenNoInit(block.Pass(),
+  RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block),
                                         cfile::ReaderOptions(), &cf_reader));
   gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(block_id,
                                                              cf_reader.release(),

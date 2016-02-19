@@ -54,7 +54,7 @@ class RaftConsensusStateTest : public KuduTest {
     gscoped_ptr<ConsensusMetadata> cmeta;
     ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
                                         config_, kMinimumTerm, &cmeta));
-    state_.reset(new ReplicaState(ConsensusOptions(), fs_manager_.uuid(), cmeta.Pass(),
+    state_.reset(new ReplicaState(ConsensusOptions(), fs_manager_.uuid(), std::move(cmeta),
                                   txn_factory_.get()));
 
     // Start up the ReplicaState.

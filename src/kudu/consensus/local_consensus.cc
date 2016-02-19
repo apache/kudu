@@ -44,7 +44,7 @@ LocalConsensus::LocalConsensus(ConsensusOptions options,
                                ReplicaTransactionFactory* txn_factory, Log* log)
     : peer_uuid_(std::move(peer_uuid)),
       options_(std::move(options)),
-      cmeta_(cmeta.Pass()),
+      cmeta_(std::move(cmeta)),
       txn_factory_(DCHECK_NOTNULL(txn_factory)),
       log_(DCHECK_NOTNULL(log)),
       clock_(clock),
@@ -127,7 +127,7 @@ Status LocalConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
     gscoped_ptr<log::LogEntryBatchPB> entry_batch;
     log::CreateBatchFromAllocatedOperations({ round->replicate_scoped_refptr() }, &entry_batch);
 
-    RETURN_NOT_OK(log_->Reserve(log::REPLICATE, entry_batch.Pass(),
+    RETURN_NOT_OK(log_->Reserve(log::REPLICATE, std::move(entry_batch),
                                 &reserved_entry_batch));
 
     // Local consensus transactions are always committed so we

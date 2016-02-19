@@ -136,7 +136,7 @@ class DiskRowSetCompactionInput : public CompactionInput {
   DiskRowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
                             shared_ptr<DeltaIterator> redo_delta_iter,
                             shared_ptr<DeltaIterator> undo_delta_iter)
-      : base_iter_(base_iter.Pass()),
+      : base_iter_(std::move(base_iter)),
         redo_delta_iter_(std::move(redo_delta_iter)),
         undo_delta_iter_(std::move(undo_delta_iter)),
         arena_(32 * 1024, 128 * 1024),
@@ -546,7 +546,7 @@ Status CompactionInput::Create(const DiskRowSet &rowset,
           MvccSnapshot::CreateSnapshotIncludingNoTransactions(),
           &undo_deltas), "Could not open UNDOs");
 
-  out->reset(new DiskRowSetCompactionInput(base_iter.Pass(), redo_deltas, undo_deltas));
+  out->reset(new DiskRowSetCompactionInput(std::move(base_iter), redo_deltas, undo_deltas));
   return Status::OK();
 }
 

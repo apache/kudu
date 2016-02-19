@@ -82,7 +82,7 @@ class BloomFileTestBase : public KuduTest {
       << "Invalid parameters: --n_keys isn't set large enough to fill even "
       << "one bloom filter of the requested --bloom_size_bytes";
 
-    BloomFileWriter bfw(sink.Pass(), sizing);
+    BloomFileWriter bfw(std::move(sink), sizing);
 
     ASSERT_OK(bfw.Start());
     AppendBlooms(&bfw);
@@ -93,7 +93,7 @@ class BloomFileTestBase : public KuduTest {
     gscoped_ptr<ReadableBlock> source;
     RETURN_NOT_OK(fs_manager_->OpenBlock(block_id_, &source));
 
-    return BloomFileReader::Open(source.Pass(), ReaderOptions(), &bfr_);
+    return BloomFileReader::Open(std::move(source), ReaderOptions(), &bfr_);
   }
 
   uint64_t ReadBenchmark() {

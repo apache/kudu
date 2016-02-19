@@ -559,7 +559,7 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
                                                                   resp)).Pass());
 
   // Submit the alter schema op. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->SubmitAlterSchema(tx_state.Pass());
+  Status s = tablet_peer->SubmitAlterSchema(std::move(tx_state));
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -1048,14 +1048,14 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
     // Add sidecar data to context and record the returned indices.
     int rows_idx;
     CHECK_OK(context->AddRpcSidecar(make_gscoped_ptr(
-        new rpc::RpcSidecar(rows_data.Pass())), &rows_idx));
+        new rpc::RpcSidecar(std::move(rows_data))), &rows_idx));
     resp->mutable_data()->set_rows_sidecar(rows_idx);
 
     // Add indirect data as a sidecar, if applicable.
     if (indirect_data->size() > 0) {
       int indirect_idx;
       CHECK_OK(context->AddRpcSidecar(make_gscoped_ptr(
-          new rpc::RpcSidecar(indirect_data.Pass())), &indirect_idx));
+          new rpc::RpcSidecar(std::move(indirect_data))), &indirect_idx));
       resp->mutable_data()->set_indirect_data_sidecar(indirect_idx);
     }
 
@@ -1369,7 +1369,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
 
   // Store the original projection.
   gscoped_ptr<Schema> orig_projection(new Schema(projection));
-  scanner->set_client_projection_schema(orig_projection.Pass());
+  scanner->set_client_projection_schema(std::move(orig_projection));
 
   // Build a new projection with the projection columns and the missing columns. Make
   // sure to set whether the column is a key column appropriately.
@@ -1440,7 +1440,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     return Status::OK();
   }
 
-  scanner->Init(iter.Pass(), spec.Pass());
+  scanner->Init(std::move(iter), std::move(spec));
   unreg_scanner.Cancel();
   *scanner_id = scanner->id();
 

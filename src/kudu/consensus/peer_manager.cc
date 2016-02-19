@@ -76,7 +76,7 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
                                       local_uuid_,
                                       queue_,
                                       thread_pool_,
-                                      peer_proxy.Pass(),
+                                      std::move(peer_proxy),
                                       &remote_peer));
     InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());
   }

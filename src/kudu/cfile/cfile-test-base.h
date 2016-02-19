@@ -336,7 +336,7 @@ class CFileTestBase : public KuduTest {
     opts.storage_attributes.encoding = encoding;
     opts.storage_attributes.compression = compression;
     CFileWriter w(opts, GetTypeInfo(DataGeneratorType::kDataType),
-                  DataGeneratorType::has_nulls(), sink.Pass());
+                  DataGeneratorType::has_nulls(), std::move(sink));
 
     ASSERT_OK(w.Start());
 
@@ -429,7 +429,7 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
   gscoped_ptr<fs::ReadableBlock> source;
   ASSERT_OK(fs_manager->OpenBlock(block_id, &source));
   gscoped_ptr<CFileReader> reader;
-  ASSERT_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
+  ASSERT_OK(CFileReader::Open(std::move(source), ReaderOptions(), &reader));
 
   gscoped_ptr<CFileIterator> iter;
   ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));

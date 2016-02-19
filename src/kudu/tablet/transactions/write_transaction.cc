@@ -229,7 +229,7 @@ void WriteTransactionState::SetMvccTxAndTimestamp(gscoped_ptr<ScopedTransaction>
   } else {
     set_timestamp(mvcc_tx->timestamp());
   }
-  mvcc_tx_ = mvcc_tx.Pass();
+  mvcc_tx_ = std::move(mvcc_tx);
 }
 
 void WriteTransactionState::set_tablet_components(

@@ -43,7 +43,7 @@ Status DumpPBContainerFile(const string& filename) {
   Env* env = Env::Default();
   gscoped_ptr<RandomAccessFile> reader;
   RETURN_NOT_OK(env->NewRandomAccessFile(filename, &reader));
-  ReadablePBContainerFile pb_reader(reader.Pass());
+  ReadablePBContainerFile pb_reader(std::move(reader));
   RETURN_NOT_OK(pb_reader.Init());
   RETURN_NOT_OK(pb_reader.Dump(&std::cout, FLAGS_oneline));
 

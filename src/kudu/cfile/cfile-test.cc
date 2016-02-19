@@ -67,7 +67,7 @@ class TestCFile : public CFileTestBase {
     gscoped_ptr<ReadableBlock> block;
     ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
+    ASSERT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
     BlockPointer ptr;
 
@@ -148,7 +148,7 @@ class TestCFile : public CFileTestBase {
     gscoped_ptr<ReadableBlock> block;
     ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
+    ASSERT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
     ASSERT_EQ(DataGeneratorType::kDataType, reader->type_info()->type());
 
     gscoped_ptr<CFileIterator> iter;
@@ -215,7 +215,7 @@ class TestCFile : public CFileTestBase {
     opts.write_validx = false;
     opts.storage_attributes.cfile_block_size = FLAGS_cfile_test_block_size;
     opts.storage_attributes.encoding = PLAIN_ENCODING;
-    CFileWriter w(opts, GetTypeInfo(STRING), false, sink.Pass());
+    CFileWriter w(opts, GetTypeInfo(STRING), false, std::move(sink));
     ASSERT_OK(w.Start());
     for (uint32_t i = 0; i < num_entries; i++) {
       vector<Slice> slices;
@@ -231,7 +231,7 @@ class TestCFile : public CFileTestBase {
     gscoped_ptr<ReadableBlock> source;
     ASSERT_OK(fs_manager_->OpenBlock(id, &source));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
+    ASSERT_OK(CFileReader::Open(std::move(source), ReaderOptions(), &reader));
 
     gscoped_ptr<IndexTreeIterator> iter;
     iter.reset(IndexTreeIterator::Create(reader.get(), reader->posidx_root()));
@@ -482,7 +482,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding) {
   gscoped_ptr<ReadableBlock> block;
   ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
   gscoped_ptr<CFileReader> reader;
-  ASSERT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
+  ASSERT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
   rowid_t reader_nrows;
   ASSERT_OK(reader->CountRows(&reader_nrows));
@@ -595,7 +595,7 @@ TEST_P(TestCFileBothCacheTypes, TestMetadata) {
     ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
     block_id = sink->id();
     WriterOptions opts;
-    CFileWriter w(opts, GetTypeInfo(INT32), false, sink.Pass());
+    CFileWriter w(opts, GetTypeInfo(INT32), false, std::move(sink));
 
     w.AddMetadataPair("key_in_header", "header value");
     ASSERT_OK(w.Start());
@@ -612,7 +612,7 @@ TEST_P(TestCFileBothCacheTypes, TestMetadata) {
     gscoped_ptr<ReadableBlock> source;
     ASSERT_OK(fs_manager_->OpenBlock(block_id, &source));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
+    ASSERT_OK(CFileReader::Open(std::move(source), ReaderOptions(), &reader));
     string val;
     ASSERT_TRUE(reader->GetMetadataEntry("key_in_header", &val));
     ASSERT_EQ(val, "header value");
@@ -713,7 +713,7 @@ TEST_P(TestCFileBothCacheTypes, TestReleaseBlock) {
   ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
   ASSERT_EQ(WritableBlock::CLEAN, sink->state());
   WriterOptions opts;
-  CFileWriter w(opts, GetTypeInfo(STRING), false, sink.Pass());
+  CFileWriter w(opts, GetTypeInfo(STRING), false, std::move(sink));
   ASSERT_OK(w.Start());
   fs::ScopedWritableBlockCloser closer;
   ASSERT_OK(w.FinishAndReleaseBlock(&closer));
@@ -751,14 +751,14 @@ TEST_P(TestCFileBothCacheTypes, TestLazyInit) {
   ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
   size_t bytes_read = 0;
   gscoped_ptr<ReadableBlock> count_block(
-      new CountingReadableBlock(block.Pass(), &bytes_read));
+      new CountingReadableBlock(std::move(block), &bytes_read));
   ASSERT_EQ(initial_mem_usage, tracker->consumption());
 
   // Lazily opening the cfile should not trigger any reads.
   ReaderOptions opts;
   opts.parent_mem_tracker = tracker;
   gscoped_ptr<CFileReader> reader;
-  ASSERT_OK(CFileReader::OpenNoInit(count_block.Pass(), opts, &reader));
+  ASSERT_OK(CFileReader::OpenNoInit(std::move(count_block), opts, &reader));
   ASSERT_EQ(0, bytes_read);
   int64_t lazy_mem_usage = tracker->consumption();
   ASSERT_GT(lazy_mem_usage, initial_mem_usage);
@@ -776,8 +776,8 @@ TEST_P(TestCFileBothCacheTypes, TestLazyInit) {
   // same number of bytes read.
   ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
   bytes_read = 0;
-  count_block.reset(new CountingReadableBlock(block.Pass(), &bytes_read));
-  ASSERT_OK(CFileReader::Open(count_block.Pass(), ReaderOptions(), &reader));
+  count_block.reset(new CountingReadableBlock(std::move(block), &bytes_read));
+  ASSERT_OK(CFileReader::Open(std::move(count_block), ReaderOptions(), &reader));
   ASSERT_EQ(bytes_read_after_init, bytes_read);
 }
 
@@ -805,7 +805,7 @@ TEST_P(TestCFileBothCacheTypes, TestCacheKeysAreStable) {
     gscoped_ptr<ReadableBlock> source;
     ASSERT_OK(fs_manager_->OpenBlock(block_id, &source));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
+    ASSERT_OK(CFileReader::Open(std::move(source), ReaderOptions(), &reader));
 
     gscoped_ptr<IndexTreeIterator> iter;
     iter.reset(IndexTreeIterator::Create(reader.get(), reader->posidx_root()));
