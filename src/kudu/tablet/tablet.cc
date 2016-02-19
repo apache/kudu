@@ -327,11 +327,10 @@ Status Tablet::AcquireLockForOp(WriteTransactionState* tx_state, RowOp* op) {
   op->key_probe.reset(new tablet::RowSetKeyProbe(row_key));
   RETURN_NOT_OK(CheckRowInTablet(row_key));
 
-  ScopedRowLock row_lock(&lock_manager_,
-                         tx_state,
-                         op->key_probe->encoded_key_slice(),
-                         LockManager::LOCK_EXCLUSIVE);
-  op->row_lock = row_lock.Pass();
+  op->row_lock = ScopedRowLock(&lock_manager_,
+                               tx_state,
+                               op->key_probe->encoded_key_slice(),
+                               LockManager::LOCK_EXCLUSIVE);
   return Status::OK();
 }
 

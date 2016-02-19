@@ -278,12 +278,12 @@ ScopedRowLock::ScopedRowLock(LockManager *manager,
   }
 }
 
-ScopedRowLock::ScopedRowLock(RValue other) {
-  TakeState(other.object);
+ScopedRowLock::ScopedRowLock(ScopedRowLock&& other) {
+  TakeState(&other);
 }
 
-ScopedRowLock& ScopedRowLock::operator=(RValue other) {
-  TakeState(other.object);
+ScopedRowLock& ScopedRowLock::operator=(ScopedRowLock&& other) {
+  TakeState(&other);
   return *this;
 }
 

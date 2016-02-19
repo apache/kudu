@@ -73,26 +73,25 @@ class LockManager {
 //   }
 //   // lock is released when the object exits its scope.
 //
-// This class emulates C++11 move constructors and thus can be
-// copied by using the special '.Pass()' function. For example:
+// This class implements C++11 move constructors and thus can be
+// transferred around using std::move(). For example:
 //
 // void DoSomething(ScopedRowLock l) {
 //   // l owns the lock and will release at the end of this function
 // }
 // ScopedRowLock my_lock(&manager, ...);
-// DoSomething(l.Pass());
-// CHECK(!l.acquired()); // doesn't own lock anymore, since it Pass()ed
+// DoSomething(std::move(l);
+// CHECK(!l.acquired()); // doesn't own lock anymore, since it moved
 class ScopedRowLock {
-  MOVE_ONLY_TYPE_FOR_CPP_03(ScopedRowLock, RValue);
  public:
 
   // Construct an initially-unlocked lock holder.
   // You can later assign this to actually hold a lock using
-  // the emulated move-constructor:
+  // the move-constructor:
   //   ScopedRowLock l;
-  //   l = ScopedRowLock(...); // use the ctor below
+  //   l = ScopedRowLock(...);
   // or
-  //   l = other_row_lock.Pass();
+  //   l = std::move(other_row_lock);
   ScopedRowLock()
     : manager_(NULL),
       acquired_(false),
@@ -104,9 +103,9 @@ class ScopedRowLock {
   ScopedRowLock(LockManager *manager, const TransactionState* ctx,
                 const Slice &key, LockManager::LockMode mode);
 
-  // Emulated Move constructor
-  ScopedRowLock(RValue other); // NOLINT(runtime/explicit)
-  ScopedRowLock& operator=(RValue other);
+  // Move constructor and assignment.
+  ScopedRowLock(ScopedRowLock&& other);
+  ScopedRowLock& operator=(ScopedRowLock&& other);
 
   void Release();
 
