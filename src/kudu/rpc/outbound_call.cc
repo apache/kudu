@@ -253,13 +253,16 @@ void OutboundCall::SetFailed(const Status &status,
 }
 
 void OutboundCall::SetTimedOut() {
+  // We have to fetch timeout outside the lock to avoid a lock
+  // order inversion between this class and RpcController.
+  MonoDelta timeout = controller_->timeout();
   {
     lock_guard<simple_spinlock> l(&lock_);
     status_ = Status::TimedOut(Substitute(
         "$0 RPC to $1 timed out after $2",
         remote_method_.method_name(),
         conn_id_.remote().ToString(),
-        controller_->timeout().ToString()));
+        timeout.ToString()));
     set_state_unlocked(TIMED_OUT);
   }
   CallCallback();

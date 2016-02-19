@@ -102,13 +102,6 @@ if [ -z "$ASAN_SYMBOLIZER_PATH" ]; then
 fi
 
 # Configure TSAN (ignored if this isn't a TSAN build).
-#
-# Deadlock detection (new in clang 3.5) is disabled because:
-# 1. The clang 3.5 deadlock detector crashes in some Kudu unit tests. It
-#    needs compiler-rt commits c4c3dfd, 9a8efe3, and possibly others.
-# 2. Many unit tests report lock-order-inversion warnings; they should be
-#    fixed before reenabling the detector.
-TSAN_OPTIONS="$TSAN_OPTIONS detect_deadlocks=0"
 TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt"
 TSAN_OPTIONS="$TSAN_OPTIONS history_size=7"
 TSAN_OPTIONS="$TSAN_OPTIONS external_symbolizer_path=$ASAN_SYMBOLIZER_PATH"
