@@ -18,7 +18,10 @@
 #ifndef KUDU_RPC_RPC_CONSTANTS_H
 #define KUDU_RPC_RPC_CONSTANTS_H
 
-#include <stdint.h>
+#include <cstdint>
+#include <set>
+
+#include "kudu/rpc/rpc_header.pb.h"
 
 namespace kudu {
 namespace rpc {
@@ -45,6 +48,14 @@ static const uint8_t kHeaderFlagsLength = 3;
 
 // There is a 4-byte length prefix before any packet.
 static const uint8_t kMsgLengthPrefixLength = 4;
+
+// The set of RPC features that this server build supports.
+// Non-const for testing.
+extern std::set<RpcFeatureFlag> kSupportedServerRpcFeatureFlags;
+
+// The set of RPC features that this client build supports.
+// Non-const for testing.
+extern std::set<RpcFeatureFlag> kSupportedClientRpcFeatureFlags;
 
 } // namespace rpc
 } // namespace kudu

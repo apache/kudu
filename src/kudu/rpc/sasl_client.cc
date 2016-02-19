@@ -256,6 +256,12 @@ Status SaslClient::ParseSaslMsgResponse(const ResponseHeader& header, const Slic
 Status SaslClient::SendNegotiateMessage() {
   SaslMessagePB msg;
   msg.set_state(SaslMessagePB::NEGOTIATE);
+
+  // Advertise our supported features.
+  for (RpcFeatureFlag feature : kSupportedClientRpcFeatureFlags) {
+    msg.add_supported_features(feature);
+  }
+
   TRACE("SASL Client: Sending NEGOTIATE request to server.");
   RETURN_NOT_OK(SendSaslMessage(msg));
   nego_response_expected_ = true;
@@ -302,6 +308,18 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
   TRACE("SASL Client: Received NEGOTIATE response from server");
   map<string, SaslMessagePB::SaslAuth> mech_auth_map;
 
+  // Fill in the set of features supported by the server.
+  for (int flag : response.supported_features()) {
+    // We only add the features that our local build knows about.
+    RpcFeatureFlag feature_flag = RpcFeatureFlag_IsValid(flag) ?
+                                  static_cast<RpcFeatureFlag>(flag) : UNKNOWN;
+    if (ContainsKey(kSupportedClientRpcFeatureFlags, feature_flag)) {
+      server_features_.insert(feature_flag);
+    }
+  }
+
+  // Build the list of SASL mechanisms requested by the client, and a map
+  // back to to the SaslAuth PBs.
   string mech_list;
   mech_list.reserve(64);  // Avoid resizing the buffer later.
   for (const SaslMessagePB::SaslAuth& auth : response.auths()) {

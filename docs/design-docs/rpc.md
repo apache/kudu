@@ -341,7 +341,25 @@ token=<challenge response> } -----------------> |
 Each of the SaslMessagePBs above is framed as usual using RequestHeader or ResponseHeader
 protobufs. For each SASL message, the CallId should be set to '-33'.
 
+RPC Feature Flags
+-----------------
 
+During connection negotiation the client and server exchange the set of RPC
+feature flags, so that subsequent RPCs request and responses are aware of what
+is supported. There are several advantages of feature flags over version numbers:
+
+* since we have both a Java and C++ client, this allows us to add
+  features in different orders, or decide to not support a feature
+  at all in one client or the other. For example, the C++ client
+  is likely to gain support for a shared-memory transport long before
+  the Java one.
+* this allows much more flexibility in backporting RPC system features
+  across versions. For example, if we introduce feature 'A' in Kudu
+  2.0, and feature 'B' in Kudu 2.1, we are still able to selectively
+  backport 'B' without 'A' to Kudu 1.5.
+* currently, the set of supported features is determined only by
+  code-level support, but we could later decide to conditionally
+  enable features based on configuration or machine capability.
 
 Connection Context:
 ------------------
