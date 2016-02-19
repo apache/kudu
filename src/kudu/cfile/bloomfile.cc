@@ -196,7 +196,7 @@ Status BloomFileReader::InitOnce() {
   // stack-allocate these things more smartly!
   int n_cpus = base::MaxCPUIndex() + 1;
   for (int i = 0; i < n_cpus; i++) {
-    index_iters_.push_back(
+    index_iters_.emplace_back(
       IndexTreeIterator::Create(reader_.get(), validx_root));
   }
   iter_locks_.reset(new padded_spinlock[n_cpus]);
@@ -258,7 +258,7 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
       cpu = (cpu + 1) % index_iters_.size();
     }
 
-    cfile::IndexTreeIterator *index_iter = &index_iters_[cpu];
+    cfile::IndexTreeIterator *index_iter = index_iters_[cpu].get();
 
     Status s = index_iter->SeekAtOrBefore(probe.key());
     if (PREDICT_FALSE(s.IsNotFound())) {
@@ -291,14 +291,13 @@ size_t BloomFileReader::memory_footprint_excluding_reader() const {
 
   size += init_once_.memory_footprint_excluding_this();
 
-  // This seems to be the easiest way to get a heap pointer to the ptr_vector.
-  //
   // TODO: Track the iterators' memory footprint? May change with every seek;
   // not clear if it's worth doing.
-  size += kudu_malloc_usable_size(
-      const_cast<BloomFileReader*>(this)->index_iters_.c_array());
-  for (int i = 0; i < index_iters_.size(); i++) {
-    size += kudu_malloc_usable_size(&index_iters_[i]);
+  if (!index_iters_.empty()) {
+    size += kudu_malloc_usable_size(index_iters_.data());
+    for (int i = 0; i < index_iters_.size(); i++) {
+      size += kudu_malloc_usable_size(index_iters_[i].get());
+    }
   }
 
   if (iter_locks_) {

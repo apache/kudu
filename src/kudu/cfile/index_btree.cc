@@ -32,7 +32,7 @@ IndexTreeBuilder::IndexTreeBuilder(
   CFileWriter *writer) :
   options_(options),
   writer_(writer) {
-  idx_blocks_.push_back(CreateBlockBuilder(true));
+  idx_blocks_.emplace_back(CreateBlockBuilder(true));
 }
 
 
@@ -54,15 +54,15 @@ Status IndexTreeBuilder::Append(
       "trying to create level " << level << " but size is only "
                                 << idx_blocks_.size();
     VLOG(1) << "Creating level-" << level << " in index b-tree";
-    idx_blocks_.push_back(CreateBlockBuilder(false));
+    idx_blocks_.emplace_back(CreateBlockBuilder(false));
   }
 
-  IndexBlockBuilder &idx_block = idx_blocks_[level];
-  idx_block.Add(key, block_ptr);
+  IndexBlockBuilder* idx_block = idx_blocks_[level].get();
+  idx_block->Add(key, block_ptr);
 
-  size_t est_size = idx_block.EstimateEncodedSize();
+  size_t est_size = idx_block->EstimateEncodedSize();
   if (est_size > options_->index_block_size) {
-    DCHECK(idx_block.Count() > 1)
+    DCHECK(idx_block->Count() > 1)
       << "Index block full with only one entry - this would create "
       << "an infinite loop";
     // This index block is full, flush it.
@@ -101,7 +101,7 @@ Status IndexTreeBuilder::Finish(BTreeInfoPB *info) {
 }
 
 Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
-  IndexBlockBuilder &idx_block = idx_blocks_[level];
+  IndexBlockBuilder* idx_block = idx_blocks_[level].get();
 
   // If the block doesn't have any data in it, we don't need to
   // write it out.
@@ -109,7 +109,7 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
   // and then the file completes.
   //
   // TODO: add a test case which exercises this explicitly.
-  if (idx_block.Count() == 0) {
+  if (idx_block->Count() == 0) {
     return Status::OK();
   }
 
@@ -119,7 +119,7 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
 
   // Get the first key of the finished block.
   Slice first_in_idx_block;
-  Status s = idx_block.GetFirstKey(&first_in_idx_block);
+  Status s = idx_block->GetFirstKey(&first_in_idx_block);
 
   if (!s.ok()) {
     LOG(ERROR) << "Unable to get first key of level-" << level
@@ -135,7 +135,7 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
   // Finally, reset the block we just wrote. It's important to wait until
   // here to do this, since the first_in_idx_block data may point to internal
   // storage of the index block.
-  idx_block.Reset();
+  idx_block->Reset();
 
   return Status::OK();
 }
@@ -144,8 +144,8 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
 // to the file. Return the location of the written block
 // in 'written'.
 Status IndexTreeBuilder::FinishAndWriteBlock(size_t level, BlockPointer *written) {
-  IndexBlockBuilder &idx_block = idx_blocks_[level];
-  Slice data = idx_block.Finish();
+  IndexBlockBuilder* idx_block = idx_blocks_[level].get();
+  Slice data = idx_block->Finish();
 
   vector<Slice> v;
   v.push_back(data);
@@ -178,7 +178,7 @@ Status IndexTreeIterator::SeekToFirst() {
 
 bool IndexTreeIterator::HasNext() {
   for (int i = seeked_indexes_.size() - 1; i >= 0; i--) {
-    if (seeked_indexes_[i].iter.HasNext())
+    if (seeked_indexes_[i]->iter.HasNext())
       return true;
   }
   return false;
@@ -221,27 +221,27 @@ Status IndexTreeIterator::Next() {
 }
 
 const Slice IndexTreeIterator::GetCurrentKey() const {
-  return seeked_indexes_.back().iter.GetCurrentKey();
+  return seeked_indexes_.back()->iter.GetCurrentKey();
 }
 
 const BlockPointer &IndexTreeIterator::GetCurrentBlockPointer() const {
-  return seeked_indexes_.back().iter.GetCurrentBlockPointer();
+  return seeked_indexes_.back()->iter.GetCurrentBlockPointer();
 }
 
 IndexBlockIterator *IndexTreeIterator::BottomIter() {
-  return &seeked_indexes_.back().iter;
+  return &seeked_indexes_.back()->iter;
 }
 
 IndexBlockReader *IndexTreeIterator::BottomReader() {
-  return &seeked_indexes_.back().reader;
+  return &seeked_indexes_.back()->reader;
 }
 
 IndexBlockIterator *IndexTreeIterator::seeked_iter(int depth) {
-  return &seeked_indexes_[depth].iter;
+  return &seeked_indexes_[depth]->iter;
 }
 
 IndexBlockReader *IndexTreeIterator::seeked_reader(int depth) {
-  return &seeked_indexes_[depth].reader;
+  return &seeked_indexes_[depth]->reader;
 }
 
 Status IndexTreeIterator::LoadBlock(const BlockPointer &block, int depth) {
@@ -249,7 +249,7 @@ Status IndexTreeIterator::LoadBlock(const BlockPointer &block, int depth) {
   SeekedIndex *seeked;
   if (depth < seeked_indexes_.size()) {
     // We have a cached instance from previous seek.
-    seeked = &seeked_indexes_[depth];
+    seeked = seeked_indexes_[depth].get();
 
     if (seeked->block_ptr.offset() == block.offset()) {
       // We're already seeked to this block - no need to re-parse it.
@@ -264,8 +264,8 @@ Status IndexTreeIterator::LoadBlock(const BlockPointer &block, int depth) {
     seeked->iter.Reset();
   } else {
     // No cached instance, make a new one.
-    seeked_indexes_.push_back(new SeekedIndex());
-    seeked = &seeked_indexes_.back();
+    seeked_indexes_.emplace_back(new SeekedIndex());
+    seeked = seeked_indexes_.back().get();
   }
 
   RETURN_NOT_OK(reader_->ReadBlock(block, CFileReader::CACHE_BLOCK, &seeked->data));

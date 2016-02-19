@@ -17,7 +17,7 @@
 #ifndef KUDU_CFILE_BLOOMFILE_H
 #define KUDU_CFILE_BLOOMFILE_H
 
-#include <boost/ptr_container/ptr_vector.hpp>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -128,7 +128,7 @@ class BloomFileReader {
   // We need a big per-thread object which gets passed around so as
   // to avoid this... Instead we'll use a per-CPU iterator as a
   // lame hack.
-  boost::ptr_vector<cfile::IndexTreeIterator> index_iters_;
+  std::vector<std::unique_ptr<cfile::IndexTreeIterator>> index_iters_;
   gscoped_ptr<padded_spinlock[]> iter_locks_;
 
   KuduOnceDynamic init_once_;
