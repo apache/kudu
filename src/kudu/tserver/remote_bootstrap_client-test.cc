@@ -132,7 +132,7 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadWalSegment) {
   ASSERT_TRUE(fs_manager_->Exists(path));
 
   log::SegmentSequence local_segments;
-  ASSERT_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&local_segments));
+  ASSERT_OK(tablet_peer_->log()->reader()->GetSegmentsSnapshot(&local_segments));
   const scoped_refptr<log::ReadableLogSegment>& segment = local_segments[0];
   string server_path = segment->path();
 

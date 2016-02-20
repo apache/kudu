@@ -22,6 +22,7 @@
 #include <boost/thread/thread.hpp>
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 #include "kudu/consensus/log_index.h"
@@ -39,6 +40,7 @@ DEFINE_int32(num_ops_per_batch_avg, 5, "Target average number of ops per batch")
 namespace kudu {
 namespace log {
 
+using std::shared_ptr;
 using std::vector;
 using consensus::ReplicateRefPtr;
 using consensus::make_scoped_refptr_replicate;
@@ -159,7 +161,7 @@ TEST_F(MultiThreadedLogTest, TestAppends) {
   }
   ASSERT_OK(log_->Close());
 
-  gscoped_ptr<LogReader> reader;
+  shared_ptr<LogReader> reader;
   ASSERT_OK(LogReader::Open(fs_manager_.get(), NULL, kTestTablet, NULL, &reader));
   SegmentSequence segments;
   ASSERT_OK(reader->GetSegmentsSnapshot(&segments));

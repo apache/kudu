@@ -19,6 +19,7 @@
 
 #include <gflags/gflags.h>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -283,7 +284,7 @@ class TabletBootstrap {
   gscoped_ptr<tablet::Tablet> tablet_;
   const scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   scoped_refptr<log::Log> log_;
-  gscoped_ptr<log::LogReader> log_reader_;
+  std::shared_ptr<log::LogReader> log_reader_;
 
   Arena arena_;
 
