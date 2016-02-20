@@ -188,10 +188,9 @@ class HybridClock : public Clock {
 
   mutable simple_spinlock lock_;
 
-  // the last clock read/update, in microseconds.
-  uint64_t last_usec_;
-  // the next logical value to be assigned to a timestamp
-  uint64_t next_logical_;
+  // The next timestamp to be generated from this clock, assuming that
+  // the physical clock hasn't advanced beyond the value stored here.
+  uint64_t next_timestamp_;
 
   // How many bits to left shift a microseconds clock read. The remainder
   // of the timestamp will be reserved for logical values.

@@ -73,6 +73,55 @@ TEST(MockHybridClockTest, TestMockedSystemClock) {
             HybridClock::TimestampFromMicrosecondsAndLogicalValue(time, 1).ToUint64());
 }
 
+// Test that, if the rate at which the clock is read is greater than the maximum
+// resolution of the logical counter (12 bits in our implementation), it properly
+// "overflows" into the physical portion of the clock, and maintains all ordering
+// guarantees even as the physical clock continues to increase.
+//
+// This is a regression test for KUDU-1345.
+TEST(MockHybridClockTest, TestClockDealsWithWrapping) {
+  google::FlagSaver saver;
+  FLAGS_use_mock_wall_clock = true;
+  scoped_refptr<HybridClock> clock(new HybridClock());
+  clock->SetMockClockWallTimeForTests(1000);
+  clock->Init();
+
+  Timestamp prev = clock->Now();
+
+  // Update the clock from 10us in the future
+  clock->Update(HybridClock::TimestampFromMicroseconds(1010));
+
+  // Now read the clock value enough times so that the logical value wraps
+  // over, and should increment the _physical_ portion of the clock.
+  for (int i = 0; i < 10000; i++) {
+    Timestamp now = clock->Now();
+    ASSERT_GT(now.value(), prev.value());
+    prev = now;
+  }
+  ASSERT_EQ(1012, HybridClock::GetPhysicalValueMicros(prev));
+
+  // Advance the time microsecond by microsecond, and ensure the clock never
+  // goes backwards.
+  for (int time = 1001; time < 1020; time++) {
+    clock->SetMockClockWallTimeForTests(time);
+    Timestamp now = clock->Now();
+
+    // Clock should run strictly forwards.
+    ASSERT_GT(now.value(), prev.value());
+
+    // Additionally, once the physical time surpasses the logical time, we should
+    // be running on the physical clock. Otherwise, we should stick with the physical
+    // time we had rolled forward to above.
+    if (time > 1012) {
+      ASSERT_EQ(time, HybridClock::GetPhysicalValueMicros(now));
+    } else {
+      ASSERT_EQ(1012, HybridClock::GetPhysicalValueMicros(now));
+    }
+
+    prev = now;
+  }
+}
+
 // Test that two subsequent time reads are monotonically increasing.
 TEST_F(HybridClockTest, TestNow_ValuesIncreaseMonotonically) {
   const Timestamp now1 = clock_->Now();
