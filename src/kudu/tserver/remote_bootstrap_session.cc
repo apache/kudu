@@ -102,7 +102,15 @@ Status RemoteBootstrapSession::Init() {
   // Get the current segments from the log, including the active segment.
   // The Log doesn't add the active segment to the log reader's list until
   // a header has been written to it (but it will not have a footer).
-  RETURN_NOT_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&log_segments_));
+  shared_ptr<log::LogReader> reader = tablet_peer_->log()->reader();
+  if (!reader) {
+    tablet::TabletStatePB tablet_state = tablet_peer_->state();
+    return Status::IllegalState(Substitute(
+        "Unable to initialize remote bootstrap session for tablet $0. "
+        "Log reader is not available. Tablet state: $1 ($2)",
+        tablet_id, tablet::TabletStatePB_Name(tablet_state), tablet_state));
+  }
+  reader->GetSegmentsSnapshot(&log_segments_);
   for (const scoped_refptr<ReadableLogSegment>& segment : log_segments_) {
     RETURN_NOT_OK(OpenLogSegmentUnlocked(segment->header().sequence_number()));
   }
@@ -114,9 +122,10 @@ Status RemoteBootstrapSession::Init() {
   scoped_refptr<consensus::Consensus> consensus = tablet_peer_->shared_consensus();
   if (!consensus) {
     tablet::TabletStatePB tablet_state = tablet_peer_->state();
-    return Status::IllegalState(Substitute("Unable to initialize remote bootstrap session "
-                                "for tablet $0. Consensus is not available. Tablet state: $1 ($2)",
-                                tablet_id, tablet::TabletStatePB_Name(tablet_state), tablet_state));
+    return Status::IllegalState(Substitute(
+        "Unable to initialize remote bootstrap session for tablet $0. "
+        "Consensus is not available. Tablet state: $1 ($2)",
+        tablet_id, tablet::TabletStatePB_Name(tablet_state), tablet_state));
   }
   initial_committed_cstate_ = consensus->ConsensusState(consensus::CONSENSUS_CONFIG_COMMITTED);
 

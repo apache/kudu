@@ -18,6 +18,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 #include "kudu/common/row_operations.h"
@@ -50,6 +51,7 @@ using consensus::CommitMsg;
 using consensus::OperationType;
 using consensus::ReplicateMsg;
 using tserver::WriteRequestPB;
+using std::shared_ptr;
 using std::string;
 using std::vector;
 using std::cout;
@@ -185,7 +187,7 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
 
 Status DumpLog(const string& tablet_id) {
   Env *env = Env::Default();
-  gscoped_ptr<LogReader> reader;
+  shared_ptr<LogReader> reader;
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
   FsManager fs_manager(env, fs_opts);

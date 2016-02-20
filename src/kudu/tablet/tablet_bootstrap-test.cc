@@ -229,7 +229,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
     // commits.
     AppendCommit(opid);
     log::SegmentSequence segments;
-    ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+    ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
     fs_manager_->env()->DeleteFile(segments[0]->path());
   }
   {
@@ -268,7 +268,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
   AppendCommit(opid);
 
   log::SegmentSequence segments;
-  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
   fs_manager_->env()->DeleteFile(segments[0]->path());
 
   current_index_ += 2;

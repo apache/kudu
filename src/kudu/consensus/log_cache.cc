@@ -253,7 +253,7 @@ Status LogCache::LookupOpId(int64_t op_index, OpId* op_id) const {
   }
 
   // If it misses, read from the log.
-  return log_->GetLogReader()->LookupOpId(op_index, op_id);
+  return log_->reader()->LookupOpId(op_index, op_id);
 }
 
 namespace {
@@ -299,7 +299,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
 
       vector<ReplicateMsg*> raw_replicate_ptrs;
       RETURN_NOT_OK_PREPEND(
-        log_->GetLogReader()->ReadReplicatesInRange(
+        log_->reader()->ReadReplicatesInRange(
           next_index, up_to, remaining_space, &raw_replicate_ptrs),
         Substitute("Failed to read ops $0..$1", next_index, up_to));
       l.lock();

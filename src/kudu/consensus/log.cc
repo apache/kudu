@@ -783,10 +783,6 @@ void Log::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,
                                          max_idx_to_segment_size);
 }
 
-LogReader* Log::GetLogReader() const {
-  return reader_.get();
-}
-
 void Log::SetSchemaForNextLogSegment(const Schema& schema,
                                      uint32_t version) {
   boost::lock_guard<rw_spinlock> l(schema_lock_);

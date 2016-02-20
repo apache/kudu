@@ -151,10 +151,11 @@ class Log : public RefCountedThreadSafe<Log> {
   // REQUIRES: The Log must be closed.
   static Status DeleteOnDiskData(FsManager* fs_manager, const std::string& tablet_id);
 
-  // Returns a reader that is able to read through the previous
-  // segments. The reader pointer is guaranteed to be live as long
-  // as the log itself is initialized and live.
-  LogReader* GetLogReader() const;
+  // Returns a reader that is able to read through the previous segments,
+  // provided the log is initialized and not yet closed. After being closed,
+  // this function will return NULL, but existing reader references will
+  // remain live.
+  std::shared_ptr<LogReader> reader() const { return reader_; }
 
   void SetMaxSegmentSizeForTests(uint64_t max_segment_size) {
     max_segment_size_ = max_segment_size;
@@ -347,7 +348,9 @@ class Log : public RefCountedThreadSafe<Log> {
   LogState log_state_;
 
   // A reader for the previous segments that were not yet GC'd.
-  gscoped_ptr<LogReader> reader_;
+  //
+  // Will be NULL after the log is Closed().
+  std::shared_ptr<LogReader> reader_;
 
   // Index which translates between operation indexes and the position
   // of the operation in the log.
