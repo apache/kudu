@@ -46,7 +46,7 @@ your city, get in touch by emailing the
 1. Thu, Feb 18, 2016. [DataKRK Meetup](http://www.meetup.com/datakrk/events/228548317/). Krakow, Poland. <br/>
    _Are you KUDUing me?_. Presented by Przemek Maciołek.
 1. Wed, Feb 17, 2016. [Bay Area Hadoop User Group](http://www.meetup.com/hadoop/events/228573587/). Sunnyvale, CA, USA. <br/>
-   _Apache Kudu (incubating): New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by David Alves.
+   _Apache Kudu (incubating): New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by David Alves. ([video](https://www.youtube.com/watch?v=j3wYaz-kIvs))
 1. Wed, Feb 10, 2016. [San Francisco Python Meetup Group](http://www.meetup.com/sfpython/events/228213876/). San Francisco, CA, USA. <br/>
    _Using Python at Scale for Data Science_ (Python + Kudu + Ibis). Presented by Wes McKinney.
 1. Mon, Feb 8, 2016. [Hadoop / Spark Conference Japan 2016](http://www.eventbrite.com/e/hadoop-spark-conference-japan-2016-tickets-20809016328). Tokyo, Japan. <br/>
