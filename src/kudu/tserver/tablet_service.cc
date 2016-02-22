@@ -242,7 +242,8 @@ static void SetupErrorAndRespond(TabletServerErrorPB* error,
                                  TabletServerErrorPB::Code code,
                                  rpc::RpcContext* context) {
   // Generic "service unavailable" errors will cause the client to retry later.
-  if (code == TabletServerErrorPB::UNKNOWN_ERROR && s.IsServiceUnavailable()) {
+  if ((code == TabletServerErrorPB::UNKNOWN_ERROR ||
+       code == TabletServerErrorPB::THROTTLED) && s.IsServiceUnavailable()) {
     context->RespondRpcFailure(rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY, s);
     return;
   }
@@ -681,6 +682,16 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   Status s = GetTabletRef(tablet_peer, &tablet, &error_code);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
+    return;
+  }
+
+  uint64_t bytes = req->row_operations().rows().size() +
+      req->row_operations().indirect_data().size();
+  if (!tablet->ShouldThrottleAllow(bytes)) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::ServiceUnavailable("Rejecting Write request: throttled"),
+                         TabletServerErrorPB::THROTTLED,
+                         context);
     return;
   }
 

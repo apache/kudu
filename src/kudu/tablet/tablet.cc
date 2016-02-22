@@ -98,6 +98,22 @@ DEFINE_double(fault_crash_before_flush_tablet_meta_after_flush_mrs, 0.0,
 TAG_FLAG(fault_crash_before_flush_tablet_meta_after_flush_mrs, unsafe);
 
 
+DEFINE_int64(tablet_throttler_rpc_per_sec, 0,
+             "Maximum write RPC rate (op/s) allowed for a tablet, write RPC exceeding this "
+             "limit will be throttled. 0 means no limit.");
+TAG_FLAG(tablet_throttler_rpc_per_sec, experimental);
+
+DEFINE_int64(tablet_throttler_bytes_per_sec, 0,
+             "Maximum write RPC IO rate (byte/s) allowed for a tablet, write RPC exceeding "
+             "this limit will be throttled. 0 means no limit.");
+TAG_FLAG(tablet_throttler_bytes_per_sec, experimental);
+
+DEFINE_double(tablet_throttler_burst_factor, 1.0f,
+             "Burst factor for write RPC throttling. The maximum rate the throttler "
+             "allows within a token refill period (100ms) equals burst factor multiply "
+             "base rate.");
+TAG_FLAG(tablet_throttler_burst_factor, experimental);
+
 METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
                          kudu::MetricUnit::kBytes,
@@ -175,6 +191,13 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     METRIC_on_disk_size.InstantiateFunctionGauge(
       metric_entity_, Bind(&Tablet::EstimateOnDiskSize, Unretained(this)))
       ->AutoDetach(&metric_detacher_);
+  }
+
+  if (FLAGS_tablet_throttler_rpc_per_sec > 0 || FLAGS_tablet_throttler_bytes_per_sec > 0) {
+    throttler_.reset(new Throttler(MonoTime::Now(MonoTime::FINE),
+                                   FLAGS_tablet_throttler_rpc_per_sec,
+                                   FLAGS_tablet_throttler_bytes_per_sec,
+                                   FLAGS_tablet_throttler_burst_factor));
   }
 }
 
@@ -835,6 +858,13 @@ void Tablet::SetFlushCompactCommonHooksForTests(
 int32_t Tablet::CurrentMrsIdForTests() const {
   boost::shared_lock<rw_spinlock> lock(component_lock_);
   return components_->memrowset->mrs_id();
+}
+
+bool Tablet::ShouldThrottleAllow(int64_t bytes) {
+  if (!throttler_) {
+    return true;
+  }
+  return throttler_->Take(MonoTime::Now(MonoTime::FINE), 1, bytes);
 }
 
 ////////////////////////////////////////////////////////////

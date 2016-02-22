@@ -88,6 +88,9 @@ message TabletServerErrorPB {
 
     // The requested operation is already inprogress, e.g. RemoteBootstrap.
     ALREADY_INPROGRESS = 18;
+
+    // The request is throttled.
+    THROTTLED = 19;
   }
 
   // The error code.

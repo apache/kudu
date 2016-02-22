@@ -156,6 +156,7 @@ set(UTIL_SRCS
   threadlocal.cc
   threadpool.cc
   thread_restrictions.cc
+  throttler.cc
   trace.cc
   user.cc
   url-coding.cc
@@ -314,6 +315,7 @@ ADD_KUDU_TEST(subprocess-test)
 ADD_KUDU_TEST(sync_point-test)
 ADD_KUDU_TEST(thread-test)
 ADD_KUDU_TEST(threadpool-test)
+ADD_KUDU_TEST(throttler-test)
 ADD_KUDU_TEST(trace-test)
 ADD_KUDU_TEST(url-coding-test)
 ADD_KUDU_TEST(user-test)

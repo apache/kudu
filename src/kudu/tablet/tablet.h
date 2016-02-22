@@ -40,6 +40,7 @@
 #include "kudu/util/semaphore.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/throttler.h"
 
 namespace kudu {
 
@@ -370,6 +371,10 @@ class Tablet {
   // Returns a reference to this tablet's memory tracker.
   const std::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
 
+  // Throttle a RPC with 'bytes' request size.
+  // Return true if this RPC is allowed.
+  bool ShouldThrottleAllow(int64_t bytes);
+
   static const char* kDMSMemTrackerId;
  private:
   friend class Iterator;
@@ -525,6 +530,8 @@ class Tablet {
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<TabletMetrics> metrics_;
   FunctionGaugeDetacher metric_detacher_;
+
+  std::unique_ptr<Throttler> throttler_;
 
   int64_t next_mrs_id_;
 
