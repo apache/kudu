@@ -242,6 +242,16 @@ elseif("${COMPILER_FAMILY}" STREQUAL "gcc")
       "forbidden as it is known to produce broken code in release mode. "
       "Upgrade gcc, or build with clang from the thirdparty directory.")
   endif()
+
+  # GCC 4.8's tree vectorizer has a bug which causes hard-to-debug incorrect
+  # code. Disable this option on release builds, where it would otherwise
+  # be enabled by -O3.
+  if ("${COMPILER_VERSION}" MATCHES "^4.8" AND
+      "${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")
+    message("Running release build on gcc 4.8. The tree-vectorize optimization "
+      "in this version of gcc is known to be buggy. Disabling it.")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-tree-vectorize")
+  endif()
 endif()
 
 # Sanity check linking option.
