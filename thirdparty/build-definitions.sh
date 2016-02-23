@@ -261,7 +261,7 @@ build_curl() {
     --disable-smtp \
     --disable-gopher \
     --disable-manual \
-    --without-rtmp \
+    --without-librtmp \
     --disable-ipv6
   make -j$PARALLEL
   make install
