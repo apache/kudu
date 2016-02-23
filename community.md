@@ -41,6 +41,8 @@ your city, get in touch by emailing the
    _Fast data made easy with Apache Kafka and Apache Kudu (incubating)_. Presented by Ted Malaska and Jeff Holoman.
 1. Wed, Mar 30, 2016. [Strata Hadoop World](http://conferences.oreilly.com/strata/hadoop-big-data-ca/public/schedule/detail/46916). San Jose, CA, USA.<br/>
    Hadoop's storage gap: Resolving transactional-access and analytic-performance tradeoffs with Apache Kudu (incubating). Presented by Todd Lipcon.
+1. Tue, Mar 1, 2016. [Rust Detroit](http://www.meetup.com/rust-detroit/events/224586618/). Detroit, MI, USA. <br/>
+   _Hadoop Next Gen: Using Kudu & Mozilla Rust to Crunch Big Data!_. Presented by Dan Burkert.
 1. Tue, Feb 23, 2016. [SF Data Engineering Meetup](http://www.meetup.com/SF-Data-Engineering/events/228293610/). San Francisco, CA, USA. <br/>
    _Intro to Apache Kudu_. Presented by Asim Jalis.
 1. Thu, Feb 18, 2016. [DataKRK Meetup](http://www.meetup.com/datakrk/events/228548317/). Krakow, Poland. <br/>
