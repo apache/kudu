@@ -90,6 +90,11 @@ class MasterFailoverTest : public KuduTest {
     cluster_.reset(new ExternalMiniCluster(opts_));
     ASSERT_OK(cluster_->Start());
     KuduClientBuilder builder;
+
+    // Create and alter table operation timeouts can be extended via their
+    // builders, but there's no such option for DeleteTable, so we extend
+    // the global operation timeout.
+    builder.default_admin_operation_timeout(MonoDelta::FromSeconds(90));
     ASSERT_OK(cluster_->CreateClient(builder, &client_));
   }
 
@@ -103,7 +108,6 @@ class MasterFailoverTest : public KuduTest {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     return table_creator->table_name(table_name)
         .schema(&schema)
-        .timeout(MonoDelta::FromSeconds(90))
         .wait(mode == kWaitForCreate)
         .Create();
   }
@@ -112,7 +116,6 @@ class MasterFailoverTest : public KuduTest {
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name_orig));
     return table_alterer
       ->RenameTo(table_name_new)
-      ->timeout(MonoDelta::FromSeconds(90))
       ->wait(true)
       ->Alter();
   }
@@ -173,7 +176,7 @@ TEST_F(MasterFailoverTest, DISABLED_TestCreateTableSync) {
 //
 // TODO enable this test once flakiness issues are worked out and
 // eliminated on test machines.
-TEST_F(MasterFailoverTest, DISABLED_TestPauseAfterCreateTableIssued) {
+TEST_F(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "This test can only be run in slow mode.";
     return;

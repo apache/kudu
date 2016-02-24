@@ -84,9 +84,9 @@ class MasterReplicationTest : public KuduTest {
   }
 
   // This method is meant to be run in a separate thread.
-  void StartClusterDelayed(int64_t micros) {
-    LOG(INFO) << "Sleeping for "  << micros << " micro seconds...";
-    SleepFor(MonoDelta::FromMicroseconds(micros));
+  void StartClusterDelayed(int64_t millis) {
+    LOG(INFO) << "Sleeping for "  << millis << " ms...";
+    SleepFor(MonoDelta::FromMilliseconds(millis));
     LOG(INFO) << "Attempting to start the cluster...";
     CHECK_OK(cluster_->Start());
     CHECK_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
@@ -151,9 +151,6 @@ TEST_F(MasterReplicationTest, TestSysTablesReplication) {
   ASSERT_OK(CreateClient(&client));
   ASSERT_OK(CreateTable(client, kTableId1));
 
-  // TODO: once fault tolerant DDL is in, remove the line below.
-  ASSERT_OK(CreateClient(&client));
-
   ASSERT_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
 
   // Repeat the same for the second table.
@@ -195,15 +192,19 @@ TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
   ASSERT_OK(Thread::Create("TestCycleThroughAllMasters", "start_thread",
                                   &MasterReplicationTest::StartClusterDelayed,
                                   this,
-                                  100 * 1000, // start after 100 millis.
+                                  1000, // start after 1000 millis.
                                   &start_thread));
 
   // Verify that the client doesn't give up even though the entire
-  // cluster is down for 100 milliseconds.
+  // cluster is down for a little while.
+  //
+  // The timeouts for both RPCs and operations are increased to cope with slow
+  // clusters (i.e. TSAN builds).
   shared_ptr<KuduClient> client;
   KuduClientBuilder builder;
   builder.master_server_addrs(master_addrs);
-  builder.default_admin_operation_timeout(MonoDelta::FromSeconds(15));
+  builder.default_admin_operation_timeout(MonoDelta::FromSeconds(90));
+  builder.default_rpc_timeout(MonoDelta::FromSeconds(15));
   EXPECT_OK(builder.Build(&client));
 
   ASSERT_OK(ThreadJoiner(start_thread.get()).Join());
