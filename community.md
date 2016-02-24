@@ -43,6 +43,8 @@ your city, get in touch by emailing the
    Hadoop's storage gap: Resolving transactional-access and analytic-performance tradeoffs with Apache Kudu (incubating). Presented by Todd Lipcon.
 1. Tue, Mar 1, 2016. [Rust Detroit](http://www.meetup.com/rust-detroit/events/224586618/). Detroit, MI, USA. <br/>
    _Hadoop Next Gen: Using Kudu & Mozilla Rust to Crunch Big Data!_. Presented by Dan Burkert.
+1. Wed, Feb 24, 2016. [Seattle Scalability Meetup](http://www.meetup.com/Seattle-Scalability-Meetup/events/225955122/). Seattle, WA, USA. <br/>
+   _Resolving Transactional Access/Analytic Performance Trade-offs in Hadoop with Kudu_. Presented by Dan Burkert.
 1. Tue, Feb 23, 2016. [SF Data Engineering Meetup](http://www.meetup.com/SF-Data-Engineering/events/228293610/). San Francisco, CA, USA. <br/>
    _Intro to Apache Kudu_. Presented by Asim Jalis.
 1. Thu, Feb 18, 2016. [DataKRK Meetup](http://www.meetup.com/datakrk/events/228548317/). Krakow, Poland. <br/>
