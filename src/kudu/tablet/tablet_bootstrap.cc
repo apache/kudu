@@ -1277,6 +1277,7 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
   int32_t op_idx = 0;
   for (RowOp* op : tx_state->row_ops()) {
     const OperationResultPB& orig_op_result = orig_result.ops(op_idx++);
+    op->set_original_result_from_log(&orig_op_result);
 
     // check if the operation failed in the original transaction
     if (PREDICT_FALSE(orig_op_result.has_failed_status())) {

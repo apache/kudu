@@ -44,6 +44,15 @@ struct RowOp {
   void SetMutateSucceeded(gscoped_ptr<OperationResultPB> result);
   void SetAlreadyFlushed();
 
+  // In the case that this operation is being replayed from the WAL
+  // during tablet bootstrap, we may need to look at the original result
+  // stored in the COMMIT message to know the correct RowSet to apply it to.
+  //
+  // This pointer must stay live as long as this RowOp.
+  void set_original_result_from_log(const OperationResultPB* orig_result) {
+    orig_result_from_log_ = orig_result;
+  }
+
   bool has_row_lock() const {
     return row_lock.acquired();
   }
@@ -64,6 +73,10 @@ struct RowOp {
 
   // The result of the operation, after Apply.
   gscoped_ptr<OperationResultPB> result;
+
+  // If this operation is being replayed from the log, set to the original
+  // result. Otherwise nullptr.
+  const OperationResultPB* orig_result_from_log_;
 };
 
 

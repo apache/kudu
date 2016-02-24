@@ -82,9 +82,7 @@ class MockRowSet : public RowSet {
     return NULL;
   }
   virtual std::shared_ptr<RowSetMetadata> metadata() OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return std::shared_ptr<RowSetMetadata>(
-      reinterpret_cast<RowSetMetadata *>(NULL));
+    return NULL;
   }
 
   virtual size_t DeltaMemStoreSize() const OVERRIDE {

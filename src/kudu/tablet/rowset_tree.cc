@@ -25,6 +25,7 @@
 
 #include "kudu/gutil/stl_util.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/interval_tree.h"
 #include "kudu/util/interval_tree-inl.h"
 #include "kudu/util/slice.h"
@@ -129,6 +130,15 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
   tree_.reset(new IntervalTree<RowSetIntervalTraits>(entries_));
   key_endpoints_.swap(endpoints);
   all_rowsets_.assign(rowsets.begin(), rowsets.end());
+
+  // Build the mapping from DRS ID to DRS.
+  drs_by_id_.clear();
+  for (auto& rs : all_rowsets_) {
+    if (rs->metadata()) {
+      InsertOrDie(&drs_by_id_, rs->metadata()->id(), rs.get());
+    }
+  }
+
   initted_ = true;
 
   return Status::OK();
