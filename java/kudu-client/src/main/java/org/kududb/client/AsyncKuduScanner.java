@@ -485,6 +485,7 @@ public final class AsyncKuduScanner {
     }
     nextPartitionKey = partition.getPartitionKeyEnd();
     scannerId = null;
+    sequenceId = 0;
     invalidate();
   }
 
