@@ -390,6 +390,12 @@ class Tablet {
   Status MutateRowUnlocked(WriteTransactionState *tx_state,
                            RowOp* mutate);
 
+  // Return the list of RowSets that need to be consulted when processing the
+  // given mutation.
+  static std::vector<RowSet*> FindRowSetsToCheck(RowOp* mutate,
+                                                 const TabletComponents* comps);
+
+
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //
   // These iterators are not true snapshot iterators, but they are safe against

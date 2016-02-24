@@ -17,10 +17,12 @@
 #ifndef KUDU_TABLET_ROWSET_MANAGER_H
 #define KUDU_TABLET_ROWSET_MANAGER_H
 
+#include <unordered_map>
 #include <vector>
 #include <utility>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/util/status.h"
 #include "kudu/tablet/rowset.h"
 
@@ -77,6 +79,10 @@ class RowSetTree {
 
   const RowSetVector &all_rowsets() const { return all_rowsets_; }
 
+  RowSet* drs_by_id(int64_t drs_id) const {
+    return FindPtrOrNull(drs_by_id_, drs_id);
+  }
+
   // Iterates over RowSetTree::RSEndpoint, guaranteed to be ordered and for
   // any rowset to appear exactly twice, once at its start slice and once at
   // its stop slice, equivalent to its GetBounds() values.
@@ -99,6 +105,9 @@ class RowSetTree {
 
   // All of the rowsets which were put in this RowSetTree.
   RowSetVector all_rowsets_;
+
+  // The DiskRowSets in this RowSetTree, keyed by their id.
+  std::unordered_map<int64_t, RowSet*> drs_by_id_;
 
   // Rowsets for which the bounds are unknown -- e.g because they
   // are mutable (MemRowSets).

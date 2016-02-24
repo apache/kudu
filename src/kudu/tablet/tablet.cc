@@ -409,6 +409,46 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   return s;
 }
 
+vector<RowSet*> Tablet::FindRowSetsToCheck(RowOp* mutate,
+                                           const TabletComponents* comps) {
+  vector<RowSet*> to_check;
+  if (PREDICT_TRUE(!mutate->orig_result_from_log_)) {
+    // TODO: could iterate the rowsets in a smart order
+    // based on recent statistics - eg if a rowset is getting
+    // updated frequently, pick that one first.
+    comps->rowsets->FindRowSetsWithKeyInRange(mutate->key_probe->encoded_key_slice(),
+                                              &to_check);
+#ifndef NDEBUG
+    // The order in which the rowset tree returns its results doesn't have semantic
+    // relevance. We've had bugs in the past (eg KUDU-1341) which were obscured by
+    // relying on the order of rowsets here. So, in debug builds, we shuffle the
+    // order to encourage finding such bugs more easily.
+    std::random_shuffle(to_check.begin(), to_check.end());
+#endif
+    return to_check;
+  }
+
+  // If we are replaying an operation during bootstrap, then we already have a
+  // COMMIT message which tells us specifically which memory store to apply it to.
+  for (const auto& store : mutate->orig_result_from_log_->mutated_stores()) {
+    if (store.has_mrs_id()) {
+      to_check.push_back(comps->memrowset.get());
+    } else {
+      DCHECK(store.has_rs_id());
+      RowSet* drs = comps->rowsets->drs_by_id(store.rs_id());
+      if (PREDICT_TRUE(drs)) {
+        to_check.push_back(drs);
+      }
+
+      // If for some reason we didn't find any stores that the COMMIT message indicated,
+      // then 'to_check' will be empty at this point. That will result in a NotFound()
+      // status below, which the bootstrap code catches and propagates as a tablet
+      // corruption.
+    }
+  }
+  return to_check;
+}
+
 Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
                                  RowOp* mutate) {
   DCHECK(tx_state != nullptr) << "you must have a WriteTransactionState";
@@ -456,12 +496,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
 
   // Next, check the disk rowsets.
 
-  // TODO: could iterate the rowsets in a smart order
-  // based on recent statistics - eg if a rowset is getting
-  // updated frequently, pick that one first.
-  vector<RowSet *> to_check;
-  comps->rowsets->FindRowSetsWithKeyInRange(mutate->key_probe->encoded_key_slice(),
-                                            &to_check);
+  vector<RowSet *> to_check = FindRowSetsToCheck(mutate, comps);
   for (RowSet *rs : to_check) {
     s = rs->MutateRow(ts,
                       *mutate->key_probe,
