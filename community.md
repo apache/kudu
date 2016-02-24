@@ -46,9 +46,9 @@ your city, get in touch by emailing the
 1. Wed, Feb 24, 2016. [Seattle Scalability Meetup](http://www.meetup.com/Seattle-Scalability-Meetup/events/225955122/). Seattle, WA, USA. <br/>
    _Resolving Transactional Access/Analytic Performance Trade-offs in Hadoop with Kudu_. Presented by Dan Burkert.
 1. Tue, Feb 23, 2016. [SF Data Engineering Meetup](http://www.meetup.com/SF-Data-Engineering/events/228293610/). San Francisco, CA, USA. <br/>
-   _Intro to Apache Kudu_. Presented by Asim Jalis.
+   _Intro to Apache Kudu_. Presented by Asim Jalis. ([slides](http://www.slideshare.net/AsimJalis/apache-kudu))
 1. Thu, Feb 18, 2016. [DataKRK Meetup](http://www.meetup.com/datakrk/events/228548317/). Krakow, Poland. <br/>
-   _Are you KUDUing me?_. Presented by Przemek Maciołek.
+   _Are you KUDUing me?_. Presented by Przemek Maciołek. ([slides](http://www.slideshare.net/pmaciolek/are-you-kuduing-me))
 1. Wed, Feb 17, 2016. [Bay Area Hadoop User Group](http://www.meetup.com/hadoop/events/228573587/). Sunnyvale, CA, USA. <br/>
    _Apache Kudu (incubating): New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by David Alves. ([video](https://www.youtube.com/watch?v=j3wYaz-kIvs))
 1. Wed, Feb 10, 2016. [San Francisco Python Meetup Group](http://www.meetup.com/sfpython/events/228213876/). San Francisco, CA, USA. <br/>
