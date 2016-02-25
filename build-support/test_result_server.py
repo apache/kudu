@@ -179,7 +179,11 @@ class TRServer(object):
     k = boto.s3.key.Key(self.s3_bucket)
     k.key = key
     log_text_gz = k.get_contents_as_string()
-    log_text = gzip.GzipFile(fileobj=StringIO(log_text_gz)).read().decode('utf-8')
+    encoded_text = gzip.GzipFile(fileobj=StringIO(log_text_gz)).read()
+
+    # Ignore errors in decoding, as logs may contain binary data.
+    log_text = encoded_text.decode('utf-8', 'ignore')
+
     summary = parse_test_failure.extract_failure_summary(log_text)
     if not summary:
       summary = "Unable to diagnose"
