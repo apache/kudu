@@ -149,7 +149,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     LOG(INFO) << "Waiting for row count " << expected_count << "...";
     MonoTime start = MonoTime::Now(MonoTime::FINE);
     MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-    deadline.AddDelta(MonoDelta::FromSeconds(10));
+    deadline.AddDelta(MonoDelta::FromSeconds(90));
     while (true) {
       results->clear();
       NO_FATALS(ScanReplica(replica_proxy, results));
