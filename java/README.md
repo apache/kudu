@@ -138,10 +138,4 @@ Here's how to build the kudu-csd module:
 
 $ mvn package -DskipTests -PbuildCSD
 
-Also by default, building the CSD does not validate it,
-because (for the moment) this requires access to an internal
-Cloudera repository containing the validator maven plugin.
-
-Here's how to build the kudu-csd module with validation:
-
-$ mvn package -DskipTests -PbuildCSD -PvalidateCSD
+This will both build the Kudu CSD and validate it for correctness.

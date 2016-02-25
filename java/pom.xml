@@ -46,7 +46,7 @@
         <maven-protoc-plugin.version>0.1.10</maven-protoc-plugin.version>
         <maven-surefire-plugin.version>2.18</maven-surefire-plugin.version>
         <maven-failsafe-plugin.version>2.18</maven-failsafe-plugin.version>
-        <schema-validator-maven-plugin.version>5.5.0-SNAPSHOT</schema-validator-maven-plugin.version>
+        <schema-validator-maven-plugin.version>5.5.3</schema-validator-maven-plugin.version>
 
         <!-- Library dependencies -->
         <async.version>1.4.1</async.version>
@@ -235,6 +235,13 @@
       <pluginRepository>
         <id>protoc-plugin</id>
         <url>http://maven.davidtrott.com/repository</url>
+        <name>Protoc Plugin Repository</name>
+      </pluginRepository>
+      <!-- For schema-validator-maven-plugin -->
+      <pluginRepository>
+        <id>schema-validator-maven-plugin</id>
+        <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>
+        <name>Cloudera Plugin Repositories</name>
       </pluginRepository>
     </pluginRepositories>
 

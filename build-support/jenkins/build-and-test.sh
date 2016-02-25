@@ -56,10 +56,6 @@
 #   BUILD_JAVA        Default: 1
 #     Build and test java code if this is set to 1.
 #
-#   VALIDATE_CSD      Default: 0
-#     If 1, runs the CM CSD validator against the Kudu CSD.
-#     This requires access to an internal Cloudera maven repository.
-#
 #   BUILD_PYTHON       Default: 1
 #     Build and test the Python wrapper of the client API.
 #
@@ -102,7 +98,6 @@ export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
 BUILD_JAVA=${BUILD_JAVA:-1}
-VALIDATE_CSD=${VALIDATE_CSD:-0}
 BUILD_PYTHON=${BUILD_PYTHON:-1}
 
 # Ensure that the test data directory is usable.
@@ -307,12 +302,7 @@ if [ "$BUILD_JAVA" == "1" ]; then
   pushd $SOURCE_ROOT/java
   export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt history_size=7"
   set -x
-  VALIDATE_CSD_FLAG=""
-  if [ "$VALIDATE_CSD" == "1" ]; then
-    VALIDATE_CSD_FLAG="-PvalidateCSD"
-  fi
   if ! mvn $MVN_FLAGS -PbuildCSD \
-      $VALIDATE_CSD_FLAG \
       -Dsurefire.rerunFailingTestsCount=3 \
       -Dfailsafe.rerunFailingTestsCount=3 \
       clean verify ; then
