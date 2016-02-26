@@ -282,7 +282,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
 
   // Create RowOp objects for each
   vector<RowOp*> row_ops;
-  ops.reserve(ops.size());
+  row_ops.reserve(ops.size());
   for (const DecodedRowOperation& op : ops) {
     row_ops.push_back(new RowOp(op));
   }
