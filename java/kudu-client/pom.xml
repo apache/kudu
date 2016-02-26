@@ -110,7 +110,11 @@
                          http://sergei-ivanov.github.io/maven-protoc-plugin/compile-mojo.html -->
                     <checkStaleness>true</checkStaleness>
                     <protoSourceRoot>${project.basedir}/../../src</protoSourceRoot>
-                    <protocExecutable>${project.basedir}/dev-support/build-proto.sh</protocExecutable>
+                    <protocExecutable>
+                      ${project.basedir}/../../thirdparty/installed-deps/bin/protoc
+                    </protocExecutable>
+                    <!-- Where we'll look for built-in .proto files such as
+                         google/protobuf/descriptor.proto. -->
                     <additionalProtoPathElements>
                       <additionalProtoPathElement>
                         ${project.basedir}/../../thirdparty/installed-deps/include
@@ -299,4 +303,33 @@
           </plugins>
         </pluginManagement>
     </build>
+
+    <profiles>
+      <!-- If thirdparty's protoc can't be found, this profile will activate and
+           use the system's protoc during the build. -->
+      <profile>
+        <id>protoc-system</id>
+        <activation>
+          <file>
+            <missing>${basedir}/../../thirdparty/installed-deps/bin/protoc</missing>
+          </file>
+        </activation>
+        <build>
+          <plugins>
+            <plugin>
+              <groupId>com.google.protobuf.tools</groupId>
+              <artifactId>maven-protoc-plugin</artifactId>
+              <version>${maven-protoc-plugin.version}</version>
+              <configuration>
+                <protocExecutable>protoc</protocExecutable>
+                <additionalProtoPathElements>
+                  <additionalProtoPathElement>/usr/include</additionalProtoPathElement>
+                  <additionalProtoPathElement>/usr/local/include</additionalProtoPathElement>
+                </additionalProtoPathElements>
+              </configuration>
+            </plugin>
+          </plugins>
+        </build>
+      </profile>
+    </profiles>
 </project>
