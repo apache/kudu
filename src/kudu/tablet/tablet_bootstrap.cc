@@ -110,17 +110,30 @@ using tserver::WriteRequestPB;
 struct ReplayState;
 
 // Information from the tablet metadata which indicates which data was
-// flushed prior to this restart.
+// flushed prior to this restart and which memory stores are still active.
 //
 // We take a snapshot of this information at the beginning of the bootstrap
 // process so that we can allow compactions and flushes to run during bootstrap
 // without confusing our tracking of flushed stores.
+//
+// NOTE: automatic flushes and compactions are not currently scheduled during
+// bootstrap. However, flushes may still be triggered due to operations like
+// alter-table.
 class FlushedStoresSnapshot {
  public:
   FlushedStoresSnapshot() {}
   Status InitFrom(const TabletMetadata& meta);
 
-  bool WasStoreAlreadyFlushed(const MemStoreTargetPB& target) const;
+  // Return true if the given memory store is still active (i.e. edits that were
+  // originally written to this memory store should be replayed during the bootstrap
+  // process).
+  //
+  // NOTE: a store may be inactive for either of two reasons. Either:
+  // (a) the store was flushed to disk, OR
+  // (b) the store was in the process of being written by a flush or compaction
+  //     but the process crashed before the associated tablet metadata update
+  //     was committed.
+  bool IsMemStoreActive(const MemStoreTargetPB& target) const;
 
  private:
   int64_t last_durable_mrs_id_;
@@ -244,13 +257,9 @@ class TabletBootstrap {
                       RowOp* op,
                       const OperationResultPB& op_result);
 
-  // Returns whether all the stores that are referred to in the commit
-  // message are already flushed.
-  bool AreAllStoresAlreadyFlushed(const CommitMsg& commit);
-
-  // Returns whether there is any store that is referred to in the commit
-  // message that is already flushed.
-  bool AreAnyStoresAlreadyFlushed(const CommitMsg& commit);
+  // Returns true if any of the memory stores referenced in 'commit' are still
+  // active, in which case the operation needs to be replayed.
+  bool AreAnyStoresActive(const CommitMsg& commit);
 
   void DumpReplayStateToLog(const ReplayState& state);
 
@@ -261,9 +270,9 @@ class TabletBootstrap {
   Status ApplyCommitMessage(ReplayState* state, LogEntryPB* commit_entry);
   Status HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry);
 
-  // Checks that an orphaned commit message is actually irrelevant, i.e that the
-  // data stores it refers to are already flushed.
-  Status CheckOrphanedCommitAlreadyFlushed(const CommitMsg& commit);
+  // Checks that an orphaned commit message is actually irrelevant, i.e that none
+  // of the data stores it refers to are live.
+  Status CheckOrphanedCommitDoesntNeedReplay(const CommitMsg& commit);
 
   // Decodes a Timestamp from the provided string and updates the clock
   // with it.
@@ -821,7 +830,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
   if (state->pending_replicates.empty() ||
       (*state->pending_replicates.begin()).first > committed_op_id.index()) {
     VLOG_WITH_PREFIX(2) << "Found orphaned commit for " << committed_op_id;
-    RETURN_NOT_OK(CheckOrphanedCommitAlreadyFlushed(commit_entry->commit()));
+    RETURN_NOT_OK(CheckOrphanedCommitDoesntNeedReplay(commit_entry->commit()));
     stats_.orphaned_commits++;
     delete commit_entry;
     return Status::OK();
@@ -859,21 +868,10 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
   return Status::OK();
 }
 
-bool TabletBootstrap::AreAllStoresAlreadyFlushed(const CommitMsg& commit) {
+bool TabletBootstrap::AreAnyStoresActive(const CommitMsg& commit) {
   for (const OperationResultPB& op_result : commit.result().ops()) {
     for (const MemStoreTargetPB& mutated_store : op_result.mutated_stores()) {
-      if (!flushed_stores_.WasStoreAlreadyFlushed(mutated_store)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-bool TabletBootstrap::AreAnyStoresAlreadyFlushed(const CommitMsg& commit) {
-  for (const OperationResultPB& op_result : commit.result().ops()) {
-    for (const MemStoreTargetPB& mutated_store : op_result.mutated_stores()) {
-      if (flushed_stores_.WasStoreAlreadyFlushed(mutated_store)) {
+      if (flushed_stores_.IsMemStoreActive(mutated_store)) {
         return true;
       }
     }
@@ -881,14 +879,15 @@ bool TabletBootstrap::AreAnyStoresAlreadyFlushed(const CommitMsg& commit) {
   return false;
 }
 
-Status TabletBootstrap::CheckOrphanedCommitAlreadyFlushed(const CommitMsg& commit) {
-  if (!AreAllStoresAlreadyFlushed(commit)) {
+Status TabletBootstrap::CheckOrphanedCommitDoesntNeedReplay(const CommitMsg& commit) {
+  if (AreAnyStoresActive(commit)) {
     TabletSuperBlockPB super;
     WARN_NOT_OK(meta_->ToSuperBlock(&super), LogPrefix() + "Couldn't build TabletSuperBlockPB");
     return Status::Corruption(Substitute("CommitMsg was orphaned but it referred to "
-        "unflushed stores. Commit: $0. TabletMetadata: $1", commit.ShortDebugString(),
+        "stores which need replay. Commit: $0. TabletMetadata: $1", commit.ShortDebugString(),
         super.ShortDebugString()));
   }
+
   return Status::OK();
 }
 
@@ -920,7 +919,7 @@ Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* commi
     stats_.ops_committed++;
   } else {
     stats_.orphaned_commits++;
-    RETURN_NOT_OK(CheckOrphanedCommitAlreadyFlushed(commit_entry->commit()));
+    RETURN_NOT_OK(CheckOrphanedCommitDoesntNeedReplay(commit_entry->commit()));
   }
 
   return Status::OK();
@@ -1080,26 +1079,27 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   }
 
   // If we have non-applied commits they all must belong to pending operations and
-  // they should only pertain to unflushed stores.
+  // they should only pertain to stores which are still active.
   if (!state.pending_commits.empty()) {
     for (const OpIndexToEntryMap::value_type& entry : state.pending_commits) {
       if (!ContainsKey(state.pending_replicates, entry.first)) {
         DumpReplayStateToLog(state);
         return Status::Corruption("Had orphaned commits at the end of replay.");
       }
-      if (AreAnyStoresAlreadyFlushed(entry.second->commit())) {
+      if (entry.second->commit().op_type() == WRITE_OP &&
+          !AreAnyStoresActive(entry.second->commit())) {
         DumpReplayStateToLog(state);
         TabletSuperBlockPB super;
         WARN_NOT_OK(meta_->ToSuperBlock(&super), "Couldn't build TabletSuperBlockPB.");
-        return Status::Corruption(Substitute("CommitMsg was pending but it referred to "
-            "flushed stores. Commit: $0. TabletMetadata: $1",
+        return Status::Corruption(Substitute("CommitMsg was pending but it did not refer "
+            "to any active memory stores. Commit: $0. TabletMetadata: $1",
             entry.second->commit().ShortDebugString(), super.ShortDebugString()));
       }
     }
   }
 
   // Note that we don't pass the information contained in the pending commits along with
-  // ConsensusBootstrapInfo. We know that this is safe as they must refer to unflushed
+  // ConsensusBootstrapInfo. We know that this is safe as they must refer to active
   // stores (we make doubly sure above).
   //
   // Example/Explanation:
@@ -1120,7 +1120,7 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   // pass them both as "pending" to consensus to be applied again.
   //
   // The reason why it is safe to simply disregard 10.11's commit is that we know that
-  // it must refer only to unflushed stores. We know this because one important flush/compact
+  // it must refer only to active stores. We know this because one important flush/compact
   // pre-condition is:
   // - No flush will become visible on reboot (meaning we won't durably update the tablet
   //   metadata), unless the snapshot under which the flush/compact was performed has no
@@ -1348,13 +1348,14 @@ Status TabletBootstrap::FilterInsert(WriteTransactionState* tx_state,
                                      const OperationResultPB& op_result) {
   DCHECK_EQ(op->decoded_op.type, RowOperationsPB::INSERT);
 
+  // INSERTs are never duplicated.
   if (PREDICT_FALSE(op_result.mutated_stores_size() != 1 ||
                     !op_result.mutated_stores(0).has_mrs_id())) {
     return Status::Corruption(Substitute("Insert operation result must have an mrs_id: $0",
                                          op_result.ShortDebugString()));
   }
   // check if the insert is already flushed
-  if (flushed_stores_.WasStoreAlreadyFlushed(op_result.mutated_stores(0))) {
+  if (!flushed_stores_.IsMemStoreActive(op_result.mutated_stores(0))) {
     if (VLOG_IS_ON(1)) {
       VLOG_WITH_PREFIX(1) << "Skipping insert that was already flushed. OpId: "
                           << tx_state->op_id().DebugString()
@@ -1383,37 +1384,35 @@ Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
   }
 
   // The mutation may have been duplicated, so we'll check whether any of the
-  // output targets was "unflushed".
-  int num_unflushed_stores = 0;
+  // output targets was active.
+  int num_active_stores = 0;
   for (const MemStoreTargetPB& mutated_store : op_result.mutated_stores()) {
-    if (!flushed_stores_.WasStoreAlreadyFlushed(mutated_store)) {
-      num_unflushed_stores++;
+    if (flushed_stores_.IsMemStoreActive(mutated_store)) {
+      num_active_stores++;
     } else {
       if (VLOG_IS_ON(1)) {
         string mutation = op->decoded_op.changelist.ToString(*tablet_->schema());
         VLOG_WITH_PREFIX(1) << "Skipping mutation to " << mutated_store.ShortDebugString()
-                            << " that was already flushed. "
-                            << "OpId: " << tx_state->op_id().DebugString();
+                            << " that was not active. OpId: " << tx_state->op_id().DebugString();
       }
     }
   }
 
-  if (num_unflushed_stores == 0) {
+  if (num_active_stores == 0) {
     // The mutation was fully flushed.
     op->SetFailed(Status::AlreadyPresent("Update was already flushed."));
     stats_.mutations_ignored++;
     return Status::OK();
   }
 
-  if (num_unflushed_stores == 2) {
-    // 18:47 < dralves> off the top of my head, if we crashed before writing the meta
-    //                  at the end of a flush/compation then both mutations could
-    //                  potentually be considered unflushed
-    // This case is not currently covered by any tests -- we need to add test coverage
-    // for this. See KUDU-218. It's likely the correct behavior is just to apply the edit,
-    // ie not fatal below.
-    LOG_WITH_PREFIX(DFATAL) << "TODO: add test coverage for case where op is unflushed "
-                            << "in both duplicated targets";
+  if (PREDICT_FALSE(num_active_stores == 2)) {
+    // It's not possible for a duplicated mutation to refer to two stores which are still
+    // active. Either the mutation arrived before the metadata was flushed, in which case
+    // the 'first' store is live, or it arrived just after it was flushed, in which case
+    // the 'second' store was live. But at no time should the metadata refer to both the
+    // 'input' and 'output' stores of a compaction.
+    return Status::Corruption("Mutation was duplicated to two stores that are considered live",
+                              op_result.ShortDebugString());
   }
 
   return Status::OK();
@@ -1448,32 +1447,37 @@ Status FlushedStoresSnapshot::InitFrom(const TabletMetadata& meta) {
   return Status::OK();
 }
 
-bool FlushedStoresSnapshot::WasStoreAlreadyFlushed(const MemStoreTargetPB& target) const {
+bool FlushedStoresSnapshot::IsMemStoreActive(const MemStoreTargetPB& target) const {
   if (target.has_mrs_id()) {
     DCHECK(!target.has_rs_id());
     DCHECK(!target.has_dms_id());
 
-    // The original mutation went to the MRS. It is flushed if it went to an MRS
-    // with a lower ID than the latest flushed one.
-    return target.mrs_id() <= last_durable_mrs_id_;
+    // The original mutation went to the MRS. If this MRS has not yet been made
+    // durable, it needs to be replayed.
+    return target.mrs_id() > last_durable_mrs_id_;
   } else {
+
     // The original mutation went to a DRS's delta store.
+    DCHECK(target.has_rs_id());
+
     int64_t last_durable_dms_id;
     if (!FindCopy(flushed_dms_by_drs_id_, target.rs_id(), &last_durable_dms_id)) {
-      // if we have no data about this RowSet, then it must have been flushed and
-      // then deleted.
-      // TODO: how do we avoid a race where we get an update on a rowset before
-      // it is persisted? add docs about the ordering of flush.
-      return true;
+      // If we have no data about this DRS, then there are two cases:
+      //
+      // 1) The DRS has already been flushed, but then later got removed because
+      // it got compacted away. Since it was flushed, we don't need to replay it.
+      //
+      // 2) The DRS was in the process of being written, but haven't yet flushed the
+      // TabletMetadata update that includes it. We only write to an in-progress DRS like
+      // this when we are in the 'duplicating' phase of a compaction. In that case,
+      // the other duplicated 'target' should still be present in the metadata, and we
+      // can base our decision based on that one.
+      return false;
     }
 
     // If the original rowset that we applied the edit to exists, check whether
     // the edit was in a flushed DMS or a live one.
-    if (target.dms_id() <= last_durable_dms_id) {
-      return true;
-    }
-
-    return false;
+    return target.dms_id() > last_durable_dms_id;
   }
 }
 

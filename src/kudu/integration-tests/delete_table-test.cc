@@ -188,12 +188,9 @@ void DeleteTableTest::WaitForTabletDeletedOnTS(int index,
 }
 
 void DeleteTableTest::WaitForTSToCrash(int index) {
-  ExternalTabletServer* ts = cluster_->tablet_server(index);
-  for (int i = 0; i < 6000; i++) { // wait 60sec
-    if (!ts->IsProcessAlive()) return;
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-  FAIL() << "TS " << ts->instance_id().permanent_uuid() << " did not crash!";
+  auto ts = cluster_->tablet_server(index);
+  SCOPED_TRACE(ts->instance_id().permanent_uuid());
+  ASSERT_OK(ts->WaitForCrash(MonoDelta::FromSeconds(60)));
 }
 
 void DeleteTableTest::WaitForAllTSToCrash() {

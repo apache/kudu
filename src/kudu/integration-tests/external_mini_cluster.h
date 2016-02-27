@@ -308,6 +308,10 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // explicitly call Shutdown().
   bool IsProcessAlive() const;
 
+  // Wait for this process to crash, or the given timeout to
+  // elapse. If the process is already crashed, returns immediately.
+  Status WaitForCrash(const MonoDelta& timeout) const;
+
   virtual void Shutdown();
 
   const std::string& data_dir() const { return data_dir_; }

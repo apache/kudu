@@ -17,6 +17,7 @@
 
 #include "kudu/integration-tests/external_mini_cluster.h"
 
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <memory>
 #include <rapidjson/document.h>
@@ -612,6 +613,19 @@ bool ExternalDaemon::IsProcessAlive() const {
   // If the non-blocking Wait "times out", that means the process
   // is running.
   return s.IsTimedOut();
+}
+
+Status ExternalDaemon::WaitForCrash(const MonoDelta& timeout) const {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+
+  int i = 1;
+  while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+    if (!IsProcessAlive()) return Status::OK();
+    int sleep_ms = std::min(i++ * 10, 200);
+    SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
+  }
+  return Status::TimedOut(Substitute("Process did not crash within $0", timeout.ToString()));
 }
 
 pid_t ExternalDaemon::pid() const {
