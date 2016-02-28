@@ -39,7 +39,7 @@ import subprocess
 import time
 
 TEST_TIMEOUT_SECS = int(os.environ.get('TEST_TIMEOUT_SECS', '900'))
-ARTIFACT_ARCHIVE_GLOBS = ["build/*/test-logs/*"]
+ARTIFACT_ARCHIVE_GLOBS = ["build/*/test-logs/**/*"]
 ISOLATE_SERVER = os.environ.get('ISOLATE_SERVER',
                                 "http://isolate.cloudera.org:4242/")
 DIST_TEST_HOME = os.environ.get('DIST_TEST_HOME',
@@ -222,7 +222,8 @@ def ldd_deps(exe):
 
 
 def create_archive_input(staging, argv,
-                         disable_sharding=False):
+                         disable_sharding=False,
+                         collect_tmpdir=False):
   """
   Generates .gen.json and .isolate files corresponding to the
   test command 'argv'. The outputs are placed in the specified
@@ -275,6 +276,8 @@ def create_archive_input(staging, argv,
                '-e', 'KUDU_ALLOW_SLOW_TESTS=%s' % os.environ.get('KUDU_ALLOW_SLOW_TESTS', 1),
                '-e', 'KUDU_COMPRESS_TEST_OUTPUT=%s' % \
                       os.environ.get('KUDU_COMPRESS_TEST_OUTPUT', 0)]
+    if collect_tmpdir:
+      command += ["--collect-tmpdir"]
     command.append('--')
     command += argv[1:]
 
@@ -386,8 +389,8 @@ def run_all_tests(parser, options):
   staging = StagingDir.new()
   for command in commands:
     create_archive_input(staging, command,
-        disable_sharding=options.disable_sharding)
-
+                         disable_sharding=options.disable_sharding,
+                         collect_tmpdir=options.collect_tmpdir)
   run_isolate(staging)
   create_task_json(staging, flaky_test_set=get_flakies())
   submit_tasks(staging, options)
@@ -405,7 +408,8 @@ def loop_test(parser, options):
   command = ["run-test.sh", options.cmd] + options.args
   staging = StagingDir.new()
   create_archive_input(staging, command,
-                       disable_sharding=options.disable_sharding)
+                       disable_sharding=options.disable_sharding,
+                       collect_tmpdir=options.collect_tmpdir)
   run_isolate(staging)
   create_task_json(staging, options.num_instances)
   submit_tasks(staging, options)
@@ -427,6 +431,8 @@ def main(argv):
   p = argparse.ArgumentParser()
   p.add_argument("--disable-sharding", dest="disable_sharding", action="store_true",
                  help="Disable automatic sharding of tests", default=False)
+  p.add_argument("--collect-tmpdir", dest="collect_tmpdir", action="store_true",
+                 help="Collect the test tmpdir of failed tasks as test artifacts", default=False)
   p.add_argument("--no-wait", dest="no_wait", action="store_true",
                  help="Return without waiting for the job to complete", default=False)
   sp = p.add_subparsers()
