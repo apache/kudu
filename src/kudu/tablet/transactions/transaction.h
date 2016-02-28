@@ -102,12 +102,6 @@ class Transaction {
   // method where data-structures are changed.
   virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) = 0;
 
-  // Executed after Apply() but before the commit is submitted to consensus.
-  // Some transactions use this to perform pre-commit actions (e.g. write
-  // transactions perform early lock release on this hook).
-  // Default implementation does nothing.
-  virtual void PreCommit() {}
-
   // Executed after the transaction has been applied and the commit message has
   // been appended to the log (though it might not be durable yet), or if the
   // transaction was aborted.

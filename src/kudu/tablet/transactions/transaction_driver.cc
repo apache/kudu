@@ -367,6 +367,11 @@ void TransactionDriver::ApplyTask() {
     commit_msg->mutable_commited_op_id()->CopyFrom(op_id_copy_);
     SetResponseTimestamp(transaction_->state(), transaction_->state()->timestamp());
 
+    {
+      TRACE_EVENT1("txn", "AsyncAppendCommit", "txn", this);
+      CHECK_OK(log_->AsyncAppendCommit(std::move(commit_msg), Bind(DoNothingStatusCB)));
+    }
+
     // If the client requested COMMIT_WAIT as the external consistency mode
     // calculate the latest that the prepare timestamp could be and wait
     // until now.earliest > prepare_latest. Only after this are the locks
@@ -381,11 +386,6 @@ void TransactionDriver::ApplyTask() {
       CHECK_OK(CommitWait());
     }
 
-    transaction_->PreCommit();
-    {
-      TRACE_EVENT1("txn", "AsyncAppendCommit", "txn", this);
-      CHECK_OK(log_->AsyncAppendCommit(std::move(commit_msg), Bind(DoNothingStatusCB)));
-    }
     Finalize();
   }
 }

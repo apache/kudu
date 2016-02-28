@@ -139,15 +139,16 @@ class WriteTransactionState : public TransactionState {
   // blocked on it).
   void StartApplying();
 
-  // Commits the Mvcc transaction and releases the component lock. After
-  // this method is called all the inserts and mutations will become
-  // visible to other transactions.
+  // Commits or aborts the MVCC transaction and releases all locks held.
   //
-  // Only one of Commit() or Abort() should be called.
+  // In the case of COMMITTED, this method makes the inserts and mutations performed
+  // by this transaction visible to other transactions.
+  //
+  // Must be called exactly once.
   // REQUIRES: StartApplying() was called.
   //
   // Note: request_ and response_ are set to NULL after this method returns.
-  void Commit();
+  void CommitOrAbort(Transaction::TransactionResult result);
 
   // Aborts the mvcc transaction and releases the component lock.
   // Only one of Commit() or Abort() should be called.
@@ -168,9 +169,6 @@ class WriteTransactionState : public TransactionState {
 
   void UpdateMetricsForOp(const RowOp& op);
 
-  // Releases all the row locks acquired by this transaction.
-  void release_row_locks();
-
   // Resets this TransactionState, releasing all locks, destroying all prepared
   // writes, clearing the transaction result _and_ committing the current Mvcc
   // transaction.
@@ -179,6 +177,9 @@ class WriteTransactionState : public TransactionState {
   virtual std::string ToString() const OVERRIDE;
 
  private:
+  // Releases all the row locks acquired by this transaction.
+  void ReleaseRowLocks();
+
   // Reset the RPC request, response, and row_ops_ (which refers to data
   // from the request).
   void ResetRpcFields();
@@ -251,9 +252,6 @@ class WriteTransaction : public Transaction {
   // original requests) which is already a requirement of the consensus
   // algorithm.
   virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
-
-  // Releases the row locks (Early Lock Release).
-  virtual void PreCommit() OVERRIDE;
 
   // If result == COMMITTED, commits the mvcc transaction and updates
   // the metrics, if result == ABORTED aborts the mvcc transaction.

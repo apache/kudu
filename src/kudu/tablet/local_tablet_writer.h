@@ -99,9 +99,7 @@ class LocalTabletWriter {
     tablet_->ApplyRowOperations(tx_state_.get());
 
     tx_state_->ReleaseTxResultPB(&result_);
-    tx_state_->Commit();
-    tx_state_->release_row_locks();
-    tx_state_->ReleaseSchemaLock();
+    tx_state_->CommitOrAbort(Transaction::COMMITTED);
 
     // Return the status of first failed op.
     int op_idx = 0;

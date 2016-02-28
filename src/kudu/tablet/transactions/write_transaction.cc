@@ -146,27 +146,19 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   return Status::OK();
 }
 
-void WriteTransaction::PreCommit() {
-  TRACE_EVENT0("txn", "WriteTransaction::PreCommit");
-  TRACE("PRECOMMIT: Releasing row and schema locks");
-  // Perform early lock release after we've applied all changes
-  state()->release_row_locks();
-  state()->ReleaseSchemaLock();
-}
-
 void WriteTransaction::Finish(TransactionResult result) {
   TRACE_EVENT0("txn", "WriteTransaction::Finish");
+
+  state()->CommitOrAbort(result);
+
   if (PREDICT_FALSE(result == Transaction::ABORTED)) {
-    TRACE("FINISH: aborting transaction");
-    state()->Abort();
+    TRACE("FINISH: transaction aborted");
     return;
   }
 
   DCHECK_EQ(result, Transaction::COMMITTED);
-  // Now that all of the changes have been applied and the commit is durable
-  // make the changes visible to readers.
-  TRACE("FINISH: making edits visible");
-  state()->Commit();
+
+  TRACE("FINISH: updating metrics");
 
   TabletMetrics* metrics = state_->tablet_peer()->tablet()->metrics();
   if (metrics) {
@@ -256,29 +248,27 @@ void WriteTransactionState::StartApplying() {
   CHECK_NOTNULL(mvcc_tx_.get())->StartApplying();
 }
 
-void WriteTransactionState::Abort() {
-  if (mvcc_tx_.get() != nullptr) {
-    // Abort the transaction.
-    mvcc_tx_->Abort();
-  }
-  mvcc_tx_.reset();
-
-  release_row_locks();
-  ReleaseSchemaLock();
-
-  // After commiting, we may respond to the RPC and delete the
-  // original request, so null them out here.
-  ResetRpcFields();
-}
-void WriteTransactionState::Commit() {
+void WriteTransactionState::CommitOrAbort(Transaction::TransactionResult result) {
   if (mvcc_tx_.get() != nullptr) {
     // Commit the transaction.
-    mvcc_tx_->Commit();
+    switch (result) {
+      case Transaction::COMMITTED:
+        mvcc_tx_->Commit();
+        break;
+      case Transaction::ABORTED:
+        mvcc_tx_->Abort();
+        break;
+    }
   }
   mvcc_tx_.reset();
 
-  // After commiting, we may respond to the RPC and delete the
-  // original request, so null them out here.
+  TRACE("Releasing row and schema locks");
+  ReleaseRowLocks();
+  ReleaseSchemaLock();
+
+  // After committing, if there is an RPC going on, the driver will respond to it.
+  // That will delete the RPC request and response objects. So, NULL them here
+  // so we don't read them again after they're deleted.
   ResetRpcFields();
 }
 
@@ -310,7 +300,7 @@ void WriteTransactionState::UpdateMetricsForOp(const RowOp& op) {
   }
 }
 
-void WriteTransactionState::release_row_locks() {
+void WriteTransactionState::ReleaseRowLocks() {
   // free the row locks
   for (RowOp* op : row_ops_) {
     op->row_lock.Release();
@@ -323,7 +313,7 @@ WriteTransactionState::~WriteTransactionState() {
 
 void WriteTransactionState::Reset() {
   // We likely shouldn't Commit() here. See KUDU-625.
-  Commit();
+  CommitOrAbort(Transaction::COMMITTED);
   tx_metrics_.Reset();
   timestamp_ = Timestamp::kInvalidTimestamp;
   tablet_components_ = nullptr;
