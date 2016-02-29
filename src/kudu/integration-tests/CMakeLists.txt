@@ -60,6 +60,7 @@ ADD_KUDU_TEST(all_types-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(remote_bootstrap-itest)
 ADD_KUDU_TEST(tablet_replacement-itest)
 ADD_KUDU_TEST(create-table-itest)
+ADD_KUDU_TEST(fuzz-itest)
 
 # Some tests have additional dependencies
 set(KUDU_TEST_LINK_LIBS kudu_client kudu_tools_util ${KUDU_TEST_LINK_LIBS})
