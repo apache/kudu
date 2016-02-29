@@ -64,6 +64,8 @@ See also +++<a href="https://issues.cloudera.org/issues/?jql=project%20%3D%20Kud
 for Kudu 0.7.0</a>+++ and +++<a href="https://github.com/apache/incubator-kudu/compare/branch-0.6.0...branch-0.7.0">Git
 changes between 0.6.0 and 0.7.0</a>+++.
 
+The upgrade instructions can be found at link:installation.html#upgrade[Upgrade from 0.6.0 to 0.7.0].
+
 [[rn_0.7.0_incompatible_changes]]
 ==== Incompatible changes
 
@@ -162,8 +164,6 @@ consistent with the C++ client.
 "list_tables" and "delete_table <table_name>".
 . OSX is now supported for single-host development. Please consult its specific installation
 instructions in link:installation.html#osx_from_source[OS X].
-
-The upgrade instructions are situated at link:installation.html#upgrade[Upgrade from 0.5.0 to 0.6.0].
 
 ==== Limitations
 
