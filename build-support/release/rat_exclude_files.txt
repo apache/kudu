@@ -9,7 +9,6 @@ pax_global_header
 *.pdf
 version.txt
 build-support/release/rat_exclude_files.txt
-docs/whitepaper/vldb.cls
 java/kudu-client/src/main/java/com/google/protobuf/ZeroCopyLiteralByteString.java
 java/kudu-client/src/main/java/org/kududb/client/AsyncKuduClient.java
 java/kudu-client/src/main/java/org/kududb/client/AsyncKuduScanner.java

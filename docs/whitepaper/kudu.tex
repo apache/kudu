@@ -15,23 +15,29 @@
 % specific language governing permissions and limitations
 % under the License.
 
-\documentclass{vldb}
+\documentclass[twocolumn,9pt]{article}
 \usepackage{graphicx}
 \usepackage{verbatim}
+\oddsidemargin -0.5in
+\evensidemargin -0.5in
+\textwidth 7.5in
+\topmargin -0.75in
+\textheight 9in
+
 \begin{document}
 
 \title{Kudu: Storage for Fast Analytics on Fast Data
-\titlenote{\bf
+\footnote{\bf
 This document is a draft. Edits will be made and re-published to the Kudu
 open source project web site on a rolling basis.}
 }
 % Authors
 %-----------------
-\numberofauthors{1}
 \author{
-  \alignauthor Todd Lipcon, David Alves, Dan Burkert, Jean-Daniel Cryans, Adar Dembo, Mike Percy, Silvius Rus, Dave Wang,
-  Matteo Bertozzi, Colin Patrick McCabe, Andrew Wang\\
-  \affaddr{Cloudera, inc.}\\
+  Todd Lipcon \and David Alves \and Dan Burkert \and Jean-Daniel Cryans \and Adar Dembo \and
+  Mike Percy \and Silvius Rus \and Dave Wang \and Matteo Bertozzi \and Colin Patrick McCabe \and
+  Andrew Wang\\
+  {\small \bf Cloudera, inc.}
 }
 
 \date{28 September 2015}
@@ -1056,7 +1062,7 @@ not yet support. When these features are added to Kudu, we plan to run these wor
 as well.
 
 \begin{figure}
-  \includegraphics[width=3in]{ycsb-results.pdf}
+  \includegraphics[width=3.5in]{ycsb-results.pdf}
   \caption{Operation throughput of YCSB random-access workloads, comparing Kudu vs.\ HBase}
   \label{fig:ycsb_throughput}
 \end{figure}
