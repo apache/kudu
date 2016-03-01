@@ -291,6 +291,17 @@ TEST(TestThreadPool, TestMetrics) {
   ASSERT_EQ(kNumItems, run_time->TotalCount());
 }
 
+// Test that a thread pool will crash if asked to run its own blocking
+// functions in a pool thread.
+//
+// In a multi-threaded application, TSAN is unsafe to use following a fork().
+// After a fork(), TSAN will:
+// 1. Disable verification, expecting an exec() soon anyway, and
+// 2. Die on future thread creation.
+// For some reason, this test triggers behavior #2. We could disable it with
+// the TSAN option die_after_fork=0, but this can (supposedly) lead to
+// deadlocks, so we'll disable the entire test instead.
+#ifndef THREAD_SANITIZER
 TEST(TestThreadPool, TestDeadlocks) {
   const char* death_msg = "called pool function that would result in deadlock";
   ASSERT_DEATH({
@@ -315,5 +326,6 @@ TEST(TestThreadPool, TestDeadlocks) {
     thread_pool->Wait();
   }, death_msg);
 }
+#endif
 
 } // namespace kudu
