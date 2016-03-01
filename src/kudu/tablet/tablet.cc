@@ -355,7 +355,8 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
 }
 
 Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
-                              RowOp* insert) {
+                              RowOp* insert,
+                              ProbeStats* stats) {
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
 
   CHECK(state_ == kOpen || state_ == kBootstrapping);
@@ -365,11 +366,6 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   DCHECK_EQ(tx_state->schema_at_decode_time(), schema()) << "Raced against schema change";
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
 
-  ProbeStats stats;
-
-  // Submit the stats before returning from this function
-  ProbeStatsSubmitter submitter(stats, metrics_.get());
-
   // First, ensure that it is a unique key by checking all the open RowSets.
   if (FLAGS_tablet_do_dup_key_checks) {
     vector<RowSet *> to_check;
@@ -378,7 +374,7 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
 
     for (const RowSet *rowset : to_check) {
       bool present = false;
-      RETURN_NOT_OK(rowset->CheckRowPresent(*insert->key_probe, &present, &stats));
+      RETURN_NOT_OK(rowset->CheckRowPresent(*insert->key_probe, &present, stats));
       if (PREDICT_FALSE(present)) {
         Status s = Status::AlreadyPresent("key already present");
         if (metrics_) {
@@ -451,7 +447,8 @@ vector<RowSet*> Tablet::FindRowSetsToCheck(RowOp* mutate,
 }
 
 Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
-                                 RowOp* mutate) {
+                                 RowOp* mutate,
+                                 ProbeStats* stats) {
   DCHECK(tx_state != nullptr) << "you must have a WriteTransactionState";
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
   DCHECK_EQ(tx_state->schema_at_decode_time(), schema());
@@ -475,16 +472,12 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
 
   Timestamp ts = tx_state->timestamp();
 
-  ProbeStats stats;
-  // Submit the stats before returning from this function
-  ProbeStatsSubmitter submitter(stats, metrics_.get());
-
   // First try to update in memrowset.
   s = comps->memrowset->MutateRow(ts,
                             *mutate->key_probe,
                             mutate->decoded_op.changelist,
                             tx_state->op_id(),
-                            &stats,
+                            stats,
                             result.get());
   if (s.ok()) {
     mutate->SetMutateSucceeded(std::move(result));
@@ -503,7 +496,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
                       *mutate->key_probe,
                       mutate->decoded_op.changelist,
                       tx_state->op_id(),
-                      &stats,
+                      stats,
                       result.get());
     if (s.ok()) {
       mutate->SetMutateSucceeded(std::move(result));
@@ -527,22 +520,39 @@ void Tablet::StartApplying(WriteTransactionState* tx_state) {
 }
 
 void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
+  // Allocate the ProbeStats objects from the transaction's arena, so
+  // they're all contiguous and we don't need to do any central allocation.
+  int num_ops = tx_state->row_ops().size();
+  ProbeStats* stats_array = static_cast<ProbeStats*>(
+      tx_state->arena()->AllocateBytesAligned(sizeof(ProbeStats) * num_ops,
+                                              alignof(ProbeStats)));
+
   StartApplying(tx_state);
+  int i = 0;
   for (RowOp* row_op : tx_state->row_ops()) {
-    ApplyRowOperation(tx_state, row_op);
+    ProbeStats* stats = &stats_array[i++];
+    // Manually run the constructor to clear the stats to 0 before collecting
+    // them.
+    new (stats) ProbeStats();
+    ApplyRowOperation(tx_state, row_op, stats);
+  }
+
+  if (metrics_) {
+    metrics_->AddProbeStats(stats_array, num_ops, tx_state->arena());
   }
 }
 
 void Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
-                               RowOp* row_op) {
+                               RowOp* row_op,
+                               ProbeStats* stats) {
   switch (row_op->decoded_op.type) {
     case RowOperationsPB::INSERT:
-      ignore_result(InsertUnlocked(tx_state, row_op));
+      ignore_result(InsertUnlocked(tx_state, row_op, stats));
       return;
 
     case RowOperationsPB::UPDATE:
     case RowOperationsPB::DELETE:
-      ignore_result(MutateRowUnlocked(tx_state, row_op));
+      ignore_result(MutateRowUnlocked(tx_state, row_op, stats));
       return;
 
     default:

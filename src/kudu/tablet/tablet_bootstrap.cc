@@ -1324,7 +1324,8 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
     }
 
     // Actually apply it.
-    tablet_->ApplyRowOperation(tx_state, op);
+    ProbeStats stats; // we don't use this, but tablet internals require non-NULL.
+    tablet_->ApplyRowOperation(tx_state, op, &stats);
     DCHECK(op->result != nullptr);
 
     // We expect that the above Apply() will always succeed, because we're

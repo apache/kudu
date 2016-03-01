@@ -16,7 +16,12 @@
 // under the License.
 #include "kudu/tablet/tablet_metrics.h"
 
+#include <functional>
+#include <map>
+#include <utility>
+
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/trace.h"
 
@@ -205,6 +210,8 @@ METRIC_DEFINE_counter(tablet, leader_memory_pressure_rejections,
   "Number of RPC requests rejected due to memory pressure while LEADER.");
 
 using strings::Substitute;
+using std::unordered_map;
+
 
 namespace kudu {
 namespace tablet {
@@ -250,20 +257,57 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
 #undef MINIT
 #undef GINIT
 
-void TabletMetrics::AddProbeStats(const ProbeStats& stats) {
-  bloom_lookups->IncrementBy(stats.blooms_consulted);
-  key_file_lookups->IncrementBy(stats.keys_consulted);
-  delta_file_lookups->IncrementBy(stats.deltas_consulted);
-  mrs_lookups->IncrementBy(stats.mrs_consulted);
+void TabletMetrics::AddProbeStats(const ProbeStats* stats_array, int len,
+                                  Arena* work_arena) {
+  // In most cases, different operations within a batch will have the same
+  // statistics (e.g. 1 or 2 bloom lookups, 0 key lookups, 0 delta lookups).
+  //
+  // Given that, we pre-aggregate our contributions to the tablet histograms
+  // in local maps here. We also pre-aggregate our normal counter contributions
+  // to minimize contention on the counter metrics.
+  //
+  // To avoid any actual expensive allocation, we allocate these local maps from
+  // 'work_arena'.
+  typedef ArenaAllocator<std::pair<const int32_t, int32_t>, false> AllocType;
+  typedef std::map<int32_t, int32_t, std::less<int32_t>, AllocType> MapType;
+  AllocType alloc(work_arena);
+  MapType bloom_lookups_hist(std::less<int32_t>(), alloc);
+  MapType key_file_lookups_hist(std::less<int32_t>(), alloc);
+  MapType delta_file_lookups_hist(std::less<int32_t>(), alloc);
 
-  bloom_lookups_per_op->Increment(stats.blooms_consulted);
-  key_file_lookups_per_op->Increment(stats.keys_consulted);
-  delta_file_lookups_per_op->Increment(stats.deltas_consulted);
+  ProbeStats sum;
+  for (int i = 0; i < len; i++) {
+    const ProbeStats& stats = stats_array[i];
+
+    sum.blooms_consulted += stats.blooms_consulted;
+    sum.keys_consulted += stats.keys_consulted;
+    sum.deltas_consulted += stats.deltas_consulted;
+    sum.mrs_consulted += stats.mrs_consulted;
+
+    bloom_lookups_hist[stats.blooms_consulted]++;
+    key_file_lookups_hist[stats.keys_consulted]++;
+    delta_file_lookups_hist[stats.deltas_consulted]++;
+  }
+
+  bloom_lookups->IncrementBy(sum.blooms_consulted);
+  key_file_lookups->IncrementBy(sum.keys_consulted);
+  delta_file_lookups->IncrementBy(sum.deltas_consulted);
+  mrs_lookups->IncrementBy(sum.mrs_consulted);
+
+  for (const auto& entry : bloom_lookups_hist) {
+    bloom_lookups_per_op->IncrementBy(entry.first, entry.second);
+  }
+  for (const auto& entry : key_file_lookups_hist) {
+    key_file_lookups_per_op->IncrementBy(entry.first, entry.second);
+  }
+  for (const auto& entry : delta_file_lookups_hist) {
+    delta_file_lookups_per_op->IncrementBy(entry.first, entry.second);
+  }
 
   TRACE("ProbeStats: bloom_lookups=$0,key_file_lookups=$1,"
         "delta_file_lookups=$2,mrs_lookups=$3",
-        stats.blooms_consulted, stats.keys_consulted,
-        stats.deltas_consulted, stats.mrs_consulted);
+        sum.blooms_consulted, sum.keys_consulted,
+        sum.deltas_consulted, sum.mrs_consulted);
 }
 
 } // namespace tablet
