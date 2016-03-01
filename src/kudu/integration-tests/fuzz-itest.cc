@@ -154,7 +154,7 @@ class FuzzTest : public KuduTest {
     // Setup session and table.
     session_ = client_->NewSession();
     CHECK_OK(session_->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    session_->SetTimeoutMillis(15 * 1000);
+    session_->SetTimeoutMillis(60 * 1000);
     CHECK_OK(client_->OpenTable(kTableName, &table_));
   }
 
