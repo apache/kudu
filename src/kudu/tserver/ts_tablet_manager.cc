@@ -554,6 +554,7 @@ Status TSTabletManager::DeleteTablet(
     boost::lock_guard<rw_spinlock> lock(lock_);
     RETURN_NOT_OK(CheckRunningUnlocked(error_code));
     CHECK_EQ(1, tablet_map_.erase(tablet_id)) << tablet_id;
+    InsertOrDie(&perm_deleted_tablet_ids_, tablet_id);
   }
 
   return Status::OK();
@@ -578,6 +579,22 @@ Status TSTabletManager::StartTabletStateTransitionUnlocked(
     const string& reason,
     scoped_refptr<TransitionInProgressDeleter>* deleter) {
   DCHECK(lock_.is_write_locked());
+  if (ContainsKey(perm_deleted_tablet_ids_, tablet_id)) {
+    // When a table is deleted, the master sends a DeleteTablet() RPC to every
+    // replica of every tablet with the TABLET_DATA_DELETED parameter, which
+    // indicates a "permanent" tablet deletion. If a follower services
+    // DeleteTablet() before the leader does, it's possible for the leader to
+    // react to the missing replica by asking the follower to remote bootstrap
+    // itself.
+    //
+    // If the tablet was permanently deleted, we should not allow it to
+    // transition back to "liveness" because that can result in flapping back
+    // and forth between deletion and remote bootstrapping.
+    return Status::IllegalState(
+        Substitute("Tablet $0 was permanently deleted. Cannot transition from state $1.",
+                   tablet_id, TabletDataState_Name(TABLET_DATA_DELETED)));
+  }
+
   if (!InsertIfNotPresent(&transition_in_progress_, tablet_id, reason)) {
     return Status::IllegalState(
         Substitute("State transition of tablet $0 already in progress: $1",

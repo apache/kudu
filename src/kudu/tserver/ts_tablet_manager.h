@@ -315,12 +315,17 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   typedef std::unordered_map<std::string, scoped_refptr<tablet::TabletPeer> > TabletMap;
 
-  // Lock protecting tablet_map_, dirty_tablets_, state_, and
-  // transition_in_progress_.
+  // Lock protecting tablet_map_, dirty_tablets_, state_,
+  // transition_in_progress_, and perm_deleted_tablet_ids_.
   mutable rw_spinlock lock_;
 
   // Map from tablet ID to tablet
   TabletMap tablet_map_;
+
+  // Permanently deleted tablet ids. If a tablet is removed with status
+  // TABLET_DATA_DELETED then it is added to this map (until the next process
+  // restart).
+  std::unordered_set<std::string> perm_deleted_tablet_ids_;
 
   // Map of tablet ids -> reason strings where the keys are tablets whose
   // bootstrap, creation, or deletion is in-progress

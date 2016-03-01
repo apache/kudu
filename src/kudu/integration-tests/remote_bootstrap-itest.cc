@@ -56,6 +56,7 @@ using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::itest::TServerDetails;
+using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::RemoteBootstrapClient;
@@ -735,6 +736,65 @@ TEST_F(RemoteBootstrapITest, TestSlowBootstrapDoesntFail) {
   NO_FATALS(v.CheckCluster());
   NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
                             workload.rows_inserted()));
+}
+
+// Attempting to start remote bootstrap on a tablet that was deleted with
+// TABLET_DATA_DELETED should fail. This behavior helps avoid thrashing when
+// a follower tablet is deleted and the leader notices before it has processed
+// its own DeleteTablet RPC, thinking that it needs to bring its follower back.
+TEST_F(RemoteBootstrapITest, TestRemoteBootstrappingDeletedTabletFails) {
+  // Delete the leader with TABLET_DATA_DELETED
+  // Attempt to manually bootstrap the leader from a follower
+  // Should get an error saying it's illegal
+
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  NO_FATALS(StartCluster({"--enable_leader_failure_detection=false"},
+                         {"--catalog_manager_wait_for_new_tablets_to_elect_leader=false"}));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(3);
+  workload.Setup();
+
+  TServerDetails* leader = ts_map_[cluster_->tablet_server(0)->uuid()];
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(leader, 1, kTimeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, kTimeout));
+  }
+
+  // Elect a leader for term 1, then run some data through the cluster.
+  ASSERT_OK(itest::StartElection(leader, tablet_id, kTimeout));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
+
+  // Now delete the leader with TABLET_DATA_DELETED. We should not be able to
+  // bring back the leader after that until restarting the process.
+  ASSERT_OK(itest::DeleteTablet(leader, tablet_id, TABLET_DATA_DELETED, boost::none, kTimeout));
+
+  Status s = itest::StartRemoteBootstrap(leader, tablet_id,
+                                         cluster_->tablet_server(1)->uuid(),
+                                         HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
+                                         1, // We are in term 1.
+                                         kTimeout);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Cannot transition from state TABLET_DATA_DELETED");
+
+  // Restart the server so that it won't remember the tablet was permanently
+  // deleted and we can remote bootstrap the server again.
+  cluster_->tablet_server(0)->Shutdown();
+  ASSERT_OK(cluster_->tablet_server(0)->Restart());
+
+  ASSERT_OK(itest::StartRemoteBootstrap(leader, tablet_id,
+                                        cluster_->tablet_server(1)->uuid(),
+                                        HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
+                                        1, // We are in term 1.
+                                        kTimeout));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 }
 
 } // namespace kudu
