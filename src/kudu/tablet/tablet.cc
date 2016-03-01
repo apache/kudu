@@ -60,6 +60,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/stopwatch.h"
@@ -187,8 +188,8 @@ Status Tablet::Open() {
     shared_ptr<DiskRowSet> rowset;
     Status s = DiskRowSet::Open(rowset_meta, log_anchor_registry_.get(), &rowset, mem_tracker_);
     if (!s.ok()) {
-      LOG(ERROR) << "Failed to open rowset " << rowset_meta->ToString() << ": "
-                 << s.ToString();
+      LOG_WITH_PREFIX(ERROR) << "Failed to open rowset " << rowset_meta->ToString() << ": "
+                             << s.ToString();
       return s;
     }
 
@@ -253,7 +254,7 @@ Status Tablet::NewRowIterator(const Schema &projection,
   if (metrics_) {
     metrics_->scans_started->Increment();
   }
-  VLOG(2) << "Created new Iterator under snap: " << snap.ToString();
+  VLOG_WITH_PREFIX(2) << "Created new Iterator under snap: " << snap.ToString();
   iter->reset(new Iterator(this, projection, snap, order));
   return Status::OK();
 }
@@ -545,7 +546,7 @@ void Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
       return;
 
     default:
-      LOG(FATAL) << RowOperationsPB::Type_Name(row_op->decoded_op.type);
+      LOG_WITH_PREFIX(FATAL) << RowOperationsPB::Type_Name(row_op->decoded_op.type);
   }
 }
 
@@ -683,9 +684,9 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
                           "PostSwapNewMemRowSet hook failed");
   }
 
-  LOG(INFO) << "Flush: entering stage 1 (old memrowset already frozen for inserts)";
+  LOG_WITH_PREFIX(INFO) << "Flush: entering stage 1 (old memrowset already frozen for inserts)";
   input.DumpToLog();
-  LOG(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
+  LOG_WITH_PREFIX(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
 
   RETURN_NOT_OK(DoCompactionOrFlush(input, mrs_being_flushed));
 
@@ -733,15 +734,15 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
     // If the current version >= new version, there is nothing to do.
     bool same_schema = schema()->Equals(*tx_state->schema());
     if (metadata_->schema_version() >= tx_state->schema_version()) {
-      LOG(INFO) << "Already running schema version " << metadata_->schema_version()
-                << " got alter request for version " << tx_state->schema_version();
+      LOG_WITH_PREFIX(INFO) << "Already running schema version " << metadata_->schema_version()
+                            << " got alter request for version " << tx_state->schema_version();
       return Status::OK();
     }
 
-    LOG(INFO) << "Alter schema from " << schema()->ToString()
-              << " version " << metadata_->schema_version()
-              << " to " << tx_state->schema()->ToString()
-              << " version " << tx_state->schema_version();
+    LOG_WITH_PREFIX(INFO) << "Alter schema from " << schema()->ToString()
+                          << " version " << metadata_->schema_version()
+                          << " to " << tx_state->schema()->ToString()
+                          << " version " << tx_state->schema_version();
     DCHECK(schema_lock_.is_locked());
     metadata_->SetSchema(*tx_state->schema(), tx_state->schema_version());
     if (tx_state->has_new_table_name()) {
@@ -783,7 +784,7 @@ Status Tablet::RewindSchemaForBootstrap(const Schema& new_schema,
   // rewind the schema before replaying any operations. So, we just
   // swap in a new one with the correct schema, rather than attempting
   // to flush.
-  LOG(INFO) << "Rewinding schema during bootstrap to " << new_schema.ToString();
+  LOG_WITH_PREFIX(INFO) << "Rewinding schema during bootstrap to " << new_schema.ToString();
 
   metadata_->SetSchema(new_schema, schema_version);
   {
@@ -1066,7 +1067,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
     // Let the policy decide which rowsets to compact.
     double quality = 0;
     RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set, &quality, NULL));
-    VLOG(2) << "Compaction quality: " << quality;
+    VLOG_WITH_PREFIX(2) << "Compaction quality: " << quality;
   }
 
   boost::shared_lock<rw_spinlock> lock(component_lock_);
@@ -1096,10 +1097,10 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   // since we only picked rowsets that were marked as available for compaction.
   if (!picked_set.empty()) {
     for (const RowSet* not_found : picked_set) {
-      LOG(ERROR) << "Rowset selected for compaction but not available anymore: "
-                 << not_found->ToString();
+      LOG_WITH_PREFIX(ERROR) << "Rowset selected for compaction but not available anymore: "
+                             << not_found->ToString();
     }
-    LOG(FATAL) << "Was unable to find all rowsets selected for compaction";
+    LOG_WITH_PREFIX(FATAL) << "Was unable to find all rowsets selected for compaction";
   }
   return Status::OK();
 }
@@ -1162,8 +1163,8 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
                "op", op_name);
 
   MvccSnapshot flush_snap(mvcc_);
-  LOG(INFO) << op_name << ": entering phase 1 (flushing snapshot). Phase 1 snapshot: "
-      << flush_snap.ToString();
+  LOG_WITH_PREFIX(INFO) << op_name << ": entering phase 1 (flushing snapshot). Phase 1 snapshot: "
+                        << flush_snap.ToString();
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostTakeMvccSnapshot(),
@@ -1189,8 +1190,8 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   // GCed in this compaction. In that case, we don't actually want to reopen.
   bool gced_all_input = drsw.written_count() == 0;
   if (gced_all_input) {
-    LOG(INFO) << op_name << " resulted in no output rows (all input rows "
-              << "were GCed!)  Removing all input rowsets.";
+    LOG_WITH_PREFIX(INFO) << op_name << " resulted in no output rows (all input rows "
+                          << "were GCed!)  Removing all input rowsets.";
 
     // Write out the new Tablet Metadata and remove old rowsets.
     // TODO: Consensus catch-up may want to preserve the compaction inputs.
@@ -1218,8 +1219,8 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
       shared_ptr<DiskRowSet> new_rowset;
       Status s = DiskRowSet::Open(meta, log_anchor_registry_.get(), &new_rowset, mem_tracker_);
       if (!s.ok()) {
-        LOG(WARNING) << "Unable to open snapshot " << op_name << " results "
-                     << meta->ToString() << ": " << s.ToString();
+        LOG_WITH_PREFIX(WARNING) << "Unable to open snapshot " << op_name << " results "
+                                 << meta->ToString() << ": " << s.ToString();
         return s;
       }
       new_disk_rowsets.push_back(new_rowset);
@@ -1252,8 +1253,8 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   //
   // The way that we avoid this case is that DuplicatingRowSet's FlushDeltas method is a
   // no-op.
-  LOG(INFO) << op_name << ": entering phase 2 (starting to duplicate updates "
-            << "in new rowsets)";
+  LOG_WITH_PREFIX(INFO) << op_name << ": entering phase 2 (starting to duplicate updates "
+                        << "in new rowsets)";
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
     new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
 
@@ -1283,10 +1284,10 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   // non_duplicated_txns_snap. To do so, we wait for them to commit, and then
   // manually include them into our snapshot.
   if (VLOG_IS_ON(1) && !applying_during_swap.empty()) {
-    VLOG(1) << "Waiting for " << applying_during_swap.size() << " mid-APPLY txns to commit "
-            << "before finishing compaction...";
+    VLOG_WITH_PREFIX(1) << "Waiting for " << applying_during_swap.size()
+                        << " mid-APPLY txns to commit before finishing compaction...";
     for (const Timestamp& ts : applying_during_swap) {
-      VLOG(1) << "  " << ts.value();
+      VLOG_WITH_PREFIX(1) << "  " << ts.value();
     }
   }
 
@@ -1307,8 +1308,9 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
 
   // Phase 2. Here we re-scan the compaction input, copying those missed updates into the
   // new rowset's DeltaTracker.
-  LOG(INFO) << op_name << " Phase 2: carrying over any updates which arrived during Phase 1";
-  LOG(INFO) << "Phase 2 snapshot: " << non_duplicated_txns_snap.ToString();
+  LOG_WITH_PREFIX(INFO) << op_name
+                        << " Phase 2: carrying over any updates which arrived during Phase 1";
+  LOG_WITH_PREFIX(INFO) << "Phase 2 snapshot: " << non_duplicated_txns_snap.ToString();
   RETURN_NOT_OK_PREPEND(
       input.CreateCompactionInput(non_duplicated_txns_snap, schema(), &merge),
           Substitute("Failed to create $0 inputs", op_name).c_str());
@@ -1341,8 +1343,8 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   // their metadata was written to disk.
   AtomicSwapRowSets({ inprogress_rowset }, new_disk_rowsets);
 
-  LOG(INFO) << op_name << " successful on " << drsw.written_count()
-            << " rows " << "(" << drsw.written_size() << " bytes)";
+  LOG_WITH_PREFIX(INFO) << op_name << " successful on " << drsw.written_count()
+                        << " rows " << "(" << drsw.written_size() << " bytes)";
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapNewRowSet(),
@@ -1360,11 +1362,11 @@ Status Tablet::Compact(CompactFlags flags) {
   RETURN_NOT_OK_PREPEND(PickRowSetsToCompact(&input, flags),
                         "Failed to pick rowsets to compact");
   if (input.num_rowsets() < 2) {
-    VLOG(1) << "Not enough rowsets to run compaction! Aborting...";
+    VLOG_WITH_PREFIX(1) << "Not enough rowsets to run compaction! Aborting...";
     return Status::OK();
   }
-  LOG(INFO) << "Compaction: stage 1 complete, picked "
-            << input.num_rowsets() << " rowsets to compact";
+  LOG_WITH_PREFIX(INFO) << "Compaction: stage 1 complete, picked "
+                        << input.num_rowsets() << " rowsets to compact";
   if (compaction_hooks_) {
     RETURN_NOT_OK_PREPEND(compaction_hooks_->PostSelectIterators(),
                           "PostSelectIterators hook failed");
@@ -1396,7 +1398,7 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
                 Substitute("Couldn't determine compaction quality for $0", tablet_id()));
   }
 
-  VLOG(1) << "Best compaction for " << tablet_id() << ": " << quality;
+  VLOG_WITH_PREFIX(1) << "Best compaction for " << tablet_id() << ": " << quality;
 
   stats->set_runnable(quality >= 0);
   stats->set_perf_improvement(quality);
@@ -1736,6 +1738,10 @@ void Tablet::PrintRSLayout(ostream* o) {
     *o << EscapeForHtmlToString(s) << std::endl;
   }
   *o << "</pre>" << std::endl;
+}
+
+string Tablet::LogPrefix() const {
+  return Substitute("T $0 ", tablet_id());
 }
 
 ////////////////////////////////////////////////////////////

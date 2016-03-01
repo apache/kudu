@@ -468,6 +468,8 @@ class Tablet {
   static int64_t GetLogRetentionSizeForIndex(int64_t min_log_index,
                                              const MaxIdxToSegmentMap& max_idx_to_segment_size);
 
+  std::string LogPrefix() const;
+
   // Lock protecting schema_ and key_schema_.
   //
   // Writers take this lock in shared mode before decoding and projecting
