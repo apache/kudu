@@ -666,7 +666,7 @@ uint64_t DiskRowSet::EstimateDeltaDiskSize() const {
 uint64_t DiskRowSet::EstimateOnDiskSize() const {
   DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
-  return EstimateBaseDataDiskSize() + EstimateDeltaDiskSize();
+  return base_data_->EstimateOnDiskSize() + delta_tracker_->EstimateOnDiskSize();
 }
 
 size_t DiskRowSet::DeltaMemStoreSize() const {

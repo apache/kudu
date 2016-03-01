@@ -36,6 +36,14 @@ namespace kudu {
 // This rw-semaphore makes no attempt at fairness, though it does avoid write
 // starvation (no new readers may obtain the lock if a write is waiting).
 //
+// NOTE: this means that it is not safe to reentrantly acquire the read lock,
+// due to the following deadlock:
+//   - T1: acquire read lock
+//   - T2: wait for write lock
+//     (blocks waiting for readers)
+//   - T1: try to acquire read-lock reentrantly
+//     (blocks to avoid starving writers)
+//
 // Given that this is currently based only on spinning (and not futex),
 // it should only be used in cases where the lock is held for very short
 // time intervals.
