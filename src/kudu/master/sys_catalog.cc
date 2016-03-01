@@ -414,7 +414,7 @@ Status SysCatalogTable::DeleteTable(const TableInfo *table) {
                "table", table->ToString());
   WriteRequestPB req;
   WriteResponsePB resp;
-  req.set_tablet_id(kSysCatalogTableColMetadata);
+  req.set_tablet_id(kSysCatalogTabletId);
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   KuduPartialRow row(&schema_);
