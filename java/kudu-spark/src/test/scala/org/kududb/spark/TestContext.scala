@@ -39,7 +39,7 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
     val columns = ImmutableList.of(
       new ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
       new ColumnSchemaBuilder("c1_i", Type.INT32).build(),
-      new ColumnSchemaBuilder("c2_s", Type.STRING).build())
+      new ColumnSchemaBuilder("c2_s", Type.STRING).nullable(true).build())
     new Schema(columns)
   }
 
@@ -75,7 +75,14 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
       val row = insert.getRow
       row.addInt(0, i)
       row.addInt(1, i)
-      row.addString(2, i.toString)
+
+      // Sprinkling some nulls so that queries see them.
+      if (i % 2 == 0) {
+        row.addString(2, i.toString)
+      } else {
+        row.setNull(2)
+      }
+
       kuduSession.apply(insert)
     }
   }

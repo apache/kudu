@@ -116,7 +116,7 @@ class KuduRelation(val tableName: String,
   /**
     * Build the RDD to scan rows.
     *
-    * @param requiredColumns clumns that are being requested by the requesting query
+    * @param requiredColumns columns that are being requested by the requesting query
     * @param filters         filters that are being applied by the requesting query
     * @return                RDD will all the results from Kudu
     */
@@ -128,8 +128,14 @@ class KuduRelation(val tableName: String,
   }
 
   private def getKuduValue(row: RowResult, columnName: String): Any = {
-    val columnType = kuduSchemaColumnMap.getOrElse(columnName,
-      throw new IllegalArgumentException(s"Couldn't find column '$columnName'")).getType
+    val columnSchema = kuduSchemaColumnMap.getOrElse(columnName,
+      throw new IllegalArgumentException(s"Couldn't find column '$columnName'"))
+
+    if (columnSchema.isNullable && row.isNull(columnName)) {
+      return null
+    }
+
+    val columnType = columnSchema.getType
 
     columnType match {
       case Type.BINARY => row.getBinary(columnName)
