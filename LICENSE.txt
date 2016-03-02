@@ -201,10 +201,11 @@
    limitations under the License.
 
 --------------------------------------------------------------------------------
+
 src/kudu/gutil (some portions): Apache 2.0, and 3-clause BSD
 
-This module is derived from code in the Chromium project, copyright
-(c) Google inc and (c) The Chromium Authors and licensed under the
+Some portions of this module are derived from code in the Chromium project,
+copyright (c) Google inc and (c) The Chromium Authors and licensed under the
 Apache 2.0 License or the under the 3-clause BSD license:
 
   Copyright (c) 2013 The Chromium Authors. All rights reserved.
@@ -253,48 +254,8 @@ src/kudu/gutil/utf: licensed under the following terms:
   REPRESENTATION OR WARRANTY OF ANY KIND CONCERNING THE MERCHANTABILITY
   OF THIS SOFTWARE OR ITS FITNESS FOR ANY PARTICULAR PURPOSE.
 
-
 --------------------------------------------------------------------------------
 
-src/kudu/gutil/valgrind.h: Hybrid BSD (half BSD, half zlib)
-
-   This file is part of Valgrind, a dynamic binary instrumentation
-   framework.
-
-   Copyright (C) 2000-2008 Julian Seward.  All rights reserved.
-
-   Redistribution and use in source and binary forms, with or without
-   modification, are permitted provided that the following conditions
-   are met:
-
-   1. Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-
-   2. The origin of this software must not be misrepresented; you must
-      not claim that you wrote the original software.  If you use this
-      software in a product, an acknowledgment in the product
-      documentation would be appreciated but is not required.
-
-   3. Altered source versions must be plainly marked as such, and must
-      not be misrepresented as being the original software.
-
-   4. The name of the author may not be used to endorse or promote
-      products derived from this software without specific prior written
-      permission.
-
-   THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
-   OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-   WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-   ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
-   DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
-   GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-   WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
---------------------------------------------------------------------------------
 src/kudu/util (some portions): 3-clause BSD license
 
 Some portions of this module are derived from code from LevelDB
@@ -329,19 +290,9 @@ Some portions of this module are derived from code from LevelDB
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
-src/kudu/util (HdrHistogram-related classes): public domain
-
-Portions of these classes were ported from Java to C++ from the sources
-available at https://github.com/HdrHistogram/HdrHistogram .
-
-  The code in this repository code was Written by Gil Tene, Michael Barker,
-  and Matt Warren, and released to the public domain, as explained at
-  http://creativecommons.org/publicdomain/zero/1.0/
-
---------------------------------------------------------------------------------
-
-src/kudu/util/random-util.cc: some portions adapted from WebRTC project
-(modules/video_coding/main/test/test_util.cc) under a 3-clause BSD license.
+src/kudu/util/{random-util.cc},{random.h}: some portions adapted from WebRTC
+project (modules/video_coding/main/test/test_util.cc) under a 3-clause BSD
+license.
 
   Copyright (c) 2011, The WebRTC project authors. All rights reserved.
 
@@ -445,53 +396,6 @@ BSD license with an additional grant of patent rights:
 
 --------------------------------------------------------------------------------
 
-src/kudu/server/url-coding.cc: some portions adapted from the Boost project
-thirdparty/boost_uuid/:
-
-  Boost Software License - Version 1.0 - August 17th, 2003
-
-  Permission is hereby granted, free of charge, to any person or organization
-  obtaining a copy of the software and accompanying documentation covered by
-  this license (the "Software") to use, reproduce, display, distribute,
-  execute, and transmit the Software, and to prepare derivative works of the
-  Software, and to permit third-parties to whom the Software is furnished to
-  do so, all subject to the following:
-
-  The copyright notices in the Software and this entire statement, including
-  the above license grant, this restriction and the following disclaimer,
-  must be included in all copies of the Software, in whole or in part, and
-  all derivative works of the Software, unless such copies or derivative
-  works are solely in the form of machine-executable object code generated by
-  a source language processor.
-
-  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-  FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
-  SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
-  FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
-  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-  DEALINGS IN THE SOFTWARE.
-
---------------------------------------------------------------------------------
-
-www/bootstrap: Apache 2.0 license
-
-   Copyright 2012 Twitter, Inc
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-
---------------------------------------------------------------------------------
-
 www/d3.v2.js: BSD 3-clause license
 
    Copyright (c) 2012, Michael Bostock
@@ -520,6 +424,7 @@ www/d3.v2.js: BSD 3-clause license
    OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
    EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 --------------------------------------------------------------------------------
 
 www/epoch.*: MIT license
@@ -576,28 +481,6 @@ www/jquery*.js: MIT license
 
 --------------------------------------------------------------------------------
 
-java/kudu-client/src/main/java/org/kududb/util/: Slice.java and Slices.java
-
-  Derived from the LevelDB Java project at https://github.com/dain/leveldb/
-  Licensed under the Apache 2.0 license with the following copyrights:
-
-  Copyright 2011 Dain Sundstrom <dain@iq80.com>
-  Copyright 2011 FuseSource Corp. http://fusesource.com
-
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-      http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
-
---------------------------------------------------------------------------------
-
 java/kudu-client/: Some classes are derived from the AsyncHBase project
 under the following 3-clause BSD license:
 
@@ -626,34 +509,33 @@ under the following 3-clause BSD license:
   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
   POSSIBILITY OF SUCH DAMAGE.
 
+================================================================================
+
+The following dependencies or pieces of incorporated source code have licenses
+such that either:
+  (a) do not require their license text to be re-distributed with binary
+      distributions, or
+  (b) have no requirements about re-distributing their license text in either
+      source or binary distributions, or
+  (c) are the same Apache 2.0 license reproduced in its entirety above.
+
+Therefore, we do not reproduce their licenses in their entirety in this file.
 --------------------------------------------------------------------------------
 
 .ycm_extra_conf.py: public domain
+cmake_modules/FindGMock.cmake: MIT license
+cmake_modules/FindProtobuf.cmake: BSD 3-clause license
+src/kudu/util (HdrHistogram-related classes): public domain
+src/kudu/gutil/valgrind.h: Hybrid BSD (half BSD, half zlib)
+  - See the file headers for full license text.
 
-  This is free and unencumbered software released into the public domain.
+src/kudu/server/url-coding.cc (some portions): Boost software license
+thirdparty/boost_uuid/: Boost software license
+  - See thirdparty/boost_uuid/LICENSE.txt
 
-  Anyone is free to copy, modify, publish, use, compile, sell, or
-  distribute this software, either in source code form or as a compiled
-  binary, for any purpose, commercial or non-commercial, and by any
-  means.
-
-  In jurisdictions that recognize copyright laws, the author or authors
-  of this software dedicate any and all copyright interest in the
-  software to the public domain. We make this dedication for the benefit
-  of the public at large and to the detriment of our heirs and
-  successors. We intend this dedication to be an overt act of
-  relinquishment in perpetuity of all present and future rights to this
-  software under copyright law.
-
-  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-  IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-  OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-  OTHER DEALINGS IN THE SOFTWARE.
-
-  For more information, please refer to <http://unlicense.org/>
+www/bootstrap: Apache 2.0 license
+java/kudu-client/src/main/java/org/kududb/util/{Slice,Slices}.java: Apache 2.0 license
+  - See above for full text.
 
 ================================================================================
 
