@@ -74,6 +74,7 @@
         <module>kudu-client-tools</module>
         <module>kudu-mapreduce</module>
         <module>kudu-spark</module>
+        <module>kudu-flume-sink</module>
     </modules>
 
     <build>
