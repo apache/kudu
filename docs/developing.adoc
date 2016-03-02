@@ -99,8 +99,8 @@ and using Impala with Kudu, including several `impala-shell` examples.
 == Integration with MapReduce, YARN, and Other Frameworks
 
 Kudu was designed to integrate with MapReduce, YARN, Spark, and other frameworks in
-the Hadoop ecosystem. See link:https://github.com/cloudera/kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/RowCounter.java[RowCounter.java]
+the Hadoop ecosystem. See link:https://github.com/apache/incubator-kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/RowCounter.java[RowCounter.java]
 and
-link:https://github.com/cloudera/kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/ImportCsv.java[ImportCsv.java]
+link:https://github.com/apache/incubator-kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/ImportCsv.java[ImportCsv.java]
 for examples which you can model your own integrations on. Stay tuned for more examples
 using YARN and Spark in the future.

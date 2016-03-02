@@ -347,7 +347,7 @@ ASF.
 === Resources
 
 - link:http://getkudu.io[Kudu Website]
-- link:http://github.com/cloudera/kudu[Kudu Github Repository]
+- link:http://github.com/apache/incubator-kudu[Kudu GitHub Repository]
 - link:index.html[Kudu Documentation]
 
 === Installation Options
