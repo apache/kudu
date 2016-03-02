@@ -56,7 +56,7 @@ class ClientFailoverParamITest : public ExternalMiniClusterITestBase,
 // results back.
 TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
   ClientTestBehavior test_type = GetParam();
-  const MonoDelta kTimeout = MonoDelta::FromSeconds(20);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
 
   vector<string> ts_flags = { "--enable_leader_failure_detection=false",
                               "--enable_remote_bootstrap=false" };
