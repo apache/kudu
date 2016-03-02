@@ -118,7 +118,9 @@ rm -rf $BUILD_ROOT
 mkdir -p $BUILD_ROOT
 
 list_flaky_tests() {
-  curl -s "http://$TEST_RESULT_SERVER/list_failed_tests?num_days=3&build_pattern=%25kudu-test%25"
+  local url="http://$TEST_RESULT_SERVER/list_failed_tests?num_days=3&build_pattern=%25kudu-test%25"
+  >&2 echo Fetching flaky test list from "$url" ...
+  curl -s --show-error "$url"
   return $?
 }
 
@@ -245,15 +247,24 @@ if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
   echo
   echo Running flaky tests only:
   echo ------------------------------------------------------------
-  list_flaky_tests | tee build/flaky-tests.txt
+  if ! ( set -o pipefail ;
+         list_flaky_tests | tee $BUILD_ROOT/flaky-tests.txt) ; then
+    echo Could not fetch flaky tests list.
+    exit 1
+  fi
   test_regex=$(perl -e '
     chomp(my @lines = <>);
     print join("|", map { "^" . quotemeta($_) . "\$" } @lines);
-   ' build/flaky-tests.txt)
+   ' $BUILD_ROOT/flaky-tests.txt)
+  if [ -z "$test_regex" ]; then
+    echo No tests are flaky.
+    exit 0
+  fi
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -R $test_regex"
 
-  # We don't support detecting java flaky tests at the moment.
-  echo Disabling Java build since RUN_FLAKY_ONLY=1
+  # We don't support detecting java and python flaky tests at the moment.
+  echo Disabling Java and python build since RUN_FLAKY_ONLY=1
+  BUILD_PYTHON=0
   BUILD_JAVA=0
 fi
 
