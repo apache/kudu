@@ -684,7 +684,8 @@ Status KuduSession::Flush() {
 }
 
 void KuduSession::FlushAsync(KuduStatusCallback* user_callback) {
-  CHECK_EQ(data_->flush_mode_, MANUAL_FLUSH) << "TODO: handle other flush modes";
+  CHECK_NE(data_->flush_mode_, AUTO_FLUSH_BACKGROUND) <<
+      "AUTO_FLUSH_BACKGROUND has not been implemented";
 
   // Swap in a new batcher to start building the next batch.
   // Save off the old batcher.

@@ -1415,6 +1415,33 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
   FlushSessionOrDie(session);
 }
 
+TEST_F(ClientTest, TestInsertAutoFlushSync) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_FALSE(session->HasPendingOperations());
+
+  session->SetTimeoutMillis(10000);
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+  // Test in Flush() is called implicitly,
+  // so there is no pending operations.
+  gscoped_ptr<KuduInsert> insert(client_table_->NewInsert());
+  ASSERT_OK(insert->mutable_row()->SetInt32("key", 12345));
+  ASSERT_OK(insert->mutable_row()->SetInt32("int_val", 54321));
+  ASSERT_OK(insert->mutable_row()->SetStringCopy("string_val", "hello world"));
+  ASSERT_OK(session->Apply(insert.release()));
+  ASSERT_TRUE(insert == nullptr) << "Successful insert should take ownership";
+  ASSERT_FALSE(session->HasPendingOperations()) << "Should not have pending operation";
+
+  // Test multiple inserts.
+  for (int i = 0; i < 100; i++) {
+    gscoped_ptr<KuduInsert> insert(client_table_->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt32("key", i));
+    ASSERT_OK(insert->mutable_row()->SetInt32("int_val", 54321));
+    ASSERT_OK(insert->mutable_row()->SetStringCopy("string_val", "hello world"));
+    ASSERT_OK(session->Apply(insert.release()));
+  }
+}
+
 static Status ApplyInsertToSession(KuduSession* session,
                                    const shared_ptr<KuduTable>& table,
                                    int row_key,
