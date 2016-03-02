@@ -373,9 +373,10 @@ Status WaitUntilCommittedOpIdIndexIs(int64_t opid_index,
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
   return Status::TimedOut(Substitute("Committed consensus opid_index does not equal $0 "
-                                     "after waiting for $1. Last status: $2",
+                                     "after waiting for $1. Last opid: $2. Last status: $3",
                                      opid_index,
                                      MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
+                                     OpIdToString(op_id),
                                      s.ToString()));
 }
 
