@@ -1049,8 +1049,11 @@ Status KuduScanner::Open() {
   CHECK(data_->projection_ != nullptr) << "No projection provided";
 
   data_->spec_.OptimizeScan(*data_->table_->schema().schema_, &data_->arena_, &data_->pool_, false);
+  data_->partition_pruner_.Init(*data_->table_->schema().schema_,
+                                data_->table_->partition_schema(),
+                                data_->spec_);
 
-  if (data_->spec_.CanShortCircuit()) {
+  if (data_->spec_.CanShortCircuit() || !data_->partition_pruner_.HasMorePartitionKeyRanges()) {
     VLOG(1) << "Short circuiting scan " << ToString();
     data_->open_ = true;
     data_->short_circuit_ = true;
@@ -1063,43 +1066,7 @@ Status KuduScanner::Open() {
   deadline.AddDelta(data_->timeout_);
   set<string> blacklist;
 
-  bool is_simple_range_partitioned =
-    data_->table_->partition_schema().IsSimplePKRangePartitioning(*data_->table_->schema().schema_);
-
-  if (!is_simple_range_partitioned &&
-      (data_->spec_.lower_bound_key() != nullptr ||
-       data_->spec_.exclusive_upper_bound_key() != nullptr ||
-       !data_->spec_.predicates().empty())) {
-    KLOG_FIRST_N(WARNING, 1) << "Starting full table scan. In the future this scan may be "
-                                "automatically optimized with partition pruning.";
-  }
-
-  if (is_simple_range_partitioned) {
-    // If the table is simple range partitioned, then the partition key space is
-    // isomorphic to the primary key space. We can potentially reduce the scan
-    // length by only scanning the intersection of the primary key range and the
-    // partition key range. This is a stop-gap until real partition pruning is
-    // in place that will work across any partition type.
-    Slice start_primary_key = data_->spec_.lower_bound_key() == nullptr ? Slice()
-                            : data_->spec_.lower_bound_key()->encoded_key();
-    Slice end_primary_key = data_->spec_.exclusive_upper_bound_key() == nullptr ? Slice()
-                          : data_->spec_.exclusive_upper_bound_key()->encoded_key();
-    Slice start_partition_key = data_->spec_.lower_bound_partition_key();
-    Slice end_partition_key = data_->spec_.exclusive_upper_bound_partition_key();
-
-    if ((!end_partition_key.empty() && start_primary_key.compare(end_partition_key) >= 0) ||
-        (!end_primary_key.empty() && start_partition_key.compare(end_primary_key) >= 0)) {
-      // The primary key range and the partition key range do not intersect;
-      // the scan will be empty. Keep the existing partition key range.
-    } else {
-      // Assign the scan's partition key range to the intersection of the
-      // primary key and partition key ranges.
-      data_->spec_.SetLowerBoundPartitionKey(start_primary_key);
-      data_->spec_.SetExclusiveUpperBoundPartitionKey(end_primary_key);
-    }
-  }
-
-  RETURN_NOT_OK(data_->OpenTablet(data_->spec_.lower_bound_partition_key(), deadline, &blacklist));
+  RETURN_NOT_OK(data_->OpenNextTablet(deadline, &blacklist));
 
   data_->open_ = true;
   return Status::OK();
@@ -1227,9 +1194,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* result) {
                                       batch_deadline, candidates, &blacklist));
 
     LOG(WARNING) << "Attempting to retry scan of tablet " << ToString() << " elsewhere.";
-    // Use the start partition key of the current tablet as the start partition key.
-    const string& partition_key_start = data_->remote_->partition().partition_key_start();
-    return data_->OpenTablet(partition_key_start, batch_deadline, &blacklist);
+    return data_->ReopenCurrentTablet(batch_deadline, &blacklist);
   } else if (data_->MoreTablets()) {
     // More data may be available in other tablets.
     // No need to close the current tablet; we scanned all the data so the
@@ -1239,8 +1204,8 @@ Status KuduScanner::NextBatch(KuduScanBatch* result) {
     MonoTime deadline = MonoTime::Now(MonoTime::FINE);
     deadline.AddDelta(data_->timeout_);
     set<string> blacklist;
-    RETURN_NOT_OK(data_->OpenTablet(data_->remote_->partition().partition_key_end(),
-                                    deadline, &blacklist));
+
+    RETURN_NOT_OK(data_->OpenNextTablet(deadline, &blacklist));
     // No rows written, the next invocation will pick them up.
     return Status::OK();
   } else {

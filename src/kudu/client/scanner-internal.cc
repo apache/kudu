@@ -251,6 +251,20 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
   return Status::OK();
 }
 
+Status KuduScanner::Data::OpenNextTablet(const MonoTime& deadline,
+                                         std::set<std::string>* blacklist) {
+  return OpenTablet(partition_pruner_.NextPartitionKey(),
+                    deadline,
+                    blacklist);
+}
+
+Status KuduScanner::Data::ReopenCurrentTablet(const MonoTime& deadline,
+                                              std::set<std::string>* blacklist) {
+  return OpenTablet(remote_->partition().partition_key_start(),
+                    deadline,
+                    blacklist);
+}
+
 Status KuduScanner::Data::OpenTablet(const string& partition_key,
                                      const MonoTime& deadline,
                                      set<string>* blacklist) {
@@ -387,6 +401,8 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
                                candidates, blacklist));
   }
 
+  partition_pruner_.RemovePartitionKeyRange(remote_->partition().partition_key_end());
+
   next_req_.clear_new_scan_request();
   data_in_open_ = last_response_.has_data();
   if (last_response_.has_more_results()) {
@@ -440,31 +456,7 @@ Status KuduScanner::Data::KeepAlive() {
 bool KuduScanner::Data::MoreTablets() const {
   CHECK(open_);
   // TODO(KUDU-565): add a test which has a scan end on a tablet boundary
-
-  if (remote_->partition().partition_key_end().empty()) {
-    // Last tablet -- nothing more to scan.
-    return false;
-  }
-
-  if (!spec_.exclusive_upper_bound_partition_key().empty() &&
-      spec_.exclusive_upper_bound_partition_key() <= remote_->partition().partition_key_end()) {
-    // We are not past the scan's upper bound partition key.
-    return false;
-  }
-
-  if (!table_->partition_schema().IsSimplePKRangePartitioning(*table_->schema().schema_)) {
-    // We can't do culling yet if the partitioning isn't simple.
-    return true;
-  }
-
-  if (spec_.exclusive_upper_bound_key() == nullptr) {
-    // No upper bound - keep going!
-    return true;
-  }
-
-  // Otherwise, we have to compare the upper bound.
-  return spec_.exclusive_upper_bound_key()->encoded_key()
-          .compare(remote_->partition().partition_key_end()) > 0;
+  return partition_pruner_.HasMorePartitionKeyRanges();
 }
 
 void KuduScanner::Data::PrepareRequest(RequestType state) {

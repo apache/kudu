@@ -40,6 +40,9 @@ TAG_FLAG(arena_warn_threshold_bytes, hidden);
 namespace kudu {
 
 template <bool THREADSAFE>
+const size_t ArenaBase<THREADSAFE>::kMinimumChunkSize = 16;
+
+template <bool THREADSAFE>
 ArenaBase<THREADSAFE>::ArenaBase(
   BufferAllocator* const buffer_allocator,
   size_t initial_buffer_size,

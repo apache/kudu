@@ -23,6 +23,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
+#include "kudu/common/partition_pruner.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tserver/tserver_service.proxy.h"
@@ -58,10 +59,17 @@ class KuduScanner::Data {
                       const std::vector<internal::RemoteTabletServer*>& candidates,
                       std::set<std::string>* blacklist);
 
-  // Open a tablet.
+  // Open the next tablet in the scan.
   // The deadline is the time budget for this operation.
   // The blacklist is used to temporarily filter out nodes that are experiencing transient errors.
   // This blacklist may be modified by the callee.
+  Status OpenNextTablet(const MonoTime& deadline, std::set<std::string>* blacklist);
+
+  // Open the current tablet in the scan again.
+  // See OpenNextTablet for options.
+  Status ReopenCurrentTablet(const MonoTime& deadline, std::set<std::string>* blacklist);
+
+  // Open the tablet to scan.
   Status OpenTablet(const std::string& partition_key,
                     const MonoTime& deadline,
                     std::set<std::string>* blacklist);
@@ -146,6 +154,8 @@ class KuduScanner::Data {
   // Machinery to store and encode raw column range predicates into
   // encoded keys.
   ScanSpec spec_;
+
+  PartitionPruner partition_pruner_;
 
   // The tablet we're scanning.
   scoped_refptr<internal::RemoteTablet> remote_;

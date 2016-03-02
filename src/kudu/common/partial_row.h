@@ -24,6 +24,7 @@
 #ifdef KUDU_HEADERS_NO_STUBS
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include <gtest/gtest_prod.h>
 #else
 // This is a poor module interdependency, but the stubs are header-only and
 // it's only for exported header builds, so we'll make an exception.
@@ -189,14 +190,16 @@ class KUDU_EXPORT KuduPartialRow {
   const Schema* schema() const { return schema_; }
 
  private:
+  friend class client::KuduWriteOperation;   // for row_data_.
   friend class KeyUtilTest;
+  friend class PartitionSchema;
   friend class RowOperationsPBDecoder;
   friend class RowOperationsPBEncoder;
-  friend class client::KuduWriteOperation;   // for row_data_.
-  friend class PartitionSchema;
   friend class TestScanSpec;
   template<typename KeyTypeWrapper> friend struct client::SliceKeysTestSetup;
   template<typename KeyTypeWrapper> friend struct client::IntKeysTestSetup;
+  FRIEND_TEST(TestPartitionPruner, TestPrimaryKeyRangePruning);
+  FRIEND_TEST(TestPartitionPruner, TestPartialPrimaryKeyRangePruning);
 
   template<typename T>
   Status Set(const Slice& col_name, const typename T::cpp_type& val,

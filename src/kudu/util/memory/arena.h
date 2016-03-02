@@ -70,6 +70,9 @@ template <> struct ArenaTraits<false> {
 template <bool THREADSAFE>
 class ArenaBase {
  public:
+  // Arenas are required to have a minimum size of at least this amount.
+  static const size_t kMinimumChunkSize;
+
   // Creates a new arena, with a single buffer of size up-to
   // initial_buffer_size, upper size limit for later-allocated buffers capped
   // at max_buffer_size, and maximum capacity (i.e. total sizes of all buffers)

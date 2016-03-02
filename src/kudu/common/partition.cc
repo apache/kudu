@@ -247,8 +247,8 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
 
     // Check for an empty split row.
     if (column_count == 0) {
-    return Status::InvalidArgument("Split rows must contain a value for at "
-                                   "least one range partition column");
+      return Status::InvalidArgument("Split rows must contain a value for at "
+                                     "least one range partition column");
     }
 
     start_key.clear();
@@ -652,16 +652,6 @@ bool PartitionSchema::Equals(const PartitionSchema& other) const {
         != other.hash_bucket_schemas_[i].column_ids) return false;
   }
 
-  return true;
-}
-
-bool PartitionSchema::IsSimplePKRangePartitioning(const Schema& schema) const {
-  if (!hash_bucket_schemas_.empty()) return false;
-  if (range_schema_.column_ids.size() != schema.num_key_columns()) return false;
-
-  for (int i = 0; i < schema.num_key_columns(); i++) {
-    if (range_schema_.column_ids[i] != schema.column_id(i)) return false;
-  }
   return true;
 }
 

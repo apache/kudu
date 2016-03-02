@@ -21,17 +21,32 @@ tablets through a combination of hash and range partitioning. The design allows
 operators to have control over data locality in order to optimize for the
 expected workload.
 
+Every table has a partition schema, which is comprised of zero or more hash
+components, and a range component. The hash components have one or more columns.
+Each column must be part of the primary key column set, and any column may not
+be in two hash components. The range component may have zero or more columns,
+all of which must be part of the primary key.
+
+Rows in a Kudu table are mapped to tablets using a partition key. A row's
+partition key is created by encoding the column values of the row according to
+the table's partition schema. For each hash bucket component, the partition key
+contains the hash of the column values in the component. For each column in the
+range component, the key will contain the row's encoded value for that column.
+Every tablet has a start and end partition key which covers the hash bucket and
+range assignment of the tablet. Finding the tablet for a row requires finding
+the tablet with the partition key range which contains the row's partition key.
+
 Currently, Kudu does not take full advantage of partition information when
 executing scans. This results in missed opportunities to 'prune', or skip
 tablets during a scan based on the scan's predicates and the tablet's hash
 bucket and range assignments. This remainder of this design doc will detail the
 specific opportunities we can take advantage of to prune partitions, provide an
-overview of how we will accomplish this is the clients and on the server, and
-provide some alternatives for discussion.
+overview of how we will accomplish this on client and on the server, and provide
+alternatives for discussion.
 
 ### Sample Schemas
 
-The following sections will reference two example table schema:
+The following sections will reference two example table schemas:
 
 ```sql
 CREATE TABLE 'machine_metrics'
@@ -42,7 +57,7 @@ DISTRIBUTE BY
   RANGE (time) SPLIT ROWS [(1451606400000)];
 ```
 
-which the following tablets:
+with the following tablets:
 
 ```
 A: bucket(host, metric) = 0, range(time) = [(min), (1451606400000))
@@ -63,8 +78,8 @@ DISTRIBUTE BY RANGE (user_id, target_id) SPLIT ROWS [(1000, 1000)];
 with the following tablets:
 
 ```
-A: range(user_id) = [(min, min), (1000, 1000))
-B: range(user_id) = [(1000, 1000), (max, max))
+A: range(user_id, target_id) = [(min, min), (1000, 1000))
+B: range(user_id, target_id) = [(1000, 1000), (max, max))
 ```
 
 ## Scan Constraints
@@ -119,12 +134,12 @@ primary_key  < (500, 700)
 ### Range Pruning
 
 If the table is range partitioned with split rows and the scan contains
-predicates over a prefix subset of the range columns, then the scan may be able
-to prune tablets based on those predicates. For example, the query:
+predicates over a prefix of the range columns, then the scan may be able to
+prune tablets based on those predicates. For example, the query:
 
 ```sql
 SELECT * FROM 'machine_metrics'
-WHERE timestamp < 500;
+WHERE time < 500;
 ```
 
 can prune tablets `B` and `D`.
@@ -169,20 +184,16 @@ WHERE host = "host001.example.com"
   AND metric = "load-avg-1min";
 
 -- Does not allow hash bucket pruning
-SELECT * from 't'
+SELECT * from 'machine_metrics'
 WHERE host = "host001.example.com";
 ```
 
 ## Tablet Lookup Optimization
 
-In order for the client to prune tablets, it must look up the tablet partition
-information from the master. In order to limit these lookups for queries which
-only touch a small portion of the table, predicates and primary key bounds are
-pushed into partition key bounds in a manner similar to how predicates are
-pushed into the primary key bounds. The partition key bounds limit the set of
-tablets that are looked up from the master and evaluated for pruning. This can
-limit the high upfront cost of looking up the entire tablet metadata set for a
-new client which is performing a scan that is constrained to a few rows.
+In order for the client to scan a tablet it must retrieve the tablet location
+from the master. When a tablet is going to be pruned from a scan, its tablet
+location is not needed, so the client can speed up metadata operations by not
+looking up metadata for pruned tablets.
 
 ## Implementation
 
@@ -192,12 +203,10 @@ Duplicating the work on the server is not strictly necessary, but it is a
 low-overhead operation in comparison with accessing disk, and it allows for
 client implementations which don't implement the optimizations to benefit.
 
-In the client, the scan's range, hash bucket, and partition key constraints will
-be evaluated once per scan. As the scan progresses through the set of tablets in
-the partition key range, each tablet's partition information will be compared
-against the range bounds and hash buckets to determine whether pruning can
-occur. Pruned tablets never need to be contacted (though their partition
-information needs to be looked up from the master).
+In the client, the scan's constraints will be evaluated once per scan into a set
+of partition key ranges which cover the non-pruned tablets in the scan. Using
+these partition key ranges, only the tablet metadata necessary for the scan can
+be requested from the master.
 
 The server will go one step further by adding the tablet's primary key bounds to
 the scan spec during scan initialization, which may provide additional pruning
@@ -217,15 +226,3 @@ yield better pruning oppurtunities often.  On the server, it is a lighter weight
 operation since the original scan predicate does not need to be copied (because
 it can be mutated in place), and most of the optimization steps are already
 happening anyway.
-
-### Prune Tablets by Partition Key Interval Set
-
-The method of pruning tablets described above is 'lazy' in that it retrieves
-partition metadata for each tablet in the partition key range, and then compares
-the partition against the precomputed hash bucket and range constraints to
-determine if the tablet should be pruned.
-
-As an alternative, the client could create a set of partition key ranges from
-the hash bucket and range constraints. Taking the intersection of this interval
-set with the interval set of tablet partition key ranges would yield exactly the
-set of tablets necessary to satisfy the scan.
