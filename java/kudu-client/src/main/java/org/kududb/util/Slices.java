@@ -1,9 +1,4 @@
 /**
- * Copyright (C) 2011 the original author or authors.
- *
- * See the LICENSE.txt file distributed with this work for additional
- * information regarding copyright ownership.
- *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,6 +15,9 @@
  * KIND, either express or implied.  See the License for the
  * specific language governing permissions and limitations
  * under the License.
+ *
+ * Copyright 2011 Dain Sundstrom <dain@iq80.com>
+ * Copyright 2011 FuseSource Corp. http://fusesource.com
  */
 package org.kududb.util;
 
