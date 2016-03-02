@@ -49,7 +49,7 @@ is called `origin`. When you fetch or pull, you will do so from `origin`.
 +
 [source,bash]
 ----
-git clone https://github.com/cloudera/kudu
+git clone https://github.com/apache/incubator-kudu kudu
 ----
 
 . Change to the new `kudu` directory.
