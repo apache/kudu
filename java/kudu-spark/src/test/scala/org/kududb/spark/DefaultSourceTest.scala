@@ -35,6 +35,10 @@ class DefaultSourceTest extends FunSuite with TestContext {
       Map("kudu.table" -> tableName, "kudu.master" -> miniCluster.getMasterAddresses))
       .registerTempTable(tableName)
 
-    assert(sqlContext.sql("SELECT * FROM " + tableName).collectAsList().size() == rowCount)
+    val results = sqlContext.sql("SELECT * FROM " + tableName).collectAsList()
+    assert(results.size() == rowCount)
+
+    assert(results.get(0).isNullAt(2))
+    assert(!results.get(1).isNullAt(2))
   }
 }
