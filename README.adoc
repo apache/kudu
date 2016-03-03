@@ -225,26 +225,23 @@ and use the following flags:
 ----
 $ mkdir -p build/coverage
 $ cd build/coverage
-$ cmake -DKUDU_GENERATE_COVERAGE=1 ../..
+$ CC=../../thirdparty/clang-toolchain/bin/clang \
+  CXX=../../thirdparty/clang-toolchain/bin/clang++ \
+  cmake -DKUDU_GENERATE_COVERAGE=1 ../..
 $ make -j4
 $ ctest -j4
 ----
 
 This will generate the code coverage files with extensions .gcno and .gcda. You can then
-use a tool like `lcov` or `gcovr` to visualize the results. For example, using gcovr:
+use a tool like `gcovr` or `llvm-cov gcov` to visualize the results. For example, using
+gcovr:
 
 [source,bash]
 ----
 $ mkdir cov_html
-$ ./thirdparty/gcovr-3.0/scripts/gcovr -r src/
-----
-
-Or using `lcov` (which seems to produce better HTML output):
-
-[source,bash]
-----
-$ lcov  --capture --directory src --output-file coverage.info
-$ genhtml coverage.info --output-directory out
+$ cd build/coverage
+$ ../../thirdparty/gcovr-3.0/scripts/gcovr -r ../../src/ \
+  --gcov-executable=../../build-support/llvm-gcov-wrapper
 ----
 
 === Running lint checks

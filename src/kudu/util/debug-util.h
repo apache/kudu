@@ -27,6 +27,14 @@
 
 namespace kudu {
 
+// Return true if coverage is enabled.
+bool IsCoverageBuild();
+
+// Try to flush coverage info. If another thread is already flushing
+// coverage, this returns without doing anything, since flushing coverage
+// is not thread-safe or re-entrant.
+void TryFlushCoverage();
+
 // Return a list of all of the thread IDs currently running in this process.
 // Not async-safe.
 Status ListThreads(std::vector<pid_t>* tids);

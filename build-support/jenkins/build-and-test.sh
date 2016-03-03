@@ -177,7 +177,13 @@ elif [ "$BUILD_TYPE" = "TSAN" ]; then
 elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   DO_COVERAGE=1
   BUILD_TYPE=debug
-  $SOURCE_ROOT/build-support/enable_devtoolset.sh "$THIRDPARTY_BIN/cmake -DKUDU_GENERATE_COVERAGE=1 $SOURCE_ROOT"
+
+  # We currently dont capture coverage for Java or Python.
+  BUILD_JAVA=0
+  BUILD_PYTHON=0
+
+  $SOURCE_ROOT/build-support/enable_devtoolset.sh \
+    "env CC=$CLANG CXX=$CLANG++ $THIRDPARTY_BIN/cmake -DKUDU_GENERATE_COVERAGE=1 $SOURCE_ROOT"
 elif [ "$BUILD_TYPE" = "LINT" ]; then
   # Create empty test logs or else Jenkins fails to archive artifacts, which
   # results in the build failing.
@@ -296,7 +302,11 @@ if [ "$DO_COVERAGE" == "1" ]; then
   echo
   echo Generating coverage report...
   echo ------------------------------------------------------------
-  if ! $SOURCE_ROOT/thirdparty/gcovr-3.0/scripts/gcovr -r $SOURCE_ROOT --xml \
+  if ! $SOURCE_ROOT/thirdparty/gcovr-3.0/scripts/gcovr \
+      -r $SOURCE_ROOT \
+      --gcov-filter='.*src#kudu.*' \
+      --gcov-executable=$SOURCE_ROOT/build-support/llvm-gcov-wrapper \
+      --xml \
       > $BUILD_ROOT/coverage.xml ; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Coverage report failed\n'

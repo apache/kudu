@@ -32,6 +32,7 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/uuid/uuid_generators.hpp>
+#include <mutex>
 #include <sstream>
 #include <stdio.h>
 #include <iostream>
@@ -40,6 +41,7 @@
 
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/spinlock.h"
+#include "kudu/util/debug-util.h"
 #include "kudu/util/flag_tags.h"
 
 DEFINE_string(log_filename, "",
@@ -111,6 +113,7 @@ SimpleSink* registered_sink = nullptr;
 // Protected by 'logging_mutex'.
 int initial_stderr_severity;
 
+
 void UnregisterLoggingCallbackUnlocked() {
   CHECK(logging_mutex.IsHeld());
   CHECK(registered_sink);
@@ -123,6 +126,48 @@ void UnregisterLoggingCallbackUnlocked() {
   registered_sink = nullptr;
 }
 
+void FlushCoverageOnExit() {
+  // Coverage flushing is not re-entrant, but this might be called from a
+  // crash signal context, so avoid re-entrancy.
+  static __thread bool in_call = false;
+  if (in_call) return;
+  in_call = true;
+
+  // The failure writer will be called multiple times per exit.
+  // We only need to flush coverage once. We use a 'once' here so that,
+  // if another thread is already flushing, we'll block and wait for them
+  // to finish before allowing this thread to call abort().
+  static std::once_flag once;
+  std::call_once(once, [] {
+      static const char msg[] = "Flushing coverage data before crash...\n";
+      write(STDERR_FILENO, msg, arraysize(msg));
+      TryFlushCoverage();
+    });
+  in_call = false;
+}
+
+// On SEGVs, etc, glog will call this function to write the error to stderr. This
+// implementation is copied from glog with the exception that we also flush coverage
+// the first time it's called.
+//
+// NOTE: this is only used in coverage builds!
+void FailureWriterWithCoverage(const char* data, int size) {
+  FlushCoverageOnExit();
+
+  // Original implementation from glog:
+  if (write(STDERR_FILENO, data, size) < 0) {
+    // Ignore errors.
+  }
+}
+
+// GLog "failure function". This is called in the case of LOG(FATAL) to
+// ensure that we flush coverage even on crashes.
+//
+// NOTE: this is only used in coverage builds!
+void FlushCoverageAndAbort() {
+  FlushCoverageOnExit();
+  abort();
+}
 } // anonymous namespace
 
 void InitGoogleLoggingSafe(const char* arg) {
@@ -164,6 +209,17 @@ void InitGoogleLoggingSafe(const char* arg) {
   }
 
   google::InitGoogleLogging(arg);
+
+  // In coverage builds, we should flush coverage before exiting on crash.
+  // This way, fault injection tests still capture coverage of the daemon
+  // that "crashed".
+  if (IsCoverageBuild()) {
+    // We have to use both the "failure writer" and the "FailureFunction".
+    // This allows us to handle both LOG(FATAL) and unintended crashes like
+    // SEGVs.
+    google::InstallFailureWriter(FailureWriterWithCoverage);
+    google::InstallFailureFunction(FlushCoverageAndAbort);
+  }
 
   // Needs to be done after InitGoogleLogging
   if (FLAGS_log_filename.empty()) {

@@ -26,6 +26,7 @@
 #include "kudu/server/clock.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/server/server_base.h"
+#include "kudu/util/debug-util.h"
 #include "kudu/util/flag_tags.h"
 
 DECLARE_bool(use_mock_wall_clock);
@@ -33,11 +34,6 @@ DECLARE_bool(use_hybrid_clock);
 
 using std::string;
 using std::unordered_set;
-
-#ifdef COVERAGE_BUILD
-extern "C" void __gcov_flush(void);
-#endif
-
 
 namespace kudu {
 namespace server {
@@ -101,15 +97,15 @@ void GenericServiceImpl::SetFlag(const SetFlagRequestPB* req,
 void GenericServiceImpl::FlushCoverage(const FlushCoverageRequestPB* req,
                                        FlushCoverageResponsePB* resp,
                                        rpc::RpcContext* rpc) {
-#ifdef COVERAGE_BUILD
-  __gcov_flush();
-  LOG(INFO) << "Flushed coverage info. (request from " << rpc->requestor_string() << ")";
-  resp->set_success(true);
-#else
-  LOG(WARNING) << "Non-coverage build cannot flush coverage (request from "
-               << rpc->requestor_string() << ")";
-  resp->set_success(false);
-#endif
+  if (IsCoverageBuild()) {
+    TryFlushCoverage();
+    LOG(INFO) << "Flushed coverage info. (request from " << rpc->requestor_string() << ")";
+    resp->set_success(true);
+  } else {
+    LOG(WARNING) << "Non-coverage build cannot flush coverage (request from "
+                 << rpc->requestor_string() << ")";
+    resp->set_success(false);
+  }
   rpc->RespondSuccess();
 }
 

@@ -37,6 +37,13 @@
 typedef sig_t sighandler_t;
 #endif
 
+// In coverage builds, this symbol will be defined and allows us to flush coverage info
+// to disk before exiting.
+extern "C" {
+__attribute__((weak))
+void __gcov_flush();
+}
+
 // Evil hack to grab a few useful functions from glog
 namespace google {
 
@@ -68,6 +75,25 @@ static int g_stack_trace_signum = SIGUSR2;
 static base::SpinLock g_dumper_thread_lock(base::LINKER_INITIALIZED);
 
 namespace kudu {
+
+bool IsCoverageBuild() {
+  return __gcov_flush != nullptr;
+}
+
+void TryFlushCoverage() {
+  static base::SpinLock lock(base::LINKER_INITIALIZED);
+
+  // Flushing coverage is not reentrant or thread-safe.
+  if (!__gcov_flush || !lock.TryLock()) {
+    return;
+  }
+
+  __gcov_flush();
+
+  lock.Unlock();
+}
+
+
 
 namespace {
 
