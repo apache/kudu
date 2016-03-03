@@ -452,5 +452,14 @@ TEST_F(MasterTest, TestInvalidGetTableLocations) {
   }
 }
 
+// Tests that if the master is shutdown while a table visitor is active, the
+// shutdown waits for the visitor to finish, avoiding racing and crashing.
+TEST_F(MasterTest, TestShutdownDuringTableVisit) {
+  ASSERT_OK(master_->catalog_manager()->ElectedAsLeaderCb());
+
+  // Master will now shut down, potentially racing with
+  // CatalogManager::VisitTablesAndTabletsTask.
+}
+
 } // namespace master
 } // namespace kudu

@@ -609,6 +609,12 @@ void CatalogManager::Shutdown() {
     e.second->WaitTasksCompletion();
   }
 
+  // Wait for any outstanding table visitors to finish.
+  //
+  // Must be done before shutting down the catalog, otherwise its tablet peer
+  // may be destroyed while still in use by a table visitor.
+  worker_pool_->Shutdown();
+
   // Shut down the underlying storage for tables and tablets.
   if (sys_catalog_) {
     sys_catalog_->Shutdown();

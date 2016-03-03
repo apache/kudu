@@ -416,6 +416,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   consensus::RaftPeerPB::Role Role() const;
 
  private:
+  // So that the test can call ElectedAsLeaderCb() directly.
+  FRIEND_TEST(MasterTest, TestShutdownDuringTableVisit);
+
   friend class TableLoader;
   friend class TabletLoader;
 
