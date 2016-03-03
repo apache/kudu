@@ -683,7 +683,7 @@ TEST_F(RemoteBootstrapITest, TestDisableRemoteBootstrap_NoTightLoopWhenTabletDel
 // Test that if a remote bootstrap is taking a long time but the client peer is still responsive,
 // the leader won't mark it as failed.
 TEST_F(RemoteBootstrapITest, TestSlowBootstrapDoesntFail) {
-  MonoDelta timeout = MonoDelta::FromSeconds(10);
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags, master_flags;
   ts_flags.push_back("--enable_leader_failure_detection=false");
   ts_flags.push_back("--remote_bootstrap_dowload_file_inject_latency_ms=5000");
