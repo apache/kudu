@@ -248,21 +248,22 @@ build_curl() {
   # use this for testing our own HTTP endpoints at this point in time.
   cd $CURL_DIR
   ./configure --prefix=$PREFIX \
-    --disable-ftp \
+    --disable-dict \
     --disable-file \
+    --disable-ftp \
+    --disable-gopher \
+    --disable-imap \
+    --disable-ipv6 \
     --disable-ldap \
     --disable-ldaps \
+    --disable-manual \
+    --disable-pop3 \
     --disable-rtsp \
-    --disable-dict \
+    --disable-smtp \
     --disable-telnet \
     --disable-tftp \
-    --disable-pop3 \
-    --disable-imap \
-    --disable-smtp \
-    --disable-gopher \
-    --disable-manual \
     --without-librtmp \
-    --disable-ipv6
+    --without-ssl
   make -j$PARALLEL
   make install
 }
