@@ -19,7 +19,6 @@ written from a point-of-time view, and do not necessarily represent the current
 state of the system. They are useful for learning why design decisions were
 made.
 
-
 | Document | Component(s) | Discussion |
 | -------- | ------------ | ---------- |
 | [Scan optimization and partition pruning](scan-optimization-partition-pruning.md) | Client, Tablet | [gerrit](http://gerrit.cloudera.org:8080/2149) |
@@ -35,3 +34,4 @@ made.
 | [Maintenance operation scheduling](triggering-maintenance-ops.md) | Master, Tablet Server | N/A |
 | [C++ client design and impl. details](cpp-client.md) | Client | N/A |
 | [(old) Heartbeating between tservers and multiple masters](old-multi-master-heartbeating.md) | Master | [gerrit](http://gerrit.cloudera.org:8080/2495) |
+| [Scan Token API](scan-tokens.md) | Client | [gerrit](http://gerrit.cloudera.org:8080/2443) |
