@@ -164,7 +164,9 @@ def copy_system_library(lib):
   if not os.path.exists(sys_lib_dir):
     os.makedirs(sys_lib_dir)
   dst = os.path.join(sys_lib_dir, os.path.basename(lib))
-  if not os.path.exists(dst):
+  # Copy if it doesn't exist, or the mtimes don't match.
+  # Using shutil.copy2 preserves the mtime after the copy (like cp -p)
+  if not os.path.exists(dst) or os.stat(dst).st_mtime != os.stat(lib).st_mtime:
     logging.info("Copying system library %s to %s...", lib, dst)
     shutil.copy2(rel_to_abs(lib), dst)
   return dst
