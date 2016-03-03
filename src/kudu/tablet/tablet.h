@@ -418,6 +418,12 @@ class Tablet {
   Status DoCompactionOrFlush(const RowSetsInCompaction &input,
                              int64_t mrs_being_flushed);
 
+  // Handle the case in which a compaction or flush yielded no output rows.
+  // In this case, we just need to remove the rowsets in 'rowsets' from the
+  // metadata and flush it.
+  Status HandleEmptyCompactionOrFlush(const RowSetVector& rowsets,
+                                      int mrs_being_flushed);
+
   Status FlushMetadata(const RowSetVector& to_remove,
                        const RowSetMetadataVector& to_add,
                        int64_t mrs_being_flushed);

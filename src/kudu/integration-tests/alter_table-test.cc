@@ -674,7 +674,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterUpdatingRemovedColumn) {
   ASSERT_EQ("Dumping tablet:\n"
             "---------------------------\n"
             "MRS memrowset:\n"
-            "RowSet RowSet(1):\n"
+            "RowSet RowSet(0):\n"
             "(int32 c0=0, int32 c2=12345) Undos: [@2(DELETE)] Redos: []",
             JoinStrings(rows, "\n"));
 

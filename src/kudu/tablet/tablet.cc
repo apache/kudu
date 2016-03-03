@@ -700,6 +700,15 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
   uint64_t start_insert_count = old_ms->debug_insert_count();
   int64_t mrs_being_flushed = old_ms->mrs_id();
 
+  if (old_ms->empty()) {
+    // If we're flushing an empty RowSet, we can short circuit here rather than
+    // waiting until the check at the end of DoCompactionAndFlush(). This avoids
+    // the need to create cfiles and write their headers only to later delete
+    // them.
+    LOG(INFO) << "MemRowSet was empty: no flush needed.";
+    return HandleEmptyCompactionOrFlush(input.rowsets(), mrs_being_flushed);
+  }
+
   if (flush_hooks_) {
     RETURN_NOT_OK_PREPEND(flush_hooks_->PostSwapNewMemRowSet(),
                           "PostSwapNewMemRowSet hook failed");
@@ -749,52 +758,33 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
   // in-place.
   boost::lock_guard<Semaphore> lock(rowsets_flush_sem_);
 
-  RowSetsInCompaction input;
-  shared_ptr<MemRowSet> old_ms;
-  {
-    // If the current version >= new version, there is nothing to do.
-    bool same_schema = schema()->Equals(*tx_state->schema());
-    if (metadata_->schema_version() >= tx_state->schema_version()) {
-      LOG_WITH_PREFIX(INFO) << "Already running schema version " << metadata_->schema_version()
-                            << " got alter request for version " << tx_state->schema_version();
-      return Status::OK();
-    }
+  // If the current version >= new version, there is nothing to do.
+  bool same_schema = schema()->Equals(*tx_state->schema());
+  if (metadata_->schema_version() >= tx_state->schema_version()) {
+    LOG_WITH_PREFIX(INFO) << "Already running schema version " << metadata_->schema_version()
+                          << " got alter request for version " << tx_state->schema_version();
+    return Status::OK();
+  }
 
-    LOG_WITH_PREFIX(INFO) << "Alter schema from " << schema()->ToString()
-                          << " version " << metadata_->schema_version()
-                          << " to " << tx_state->schema()->ToString()
-                          << " version " << tx_state->schema_version();
-    DCHECK(schema_lock_.is_locked());
-    metadata_->SetSchema(*tx_state->schema(), tx_state->schema_version());
-    if (tx_state->has_new_table_name()) {
-      metadata_->SetTableName(tx_state->new_table_name());
-      if (metric_entity_) {
-        metric_entity_->SetAttribute("table_name", tx_state->new_table_name());
-      }
-    }
-
-    // If the current schema and the new one are equal, there is nothing to do.
-    if (same_schema) {
-      return metadata_->Flush();
+  LOG_WITH_PREFIX(INFO) << "Alter schema from " << schema()->ToString()
+                        << " version " << metadata_->schema_version()
+                        << " to " << tx_state->schema()->ToString()
+                        << " version " << tx_state->schema_version();
+  DCHECK(schema_lock_.is_locked());
+  metadata_->SetSchema(*tx_state->schema(), tx_state->schema_version());
+  if (tx_state->has_new_table_name()) {
+    metadata_->SetTableName(tx_state->new_table_name());
+    if (metric_entity_) {
+      metric_entity_->SetAttribute("table_name", tx_state->new_table_name());
     }
   }
 
-
-  // Replace the MemRowSet
-  {
-    boost::lock_guard<rw_spinlock> lock(component_lock_);
-    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(&input, &old_ms));
+  // If the current schema and the new one are equal, there is nothing to do.
+  if (same_schema) {
+    return metadata_->Flush();
   }
 
-  // TODO(KUDU-915): ideally we would release the schema_lock here so that
-  // we don't block access to the tablet while we flush the MRS.
-  // However, doing so opens up some subtle issues with the ordering of
-  // the alter's COMMIT message against the COMMIT messages of other
-  // writes. A "big hammer" fix has been applied here to hold the lock
-  // all the way until the COMMIT message has been appended to the WAL.
-
-  // Flush the old MemRowSet
-  return FlushInternal(input, old_ms);
+  return FlushUnlocked();
 }
 
 Status Tablet::RewindSchemaForBootstrap(const Schema& new_schema,
@@ -1213,17 +1203,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   if (gced_all_input) {
     LOG_WITH_PREFIX(INFO) << op_name << " resulted in no output rows (all input rows "
                           << "were GCed!)  Removing all input rowsets.";
-
-    // Write out the new Tablet Metadata and remove old rowsets.
-    // TODO: Consensus catch-up may want to preserve the compaction inputs.
-    RETURN_NOT_OK_PREPEND(FlushMetadata(input.rowsets(),
-                                        RowSetMetadataVector(),
-                                        mrs_being_flushed),
-                          "Failed to flush new tablet metadata");
-
-    AtomicSwapRowSets(input.rowsets(), RowSetVector());
-
-    return Status::OK();
+    return HandleEmptyCompactionOrFlush(input.rowsets(), mrs_being_flushed);
   }
 
   // The RollingDiskRowSet writer wrote out one or more RowSets as the
@@ -1380,6 +1360,18 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
                           "PostSwapNewRowSet hook failed");
   }
 
+  return Status::OK();
+}
+
+Status Tablet::HandleEmptyCompactionOrFlush(const RowSetVector& rowsets,
+                                            int mrs_being_flushed) {
+  // Write out the new Tablet Metadata and remove old rowsets.
+  RETURN_NOT_OK_PREPEND(FlushMetadata(rowsets,
+                                      RowSetMetadataVector(),
+                                      mrs_being_flushed),
+                        "Failed to flush new tablet metadata");
+
+  AtomicSwapRowSets(rowsets, RowSetVector());
   return Status::OK();
 }
 
