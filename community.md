@@ -40,7 +40,11 @@ your city, get in touch by emailing the
 1. Thu, Mar 31, 2016. [Strata Hadoop World](http://conferences.oreilly.com/strata/hadoop-big-data-ca/public/schedule/detail/47055). San Jose, CA, USA.<br/>
    _Fast data made easy with Apache Kafka and Apache Kudu (incubating)_. Presented by Ted Malaska and Jeff Holoman.
 1. Wed, Mar 30, 2016. [Strata Hadoop World](http://conferences.oreilly.com/strata/hadoop-big-data-ca/public/schedule/detail/46916). San Jose, CA, USA.<br/>
-   Hadoop's storage gap: Resolving transactional-access and analytic-performance tradeoffs with Apache Kudu (incubating). Presented by Todd Lipcon.
+   _Hadoop's storage gap: Resolving transactional-access and analytic-performance tradeoffs with Apache Kudu (incubating)_. Presented by Todd Lipcon.
+1. Thu, Mar 17, 2016. [Big Data Boston](http://www.meetup.com/BigDataBoston/events/229317011/). Boston, MA, USA.<br/>
+   _St. Patty's Day meet-up on an Introduction to Apache Kudu_. Presented by Todd Lipcon.
+1. Wed, Mar 16, 2016. [Cloudera Technology Day](http://www.govexec.com/sponsor-content/cloudera-tech-day-1/#cloudera-technology-day). Washington DC, USA.<br/>
+   _Apache Kudu (Incubating): New Hadoop Storage for Fast Analytics on Fast Data_. Presented by Todd Lipcon.
 1. Tue, Mar 1, 2016. [Rust Detroit](http://www.meetup.com/rust-detroit/events/224586618/). Detroit, MI, USA. <br/>
    _Hadoop Next Gen: Using Kudu & Mozilla Rust to Crunch Big Data!_. Presented by Dan Burkert.
 1. Wed, Feb 24, 2016. [Seattle Scalability Meetup](http://www.meetup.com/Seattle-Scalability-Meetup/events/225955122/). Seattle, WA, USA. <br/>
