@@ -39,6 +39,11 @@ set -ex
 
 TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 
+# Before doing anything, run the pre-flight check for missing dependencies.
+# This avoids the most common issues people have with building (if they don't
+# read the docs)
+$TP_DIR/preflight.py
+
 source $TP_DIR/vars.sh
 source $TP_DIR/build-definitions.sh
 
