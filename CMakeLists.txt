@@ -234,13 +234,11 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
     message("Running without a controlling terminal or in a dumb terminal")
   endif()
 elseif("${COMPILER_FAMILY}" STREQUAL "gcc")
-  # Blacklist gcc versions known to generate broken optimized code.
-  #
-  # See KUDU-1030 for more details.
-  if ("${COMPILER_VERSION}" MATCHES "^4.[67]")
-    message(FATAL_ERROR "Building with gcc version ${COMPILER_VERSION} is "
-      "forbidden as it is known to produce broken code in release mode. "
-      "Upgrade gcc, or build with clang from the thirdparty directory.")
+  # Disallow GCC < 4.8, since it doesn't support the C++11 standard
+  # well enough for us.
+  if ("${COMPILER_VERSION}" VERSION_LESS "4.8")
+    message(FATAL_ERROR "GCC <4.8 not supported. Consider using "
+        "thirdparty/clang-toolchain/ to build on older hosts.")
   endif()
 
   # GCC 4.8's tree vectorizer has a bug which causes hard-to-debug incorrect
