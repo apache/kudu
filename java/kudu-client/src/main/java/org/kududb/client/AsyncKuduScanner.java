@@ -743,11 +743,13 @@ public final class AsyncKuduScanner {
                  .setBatchSizeBytes(batchSizeBytes);
           break;
         case NEXT:
+          setTablet(AsyncKuduScanner.this.tablet);
           builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
                  .setCallSeqId(sequenceId)
                  .setBatchSizeBytes(batchSizeBytes);
           break;
         case CLOSING:
+          setTablet(AsyncKuduScanner.this.tablet);
           builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
                  .setBatchSizeBytes(0)
                  .setCloseScanner(true);

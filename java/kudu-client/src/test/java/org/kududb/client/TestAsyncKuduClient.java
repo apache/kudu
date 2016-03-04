@@ -17,6 +17,7 @@
 package org.kududb.client;
 
 import com.google.common.base.Charsets;
+import com.google.common.base.Stopwatch;
 import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
 import org.junit.BeforeClass;
@@ -48,7 +49,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
 
     // 2. Disconnect the TabletClient.
-    client.getTableClients().get(0).shutdown().join(DEFAULT_SLEEP);
+    disconnectAndWait();
 
     // 3. Count again, it will trigger a re-connection and we should not hang or fail to scan.
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
@@ -76,9 +77,24 @@ public class TestAsyncKuduClient extends BaseKuduTest {
         rowCount, numRows);
 
     // 4. Disconnect the TS.
-    client.getTableClients().get(0).shutdown().join(DEFAULT_SLEEP);
+    disconnectAndWait();
+
     // 5. Make sure that we can continue scanning and that we get the remaining rows back.
     assertEquals(rowCount - numRows, countRowsInScan(scanner));
+  }
+
+  private void disconnectAndWait() throws InterruptedException {
+    client.getTableClients().get(0).disconnect();
+    Stopwatch sw = new Stopwatch().start();
+    while (sw.elapsedMillis() < DEFAULT_SLEEP) {
+      if (!client.getTableClients().isEmpty()) {
+        Thread.sleep(50);
+        continue;
+      } else {
+        break;
+      }
+    }
+    assertTrue(client.getTableClients().isEmpty());
   }
 
   @Test

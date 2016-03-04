@@ -582,12 +582,12 @@ public class AsyncKuduClient implements AutoCloseable {
     final TabletClient client = clientFor(tablet);
     final KuduRpc<AsyncKuduScanner.Response> next_request = scanner.getNextRowsRequest();
     final Deferred<AsyncKuduScanner.Response> d = next_request.getDeferred();
-    if (client == null) {
-      // Oops, we no longer know anything about this client or tabletSlice.  Our
-      // cache was probably invalidated while the client was scanning.  This
-      // means that we lost the connection to that TabletServer, so we have to
-      // try to re-connect and check if the scanner is still good.
-      return sendRpcToTablet(next_request);
+    if (client == null || !client.isAlive()) {
+      // A null client means we either don't know about this tablet anymore (unlikely) or we
+      // couldn't find a leader (which could be triggered by a read timeout).
+      // We'll first delay the RPC in case things take some time to settle down, then retry.
+      delayedSendRpcToTablet(next_request, null);
+      return next_request.getDeferred();
     }
     next_request.attempt++;
     client.sendRpc(next_request);
@@ -596,8 +596,8 @@ public class AsyncKuduClient implements AutoCloseable {
 
   /**
    * Package-private access point for {@link AsyncKuduScanner}s to close themselves.
-   * @param scanner The scanner to close.
-   * @return A deferred object that indicates the completion of the request.
+   * @param scanner the scanner to close
+   * @return a deferred object that indicates the completion of the request.
    * The {@link AsyncKuduScanner.Response} can contain rows that were left to scan.
    */
   Deferred<AsyncKuduScanner.Response> closeScanner(final AsyncKuduScanner scanner) {
@@ -608,9 +608,9 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     final TabletClient client = clientFor(tablet);
-    if (client == null) {
-      // Oops, we no longer know anything about this client or tabletSlice.  Our
-      // cache was probably invalidated while the client was scanning.  So
+    if (client == null || !client.isAlive()) {
+      // Oops, we couldn't find a tablet server that hosts this tablet. Our
+      // cache was probably invalidated while the client was scanning. So
       // we can't close this scanner properly.
       LOG.warn("Cannot close " + scanner + " properly, no connection open for "
           + (tablet == null ? null : tablet));
@@ -643,13 +643,45 @@ public class AsyncKuduClient implements AutoCloseable {
       request.setPropagatedTimestamp(lastPropagatedTs);
     }
 
+    // If we found a tablet, we'll try to find the TS to talk to. If that TS was previously
+    // disconnected, say because we didn't query that tablet for some seconds, then we'll try to
+    // reconnect based on the old information. If that fails, we'll instead continue with the next
+    // block that queries the master.
     if (tablet != null) {
       TabletClient tabletClient = clientFor(tablet);
       if (tabletClient != null) {
-        request.setTablet(tablet);
         final Deferred<R> d = request.getDeferred();
-        tabletClient.sendRpc(request);
-        return d;
+        if (tabletClient.isAlive()) {
+          request.setTablet(tablet);
+          tabletClient.sendRpc(request);
+          return d;
+        }
+        try {
+          tablet.reconnectTabletClient(tabletClient);
+        } catch (UnknownHostException e) {
+          LOG.error("Cached tablet server {}'s host cannot be resolved, will query the master",
+              tabletClient.getUuid(), e);
+          // Because of this exception, clientFor() below won't be able to find a newTabletClient
+          // and we'll delay the RPC.
+        }
+        TabletClient newTabletClient = clientFor(tablet);
+        assert (tabletClient != newTabletClient);
+
+        if (newTabletClient == null) {
+          // Wait a little bit before hitting the master.
+          delayedSendRpcToTablet(request, null);
+          return request.getDeferred();
+        }
+
+        if (!newTabletClient.isAlive()) {
+          LOG.debug("Tried reconnecting to tablet server {} but failed, " +
+              "will query the master", tabletClient.getUuid());
+          // Let fall through.
+        } else {
+          request.setTablet(tablet);
+          newTabletClient.sendRpc(request);
+          return d;
+        }
       }
     }
 
@@ -687,6 +719,7 @@ public class AsyncKuduClient implements AutoCloseable {
       this.request = request;
     }
     public Deferred<R> call(final D arg) {
+      LOG.debug("Retrying sending RPC {} after lookup", request);
       return sendRpcToTablet(request);  // Retry the RPC.
     }
     public String toString() {
@@ -937,6 +970,7 @@ public class AsyncKuduClient implements AutoCloseable {
     }
     final Exception e = new NonRecoverableException(message + request, cause);
     request.errback(e);
+    LOG.debug("Cannot continue with this RPC: {} because of: {}", request, message, e);
     return Deferred.fromError(e);
   }
 
@@ -1142,7 +1176,7 @@ public class AsyncKuduClient implements AutoCloseable {
   private void invalidateTabletCache(RemoteTablet tablet, TabletClient server) {
     LOG.info("Removing server " + server.getUuid() + " from this tablet's cache " +
         tablet.getTabletIdAsString());
-    tablet.removeTabletServer(server);
+    tablet.removeTabletClient(server);
   }
 
   /** Callback executed when a master lookup completes.  */
@@ -1218,7 +1252,7 @@ public class AsyncKuduClient implements AutoCloseable {
       // If we already know about this one, just refresh the locations
       RemoteTablet currentTablet = tablet2client.get(tabletId);
       if (currentTablet != null) {
-        currentTablet.refreshServers(tabletPb);
+        currentTablet.refreshTabletClients(tabletPb);
         continue;
       }
 
@@ -1231,7 +1265,7 @@ public class AsyncKuduClient implements AutoCloseable {
       }
       LOG.info("Discovered tablet {} for table {} with partition {}",
                tabletId.toString(Charset.defaultCharset()), tableName, rt.getPartition());
-      rt.refreshServers(tabletPb);
+      rt.refreshTabletClients(tabletPb);
       // This is making this tablet available
       // Even if two clients were racing in this method they are putting the same RemoteTablet
       // with the same start key in the CSLM in the end
@@ -1328,7 +1362,7 @@ public class AsyncKuduClient implements AutoCloseable {
         return client;
       }
       final TabletClientPipeline pipeline = new TabletClientPipeline();
-      client = pipeline.init(uuid);
+      client = pipeline.init(uuid, host, port);
       chan = channelFactory.newChannel(pipeline);
       ip2client.put(hostport, client);  // This is guaranteed to return null.
     }
@@ -1464,7 +1498,7 @@ public class AsyncKuduClient implements AutoCloseable {
           public ArrayList<Void> call(final ArrayList<Void> arg) {
             // Normally, now that we've shutdown() every client, all our caches should
             // be empty since each shutdown() generates a DISCONNECTED event, which
-            // causes TabletClientPipeline to call removeClientFromCache().
+            // causes TabletClientPipeline to call removeClientFromIpCache().
             HashMap<String, TabletClient> logme = null;
             synchronized (ip2client) {
               if (!ip2client.isEmpty()) {
@@ -1542,12 +1576,12 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Removes all the cache entries referred to the given client.
-   * @param client The client for which we must invalidate everything.
-   * @param remote The address of the remote peer, if known, or null.
+   * Removes the given client from the `ip2client` cache.
+   * @param client The client for which we must clear the ip cache
+   * @param remote The address of the remote peer, if known, or null
    */
-  private void removeClientFromCache(final TabletClient client,
-                                     final SocketAddress remote) {
+  private void removeClientFromIpCache(final TabletClient client,
+                                       final SocketAddress remote) {
 
     if (remote == null) {
       return;  // Can't continue without knowing the remote address.
@@ -1584,19 +1618,24 @@ public class AsyncKuduClient implements AutoCloseable {
           + hostport + "), it was found that there was no entry"
           + " corresponding to " + remote + ".  This shouldn't happen.");
     }
+  }
 
-    ArrayList<RemoteTablet> tablets = client2tablets.remove(client);
+  /**
+   * Call this method after encountering an error connecting to a tablet server so that we stop
+   * considering it a leader for the tablets it serves.
+   * @param client tablet server to use for demotion
+   */
+  void demoteAsLeaderForAllTablets(final TabletClient client) {
+    ArrayList<RemoteTablet> tablets = client2tablets.get(client);
     if (tablets != null) {
       // Make a copy so we don't need to synchronize on it while iterating.
       RemoteTablet[] tablets_copy;
       synchronized (tablets) {
         tablets_copy = tablets.toArray(new RemoteTablet[tablets.size()]);
-        tablets = null;
-        // If any other thread still has a reference to `tablets', their
-        // updates will be lost (and we don't care).
       }
       for (final RemoteTablet remoteTablet : tablets_copy) {
-        remoteTablet.removeTabletServer(client);
+        // It will be a no-op if it's not already a leader.
+        remoteTablet.demoteLeader(client);
       }
     }
   }
@@ -1620,8 +1659,8 @@ public class AsyncKuduClient implements AutoCloseable {
      */
     private boolean disconnected = false;
 
-    TabletClient init(String uuid) {
-      final TabletClient client = new TabletClient(AsyncKuduClient.this, uuid);
+    TabletClient init(String uuid, String host, int port) {
+      final TabletClient client = new TabletClient(AsyncKuduClient.this, uuid, host, port);
       if (defaultSocketReadTimeoutMs > 0) {
         super.addLast("timeout-handler",
             new ReadTimeoutHandler(timer,
@@ -1679,10 +1718,8 @@ public class AsyncKuduClient implements AutoCloseable {
           remote = slowSearchClientIP(client);
         }
 
-        // Prevent the client from buffering requests while we invalidate
-        // everything we have about it.
         synchronized (client) {
-          removeClientFromCache(client, remote);
+          removeClientFromIpCache(client, remote);
         }
       } catch (Exception e) {
         log.error("Uncaught exception when handling a disconnection of " + getChannel(), e);
@@ -1766,7 +1803,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * succeeds.
    *
    * Subtleties:
-   * We don't keep track of a TS after it disconnects (via removeTabletServer), so if we
+   * We don't keep track of a TS after it disconnects (via removeTabletClient), so if we
    * haven't contacted one for 10 seconds (socket timeout), it will be removed from the list of
    * tabletServers. This means that if the leader fails, we only have one other TS to "promote"
    * or maybe none at all. This is partly why we then set leaderIndex to NO_LEADER_INDEX.
@@ -1793,7 +1830,7 @@ public class AsyncKuduClient implements AutoCloseable {
       this.partition = partition;
     }
 
-    void refreshServers(Master.TabletLocationsPB tabletLocations) throws NonRecoverableException {
+    void refreshTabletClients(Master.TabletLocationsPB tabletLocations) throws NonRecoverableException {
 
       synchronized (tabletServers) { // TODO not a fat lock with IP resolving in it
         tabletServers.clear();
@@ -1820,9 +1857,9 @@ public class AsyncKuduClient implements AutoCloseable {
             lookupExceptions.add(ex);
           }
         }
-        leaderIndex = 0;
+
         if (leaderIndex == NO_LEADER_INDEX) {
-          LOG.warn("No leader provided for tablet " + getTabletIdAsString());
+          LOG.warn("No leader provided for tablet {}", getTabletIdAsString());
         }
 
         // If we found a tablet that doesn't contain a single location that we can resolve, there's
@@ -1846,19 +1883,48 @@ public class AsyncKuduClient implements AutoCloseable {
 
       final ArrayList<RemoteTablet> tablets = client2tablets.get(client);
 
-      if (tablets == null) {
-        // We raced with removeClientFromCache and lost. The client we got was just disconnected.
-        // Reconnect.
-        addTabletClient(uuid, host, port, isLeader);
-      } else {
-        synchronized (tablets) {
-          if (isLeader) {
-            tabletServers.add(0, client);
-          } else {
-            tabletServers.add(client);
-          }
-          tablets.add(this);
+      synchronized (tablets) {
+        tabletServers.add(client);
+        if (isLeader) {
+          leaderIndex = tabletServers.size() - 1;
         }
+        tablets.add(this);
+      }
+    }
+
+    /**
+     * Call this method when an existing TabletClient in this tablet's cache is found to be dead.
+     * It removes the passed TS from this tablet's cache and replaces it with a new instance of
+     * TabletClient. It will keep its leader status if it was already considered a leader.
+     * If the passed TabletClient was already removed, then this is a no-op.
+     * @param staleTs TS to reconnect to
+     * @throws UnknownHostException if we can't resolve server's hostname
+     */
+    void reconnectTabletClient(TabletClient staleTs) throws UnknownHostException {
+      assert (!staleTs.isAlive());
+
+      synchronized (tabletServers) {
+        int index = tabletServers.indexOf(staleTs);
+
+        if (index == -1) {
+          // Another thread already took care of it.
+          return;
+        }
+
+        boolean wasLeader = index == leaderIndex;
+
+        LOG.debug("Reconnecting to server {} for tablet {}. Was a leader? {}",
+            staleTs.getUuid(), getTabletIdAsString(), wasLeader);
+
+        boolean removed = removeTabletClient(staleTs);
+
+        if (!removed) {
+          LOG.debug("{} was already removed from tablet {}'s cache when reconnecting to it",
+              staleTs.getUuid(), getTabletIdAsString());
+        }
+
+        addTabletClient(staleTs.getUuid(), staleTs.getHost(),
+            staleTs.getPort(), wasLeader);
       }
     }
 
@@ -1873,7 +1939,7 @@ public class AsyncKuduClient implements AutoCloseable {
      * @param ts A TabletClient that was disconnected.
      * @return True if this method removed ts from the list, else false.
      */
-    boolean removeTabletServer(TabletClient ts) {
+    boolean removeTabletClient(TabletClient ts) {
       synchronized (tabletServers) {
         // TODO unit test for this once we have the infra
         int index = tabletServers.indexOf(ts);
@@ -1894,10 +1960,10 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     /**
-     * If the passed TabletClient is the current leader, then the next one in the list will be
-     * "promoted" unless we're at the end of the list, in which case we set the leaderIndex to
-     * NO_LEADER_INDEX which will force a call to the master.
-     * @param ts A TabletClient that gave a sign that it isn't this tablet's leader.
+     * Clears the leader index if the passed tablet server is the current leader.
+     * If it is the current leader, then the next call to this tablet will have
+     * to query the master to find the new leader.
+     * @param ts a TabletClient that gave a sign that it isn't this tablet's leader
      */
     void demoteLeader(TabletClient ts) {
       synchronized (tabletServers) {
@@ -1905,15 +1971,17 @@ public class AsyncKuduClient implements AutoCloseable {
         // If this TS was removed or we're already forcing a call to the master (meaning someone
         // else beat us to it), then we just noop.
         if (index == -1 || leaderIndex == NO_LEADER_INDEX) {
+          LOG.debug("{} couldn't be demoted as the leader for {}",
+              ts.getUuid(), getTabletIdAsString());
           return;
         }
 
         if (leaderIndex == index) {
-          if (leaderIndex + 1 == tabletServers.size()) {
-            leaderIndex = NO_LEADER_INDEX;
-          } else {
-            leaderIndex++;
-          }
+          leaderIndex = NO_LEADER_INDEX;
+          LOG.debug("{} was demoted as the leader for {}", ts.getUuid(), getTabletIdAsString());
+        } else {
+          LOG.debug("{} wasn't the leader for {}, current leader is at index {}", ts.getUuid(),
+              getTabletIdAsString(), leaderIndex);
         }
       }
     }

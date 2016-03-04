@@ -26,8 +26,7 @@
 
 package org.kududb.client;
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
+import com.google.common.annotations.VisibleForTesting;
 import com.stumbleupon.async.Deferred;
 
 import org.jboss.netty.handler.timeout.ReadTimeoutException;
@@ -136,14 +135,20 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   private final String uuid;
 
+  private final String host;
+
+  private final int port;
+
   private final long socketReadTimeoutMs;
 
   private SecureRpcHelper secureRpcHelper;
 
-  public TabletClient(AsyncKuduClient client, String uuid) {
+  public TabletClient(AsyncKuduClient client, String uuid, String host, int port) {
     this.kuduClient = client;
     this.uuid = uuid;
     this.socketReadTimeoutMs = client.getDefaultSocketReadTimeoutMs();
+    this.host = host;
+    this.port = port;
   }
 
   <R> void sendRpc(KuduRpc<R> rpc) {
@@ -252,6 +257,22 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     return payload;
   }
 
+  /**
+   * Quick and dirty way to close a connection to a tablet server, if it wasn't already closed.
+   */
+  @VisibleForTesting
+  void disconnect() {
+    Channel chancopy = chan;
+    if (chancopy != null && chancopy.isConnected()) {
+      Channels.disconnect(chancopy);
+    }
+  }
+
+  /**
+   * Forcefully shuts down the connection to this tablet server and fails all the outstanding RPCs.
+   * Only use when shutting down a client.
+   * @return deferred object to use to track the shutting down of this connection
+   */
   public Deferred<Void> shutdown() {
     // First, check whether we have RPCs in flight and cancel them.
     for (Iterator<KuduRpc<?>> ite = rpcs_inflight.values().iterator(); ite
@@ -667,10 +688,12 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   private void failOrRetryRpc(final KuduRpc<?> rpc,
                               final ConnectionResetException exception) {
     AsyncKuduClient.RemoteTablet tablet = rpc.getTablet();
+    // Note As of the time of writing (03/11/16), a null tablet doesn't make sense, if we see a null
+    // tablet it's because we didn't set it properly before calling sendRpc().
     if (tablet == null) {  // Can't retry, dunno where this RPC should go.
       rpc.errback(exception);
     } else {
-      kuduClient.handleTabletNotFound(rpc, exception, this);
+      kuduClient.handleRetryableError(rpc, exception);
     }
   }
 
@@ -691,6 +714,9 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       cleanup(c);
     } else {
       LOG.error(getPeerUuidLoggingString() + "Unexpected exception from downstream on " + c, e);
+      // For any other exception, likely a connection error, we clear the leader state
+      // for those tablets that this TS is the cached leader of.
+      kuduClient.demoteAsLeaderForAllTablets(this);
     }
     if (c.isOpen()) {
       Channels.close(c);  // Will trigger channelClosed(), which will cleanup()
@@ -755,6 +781,23 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    */
   String getUuid() {
     return uuid;
+  }
+
+  /**
+   * Returns this tablet server's port.
+   * @return a port number that this tablet server is bound to
+   */
+  int getPort() {
+    return port;
+  }
+
+  /**
+   * Returns this tablet server's hostname. We might get many hostnames from the master for a single
+   * TS, and this is the one we picked to connect to originally.
+   * @returna string that contains this tablet server's hostname
+   */
+  String getHost() {
+    return host;
   }
 
   public String toString() {
