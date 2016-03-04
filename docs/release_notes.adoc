@@ -53,6 +53,37 @@ By combining all of these properties, Kudu targets support for families of
 applications that are difficult or impossible to implement on current-generation
 Hadoop storage technologies.
 
+[[rn_0.7.1]]
+=== Release notes specific to 0.7.1
+
+Kudu 0.7.1 is a bug fix release for 0.7.0.
+
+[[rn_0.7.1_fixed_issues]]
+
+==== Fixed Issues
+
+. https://issues.apache.org/jira/browse/KUDU-1325[KUDU-1325] fixes a tablet server crash that could
+occur during table deletion. In some cases, while a table was being deleted, other replicas would
+attempt to re-replicate tablets to servers that had already processed the deletion. This could
+trigger a race condition that caused a crash.
+
+. https://issues.apache.org/jira/browse/KUDU-1341[KUDU-1341] fixes a potential data corruption and
+crash that could happen shortly after tablet server restarts in workloads that repeatedly delete
+and re-insert rows with the same primary key. In most cases, this corruption affected only a single
+replica and could be repaired by re-replicating from another.
+
+. https://issues.apache.org/jira/browse/KUDU-1343[KUDU-1343] fixes a bug in the Java client that
+occurs when a scanner has to scan multiple batches from one tablet and then start scanning from
+another. In particular, this would affect any scans using the Java client that read large numbers
+of rows from multi-tablet tables.
+
+. https://issues.apache.org/jira/browse/KUDU-1345[KUDU-1345] fixes a bug where in some cases the
+hybrid clock could jump backwards, resulting in a crash followed by an inability to
+restart the affected tablet server.
+
+. https://issues.apache.org/jira/browse/KUDU-1360[KUDU-1360] fixes a bug in the kudu-spark module
+which prevented reading rows with `NULL` values.
+
 [[rn_0.7.0]]
 === Release notes specific to 0.7.0
 
