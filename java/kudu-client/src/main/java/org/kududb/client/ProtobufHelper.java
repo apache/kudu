@@ -79,24 +79,27 @@ public class ProtobufHelper {
     return schemaBuilder.build();
   }
 
+  public static ColumnSchema pbToColumnSchema(Common.ColumnSchemaPB pb) {
+    Type type = Type.getTypeForDataType(pb.getType());
+    Object defaultValue = pb.hasReadDefaultValue() ?
+        byteStringToObject(type, pb.getReadDefaultValue()) : null;
+    ColumnSchema.Encoding encoding = ColumnSchema.Encoding.valueOf(pb.getEncoding().name());
+    ColumnSchema.CompressionAlgorithm compressionAlgorithm =
+        ColumnSchema.CompressionAlgorithm.valueOf(pb.getCompression().name());
+    return new ColumnSchema.ColumnSchemaBuilder(pb.getName(), type)
+                           .key(pb.getIsKey())
+                           .nullable(pb.getIsNullable())
+                           .defaultValue(defaultValue)
+                           .encoding(encoding)
+                           .compressionAlgorithm(compressionAlgorithm)
+                           .build();
+  }
+
   public static Schema pbToSchema(Common.SchemaPB schema) {
     List<ColumnSchema> columns = new ArrayList<>(schema.getColumnsCount());
     List<Integer> columnIds = new ArrayList<>(schema.getColumnsCount());
     for (Common.ColumnSchemaPB columnPb : schema.getColumnsList()) {
-      Type type = Type.getTypeForDataType(columnPb.getType());
-      Object defaultValue = columnPb.hasReadDefaultValue() ? byteStringToObject(type,
-          columnPb.getReadDefaultValue()) : null;
-      ColumnSchema.Encoding encoding = ColumnSchema.Encoding.valueOf(columnPb.getEncoding().name());
-      ColumnSchema.CompressionAlgorithm compressionAlgorithm =
-          ColumnSchema.CompressionAlgorithm.valueOf(columnPb.getCompression().name());
-      ColumnSchema column = new ColumnSchema.ColumnSchemaBuilder(columnPb.getName(), type)
-          .key(columnPb.getIsKey())
-          .nullable(columnPb.getIsNullable())
-          .defaultValue(defaultValue)
-          .encoding(encoding)
-          .compressionAlgorithm(compressionAlgorithm)
-          .build();
-      columns.add(column);
+      columns.add(pbToColumnSchema(columnPb));
       int id = columnPb.getId();
       if (id < 0) {
         throw new IllegalArgumentException("Illegal column ID: " + id);

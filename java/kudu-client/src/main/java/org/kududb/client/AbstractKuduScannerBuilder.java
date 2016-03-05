@@ -16,8 +16,9 @@
 // under the License.
 package org.kududb.client;
 
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
 import org.kududb.annotations.InterfaceAudience;
@@ -34,7 +35,9 @@ public abstract class AbstractKuduScannerBuilder
     <S extends AbstractKuduScannerBuilder<? super S, T>, T> {
   final AsyncKuduClient client;
   final KuduTable table;
-  final List<Tserver.ColumnRangePredicatePB> columnRangePredicates;
+
+  /** Map of column name to predicate */
+  final Map<String, KuduPredicate> predicates = new HashMap<>();
 
   AsyncKuduScanner.ReadMode readMode = AsyncKuduScanner.ReadMode.READ_LATEST;
   int batchSizeBytes = 1024*1024;
@@ -53,7 +56,6 @@ public abstract class AbstractKuduScannerBuilder
   AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
     this.client = client;
     this.table = table;
-    this.columnRangePredicates = new ArrayList<>();
     this.scanRequestTimeout = client.getDefaultOperationTimeoutMs();
   }
 
@@ -71,10 +73,11 @@ public abstract class AbstractKuduScannerBuilder
    * Adds a predicate for a column.
    * @param predicate predicate for a column to add
    * @return this instance
+   * @deprecated use {@link #addPredicate(KuduPredicate)}
    */
+  @Deprecated
   public S addColumnRangePredicate(ColumnRangePredicate predicate) {
-    columnRangePredicates.add(predicate.getPb());
-    return (S) this;
+    return addPredicate(predicate.toKuduPredicate());
   }
 
   /**
@@ -85,9 +88,25 @@ public abstract class AbstractKuduScannerBuilder
    * @throws IllegalArgumentException thrown when the passed bytes aren't valid
    */
   public S addColumnRangePredicatesRaw(byte[] predicateBytes) {
-    List<Tserver.ColumnRangePredicatePB> predicates =
-        ColumnRangePredicate.fromByteArray(predicateBytes);
-    columnRangePredicates.addAll(predicates);
+    for (Tserver.ColumnRangePredicatePB pb : ColumnRangePredicate.fromByteArray(predicateBytes)) {
+      addPredicate(ColumnRangePredicate.fromPb(pb).toKuduPredicate());
+    }
+    return (S) this;
+  }
+
+  /**
+   * Adds a predicate to the scan.
+   * @param predicate predicate to add
+   * @return this instance
+   */
+  public S addPredicate(KuduPredicate predicate) {
+    String columnName = predicate.getColumn().getName();
+    KuduPredicate existing = predicates.get(columnName);
+    if (existing == null) {
+      predicates.put(columnName, predicate);
+    } else {
+      predicates.put(columnName, existing.merge(predicate));
+    }
     return (S) this;
   }
 
