@@ -21,10 +21,8 @@ import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.ColumnSchema;
 import org.kududb.Type;
 import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -32,9 +30,10 @@ import java.util.List;
 /**
  * A range predicate on one of the columns in the underlying data.
  * Both boundaries are inclusive.
+ * @deprecated use the {@link KuduPredicate} class instead.
  */
 @InterfaceAudience.Public
-@InterfaceStability.Evolving
+@Deprecated
 public class ColumnRangePredicate {
 
   private final Tserver.ColumnRangePredicatePB.Builder pb = Tserver.ColumnRangePredicatePB
@@ -60,6 +59,52 @@ public class ColumnRangePredicate {
   private void setUpperBoundInternal(byte[] value) {
     this.upperBound = value;
     pb.setInclusiveUpperBound(ZeroCopyLiteralByteString.wrap(this.upperBound));
+  }
+
+  /**
+   * Convert a bound into a {@link KuduPredicate}.
+   * @param column the column
+   * @param op the bound comparison operator
+   * @param bound the bound
+   * @return the {@code KuduPredicate}
+   */
+  private static KuduPredicate toKuduPredicate(ColumnSchema column,
+                                               KuduPredicate.ComparisonOp op,
+                                               byte[] bound) {
+    if (bound == null) { return null; }
+    switch (column.getType().getDataType()) {
+      case BOOL: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getBoolean(bound));
+      case INT8: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getByte(bound));
+      case INT16: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getShort(bound));
+      case INT32: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getInt(bound));
+      case INT64:
+      case TIMESTAMP: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getLong(bound));
+      case FLOAT: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getFloat(bound));
+      case DOUBLE: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getDouble(bound));
+      case STRING: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getString(bound));
+      case BINARY: return KuduPredicate.newComparisonPredicate(column, op, bound);
+      default:
+        throw new IllegalStateException(String.format("unknown column type %s", column.getType()));
+    }
+  }
+
+  /**
+   * Convert this column range predicate into a {@link KuduPredicate}.
+   * @return the column predicate.
+   */
+  public KuduPredicate toKuduPredicate() {
+    KuduPredicate lower =
+        toKuduPredicate(column, KuduPredicate.ComparisonOp.GREATER_EQUAL, lowerBound);
+    KuduPredicate upper =
+        toKuduPredicate(column, KuduPredicate.ComparisonOp.LESS_EQUAL, upperBound);
+
+    if (upper != null && lower != null) {
+      return upper.merge(lower);
+    } else if (upper != null) {
+      return upper;
+    } else {
+      return lower;
+    }
   }
 
   /**
@@ -298,6 +343,23 @@ public class ColumnRangePredicate {
    */
   Tserver.ColumnRangePredicatePB getPb() {
     return pb.build();
+  }
+
+  /**
+   * Creates a {@code ColumnRangePredicate} from a protobuf column range predicate message.
+   * @param pb the protobuf message
+   * @return a column range predicate
+   */
+  static ColumnRangePredicate fromPb(Tserver.ColumnRangePredicatePB pb) {
+    ColumnRangePredicate pred =
+        new ColumnRangePredicate(ProtobufHelper.pbToColumnSchema(pb.getColumn()));
+    if (pb.hasLowerBound()) {
+      pred.setLowerBoundInternal(pb.getLowerBound().toByteArray());
+    }
+    if (pb.hasInclusiveUpperBound()) {
+      pred.setUpperBoundInternal(pb.getInclusiveUpperBound().toByteArray());
+    }
+    return pred;
   }
 
   /**

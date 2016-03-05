@@ -20,6 +20,10 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.kududb.client.KuduPredicate.ComparisonOp.GREATER;
+import static org.kududb.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
+import static org.kududb.client.KuduPredicate.ComparisonOp.LESS;
+import static org.kududb.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
 import static org.kududb.client.RowResult.timestampToString;
 
 import java.util.ArrayList;
@@ -255,6 +259,53 @@ public class TestKuduClient extends BaseKuduTest {
       }
       assertEquals(expectedRow.toString(), rowStrings.get(i));
     }
+  }
+
+  /**
+   * Test scanning with predicates.
+   */
+  @Test
+  public void testScanWithPredicates() throws Exception {
+    Schema schema = createManyStringsSchema();
+    syncClient.createTable(tableName, schema);
+
+    KuduSession session = syncClient.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+    KuduTable table = syncClient.openTable(tableName);
+    for (int i = 0; i < 100; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addString("key", String.format("key_%02d", i));
+      row.addString("c1", "c1_" + i);
+      row.addString("c2", "c2_" + i);
+      session.apply(insert);
+    }
+    session.flush();
+
+    assertEquals(100, scanTableToStrings(table).size());
+    assertEquals(50, scanTableToStrings(table,
+        KuduPredicate.newComparisonPredicate(schema.getColumn("key"), GREATER_EQUAL, "key_50")
+    ).size());
+    assertEquals(25, scanTableToStrings(table,
+        KuduPredicate.newComparisonPredicate(schema.getColumn("key"), GREATER, "key_74")
+    ).size());
+    assertEquals(25, scanTableToStrings(table,
+        KuduPredicate.newComparisonPredicate(schema.getColumn("key"), GREATER, "key_24"),
+        KuduPredicate.newComparisonPredicate(schema.getColumn("c1"), LESS_EQUAL, "c1_49")
+    ).size());
+    assertEquals(50, scanTableToStrings(table,
+        KuduPredicate.newComparisonPredicate(schema.getColumn("key"), GREATER, "key_24"),
+        KuduPredicate.newComparisonPredicate(schema.getColumn("key"), GREATER_EQUAL, "key_50")
+    ).size());
+    assertEquals(0, scanTableToStrings(table,
+        KuduPredicate.newComparisonPredicate(schema.getColumn("c1"), GREATER, "c1_30"),
+        KuduPredicate.newComparisonPredicate(schema.getColumn("c2"), LESS, "c2_20")
+    ).size());
+    assertEquals(0, scanTableToStrings(table,
+        // Short circuit scan
+        KuduPredicate.newComparisonPredicate(schema.getColumn("c2"), GREATER, "c2_30"),
+        KuduPredicate.newComparisonPredicate(schema.getColumn("c2"), LESS, "c2_20")
+    ).size());
   }
 
   /**

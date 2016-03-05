@@ -164,9 +164,14 @@ public class BaseKuduTest {
     return counter.get();
   }
 
-  protected List<String> scanTableToStrings(KuduTable table) throws Exception {
+  protected List<String> scanTableToStrings(KuduTable table,
+                                            KuduPredicate... predicates) throws Exception {
     List<String> rowStrings = Lists.newArrayList();
-    KuduScanner scanner = syncClient.newScannerBuilder(table).build();
+    KuduScanner.KuduScannerBuilder scanBuilder = syncClient.newScannerBuilder(table);
+    for (KuduPredicate predicate : predicates) {
+      scanBuilder.addPredicate(predicate);
+    }
+    KuduScanner scanner = scanBuilder.build();
     while (scanner.hasMoreRows()) {
       RowResultIterator rows = scanner.nextRows();
       for (RowResult r : rows) {

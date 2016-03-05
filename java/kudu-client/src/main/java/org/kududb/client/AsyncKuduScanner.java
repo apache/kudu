@@ -25,27 +25,33 @@
  */
 package org.kududb.client;
 
-import java.util.ArrayList;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.List;
-
+import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+import com.stumbleupon.async.Callback;
+import com.stumbleupon.async.Deferred;
+import org.jboss.netty.buffer.ChannelBuffer;
 import org.kududb.ColumnSchema;
 import org.kududb.Common;
 import org.kududb.Schema;
-import com.stumbleupon.async.Callback;
-import com.stumbleupon.async.Deferred;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 import org.kududb.util.Pair;
-import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import static com.google.common.base.Preconditions.checkArgument;
-import static org.kududb.tserver.Tserver.*;
+import static org.kududb.tserver.Tserver.NewScanRequestPB;
+import static org.kududb.tserver.Tserver.ScanRequestPB;
+import static org.kududb.tserver.Tserver.ScanResponsePB;
+import static org.kududb.tserver.Tserver.TabletServerErrorPB;
 
 /**
  * Creates a scanner to read data from Kudu.
@@ -133,7 +139,11 @@ public final class AsyncKuduScanner {
   private final AsyncKuduClient client;
   private final KuduTable table;
   private final Schema schema;
-  private final List<Tserver.ColumnRangePredicatePB> columnRangePredicates;
+
+  /**
+   * Map of column name to predicate.
+   */
+  private final Map<String, KuduPredicate> predicates;
 
   /**
    * Maximum number of bytes returned by the scanner, on each batch.
@@ -220,7 +230,7 @@ public final class AsyncKuduScanner {
 
   AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedNames,
                    List<Integer> projectedIndexes, ReadMode readMode, long scanRequestTimeout,
-                   List<Tserver.ColumnRangePredicatePB> columnRangePredicates, long limit,
+                   Map<String, KuduPredicate> predicates, long limit,
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
                    byte[] startPartitionKey, byte[] endPartitionKey,
@@ -240,7 +250,7 @@ public final class AsyncKuduScanner {
     this.table = table;
     this.readMode = readMode;
     this.scanRequestTimeout = scanRequestTimeout;
-    this.columnRangePredicates = columnRangePredicates;
+    this.predicates = predicates;
     this.limit = limit;
     this.cacheBlocks = cacheBlocks;
     this.prefetching = prefetching;
@@ -313,6 +323,22 @@ public final class AsyncKuduScanner {
       this.schema = new Schema(columns);
     } else {
       this.schema = table.getSchema();
+    }
+
+    // If any of the column predicates are of type None (the predicate is known
+    // to match no rows), then the scan can be short circuited without
+    // contacting any tablet servers.
+    boolean shortCircuit = false;
+    for (KuduPredicate predicate : this.predicates.values()) {
+      if (predicate.getType() == KuduPredicate.PredicateType.NONE) {
+        shortCircuit = true;
+        break;
+      }
+    }
+    if (shortCircuit) {
+      LOG.debug("Short circuiting scan with predicates: {}", predicates.values());
+      this.hasMore = false;
+      this.closed = true;
     }
   }
 
@@ -665,6 +691,15 @@ public final class AsyncKuduScanner {
       return "Scan";
     }
 
+    @Override
+    Collection<Integer> getRequiredFeatures() {
+      if (predicates.isEmpty()) {
+        return ImmutableList.of();
+      } else {
+        return ImmutableList.of(Tserver.TabletServerFeatures.COLUMN_PREDICATES_VALUE);
+      }
+    }
+
     /** Serializes this request.  */
     ChannelBuffer serialize(Message header) {
       final ScanRequestPB.Builder builder = ScanRequestPB.newBuilder();
@@ -701,8 +736,8 @@ public final class AsyncKuduScanner {
             newBuilder.setStopPrimaryKey(ZeroCopyLiteralByteString.copyFrom(endPrimaryKey));
           }
 
-          if (!columnRangePredicates.isEmpty()) {
-            newBuilder.addAllDEPRECATEDRangePredicates(columnRangePredicates);
+          for (KuduPredicate pred : predicates.values()) {
+            newBuilder.addColumnPredicates(pred.toPB());
           }
           builder.setNewScanRequest(newBuilder.build())
                  .setBatchSizeBytes(batchSizeBytes);
@@ -791,7 +826,7 @@ public final class AsyncKuduScanner {
     public AsyncKuduScanner build() {
       return new AsyncKuduScanner(
           client, table, projectedColumnNames, projectedColumnIndexes, readMode,
-          scanRequestTimeout, columnRangePredicates, limit, cacheBlocks,
+          scanRequestTimeout, predicates, limit, cacheBlocks,
           prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
           lowerBoundPartitionKey, upperBoundPartitionKey,
           htTimestamp, batchSizeBytes);

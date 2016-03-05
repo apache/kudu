@@ -18,6 +18,7 @@ package org.kududb.client;
 
 import static org.junit.Assert.assertEquals;
 
+import org.junit.Assert;
 import org.junit.Test;
 
 import java.math.BigInteger;
@@ -93,5 +94,12 @@ public class TestBytes {
     double aDouble = 123.456;
     Bytes.setDouble(bytes, aDouble);
     assertEquals(aDouble, Bytes.getDouble(bytes), 0.001);
+  }
+
+  @Test
+  public void testHex() {
+    byte[] bytes = new byte[] { (byte) 0x01, (byte) 0x23, (byte) 0x45, (byte) 0x67,
+                                (byte) 0x89, (byte) 0xAB, (byte) 0xCD, (byte) 0xEF };
+    Assert.assertEquals("0x0123456789ABCDEF", Bytes.hex(bytes));
   }
 }

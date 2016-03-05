@@ -710,7 +710,7 @@ public final class Bytes {
   // Pretty-printing byte arrays. //
   // ---------------------------- //
 
-  private static final byte[] HEX = {
+  private static final char[] HEX = {
       '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
       'A', 'B', 'C', 'D', 'E', 'F'
   };
@@ -741,8 +741,8 @@ public final class Bytes {
         outbuf.append('\\').append('t');
       } else {
         outbuf.append("\\x")
-            .append((char) HEX[(b >>> 4) & 0x0F])
-            .append((char) HEX[b & 0x0F]);
+            .append(HEX[(b >>> 4) & 0x0F])
+            .append(HEX[b & 0x0F]);
       }
     }
     if (ascii < n / 2) {
@@ -793,25 +793,27 @@ public final class Bytes {
     return buf.toString();
   }
 
-  // This doesn't really belong here but it doesn't belong anywhere else
-  // either, so let's put it close to the other pretty-printing functions.
   /**
-   * Pretty-prints a {@code long} into a fixed-width hexadecimal number.
-   * @return A string of the form {@code 0x0123456789ABCDEF}.
+   * Convert a byte array to a hex encoded string.
+   *
+   * TODO: replace this with {@link com.google.common.io.BaseEncoding}
+   * when the Guava version is bumped.
+   *
+   * https://stackoverflow.com/questions/9655181/how-to-convert-a-byte-array-to-a-hex-string-in-java
+   * @param bytes the bytes to encode
+   * @return the hex encoded bytes
    */
-  public static String hex(long v) {
-    final byte[] buf = new byte[2 + 16];
-    buf[0] = '0';
-    buf[1] = 'x';
-    int i = 2 + 16;
-    do {
-      buf[--i] = HEX[(int) v & 0x0F];
-      v >>>= 4;
-    } while (v != 0);
-    for (/**/; i > 1; i--) {
-      buf[i] = '0';
+  public static String hex(byte[] bytes) {
+    StringBuilder sb = new StringBuilder(2 + bytes.length * 2);
+    sb.append('0');
+    sb.append('x');
+
+    for (byte b : bytes) {
+      int v = b & 0xFF;
+      sb.append(HEX[v >>> 4]);
+      sb.append(HEX[v & 0x0F]);
     }
-    return new String(buf);
+    return sb.toString();
   }
 
   // Ugly stuff
