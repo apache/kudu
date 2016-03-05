@@ -32,7 +32,6 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/diskrowset-test-base.h"
 #include "kudu/util/test_util.h"
-#include "kudu/gutil/algorithm.h"
 
 using std::shared_ptr;
 using std::unordered_set;

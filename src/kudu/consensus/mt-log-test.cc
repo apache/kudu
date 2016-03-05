@@ -26,7 +26,6 @@
 #include <vector>
 
 #include "kudu/consensus/log_index.h"
-#include "kudu/gutil/algorithm.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/locks.h"

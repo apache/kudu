@@ -26,7 +26,6 @@
 #include <glog/logging.h>
 #include <inttypes.h>
 
-#include "kudu/gutil/algorithm.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/map-util.h"

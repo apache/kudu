@@ -27,7 +27,6 @@
 #include "kudu/tablet/delta_compaction.h"
 #include "kudu/tablet/delta_iterator_merger.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/gutil/algorithm.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"

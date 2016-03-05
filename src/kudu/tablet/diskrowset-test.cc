@@ -23,7 +23,6 @@
 
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/algorithm.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/delta_compaction.h"
 #include "kudu/tablet/diskrowset.h"

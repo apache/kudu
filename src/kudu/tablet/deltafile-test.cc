@@ -24,7 +24,6 @@
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/delta_tracker.h"
-#include "kudu/gutil/algorithm.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/util/memenv/memenv.h"
 #include "kudu/util/test_macros.h"
