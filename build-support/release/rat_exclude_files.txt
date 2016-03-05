@@ -88,7 +88,6 @@ src/kudu/gutil/sysinfo.cc
 src/kudu/gutil/sysinfo.h
 src/kudu/gutil/template_util.h
 src/kudu/gutil/thread_annotations.h
-src/kudu/gutil/tuple.h
 src/kudu/gutil/type_traits.h
 src/kudu/gutil/valgrind.h
 src/kudu/gutil/auxiliary/atomicops-internals-arm-generic.h
