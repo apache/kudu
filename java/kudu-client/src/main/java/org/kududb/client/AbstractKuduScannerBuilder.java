@@ -86,7 +86,9 @@ public abstract class AbstractKuduScannerBuilder
    * @param predicateBytes predicates to add
    * @return this instance
    * @throws IllegalArgumentException thrown when the passed bytes aren't valid
+   * @deprecated use {@link #addPredicate}
    */
+  @Deprecated
   public S addColumnRangePredicatesRaw(byte[] predicateBytes) {
     for (Tserver.ColumnRangePredicatePB pb : ColumnRangePredicate.fromByteArray(predicateBytes)) {
       addPredicate(ColumnRangePredicate.fromPb(pb).toKuduPredicate());

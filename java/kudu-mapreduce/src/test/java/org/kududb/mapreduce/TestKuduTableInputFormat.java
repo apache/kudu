@@ -100,14 +100,14 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     }
 
     // Test using a predicate that filters the row out.
-    ColumnRangePredicate pred1 = new ColumnRangePredicate(schema.getColumnByIndex(1));
-    pred1.setLowerBound(3);
+    KuduPredicate pred1 = KuduPredicate.newComparisonPredicate(
+        schema.getColumnByIndex(1), KuduPredicate.ComparisonOp.GREATER_EQUAL, 3);
     reader = createRecordReader("*", Lists.newArrayList(pred1));
     assertFalse(reader.nextKeyValue());
   }
 
   private RecordReader<NullWritable, RowResult> createRecordReader(String columnProjection,
-        List<ColumnRangePredicate> predicates) throws IOException, InterruptedException {
+        List<KuduPredicate> predicates) throws IOException, InterruptedException {
     KuduTableInputFormat input = new KuduTableInputFormat();
     Configuration conf = new Configuration();
     conf.set(KuduTableInputFormat.MASTER_ADDRESSES_KEY, getMasterAddresses());
@@ -117,7 +117,7 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     }
     if (predicates != null) {
       String encodedPredicates = KuduTableMapReduceUtil.base64EncodePredicates(predicates);
-      conf.set(KuduTableInputFormat.ENCODED_COLUMN_RANGE_PREDICATES_KEY, encodedPredicates);
+      conf.set(KuduTableInputFormat.ENCODED_PREDICATES_KEY, encodedPredicates);
     }
     input.setConf(conf);
     List<InputSplit> splits = input.getSplits(null);

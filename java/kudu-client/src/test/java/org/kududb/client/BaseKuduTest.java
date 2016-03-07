@@ -104,7 +104,9 @@ public class BaseKuduTest {
         // shutting down the async client effectively does that.
       }
     } finally {
-      miniCluster.shutdown();
+      if (miniCluster != null) {
+        miniCluster.shutdown();
+      }
     }
   }
 

@@ -14,6 +14,20 @@
  */
 package org.kududb.mapreduce;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.net.util.Base64;
@@ -29,15 +43,9 @@ import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 import org.kududb.client.AsyncKuduClient;
 import org.kududb.client.ColumnRangePredicate;
+import org.kududb.client.KuduPredicate;
 import org.kududb.client.KuduTable;
 import org.kududb.client.Operation;
-
-import java.io.IOException;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.util.*;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /**
  * Utility class to setup MR jobs that use Kudu as an input and/or output.
@@ -145,7 +153,7 @@ public class KuduTableMapReduceUtil {
     protected long operationTimeoutMs = AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
     protected final String columnProjection;
     protected boolean cacheBlocks;
-    protected List<ColumnRangePredicate> columnRangePredicates = new ArrayList<>();
+    protected List<KuduPredicate> predicates = new ArrayList<>();
 
     /**
      * Constructor for the required fields to configure.
@@ -188,10 +196,7 @@ public class KuduTableMapReduceUtil {
         conf.set(KuduTableInputFormat.COLUMN_PROJECTION_KEY, columnProjection);
       }
 
-      if (!columnRangePredicates.isEmpty()) {
-        conf.set(KuduTableInputFormat.ENCODED_COLUMN_RANGE_PREDICATES_KEY,
-            base64EncodePredicates(columnRangePredicates));
-      }
+      conf.set(KuduTableInputFormat.ENCODED_PREDICATES_KEY, base64EncodePredicates(predicates));
 
       if (addDependencies) {
         addDependencyJars(job);
@@ -199,9 +204,17 @@ public class KuduTableMapReduceUtil {
     }
   }
 
-  static String base64EncodePredicates(List<ColumnRangePredicate> predicates) {
-    byte[] predicateBytes = ColumnRangePredicate.toByteArray(predicates);
-    return Base64.encodeBase64String(predicateBytes);
+  /**
+   * Returns the provided predicates as a Base64 encoded string.
+   * @param predicates the predicates to encode
+   * @return the encoded predicates
+   */
+  static String base64EncodePredicates(List<KuduPredicate> predicates) throws IOException {
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    for (KuduPredicate predicate : predicates) {
+      predicate.toPB().writeDelimitedTo(baos);
+    }
+    return Base64.encodeBase64String(baos.toByteArray());
   }
 
 
@@ -297,9 +310,20 @@ public class KuduTableMapReduceUtil {
      * Adds a new predicate that will be pushed down to all the tablets.
      * @param predicate a predicate to add
      * @return this instance
+     * @deprecated use {@link #addPredicate}
      */
+    @Deprecated
     public TableInputFormatConfigurator addColumnRangePredicate(ColumnRangePredicate predicate) {
-      this.columnRangePredicates.add(predicate);
+      return addPredicate(predicate.toKuduPredicate());
+    }
+
+    /**
+     * Adds a new predicate that will be pushed down to all the tablets.
+     * @param predicate a predicate to add
+     * @return this instance
+     */
+    public TableInputFormatConfigurator addPredicate(KuduPredicate predicate) {
+      this.predicates.add(predicate);
       return this;
     }
   }

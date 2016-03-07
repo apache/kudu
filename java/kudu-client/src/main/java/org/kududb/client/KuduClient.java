@@ -198,12 +198,22 @@ public class KuduClient implements AutoCloseable {
 
   /**
    * Creates a new {@link KuduScanner.KuduScannerBuilder} for a particular table.
-   * @param table the name of the table you intend to scan.
+   * @param table the table you intend to scan.
    * The string is assumed to use the platform's default charset.
-   * @return a new scanner builder for this table
+   * @return a new scanner builder for the table
    */
   public KuduScanner.KuduScannerBuilder newScannerBuilder(KuduTable table) {
     return new KuduScanner.KuduScannerBuilder(asyncClient, table);
+  }
+
+  /**
+   * Creates a new {@link KuduScanToken.KuduScanTokenBuilder} for a particular table.
+   * Used for integrations with compute frameworks.
+   * @param table the table you intend to scan
+   * @return a new scan token builder for the table
+   */
+  public KuduScanToken.KuduScanTokenBuilder newScanTokenBuilder(KuduTable table) {
+    return new KuduScanToken.KuduScanTokenBuilder(asyncClient, table);
   }
 
   /**

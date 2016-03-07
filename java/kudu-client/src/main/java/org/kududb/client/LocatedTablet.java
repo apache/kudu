@@ -46,11 +46,11 @@ public class LocatedTablet {
     this.partition = ProtobufHelper.pbToPartition(pb.getPartition());
     this.tabletId = pb.getTabletId().toByteArray();
 
-    List<Replica> reps = Lists.newArrayList();
+    ImmutableList.Builder<Replica> reps = ImmutableList.builder();
     for (ReplicaPB repPb : pb.getReplicasList()) {
       reps.add(new Replica(repPb));
     }
-    this.replicas = ImmutableList.copyOf(reps);
+    this.replicas = reps.build();
   }
 
   public List<Replica> getReplicas() {

@@ -676,7 +676,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * <p>
    * Use {@code AsyncUtil.addCallbacksDeferring} to add this as the callback and
    * {@link AsyncKuduClient.RetryRpcErrback} as the "errback" to the {@code Deferred}
-   * returned by {@link #locateTablet(String, byte[])}.
+   * returned by {@link #locateTablet(KuduTable, byte[])}.
    * @param <R> RPC's return type.
    * @param <D> Previous query's return type, which we don't use, but need to specify in order to
    *           tie it all together.
@@ -700,7 +700,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * <p>
    * Use {@code AsyncUtil.addCallbacksDeferring} to add this as the "errback" and
    * {@link RetryRpcCB} as the callback to the {@code Deferred} returned by
-   * {@link #locateTablet(String, byte[])}.
+   * {@link #locateTablet(KuduTable, byte[])}.
    * @see #delayedSendRpcToTablet(KuduRpc, KuduException)
    * @param <R> The type of the original RPC.
    */

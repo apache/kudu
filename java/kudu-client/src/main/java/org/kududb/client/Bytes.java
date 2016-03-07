@@ -1080,7 +1080,7 @@ public final class Bytes {
   }
 
   /**
-   * Utility methd to write a byte array to a data output. Equivalent of doing a writeInt of the
+   * Utility method to write a byte array to a data output. Equivalent of doing a writeInt of the
    * length followed by a write of the byte array. Convert back with {@link #readByteArray}
    * @param dataOutput
    * @param b
