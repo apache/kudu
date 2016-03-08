@@ -1656,6 +1656,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
 
   // Elect one of the other servers.
   ASSERT_OK(StartElection(tservers[1], tablet_id_, MonoDelta::FromSeconds(10)));
+  leader_tserver = tservers[1];
 
   // Resume the original leader. Its change-config operation will now be aborted
   // since it was never replicated to the majority, and the new leader will have
@@ -1665,6 +1666,14 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
   // Insert some data and verify that it propagates to all servers.
   NO_FATALS(InsertTestRowsRemoteThread(0, 10, 1, vector<CountDownLatch*>()));
   ASSERT_ALL_REPLICAS_AGREE(10);
+
+  // Try another config change.
+  // This acts as a regression test for KUDU-1338, in which aborting the original
+  // config change didn't properly unset the 'pending' configuration.
+  ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tservers[2],
+                         -1, MonoDelta::FromSeconds(5),
+                         &error_code));
+  NO_FATALS(InsertTestRowsRemoteThread(10, 10, 1, vector<CountDownLatch*>()));
 }
 
 // Test the atomic CAS arguments to ChangeConfig() add server and remove server.

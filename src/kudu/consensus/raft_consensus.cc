@@ -1873,7 +1873,8 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   string op_type_str = OperationType_Name(op_type);
   CHECK(IsConsensusOnlyOperation(op_type)) << "Unexpected op type: " << op_type_str;
   if (!status.ok()) {
-    // TODO: Do something with the status on failure?
+    // In the case that a change-config operation is aborted, RaftConsensusState
+    // already handled clearing the pending config state.
     LOG(INFO) << state_->LogPrefixThreadSafe() << op_type_str << " replication failed: "
               << status.ToString();
     client_cb.Run(status);

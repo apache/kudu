@@ -59,7 +59,6 @@ Raft author’s PhD thesis)](https://docs.google.com/a/cloudera.com/document/d/1
 
 We reference [2] a lot in this doc.
 
-
 ## Quorum membership change
 In Kudu, we change quorum membership following the one-by-one
 membership change design [2] from Diego Ongaro’s PhD thesis. We
@@ -81,13 +80,13 @@ the Master. We’ll say the node to be added to the cluster is named
 `new_node`.
 
 1. Driver initiates execution of remote bootstrap procedure of
-`new_node` from the current leader bootstrap_source using an RPC call to
+`new_node` from the current leader `bootstrap_source` using an RPC call to
 the `new_node`. Remote bootstrap runs to completion, which means all
 data and logs at the time remote bootstrap was initiated were
 replicated to `new_node`. Driver polls `new_node` for indication that the
 remote bootstrap process is complete.
 
-If the bootstrap_source node crashes before remote bootstrap is
+If the `bootstrap_source` node crashes before remote bootstrap is
 complete, the bootstrap fails and the driver must start the entire
 process over from the beginning. If the driver or `new_node` crashes and
 the tablet never joins the quorum, the Master should eventually delete
@@ -113,7 +112,7 @@ the quorum change in-memory. It does not wait for commitment to apply
 the change. See rationale in [2] section 4.1.
 
 4. The remote bootstrap session between `new_node` and
-bootstrap_source is closed once the config change to transition the
+`bootstrap_source` is closed once the config change to transition the
 node to `PRE_FOLLOWER` has been committed. This implies releasing an
 anchor on the log. Since `new_node` is already a member of the quorum
 receiving log updates, it should hold a log anchor on the leader

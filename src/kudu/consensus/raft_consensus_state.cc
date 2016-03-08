@@ -420,8 +420,21 @@ Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
 
   for (; iter != pending_txns_.end();) {
     const scoped_refptr<ConsensusRound>& round = (*iter).second;
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting uncommitted operation due to leader change: "
-                                   << round->replicate_msg()->id();
+    auto op_type = round->replicate_msg()->op_type();
+    LOG_WITH_PREFIX_UNLOCKED(INFO)
+        << "Aborting uncommitted " << OperationType_Name(op_type)
+        << " operation due to leader change: " << round->replicate_msg()->id();
+
+    // When aborting a config-change operation, go back to using the committed
+    // configuration.
+    if (PREDICT_FALSE(op_type == CHANGE_CONFIG_OP)) {
+      CHECK(IsConfigChangePendingUnlocked())
+          << LogPrefixUnlocked() << "Aborting CHANGE_CONFIG_OP but "
+          << "there was no pending config set. Op: "
+          << round->replicate_msg()->ShortDebugString();
+      ClearPendingConfigUnlocked();
+    }
+
     round->NotifyReplicationFinished(Status::Aborted("Transaction aborted by new leader"));
     // Erase the entry from pendings.
     pending_txns_.erase(iter++);
