@@ -19,6 +19,7 @@
 
 #include "kudu/common/scan_predicate.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/util/memory/overwrite.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

@@ -23,11 +23,11 @@
 #include "kudu/common/row.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/bitmap.h"
 
 namespace kudu {
 
+class Arena;
 class RowBlockRow;
 
 // Bit-vector representing the selection status of each row in a row block.

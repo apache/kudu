@@ -26,6 +26,7 @@
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/memory.h"
+#include "kudu/util/memory/overwrite.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"

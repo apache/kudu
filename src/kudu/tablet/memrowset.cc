@@ -33,6 +33,7 @@
 #include "kudu/tablet/compaction.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mem_tracker.h"
+#include "kudu/util/memory/overwrite.h"
 
 DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
             "generation for iteration");

@@ -22,11 +22,11 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/memory/overwrite.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
-class Arena;
 class ColumnBlockCell;
 
 // A block of data all belonging to a single column.

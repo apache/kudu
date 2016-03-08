@@ -27,6 +27,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/memory/overwrite.h"
 #include "kudu/util/status.h"
 
 using strings::Substitute;

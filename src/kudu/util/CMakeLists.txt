@@ -120,7 +120,9 @@ set(UTIL_SRCS
   logging.cc
   malloc.cc
   memcmpable_varint.cc
-  memory/arena.cc memory/memory.cc
+  memory/arena.cc
+  memory/memory.cc
+  memory/overwrite.cc
   memenv/memenv.cc
   mem_tracker.cc
   metrics.cc
@@ -159,6 +161,11 @@ set(UTIL_SRCS
   url-coding.cc
   version_info.cc
 )
+
+# overwrite.cc contains a single function which would be a hot spot in
+# debug builds. It's separated into a separate file so it can be
+# optimized regardless of the default optimization options.
+set_source_files_properties(memory/overwrite.cc PROPERTIES COMPILE_FLAGS "-O3")
 
 if(NOT APPLE)
   set(UTIL_SRCS
