@@ -1,6 +1,6 @@
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file. See the AUTHORS file for names of contributors.
+// found in the LICENSE file.
 //
 // A Cache is an interface that maps keys to values.  It has internal
 // synchronization and may be safely accessed concurrently from
