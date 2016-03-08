@@ -295,8 +295,6 @@ class TabletBootstrap {
   scoped_refptr<log::Log> log_;
   std::shared_ptr<log::LogReader> log_reader_;
 
-  Arena arena_;
-
   gscoped_ptr<ConsensusMetadata> cmeta_;
 
   // Statistics on the replay of entries in the log.
@@ -423,8 +421,7 @@ TabletBootstrap::TabletBootstrap(
       mem_tracker_(std::move(mem_tracker)),
       metric_registry_(metric_registry),
       listener_(listener),
-      log_anchor_registry_(log_anchor_registry),
-      arena_(256 * 1024, 4 * 1024 * 1024) {}
+      log_anchor_registry_(log_anchor_registry) {}
 
 Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   scoped_refptr<Log>* rebuilt_log,
@@ -1255,8 +1252,6 @@ Status TabletBootstrap::PlayRowOperations(WriteTransactionState* tx_state,
   Schema inserts_schema;
   RETURN_NOT_OK_PREPEND(SchemaFromPB(schema_pb, &inserts_schema),
                         "Couldn't decode client schema");
-
-  arena_.Reset();
 
   RETURN_NOT_OK_PREPEND(tablet_->DecodeWriteOperations(&inserts_schema, tx_state),
                         Substitute("Could not decode row operations: $0",
