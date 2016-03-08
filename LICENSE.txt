@@ -512,12 +512,19 @@ under the following 3-clause BSD license:
 ================================================================================
 
 The following dependencies or pieces of incorporated source code have licenses
-such that either:
+under one of the following categories:
+
   (a) do not require their license text to be re-distributed with binary
-      distributions, or
+      distributions (e.g. MIT license, Boost license)
+
   (b) have no requirements about re-distributing their license text in either
-      source or binary distributions, or
-  (c) are the same Apache 2.0 license reproduced in its entirety above.
+      source or binary distributions (e.g. public domain)
+
+  (c) require inclusion of the license text in both source and binary distributions,
+      but are used only at build-time and thus not incorporated in binary artifacts
+      (e.g. BSD-licensed build tooling)
+
+  (d) are the same Apache 2.0 license reproduced in its entirety above.
 
 Therefore, we do not reproduce their licenses in their entirety in this file.
 --------------------------------------------------------------------------------
