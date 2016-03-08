@@ -4,9 +4,8 @@
 #ifndef KUDU_UTIL_RANDOM_H_
 #define KUDU_UTIL_RANDOM_H_
 
-#include <stdint.h>
-
 #include <cmath>
+#include <cstdint>
 #include <random>
 #include <vector>
 
@@ -232,8 +231,8 @@ class StdUniformRNG {
   uint32_t operator()() {
     return r_->Next32();
   }
-  uint32_t min() const { return 0; }
-  uint32_t max() const { return (1L << 31) - 1; }
+  constexpr static uint32_t min() { return 0; }
+  constexpr static uint32_t max() { return (1L << 31) - 1; }
 
  private:
   R* r_;
