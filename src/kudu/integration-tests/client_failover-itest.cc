@@ -69,6 +69,12 @@ TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
   // Create the test table.
   TestWorkload workload(cluster_.get());
   workload.set_write_timeout_millis(kTimeout.ToMilliseconds());
+  // We count on each flush from the client corresponding to exactly one
+  // consensus operation in this test. If we use batches with more than one row,
+  // the client is allowed to (and will on rare occasion) break the batches
+  // up into more than one write request, resulting in more than one op
+  // in the log.
+  workload.set_write_batch_size(1);
   workload.Setup();
 
   // Figure out the tablet id.
@@ -120,6 +126,7 @@ TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
   workload.StopAndJoin();
+  LOG(INFO) << "workload completed " << workload.batches_completed() << " batches";
 
   // We don't want the leader that takes over after we kill the first leader to
   // be unsure whether the writes have been committed, so wait until all

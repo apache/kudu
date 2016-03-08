@@ -119,6 +119,9 @@ class TestWorkload {
 
   // Return the number of batches in which we have successfully inserted at
   // least one row.
+  // NOTE: it is not safe to assume that this is exactly equal to the number
+  // of log operations generated on the TS side. The client may split a single
+  // Flush() call into multiple batches.
   int64_t batches_completed() const {
     return batches_completed_.Load();
   }
