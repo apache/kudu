@@ -22,7 +22,7 @@ made.
 
 | Document | Component(s) | Discussion |
 | -------- | ------------ | ---------- |
-| [Scan Optimization & Partition Pruning](scan-optimization-partition-pruning.md) | Client, Tablet | [gerrit](http://gerrit.cloudera.org:8080/#/c/2149/) |
+| [Scan optimization and partition pruning](scan-optimization-partition-pruning.md) | Client, Tablet | [gerrit](http://gerrit.cloudera.org:8080/2149) |
 | [CFile format](cfile.md) | Tablet | N/A |
 | [Codegen API and impl. details](codegen.md) | Server | N/A |
 | [Consensus design](consensus.md) | Consensus | N/A |
@@ -34,3 +34,4 @@ made.
 | [Schema change design](schema-change.md) | Master, Tablet | N/A |
 | [Maintenance operation scheduling](triggering-maintenance-ops.md) | Master, Tablet Server | N/A |
 | [C++ client design and impl. details](cpp-client.md) | Client | N/A |
+| [(old) Heartbeating between tservers and multiple masters](old-multi-master-heartbeating.md) | Master | [gerrit](http://gerrit.cloudera.org:8080/2495) |
