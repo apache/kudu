@@ -29,4 +29,8 @@ made.
 | [Master design](master.md) | Master | N/A |
 | [RPC design and impl. details](rpc.md) | RPC | N/A |
 | [Tablet design, impl. details and comparison to other systems](tablet.md) | Tablet | N/A |
+| [Tablet compaction design and impl.](compaction.md) | Tablet | N/A |
+| [Tablet compaction policy](compaction-policy.md) | Tablet | N/A |
+| [Schema change design](schema-change.md) | Master, Tablet | N/A |
+| [Maintenance operation scheduling](triggering-maintenance-ops.md) | Master, Tablet Server | N/A |
 | [C++ client design and impl. details](cpp-client.md) | Client | N/A |

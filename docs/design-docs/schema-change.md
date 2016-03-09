@@ -1,4 +1,4 @@
-
+<!--
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -10,8 +10,8 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+-->
 
-============================================================
 Schema Changes
 ============================================================
 
@@ -24,28 +24,32 @@ have the same name.
 
 For example:
 
+```
 > CREATE TABLE x (col_a int, col_b int);
 > INSERT INTO x VALUES (1, 1);
 > ALTER TABLE x DROP COLUMN col_b;
 > ALTER TABLE x ADD COLUMN col_b int not null default 999;
+```
 
 In this case, although the Schema at the end of the sequence looks the same
 as the one at the beginning, the correct data is:
 
+```
 > SELECT * from x;
  col_a   | col_b
 ------------------
   1      | 999
+```
 
-In other words, we cannot re-materialize data from the old 'col_b' into the new
-'col_b'.
+In other words, we cannot re-materialize data from the old `col_b` into the new
+`col_b`.
 
 If we were to dump the initial schema and the new schema, we would see that although
-the two 'col_b's have the same name, they would have different column IDs.
+the two `col_b`s have the same name, they would have different column IDs.
 
 Column IDs are internal to the server and not sent by the user on RPCs. Clients
 specify columns by name. This is because we expect a client to continue to make
-queries like "select sum(col_b) from x;" without any refresh of the schema, even
+queries like "`select sum(col_b) from x;`" without any refresh of the schema, even
 if the column is dropped and re-added with new data.
 
 Schemas specified in RPCs
@@ -64,6 +68,8 @@ smaller to larger integers on read, promote non-null data to a nullable read, et
 
 Handling varying schemas at read time
 ------------------------------
+
+```
  + Tablet
  |---- MemRowSet
  |---- DiskRowSet N
@@ -71,6 +77,7 @@ Handling varying schemas at read time
  |-------- Delta Tracker
  |------------ Delta Memstore
  |------------ Delta File N
+```
 
 Because the Schema of a table may change over time, different rowsets may have
 been written with different schemas. At read time, the server determines a Schema
@@ -81,10 +88,10 @@ the schema change and thus may be  missing some columns.
 For each column in the read schema which is not present in the data, that column
 may be treated in one of two ways:
 
-  1) In the case that the new column has a "read default" in the metadata, that
-     value is materialized for each cell.
-  2) If no "read default" is present, then the column must be nullable. In that
-     case, a column of NULLs is materialized.
+1. In the case that the new column has a "read default" in the metadata, that
+   value is materialized for each cell.
+2. If no "read default" is present, then the column must be nullable. In that
+   case, a column of NULLs is materialized.
 
 Currently, Kudu does not handle type changes. In the future, we may also need to
 add type adapters to convert older data to the new type.

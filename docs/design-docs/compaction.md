@@ -1,4 +1,4 @@
-
+<!--
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -10,26 +10,25 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
-This document explains the mechanics of performing a rowset flush/compaction.
-For details explaining how compactions are selected, see compaction-policy.txt.
-NOTE: this does not describe anything about flushing delta stores to delta files!
+-->
 
 Compaction design notes
-------------------------------------------------------------
+=======================
+
+This document explains the mechanics of performing a rowset flush/compaction.
+For details explaining how compactions are selected, see compaction-policy.md.
+NOTE: this does not describe anything about flushing delta stores to delta files!
 
 Goal: Take two or more RowSets with overlapping key ranges, and merge
 them into a new RowSet, while updates are concurrently being applied.
 The output RowSet should also garbage collect (i.e reclaim storage from)
 any rows which were deleted in the old RowSets.
 
-------------------------------
-
 Let's start with the simple example of compacting from 1 input rowset to
 1 output rowset. This has the effect of removing GC-able data and
 applying updates. The compaction has two main phases:
 
-
+```
       "flush_snap"
            |
            |
@@ -46,7 +45,7 @@ applying updates. The compaction has two main phases:
                                        |----------->
 
 |--------------  time ----------------------------->
-
+```
 
 System steady state:
   - Updates are applied only to the "source RowSet"
@@ -87,7 +86,7 @@ End of Phase 2: swap RowSets
     only need to be applied to the output RowSet, and the old RowSet may be dropped.
 
 Extending to multiple RowSets
-------------------------------
+-----------------------------
 
 The above algorithm can be extended to multiple RowSets equally well. At the beginning
 of the compaction, each RowSet is snapshotted, and a snapshot iterator created. A merge

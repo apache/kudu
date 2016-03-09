@@ -1,4 +1,4 @@
-
+<!--
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -10,8 +10,8 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+-->
 
-===============================================================================
 Maintenance Op Scheduling
 ===============================================================================
 
@@ -38,11 +38,11 @@ are:
 Some other criteria that we considered, but rejected for v1 include:
 1. free disk space.
 2. load-balancing between disks or disksets which will be touched by
-maintenance operations
+   maintenance operations
 
 Free disk space should not be an issue in most competently administered setups.
 We may revisit this later, but for the initial version, it is best to assume we
-have enough space. 
+have enough space.
 
 We can't consider disk-based scheduling right now since we don't have support
 for multiple disks yet.
@@ -52,7 +52,7 @@ Memory usage
 -------------------------------------------------------------------------------
 Memory usage can be broken down into a few buckets:
 1. System overhead (C++ data structures, operating system overheads, and so
-forth).
+   forth).
 2. MemRowSets
 3. The LRU block cache
 
@@ -190,7 +190,7 @@ registered MaintenanceOp objects and determines whether it should execute any
 of them.  The default polling interval is 250 ms, but this is configurable.
 Access to the MaintenanceOp is assumed to be thread-safe.  It's important to
 note that the scheduler can choose any op available to it.  It is not bound to
-execute operations on a first-come, first-serve basis.  
+execute operations on a first-come, first-serve basis.
 
 If the MaintenanceManager decides to execute one of these operations, it will
 run it in a thread-pool of configurable size.  We assume that maintenance
