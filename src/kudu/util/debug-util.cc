@@ -39,10 +39,19 @@ typedef sig_t sighandler_t;
 
 // In coverage builds, this symbol will be defined and allows us to flush coverage info
 // to disk before exiting.
+#if defined(__APPLE__)
+  // OS X does not support weak linking at compile time properly.
+  #if defined(COVERAGE_BUILD)
+extern "C" void __gcov_flush() __attribute__((weak_import));
+  #else
+extern "C" void (*__gcov_flush)() = nullptr;
+  #endif
+#else
 extern "C" {
 __attribute__((weak))
 void __gcov_flush();
 }
+#endif
 
 // Evil hack to grab a few useful functions from glog
 namespace google {
