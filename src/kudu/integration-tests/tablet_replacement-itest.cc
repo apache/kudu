@@ -84,7 +84,8 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
   ASSERT_OK(itest::RemoveServer(leader_ts, tablet_id, follower_ts, boost::none, timeout));
 
   // Wait for the Master to tombstone the replica.
-  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kFollowerIndex, tablet_id, TABLET_DATA_TOMBSTONED,
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kFollowerIndex, tablet_id,
+                                                 { TABLET_DATA_TOMBSTONED },
                                                  timeout));
 
   if (!AllowSlowTests()) {
@@ -105,14 +106,14 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
   Status s = itest::AddServer(leader_ts, tablet_id, follower_ts, RaftPeerPB::VOTER,
                               boost::none, MonoDelta::FromSeconds(5));
   ASSERT_TRUE(s.IsTimedOut());
-  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kFollowerIndex, tablet_id, TABLET_DATA_READY,
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kFollowerIndex, tablet_id, { TABLET_DATA_READY },
                                                  timeout));
   ASSERT_OK(itest::WaitForServersToAgree(timeout, active_ts_map, tablet_id, 3));
 
   // Sleep for a few more seconds and check again to ensure that the Master
   // didn't end up tombstoning the replica.
   SleepFor(MonoDelta::FromSeconds(3));
-  ASSERT_OK(inspect_->CheckTabletDataStateOnTS(kFollowerIndex, tablet_id, TABLET_DATA_READY));
+  ASSERT_OK(inspect_->CheckTabletDataStateOnTS(kFollowerIndex, tablet_id, { TABLET_DATA_READY }));
 }
 
 // Ensure that the Master will tombstone a replica if it reports in with an old
@@ -166,7 +167,8 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneOldReplicaOnReport) {
   ASSERT_OK(cluster_->tablet_server(kFollowerIndex)->Restart());
 
   // Wait for the Master to tombstone the revived follower.
-  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kFollowerIndex, tablet_id, TABLET_DATA_TOMBSTONED,
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kFollowerIndex, tablet_id,
+                                                 { TABLET_DATA_TOMBSTONED },
                                                  timeout));
 }
 

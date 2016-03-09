@@ -557,8 +557,10 @@ TEST_F(RemoteBootstrapITest, TestDeleteLeaderDuringRemoteBootstrapStressTest) {
                                   timeout));
 
     // Wait for remote bootstrap to start.
-    ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(follower_index, tablet_id,
-                                                   tablet::TABLET_DATA_COPYING, timeout));
+    ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
+        follower_index, tablet_id,
+        { tablet::TABLET_DATA_COPYING, tablet::TABLET_DATA_READY },
+        timeout));
 
     // Tombstone the leader.
     LOG(INFO) << "Tombstoning leader tablet " << tablet_id << " on TS " << leader_ts->uuid();
@@ -727,7 +729,7 @@ TEST_F(RemoteBootstrapITest, TestSlowBootstrapDoesntFail) {
 
   // Wait for remote bootstrap to start.
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(1, tablet_id,
-                                                 tablet::TABLET_DATA_COPYING, timeout));
+                                                 { tablet::TABLET_DATA_COPYING }, timeout));
 
   workload.StopAndJoin();
   ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 1));

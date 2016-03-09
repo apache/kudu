@@ -181,16 +181,30 @@ Status ExternalMiniClusterFsInspector::ReadConsensusMetadataOnTS(int index,
   return pb_util::ReadPBContainerFromPath(env_, cmeta_file, cmeta_pb);
 }
 
-Status ExternalMiniClusterFsInspector::CheckTabletDataStateOnTS(int index,
-                                                                const string& tablet_id,
-                                                                TabletDataState state) {
+Status ExternalMiniClusterFsInspector::CheckTabletDataStateOnTS(
+    int index,
+    const string& tablet_id,
+    const vector<TabletDataState>& allowed_states) {
+
   TabletSuperBlockPB sb;
   RETURN_NOT_OK(ReadTabletSuperBlockOnTS(index, tablet_id, &sb));
-  if (PREDICT_FALSE(sb.tablet_data_state() != state)) {
-    return Status::IllegalState("Tablet data state != " + TabletDataState_Name(state),
-                                TabletDataState_Name(sb.tablet_data_state()));
+  if (std::find(allowed_states.begin(), allowed_states.end(), sb.tablet_data_state()) !=
+      allowed_states.end()) {
+    return Status::OK();
   }
-  return Status::OK();
+
+  vector<string> state_names;
+  for (auto state : allowed_states) {
+    state_names.push_back(TabletDataState_Name(state));
+  }
+  string expected_str = JoinStrings(state_names, ",");
+  if (state_names.size() > 1) {
+    expected_str = "one of: " + expected_str;
+  }
+
+  return Status::IllegalState(Substitute("State $0 unexpected, expected $1",
+                                         TabletDataState_Name(sb.tablet_data_state()),
+                                         expected_str));
 }
 
 Status ExternalMiniClusterFsInspector::WaitForNoData(const MonoDelta& timeout) {
@@ -262,23 +276,24 @@ Status ExternalMiniClusterFsInspector::WaitForReplicaCount(int expected, const M
                                      expected, found));
 }
 
-Status ExternalMiniClusterFsInspector::WaitForTabletDataStateOnTS(int index,
-                                                                  const string& tablet_id,
-                                                                  TabletDataState expected,
-                                                                  const MonoDelta& timeout) {
+Status ExternalMiniClusterFsInspector::WaitForTabletDataStateOnTS(
+    int index,
+    const string& tablet_id,
+    const vector<TabletDataState>& expected_states,
+    const MonoDelta& timeout) {
   MonoTime start = MonoTime::Now(MonoTime::FINE);
   MonoTime deadline = start;
   deadline.AddDelta(timeout);
   Status s;
   while (true) {
-    s = CheckTabletDataStateOnTS(index, tablet_id, expected);
+    s = CheckTabletDataStateOnTS(index, tablet_id, expected_states);
     if (s.ok()) return Status::OK();
     if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) break;
     SleepFor(MonoDelta::FromMilliseconds(5));
   }
-  return Status::TimedOut(Substitute("Timed out after $0 waiting for tablet data state $1: $2",
+  return Status::TimedOut(Substitute("Timed out after $0 waiting for correct tablet state: $1",
                                      MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
-                                     TabletDataState_Name(expected), s.ToString()));
+                                     s.ToString()));
 }
 
 Status ExternalMiniClusterFsInspector::WaitForFilePatternInTabletWalDirOnTs(

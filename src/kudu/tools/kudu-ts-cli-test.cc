@@ -89,7 +89,7 @@ TEST_F(KuduTsCliTest, TestDeleteTablet) {
   argv.push_back("Deleting for kudu-ts-cli-test");
   ASSERT_OK(Subprocess::Call(argv));
 
-  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(0, tablet_id, tablet::TABLET_DATA_TOMBSTONED));
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(0, tablet_id, { tablet::TABLET_DATA_TOMBSTONED }));
   TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
   ASSERT_OK(itest::WaitUntilTabletInState(ts, tablet_id, tablet::SHUTDOWN, timeout));
 }
