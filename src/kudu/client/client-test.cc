@@ -948,7 +948,13 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   // Create test table and insert test rows.
   const string kScanTable = "TestScanFaultTolerance";
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, 3, vector<const KuduPartialRow*>(), &table));
+
+  // We use only two replicas in this test so that every write is fully replicated to both
+  // servers (the Raft majority is 2/2). This reduces potential flakiness if the scanner tries
+  // to read from a replica that is lagging for some reason. This won't be necessary once
+  // we implement full support for snapshot consistency (KUDU-430).
+  const int kNumReplicas = 2;
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, kNumReplicas, {}, &table));
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
 
   // Do an initial scan to determine the expected rows for later verification.
@@ -961,7 +967,7 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
     // disk.
     if (with_flush) {
       string tablet_id = GetFirstTabletId(table.get());
-      for (int i = 0; i < 3; i++) {
+      for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
         scoped_refptr<TabletPeer> tablet_peer;
         ASSERT_TRUE(cluster_->mini_tablet_server(i)->server()->tablet_manager()->LookupTablet(
                 tablet_id, &tablet_peer));

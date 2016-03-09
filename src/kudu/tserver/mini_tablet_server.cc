@@ -90,6 +90,11 @@ Status MiniTabletServer::WaitStarted() {
 
 void MiniTabletServer::Shutdown() {
   if (started_) {
+    // Save the bound ports back into the options structure so that, if we restart the
+    // server, it will come back on the same address. This is necessary since we don't
+    // currently support tablet servers re-registering on different ports (KUDU-418).
+    opts_.webserver_opts.port = bound_http_addr().port();
+    opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", bound_rpc_addr().port());
     server_->Shutdown();
     server_.reset();
   }
@@ -98,8 +103,6 @@ void MiniTabletServer::Shutdown() {
 
 Status MiniTabletServer::Restart() {
   CHECK(started_);
-  opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", bound_rpc_addr().port());
-  opts_.webserver_opts.port = bound_http_addr().port();
   Shutdown();
   RETURN_NOT_OK(Start());
   return Status::OK();
