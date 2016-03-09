@@ -2723,7 +2723,7 @@ TEST_F(ClientTest, TestLastErrorEmbeddedInScanTimeoutStatus) {
 
     // Restart, but inject latency so that startup is very slow.
     FLAGS_log_inject_latency = true;
-    FLAGS_log_inject_latency_ms_mean = 1000;
+    FLAGS_log_inject_latency_ms_mean = 5000;
     FLAGS_log_inject_latency_ms_stddev = 0;
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       MiniTabletServer* ts = cluster_->mini_tablet_server(i);
