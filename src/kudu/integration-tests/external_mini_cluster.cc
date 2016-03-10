@@ -64,7 +64,7 @@ namespace kudu {
 static const char* const kMasterBinaryName = "kudu-master";
 static const char* const kTabletServerBinaryName = "kudu-tserver";
 static double kProcessStartTimeoutSeconds = 30.0;
-static double kTabletServerRegistrationTimeoutSeconds = 10.0;
+static double kTabletServerRegistrationTimeoutSeconds = 15.0;
 
 #if defined(__APPLE__)
 static bool kBindToUniqueLoopbackAddress = false;

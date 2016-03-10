@@ -164,7 +164,7 @@ class MiniCluster {
  private:
   enum {
     kTabletReportWaitTimeSeconds = 5,
-    kRegistrationWaitTimeSeconds = 5,
+    kRegistrationWaitTimeSeconds = 15,
     kMasterLeaderElectionWaitTimeSeconds = 10
   };
 
