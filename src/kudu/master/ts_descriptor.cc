@@ -61,6 +61,19 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
   boost::lock_guard<simple_spinlock> l(lock_);
   CHECK_EQ(instance.permanent_uuid(), permanent_uuid_);
 
+  // TODO(KUDU-418): we don't currently support changing IPs or hosts since the
+  // host/port is stored persistently in each tablet's metadata.
+  if (registration_ && registration_->ShortDebugString() != registration.ShortDebugString()) {
+    string msg = strings::Substitute(
+        "Tablet server $0 is attempting to re-register with a different host/port. "
+        "This is not currently supported. Old: {$1} New: {$2}",
+        instance.permanent_uuid(),
+        registration_->ShortDebugString(),
+        registration.ShortDebugString());
+    LOG(ERROR) << msg;
+    return Status::InvalidArgument(msg);
+  }
+
   if (instance.instance_seqno() < latest_seqno_) {
     return Status::AlreadyPresent(
       strings::Substitute("Cannot register with sequence number $0:"

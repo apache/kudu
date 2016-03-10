@@ -209,6 +209,21 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     ASSERT_EQ("my-ts-uuid", resp.servers(0).instance_id().permanent_uuid());
     ASSERT_EQ(1, resp.servers(0).instance_id().instance_seqno());
   }
+
+  // Ensure that trying to re-register with a different port fails.
+  {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    req.mutable_registration()->CopyFrom(fake_reg);
+    req.mutable_registration()->mutable_rpc_addresses(0)->set_port(1001);
+    Status s = proxy_->TSHeartbeat(req, &resp, &rpc);
+    ASSERT_TRUE(s.IsRemoteError());
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "Tablet server my-ts-uuid is attempting to re-register "
+                        "with a different host/port.");
+  }
 }
 
 Status MasterTest::CreateTable(const string& table_name,
