@@ -569,17 +569,11 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       subs->PushService(service);
 
       Print(printer, *subs,
-        "class $service_name$Proxy {\n"
+        "class $service_name$Proxy : public ::kudu::rpc::Proxy {\n"
         " public:\n"
         "  $service_name$Proxy(const std::shared_ptr< ::kudu::rpc::Messenger>\n"
         "                &messenger, const ::kudu::Sockaddr &sockaddr);\n"
         "  ~$service_name$Proxy();\n"
-        "\n"
-        "  // Set the user information for the connection.\n"
-        "  void set_user_credentials(const ::kudu::rpc::UserCredentials& user_credentials);\n"
-        "\n"
-        "  // Get the current user information for the connection.\n"
-        "  const ::kudu::rpc::UserCredentials& user_credentials() const;\n"
         "\n"
         );
 
@@ -600,8 +594,6 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         subs->Pop();
       }
       Print(printer, *subs,
-      " private:\n"
-      "  ::kudu::rpc::Proxy proxy_;\n"
       "};\n");
       subs->Pop();
     }
@@ -636,20 +628,12 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "$service_name$Proxy::$service_name$Proxy(\n"
         "   const std::shared_ptr< ::kudu::rpc::Messenger> &messenger,\n"
         "   const ::kudu::Sockaddr &remote)\n"
-        "  : proxy_(messenger, remote, \"$full_service_name$\") {\n"
+        "  : Proxy(messenger, remote, \"$full_service_name$\") {\n"
         "}\n"
         "\n"
         "$service_name$Proxy::~$service_name$Proxy() {\n"
         "}\n"
         "\n"
-        "void $service_name$Proxy::set_user_credentials(\n"
-        "  const ::kudu::rpc::UserCredentials& user_credentials) {\n"
-        "  proxy_.set_user_credentials(user_credentials);\n"
-        "}\n"
-        "\n"
-        "const ::kudu::rpc::UserCredentials& $service_name$Proxy::user_credentials() const {\n"
-        "  return proxy_.user_credentials();\n"
-        "}\n"
         "\n");
       for (int method_idx = 0; method_idx < service->method_count();
            ++method_idx) {
@@ -658,13 +642,13 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         Print(printer, *subs,
         "::kudu::Status $service_name$Proxy::$rpc_name$(const $request$ &req, $response$ *resp,\n"
         "                                     ::kudu::rpc::RpcController *controller) {\n"
-        "  return proxy_.SyncRequest(\"$rpc_name$\", req, resp, controller);\n"
+        "  return SyncRequest(\"$rpc_name$\", req, resp, controller);\n"
         "}\n"
         "\n"
         "void $service_name$Proxy::$rpc_name$Async(const $request$ &req,\n"
         "                     $response$ *resp, ::kudu::rpc::RpcController *controller,\n"
         "                     const ::kudu::rpc::ResponseCallback &callback) {\n"
-        "  proxy_.AsyncRequest(\"$rpc_name$\", req, resp, controller, callback);\n"
+        "  AsyncRequest(\"$rpc_name$\", req, resp, controller, callback);\n"
         "}\n"
         "\n");
         subs->Pop();
