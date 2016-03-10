@@ -205,7 +205,8 @@ Status GetFQDN(string* hostname) {
 
   struct addrinfo* result;
   LOG_SLOW_EXECUTION(WARNING, 200,
-                     Substitute("looking up canonical hostname for localhost $0", hostname)) {
+                     Substitute("looking up canonical hostname for localhost "
+                                "(eventual result was $0)", *hostname)) {
     TRACE_EVENT0("net", "getaddrinfo");
     int rc = getaddrinfo(hostname->c_str(), nullptr, &hints, &result);
     if (rc != 0) {
