@@ -367,9 +367,10 @@ buckets by hashing the `id` column, for simplicity. See
 
 [source,sql]
 ----
-CREATE TABLE my_first_table (
-id BIGINT,
-name STRING
+CREATE TABLE my_first_table
+(
+  id BIGINT,
+  name STRING
 )
 DISTRIBUTE BY HASH (id) INTO 16 BUCKETS
 TBLPROPERTIES(
@@ -408,7 +409,8 @@ TBLPROPERTIES(
   'kudu.table_name' = 'new_table',
   'kudu.master_addresses' = 'kudu-master.example.com:7051',
   'kudu.key_columns' = 'ts, name'
-) AS SELECT * FROM old_table;
+)
+AS SELECT * FROM old_table;
 ----
 [NOTE]
 ====
@@ -454,13 +456,18 @@ CREATE TABLE cust_behavior (
   fulfilled_date BIGINT
 )
 DISTRIBUTE BY RANGE(_id)
-SPLIT ROWS((1439560049342), (1439566253755), (1439572458168), (1439578662581), (1439584866994), (1439591071407))
+SPLIT ROWS((1439560049342),
+           (1439566253755),
+           (1439572458168),
+           (1439578662581),
+           (1439584866994),
+           (1439591071407))
 TBLPROPERTIES(
-'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
-'kudu.table_name' = 'cust_behavior',
-'kudu.master_addresses' = 'a1216.halxg.cloudera.com:7051',
-'kudu.key_columns' = '_id',
-'kudu.num_tablet_replicas' = '3',
+  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+  'kudu.table_name' = 'cust_behavior',
+  'kudu.master_addresses' = 'a1216.halxg.cloudera.com:7051',
+  'kudu.key_columns' = '_id',
+  'kudu.num_tablet_replicas' = '3',
 );
 ----
 
@@ -487,8 +494,8 @@ use the following SQL:
 CREATE DATABASE impala_kudu
 USE impala_kudu;
 CREATE TABLE my_first_table (
-id BIGINT,
-name STRING
+  id BIGINT,
+  name STRING
 )
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
@@ -597,13 +604,19 @@ CREATE TABLE customers (
   state STRING,
   name STRING,
   purchase_count int32,
-) DISTRIBUTE BY RANGE(state)
-SPLIT ROWS(('al'), ('ak'), ('ar'), .., ('wv'), ('wy'))
+)
+DISTRIBUTE BY RANGE(state)
+SPLIT ROWS(('al'),
+           ('ak'),
+           ('ar'),
+           ...
+           ('wv'),
+           ('wy'))
 TBLPROPERTIES(
-'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
-'kudu.table_name' = 'customers',
-'kudu.master_addresses' = 'kudu-master.example.com:7051',
-'kudu.key_columns' = 'state, name'
+  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+  'kudu.table_name' = 'customers',
+  'kudu.master_addresses' = 'kudu-master.example.com:7051',
+  'kudu.key_columns' = 'state, name'
 );
 ----
 
@@ -655,10 +668,10 @@ CREATE TABLE cust_behavior (
 )
 DISTRIBUTE BY HASH (id) INTO 16 BUCKETS
 TBLPROPERTIES(
-'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
-'kudu.table_name' = 'cust_behavior',
-'kudu.master_addresses' = 'kudu-master.example.com:7051',
-'kudu.key_columns' = 'id, sku'
+  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+  'kudu.table_name' = 'cust_behavior',
+  'kudu.master_addresses' = 'kudu-master.example.com:7051',
+  'kudu.key_columns' = 'id, sku'
 );
 ----
 
@@ -687,13 +700,20 @@ CREATE TABLE customers (
   state STRING,
   name STRING,
   purchase_count int32,
-) DISTRIBUTE BY RANGE(state, name)
-SPLIT ROWS(('al', ''), ('al', 'm'), ('ak', ''), ('ak', 'm'), .., ('wy', ''), ('wy', 'm'))
+)
+DISTRIBUTE BY RANGE(state, name)
+  SPLIT ROWS(('al', ''),
+             ('al', 'm'),
+             ('ak', ''),
+             ('ak', 'm'),
+             ...
+             ('wy', ''),
+             ('wy', 'm'))
 TBLPROPERTIES(
-'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
-'kudu.table_name' = 'customers',
-'kudu.master_addresses' = 'kudu-master.example.com:7051',
-'kudu.key_columns' = 'state, name'
+  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+  'kudu.table_name' = 'customers',
+  'kudu.master_addresses' = 'kudu-master.example.com:7051',
+  'kudu.key_columns' = 'state, name'
 );
 ----
 
@@ -726,12 +746,15 @@ CREATE TABLE cust_behavior (
   fulfilled_date BIGINT
 )
 DISTRIBUTE BY HASH (id) INTO 4 BUCKETS,
-RANGE (sku) SPLIT ROWS(('g'), ('o'), ('u'))
+RANGE (sku)
+  SPLIT ROWS(('g'),
+             ('o'),
+             ('u'))
 TBLPROPERTIES(
-'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
-'kudu.table_name' = 'cust_behavior',
-'kudu.master_addresses' = 'kudu-master.example.com:7051',
-'kudu.key_columns' = 'id, sku'
+  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+  'kudu.table_name' = 'cust_behavior',
+  'kudu.master_addresses' = 'kudu-master.example.com:7051',
+  'kudu.key_columns' = 'id, sku'
 );
 ----
 
@@ -758,12 +781,13 @@ CREATE TABLE cust_behavior (
   rating INT,
   fulfilled_date BIGINT
 )
-DISTRIBUTE BY HASH (id) INTO 4 BUCKETS, HASH (sku) INTO 4 BUCKETS
+DISTRIBUTE BY HASH (id) INTO 4 BUCKETS,
+              HASH (sku) INTO 4 BUCKETS
 TBLPROPERTIES(
-'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
-'kudu.table_name' = 'cust_behavior',
-'kudu.master_addresses' = 'kudu-master.example.com:7051',
-'kudu.key_columns' = 'id, sku'
+  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+  'kudu.table_name' = 'cust_behavior',
+  'kudu.master_addresses' = 'kudu-master.example.com:7051',
+  'kudu.key_columns' = 'id, sku'
 );
 ----
 
