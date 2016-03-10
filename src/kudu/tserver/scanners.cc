@@ -35,7 +35,7 @@ DEFINE_int32(scanner_ttl_ms, 60000,
 TAG_FLAG(scanner_ttl_ms, advanced);
 DEFINE_int32(scanner_gc_check_interval_us, 5 * 1000L *1000L, // 5 seconds
              "Number of microseconds in the interval at which we remove expired scanners");
-TAG_FLAG(scanner_ttl_ms, hidden);
+TAG_FLAG(scanner_gc_check_interval_us, hidden);
 
 // TODO: would be better to scope this at a tablet level instead of
 // server level.
