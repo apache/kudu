@@ -176,3 +176,49 @@ footer {
       padding: 13px;
   }
 }
+
+/* ------------------------------------------
+   BLOG
+   ------------------------------------- */
+article header p.meta {
+  font-style: italic;
+  color: #666;
+  margin-bottom: 5px;
+}
+
+article header a {
+  color: #000;
+}
+
+article header {
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 20px;
+}
+
+article .entry-content {
+  font-size: 125%;
+}
+
+article .entry-content p {
+  margin-bottom: 1.5em;
+}
+
+article .read-full {
+  text-align: right;
+}
+
+.recent-posts {
+  background: #f6f6f6;
+}
+
+.recent-posts h3 {
+  font-weight: bold;
+  font-size: 140%;
+}
+
+.recent-posts ul {
+  list-style: none;
+  padding: 0.5em 0;
+  margin: 0;
+  border-bottom: 1px solid #eee;
+}

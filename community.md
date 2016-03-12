@@ -29,8 +29,69 @@ Get help using Kudu or contribute to the project on our mailing lists or our cha
 
 ### Contributions
 
-The Kudu project is dedicated to building a community not just of users, but
-also of developers around the world. [Learn more about how to contribute to Kudu](contributing.html).
+There are lots of ways to get involved with the Kudu project. Some of them are
+listed below. You don't have to be a developer; there are lots of valuable and
+important ways to get involved that suit any skill set and level.
+
+If you want to do something not listed here, or you see a gap that needs to be
+filled, [let us know](mailto:dev@kudu.incubator.apache.org).
+
+#### Participate in the community.
+
+Community is the core of any open source project, and Kudu is no exception.
+Participate in the mailing lists, requests for comment, chat sessions, and bug
+reports.
+
+#### Talk about how you use Kudu.
+
+Let us know what you think of Kudu and how you are using it. Send links to
+blogs or presentations you've given to the [kudu-user mailing
+list](mailto:user@kudu.incubator.apache.org) so that we can feature them.
+
+#### File bugs and enhancement requests.
+
+If you see problems in Kudu or if a missing feature would make Kudu more useful
+to you, let us know by filing a bug or request for enhancement on the [Kudu
+JIRA issue tracker](https://issues.apache.org/jira/browse/KUDU). The more
+information you can provide about how to reproduce an issue or how you'd like a
+new feature to work, the better.
+
+#### Write code and submit patches.
+
+You can submit patches to the core Kudu project or extend your existing
+codebase and APIs to work with Kudu. The Kudu project uses
+[Gerrit](http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu) for code
+reviews. Please read the details of [how to submit
+patches](docs/contributing.html#_contributing_patches_using_gerrit) and what
+the project [coding guidelines](docs/contributing.html#_code_style) are before
+your submit your patch, so that your contribution will be easy for others to
+review and integrate.
+
+#### Review patches and test new code.
+
+In order for patches to be integrated into Kudu as quickly as possible, they
+must be reviewed and tested. The more eyes, the better. Even if you are not a
+committer your review input is extremely valuable. Keep an eye on the [Kudu
+gerrit instance](http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu)
+for patches that need review or testing.
+
+#### Write and review documentation or a blog post.
+
+Making good documentation is critical to making great, usable software. If you
+see gaps in the documentation, please submit suggestions or corrections to the
+mailing list or submit documentation patches through Gerrit. You can also
+correct or improve error messages, log messages, or API docs.
+
+If you'd like to translate the Kudu documentation into a different language or
+you'd like to help in some other way, please [let us know](mailto:dev@kudu.incubator.apache.org).
+It's best to review the [documentation guidelines](docs/style_guide.html)
+before you get started.
+
+#### Request and review examples.
+
+The [kudu-examples](https://github.com/cloudera/kudu-examples) repository
+includes working code examples. As more examples are requested and added, they
+will need review and clean-up. This is another way you can get involved.
 
 ### Meetups, User Groups, and Conference Presentations
 

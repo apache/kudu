@@ -1,0 +1,39 @@
+---
+layout: blog_layout
+title: Blog
+---
+
+{% for post in paginator.posts %}
+
+<!-- Articles -->
+<article>
+  <header>
+    <h1 class="entry-title"><a href="{{site.github.url }}{{ post.url }}">{{ post.title }}</a></h1>
+    <p class="meta">Posted {{ post.date | date_to_string }} by {{ post.author }}</p>
+  </header>
+  <div class="entry-content">
+    {% unless post.no_excerpt %}
+    {{ post.excerpt }}
+    {% endunless %}
+  </div>
+  <div class="read-full">
+    <a class="btn btn-info" href="{{site.github.url }}{{ post.url }}">Read full post...</a>
+  </div>
+</article>
+
+{% endfor %}
+
+<!-- Pagination links -->
+{% if paginator.previous_page or paginator.next_page %}
+<nav>
+  <hr/>
+  <ul class="pager">
+  {% if paginator.previous_page %}
+    <li class="previous"><a href="{{ site.github.url }}{{ paginator.previous_page_path |replace: 'index.html', '' }}"><span aria-hidden="true">&larr;</span> Newer posts</a></li>
+  {% endif %}
+  {% if paginator.next_page %}
+    <li class="next"><a href="{{ site.github.url }}{{ paginator.next_page_path }}">Older posts <span aria-hidden="true">&rarr;</span></a></li>
+  {% endif %}
+  </ul>
+</nav>
+{% endif %}

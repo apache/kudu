@@ -1,0 +1,13 @@
+---
+layout: blog_layout
+---
+<article>
+  <header>
+    <h1 class="entry-title">{{ page.title }}</h1>
+    <p class="meta">Posted {{ page.date | date_to_string }} by {{ page.author }}</p>
+  </header>
+  <div class="entry-content">
+    {{ content }}
+  </div>
+</article>
+

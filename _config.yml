@@ -1,0 +1,20 @@
+gems:
+  - jekyll-feed
+  - jekyll-paginate
+exclude:
+  - site_tool
+  - README.adoc
+  - Gemfile*
+
+# When writing a blog post, you can use this special HTML comment to
+# designate where the post should be chopped in order to generate the
+# excerpt on the main blog page.
+excerpt_separator: "<!--more-->"
+
+# Force using kramdown as the markdown generator, since it supports the
+# TOC function we use on the FAQ page.
+markdown: kramdown
+
+# Pagination settings for the blog.
+paginate: 5
+paginate_path: "/blog/page/:num"
