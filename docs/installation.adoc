@@ -629,6 +629,7 @@ are detailed in <<upgrade_procedure>>:
 
 . Shut down all Kudu services.
 . Install the new Kudu packages or parcels, or install Kudu 0.7.0 from source.
+. Ubuntu only: re-download the repository list file. See <<kudu_package_locations>>.
 . Restart all Kudu services.
 
 It is technically possible to upgrade Kudu using rolling restarts, but it has not
