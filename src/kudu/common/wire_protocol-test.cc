@@ -30,25 +30,36 @@ namespace kudu {
 class WireProtocolTest : public KuduTest {
  public:
   WireProtocolTest()
-    : schema_({ ColumnSchema("col1", STRING),
-                ColumnSchema("col2", STRING),
-                ColumnSchema("col3", UINT32, true /* nullable */) },
-              1) {
+      : schema_({ ColumnSchema("col1", STRING),
+              ColumnSchema("col2", STRING),
+              ColumnSchema("col3", UINT32, true /* nullable */) },
+        1),
+        test_data_arena_(4096, 256 * 1024) {
   }
 
   void FillRowBlockWithTestRows(RowBlock* block) {
+    test_data_arena_.Reset();
     block->selection_vector()->SetAllTrue();
 
     for (int i = 0; i < block->nrows(); i++) {
       RowBlockRow row = block->row(i);
-      *reinterpret_cast<Slice*>(row.mutable_cell_ptr(0)) = Slice("hello world col1");
-      *reinterpret_cast<Slice*>(row.mutable_cell_ptr(1)) = Slice("hello world col2");
+
+      // We make new copies of these strings into the Arena for each row so that
+      // the workload is more realistic. If we just re-use the same Slice object
+      // for each row, the memory accesses fit entirely into a smaller number of
+      // cache lines and we may micro-optimize for the wrong thing.
+      Slice col1, col2;
+      CHECK(test_data_arena_.RelocateSlice("hello world col1", &col1));
+      CHECK(test_data_arena_.RelocateSlice("hello world col2", &col2));
+      *reinterpret_cast<Slice*>(row.mutable_cell_ptr(0)) = col1;
+      *reinterpret_cast<Slice*>(row.mutable_cell_ptr(1)) = col2;
       *reinterpret_cast<uint32_t*>(row.mutable_cell_ptr(2)) = i;
       row.cell(2).set_null(false);
     }
   }
  protected:
   Schema schema_;
+  Arena test_data_arena_;
 };
 
 TEST_F(WireProtocolTest, TestOKStatus) {
