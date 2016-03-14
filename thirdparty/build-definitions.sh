@@ -75,6 +75,13 @@ build_llvm() {
   # Rebuild the CMake cache every time.
   rm -Rf CMakeCache.txt CMakeFiles/
 
+  # The LLVM build can fail if a different version is already installed
+  # in the install prefix. It will try to link against that version instead
+  # of the one being built.
+  rm -Rf $PREFIX/include/{llvm*,clang*} \
+         $PREFIX/lib/lib{LLVM,LTO,clang}* \
+         $PREFIX/lib/clang/
+
   cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
