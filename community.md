@@ -105,8 +105,8 @@ your city, get in touch by emailing the
 
 1. Thu, Mar 31, 2016. [Strata Hadoop World](http://conferences.oreilly.com/strata/hadoop-big-data-ca/public/schedule/detail/47055). San Jose, CA, USA.<br/>
    _Fast data made easy with Apache Kafka and Apache Kudu (incubating)_. Presented by Ted Malaska and Jeff Holoman.
-1. Wed, Mar 30, 2016. [Strata Hadoop World](http://conferences.oreilly.com/strata/hadoop-big-data-ca/public/schedule/detail/46916). San Jose, CA, USA.<br/>
-   _Hadoop's storage gap: Resolving transactional-access and analytic-performance tradeoffs with Apache Kudu (incubating)_. Presented by Todd Lipcon.
+1. Sat, Mar 19, 2016. [China Hadoop Summit 2016](http://chinahadoop.com/archives/1313). Beijing, China.<br/>
+   _使用Kudu构建统一实时数据分析服务的方法 (Using Kudu to build unified real-time data analysis services)_. Presented by Binglin Chang.
 1. Thu, Mar 17, 2016. [Big Data Boston](http://www.meetup.com/BigDataBoston/events/229317011/). Boston, MA, USA.<br/>
    _St. Patty's Day meet-up on an Introduction to Apache Kudu_. Presented by Todd Lipcon.
 1. Wed, Mar 16, 2016. [Cloudera Technology Day](http://www.govexec.com/sponsor-content/cloudera-tech-day-1/#cloudera-technology-day). Washington DC, USA.<br/>
