@@ -83,7 +83,9 @@ public class BaseKuduTest {
     masterHostPorts = miniCluster.getMasterHostPorts();
 
     LOG.info("Creating new Kudu client...");
-    client = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses).build();
+    client = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses)
+                                .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
+                                .build();
     syncClient = new KuduClient(client);
     LOG.info("Waiting for tablet servers...");
     if (!miniCluster.waitForTabletServers(NUM_TABLET_SERVERS)) {
