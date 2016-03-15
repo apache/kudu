@@ -5,6 +5,7 @@ exclude:
   - site_tool
   - README.adoc
   - Gemfile*
+  - tmp
 
 # When writing a blog post, you can use this special HTML comment to
 # designate where the post should be chopped in order to generate the

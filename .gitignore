@@ -2,3 +2,6 @@ _site
 
 .bundle/
 .gem/
+
+# htmlproof creates this tmp dir
+tmp

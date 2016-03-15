@@ -4,6 +4,9 @@ This repository contains a handy wrapper tool called 'site_tool'
 which takes care of installing and running the correct version of
 jekyll.
 
+NOTE:  this tool requires that libxslt and libxml2 development headers are
+installed. On Ubuntu, these are `libxslt-dev` and `libxml2-dev` packages.
+
 [source,bash]
 ----
 ./site_tool jekyll serve
@@ -14,6 +17,16 @@ the site just like it renders on the site.
 
 In addition to serving static content, jekyll will render Markdown (the kramdown
 flavor) and also supports templating using Liquid templates.
+
+= Checking for broken links or syntax errors
+
+Use the following command to verify that you didn't introduce any broken links
+or HTML errors:
+
+[source,bash]
+----
+./site_tool proof
+----
 
 = Updating the Kudu Website
 

@@ -32,3 +32,7 @@ gem 'therubyracer' # V8 runtime installer for Jekyll
 
 # Produce /feed.xml for the Jekyll blog.
 gem 'jekyll-feed'
+
+# Used for 'site_tool proof'.
+# Pin to an old version which doesn't require ruby 2.0.
+gem 'html-proofer', '~> 2.6.4'
