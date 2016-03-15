@@ -25,6 +25,8 @@
  */
 package org.kududb.client;
 
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableSet;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -36,6 +38,9 @@ import org.kududb.rpc.RpcHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.NameCallback;
@@ -46,8 +51,6 @@ import javax.security.sasl.RealmChoiceCallback;
 import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslClient;
 import javax.security.sasl.SaslException;
-import java.util.Map;
-import java.util.TreeMap;
 
 @InterfaceAudience.Private
 public class SecureRpcHelper {
@@ -57,23 +60,35 @@ public class SecureRpcHelper {
   private final TabletClient client;
   private SaslClient saslClient;
   public static final String SASL_DEFAULT_REALM = "default";
-  public static final Map<String, String> SASL_PROPS =
-      new TreeMap<String, String>();
+  public static final Map<String, String> SASL_PROPS = new TreeMap<>();
   private static final int SASL_CALL_ID = -33;
+  private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
+      ImmutableSet.of(RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS);
   private volatile boolean negoUnderway = true;
   private boolean useWrap = false; // no QOP at the moment
+  private Set<RpcHeader.RpcFeatureFlag> serverFeatures;
 
   public static final String USER_AND_PASSWORD = "java_client";
 
   public SecureRpcHelper(TabletClient client) {
     this.client = client;
     try {
-      saslClient = Sasl.createSaslClient(new String[]{"PLAIN"
-      }, null, null, SASL_DEFAULT_REALM,
-          SASL_PROPS, new SaslClientCallbackHandler(USER_AND_PASSWORD, USER_AND_PASSWORD));
+      saslClient = Sasl.createSaslClient(new String[]{"PLAIN"},
+                                         null,
+                                         null,
+                                         SASL_DEFAULT_REALM,
+                                         SASL_PROPS,
+                                         new SaslClientCallbackHandler(USER_AND_PASSWORD,
+                                                                       USER_AND_PASSWORD));
     } catch (SaslException e) {
       throw new RuntimeException("Could not create the SASL client", e);
     }
+  }
+
+  public Set<RpcHeader.RpcFeatureFlag> getServerFeatures() {
+    Preconditions.checkState(!negoUnderway);
+    Preconditions.checkNotNull(serverFeatures);
+    return serverFeatures;
   }
 
   public void sendHello(Channel channel) {
@@ -82,6 +97,12 @@ public class SecureRpcHelper {
 
   private void sendNegotiateMessage(Channel channel) {
     RpcHeader.SaslMessagePB.Builder builder = RpcHeader.SaslMessagePB.newBuilder();
+
+    // Advertise our supported features
+    for (RpcHeader.RpcFeatureFlag flag : SUPPORTED_RPC_FEATURES) {
+      builder.addSupportedFeatures(flag);
+    }
+
     builder.setState(RpcHeader.SaslMessagePB.SaslState.NEGOTIATE);
     sendSaslMessage(channel, builder.build());
   }
@@ -181,6 +202,15 @@ public class SecureRpcHelper {
     for (RpcHeader.SaslMessagePB.SaslAuth auth : response.getAuthsList()) {
       negotiatedAuth = auth;
     }
+
+    ImmutableSet.Builder<RpcHeader.RpcFeatureFlag> features = ImmutableSet.builder();
+    for (RpcHeader.RpcFeatureFlag feature : response.getSupportedFeaturesList()) {
+      if (SUPPORTED_RPC_FEATURES.contains(feature)) {
+        features.add(feature);
+      }
+    }
+    serverFeatures = features.build();
+
     byte[] saslToken = new byte[0];
     if (saslClient.hasInitialResponse())
       saslToken = saslClient.evaluateChallenge(saslToken);
@@ -192,7 +222,6 @@ public class SecureRpcHelper {
     builder.setState(RpcHeader.SaslMessagePB.SaslState.INITIATE);
     builder.addAuths(negotiatedAuth);
     sendSaslMessage(chan, builder.build());
-
   }
 
   private void handleChallengeResponse(Channel chan, RpcHeader.SaslMessagePB response) throws

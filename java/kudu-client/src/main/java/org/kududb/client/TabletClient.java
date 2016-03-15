@@ -26,6 +26,8 @@
 
 package org.kududb.client;
 
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import com.stumbleupon.async.Deferred;
 
 import org.jboss.netty.handler.timeout.ReadTimeoutException;
@@ -128,8 +130,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * Maps an RPC ID to the in-flight RPC that was given this ID.
    * RPCs can be sent out from any thread, so we need a concurrent map.
    */
-  private final ConcurrentHashMap<Integer, KuduRpc<?>> rpcs_inflight =
-      new ConcurrentHashMap<Integer, KuduRpc<?>>();
+  private final ConcurrentHashMap<Integer, KuduRpc<?>> rpcs_inflight = new ConcurrentHashMap<>();
 
   private final AsyncKuduClient kuduClient;
 
@@ -150,6 +151,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       LOG.warn(getPeerUuidLoggingString() + " sending an rpc without a timeout " + rpc);
     }
     if (chan != null) {
+      if (!rpc.getRequiredFeatures().isEmpty() &&
+          !secureRpcHelper.getServerFeatures().contains(
+              RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS)) {
+        rpc.errback(new NonRecoverableException(
+            "the server does not support the APPLICATION_FEATURE_FLAGS RPC feature"));
+      }
+
       final ChannelBuffer serialized = encode(rpc);
       if (serialized == null) {  // Error during encoding.
         return;  // Stop here.  RPC has been failed already.
@@ -197,6 +205,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     try {
       final RpcHeader.RequestHeader.Builder headerBuilder = RpcHeader.RequestHeader.newBuilder()
           .setCallId(rpcid)
+          .addAllRequiredFeatureFlags(rpc.getRequiredFeatures())
           .setRemoteMethod(
               RpcHeader.RemoteMethodPB.newBuilder().setServiceName(service).setMethodName(method));
 

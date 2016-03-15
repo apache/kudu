@@ -25,17 +25,19 @@
  */
 package org.kududb.client;
 
+import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Deferred;
+import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.buffer.ChannelBuffers;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.util.Pair;
 import org.kududb.util.Slice;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
 
 import java.io.IOException;
+import java.util.Collection;
 
 import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
@@ -119,6 +121,14 @@ public abstract class KuduRpc<R> {
    * Package private way of getting the name of the RPC method.
    */
   abstract String method();
+
+  /**
+   * Returns the set of application-specific feature flags required to service the RPC.
+   * @return the feature flags required to complete the RPC
+   */
+  Collection<Integer> getRequiredFeatures() {
+    return ImmutableList.of();
+  }
 
   /**
    * To be implemented by the concrete sub-type.
