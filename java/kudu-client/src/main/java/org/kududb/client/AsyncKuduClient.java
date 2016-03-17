@@ -38,6 +38,7 @@ import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 
 import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.channel.socket.nio.NioWorkerPool;
 import org.kududb.Common;
 import org.kududb.Schema;
 import org.kududb.annotations.InterfaceAudience;
@@ -197,7 +198,7 @@ public class AsyncKuduClient implements AutoCloseable {
   final KuduTable masterTable;
   private final List<HostAndPort> masterAddresses;
 
-  private final HashedWheelTimer timer = new HashedWheelTimer(20, MILLISECONDS);
+  private final HashedWheelTimer timer;
 
   /**
    * Timestamp required for HybridTime external consistency through timestamp
@@ -238,6 +239,7 @@ public class AsyncKuduClient implements AutoCloseable {
     this.defaultOperationTimeoutMs = b.defaultOperationTimeoutMs;
     this.defaultAdminOperationTimeoutMs = b.defaultAdminOperationTimeoutMs;
     this.defaultSocketReadTimeoutMs = b.defaultSocketReadTimeoutMs;
+    this.timer = b.timer;
   }
 
   /**
@@ -1986,6 +1988,8 @@ public class AsyncKuduClient implements AutoCloseable {
     private long defaultOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
     private long defaultSocketReadTimeoutMs = DEFAULT_SOCKET_READ_TIMEOUT_MS;
 
+    private final HashedWheelTimer timer =
+        new HashedWheelTimer(new ThreadFactoryBuilder().setDaemon(true).build(), 20, MILLISECONDS);
     private Executor bossExecutor;
     private Executor workerExecutor;
     private int bossCount = DEFAULT_BOSS_COUNT;
@@ -2118,7 +2122,12 @@ public class AsyncKuduClient implements AutoCloseable {
         if (boss == null) boss = defaultExec;
         if (worker == null) worker = defaultExec;
       }
-      return new NioClientSocketChannelFactory(boss, worker, bossCount, workerCount);
+      // Share the timer with the socket channel factory so that it does not
+      // create an internal timer with a non-daemon thread.
+      return new NioClientSocketChannelFactory(boss,
+                                               bossCount,
+                                               new NioWorkerPool(worker, workerCount),
+                                               timer);
     }
 
     /**

@@ -19,8 +19,9 @@ package org.kududb.spark
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.io.NullWritable
-import org.apache.spark.rdd.RDD
+import org.apache.hadoop.util.ShutdownHookManager
 import org.apache.spark.SparkContext
+import org.apache.spark.rdd.RDD
 import org.kududb.annotations.InterfaceStability
 import org.kududb.client.{AsyncKuduClient, KuduClient, RowResult}
 import org.kududb.mapreduce.KuduTableInputFormat
@@ -34,8 +35,31 @@ import org.kududb.mapreduce.KuduTableInputFormat
   */
 @InterfaceStability.Unstable
 class KuduContext(kuduMaster: String) extends Serializable {
-  @transient lazy val syncClient = new KuduClient.KuduClientBuilder(kuduMaster).build()
-  @transient lazy val asyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(kuduMaster).build()
+
+  /**
+    * Set to
+    * [[org.apache.spark.util.ShutdownHookManager.DEFAULT_SHUTDOWN_PRIORITY]].
+    * The client instances are closed through the JVM shutdown hook
+    * mechanism in order to make sure that any unflushed writes are cleaned up
+    * properly. Spark has no way of notifying the [[DefaultSource]] on shutdown.
+    */
+  private val ShutdownHookPriority = 100
+
+  @transient lazy val syncClient = {
+    val syncClient = new KuduClient.KuduClientBuilder(kuduMaster).build()
+    ShutdownHookManager.get().addShutdownHook(new Runnable {
+      override def run() = syncClient.close()
+    }, ShutdownHookPriority)
+    syncClient
+  }
+  @transient lazy val asyncClient = {
+    val asyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(kuduMaster).build()
+    ShutdownHookManager.get().addShutdownHook(
+      new Runnable {
+        override def run() = asyncClient.close()
+      }, ShutdownHookPriority)
+    asyncClient
+  }
 
   /**
     * Create an RDD from a Kudu table.
