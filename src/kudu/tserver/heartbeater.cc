@@ -135,9 +135,6 @@ class Heartbeater::Thread {
   // The most recent response from a heartbeat.
   master::TSHeartbeatResponsePB last_hb_response_;
 
-  // True once at least one heartbeat has been sent.
-  bool has_heartbeated_;
-
   // The number of heartbeats which have failed in a row.
   // This is tracked so as to back-off heartbeating.
   int consecutive_failed_heartbeats_;
@@ -177,11 +174,10 @@ Heartbeater::Thread::Thread(const TabletServerOptions& opts, TabletServer* serve
   : master_addrs_(opts.master_addresses),
     last_locate_master_idx_(0),
     server_(server),
-    has_heartbeated_(false),
     consecutive_failed_heartbeats_(0),
     cond_(&mutex_),
     should_run_(false),
-    heartbeat_asap_(false) {
+    heartbeat_asap_(true) {
   CHECK(!master_addrs_.empty());
 }
 
@@ -293,11 +289,6 @@ int Heartbeater::Thread::GetMinimumHeartbeatMillis() const {
 }
 
 int Heartbeater::Thread::GetMillisUntilNextHeartbeat() const {
-  // When we first start up, heartbeat immediately.
-  if (!has_heartbeated_) {
-    return GetMinimumHeartbeatMillis();
-  }
-
   // If the master needs something from us, we should immediately
   // send another heartbeat with that info, rather than waiting for the interval.
   if (last_hb_response_.needs_reregister() ||
@@ -423,7 +414,6 @@ void Heartbeater::Thread::RunThread() {
       continue;
     }
     consecutive_failed_heartbeats_ = 0;
-    has_heartbeated_ = true;
   }
 }
 
