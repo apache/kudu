@@ -421,6 +421,21 @@ void CheckIfNoLongerLeaderAndSetupError(Status s, RespClass* resp) {
   }
 }
 
+template<class RespClass>
+Status CheckIfTableDeletedOrNotRunning(TableMetadataLock* lock, RespClass* resp) {
+  if (lock->data().is_deleted()) {
+    Status s = Status::NotFound("The table was deleted", lock->data().pb.state_msg());
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+  if (!lock->data().is_running()) {
+    Status s = Status::ServiceUnavailable("The table is not running");
+    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+    return s;
+  }
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 CatalogManager::CatalogManager(Master *master)
@@ -868,11 +883,7 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
 
   TRACE("Locking table");
   TableMetadataLock l(table.get(), TableMetadataLock::READ);
-  if (l.data().is_deleted()) {
-    Status s = Status::NotFound("The table was deleted", l.data().pb.state_msg());
-    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
-    return s;
-  }
+  RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   // 2. Verify if the create is in-progress
   TRACE("Verify if the table creation is in progress for $0", table->ToString());
@@ -1222,11 +1233,7 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
 
   TRACE("Locking table");
   TableMetadataLock l(table.get(), TableMetadataLock::READ);
-  if (l.data().is_deleted()) {
-    Status s = Status::NotFound("The table was deleted", l.data().pb.state_msg());
-    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
-    return s;
-  }
+  RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   // 2. Verify if the alter is in-progress
   TRACE("Verify if there is an alter operation in progress for $0", table->ToString());
@@ -1253,11 +1260,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
 
   TRACE("Locking table");
   TableMetadataLock l(table.get(), TableMetadataLock::READ);
-  if (l.data().is_deleted()) {
-    Status s = Status::NotFound("The table was deleted", l.data().pb.state_msg());
-    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
-    return s;
-  }
+  RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   if (l.data().pb.has_fully_applied_schema()) {
     // An AlterTable is in progress; fully_applied_schema is the last
@@ -1284,7 +1287,7 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
 
   for (const TableInfoMap::value_type& entry : table_names_map_) {
     TableMetadataLock ltm(entry.second.get(), TableMetadataLock::READ);
-    if (!ltm.data().is_running()) continue;
+    if (!ltm.data().is_running()) continue; // implies !is_deleted() too
 
     if (req->has_name_filter()) {
       size_t found = ltm.data().name().find(req->name_filter());
@@ -3030,7 +3033,6 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
 
   scoped_refptr<TableInfo> table;
   RETURN_NOT_OK(FindTable(req->table(), &table));
-
   if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist");
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
@@ -3038,18 +3040,7 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   }
 
   TableMetadataLock l(table.get(), TableMetadataLock::READ);
-  if (l.data().is_deleted()) {
-    Status s = Status::NotFound("The table was deleted",
-                                l.data().pb.state_msg());
-    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
-    return s;
-  }
-
-  if (!l.data().is_running()) {
-    Status s = Status::ServiceUnavailable("The table is not running");
-    SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
-    return s;
-  }
+  RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   vector<scoped_refptr<TabletInfo> > tablets_in_range;
   table->GetTabletsInRange(req, &tablets_in_range);
