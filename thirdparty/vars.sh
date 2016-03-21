@@ -104,11 +104,20 @@ CRCUTIL_DIR=$TP_DIR/crcutil-${CRCUTIL_VERSION}
 LIBUNWIND_VERSION=1.1a
 LIBUNWIND_DIR=$TP_DIR/libunwind-${LIBUNWIND_VERSION}
 
-# Our llvm tarball includes clang, extra clang tools, and compiler-rt.
+# Our llvm tarball includes clang, extra clang tools, lld, and compiler-rt.
 #
-# See http://clang.llvm.org/get_started.html for details on how they're laid
-# out in the llvm tarball.
-LLVM_VERSION=3.7.1
+# See http://clang.llvm.org/get_started.html and http://lld.llvm.org/ for
+# details on how they're laid out in the llvm tarball.
+#
+# Summary:
+# 1. Unpack the llvm tarball
+# 2. Unpack the clang tarball into the llvm tree as tools/clang (rename from cfe-<version> to clang)
+# 3. Unpack the extra clang tools tarball as tools/clang/tools/clang-tools-extra
+# 4. Unpack the lld tarball into the llvm tree as tools/lld
+# 5. Unpack the compiler-rt tarball as projects/compiler-rt
+# 6. Create new tarball from the resulting source tree
+#
+LLVM_VERSION=3.8.0
 LLVM_DIR=$TP_DIR/llvm-${LLVM_VERSION}.src
 LLVM_BUILD_DIR=$TP_DIR/llvm-${LLVM_VERSION}.build
 

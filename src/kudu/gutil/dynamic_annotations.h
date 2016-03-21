@@ -575,6 +575,8 @@ double ValgrindSlowdown(void);
 
 /* AddressSanitizer annotations from LLVM asan_interface.h */
 
+
+#if defined(__SANITIZE_ADDRESS__) || defined(ADDRESS_SANITIZER)
 // Marks memory region [addr, addr+size) as unaddressable.
 // This memory must be previously allocated by the user program. Accessing
 // addresses in this region from instrumented code is forbidden until
@@ -594,7 +596,6 @@ void __asan_poison_memory_region(void const volatile *addr, size_t size);
 void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 
 // User code should use macros instead of functions.
-#if defined(__SANITIZE_ADDRESS__) || defined(ADDRESS_SANITIZER)
 #define ASAN_POISON_MEMORY_REGION(addr, size)   \
   __asan_poison_memory_region((addr), (size))
 #define ASAN_UNPOISON_MEMORY_REGION(addr, size) \
