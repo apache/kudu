@@ -52,6 +52,11 @@ race:kudu::RowChangeListDecoder::Init
 # https://code.google.com/p/google-glog/issues/detail?id=191
 signal:logging_fail
 
+# LOG(FATAL) from multiple threads can also end up triggering a TSAN error.
+# See https://github.com/google/glog/issues/80 for a general list of TSAN
+# issues in glog.
+race:google::LogMessage::Init
+
 # This method in Boost's UUID library operates on static state with impunity,
 # triggering (harmless) data races in TSAN when boost::uuids::random_generator
 # instances are created across threads (see kudu::ObjectIdGenerator).
