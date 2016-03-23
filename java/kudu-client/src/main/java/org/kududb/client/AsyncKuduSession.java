@@ -370,6 +370,7 @@ public class AsyncKuduSession implements SessionConfiguration {
         operation.setTimeoutMillis(timeoutMs);
       }
       operation.setExternalConsistencyMode(this.consistencyMode);
+      operation.setIgnoreAllDuplicateRows(ignoreAllDuplicateRows);
       return client.sendRpcToTablet(operation);
     }
 

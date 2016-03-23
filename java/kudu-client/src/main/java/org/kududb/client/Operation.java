@@ -23,6 +23,7 @@ import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
+import org.kududb.WireProtocol;
 import org.kududb.WireProtocol.RowOperationsPB;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
@@ -69,6 +70,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
 
   private final PartialRow row;
 
+  /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
+  boolean ignoreAllDuplicateRows = false;
+
   /**
    * Package-private constructor. Subclasses need to be instantiated via AsyncKuduSession
    * @param table table with the schema to use for this operation
@@ -76,6 +80,11 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   Operation(KuduTable table) {
     super(table);
     this.row = table.getSchema().newPartialRow();
+  }
+
+  /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
+  void setIgnoreAllDuplicateRows(boolean ignoreAllDuplicateRows) {
+    this.ignoreAllDuplicateRows = ignoreAllDuplicateRows;
   }
 
   /**
@@ -130,6 +139,10 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
     Tserver.WriteResponsePB.PerRowErrorPB error = null;
     if (builder.getPerRowErrorsCount() != 0) {
       error = builder.getPerRowErrors(0);
+      if (ignoreAllDuplicateRows &&
+          error.getError().getCode() == WireProtocol.AppStatusPB.ErrorCode.ALREADY_PRESENT) {
+        error = null;
+      }
     }
     OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
         builder.getTimestamp(), this, error);

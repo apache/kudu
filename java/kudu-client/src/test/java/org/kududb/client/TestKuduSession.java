@@ -16,6 +16,9 @@
 // under the License.
 package org.kududb.client;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -48,6 +51,38 @@ public class TestKuduSession extends BaseKuduTest {
     }
     session.flush();
     assertEquals(20, countRowsInScan(client.newScannerBuilder(table).build()));
+  }
+
+  @Test(timeout = 100000)
+  public void testIgnoreAllDuplicateRows() throws Exception {
+    String tableName = TABLE_NAME_PREFIX + "-testIgnoreAllDuplicateRows";
+    table = createTable(tableName, basicSchema, new CreateTableOptions());
+
+    KuduSession session = syncClient.newSession();
+    session.setIgnoreAllDuplicateRows(true);
+    for (int i = 0; i < 10; i++) {
+      session.apply(createInsert(i));
+    }
+    for (SessionConfiguration.FlushMode mode : SessionConfiguration.FlushMode.values()) {
+      session.setFlushMode(mode);
+      for (int i = 0; i < 10; i++) {
+        OperationResponse resp = session.apply(createInsert(i));
+        if (mode == SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC) {
+          assertFalse(resp.hasRowError());
+        }
+      }
+      if (mode == SessionConfiguration.FlushMode.MANUAL_FLUSH) {
+        List<OperationResponse> responses = session.flush();
+        for (OperationResponse resp : responses) {
+          assertFalse(resp.hasRowError());
+        }
+      } else if (mode == SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND) {
+        while (session.hasPendingOperations()) {
+          Thread.sleep(100);
+        }
+        assertEquals(0, session.countPendingErrors());
+      }
+    }
   }
 
   @Test(timeout = 100000)
