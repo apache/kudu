@@ -15,13 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <gmock/gmock.h>
 
 #include "kudu/codegen/code_generator.h"
+#include "kudu/codegen/compilation_manager.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
@@ -38,11 +41,14 @@ using std::string;
 using std::vector;
 
 DECLARE_bool(codegen_dump_mc);
+DECLARE_int32(codegen_cache_capacity);
 
 namespace kudu {
 
 typedef RowProjector NoCodegenRP;
 typedef codegen::RowProjector CodegenRP;
+
+using codegen::CompilationManager;
 
 class CodegenTest : public KuduTest {
  public:
@@ -357,6 +363,48 @@ TEST_F(CodegenTest, TestDumpMC) {
   const vector<string>& msgs = sink.logged_msgs();
   ASSERT_EQ(msgs.size(), 1);
   EXPECT_THAT(msgs[0], testing::ContainsRegex("retq"));
+}
+
+// Basic test for the CompilationManager code cache.
+// This runs a bunch of compilation tasks and ensures that the cache
+// sometimes hits on the second attempt for the same projection.
+TEST_F(CodegenTest, TestCodeCache) {
+  Singleton<CompilationManager>::UnsafeReset();
+  FLAGS_codegen_cache_capacity = 10;
+  CompilationManager* cm = CompilationManager::GetSingleton();
+
+  for (int pass = 0; pass < 2; pass++) {
+    int num_hits = 0;
+
+    // Generate all permutations of the first four columns (24 permutations).
+    // For each such permutation, we'll create a projection and request code generation.
+    vector<size_t> perm = { 0, 1, 2, 3 };
+    do {
+      SCOPED_TRACE(perm);
+      Schema projection;
+      ASSERT_OK(CreatePartialSchema(perm, &projection));
+
+      gscoped_ptr<CodegenRP> projector;
+      if (cm->RequestRowProjector(&base_, &projection, &projector)) {
+        num_hits++;
+      }
+      cm->Wait();
+    } while (std::next_permutation(perm.begin(), perm.end()));
+
+    if (pass == 0) {
+      // On the first pass, the cache should have been empty and gotten 0 hits.
+      ASSERT_EQ(0, num_hits);
+    } else {
+      // Otherwise, we expect to have gotten some hits.
+      // If our cache were a perfect LRU implementation, then we would actually
+      // expect 0 hits here as well, since we are accessing the entries in
+      // exactly the same order as we inserted them, and thus would evict
+      // an entry before we look for it again. But, our LRU cache is sharded
+      // so we expect to get some hits on the second time.
+      ASSERT_GT(num_hits, 0);
+      ASSERT_LT(num_hits, 24);
+    }
+  }
 }
 
 } // namespace kudu

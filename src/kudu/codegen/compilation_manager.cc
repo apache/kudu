@@ -49,6 +49,10 @@ DEFINE_bool(codegen_time_compilation, false, "Whether to print time that each co
 TAG_FLAG(codegen_time_compilation, experimental);
 TAG_FLAG(codegen_time_compilation, runtime);
 
+DEFINE_int32(codegen_cache_capacity, 100, "Number of entries which may be stored in the "
+             "code generation cache.");
+TAG_FLAG(codegen_cache_capacity, experimental);
+
 METRIC_DEFINE_gauge_int64(server, code_cache_hits, "Codegen Cache Hits",
                           kudu::MetricUnit::kCacheHits,
                           "Number of codegen cache hits since start",
@@ -118,7 +122,7 @@ class CompilationTask : public Runnable {
 } // anonymous namespace
 
 CompilationManager::CompilationManager()
-  : cache_(kDefaultCacheCapacity),
+  : cache_(FLAGS_codegen_cache_capacity),
     hit_counter_(0),
     query_counter_(0) {
   CHECK_OK(ThreadPoolBuilder("compiler_manager_pool")

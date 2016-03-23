@@ -98,7 +98,6 @@ class CompilationManager {
   AtomicInt<int64_t> hit_counter_;
   AtomicInt<int64_t> query_counter_;
 
-  static const int kDefaultCacheCapacity = 100;
   static const int kThreadTimeoutMs = 100;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationManager);
