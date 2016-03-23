@@ -124,7 +124,8 @@ bool FlushMRSOp::Prepare() {
 void FlushMRSOp::Perform() {
   CHECK(!tablet_peer_->tablet()->rowsets_flush_sem_.try_lock());
 
-  tablet_peer_->tablet()->FlushUnlocked();
+  KUDU_CHECK_OK_PREPEND(tablet_peer_->tablet()->FlushUnlocked(),
+                        Substitute("FlushMRS failed on $0", tablet_peer_->tablet_id()));
 
   {
     boost::lock_guard<simple_spinlock> l(lock_);
