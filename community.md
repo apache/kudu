@@ -103,6 +103,12 @@ your city, get in touch by emailing the
 
 [comment]: # (Note: we are using an ordered list here to allow for special styling of it)
 
+1. Thu, May 12, 2016. [Vancouver Spark Meetup](http://www.meetup.com/Vancouver-Spark/events/229692936/). Vancouver, BC, Canada.<br/>
+   _Kudu and Spark for fast analytics on streaming data_. Presented by Mike Percy and Dan Burkert.
+1. Tue, May 10, 2016. [Apache: Big Data 2016](http://apachebigdata2016.sched.org/event/6M1k/using-kafka-and-kudu-for-fast-low-latency-sql-analytics-on-streaming-data-mike-percy-ashish-singh-cloudera). Vancouver, BC, Canada.<br/>
+   _Using Kafka and Kudu for fast, low-latency SQL analytics on streaming data_. Presented by Mike Percy and Ashish Singh.
+1. Mon, May 9, 2016. [Apache: Big Data 2016](http://apachebigdata2016.sched.org/event/6M0B/introduction-to-apache-kudu-incubating-for-timeseries-storage-dan-burkert-cloudera). Vancouver, BC, Canada.<br/>
+   _Introduction to Apache Kudu (incubating) for timeseries storage_. Presented by Dan Burkert.
 1. Thu, Mar 31, 2016. [Strata Hadoop World](http://conferences.oreilly.com/strata/hadoop-big-data-ca/public/schedule/detail/47055). San Jose, CA, USA.<br/>
    _Fast data made easy with Apache Kafka and Apache Kudu (incubating)_. Presented by Ted Malaska and Jeff Holoman.
 1. Sat, Mar 19, 2016. [China Hadoop Summit 2016](http://chinahadoop.com/archives/1313). Beijing, China.<br/>
