@@ -15,6 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
+PROTOBUF_GENERATE_CPP(
+  CLIENT_PROTO_SRCS CLIENT_PROTO_HDRS CLIENT_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES client.proto)
+set(CLIENT_PROTO_LIBS
+  kudu_common_proto)
+ADD_EXPORTABLE_LIBRARY(client_proto
+  SRCS ${CLIENT_PROTO_SRCS}
+  DEPS ${CLIENT_PROTO_LIBS}
+  NONLINK_DEPS ${CLIENT_PROTO_TGTS})
+
 set(CLIENT_SRCS
   batcher.cc
   client.cc
@@ -38,14 +50,15 @@ set(CLIENT_SRCS
 )
 
 set(CLIENT_LIBS
+  client_proto
+  gutil
+  krpc
   kudu_common
+  kudu_util
   master_proto
   master_rpc
   tserver_proto
-  tserver_service_proto
-  kudu_util
-  gutil
-  krpc)
+  tserver_service_proto)
 
 # Make sure we exclude tcmalloc from the exported library; we want the library
 # code to use the linking application's malloc implementation.
