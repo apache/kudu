@@ -110,6 +110,9 @@ def check_cxx11():
 
 
 def check_boost():
+  flags = ['-E']
+  if 'BOOST_ROOT' in os.environ:
+    flags += ['-I%s/include' % os.environ['BOOST_ROOT']]
   try_do(
     "Checking for boost_thread and boost_system headers",
     ("Unable to compile a simple program that uses boost. " +
@@ -118,7 +121,7 @@ def check_boost():
       #include <boost/thread/locks.hpp>
       #include <boost/system/config.hpp>
       """,
-      flags=["-E"]))
+      flags=flags))
 
 
 def check_sasl():
