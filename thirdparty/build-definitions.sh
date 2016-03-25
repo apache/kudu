@@ -220,10 +220,12 @@ build_lz4() {
 build_bitshuffle() {
   cd $BITSHUFFLE_DIR
   # bitshuffle depends on lz4, therefore set the flag I$PREFIX/include
-  ${CC:-gcc} $EXTRA_CFLAGS -std=c99 -I$PREFIX/include -O3 -DNDEBUG -fPIC -c bitshuffle.c
-  ar rs bitshuffle.a bitshuffle.o
+  ${CC:-gcc} $EXTRA_CFLAGS -std=c99 -I$PREFIX/include -O3 -DNDEBUG -fPIC -c \
+    src/bitshuffle_core.c src/bitshuffle.c src/iochain.c
+  ar rs bitshuffle.a bitshuffle_core.o bitshuffle.o iochain.o
   cp bitshuffle.a $PREFIX/lib/
-  cp bitshuffle.h $PREFIX/include/
+  cp src/bitshuffle.h $PREFIX/include/bitshuffle.h
+  cp src/bitshuffle_core.h $PREFIX/include/bitshuffle_core.h
 }
 
 build_libev() {

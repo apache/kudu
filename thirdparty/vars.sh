@@ -54,8 +54,8 @@ LZ4_VERSION=r130
 LZ4_DIR=$TP_DIR/lz4-lz4-$LZ4_VERSION
 
 # from https://github.com/kiyo-masui/bitshuffle
-# Hash of git: c5c928fe7d4bc5b9391748a8dd29de5a89c3c94a
-BITSHUFFLE_VERSION=c5c928f
+# Hash of git: 55f9b4caec73fa21d13947cacea1295926781440
+BITSHUFFLE_VERSION=55f9b4c
 BITSHUFFLE_DIR=$TP_DIR/bitshuffle-${BITSHUFFLE_VERSION}
 
 ZLIB_VERSION=1.2.8
