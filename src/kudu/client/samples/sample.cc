@@ -231,6 +231,11 @@ static void LogCb(void* unused,
 }
 
 int main(int argc, char* argv[]) {
+  KUDU_LOG(INFO) << "Running with Kudu client version: " <<
+      kudu::client::GetShortVersionString();
+  KUDU_LOG(INFO) << "Long version info: " <<
+      kudu::client::GetAllVersionInfo();
+
   kudu::client::KuduLoggingFunctionCallback<void*> log_cb(&LogCb, NULL);
   kudu::client::InstallLoggingCallback(&log_cb);
 

@@ -108,6 +108,13 @@ void KUDU_EXPORT SetVerboseLogLevel(int level);
 // workaround conflicts.
 Status KUDU_EXPORT SetInternalSignalNumber(int signum);
 
+// Return a single-version string identifying the Kudu client.
+std::string KUDU_EXPORT GetShortVersionString();
+
+// Return a longer multi-line version string identifying the client, including
+// build time, etc.
+std::string KUDU_EXPORT GetAllVersionInfo();
+
 // Creates a new KuduClient with the desired options.
 //
 // Note that KuduClients are shared amongst multiple threads and, as such,

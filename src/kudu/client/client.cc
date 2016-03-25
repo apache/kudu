@@ -53,6 +53,7 @@
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
+#include "kudu/util/version_info.h"
 
 using kudu::master::AlterTableRequestPB;
 using kudu::master::AlterTableRequestPB_Step;
@@ -161,6 +162,14 @@ void SetVerboseLogLevel(int level) {
 
 Status SetInternalSignalNumber(int signum) {
   return SetStackTraceSignal(signum);
+}
+
+std::string GetShortVersionString() {
+  return VersionInfo::GetShortVersionString();
+}
+
+std::string GetAllVersionInfo() {
+  return VersionInfo::GetAllVersionInfo();
 }
 
 KuduClientBuilder::KuduClientBuilder()
