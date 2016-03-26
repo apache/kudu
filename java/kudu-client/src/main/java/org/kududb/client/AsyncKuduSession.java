@@ -325,12 +325,12 @@ public class AsyncKuduSession implements SessionConfiguration {
    * This will flush all the batches but not the operations that are currently in lookup.
    */
   private Deferred<ArrayList<BatchResponse>> flushAllBatches() {
-    HashMap<Slice, Batch> copyOfOps;
-    final ArrayList<Deferred<BatchResponse>> d = new ArrayList<>(operations.size());
+    Map<Slice, Batch> copyOfOps;
+    final List<Deferred<BatchResponse>> d = new ArrayList<>(operations.size());
     synchronized (this) {
       copyOfOps = new HashMap<>(operations);
     }
-    for (Map.Entry<Slice, Batch> entry: copyOfOps.entrySet()) {
+    for (Map.Entry<Slice, Batch> entry : copyOfOps.entrySet()) {
       d.add(flushTablet(entry.getKey(), entry.getValue()));
     }
     return Deferred.group(d);

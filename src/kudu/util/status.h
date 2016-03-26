@@ -315,6 +315,7 @@ class KUDU_EXPORT Status {
     kEndOfFile = 18,
     // NOTE: Remember to duplicate these constants into wire_protocol.proto and
     // and to add StatusTo/FromPB ser/deser cases in wire_protocol.cc !
+    // Also remember to make the same changes to the java client in Status.java.
     //
     // TODO: Move error codes into an error_code.proto or something similar.
   };

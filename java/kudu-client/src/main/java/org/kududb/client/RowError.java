@@ -27,35 +27,42 @@ import org.kududb.tserver.Tserver;
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public class RowError {
-  private final String status;
-  private final String message;
+  private final Status status;
   private final Operation operation;
   private final String tsUUID;
 
   /**
    * Package-private for unit tests.
    */
-  RowError(String errorStatus, String errorMessage, Operation operation, String tsUUID) {
-    this.status = errorStatus;
-    this.message = errorMessage;
+  RowError(Status status, Operation operation, String tsUUID) {
+    this.status = status;
     this.operation = operation;
     this.tsUUID = tsUUID;
   }
 
   /**
+   * Get the status code and message of the row error.
+   */
+  public Status getErrorStatus() {
+    return status;
+  }
+
+  /**
    * Get the string-representation of the error code that the tablet server returned.
    * @return A short string representation of the error.
+   * @deprecated Please use getErrorStatus() instead. Will be removed in a future version.
    */
   public String getStatus() {
-    return status;
+    return status.getCodeName();
   }
 
   /**
    * Get the error message the tablet server sent.
    * @return The error message.
+   * @deprecated Please use getErrorStatus() instead. Will be removed in a future version.
    */
   public String getMessage() {
-    return message;
+    return status.getMessage();
   }
 
   /**
@@ -79,8 +86,7 @@ public class RowError {
     return "Row error for primary key=" + Bytes.pretty(operation.getRow().encodePrimaryKey()) +
         ", tablet=" + operation.getTablet().getTabletIdAsString() +
         ", server=" + tsUUID +
-        ", status=" + status +
-        ", message=" + message;
+        ", status=" + status.toString();
   }
 
   /**
@@ -93,7 +99,6 @@ public class RowError {
   static RowError fromRowErrorPb(Tserver.WriteResponsePB.PerRowErrorPB errorPB,
                                  Operation operation, String tsUUID) {
     WireProtocol.AppStatusPB statusPB = errorPB.getError();
-    return new RowError(statusPB.getCode().toString(),
-        statusPB.getMessage(), operation, tsUUID);
+    return new RowError(Status.fromPB(statusPB), operation, tsUUID);
   }
 }

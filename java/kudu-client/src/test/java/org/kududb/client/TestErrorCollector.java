@@ -42,7 +42,7 @@ public class TestErrorCollector {
     Assert.assertEquals(0, collector.countErrors());
     Assert.assertFalse(reos.isOverflowed());
     Assert.assertEquals(countToTest, reos.getRowErrors().length);
-    Assert.assertEquals(countToTest + "", reos.getRowErrors()[0].getStatus());
+    Assert.assertEquals(countToTest, reos.getRowErrors()[0].getErrorStatus().getPosixCode());
 
     // Test filling the collector to the max.
     countToTest = maxErrors;
@@ -52,7 +52,7 @@ public class TestErrorCollector {
     Assert.assertEquals(0, collector.countErrors());
     Assert.assertFalse(reos.isOverflowed());
     Assert.assertEquals(countToTest, reos.getRowErrors().length);
-    Assert.assertEquals((countToTest - 1) + "", reos.getRowErrors()[9].getStatus());
+    Assert.assertEquals(countToTest - 1, reos.getRowErrors()[9].getErrorStatus().getPosixCode());
 
     // Test overflowing.
     countToTest = 95;
@@ -62,7 +62,7 @@ public class TestErrorCollector {
     Assert.assertEquals(0, collector.countErrors());
     Assert.assertTrue(reos.isOverflowed());
     Assert.assertEquals(maxErrors, reos.getRowErrors().length);
-    Assert.assertEquals((countToTest - 1) + "", reos.getRowErrors()[9].getStatus());
+    Assert.assertEquals(countToTest - 1, reos.getRowErrors()[9].getErrorStatus().getPosixCode());
 
     // Test overflowing on a newly created collector.
     countToTest = 95;
@@ -73,7 +73,7 @@ public class TestErrorCollector {
     Assert.assertEquals(0, collector.countErrors());
     Assert.assertTrue(reos.isOverflowed());
     Assert.assertEquals(maxErrors, reos.getRowErrors().length);
-    Assert.assertEquals((countToTest - 1) + "", reos.getRowErrors()[9].getStatus());
+    Assert.assertEquals(countToTest - 1, reos.getRowErrors()[9].getErrorStatus().getPosixCode());
   }
 
   private void fillCollectorWith(ErrorCollector collector, int errorsToAdd) {
@@ -85,6 +85,6 @@ public class TestErrorCollector {
   private RowError createRowError(int id) {
     // Use the error status as a way to message pass and so that we can test we're getting the right
     // messages on the other end.
-    return new RowError(id + "", "test", null, "test");
+    return new RowError(Status.NotAuthorized("test", id), null, "test");
   }
 }

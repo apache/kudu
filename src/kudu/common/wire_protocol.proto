@@ -32,7 +32,7 @@ import "kudu/consensus/metadata.proto";
 // should have this (or a more complex error result) as an optional field
 // in its response.
 //
-// This maps to kudu::Status in C++.
+// This maps to kudu::Status in C++ and org.kududb.Status in Java.
 message AppStatusPB {
   enum ErrorCode {
     UNKNOWN_ERROR = 999;
