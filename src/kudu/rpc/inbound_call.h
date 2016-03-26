@@ -159,6 +159,9 @@ class InboundCall {
   // If the client did not specify a deadline, returns MonoTime::Max().
   MonoTime GetClientDeadline() const;
 
+  // Return the time when this call was received.
+  MonoTime GetTimeReceived() const;
+
   // Returns the set of application-specific feature flags required to service
   // the RPC.
   std::vector<uint32_t> GetRequiredFeatures() const;
