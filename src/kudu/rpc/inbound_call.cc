@@ -285,6 +285,10 @@ MonoTime InboundCall::GetClientDeadline() const {
   return deadline;
 }
 
+MonoTime InboundCall::GetTimeReceived() const {
+  return timing_.time_received;
+}
+
 vector<uint32_t> InboundCall::GetRequiredFeatures() const {
   vector<uint32_t> features;
   for (uint32_t feature : header_.required_feature_flags()) {

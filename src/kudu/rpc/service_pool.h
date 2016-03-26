@@ -25,7 +25,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_service.h"
-#include "kudu/util/blocking_queue.h"
+#include "kudu/rpc/service_queue.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/status.h"
@@ -63,6 +63,10 @@ class ServicePool : public RpcService {
     return rpcs_timed_out_in_queue_.get();
   }
 
+  const Histogram* IncomingQueueTimeMetricForTests() const {
+    return incoming_queue_time_.get();
+  }
+
   const Counter* RpcsQueueOverflowMetric() const {
     return rpcs_queue_overflow_.get();
   }
@@ -71,9 +75,11 @@ class ServicePool : public RpcService {
 
  private:
   void RunThread();
+  void RejectTooBusy(InboundCall* c);
+
   gscoped_ptr<ServiceIf> service_;
   std::vector<scoped_refptr<kudu::Thread> > threads_;
-  BlockingQueue<InboundCall*> service_queue_;
+  ServiceQueue service_queue_;
   scoped_refptr<Histogram> incoming_queue_time_;
   scoped_refptr<Counter> rpcs_timed_out_in_queue_;
   scoped_refptr<Counter> rpcs_queue_overflow_;
