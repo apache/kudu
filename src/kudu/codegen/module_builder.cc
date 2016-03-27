@@ -241,6 +241,19 @@ void DoOptimizations(ExecutionEngine* engine,
 
 #endif
 
+vector<string> GetHostCPUAttrs() {
+  // LLVM's ExecutionEngine expects features to be enabled or disabled with a list
+  // of strings like ["+feature1", "-feature2"].
+  vector<string> attrs;
+  llvm::StringMap<bool> cpu_features;
+  llvm::sys::getHostCPUFeatures(cpu_features);
+  for (const auto& entry : cpu_features) {
+    attrs.emplace_back(
+        Substitute("$0$1", entry.second ? "+" : "-", entry.first().data()));
+  }
+  return attrs;
+}
+
 } // anonymous namespace
 
 Status ModuleBuilder::Compile(unique_ptr<ExecutionEngine>* out) {
@@ -257,6 +270,8 @@ Status ModuleBuilder::Compile(unique_ptr<ExecutionEngine>* out) {
   EngineBuilder ebuilder(move(module_));
   ebuilder.setErrorStr(&str);
   ebuilder.setOptLevel(opt_level);
+  ebuilder.setMCPU(llvm::sys::getHostCPUName());
+  ebuilder.setMAttrs(GetHostCPUAttrs());
   target_ = ebuilder.selectTarget();
   unique_ptr<ExecutionEngine> local_engine(ebuilder.create(target_));
   if (!local_engine) {

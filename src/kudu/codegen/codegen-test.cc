@@ -350,7 +350,7 @@ TEST_F(CodegenTest, TestDumpMC) {
   ScopedRegisterSink srs(&sink);
 
   Schema ints;
-  vector<size_t> part_cols = { kI32Col, kI32NullValCol, kI32NullCol };
+  vector<size_t> part_cols = { kI32Col, kI32NullValCol, kI32NullCol, kStrCol };
   ASSERT_OK(CreatePartialSchema(part_cols, &ints));
   TestProjection<true>(&ints);
 
