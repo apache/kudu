@@ -830,7 +830,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
 
   // e. Write Tablets to sys-tablets (in "preparing" state)
-  s = sys_catalog_->AddTablets(tablets);
+  SysCatalogTable::Actions tablet_actions;
+  tablet_actions.tablets_to_add = tablets;
+  s = sys_catalog_->Write(tablet_actions);
   if (!s.ok()) {
     s = s.CloneAndPrepend(Substitute("An error occurred while inserting to sys-tablets: $0",
                                      s.ToString()));
@@ -843,7 +845,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // f. Update the on-disk table state to "running".
   table->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::RUNNING);
-  s = sys_catalog_->AddTable(table.get());
+  SysCatalogTable::Actions table_actions;
+  table_actions.table_to_add = table.get();
+  s = sys_catalog_->Write(table_actions);
   if (!s.ok()) {
     s = s.CloneAndPrepend(Substitute("An error occurred while inserting to sys-tablets: $0",
                                      s.ToString()));
@@ -975,7 +979,9 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
                               Substitute("Deleted at $0", LocalTimeAsString()));
 
   // 3. Update sys-catalog with the removed table state.
-  Status s = sys_catalog_->UpdateTable(table.get());
+  SysCatalogTable::Actions actions;
+  actions.table_to_update = table.get();
+  Status s = sys_catalog_->Write(actions);
   if (!s.ok()) {
     // The mutation will be aborted when 'l' exits the scope on early return.
     s = s.CloneAndPrepend(Substitute("An error occurred while updating sys tables: $0",
@@ -1182,7 +1188,9 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 
   // 5. Update sys-catalog with the new table schema.
   TRACE("Updating metadata on disk");
-  Status s = sys_catalog_->UpdateTable(table.get());
+  SysCatalogTable::Actions actions;
+  actions.table_to_update = table.get();
+  Status s = sys_catalog_->Write(actions);
   if (!s.ok()) {
     s = s.CloneAndPrepend(
         Substitute("An error occurred while updating sys-catalog tables entry: $0",
@@ -1597,7 +1605,9 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   table_lock.Unlock();
   // We update the tablets each time that someone reports it.
   // This shouldn't be very frequent and should only happen when something in fact changed.
-  Status s = sys_catalog_->UpdateTablets({ tablet.get() });
+  SysCatalogTable::Actions actions;
+  actions.tablets_to_update.push_back(tablet.get());
+  Status s = sys_catalog_->Write(actions);
   if (!s.ok()) {
     LOG(WARNING) << "Error updating tablets: " << s.ToString() << ". Tablet report was: "
                  << report.ShortDebugString();
@@ -2450,7 +2460,9 @@ void CatalogManager::DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>
 
     TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::WRITE);
     tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::DELETED, deletion_msg);
-    CHECK_OK(sys_catalog_->UpdateTablets({ tablet.get() }));
+    SysCatalogTable::Actions actions;
+    actions.tablets_to_update.push_back(tablet.get());
+    CHECK_OK(sys_catalog_->Write(actions));
     tablet_lock.Commit();
   }
 }
@@ -2624,7 +2636,9 @@ Status CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint3
   l.mutable_data()->set_state(SysTablesEntryPB::RUNNING,
                               Substitute("Current schema version=$0", current_version));
 
-  Status s = sys_catalog_->UpdateTable(table);
+  SysCatalogTable::Actions actions;
+  actions.table_to_update = table;
+  Status s = sys_catalog_->Write(actions);
   if (!s.ok()) {
     LOG(WARNING) << "An error occurred while updating sys-tables: " << s.ToString();
     return s;
@@ -2737,8 +2751,10 @@ Status CatalogManager::ProcessPendingAssignments(
 
   // Update the sys catalog with the new set of tablets/metadata.
   if (s.ok()) {
-    s = sys_catalog_->AddAndUpdateTablets(deferred.tablets_to_add,
-                                          deferred.tablets_to_update);
+    SysCatalogTable::Actions actions;
+    actions.tablets_to_add = deferred.tablets_to_add;
+    actions.tablets_to_update = deferred.tablets_to_update;
+    s = sys_catalog_->Write(actions);
     if (!s.ok()) {
       s = s.CloneAndPrepend("An error occurred while persisting the updated tablet metadata");
     }

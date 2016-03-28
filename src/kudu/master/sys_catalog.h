@@ -93,24 +93,21 @@ class SysCatalogTable {
   // Create the new Metadata and initialize the TabletPeer for the sys-table.
   Status CreateNew(FsManager *fs_manager);
 
-  // ==================================================================
-  // Tables related methods
-  // ==================================================================
-  Status AddTable(const TableInfo* table);
-  Status UpdateTable(const TableInfo* table);
-  Status DeleteTable(const TableInfo* table);
+  // Perform a series of table/tablet actions in one WriteTransaction.
+  struct Actions {
+    Actions();
+
+    TableInfo* table_to_add;
+    TableInfo* table_to_update;
+    TableInfo* table_to_delete;
+    std::vector<TabletInfo*> tablets_to_add;
+    std::vector<TabletInfo*> tablets_to_update;
+    std::vector<TabletInfo*> tablets_to_delete;
+  };
+  Status Write(const Actions& actions);
 
   // Scan of the table-related entries.
   Status VisitTables(TableVisitor* visitor);
-
-  // ==================================================================
-  // Tablets related methods
-  // ==================================================================
-  Status AddTablets(const vector<TabletInfo*>& tablets);
-  Status UpdateTablets(const vector<TabletInfo*>& tablets);
-  Status AddAndUpdateTablets(const vector<TabletInfo*>& tablets_to_add,
-                             const vector<TabletInfo*>& tablets_to_update);
-  Status DeleteTablets(const vector<TabletInfo*>& tablets);
 
   // Scan of the tablet-related entries.
   Status VisitTablets(TabletVisitor* visitor);
@@ -179,6 +176,17 @@ class SysCatalogTable {
   // Initializes the RaftPeerPB for the local peer.
   // Crashes due to an invariant check if the rpc server is not running.
   void InitLocalRaftPeerPB();
+
+  // Add an operation to a write adding/updating/deleting a table or tablet.
+  Status ReqAddTable(tserver::WriteRequestPB* req, const TableInfo* table);
+  Status ReqUpdateTable(tserver::WriteRequestPB* req, const TableInfo* table);
+  Status ReqDeleteTable(tserver::WriteRequestPB* req, const TableInfo* table);
+  Status ReqAddTablets(tserver::WriteRequestPB* req,
+                       const std::vector<TabletInfo*>& tablets);
+  Status ReqUpdateTablets(tserver::WriteRequestPB* req,
+                          const std::vector<TabletInfo*>& tablets);
+  Status ReqDeleteTablets(tserver::WriteRequestPB* req,
+                          const std::vector<TabletInfo*>& tablets);
 
   // Table schema, without IDs, used to send messages to the TabletPeer
   Schema schema_;
