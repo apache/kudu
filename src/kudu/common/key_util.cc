@@ -18,7 +18,9 @@
 #include "kudu/common/key_util.h"
 
 #include <boost/iterator/counting_iterator.hpp>
+#include <cmath>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -29,6 +31,8 @@
 #include "kudu/common/schema.h"
 #include "kudu/gutil/map-util.h"
 
+using std::nextafter;
+using std::numeric_limits;
 using std::string;
 using std::tuple;
 using std::unordered_map;
@@ -38,6 +42,18 @@ namespace kudu {
 namespace key_util {
 
 namespace {
+
+bool IncrementBoolCell(void* cell_ptr) {
+  bool orig;
+  memcpy(&orig, cell_ptr, sizeof(bool));
+  if (!orig) {
+    bool inc = true;
+    memcpy(cell_ptr, &inc, sizeof(bool));
+    return true;
+  } else {
+    return false;
+  }
+}
 
 template<DataType type>
 bool IncrementIntCell(void* cell_ptr) {
@@ -61,6 +77,18 @@ bool IncrementIntCell(void* cell_ptr) {
   }
   memcpy(cell_ptr, &inc, sizeof(cpp_type));
   return inc > orig;
+}
+
+template<DataType type>
+bool IncrementFloatingPointCell(void* cell_ptr) {
+  typedef DataTypeTraits<type> traits;
+  typedef typename traits::cpp_type cpp_type;
+
+  cpp_type orig;
+  memcpy(&orig, cell_ptr, sizeof(cpp_type));
+  cpp_type inc = nextafter(orig, numeric_limits<cpp_type>::infinity());
+  memcpy(cell_ptr, &inc, sizeof(cpp_type));
+  return inc != orig;
 }
 
 bool IncrementStringCell(void* cell_ptr, Arena* arena) {
@@ -212,6 +240,8 @@ bool IncrementPrimaryKey(ContiguousRow* row, Arena* arena) {
 bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena) {
   DataType type = col.type_info()->physical_type();
   switch (type) {
+    case BOOL:
+      return IncrementBoolCell(cell_ptr);
 #define HANDLE_TYPE(t) case t: return IncrementIntCell<t>(cell_ptr);
     HANDLE_TYPE(UINT8);
     HANDLE_TYPE(UINT16);
@@ -222,15 +252,15 @@ bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena) {
     HANDLE_TYPE(INT32);
     HANDLE_TYPE(TIMESTAMP);
     HANDLE_TYPE(INT64);
-    case UNKNOWN_DATA:
-    case BOOL:
     case FLOAT:
+      return IncrementFloatingPointCell<FLOAT>(cell_ptr);
     case DOUBLE:
-      LOG(FATAL) << "Unable to handle type " << type << " in row keys";
+      return IncrementFloatingPointCell<DOUBLE>(cell_ptr);
     case STRING:
     case BINARY:
       return IncrementStringCell(cell_ptr, arena);
-    default: CHECK(false) << "Unknown data type: " << type;
+    case UNKNOWN_DATA:
+    default: LOG(FATAL) << "Unknown data type: " << type;
   }
   return false; // unreachable
 #undef HANDLE_TYPE
