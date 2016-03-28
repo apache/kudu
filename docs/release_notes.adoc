@@ -53,6 +53,85 @@ By combining all of these properties, Kudu targets support for families of
 applications that are difficult or impossible to implement on current-generation
 Hadoop storage technologies.
 
+[[rn_0.8.0]]
+=== Release notes specific to 0.8.0
+
+Kudu 0.8.0 delivers incremental features, improvements, and bug fixes over the previous versions.
+
+See also +++<a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20%3D%20Resolved
+%20AND%20fixVersion%20%3D%200.8.0">JIRAs resolved
+for Kudu 0.8.0</a>+++ and +++<a href="https://github.com/apache/incubator-kudu/compare/0.7.1...0.8.0">Git
+changes between 0.7.1 and 0.8.0</a>+++.
+
+To upgrade to Kudu 0.8.0, see link:installation.html#upgrade[Upgrade from 0.7.1 to 0.8.0].
+
+[[rn_0.8.0_incompatible_changes]]
+==== Incompatible changes
+
+- 0.8.0 clients are not fully compatible with servers running Kudu 0.7.1 or lower.
+In particular, scans that specify column predicates will fail. To work around this
+issue, upgrade all Kudu servers before upgrading clients.
+
+[[rn_0.8.0_new_features]]
+==== New features
+
+- link:https://issues.apache.org/jira/browse/KUDU-431[KUDU-431] A simple Flume
+  sink has been implemented.
+
+[[rn_0.8.0_improvements]]
+==== Improvements
+
+- link:https://issues.apache.org/jira/browse/KUDU-839[KUDU-839] Java RowError now uses an enum error code.
+
+- link:http://gerrit.cloudera.org:8080/#/c/2138/[Gerrit 2138] The handling of
+  column predicates has been re-implemented in the server and clients.
+
+- link:https://issues.apache.org/jira/browse/KUDU-1379[KUDU-1379] Partition pruning
+  has been implemented for C++ clients (but not yet for the Java client). This feature
+  allows you to avoid reading a tablet if you know it does not serve the row keys you are querying.
+
+- link:http://gerrit.cloudera.org:8080/#/c/2641[Gerrit 2641] Kudu now uses
+  `earliest-deadline-first` RPC scheduling and rejection. This changes the behavior
+  of the RPC service queue to prevent unfairness when processing a backlog of RPC
+  threads and to increase the likelihood that an RPC will be processed before it
+  can time out.
+
+
+[[rn_0.8.0_fixed_issues]]
+==== Fixed Issues
+
+- link:https://issues.cloudera.org/browse/KUDU-1337[KUDU-1337] Tablets from tables
+  that were deleted might be unnecessarily re-bootstrapped when the leader gets the
+  notification to delete itself after the replicas do.
+
+- link:https://issues.cloudera.org/browse/KUDU-969[KUDU-969] If a tablet server
+  shuts down while compacting a rowset and receiving updates for it, it might immediately
+  crash upon restart while bootstrapping that rowset's tablet.
+
+- link:https://issues.cloudera.org/browse/KUDU-1354[KUDU-1354] Due to a bug in Kudu's
+  MVCC implementation where row locks were released before the MVCC commit happened,
+  flushed data would include out-of-order transactions, triggering a crash on the
+  next compaction.
+
+- link:https://issues.apache.org/jira/browse/KUDU-1322[KUDU-1322] The C++ client
+  now retries write operations if the tablet it is trying to reach has already been
+  deleted.
+
+- link:http://gerrit.cloudera.org:8080/#/c/2571/[Gerrit 2571] Due to a bug in the
+  Java client, users were unable to close the `kudu-spark` shell because of
+  lingering non-daemon threads.
+
+[[rn_0.8.0_changes]]
+==== Other noteworthy changes
+
+- link:http://gerrit.cloudera.org:8080/#/c/2239/[Gerrit 2239] The concept of "feature flags"
+  was introduced in order to manage compability between different
+  Kudu versions. One case where this is helpful is if a newer client attempts to use
+  a feature unsupported by the currently-running tablet server. Rather than receiving
+  a cryptic error, the user gets an error message that is easier to interpret.
+  This is an internal change for Kudu system developers and requires no action by
+  users of the clients or API.
+
 [[rn_0.7.1]]
 === Release notes specific to 0.7.1
 
@@ -62,26 +141,26 @@ Kudu 0.7.1 is a bug fix release for 0.7.0.
 
 ==== Fixed Issues
 
-. https://issues.apache.org/jira/browse/KUDU-1325[KUDU-1325] fixes a tablet server crash that could
+- https://issues.apache.org/jira/browse/KUDU-1325[KUDU-1325] fixes a tablet server crash that could
 occur during table deletion. In some cases, while a table was being deleted, other replicas would
 attempt to re-replicate tablets to servers that had already processed the deletion. This could
 trigger a race condition that caused a crash.
 
-. https://issues.apache.org/jira/browse/KUDU-1341[KUDU-1341] fixes a potential data corruption and
+- https://issues.apache.org/jira/browse/KUDU-1341[KUDU-1341] fixes a potential data corruption and
 crash that could happen shortly after tablet server restarts in workloads that repeatedly delete
 and re-insert rows with the same primary key. In most cases, this corruption affected only a single
 replica and could be repaired by re-replicating from another.
 
-. https://issues.apache.org/jira/browse/KUDU-1343[KUDU-1343] fixes a bug in the Java client that
+- https://issues.apache.org/jira/browse/KUDU-1343[KUDU-1343] fixes a bug in the Java client that
 occurs when a scanner has to scan multiple batches from one tablet and then start scanning from
 another. In particular, this would affect any scans using the Java client that read large numbers
 of rows from multi-tablet tables.
 
-. https://issues.apache.org/jira/browse/KUDU-1345[KUDU-1345] fixes a bug where in some cases the
+- https://issues.apache.org/jira/browse/KUDU-1345[KUDU-1345] fixes a bug where in some cases the
 hybrid clock could jump backwards, resulting in a crash followed by an inability to
 restart the affected tablet server.
 
-. https://issues.apache.org/jira/browse/KUDU-1360[KUDU-1360] fixes a bug in the kudu-spark module
+- https://issues.apache.org/jira/browse/KUDU-1360[KUDU-1360] fixes a bug in the kudu-spark module
 which prevented reading rows with `NULL` values.
 
 [[rn_0.7.0]]
@@ -100,19 +179,19 @@ The upgrade instructions can be found at link:installation.html#upgrade[Upgrade 
 [[rn_0.7.0_incompatible_changes]]
 ==== Incompatible changes
 
-. The C++ client includes a new API, `KuduScanBatch`, which performs better when a
+- The C++ client includes a new API, `KuduScanBatch`, which performs better when a
 large number of small rows are returned in a batch. The old API of `vector<KuduRowResult>`
 is deprecated.
 +
 NOTE: This change is API-compatible but *not* ABI-compatible.
 
-. The default replication factor has been changed from 1 to 3. Existing tables will
+- The default replication factor has been changed from 1 to 3. Existing tables will
 continue to use the replication factor they were created with. Applications that create
 tables may not work properly if they assume a replication factor of 1 and fewer than
 3 replicas are available. To use the previous default replication factor, start the
 master with the configuration flag `--default_num_replicas=1`.
 
-. The Python client has been completely rewritten, with a focus on improving code
+- The Python client has been completely rewritten, with a focus on improving code
 quality and testing. The read path (scanners) has been improved by adding many of
 the features already supported by the C++ and Java clients. The Python client is no
 longer considered experimental.
@@ -120,54 +199,54 @@ longer considered experimental.
 [[rn_0.7.0_new_features]]
 ==== New features
 
-. With the goal of Spark integration in mind, a new `kuduRDD` API has been added,
+- With the goal of Spark integration in mind, a new `kuduRDD` API has been added,
 which wraps `newAPIHadoopRDD` and includes a default source for Spark SQL.
 
 [[rn_0.7.0_improvements]]
 ==== Improvements
 
-. The Java client includes new methods `countPendingErrors()` and
+- The Java client includes new methods `countPendingErrors()` and
 `getPendingErrors()` on `KuduSession`. These methods allow you to count and
 retrieve outstanding row errors when configuring sessions with `AUTO_FLUSH_BACKGROUND`.
 
-. New server-level metrics allow you to monitor CPU usage and context switching.
+- New server-level metrics allow you to monitor CPU usage and context switching.
 
-. Kudu now builds on RHEL 7, CentOS 7, and SLES 12. Extra instructions are included
+- Kudu now builds on RHEL 7, CentOS 7, and SLES 12. Extra instructions are included
 for SLES 12.
 
 
 [[rn_0.7.0_fixed_issues]]
 ==== Fixed Issues
 
-. https://issues.cloudera.org/browse/KUDU-1288[KUDU-1288] fixes a severe file descriptor
+- https://issues.cloudera.org/browse/KUDU-1288[KUDU-1288] fixes a severe file descriptor
 leak, which could previously only be resolved by restarting the tablet server.
 
-. https://issues.cloudera.org/browse/KUDU-1250[KUDU-1250] fixes a hang in the Java
+- https://issues.cloudera.org/browse/KUDU-1250[KUDU-1250] fixes a hang in the Java
 client when processing an in-flight batch and the previous batch encountered an error.
 
 [[rn_0.7.0_changes]]
 ==== Other noteworthy changes
 
-. The file block manager's performance was improved, but it is still not recommended for
+- The file block manager's performance was improved, but it is still not recommended for
 real-world use.
 
-. The master now attempts to spread tablets more evenly across the cluster during
+- The master now attempts to spread tablets more evenly across the cluster during
 table creation. This has no impact on existing tables, but will improve the speed
 at which under-replicated tabletsare re-replicated after a tablet server failure.
 
-. All licensing documents have been modified to adhere to ASF guidelines.
+- All licensing documents have been modified to adhere to ASF guidelines.
 
-. Kudu now requires an out-of-tree build directory. Review the build instructions
+- Kudu now requires an out-of-tree build directory. Review the build instructions
 for additional information.
 
-. The `C++` client library is now explicitly built against the
+- The `C++` client library is now explicitly built against the
 link:https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html[old gcc5 ABI].
 If you use gcc5 to build a Kudu application, your application must use the old ABI
 as well. This is typically achieved by defining the `_GLIBCXX_USE_CXX11_ABI` macro
 at compile-time when building your application. For more information, see the
 previous link and link:http://developerblog.redhat.com/2015/02/05/gcc5-and-the-c11-abi/.
 
-. The Python client is no longer considered experimental.
+- The Python client is no longer considered experimental.
 
 ==== Limitations
 
@@ -185,15 +264,15 @@ Trusty, and SLES 12. Other operating systems may work but have not been tested.
 The 0.6.0 release contains incremental improvements and bug fixes. The most notable
 changes are:
 
-. The Java client's CreateTableBuilder and AlterTableBuilder classes have been renamed
+- The Java client's CreateTableBuilder and AlterTableBuilder classes have been renamed
 to CreateTableOptions and AlterTableOptions. Their methods now also return `this` objects,
 allowing them to be used as builders.
-. The Java client's AbstractKuduScannerBuilder#maxNumBytes() setter is now called
+- The Java client's AbstractKuduScannerBuilder#maxNumBytes() setter is now called
 batchSizeBytes as is the corresponding property in AsyncKuduScanner. This makes it
 consistent with the C++ client.
-. The "kudu-admin" tool can now list and delete tables via its new subcommands
+- The "kudu-admin" tool can now list and delete tables via its new subcommands
 "list_tables" and "delete_table <table_name>".
-. OSX is now supported for single-host development. Please consult its specific installation
+- OSX is now supported for single-host development. Please consult its specific installation
 instructions in link:installation.html#osx_from_source[OS X].
 
 ==== Limitations

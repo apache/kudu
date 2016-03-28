@@ -621,15 +621,14 @@ in `java/kudu-client/target/apidocs/index.html`.
 // end::view_api[]
 
 [[upgrade]]
-== Upgrade from 0.6.0 to 0.7.0
+== Upgrade from 0.7.1 to 0.8.0
 
 Before upgrading, see <<client_compatibility>> and <<api_compatibility>>.
-To upgrade from Kudu 0.6.0 to 0.7.0, perform the following high-level steps, which
+To upgrade from Kudu 0.7.1 to 0.8.0, perform the following high-level steps, which
 are detailed in <<upgrade_procedure>>:
 
 . Shut down all Kudu services.
-. Install the new Kudu packages or parcels, or install Kudu 0.7.0 from source.
-. Ubuntu only: re-download the repository list file. See <<kudu_package_locations>>.
+. Install the new Kudu packages or parcels, or install Kudu 0.8.0 from source.
 . Restart all Kudu services.
 
 It is technically possible to upgrade Kudu using rolling restarts, but it has not
@@ -641,18 +640,16 @@ from the previous latest version to the newest.
 [[client_compatibility]]
 === Client compatibility
 
-Kudu 0.7.0 maintains wire compatibility with previous versions. This means that a Kudu 0.7.0
-client can communicate with a Kudu 0.6.0 cluster, and vice versa. For that reason,
-you do not need to upgrade client JARs at the same time the cluster is upgraded.
-
-The same wire compatibility guarantees apply to the Impala_Kudu fork that was released
-with Kudu 0.5.0.
+Masters and tablet servers should be upgraded before clients are upgraded. For specific
+information about client compatibility, see the
+link:release_notes.html#rn_0.8.0_incompatible_changes[Incompatible Changes] section
+of the release notes.
 
 [[api_compatibility]]
 
 === API Compatibility
 
-The Kudu 0.7.0 client API is compatible with Kudu 0.6.0.
+The Kudu 0.8.0 client API is compatible with Kudu 0.7.1.
 
 [[upgrade_procedure]]
 === Upgrade procedure
