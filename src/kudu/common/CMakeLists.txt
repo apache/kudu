@@ -53,7 +53,6 @@ set(COMMON_SRCS
   rowblock.cc
   row_changelist.cc
   row_operations.cc
-  scan_predicate.cc
   scan_spec.cc
   schema.cc
   timestamp.cc
@@ -86,7 +85,6 @@ ADD_KUDU_TEST(key_util-test)
 ADD_KUDU_TEST(partial_row-test)
 ADD_KUDU_TEST(partition-test)
 ADD_KUDU_TEST(partition_pruner-test)
-ADD_KUDU_TEST(predicate-test)
 ADD_KUDU_TEST(row_changelist-test)
 ADD_KUDU_TEST(row_operations-test)
 ADD_KUDU_TEST(scan_spec-test)

@@ -24,7 +24,6 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/common/row.h"
-#include "kudu/common/scan_predicate.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/slice.h"

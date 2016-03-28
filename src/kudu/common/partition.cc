@@ -21,7 +21,6 @@
 #include <set>
 
 #include "kudu/common/partial_row.h"
-#include "kudu/common/scan_predicate.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"

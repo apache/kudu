@@ -23,7 +23,6 @@
 #include "kudu/client/scan_predicate-internal.h"
 #include "kudu/client/value-internal.h"
 #include "kudu/client/value.h"
-#include "kudu/common/scan_predicate.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/strings/substitute.h"
 
