@@ -28,6 +28,7 @@ users if they're missing anything obvious.
 """
 
 import os
+import platform
 import sys
 import subprocess
 
@@ -40,13 +41,20 @@ REQUIRED_TOOLS = [
   "automake",
   "curl",
   "git",
-  "libtool",
   "make",
   "patch",
   "pkg-config",
   "rsync",
   "unzip",
   "xxd"]
+
+if platform.system() == "Linux":
+  # Modern Linux distros split libtool functionality into two packages:
+  # libtool-bin (containing 'libtool') and libtool (containing 'libtoolize').
+  # Only the latter is needed for a working autoconf.
+  REQUIRED_TOOLS.append("libtoolize")
+else:
+  REQUIRED_TOOLS.append("libtool")
 
 def log_failure_and_exit(error_msg, exc=None):
   print "***", error_msg
