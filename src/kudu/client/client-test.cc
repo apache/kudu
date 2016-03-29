@@ -150,8 +150,8 @@ class ClientTest : public KuduTest {
   // Count the rows of a table, checking that the operation succeeds.
   //
   // Must be public to use as a thread closure.
-  void CheckRowCount(KuduTable* table) {
-    CountRowsFromClient(table);
+  void CheckRowCount(KuduTable* table, int expected) {
+    CHECK_EQ(CountRowsFromClient(table), expected);
   }
 
  protected:
@@ -198,7 +198,7 @@ class ClientTest : public KuduTest {
   void InsertTestRows(KuduClient* client, KuduTable* table, int num_rows, int first_row = 0) {
     shared_ptr<KuduSession> session = client->NewSession();
     ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    session->SetTimeoutMillis(10000);
+    session->SetTimeoutMillis(60000);
     for (int i = first_row; i < num_rows + first_row; i++) {
       gscoped_ptr<KuduInsert> insert(BuildTestRow(table, i));
       ASSERT_OK(session->Apply(insert.release()));
@@ -2707,7 +2707,8 @@ TEST_F(ClientTest, TestClonePredicates) {
 // Test that scanners will retry after receiving ERROR_SERVER_TOO_BUSY from an
 // overloaded tablet server. Regression test for KUDU-1079.
 TEST_F(ClientTest, TestServerTooBusyRetry) {
-  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
+  const int kNumRows = 100000;
+  NO_FATALS(InsertTestRows(client_table_.get(), kNumRows));
 
   // Introduce latency in each scan to increase the likelihood of
   // ERROR_SERVER_TOO_BUSY.
@@ -2728,7 +2729,7 @@ TEST_F(ClientTest, TestServerTooBusyRetry) {
   while (!stop) {
     scoped_refptr<kudu::Thread> thread;
     ASSERT_OK(kudu::Thread::Create("test", strings::Substitute("t$0", t++),
-                                   &ClientTest::CheckRowCount, this, client_table_.get(),
+                                   &ClientTest::CheckRowCount, this, client_table_.get(), kNumRows,
                                    &thread));
     threads.push_back(thread);
 

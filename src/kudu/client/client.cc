@@ -1125,7 +1125,7 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
   return Status::OK();
 }
 
-Status KuduScanner::NextBatch(KuduScanBatch* result) {
+Status KuduScanner::NextBatch(KuduScanBatch* batch) {
   // TODO: do some double-buffering here -- when we return this batch
   // we should already have fired off the RPC for the next batch, but
   // need to do some swapping of the response objects around to avoid
@@ -1133,7 +1133,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* result) {
   CHECK(data_->open_);
   CHECK(data_->proxy_);
 
-  result->data_->Clear();
+  batch->data_->Clear();
 
   if (data_->short_circuit_) {
     return Status::OK();
@@ -1143,7 +1143,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* result) {
     // We have data from a previous scan.
     VLOG(1) << "Extracting data from scan " << ToString();
     data_->data_in_open_ = false;
-    return result->data_->Reset(&data_->controller_,
+    return batch->data_->Reset(&data_->controller_,
                                 data_->projection_,
                                 &data_->client_projection_,
                                 make_gscoped_ptr(data_->last_response_.release_data()));
@@ -1151,59 +1151,48 @@ Status KuduScanner::NextBatch(KuduScanBatch* result) {
     // More data is available in this tablet.
     VLOG(1) << "Continuing scan " << ToString();
 
-    // The user has specified a timeout 'data_->timeout_' which should
-    // apply to the total time for each call to NextBatch(). However,
-    // if this is a fault-tolerant scan, it's preferable to set a shorter
-    // timeout (the "default RPC timeout" for each individual RPC call --
-    // so that if the server is hung we have time to fail over and try a
-    // different server.
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
-
-    MonoTime batch_deadline = now;
+    MonoTime batch_deadline = MonoTime::Now(MonoTime::FINE);
     batch_deadline.AddDelta(data_->timeout_);
-
-    MonoTime rpc_deadline;
-    if (data_->is_fault_tolerant_) {
-      rpc_deadline = now;
-      rpc_deadline.AddDelta(data_->table_->client()->default_rpc_timeout());
-      rpc_deadline = MonoTime::Earliest(batch_deadline, rpc_deadline);
-    } else {
-      rpc_deadline = batch_deadline;
-    }
-
-    data_->controller_.Reset();
-    data_->controller_.set_deadline(rpc_deadline);
     data_->PrepareRequest(KuduScanner::Data::CONTINUE);
-    Status rpc_status = data_->proxy_->Scan(data_->next_req_,
-                                            &data_->last_response_,
-                                            &data_->controller_);
-    const Status server_status = data_->CheckForErrors();
 
-    // Success case.
-    if (rpc_status.ok() && server_status.ok()) {
-      if (data_->last_response_.has_last_primary_key()) {
-        data_->last_primary_key_ = data_->last_response_.last_primary_key();
+    while (true) {
+      bool allow_time_for_failover = data_->is_fault_tolerant_;
+      ScanRpcStatus result = data_->SendScanRpc(batch_deadline, allow_time_for_failover);
+
+      // Success case.
+      if (result.result == ScanRpcStatus::OK) {
+        if (data_->last_response_.has_last_primary_key()) {
+          data_->last_primary_key_ = data_->last_response_.last_primary_key();
+        }
+        data_->scan_attempts_ = 0;
+        return batch->data_->Reset(&data_->controller_,
+                                   data_->projection_,
+                                   &data_->client_projection_,
+                                   make_gscoped_ptr(data_->last_response_.release_data()));
       }
-      data_->scan_attempts_ = 0;
-      return result->data_->Reset(&data_->controller_,
-                                  data_->projection_,
-                                  &data_->client_projection_,
-                                  make_gscoped_ptr(data_->last_response_.release_data()));
+
+      data_->scan_attempts_++;
+
+      // Error handling.
+      LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
+                   << ToString() << " failed: " << result.status.ToString();
+
+      set<string> blacklist;
+      RETURN_NOT_OK(data_->HandleError(result, batch_deadline, &blacklist));
+
+      if (data_->is_fault_tolerant_) {
+        LOG(WARNING) << "Attempting to retry scan of tablet " << ToString() << " elsewhere.";
+        return data_->ReopenCurrentTablet(batch_deadline, &blacklist);
+      }
+
+      if (blacklist.empty()) {
+        // If we didn't blacklist the current server, we can just retry again.
+        continue;
+      }
+      // If we blacklisted the current server, and it's not fault-tolerant, we can't
+      // retry anywhere, so just propagate the error.
+      return result.status;
     }
-
-    data_->scan_attempts_++;
-
-    // Error handling.
-    LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
-        << ToString() << " failed: "
-        << (!rpc_status.ok() ? rpc_status.ToString() : server_status.ToString());
-    set<string> blacklist;
-    vector<internal::RemoteTabletServer*> candidates;
-    RETURN_NOT_OK(data_->CanBeRetried(false, rpc_status, server_status, rpc_deadline,
-                                      batch_deadline, candidates, &blacklist));
-
-    LOG(WARNING) << "Attempting to retry scan of tablet " << ToString() << " elsewhere.";
-    return data_->ReopenCurrentTablet(batch_deadline, &blacklist);
   } else if (data_->MoreTablets()) {
     // More data may be available in other tablets.
     // No need to close the current tablet; we scanned all the data so the
