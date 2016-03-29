@@ -33,31 +33,80 @@ namespace kudu {
 
 namespace client {
 
+// The result of KuduScanner::Data::AnalyzeResponse.
+//
+// This provides a more specific enum for handling the possible error conditions in a Scan
+// RPC.
+struct ScanRpcStatus {
+  enum Result {
+    OK,
+
+    // The request was malformed (e.g. bad schema, etc).
+    INVALID_REQUEST,
+
+    // The server was busy (e.g. RPC queue overflow).
+    SERVER_BUSY,
+
+    // The deadline for the whole batch was exceeded.
+    OVERALL_DEADLINE_EXCEEDED,
+
+    // The deadline for an individual RPC was exceeded, but we have more time left to try
+    // on other hosts.
+    RPC_DEADLINE_EXCEEDED,
+
+    // Another RPC-system error (e.g. NetworkError because the TS was down).
+    RPC_ERROR,
+
+    // The scanner on the server side expired.
+    SCANNER_EXPIRED,
+
+    // The destination tablet was not running (e.g. in the process of bootstrapping).
+    TABLET_NOT_RUNNING,
+
+    // The destination tablet does not exist (e.g. because the replica was deleted).
+    TABLET_NOT_FOUND,
+
+    // Some other unknown tablet server error. This indicates that the TS was running
+    // but some problem occurred other than the ones enumerated above.
+    OTHER_TS_ERROR
+  };
+
+  Result result;
+  Status status;
+};
+
 class KuduScanner::Data {
  public:
+
   explicit Data(KuduTable* table);
   ~Data();
-
-  Status CheckForErrors();
 
   // Copies a predicate lower or upper bound from 'bound_src' into
   // 'bound_dst'.
   void CopyPredicateBound(const ColumnSchema& col,
                           const void* bound_src, std::string* bound_dst);
 
-  // Called when KuduScanner::NextBatch or KuduScanner::Data::OpenTablet result in an RPC or
-  // server error. Returns the error status if the call cannot be retried.
+
+  // Calculates a deadline and sends the next RPC for this scanner. The deadline for the
+  // RPC is calculated based on whether 'allow_time_for_failover' is true. If true,
+  // the deadline used for the RPC will be shortened so that, on timeout, there will
+  // be enough time for another attempt to a different server. If false, then the RPC
+  // will use 'overall_deadline' as its deadline.
   //
-  // The number of parameters reflects the complexity of handling retries.
-  // We must respect the overall scan 'deadline', as well as the 'blacklist' of servers
-  // experiencing transient failures. See the implementation for more details.
-  Status CanBeRetried(const bool isNewScan,
-                      const Status& rpc_status,
-                      const Status& server_status,
-                      const MonoTime& actual_deadline,
-                      const MonoTime& deadline,
-                      const std::vector<internal::RemoteTabletServer*>& candidates,
-                      std::set<std::string>* blacklist);
+  // The RPC and TS proxy should already have been prepared in next_req_, proxy_, etc.
+  ScanRpcStatus SendScanRpc(const MonoTime& overall_deadline, bool allow_time_for_failover);
+
+  // Called when KuduScanner::NextBatch or KuduScanner::Data::OpenTablet result in an RPC or
+  // server error.
+  //
+  // If the provided 'status' indicates the error was retryable, then returns Status::OK()
+  // and potentially inserts the current server into 'blacklist' if the retry should be
+  // made on a different replica.
+  //
+  // This function may also sleep in case the error suggests that backoff is necessary.
+  Status HandleError(const ScanRpcStatus& status,
+                     const MonoTime& deadline,
+                     std::set<std::string>* blacklist);
 
   // Open the next tablet in the scan.
   // The deadline is the time budget for this operation.
@@ -177,6 +226,23 @@ class KuduScanner::Data {
   //
   // TODO: This and the overall scan retry logic duplicates much of RpcRetrier.
   Status last_error_;
+
+ private:
+  // Analyze the response of the last Scan RPC made by this scanner.
+  //
+  // The error handling of a scan RPC is fairly complex, since we have to handle
+  // some errors which happen at the network layer, some which happen generically
+  // at the RPC layer, and some which are scanner-specific. This function consolidates
+  // the various different error situations into a single enum code and Status.
+  //
+  // 'rpc_status':       the Status directly returned by the RPC Scan() method.
+  // 'overall_deadline': the user-provided deadline for the scanner batch
+  // 'rpc_deadline':     the deadline that was used for this specific RPC, which
+  //                     might be earlier than the overall deadline, in order to
+  //                     leave more time for further retries on other hosts.
+  ScanRpcStatus AnalyzeResponse(const Status& rpc_status,
+                                const MonoTime& overall_deadline,
+                                const MonoTime& rpc_deadline);
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

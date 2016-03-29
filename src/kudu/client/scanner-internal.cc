@@ -71,14 +71,6 @@ KuduScanner::Data::Data(KuduTable* table)
 KuduScanner::Data::~Data() {
 }
 
-Status KuduScanner::Data::CheckForErrors() {
-  if (PREDICT_TRUE(!last_response_.has_error())) {
-    return Status::OK();
-  }
-
-  return StatusFromPB(last_response_.error().status());
-}
-
 namespace {
 void CopyPredicateBound(const ColumnSchema& col,
                         const void* bound_src,
@@ -132,28 +124,65 @@ void ColumnPredicateIntoPB(const ColumnPredicate& predicate,
 }
 } // anonymous namespace
 
-Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
-                                       const Status& rpc_status, const Status& server_status,
-                                       const MonoTime& actual_deadline, const MonoTime& deadline,
-                                       const vector<RemoteTabletServer*>& candidates,
-                                       set<string>* blacklist) {
-  CHECK(!rpc_status.ok() || !server_status.ok());
-
-  // Check for ERROR_INVALID_REQUEST, which should not retry.
-  if (server_status.ok() &&
-      !rpc_status.ok() &&
-      controller_.error_response() != nullptr &&
-      controller_.error_response()->code() == rpc::ErrorStatusPB::ERROR_INVALID_REQUEST) {
-    return rpc_status;
+Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
+                                      const MonoTime& deadline,
+                                      set<string>* blacklist) {
+  // If we timed out because of the overall deadline, we're done.
+  // We didn't wait a full RPC timeout, though, so don't mark the tserver as failed.
+  if (err.result == ScanRpcStatus::OVERALL_DEADLINE_EXCEEDED) {
+      LOG(INFO) << "Scan of tablet " << remote_->tablet_id() << " at "
+          << ts_->ToString() << " deadline expired.";
+      return last_error_.ok()
+          ? err.status : err.status.CloneAndAppend(last_error_.ToString());
   }
 
-  // Check for ERROR_SERVER_TOO_BUSY, which should result in a retry after a delay.
-  if (server_status.ok() &&
-      !rpc_status.ok() &&
-      controller_.error_response() &&
-      controller_.error_response()->code() == rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY) {
-    UpdateLastError(rpc_status);
+  UpdateLastError(err.status);
 
+  bool mark_ts_failed = false;
+  bool blacklist_location = false;
+  bool mark_locations_stale = false;
+  bool can_retry = true;
+  bool backoff = false;
+  switch (err.result) {
+    case ScanRpcStatus::SERVER_BUSY:
+      backoff = true;
+      break;
+    case ScanRpcStatus::RPC_DEADLINE_EXCEEDED:
+    case ScanRpcStatus::RPC_ERROR:
+      blacklist_location = true;
+      mark_ts_failed = true;
+      break;
+    case ScanRpcStatus::SCANNER_EXPIRED:
+      break;
+    case ScanRpcStatus::TABLET_NOT_RUNNING:
+      blacklist_location = true;
+      break;
+    case ScanRpcStatus::TABLET_NOT_FOUND:
+      // There was either a tablet configuration change or the table was
+      // deleted, since at the time of this writing we don't support splits.
+      // Force a re-fetch of the tablet metadata.
+      mark_locations_stale = true;
+      blacklist_location = true;
+      break;
+    default:
+      can_retry = false;
+      break;
+  }
+
+  if (mark_ts_failed) {
+    table_->client()->data_->meta_cache_->MarkTSFailed(ts_, err.status);
+    DCHECK(blacklist_location);
+  }
+
+  if (blacklist_location) {
+    blacklist->insert(ts_->permanent_uuid());
+  }
+
+  if (mark_locations_stale) {
+    remote_->MarkStale();
+  }
+
+  if (backoff) {
     // Exponential backoff with jitter anchored between 10ms and 20ms, and an
     // upper bound between 2.5s and 5s.
     MonoDelta sleep = MonoDelta::FromMilliseconds(
@@ -162,89 +191,69 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
     now.AddDelta(sleep);
     if (deadline.ComesBefore(now)) {
       Status ret = Status::TimedOut("unable to retry before timeout",
-                                    rpc_status.ToString());
+                                    err.status.ToString());
       return last_error_.ok() ?
           ret : ret.CloneAndAppend(last_error_.ToString());
     }
-    LOG(INFO) << "Retrying scan to busy tablet server " << ts_->ToString()
-              << " after " << sleep.ToString() << "; attempt " << scan_attempts_;
+    LOG(INFO) << "Error scanning on server " << ts_->ToString() << ": "
+              << err.status.ToString() << ". Will retry after "
+              << sleep.ToString() << "; attempt " << scan_attempts_;
     SleepFor(sleep);
+  }
+  if (can_retry) {
     return Status::OK();
   }
+  return err.status;
+}
 
-  // Start by checking network errors.
+ScanRpcStatus KuduScanner::Data::AnalyzeResponse(const Status& rpc_status,
+                                                 const MonoTime& overall_deadline,
+                                                 const MonoTime& deadline) {
+  if (rpc_status.ok() && !last_response_.has_error()) {
+    return ScanRpcStatus{ScanRpcStatus::OK, Status::OK()};
+  }
+
+  // Check for various RPC-level errors.
   if (!rpc_status.ok()) {
-    if (rpc_status.IsTimedOut() && actual_deadline.Equals(deadline)) {
-      // If we ended because of the overall deadline, we're done.
-      // We didn't wait a full RPC timeout though, so don't mark the tserver as failed.
-      LOG(INFO) << "Scan of tablet " << remote_->tablet_id() << " at "
-          << ts_->ToString() << " deadline expired.";
-      return last_error_.ok()
-          ? rpc_status : rpc_status.CloneAndAppend(last_error_.ToString());
-    } else {
-      // All other types of network errors are retriable, and also indicate the tserver is failed.
-      UpdateLastError(rpc_status);
-      table_->client()->data_->meta_cache_->MarkTSFailed(ts_, rpc_status);
-      blacklist->insert(ts_->permanent_uuid());
-    }
-  }
-
-  // If we're in the middle of a batch and doing a non fault-tolerant scan, then
-  // we cannot retry. Non fault-tolerant scans can still be retried on a tablet
-  // boundary (i.e. an OpenTablet call).
-  if (!isNewScan && !is_fault_tolerant_) {
-    return !rpc_status.ok() ? rpc_status : server_status;
-  }
-
-  // For retries, the correct action depends on the particular failure condition.
-  //
-  // On an RPC error, we retry at a different tablet server.
-  //
-  // If the server returned an error code, it depends:
-  //
-  //   - SCANNER_EXPIRED    : The scan can be retried at the same tablet server.
-  //
-  //   - TABLET_NOT_RUNNING : The scan can be retried at a different tablet server, subject
-  //                          to the client's specified selection criteria.
-  //
-  //   - TABLET_NOT_FOUND   : The scan can be retried at a different tablet server, subject
-  //                          to the client's specified selection criteria.
-  //                          The metadata for this tablet should be refreshed.
-  //
-  //   - Any other error    : Fatal. This indicates an unexpected error while processing the scan
-  //                          request.
-  if (rpc_status.ok() && !server_status.ok()) {
-    UpdateLastError(server_status);
-
-    const tserver::TabletServerErrorPB& error = last_response_.error();
-    switch (error.code()) {
-      case tserver::TabletServerErrorPB::SCANNER_EXPIRED:
-        VLOG(1) << "Got SCANNER_EXPIRED error code, non-fatal error.";
-        break;
-      case tserver::TabletServerErrorPB::TABLET_NOT_RUNNING:
-        VLOG(1) << "Got error code " << tserver::TabletServerErrorPB::Code_Name(error.code())
-            << ": temporarily blacklisting node " << ts_->permanent_uuid();
-        blacklist->insert(ts_->permanent_uuid());
-        break;
-      case tserver::TabletServerErrorPB::TABLET_NOT_FOUND: {
-        // There was either a tablet configuration change or the table was
-        // deleted, since at the time of this writing we don't support splits.
-        // Backoff, then force a re-fetch of the tablet metadata.
-        remote_->MarkStale();
-        // TODO: Only backoff on the second time we hit TABLET_NOT_FOUND on the
-        // same tablet (see KUDU-1314).
-        MonoDelta backoff_time = MonoDelta::FromMilliseconds((random() % 1000) + 500);
-        SleepFor(backoff_time);
-        break;
+    // Handle various RPC-system level errors that came back from the server. These
+    // errors indicate that the TS is actually up.
+    if (rpc_status.IsRemoteError()) {
+      DCHECK(controller_.error_response());
+      switch (controller_.error_response()->code()) {
+        case rpc::ErrorStatusPB::ERROR_INVALID_REQUEST:
+          return ScanRpcStatus{ScanRpcStatus::INVALID_REQUEST, rpc_status};
+        case rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY:
+          return ScanRpcStatus{ScanRpcStatus::SERVER_BUSY, rpc_status};
+        default:
+          return ScanRpcStatus{ScanRpcStatus::RPC_ERROR, rpc_status};
       }
-      default:
-        // All other server errors are fatal. Usually indicates a malformed request, e.g. a bad scan
-        // specification.
-        return server_status;
     }
+
+    if (rpc_status.IsTimedOut()) {
+      if (overall_deadline.Equals(deadline)) {
+        return ScanRpcStatus{ScanRpcStatus::OVERALL_DEADLINE_EXCEEDED, rpc_status};
+      } else {
+        return ScanRpcStatus{ScanRpcStatus::RPC_DEADLINE_EXCEEDED, rpc_status};
+      }
+    }
+    return ScanRpcStatus{ScanRpcStatus::RPC_ERROR, rpc_status};
   }
 
-  return Status::OK();
+  // If we got this far, it indicates that the tserver service actually handled the
+  // call, but it was an error for some reason.
+  Status server_status = StatusFromPB(last_response_.error().status());
+  DCHECK(!server_status.ok());
+  const tserver::TabletServerErrorPB& error = last_response_.error();
+  switch (error.code()) {
+    case tserver::TabletServerErrorPB::SCANNER_EXPIRED:
+      return ScanRpcStatus{ScanRpcStatus::SCANNER_EXPIRED, server_status};
+    case tserver::TabletServerErrorPB::TABLET_NOT_RUNNING:
+      return ScanRpcStatus{ScanRpcStatus::TABLET_NOT_RUNNING, server_status};
+    case tserver::TabletServerErrorPB::TABLET_NOT_FOUND:
+      return ScanRpcStatus{ScanRpcStatus::TABLET_NOT_FOUND, server_status};
+    default:
+      return ScanRpcStatus{ScanRpcStatus::OTHER_TS_ERROR, server_status};
+  }
 }
 
 Status KuduScanner::Data::OpenNextTablet(const MonoTime& deadline,
@@ -259,6 +268,34 @@ Status KuduScanner::Data::ReopenCurrentTablet(const MonoTime& deadline,
   return OpenTablet(remote_->partition().partition_key_start(),
                     deadline,
                     blacklist);
+}
+
+ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
+                                             bool allow_time_for_failover) {
+  // The user has specified a timeout which should apply to the total time for each call
+  // to NextBatch(). However, for fault-tolerant scans, or for when we are first opening
+  // a scanner, it's preferable to set a shorter timeout (the "default RPC timeout") for
+  // each individual RPC call. This gives us time to fail over to a different server
+  // if the first server we try happens to be hung.
+  MonoTime rpc_deadline;
+  if (allow_time_for_failover) {
+    rpc_deadline = MonoTime::Now(MonoTime::FINE);
+    rpc_deadline.AddDelta(table_->client()->default_rpc_timeout());
+    rpc_deadline = MonoTime::Earliest(overall_deadline, rpc_deadline);
+  } else {
+    rpc_deadline = overall_deadline;
+  }
+
+  controller_.Reset();
+  controller_.set_deadline(rpc_deadline);
+  if (!spec_.predicates().empty()) {
+    controller_.RequireServerFeature(TabletServerFeatures::COLUMN_PREDICATES);
+  }
+  return AnalyzeResponse(
+      proxy_->Scan(next_req_,
+                   &last_response_,
+                   &controller_),
+      rpc_deadline, overall_deadline);
 }
 
 Status KuduScanner::Data::OpenTablet(const string& partition_key,
@@ -360,47 +397,19 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
       continue;
     }
     RETURN_NOT_OK(lookup_status);
-
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
-    if (deadline.ComesBefore(now)) {
-      Status ret = Status::TimedOut("Scan timed out, deadline expired");
-      return last_error_.ok() ?
-          ret : ret.CloneAndAppend(last_error_.ToString());
-    }
-
-    // Recalculate the deadlines.
-    // If we have other replicas beyond this one to try, then we'll try to
-    // open the scanner with the default RPC timeout. That gives us time to
-    // try other replicas later. Otherwise, we open the scanner using the
-    // full remaining deadline for the user's call.
-    MonoTime rpc_deadline;
-    if (static_cast<int>(candidates.size()) - blacklist->size() > 1) {
-      rpc_deadline = now;
-      rpc_deadline.AddDelta(table_->client()->default_rpc_timeout());
-      rpc_deadline = MonoTime::Earliest(deadline, rpc_deadline);
-    } else {
-      rpc_deadline = deadline;
-    }
-
-    controller_.Reset();
-    controller_.set_deadline(rpc_deadline);
-
-    if (!spec_.predicates().empty()) {
-      controller_.RequireServerFeature(TabletServerFeatures::COLUMN_PREDICATES);
-    }
-
     CHECK(ts->proxy());
     ts_ = CHECK_NOTNULL(ts);
-    proxy_ = ts->proxy();
-    const Status rpc_status = proxy_->Scan(next_req_, &last_response_, &controller_);
-    const Status server_status = CheckForErrors();
-    if (rpc_status.ok() && server_status.ok()) {
+    proxy_ = ts_->proxy();
+
+    bool allow_time_for_failover = static_cast<int>(candidates.size()) - blacklist->size() > 1;
+    ScanRpcStatus scan_status = SendScanRpc(deadline, allow_time_for_failover);
+    if (scan_status.result == ScanRpcStatus::OK) {
+      last_error_ = Status::OK();
       scan_attempts_ = 0;
       break;
     }
     scan_attempts_++;
-    RETURN_NOT_OK(CanBeRetried(true, rpc_status, server_status, rpc_deadline, deadline,
-                               candidates, blacklist));
+    RETURN_NOT_OK(HandleError(scan_status, deadline, blacklist));
   }
 
   partition_pruner_.RemovePartitionKeyRange(remote_->partition().partition_key_end());
