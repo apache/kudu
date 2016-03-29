@@ -27,7 +27,7 @@ a future post.
 * Dan Burkert has been working on a [design doc](http://gerrit.cloudera.org:8080/#/c/2443/)
   for a "scan tokens" API as described in the [KUDU-1312](https://issues.apache.org/jira/browse/KUDU-1312)
   JIRA. He also posted a preliminary patch series for the
-  [http://gerrit.cloudera.org:8080/#/c/2592/](Java implementation) of the API.
+  [Java implementation](http://gerrit.cloudera.org:8080/#/c/2592/) of the API.
 
   This work will make it easier to integrate query and execution engines such as
   Spark, MapReduce, and Drill with Kudu. In particular, the API aims to support features
