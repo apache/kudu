@@ -11,7 +11,7 @@ project on a weekly basis.
 
 If you find this post useful, please let us know by emailing the
 [kudu-user mailing list](mailto:user@kudu.incubator.apache.org) or
-tweeting at [@ApacheKudu](https://twitter.com/). Similarly, if you're
+tweeting at [@ApacheKudu](https://twitter.com/ApacheKudu). Similarly, if you're
 aware of some Kudu news we missed, let us know so we can cover it in
 a future post.
 
