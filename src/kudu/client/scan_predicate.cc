@@ -61,9 +61,9 @@ ComparisonPredicateData::ComparisonPredicateData(ColumnSchema col,
       op_(op),
       val_(val) {
 }
+
 ComparisonPredicateData::~ComparisonPredicateData() {
 }
-
 
 Status ComparisonPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
   void* val_void;

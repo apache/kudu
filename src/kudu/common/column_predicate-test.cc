@@ -188,20 +188,58 @@ class TestColumnPredicate : public KuduTest {
               ColumnPredicate::None(column),
               ColumnPredicate::None(column),
               PredicateType::None);
+
+    // IS NOT NULL
+
+    // IS NOT NULL AND
+    // IS NOT NULL
+    // =
+    // IS NOT NULL
+    TestMerge(ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::IsNotNull(column),
+              PredicateType::IsNotNull);
+
+    // IS NOT NULL AND
+    // None
+    // =
+    // None
+    TestMerge(ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::None(column),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // IS NOT NULL AND
+    // |
+    // =
+    // |
+    TestMerge(ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::Equality(column, &values[0]),
+              ColumnPredicate::Equality(column, &values[0]),
+              PredicateType::Equality);
+
+    // IS NOT NULL AND
+    // [------)
+    // =
+    // [------)
+    TestMerge(ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::Range(column, &values[0], &values[2]),
+              ColumnPredicate::Range(column, &values[0], &values[2]),
+              PredicateType::Range);
   }
 };
 
 TEST_F(TestColumnPredicate, TestMerge) {
-  TestMergeCombinations(ColumnSchema("c", INT8),
+  TestMergeCombinations(ColumnSchema("c", INT8, true),
                         vector<int8_t> { 0, 1, 2, 3, 4, 5, 6 });
 
-  TestMergeCombinations(ColumnSchema("c", INT32),
+  TestMergeCombinations(ColumnSchema("c", INT32, true),
                         vector<int32_t> { -100, -10, -1, 0, 1, 10, 100 });
 
-  TestMergeCombinations(ColumnSchema("c", STRING),
+  TestMergeCombinations(ColumnSchema("c", STRING, true),
                         vector<Slice> { "a", "b", "c", "d", "e", "f", "g" });
 
-  TestMergeCombinations(ColumnSchema("c", BINARY),
+  TestMergeCombinations(ColumnSchema("c", BINARY, true),
                         vector<Slice> { Slice("", 0),
                                         Slice("\0", 1),
                                         Slice("\0\0", 2),
@@ -263,6 +301,21 @@ TEST_F(TestColumnPredicate, TestInclusiveRange) {
               ColumnPredicate::InclusiveRange(column, &zero, &max, &arena));
 
     ASSERT_EQ(boost::none, ColumnPredicate::InclusiveRange(column, nullptr, &max, &arena));
+  }
+  {
+    ColumnSchema column("c", INT32, true);
+    int32_t zero = 0;
+    int32_t two = 2;
+    int32_t three = 3;
+    int32_t max = INT32_MAX;
+
+    ASSERT_EQ(ColumnPredicate::Range(column, &zero, &three),
+              ColumnPredicate::InclusiveRange(column, &zero, &two, &arena));
+    ASSERT_EQ(ColumnPredicate::Range(column, &zero, nullptr),
+              ColumnPredicate::InclusiveRange(column, &zero, &max, &arena));
+
+    ASSERT_EQ(ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::InclusiveRange(column, nullptr, &max, &arena));
   }
   {
     ColumnSchema column("c", STRING);

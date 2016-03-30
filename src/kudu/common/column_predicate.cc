@@ -67,7 +67,14 @@ boost::optional<ColumnPredicate> ColumnPredicate::InclusiveRange(ColumnSchema co
     memcpy(buf, upper, size);
     if (!key_util::IncrementCell(column, buf, arena)) {
       if (lower == nullptr) {
-        return boost::none;
+        if (column.is_nullable()) {
+          // If incrementing the upper bound fails and the column is nullable,
+          // then return an IS NOT NULL predicate, so that null values will be
+          // filtered.
+          return ColumnPredicate::IsNotNull(move(column));
+        } else {
+          return boost::none;
+        }
       } else {
         upper = nullptr;
       }
@@ -76,6 +83,11 @@ boost::optional<ColumnPredicate> ColumnPredicate::InclusiveRange(ColumnSchema co
     }
   }
   return ColumnPredicate::Range(move(column), lower, upper);
+}
+
+ColumnPredicate ColumnPredicate::IsNotNull(ColumnSchema column) {
+  CHECK(column.is_nullable());
+  return ColumnPredicate(PredicateType::IsNotNull, move(column), nullptr, nullptr);
 }
 
 ColumnPredicate ColumnPredicate::None(ColumnSchema column) {
@@ -90,8 +102,9 @@ void ColumnPredicate::SetToNone() {
 
 void ColumnPredicate::Simplify() {
   switch (predicate_type_) {
-    case PredicateType::None: return;
-    case PredicateType::Equality: return;
+    case PredicateType::None:
+    case PredicateType::Equality:
+    case PredicateType::IsNotNull: return;
     case PredicateType::Range: {
       if (lower_ != nullptr && upper_ != nullptr) {
         if (column_.type_info()->Compare(lower_, upper_) >= 0) {
@@ -119,6 +132,18 @@ void ColumnPredicate::Merge(const ColumnPredicate& other) {
     };
     case PredicateType::Equality: {
       MergeIntoEquality(other);
+      return;
+    };
+    case PredicateType::IsNotNull: {
+      // NOT NULL is less selective than all other predicate types, so the
+      // intersection of NOT NULL with any other predicate is just the other
+      // predicate.
+      //
+      // Note: this will no longer be true when an IS NULL predicate type is
+      // added.
+      predicate_type_ = other.predicate_type_;
+      lower_ = other.lower_;
+      upper_ = other.upper_;
       return;
     };
   }
@@ -163,6 +188,7 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
       }
       return;
     };
+    case PredicateType::IsNotNull: return;
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -189,6 +215,7 @@ void ColumnPredicate::MergeIntoEquality(const ColumnPredicate& other) {
       }
       return;
     };
+    case PredicateType::IsNotNull: return;
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -260,6 +287,17 @@ void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector *sel) c
         });
         return;
     };
+    case PredicateType::IsNotNull: {
+      if (!block.is_nullable()) return;
+      // TODO: make this more efficient by using bitwise operations on the
+      // null and selection vectors.
+      for (size_t i = 0; i < block.nrows(); i++) {
+        if (sel->IsRowSelected(i) && block.is_null(i)) {
+          BitmapClear(sel->mutable_bitmap(), i);
+        }
+      }
+      return;
+    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -281,6 +319,9 @@ string ColumnPredicate::ToString() const {
     };
     case PredicateType::Equality: {
       return strings::Substitute("`$0` = $1", column_.name(), column_.Stringify(lower_));
+    };
+    case PredicateType::IsNotNull: {
+      return strings::Substitute("`$0` IS NOT NULL", column_.name());
     };
   }
   LOG(FATAL) << "unknown predicate type";
@@ -310,6 +351,7 @@ int SelectivityRank(const ColumnPredicate& predicate) {
     case PredicateType::None: return 0;
     case PredicateType::Equality: return 1;
     case PredicateType::Range: return 2;
+    case PredicateType::IsNotNull: return 3;
   }
   LOG(FATAL) << "unknown predicate type";
 }

@@ -122,6 +122,10 @@ void ColumnPredicateIntoPB(const ColumnPredicate& predicate,
       }
       return;
     };
+    case PredicateType::IsNotNull: {
+      pb->mutable_is_not_null();
+      return;
+    };
     case PredicateType::None: LOG(FATAL) << "None predicate may not be converted to protobuf";
   }
   LOG(FATAL) << "unknown predicate type";

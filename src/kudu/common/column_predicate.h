@@ -41,6 +41,9 @@ enum class PredicateType {
   // A predicate which evaluates to true if the column value falls within a
   // range.
   Range,
+
+  // A predicate which evaluates to true if the value is not null.
+  IsNotNull,
 };
 
 // A predicate which can be evaluated over a block of column values.
@@ -89,6 +92,9 @@ class ColumnPredicate {
                                                          const void* lower,
                                                          const void* upper,
                                                          Arena* arena);
+
+  // Creates a new IS NOT NULL predicate for the column.
+  static ColumnPredicate IsNotNull(ColumnSchema column);
 
   // Returns the type of this predicate.
   PredicateType predicate_type() const {
