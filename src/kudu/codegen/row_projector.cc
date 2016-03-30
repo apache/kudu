@@ -380,7 +380,7 @@ struct DefaultEquals {
 
 struct ColumnSchemaEqualsType {
   bool operator()(const ColumnSchema& s1, const ColumnSchema& s2) {
-    return s1.EqualsType(s2);
+    return s1.EqualsPhysicalType(s2);
   }
 };
 
@@ -418,7 +418,7 @@ bool ContainerEquals(const T& t1, const T& t2) {
 // the actual dependency on column identification - which is the effect
 // that those attributes have on the RowProjector's mapping (i.e., different
 // names and IDs are ok, so long as the mapping is the same). Note that
-// key columns are not given any special meaning in projection. Types
+// key columns are not given any special meaning in projection. Physical types
 // and nullability of columns must be exactly equal between the two
 // schema pairs.
 //
