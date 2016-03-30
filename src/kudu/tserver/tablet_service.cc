@@ -1310,6 +1310,10 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
         ret->AddPredicate(ColumnPredicate::Equality(col, value));
         break;
       };
+      case ColumnPredicatePB::kIsNotNull: {
+        ret->AddPredicate(ColumnPredicate::IsNotNull(col));
+        break;
+      };
       default: return Status::InvalidArgument("Unknown predicate type for column", col.name());
     }
   }
