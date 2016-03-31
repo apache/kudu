@@ -33,7 +33,7 @@ elseif("${COMPILER_VERSION_FULL}" MATCHES ".*based on LLVM.*")
     COMPILER_VERSION "${COMPILER_VERSION_FULL}")
 
 # clang on Mac OS X, XCode 7.
-elseif("${COMPILER_VERSION_FULL}" MATCHES ".*clang-700\\..*")
+elseif("${COMPILER_VERSION_FULL}" MATCHES ".*clang-7")
   set(COMPILER_FAMILY "clang")
   set(COMPILER_VERSION "3.7.0svn")
 
