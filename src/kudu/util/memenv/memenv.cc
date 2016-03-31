@@ -94,6 +94,10 @@ class FileState : public RefCountedThreadSafe<FileState> {
     return s;
   }
 
+  Status Truncate(uint64_t length) {
+    return Status::NotSupported("Not implemented");
+  }
+
   Status Append(const Slice& data) {
     return AppendRaw(data.data(), data.size());
   }
@@ -307,6 +311,10 @@ class RWFileImpl : public RWFile {
 
   virtual Status PreAllocate(uint64_t offset, size_t length) OVERRIDE {
     return Status::OK();
+  }
+
+  virtual Status Truncate(uint64_t length) OVERRIDE {
+    return file_->Truncate(length);
   }
 
   virtual Status PunchHole(uint64_t offset, size_t length) OVERRIDE {

@@ -54,6 +54,7 @@ using std::string;
 using std::vector;
 
 static const uint64_t kOneMb = 1024 * 1024;
+static const uint64_t kTwoMb = 2 * kOneMb;
 
 class TestEnv : public KuduTest {
  public:
@@ -332,6 +333,43 @@ TEST_F(TestEnv, TestHolePunch) {
   ASSERT_EQ(kOneMb, sz);
   ASSERT_OK(env_->GetFileSizeOnDisk(test_path, &new_size_on_disk));
   ASSERT_EQ(size_on_disk - punch_amount, new_size_on_disk);
+}
+
+TEST_F(TestEnv, TestTruncate) {
+  LOG(INFO) << "Testing Truncate()";
+  string test_path = GetTestPath("test_env_wf");
+  gscoped_ptr<RWFile> file;
+  ASSERT_OK(env_->NewRWFile(test_path, &file));
+  uint64_t size;
+  ASSERT_OK(file->Size(&size));
+  ASSERT_EQ(0, size);
+
+  // Truncate to 2 MB (up).
+  ASSERT_OK(file->Truncate(kTwoMb));
+  ASSERT_OK(file->Size(&size));
+  ASSERT_EQ(kTwoMb, size);
+  ASSERT_OK(env_->GetFileSize(test_path, &size));
+  ASSERT_EQ(kTwoMb, size);
+
+  // Truncate to 1 MB (down).
+  ASSERT_OK(file->Truncate(kOneMb));
+  ASSERT_OK(file->Size(&size));
+  ASSERT_EQ(kOneMb, size);
+  ASSERT_OK(env_->GetFileSize(test_path, &size));
+  ASSERT_EQ(kOneMb, size);
+
+  ASSERT_OK(file->Close());
+
+  // Read the whole file. Ensure it is all zeroes.
+  gscoped_ptr<RandomAccessFile> raf;
+  ASSERT_OK(env_->NewRandomAccessFile(test_path, &raf));
+  Slice s;
+  gscoped_ptr<uint8_t[]> scratch(new uint8_t[size]);
+  ASSERT_OK(env_util::ReadFully(raf.get(), 0, size, &s, scratch.get()));
+  const uint8_t* data = s.data();
+  for (int i = 0; i < size; i++) {
+    ASSERT_EQ(0, data[i]) << "Not null at position " << i;
+  }
 }
 
 class ShortReadRandomAccessFile : public RandomAccessFile {

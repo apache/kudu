@@ -65,6 +65,10 @@
 #define fread_unlocked fread
 #endif
 
+#define RETRY_ON_EINTR(ret, expr) do { \
+  ret = (expr); \
+} while ((ret == -1) && (errno == EINTR));
+
 // See KUDU-588 for details.
 DEFINE_bool(writable_file_use_fsync, false,
             "Use fsync(2) instead of fdatasync(2) for synchronizing dirty "
@@ -122,7 +126,9 @@ int fallocate(int fd, int mode, off_t offset, off_t len) {
 
   if (stat.st_size < size) {
     // fcntl does not change the file size, so set it if necessary.
-    return ftruncate(fd, size);
+    int ret;
+    RETRY_ON_EINTR(ret, ftruncate(fd, size));
+    return ret;
   }
   return 0;
 }
@@ -349,7 +355,9 @@ class PosixWritableFile : public WritableFile {
     // If we've allocated more space than we used, truncate to the
     // actual size of the file and perform Sync().
     if (filesize_ < pre_allocated_size_) {
-      if (ftruncate(fd_, filesize_) < 0) {
+      int ret;
+      RETRY_ON_EINTR(ret, ftruncate(fd_, filesize_));
+      if (ret != 0) {
         s = IOError(filename_, errno);
         pending_sync_ = true;
       }
@@ -549,6 +557,20 @@ class PosixRWFile : public RWFile {
       } else {
         return IOError(filename_, errno);
       }
+    }
+    return Status::OK();
+  }
+
+  virtual Status Truncate(uint64_t length) OVERRIDE {
+    TRACE_EVENT2("io", "PosixRWFile::Truncate", "path", filename_, "length", length);
+    ThreadRestrictions::AssertIOAllowed();
+    int ret;
+    RETRY_ON_EINTR(ret, ftruncate(fd_, length));
+    if (ret != 0) {
+      int err = errno;
+      return Status::IOError(Substitute("Unable to truncate file $0", filename_),
+                             Substitute("ftruncate() failed: $0", ErrnoToString(err)),
+                             err);
     }
     return Status::OK();
   }

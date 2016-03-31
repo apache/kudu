@@ -199,10 +199,12 @@ TEST_F(TestPBUtil, TestPBContainerCorruption) {
   ASSERT_OK(CreateKnownGoodContainerFile());
   uint64_t known_good_size = 0;
   ASSERT_OK(env_->GetFileSize(path_, &known_good_size));
-  int ret = truncate(path_.c_str(), known_good_size - 2);
-  if (ret != 0) {
-    PLOG(ERROR) << "truncate() of file " << path_ << " failed";
-    FAIL();
+  {
+    gscoped_ptr<RWFile> file;
+    RWFileOptions opts;
+    opts.mode = Env::OPEN_EXISTING;
+    ASSERT_OK(env_->NewRWFile(opts, path_, &file));
+    ASSERT_OK(file->Truncate(known_good_size - 2));
   }
   s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect size: " << path_ << ": " << s.ToString();

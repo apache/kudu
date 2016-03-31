@@ -350,12 +350,6 @@ class WritableFile {
   WritableFile() { }
   virtual ~WritableFile();
 
-  // Pre-allocates 'size' bytes for the file in the underlying filesystem.
-  // size bytes are added to the current pre-allocated size or to the current
-  // offset, whichever is bigger. In no case is the file truncated by this
-  // operation.
-  virtual Status PreAllocate(uint64_t size) = 0;
-
   virtual Status Append(const Slice& data) = 0;
 
   // If possible, uses scatter-gather I/O to efficiently append
@@ -364,6 +358,18 @@ class WritableFile {
   // For implementation specific quirks and details, see comments in
   // implementation source code (e.g., env_posix.cc)
   virtual Status AppendVector(const std::vector<Slice>& data_vector) = 0;
+
+  // Pre-allocates 'size' bytes for the file in the underlying filesystem.
+  // size bytes are added to the current pre-allocated size or to the current
+  // offset, whichever is bigger. In no case is the file truncated by this
+  // operation.
+  //
+  // On some implementations, preallocation is done without initializing the
+  // contents of the data blocks (as opposed to writing zeroes), requiring no
+  // IO to the data blocks.
+  //
+  // In no case is the file truncated by this operation.
+  virtual Status PreAllocate(uint64_t size) = 0;
 
   virtual Status Close() = 0;
 
@@ -437,8 +443,19 @@ class RWFile {
   // beginning at 'offset'. It is safe to preallocate the same range
   // repeatedly; this is an idempotent operation.
   //
+  // On some implementations, preallocation is done without initializing the
+  // contents of the data blocks (as opposed to writing zeroes), requiring no
+  // IO to the data blocks. On such implementations, this is much faster than
+  // using Truncate() to increase the file size.
+  //
   // In no case is the file truncated by this operation.
   virtual Status PreAllocate(uint64_t offset, size_t length) = 0;
+
+  // Truncate the file. If 'new_size' is less than the previous file size, the
+  // extra data will be lost. If 'new_size' is greater than the previous file
+  // size, the file length is extended, and the extended portion will contain
+  // null bytes ('\0').
+  virtual Status Truncate(uint64_t length) = 0;
 
   // Deallocates space given by 'offset' and length' from the file,
   // effectively "punching a hole" in it. The space will be reclaimed by
