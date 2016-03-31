@@ -68,7 +68,7 @@ during a local build.
 
 To view the HTML, open _docs/index.html_ in your local browser.
 
-You can also build only a single chapter. such as _introduction.adoc_, by passing its name instead.
+You can also build only a single chapter. such as _release_notes.adoc_, by passing its name instead.
 
 == Asciidoc Style Guide
 Asciidoc supports a lot of syntax that we do not need to use. When possible, stick
