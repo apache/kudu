@@ -284,7 +284,7 @@ including Javadoc documentation, you may run the following command:
 
 [source,bash]
 ----
-$ ./docs/support/script/make_site.sh
+$ ./docs/support/scripts/make_site.sh
 ----
 
 This script will use your local Git repository to check out a shallow clone of
