@@ -28,7 +28,18 @@ TEST(ScopedCleanup, TestCleanup) {
     auto cleanup = MakeScopedCleanup([&] () { var = saved; });
     var = 42;
   }
-  ASSERT_EQ(var, 0);
+  ASSERT_EQ(0, var);
+}
+
+TEST(ScopedCleanup, TestCancelCleanup) {
+  int var = 0;
+  {
+    auto saved = var;
+    auto cleanup = MakeScopedCleanup([&] () { var = saved; });
+    var = 42;
+    cleanup.cancel();
+  }
+  ASSERT_EQ(42, var);
 }
 
 } // namespace kudu

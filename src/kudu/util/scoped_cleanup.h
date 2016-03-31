@@ -26,9 +26,19 @@ namespace kudu {
 template<typename F>
 class ScopedCleanup {
  public:
-  explicit ScopedCleanup(F f) : f_(std::move(f)) {}
-  ~ScopedCleanup() { f_(); }
+  explicit ScopedCleanup(F f)
+      : cancelled_(false),
+        f_(std::move(f)) {
+  }
+  ~ScopedCleanup() {
+    if (!cancelled_) {
+      f_();
+    }
+  }
+  void cancel() { cancelled_ = true; }
+
  private:
+  bool cancelled_;
   F f_;
 };
 
