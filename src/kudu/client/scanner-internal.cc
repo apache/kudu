@@ -185,6 +185,7 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
       // All other types of network errors are retriable, and also indicate the tserver is failed.
       UpdateLastError(rpc_status);
       table_->client()->data_->meta_cache_->MarkTSFailed(ts_, rpc_status);
+      blacklist->insert(ts_->permanent_uuid());
     }
   }
 
@@ -224,15 +225,6 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
         VLOG(1) << "Got error code " << tserver::TabletServerErrorPB::Code_Name(error.code())
             << ": temporarily blacklisting node " << ts_->permanent_uuid();
         blacklist->insert(ts_->permanent_uuid());
-        // We've blacklisted all the live candidate tservers.
-        // Do a short random sleep, clear the temp blacklist, then do another round of retries.
-        if (!candidates.empty() && candidates.size() == blacklist->size()) {
-          MonoDelta sleep_delta = MonoDelta::FromMilliseconds((random() % 5000) + 1000);
-          LOG(INFO) << "All live candidate nodes are unavailable because of transient errors."
-              << " Sleeping for " << sleep_delta.ToMilliseconds() << " ms before trying again.";
-          SleepFor(sleep_delta);
-          blacklist->clear();
-        }
         break;
       case tserver::TabletServerErrorPB::TABLET_NOT_FOUND: {
         // There was either a tablet configuration change or the table was
@@ -354,7 +346,13 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     // soon have one.
     if (lookup_status.IsServiceUnavailable() &&
         MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+
+      // ServiceUnavailable means that we have already blacklisted all of the candidate
+      // tablet servers. So, we clear the list so that we will cycle through them all
+      // another time.
+      blacklist->clear();
       int sleep_ms = attempt * 100;
+      // TODO: should ensure that sleep_ms does not pass the provided deadline.
       VLOG(1) << "Tablet " << remote_->tablet_id() << " current unavailable: "
               << lookup_status.ToString() << ". Sleeping for " << sleep_ms << "ms "
               << "and retrying...";

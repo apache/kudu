@@ -72,6 +72,9 @@ DECLARE_int32(scanner_ttl_ms);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 METRIC_DECLARE_counter(rpcs_queue_overflow);
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetMasterRegistration);
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTabletLocations);
 
 using std::string;
 using std::set;
@@ -176,6 +179,19 @@ class ClientTest : public KuduTest {
                   RpcsQueueOverflowMetric()->value());
       }
     }
+  }
+
+  // Return the number of lookup-related RPCs which have been serviced by the master.
+  int CountMasterLookupRPCs() const {
+    auto ent = cluster_->mini_master()->master()->metric_entity();
+    int ret = 0;
+    ret += METRIC_handler_latency_kudu_master_MasterService_GetMasterRegistration
+        .Instantiate(ent)->TotalCount();
+    ret += METRIC_handler_latency_kudu_master_MasterService_GetTableLocations
+        .Instantiate(ent)->TotalCount();
+    ret += METRIC_handler_latency_kudu_master_MasterService_GetTabletLocations
+        .Instantiate(ent)->TotalCount();
+    return ret;
   }
 
   // Inserts 'num_rows' test rows using 'client'
@@ -2130,10 +2146,21 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   // We wait until we fail over to the new leader(s).
   int tries = 0;
   for (;;) {
+    int master_rpcs_before = CountMasterLookupRPCs();
     tries++;
     int num_rows = CountRowsFromClient(table.get(),
                                        KuduClient::LEADER_ONLY,
                                        kNoBound, kNoBound);
+    int master_rpcs = CountMasterLookupRPCs() - master_rpcs_before;
+
+    // Regression test for KUDU-1387: we should not have any tight loops
+    // hitting the master during the time when a client is awaiting leader
+    // election. However, we do expect a reasonable number of lookup retries
+    // as the client will retry rapidly at first and then back off. 20 is
+    // enough to avoid test flakiness. Before fixing the above-mentioned bug,
+    // we would see several hundred lookups here.
+    ASSERT_LT(master_rpcs, 20);
+
     if (num_rows == kNumRowsToWrite) {
       LOG(INFO) << "Found expected number of rows: " << num_rows;
       break;
