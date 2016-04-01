@@ -510,10 +510,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   void NewReplica(TSDescriptor* ts_desc, const ReportedTabletPB& report, TabletReplica* replica);
 
-  // Extract the set of tablets that can be deleted and the set of tablets
-  // that must be processed because not running yet.
-  void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo> > *tablets_to_delete,
-                               std::vector<scoped_refptr<TabletInfo> > *tablets_to_process);
+  // Extract the set of tablets that must be processed because not running yet.
+  void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo>>* tablets_to_process);
 
   // Task that takes care of the tablet assignments/creations.
   // Loops through the "not created" tablets and sends a CreateTablet() request.
@@ -578,21 +576,23 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // tablet.
   void SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet);
 
-  // Request tablet servers to delete all replicas of the tablet.
-  void DeleteTabletReplicas(const TabletInfo* tablet, const std::string& msg);
+  // Send the "delete tablet request" to all replicas of all tablets of the
+  // specified table.
+  void SendDeleteTableRequest(const scoped_refptr<TableInfo>& table,
+                              const std::string& deletion_msg);
 
-  // Marks each of the tablets in the given table as deleted and triggers requests
-  // to the tablet servers to delete them.
-  void DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>& table);
+  // Send the "delete tablet request" to all replicas of the specified tablet.
+  void SendDeleteTabletRequest(const scoped_refptr<TabletInfo>& tablet,
+                               const std::string& deletion_msg);
 
-  // Send the "delete tablet request" to the specified TS/tablet.
-  // The specified 'reason' will be logged on the TS.
-  void SendDeleteTabletRequest(const std::string& tablet_id,
-                               tablet::TabletDataState delete_type,
-                               const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
-                               const scoped_refptr<TableInfo>& table,
-                               TSDescriptor* ts_desc,
-                               const std::string& reason);
+  // Send the "delete tablet request" to a particular replica (i.e. TS and
+  // tablet combination). The specified 'reason' will be logged on the TS.
+  void SendDeleteReplicaRequest(const std::string& tablet_id,
+                                tablet::TabletDataState delete_type,
+                                const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
+                                const scoped_refptr<TableInfo>& table,
+                                TSDescriptor* ts_desc,
+                                const std::string& reason);
 
   // Start a task to change the config to add an additional voter because the
   // specified tablet is under-replicated.

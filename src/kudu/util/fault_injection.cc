@@ -79,5 +79,14 @@ void DoInjectRandomLatency(double max_ms) {
   SleepFor(MonoDelta::FromMilliseconds(g_random->NextDoubleFraction() * max_ms));
 }
 
+Status DoMaybeReturnFailure(double fraction,
+                            const Status& bad_status_to_return) {
+  GoogleOnceInit(&g_random_once, InitRandom);
+  if (PREDICT_TRUE(g_random->NextDoubleFraction() >= fraction)) {
+    return Status::OK();
+  }
+  return bad_status_to_return;
+}
+
 } // namespace fault_injection
 } // namespace kudu

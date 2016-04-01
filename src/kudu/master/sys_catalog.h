@@ -113,6 +113,7 @@ class SysCatalogTable {
   Status VisitTablets(TabletVisitor* visitor);
 
  private:
+  FRIEND_TEST(MasterTest, TestMasterMetadataConsistentDespiteFailures);
   DISALLOW_COPY_AND_ASSIGN(SysCatalogTable);
 
   friend class CatalogManager;
@@ -187,6 +188,11 @@ class SysCatalogTable {
                           const std::vector<TabletInfo*>& tablets);
   Status ReqDeleteTablets(tserver::WriteRequestPB* req,
                           const std::vector<TabletInfo*>& tablets);
+
+  // Special string injected into SyncWrite() random failures (if enabled).
+  //
+  // Only useful for tests.
+  static const char* kInjectedFailureStatusMsg;
 
   // Table schema, without IDs, used to send messages to the TabletPeer
   Schema schema_;

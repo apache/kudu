@@ -18,6 +18,11 @@
 #define KUDU_UTIL_FAULT_INJECTION_H
 
 #include "kudu/gutil/macros.h"
+#include "kudu/util/status.h"
+
+// Macros for injecting various kinds of faults with varying probability. If
+// configured with 0 probability, each of these macros is evaluated inline and
+// is fast enough to run even in hot code paths.
 
 // With some probability, crash at the current point in the code
 // by issuing LOG(FATAL).
@@ -29,18 +34,22 @@
 //   DEFINE_double(fault_crash_before_foo, 0.0,
 //                 "Fraction of the time when we will crash before doing foo");
 //   TAG_FLAG(fault_crash_before_foo, unsafe);
-//
-// This macro should be fast enough to run even in hot code paths.
 #define MAYBE_FAULT(fraction_flag) \
   kudu::fault_injection::MaybeFault(AS_STRING(fraction_flag), fraction_flag)
 
 // Inject a uniformly random amount of latency between 0 and the configured
 // number of milliseconds.
-//
-// As with above, if the flag is configured to be <= 0, then this will be evaluated
-// inline and should be fast, even in hot code path.
 #define MAYBE_INJECT_RANDOM_LATENCY(max_ms_flag) \
-  kudu::fault_injection::MaybeInjectRandomLatency(max_ms_flag);
+  kudu::fault_injection::MaybeInjectRandomLatency(max_ms_flag)
+
+// With some probability, return the failure described by 'status_expr'.
+//
+// Unlike the other MAYBE_ macros, this one does not chain to an inline
+// function so that 'status_expr' isn't evaluated unless 'fraction_flag'
+// really is non-zero.
+#define MAYBE_RETURN_FAILURE(fraction_flag, status_expr) \
+  static const Status status_eval = (status_expr); \
+  RETURN_NOT_OK(kudu::fault_injection::MaybeReturnFailure(fraction_flag, status_eval));
 
 // Implementation details below.
 // Use the MAYBE_FAULT macro instead.
@@ -50,6 +59,8 @@ namespace fault_injection {
 // Out-of-line implementation.
 void DoMaybeFault(const char* fault_str, double fraction);
 void DoInjectRandomLatency(double max_latency);
+Status DoMaybeReturnFailure(double fraction,
+                            const Status& bad_status_to_return);
 
 inline void MaybeFault(const char* fault_str, double fraction) {
   if (PREDICT_TRUE(fraction <= 0)) return;
@@ -59,6 +70,12 @@ inline void MaybeFault(const char* fault_str, double fraction) {
 inline void MaybeInjectRandomLatency(double max_latency) {
   if (PREDICT_TRUE(max_latency <= 0)) return;
   DoInjectRandomLatency(max_latency);
+}
+
+inline Status MaybeReturnFailure(double fraction,
+                                 const Status& bad_status_to_return) {
+  if (PREDICT_TRUE(fraction <= 0)) return Status::OK();
+  return DoMaybeReturnFailure(fraction, bad_status_to_return);
 }
 
 } // namespace fault_injection

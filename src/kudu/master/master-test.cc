@@ -41,8 +41,10 @@ using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using std::shared_ptr;
 using std::string;
+using strings::Substitute;
 
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
+DECLARE_double(sys_catalog_fail_during_write);
 
 namespace kudu {
 namespace master {
@@ -537,6 +539,311 @@ TEST_F(MasterTest, TestGetTableSchemaIsAtomicWithCreateTable) {
 
   done.Store(true);
   t->Join();
+}
+
+// Verifies that on-disk master metadata is self-consistent and matches a set
+// of expected contents.
+//
+// Sample usage:
+//
+//   MasterMetadataVerifier v(live, dead);
+//   sys_catalog->VisitTables(&v);
+//   sys_catalog->VisitTablets(&v);
+//   ASSERT_OK(v.Verify());
+//
+class MasterMetadataVerifier : public TableVisitor,
+                               public TabletVisitor {
+ public:
+  MasterMetadataVerifier(const unordered_set<string>& live_table_names,
+                         const multiset<string>& dead_table_names)
+    : live_table_names_(live_table_names),
+      dead_table_names_(dead_table_names) {
+  }
+
+  virtual Status VisitTable(const std::string& table_id,
+                             const SysTablesEntryPB& metadata) OVERRIDE {
+     InsertOrDie(&visited_tables_by_id_, table_id,
+                 { table_id, metadata.name(), metadata.state() });
+     return Status::OK();
+   }
+
+  virtual Status VisitTablet(const std::string& table_id,
+                             const std::string& tablet_id,
+                             const SysTabletsEntryPB& metadata) OVERRIDE {
+    InsertOrDie(&visited_tablets_by_id_, tablet_id,
+                { tablet_id, table_id, metadata.state() });
+    return Status::OK();
+  }
+
+  Status Verify() {
+    RETURN_NOT_OK(VerifyTables());
+    RETURN_NOT_OK(VerifyTablets());
+    return Status::OK();
+  }
+
+ private:
+  Status VerifyTables() {
+    unordered_set<string> live_visited_table_names;
+    multiset<string> dead_visited_table_names;
+
+    for (const auto& entry : visited_tables_by_id_) {
+      const Table& table = entry.second;
+      switch (table.state) {
+        case SysTablesEntryPB::RUNNING:
+        case SysTablesEntryPB::ALTERING:
+          InsertOrDie(&live_visited_table_names, table.name);
+          break;
+        case SysTablesEntryPB::REMOVED:
+          // InsertOrDie() doesn't work on multisets, where the returned
+          // element is not an std::pair.
+          dead_visited_table_names.insert(table.name);
+          break;
+        default:
+          return Status::Corruption(
+              Substitute("Table $0 has unexpected state $1",
+                         table.id,
+                         SysTablesEntryPB::State_Name(table.state)));
+      }
+    }
+
+    if (live_visited_table_names != live_table_names_) {
+      return Status::Corruption("Live table name set mismatch");
+    }
+
+    if (dead_visited_table_names != dead_table_names_) {
+      return Status::Corruption("Dead table name set mismatch");
+    }
+    return Status::OK();
+  }
+
+  Status VerifyTablets() {
+    // Each table should be referenced by exactly this number of tablets.
+    const int kNumExpectedReferences = 3;
+
+    // Build table ID --> table map for use in verification below.
+    unordered_map<string, const Table*> tables_by_id;
+    for (const auto& entry : visited_tables_by_id_) {
+      InsertOrDie(&tables_by_id, entry.second.id, &entry.second);
+    }
+
+    map<string, int> referenced_tables;
+    for (const auto& entry : visited_tablets_by_id_) {
+      const Tablet& tablet = entry.second;
+      switch (tablet.state) {
+        case SysTabletsEntryPB::PREPARING:
+        case SysTabletsEntryPB::CREATING:
+        case SysTabletsEntryPB::DELETED:
+        {
+          const Table* table = FindPtrOrNull(tables_by_id, tablet.table_id);
+          if (!table) {
+            return Status::Corruption(Substitute(
+                "Tablet $0 belongs to non-existent table $1",
+                tablet.id, tablet.table_id));
+          }
+          string table_state_str = SysTablesEntryPB_State_Name(table->state);
+          string tablet_state_str = SysTabletsEntryPB_State_Name(tablet.state);
+
+          // PREPARING or CREATING tablets must be members of RUNNING or
+          // ALTERING tables.
+          //
+          // DELETED tablets must be members of REMOVED tables.
+          if (((tablet.state == SysTabletsEntryPB::PREPARING ||
+                tablet.state == SysTabletsEntryPB::CREATING) &&
+               (table->state != SysTablesEntryPB::RUNNING &&
+                table->state != SysTablesEntryPB::ALTERING)) ||
+              (tablet.state == SysTabletsEntryPB::DELETED &&
+               table->state != SysTablesEntryPB::REMOVED)) {
+            return Status::Corruption(
+                Substitute("Unexpected states: table $0=$1, tablet $2=$3",
+                           table->id, table_state_str,
+                           tablet.id, tablet_state_str));
+          }
+
+          referenced_tables[tablet.table_id]++;
+          break;
+        }
+        default:
+          return Status::Corruption(
+              Substitute("Tablet $0 has unexpected state $1",
+                         tablet.id,
+                         SysTabletsEntryPB::State_Name(tablet.state)));
+      }
+    }
+
+    for (const auto& entry : referenced_tables) {
+      if (entry.second != kNumExpectedReferences) {
+        return Status::Corruption(
+            Substitute("Table $0 has bad reference count ($1 instead of $2)",
+                       entry.first, entry.second, kNumExpectedReferences));
+      }
+    }
+    return Status::OK();
+  }
+
+  // Names of tables that are thought to be created and never deleted.
+  const unordered_set<string> live_table_names_;
+
+  // Names of tables that are thought to be deleted. A table with a given name
+  // could be deleted more than once.
+  const multiset<string> dead_table_names_;
+
+  // Table ID to table map populated during VisitTables().
+  struct Table {
+    string id;
+    string name;
+    SysTablesEntryPB::State state;
+  };
+  unordered_map<string, Table> visited_tables_by_id_;
+
+  // Tablet ID to tablet map populated during VisitTablets().
+  struct Tablet {
+    string id;
+    string table_id;
+    SysTabletsEntryPB::State state;
+  };
+  unordered_map<string, Tablet> visited_tablets_by_id_;
+};
+
+TEST_F(MasterTest, TestMasterMetadataConsistentDespiteFailures) {
+  const Schema kTableSchema({ ColumnSchema("key", INT32),
+                              ColumnSchema("v1", UINT64),
+                              ColumnSchema("v2", STRING) },
+                            1);
+
+  // When generating random table names, we use a uniform distribution so
+  // as to generate the occasional name collision; the test should cope.
+  const int kUniformBound = 25;
+
+  // Ensure some portion of the attempted operations fail.
+  FLAGS_sys_catalog_fail_during_write = 0.25;
+  int num_injected_failures = 0;
+
+  // Tracks all "live" tables (i.e. created and not yet deleted).
+  vector<string> table_names;
+
+  // Tracks all deleted tables. A given name may have been deleted more
+  // than once.
+  multiset<string> deleted_table_names;
+  Random r(SeedRandom());
+
+  // Spend some time hammering the master with create/alter/delete operations.
+  MonoDelta time_to_run = MonoDelta::FromSeconds(AllowSlowTests() ? 10 : 1);
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(time_to_run);
+  while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+    int next_action = r.Uniform(3);
+    switch (next_action) {
+      case 0:
+      {
+        // Create a new table with a random name and three tablets.
+        //
+        // No name collision checking, so this table may already exist.
+        CreateTableRequestPB req;
+        CreateTableResponsePB resp;
+        RpcController controller;
+
+        req.set_name(Substitute("table-$0", r.Uniform(kUniformBound)));
+        ASSERT_OK(SchemaToPB(kTableSchema, req.mutable_schema()));
+        RowOperationsPBEncoder encoder(req.mutable_split_rows());
+        KuduPartialRow row(&kTableSchema);
+        ASSERT_OK(row.SetInt32("key", 10));
+        encoder.Add(RowOperationsPB::SPLIT_ROW, row);
+        ASSERT_OK(row.SetInt32("key", 20));
+        encoder.Add(RowOperationsPB::SPLIT_ROW, row);
+
+        ASSERT_OK(proxy_->CreateTable(req, &resp, &controller));
+        if (resp.has_error()) {
+          Status s = StatusFromPB(resp.error().status());
+          ASSERT_TRUE(s.IsAlreadyPresent() || s.IsRuntimeError()) << s.ToString();
+          if (s.IsRuntimeError()) {
+            ASSERT_STR_CONTAINS(s.ToString(),
+                                SysCatalogTable::kInjectedFailureStatusMsg);
+            num_injected_failures++;
+          }
+        } else {
+          table_names.push_back(req.name());
+        }
+        break;
+      }
+      case 1:
+      {
+        // Rename a random table to some random name.
+        //
+        // No name collision checking, so the new table name may already exist.
+        int num_tables = table_names.size();
+        if (num_tables == 0) {
+          break;
+        }
+        int table_idx = r.Uniform(num_tables);
+        AlterTableRequestPB req;
+        AlterTableResponsePB resp;
+        RpcController controller;
+
+        req.mutable_table()->set_table_name(table_names[table_idx]);
+        req.set_new_table_name(Substitute("table-$0", r.Uniform(kUniformBound)));
+        ASSERT_OK(proxy_->AlterTable(req, &resp, &controller));
+        if (resp.has_error()) {
+          Status s = StatusFromPB(resp.error().status());
+          ASSERT_TRUE(s.IsAlreadyPresent() || s.IsRuntimeError()) << s.ToString();
+          if (s.IsRuntimeError()) {
+            ASSERT_STR_CONTAINS(s.ToString(),
+                                SysCatalogTable::kInjectedFailureStatusMsg);
+            num_injected_failures++;
+          }
+        } else {
+          table_names[table_idx] = req.new_table_name();
+        }
+        break;
+      }
+      case 2:
+      {
+        // Delete a random table.
+        int num_tables = table_names.size();
+        if (num_tables == 0) {
+          break;
+        }
+        int table_idx = r.Uniform(num_tables);
+        DeleteTableRequestPB req;
+        DeleteTableResponsePB resp;
+        RpcController controller;
+
+        req.mutable_table()->set_table_name(table_names[table_idx]);
+        ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
+        if (resp.has_error()) {
+          Status s = StatusFromPB(resp.error().status());
+          ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+          ASSERT_STR_CONTAINS(s.ToString(),
+                              SysCatalogTable::kInjectedFailureStatusMsg);
+          num_injected_failures++;
+        } else {
+          deleted_table_names.insert(table_names[table_idx]);
+          table_names[table_idx] = table_names.back();
+          table_names.pop_back();
+        }
+        break;
+      }
+      default:
+        LOG(FATAL) << "Cannot reach here!";
+    }
+  }
+
+  // Injected failures are random, but given the number of operations we did,
+  // we should expect to have seen at least one.
+  ASSERT_GE(num_injected_failures, 1);
+
+  // Restart the catalog manager to ensure that it can survive reloading the
+  // metadata we wrote to disk.
+  ASSERT_OK(mini_master_->Restart());
+
+  // Reload the metadata again, this time verifying its consistency.
+  unordered_set<string> live_table_names(table_names.begin(),
+                                         table_names.end());
+  MasterMetadataVerifier verifier(live_table_names, deleted_table_names);
+  SysCatalogTable* sys_catalog =
+      mini_master_->master()->catalog_manager()->sys_catalog();
+  ASSERT_OK(sys_catalog->VisitTables(&verifier));
+  ASSERT_OK(sys_catalog->VisitTablets(&verifier));
+  ASSERT_OK(verifier.Verify());
 }
 
 } // namespace master

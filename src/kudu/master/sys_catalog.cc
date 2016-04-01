@@ -41,9 +41,15 @@
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
+
+DEFINE_double(sys_catalog_fail_during_write, 0.0,
+              "Fraction of the time when system table writes will fail");
+TAG_FLAG(sys_catalog_fail_during_write, unsafe);
 
 using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::ConsensusMetadata;
@@ -67,6 +73,8 @@ static const char* const kSysCatalogTabletId = "00000000000000000000000000000000
 static const char* const kSysCatalogTableColType = "entry_type";
 static const char* const kSysCatalogTableColId = "entry_id";
 static const char* const kSysCatalogTableColMetadata = "metadata";
+
+const char* SysCatalogTable::kInjectedFailureStatusMsg = "INJECTED FAILURE";
 
 SysCatalogTable::SysCatalogTable(Master* master, MetricRegistry* metrics,
                                  ElectedLeaderCallback leader_cb)
@@ -312,6 +320,9 @@ Status SysCatalogTable::WaitUntilRunning() {
 }
 
 Status SysCatalogTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *resp) {
+  MAYBE_RETURN_FAILURE(FLAGS_sys_catalog_fail_during_write,
+                       Status::RuntimeError(kInjectedFailureStatusMsg));
+
   CountDownLatch latch(1);
   gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
     new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, resp));
