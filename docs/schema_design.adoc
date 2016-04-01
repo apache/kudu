@@ -245,9 +245,6 @@ separate hash bucket components is that scans which specify equality constraints
 on the `metric` and `host` columns will be able to skip 7/8 of the total
 tablets, leaving a total of just 4 tablets to scan.
 
-WARNING: This optimization is not yet implemented. See
-<<known-limitations,known limitations>> for details.
-
 [[hash-and-range]]
 === Hash Bucketing and Range Partitioning
 
@@ -281,11 +278,10 @@ Non-alterable Primary Key:: Kudu does not allow you to alter the primary key
 Non-alterable Partition Schema:: Kudu does not allow you to alter the
   partition schema after table creation.
 
-Partition Pruning:: When tables use hash buckets, the Java and C++ clients do
-not yet use scan predicates to prune tablets for scans over these tables. In the
-future, specifying an equality predicate on all columns in the hash bucket
-component will limit the scan to only the tablets corresponding to the hash
-bucket.
+Partition Pruning:: When tables use hash buckets, the Java client does not yet
+use scan predicates to prune tablets for scans over these tables. In the future,
+specifying an equality predicate on all columns in the hash bucket component
+will limit the scan to only the tablets corresponding to the hash bucket.
 
 Tablet Splitting:: You currently cannot split or merge tablets after table
 creation. You must create the appropriate number of tablets in the
