@@ -136,6 +136,14 @@ footer {
     font-size: 18px;
     font-weight: bold;
     padding: 20px 0 0 0;
+    margin: 20px 0 0 0;
+}
+
+.faq h4 {
+    color: #333;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 20px 0 0 0;
     border-top: 1px solid #dddddd;
     margin: 20px 0 0 0;
 }

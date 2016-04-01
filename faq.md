@@ -8,7 +8,7 @@ single_col_extra_classes: faq
 ## Frequently Asked Questions
 {:.no_toc}
 
-1. TOC
+- TOC
 {:toc}
 
 ### Project Motivation
