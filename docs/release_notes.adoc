@@ -125,7 +125,7 @@ issue, upgrade all Kudu servers before upgrading clients.
 ==== Other noteworthy changes
 
 - link:http://gerrit.cloudera.org:8080/#/c/2239/[Gerrit 2239] The concept of "feature flags"
-  was introduced in order to manage compability between different
+  was introduced in order to manage compatibility between different
   Kudu versions. One case where this is helpful is if a newer client attempts to use
   a feature unsupported by the currently-running tablet server. Rather than receiving
   a cryptic error, the user gets an error message that is easier to interpret.
