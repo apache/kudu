@@ -45,10 +45,31 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 
 /**
- * A simple sink which reads events from a channel and writes them to Kudu.
- * To use this sink, it has to be configured with certain mandatory parameters:<p>
- * <tt>tableName: </tt> The name of the table in Kudu to write to. <p>
- * <tt>masterAddresses: </tt> Comma-separated list of "host:port" pairs of the masters (port optional). <p>
+ * <p>A Flume sink that reads events from a channel and writes them to a Kudu table.
+ *
+ * <p><strong>Flume Kudu Sink configuration parameters</strong>
+ *
+ * <table cellpadding=3 cellspacing=0 border=1>
+ * <tr><th>Property Name</th><th>Default</th><th>Required?</th><th>Description</th></tr>
+ * <tr><td>channel</td><td></td><td>Yes</td><td>The name of the Flume channel to read from.</td></tr>
+ * <tr><td>type</td><td></td><td>Yes</td><td>Component name. Must be {@code org.kududb.flume.sink.KuduSink}</td></tr>
+ * <tr><td>masterAddresses</td><td></td><td>Yes</td><td>Comma-separated list of "host:port" pairs of the Kudu master servers. The port is optional.</td></tr>
+ * <tr><td>tableName</td><td></td><td>Yes</td><td>The name of the Kudu table to write to.</td></tr>
+ * <tr><td>batchSize</td><td>100</td><td>No</td><td>The maximum number of events the sink will attempt to take from the channel per transaction.</td></tr>
+ * <tr><td>ignoreDuplicateRows</td><td>true</td><td>No</td><td>Whether to ignore errors indicating that we attempted to insert duplicate rows into Kudu.</td></tr>
+ * <tr><td>timeoutMillis</td><td>10000</td><td>No</td><td>Timeout period for Kudu write operations, in milliseconds.</td></tr>
+ * <tr><td>producer</td><td>{@link org.kududb.flume.sink.SimpleKuduEventProducer}</td><td>No</td><td>The fully qualified class name of the {@link KuduEventProducer} the sink should use.</td></tr>
+ * <tr><td>producer.*</td><td></td><td>(Varies by event producer)</td><td>Configuration properties to pass to the event producer implementation.</td></tr>
+ * </table>
+ *
+ * <p><strong>Installation</strong>
+ *
+ * <p>After building the sink, in order to use it with Flume, place the file named
+ * <tt>kudu-flume-sink-<em>VERSION</em>-jar-with-dependencies.jar</tt> in the
+ * Flume <tt>plugins.d</tt> directory under <tt>kudu-flume-sink/lib/</tt>.
+ *
+ * <p>For detailed instructions on using Flume's plugins.d mechanism, please see the plugins.d
+ * section of the <a href="https://flume.apache.org/FlumeUserGuide.html#the-plugins-d-directory">Flume User Guide</a>.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
