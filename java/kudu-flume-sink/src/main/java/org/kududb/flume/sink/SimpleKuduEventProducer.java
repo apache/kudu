@@ -32,12 +32,15 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * A simple serializer that returns puts from an event, by writing the event
- * body into it. The headers are discarded.
+ * <p>A simple serializer that generates one {@link Insert} per {@link Event} by writing the event
+ * body into a BINARY column. The headers are discarded.
  *
- * Optional parameters: <p>
- * <tt>payloadColumn:</tt> Which column to put payload in. If it is null,
- * payload will be assumed.<p>
+ * <p><strong>Simple Kudu Event Producer configuration parameters</strong>
+ *
+ * <table cellpadding=3 cellspacing=0 border=1>
+ * <tr><th>Property Name</th><th>Default</th><th>Required?</th><th>Description</th></tr>
+ * <tr><td>producer.payloadColumn</td><td>payload</td><td>No</td><td>The name of the BINARY column to write the Flume the event body to.</td></tr>
+ * </table>
  */
 public class SimpleKuduEventProducer implements KuduEventProducer {
   private byte[] payload;
