@@ -84,6 +84,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
@@ -733,42 +734,6 @@ Status CatalogManager::CheckOnline() const {
   return Status::OK();
 }
 
-void CatalogManager::AbortTableCreation(TableInfo* table,
-                                        const vector<TabletInfo*>& tablets) {
-  string table_id = table->id();
-  string table_name = table->mutable_metadata()->mutable_dirty()->pb.name();
-  vector<string> tablet_ids_to_erase;
-  for (TabletInfo* tablet : tablets) {
-    tablet_ids_to_erase.push_back(tablet->tablet_id());
-  }
-
-  LOG(INFO) << "Aborting creation of table '" << table_name << "', erasing table and tablets (" <<
-      JoinStrings(tablet_ids_to_erase, ",") << ") from in-memory state.";
-
-  // Since this is a failed creation attempt, it's safe to just abort
-  // all tasks, as (by definition) no tasks may be pending against a
-  // table that has failed to succesfully create.
-  table->AbortTasks();
-  table->WaitTasksCompletion();
-
-  boost::lock_guard<LockType> l(lock_);
-
-  // Call AbortMutation() manually, as otherwise the lock won't be
-  // released.
-  for (TabletInfo* tablet : tablets) {
-    tablet->mutable_metadata()->AbortMutation();
-  }
-  table->mutable_metadata()->AbortMutation();
-  for (const string& tablet_id_to_erase : tablet_ids_to_erase) {
-    CHECK_EQ(tablet_map_.erase(tablet_id_to_erase), 1)
-        << "Unable to erase tablet " << tablet_id_to_erase << " from tablet map.";
-  }
-  CHECK_EQ(table_names_map_.erase(table_name), 1)
-      << "Unable to erase table named " << table_name << " from table names map.";
-  CHECK_EQ(table_ids_map_.erase(table_id), 1)
-      << "Unable to erase tablet with id " << table_id << " from tablet ids map.";
-}
-
 // Create a new table.
 // See README file in this directory for a description of the design.
 Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
@@ -867,7 +832,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
 
   scoped_refptr<TableInfo> table;
-  vector<TabletInfo*> tablets;
   {
     boost::lock_guard<LockType> l(lock_);
     TRACE("Acquired catalog manager lock");
@@ -880,28 +844,34 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
       return s;
     }
 
-    // c. Add the new table in "preparing" state.
-    table = CreateTableInfo(req, schema, partition_schema);
-    table_ids_map_[table->id()] = table;
-    table_names_map_[req.name()] = table;
-
-    // d. Create the TabletInfo objects in state PREPARING.
-    for (const Partition& partition : partitions) {
-      PartitionPB partition_pb;
-      partition.ToPB(&partition_pb);
-      scoped_refptr<TabletInfo> t = CreateTabletInfo(table.get(), partition_pb);
-      tablets.push_back(t.get());
-
-      // Add the new tablet to the catalog-manager-wide map by tablet ID.
-      InsertOrDie(&tablet_map_, t->tablet_id(), std::move(t));
+    // c. Mark the table as being created (if it isn't already).
+    if (!InsertIfNotPresent(&tables_being_created_, req.name())) {
+      s = Status::ServiceUnavailable("Table is currently being created", req.name());
+      SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+      return s;
     }
-
-    resp->set_table_id(table->id());
-
-    // Add the tablets to the table's map.
-    table->AddTablets(tablets);
   }
-  TRACE("Inserted new table and tablet info into CatalogManager maps");
+
+  // Ensure that if we return, we mark this table as no longer being created.
+  auto cleanup = MakeScopedCleanup([&] () {
+    boost::lock_guard<LockType> l(lock_);
+    CHECK_EQ(1, tables_being_created_.erase(req.name()));
+  });
+
+  // d. Create the in-memory representation of the new table and its tablets.
+  //    It's not yet in any global maps; that will happen in step g below.
+  table = CreateTableInfo(req, schema, partition_schema);
+  vector<TabletInfo*> tablets;
+  vector<scoped_refptr<TabletInfo>> tablet_refs;
+  for (const Partition& partition : partitions) {
+    PartitionPB partition_pb;
+    partition.ToPB(&partition_pb);
+    scoped_refptr<TabletInfo> t = CreateTabletInfo(table.get(), partition_pb);
+    tablets.push_back(t.get());
+    tablet_refs.emplace_back(std::move(t));
+  }
+  table->AddTablets(tablets);
+  TRACE("Created new table and tablet info");
 
   // NOTE: the table and tablets are already locked for write at this point,
   // since the CreateTableInfo/CreateTabletInfo functions leave them in that state.
@@ -922,7 +892,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     s = s.CloneAndPrepend(Substitute("An error occurred while writing to sys-catalog: $0",
                                      s.ToString()));
     LOG(WARNING) << s.ToString();
-    AbortTableCreation(table.get(), tablets);
     CheckIfNoLongerLeaderAndSetupError(s, resp);
     return s;
   }
@@ -935,6 +904,19 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     tablet->mutable_metadata()->CommitMutation();
   }
 
+  // g. Make the new table and tablets visible in the catalog.
+  {
+    boost::lock_guard<LockType> l(lock_);
+
+    table_ids_map_[table->id()] = table;
+    table_names_map_[req.name()] = table;
+    for (const auto& tablet : tablet_refs) {
+      InsertOrDie(&tablet_map_, tablet->tablet_id(), std::move(tablet));
+    }
+  }
+  TRACE("Inserted table and tablets into CatalogManager maps");
+
+  resp->set_table_id(table->id());
   VLOG(1) << "Created table " << table->ToString();
   background_tasks_->Wake();
   return Status::OK();

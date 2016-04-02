@@ -846,5 +846,63 @@ TEST_F(MasterTest, TestMasterMetadataConsistentDespiteFailures) {
   ASSERT_OK(verifier.Verify());
 }
 
+static void CreateTableOrFail(const char* kTableName,
+                              const Schema* kSchema,
+                              MasterServiceProxy* proxy) {
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  RpcController controller;
+
+  req.set_name(kTableName);
+  CHECK_OK(SchemaToPB(*kSchema, req.mutable_schema()));
+  CHECK_OK(proxy->CreateTable(req, &resp, &controller));
+  SCOPED_TRACE(resp.DebugString());
+
+  // There are three expected outcomes:
+  //
+  // 1. This thread won the CreateTable() race: no error.
+  // 2. This thread lost the CreateTable() race: TABLE_NOT_FOUND error
+  //    with ServiceUnavailable status.
+  // 3. This thread arrived after the CreateTable() race was already over:
+  //    TABLE_ALREADY_PRESENT error with AlreadyPresent status.
+  if (resp.has_error()) {
+    Status s = StatusFromPB(resp.error().status());
+    string failure_msg = Substitute("Unexpected response: $0",
+                                    resp.DebugString());
+    switch (resp.error().code()) {
+      case MasterErrorPB::TABLE_NOT_FOUND:
+        CHECK(s.IsServiceUnavailable()) << failure_msg;
+        break;
+      case MasterErrorPB::TABLE_ALREADY_PRESENT:
+        CHECK(s.IsAlreadyPresent()) << failure_msg;
+        break;
+      default:
+        FAIL() << failure_msg;
+    }
+  }
+}
+
+TEST_F(MasterTest, TestConcurrentCreateOfSameTable) {
+  const char* kTableName = "testtb";
+  const Schema kTableSchema({ ColumnSchema("key", INT32),
+                              ColumnSchema("v1", UINT64),
+                              ColumnSchema("v2", STRING) },
+                            1);
+
+  // Kick off a bunch of threads all trying to create the same table.
+  vector<scoped_refptr<Thread>> threads;
+  for (int i = 0; i < 10; i++) {
+    scoped_refptr<Thread> t;
+    EXPECT_OK(Thread::Create("test", "test",
+                             &CreateTableOrFail, kTableName, &kTableSchema,
+                             proxy_.get(), &t));
+    threads.emplace_back(std::move(t));
+  }
+
+  for (const auto& t : threads) {
+    t->Join();
+  }
+}
+
 } // namespace master
 } // namespace kudu

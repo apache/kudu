@@ -601,13 +601,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   std::string GenerateId() { return oid_generator_.Next(); }
 
-  // Abort creation of 'table': abort all mutation for TabletInfo and
-  // TableInfo objects (releasing all COW locks), abort all pending
-  // tasks associated with the table, and erase any state related to
-  // the table we failed to create from the in-memory maps
-  // ('table_names_map_', 'table_ids_map_', 'tablet_map_' below).
-  void AbortTableCreation(TableInfo* table, const std::vector<TabletInfo*>& tablets);
-
   // Conventional "T xxx P yyy: " prefix for logging.
   std::string LogPrefix() const;
 
@@ -615,7 +608,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // objects have a copy of the string key. But STL doesn't make it
   // easy to make a "gettable set".
 
-  // Lock protecting the various maps below.
+  // Lock protecting the various maps and sets below.
   typedef rw_spinlock LockType;
   mutable LockType lock_;
 
@@ -627,6 +620,10 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // Tablet maps: tablet-id -> TabletInfo
   typedef std::unordered_map<std::string, scoped_refptr<TabletInfo> > TabletInfoMap;
   TabletInfoMap tablet_map_;
+
+  // Names of tables that are currently being created. Only used in
+  // table creation so that transient tables are not made visible.
+  std::unordered_set<std::string> tables_being_created_;
 
   Master *master_;
   Atomic32 closing_;
