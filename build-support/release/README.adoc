@@ -15,13 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-= How to run RAT on a release tarball
+= How to run Apache RAT on a release tarball
 
 Kudu has a script and an excludes file to allow for running RAT on a release
 artifact. You can use the following steps to verify a source tarball.
 
-1. Download a binary artifact of RAT from
-   http://creadur.apache.org/rat/download_rat.cgi and unpack it.
-2. Run RAT: `java -jar apache-rat-0.11.jar -x apache-kudu-X.Y.Z.tar.gz > rat-report.xml`
-3. ./build-support/release/check-rat-report.py build-support/release/rat_exclude_files.txt rat-report.xml
+1. Download a binary artifact of RAT:
+   `wget http://central.maven.org/maven2/org/apache/rat/apache-rat/0.11/apache-rat-0.11.jar`
+2. Run RAT:
+   `java -jar apache-rat-0.11.jar -x apache-kudu-X.Y.Z.tar.gz > rat-report.xml`
+3. Run the report checker:
+   `./build-support/release/check-rat-report.py build-support/release/rat_exclude_files.txt rat-report.xml`
 
+The above steps are automatically performed as part of the `build-support/build_source_release.py` script.

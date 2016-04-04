@@ -20,8 +20,11 @@
 import hashlib
 import logging
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
+import urllib
 
 from kudu_util import check_output, confirm_prompt, Colors, get_my_email
 
@@ -131,6 +134,46 @@ def gen_checksum_files(tarball_path):
     print Colors.GREEN + ("Generated %s:\t" % extension) + Colors.RESET, path
 
 
+def run_rat(tarball_path):
+  """
+  Run Apache RAT on the source tarball.
+
+  Raises an exception on failure.
+  """
+  if not confirm_prompt("Would you like to run Apache RAT (Release Audit Tool) now?"):
+    return
+
+  # TODO: Cache and call the jar from the maven repo?
+  rat_url = "http://central.maven.org/maven2/org/apache/rat/apache-rat/0.11/apache-rat-0.11.jar"
+
+  tmpdir_path = tempfile.mkdtemp()
+  rat_report_result = ''
+  try:
+    rat_jar_dest = "%s/%s" % (tmpdir_path, os.path.basename(rat_url))
+
+    print "> Downloading RAT jar from " + rat_url
+    urllib.urlretrieve(rat_url, rat_jar_dest)
+
+    print "> Running RAT..."
+    xml = subprocess.check_output(["java", "-jar", rat_jar_dest, "-x", tarball_path])
+    rat_report_dest = "%s/%s" % (tmpdir_path, "rat_report.xml")
+    with open(rat_report_dest, "w") as f:
+        f.write(xml)
+
+    print "> Parsing RAT report..."
+    rat_report_result = subprocess.check_output(
+        ["./build-support/release/check-rat-report.py",
+         "./build-support/release/rat_exclude_files.txt",
+         rat_report_dest],
+        stderr=subprocess.STDOUT)
+    print Colors.GREEN + "RAT: LICENSES APPROVED" + Colors.RESET
+  except subprocess.CalledProcessError as e:
+    print Colors.RED + "RAT: LICENSES NOT APPROVED" + Colors.RESET
+    print e.output
+    raise e
+  finally:
+    shutil.rmtree(tmpdir_path)
+
 def main():
   # Change into the source repo so that we can run git commands without having to
   # specify cwd=BUILD_SUPPORT every time.
@@ -140,6 +183,7 @@ def main():
   tarball_path = create_tarball()
   gen_checksum_files(tarball_path)
   sign_tarball(tarball_path)
+  run_rat(tarball_path)
 
   print Colors.GREEN + "Release successfully generated!" + Colors.RESET
   print
