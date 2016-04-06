@@ -327,6 +327,7 @@ class KUDU_EXPORT KuduSchema {
   friend class KuduTable;
   friend class KuduTableCreator;
   friend class KuduWriteOperation;
+  friend class ScanConfiguration;
   friend class internal::GetTableSchemaRpc;
   friend class internal::LookupRpc;
   friend class internal::WriteRpc;

@@ -47,10 +47,10 @@ class KUDU_EXPORT KuduPredicate {
   // and gcc gives an error trying to derive from a private nested class.
   class KUDU_NO_EXPORT Data;
  private:
-  friend class KuduScanner;
-  friend class KuduTable;
   friend class ComparisonPredicateData;
   friend class ErrorPredicateData;
+  friend class KuduTable;
+  friend class ScanConfiguration;
 
   explicit KuduPredicate(Data* d);
 

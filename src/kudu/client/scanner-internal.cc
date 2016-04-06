@@ -49,29 +49,20 @@ namespace client {
 
 using internal::RemoteTabletServer;
 
-static const int64_t kNoTimestamp = -1;
-
 KuduScanner::Data::Data(KuduTable* table)
-  : open_(false),
+  : configuration_(table),
+    open_(false),
     data_in_open_(false),
-    has_batch_size_bytes_(false),
-    batch_size_bytes_(0),
-    selection_(KuduClient::CLOSEST_REPLICA),
-    read_mode_(READ_LATEST),
-    is_fault_tolerant_(false),
-    snapshot_timestamp_(kNoTimestamp),
     short_circuit_(false),
     table_(DCHECK_NOTNULL(table)),
-    arena_(1024, 1024*1024),
-    timeout_(MonoDelta::FromMilliseconds(kScanTimeoutMillis)),
     scan_attempts_(0) {
-  SetProjectionSchema(table->schema().schema_);
 }
 
 KuduScanner::Data::~Data() {
 }
 
 namespace {
+// Copies a predicate lower or upper bound from 'bound_src' into 'bound_dst'.
 void CopyPredicateBound(const ColumnSchema& col,
                         const void* bound_src,
                         string* bound_dst) {
@@ -288,7 +279,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
 
   controller_.Reset();
   controller_.set_deadline(rpc_deadline);
-  if (!spec_.predicates().empty()) {
+  if (!configuration_.spec().predicates().empty()) {
     controller_.RequireServerFeature(TabletServerFeatures::COLUMN_PREDICATES);
   }
   return AnalyzeResponse(
@@ -305,13 +296,13 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   PrepareRequest(KuduScanner::Data::NEW);
   next_req_.clear_scanner_id();
   NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
-  switch (read_mode_) {
+  switch (configuration_.read_mode()) {
     case READ_LATEST: scan->set_read_mode(kudu::READ_LATEST); break;
     case READ_AT_SNAPSHOT: scan->set_read_mode(kudu::READ_AT_SNAPSHOT); break;
     default: LOG(FATAL) << "Unexpected read mode.";
   }
 
-  if (is_fault_tolerant_) {
+  if (configuration_.is_fault_tolerant()) {
     scan->set_order_mode(kudu::ORDERED);
   } else {
     scan->set_order_mode(kudu::UNORDERED);
@@ -323,38 +314,38 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     scan->set_last_primary_key(last_primary_key_);
   }
 
-  scan->set_cache_blocks(spec_.cache_blocks());
+  scan->set_cache_blocks(configuration_.spec().cache_blocks());
 
-  if (snapshot_timestamp_ != kNoTimestamp) {
-    if (PREDICT_FALSE(read_mode_ != READ_AT_SNAPSHOT)) {
+  if (configuration_.snapshot_timestamp() != ScanConfiguration::kNoTimestamp) {
+    if (PREDICT_FALSE(configuration_.read_mode() != READ_AT_SNAPSHOT)) {
       LOG(WARNING) << "Scan snapshot timestamp set but read mode was READ_LATEST."
           " Ignoring timestamp.";
     } else {
-      scan->set_snap_timestamp(snapshot_timestamp_);
+      scan->set_snap_timestamp(configuration_.snapshot_timestamp());
     }
   }
 
   // Set up the predicates.
   scan->clear_column_predicates();
-  for (const auto& col_pred : spec_.predicates()) {
+  for (const auto& col_pred : configuration_.spec().predicates()) {
     ColumnPredicateIntoPB(col_pred.second, scan->add_column_predicates());
   }
 
-  if (spec_.lower_bound_key()) {
+  if (configuration_.spec().lower_bound_key()) {
     scan->mutable_start_primary_key()->assign(
-      reinterpret_cast<const char*>(spec_.lower_bound_key()->encoded_key().data()),
-      spec_.lower_bound_key()->encoded_key().size());
+      reinterpret_cast<const char*>(configuration_.spec().lower_bound_key()->encoded_key().data()),
+      configuration_.spec().lower_bound_key()->encoded_key().size());
   } else {
     scan->clear_start_primary_key();
   }
-  if (spec_.exclusive_upper_bound_key()) {
-    scan->mutable_stop_primary_key()->assign(
-      reinterpret_cast<const char*>(spec_.exclusive_upper_bound_key()->encoded_key().data()),
-      spec_.exclusive_upper_bound_key()->encoded_key().size());
+  if (configuration_.spec().exclusive_upper_bound_key()) {
+    scan->mutable_stop_primary_key()->assign(reinterpret_cast<const char*>(
+          configuration_.spec().exclusive_upper_bound_key()->encoded_key().data()),
+      configuration_.spec().exclusive_upper_bound_key()->encoded_key().size());
   } else {
     scan->clear_stop_primary_key();
   }
-  RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns(),
+  RETURN_NOT_OK(SchemaToColumnPBs(*configuration_.projection(), scan->mutable_projected_columns(),
                                   SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES | SCHEMA_PB_WITHOUT_IDS));
 
   for (int attempt = 1;; attempt++) {
@@ -373,7 +364,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     Status lookup_status = table_->client()->data_->GetTabletServer(
         table_->client(),
         remote_,
-        selection_,
+        configuration_.selection(),
         *blacklist,
         &candidates,
         &ts);
@@ -429,9 +420,9 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   // If present in the response, set the snapshot timestamp and the encoded last
   // primary key.  This is used when retrying the scan elsewhere.  The last
   // primary key is also updated on each scan response.
-  if (is_fault_tolerant_) {
+  if (configuration().is_fault_tolerant()) {
     CHECK(last_response_.has_snap_timestamp());
-    snapshot_timestamp_ = last_response_.snap_timestamp();
+    configuration_.SetSnapshotRaw(last_response_.snap_timestamp());
     if (last_response_.has_last_primary_key()) {
       last_primary_key_ = last_response_.last_primary_key();
     }
@@ -453,7 +444,7 @@ Status KuduScanner::Data::KeepAlive() {
   }
 
   RpcController controller;
-  controller.set_timeout(timeout_);
+  controller.set_timeout(configuration_.timeout());
   tserver::ScannerKeepAliveRequestPB request;
   request.set_scanner_id(next_req_.scanner_id());
   tserver::ScannerKeepAliveResponsePB response;
@@ -473,8 +464,8 @@ bool KuduScanner::Data::MoreTablets() const {
 void KuduScanner::Data::PrepareRequest(RequestType state) {
   if (state == KuduScanner::Data::CLOSE) {
     next_req_.set_batch_size_bytes(0);
-  } else if (has_batch_size_bytes_) {
-    next_req_.set_batch_size_bytes(batch_size_bytes_);
+  } else if (configuration_.has_batch_size_bytes()) {
+    next_req_.set_batch_size_bytes(configuration_.batch_size_bytes());
   } else {
     next_req_.clear_batch_size_bytes();
   }
@@ -490,11 +481,6 @@ void KuduScanner::Data::UpdateLastError(const Status& error) {
   if (last_error_.ok() || last_error_.IsTimedOut()) {
     last_error_ = error;
   }
-}
-
-void KuduScanner::Data::SetProjectionSchema(const Schema* schema) {
-  projection_ = schema;
-  client_projection_ = KuduSchema(*schema);
 }
 
 ////////////////////////////////////////////////////////////

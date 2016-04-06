@@ -103,7 +103,6 @@ using internal::ErrorCollector;
 using internal::MetaCache;
 using sp::shared_ptr;
 
-static const int kHtTimestampBitsToShift = 12;
 static const char* kProgName = "kudu_client";
 
 // We need to reroute all logging to stderr when the client library is
@@ -852,48 +851,18 @@ Status KuduScanner::SetProjectedColumnNames(const vector<string>& col_names) {
   if (data_->open_) {
     return Status::IllegalState("Projection must be set before Open()");
   }
-
-  const Schema* table_schema = data_->table_->schema().schema_;
-  vector<int> col_indexes;
-  col_indexes.reserve(col_names.size());
-  for (const string& col_name : col_names) {
-    int idx = table_schema->find_column(col_name);
-    if (idx == Schema::kColumnNotFound) {
-      return Status::NotFound(strings::Substitute("Column: \"$0\" was not found in the "
-          "table schema.", col_name));
-    }
-    col_indexes.push_back(idx);
-  }
-
-  return SetProjectedColumnIndexes(col_indexes);
+  return data_->mutable_configuration()->SetProjectedColumnNames(col_names);
 }
 
 Status KuduScanner::SetProjectedColumnIndexes(const vector<int>& col_indexes) {
   if (data_->open_) {
     return Status::IllegalState("Projection must be set before Open()");
   }
-
-  const Schema* table_schema = data_->table_->schema().schema_;
-  vector<ColumnSchema> cols;
-  cols.reserve(col_indexes.size());
-  for (const int col_index : col_indexes) {
-    if (col_index >= table_schema->columns().size()) {
-      return Status::NotFound(strings::Substitute("Column: \"$0\" was not found in the "
-          "table schema.", col_index));
-    }
-    cols.push_back(table_schema->column(col_index));
-  }
-
-  gscoped_ptr<Schema> s(new Schema());
-  RETURN_NOT_OK(s->Reset(cols, 0));
-  data_->SetProjectionSchema(data_->pool_.Add(s.release()));
-  return Status::OK();
+  return data_->mutable_configuration()->SetProjectedColumnIndexes(col_indexes);
 }
 
 Status KuduScanner::SetBatchSizeBytes(uint32_t batch_size) {
-  data_->has_batch_size_bytes_ = true;
-  data_->batch_size_bytes_ = batch_size;
-  return Status::OK();
+  return data_->mutable_configuration()->SetBatchSizeBytes(batch_size);
 }
 
 Status KuduScanner::SetReadMode(ReadMode read_mode) {
@@ -903,8 +872,7 @@ Status KuduScanner::SetReadMode(ReadMode read_mode) {
   if (!tight_enum_test<ReadMode>(read_mode)) {
     return Status::InvalidArgument("Bad read mode");
   }
-  data_->read_mode_ = read_mode;
-  return Status::OK();
+  return data_->mutable_configuration()->SetReadMode(read_mode);
 }
 
 Status KuduScanner::SetOrderMode(OrderMode order_mode) {
@@ -914,26 +882,21 @@ Status KuduScanner::SetOrderMode(OrderMode order_mode) {
   if (!tight_enum_test<OrderMode>(order_mode)) {
     return Status::InvalidArgument("Bad order mode");
   }
-  data_->is_fault_tolerant_ = order_mode == ORDERED;
-  return Status::OK();
+  return data_->mutable_configuration()->SetFaultTolerant(order_mode == ORDERED);
 }
 
 Status KuduScanner::SetFaultTolerant() {
   if (data_->open_) {
     return Status::IllegalState("Fault-tolerance must be set before Open()");
   }
-  RETURN_NOT_OK(SetReadMode(READ_AT_SNAPSHOT));
-  data_->is_fault_tolerant_ = true;
-  return Status::OK();
+  return data_->mutable_configuration()->SetFaultTolerant(true);
 }
 
 Status KuduScanner::SetSnapshotMicros(uint64_t snapshot_timestamp_micros) {
   if (data_->open_) {
     return Status::IllegalState("Snapshot timestamp must be set before Open()");
   }
-  // Shift the HT timestamp bits to get well-formed HT timestamp with the logical
-  // bits zeroed out.
-  data_->snapshot_timestamp_ = snapshot_timestamp_micros << kHtTimestampBitsToShift;
+  data_->mutable_configuration()->SetSnapshotMicros(snapshot_timestamp_micros);
   return Status::OK();
 }
 
@@ -941,7 +904,7 @@ Status KuduScanner::SetSnapshotRaw(uint64_t snapshot_timestamp) {
   if (data_->open_) {
     return Status::IllegalState("Snapshot timestamp must be set before Open()");
   }
-  data_->snapshot_timestamp_ = snapshot_timestamp;
+  data_->mutable_configuration()->SetSnapshotRaw(snapshot_timestamp);
   return Status::OK();
 }
 
@@ -949,83 +912,59 @@ Status KuduScanner::SetSelection(KuduClient::ReplicaSelection selection) {
   if (data_->open_) {
     return Status::IllegalState("Replica selection must be set before Open()");
   }
-  data_->selection_ = selection;
-  return Status::OK();
+  return data_->mutable_configuration()->SetSelection(selection);
 }
 
 Status KuduScanner::SetTimeoutMillis(int millis) {
   if (data_->open_) {
     return Status::IllegalState("Timeout must be set before Open()");
   }
-  data_->timeout_ = MonoDelta::FromMilliseconds(millis);
+  data_->mutable_configuration()->SetTimeoutMillis(millis);
   return Status::OK();
 }
 
 Status KuduScanner::AddConjunctPredicate(KuduPredicate* pred) {
-  // Take ownership even if we return a bad status.
-  data_->pool_.Add(pred);
   if (data_->open_) {
+    // Take ownership even if we return a bad status.
+    delete pred;
     return Status::IllegalState("Predicate must be set before Open()");
   }
-  return pred->data_->AddToScanSpec(&data_->spec_, &data_->arena_);
+  return data_->mutable_configuration()->AddConjunctPredicate(pred);
 }
 
 Status KuduScanner::AddLowerBound(const KuduPartialRow& key) {
-  gscoped_ptr<string> enc(new string());
-  RETURN_NOT_OK(key.EncodeRowKey(enc.get()));
-  RETURN_NOT_OK(AddLowerBoundRaw(Slice(*enc)));
-  data_->pool_.Add(enc.release());
-  return Status::OK();
+  return data_->mutable_configuration()->AddLowerBound(key);
 }
 
 Status KuduScanner::AddLowerBoundRaw(const Slice& key) {
-  // Make a copy of the key.
-  gscoped_ptr<EncodedKey> enc_key;
-  RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
-                  *data_->table_->schema().schema_, &data_->arena_, key, &enc_key));
-  data_->spec_.SetLowerBoundKey(enc_key.get());
-  data_->pool_.Add(enc_key.release());
-  return Status::OK();
+  return data_->mutable_configuration()->AddLowerBoundRaw(key);
 }
 
 Status KuduScanner::AddExclusiveUpperBound(const KuduPartialRow& key) {
-  gscoped_ptr<string> enc(new string());
-  RETURN_NOT_OK(key.EncodeRowKey(enc.get()));
-  RETURN_NOT_OK(AddExclusiveUpperBoundRaw(Slice(*enc)));
-  data_->pool_.Add(enc.release());
-  return Status::OK();
+  return data_->mutable_configuration()->AddUpperBound(key);
 }
 
 Status KuduScanner::AddExclusiveUpperBoundRaw(const Slice& key) {
-  // Make a copy of the key.
-  gscoped_ptr<EncodedKey> enc_key;
-  RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
-                  *data_->table_->schema().schema_, &data_->arena_, key, &enc_key));
-  data_->spec_.SetExclusiveUpperBoundKey(enc_key.get());
-  data_->pool_.Add(enc_key.release());
-  return Status::OK();
+  return data_->mutable_configuration()->AddUpperBoundRaw(key);
 }
 
 Status KuduScanner::AddLowerBoundPartitionKeyRaw(const Slice& partition_key) {
-  data_->spec_.SetLowerBoundPartitionKey(partition_key);
-  return Status::OK();
+  return data_->mutable_configuration()->AddLowerBoundPartitionKeyRaw(partition_key);
 }
 
 Status KuduScanner::AddExclusiveUpperBoundPartitionKeyRaw(const Slice& partition_key) {
-  data_->spec_.SetExclusiveUpperBoundPartitionKey(partition_key);
-  return Status::OK();
+  return data_->mutable_configuration()->AddUpperBoundPartitionKeyRaw(partition_key);
 }
 
 Status KuduScanner::SetCacheBlocks(bool cache_blocks) {
   if (data_->open_) {
     return Status::IllegalState("Block caching must be set before Open()");
   }
-  data_->spec_.set_cache_blocks(cache_blocks);
-  return Status::OK();
+  return data_->mutable_configuration()->SetCacheBlocks(cache_blocks);
 }
 
 KuduSchema KuduScanner::GetProjectionSchema() const {
-  return data_->client_projection_;
+  return KuduSchema(*data_->configuration().projection());
 }
 
 namespace {
@@ -1050,19 +989,21 @@ struct CloseCallback {
 string KuduScanner::ToString() const {
   return strings::Substitute("$0: $1",
                              data_->table_->name(),
-                             data_->spec_.ToString(*data_->table_->schema().schema_));
+                             data_->configuration()
+                                   .spec()
+                                   .ToString(*data_->table_->schema().schema_));
 }
 
 Status KuduScanner::Open() {
   CHECK(!data_->open_) << "Scanner already open";
-  CHECK(data_->projection_ != nullptr) << "No projection provided";
 
-  data_->spec_.OptimizeScan(*data_->table_->schema().schema_, &data_->arena_, &data_->pool_, false);
+  data_->mutable_configuration()->OptimizeScanSpec();
   data_->partition_pruner_.Init(*data_->table_->schema().schema_,
                                 data_->table_->partition_schema(),
-                                data_->spec_);
+                                data_->configuration().spec());
 
-  if (data_->spec_.CanShortCircuit() || !data_->partition_pruner_.HasMorePartitionKeyRanges()) {
+  if (data_->configuration().spec().CanShortCircuit() ||
+      !data_->partition_pruner_.HasMorePartitionKeyRanges()) {
     VLOG(1) << "Short circuiting scan " << ToString();
     data_->open_ = true;
     data_->short_circuit_ = true;
@@ -1072,7 +1013,7 @@ Status KuduScanner::Open() {
   VLOG(1) << "Beginning scan " << ToString();
 
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(data_->timeout_);
+  deadline.AddDelta(data_->configuration().timeout());
   set<string> blacklist;
 
   RETURN_NOT_OK(data_->OpenNextTablet(deadline, &blacklist));
@@ -1101,7 +1042,7 @@ void KuduScanner::Close() {
     closer->scanner_id = data_->next_req_.scanner_id();
     data_->PrepareRequest(KuduScanner::Data::CLOSE);
     data_->next_req_.set_close_scanner(true);
-    closer->controller.set_timeout(data_->timeout_);
+    closer->controller.set_timeout(data_->configuration().timeout());
     data_->proxy_->ScanAsync(data_->next_req_, &closer->response, &closer->controller,
                              boost::bind(&CloseCallback::Callback, closer.get()));
     ignore_result(closer.release());
@@ -1144,19 +1085,19 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
     VLOG(1) << "Extracting data from scan " << ToString();
     data_->data_in_open_ = false;
     return batch->data_->Reset(&data_->controller_,
-                                data_->projection_,
-                                &data_->client_projection_,
+                               data_->configuration().projection(),
+                               data_->configuration().client_projection(),
                                 make_gscoped_ptr(data_->last_response_.release_data()));
   } else if (data_->last_response_.has_more_results()) {
     // More data is available in this tablet.
     VLOG(1) << "Continuing scan " << ToString();
 
     MonoTime batch_deadline = MonoTime::Now(MonoTime::FINE);
-    batch_deadline.AddDelta(data_->timeout_);
+    batch_deadline.AddDelta(data_->configuration().timeout());
     data_->PrepareRequest(KuduScanner::Data::CONTINUE);
 
     while (true) {
-      bool allow_time_for_failover = data_->is_fault_tolerant_;
+      bool allow_time_for_failover = data_->configuration().is_fault_tolerant();
       ScanRpcStatus result = data_->SendScanRpc(batch_deadline, allow_time_for_failover);
 
       // Success case.
@@ -1166,8 +1107,8 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
         }
         data_->scan_attempts_ = 0;
         return batch->data_->Reset(&data_->controller_,
-                                   data_->projection_,
-                                   &data_->client_projection_,
+                                   data_->configuration().projection(),
+                                   data_->configuration().client_projection(),
                                    make_gscoped_ptr(data_->last_response_.release_data()));
       }
 
@@ -1180,7 +1121,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
       set<string> blacklist;
       RETURN_NOT_OK(data_->HandleError(result, batch_deadline, &blacklist));
 
-      if (data_->is_fault_tolerant_) {
+      if (data_->configuration().is_fault_tolerant()) {
         LOG(WARNING) << "Attempting to retry scan of tablet " << ToString() << " elsewhere.";
         return data_->ReopenCurrentTablet(batch_deadline, &blacklist);
       }
@@ -1200,7 +1141,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
     VLOG(1) << "Scanning next tablet " << ToString();
     data_->last_primary_key_.clear();
     MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-    deadline.AddDelta(data_->timeout_);
+    deadline.AddDelta(data_->configuration().timeout());
     set<string> blacklist;
 
     RETURN_NOT_OK(data_->OpenNextTablet(deadline, &blacklist));

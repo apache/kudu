@@ -23,6 +23,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
+#include "kudu/client/scan_configuration.h"
 #include "kudu/common/partition_pruner.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/macros.h"
@@ -80,12 +81,6 @@ class KuduScanner::Data {
 
   explicit Data(KuduTable* table);
   ~Data();
-
-  // Copies a predicate lower or upper bound from 'bound_src' into
-  // 'bound_dst'.
-  void CopyPredicateBound(const ColumnSchema& col,
-                          const void* bound_src, std::string* bound_dst);
-
 
   // Calculates a deadline and sends the next RPC for this scanner. The deadline for the
   // RPC is calculated based on whether 'allow_time_for_failover' is true. If true,
@@ -151,18 +146,18 @@ class KuduScanner::Data {
   // non-fatal (i.e. retriable) scan error is encountered.
   void UpdateLastError(const Status& error);
 
-  // Sets the projection schema.
-  void SetProjectionSchema(const Schema* schema);
+  const ScanConfiguration& configuration() const {
+    return configuration_;
+  }
+
+  ScanConfiguration* mutable_configuration() {
+    return &configuration_;
+  }
+
+  ScanConfiguration configuration_;
 
   bool open_;
   bool data_in_open_;
-  bool has_batch_size_bytes_;
-  uint32 batch_size_bytes_;
-  KuduClient::ReplicaSelection selection_;
-
-  ReadMode read_mode_;
-  bool is_fault_tolerant_;
-  int64_t snapshot_timestamp_;
 
   // Set to true if the scan is known to be empty based on predicates and
   // primary key bounds.
@@ -172,6 +167,7 @@ class KuduScanner::Data {
   std::string last_primary_key_;
 
   internal::RemoteTabletServer* ts_;
+
   // The proxy can be derived from the RemoteTabletServer, but this involves retaking the
   // meta cache lock. Keeping our own shared_ptr avoids this overhead.
   std::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
@@ -190,27 +186,10 @@ class KuduScanner::Data {
   // The table we're scanning.
   KuduTable* table_;
 
-  // The projection schema used in the scan.
-  const Schema* projection_;
-
-  // 'projection_' after it is converted to KuduSchema, so that users can obtain
-  // the projection without having to include common/schema.h.
-  KuduSchema client_projection_;
-
-  Arena arena_;
-  AutoReleasePool pool_;
-
-  // Machinery to store and encode raw column range predicates into
-  // encoded keys.
-  ScanSpec spec_;
-
   PartitionPruner partition_pruner_;
 
   // The tablet we're scanning.
   scoped_refptr<internal::RemoteTablet> remote_;
-
-  // Timeout for scanner RPCs.
-  MonoDelta timeout_;
 
   // Number of attempts since the last successful scan.
   int scan_attempts_;

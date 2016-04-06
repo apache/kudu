@@ -24,10 +24,11 @@ set(CLIENT_SRCS
   error-internal.cc
   meta_cache.cc
   scan_batch.cc
+  scan_configuration.cc
   scan_predicate.cc
   scanner-internal.cc
-  session-internal.cc
   schema.cc
+  session-internal.cc
   table-internal.cc
   table_alterer-internal.cc
   table_creator-internal.cc
