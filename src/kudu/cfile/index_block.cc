@@ -235,10 +235,6 @@ void IndexBlockReader::GetKeyPointer(int idx_in_block, const uint8_t **ptr,
   }
 }
 
-size_t IndexBlockBuilder::Count() const {
-  return entry_offsets_.size();
-}
-
 void IndexBlockBuilder::Reset() {
   buffer_.clear();
   entry_offsets_.clear();

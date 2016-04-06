@@ -60,12 +60,11 @@ Status IndexTreeBuilder::Append(
   IndexBlockBuilder* idx_block = idx_blocks_[level].get();
   idx_block->Add(key, block_ptr);
 
+  // This index block is full, and there are at least two entries,
+  // flush it.
   size_t est_size = idx_block->EstimateEncodedSize();
-  if (est_size > options_->index_block_size) {
-    DCHECK(idx_block->Count() > 1)
-      << "Index block full with only one entry - this would create "
-      << "an infinite loop";
-    // This index block is full, flush it.
+  if (est_size > options_->index_block_size &&
+      idx_block->count() > 1) {
     BlockPointer index_block_ptr;
     RETURN_NOT_OK(FinishBlockAndPropagate(level));
   }
@@ -109,7 +108,7 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
   // and then the file completes.
   //
   // TODO: add a test case which exercises this explicitly.
-  if (idx_block->Count() == 0) {
+  if (idx_block->count() == 0) {
     return Status::OK();
   }
 

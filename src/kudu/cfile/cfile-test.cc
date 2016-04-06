@@ -255,7 +255,7 @@ class TestCFile : public CFileTestBase {
     ASSERT_EQ(num_entries, count);
   }
 
-  void TestReadWriteStrings(EncodingType encoding);
+  void TestReadWriteStrings(EncodingType encoding, const char* format);
 
 #ifdef NDEBUG
   void TestWrite100MFileStrings(EncodingType encoding) {
@@ -470,12 +470,13 @@ void EncodeStringKey(const Schema &schema, const Slice& key,
   encoded_key->reset(kb.BuildEncodedKey());
 }
 
-void TestCFile::TestReadWriteStrings(EncodingType encoding) {
+void TestCFile::TestReadWriteStrings(EncodingType encoding,
+                                     const char* str_format = "hello %04d") {
   Schema schema({ ColumnSchema("key", STRING) }, 1);
 
   const int nrows = 10000;
   BlockId block_id;
-  StringDataGenerator<false> generator("hello %04d");
+  StringDataGenerator<false> generator(str_format);
   WriteTestFile(&generator, encoding, NO_COMPRESSION, nrows,
                 SMALL_BLOCKSIZE | WRITE_VALIDX, &block_id);
 
@@ -500,7 +501,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding) {
   Slice s;
 
   CopyOne<STRING>(iter.get(), &s, &arena);
-  ASSERT_EQ(string("hello 5000"), s.ToString());
+  ASSERT_EQ(StringPrintf(str_format, 5000), s.ToString());
 
   // Seek to last key exactly, should succeed
   ASSERT_OK(iter->SeekToOrdinal(9999));
@@ -517,25 +518,29 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding) {
   gscoped_ptr<EncodedKey> encoded_key;
   bool exact;
 
-  // Seek in between each key
+  // Seek in between each key.
+  // (seek to "hello 0000.5" through "hello 9999.5")
+  string buf;
   for (int i = 1; i < 10000; i++) {
+    arena.Reset();
     SCOPED_TRACE(i);
-    char buf[100];
-    snprintf(buf, sizeof(buf), "hello %04d.5", i - 1);
+    SStringPrintf(&buf, str_format, i - 1);
+    buf.append(".5");
     s = Slice(buf);
     EncodeStringKey(schema, s, &encoded_key);
     ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
     ASSERT_FALSE(exact);
     ASSERT_EQ(i, iter->GetCurrentOrdinal());
     CopyOne<STRING>(iter.get(), &s, &arena);
-    ASSERT_EQ(StringPrintf("hello %04d", i), s.ToString());
+    ASSERT_EQ(StringPrintf(str_format, i), s.ToString());
   }
 
   // Seek exactly to each key
+  // (seek to "hello 0000" through "hello 9999")
   for (int i = 0; i < 9999; i++) {
+    arena.Reset();
     SCOPED_TRACE(i);
-    char buf[100];
-    snprintf(buf, sizeof(buf), "hello %04d", i);
+    SStringPrintf(&buf, str_format, i);
     s = Slice(buf);
     EncodeStringKey(schema, s, &encoded_key);
     ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
@@ -547,32 +552,40 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding) {
   }
 
   // after last entry
-  s = "hello 9999x";
+  // (seek to "hello 9999.x")
+  buf = StringPrintf(str_format, 9999) + "x";
+  s = Slice(buf);
   EncodeStringKey(schema, s, &encoded_key);
   EXPECT_TRUE(iter->SeekAtOrAfter(*encoded_key, &exact).IsNotFound());
 
   // before first entry
-  s = "hello";
+  // (seek to "hello 000", which falls before "hello 0000")
+  buf = StringPrintf(str_format, 0);
+  buf.resize(buf.size() - 1);
+  s = Slice(buf);
   EncodeStringKey(schema, s, &encoded_key);
   ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
-  ASSERT_FALSE(exact);
-  ASSERT_EQ(0u, iter->GetCurrentOrdinal());
+  EXPECT_FALSE(exact);
+  EXPECT_EQ(0u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
-  ASSERT_EQ(string("hello 0000"), s.ToString());
+  EXPECT_EQ(StringPrintf(str_format, 0), s.ToString());
 
   // Seek to start of file by ordinal
   ASSERT_OK(iter->SeekToFirst());
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
-  ASSERT_EQ(string("hello 0000"), s.ToString());
+  ASSERT_EQ(StringPrintf(str_format, 0), s.ToString());
 
   // Reseek to start and fetch all data.
+  // We fetch in 10 smaller chunks to avoid using too much RAM for the
+  // case where the values are large.
   ASSERT_OK(iter->SeekToFirst());
-
-  ScopedColumnBlock<STRING> cb(10000);
-  size_t n = 10000;
-  ASSERT_OK(iter->CopyNextValues(&n, &cb));
-  ASSERT_EQ(10000, n);
+  for (int i = 0; i < 10; i++) {
+    ScopedColumnBlock<STRING> cb(10000);
+    size_t n = 1000;
+    ASSERT_OK(iter->CopyNextValues(&n, &cb));
+    ASSERT_EQ(1000, n);
+  }
 }
 
 
@@ -584,6 +597,23 @@ TEST_P(TestCFileBothCacheTypes, TestReadWriteStringsPrefixEncoding) {
 TEST_P(TestCFileBothCacheTypes, TestReadWriteStringsDictEncoding) {
   TestReadWriteStrings(DICT_ENCODING);
 }
+
+// Regression test for properly handling cells that are larger
+// than the index block and/or data block size.
+//
+// This test is disabled in TSAN because it's single-threaded anyway
+// and runs extremely slowly with TSAN enabled.
+#ifndef THREAD_SANITIZER
+TEST_P(TestCFileBothCacheTypes, TestReadWriteLargeStrings) {
+  // Pad the values out to a length of ~65KB.
+  const char* kFormat = "%066000d";
+  TestReadWriteStrings(PLAIN_ENCODING, kFormat);
+  if (AllowSlowTests()) {
+    TestReadWriteStrings(DICT_ENCODING, kFormat);
+    TestReadWriteStrings(PREFIX_ENCODING, kFormat);
+  }
+}
+#endif
 
 // Test that metadata entries stored in the cfile are persisted.
 TEST_P(TestCFileBothCacheTypes, TestMetadata) {

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <stdlib.h>
 #include <string>
+#include <vector>
 
 #include "kudu/cfile/cfile-test-base.h"
 #include "kudu/cfile/cfile_reader.h"
@@ -232,27 +233,17 @@ class StringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
   }
 
   Slice BuildTestValue(size_t block_index, size_t value) OVERRIDE {
-    char *buf = data_buffer_[block_index].data;
-    int len = snprintf(buf, kItemBufferSize - 1, format_, value);
-    DCHECK_LT(len, kItemBufferSize);
-    return Slice(buf, len);
+    data_buffers_[block_index] = StringPrintf(format_, value);
+    return Slice(data_buffers_[block_index]);
   }
 
   void Resize(size_t num_entries) OVERRIDE {
-    if (num_entries > this->block_entries()) {
-      data_buffer_.reset(new Buffer[num_entries]);
-    }
+    data_buffers_.resize(num_entries);
     DataGenerator<STRING, HAS_NULLS>::Resize(num_entries);
   }
 
  private:
-  static const int kItemBufferSize = 16;
-
-  struct Buffer {
-    char data[kItemBufferSize];
-  };
-
-  gscoped_array<Buffer> data_buffer_;
+  std::vector<std::string> data_buffers_;
   const char* format_;
 };
 

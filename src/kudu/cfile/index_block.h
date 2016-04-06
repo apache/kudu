@@ -66,7 +66,11 @@ class IndexBlockBuilder {
   // The pointed-to data is only valid until the next call to this builder.
   Status GetFirstKey(Slice *key) const;
 
-  size_t Count() const;
+  // Return the number of entries already added to this index
+  // block.
+  size_t count() const {
+    return entry_offsets_.size();
+  }
 
   // Return an estimate of the post-encoding size of this
   // index block. This estimate should be conservative --
