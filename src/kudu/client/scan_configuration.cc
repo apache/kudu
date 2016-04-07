@@ -86,6 +86,10 @@ Status ScanConfiguration::AddConjunctPredicate(KuduPredicate* pred) {
   return pred->data_->AddToScanSpec(&spec_, &arena_);
 }
 
+void ScanConfiguration::AddConjunctPredicate(ColumnPredicate pred) {
+  spec_.AddPredicate(std::move(pred));
+}
+
 Status ScanConfiguration::AddLowerBound(const KuduPartialRow& key) {
   string encoded;
   RETURN_NOT_OK(key.EncodeRowKey(&encoded));

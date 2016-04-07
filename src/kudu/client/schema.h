@@ -323,6 +323,8 @@ class KUDU_EXPORT KuduSchema {
  private:
   friend class KuduClient;
   friend class KuduScanner;
+  friend class KuduScanToken;
+  friend class KuduScanTokenBuilder;
   friend class KuduSchemaBuilder;
   friend class KuduTable;
   friend class KuduTableCreator;

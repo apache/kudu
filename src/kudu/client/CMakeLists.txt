@@ -38,6 +38,7 @@ set(CLIENT_SRCS
   scan_batch.cc
   scan_configuration.cc
   scan_predicate.cc
+  scan_token-internal.cc
   scanner-internal.cc
   schema.cc
   session-internal.cc
@@ -251,3 +252,4 @@ set(KUDU_TEST_LINK_LIBS kudu_client integration-tests ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(client-test)
 ADD_KUDU_TEST(client-unittest)
 ADD_KUDU_TEST(predicate-test)
+ADD_KUDU_TEST(scan_token-test)

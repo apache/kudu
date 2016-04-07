@@ -54,6 +54,7 @@ class PartitionSchema;
 namespace client {
 
 class KuduLoggingCallback;
+class KuduScanToken;
 class KuduSession;
 class KuduStatusCallback;
 class KuduTable;
@@ -271,11 +272,6 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
  private:
   class KUDU_NO_EXPORT Data;
 
-  friend class KuduClientBuilder;
-  friend class KuduScanner;
-  friend class KuduTable;
-  friend class KuduTableAlterer;
-  friend class KuduTableCreator;
   friend class internal::Batcher;
   friend class internal::GetTableSchemaRpc;
   friend class internal::LookupRpc;
@@ -283,6 +279,12 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class internal::RemoteTablet;
   friend class internal::RemoteTabletServer;
   friend class internal::WriteRpc;
+  friend class KuduClientBuilder;
+  friend class KuduScanner;
+  friend class KuduScanTokenBuilder;
+  friend class KuduTable;
+  friend class KuduTableAlterer;
+  friend class KuduTableCreator;
 
   FRIEND_TEST(ClientTest, TestGetTabletServerBlacklist);
   FRIEND_TEST(ClientTest, TestMasterDown);
@@ -886,13 +888,17 @@ class KUDU_EXPORT KuduScanner {
 
   // Set the projection used for this scanner by passing the column names to read.
   //
-  // This overrides any previous call to SetProjectedColumns.
-  Status SetProjectedColumnNames(const std::vector<std::string>& col_names) WARN_UNUSED_RESULT;
+  // This overrides any previous call to SetProjectedColumnNames or
+  // SetProjectedColumnIndexes.
+  Status SetProjectedColumnNames(const std::vector<std::string>& col_names)
+    WARN_UNUSED_RESULT;
 
   // Set the projection used for this scanner by passing the column indexes to read.
   //
-  // This overrides any previous call to SetProjectedColumns/SetProjectedColumnIndexes.
-  Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes) WARN_UNUSED_RESULT;
+  // This overrides any previous call to SetProjectedColumnNames or
+  // SetProjectedColumnIndexes.
+  Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes)
+    WARN_UNUSED_RESULT;
 
   // DEPRECATED: See SetProjectedColumnNames
   Status SetProjectedColumns(const std::vector<std::string>& col_names) WARN_UNUSED_RESULT;
@@ -1048,6 +1054,7 @@ class KUDU_EXPORT KuduScanner {
  private:
   class KUDU_NO_EXPORT Data;
 
+  friend class KuduScanToken;
   FRIEND_TEST(ClientTest, TestScanCloseProxy);
   FRIEND_TEST(ClientTest, TestScanFaultTolerance);
   FRIEND_TEST(ClientTest, TestScanNoBlockCaching);
@@ -1057,6 +1064,163 @@ class KUDU_EXPORT KuduScanner {
   Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduScanner);
+};
+
+// A KuduScanToken describes a partial scan of a Kudu table limited to a single
+// contiguous physical location. Using the KuduScanTokenBuilder, clients can
+// describe the desired scan, including predicates, bounds, timestamps, and
+// caching, and receive back a collection of scan tokens.
+//
+// Each scan token may be separately turned into a scanner using
+// KuduScanToken::IntoKuduScanner, with each scanner responsible for a disjoint
+// section of the table.
+//
+// Scan tokens may be serialized using the KuduScanToken::Serialize method and
+// deserialized back into a scanner using the
+// KuduScanToken::DeserializeIntoScanner method. This allows use cases such as
+// generating scan tokens in the planner component of a query engine, then
+// sending the tokens to execution nodes based on locality, and then
+// instantiating the scanners on those nodes.
+//
+// Scan token locality information can be inspected using the
+// KuduScanToken::TabletServers method.
+class KUDU_EXPORT KuduScanToken {
+ public:
+
+  ~KuduScanToken();
+
+  // Creates a new scanner and sets the scanner options according to the scan
+  // token. The caller owns the new scanner. The scanner must be opened before
+  // use. The scanner will not be set if the returned status is an error.
+  Status IntoKuduScanner(KuduScanner** scanner) const WARN_UNUSED_RESULT;
+
+  // Returns a vector of tablet servers who may be hosting the tablet which
+  // this scan is retrieving rows from. This method should be considered a
+  // hint, since tablet to tablet server assignments may change in response to
+  // external events such as failover or load balancing.
+  const std::vector<KuduTabletServer*>& TabletServers() const;
+
+  // Serialize the token to a string buffer. Deserialize with
+  // KuduScanToken::DeserializeIntoScanner.
+  Status Serialize(std::string* buf) const WARN_UNUSED_RESULT;
+
+  // Creates a new scanner and sets the scanner options according to the
+  // serialized scan token. The caller owns the new scanner. The scanner must be
+  // opened before use. The scanner will not be set if the returned status is an
+  // error.
+  static Status DeserializeIntoScanner(KuduClient* client,
+                                       const std::string& serialized_token,
+                                       KuduScanner** scanner) WARN_UNUSED_RESULT;
+
+ private:
+  class KUDU_NO_EXPORT Data;
+
+  friend class KuduScanTokenBuilder;
+
+  explicit KuduScanToken(Data* data);
+
+  // Owned.
+  Data* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduScanToken);
+};
+
+// A scan token builder. This class is not thread-safe.
+class KUDU_EXPORT KuduScanTokenBuilder {
+ public:
+
+  // Constructs a KuduScanTokenBuilder. The given 'table' object must remain valid
+  // for the lifetime of the builder, and the tokens which it builds.
+  explicit KuduScanTokenBuilder(KuduTable* table);
+  ~KuduScanTokenBuilder();
+
+  // Set the column projection by passing the column names to read.
+  //
+  // This overrides any previous call to SetProjectedColumnNames or
+  // SetProjectedColumnIndexes.
+  Status SetProjectedColumnNames(const std::vector<std::string>& col_names) WARN_UNUSED_RESULT;
+
+  // Set the column projection used for this scanner by passing the column indexes to read.
+  //
+  // This overrides any previous call to SetProjectedColumnNames or
+  // SetProjectedColumnIndexes.
+  Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes) WARN_UNUSED_RESULT;
+
+  // Add a predicate.
+  //
+  // The predicates act as conjunctions -- i.e, they all must pass for
+  // a row to be returned.
+  //
+  // The KuduScanTokenBuilder takes ownership of 'pred', even if a bad Status is
+  // returned.
+  Status AddConjunctPredicate(KuduPredicate* pred) WARN_UNUSED_RESULT;
+
+  // Add a lower bound (inclusive) primary key for the scan.
+  // If any bound is already added, this bound is intersected with that one.
+  //
+  // The KuduScanTokenBuilder does not take ownership of 'key'; the caller may
+  // free it afterward.
+  Status AddLowerBound(const KuduPartialRow& key) WARN_UNUSED_RESULT;
+
+  // Add an upper bound (exclusive) primary key.
+  // If any bound is already added, this bound is intersected with that one.
+  //
+  // The KuduScanTokenBuilder does not take ownerhip of 'key'; the caller may
+  // free it afterward.
+  Status AddUpperBound(const KuduPartialRow& key) WARN_UNUSED_RESULT;
+
+  // Set the block caching policy. If true, scanned data blocks will be cached
+  // in memory and made available for future scans. Default is true.
+  Status SetCacheBlocks(bool cache_blocks) WARN_UNUSED_RESULT;
+
+  // Set the hint for the size of the next batch in bytes.
+  // If set to 0, the first call to the tablet server won't return data.
+  Status SetBatchSizeBytes(uint32_t batch_size) WARN_UNUSED_RESULT;
+
+  // Sets the replica selection policy while scanning.
+  //
+  // TODO: kill this in favor of a consistency-level-based API
+  Status SetSelection(KuduClient::ReplicaSelection selection) WARN_UNUSED_RESULT;
+
+  // Sets the ReadMode. Default is READ_LATEST.
+  Status SetReadMode(KuduScanner::ReadMode read_mode) WARN_UNUSED_RESULT;
+
+  // Scans are by default non fault-tolerant, and scans will fail if scanning an
+  // individual tablet fails (for example, if a tablet server crashes in the
+  // middle of a tablet scan).
+  //
+  // If this method is called, scans will be resumed at another tablet server in
+  // the case of failure.
+  //
+  // Fault tolerant scans typically have lower throughput than non
+  // fault-tolerant scans. Fault tolerant scans use READ_AT_SNAPSHOT mode,
+  // if no snapshot timestamp is provided, the server will pick one.
+  Status SetFaultTolerant() WARN_UNUSED_RESULT;
+
+  // Sets the snapshot timestamp, in microseconds since the epoch, for scans in
+  // READ_AT_SNAPSHOT mode.
+  Status SetSnapshotMicros(uint64_t snapshot_timestamp_micros) WARN_UNUSED_RESULT;
+
+  // Sets the snapshot timestamp in raw encoded form (i.e. as returned by a
+  // previous call to a server), for scans in READ_AT_SNAPSHOT mode.
+  Status SetSnapshotRaw(uint64_t snapshot_timestamp) WARN_UNUSED_RESULT;
+
+  // Sets the maximum time that Open() and NextBatch() are allowed to take.
+  Status SetTimeoutMillis(int millis) WARN_UNUSED_RESULT;
+
+  // Build the set of scan tokens. The caller takes ownership of the tokens.
+  // The builder may be reused after this call.
+  Status Build(std::vector<KuduScanToken*>* tokens) WARN_UNUSED_RESULT;
+
+  // Returns a string representation of this scan.
+  std::string ToString() const;
+ private:
+  class KUDU_NO_EXPORT Data;
+
+  // Owned.
+  Data* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduScanTokenBuilder);
 };
 
 // In-memory representation of a remote tablet server.
@@ -1077,6 +1241,7 @@ class KUDU_EXPORT KuduTabletServer {
 
   friend class KuduClient;
   friend class KuduScanner;
+  friend class KuduScanTokenBuilder;
 
   KuduTabletServer();
 

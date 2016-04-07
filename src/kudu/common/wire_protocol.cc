@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/common/column_predicate.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/gutil/port.h"
@@ -27,6 +28,7 @@
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/safe_math.h"
@@ -305,6 +307,144 @@ Status SchemaToColumnPBs(const Schema& schema,
     }
 
     idx++;
+  }
+  return Status::OK();
+}
+
+namespace {
+// Copies a predicate lower or upper bound from 'bound_src' into 'bound_dst'.
+void CopyPredicateBoundToPB(const ColumnSchema& col, const void* bound_src, string* bound_dst) {
+  const void* src;
+  size_t size;
+  if (col.type_info()->physical_type() == BINARY) {
+    // Copying a string involves an extra level of indirection through its
+    // owning slice.
+    const Slice* s = reinterpret_cast<const Slice*>(bound_src);
+    src = s->data();
+    size = s->size();
+  } else {
+    src = bound_src;
+    size = col.type_info()->size();
+  }
+  bound_dst->assign(reinterpret_cast<const char*>(src), size);
+}
+
+// Extract a void* pointer suitable for use in a ColumnRangePredicate from the
+// string protobuf bound. This validates that the pb_value has the correct
+// length, copies the data into 'arena', and sets *result to point to it.
+// Returns bad status if the user-specified value is the wrong length.
+Status CopyPredicateBoundFromPB(const ColumnSchema& schema,
+                                const string& pb_value,
+                                Arena* arena,
+                                const void** result) {
+  // Copy the data from the protobuf into the Arena.
+  uint8_t* data_copy = static_cast<uint8_t*>(arena->AllocateBytes(pb_value.size()));
+  memcpy(data_copy, &pb_value[0], pb_value.size());
+
+  // If the type is of variable length, then we need to return a pointer to a Slice
+  // element pointing to the string. Otherwise, just verify that the provided
+  // value was the right size.
+  if (schema.type_info()->physical_type() == BINARY) {
+    *result = arena->NewObject<Slice>(data_copy, pb_value.size());
+  } else {
+    // TODO: add test case for this invalid request
+    size_t expected_size = schema.type_info()->size();
+    if (pb_value.size() != expected_size) {
+      return Status::InvalidArgument(
+          strings::Substitute("Bad predicate on $0. Expected value size $1, got $2",
+                              schema.ToString(), expected_size, pb_value.size()));
+    }
+    *result = data_copy;
+  }
+
+  return Status::OK();
+}
+} // anonymous namespace
+
+void ColumnPredicateToPB(const ColumnPredicate& predicate,
+                         ColumnPredicatePB* pb) {
+  pb->set_column(predicate.column().name());
+  switch (predicate.predicate_type()) {
+    case PredicateType::Equality: {
+      CopyPredicateBoundToPB(predicate.column(),
+                             predicate.raw_lower(),
+                             pb->mutable_equality()->mutable_value());
+      return;
+    };
+    case PredicateType::Range: {
+      auto range_pred = pb->mutable_range();
+      if (predicate.raw_lower() != nullptr) {
+        CopyPredicateBoundToPB(predicate.column(),
+                               predicate.raw_lower(),
+                               range_pred->mutable_lower());
+      }
+      if (predicate.raw_upper() != nullptr) {
+        CopyPredicateBoundToPB(predicate.column(),
+                               predicate.raw_upper(),
+                               range_pred->mutable_upper());
+      }
+      return;
+    };
+    case PredicateType::IsNotNull: {
+      pb->mutable_is_not_null();
+      return;
+    };
+    case PredicateType::None: LOG(FATAL) << "None predicate may not be converted to protobuf";
+  }
+  LOG(FATAL) << "unknown predicate type";
+}
+
+Status ColumnPredicateFromPB(const Schema& schema,
+                             Arena* arena,
+                             const ColumnPredicatePB& pb,
+                             optional<ColumnPredicate>* predicate) {
+  if (!pb.has_column()) {
+    return Status::InvalidArgument("Column predicate must include a column", pb.DebugString());
+  }
+  const string& column = pb.column();
+  int32_t idx = schema.find_column(column);
+  if (idx == Schema::kColumnNotFound) {
+    return Status::InvalidArgument("unknown column in predicate", pb.DebugString());
+  }
+  const ColumnSchema& col = schema.column(idx);
+
+  switch (pb.predicate_case()) {
+    case ColumnPredicatePB::kRange: {
+      const auto& range = pb.range();
+      if (!range.has_lower() && !range.has_upper()) {
+        return Status::InvalidArgument("Invalid range predicate on column: no bounds",
+                                        col.name());
+      }
+
+      const void* lower = nullptr;
+      const void* upper = nullptr;
+      if (range.has_lower()) {
+        RETURN_NOT_OK(CopyPredicateBoundFromPB(col, range.lower(), arena, &lower));
+      }
+      if (range.has_upper()) {
+        RETURN_NOT_OK(CopyPredicateBoundFromPB(col, range.upper(), arena, &upper));
+      }
+
+      *predicate = ColumnPredicate::Range(col, lower, upper);
+      break;
+    };
+    case ColumnPredicatePB::kEquality: {
+      const auto& equality = pb.equality();
+      if (!equality.has_value()) {
+        return Status::InvalidArgument("Invalid equality predicate on column: no value",
+                                        col.name());
+      }
+      const void* value = nullptr;
+      RETURN_NOT_OK(CopyPredicateBoundFromPB(col, equality.value(), arena, &value));
+      *predicate = ColumnPredicate::Equality(col, value);
+      break;
+    };
+    case ColumnPredicatePB::kIsNotNull: {
+      ColumnPredicate p = ColumnPredicate::IsNotNull(col);
+      *predicate = ColumnPredicate::IsNotNull(col);
+      break;
+    };
+    default: return Status::InvalidArgument("Unknown predicate type for column", col.name());
   }
   return Status::OK();
 }

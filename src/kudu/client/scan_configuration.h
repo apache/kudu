@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "kudu/client/client.h"
+#include "kudu/common/column_predicate.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
@@ -47,6 +48,8 @@ class ScanConfiguration {
   Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes) WARN_UNUSED_RESULT;
 
   Status AddConjunctPredicate(KuduPredicate* pred) WARN_UNUSED_RESULT;
+
+  void AddConjunctPredicate(ColumnPredicate pred);
 
   Status AddLowerBound(const KuduPartialRow& key);
 
@@ -129,8 +132,12 @@ class ScanConfiguration {
     return timeout_;
   }
 
+  Arena* arena() {
+    return &arena_;
+  }
+
  private:
-  friend class ScanTokenBuilder;
+  friend class KuduScanTokenBuilder;
 
   // Non-owned, non-null table.
   KuduTable* table_;

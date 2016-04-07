@@ -1261,61 +1261,16 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
 
   // First the column predicates.
   for (const ColumnPredicatePB& pred_pb : scan_pb.column_predicates()) {
-    if (!pred_pb.has_column()) {
-      return Status::InvalidArgument("Column predicate must include a column",
-                                     pred_pb.DebugString());
+    boost::optional<ColumnPredicate> predicate;
+    RETURN_NOT_OK(ColumnPredicateFromPB(tablet_schema, scanner->arena(), pred_pb, &predicate));
+
+    if (projection.find_column(predicate->column().name()) == Schema::kColumnNotFound &&
+        !ContainsKey(missing_col_names, predicate->column().name())) {
+      InsertOrDie(&missing_col_names, predicate->column().name());
+      missing_cols->push_back(predicate->column());
     }
 
-    const string& column = pred_pb.column();
-    int32_t idx = tablet_schema.find_column(column);
-    if (idx == Schema::kColumnNotFound) {
-      return Status::InvalidArgument("Unknown column in predicate", pred_pb.DebugString());
-    }
-    const ColumnSchema& col = tablet_schema.column(idx);
-
-    if (projection.find_column(column) == Schema::kColumnNotFound &&
-        !ContainsKey(missing_col_names, column)) {
-      InsertOrDie(&missing_col_names, column);
-      missing_cols->push_back(col);
-    }
-
-    switch (pred_pb.predicate_case()) {
-      case ColumnPredicatePB::kRange: {
-        const auto& range = pred_pb.range();
-        if (!range.has_lower() && !range.has_upper()) {
-          return Status::InvalidArgument("Invalid range predicate on column: no bounds",
-                                         col.name());
-        }
-
-        const void* lower = nullptr;
-        const void* upper = nullptr;
-        if (range.has_lower()) {
-          RETURN_NOT_OK(ExtractPredicateValue(col, range.lower(), scanner->arena(), &lower));
-        }
-        if (range.has_upper()) {
-          RETURN_NOT_OK(ExtractPredicateValue(col, range.upper(), scanner->arena(), &upper));
-        }
-
-        ret->AddPredicate(ColumnPredicate::Range(col, lower, upper));
-        break;
-      };
-      case ColumnPredicatePB::kEquality: {
-        const auto& equality = pred_pb.equality();
-        if (!equality.has_value()) {
-          return Status::InvalidArgument("Invalid equality predicate on column: no value",
-                                         col.name());
-        }
-        const void* value = nullptr;
-        RETURN_NOT_OK(ExtractPredicateValue(col, equality.value(), scanner->arena(), &value));
-        ret->AddPredicate(ColumnPredicate::Equality(col, value));
-        break;
-      };
-      case ColumnPredicatePB::kIsNotNull: {
-        ret->AddPredicate(ColumnPredicate::IsNotNull(col));
-        break;
-      };
-      default: return Status::InvalidArgument("Unknown predicate type for column", col.name());
-    }
+    ret->AddPredicate(std::move(*predicate));
   }
 
   // Then the column range predicates.

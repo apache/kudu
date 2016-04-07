@@ -38,7 +38,6 @@ using std::string;
 
 namespace kudu {
 
-using kudu::ColumnPredicatePB;
 using rpc::RpcController;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
@@ -54,66 +53,12 @@ KuduScanner::Data::Data(KuduTable* table)
     open_(false),
     data_in_open_(false),
     short_circuit_(false),
-    table_(DCHECK_NOTNULL(table)),
+    table_(DCHECK_NOTNULL(table)->shared_from_this()),
     scan_attempts_(0) {
 }
 
 KuduScanner::Data::~Data() {
 }
-
-namespace {
-// Copies a predicate lower or upper bound from 'bound_src' into 'bound_dst'.
-void CopyPredicateBound(const ColumnSchema& col,
-                        const void* bound_src,
-                        string* bound_dst) {
-  const void* src;
-  size_t size;
-  if (col.type_info()->physical_type() == BINARY) {
-    // Copying a string involves an extra level of indirection through its
-    // owning slice.
-    const Slice* s = reinterpret_cast<const Slice*>(bound_src);
-    src = s->data();
-    size = s->size();
-  } else {
-    src = bound_src;
-    size = col.type_info()->size();
-  }
-  bound_dst->assign(reinterpret_cast<const char*>(src), size);
-}
-
-void ColumnPredicateIntoPB(const ColumnPredicate& predicate,
-                           ColumnPredicatePB* pb) {
-  pb->set_column(predicate.column().name());
-  switch (predicate.predicate_type()) {
-    case PredicateType::Equality: {
-      CopyPredicateBound(predicate.column(),
-                         predicate.raw_lower(),
-                         pb->mutable_equality()->mutable_value());
-      return;
-    };
-    case PredicateType::Range: {
-      auto range_pred = pb->mutable_range();
-      if (predicate.raw_lower() != nullptr) {
-        CopyPredicateBound(predicate.column(),
-                           predicate.raw_lower(),
-                           range_pred->mutable_lower());
-      }
-      if (predicate.raw_upper() != nullptr) {
-        CopyPredicateBound(predicate.column(),
-                           predicate.raw_upper(),
-                           range_pred->mutable_upper());
-      }
-      return;
-    };
-    case PredicateType::IsNotNull: {
-      pb->mutable_is_not_null();
-      return;
-    };
-    case PredicateType::None: LOG(FATAL) << "None predicate may not be converted to protobuf";
-  }
-  LOG(FATAL) << "unknown predicate type";
-}
-} // anonymous namespace
 
 Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
                                       const MonoTime& deadline,
@@ -328,7 +273,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   // Set up the predicates.
   scan->clear_column_predicates();
   for (const auto& col_pred : configuration_.spec().predicates()) {
-    ColumnPredicateIntoPB(col_pred.second, scan->add_column_predicates());
+    ColumnPredicateToPB(col_pred.second, scan->add_column_predicates());
   }
 
   if (configuration_.spec().lower_bound_key()) {
@@ -350,7 +295,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
 
   for (int attempt = 1;; attempt++) {
     Synchronizer sync;
-    table_->client()->data_->meta_cache_->LookupTabletByKey(table_,
+    table_->client()->data_->meta_cache_->LookupTabletByKey(table_.get(),
                                                             partition_key,
                                                             deadline,
                                                             &remote_,

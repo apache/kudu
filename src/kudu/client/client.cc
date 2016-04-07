@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <set>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -32,6 +33,7 @@
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_predicate-internal.h"
+#include "kudu/client/scan_token-internal.h"
 #include "kudu/client/scanner-internal.h"
 #include "kudu/client/schema-internal.h"
 #include "kudu/client/session-internal.h"
@@ -1167,6 +1169,110 @@ Status KuduScanner::GetCurrentServer(KuduTabletServer** server) {
   (*server)->data_ = new KuduTabletServer::Data(rts->permanent_uuid(),
                                                 host_ports[0].host());
   return Status::OK();
+}
+
+////////////////////////////////////////////////////////////
+// KuduScanToken
+////////////////////////////////////////////////////////////
+
+KuduScanToken::KuduScanToken(KuduScanToken::Data* data)
+    : data_(data) {
+}
+
+KuduScanToken::~KuduScanToken() {
+  delete data_;
+}
+
+Status KuduScanToken::IntoKuduScanner(KuduScanner** scanner) const {
+  return data_->IntoKuduScanner(scanner);
+}
+
+const vector<KuduTabletServer*>& KuduScanToken::TabletServers() const {
+  return data_->TabletServers();
+}
+
+Status KuduScanToken::Serialize(string* buf) const {
+  return data_->Serialize(buf);
+}
+
+Status KuduScanToken::DeserializeIntoScanner(KuduClient* client,
+                                         const string& serialized_token,
+                                         KuduScanner** scanner) {
+  return KuduScanToken::Data::DeserializeIntoScanner(client, serialized_token, scanner);
+}
+
+////////////////////////////////////////////////////////////
+// KuduScanTokenBuilder
+////////////////////////////////////////////////////////////
+
+KuduScanTokenBuilder::KuduScanTokenBuilder(KuduTable* table)
+    : data_(new KuduScanTokenBuilder::Data(table)) {
+}
+
+KuduScanTokenBuilder::~KuduScanTokenBuilder() {
+  delete data_;
+}
+
+Status KuduScanTokenBuilder::SetProjectedColumnNames(const vector<string>& col_names) {
+  return data_->mutable_configuration()->SetProjectedColumnNames(col_names);
+}
+
+Status KuduScanTokenBuilder::SetProjectedColumnIndexes(const vector<int>& col_indexes) {
+  return data_->mutable_configuration()->SetProjectedColumnIndexes(col_indexes);
+}
+
+Status KuduScanTokenBuilder::SetBatchSizeBytes(uint32_t batch_size) {
+  return data_->mutable_configuration()->SetBatchSizeBytes(batch_size);
+}
+
+Status KuduScanTokenBuilder::SetReadMode(KuduScanner::ReadMode read_mode) {
+  if (!tight_enum_test<KuduScanner::ReadMode>(read_mode)) {
+    return Status::InvalidArgument("Bad read mode");
+  }
+  return data_->mutable_configuration()->SetReadMode(read_mode);
+}
+
+Status KuduScanTokenBuilder::SetFaultTolerant() {
+  return data_->mutable_configuration()->SetFaultTolerant(true);
+}
+
+Status KuduScanTokenBuilder::SetSnapshotMicros(uint64_t snapshot_timestamp_micros) {
+  data_->mutable_configuration()->SetSnapshotMicros(snapshot_timestamp_micros);
+  return Status::OK();
+}
+
+Status KuduScanTokenBuilder::SetSnapshotRaw(uint64_t snapshot_timestamp) {
+  data_->mutable_configuration()->SetSnapshotRaw(snapshot_timestamp);
+  return Status::OK();
+}
+
+Status KuduScanTokenBuilder::SetSelection(KuduClient::ReplicaSelection selection) {
+  return data_->mutable_configuration()->SetSelection(selection);
+}
+
+Status KuduScanTokenBuilder::SetTimeoutMillis(int millis) {
+  data_->mutable_configuration()->SetTimeoutMillis(millis);
+  return Status::OK();
+}
+
+Status KuduScanTokenBuilder::AddConjunctPredicate(KuduPredicate* pred) {
+  return data_->mutable_configuration()->AddConjunctPredicate(pred);
+}
+
+Status KuduScanTokenBuilder::AddLowerBound(const KuduPartialRow& key) {
+  return data_->mutable_configuration()->AddLowerBound(key);
+}
+
+Status KuduScanTokenBuilder::AddUpperBound(const KuduPartialRow& key) {
+  return data_->mutable_configuration()->AddUpperBound(key);
+}
+
+Status KuduScanTokenBuilder::SetCacheBlocks(bool cache_blocks) {
+  return data_->mutable_configuration()->SetCacheBlocks(cache_blocks);
+}
+
+Status KuduScanTokenBuilder::Build(vector<KuduScanToken*>* tokens) {
+  return data_->Build(tokens);
 }
 
 ////////////////////////////////////////////////////////////

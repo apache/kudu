@@ -184,7 +184,7 @@ class KuduScanner::Data {
   rpc::RpcController controller_;
 
   // The table we're scanning.
-  KuduTable* table_;
+  sp::shared_ptr<KuduTable> table_;
 
   PartitionPruner partition_pruner_;
 

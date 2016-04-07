@@ -19,15 +19,20 @@
 #ifndef KUDU_COMMON_WIRE_PROTOCOL_H
 #define KUDU_COMMON_WIRE_PROTOCOL_H
 
+#include <boost/optional.hpp>
 #include <vector>
 
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/util/status.h"
 
+using boost::optional;
+
 namespace kudu {
 
-class ConstContiguousRow;
+class Arena;
+class ColumnPredicate;
 class ColumnSchema;
+class ConstContiguousRow;
 class faststring;
 class HostPort;
 class RowBlock;
@@ -94,6 +99,17 @@ Status SchemaToColumnPBs(
   const Schema& schema,
   google::protobuf::RepeatedPtrField<ColumnSchemaPB>* cols,
   int flags = 0);
+
+// Convert the column predicate to protobuf.
+void ColumnPredicateToPB(const ColumnPredicate& predicate, ColumnPredicatePB* pb);
+
+// Convert a column predicate protobuf to a column predicate. The resulting
+// predicate is stored in the 'predicate' out parameter, if the result is
+// successful.
+Status ColumnPredicateFromPB(const Schema& schema,
+                             Arena* arena,
+                             const ColumnPredicatePB& pb,
+                             optional<ColumnPredicate>* predicate);
 
 // Encode the given row block into the provided protobuf and data buffers.
 //
