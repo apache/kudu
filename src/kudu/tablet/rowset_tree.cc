@@ -94,7 +94,7 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
   for (const shared_ptr<RowSet> &rs : rowsets) {
     gscoped_ptr<RowSetWithBounds> rsit(new RowSetWithBounds());
     rsit->rowset = rs.get();
-    Slice min_key, max_key;
+    string min_key, max_key;
     Status s = rs->GetBounds(&min_key, &max_key);
     if (s.IsNotSupported()) {
       // This rowset is a MemRowSet, for which the bounds change as more
@@ -116,8 +116,8 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
     endpoints.push_back(RSEndpoint(rsit->rowset, STOP, max_key));
 
     // Load bounds and save entry
-    rsit->min_key = min_key.ToString();
-    rsit->max_key = max_key.ToString();
+    rsit->min_key = min_key;
+    rsit->max_key = max_key;
     entries.push_back(rsit.release());
   }
 

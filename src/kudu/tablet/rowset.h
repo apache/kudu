@@ -99,14 +99,12 @@ class RowSet {
   virtual Status CountRows(rowid_t *count) const = 0;
 
   // Return the bounds for this RowSet. 'min_encoded_key' and 'max_encoded_key'
-  // are set to the first and last encoded keys for this RowSet. The storage
-  // for these slices is part of the RowSet and only guaranteed to stay valid
-  // until the RowSet is destroyed.
+  // are set to the first and last encoded keys for this RowSet.
   //
   // In the case that the rowset is still mutable (eg MemRowSet), this may
   // return Status::NotImplemented.
-  virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const = 0;
+  virtual Status GetBounds(std::string* min_encoded_key,
+                           std::string* max_encoded_key) const = 0;
 
   // Return a displayable string for this rowset.
   virtual string ToString() const = 0;
@@ -273,8 +271,8 @@ class DuplicatingRowSet : public RowSet {
 
   Status CountRows(rowid_t *count) const OVERRIDE;
 
-  virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const OVERRIDE;
+  virtual Status GetBounds(std::string* min_encoded_key,
+                           std::string* max_encoded_key) const OVERRIDE;
 
   uint64_t EstimateOnDiskSize() const OVERRIDE;
 

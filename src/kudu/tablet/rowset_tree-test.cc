@@ -159,16 +159,14 @@ TEST_F(TestRowSetTree, TestEndpointsConsistency) {
       ASSERT_LE(prev.compare(slice), 0);
     }
 
-    Slice min, max;
+    string min, max;
     ASSERT_OK(rs->GetBounds(&min, &max));
     if (ept == RowSetTree::START) {
-      ASSERT_EQ(min.data(), slice.data());
-      ASSERT_EQ(min.size(), slice.size());
+      ASSERT_EQ(min, slice.ToString());
       ASSERT_TRUE(InsertIfNotPresent(&open, rs));
       ASSERT_TRUE(InsertIfNotPresent(&visited, rs));
     } else if (ept == RowSetTree::STOP) {
-      ASSERT_EQ(max.data(), slice.data());
-      ASSERT_EQ(max.size(), slice.size());
+      ASSERT_EQ(max, slice.ToString());
       ASSERT_TRUE(open.erase(rs) == 1);
     } else {
       FAIL() << "No such endpoint type exists";

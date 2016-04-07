@@ -186,13 +186,13 @@ Status DuplicatingRowSet::CountRows(rowid_t *count) const {
   return Status::OK();
 }
 
-Status DuplicatingRowSet::GetBounds(Slice *min_encoded_key,
-                                    Slice *max_encoded_key) const {
+Status DuplicatingRowSet::GetBounds(string* min_encoded_key,
+                                    string* max_encoded_key) const {
   // The range out of the output rowset always spans the full range
   // of the input rowsets, since no new rows can be inserted.
   // The output rowsets are in ascending order, so their total range
   // spans the range [front().min, back().max].
-  Slice junk;
+  string junk;
   RETURN_NOT_OK(new_rowsets_.front()->GetBounds(min_encoded_key, &junk));
   RETURN_NOT_OK(new_rowsets_.back()->GetBounds(&junk, max_encoded_key));
   return Status::OK();

@@ -47,20 +47,14 @@ namespace tablet {
 
 namespace {
 
-// Less-than comparison by minimum key (both by actual key slice and cdf)
+// Less-than comparison by minimum key (both by actual encoded key and cdf)
 bool LessCDFAndRSMin(const RowSetInfo& a, const RowSetInfo& b) {
-  Slice amin, bmin, max;
-  a.rowset()->GetBounds(&amin, &max);
-  b.rowset()->GetBounds(&bmin, &max);
-  return a.cdf_min_key() < b.cdf_min_key() && amin.compare(bmin) < 0;
+  return a.cdf_min_key() < b.cdf_min_key() && a.min_key().compare(b.min_key()) < 0;
 }
 
 // Less-than comparison by maximum key (both by actual key slice and cdf)
 bool LessCDFAndRSMax(const RowSetInfo& a, const RowSetInfo& b) {
-  Slice amax, bmax, min;
-  a.rowset()->GetBounds(&min, &amax);
-  b.rowset()->GetBounds(&min, &bmax);
-  return a.cdf_max_key() < b.cdf_max_key() && amax.compare(bmax) < 0;
+  return a.cdf_max_key() < b.cdf_max_key() && a.max_key().compare(b.max_key()) < 0;
 }
 
 // Debug-checks that min <= imin <= imax <= max
@@ -106,12 +100,13 @@ uint64_t SliceTailToInt(const Slice& slice, int start) {
 
 // Finds fraction (imin, imax) takes up of rs->GetBounds().
 // Requires that (imin, imax) is contained in rs->GetBounds().
-double StringFractionInRange(const RowSet* rs,
+double StringFractionInRange(const RowSetInfo* rsi,
                              const Slice& imin,
                              const Slice& imax) {
-  Slice min, max;
-  if (!rs->GetBounds(&min, &max).ok()) {
-    VLOG(2) << "Ignoring " << rs->ToString() << " in CDF calculation";
+  Slice min(rsi->min_key());
+  Slice max(rsi->max_key());
+  if (!rsi->has_bounds()) {
+    VLOG(2) << "Ignoring " << rsi->rowset()->ToString() << " in CDF calculation";
     return 0;
   }
   DCheckInside(min, max, imin, imax);
@@ -130,9 +125,6 @@ double StringFractionInRange(const RowSet* rs,
   return static_cast<double>(imax_int - imin_int) / (max_int - min_int);
 }
 
-// Typedef needed to use boost foreach macro
-typedef unordered_map<RowSet*, RowSetInfo*>::value_type RowSetRowSetInfoPair;
-
 // Computes the "width" of an interval [prev, next] according to the amount
 // of data estimated to be inside the interval, where this is calculated by
 // multiplying the fraction that the interval takes up in the keyspace of
@@ -143,10 +135,9 @@ double WidthByDataSize(const Slice& prev, const Slice& next,
                        const unordered_map<RowSet*, RowSetInfo*>& active) {
   double weight = 0;
 
-  for (const RowSetRowSetInfoPair& rsi : active) {
-    RowSet* rs = rsi.first;
-    double fraction = StringFractionInRange(rs, prev, next);
-    weight += rs->EstimateOnDiskSize() * fraction;
+  for (const auto& rs_rsi : active) {
+    double fraction = StringFractionInRange(rs_rsi.second, prev, next);
+    weight += rs_rsi.first->EstimateOnDiskSize() * fraction;
   }
 
   return weight;
@@ -223,8 +214,8 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
     double interval_width = WidthByDataSize(prev, next, active);
 
     // Increment active rowsets in min_key by the interval_width.
-    for (const RowSetRowSetInfoPair& rsi : active) {
-      RowSetInfo& cdf_rs = *rsi.second;
+    for (const auto& rs_rsi : active) {
+      RowSetInfo& cdf_rs = *rs_rsi.second;
       cdf_rs.cdf_max_key_ += interval_width;
     }
 
@@ -266,6 +257,7 @@ RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
                       kMinSizeMb)),
     cdf_min_key_(init_cdf),
     cdf_max_key_(init_cdf) {
+  has_bounds_ = rs->GetBounds(&min_key_, &max_key_).ok();
 }
 
 void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,
@@ -288,10 +280,9 @@ string RowSetInfo::ToString() const {
   ret.append(rowset_->ToString());
   StringAppendF(&ret, "(% 3dM) [%.04f, %.04f]", size_mb_,
                 cdf_min_key_, cdf_max_key_);
-  Slice min, max;
-  if (rowset_->GetBounds(&min, &max).ok()) {
-    ret.append(" [").append(min.ToDebugString());
-    ret.append(",").append(max.ToDebugString());
+  if (has_bounds_) {
+    ret.append(" [").append(Slice(min_key_).ToDebugString());
+    ret.append(",").append(Slice(max_key_).ToDebugString());
     ret.append("]");
   }
   return ret;

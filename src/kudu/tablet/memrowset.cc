@@ -298,8 +298,8 @@ Status MemRowSet::NewCompactionInput(const Schema* projection,
   return Status::OK();
 }
 
-Status MemRowSet::GetBounds(Slice *min_encoded_key,
-                            Slice *max_encoded_key) const {
+Status MemRowSet::GetBounds(string *min_encoded_key,
+                            string *max_encoded_key) const {
   return Status::NotSupported("");
 }
 

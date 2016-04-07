@@ -220,8 +220,8 @@ class MemRowSet : public RowSet,
     return Status::OK();
   }
 
-  virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const OVERRIDE;
+  virtual Status GetBounds(std::string *min_encoded_key,
+                           std::string *max_encoded_key) const OVERRIDE;
 
   uint64_t EstimateOnDiskSize() const OVERRIDE {
     return 0;

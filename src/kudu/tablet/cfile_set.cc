@@ -178,10 +178,10 @@ Status CFileSet::CountRows(rowid_t *count) const {
   return key_index_reader()->CountRows(count);
 }
 
-Status CFileSet::GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const {
-  *min_encoded_key = Slice(min_encoded_key_);
-  *max_encoded_key = Slice(max_encoded_key_);
+Status CFileSet::GetBounds(string* min_encoded_key,
+                           string* max_encoded_key) const {
+  *min_encoded_key = min_encoded_key_;
+  *max_encoded_key = max_encoded_key_;
   return Status::OK();
 }
 

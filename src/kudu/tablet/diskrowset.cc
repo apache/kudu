@@ -644,8 +644,8 @@ Status DiskRowSet::CountRows(rowid_t *count) const {
   return base_data_->CountRows(count);
 }
 
-Status DiskRowSet::GetBounds(Slice *min_encoded_key,
-                             Slice *max_encoded_key) const {
+Status DiskRowSet::GetBounds(std::string* min_encoded_key,
+                             std::string* max_encoded_key) const {
   DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return base_data_->GetBounds(min_encoded_key, max_encoded_key);

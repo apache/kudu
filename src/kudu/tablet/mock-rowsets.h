@@ -130,10 +130,10 @@ class MockDiskRowSet : public MockRowSet {
         last_key_(std::move(last_key)),
         size_(size) {}
 
-  virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const OVERRIDE {
-    *min_encoded_key = Slice(first_key_);
-    *max_encoded_key = Slice(last_key_);
+  virtual Status GetBounds(std::string* min_encoded_key,
+                           std::string* max_encoded_key) const OVERRIDE {
+    *min_encoded_key = first_key_;
+    *max_encoded_key = last_key_;
     return Status::OK();
   }
 
@@ -156,8 +156,8 @@ class MockDiskRowSet : public MockRowSet {
 // Mock which acts like a MemRowSet and has no known bounds.
 class MockMemRowSet : public MockRowSet {
  public:
-  virtual Status GetBounds(Slice *min_encoded_key,
-                           Slice *max_encoded_key) const OVERRIDE {
+  virtual Status GetBounds(std::string* min_encoded_key,
+                           std::string* max_encoded_key) const OVERRIDE {
     return Status::NotSupported("");
   }
 
