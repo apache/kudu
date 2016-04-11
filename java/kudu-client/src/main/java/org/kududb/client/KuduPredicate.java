@@ -41,6 +41,7 @@ public class KuduPredicate {
   /**
    * The predicate type.
    */
+  @InterfaceAudience.Private
   enum PredicateType {
     /** A predicate which filters all rows. */
     NONE,
@@ -55,6 +56,8 @@ public class KuduPredicate {
   /**
    * The comparison operator of a predicate.
    */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public enum ComparisonOp {
     GREATER,
     GREATER_EQUAL,
