@@ -177,6 +177,8 @@ class Messenger {
 
   RpczStore* rpcz_store() { return rpcz_store_.get(); }
 
+  int num_reactors() const { return reactors_.size(); }
+
   std::string name() const {
     return name_;
   }

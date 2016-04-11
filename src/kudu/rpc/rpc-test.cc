@@ -294,8 +294,13 @@ TEST_F(TestRpc, TestCallTimeout) {
   // before.
   ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromNanoseconds(1)));
 
-  // Test a longer timeout - expect this will time out after we send the request.
-  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(10)));
+  // Test a longer timeout - expect this will time out after we send the request,
+  // but shorter than our threshold for two-stage timeout handling.
+  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(200)));
+
+  // Test a longer timeout - expect this will trigger the "two-stage timeout"
+  // code path.
+  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(1500)));
 }
 
 static void AcceptAndReadForever(Socket* listen_sock) {

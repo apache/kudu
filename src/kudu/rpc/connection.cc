@@ -194,6 +194,21 @@ Connection::CallAwaitingResponse::~CallAwaitingResponse() {
 }
 
 void Connection::CallAwaitingResponse::HandleTimeout(ev::timer &watcher, int revents) {
+  if (remaining_timeout > 0) {
+    if (watcher.remaining() < -1.0) {
+      LOG(WARNING) << "RPC call timeout handler was delayed by "
+                   << -watcher.remaining() << "s! This may be due to a process-wide "
+                   << "pause such as swapping, logging-related delays, or allocator lock "
+                   << "contention. Will allow an additional "
+                   << remaining_timeout << "s for a response.";
+    }
+
+    watcher.set(remaining_timeout, 0);
+    watcher.start();
+    remaining_timeout = 0;
+    return;
+  }
+
   conn->HandleOutboundCallTimeout(this);
 }
 
@@ -287,7 +302,41 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
     reactor_thread_->RegisterTimeout(&car->timeout_timer);
     car->timeout_timer.set<CallAwaitingResponse, // NOLINT(*)
                            &CallAwaitingResponse::HandleTimeout>(car.get());
-    car->timeout_timer.set(timeout.ToSeconds(), 0);
+
+    // For calls with a timeout of at least 500ms, we actually run the timeout
+    // handler in two stages. The first timeout fires with a timeout 10% less
+    // than the user-specified one. It then schedules a second timeout for the
+    // remaining amount of time.
+    //
+    // The purpose of this two-stage timeout is to be more robust when the client
+    // has some process-wide pause, such as lock contention in tcmalloc, or a
+    // reactor callback that blocks in glog. Consider the following case:
+    //
+    // T = 0s        user issues an RPC with 5 second timeout
+    // T = 0.5s - 6s   process is blocked
+    // T = 6s        process unblocks, and the timeout fires (1s late)
+    //
+    // Without the two-stage timeout, we would determine that the call had timed out,
+    // even though it's likely that the response is waiting on our TCP socket.
+    // With the two-stage timeout, we'll end up with:
+    //
+    // T = 0s           user issues an RPC with 5 second timeout
+    // T = 0.5s - 6s    process is blocked
+    // T = 6s           process unblocks, and the first-stage timeout fires (1.5s late)
+    // T = 6s - 6.200s  time for the client to read the response which is waiting
+    // T = 6.200s       if the response was not actually available, we'll time out here
+    //
+    // We don't bother with this logic for calls with very short timeouts - assumedly
+    // a user setting such a short RPC timeout is well equipped to handle one.
+    double time = timeout.ToSeconds();
+    if (time >= 0.5) {
+      car->remaining_timeout = time * 0.1;
+      time -= car->remaining_timeout;
+    } else {
+      car->remaining_timeout = 0;
+    }
+
+    car->timeout_timer.set(time, 0);
     car->timeout_timer.start();
   }
 

@@ -554,5 +554,40 @@ TEST_F(RpcStubTest, TestCallbackClearedAfterRunning) {
   ASSERT_TRUE(my_refptr->HasOneRef());
 }
 
+// Regression test for KUDU-1409: if the client reactor thread is blocked (e.g due to a
+// process-wide pause or a slow callback) then we should not cause RPC calls to time out.
+TEST_F(RpcStubTest, DontTimeOutWhenReactorIsBlocked) {
+  CHECK_EQ(client_messenger_->num_reactors(), 1)
+      << "This test requires only a single reactor. Otherwise the injected sleep might "
+      << "be scheduled on a different reactor than the RPC call.";
+
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+  // Schedule a 1-second sleep on the reactor thread.
+  //
+  // This will cause us the reactor to be blocked while the call response is received, and
+  // still be blocked when the timeout would normally occur. Despite this, the call should
+  // not time out.
+  //
+  //  0s         0.5s          1.2s     1.5s
+  //  RPC call running
+  //  |---------------------|
+  //              Reactor blocked in sleep
+  //             |----------------------|
+  //                            \_ RPC would normally time out
+
+  client_messenger_->ScheduleOnReactor([](const Status& s) {
+      ThreadRestrictions::ScopedAllowWait allow_wait;
+      SleepFor(MonoDelta::FromSeconds(1));
+    }, MonoDelta::FromSeconds(0.5));
+
+  RpcController controller;
+  SleepRequestPB req;
+  SleepResponsePB resp;
+  req.set_sleep_micros(800 * 1000);
+  controller.set_timeout(MonoDelta::FromMilliseconds(1200));
+  ASSERT_OK(p.Sleep(req, &resp, &controller));
+}
+
 } // namespace rpc
 } // namespace kudu

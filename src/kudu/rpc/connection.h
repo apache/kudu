@@ -182,6 +182,10 @@ class Connection : public RefCountedThreadSafe<Connection> {
     Connection *conn;
     std::shared_ptr<OutboundCall> call;
     ev::timer timeout_timer;
+
+    // We time out RPC calls in two stages. This is set to the amount of timeout
+    // remaining after the next timeout fires. See Connection::QueueOutboundCall().
+    double remaining_timeout;
   };
 
   typedef std::unordered_map<uint64_t, CallAwaitingResponse*> car_map_t;

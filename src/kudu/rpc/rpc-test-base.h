@@ -339,7 +339,9 @@ class RpcTestBase : public KuduTest {
   void DoTestExpectTimeout(const Proxy &p, const MonoDelta &timeout) {
     SleepRequestPB req;
     SleepResponsePB resp;
-    req.set_sleep_micros(500000); // 0.5sec
+    // Sleep for 50ms longer than the call timeout.
+    int sleep_micros = timeout.ToMicroseconds() + 50000;
+    req.set_sleep_micros(sleep_micros);
 
     RpcController c;
     c.set_timeout(timeout);
@@ -354,8 +356,8 @@ class RpcTestBase : public KuduTest {
 
     // We shouldn't timeout significantly faster than our configured timeout.
     EXPECT_GE(elapsed_millis, expected_millis - 10);
-    // And we also shouldn't take the full 0.5sec that we asked for
-    EXPECT_LT(elapsed_millis, 500);
+    // And we also shouldn't take the full time that we asked for
+    EXPECT_LT(elapsed_millis * 1000, sleep_micros);
     EXPECT_TRUE(s.IsTimedOut());
     LOG(INFO) << "status: " << s.ToString() << ", seconds elapsed: " << sw.elapsed().wall_seconds();
   }
