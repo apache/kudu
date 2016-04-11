@@ -131,6 +131,7 @@ The tracing interface is accessed via a web browser as part of the
 embedded web server in each of the Kudu daemons.
 
 .Tracing Interface URLs
+[options="header"]
 |===
 | Daemon | URL
 | Tablet Server | http://tablet-server-1.example.com:8050/tracing.html

@@ -467,12 +467,12 @@ TBLPROPERTIES(
   'kudu.table_name' = 'cust_behavior',
   'kudu.master_addresses' = 'a1216.halxg.cloudera.com:7051',
   'kudu.key_columns' = '_id',
-  'kudu.num_tablet_replicas' = '3',
+  'kudu.num_tablet_replicas' = '3'
 );
 ----
 
 If you have multiple primary key columns, you can specify split points by separating
-them with commas within the inner brackets: `[['va',1],['ab',2]]`. The expression
+them with commas within the inner brackets: `\(('va',1), ('ab',2))`. The expression
 must be valid JSON.
 
 ==== Impala Databases and Kudu
@@ -488,7 +488,7 @@ scopes, called `databases`. To create a database, use a `CREATE DATABASE`
 statement. To use the database for further Impala operations such as `CREATE TABLE`,
 use the `USE` statement. For example, to create a table in a database called `impala_kudu`,
 use the following SQL:
-+
+
 [source,sql]
 ----
 CREATE DATABASE impala_kudu
@@ -504,12 +504,12 @@ TBLPROPERTIES(
   'kudu.key_columns' = 'id'
 );
 ----
-+
+
 The `my_first_table` table is created within the `impala_kudu` database. To refer
 to this database in the future, without using a specific `USE` statement, you can
 refer to the table using `<database>.<table>` syntax. For example, to specify the
 `my_first_table` table in database `impala_kudu`, as opposed to any other table with
-the same name in another database, use `impala_kudu:my_first_table`. This also applies
+the same name in another database, use `impala_kudu.my_first_table`. This also applies
 to `INSERT`, `UPDATE`, `DELETE`, and `DROP` statements.
 
 WARNING: Currently, Kudu does not encode the Impala database into the table name
@@ -530,7 +530,7 @@ The following Impala keywords are not supported when creating Kudu tables:
 === Optimizing Performance for Evaluating SQL Predicates
 
 If the `WHERE` clause of your query includes comparisons with the operators
-`=`, `<=`, or `>=`, Kudu evaluates the condition directly and only returns the
+`=`, `\<=`, or `>=`, Kudu evaluates the condition directly and only returns the
 relevant results. This provides optimum performance, because Kudu only returns the
 relevant results to Impala. For predicates `<`, `>`, `!=`, or any other predicate
 type supported by Impala, Kudu does not evaluate the predicates directly, but returns
@@ -852,9 +852,9 @@ Batch Insert:: The approach that usually performs best, from the standpoint of
 both Impala and Kudu, is usually to import the data using a `SELECT FROM` statement
 in Impala.
 +
-. If your data is not already in Impala, one strategy is
-to link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_txtfile.html
-[import it from a text file], such as a TSV or CSV file.
+. If your data is not already in Impala, one strategy is to
+link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_txtfile.html[import it from a text file],
+such as a TSV or CSV file.
 +
 . <<kudu_impala_create_table,Create the Kudu table>>, being mindful that the columns
 designated as primary keys cannot have null values.
@@ -910,7 +910,7 @@ You can update in bulk using the same approaches outlined in
 
 ==== `UPDATE` and the `IGNORE` Keyword
 
-Similar to <<insert_ignore>>You can use the `IGNORE` operation to ignore an `UPDATE`
+Similarly to <<insert_ignore>>, you can use the `IGNORE` operation to ignore an `UPDATE`
 which would otherwise fail. For instance, a row may be deleted while you are
 attempting to update it. In Impala, this would cause an error. The `IGNORE`
 keyword causes the error to be ignored.
@@ -945,7 +945,7 @@ You can delete in bulk using the same approaches outlined in
 
 ==== `DELETE` and the `IGNORE` Keyword
 
-Similar to <<insert_ignore>>You can use the `IGNORE` operation to ignore an `DELETE`
+Similarly to <<insert_ignore>>, you can use the `IGNORE` operation to ignore an `DELETE`
 which would otherwise fail. For instance, a row may be deleted by another process
 while you are attempting to delete it. In Impala, this would cause an error. The
 `IGNORE` keyword causes the error to be ignored.
@@ -996,12 +996,12 @@ ALTER TABLE my_table SET TBLPROPERTIES('EXTERNAL' = 'TRUE');
 
 === Dropping a Kudu Table Using Impala
 
-- If the table was created as an internal table in Impala, using `CREATE TABLE`, the
+If the table was created as an internal table in Impala, using `CREATE TABLE`, the
 standard `DROP TABLE` syntax drops the underlying Kudu table and all its data. If
 the table was created as an external table, using `CREATE EXTERNAL TABLE`, the mapping
 between Impala and Kudu is dropped, but the Kudu table is left intact, with all its
 data.
-+
+
 [source,sql]
 ----
 DROP TABLE my_first_table;

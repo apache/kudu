@@ -177,7 +177,7 @@ Selecting between read modes requires balancing the trade-offs and making a choi
 that fits your workload. For instance, a reporting application that needs to
 scan the entire database might need to perform careful accounting operations, so that
 scan may need to be fault-tolerant, but probably doesn't require a to-the-microsecond
-up-to-date view of the database. In that case, you might choose 'READ_AT_SNAPSHOT'
+up-to-date view of the database. In that case, you might choose `READ_AT_SNAPSHOT`
 and select a timestamp that is a few seconds in the past when the scan starts. On
 the other hand, a machine learning workload that is not ingesting the whole data
 set and is already statistical in nature might not require the scan to be repeatable,
@@ -250,7 +250,7 @@ frequently.
 
 [bibliography]
 .References
-- [[[1]]] David Alves, Todd Lipcon and Vijay Garg. Technical Report: HybridTime - Accessible Global Consistency with High Clock Uncertainty. April, 2014. http://pdsl.ece.utexas.edu/david/hybrid-time-tech-report-01.pdf
+- [[[1]]] David Alves, Todd Lipcon and Vijay Garg. Technical Report: HybridTime - Accessible Global Consistency with High Clock Uncertainty. April, 2014. http://users.ece.utexas.edu/~garg/pdslab/david/hybrid-time-tech-report-01.pdf
 - [[[2]]] James C. Corbett, Jeffrey Dean, Michael Epstein, Andrew Fikes, Christopher Frost, J. J. Furman, Sanjay Ghemawat, Andrey Gubarev, Christopher Heiser, Peter Hochschild, Wilson Hsieh, Sebastian Kanthak, Eugene Kogan, Hongyi Li, Alexander Lloyd, Sergey Melnik, David Mwaura, David Nagle, Sean Quinlan, Rajesh Rao, Lindsay Rolig, Yasushi Saito, Michal Szymaniak, Christopher Taylor, Ruth Wang, and Dale Woodford. 2012. Spanner: Google's globally-distributed database. In Proceedings of the 10th USENIX conference on Operating Systems Design and Implementation (OSDI'12). USENIX Association, Berkeley, CA, USA, 251-264.
 - [[[3]]] Alexander Thomson, Thaddeus Diamond, Shu-Chun Weng, Kun Ren, Philip Shao, and Daniel J. Abadi. 2012. Calvin: fast distributed transactions for partitioned database systems. In Proceedings of the 2012 ACM SIGMOD International Conference on Management of Data (SIGMOD '12). ACM, New York, NY, USA, 1-12. DOI=10.1145/2213836.2213838 http://doi.acm.org/10.1145/2213836.2213838
 - [[[4]]] Diego Ongaro and John Ousterhout. 2014. In search of an understandable consensus algorithm. In Proceedings of the 2014 USENIX conference on USENIX Annual Technical Conference (USENIX ATC'14), Garth Gibson and Nickolai Zeldovich (Eds.). USENIX Association, Berkeley, CA, USA, 305-320.

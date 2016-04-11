@@ -49,13 +49,13 @@ Columns that are not part of the primary key may optionally be nullable.
 Supported column types include:
 
 * boolean
-* 8 bit signed integer
-* 16 bit signed integer
-* 32 bit signed integer
-* 64 bit signed integer
+* 8-bit signed integer
+* 16-bit signed integer
+* 32-bit signed integer
+* 64-bit signed integer
 * timestamp
-* single-precision (32 bit) IEEE-754 floating-point number
-* double-precision (64 bit) IEEE-754 floating-point number
+* single-precision (32-bit) IEEE-754 floating-point number
+* double-precision (64-bit) IEEE-754 floating-point number
 * UTF-8 encoded string
 * binary
 
@@ -73,6 +73,7 @@ Each column in a Kudu table can be created with an encoding, based on the type
 of the column. Columns use plain encoding by default.
 
 .Encoding Types
+[options="header"]
 |===
 | Column Type        | Encoding
 | integer, timestamp | plain, bitshuffle, run length
@@ -95,7 +96,7 @@ https://github.com/kiyo-masui/bitshuffle[bitshuffle] project has a good
 overview of performance and use cases.
 
 [[run-length]]
-Run Length Encoding:: _Runs_ (consecutive repeated values), are compressed in a
+Run Length Encoding:: _Runs_ (consecutive repeated values) are compressed in a
 column by storing only the value and the count. Run length encoding is effective
 for columns with many consecutive repeated values when sorted by primary key.
 
@@ -118,7 +119,7 @@ column of the primary key, since rows are sorted by primary key within tablets.
 Kudu allows per-column compression using LZ4, `snappy`, or `zlib` compression
 codecs. By default, columns are stored uncompressed. Consider using compression
 if reducing storage space is more important than raw scan performance.
-+
+
 Every data set will compress differently, but in general LZ4 has the least effect on
 performance, while `zlib` will compress to the smallest data sizes.
 Bitshuffle-encoded columns are inherently compressed using LZ4, so it is not

@@ -136,6 +136,7 @@ $ curl -s 'http://example-ts:8050/metrics?include_schema=1&metrics=connections_a
         ]
     }
 ]
+----
 
 [source,bash]
 ----
