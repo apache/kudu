@@ -15,19 +15,17 @@
  * limitations under the License.
  */
 
-package org.kududb.spark
+package org.kududb.spark.kudu
 
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.io.NullWritable
 import org.apache.hadoop.util.ShutdownHookManager
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.Row
 import org.kududb.annotations.InterfaceStability
-import org.kududb.client.{AsyncKuduClient, KuduClient, RowResult}
-import org.kududb.mapreduce.KuduTableInputFormat
+import org.kududb.client.{AsyncKuduClient, KuduClient}
 
 /**
-  * KuduContext is a façade for Kudu operations.
+  * KuduContext is a serializable container for Kudu client connections.
   *
   * If a Kudu client connection is needed as part of a Spark application, a
   * [[KuduContext]] should used as a broadcast variable in the job in order to
@@ -41,7 +39,7 @@ class KuduContext(kuduMaster: String) extends Serializable {
     * [[org.apache.spark.util.ShutdownHookManager.DEFAULT_SHUTDOWN_PRIORITY]].
     * The client instances are closed through the JVM shutdown hook
     * mechanism in order to make sure that any unflushed writes are cleaned up
-    * properly. Spark has no way of notifying the [[DefaultSource]] on shutdown.
+    * properly. Spark has no shutdown notifications.
     */
   private val ShutdownHookPriority = 100
 
@@ -52,6 +50,7 @@ class KuduContext(kuduMaster: String) extends Serializable {
     }, ShutdownHookPriority)
     syncClient
   }
+
   @transient lazy val asyncClient = {
     val asyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(kuduMaster).build()
     ShutdownHookManager.get().addShutdownHook(
@@ -65,27 +64,15 @@ class KuduContext(kuduMaster: String) extends Serializable {
     * Create an RDD from a Kudu table.
     *
     * @param tableName          table to read from
-    * @param columnProjection   list of columns to read
-    *
-    * Not specifying this at all (i.e. setting to null) or setting to the special string
-    * '*' means to project all columns.
+    * @param columnProjection   list of columns to read. Not specifying this at all
+    *                           (i.e. setting to null) or setting to the special
+    *                           string '*' means to project all columns.
     * @return a new RDD that maps over the given table for the selected columns
     */
   def kuduRDD(sc: SparkContext,
               tableName: String,
-              columnProjection: Seq[String] = Nil): RDD[RowResult] = {
-
-    val conf = new Configuration
-    conf.set("kudu.mapreduce.master.address", kuduMaster)
-    conf.set("kudu.mapreduce.input.table", tableName)
-    if (columnProjection.nonEmpty) {
-      conf.set("kudu.mapreduce.column.projection", columnProjection.mkString(","))
-    }
-
-    val rdd = sc.newAPIHadoopRDD(conf, classOf[KuduTableInputFormat],
-                                 classOf[NullWritable], classOf[RowResult])
-
-    val columnNames = if (columnProjection.nonEmpty) columnProjection.mkString(", ") else "(*)"
-    rdd.values.setName(s"KuduRDD { table=$tableName, columnProjection=$columnNames }")
+              columnProjection: Seq[String] = Nil): RDD[Row] = {
+    new KuduRDD(kuduMaster, 1024*1024*20, columnProjection.toArray, Array(),
+                syncClient.openTable(tableName), this, sc)
   }
 }

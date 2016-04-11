@@ -71,6 +71,10 @@ Hadoop storage technologies.
   for creating partition-aware scan descriptors. Can be used by clients and
   query engines to more easily execute parallel scans.
 
+- link:http://gerrit.cloudera.org:8080/#/c/2848/[Gerrit 2848] Added a kudu datasource for spark which uses the kudu client directly instead of
+  using mapreduce api. Includes predicate pushdowns for spark-sql and spark filters.
+  Parallel retrieval for multiple tablets and column projections. link:developing.html#_kudu_integration_with_spark[Kudu integration with Spark Example]
+
 [[rn_0.8.0]]
 === Release notes specific to 0.8.0
 

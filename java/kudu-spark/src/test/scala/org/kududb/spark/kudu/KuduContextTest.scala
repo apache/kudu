@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kududb.spark
+package org.kududb.spark.kudu
 
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -27,7 +27,7 @@ class KuduContextTest extends FunSuite with TestContext {
 
     insertRows(rowCount)
 
-    val scanRdd = kuduContext.kuduRDD(sc, "test")
+    val scanRdd = kuduContext.kuduRDD(sc, "test", Seq("key"))
 
     val scanList = scanRdd.map(r => r.getInt(0)).collect()
     assert(scanList.length == rowCount)

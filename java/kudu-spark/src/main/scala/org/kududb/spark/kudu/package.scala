@@ -16,29 +16,15 @@
  */
 package org.kududb.spark
 
-import org.apache.spark.sql.SQLContext
-import org.junit.runner.RunWith
-import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
+import org.apache.spark.sql.{DataFrame, DataFrameReader}
 
-@RunWith(classOf[JUnitRunner])
-class DefaultSourceTest extends FunSuite with TestContext {
+package object kudu {
 
-  test("Test basic SparkSQL") {
-    val rowCount = 10
-
-    insertRows(rowCount)
-
-    val sqlContext = new SQLContext(sc)
-
-    sqlContext.load("org.kududb.spark",
-      Map("kudu.table" -> tableName, "kudu.master" -> miniCluster.getMasterAddresses))
-      .registerTempTable(tableName)
-
-    val results = sqlContext.sql("SELECT * FROM " + tableName).collectAsList()
-    assert(results.size() == rowCount)
-
-    assert(results.get(0).isNullAt(2))
-    assert(!results.get(1).isNullAt(2))
+  /**
+   * Adds a method, `kudu`, to DataFrameReader that allows you to read Kudu tables using
+   * the DataFrameReader.
+   */
+  implicit class KuduDataFrameReader(reader: DataFrameReader) {
+    def kudu: DataFrame = reader.format("org.kududb.spark.kudu").load
   }
 }
