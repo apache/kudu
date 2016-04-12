@@ -689,7 +689,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
     LOG(WARNING) << LogPrefix(tablet_id) << "Tablet startup took " << elapsed_ms << "ms";
     if (Trace::CurrentTrace()) {
       LOG(WARNING) << LogPrefix(tablet_id) << "Trace:" << std::endl
-                   << Trace::CurrentTrace()->DumpToString(true);
+                   << Trace::CurrentTrace()->DumpToString();
     }
   }
 }

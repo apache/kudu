@@ -76,6 +76,7 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
     op_id_copy_ = transaction_->state()->op_id();
     DCHECK(op_id_copy_.IsInitialized());
     replication_state_ = REPLICATING;
+    replication_start_time_ = MonoTime::Now(MonoTime::FINE);
   } else {
     DCHECK_EQ(type, consensus::LEADER);
     gscoped_ptr<ReplicateMsg> replicate_msg;
@@ -195,6 +196,7 @@ Status TransactionDriver::PrepareAndStart() {
       {
         boost::lock_guard<simple_spinlock> lock(lock_);
         replication_state_ = REPLICATING;
+        replication_start_time_ = MonoTime::Now(MonoTime::FINE);
       }
       Status s = consensus_->Replicate(mutable_state()->consensus_round());
 
@@ -265,6 +267,9 @@ void TransactionDriver::HandleFailure(const Status& s) {
 }
 
 void TransactionDriver::ReplicationFinished(const Status& status) {
+  MonoTime replication_finished_time = MonoTime::Now(MonoTime::FINE);
+
+  ADOPT_TRACE(trace());
   {
     boost::lock_guard<simple_spinlock> op_id_lock(opid_lock_);
     // TODO: it's a bit silly that we have three copies of the opid:
@@ -275,6 +280,7 @@ void TransactionDriver::ReplicationFinished(const Status& status) {
     mutable_state()->mutable_op_id()->CopyFrom(op_id_copy_);
   }
 
+  MonoDelta replication_duration;
   PrepareState prepare_state_copy;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -286,7 +292,10 @@ void TransactionDriver::ReplicationFinished(const Status& status) {
       transaction_status_ = status;
     }
     prepare_state_copy = prepare_state_;
+    replication_duration = replication_finished_time.GetDeltaSince(replication_start_time_);
   }
+
+  TRACE_COUNTER_INCREMENT("replication_time_us", replication_duration.ToMicroseconds());
 
   // If we have prepared and replicated, we're ready
   // to move ahead and apply this operation.

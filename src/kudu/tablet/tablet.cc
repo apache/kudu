@@ -314,6 +314,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
                              schema(),
                              tx_state->arena());
   RETURN_NOT_OK(dec.DecodeOperations(&ops));
+  TRACE_COUNTER_INCREMENT("num_ops", ops.size());
 
   // Create RowOp objects for each
   vector<RowOp*> row_ops;

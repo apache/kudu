@@ -28,6 +28,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/trace_metrics.h"
 
 // Adopt a Trace on the current thread for the duration of the current
 // scope. The old current Trace is restored when the scope is exited.
@@ -52,9 +53,34 @@
 #define TRACE_TO(trace, format, substitutions...) \
   (trace)->SubstituteAndTrace(__FILE__, __LINE__, (format), ##substitutions)
 
+// Increment a counter associated with the current trace.
+//
+// Each trace contains a map of counters which can be used to keep
+// request-specific statistics. It is significantly faster to increment
+// a trace counter compared to logging a message. Additionally, having
+// slightly more structured information makes it easier to aggregate
+// and show information back to operators.
+//
+// NOTE: the 'counter_name' MUST be a string which stays alive forever.
+// Typically, this is a compile-time constant. If something other than
+// a constant is required, use TraceMetric::InternName() in order to
+// create a string which will last for the process lifetime. Of course,
+// these strings will never be cleaned up, so it's important to use this
+// judiciously.
+//
+// If no trace is active, this does nothing and does not evaluate its
+// parameters.
+#define TRACE_COUNTER_INCREMENT(counter_name, val) \
+  do { \
+    kudu::Trace* _trace = Trace::CurrentTrace(); \
+    if (_trace) { \
+      _trace->metrics()->Increment(counter_name, val); \
+    } \
+  } while (0);
 
 namespace kudu {
 
+class JsonWriter;
 class ThreadSafeArena;
 struct TraceEntry;
 
@@ -101,12 +127,22 @@ class Trace : public RefCountedThreadSafe<Trace> {
 
   // Dump the trace buffer to the given output stream.
   //
-  // If 'include_time_deltas' is true, calculates and prints the difference between
-  // successive trace messages.
-  void Dump(std::ostream* out, bool include_time_deltas) const;
+  enum {
+    NO_FLAGS = 0,
+
+    // If set, calculate and print the difference between successive trace messages.
+    INCLUDE_TIME_DELTAS = 1 << 0,
+    // If set, include a 'Metrics' line showing any attached trace metrics.
+    INCLUDE_METRICS =     1 << 1,
+
+    INCLUDE_ALL = INCLUDE_TIME_DELTAS | INCLUDE_METRICS
+  };
+  void Dump(std::ostream* out, int flags) const;
 
   // Dump the trace buffer as a string.
-  std::string DumpToString(bool include_time_deltas) const;
+  std::string DumpToString(int flags = INCLUDE_ALL) const;
+
+  std::string MetricsAsJSON() const;
 
   // Attaches the given trace which will get appended at the end when Dumping.
   void AddChildTrace(Trace* child_trace);
@@ -120,6 +156,10 @@ class Trace : public RefCountedThreadSafe<Trace> {
   // available. This is meant for usage when debugging in gdb via
   // 'call kudu::Trace::DumpCurrentTrace();'.
   static void DumpCurrentTrace();
+
+  TraceMetrics* metrics() {
+    return &metrics_;
+  }
 
  private:
   friend class ScopedAdoptTrace;
@@ -138,6 +178,8 @@ class Trace : public RefCountedThreadSafe<Trace> {
   // Add the entry to the linked list of entries.
   void AddEntry(TraceEntry* entry);
 
+  void MetricsToJSON(JsonWriter* jw) const;
+
   gscoped_ptr<ThreadSafeArena> arena_;
 
   // Lock protecting the entries linked list.
@@ -148,6 +190,8 @@ class Trace : public RefCountedThreadSafe<Trace> {
   TraceEntry* entries_tail_;
 
   std::vector<scoped_refptr<Trace> > child_traces_;
+
+  TraceMetrics metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(Trace);
 };

@@ -28,6 +28,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/trace.h"
 
@@ -61,6 +62,12 @@ ThreadPoolBuilder::ThreadPoolBuilder(std::string name)
       max_threads_(base::NumCPUs()),
       max_queue_size_(std::numeric_limits<int>::max()),
       idle_timeout_(MonoDelta::FromMilliseconds(500)) {}
+
+ThreadPoolBuilder& ThreadPoolBuilder::set_trace_metric_prefix(
+    const std::string& prefix) {
+  trace_metric_prefix_ = prefix;
+  return *this;
+}
 
 ThreadPoolBuilder& ThreadPoolBuilder::set_min_threads(int min_threads) {
   CHECK_GE(min_threads, 0);
@@ -108,6 +115,16 @@ ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
     num_threads_(0),
     active_threads_(0),
     queue_size_(0) {
+
+  string prefix = !builder.trace_metric_prefix_.empty() ?
+      builder.trace_metric_prefix_ : builder.name_;
+
+  queue_time_trace_metric_name_ = TraceMetrics::InternName(
+      prefix + ".queue_time_us");
+  run_wall_time_trace_metric_name_ = TraceMetrics::InternName(
+      prefix + ".run_wall_time_us");
+  run_cpu_time_trace_metric_name_ = TraceMetrics::InternName(
+      prefix + ".run_cpu_time_us");
 }
 
 ThreadPool::~ThreadPool() {
@@ -304,21 +321,35 @@ void ThreadPool::DispatchThread(bool permanent) {
 
     unique_lock.Unlock();
 
-    // Update metrics
-    if (queue_time_us_histogram_) {
-      MonoTime now(MonoTime::Now(MonoTime::FINE));
-      queue_time_us_histogram_->Increment(now.GetDeltaSince(entry.submit_time).ToMicroseconds());
-    }
-
-    ADOPT_TRACE(entry.trace);
     // Release the reference which was held by the queued item.
+    ADOPT_TRACE(entry.trace);
     if (entry.trace) {
       entry.trace->Release();
     }
+
+    // Update metrics
+    MonoTime now(MonoTime::Now(MonoTime::FINE));
+    int64_t queue_time_us = now.GetDeltaSince(entry.submit_time).ToMicroseconds();
+    TRACE_COUNTER_INCREMENT(queue_time_trace_metric_name_, queue_time_us);
+    if (queue_time_us_histogram_) {
+      queue_time_us_histogram_->Increment(queue_time_us);
+    }
+
     // Execute the task
     {
-      ScopedLatencyMetric m(run_time_us_histogram_.get());
+      MicrosecondsInt64 start_wall_us = GetMonoTimeMicros();
+      MicrosecondsInt64 start_cpu_us = GetThreadCpuTimeMicros();
+
       entry.runnable->Run();
+
+      int64_t wall_us = GetMonoTimeMicros() - start_wall_us;
+      int64_t cpu_us = GetThreadCpuTimeMicros() - start_cpu_us;
+
+      if (run_time_us_histogram_) {
+        run_time_us_histogram_->Increment(wall_us);
+      }
+      TRACE_COUNTER_INCREMENT(run_wall_time_trace_metric_name_, wall_us);
+      TRACE_COUNTER_INCREMENT(run_cpu_time_trace_metric_name_, cpu_us);
     }
     unique_lock.Lock();
 

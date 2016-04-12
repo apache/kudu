@@ -138,11 +138,16 @@ struct CpuTimes {
 //
 // Wall clock time is based on a monotonic timer, so can be reliably used for
 // determining durations.
-// CPU time is based on the current thread's usage (not the whole process).
+// CPU time is based on either current thread's usage or the usage of the whole
+// process, depending on the value of 'Mode' passed to the constructor.
 //
 // The implementation relies on several syscalls, so should not be used for
 // hot paths, but is useful for timing anything on the granularity of seconds
 // or more.
+//
+// NOTE: the user time reported by this class is based on Linux scheduler ticks
+// and thus has low precision. Use GetThreadCpuTimeMicros() from walltime.h if
+// more accurate per-thread CPU usage timing is required.
 class Stopwatch {
  public:
 

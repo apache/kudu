@@ -35,6 +35,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/trace.h"
 
 DECLARE_bool(cfile_lazy_open);
 DEFINE_int32(deltafile_default_block_size, 32*1024,
@@ -261,6 +262,8 @@ Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
   if (IsRelevantForSnapshot(snap)) {
     if (VLOG_IS_ON(2)) {
       if (!init_once_.initted()) {
+        TRACE_COUNTER_INCREMENT("delta_iterators_lazy_initted", 1);
+
         VLOG(2) << (delta_type_ == REDO ? "REDO" : "UNDO") << " delta " << ToString()
                 << "has no delta stats"
                 << ": can't cull for " << snap.ToString();
@@ -275,6 +278,7 @@ Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
       }
     }
 
+    TRACE_COUNTER_INCREMENT("delta_iterators_relevant", 1);
     // Ugly cast, but it lets the iterator fully initialize the reader
     // during its first seek.
     *iterator = new DeltaFileIterator(

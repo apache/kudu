@@ -644,7 +644,7 @@ void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
   DCHECK_LE(OpIdCompare(last_received_op_id_, op_id), 0)
     << "Previously received OpId: " << last_received_op_id_.ShortDebugString()
     << ", updated OpId: " << op_id.ShortDebugString()
-    << ", Trace:" << std::endl << Trace::CurrentTrace()->DumpToString(true);
+    << ", Trace:" << std::endl << Trace::CurrentTrace()->DumpToString();
   last_received_op_id_ = op_id;
   last_received_op_id_current_leader_ = last_received_op_id_;
   next_index_ = op_id.index() + 1;

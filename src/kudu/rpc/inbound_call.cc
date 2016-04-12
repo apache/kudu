@@ -17,6 +17,7 @@
 
 #include "kudu/rpc/inbound_call.h"
 
+#include <glog/stl_logging.h>
 #include <memory>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -197,7 +198,7 @@ void InboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
                          RpcCallInProgressPB* resp) {
   resp->mutable_header()->CopyFrom(header_);
   if (req.include_traces() && trace_) {
-    resp->set_trace_buffer(trace_->DumpToString(true));
+    resp->set_trace_buffer(trace_->DumpToString());
   }
   resp->set_micros_elapsed(MonoTime::Now(MonoTime::FINE).GetDeltaSince(timing_.time_received)
                            .ToMicroseconds());
@@ -214,7 +215,7 @@ void InboundCall::LogTrace() const {
       // The traces may also be too large to fit in a log message.
       LOG(WARNING) << ToString() << " took " << total_time << "ms (client timeout "
                    << header_.timeout_millis() << ").";
-      std::string s = trace_->DumpToString(true);
+      std::string s = trace_->DumpToString();
       if (!s.empty()) {
         LOG(WARNING) << "Trace:\n" << s;
       }
@@ -225,6 +226,9 @@ void InboundCall::LogTrace() const {
   if (PREDICT_FALSE(FLAGS_rpc_dump_all_traces)) {
     LOG(INFO) << ToString() << " took " << total_time << "ms. Trace:";
     trace_->Dump(&LOG(INFO), true);
+  } else if (total_time > 1000) {
+    LOG(INFO) << ToString() << " took " << total_time << "ms. "
+              << "Request Metrics: " << trace_->MetricsAsJSON();
   }
 }
 

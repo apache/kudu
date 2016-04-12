@@ -91,7 +91,7 @@ void RpcContext::RespondSuccess() {
           << call_->ToString() << ":" << std::endl << response_pb_->DebugString();
   TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
                          "response", TracePb(*response_pb_),
-                         "trace", trace()->DumpToString(true));
+                         "trace", trace()->DumpToString());
   call_->RespondSuccess(*response_pb_);
   delete this;
 }
@@ -102,7 +102,7 @@ void RpcContext::RespondFailure(const Status &status) {
           << call_->ToString() << ": " << status.ToString();
   TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
                          "status", status.ToString(),
-                         "trace", trace()->DumpToString(true));
+                         "trace", trace()->DumpToString());
   call_->RespondFailure(ErrorStatusPB::ERROR_APPLICATION,
                         status);
   delete this;
@@ -114,7 +114,7 @@ void RpcContext::RespondRpcFailure(ErrorStatusPB_RpcErrorCodePB err, const Statu
           << call_->ToString() << ": " << status.ToString();
   TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
                          "status", status.ToString(),
-                         "trace", trace()->DumpToString(true));
+                         "trace", trace()->DumpToString());
   call_->RespondFailure(err, status);
   delete this;
 }
@@ -129,7 +129,7 @@ void RpcContext::RespondApplicationError(int error_ext_id, const std::string& me
             << call_->ToString() << ":" << std::endl << err.DebugString();
     TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
                            "response", TracePb(app_error_pb),
-                           "trace", trace()->DumpToString(true));
+                           "trace", trace()->DumpToString());
   }
   call_->RespondApplicationError(error_ext_id, message, app_error_pb);
   delete this;

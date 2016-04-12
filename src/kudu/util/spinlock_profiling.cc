@@ -204,6 +204,7 @@ bool ContentionStacks::CollectSample(uint64_t* iterator, StackTrace* s, int64_t*
 
 
 void SubmitSpinLockProfileData(const void *contendedlock, int64 wait_cycles) {
+  TRACE_COUNTER_INCREMENT("spinlock_wait_cycles", wait_cycles);
   bool profiling_enabled = base::subtle::Acquire_Load(&g_profiling_enabled);
   bool long_wait_time = wait_cycles > FLAGS_lock_contention_trace_threshold_cycles;
   // Short circuit this function quickly in the common case.

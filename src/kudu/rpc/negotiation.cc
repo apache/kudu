@@ -225,7 +225,7 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
   bool is_bad = !s.ok() && !(s.IsNetworkError() && s.posix_code() == ECONNREFUSED);
 
   if (is_bad || FLAGS_rpc_trace_negotiation) {
-    string msg = Trace::CurrentTrace()->DumpToString(true);
+    string msg = Trace::CurrentTrace()->DumpToString();
     if (is_bad) {
       LOG(WARNING) << "Failed RPC negotiation. Trace:\n" << msg;
     } else {

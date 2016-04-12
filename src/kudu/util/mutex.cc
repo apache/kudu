@@ -21,8 +21,10 @@
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/trace.h"
 
 namespace kudu {
 
@@ -68,7 +70,27 @@ bool Mutex::TryAcquire() {
 }
 
 void Mutex::Acquire() {
+  // Optimize for the case when mutexes are uncontended. If they
+  // are contended, we'll have to go to sleep anyway, so the extra
+  // cost of branch mispredictions is moot.
+  //
+  // TryAcquire() is implemented as a simple CompareAndSwap inside
+  // pthreads so this does not require a system call.
+  if (PREDICT_TRUE(TryAcquire())) {
+    return;
+  }
+
+  // If we weren't able to acquire the mutex immediately, then it's
+  // worth gathering timing information about the mutex acquisition.
+  MicrosecondsInt64 start_time = GetMonoTimeMicros();
   int rv = pthread_mutex_lock(&native_handle_);
+  MicrosecondsInt64 end_time = GetMonoTimeMicros();
+
+  int64_t wait_time = end_time - start_time;
+  if (wait_time > 0) {
+    TRACE_COUNTER_INCREMENT("mutex_wait_us", wait_time);
+  }
+
 #ifndef NDEBUG
   DCHECK_EQ(0, rv) << ". " << strerror(rv)
       << ". Owner tid: " << owning_tid_ << "; Self tid: " << Env::Default()->gettid()

@@ -16,6 +16,7 @@
 // under the License.
 
 #include <gtest/gtest.h>
+#include <glog/stl_logging.h>
 #include <string>
 #include <rapidjson/document.h>
 #include <rapidjson/rapidjson.h>
@@ -59,7 +60,7 @@ TEST_F(TraceTest, TestBasic) {
   TRACE_TO(t, "hello $0, $1", "world", 12345);
   TRACE_TO(t, "goodbye $0, $1", "cruel world", 54321);
 
-  string result = XOutDigits(t->DumpToString(false));
+  string result = XOutDigits(t->DumpToString(Trace::NO_FLAGS));
   ASSERT_EQ("XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello world, XXXXX\n"
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] goodbye cruel world, XXXXX\n",
             result);
@@ -82,9 +83,9 @@ TEST_F(TraceTest, TestAttach) {
   EXPECT_TRUE(Trace::CurrentTrace() == nullptr);
   TRACE("this goes nowhere");
 
-  EXPECT_EQ(XOutDigits(traceA->DumpToString(false)),
+  EXPECT_EQ(XOutDigits(traceA->DumpToString(Trace::NO_FLAGS)),
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceA\n");
-  EXPECT_EQ(XOutDigits(traceB->DumpToString(false)),
+  EXPECT_EQ(XOutDigits(traceB->DumpToString(Trace::NO_FLAGS)),
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceB\n");
 }
 
@@ -98,10 +99,10 @@ TEST_F(TraceTest, TestChildTrace) {
     ADOPT_TRACE(traceB.get());
     TRACE("hello from traceB");
   }
-  EXPECT_EQ(XOutDigits(traceA->DumpToString(false)),
+  EXPECT_EQ(XOutDigits(traceA->DumpToString(Trace::NO_FLAGS)),
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceA\n"
             "Related trace:\n"
-            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceB\n");
+            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XXX] hello from traceB\n");
 }
 
 static void GenerateTraceEvents(int thread_id,
@@ -819,6 +820,17 @@ TEST_F(TraceTest, TestVLogAndEchoToConsole) {
   FLAGS_v = 1;
   VLOG_AND_TRACE("test", 1) << "hello world";
   tl->SetDisabled();
+}
+
+TEST_F(TraceTest, TestTraceMetrics) {
+  scoped_refptr<Trace> trace(new Trace);
+  trace->metrics()->Increment("foo", 10);
+  trace->metrics()->Increment("bar", 10);
+  for (int i = 0; i < 1000; i++) {
+    trace->metrics()->Increment("baz", i);
+  }
+  ASSERT_EQ("{\"foo\":10,\"bar\":10,\"baz\":499500}",
+            trace->MetricsAsJSON());
 }
 
 } // namespace debug

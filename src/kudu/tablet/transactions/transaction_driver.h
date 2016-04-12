@@ -243,6 +243,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   scoped_refptr<Trace> trace_;
 
   const MonoTime start_time_;
+  MonoTime replication_start_time_;
 
   ReplicationState replication_state_;
   PrepareState prepare_state_;

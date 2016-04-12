@@ -158,6 +158,7 @@ set(UTIL_SRCS
   thread_restrictions.cc
   throttler.cc
   trace.cc
+  trace_metrics.cc
   user.cc
   url-coding.cc
   version_info.cc

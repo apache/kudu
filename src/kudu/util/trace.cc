@@ -27,6 +27,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/jsonwriter.h"
 
 namespace kudu {
 
@@ -115,7 +116,7 @@ void Trace::AddEntry(TraceEntry* entry) {
   entries_tail_ = entry;
 }
 
-void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
+void Trace::Dump(std::ostream* out, int flags) const {
   // Gather a copy of the list of entries under the lock. This is fast
   // enough that we aren't worried about stalling concurrent tracers
   // (whereas doing the logging itself while holding the lock might be
@@ -160,7 +161,7 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
          << setw(2) << tm_time.tm_min   << ':'
          << setw(2) << tm_time.tm_sec   << '.'
          << setw(6) << usecs << ' ';
-    if (include_time_deltas) {
+    if (flags & INCLUDE_TIME_DELTAS) {
       out->fill(' ');
       *out << "(+" << setw(6) << usecs_since_prev << "us) ";
     }
@@ -173,17 +174,46 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
 
   for (scoped_refptr<Trace> child_trace : child_traces) {
     *out << "Related trace:" << std::endl;
-    *out << child_trace->DumpToString(include_time_deltas);
+    *out << child_trace->DumpToString(flags & (~INCLUDE_METRICS));
+  }
+
+  if (flags & INCLUDE_METRICS) {
+    *out << "Metrics: " << MetricsAsJSON();
   }
 
   // Restore stream flags.
   out->flags(save_flags);
 }
 
-string Trace::DumpToString(bool include_time_deltas) const {
+string Trace::DumpToString(int flags) const {
   std::stringstream s;
-  Dump(&s, include_time_deltas);
+  Dump(&s, flags);
   return s.str();
+}
+
+string Trace::MetricsAsJSON() const {
+  std::stringstream s;
+  JsonWriter jw(&s, JsonWriter::COMPACT);
+  MetricsToJSON(&jw);
+  return s.str();
+}
+
+void Trace::MetricsToJSON(JsonWriter* jw) const {
+  jw->StartObject();
+  auto m = metrics_.Get();
+  for (const auto& e : m) {
+    jw->String(e.first);
+    jw->Int64(e.second);
+  }
+  if (!child_traces_.empty()) {
+    jw->String("child_traces");
+    jw->StartArray();
+    for (const auto& t : child_traces_) {
+      t->MetricsToJSON(jw);
+    }
+    jw->EndArray();
+  }
+  jw->EndObject();
 }
 
 void Trace::DumpCurrentTrace() {

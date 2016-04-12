@@ -42,6 +42,7 @@
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/trace.h"
 
 DEFINE_bool(cfile_lazy_open, true,
             "Allow lazily opening of cfiles");
@@ -125,6 +126,7 @@ Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
 
 Status CFileReader::InitOnce() {
   VLOG(1) << "Initializing CFile with ID " << block_->id().ToString();
+  TRACE_COUNTER_INCREMENT("cfile_init", 1);
 
   RETURN_NOT_OK(ReadAndParseHeader());
 
@@ -315,6 +317,8 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
       Cache::EXPECT_IN_CACHE : Cache::NO_EXPECT_IN_CACHE;
   BlockCache* cache = BlockCache::GetSingleton();
   if (cache->Lookup(block_->id(), ptr.offset(), cache_behavior, &bc_handle)) {
+    TRACE_COUNTER_INCREMENT("cfile_cache_hit", 1);
+    TRACE_COUNTER_INCREMENT("cfile_cache_hit_bytes", ptr.size());
     *ret = BlockHandle::WithDataFromCache(&bc_handle);
     // Cache hit
     return Status::OK();
@@ -326,6 +330,8 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   // from the Linux cache).
   TRACE_EVENT1("io", "CFileReader::ReadBlock(cache miss)",
                "cfile", ToString());
+  TRACE_COUNTER_INCREMENT("cfile_cache_miss", 1);
+  TRACE_COUNTER_INCREMENT("cfile_cache_miss_bytes", ptr.size());
   Slice block;
 
   // If we are reading uncompressed data and plan to cache the result,
