@@ -63,8 +63,7 @@ class RpcContext {
   // and is not a public API.
   RpcContext(InboundCall *call,
              const google::protobuf::Message *request_pb,
-             google::protobuf::Message *response_pb,
-             RpcMethodMetrics metrics);
+             google::protobuf::Message *response_pb);
 
   ~RpcContext();
 
@@ -179,7 +178,6 @@ class RpcContext {
   InboundCall* const call_;
   const gscoped_ptr<const google::protobuf::Message> request_pb_;
   const gscoped_ptr<google::protobuf::Message> response_pb_;
-  RpcMethodMetrics metrics_;
 };
 
 } // namespace rpc

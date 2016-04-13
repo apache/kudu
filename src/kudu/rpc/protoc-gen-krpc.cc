@@ -454,7 +454,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
               "    unique_ptr<RpcMethodInfo> mi(new RpcMethodInfo());\n"
               "    mi->req_prototype.reset(new $request$());\n"
               "    mi->resp_prototype.reset(new $response$());\n"
-              "    mi->metrics.handler_latency =\n"
+              "    mi->handler_latency_histogram =\n"
               "        METRIC_handler_latency_$rpc_full_name_plainchars$.Instantiate(entity);\n"
               "    mi->func = [this](const Message* req, Message* resp, RpcContext* ctx) {\n"
               "      this->$rpc_name$(static_cast<const $request$*>(req),\n"

@@ -49,6 +49,7 @@ namespace rpc {
 class Connection;
 class DumpRunningRpcsRequestPB;
 class RpcCallInProgressPB;
+struct RpcMethodInfo;
 class RpcSidecar;
 class UserCredentials;
 
@@ -132,6 +133,19 @@ class InboundCall {
 
   Trace* trace();
 
+  // Associate this call with a particular method that will be invoked
+  // by the service.
+  void set_method_info(RpcMethodInfo* info) {
+    method_info_ = info;
+  }
+
+  // Return the method associated with this call. This is set just before
+  // the call is enqueued onto the service queue, and therefore may be
+  // 'nullptr' for much of the lifecycle of a call.
+  RpcMethodInfo* method_info() {
+    return method_info_;
+  }
+
   // When this InboundCall was received (instantiated).
   // Should only be called once on a given instance.
   // Not thread-safe. Should only be called by the current "owner" thread.
@@ -142,12 +156,6 @@ class InboundCall {
   // and should only be called once on a given instance.
   // Not thread-safe. Should only be called by the current "owner" thread.
   void RecordHandlingStarted(scoped_refptr<Histogram> incoming_queue_time);
-
-  // When RPC call Handle() completed execution on the server side.
-  // Updates the Histogram with time elapsed since the call was started,
-  // and should only be called once on a given instance.
-  // Not thread-safe. Should only be called by the current "owner" thread.
-  void RecordHandlingCompleted(scoped_refptr<Histogram> handler_run_time);
 
   // Return true if the deadline set by the client has already elapsed.
   // In this case, the server may stop processing the call, since the
@@ -183,6 +191,12 @@ class InboundCall {
   // Also can be configured to log _all_ RPC traces for help debugging.
   void LogTrace() const;
 
+  // When RPC call Handle() completed execution on the server side.
+  // Updates the Histogram with time elapsed since the call was started,
+  // and should only be called once on a given instance.
+  // Not thread-safe. Should only be called by the current "owner" thread.
+  void RecordHandlingCompleted();
+
   // The connection on which this inbound call arrived.
   scoped_refptr<Connection> conn_;
 
@@ -216,6 +230,11 @@ class InboundCall {
   // Proto service this calls belongs to. Used for routing.
   // This field is filled in when the inbound request header is parsed.
   RemoteMethod remote_method_;
+
+  // After the method has been looked up within the service, this is filled in
+  // to point to the information about this method. Acts as a pointer back to
+  // per-method info such as tracing.
+  RpcMethodInfo* method_info_;
 
   DISALLOW_COPY_AND_ASSIGN(InboundCall);
 };

@@ -25,6 +25,7 @@
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/serialization.h"
+#include "kudu/rpc/service_if.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
@@ -49,7 +50,8 @@ namespace rpc {
 InboundCall::InboundCall(Connection* conn)
   : conn_(conn),
     sidecars_deleter_(&sidecars_),
-    trace_(new Trace) {
+    trace_(new Trace),
+    method_info_(nullptr) {
   RecordCallReceived();
 }
 
@@ -135,7 +137,7 @@ void InboundCall::Respond(const MessageLite& response,
   TRACE_EVENT_ASYNC_END1("rpc", "InboundCall", this,
                          "method", remote_method_.method_name());
   TRACE_TO(trace_, "Queueing $0 response", is_success ? "success" : "failure");
-
+  RecordHandlingCompleted();
   LogTrace();
   conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this));
 }
@@ -262,12 +264,20 @@ void InboundCall::RecordHandlingStarted(scoped_refptr<Histogram> incoming_queue_
       timing_.time_handled.GetDeltaSince(timing_.time_received).ToMicroseconds());
 }
 
-void InboundCall::RecordHandlingCompleted(scoped_refptr<Histogram> handler_run_time) {
-  DCHECK(handler_run_time != nullptr);
+void InboundCall::RecordHandlingCompleted() {
   DCHECK(!timing_.time_completed.Initialized());  // Protect against multiple calls.
   timing_.time_completed = MonoTime::Now(MonoTime::FINE);
-  handler_run_time->Increment(
-      timing_.time_completed.GetDeltaSince(timing_.time_handled).ToMicroseconds());
+
+  if (!timing_.time_handled.Initialized()) {
+    // Sometimes we respond to a call before we begin handling it (e.g. due to queue
+    // overflow, etc). These cases should not be counted against the histogram.
+    return;
+  }
+
+  if (method_info_) {
+    method_info_->handler_latency_histogram->Increment(
+        timing_.time_completed.GetDeltaSince(timing_.time_handled).ToMicroseconds());
+  }
 }
 
 bool InboundCall::ClientTimedOut() const {

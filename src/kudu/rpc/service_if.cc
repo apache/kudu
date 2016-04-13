@@ -80,21 +80,30 @@ GeneratedServiceIf::~GeneratedServiceIf() {
 
 
 void GeneratedServiceIf::Handle(InboundCall *call) {
-  const auto& method_name = call->remote_method().method_name();
-  const auto& it = methods_by_name_.find(method_name);
-  if (PREDICT_FALSE(it == methods_by_name_.end())) {
+  const RpcMethodInfo* method_info = call->method_info();
+  if (!method_info) {
     RespondBadMethod(call);
     return;
   }
-  const auto& method_info = it->second;
   unique_ptr<Message> req(method_info->req_prototype->New());
   if (PREDICT_FALSE(!ParseParam(call, req.get()))) {
     return;
   }
   Message* resp = method_info->resp_prototype->New();
-  RpcContext* ctx = new RpcContext(call, req.get(), resp, method_info->metrics);
+  RpcContext* ctx = new RpcContext(call, req.get(), resp);
   method_info->func(req.release(), resp, ctx);
 }
+
+
+RpcMethodInfo* GeneratedServiceIf::LookupMethod(const RemoteMethod& method) {
+  DCHECK_EQ(method.service_name(), service_name());
+  const auto& it = methods_by_name_.find(method.method_name());
+  if (PREDICT_FALSE(it == methods_by_name_.end())) {
+    return nullptr;
+  }
+  return it->second.get();
+}
+
 
 } // namespace rpc
 } // namespace kudu

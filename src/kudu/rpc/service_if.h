@@ -38,11 +38,8 @@ class Histogram;
 namespace rpc {
 
 class InboundCall;
+class RemoteMethod;
 class RpcContext;
-
-struct RpcMethodMetrics {
-  scoped_refptr<Histogram> handler_latency;
-};
 
 // Generated services define an instance of this class for each
 // method that they implement. The generic server code implemented
@@ -55,7 +52,7 @@ struct RpcMethodInfo {
   std::unique_ptr<google::protobuf::Message> req_prototype;
   std::unique_ptr<google::protobuf::Message> resp_prototype;
 
-  RpcMethodMetrics metrics;
+  scoped_refptr<Histogram> handler_latency_histogram;
 
   // The actual function to be called.
   std::function<void(const google::protobuf::Message* req,
@@ -75,6 +72,14 @@ class ServiceIf {
   // specific feature flag.
   virtual bool SupportsFeature(uint32_t feature) const;
 
+  // Look up the method being requested by the remote call.
+  //
+  // If this returns nullptr, then certain functionality like
+  // metrics collection will not be performed for this call.
+  virtual RpcMethodInfo* LookupMethod(const RemoteMethod& method) {
+    return nullptr;
+  }
+
  protected:
   bool ParseParam(InboundCall* call, google::protobuf::Message* message);
   void RespondBadMethod(InboundCall* call);
@@ -91,6 +96,8 @@ class GeneratedServiceIf : public ServiceIf {
   //
   // If no such method is found, responds with an error.
   void Handle(InboundCall* incoming) override;
+
+  RpcMethodInfo* LookupMethod(const RemoteMethod& method) override;
 
  protected:
   // For each method, stores the relevant information about how to handle the

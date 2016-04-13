@@ -57,6 +57,8 @@ class ServicePool : public RpcService {
   // Shut down the queue and the thread pool.
   virtual void Shutdown();
 
+  RpcMethodInfo* LookupMethod(const RemoteMethod& method) override;
+
   virtual Status QueueInboundCall(gscoped_ptr<InboundCall> call) OVERRIDE;
 
   const Counter* RpcsTimedOutInQueueMetricForTests() const {

@@ -69,12 +69,10 @@ scoped_refptr<debug::ConvertableToTraceFormat> TracePb(const Message& msg) {
 
 RpcContext::RpcContext(InboundCall *call,
                        const google::protobuf::Message *request_pb,
-                       google::protobuf::Message *response_pb,
-                       RpcMethodMetrics metrics)
+                       google::protobuf::Message *response_pb)
   : call_(CHECK_NOTNULL(call)),
     request_pb_(request_pb),
-    response_pb_(response_pb),
-    metrics_(metrics) {
+    response_pb_(response_pb) {
   VLOG(4) << call_->remote_method().service_name() << ": Received RPC request for "
           << call_->ToString() << ":" << std::endl << request_pb_->DebugString();
   TRACE_EVENT_ASYNC_BEGIN2("rpc_call", "RPC", this,
@@ -86,7 +84,6 @@ RpcContext::~RpcContext() {
 }
 
 void RpcContext::RespondSuccess() {
-  call_->RecordHandlingCompleted(metrics_.handler_latency);
   VLOG(4) << call_->remote_method().service_name() << ": Sending RPC success response for "
           << call_->ToString() << ":" << std::endl << response_pb_->DebugString();
   TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
@@ -97,7 +94,6 @@ void RpcContext::RespondSuccess() {
 }
 
 void RpcContext::RespondFailure(const Status &status) {
-  call_->RecordHandlingCompleted(metrics_.handler_latency);
   VLOG(4) << call_->remote_method().service_name() << ": Sending RPC failure response for "
           << call_->ToString() << ": " << status.ToString();
   TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
@@ -109,7 +105,6 @@ void RpcContext::RespondFailure(const Status &status) {
 }
 
 void RpcContext::RespondRpcFailure(ErrorStatusPB_RpcErrorCodePB err, const Status& status) {
-  call_->RecordHandlingCompleted(metrics_.handler_latency);
   VLOG(4) << call_->remote_method().service_name() << ": Sending RPC failure response for "
           << call_->ToString() << ": " << status.ToString();
   TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
@@ -121,7 +116,6 @@ void RpcContext::RespondRpcFailure(ErrorStatusPB_RpcErrorCodePB err, const Statu
 
 void RpcContext::RespondApplicationError(int error_ext_id, const std::string& message,
                                          const Message& app_error_pb) {
-  call_->RecordHandlingCompleted(metrics_.handler_latency);
   if (VLOG_IS_ON(4)) {
     ErrorStatusPB err;
     InboundCall::ApplicationErrorToPB(error_ext_id, message, app_error_pb, &err);

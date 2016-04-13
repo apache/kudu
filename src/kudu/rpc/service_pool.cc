@@ -120,6 +120,10 @@ void ServicePool::RejectTooBusy(InboundCall* c) {
              << service_queue_.ToString();
 }
 
+RpcMethodInfo* ServicePool::LookupMethod(const RemoteMethod& method) {
+  return service_->LookupMethod(method);
+}
+
 Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   InboundCall* c = call.release();
 
