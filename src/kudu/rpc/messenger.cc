@@ -38,6 +38,7 @@
 #include "kudu/rpc/reactor.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_service.h"
+#include "kudu/rpc/rpcz_store.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/errno.h"
@@ -232,6 +233,7 @@ void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote
 Messenger::Messenger(const MessengerBuilder &bld)
   : name_(bld.name_),
     closing_(false),
+    rpcz_store_(new RpczStore()),
     metric_entity_(bld.metric_entity_),
     retain_self_(this) {
   for (int i = 0; i < bld.num_reactors_; i++) {

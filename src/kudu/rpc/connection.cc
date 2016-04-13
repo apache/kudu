@@ -382,6 +382,10 @@ void Connection::set_user_credentials(const UserCredentials &user_credentials) {
   user_credentials_.CopyFrom(user_credentials);
 }
 
+RpczStore* Connection::rpcz_store() {
+  return reactor_thread_->reactor()->messenger()->rpcz_store();
+}
+
 void Connection::ReadHandler(ev::io &watcher, int revents) {
   DCHECK(reactor_thread_->IsCurrentThread());
 

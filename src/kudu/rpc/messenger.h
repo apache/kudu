@@ -52,6 +52,7 @@ class OutboundCall;
 class Reactor;
 class ReactorThread;
 class RpcService;
+class RpczStore;
 
 struct AcceptorPoolInfo {
  public:
@@ -174,6 +175,8 @@ class Messenger {
 
   ThreadPool* negotiation_pool() const { return negotiation_pool_.get(); }
 
+  RpczStore* rpcz_store() { return rpcz_store_.get(); }
+
   std::string name() const {
     return name_;
   }
@@ -220,6 +223,8 @@ class Messenger {
   std::vector<Reactor*> reactors_;
 
   gscoped_ptr<ThreadPool> negotiation_pool_;
+
+  std::unique_ptr<RpczStore> rpcz_store_;
 
   scoped_refptr<MetricEntity> metric_entity_;
 

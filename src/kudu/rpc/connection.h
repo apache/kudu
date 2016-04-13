@@ -47,6 +47,7 @@ namespace rpc {
 class DumpRunningRpcsRequestPB;
 class RpcConnectionPB;
 class ReactorThread;
+class RpczStore;
 
 //
 // A connection between an endpoint and us.
@@ -126,6 +127,8 @@ class Connection : public RefCountedThreadSafe<Connection> {
 
   // Get the user credentials which will be used to log in.
   const UserCredentials &user_credentials() const { return user_credentials_; }
+
+  RpczStore* rpcz_store();
 
   // libev callback when data is available to read.
   void ReadHandler(ev::io &watcher, int revents);

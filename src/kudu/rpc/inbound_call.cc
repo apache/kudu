@@ -24,10 +24,10 @@
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
+#include "kudu/rpc/rpcz_store.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/util/debug/trace_event.h"
-#include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/trace.h"
 
@@ -38,11 +38,6 @@ using google::protobuf::MessageLite;
 using std::shared_ptr;
 using std::vector;
 using strings::Substitute;
-
-DEFINE_bool(rpc_dump_all_traces, false,
-            "If true, dump all RPC traces at INFO level");
-TAG_FLAG(rpc_dump_all_traces, advanced);
-TAG_FLAG(rpc_dump_all_traces, runtime);
 
 namespace kudu {
 namespace rpc {
@@ -138,7 +133,7 @@ void InboundCall::Respond(const MessageLite& response,
                          "method", remote_method_.method_name());
   TRACE_TO(trace_, "Queueing $0 response", is_success ? "success" : "failure");
   RecordHandlingCompleted();
-  LogTrace();
+  conn_->rpcz_store()->AddCall(this);
   conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this));
 }
 
@@ -204,34 +199,6 @@ void InboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
   }
   resp->set_micros_elapsed(MonoTime::Now(MonoTime::FINE).GetDeltaSince(timing_.time_received)
                            .ToMicroseconds());
-}
-
-void InboundCall::LogTrace() const {
-  MonoTime now = MonoTime::Now(MonoTime::FINE);
-  int total_time = now.GetDeltaSince(timing_.time_received).ToMilliseconds();
-
-  if (header_.has_timeout_millis() && header_.timeout_millis() > 0) {
-    double log_threshold = header_.timeout_millis() * 0.75f;
-    if (total_time > log_threshold) {
-      // TODO: consider pushing this onto another thread since it may be slow.
-      // The traces may also be too large to fit in a log message.
-      LOG(WARNING) << ToString() << " took " << total_time << "ms (client timeout "
-                   << header_.timeout_millis() << ").";
-      std::string s = trace_->DumpToString();
-      if (!s.empty()) {
-        LOG(WARNING) << "Trace:\n" << s;
-      }
-      return;
-    }
-  }
-
-  if (PREDICT_FALSE(FLAGS_rpc_dump_all_traces)) {
-    LOG(INFO) << ToString() << " took " << total_time << "ms. Trace:";
-    trace_->Dump(&LOG(INFO), true);
-  } else if (total_time > 1000) {
-    LOG(INFO) << ToString() << " took " << total_time << "ms. "
-              << "Request Metrics: " << trace_->MetricsAsJSON();
-  }
 }
 
 const UserCredentials& InboundCall::user_credentials() const {

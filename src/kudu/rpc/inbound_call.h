@@ -175,6 +175,8 @@ class InboundCall {
   std::vector<uint32_t> GetRequiredFeatures() const;
 
  private:
+  friend class RpczStore;
+
   // Serialize and queue the response.
   void Respond(const google::protobuf::MessageLite& response,
                bool is_success);
@@ -184,12 +186,6 @@ class InboundCall {
   // failure, 'response' should be an ErrorStatusPB instance.
   Status SerializeResponseBuffer(const google::protobuf::MessageLite& response,
                                  bool is_success);
-
-  // Log a WARNING message if the RPC response was slow enough that the
-  // client likely timed out. This is based on the client-provided timeout
-  // value.
-  // Also can be configured to log _all_ RPC traces for help debugging.
-  void LogTrace() const;
 
   // When RPC call Handle() completed execution on the server side.
   // Updates the Histogram with time elapsed since the call was started,
