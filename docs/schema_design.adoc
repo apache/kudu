@@ -275,7 +275,20 @@ You cannot modify the partition schema after table creation.
 [[known-limitations]]
 == Known Limitations
 
-Kudu currently has some known limitations that may factor into schema design:
+Kudu currently has some known limitations that may factor into schema design. When
+designing your schema, consider these limitations together, not in isolation. If you
+test these limitations and your findings are different from these, please share your
+test cases and results.
+
+Number of Columns:: Kudu has not been thoroughly tested with more than 200 columns
+and we recommend schemas with fewer than 50 columns per table.
+
+Size of Rows:: Kudu has not been thoroughly tested with rows larger than 10 kb. Most
+testing has been on rows at 1 kb.
+
+Size of Cells:: There is no hard limit imposed by Kudu, but large values (10s of
+  kilobytes and above) are likely to perform poorly and may cause stability issues
+  in current Kudu releases.
 
 Immutable Primary Keys:: Kudu does not allow you to update the primary key of a
   row after insertion.
