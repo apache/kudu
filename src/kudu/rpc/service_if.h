@@ -17,6 +17,7 @@
 #ifndef KUDU_RPC_SERVICE_IF_H
 #define KUDU_RPC_SERVICE_IF_H
 
+#include <unordered_map>
 #include <string>
 
 #include "kudu/gutil/macros.h"
@@ -37,12 +38,29 @@ class Histogram;
 namespace rpc {
 
 class InboundCall;
+class RpcContext;
 
 struct RpcMethodMetrics {
-  RpcMethodMetrics();
-  ~RpcMethodMetrics();
-
   scoped_refptr<Histogram> handler_latency;
+};
+
+// Generated services define an instance of this class for each
+// method that they implement. The generic server code implemented
+// by GeneratedServiceIf look up the RpcMethodInfo in order to handle
+// each RPC.
+struct RpcMethodInfo {
+  // Prototype protobufs for requests and responses.
+  // These are empty protobufs which are cloned in order to provide an
+  // instance for each request.
+  std::unique_ptr<google::protobuf::Message> req_prototype;
+  std::unique_ptr<google::protobuf::Message> resp_prototype;
+
+  RpcMethodMetrics metrics;
+
+  // The actual function to be called.
+  std::function<void(const google::protobuf::Message* req,
+                     google::protobuf::Message* resp,
+                     RpcContext* ctx)> func;
 };
 
 // Handles incoming messages that initiate an RPC.
@@ -60,7 +78,26 @@ class ServiceIf {
  protected:
   bool ParseParam(InboundCall* call, google::protobuf::Message* message);
   void RespondBadMethod(InboundCall* call);
+};
 
+
+// Base class for code-generated service classes.
+class GeneratedServiceIf : public ServiceIf {
+ public:
+  virtual ~GeneratedServiceIf();
+
+  // Looks up the appropriate method in 'methods_by_name_' and executes
+  // it on the current thread.
+  //
+  // If no such method is found, responds with an error.
+  void Handle(InboundCall* incoming) override;
+
+ protected:
+  // For each method, stores the relevant information about how to handle the
+  // call. Methods are inserted by the constructor of the generated subclass.
+  // After construction, this map is accessed by multiple threads and therefore
+  // must not be modified.
+  std::unordered_map<std::string, std::unique_ptr<RpcMethodInfo>> methods_by_name_;
 };
 
 } // namespace rpc

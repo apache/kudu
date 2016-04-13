@@ -326,6 +326,8 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "\n"
       "#include \"$path_no_extension$.pb.h\"\n"
       "\n"
+      "#include <functional>\n"
+      "#include <memory>\n"
       "#include <string>\n"
       "\n"
       "#include \"kudu/rpc/rpc_header.pb.h\"\n"
@@ -349,13 +351,11 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       subs->PushService(service);
 
       Print(printer, *subs,
-        "\n"
-        "class $service_name$If : public ::kudu::rpc::ServiceIf {\n"
+        "class $service_name$If : public ::kudu::rpc::GeneratedServiceIf {\n"
         " public:\n"
         "  explicit $service_name$If(const scoped_refptr<MetricEntity>& entity);\n"
         "  virtual ~$service_name$If();\n"
-        "  virtual void Handle(::kudu::rpc::InboundCall *call);\n"
-        "  virtual std::string service_name() const;\n"
+        "  std::string service_name() const override;\n"
         "  static std::string static_service_name();\n"
         "\n"
         );
@@ -374,36 +374,6 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       }
 
       Print(printer, *subs,
-        "\n"
-        " private:\n"
-      );
-
-
-      Print(printer, *subs,
-        "  enum RpcMetricIndexes {\n"
-      );
-      for (int method_idx = 0; method_idx < service->method_count();
-           ++method_idx) {
-        const MethodDescriptor *method = service->method(method_idx);
-        subs->PushMethod(method);
-
-        Print(printer, *subs,
-          "    $metric_enum_key$,\n"
-        );
-
-        subs->Pop();
-      }
-      Print(printer, *subs,
-        "  };\n" // enum
-      );
-
-      Print(printer, *subs,
-        "  static const int kMethodCount = $service_method_count$;\n"
-        "\n"
-        "  // Pre-initialize metrics because calling METRIC_foo.Instantiate() is expensive.\n"
-        "  void InitMetrics(const scoped_refptr<MetricEntity>& ent);\n"
-        "\n"
-        "  ::kudu::rpc::RpcMethodMetrics metrics_[kMethodCount];\n"
         "\n"
         "};\n"
       );
@@ -459,6 +429,11 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
     }
 
     Print(printer, *subs,
+      "using google::protobuf::Message;\n"
+      "using kudu::rpc::RpcContext;\n"
+      "using kudu::rpc::RpcMethodInfo;\n"
+      "using std::unique_ptr;\n"
+      "\n"
       "$open_namespace$"
       "\n");
 
@@ -468,40 +443,33 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       subs->PushService(service);
 
       Print(printer, *subs,
-        "$service_name$If::$service_name$If(const scoped_refptr<MetricEntity>& entity) {\n"
-        "  InitMetrics(entity);\n"
-        "}\n"
-        "\n"
-        "$service_name$If::~$service_name$If() {\n"
-        "}\n"
-        "\n"
-        "void $service_name$If::Handle(::kudu::rpc::InboundCall *call) {\n"
-        "  {\n");
-
+        "$service_name$If::$service_name$If(const scoped_refptr<MetricEntity>& entity) {\n");
       for (int method_idx = 0; method_idx < service->method_count();
            ++method_idx) {
         const MethodDescriptor *method = service->method(method_idx);
         subs->PushMethod(method);
 
         Print(printer, *subs,
-        "    if (call->remote_method().method_name() == \"$rpc_name$\") {\n"
-        "      $request$ *req = new $request$;\n"
-        "      if (PREDICT_FALSE(!ParseParam(call, req))) {\n"
-        "        delete req;\n"
-        "        return;\n"
-        "      }\n"
-        "      $response$ *resp = new $response$;\n"
-        "      $rpc_name$(req, resp,\n"
-        "          new ::kudu::rpc::RpcContext(call, req, resp,\n"
-        "                                      metrics_[$metric_enum_key$]));\n"
-        "      return;\n"
-        "    }\n"
-        "\n");
+              "  {\n"
+              "    unique_ptr<RpcMethodInfo> mi(new RpcMethodInfo());\n"
+              "    mi->req_prototype.reset(new $request$());\n"
+              "    mi->resp_prototype.reset(new $response$());\n"
+              "    mi->metrics.handler_latency =\n"
+              "        METRIC_handler_latency_$rpc_full_name_plainchars$.Instantiate(entity);\n"
+              "    mi->func = [this](const Message* req, Message* resp, RpcContext* ctx) {\n"
+              "      this->$rpc_name$(static_cast<const $request$*>(req),\n"
+              "                       static_cast<$response$*>(resp),\n"
+              "                       ctx);\n"
+              "    };\n"
+              "    methods_by_name_[\"$rpc_name$\"] = std::move(mi);\n"
+              "  }\n");
         subs->Pop();
       }
+
       Print(printer, *subs,
-        "  }\n"
-        "  RespondBadMethod(call);\n"
+        "}\n"
+        "\n"
+        "$service_name$If::~$service_name$If() {\n"
         "}\n"
         "\n"
         "std::string $service_name$If::service_name() const {\n"
@@ -509,27 +477,6 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "}\n"
         "std::string $service_name$If::static_service_name() {\n"
         "  return \"$full_service_name$\";\n"
-        "}\n"
-        "\n"
-      );
-
-      Print(printer, *subs,
-        "void $service_name$If::InitMetrics(const scoped_refptr<MetricEntity>& entity) {\n"
-      );
-      // Expose per-RPC metrics.
-      for (int method_idx = 0; method_idx < service->method_count();
-           ++method_idx) {
-        const MethodDescriptor *method = service->method(method_idx);
-        subs->PushMethod(method);
-
-        Print(printer, *subs,
-          "  metrics_[$metric_enum_key$].handler_latency = \n"
-          "      METRIC_handler_latency_$rpc_full_name_plainchars$.Instantiate(entity);\n"
-        );
-
-        subs->Pop();
-      }
-      Print(printer, *subs,
         "}\n"
         "\n"
       );
