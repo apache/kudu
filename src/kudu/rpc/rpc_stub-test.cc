@@ -27,6 +27,7 @@
 
 #include "kudu/gutil/stl_util.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
+#include "kudu/rpc/rpcz_store.h"
 #include "kudu/rpc/rtest.proxy.h"
 #include "kudu/rpc/rtest.service.h"
 #include "kudu/rpc/rpc-test-base.h"
@@ -485,6 +486,34 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
   ASSERT_STR_CONTAINS(dump_resp.inbound_connections(0).calls_in_flight(0).trace_buffer(),
                       "Inserting onto call queue");
   sleep.latch.Wait();
+}
+
+TEST_F(RpcStubTest, TestDumpSampledCalls) {
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+  // Issue two calls that fall into different latency buckets.
+  AsyncSleep sleeps[2];
+  sleeps[0].req.set_sleep_micros(150 * 1000); // 150ms
+  sleeps[1].req.set_sleep_micros(1500 * 1000); // 1500ms
+
+  for (auto& sleep : sleeps) {
+    p.SleepAsync(sleep.req, &sleep.resp, &sleep.rpc,
+                 boost::bind(&CountDownLatch::CountDown, &sleep.latch));
+  }
+  for (auto& sleep : sleeps) {
+    sleep.latch.Wait();
+  }
+
+  // Dump the sampled RPCs and expect to see the calls
+  // above.
+
+  DumpRpczStoreResponsePB sampled_rpcs;
+  server_messenger_->rpcz_store()->DumpPB(DumpRpczStoreRequestPB(), &sampled_rpcs);
+  EXPECT_EQ(sampled_rpcs.methods_size(), 1);
+  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(), "{\\\"test_sleep_us\\\":150000");
+  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(), "{\\\"test_sleep_us\\\":1500000}");
+  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(), "SleepRequestPB");
+  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(), "duration_ms");
 }
 
 namespace {

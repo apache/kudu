@@ -52,3 +52,28 @@ message DumpRunningRpcsResponsePB {
   repeated RpcConnectionPB inbound_connections = 1;
   repeated RpcConnectionPB outbound_connections = 2;
 }
+
+//------------------------------------------------------------
+
+// A single sampled RPC call.
+message RpczSamplePB {
+  // The original request header.
+  optional RequestHeader header = 1;
+  // The stringified request trace.
+  optional string trace = 2;
+  // The number of millis that this call took to complete.
+  optional int32 duration_ms = 3;
+}
+
+// A set of samples for a particular RPC method.
+message RpczMethodPB {
+  required string method_name = 1;
+  repeated RpczSamplePB samples = 2;
+}
+
+// Request and response for dumping previously sampled RPC calls.
+message DumpRpczStoreRequestPB {
+}
+message DumpRpczStoreResponsePB {
+  repeated RpczMethodPB methods = 1;
+}

@@ -57,6 +57,10 @@ struct InboundCallTiming {
   MonoTime time_received;   // Time the call was first accepted.
   MonoTime time_handled;    // Time the call handler was kicked off.
   MonoTime time_completed;  // Time the call handler completed.
+
+  MonoDelta TotalDuration() const {
+    return time_completed.GetDeltaSince(time_received);
+  }
 };
 
 // Inbound call on server
@@ -132,6 +136,14 @@ class InboundCall {
   const scoped_refptr<Connection>& connection() const;
 
   Trace* trace();
+
+  const InboundCallTiming& timing() const {
+    return timing_;
+  }
+
+  const RequestHeader& header() const {
+    return header_;
+  }
 
   // Associate this call with a particular method that will be invoked
   // by the service.

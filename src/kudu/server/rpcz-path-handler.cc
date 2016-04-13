@@ -26,10 +26,13 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
+#include "kudu/rpc/rpcz_store.h"
 #include "kudu/server/webserver.h"
 
 using kudu::rpc::DumpRunningRpcsRequestPB;
 using kudu::rpc::DumpRunningRpcsResponsePB;
+using kudu::rpc::DumpRpczStoreRequestPB;
+using kudu::rpc::DumpRpczStoreResponsePB;
 using kudu::rpc::Messenger;
 using std::shared_ptr;
 using std::stringstream;
@@ -40,16 +43,29 @@ namespace {
 
 void RpczPathHandler(const shared_ptr<Messenger>& messenger,
                      const Webserver::WebRequest& req, stringstream* output) {
-  DumpRunningRpcsRequestPB dump_req;
-  DumpRunningRpcsResponsePB dump_resp;
+  DumpRunningRpcsResponsePB running_rpcs;
+  {
+    DumpRunningRpcsRequestPB dump_req;
 
-  string arg = FindWithDefault(req.parsed_args, "include_traces", "false");
-  dump_req.set_include_traces(ParseLeadingBoolValue(arg.c_str(), false));
+    string arg = FindWithDefault(req.parsed_args, "include_traces", "false");
+    dump_req.set_include_traces(ParseLeadingBoolValue(arg.c_str(), false));
 
-  messenger->DumpRunningRpcs(dump_req, &dump_resp);
+    messenger->DumpRunningRpcs(dump_req, &running_rpcs);
+  }
+  DumpRpczStoreResponsePB sampled_rpcs;
+  {
+    DumpRpczStoreRequestPB dump_req;
+    messenger->rpcz_store()->DumpPB(dump_req, &sampled_rpcs);
+  }
 
   JsonWriter writer(output, JsonWriter::PRETTY);
-  writer.Protobuf(dump_resp);
+  writer.StartObject();
+  writer.String("running");
+  writer.Protobuf(running_rpcs);
+  writer.String("sampled");
+  writer.Protobuf(sampled_rpcs);
+  writer.EndObject();
+
 }
 
 } // anonymous namespace

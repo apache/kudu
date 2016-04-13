@@ -236,6 +236,7 @@ class CalculatorService : public CalculatorServiceIf {
  private:
   void DoSleep(const SleepRequestPB *req,
                RpcContext *context) {
+    TRACE_COUNTER_INCREMENT("test_sleep_us", req->sleep_micros());
     SleepFor(MonoDelta::FromMicroseconds(req->sleep_micros()));
     context->RespondSuccess();
   }
