@@ -301,6 +301,8 @@ void WriteTransactionState::UpdateMetricsForOp(const RowOp& op) {
       break;
     case RowOperationsPB::UNKNOWN:
     case RowOperationsPB::SPLIT_ROW:
+    case RowOperationsPB::RANGE_LOWER_BOUND:
+    case RowOperationsPB::RANGE_UPPER_BOUND:
       break;
   }
 }

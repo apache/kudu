@@ -17,8 +17,8 @@
 #ifndef KUDU_COMMON_PARTITION_H
 #define KUDU_COMMON_PARTITION_H
 
-#include <algorithm>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/common/common.pb.h"
@@ -142,12 +142,17 @@ class PartitionSchema {
   Status EncodeKey(const ConstContiguousRow& row, std::string* buf) const WARN_UNUSED_RESULT;
 
   // Creates the set of table partitions for a partition schema and collection
-  // of split rows.
+  // of split rows and split bounds.
   //
-  // The number of resulting partitions is the product of the number of hash
-  // buckets for each hash bucket component, multiplied by
-  // (split_rows.size() + 1).
+  // Split bounds define disjoint ranges for which tablets will be created. If
+  // empty, then Kudu assumes a single unbounded range. Each split key must fall
+  // into one of the ranges, and results in the range being split.  The number
+  // of resulting partitions is the product of the number of hash buckets for
+  // each hash bucket component, multiplied by
+  // (split_rows.size() + max(1, range_bounds.size())).
   Status CreatePartitions(const std::vector<KuduPartialRow>& split_rows,
+                          const std::vector<std::pair<KuduPartialRow,
+                                                      KuduPartialRow>>& range_bounds,
                           const Schema& schema,
                           std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
 
@@ -172,6 +177,9 @@ class PartitionSchema {
 
   // Returns a text description of the encoded partition key suitable for debug printing.
   std::string PartitionKeyDebugString(const std::string& key, const Schema& schema) const;
+
+  // Returns a text description of the encoded range key suitable for debug printing.
+  std::string RangeKeyDebugString(const std::string& range_key, const Schema& schema) const;
 
   // Returns a text description of this partition schema suitable for debug printing.
   std::string DebugString(const Schema& schema) const;
@@ -246,6 +254,14 @@ class PartitionSchema {
   void AppendRangeDebugStringComponentsOrMin(const KuduPartialRow& row,
                                              std::vector<std::string>* components) const;
 
+  // Encode the provided row into a range key. The row must not include values
+  // for any columns not in the range key. Missing range values will be filled
+  // with the logical minimum value for the column. A row without any values
+  // will encode to an empty string.
+  //
+  // This method is useful used for encoding splits and bounds.
+  Status EncodeRangeKey(const KuduPartialRow& row, const Schema& schema, std::string* key) const;
+
   // Decodes a range partition key into a partial row, with variable-length
   // fields stored in the arena.
   Status DecodeRangeKey(Slice* encode_key,
@@ -264,6 +280,28 @@ class PartitionSchema {
   // Validates that this partition schema is valid. Returns OK, or an
   // appropriate error code for an invalid partition schema.
   Status Validate(const Schema& schema) const;
+
+  // Validates the split rows, converts them to partition key form, and inserts
+  // them into splits in sorted order.
+  Status EncodeRangeSplits(const std::vector<KuduPartialRow>& split_rows,
+                           const Schema& schema,
+                           std::vector<std::string>* splits) const;
+
+  // Validates the range bounds, converts them to partition key form, and
+  // inserts them into encoded_range_partitions in sorted order.
+  Status EncodeRangeBounds(const std::vector<std::pair<KuduPartialRow,
+                                                       KuduPartialRow>>& range_bounds,
+                           const Schema& schema,
+                           std::vector<std::pair<std::string,
+                                                 std::string>>* encoded_range_bounds) const;
+
+  // Splits the encoded range bounds by the split points. The splits and bounds
+  // must be sorted. If `bounds` is empty, then a single unbounded range is
+  // assumed. If any of the splits falls outside of the bounds then an
+  // InvalidArgument status is returned.
+  Status SplitRangeBounds(const Schema& schema,
+                          std::vector<std::string> splits,
+                          std::vector<std::pair<std::string, std::string>>* bounds) const;
 
   std::vector<HashBucketSchema> hash_bucket_schemas_;
   RangeSchema range_schema_;

@@ -143,7 +143,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
 
   vector<KuduPartialRow> split_rows;
   vector<Partition> partitions;
-  RETURN_NOT_OK(partition_schema.CreatePartitions(split_rows, schema, &partitions));
+  RETURN_NOT_OK(partition_schema.CreatePartitions(split_rows, {}, schema, &partitions));
   DCHECK_EQ(1, partitions.size());
 
   RETURN_NOT_OK(tablet::TabletMetadata::CreateNew(fs_manager,

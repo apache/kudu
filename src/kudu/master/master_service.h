@@ -84,6 +84,8 @@ class MasterServiceImpl : public MasterServiceIf {
                                      GetMasterRegistrationResponsePB* resp,
                                      rpc::RpcContext* rpc) OVERRIDE;
 
+  bool SupportsFeature(uint32_t feature) const override;
+
  private:
   Master* server_;
 

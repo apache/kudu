@@ -44,6 +44,10 @@ string DecodedRowOperation::ToString(const Schema& schema) const {
                         changelist.ToString(schema));
     case RowOperationsPB::SPLIT_ROW:
       return Substitute("SPLIT_ROW $0", split_row->ToString());
+    case RowOperationsPB::RANGE_LOWER_BOUND:
+      return Substitute("RANGE_LOWER_BOUND $0", split_row->ToString());
+    case RowOperationsPB::RANGE_UPPER_BOUND:
+      return Substitute("RANGE_UPPER_BOUND $0", split_row->ToString());
     default:
       LOG(DFATAL) << "Bad type: " << type;
       return "<bad row operation>";
@@ -572,6 +576,8 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
         RETURN_NOT_OK(DecodeUpdateOrDelete(mapping, &op));
         break;
       case RowOperationsPB::SPLIT_ROW:
+      case RowOperationsPB::RANGE_LOWER_BOUND:
+      case RowOperationsPB::RANGE_UPPER_BOUND:
         RETURN_NOT_OK(DecodeSplitRow(mapping, &op));
         break;
     }

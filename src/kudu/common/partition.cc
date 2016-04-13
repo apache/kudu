@@ -19,6 +19,9 @@
 
 #include <algorithm>
 #include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -27,11 +30,12 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hash_util.h"
 
-namespace kudu {
-
+using std::pair;
 using std::set;
 using std::string;
 using std::vector;
+
+namespace kudu {
 
 using google::protobuf::RepeatedPtrField;
 using strings::Substitute;
@@ -192,7 +196,141 @@ Status PartitionSchema::EncodeKey(const ConstContiguousRow& row, string* buf) co
   return EncodeColumns(row, range_schema_.column_ids, buf);
 }
 
+Status PartitionSchema::EncodeRangeKey(const KuduPartialRow& row,
+                                       const Schema& schema,
+                                       string* key) const {
+  DCHECK(key->empty());
+  bool contains_no_columns = true;
+  for (int column_idx = 0; column_idx < schema.num_columns(); column_idx++) {
+    const ColumnSchema& column = schema.column(column_idx);
+    if (row.IsColumnSet(column_idx)) {
+      if (std::find(range_schema_.column_ids.begin(),
+                    range_schema_.column_ids.end(),
+                    schema.column_id(column_idx)) != range_schema_.column_ids.end()) {
+        contains_no_columns = false;
+      } else {
+        return Status::InvalidArgument(
+            "split rows may only contain values for range partitioned columns", column.name());
+      }
+    }
+  }
+
+  if (contains_no_columns) {
+    return Status::OK();
+  }
+  return EncodeColumns(row, range_schema_.column_ids, key);
+}
+
+Status PartitionSchema::EncodeRangeSplits(const vector<KuduPartialRow>& split_rows,
+                                          const Schema& schema,
+                                          vector<string>* splits) const {
+  DCHECK(splits->empty());
+  for (const KuduPartialRow& row : split_rows) {
+    string split;
+    RETURN_NOT_OK(EncodeRangeKey(row, schema, &split));
+    if (split.empty()) {
+        return Status::InvalidArgument(
+            "split rows must contain a value for at least one range partition column");
+    }
+    splits->emplace_back(std::move(split));
+  }
+
+  std::sort(splits->begin(), splits->end());
+  auto unique_end = std::unique(splits->begin(), splits->end());
+  if (unique_end != splits->end()) {
+    return Status::InvalidArgument("duplicate split row", RangeKeyDebugString(*unique_end, schema));
+  }
+  return Status::OK();
+}
+
+Status PartitionSchema::EncodeRangeBounds(const vector<pair<KuduPartialRow,
+                                                            KuduPartialRow>>& range_bounds,
+                                          const Schema& schema,
+                                          vector<pair<string, string>>* range_partitions) const {
+  DCHECK(range_partitions->empty());
+  if (range_bounds.empty()) {
+    range_partitions->emplace_back("", "");
+    return Status::OK();
+  }
+
+  for (const auto& bound : range_bounds) {
+    string lower;
+    string upper;
+    RETURN_NOT_OK(EncodeRangeKey(bound.first, schema, &lower));
+    RETURN_NOT_OK(EncodeRangeKey(bound.second, schema, &upper));
+
+    if (!lower.empty() && !upper.empty() && lower >= upper) {
+      return Status::InvalidArgument(
+          "range bound has lower bound equal to or above the upper bound",
+          strings::Substitute("lower bound: ($0), upper bound: ($1)",
+                              bound.first.ToString(),
+                              bound.second.ToString()));
+    }
+    range_partitions->emplace_back(std::move(lower), std::move(upper));
+  }
+
+  // Check that the range bounds are non-overlapping
+  std::sort(range_partitions->begin(), range_partitions->end());
+  for (int i = 0; i < range_partitions->size() - 1; i++) {
+    const string& first_upper = range_partitions->at(i).second;
+    const string& second_lower = range_partitions->at(i + 1).first;
+
+    if (first_upper.empty() || second_lower.empty() || first_upper > second_lower) {
+      return Status::InvalidArgument(
+          "overlapping range bounds",
+          strings::Substitute("first upper bound: ($0), second lower bound: ($1)",
+                              RangeKeyDebugString(first_upper, schema),
+                              RangeKeyDebugString(second_lower, schema)));
+    }
+  }
+
+  return Status::OK();
+}
+
+Status PartitionSchema::SplitRangeBounds(const Schema& schema,
+                                         vector<string> splits,
+                                         vector<pair<string, string>>* bounds) const {
+  int expected_bounds = std::max(1UL, bounds->size()) + splits.size();
+
+  vector<pair<string, string>> new_bounds;
+  new_bounds.reserve(expected_bounds);
+
+  // Iterate through the sorted bounds and sorted splits, splitting the bounds
+  // as appropriate and adding them to the result list ('new_bounds').
+
+  auto split = splits.begin();
+  for (auto& bound : *bounds) {
+    string& lower = bound.first;
+    const string& upper = bound.second;
+
+    for (; split != splits.end() && (upper.empty() || *split <= upper); split++) {
+      if (!lower.empty() && *split < lower) {
+        return Status::InvalidArgument("split out of bounds", RangeKeyDebugString(*split, schema));
+      } else if (lower == *split || upper == *split) {
+        return Status::InvalidArgument("split matches lower or upper bound",
+                                       RangeKeyDebugString(*split, schema));
+      }
+      // Split the current bound. Add the lower section to the result list,
+      // and continue iterating on the upper section.
+      new_bounds.emplace_back(std::move(lower), *split);
+      lower = std::move(*split);
+    }
+
+    new_bounds.emplace_back(std::move(lower), std::move(upper));
+  }
+
+  if (split != splits.end()) {
+    return Status::InvalidArgument("split out of bounds", RangeKeyDebugString(*split, schema));
+  }
+
+  bounds->swap(new_bounds);
+  CHECK_EQ(expected_bounds, bounds->size());
+  return Status::OK();
+}
+
 Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_rows,
+                                         const vector<pair<KuduPartialRow,
+                                                           KuduPartialRow>>& range_bounds,
                                          const Schema& schema,
                                          vector<Partition>* partitions) const {
   const KeyEncoder<string>& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
@@ -219,69 +357,36 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
   for (ColumnId column_id : range_schema_.column_ids) {
     int column_idx = schema.find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {
-      return Status::InvalidArgument(Substitute("Range partition column ID $0 "
+      return Status::InvalidArgument(Substitute("range partition column ID $0 "
                                                 "not found in table schema.", column_id));
     }
     if (!InsertIfNotPresent(&range_column_idxs, column_idx)) {
-      return Status::InvalidArgument("Duplicate column in range partition",
+      return Status::InvalidArgument("duplicate column in range partition",
                                      schema.column(column_idx).name());
     }
   }
 
-  // Create the start range keys.
-  set<string> start_keys;
-  string start_key;
-  for (const KuduPartialRow& row : split_rows) {
-    int column_count = 0;
-    for (int column_idx = 0; column_idx < schema.num_columns(); column_idx++) {
-      const ColumnSchema& column = schema.column(column_idx);
-      if (row.IsColumnSet(column_idx)) {
-        if (ContainsKey(range_column_idxs, column_idx)) {
-          column_count++;
-        } else {
-          return Status::InvalidArgument("Split rows may only contain values for "
-                                         "range partitioned columns", column.name());
-        }
-      }
-    }
+  vector<pair<string, string>> bounds;
+  vector<string> splits;
+  RETURN_NOT_OK(EncodeRangeBounds(range_bounds, schema, &bounds));
+  RETURN_NOT_OK(EncodeRangeSplits(split_rows, schema, &splits));
+  RETURN_NOT_OK(SplitRangeBounds(schema, std::move(splits), &bounds));
 
-    // Check for an empty split row.
-    if (column_count == 0) {
-      return Status::InvalidArgument("Split rows must contain a value for at "
-                                     "least one range partition column");
-    }
-
-    start_key.clear();
-    RETURN_NOT_OK(EncodeColumns(row, range_schema_.column_ids, &start_key));
-
-    // Check for a duplicate split row.
-    if (!InsertIfNotPresent(&start_keys, start_key)) {
-      return Status::InvalidArgument("Duplicate split row", row.ToString());
-    }
-  }
-
-  // Create a partition per range and hash bucket combination.
+  // Create a partition per range bound and hash bucket combination.
   vector<Partition> new_partitions;
   for (const Partition& base_partition : *partitions) {
-    start_key.clear();
-
-    for (const string& end_key : start_keys) {
+    for (const auto& bound : bounds) {
       Partition partition = base_partition;
-      partition.partition_key_start_.append(start_key);
-      partition.partition_key_end_.append(end_key);
+      partition.partition_key_start_.append(bound.first);
+      partition.partition_key_end_.append(bound.second);
       new_partitions.push_back(partition);
-      start_key = end_key;
     }
-
-    // Add the final range.
-    Partition partition = base_partition;
-    partition.partition_key_start_.append(start_key);
-    new_partitions.push_back(partition);
   }
   partitions->swap(new_partitions);
 
   // Note: the following discussion and logic only takes effect when the table's
-  // partition schema includes at least one hash bucket component.
+  // partition schema includes at least one hash bucket component, and the
+  // absolute upper and/or absolute lower range bound is unbounded.
   //
   // At this point, we have the full set of partitions built up, but each
   // partition only covers a finite slice of the partition key-space. Some
@@ -593,6 +698,20 @@ string PartitionSchema::PartitionKeyDebugString(const string& key, const Schema&
     AppendRangeDebugStringComponentsOrMin(row, &components);
   }
 
+  return JoinStrings(components, ", ");
+}
+
+string PartitionSchema::RangeKeyDebugString(const string& range_key, const Schema& schema) const {
+  Arena arena(1024, 128 * 1024);
+  KuduPartialRow row(&schema);
+  vector<string> components;
+
+  Slice encoded_key(range_key);
+  Status s = DecodeRangeKey(&encoded_key, &row, &arena);
+  if (!s.ok()) {
+    return Substitute("<range-decode-error: $0>", s.ToString());
+  }
+  AppendRangeDebugStringComponentsOrMin(row, &components);
   return JoinStrings(components, ", ");
 }
 

@@ -138,7 +138,10 @@ message RowwiseRowBlockPB {
   optional int32 indirect_data_sidecar = 3;
 }
 
-// A set of operations to apply to a table.
+// A set of operations (INSERT, UPDATE, UPSERT, or DELETE) to apply to a table,
+// or the set of split rows and range bounds when creating or altering table.
+// Range bounds determine the boundaries of range partitions during table
+// creation, split rows further subdivide the ranges into more partitions.
 message RowOperationsPB {
   enum Type {
     UNKNOWN = 0;
@@ -149,6 +152,14 @@ message RowOperationsPB {
 
     // Used when specifying split rows on table creation.
     SPLIT_ROW = 4;
+    // Used when specifying an inclusive lower bound range on table creation.
+    // Should be followed by the associated upper bound. If all values are
+    // missing, then signifies unbounded.
+    RANGE_LOWER_BOUND = 6;
+    // Used when specifying an exclusive upper bound range on table creation.
+    // Should be preceded by the associated lower bound. If all values are
+    // missing, then signifies unbounded.
+    RANGE_UPPER_BOUND = 7;
   }
 
   // The row data for each operation is stored in the following format:

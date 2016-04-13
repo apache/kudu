@@ -130,7 +130,7 @@ public class CreateTableOptions {
 
   Master.CreateTableRequestPB.Builder getBuilder() {
     if (!splitRows.isEmpty()) {
-      pb.setSplitRows(new Operation.OperationsEncoder().encodeSplitRows(splitRows));
+      pb.setSplitRowsRangeBounds(new Operation.OperationsEncoder().encodeSplitRows(splitRows));
     }
     return pb;
   }

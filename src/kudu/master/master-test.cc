@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "kudu/common/partial_row.h"
@@ -39,6 +40,7 @@
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using strings::Substitute;
@@ -81,7 +83,8 @@ class MasterTest : public KuduTest {
                      const Schema& schema);
   Status CreateTable(const string& table_name,
                      const Schema& schema,
-                     const vector<KuduPartialRow>& split_rows);
+                     const vector<KuduPartialRow>& split_rows,
+                     const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds);
 
   shared_ptr<Messenger> client_messenger_;
   gscoped_ptr<MiniMaster> mini_master_;
@@ -236,12 +239,13 @@ Status MasterTest::CreateTable(const string& table_name,
   KuduPartialRow split2(&schema);
   RETURN_NOT_OK(split2.SetInt32("key", 20));
 
-  return CreateTable(table_name, schema, { split1, split2 });
+  return CreateTable(table_name, schema, { split1, split2 }, {});
 }
 
 Status MasterTest::CreateTable(const string& table_name,
                                const Schema& schema,
-                               const vector<KuduPartialRow>& split_rows) {
+                               const vector<KuduPartialRow>& split_rows,
+                               const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds) {
 
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
@@ -249,9 +253,17 @@ Status MasterTest::CreateTable(const string& table_name,
 
   req.set_name(table_name);
   RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
-  RowOperationsPBEncoder encoder(req.mutable_split_rows());
+  RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
   for (const KuduPartialRow& row : split_rows) {
     encoder.Add(RowOperationsPB::SPLIT_ROW, row);
+  }
+  for (const pair<KuduPartialRow, KuduPartialRow>& bound : bounds) {
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
+  }
+
+  if (!bounds.empty()) {
+    controller.RequireServerFeature(MasterFeatures::RANGE_PARTITION_BOUNDS);
   }
 
   RETURN_NOT_OK(proxy_->CreateTable(req, &resp, &controller));
@@ -356,43 +368,135 @@ TEST_F(MasterTest, TestCatalog) {
   }
 }
 
-TEST_F(MasterTest, TestCreateTableCheckSplitRows) {
+TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
   const char *kTableName = "testtb";
   const Schema kTableSchema({ ColumnSchema("key", INT32), ColumnSchema("val", INT32) }, 1);
 
   // No duplicate split rows.
   {
-    KuduPartialRow split1 = KuduPartialRow(&kTableSchema);
+    KuduPartialRow split1(&kTableSchema);
     ASSERT_OK(split1.SetInt32("key", 1));
     KuduPartialRow split2(&kTableSchema);
     ASSERT_OK(split2.SetInt32("key", 2));
-    Status s = CreateTable(kTableName, kTableSchema, { split1, split1, split2 });
+    Status s = CreateTable(kTableName, kTableSchema, { split1, split1, split2 }, {});
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "Duplicate split row");
+    ASSERT_STR_CONTAINS(s.ToString(), "duplicate split row");
   }
 
   // No empty split rows.
   {
-    KuduPartialRow split1 = KuduPartialRow(&kTableSchema);
+    KuduPartialRow split1(&kTableSchema);
     ASSERT_OK(split1.SetInt32("key", 1));
     KuduPartialRow split2(&kTableSchema);
-    Status s = CreateTable(kTableName, kTableSchema, { split1, split2 });
+    Status s = CreateTable(kTableName, kTableSchema, { split1, split2 }, {});
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Invalid argument: Split rows must contain a value for at "
+                        "Invalid argument: split rows must contain a value for at "
                         "least one range partition column");
   }
 
-  // No non-range columns
+  // No non-range columns.
   {
-    KuduPartialRow split = KuduPartialRow(&kTableSchema);
+    KuduPartialRow split(&kTableSchema);
     ASSERT_OK(split.SetInt32("key", 1));
     ASSERT_OK(split.SetInt32("val", 1));
-    Status s = CreateTable(kTableName, kTableSchema, { split });
+    Status s = CreateTable(kTableName, kTableSchema, { split }, {});
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Invalid argument: Split rows may only contain values "
+                        "Invalid argument: split rows may only contain values "
                         "for range partitioned columns: val")
+  }
+
+  { // Overlapping bounds.
+    KuduPartialRow a_lower(&kTableSchema);
+    KuduPartialRow a_upper(&kTableSchema);
+    KuduPartialRow b_lower(&kTableSchema);
+    KuduPartialRow b_upper(&kTableSchema);
+    ASSERT_OK(a_lower.SetInt32("key", 0));
+    ASSERT_OK(a_upper.SetInt32("key", 100));
+    ASSERT_OK(b_lower.SetInt32("key", 50));
+    ASSERT_OK(b_upper.SetInt32("key", 150));
+    Status s = CreateTable(kTableName, kTableSchema, { }, { { a_lower, a_upper },
+                                                            { b_lower, b_upper } });
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: overlapping range bounds");
+  }
+  { // Split row out of bounds (above).
+    KuduPartialRow bound_lower(&kTableSchema);
+    KuduPartialRow bound_upper(&kTableSchema);
+    ASSERT_OK(bound_lower.SetInt32("key", 0));
+    ASSERT_OK(bound_upper.SetInt32("key", 150));
+
+    KuduPartialRow split(&kTableSchema);
+    ASSERT_OK(split.SetInt32("key", 200));
+
+    Status s = CreateTable(kTableName, kTableSchema, { split },
+                           { { bound_lower, bound_upper } });
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split out of bounds");
+  }
+  { // Split row out of bounds (below).
+    KuduPartialRow bound_lower(&kTableSchema);
+    KuduPartialRow bound_upper(&kTableSchema);
+    ASSERT_OK(bound_lower.SetInt32("key", 0));
+    ASSERT_OK(bound_upper.SetInt32("key", 150));
+
+    KuduPartialRow split(&kTableSchema);
+    ASSERT_OK(split.SetInt32("key", -120));
+
+    Status s = CreateTable(kTableName, kTableSchema, { split },
+                           { { bound_lower, bound_upper } });
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split out of bounds");
+  }
+  { // Lower bound greater than upper bound.
+    KuduPartialRow bound_lower(&kTableSchema);
+    KuduPartialRow bound_upper(&kTableSchema);
+    ASSERT_OK(bound_lower.SetInt32("key", 150));
+    ASSERT_OK(bound_upper.SetInt32("key", 0));
+
+    Status s = CreateTable(kTableName, kTableSchema, { }, { { bound_lower, bound_upper } });
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(),
+        "Invalid argument: range bound has lower bound equal to or above the upper bound");
+  }
+  { // Lower bound equals upper bound.
+    KuduPartialRow bound_lower(&kTableSchema);
+    KuduPartialRow bound_upper(&kTableSchema);
+    ASSERT_OK(bound_lower.SetInt32("key", 0));
+    ASSERT_OK(bound_upper.SetInt32("key", 0));
+
+    Status s = CreateTable(kTableName, kTableSchema, { }, { { bound_lower, bound_upper } });
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "Invalid argument: range bound has lower bound equal to or above the "
+                        "upper bound");
+  }
+  { // Split equals lower bound
+    KuduPartialRow bound_lower(&kTableSchema);
+    KuduPartialRow bound_upper(&kTableSchema);
+    ASSERT_OK(bound_lower.SetInt32("key", 0));
+    ASSERT_OK(bound_upper.SetInt32("key", 10));
+
+    KuduPartialRow split(&kTableSchema);
+    ASSERT_OK(split.SetInt32("key", 0));
+
+    Status s = CreateTable(kTableName, kTableSchema, { split }, { { bound_lower, bound_upper } });
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split matches lower or upper bound");
+  }
+  { // Split equals upper bound
+    KuduPartialRow bound_lower(&kTableSchema);
+    KuduPartialRow bound_upper(&kTableSchema);
+    ASSERT_OK(bound_lower.SetInt32("key", 0));
+    ASSERT_OK(bound_upper.SetInt32("key", 10));
+
+    KuduPartialRow split(&kTableSchema);
+    ASSERT_OK(split.SetInt32("key", 10));
+
+    Status s = CreateTable(kTableName, kTableSchema, { split }, { { bound_lower, bound_upper } });
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split matches lower or upper bound");
   }
 }
 
@@ -401,7 +505,7 @@ TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
 
   {
     const Schema kTableSchema({ ColumnSchema("key", BOOL) }, 1);
-    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>());
+    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>(), {});
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
         "Key column may not have type of BOOL, FLOAT, or DOUBLE");
@@ -409,7 +513,7 @@ TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
 
   {
     const Schema kTableSchema({ ColumnSchema("key", FLOAT) }, 1);
-    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>());
+    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>(), {});
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
         "Key column may not have type of BOOL, FLOAT, or DOUBLE");
@@ -417,7 +521,7 @@ TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
 
   {
     const Schema kTableSchema({ ColumnSchema("key", DOUBLE) }, 1);
-    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>());
+    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>(), {});
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
         "Key column may not have type of BOOL, FLOAT, or DOUBLE");
@@ -744,7 +848,7 @@ TEST_F(MasterTest, TestMasterMetadataConsistentDespiteFailures) {
 
         req.set_name(Substitute("table-$0", r.Uniform(kUniformBound)));
         ASSERT_OK(SchemaToPB(kTableSchema, req.mutable_schema()));
-        RowOperationsPBEncoder encoder(req.mutable_split_rows());
+        RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
         KuduPartialRow row(&kTableSchema);
         ASSERT_OK(row.SetInt32("key", 10));
         encoder.Add(RowOperationsPB::SPLIT_ROW, row);

@@ -379,5 +379,9 @@ void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequest
   rpc->RespondSuccess();
 }
 
+bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
+  return feature == MasterFeatures::RANGE_PARTITION_BOUNDS;
+}
+
 } // namespace master
 } // namespace kudu

@@ -509,7 +509,7 @@ Status KuduTableCreator::Create() {
   RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema()),
                         "Invalid schema");
 
-  RowOperationsPBEncoder encoder(req.mutable_split_rows());
+  RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
 
   for (const KuduPartialRow* row : data_->split_rows_) {
     encoder.Add(RowOperationsPB::SPLIT_ROW, *row);

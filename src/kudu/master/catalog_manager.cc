@@ -51,6 +51,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/cfile/type_encodings.h"
@@ -152,6 +153,7 @@ DEFINE_bool(catalog_manager_check_ts_count_for_create_table, true,
             "a table to be created.");
 TAG_FLAG(catalog_manager_check_ts_count_for_create_table, hidden);
 
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -800,25 +802,38 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // Decode split rows.
   vector<KuduPartialRow> split_rows;
+  vector<pair<KuduPartialRow, KuduPartialRow>> range_bounds;
 
-  RowOperationsPBDecoder decoder(&req.split_rows(), &client_schema, &schema, nullptr);
+  RowOperationsPBDecoder decoder(req.mutable_split_rows_range_bounds(),
+                                 &client_schema, &schema, nullptr);
   vector<DecodedRowOperation> ops;
   RETURN_NOT_OK(decoder.DecodeOperations(&ops));
 
-  for (const DecodedRowOperation& op : ops) {
-    if (op.type != RowOperationsPB::SPLIT_ROW) {
-      Status s = Status::InvalidArgument(
-          "Split rows must be specified as RowOperationsPB::SPLIT_ROW");
-      SetupError(resp->mutable_error(), MasterErrorPB::UNKNOWN_ERROR, s);
-      return s;
+  for (int i = 0; i < ops.size(); i++) {
+    const DecodedRowOperation& op = ops[i];
+    switch (op.type) {
+      case RowOperationsPB::SPLIT_ROW: {
+        split_rows.push_back(*op.split_row);
+        break;
+      }
+      case RowOperationsPB::RANGE_LOWER_BOUND: {
+        i += 1;
+        if (i >= ops.size() || ops[i].type != RowOperationsPB::RANGE_UPPER_BOUND) {
+          Status s = Status::InvalidArgument("Missing upper range bound in create table request");
+          SetupError(resp->mutable_error(), MasterErrorPB::UNKNOWN_ERROR, s);
+          return s;
+        }
+        range_bounds.emplace_back(*op.split_row, *ops[i].split_row);
+        break;
+      }
+      default: return Status::InvalidArgument(
+                   Substitute("Illegal row operation type in create table request: $0", op.type));
     }
-
-    split_rows.push_back(*op.split_row);
   }
 
   // Create partitions based on specified partition schema and split rows.
   vector<Partition> partitions;
-  RETURN_NOT_OK(partition_schema.CreatePartitions(split_rows, schema, &partitions));
+  RETURN_NOT_OK(partition_schema.CreatePartitions(split_rows, range_bounds, schema, &partitions));
 
   // If they didn't specify a num_replicas, set it based on the default.
   if (!req.has_num_replicas()) {
