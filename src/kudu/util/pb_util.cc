@@ -24,7 +24,9 @@
 #include "kudu/util/pb_util.h"
 
 #include <deque>
+#include <initializer_list>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -76,6 +78,8 @@ using kudu::pb_util::internal::SequentialFileFileInputStream;
 using kudu::pb_util::internal::WritableFileOutputStream;
 using std::deque;
 using std::endl;
+using std::initializer_list;
+using std::ostream;
 using std::shared_ptr;
 using std::string;
 using std::unordered_set;
@@ -83,22 +87,34 @@ using std::vector;
 using strings::Substitute;
 using strings::Utf8SafeCEscape;
 
-static const char* const kTmpTemplateSuffix = ".tmp.XXXXXX";
+namespace std {
 
-// Protobuf container constants.
-static const int kPBContainerVersion = 1;
-static const char kPBContainerMagic[] = "kuducntr";
-static const int kPBContainerMagicLen = 8;
-static const int kPBContainerHeaderLen =
-    // magic number + version
-    kPBContainerMagicLen + sizeof(uint32_t);
-static const int kPBContainerChecksumLen = sizeof(uint32_t);
+// Allow the use of FileState with DCHECK_EQ.
+std::ostream& operator<< (std::ostream& os, const kudu::pb_util::FileState& state) {
+  os << static_cast<int>(state);
+  return os;
+}
 
-COMPILE_ASSERT((arraysize(kPBContainerMagic) - 1) == kPBContainerMagicLen,
-               kPBContainerMagic_does_not_match_expected_length);
+} // namespace std
 
 namespace kudu {
 namespace pb_util {
+
+static const char* const kTmpTemplateSuffix = ".tmp.XXXXXX";
+
+// Protobuf container constants.
+static const uint32_t kPBContainerInvalidVersion = 0;
+static const uint32_t kPBContainerDefaultVersion = 2;
+static const int kPBContainerChecksumLen = sizeof(uint32_t);
+static const char kPBContainerMagic[] = "kuducntr";
+static const int kPBContainerMagicLen = 8;
+static const int kPBContainerV1HeaderLen =
+    kPBContainerMagicLen + sizeof(uint32_t); // Magic number + version.
+static const int kPBContainerV2HeaderLen =
+    kPBContainerV1HeaderLen + kPBContainerChecksumLen; // Same as V1 plus a checksum.
+
+static_assert(arraysize(kPBContainerMagic) - 1 == kPBContainerMagicLen,
+              "kPBContainerMagic does not match expected length");
 
 namespace {
 
@@ -139,6 +155,255 @@ string InitializationErrorMessage(const char* action,
   result += "\" because it is missing required fields: ";
   result += message.InitializationErrorString();
   return result;
+}
+
+// Returns true iff the specified protobuf container file version is supported
+// by this implementation.
+bool IsSupportedContainerVersion(uint32_t version) {
+  if (version == 1 || version == 2) {
+    return true;
+  }
+  return false;
+}
+
+// Perform a non-short read. The contract is that we may go to great lengths to
+// retry reads, but if we are ultimately unable to read 'length' bytes from the
+// file then a non-OK Status is returned.
+template<typename T>
+Status NonShortRead(T* file, uint64_t offset, uint64_t length, Slice* result, uint8_t* scratch);
+
+template<>
+Status NonShortRead<RandomAccessFile>(RandomAccessFile* file, uint64_t offset, uint64_t length,
+                                      Slice* result, uint8_t* scratch) {
+  return env_util::ReadFully(file, offset, length, result, scratch);
+}
+
+template<>
+Status NonShortRead<RWFile>(RWFile* file, uint64_t offset, uint64_t length,
+                            Slice* result, uint8_t* scratch) {
+  return file->Read(offset, length, result, scratch);
+}
+
+// Reads exactly 'length' bytes from the container file into 'scratch',
+// validating that there is sufficient data in the file to read this length
+// before attempting to do so, and validating that it has read that length
+// after performing the read.
+//
+// If the file size is less than the requested size of the read, returns
+// Status::Incomplete.
+// If there is an unexpected short read, returns Status::Corruption.
+//
+// A Slice of the bytes read into 'scratch' is returned in 'result'.
+template<typename ReadableFileType>
+Status ValidateAndReadData(ReadableFileType* reader, uint64_t file_size,
+                           uint64_t* offset, uint64_t length,
+                           Slice* result, gscoped_ptr<uint8_t[]>* scratch) {
+  // Validate the read length using the file size.
+  if (*offset + length > file_size) {
+    return Status::Incomplete("File size not large enough to be valid",
+                              Substitute("Proto container file $0: "
+                                  "Tried to read $1 bytes at offset "
+                                  "$2 but file size is only $3 bytes",
+                                  reader->filename(), length,
+                                  *offset, file_size));
+  }
+
+  // Perform the read.
+  Slice s;
+  gscoped_ptr<uint8_t[]> local_scratch(new uint8_t[length]);
+  RETURN_NOT_OK(NonShortRead(reader, *offset, length, &s, local_scratch.get()));
+  CHECK_EQ(length, s.size()) // Should never trigger due to contract with reader APIs.
+      << Substitute("Unexpected short read: Proto container file $0: Tried to read $1 bytes "
+                    "but only read $2 bytes",
+                    reader->filename(), length, s.size());
+
+  *offset += length;
+  *result = s;
+  scratch->swap(local_scratch);
+  return Status::OK();
+}
+
+// Helper macro for use with ParseAndCompareChecksum(). Example usage:
+// RETURN_NOT_OK_PREPEND(ParseAndCompareChecksum(checksum.data(), { data }),
+//    CHECKSUM_ERR_MSG("Data checksum does not match", filename, offset));
+#define CHECKSUM_ERR_MSG(prefix, filename, cksum_offset) \
+  Substitute("$0: Incorrect checksum in file $1 at offset $2", prefix, filename, cksum_offset)
+
+// Parses a checksum from the specified buffer and compares it to the bytes
+// given in 'slices' by calculating a rolling CRC32 checksum of the bytes in
+// the 'slices'.
+// If they match, returns OK. Otherwise, returns Status::Corruption.
+Status ParseAndCompareChecksum(const uint8_t* checksum_buf,
+                               const initializer_list<Slice>& slices) {
+  uint32_t written_checksum = DecodeFixed32(checksum_buf);
+  uint64_t actual_checksum = 0;
+  Crc* crc32c = crc::GetCrc32cInstance();
+  for (Slice s : slices) {
+    crc32c->Compute(s.data(), s.size(), &actual_checksum);
+  }
+  if (PREDICT_FALSE(actual_checksum != written_checksum)) {
+    return Status::Corruption(Substitute("Checksum does not match. Expected: $0. Actual: $1",
+                                         written_checksum, actual_checksum));
+  }
+  return Status::OK();
+}
+
+// Read and parse a message of the specified format at the given offset in the
+// format documented in pb_util.h. 'offset' is an in-out parameter and will be
+// updated with the new offset on success. On failure, 'offset' is not modified.
+template<typename ReadableFileType>
+Status ReadPBStartingAt(ReadableFileType* reader, int version, uint64_t* offset, Message* msg) {
+  uint64_t tmp_offset = *offset;
+  VLOG(1) << "Reading PB with version " << version << " starting at offset " << *offset;
+
+  uint64_t file_size;
+  RETURN_NOT_OK(reader->Size(&file_size));
+  if (tmp_offset == file_size) {
+    return Status::EndOfFile("Reached end of file");
+  }
+
+  // Read the data length from the file.
+  // Version 2+ includes a checksum for the length field.
+  uint64_t length_buflen = (version == 1) ? sizeof(uint32_t)
+                                          : sizeof(uint32_t) + kPBContainerChecksumLen;
+  Slice len_and_cksum_slice;
+  gscoped_ptr<uint8_t[]> length_scratch;
+  RETURN_NOT_OK_PREPEND(ValidateAndReadData(reader, file_size, &tmp_offset, length_buflen,
+                                            &len_and_cksum_slice, &length_scratch),
+                        Substitute("Could not read data length from proto container file $0 "
+                                   "at offset $1", reader->filename(), *offset));
+  Slice length(len_and_cksum_slice.data(), sizeof(uint32_t));
+
+  // Versions >= 2 have an individual checksum for the data length.
+  if (version >= 2) {
+    Slice length_checksum(len_and_cksum_slice.data() + sizeof(uint32_t), kPBContainerChecksumLen);
+    RETURN_NOT_OK_PREPEND(ParseAndCompareChecksum(length_checksum.data(), { length }),
+        CHECKSUM_ERR_MSG("Data length checksum does not match",
+                         reader->filename(), tmp_offset - kPBContainerChecksumLen));
+  }
+  uint32_t data_length = DecodeFixed32(length.data());
+
+  // Read body and checksum into buffer for checksum & parsing.
+  uint64_t data_and_cksum_buflen = data_length + kPBContainerChecksumLen;
+  Slice body_and_cksum_slice;
+  gscoped_ptr<uint8_t[]> body_scratch;
+  RETURN_NOT_OK_PREPEND(ValidateAndReadData(reader, file_size, &tmp_offset, data_and_cksum_buflen,
+                                            &body_and_cksum_slice, &body_scratch),
+                        Substitute("Could not read PB message data from proto container file $0 "
+                                   "at offset $1",
+                                   reader->filename(), tmp_offset));
+  Slice body(body_and_cksum_slice.data(), data_length);
+  Slice record_checksum(body_and_cksum_slice.data() + data_length, kPBContainerChecksumLen);
+
+  // Version 1 has a single checksum for length, body.
+  // Version 2+ has individual checksums for length and body, respectively.
+  if (version == 1) {
+    RETURN_NOT_OK_PREPEND(ParseAndCompareChecksum(record_checksum.data(), { length, body }),
+        CHECKSUM_ERR_MSG("Length and data checksum does not match",
+                         reader->filename(), tmp_offset - kPBContainerChecksumLen));
+  } else {
+    RETURN_NOT_OK_PREPEND(ParseAndCompareChecksum(record_checksum.data(), { body }),
+        CHECKSUM_ERR_MSG("Data checksum does not match",
+                         reader->filename(), tmp_offset - kPBContainerChecksumLen));
+  }
+
+  // The checksum is correct. Time to decode the body.
+  //
+  // We could compare pb_type_ against msg.GetTypeName(), but:
+  // 1. pb_type_ is not available when reading the supplemental header,
+  // 2. ParseFromArray() should fail if the data cannot be parsed into the
+  //    provided message type.
+
+  // To permit parsing of very large PB messages, we must use parse through a
+  // CodedInputStream and bump the byte limit. The SetTotalBytesLimit() docs
+  // say that 512MB is the shortest theoretical message length that may produce
+  // integer overflow warnings, so that's what we'll use.
+  ArrayInputStream ais(body.data(), body.size());
+  CodedInputStream cis(&ais);
+  cis.SetTotalBytesLimit(512 * 1024 * 1024, -1);
+  if (PREDICT_FALSE(!msg->ParseFromCodedStream(&cis))) {
+    return Status::IOError("Unable to parse PB from path", reader->filename());
+  }
+
+  *offset = tmp_offset;
+  return Status::OK();
+}
+
+// Wrapper around ReadPBStartingAt() to enforce that we don't return
+// Status::Incomplete() for V1 format files.
+template<typename ReadableFileType>
+Status ReadFullPB(ReadableFileType* reader, int version, uint64_t* offset, Message* msg) {
+  Status s = ReadPBStartingAt(reader, version, offset, msg);
+  if (PREDICT_FALSE(s.IsIncomplete() && version == 1)) {
+    return Status::Corruption("Unrecoverable incomplete record", s.ToString());
+  }
+  return s;
+}
+
+// Read and parse the protobuf container file-level header documented in pb_util.h.
+template<typename ReadableFileType>
+Status ParsePBFileHeader(ReadableFileType* reader, uint64_t* offset, int* version) {
+  uint64_t file_size;
+  RETURN_NOT_OK(reader->Size(&file_size));
+
+  // We initially read enough data for a V2+ file header. This optimizes for
+  // V2+ and is valid on a V1 file because we don't consider these files valid
+  // unless they contain a record in addition to the file header. The
+  // additional 4 bytes required by a V2+ header (vs V1) is still less than the
+  // minimum number of bytes required for a V1 format data record.
+  uint64_t tmp_offset = *offset;
+  Slice header;
+  gscoped_ptr<uint8_t[]> scratch;
+  RETURN_NOT_OK_PREPEND(ValidateAndReadData(reader, file_size, &tmp_offset, kPBContainerV2HeaderLen,
+                                            &header, &scratch),
+                        Substitute("Could not read header for proto container file $0",
+                                   reader->filename()));
+  Slice magic_and_version(header.data(), kPBContainerMagicLen + sizeof(uint32_t));
+  Slice checksum(header.data() + kPBContainerMagicLen + sizeof(uint32_t), kPBContainerChecksumLen);
+
+  // Validate magic number.
+  if (PREDICT_FALSE(!strings::memeq(kPBContainerMagic, header.data(), kPBContainerMagicLen))) {
+    string file_magic(reinterpret_cast<const char*>(header.data()), kPBContainerMagicLen);
+    return Status::Corruption("Invalid magic number",
+                              Substitute("Expected: $0, found: $1",
+                                         Utf8SafeCEscape(kPBContainerMagic),
+                                         Utf8SafeCEscape(file_magic)));
+  }
+
+  // Validate container file version.
+  uint32_t tmp_version = DecodeFixed32(header.data() + kPBContainerMagicLen);
+  if (PREDICT_FALSE(!IsSupportedContainerVersion(tmp_version))) {
+    return Status::NotSupported(
+        Substitute("Protobuf container has unsupported version: $0. Default version: $1",
+                   tmp_version, kPBContainerDefaultVersion));
+  }
+
+  // Versions >= 2 have a checksum after the magic number and encoded version
+  // to ensure the integrity of these fields.
+  if (tmp_version >= 2) {
+    RETURN_NOT_OK_PREPEND(ParseAndCompareChecksum(checksum.data(), { magic_and_version }),
+        CHECKSUM_ERR_MSG("File header checksum does not match",
+                         reader->filename(), tmp_offset - kPBContainerChecksumLen));
+  } else {
+    // Version 1 doesn't have a header checksum. Rewind our read offset so this
+    // data will be read again when we next attempt to read a data record.
+    tmp_offset -= kPBContainerChecksumLen;
+  }
+
+  *offset = tmp_offset;
+  *version = tmp_version;
+  return Status::OK();
+}
+
+// Read and parse the supplemental header from the container file.
+template<typename ReadableFileType>
+Status ReadSupplementalHeader(ReadableFileType* reader, int version, uint64_t* offset,
+                              ContainerSupHeaderPB* sup_header) {
+  RETURN_NOT_OK_PREPEND(ReadFullPB(reader, version, offset, sup_header),
+      Substitute("Could not read supplemental header from proto container file $0 "
+                 "with version $1 at offset $2",
+                 reader->filename(), version, *offset));
+  return Status::OK();
 }
 
 } // anonymous namespace
@@ -263,8 +528,10 @@ void TruncateFields(Message* message, int max_len) {
   }
 }
 
-WritablePBContainerFile::WritablePBContainerFile(gscoped_ptr<WritableFile> writer)
-  : closed_(false),
+WritablePBContainerFile::WritablePBContainerFile(gscoped_ptr<RWFile> writer)
+  : state_(FileState::NOT_INITIALIZED),
+    offset_(0),
+    version_(kPBContainerDefaultVersion),
     writer_(std::move(writer)) {
 }
 
@@ -272,21 +539,40 @@ WritablePBContainerFile::~WritablePBContainerFile() {
   WARN_NOT_OK(Close(), "Could not Close() when destroying file");
 }
 
+Status WritablePBContainerFile::SetVersionForTests(int version) {
+  DCHECK_EQ(FileState::NOT_INITIALIZED, state_);
+  if (!IsSupportedContainerVersion(version)) {
+    return Status::NotSupported(Substitute("Version $0 is not supported", version));
+  }
+  version_ = version;
+  return Status::OK();
+}
+
 Status WritablePBContainerFile::Init(const Message& msg) {
-  DCHECK(!closed_);
+  DCHECK_EQ(FileState::NOT_INITIALIZED, state_);
+
+  const uint64_t kHeaderLen = (version_ == 1) ? kPBContainerV1HeaderLen
+                                              : kPBContainerV1HeaderLen + kPBContainerChecksumLen;
 
   faststring buf;
-  buf.resize(kPBContainerHeaderLen);
+  buf.resize(kHeaderLen);
 
   // Serialize the magic.
   strings::memcpy_inlined(buf.data(), kPBContainerMagic, kPBContainerMagicLen);
-  size_t offset = kPBContainerMagicLen;
+  uint64_t offset = kPBContainerMagicLen;
 
   // Serialize the version.
-  InlineEncodeFixed32(buf.data() + offset, kPBContainerVersion);
+  InlineEncodeFixed32(buf.data() + offset, version_);
   offset += sizeof(uint32_t);
-  DCHECK_EQ(kPBContainerHeaderLen, offset)
+  DCHECK_EQ(kPBContainerV1HeaderLen, offset)
     << "Serialized unexpected number of total bytes";
+
+  // Versions >= 2: Checksum the magic and version.
+  if (version_ >= 2) {
+    uint32_t header_checksum = crc::Crc32c(buf.data(), offset);
+    InlineEncodeFixed32(buf.data() + offset, header_checksum);
+    offset += sizeof(uint32_t);
+  }
 
   // Serialize the supplemental header.
   ContainerSupHeaderPB sup_header;
@@ -297,33 +583,51 @@ Status WritablePBContainerFile::Init(const Message& msg) {
                         "Failed to prepare supplemental header for writing");
 
   // Write the serialized buffer to the file.
-  RETURN_NOT_OK_PREPEND(writer_->Append(buf),
-                        "Failed to Append() header to file");
+  RETURN_NOT_OK_PREPEND(AppendBytes(buf),
+                        "Failed to append header to file");
+  state_ = FileState::OPEN;
+  return Status::OK();
+}
+
+Status WritablePBContainerFile::Reopen() {
+  DCHECK(state_ == FileState::NOT_INITIALIZED || state_ == FileState::OPEN) << state_;
+  offset_ = 0;
+  RETURN_NOT_OK(ParsePBFileHeader(writer_.get(), &offset_, &version_));
+  ContainerSupHeaderPB sup_header;
+  RETURN_NOT_OK(ReadSupplementalHeader(writer_.get(), version_, &offset_, &sup_header));
+  RETURN_NOT_OK(writer_->Size(&offset_)); // Reset the write offset to the end of the file.
+  state_ = FileState::OPEN;
+  return Status::OK();
+}
+
+Status WritablePBContainerFile::AppendBytes(const Slice& data) {
+  RETURN_NOT_OK(writer_->Write(offset_, data));
+  offset_ += data.size();
   return Status::OK();
 }
 
 Status WritablePBContainerFile::Append(const Message& msg) {
-  DCHECK(!closed_);
+  DCHECK_EQ(FileState::OPEN, state_);
 
   faststring buf;
   RETURN_NOT_OK_PREPEND(AppendMsgToBuffer(msg, &buf),
                         "Failed to prepare buffer for writing");
-  RETURN_NOT_OK_PREPEND(writer_->Append(buf), "Failed to Append() data to file");
+  RETURN_NOT_OK_PREPEND(AppendBytes(buf), "Failed to append data to file");
 
   return Status::OK();
 }
 
 Status WritablePBContainerFile::Flush() {
-  DCHECK(!closed_);
+  DCHECK_EQ(FileState::OPEN, state_);
 
   // TODO: Flush just the dirty bytes.
-  RETURN_NOT_OK_PREPEND(writer_->Flush(WritableFile::FLUSH_ASYNC), "Failed to Flush() file");
+  RETURN_NOT_OK_PREPEND(writer_->Flush(RWFile::FLUSH_SYNC, 0, 0), "Failed to Flush() file");
 
   return Status::OK();
 }
 
 Status WritablePBContainerFile::Sync() {
-  DCHECK(!closed_);
+  DCHECK_EQ(FileState::OPEN, state_);
 
   RETURN_NOT_OK_PREPEND(writer_->Sync(), "Failed to Sync() file");
 
@@ -331,41 +635,61 @@ Status WritablePBContainerFile::Sync() {
 }
 
 Status WritablePBContainerFile::Close() {
-  if (!closed_) {
-    closed_ = true;
-
-    RETURN_NOT_OK_PREPEND(writer_->Close(), "Failed to Close() file");
+  if (state_ != FileState::CLOSED) {
+    state_ = FileState::CLOSED;
+    Status s = writer_->Close();
+    writer_.reset();
+    RETURN_NOT_OK_PREPEND(s, "Failed to Close() file");
   }
-
   return Status::OK();
 }
 
 Status WritablePBContainerFile::AppendMsgToBuffer(const Message& msg, faststring* buf) {
   DCHECK(msg.IsInitialized()) << InitializationErrorMessage("serialize", msg);
-  int data_size = msg.ByteSize();
-  uint64_t bufsize = sizeof(uint32_t) + data_size + kPBContainerChecksumLen;
+  int data_len = msg.ByteSize();
+  DCHECK_GE(data_len, 0); // ByteSize() returns an int, but it should never be negative.
+  uint64_t record_buflen =  sizeof(uint32_t) + data_len + sizeof(uint32_t);
+  if (version_ >= 2) {
+    record_buflen += sizeof(uint32_t); // Additional checksum just for the length.
+  }
 
   // Grow the buffer to hold the new data.
-  size_t orig_size = buf->size();
-  buf->resize(orig_size + bufsize);
-  uint8_t* dst = buf->data() + orig_size;
+  uint64_t record_offset = buf->size();
+  buf->resize(record_offset + record_buflen);
+  uint8_t* dst = buf->data() + record_offset;
 
-  // Serialize the data size.
-  InlineEncodeFixed32(dst, static_cast<uint32_t>(data_size));
-  size_t offset = sizeof(uint32_t);
+  // Serialize the data length.
+  size_t cur_offset = 0;
+  InlineEncodeFixed32(dst + cur_offset, static_cast<uint32_t>(data_len));
+  cur_offset += sizeof(uint32_t);
+
+  // For version >= 2: Serialize the checksum of the data length.
+  if (version_ >= 2) {
+    uint32_t length_checksum = crc::Crc32c(&data_len, sizeof(data_len));
+    InlineEncodeFixed32(dst + cur_offset, length_checksum);
+    cur_offset += sizeof(uint32_t);
+  }
 
   // Serialize the data.
-  if (PREDICT_FALSE(!msg.SerializeWithCachedSizesToArray(dst + offset))) {
+  uint64_t data_offset = cur_offset;
+  if (PREDICT_FALSE(!msg.SerializeWithCachedSizesToArray(dst + cur_offset))) {
     return Status::IOError("Failed to serialize PB to array");
   }
-  offset += data_size;
+  cur_offset += data_len;
 
-  // Calculate and serialize the checksum.
-  uint32_t checksum = crc::Crc32c(dst, offset);
-  InlineEncodeFixed32(dst + offset, checksum);
-  offset += kPBContainerChecksumLen;
+  // Calculate and serialize the data checksum.
+  // For version 1, this is the checksum of the len + data.
+  // For version >= 2, this is only the checksum of the data.
+  uint32_t data_checksum;
+  if (version_ == 1) {
+    data_checksum = crc::Crc32c(dst, cur_offset);
+  } else {
+    data_checksum = crc::Crc32c(dst + data_offset, data_len);
+  }
+  InlineEncodeFixed32(dst + cur_offset, data_checksum);
+  cur_offset += sizeof(uint32_t);
 
-  DCHECK_EQ(bufsize, offset) << "Serialized unexpected number of total bytes";
+  DCHECK_EQ(record_buflen, cur_offset) << "Serialized unexpected number of total bytes";
   return Status::OK();
 }
 
@@ -411,115 +735,35 @@ void WritablePBContainerFile::PopulateDescriptorSet(
 }
 
 ReadablePBContainerFile::ReadablePBContainerFile(gscoped_ptr<RandomAccessFile> reader)
-  : offset_(0),
+  : state_(FileState::NOT_INITIALIZED),
+    version_(kPBContainerInvalidVersion),
+    offset_(0),
     reader_(std::move(reader)) {
 }
 
 ReadablePBContainerFile::~ReadablePBContainerFile() {
-  WARN_NOT_OK(Close(), "Could not Close() when destroying file");
+  Close();
 }
 
-Status ReadablePBContainerFile::Init() {
-  // Read header data.
-  Slice header;
-  gscoped_ptr<uint8_t[]> scratch;
-  RETURN_NOT_OK_PREPEND(ValidateAndRead(kPBContainerHeaderLen, EOF_NOT_OK, &header, &scratch),
-                        Substitute("Could not read header for proto container file $0",
-                                   reader_->filename()));
-
-  // Validate magic number.
-  if (PREDICT_FALSE(!strings::memeq(kPBContainerMagic, header.data(), kPBContainerMagicLen))) {
-    string file_magic(reinterpret_cast<const char*>(header.data()), kPBContainerMagicLen);
-    return Status::Corruption("Invalid magic number",
-                              Substitute("Expected: $0, found: $1",
-                                         Utf8SafeCEscape(kPBContainerMagic),
-                                         Utf8SafeCEscape(file_magic)));
-  }
-
-  // Validate container file version.
-  uint32_t version = DecodeFixed32(header.data() + kPBContainerMagicLen);
-  if (PREDICT_FALSE(version != kPBContainerVersion)) {
-    // We only support version 1.
-    return Status::NotSupported(
-        Substitute("Protobuf container has version $0, we only support version $1",
-                   version, kPBContainerVersion));
-  }
-
-  // Read the supplemental header.
+Status ReadablePBContainerFile::Open() {
+  DCHECK_EQ(FileState::NOT_INITIALIZED, state_);
+  RETURN_NOT_OK(ParsePBFileHeader(reader_.get(), &offset_, &version_));
   ContainerSupHeaderPB sup_header;
-  RETURN_NOT_OK_PREPEND(ReadNextPB(&sup_header), Substitute(
-      "Could not read supplemental header from proto container file $0",
-      reader_->filename()));
+  RETURN_NOT_OK(ReadSupplementalHeader(reader_.get(), version_, &offset_, &sup_header));
   protos_.reset(sup_header.release_protos());
   pb_type_ = sup_header.pb_type();
-
-  return Status::OK();
+  state_ = FileState::OPEN;
+  return Status::OK();;
 }
 
 Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
-  VLOG(1) << "Reading PB from offset " << offset_;
-
-  // Read the size from the file. EOF here is acceptable: it means we're
-  // out of PB entries.
-  Slice size;
-  gscoped_ptr<uint8_t[]> size_scratch;
-  RETURN_NOT_OK_PREPEND(ValidateAndRead(sizeof(uint32_t), EOF_OK, &size, &size_scratch),
-                        Substitute("Could not read data size from proto container file $0",
-                                   reader_->filename()));
-  uint32_t data_size = DecodeFixed32(size.data());
-
-  // Read body into buffer for checksum & parsing.
-  Slice body;
-  gscoped_ptr<uint8_t[]> body_scratch;
-  RETURN_NOT_OK_PREPEND(ValidateAndRead(data_size, EOF_NOT_OK, &body, &body_scratch),
-                        Substitute("Could not read body from proto container file $0",
-                                   reader_->filename()));
-
-  // Read checksum.
-  uint32_t expected_checksum = 0;
-  {
-    Slice encoded_checksum;
-    gscoped_ptr<uint8_t[]> encoded_checksum_scratch;
-    RETURN_NOT_OK_PREPEND(ValidateAndRead(kPBContainerChecksumLen, EOF_NOT_OK,
-                                          &encoded_checksum, &encoded_checksum_scratch),
-                          Substitute("Could not read checksum from proto container file $0",
-                                     reader_->filename()));
-    expected_checksum = DecodeFixed32(encoded_checksum.data());
-  }
-
-  // Validate CRC32C checksum.
-  Crc* crc32c = crc::GetCrc32cInstance();
-  uint64_t actual_checksum = 0;
-  // Compute a rolling checksum over the two byte arrays (size, body).
-  crc32c->Compute(size.data(), size.size(), &actual_checksum);
-  crc32c->Compute(body.data(), body.size(), &actual_checksum);
-  if (PREDICT_FALSE(actual_checksum != expected_checksum)) {
-    return Status::Corruption(Substitute("Incorrect checksum of file $0: actually $1, expected $2",
-                                         reader_->filename(), actual_checksum, expected_checksum));
-  }
-
-  // The checksum is correct. Time to decode the body.
-  //
-  // We could compare pb_type_ against msg.GetTypeName(), but:
-  // 1. pb_type_ is not available when reading the supplemental header,
-  // 2. ParseFromArray() should fail if the data cannot be parsed into the
-  //    provided message type.
-
-  // To permit parsing of very large PB messages, we must use parse through a
-  // CodedInputStream and bump the byte limit. The SetTotalBytesLimit() docs
-  // say that 512MB is the shortest theoretical message length that may produce
-  // integer overflow warnings, so that's what we'll use.
-  ArrayInputStream ais(body.data(), body.size());
-  CodedInputStream cis(&ais);
-  cis.SetTotalBytesLimit(512 * 1024 * 1024, -1);
-  if (PREDICT_FALSE(!msg->ParseFromCodedStream(&cis))) {
-    return Status::IOError("Unable to parse PB from path", reader_->filename());
-  }
-
-  return Status::OK();
+  DCHECK_EQ(FileState::OPEN, state_);
+  return ReadFullPB(reader_.get(), version_, &offset_, msg);
 }
 
 Status ReadablePBContainerFile::Dump(ostream* os, bool oneline) {
+  DCHECK_EQ(FileState::OPEN, state_);
+
   // Use the embedded protobuf information from the container file to
   // create the appropriate kind of protobuf Message.
   //
@@ -569,57 +813,27 @@ Status ReadablePBContainerFile::Dump(ostream* os, bool oneline) {
 }
 
 Status ReadablePBContainerFile::Close() {
-  gscoped_ptr<RandomAccessFile> deleter;
-  deleter.swap(reader_);
+  state_ = FileState::CLOSED;
+  reader_.reset();
   return Status::OK();
 }
 
-Status ReadablePBContainerFile::ValidateAndRead(size_t length, EofOK eofOK,
-                                                Slice* result, gscoped_ptr<uint8_t[]>* scratch) {
-  // Validate the read length using the file size.
-  uint64_t file_size;
-  RETURN_NOT_OK(reader_->Size(&file_size));
-  if (offset_ + length > file_size) {
-    switch (eofOK) {
-      case EOF_OK:
-        return Status::EndOfFile("Reached end of file");
-      case EOF_NOT_OK:
-        return Status::Corruption("File size not large enough to be valid",
-                                  Substitute("Proto container file $0: "
-                                      "tried to read $1 bytes at offset "
-                                      "$2 but file size is only $3",
-                                      reader_->filename(), length,
-                                      offset_, file_size));
-      default:
-        LOG(FATAL) << "Unknown value for eofOK: " << eofOK;
-    }
-  }
-
-  // Perform the read.
-  Slice s;
-  gscoped_ptr<uint8_t[]> local_scratch(new uint8_t[length]);
-  RETURN_NOT_OK(reader_->Read(offset_, length, &s, local_scratch.get()));
-
-  // Sanity check the result.
-  if (PREDICT_FALSE(s.size() < length)) {
-    return Status::Corruption("Unexpected short read", Substitute(
-        "Proto container file $0: tried to read $1 bytes; got $2 bytes",
-        reader_->filename(), length, s.size()));
-  }
-
-  *result = s;
-  scratch->swap(local_scratch);
-  offset_ += s.size();
-  return Status::OK();
+int ReadablePBContainerFile::version() const {
+  DCHECK_EQ(FileState::OPEN, state_);
+  return version_;
 }
 
+uint64_t ReadablePBContainerFile::offset() const {
+  DCHECK_EQ(FileState::OPEN, state_);
+  return offset_;
+}
 
 Status ReadPBContainerFromPath(Env* env, const std::string& path, Message* msg) {
   gscoped_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env->NewRandomAccessFile(path, &file));
 
   ReadablePBContainerFile pb_file(std::move(file));
-  RETURN_NOT_OK(pb_file.Init());
+  RETURN_NOT_OK(pb_file.Open());
   RETURN_NOT_OK(pb_file.ReadNextPB(msg));
   return pb_file.Close();
 }
@@ -639,8 +853,8 @@ Status WritePBContainerToPath(Env* env, const std::string& path,
   const string tmp_template = path + kTmpTemplateSuffix;
   string tmp_path;
 
-  gscoped_ptr<WritableFile> file;
-  RETURN_NOT_OK(env->NewTempWritableFile(WritableFileOptions(), tmp_template, &tmp_path, &file));
+  gscoped_ptr<RWFile> file;
+  RETURN_NOT_OK(env->NewTempRWFile(RWFileOptions(), tmp_template, &tmp_path, &file));
   env_util::ScopedFileDeleter tmp_deleter(env, tmp_path);
 
   WritablePBContainerFile pb_file(std::move(file));

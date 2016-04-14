@@ -286,7 +286,7 @@ class LogBlockContainer {
 
   // Opened file handles to the container's files.
   //
-  // WritableFile is not thread safe so access to each writer must be
+  // RWFile is not thread safe so access to each writer must be
   // serialized through a (sleeping) mutex. We use different mutexes to
   // avoid contention in cases where only one writer is needed.
   gscoped_ptr<WritablePBContainerFile> metadata_pb_writer_;
@@ -330,9 +330,9 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   string data_path;
   Status metadata_status;
   Status data_status;
-  gscoped_ptr<WritableFile> metadata_writer;
+  gscoped_ptr<RWFile> metadata_writer;
   gscoped_ptr<RWFile> data_file;
-  WritableFileOptions wr_opts;
+  RWFileOptions wr_opts;
   wr_opts.mode = Env::CREATE_NON_EXISTING;
 
   // Repeat in the event of a container id collision (unlikely).
@@ -344,9 +344,9 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
     }
     common_path = JoinPathSegments(dir, block_manager->oid_generator()->Next());
     metadata_path = StrCat(common_path, kMetadataFileSuffix);
-    metadata_status = block_manager->env()->NewWritableFile(wr_opts,
-                                                            metadata_path,
-                                                            &metadata_writer);
+    metadata_status = block_manager->env()->NewRWFile(wr_opts,
+                                                      metadata_path,
+                                                      &metadata_writer);
     if (data_file) {
       block_manager->env()->DeleteFile(data_path);
     }
@@ -382,17 +382,16 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
 
   // Open the existing metadata and data files for writing.
   string metadata_path = StrCat(common_path, kMetadataFileSuffix);
-  gscoped_ptr<WritableFile> metadata_writer;
-  WritableFileOptions wr_opts;
+  gscoped_ptr<RWFile> metadata_writer;
+  RWFileOptions wr_opts;
   wr_opts.mode = Env::OPEN_EXISTING;
 
-  RETURN_NOT_OK(block_manager->env()->NewWritableFile(wr_opts,
-                                                      metadata_path,
-                                                      &metadata_writer));
+  RETURN_NOT_OK(block_manager->env()->NewRWFile(wr_opts,
+                                                metadata_path,
+                                                &metadata_writer));
   gscoped_ptr<WritablePBContainerFile> metadata_pb_writer(
       new WritablePBContainerFile(std::move(metadata_writer)));
-  // No call to metadata_pb_writer->Init() because we're reopening an
-  // existing pb container (that should already have a valid header).
+  RETURN_NOT_OK(metadata_pb_writer->Reopen());
 
   string data_path = StrCat(common_path, kDataFileSuffix);
   gscoped_ptr<RWFile> data_file;
@@ -418,7 +417,7 @@ Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) co
   gscoped_ptr<RandomAccessFile> metadata_reader;
   RETURN_NOT_OK(block_manager()->env()->NewRandomAccessFile(metadata_path, &metadata_reader));
   ReadablePBContainerFile pb_reader(std::move(metadata_reader));
-  RETURN_NOT_OK(pb_reader.Init());
+  RETURN_NOT_OK(pb_reader.Open());
 
   uint64_t data_file_size;
   RETURN_NOT_OK(data_file_->Size(&data_file_size));
