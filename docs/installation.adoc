@@ -76,7 +76,10 @@ You can install Kudu using packages managed by the operating system.
 [cols=">s,<,<",options="header"]
 |===
 | OS  | Repository  | Individual Packages
-| RHEL | link:http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6] |  link:http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/0.5.0/RPMS/x86_64/[RHEL 6]
+| RHEL | link:http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6],
+         link:http://archive.cloudera.com/beta/kudu/redhat/7/x86_64/kudu/cloudera-kudu.repo[RHEL 7] |
+         link:http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/0.8.0/RPMS/x86_64/[RHEL 6],
+         link:http://archive.cloudera.com/beta/kudu/redhat/7/x86_64/kudu/0.8.0/RPMS/x86_64/[RHEL 7]
 | Ubuntu | link:http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/cloudera.list[Trusty] |  http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/pool/contrib/k/kudu/[Trusty]
 |===
 
@@ -87,10 +90,10 @@ NOTE: packages are not yet provided for SLES.
 === Install On RHEL Hosts
 
 . Download and configure the Kudu repositories for your operating system, or manually
-download individual RPMs, the appropriate link from <<kudu_package_locations>>.
+download individual RPMs, using the appropriate link from <<kudu_package_locations>>.
 
 . If using a Yum repository, use the following commands to install Kudu packages on
-each host.
+each host, after saving the `cloudera-kudu.repo` file to `/etc/yum.repos.d/`.
 +
 ----
 sudo yum install kudu                         # Base Kudu files
@@ -108,7 +111,7 @@ provide the operating system commands to start and stop Kudu.
 === Install On Ubuntu or Debian Hosts
 
 . If using an Ubuntu or Debian repository, use the following commands to install Kudu
-packages on each host.
+packages on each host after saving the `cloudera.list` file to `/etc/apt/sources.list.d/`.
 +
 ----
 sudo apt-get install kudu                     # Base Kudu files
