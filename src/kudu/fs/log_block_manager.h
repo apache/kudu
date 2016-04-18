@@ -151,6 +151,9 @@ struct LogBlockManagerMetrics;
 // The log-backed block manager.
 class LogBlockManager : public BlockManager {
  public:
+  static const char* kContainerMetadataFileSuffix;
+  static const char* kContainerDataFileSuffix;
+
   LogBlockManager(Env* env, const BlockManagerOptions& opts);
 
   virtual ~LogBlockManager();
@@ -176,6 +179,7 @@ class LogBlockManager : public BlockManager {
 
  private:
   FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
+  FRIEND_TEST(LogBlockManagerTest, TestMetadataTruncation);
   friend class internal::LogBlockContainer;
 
   // Simpler typedef for a block map which isn't tracked in the memory tracker.
@@ -266,6 +270,9 @@ class LogBlockManager : public BlockManager {
   ObjectIdGenerator* oid_generator() { return &oid_generator_; }
 
   Env* env() const { return env_; }
+
+  // Return the path of the given container. Only for use by tests.
+  static std::string ContainerPathForTests(internal::LogBlockContainer* container);
 
   const internal::LogBlockManagerMetrics* metrics() const { return metrics_.get(); }
 

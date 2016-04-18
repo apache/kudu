@@ -17,7 +17,6 @@
 
 #include "kudu/fs/log_block_manager.h"
 
-
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/gutil/callback.h"
@@ -141,8 +140,6 @@ LogBlockManagerMetrics::LogBlockManagerMetrics(const scoped_refptr<MetricEntity>
 // functions are marked explicitly.
 class LogBlockContainer {
  public:
-  static const std::string kMetadataFileSuffix;
-  static const std::string kDataFileSuffix;
   static const char* kMagic;
 
   // Creates a new block container in 'dir'.
@@ -306,9 +303,6 @@ class LogBlockContainer {
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainer);
 };
 
-const std::string LogBlockContainer::kMetadataFileSuffix(".metadata");
-const std::string LogBlockContainer::kDataFileSuffix(".data");
-
 LogBlockContainer::LogBlockContainer(
     LogBlockManager* block_manager, PathInstanceMetadataPB* instance,
     string path, gscoped_ptr<WritablePBContainerFile> metadata_writer,
@@ -343,14 +337,14 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
       block_manager->env()->DeleteFile(metadata_path);
     }
     common_path = JoinPathSegments(dir, block_manager->oid_generator()->Next());
-    metadata_path = StrCat(common_path, kMetadataFileSuffix);
+    metadata_path = StrCat(common_path, LogBlockManager::kContainerMetadataFileSuffix);
     metadata_status = block_manager->env()->NewRWFile(wr_opts,
                                                       metadata_path,
                                                       &metadata_writer);
     if (data_file) {
       block_manager->env()->DeleteFile(data_path);
     }
-    data_path = StrCat(common_path, kDataFileSuffix);
+    data_path = StrCat(common_path, LogBlockManager::kContainerDataFileSuffix);
     RWFileOptions rw_opts;
     rw_opts.mode = Env::CREATE_NON_EXISTING;
     data_status = block_manager->env()->NewRWFile(rw_opts,
@@ -381,7 +375,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   string common_path = JoinPathSegments(dir, id);
 
   // Open the existing metadata and data files for writing.
-  string metadata_path = StrCat(common_path, kMetadataFileSuffix);
+  string metadata_path = StrCat(common_path, LogBlockManager::kContainerMetadataFileSuffix);
   gscoped_ptr<RWFile> metadata_writer;
   RWFileOptions wr_opts;
   wr_opts.mode = Env::OPEN_EXISTING;
@@ -393,7 +387,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
       new WritablePBContainerFile(std::move(metadata_writer)));
   RETURN_NOT_OK(metadata_pb_writer->Reopen());
 
-  string data_path = StrCat(common_path, kDataFileSuffix);
+  string data_path = StrCat(common_path, LogBlockManager::kContainerDataFileSuffix);
   gscoped_ptr<RWFile> data_file;
   RWFileOptions rw_opts;
   rw_opts.mode = Env::OPEN_EXISTING;
@@ -413,7 +407,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
 }
 
 Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) const {
-  string metadata_path = StrCat(path_, kMetadataFileSuffix);
+  string metadata_path = StrCat(path_, LogBlockManager::kContainerMetadataFileSuffix);
   gscoped_ptr<RandomAccessFile> metadata_reader;
   RETURN_NOT_OK(block_manager()->env()->NewRandomAccessFile(metadata_path, &metadata_reader));
   ReadablePBContainerFile pb_reader(std::move(metadata_reader));
@@ -433,12 +427,34 @@ Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) co
     }
     CheckBlockRecord(local_records.back(), data_file_size);
   }
-  Status close_status = pb_reader.Close();
-  Status ret = !read_status.IsEndOfFile() ? read_status : close_status;
-  if (ret.ok()) {
+  // NOTE: 'read_status' will never be OK here.
+  if (PREDICT_TRUE(read_status.IsEndOfFile())) {
+    // We've reached the end of the file without any problems.
     records->swap(local_records);
+    return Status::OK();
   }
-  return ret;
+  if (read_status.IsIncomplete()) {
+    // We found a partial trailing record in a version of the pb container file
+    // format that can reliably detect this. Consider this a failed partial
+    // write and truncate the metadata file to remove this partial record.
+    uint64_t truncate_offset = pb_reader.offset();
+    LOG(WARNING) << "Log block manager: Found partial trailing metadata record in container "
+                  << ToString() << ": "
+                  << "Truncating metadata file to last valid offset: " << truncate_offset;
+    gscoped_ptr<RWFile> file;
+    RWFileOptions opts;
+    opts.mode = Env::OPEN_EXISTING;
+    RETURN_NOT_OK(block_manager_->env()->NewRWFile(opts, metadata_path, &file));
+    RETURN_NOT_OK(file->Truncate(truncate_offset));
+    RETURN_NOT_OK(file->Close());
+    // Reopen the PB writer so that it will refresh its metadata about the
+    // underlying file and resume appending to the new end of the file.
+    RETURN_NOT_OK(metadata_pb_writer_->Reopen());
+    records->swap(local_records);
+    return Status::OK();
+  }
+  // If we've made it here, we've found (and are returning) an unrecoverable error.
+  return read_status;
 }
 
 void LogBlockContainer::CheckBlockRecord(const BlockRecordPB& record,
@@ -1020,6 +1036,9 @@ size_t LogReadableBlock::memory_footprint() const {
 // LogBlockManager
 ////////////////////////////////////////////////////////////
 
+const char* LogBlockManager::kContainerMetadataFileSuffix = ".metadata";
+const char* LogBlockManager::kContainerDataFileSuffix = ".data";
+
 static const char* kBlockManagerType = "log";
 
 LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
@@ -1459,7 +1478,7 @@ void LogBlockManager::OpenRootPath(const string& root_path,
   }
   for (const string& child : children) {
     string id;
-    if (!TryStripSuffixString(child, LogBlockContainer::kMetadataFileSuffix, &id)) {
+    if (!TryStripSuffixString(child, LogBlockManager::kContainerMetadataFileSuffix, &id)) {
       continue;
     }
     gscoped_ptr<LogBlockContainer> container;
@@ -1613,6 +1632,10 @@ Status LogBlockManager::Init() {
   thread_pools_by_root_path_.swap(pools);
 
   return Status::OK();
+}
+
+std::string LogBlockManager::ContainerPathForTests(internal::LogBlockContainer* container) {
+  return container->ToString();
 }
 
 } // namespace fs
