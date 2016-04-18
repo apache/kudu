@@ -740,4 +740,17 @@ TEST_F(TestEnv, TestCopyFile) {
   NO_FATALS(ReadAndVerifyTestData(copy.get(), 0, kFileSize));
 }
 
+// Simple regression test for NewTempRWFile().
+TEST_F(TestEnv, TestTempRWFile) {
+  string tmpl = "foo.XXXXXX";
+  string path;
+  gscoped_ptr<RWFile> file;
+
+  ASSERT_OK(env_->NewTempRWFile(RWFileOptions(), tmpl, &path, &file));
+  ASSERT_NE(path, tmpl);
+  ASSERT_EQ(0, path.find("foo."));
+  ASSERT_OK(file->Close());
+  ASSERT_OK(env_->DeleteFile(path));
+}
+
 }  // namespace kudu

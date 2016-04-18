@@ -127,6 +127,10 @@ class Env {
                            const std::string& fname,
                            gscoped_ptr<RWFile>* result) = 0;
 
+  // Same as abovoe for NewTempWritableFile(), but for an RWFile.
+  virtual Status NewTempRWFile(const RWFileOptions& opts, const std::string& name_template,
+                               std::string* created_filename, gscoped_ptr<RWFile>* res) = 0;
+
   // Returns true iff the named file exists.
   virtual bool FileExists(const std::string& fname) = 0;
 
@@ -429,8 +433,9 @@ class RWFile {
   // 'scratch[0..length-1]', which must be live when '*result' is used.
   // If an error was encountered, returns a non-OK status.
   //
-  // In the event of a "short read" (fewer bytes read than were requested),
-  // an IOError is returned.
+  // This method will internally retry on EINTR and "short reads" in order to
+  // fully read the requested number of bytes. In the event that it is not
+  // possible to read exactly 'length' bytes, an IOError is returned.
   //
   // Safe for concurrent use by multiple threads.
   virtual Status Read(uint64_t offset, size_t length,
@@ -555,6 +560,10 @@ class EnvWrapper : public Env {
                    const std::string& f,
                    gscoped_ptr<RWFile>* r) OVERRIDE {
     return target_->NewRWFile(o, f, r);
+  }
+  Status NewTempRWFile(const RWFileOptions& o, const std::string& t,
+                       std::string* f, gscoped_ptr<RWFile>* r) OVERRIDE {
+    return target_->NewTempRWFile(o, t, f, r);
   }
   bool FileExists(const std::string& f) OVERRIDE { return target_->FileExists(f); }
   Status GetChildren(const std::string& dir, std::vector<std::string>* r) OVERRIDE {

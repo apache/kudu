@@ -410,10 +410,9 @@ class InMemoryEnv : public EnvWrapper {
     return NewRWFile(RWFileOptions(), fname, result);
   }
 
-  virtual Status NewTempWritableFile(const WritableFileOptions& opts,
-                                     const std::string& name_template,
-                                     std::string* created_filename,
-                                     gscoped_ptr<WritableFile>* result) OVERRIDE {
+  template <typename WritableFileType, typename WritableFileImplType>
+  Status NewTmpFile(const string& name_template, string* created_filename,
+                    gscoped_ptr<WritableFileType>* result) {
     // Not very random, but InMemoryEnv is basically a test env.
     Random random(GetCurrentTimeMicros());
     while (true) {
@@ -427,12 +426,25 @@ class InMemoryEnv : public EnvWrapper {
 
       MutexLock lock(mutex_);
       if (!ContainsKey(file_map_, path)) {
-        CreateAndRegisterNewWritableFileUnlocked<WritableFile, WritableFileImpl>(path, result);
+        CreateAndRegisterNewWritableFileUnlocked<WritableFileType, WritableFileImplType>(
+            path, result);
         *created_filename = path;
         return Status::OK();
       }
     }
     // Unreachable.
+  }
+
+  virtual Status NewTempWritableFile(const WritableFileOptions& opts,
+                                     const std::string& name_template,
+                                     std::string* created_filename,
+                                     gscoped_ptr<WritableFile>* result) OVERRIDE {
+    return NewTmpFile<WritableFile, WritableFileImpl>(name_template, created_filename, result);
+  }
+
+  virtual Status NewTempRWFile(const RWFileOptions& opts, const std::string& name_template,
+                               std::string* created_filename, gscoped_ptr<RWFile>* res) OVERRIDE {
+    return NewTmpFile<RWFile, RWFileImpl>(name_template, created_filename, res);
   }
 
   virtual bool FileExists(const std::string& fname) OVERRIDE {
