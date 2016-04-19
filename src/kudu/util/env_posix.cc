@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <time.h>
+#include <type_traits>
 #include <unistd.h>
 #include <vector>
 
@@ -65,9 +66,19 @@
 #define fread_unlocked fread
 #endif
 
-#define RETRY_ON_EINTR(ret, expr) do { \
-  ret = (expr); \
-} while ((ret == -1) && (errno == EINTR));
+// Retry on EINTR for functions like read() that return -1 on error.
+#define RETRY_ON_EINTR(err, expr) do { \
+  static_assert(std::is_signed<decltype(err)>::value == true, \
+                #err " must be a signed integer"); \
+  (err) = (expr); \
+} while ((err) == -1 && errno == EINTR)
+
+// Same as the above, but for stream API calls like fread() and fwrite().
+#define STREAM_RETRY_ON_EINTR(nread, stream, expr) do { \
+  static_assert(std::is_unsigned<decltype(nread)>::value == true, \
+                #nread " must be an unsigned integer"); \
+  (nread) = (expr); \
+} while ((nread) == 0 && ferror(stream) == EINTR)
 
 // See KUDU-588 for details.
 DEFINE_bool(writable_file_use_fsync, false,
@@ -222,7 +233,8 @@ class PosixSequentialFile: public SequentialFile {
   virtual Status Read(size_t n, Slice* result, uint8_t* scratch) OVERRIDE {
     ThreadRestrictions::AssertIOAllowed();
     Status s;
-    size_t r = fread_unlocked(scratch, 1, n, file_);
+    size_t r;
+    STREAM_RETRY_ON_EINTR(r, file_, fread_unlocked(scratch, 1, n, file_));
     *result = Slice(scratch, r);
     if (r < n) {
       if (feof(file_)) {
@@ -441,7 +453,8 @@ class PosixWritableFile : public WritableFile {
       ++j;
     }
 
-    ssize_t written = pwritev(fd_, iov, n, filesize_);
+    ssize_t written;
+    RETRY_ON_EINTR(written, pwritev(fd_, iov, n, filesize_));
 
     if (PREDICT_FALSE(written == -1)) {
       int err = errno;
@@ -458,7 +471,8 @@ class PosixWritableFile : public WritableFile {
 #else
     for (size_t i = offset; i < offset + n; i++) {
       const Slice& data = data_vector[i];
-      ssize_t written = pwrite(fd_, data.data(), data.size(), filesize_);
+      ssize_t written;
+      RETRY_ON_EINTR(written, pwrite(fd_, data.data(), data.size(), filesize_));
       if (PREDICT_FALSE(written == -1)) {
         int err = errno;
         return IOError("pwrite error", err);
@@ -530,7 +544,8 @@ class PosixRWFile : public RWFile {
 
   virtual Status Write(uint64_t offset, const Slice& data) OVERRIDE {
     ThreadRestrictions::AssertIOAllowed();
-    ssize_t written = pwrite(fd_, data.data(), data.size(), offset);
+    ssize_t written;
+    RETRY_ON_EINTR(written, pwrite(fd_, data.data(), data.size(), offset));
 
     if (PREDICT_FALSE(written == -1)) {
       int err = errno;
