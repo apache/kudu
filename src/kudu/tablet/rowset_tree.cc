@@ -111,13 +111,15 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
     }
     DCHECK_LE(min_key.compare(max_key), 0)
       << "Rowset min must be <= max: " << rs->ToString();
-    // Load into key endpoints.
-    endpoints.push_back(RSEndpoint(rsit->rowset, START, min_key));
-    endpoints.push_back(RSEndpoint(rsit->rowset, STOP, max_key));
 
     // Load bounds and save entry
-    rsit->min_key = min_key;
-    rsit->max_key = max_key;
+    rsit->min_key = std::move(min_key);
+    rsit->max_key = std::move(max_key);
+
+    // Load into key endpoints.
+    endpoints.push_back(RSEndpoint(rsit->rowset, START, rsit->min_key));
+    endpoints.push_back(RSEndpoint(rsit->rowset, STOP, rsit->max_key));
+
     entries.push_back(rsit.release());
   }
 
