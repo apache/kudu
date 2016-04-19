@@ -229,6 +229,10 @@ public class AsyncKuduClient implements AutoCloseable {
 
   private final long defaultSocketReadTimeoutMs;
 
+  private final Statistics statistics;
+
+  private final boolean statisticsDisabled;
+
   private volatile boolean closed;
 
   private AsyncKuduClient(AsyncKuduClientBuilder b) {
@@ -239,6 +243,8 @@ public class AsyncKuduClient implements AutoCloseable {
     this.defaultOperationTimeoutMs = b.defaultOperationTimeoutMs;
     this.defaultAdminOperationTimeoutMs = b.defaultAdminOperationTimeoutMs;
     this.defaultSocketReadTimeoutMs = b.defaultSocketReadTimeoutMs;
+    this.statisticsDisabled = b.statisticsDisabled;
+    statistics = statisticsDisabled ? null : new Statistics();
     this.timer = b.timer;
   }
 
@@ -512,6 +518,27 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   public long getDefaultSocketReadTimeoutMs() {
     return defaultSocketReadTimeoutMs;
+  }
+
+  /**
+   * Check if statistics collection is enabled for this client.
+   * @return true if it is enabled, else false
+   */
+  public boolean isStatisticsEnabled() {
+    return !statisticsDisabled;
+  }
+
+  /**
+   * Get the statistics object of this client.
+   *
+   * @return this client's Statistics object
+   * @throws IllegalStateException thrown if statistics collection has been disabled
+   */
+  public Statistics getStatistics() {
+    if (statisticsDisabled) {
+      throw new IllegalStateException("This client's statistics is disabled");
+    }
+    return this.statistics;
   }
 
   /**
@@ -2064,6 +2091,7 @@ public class AsyncKuduClient implements AutoCloseable {
     private Executor workerExecutor;
     private int bossCount = DEFAULT_BOSS_COUNT;
     private int workerCount = DEFAULT_WORKER_COUNT;
+    private boolean statisticsDisabled = false;
 
     /**
      * Creates a new builder for a client that will connect to the specified masters.
@@ -2198,6 +2226,16 @@ public class AsyncKuduClient implements AutoCloseable {
                                                bossCount,
                                                new NioWorkerPool(worker, workerCount),
                                                timer);
+    }
+
+    /**
+     * Disable this client's collection of statistics.
+     * Statistics are enabled by default.
+     * @return this builder
+     */
+    public AsyncKuduClientBuilder disableStatistics() {
+      this.statisticsDisabled = true;
+      return this;
     }
 
     /**

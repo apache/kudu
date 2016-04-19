@@ -152,6 +152,17 @@ public abstract class KuduRpc<R> {
   abstract Pair<R, Object> deserialize(CallResponse callResponse, String tsUUID) throws Exception;
 
   /**
+   * Update the statistics information before this rpc is called back. This method should not throw
+   * any exception, including RuntimeException. This method does nothing by default.
+   *
+   * @param statistics object to update
+   * @param response of this rpc
+   */
+  void updateStatistics(Statistics statistics, R response){
+    // default do nothing
+  }
+
+  /**
    * Sets the external consistency mode for this RPC.
    * TODO make this cover most if not all RPCs (right now only scans and writes use this).
    * @param externalConsistencyMode the mode to set

@@ -20,6 +20,7 @@ import com.stumbleupon.async.Deferred;
 import org.kududb.Schema;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -197,6 +198,24 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
+   * Check if statistics collection is enabled for this client.
+   * @return true if it is enabled, else false
+   */
+  public boolean isStatisticsEnabled() {
+    return asyncClient.isStatisticsEnabled();
+  }
+
+  /**
+   * Get the statistics object of this client.
+   *
+   * @return this client's Statistics object
+   * @throws IllegalStateException thrown if statistics collection has been disabled
+   */
+  public Statistics getStatistics() {
+    return asyncClient.getStatistics();
+  }
+
+  /**
    * Creates a new {@link KuduScanner.KuduScannerBuilder} for a particular table.
    * @param table the table you intend to scan.
    * The string is assumed to use the platform's default charset.
@@ -324,6 +343,16 @@ public class KuduClient implements AutoCloseable {
      */
     public KuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
       clientBuilder.defaultSocketReadTimeoutMs(timeoutMs);
+      return this;
+    }
+
+    /**
+     * Disable this client's collection of statistics.
+     * Statistics are enabled by default.
+     * @return this builder
+     */
+    public KuduClientBuilder disableStatistics() {
+      clientBuilder.disableStatistics();
       return this;
     }
 

@@ -463,8 +463,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     try {
       if (decoded != null) {
         assert !(decoded.getFirst() instanceof Exception);
+        if (kuduClient.isStatisticsEnabled()) {
+          rpc.updateStatistics(kuduClient.getStatistics(), decoded.getFirst());
+        }
         rpc.callback(decoded.getFirst());
       } else {
+        if (kuduClient.isStatisticsEnabled()) {
+          rpc.updateStatistics(kuduClient.getStatistics(), null);
+        }
         rpc.errback(exception);
       }
     } catch (Exception e) {

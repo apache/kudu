@@ -27,8 +27,11 @@ import org.kududb.WireProtocol;
 import org.kududb.WireProtocol.RowOperationsPB;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
+import org.kududb.client.Statistics.Statistic;
+import org.kududb.client.Statistics.TabletStatistics;
 import org.kududb.tserver.Tserver;
 import org.kududb.util.Pair;
+import org.kududb.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.nio.ByteBuffer;
@@ -47,6 +50,11 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   // Number given by the session when apply()'d for the first time. Necessary to retain operations
   // in their original order even after tablet lookup.
   private long sequenceNumber = -1;
+  /**
+   * This size will be set when serialize is called. It stands for the size of the row in this
+   * operation.
+   */
+  private long rowOperationSizeBytes = 0;
 
   enum ChangeType {
     INSERT((byte)RowOperationsPB.Type.INSERT.getNumber()),
@@ -112,6 +120,18 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
     return this.sequenceNumber;
   }
 
+  /**
+   * Returns the size in bytes of this operation's row after serialization.
+   * @return size in bytes
+   * @throws IllegalStateException thrown if this RPC hasn't been serialized eg sent to a TS
+   */
+  long getRowOperationSizeBytes() {
+    if (this.rowOperationSizeBytes == 0) {
+      throw new IllegalStateException("This row hasn't been serialized yet");
+    }
+    return this.rowOperationSizeBytes;
+  }
+
   @Override
   String serviceName() { return TABLET_SERVER_SERVICE_NAME; }
 
@@ -123,6 +143,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   @Override
   ChannelBuffer serialize(Message header) {
     final Tserver.WriteRequestPB.Builder builder = createAndFillWriteRequestPB(this);
+    this.rowOperationSizeBytes = builder.getRowOperations().getRows().size()
+        + builder.getRowOperations().getIndirectData().size();
     builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
     builder.setExternalConsistencyMode(this.externalConsistencyMode.pbVersion());
     if (this.propagatedTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
@@ -161,6 +183,27 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
    */
   public PartialRow getRow() {
     return this.row;
+  }
+
+  @Override
+  void updateStatistics(Statistics statistics, OperationResponse response) {
+    Slice tabletId = this.getTablet().getTabletId();
+    String tableName = this.getTable().getName();
+    TabletStatistics tabletStatistics = statistics.getTabletStatistics(tableName, tabletId);
+    if (response == null) {
+      tabletStatistics.incrementStatistic(Statistic.OPS_ERRORS, 1);
+      tabletStatistics.incrementStatistic(Statistic.RPC_ERRORS, 1);
+      return;
+    }
+    tabletStatistics.incrementStatistic(Statistic.WRITE_RPCS, 1);
+    if (response.hasRowError()) {
+      // If ignoreAllDuplicateRows is set, the already_present exception will be
+      // discarded and wont't be recorded here
+      tabletStatistics.incrementStatistic(Statistic.OPS_ERRORS, 1);
+    } else {
+      tabletStatistics.incrementStatistic(Statistic.WRITE_OPS, 1);
+    }
+    tabletStatistics.incrementStatistic(Statistic.BYTES_WRITTEN, getRowOperationSizeBytes());
   }
 
   @Override

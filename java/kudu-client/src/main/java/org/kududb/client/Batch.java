@@ -22,9 +22,12 @@ import com.google.protobuf.ZeroCopyLiteralByteString;
 
 import org.kududb.WireProtocol;
 import org.kududb.annotations.InterfaceAudience;
+import org.kududb.client.Statistics.Statistic;
+import org.kududb.client.Statistics.TabletStatistics;
 import org.kududb.tserver.Tserver;
 import org.kududb.tserver.Tserver.TabletServerErrorPB;
 import org.kududb.util.Pair;
+import org.kududb.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.util.ArrayList;
@@ -40,6 +43,12 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
 
   private static final OperationsComparatorBySequenceNumber SEQUENCE_NUMBER_COMPARATOR =
       new OperationsComparatorBySequenceNumber();
+
+  /**
+   * This size will be set when serialize is called. It stands for the size of rows in all
+   * operations in this batch.
+   */
+  private long rowOperationsSizeBytes = 0;
 
   final List<Operation> ops;
 
@@ -60,6 +69,18 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
     this.ignoreAllDuplicateRows = ignoreAllDuplicateRows;
   }
 
+  /**
+   * Returns the bytes size of this batch's row operations after serialization.
+   * @return size in bytes
+   * @throws IllegalStateException thrown if this RPC hasn't been serialized eg sent to a TS
+   */
+  long getRowOperationsSizeBytes() {
+    if (this.rowOperationsSizeBytes == 0) {
+      throw new IllegalStateException("This row hasn't been serialized yet");
+    }
+    return this.rowOperationsSizeBytes;
+  }
+
   @Override
   ChannelBuffer serialize(Message header) {
 
@@ -71,6 +92,8 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
 
     final Tserver.WriteRequestPB.Builder builder =
         Operation.createAndFillWriteRequestPB(ops.toArray(new Operation[ops.size()]));
+    this.rowOperationsSizeBytes = builder.getRowOperations().getRows().size()
+        + builder.getRowOperations().getIndirectData().size();
     builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
     builder.setExternalConsistencyMode(this.externalConsistencyMode.pbVersion());
     return toChannelBuffer(header, builder.build());
@@ -124,6 +147,27 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
   public byte[] partitionKey() {
     assert this.ops.size() > 0;
     return this.ops.get(0).partitionKey();
+  }
+
+  @Override
+  void updateStatistics(Statistics statistics, BatchResponse response) {
+    Slice tabletId = this.getTablet().getTabletId();
+    String tableName = this.getTable().getName();
+    TabletStatistics tabletStatistics = statistics.getTabletStatistics(tableName, tabletId);
+    if (response == null) {
+      tabletStatistics.incrementStatistic(Statistic.OPS_ERRORS, this.ops.size());
+      tabletStatistics.incrementStatistic(Statistic.RPC_ERRORS, 1);
+      return;
+    }
+    tabletStatistics.incrementStatistic(Statistic.WRITE_RPCS, 1);
+    for (OperationResponse opResponse : response.getIndividualResponses()) {
+      if (opResponse.hasRowError()) {
+        tabletStatistics.incrementStatistic(Statistic.OPS_ERRORS, 1);
+      } else {
+        tabletStatistics.incrementStatistic(Statistic.WRITE_OPS, 1);
+      }
+    }
+    tabletStatistics.incrementStatistic(Statistic.BYTES_WRITTEN, getRowOperationsSizeBytes());
   }
 
   public String toDebugString() {
