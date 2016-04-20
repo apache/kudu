@@ -20,13 +20,21 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.sun.security.auth.module.UnixSystem;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import sun.management.VMManagement;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.RuntimeMXBean;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.SocketAddress;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.file.Files;
@@ -35,9 +43,6 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Set;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A grouping of methods that help unit testing.
@@ -143,16 +148,18 @@ public class TestUtils {
    * Finds the next free port, starting with the one passed. Keep in mind the
    * time-of-check-time-of-use nature of this method, the returned port might become occupied
    * after it was checked for availability.
-   * @param startPort First port to be probed.
-   * @return A currently usable port.
+   * @param startPort first port to be probed
+   * @return a currently usable port
    * @throws IOException IOE is thrown if we can't close a socket we tried to open or if we run
-   * out of ports to try.
+   * out of ports to try
    */
   public static int findFreePort(int startPort) throws IOException {
     ServerSocket ss;
     for(int i = startPort; i < 65536; i++) {
       try {
-        ss = new ServerSocket(i);
+        ss = new ServerSocket();
+        SocketAddress address = new InetSocketAddress(getUniqueLocalhost(), i);
+        ss.bind(address);
       } catch (IOException e) {
         continue;
       }
@@ -239,5 +246,44 @@ public class TestUtils {
    */
   static void resumeProcess(Process proc) throws Exception {
     signalProcess(proc, "CONT");
+  }
+
+  /**
+   * This is used to generate unique loopback IPs for parallel test running.
+   * @return the local PID of this process
+   */
+  static int getPid() {
+    try {
+      RuntimeMXBean runtime = ManagementFactory.getRuntimeMXBean();
+      java.lang.reflect.Field jvm = runtime.getClass().getDeclaredField("jvm");
+      jvm.setAccessible(true);
+      VMManagement mgmt = (VMManagement)jvm.get(runtime);
+      Method pid_method = mgmt.getClass().getDeclaredMethod("getProcessId");
+      pid_method.setAccessible(true);
+
+      return (Integer)pid_method.invoke(mgmt);
+    } catch (Exception e) {
+      LOG.warn("Cannot get PID", e);
+      return 1;
+    }
+  }
+
+  /**
+   * The generated IP is based on pid, so this requires that the parallel tests
+   * run in separate VMs.
+   *
+   * On OSX, the above trick doesn't work, so we can't run parallel tests on OSX.
+   * Given that, we just return the normal localhost IP.
+   *
+   * @return a unique loopback IP address for this PID. This allows running
+   * tests in parallel, since 127.0.0.0/8 all act as loopbacks on Linux.
+   */
+  static String getUniqueLocalhost() {
+    if ("Mac OS X".equals(System.getProperty("os.name"))) {
+      return "127.0.0.1";
+    }
+
+    int pid = getPid();
+    return "127." + ((pid & 0xff00) >> 8) + "." + (pid & 0xff) + ".1";
   }
 }

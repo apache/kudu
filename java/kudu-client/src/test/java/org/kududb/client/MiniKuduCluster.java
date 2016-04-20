@@ -13,6 +13,7 @@
  */
 package org.kududb.client;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
@@ -27,16 +28,12 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.lang.management.ManagementFactory;
-import java.lang.management.RuntimeMXBean;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-
-import sun.management.VMManagement;
 
 /**
  * Utility class to start and manipulate Kudu clusters. Relies on being IN the Kudu source code with
@@ -58,6 +55,9 @@ public class MiniKuduCluster implements AutoCloseable {
 
   // Map of ports to tablet servers.
   private final Map<Integer, Process> tserverProcesses = new ConcurrentHashMap<>();
+
+  // Map of ports to process command lines. Never removed from. Used to restart processes.
+  private final Map<Integer, String[]> commandLines = new ConcurrentHashMap<>();
 
   private final List<String> pathsToDelete = new ArrayList<>();
   private final List<HostAndPort> masterHostPorts = new ArrayList<>();
@@ -96,45 +96,6 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
-   * @return the local PID of this process.
-   * This is used to generate unique loopback IPs for parallel test running.
-   */
-  private static int getPid() {
-    try {
-      RuntimeMXBean runtime = ManagementFactory.getRuntimeMXBean();
-      java.lang.reflect.Field jvm = runtime.getClass().getDeclaredField("jvm");
-      jvm.setAccessible(true);
-      VMManagement mgmt = (VMManagement)jvm.get(runtime);
-      Method pid_method = mgmt.getClass().getDeclaredMethod("getProcessId");
-      pid_method.setAccessible(true);
-
-      return (Integer)pid_method.invoke(mgmt);
-    } catch (Exception e) {
-      LOG.warn("Cannot get PID", e);
-      return 1;
-    }
-  }
-
-  /**
-   * @return a unique loopback IP address for this PID. This allows running
-   * tests in parallel, since 127.0.0.0/8 all act as loopbacks on Linux.
-   *
-   * The generated IP is based on pid, so this requires that the parallel tests
-   * run in separate VMs.
-   *
-   * On OSX, the above trick doesn't work, so we can't run parallel tests on OSX.
-   * Given that, we just return the normal localhost IP.
-   */
-  private static String getUniqueLocalhost() {
-    if ("Mac OS X".equals(System.getProperty("os.name"))) {
-      return "127.0.0.1";
-    }
-
-    int pid = getPid();
-    return "127." + ((pid & 0xff00) >> 8) + "." + (pid & 0xff) + ".1";
-  }
-
-  /**
    * Starts a Kudu cluster composed of the provided masters and tablet servers.
    * @param numMasters how many masters to start
    * @param numTservers how many tablet servers to start
@@ -145,14 +106,14 @@ public class MiniKuduCluster implements AutoCloseable {
     Preconditions.checkArgument(numTservers > 0, "Need at least one tablet server");
     // The following props are set via kudu-client's pom.
     String baseDirPath = TestUtils.getBaseDir();
-    String localhost = getUniqueLocalhost();
+    String localhost = TestUtils.getUniqueLocalhost();
 
     long now = System.currentTimeMillis();
     LOG.info("Starting {} masters...", numMasters);
-    int port = startMasters(PORT_START, numMasters, baseDirPath);
+    int startPort = startMasters(PORT_START, numMasters, baseDirPath);
     LOG.info("Starting {} tablet servers...", numTservers);
+    List<Integer> ports = TestUtils.findFreePorts(startPort, numTservers * 2);
     for (int i = 0; i < numTservers; i++) {
-      port = TestUtils.findFreePort(port);
       String dataDirPath = baseDirPath + "/ts-" + i + "-" + now;
       String flagsPath = TestUtils.getFlagsPath();
       String[] tsCmdLine = {
@@ -163,9 +124,10 @@ public class MiniKuduCluster implements AutoCloseable {
           "--tserver_master_addrs=" + masterAddresses,
           "--webserver_interface=" + localhost,
           "--local_ip_for_outbound_sockets=" + localhost,
-          "--rpc_bind_addresses=" + localhost + ":" + port};
-      tserverProcesses.put(port, configureAndStartProcess(tsCmdLine));
-      port++;
+          "--webserver_port=" + ports.get((i * 2) + 1),
+          "--rpc_bind_addresses=" + localhost + ":" + ports.get(i * 2)};
+      tserverProcesses.put(ports.get(i * 2), configureAndStartProcess(tsCmdLine));
+      commandLines.put(ports.get(i * 2), tsCmdLine);
 
       if (flagsPath.startsWith(baseDirPath)) {
         // We made a temporary copy of the flags; delete them later.
@@ -191,7 +153,7 @@ public class MiniKuduCluster implements AutoCloseable {
     // Get the list of web and RPC ports to use for the master consensus configuration:
     // request NUM_MASTERS * 2 free ports as we want to also reserve the web
     // ports for the consensus configuration.
-    String localhost = getUniqueLocalhost();
+    String localhost = TestUtils.getUniqueLocalhost();
     List<Integer> ports = TestUtils.findFreePorts(masterStartPort, numMasters * 2);
     int lastFreePort = ports.get(ports.size() - 1);
     List<Integer> masterRpcPorts = Lists.newArrayListWithCapacity(numMasters);
@@ -205,8 +167,9 @@ public class MiniKuduCluster implements AutoCloseable {
       }
     }
     masterAddresses = NetUtil.hostsAndPortsToString(masterHostPorts);
+    long now = System.currentTimeMillis();
     for (int i = 0; i < numMasters; i++) {
-      long now = System.currentTimeMillis();
+      int port = masterRpcPorts.get(i);
       String dataDirPath = baseDirPath + "/master-" + i + "-" + now;
       String flagsPath = TestUtils.getFlagsPath();
       // The web port must be reserved in the call to findFreePorts above and specified
@@ -223,13 +186,14 @@ public class MiniKuduCluster implements AutoCloseable {
           "--fs_data_dirs=" + dataDirPath,
           "--webserver_interface=" + localhost,
           "--local_ip_for_outbound_sockets=" + localhost,
-          "--rpc_bind_addresses=" + localhost + ":" + masterRpcPorts.get(i),
+          "--rpc_bind_addresses=" + localhost + ":" + port,
           "--webserver_port=" + masterWebPorts.get(i));
       if (numMasters > 1) {
         masterCmdLine.add("--master_addresses=" + masterAddresses);
       }
-      masterProcesses.put(masterRpcPorts.get(i),
-          configureAndStartProcess(masterCmdLine.toArray(new String[masterCmdLine.size()])));
+      String[] commandLine = masterCmdLine.toArray(new String[masterCmdLine.size()]);
+      masterProcesses.put(port, configureAndStartProcess(commandLine));
+      commandLines.put(port, commandLine);
 
       if (flagsPath.startsWith(baseDirPath)) {
         // We made a temporary copy of the flags; delete them later.
@@ -272,6 +236,43 @@ public class MiniKuduCluster implements AutoCloseable {
       // This means the process is still alive, it's like reverse psychology.
     }
     return proc;
+  }
+
+  /**
+   * Starts a previously killed master process on the specified port.
+   * @param port which port the master was listening on for RPCs
+   * @return true if it was successful, false otherwise
+   * @throws Exception
+   */
+  public void restartDeadMasterOnPort(int port) throws Exception {
+    restartDeadProcessOnPort(port, masterProcesses);
+  }
+
+  /**
+   * Starts a previously killed tablet server process on the specified port.
+   * @param port which port the TS was listening on for RPCs
+   * @return true if it was successful, false otherwise
+   * @throws Exception
+   */
+  public void restartDeadTabletServerOnPort(int port) throws Exception {
+    restartDeadProcessOnPort(port, tserverProcesses);
+  }
+
+  private void restartDeadProcessOnPort(int port, Map<Integer, Process> map) throws Exception {
+    if (!commandLines.containsKey(port)) {
+      String message = "Cannot start process on unknown port " + port;
+      LOG.warn(message);
+      throw new RuntimeException(message);
+    }
+
+    if (map.containsKey(port)) {
+      String message = "Process already exists on port " + port;
+      LOG.warn(message);
+      throw new RuntimeException(message);
+    }
+
+    String[] commandLine = commandLines.get(port);
+    map.put(port, configureAndStartProcess(commandLine));
   }
 
   /**
@@ -360,6 +361,24 @@ public class MiniKuduCluster implements AutoCloseable {
    */
   public List<HostAndPort> getMasterHostPorts() {
     return masterHostPorts;
+  }
+
+  /**
+   * Returns an unmodifiable map of all tablet servers in pairs of RPC port - > Process.
+   * @return an unmodifiable map of all tablet servers
+   */
+  @VisibleForTesting
+  Map<Integer, Process> getTabletServerProcesses() {
+    return Collections.unmodifiableMap(tserverProcesses);
+  }
+
+  /**
+   * Returns an unmodifiable map of all masters in pairs of RPC port - > Process.
+   * @return an unmodifiable map of all masters
+   */
+  @VisibleForTesting
+  Map<Integer, Process> getMasterProcesses() {
+    return Collections.unmodifiableMap(masterProcesses);
   }
 
   /**

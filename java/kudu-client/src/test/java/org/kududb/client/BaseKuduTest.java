@@ -16,30 +16,29 @@
 // under the License.
 package org.kududb.client;
 
-import static org.junit.Assert.fail;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-
+import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
+import com.google.common.net.HostAndPort;
+import com.stumbleupon.async.Callback;
+import com.stumbleupon.async.Deferred;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
 import org.kududb.master.Master;
-import org.kududb.util.NetUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Stopwatch;
-import com.google.common.collect.Lists;
-import com.google.common.net.HostAndPort;
-import com.stumbleupon.async.Callback;
-import com.stumbleupon.async.Deferred;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.Assert.fail;
 
 public class BaseKuduTest {
 
@@ -54,21 +53,24 @@ public class BaseKuduTest {
   private static final int NUM_MASTERS =
       Integer.getInteger(NUM_MASTERS_PROP, DEFAULT_NUM_MASTERS);
 
+  protected static final int DEFAULT_SLEEP = 50000;
+
+  // Currently not specifying a seed since we want a random behavior when running tests that
+  // restart tablet servers. Would be nice to have the same kind of facility that C++ has that dumps
+  // the seed it picks so that you can re-run tests with it.
+  private static final Random randomForTSRestart = new Random();
+
   private static MiniKuduCluster miniCluster;
 
   // Comma separate describing the master addresses and ports.
   protected static String masterAddresses;
   protected static List<HostAndPort> masterHostPorts;
 
-  protected static final int DEFAULT_SLEEP = 50000;
-
   // We create both versions of the client for ease of use.
   protected static AsyncKuduClient client;
   protected static KuduClient syncClient;
   protected static Schema basicSchema = getBasicSchema();
   protected static Schema allTypesSchema = getSchemaWithAllTypes();
-
-  private static List<String> tableNames = new ArrayList<>();
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -133,7 +135,6 @@ public class BaseKuduTest {
       fail("Got error during table creation, is the Kudu master running at " +
           masterAddresses + "?");
     }
-    tableNames.add(tableName);
     return table;
   }
 
@@ -352,6 +353,43 @@ public class BaseKuduTest {
       fail("No leader master found after " + DEFAULT_SLEEP + " ms.");
     }
     return leaderPort;
+  }
+
+  /**
+   * Picks at random a tablet server that serves tablets from the passed table and restarts it.
+   * Waits between killing and restarting the process.
+   * @param table table to query for a TS to restart
+   * @throws Exception
+   */
+  protected static void restartTabletServer(KuduTable table) throws Exception {
+    List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
+    if (tablets.isEmpty()) {
+      fail("Table " + table.getName() + " doesn't have any tablets");
+    }
+
+    LocatedTablet tablet = tablets.get(0);
+
+    int port = tablet.getReplicas().get(
+        randomForTSRestart.nextInt(tablet.getReplicas().size())).getRpcPort();
+
+    miniCluster.killTabletServerOnPort(port);
+
+    Thread.sleep(1000);
+
+    miniCluster.restartDeadTabletServerOnPort(port);
+  }
+
+  /**
+   * Kills, sleeps, then restarts the leader master.
+   * @throws Exception
+   */
+  protected static void restartLeaderMaster() throws Exception {
+    int master = findLeaderMasterPort();
+    miniCluster.killMasterOnPort(master);
+
+    Thread.sleep(1000);
+
+    miniCluster.restartDeadMasterOnPort(master);
   }
 
   /**
