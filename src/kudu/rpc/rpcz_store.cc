@@ -18,6 +18,7 @@
 #include "kudu/rpc/rpcz_store.h"
 
 #include <algorithm>
+#include <array>
 #include <glog/stl_logging.h>
 #include <mutex> // for unique_lock
 #include <string>

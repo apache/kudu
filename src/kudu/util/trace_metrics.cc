@@ -38,7 +38,7 @@ static InternMap* g_intern_map;
 } // anonymous namespace
 
 const char* TraceMetrics::InternName(const string& name) {
-  DCHECK(std::all_of(name.begin(), name.end(), isprint))
+  DCHECK(std::all_of(name.begin(), name.end(), [] (char c) { return isprint(c); } ))
       << "not printable: " << name;
 
   debug::ScopedLeakCheckDisabler no_leakcheck;
