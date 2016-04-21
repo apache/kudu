@@ -45,7 +45,7 @@ class RpcContext;
 // method that they implement. The generic server code implemented
 // by GeneratedServiceIf look up the RpcMethodInfo in order to handle
 // each RPC.
-struct RpcMethodInfo {
+struct RpcMethodInfo : public RefCountedThreadSafe<RpcMethodInfo> {
   // Prototype protobufs for requests and responses.
   // These are empty protobufs which are cloned in order to provide an
   // instance for each request.
@@ -104,7 +104,7 @@ class GeneratedServiceIf : public ServiceIf {
   // call. Methods are inserted by the constructor of the generated subclass.
   // After construction, this map is accessed by multiple threads and therefore
   // must not be modified.
-  std::unordered_map<std::string, std::unique_ptr<RpcMethodInfo>> methods_by_name_;
+  std::unordered_map<std::string, scoped_refptr<RpcMethodInfo>> methods_by_name_;
 };
 
 } // namespace rpc

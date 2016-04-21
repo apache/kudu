@@ -26,6 +26,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/remote_method.h"
+#include "kudu/rpc/service_if.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/faststring.h"
@@ -147,15 +148,15 @@ class InboundCall {
 
   // Associate this call with a particular method that will be invoked
   // by the service.
-  void set_method_info(RpcMethodInfo* info) {
-    method_info_ = info;
+  void set_method_info(scoped_refptr<RpcMethodInfo> info) {
+    method_info_ = std::move(info);
   }
 
   // Return the method associated with this call. This is set just before
   // the call is enqueued onto the service queue, and therefore may be
   // 'nullptr' for much of the lifecycle of a call.
   RpcMethodInfo* method_info() {
-    return method_info_;
+    return method_info_.get();
   }
 
   // When this InboundCall was received (instantiated).
@@ -242,7 +243,7 @@ class InboundCall {
   // After the method has been looked up within the service, this is filled in
   // to point to the information about this method. Acts as a pointer back to
   // per-method info such as tracing.
-  RpcMethodInfo* method_info_;
+  scoped_refptr<RpcMethodInfo> method_info_;
 
   DISALLOW_COPY_AND_ASSIGN(InboundCall);
 };

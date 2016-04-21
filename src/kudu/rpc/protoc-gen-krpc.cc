@@ -451,7 +451,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
 
         Print(printer, *subs,
               "  {\n"
-              "    unique_ptr<RpcMethodInfo> mi(new RpcMethodInfo());\n"
+              "    scoped_refptr<RpcMethodInfo> mi(new RpcMethodInfo());\n"
               "    mi->req_prototype.reset(new $request$());\n"
               "    mi->resp_prototype.reset(new $response$());\n"
               "    mi->handler_latency_histogram =\n"
