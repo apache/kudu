@@ -232,12 +232,14 @@ public class KuduSink extends AbstractSink implements Configurable {
       List<OperationResponse> responses = session.flush();
       if (responses != null) {
         for (OperationResponse response : responses) {
-          // Only throw an EventDeliveryException if at least one of the responses was
-          // not a row error. Row errors can occur for example when an event is inserted
-          // into Kudu successfully as part of a transaction but the transaction is
-          // rolled back and a subsequent replay of the Flume transaction leads to a
-          // row error due to the fact that the row already exists (Kudu doesn't support
-          // "insert or overwrite" semantics yet).
+          // Throw an EventDeliveryException if at least one of the responses was
+          // a row error. Row errors can occur for example when an event is inserted
+          // into Kudu successfully but the Flume transaction is rolled back for some reason,
+          // and a subsequent replay of the same Flume transaction leads to a
+          // duplicate key error since the row already exists in Kudu.
+          // (Kudu doesn't support "insert or overwrite" semantics yet.)
+          // Note: Duplicate keys will not be reported as errors if ignoreDuplicateRows
+          // is enabled in the config.
           if (response.hasRowError()) {
             throw new EventDeliveryException("Failed to flush one or more changes. " +
                 "Transaction rolled back: " + response.getRowError().toString());
