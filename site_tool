@@ -22,12 +22,33 @@
 
 import os
 import logging
+import re
+import shutil
 import subprocess
 import sys
+import textwrap
 
 SITE_ROOT = os.path.abspath(os.path.dirname(__file__))
 GEM_PATH = os.path.join(SITE_ROOT, ".gem")
 BUNDLE_PATH = os.path.join(GEM_PATH, "bin", "bundle")
+
+# The repository and branch where we version the actual site source (jekyll
+# code, posts, etc)
+SITE_REPO = "https://git-wip-us.apache.org/repos/asf/incubator-kudu.git"
+SITE_BRANCH = "gh-pages"
+
+# The repository and branch from which we publish the official ASF site.
+# Changes here are immediately visible to the world.
+PUBLISH_REPO = "https://git-wip-us.apache.org/repos/asf/incubator-kudu-site.git"
+PUBLISH_BRANCH = "asf-site"
+
+# The local directory in which we check out PUBLISH_REPO and build the site.
+PUBLISH_DIR = os.path.join(SITE_ROOT, "_publish")
+
+# A tag that ends up in the git commit messages in PUBLISH_REPO, indicating
+# the revision within SITE_REPO that corresponds to each commit.
+SITE_COMMIT_TAG = "Site-Repo-Commit"
+
 
 def usage_and_die():
   usage = """
@@ -43,6 +64,12 @@ usage: %(prog)s <tool> ..."
   %(prog)s proof
 
     Runs htmlproof to check for broken links, etc.
+
+  %(prog)s publish
+
+    Checks out the destination (i.e. static HTML) repository into
+    _publish, builds the current version of the site, and creates
+    a git commit with the results.
 """ % dict(prog=sys.argv[0])
   usage = usage.strip()
   print >>sys.stderr, usage
@@ -97,6 +124,119 @@ def proof(args):
      '--alt-ignore', '/./',
      '_site/'])
 
+
+def publish(args):
+  """ Publish the site to the public ASF repository. """
+  os.chdir(SITE_ROOT)
+
+  # Check that the site source repo has a commit which has been
+  # pushed (don't let people publish uncommitted work)
+  source_sha = subprocess.check_output(
+      ["git", "rev-parse", "HEAD"]).strip()
+  subprocess.check_call(
+      ["git", "fetch", SITE_REPO, SITE_BRANCH])
+  upstream_sha = subprocess.check_output(
+      ["git", "rev-parse", "FETCH_HEAD"]).strip()
+  if "--no-verify-source" not in args:
+    if source_sha != upstream_sha:
+      print >>sys.stderr, ""
+      print >>sys.stderr, textwrap.fill(textwrap.dedent("""\
+      Local HEAD (%(source_sha)s) in source repository %(site_root)s
+      does not match upstream repo branch %(site_branch)s (%(upstream_sha)s).
+      Maybe you have some locally committed changes that have not
+      been committed upstream, or you need to rebase on origin/%(site_branch)s
+      """ % dict(source_sha=source_sha[:8],
+                 site_root=SITE_ROOT,
+                 site_branch=SITE_BRANCH,
+                 upstream_sha=upstream_sha[:8])))
+      return 1
+    status = subprocess.check_output(["git", "status", "--porcelain"] )
+    if status.strip() != "":
+      print >>sys.stderr, "Source dir has untracked or modified files"
+      print >>sys.stderr, status
+      return 1
+
+  # Clone the repo to publish into if it's not already there.
+  if not os.path.exists(PUBLISH_DIR):
+    logging.info("Cloning git repo for publishing...")
+    subprocess.check_call(
+      ["git", "clone", "-b", PUBLISH_BRANCH, PUBLISH_REPO, PUBLISH_DIR])
+  if not os.path.exists(os.path.join(PUBLISH_DIR, ".git")):
+    print >>sys.stderr, "%s does not appear to be a git repo." % PUBLISH_DIR
+    print >>sys.stderr, "Remove it and try again"
+    return 1
+  os.chdir(PUBLISH_DIR)
+
+  # Check that the directory to publish is not dirty and has no untracked files.
+  status = subprocess.check_output(["git", "status", "--porcelain"] )
+  if status.strip() != "":
+    print >>sys.stderr, "Build dir %s has untracked or modified files:" % PUBLISH_DIR
+    print >>sys.stderr, status
+    return 1
+
+  # Update the repo to the latest from upstream.
+  logging.info("Pulling latest published site repo...")
+  if subprocess.call(["git", "pull", "--ff-only"]) != 0:
+    print >>sys.stderr, "Unable to pull latest published site."
+    return 1
+
+  # Determine the hash of the last published commit from the source repo,
+  # based on the published repo's git log. Generate a git commit message so
+  # that the published repository has a sensible looking history.
+  #
+  # Each commit in the destination repo is tagged with the source repo's hash,
+  # so that we can easily figure out which commits have been published.
+  last_publish_log = subprocess.check_output(
+    ["git", "log", "--grep=^%s: " % SITE_COMMIT_TAG, "-n1"])
+  if last_publish_log == "":
+    commit_msg = "Initial import from site repo"
+  else:
+    m = re.search(r'^\s*%s: (.+)$' % SITE_COMMIT_TAG, last_publish_log, re.MULTILINE)
+    if not m:
+      raise Exception("Unexpected git log: %s" % last_publish_log)
+    last_publish_sha = m.group(1)
+    if last_publish_sha == source_sha:
+      print >>sys.stderr, "The site has already been published as of %s" % source_sha
+      return 1
+
+    commit_msg = subprocess.check_output(
+      ["git", "log", "--pretty=oneline", "--abbrev-commit",
+       "%s..HEAD" % last_publish_sha],
+      cwd=SITE_ROOT)
+    commit_msg = (
+        "Publish commit(s) from site source repo:\n" +
+        "\n".join("  " + l for l in commit_msg.splitlines()))
+  commit_msg += "\n\n%s: %s" % (SITE_COMMIT_TAG, source_sha)
+
+  # Remove all of the files currently in the repo before re-building.
+  # This ensures that, if the source repo has removed a file, it will
+  # also get removed in the output.
+  subprocess.check_call(["git", "rm", "-r", "--quiet", "*"])
+
+  # Rebuild using Jekyll.
+  success = False
+  try:
+    if run_jekyll(['build', "--destination", PUBLISH_DIR]) != 0:
+      print >>sys.stderr, "Could not build site!"
+      return 1
+    success = True
+  finally:
+    # If jekyll failed for some reason, we want to restore the old state
+    # of the repository before exiting.
+    if not success:
+      subprocess.check_call(["git", "reset", "--hard"])
+  subprocess.check_call(["git", "add", "*"])
+
+  # Create a new commit in the published repo
+  subprocess.check_call(["git", "commit", "-a", "-m", commit_msg])
+
+  print "Success!"
+  subprocess.check_call(["git", "show", "--stat"])
+  print
+  print "To push:"
+  print "  cd %s && git push" % PUBLISH_DIR
+
+
 def main(argv):
   logging.basicConfig(level=logging.INFO)
   if len(argv) == 0:
@@ -106,6 +246,10 @@ def main(argv):
     sys.exit(run_jekyll(argv[1:]))
   elif argv[0] == 'proof':
     proof(argv[1:])
+  elif argv[0] == 'publish':
+    sys.exit(publish(argv[1:]))
+  elif '--help' in argv:
+    usage_and_die()
   else:
     print >>sys.stderr, "Unknown tool: %s" % argv[0]
     usage_and_die()
