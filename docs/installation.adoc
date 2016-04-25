@@ -230,11 +230,10 @@ $ sudo yum install -y scl-utils ${DTLS_RPM}
 $ sudo yum install -y devtoolset-3-toolchain
 ----
 
-. Optional: Install the gem and ruby-devel packages, and the `asciidoctor` gem if you plan to build documentation.
+. Optional: Install some additional packages, including ruby, if you plan to build documentation.
 +
 ----
-$ sudo yum install gem ruby-devel
-$ sudo gem install asciidoctor
+$ sudo yum install gem ruby-devel zlib-devel
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -326,10 +325,10 @@ $ sudo apt-get install git autoconf automake libboost-thread-dev \
   libtool ntp patch pkg-config make rsync unzip vim-common gdb python
 ----
 
-. Optional: Install the `asciidoctor` gem and xsltproc if you plan to build documentation.
+. Optional: Install additional packages to build the documentation
 +
 ----
-$ sudo apt-get install asciidoctor xsltproc
+$ sudo apt-get install xsltproc zlib1g-dev
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
