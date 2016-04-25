@@ -16,7 +16,7 @@ a future post.
 
 ## Development discussions and code in progress
 
-# Chris George continued to iterate on his
+* Chris George continued to iterate on his
   [improved Spark DataSource implementation for Kudu](http://gerrit.cloudera.org:8080/#/c/2848/).
   Chris reports that basic functionality like pushing down predicates
   is now working properly, and the main work remaining is around
@@ -37,7 +37,7 @@ a future post.
   Look out for an upcoming blog post about this new feature.
 
 * Mike Percy has spent the last couple of weeks working on
-  [KUDU-1377](https://issues.apache.org/jira/browse/KUDU-1377], a subtle
+  [KUDU-1377](https://issues.apache.org/jira/browse/KUDU-1377), a subtle
   issue where various types of disk drive errors or system
   crashes could cause the Kudu tablet server to be unable to properly
   recover. This week he committed the
