@@ -12,8 +12,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
+Kudu Consensus Design
+============================================================
+
+Note: This document is out of date. It should be updated to reflect design
+decisions made and implementation done relating to Raft consensus [1].
+
 This document introduces how Kudu will handle log replication and consistency
-using an algorithm known as Viewstamped Replication (VS) and a series of 
+using an algorithm known as Viewstamped Replication (VS) and a series of
 practical algorithms/techniques for recovery, reconfiguration, compactions etc.
 This document introduces all the concepts directly related to Kudu, for any
 missing information please refer to the original papers [1,3,4].
@@ -26,28 +32,25 @@ participant and process interchangeably, these do not represent machines or OS
 processes, as machines and or application daemons will participate in multiple
 configs.
 
-============================================================
 The write ahead log (WAL)
-============================================================
+------------------------------------------------------------
 
 The WAL provides strict ordering and durability guarantees:
 
-1) If calls to Reserve() are externally synchronized, the order in
-which entries had been reserved will be the order in which they will
-be committed to disk.
+1. If calls to Reserve() are externally synchronized, the order in
+   which entries had been reserved will be the order in which they will
+   be committed to disk.
 
-2) If fsync is enabled (via the 'log_force_fsync_all' flag -- see
-log_util.cc; note: this is _DISABLED_ by default), then every single
-transaction is guaranteed to be synchronized to disk before its
-execution is deemed successful.
+2. If fsync is enabled (via the 'log_force_fsync_all' flag -- see
+   log_util.cc; note: this is _DISABLED_ by default), then every single
+   transaction is guaranteed to be synchronized to disk before its
+   execution is deemed successful.
 
 Log uses group commit to increase performance primarily by allowing
 throughput to scale with the number of writer threads while
 maintaining close to constant latency.
 
-============================================================
-Basic WAL usage
-============================================================
+### Basic WAL usage
 
 To add operations to the log, the caller must obtain the lock, and
 call Reserve() with a collection of operations and pointer to the
@@ -59,9 +62,7 @@ outside of the lock.
 
 For sample usage see local_consensus.cc and mt-log-test.cc.
 
-=============================================================
-Group commit implementation details
-=============================================================
+### Group commit implementation details
 
 Currently, the group implementation uses a blocking queue (see
 Log::entry_queue_ in log.h) and a separate long-running thread (see
@@ -74,9 +75,7 @@ The size of the queue is currently based on the number of entries, but
 this will eventually be changed to be based on size of all queued
 entries in bytes.
 
-=============================================================
-Reserving a slot for the entry
-=============================================================
+#### Reserving a slot for the entry
 
 Currently Reserve() allocates memory for a new entry on the heap each
 time, marks the entry internally as "reserved" via a state enum, and
@@ -84,18 +83,14 @@ adds it to the above-mentioned queue. In the future, a ring-buffer or
 another similar data structure could be used that would take the place
 of the queue and make allocation unnecessary.
 
-============================================================
-Copying the entry contents to the reserved slot
-============================================================
+#### Copying the entry contents to the reserved slot
 
 AsyncAppend() serializes the contents of the entry to a buffer field
 in the entry object (currently the buffer is allocated at the same
 time as the entry itself); this avoids contention that would occur if
 a shared buffer was to be used.
 
-============================================================
-Synchronizing the entry contents to disk
-============================================================
+#### Synchronizing the entry contents to disk
 
 A separate appender thread waits until entries are added to the
 queue. Once the queue is no longer empty, the thread grabs all
@@ -113,9 +108,7 @@ the file to disk (env::WritableFile::Sync()) and (again) waits until
 more entries are added to the queue, or until the queue or the
 appender thread are shut down.
 
-============================================================
-Log segment files and asynchronous preallocation
-============================================================
+### Log segment files and asynchronous preallocation
 
 Log uses PosixWritableFile() for underlying storage. If preallocation
 is enabled ('--log_preallocate_segments' flag, defined in log_util.cc,
@@ -136,9 +129,8 @@ When the current segment is closed without reaching the preallocated
 size, the underlying file is truncated to the last written offset
 (i.e., the actual size).
 
-============================================================
-Quorums and roles within configs
-============================================================
+Configs and roles within configs
+------------------------------------------------------------
 
 A config in Kudu is a fault-tolerant, consistent unit that serves requests for
 a single tablet. As long as there are 2f+1 participants available in a config,
@@ -183,10 +175,11 @@ on a configuration change.
 
 The following diagram illustrates the possible state changes:
 
+```
                  +------------+
                  |  NON_PART  +---+
                  +-----+------+   |
-       Exist. RaftConfig?  |          |
+   Exist. RaftConfig?  |          |
                  +-----v------+   |
                  |  LEARNER   +   | New RaftConfig?
                  +-----+------+   |
@@ -202,13 +195,13 @@ The following diagram illustrates the possible state changes:
              |   +-----v------+
              +<--+   LEADER   |
                  +------------+
+```
 
 Additionally all states can transition to NON_PARTICIPANT, on configuration
 changes and/or peer timeout/death.
 
-============================================================
 Assembling/Rebooting a RaftConfig and RaftConfig States
-============================================================
+------------------------------------------------------------
 
 Prior to starting/rebooting a peer, the state in WAL must have been replayed
 in a bootstrap phase. This process will yield an up-to-date Log and Tablet.
@@ -263,19 +256,24 @@ config initiator (usually the master) might hint what the roles for the peers
 in the config should be, but the config is the ultimate decider on whether that
 is possible or not.
 
-============================================================
 References
-============================================================
-[1] http://ramcloud.stanford.edu/raft.pdf
+------------------------------------------------------------
 
-[2] http://www.cs.berkeley.edu/~brewer/cs262/Aries.pdf
-
-[3] Viewstamped Replication: A New Primary Copy Method to Support
-Highly-Available Distributed Systems. B. Oki, B. Liskov
-http://www.pmg.csail.mit.edu/papers/vr.pdf
-
-[4] Viewstamped Replication Revisited. B. Liskov and J. Cowling 
-http://pmg.csail.mit.edu/papers/vr-revisited.pdf
-
-[5] Aether: A Scalable Approach to logging
-http://infoscience.epfl.ch/record/149436/files/vldb10aether.pdf
+1. [Raft: In Search of an Understandable Consensus Algorithm]
+   (https://www.usenix.org/system/files/conference/atc14/atc14-paper-ongaro.pdf).
+   D. Ongaro and J. Ousterhout.
+   2014 USENIX Annual Technical Conference (USENIX ATC 14). 2014.
+2. [ARIES: A transaction recovery method supporting fine-granularity locking and partial
+   rollbacks using write-ahead logging](http://www.cs.berkeley.edu/~brewer/cs262/Aries.pdf).
+   C. Mohan, D. Haderle, D. Lindsay, H. Pirahesh, and P. Schwartz.
+   ACM Transactions on Database Systems (TODS) 17.1 (1992): 94-162.
+3. [Viewstamped replication: A new primary copy method to support highly-available
+   distributed systems](http://www.pmg.csail.mit.edu/papers/vr.pdf).
+   B. Oki and B. Liskov.
+   Proceedings of the seventh annual ACM Symposium on Principles of distributed computing.
+   ACM, 1988.
+4. [Viewstamped Replication Revisited](http://pmg.csail.mit.edu/papers/vr-revisited.pdf).
+   B. Liskov and J. Cowling. 2012.
+5. [Aether: A Scalable Approach to logging](http://pandis.net/resources/vldb10aether.pdf).
+   R. Johnson, I. Pandis, R. Stoica, M. Athanassoulis, and A. Ailamaki.
+   Proceedings of the VLDB Endowment 3.1-2 (2010): 681-692.
