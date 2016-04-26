@@ -261,8 +261,12 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
   Schema schema(GetSimpleTestSchema());
   client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));
   gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+
+  // Don't bother waiting for table creation to finish; it'll never happen
+  // because all of the tservers are dead.
   CHECK_OK(table_creator->table_name(kTableName)
            .schema(&client_schema)
+           .wait(false)
            .Create());
 
   // Spin off a bunch of threads that repeatedly look up random key ranges in the table.

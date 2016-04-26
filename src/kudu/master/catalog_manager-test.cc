@@ -50,9 +50,8 @@ TEST(TableInfoTest, TestAssignmentRanges) {
     partition->set_partition_key_start(start_key);
     partition->set_partition_key_end(end_key);
     meta_lock.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
-
-    table->AddTablet(tablet);
     meta_lock.Commit();
+    table->AddTablet(tablet);
     tablets.push_back(make_scoped_refptr(tablet));
   }
 

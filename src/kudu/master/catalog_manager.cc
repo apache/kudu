@@ -251,11 +251,12 @@ class TabletLoader : public TabletVisitor {
     // Add the tablet to the tablet manager.
     catalog_manager_->tablet_map_[tablet->tablet_id()] = tablet;
 
-    // Add the tablet to the Tablet
-    if (!l.mutable_data()->is_deleted()) {
+    // Add the tablet to the Tablet.
+    bool is_deleted = l.mutable_data()->is_deleted();
+    l.Commit();
+    if (!is_deleted) {
       table->AddTablet(tablet);
     }
-    l.Commit();
 
     LOG(INFO) << "Loaded metadata for tablet " << tablet_id
               << " (table " << table->ToString() << ")";
@@ -449,12 +450,17 @@ class ScopedTabletInfoCommitter {
     aborted_ = true;
   }
 
-  // Release all write locks, committing any mutated tablet data.
   ~ScopedTabletInfoCommitter() {
+    Commit();
+  }
+
+  // Release all write locks, committing any mutated tablet data.
+  void Commit() {
     if (PREDICT_TRUE(!aborted_ && state_ == LOCKED)) {
       for (const auto& t : tablets_) {
         t->mutable_metadata()->CommitMutation();
       }
+      state_ = UNLOCKED;
     }
   }
 
@@ -870,7 +876,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     tablets.push_back(t.get());
     tablet_refs.emplace_back(std::move(t));
   }
-  table->AddTablets(tablets);
   TRACE("Created new table and tablet info");
 
   // NOTE: the table and tablets are already locked for write at this point,
@@ -903,6 +908,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   for (TabletInfo *tablet : tablets) {
     tablet->mutable_metadata()->CommitMutation();
   }
+  table->AddTablets(tablets);
 
   // g. Make the new table and tablets visible in the catalog.
   {
@@ -2111,7 +2117,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
     deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_tablet_creation_timeout_ms));
 
     TableMetadataLock table_lock(tablet->table().get(), TableMetadataLock::READ);
-    const SysTabletsEntryPB& tablet_pb = tablet->metadata().dirty().pb;
+    const SysTabletsEntryPB& tablet_pb = tablet->metadata().state().pb;
 
     req_.set_dest_uuid(permanent_uuid);
     req_.set_table_id(tablet->table()->id());
@@ -2632,12 +2638,6 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
                << "the allowed timeout. Replacing with a new tablet "
                << replacement->tablet_id();
 
-  tablet->table()->AddTablet(replacement.get());
-  {
-    boost::lock_guard<LockType> l_maps(lock_);
-    tablet_map_[replacement->tablet_id()] = replacement;
-  }
-
   // Mark old tablet as replaced.
   tablet->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::REPLACED,
@@ -2778,32 +2778,27 @@ Status CatalogManager::ProcessPendingAssignments(
     LOG(WARNING) << "Aborting the current task due to error: " << s.ToString();
     // If there was an error, abort any mutations started by the
     // current task.
-    vector<string> tablet_ids_to_remove;
-    for (const auto& new_tablet : unlocker_out) {
-      TableInfo* table = new_tablet->table().get();
-      TableMetadataLock l_table(table, TableMetadataLock::READ);
-      if (table->RemoveTablet(
-          new_tablet->metadata().dirty().pb.partition().partition_key_start())) {
-        VLOG(1) << "Removed tablet " << new_tablet->tablet_id() << " from "
-            "table " << l_table.data().name();
-      }
-      tablet_ids_to_remove.push_back(new_tablet->tablet_id());
-    }
-    boost::lock_guard<LockType> l(lock_);
     unlocker_out.Abort();
     unlocker_in.Abort();
-    for (const string& tablet_id_to_remove : tablet_ids_to_remove) {
-      CHECK_EQ(tablet_map_.erase(tablet_id_to_remove), 1)
-          << "Unable to erase " << tablet_id_to_remove << " from tablet map.";
-    }
     return s;
+  }
+
+  // Expose tablet metadata changes before the new tablets themselves.
+  unlocker_out.Commit();
+  unlocker_in.Commit();
+  {
+    boost::lock_guard<LockType> l(lock_);
+    for (const auto& new_tablet : unlocker_out) {
+      new_tablet->table()->AddTablet(new_tablet.get());
+      tablet_map_[new_tablet->tablet_id()] = new_tablet;
+    }
   }
 
   // Send DeleteTablet requests to tablet servers serving deleted tablets.
   // This is asynchronous / non-blocking.
   for (TabletInfo* tablet : deferred.tablets_to_update) {
-    if (tablet->metadata().dirty().is_deleted()) {
-      SendDeleteTabletRequest(tablet, tablet->metadata().dirty().pb.state_msg());
+    if (tablet->metadata().state().is_deleted()) {
+      SendDeleteTabletRequest(tablet, tablet->metadata().state().pb.state_msg());
     }
   }
   // Send the CreateTablet() requests to the servers. This is asynchronous / non-blocking.
@@ -2849,7 +2844,7 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
 void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets) {
   for (TabletInfo *tablet : tablets) {
     const consensus::RaftConfigPB& config =
-        tablet->metadata().dirty().pb.committed_consensus_state().config();
+        tablet->metadata().state().pb.committed_consensus_state().config();
     tablet->set_last_update_time(MonoTime::Now(MonoTime::FINE));
     for (const RaftPeerPB& peer : config.peers()) {
       AsyncCreateReplica* task = new AsyncCreateReplica(master_, worker_pool_.get(),
@@ -3253,7 +3248,7 @@ void TableInfo::AddTablets(const vector<TabletInfo*>& tablets) {
 void TableInfo::AddTabletUnlocked(TabletInfo* tablet) {
   TabletInfo* old = nullptr;
   if (UpdateReturnCopy(&tablet_map_,
-                       tablet->metadata().dirty().pb.partition().partition_key_start(),
+                       tablet->metadata().state().pb.partition().partition_key_start(),
                        tablet, &old)) {
     VLOG(1) << "Replaced tablet " << old->tablet_id() << " with " << tablet->tablet_id();
     // TODO: can we assert that the replaced tablet is not in Running state?
