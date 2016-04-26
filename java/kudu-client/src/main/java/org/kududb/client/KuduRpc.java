@@ -35,6 +35,8 @@ import org.jboss.netty.buffer.ChannelBuffers;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.util.Pair;
 import org.kududb.util.Slice;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -62,6 +64,8 @@ public abstract class KuduRpc<R> {
   // Service names.
   protected static final String MASTER_SERVICE_NAME = "kudu.master.MasterService";
   protected static final String TABLET_SERVER_SERVICE_NAME = "kudu.tserver.TabletServerService";
+
+  private static final Logger LOG = LoggerFactory.getLogger(KuduRpc.class);
 
   public interface HasKey {
     /**
@@ -236,7 +240,11 @@ public abstract class KuduRpc<R> {
     }
     buf.append(", attempt=").append(attempt);
     buf.append(", ").append(deadlineTracker);
-    buf.append(", ").append(deferred);
+    // Cheating a bit, we're not actually logging but we'll augment the information provided by
+    // this method if DEBUG is enabled.
+    if (LOG.isDebugEnabled()) {
+      buf.append(", ").append(deferred);
+    }
     buf.append(')');
     return buf.toString();
   }
