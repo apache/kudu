@@ -376,7 +376,6 @@ class AllTypesItest : public KuduTest {
       RETURN_NOT_OK(scanner.SetBatchSizeBytes(KMaxBatchSize));
       RETURN_NOT_OK(scanner.SetFaultTolerant());
       RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
-      RETURN_NOT_OK(scanner.SetTimeoutMillis(5000));
       RETURN_NOT_OK(scanner.Open());
       LOG(INFO) << "Scanning tablet: [" << low_split << ", " << high_split << ")";
 

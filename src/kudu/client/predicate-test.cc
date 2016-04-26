@@ -94,7 +94,6 @@ class PredicateTest : public KuduTest {
   int CountRows(const shared_ptr<KuduTable>& table,
                 const vector<KuduPredicate*>& predicates) {
     KuduScanner scanner(table.get());
-    CHECK_OK(scanner.SetTimeoutMillis(5000));
     for (KuduPredicate* predicate : predicates) {
       CHECK_OK(scanner.AddConjunctPredicate(predicate));
     }

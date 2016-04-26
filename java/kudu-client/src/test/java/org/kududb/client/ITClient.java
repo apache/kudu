@@ -78,7 +78,6 @@ public class ITClient extends BaseKuduTest {
     // higher overall operation timeout.
     localAsyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses)
         .defaultSocketReadTimeoutMs(500)
-        .defaultOperationTimeoutMs(20000)
         .build();
     localClient = new KuduClient(localAsyncClient);
 

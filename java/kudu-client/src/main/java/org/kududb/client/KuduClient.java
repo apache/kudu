@@ -289,7 +289,7 @@ public class KuduClient implements AutoCloseable {
      * Sets the default timeout used for administrative operations (e.g. createTable, deleteTable,
      * etc).
      * Optional.
-     * If not provided, defaults to 10s.
+     * If not provided, defaults to 30s.
      * A value of 0 disables the timeout.
      * @param timeoutMs a timeout in milliseconds
      * @return this builder
@@ -302,7 +302,7 @@ public class KuduClient implements AutoCloseable {
     /**
      * Sets the default timeout used for user operations (using sessions and scanners).
      * Optional.
-     * If not provided, defaults to 10s.
+     * If not provided, defaults to 30s.
      * A value of 0 disables the timeout.
      * @param timeoutMs a timeout in milliseconds
      * @return this builder
@@ -315,7 +315,7 @@ public class KuduClient implements AutoCloseable {
     /**
      * Sets the default timeout to use when waiting on data from a socket.
      * Optional.
-     * If not provided, defaults to 5s.
+     * If not provided, defaults to 10s.
      * A value of 0 disables the timeout.
      * @param timeoutMs a timeout in milliseconds
      * @return this builder

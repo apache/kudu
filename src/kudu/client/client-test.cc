@@ -1347,7 +1347,7 @@ TEST_F(ClientTest, TestScanTimeout) {
     Status s = scanner.Open();
     EXPECT_TRUE(s.IsTimedOut()) << s.ToString();
     EXPECT_FALSE(scanner.data_->remote_) << "should not have located any tablet";
-    client_->data_->default_rpc_timeout_ = MonoDelta::FromSeconds(5);
+    client_->data_->default_rpc_timeout_ = MonoDelta::FromSeconds(10);
   }
 
   // Warm the cache so that the subsequent timeout occurs within the scan,
@@ -1365,7 +1365,6 @@ TEST_F(ClientTest, TestScanTimeout) {
 
   // Insert some more rows so that the scan takes multiple batches, instead of
   // fetching all the data on the 'Open()' call.
-  client_->data_->default_rpc_timeout_ = MonoDelta::FromSeconds(5);
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1000, 1));
   {
     google::FlagSaver saver;
@@ -1377,7 +1376,6 @@ TEST_F(ClientTest, TestScanTimeout) {
     // scanner timeout instead.
     FLAGS_scanner_inject_latency_on_each_batch_ms = 50;
     client_->data_->default_rpc_timeout_ = MonoDelta::FromMilliseconds(1);
-    scanner.SetTimeoutMillis(5000);
 
     // Should successfully scan.
     ASSERT_OK(scanner.Open());

@@ -126,8 +126,8 @@ public class AsyncKuduClient implements AutoCloseable {
   public static final int SLEEP_TIME = 500;
   public static final byte[] EMPTY_ARRAY = new byte[0];
   public static final long NO_TIMESTAMP = -1;
-  public static final long DEFAULT_OPERATION_TIMEOUT_MS = 10000;
-  public static final long DEFAULT_SOCKET_READ_TIMEOUT_MS = 5000;
+  public static final long DEFAULT_OPERATION_TIMEOUT_MS = 30000;
+  public static final long DEFAULT_SOCKET_READ_TIMEOUT_MS = 10000;
 
   private final ClientSocketChannelFactory channelFactory;
 
@@ -2101,7 +2101,7 @@ public class AsyncKuduClient implements AutoCloseable {
      * Sets the default timeout used for administrative operations (e.g. createTable, deleteTable,
      * etc).
      * Optional.
-     * If not provided, defaults to 10s.
+     * If not provided, defaults to 30s.
      * A value of 0 disables the timeout.
      * @param timeoutMs a timeout in milliseconds
      * @return this builder
@@ -2114,7 +2114,7 @@ public class AsyncKuduClient implements AutoCloseable {
     /**
      * Sets the default timeout used for user operations (using sessions and scanners).
      * Optional.
-     * If not provided, defaults to 10s.
+     * If not provided, defaults to 30s.
      * A value of 0 disables the timeout.
      * @param timeoutMs a timeout in milliseconds
      * @return this builder
@@ -2127,7 +2127,7 @@ public class AsyncKuduClient implements AutoCloseable {
     /**
      * Sets the default timeout to use when waiting on data from a socket.
      * Optional.
-     * If not provided, defaults to 5s.
+     * If not provided, defaults to 10s.
      * A value of 0 disables the timeout.
      * @param timeoutMs a timeout in milliseconds
      * @return this builder

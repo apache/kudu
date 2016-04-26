@@ -75,6 +75,15 @@ Hadoop storage technologies.
   using mapreduce api. Includes predicate pushdowns for spark-sql and spark filters.
   Parallel retrieval for multiple tablets and column projections. link:developing.html#_kudu_integration_with_spark[Kudu integration with Spark Example]
 
+[[rn_0.9.0_changes]]
+==== Other noteworthy changes
+
+- The clients have longer default timeouts. For Java, the default operation timeout and the default
+  admin operation timeout are now set to 30 seconds instead of 10. The default socket read timeout
+  is now 10 seconds instead of 5. For the C++ client, the default admin timeout is now 30 seconds
+  instead of 10, the default RPC timeout is now 10 seconds instead of 5, and the default scan
+  timeout is now 30 seconds instead of 15.
+
 [[rn_0.8.0]]
 === Release notes specific to 0.8.0
 

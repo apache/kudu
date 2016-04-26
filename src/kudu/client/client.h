@@ -136,12 +136,12 @@ class KUDU_EXPORT KuduClientBuilder {
   // The default timeout used for administrative operations (e.g. CreateTable,
   // AlterTable, ...). Optional.
   //
-  // If not provided, defaults to 10s.
+  // If not provided, defaults to 30s.
   KuduClientBuilder& default_admin_operation_timeout(const MonoDelta& timeout);
 
   // The default timeout for individual RPCs. Optional.
   //
-  // If not provided, defaults to 5s.
+  // If not provided, defaults to 10s.
   KuduClientBuilder& default_rpc_timeout(const MonoDelta& timeout);
 
   // Creates the client.
@@ -878,7 +878,7 @@ class KUDU_EXPORT KuduScanner {
 
   // Default scanner timeout.
   // This is set to 3x the default RPC timeout (see KuduClientBuilder::default_rpc_timeout()).
-  enum { kScanTimeoutMillis = 15000 };
+  enum { kScanTimeoutMillis = 30000 };
 
   // Initialize the scanner. The given 'table' object must remain valid
   // for the lifetime of this scanner object.
