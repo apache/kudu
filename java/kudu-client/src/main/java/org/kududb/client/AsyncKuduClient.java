@@ -2046,6 +2046,8 @@ public class AsyncKuduClient implements AutoCloseable {
    * Builder class to use in order to connect to Kudu.
    * All the parameters beyond those in the constructors are optional.
    */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public final static class AsyncKuduClientBuilder {
     private static final int DEFAULT_MASTER_PORT = 7051;
     private static final int DEFAULT_BOSS_COUNT = 1;

@@ -814,6 +814,8 @@ public final class AsyncKuduScanner {
    * A Builder class to build {@link AsyncKuduScanner}.
    * Use {@link AsyncKuduClient#newScannerBuilder} in order to get a builder instance.
    */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public static class AsyncKuduScannerBuilder
       extends AbstractKuduScannerBuilder<AsyncKuduScannerBuilder, AsyncKuduScanner> {
 

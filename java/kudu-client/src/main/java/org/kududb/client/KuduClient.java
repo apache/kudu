@@ -254,6 +254,8 @@ public class KuduClient implements AutoCloseable {
    * Builder class to use in order to connect to Kudu.
    * All the parameters beyond those in the constructors are optional.
    */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public final static class KuduClientBuilder {
     private AsyncKuduClient.AsyncKuduClientBuilder clientBuilder;
 
