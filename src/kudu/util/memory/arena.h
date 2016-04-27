@@ -127,6 +127,9 @@ class ArenaBase {
   // See AddSlice above for detail on memory lifetime.
   bool RelocateSlice(const Slice &src, Slice *dst);
 
+  // Similar to the above, but for StringPiece.
+  bool RelocateStringPiece(const StringPiece& src, StringPiece* sp);
+
   // Reserves a blob of the specified size in the arena, and returns a pointer
   // to it. The caller can then fill the allocated memory. The pointer is
   // guaranteed to remain valid during the lifetime of the arena.
@@ -459,6 +462,14 @@ inline bool ArenaBase<THREADSAFE>::RelocateSlice(const Slice &src, Slice *dst) {
   return true;
 }
 
+
+template <bool THREADSAFE>
+inline bool ArenaBase<THREADSAFE>::RelocateStringPiece(const StringPiece& src, StringPiece* sp) {
+  Slice slice(src.data(), src.size());
+  if (!RelocateSlice(slice, &slice)) return false;
+  *sp = StringPiece(reinterpret_cast<const char*>(slice.data()), slice.size());
+  return true;
+}
 
 template<bool THREADSAFE>
 template<class T>

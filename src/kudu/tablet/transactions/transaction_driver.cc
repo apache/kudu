@@ -63,7 +63,7 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
       replication_state_(NOT_REPLICATING),
       prepare_state_(NOT_PREPARED) {
   if (Trace::CurrentTrace()) {
-    Trace::CurrentTrace()->AddChildTrace(trace_.get());
+    Trace::CurrentTrace()->AddChildTrace("txn", trace_.get());
   }
 }
 

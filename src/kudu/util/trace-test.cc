@@ -93,7 +93,7 @@ TEST_F(TraceTest, TestChildTrace) {
   scoped_refptr<Trace> traceA(new Trace);
   scoped_refptr<Trace> traceB(new Trace);
   ADOPT_TRACE(traceA.get());
-  traceA->AddChildTrace(traceB.get());
+  traceA->AddChildTrace("child", traceB.get());
   TRACE("hello from traceA");
   {
     ADOPT_TRACE(traceB.get());
@@ -101,7 +101,7 @@ TEST_F(TraceTest, TestChildTrace) {
   }
   EXPECT_EQ(XOutDigits(traceA->DumpToString(Trace::NO_FLAGS)),
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceA\n"
-            "Related trace:\n"
+            "Related trace 'child':\n"
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XXX] hello from traceB\n");
 }
 

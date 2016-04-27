@@ -22,6 +22,7 @@
 #include <iostream>
 #include <strstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -122,7 +123,7 @@ void Trace::Dump(std::ostream* out, int flags) const {
   // (whereas doing the logging itself while holding the lock might be
   // too slow, if the output stream is a file, for example).
   vector<TraceEntry*> entries;
-  vector<scoped_refptr<Trace> > child_traces;
+  vector<pair<StringPiece, scoped_refptr<Trace>>> child_traces;
   {
     lock_guard<simple_spinlock> l(&lock_);
     for (TraceEntry* cur = entries_head_;
@@ -172,9 +173,10 @@ void Trace::Dump(std::ostream* out, int flags) const {
     *out << std::endl;
   }
 
-  for (scoped_refptr<Trace> child_trace : child_traces) {
-    *out << "Related trace:" << std::endl;
-    *out << child_trace->DumpToString(flags & (~INCLUDE_METRICS));
+  for (const auto& entry : child_traces) {
+    const auto& t = entry.second;
+    *out << "Related trace '" << entry.first << "':" << std::endl;
+    *out << t->DumpToString(flags & (~INCLUDE_METRICS));
   }
 
   if (flags & INCLUDE_METRICS) {
@@ -208,8 +210,12 @@ void Trace::MetricsToJSON(JsonWriter* jw) const {
   if (!child_traces_.empty()) {
     jw->String("child_traces");
     jw->StartArray();
-    for (const auto& t : child_traces_) {
-      t->MetricsToJSON(jw);
+
+    for (const auto& e : child_traces_) {
+      jw->StartArray();
+      jw->String(e.first.data(), e.first.size());
+      e.second->MetricsToJSON(jw);
+      jw->EndArray();
     }
     jw->EndArray();
   }
@@ -225,10 +231,12 @@ void Trace::DumpCurrentTrace() {
   t->Dump(&std::cerr, true);
 }
 
-void Trace::AddChildTrace(Trace* child_trace) {
+void Trace::AddChildTrace(StringPiece label, Trace* child_trace) {
+  CHECK(arena_->RelocateStringPiece(label, &label));
+
   lock_guard<simple_spinlock> l(&lock_);
   scoped_refptr<Trace> ptr(child_trace);
-  child_traces_.push_back(ptr);
+  child_traces_.emplace_back(label, ptr);
 }
 
 } // namespace kudu

@@ -19,6 +19,7 @@
 
 #include <iosfwd>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
@@ -145,7 +146,11 @@ class Trace : public RefCountedThreadSafe<Trace> {
   std::string MetricsAsJSON() const;
 
   // Attaches the given trace which will get appended at the end when Dumping.
-  void AddChildTrace(Trace* child_trace);
+  //
+  // The 'label' does not necessarily have to be unique, and is used to identify
+  // the child trace when dumped. The contents of the StringPiece are copied
+  // into this trace's arena.
+  void AddChildTrace(StringPiece label, Trace* child_trace);
 
   // Return the current trace attached to this thread, if there is one.
   static Trace* CurrentTrace() {
@@ -189,7 +194,7 @@ class Trace : public RefCountedThreadSafe<Trace> {
   // The tail of the linked list of entries (allocated inside arena_)
   TraceEntry* entries_tail_;
 
-  std::vector<scoped_refptr<Trace> > child_traces_;
+  std::vector<std::pair<StringPiece, scoped_refptr<Trace>>> child_traces_;
 
   TraceMetrics metrics_;
 
