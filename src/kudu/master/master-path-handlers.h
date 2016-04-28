@@ -17,12 +17,12 @@
 #ifndef KUDU_MASTER_MASTER_PATH_HANDLERS_H
 #define KUDU_MASTER_MASTER_PATH_HANDLERS_H
 
-#include "kudu/gutil/macros.h"
-#include "kudu/server/webserver.h"
-
 #include <string>
 #include <sstream>
 #include <vector>
+
+#include "kudu/gutil/macros.h"
+#include "kudu/server/webserver.h"
 
 namespace kudu {
 
@@ -57,12 +57,6 @@ class MasterPathHandlers {
                      std::stringstream* output);
   void HandleDumpEntities(const Webserver::WebRequest& req,
                           std::stringstream* output);
-
-  // Convert location of peers to HTML, indicating the roles
-  // of each tablet server in a consensus configuration.
-  // This method will display 'locations' in the order given.
-  std::string RaftConfigToHtml(const std::vector<TabletReplica>& locations,
-                               const std::string& tablet_id) const;
 
   // Convert the specified TSDescriptor to HTML, adding a link to the
   // tablet server's own webserver if specified in 'desc'.

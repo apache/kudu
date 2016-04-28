@@ -299,11 +299,8 @@ message TabletLocationsPB {
 
   repeated ReplicaPB replicas = 4;
 
-  // true if the tablet was running but no tablet server has reported it yet.
-  // The set of replicas will be the last one that was hosting the tablet.
-  // This should happen on Master restart when the request is issued before
-  // the TS has the time to notify the Master about the tablets that is hosting.
-  required bool stale = 5;
+  // DEPRECATED. Still set by servers, but should be ignored by clients.
+  optional bool DEPRECATED_stale = 5;
 }
 
 // Info about a single tablet server, returned to the client as part

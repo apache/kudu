@@ -46,7 +46,7 @@ TSManager::~TSManager() {
 }
 
 Status TSManager::LookupTS(const NodeInstancePB& instance,
-                           shared_ptr<TSDescriptor>* ts_desc) {
+                           shared_ptr<TSDescriptor>* ts_desc) const {
   boost::shared_lock<rw_spinlock> l(lock_);
   const shared_ptr<TSDescriptor>* found_ptr =
     FindOrNull(servers_by_id_, instance.permanent_uuid());
@@ -64,7 +64,7 @@ Status TSManager::LookupTS(const NodeInstancePB& instance,
 }
 
 bool TSManager::LookupTSByUUID(const string& uuid,
-                               std::shared_ptr<TSDescriptor>* ts_desc) {
+                               std::shared_ptr<TSDescriptor>* ts_desc) const {
   boost::shared_lock<rw_spinlock> l(lock_);
   return FindCopy(servers_by_id_, uuid, ts_desc);
 }

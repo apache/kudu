@@ -2339,45 +2339,6 @@ TEST_F(ClientTest, TestGetTableSchema) {
   ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
 }
 
-TEST_F(ClientTest, TestStaleLocations) {
-  string tablet_id = GetFirstTabletId(client_table2_.get());
-
-  // The Tablet is up and running the location should not be stale
-  master::TabletLocationsPB locs_pb;
-  ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
-                  tablet_id, &locs_pb));
-  ASSERT_FALSE(locs_pb.stale());
-
-  // On Master restart and no tablet report we expect the locations to be stale
-  cluster_->mini_tablet_server(0)->Shutdown();
-  ASSERT_OK(cluster_->mini_master()->Restart());
-  ASSERT_OK(cluster_->mini_master()->master()->
-      WaitUntilCatalogManagerIsLeaderAndReadyForTests(MonoDelta::FromSeconds(5)));
-  ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
-                  tablet_id, &locs_pb));
-  ASSERT_TRUE(locs_pb.stale());
-
-  // Restart the TS and Wait for the tablets to be reported to the master.
-  ASSERT_OK(cluster_->mini_tablet_server(0)->Start());
-  ASSERT_OK(cluster_->WaitForTabletServerCount(1));
-  ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
-                  tablet_id, &locs_pb));
-
-  // It may take a while to bootstrap the tablet and send the location report
-  // so spin until we get a non-stale location.
-  int wait_time = 1000;
-  for (int i = 0; i < 80; ++i) {
-    ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
-                    tablet_id, &locs_pb));
-    if (!locs_pb.stale()) {
-      break;
-    }
-    SleepFor(MonoDelta::FromMicroseconds(wait_time));
-    wait_time = std::min(wait_time * 5 / 4, 1000000);
-  }
-  ASSERT_FALSE(locs_pb.stale());
-}
-
 // Test creating and accessing a table which has multiple tablets,
 // each of which is replicated.
 //

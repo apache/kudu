@@ -47,6 +47,8 @@ using std::vector;
 
 DEFINE_string(master_address, "localhost",
               "Comma separated list of master addresses to run against.");
+DEFINE_int32(num_replicas, 3,
+             "Replication count for the created table.");
 
 static const char* const kTwitterTabletId = "twitter";
 static const char* const kTPCH1TabletId = "tpch1";
@@ -109,6 +111,7 @@ static int CreateDemoTable(int argc, char** argv) {
   gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
   CHECK_OK(table_creator->table_name(table_name)
            .schema(&schema)
+           .num_replicas(FLAGS_num_replicas)
            .Create());
   return 0;
 }

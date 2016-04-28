@@ -127,7 +127,6 @@ public class TestAsyncKuduClient extends BaseKuduTest {
       partition.setPartitionKeyStart(ByteString.copyFrom("a" + i, Charsets.UTF_8.name()));
       partition.setPartitionKeyEnd(ByteString.copyFrom("b" + i, Charsets.UTF_8.name()));
       tabletPb.setPartition(partition);
-      tabletPb.setStale(false);
       tabletPb.setTabletId(ByteString.copyFromUtf8("some id " + i));
       Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
       Common.HostPortPB.Builder hostBuilder = Common.HostPortPB.newBuilder();

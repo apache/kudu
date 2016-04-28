@@ -20,12 +20,15 @@
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <map>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
@@ -43,10 +46,13 @@
 
 namespace kudu {
 
+using consensus::ConsensusStatePB;
 using consensus::RaftPeerPB;
-using std::vector;
+using std::pair;
+using std::shared_ptr;
 using std::string;
 using std::stringstream;
+using std::vector;
 using strings::Substitute;
 
 namespace master {
@@ -108,8 +114,9 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
 
 namespace {
 
-bool CompareByRole(const TabletReplica& a, const TabletReplica& b) {
-  return a.role < b.role;
+bool CompareByRole(const pair<string, RaftPeerPB::Role>& a,
+                   const pair<string, RaftPeerPB::Role>& b) {
+  return a.second < b.second;
 }
 
 } // anonymous namespace
@@ -167,13 +174,38 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   *output << "  <tr><th>Tablet ID</th><th>Partition</th><th>State</th>"
       "<th>Message</th><th>RaftConfig</th></tr>\n";
   for (const scoped_refptr<TabletInfo>& tablet : tablets) {
-    TabletInfo::ReplicaMap locations;
-    tablet->GetReplicaLocations(&locations);
-    vector<TabletReplica> sorted_locations;
-    AppendValuesFromMap(locations, &sorted_locations);
-    std::sort(sorted_locations.begin(), sorted_locations.end(), &CompareByRole);
-
+    vector<pair<string, RaftPeerPB::Role>> sorted_replicas;
     TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
+    if (l.data().pb.has_committed_consensus_state()) {
+      const ConsensusStatePB& cstate = l.data().pb.committed_consensus_state();
+      for (const auto& peer : cstate.config().peers()) {
+        RaftPeerPB::Role role = GetConsensusRole(peer.permanent_uuid(), cstate);
+        string html;
+        string location_html;
+        shared_ptr<TSDescriptor> ts_desc;
+        if (master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
+          location_html = TSDescriptorToHtml(*ts_desc.get(), tablet->tablet_id());
+        } else {
+          location_html = EscapeForHtmlToString(peer.permanent_uuid());
+        }
+        if (role == RaftPeerPB::LEADER) {
+          html = Substitute("  <li><b>LEADER: $0</b></li>\n", location_html);
+        } else {
+          html = Substitute("  <li>$0: $1</li>\n",
+                            RaftPeerPB_Role_Name(role), location_html);
+        }
+        sorted_replicas.emplace_back(html, role);
+      }
+    }
+    std::sort(sorted_replicas.begin(), sorted_replicas.end(), &CompareByRole);
+
+    // Generate the RaftConfig table cell.
+    stringstream raft_config_html;
+    raft_config_html << "<ul>\n";
+    for (const auto& e : sorted_replicas) {
+      raft_config_html << e.first;
+    }
+    raft_config_html << "</ul>\n";
 
     Partition partition;
     Partition::FromPB(l.data().pb.partition(), &partition);
@@ -186,7 +218,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
         EscapeForHtmlToString(partition_schema.PartitionDebugString(partition, schema)),
         state,
         EscapeForHtmlToString(l.data().pb.state_msg()),
-        RaftConfigToHtml(sorted_locations, tablet->tablet_id()));
+        raft_config_html.str());
   }
   *output << "</table>\n";
 
@@ -408,24 +440,6 @@ Status MasterPathHandlers::Register(Webserver* server) {
                               boost::bind(&MasterPathHandlers::HandleDumpEntities, this, _1, _2),
                               false, false);
   return Status::OK();
-}
-
-string MasterPathHandlers::RaftConfigToHtml(const std::vector<TabletReplica>& locations,
-                                            const std::string& tablet_id) const {
-  stringstream html;
-
-  html << "<ul>\n";
-  for (const TabletReplica& location : locations) {
-    string location_html = TSDescriptorToHtml(*location.ts_desc, tablet_id);
-    if (location.role == RaftPeerPB::LEADER) {
-      html << Substitute("  <li><b>LEADER: $0</b></li>\n", location_html);
-    } else {
-      html << Substitute("  <li>$0: $1</li>\n",
-                         RaftPeerPB_Role_Name(location.role), location_html);
-    }
-  }
-  html << "</ul>\n";
-  return html.str();
 }
 
 string MasterPathHandlers::TSDescriptorToHtml(const TSDescriptor& desc,

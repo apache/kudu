@@ -252,8 +252,7 @@ Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
   while (sw.elapsed().wall_seconds() < kTabletReportWaitTimeSeconds) {
     Status s =
         leader_mini_master()->master()->catalog_manager()->GetTabletLocations(tablet_id, locations);
-    if (s.ok() && ((locations->stale() && expected_count == 0) ||
-        (!locations->stale() && locations->replicas_size() == expected_count))) {
+    if (s.ok() && locations->replicas_size() == expected_count) {
       return Status::OK();
     }
 

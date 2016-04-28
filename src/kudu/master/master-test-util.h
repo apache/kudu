@@ -48,14 +48,7 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
     req.set_max_returned_locations(expected_count);
     RETURN_NOT_OK(mini_master->master()->catalog_manager()->GetTableLocations(&req, resp));
     if (resp->tablet_locations_size() >= expected_count) {
-      bool is_stale = false;
-      for (const TabletLocationsPB& loc : resp->tablet_locations()) {
-        is_stale |= loc.stale();
-      }
-
-      if (!is_stale) {
-        return Status::OK();
-      }
+      return Status::OK();
     }
 
     LOG(INFO) << "Waiting for " << expected_count << " tablets for table "

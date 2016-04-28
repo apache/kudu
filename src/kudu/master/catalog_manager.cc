@@ -1508,13 +1508,15 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (!tablet) {
     LOG(INFO) << "Got report from unknown tablet " << report.tablet_id()
               << ": Sending delete request for this orphan tablet";
-    SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_DELETED, boost::none, nullptr, ts_desc,
+    SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_DELETED,
+                             boost::none, nullptr, ts_desc->permanent_uuid(),
                              "Report from unknown tablet");
     return Status::OK();
   }
   if (!tablet->table()) {
     LOG(INFO) << "Got report from an orphaned tablet " << report.tablet_id();
-    SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_DELETED, boost::none, nullptr, ts_desc,
+    SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_DELETED,
+                             boost::none, nullptr, ts_desc->permanent_uuid(),
                              "Report from an orphaned tablet");
     return Status::OK();
   }
@@ -1535,8 +1537,9 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
               << " (" << msg << "): Sending delete request for this tablet";
     // TODO: Cancel tablet creation, instead of deleting, in cases where
     // that might be possible (tablet creation timeout & replacement).
-    SendDeleteReplicaRequest(tablet->tablet_id(), TABLET_DATA_DELETED, boost::none,
-                             tablet->table(), ts_desc, msg);
+    SendDeleteReplicaRequest(tablet->tablet_id(), TABLET_DATA_DELETED,
+                             boost::none, tablet->table(),
+                             ts_desc->permanent_uuid(), msg);
     return Status::OK();
   }
 
@@ -1599,7 +1602,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
         cstate.config().opid_index() < prev_cstate.config().opid_index() &&
         !IsRaftConfigMember(ts_desc->permanent_uuid(), prev_cstate.config())) {
       SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_TOMBSTONED,
-                               prev_cstate.config().opid_index(), tablet->table(), ts_desc,
+                               prev_cstate.config().opid_index(),
+                               tablet->table(), ts_desc->permanent_uuid(),
                                Substitute("Replica from old config with index $0 (latest is $1)",
                                           cstate.config().opid_index(),
                                           prev_cstate.config().opid_index()));
@@ -1658,9 +1662,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
         }
       }
 
-      // If a replica is reporting a new consensus configuration, reset the tablet's replicas.
-      // Note that we leave out replicas who live in tablet servers who have not heartbeated to
-      // master yet.
+      // If a replica is reporting a new consensus configuration, update the
+      // master's copy of that configuration.
       LOG(INFO) << "Tablet: " << tablet->tablet_id() << " reported consensus state change."
                 << " New consensus state: " << cstate.ShortDebugString();
 
@@ -1674,24 +1677,17 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
         final_report = &updated_report;
       }
 
-      VLOG(2) << "Resetting replicas for tablet " << final_report->tablet_id()
+      VLOG(2) << "Updating consensus configuration for tablet "
+              << final_report->tablet_id()
               << " from config reported by " << ts_desc->permanent_uuid()
               << " to that committed in log index "
               << final_report->committed_consensus_state().config().opid_index()
               << " with leader state from term "
               << final_report->committed_consensus_state().current_term();
 
-      RETURN_NOT_OK(ResetTabletReplicasFromReportedConfig(*final_report, tablet,
-                                                          &tablet_lock, &table_lock));
+      RETURN_NOT_OK(HandleRaftConfigChanged(*final_report, tablet,
+                                            &tablet_lock, &table_lock));
 
-    } else {
-      // Report opid_index is equal to the previous opid_index. If some
-      // replica is reporting the same consensus configuration we already know about and hasn't
-      // been added as replica, add it.
-      DVLOG(2) << "Peer " << ts_desc->permanent_uuid() << " sent full tablet report"
-              << " with data we have already received. Ensuring replica is being tracked."
-              << " Replica consensus state: " << cstate.ShortDebugString();
-      AddReplicaToTabletIfNotFound(ts_desc, report, tablet);
     }
   }
 
@@ -1704,7 +1700,6 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (!s.ok()) {
     LOG(WARNING) << "Error updating tablets: " << s.ToString() << ". Tablet report was: "
                  << report.ShortDebugString();
-    // TODO: we should undo the in-memory tablet replica locations changes made above.
     return s;
   }
   tablet_lock.Commit();
@@ -1721,7 +1716,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   return Status::OK();
 }
 
-Status CatalogManager::ResetTabletReplicasFromReportedConfig(
+Status CatalogManager::HandleRaftConfigChanged(
     const ReportedTabletPB& report,
     const scoped_refptr<TabletInfo>& tablet,
     TabletMetadataLock* tablet_lock,
@@ -1732,25 +1727,6 @@ Status CatalogManager::ResetTabletReplicasFromReportedConfig(
   const ConsensusStatePB& cstate = report.committed_consensus_state();
   *tablet_lock->mutable_data()->pb.mutable_committed_consensus_state() = cstate;
 
-  TabletInfo::ReplicaMap replica_locations;
-  for (const consensus::RaftPeerPB& peer : cstate.config().peers()) {
-    shared_ptr<TSDescriptor> ts_desc;
-    if (!peer.has_permanent_uuid()) {
-      return Status::InvalidArgument("Missing UUID for peer", peer.ShortDebugString());
-    }
-    if (!master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
-      LOG_WITH_PREFIX(WARNING) << "Tablet server has never reported in. "
-          << "Not including in replica locations map yet. Peer: " << peer.ShortDebugString()
-          << "; Tablet: " << tablet->ToString();
-      continue;
-    }
-
-    TabletReplica replica;
-    NewReplica(ts_desc.get(), report, &replica);
-    InsertOrDie(&replica_locations, replica.ts_desc->permanent_uuid(), replica);
-  }
-  tablet->SetReplicaLocations(replica_locations);
-
   if (FLAGS_master_tombstone_evicted_tablet_replicas) {
     unordered_set<string> current_member_uuids;
     for (const consensus::RaftPeerPB& peer : cstate.config().peers()) {
@@ -1760,10 +1736,8 @@ Status CatalogManager::ResetTabletReplicasFromReportedConfig(
     for (const consensus::RaftPeerPB& prev_peer : prev_cstate.config().peers()) {
       const string& peer_uuid = prev_peer.permanent_uuid();
       if (!ContainsKey(current_member_uuids, peer_uuid)) {
-        shared_ptr<TSDescriptor> ts_desc;
-        if (!master_->ts_manager()->LookupTSByUUID(peer_uuid, &ts_desc)) continue;
         SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_TOMBSTONED,
-                                 prev_cstate.config().opid_index(), tablet->table(), ts_desc.get(),
+                                 prev_cstate.config().opid_index(), tablet->table(), peer_uuid,
                                  Substitute("TS $0 not found in new config with opid_index $1",
                                             peer_uuid, cstate.config().opid_index()));
       }
@@ -1777,24 +1751,6 @@ Status CatalogManager::ResetTabletReplicasFromReportedConfig(
   }
 
   return Status::OK();
-}
-
-void CatalogManager::AddReplicaToTabletIfNotFound(TSDescriptor* ts_desc,
-                                                  const ReportedTabletPB& report,
-                                                  const scoped_refptr<TabletInfo>& tablet) {
-  TabletReplica replica;
-  NewReplica(ts_desc, report, &replica);
-  // Only inserts if a replica with a matching UUID was not already present.
-  ignore_result(tablet->AddToReplicaLocations(replica));
-}
-
-void CatalogManager::NewReplica(TSDescriptor* ts_desc,
-                                const ReportedTabletPB& report,
-                                TabletReplica* replica) {
-  CHECK(report.has_committed_consensus_state()) << "No cstate: " << report.ShortDebugString();
-  replica->state = report.state();
-  replica->role = GetConsensusRole(ts_desc->permanent_uuid(), report.committed_consensus_state());
-  replica->ts_desc = ts_desc;
 }
 
 Status CatalogManager::GetTabletPeer(const string& tablet_id,
@@ -1829,11 +1785,8 @@ class TSPicker {
   TSPicker() {}
   virtual ~TSPicker() {}
 
-  // Sets *ts_desc to the tablet server to contact for the next RPC.
-  //
-  // This assumes that TSDescriptors are never deleted by the master,
-  // so the caller does not take ownership of the returned pointer.
-  virtual Status PickReplica(TSDescriptor** ts_desc) = 0;
+  // Sets *ts_uuid to the uuid of the tserver to contact for the next RPC.
+  virtual Status PickReplica(string* ts_uuid) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TSPicker);
@@ -1843,20 +1796,16 @@ class TSPicker {
 // identified by its UUID.
 class PickSpecificUUID : public TSPicker {
  public:
-  PickSpecificUUID(Master* master, string ts_uuid)
-      : master_(master), ts_uuid_(std::move(ts_uuid)) {}
+  explicit PickSpecificUUID(string ts_uuid)
+      : ts_uuid_(std::move(ts_uuid)) {}
 
-  virtual Status PickReplica(TSDescriptor** ts_desc) OVERRIDE {
-    shared_ptr<TSDescriptor> ts;
-    if (!master_->ts_manager()->LookupTSByUUID(ts_uuid_, &ts)) {
-      return Status::NotFound("unknown tablet server ID", ts_uuid_);
-    }
-    *ts_desc = ts.get();
+  virtual Status PickReplica(string* ts_uuid) OVERRIDE {
+    // Just a straight passthrough.
+    *ts_uuid = ts_uuid_;
     return Status::OK();
   }
 
  private:
-  Master* const master_;
   const string ts_uuid_;
 
   DISALLOW_COPY_AND_ASSIGN(PickSpecificUUID);
@@ -1870,16 +1819,23 @@ class PickLeaderReplica : public TSPicker {
     tablet_(tablet) {
   }
 
-  virtual Status PickReplica(TSDescriptor** ts_desc) OVERRIDE {
-    TabletInfo::ReplicaMap replica_locations;
-    tablet_->GetReplicaLocations(&replica_locations);
-    for (const TabletInfo::ReplicaMap::value_type& r : replica_locations) {
-      if (r.second.role == consensus::RaftPeerPB::LEADER) {
-        *ts_desc = r.second.ts_desc;
-        return Status::OK();
-      }
+  virtual Status PickReplica(string* ts_uuid) OVERRIDE {
+    TabletMetadataLock l(tablet_.get(), TabletMetadataLock::READ);
+
+    string err_msg;
+    if (!l.data().pb.has_committed_consensus_state()) {
+      // The tablet is still in the PREPARING state and has no replicas.
+      err_msg = Substitute("Tablet $0 has no consensus state",
+                           tablet_->tablet_id());
+    } else if (!l.data().pb.committed_consensus_state().has_leader_uuid()) {
+      // The tablet may be in the midst of a leader election.
+      err_msg = Substitute("Tablet $0 consensus state has no leader",
+                           tablet_->tablet_id());
+    } else {
+      *ts_uuid = l.data().pb.committed_consensus_state().leader_uuid();
+      return Status::OK();
     }
-    return Status::NotFound("no leader");
+    return Status::NotFound("No leader found", err_msg);
   }
 
  private:
@@ -2091,7 +2047,17 @@ class RetryingTSRpcTask : public MonitoredTask {
 
   Status ResetTSProxy() {
     // TODO: if there is no replica available, should we still keep the task running?
-    RETURN_NOT_OK(replica_picker_->PickReplica(&target_ts_desc_));
+    string ts_uuid;
+    RETURN_NOT_OK(replica_picker_->PickReplica(&ts_uuid));
+    shared_ptr<TSDescriptor> ts_desc;
+    if (!master_->ts_manager()->LookupTSByUUID(ts_uuid, &ts_desc)) {
+      return Status::NotFound(Substitute("Could not find TS for UUID $0",
+                                         ts_uuid));
+    }
+
+    // This assumes that TSDescriptors are never deleted by the master,
+    // so the task need not take ownership of the returned pointer.
+    target_ts_desc_ = ts_desc.get();
 
     shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy;
     RETURN_NOT_OK(target_ts_desc_->GetTSAdminProxy(master_->messenger(), &ts_proxy));
@@ -2119,7 +2085,7 @@ class RetrySpecificTSRpcTask : public RetryingTSRpcTask {
                          const scoped_refptr<TableInfo>& table)
     : RetryingTSRpcTask(master,
                         callback_pool,
-                        gscoped_ptr<TSPicker>(new PickSpecificUUID(master, permanent_uuid)),
+                        gscoped_ptr<TSPicker>(new PickSpecificUUID(permanent_uuid)),
                         table),
       permanent_uuid_(permanent_uuid) {
   }
@@ -2542,14 +2508,22 @@ void CatalogManager::SendDeleteTableRequest(const scoped_refptr<TableInfo>& tabl
 
 void CatalogManager::SendDeleteTabletRequest(const scoped_refptr<TabletInfo>& tablet,
                                              const string& deletion_msg) {
-  TabletInfo::ReplicaMap locations;
-  tablet->GetReplicaLocations(&locations);
-
-  LOG(INFO) << "Sending DeleteTablet for " << locations.size()
+  TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
+  if (!l.data().pb.has_committed_consensus_state()) {
+    // We could end up here if we're deleting a tablet that never made it to
+    // the CREATING state. That would mean no replicas were ever assigned, so
+    // there's nothing to delete.
+    LOG(INFO) << "Not sending DeleteTablet requests; no consensus state for tablet "
+              << tablet->tablet_id();
+    return;
+  }
+  const ConsensusStatePB& cstate = l.data().pb.committed_consensus_state();
+  LOG(INFO) << "Sending DeleteTablet for " << cstate.config().peers().size()
             << " replicas of tablet " << tablet->tablet_id();
-  for (const TabletInfo::ReplicaMap::value_type& r : locations) {
+  for (const auto& peer : cstate.config().peers()) {
     SendDeleteReplicaRequest(tablet->tablet_id(), TABLET_DATA_DELETED,
-                             boost::none, tablet->table(), r.second.ts_desc, deletion_msg);
+                             boost::none, tablet->table(),
+                             peer.permanent_uuid(), deletion_msg);
   }
 }
 
@@ -2558,15 +2532,15 @@ void CatalogManager::SendDeleteReplicaRequest(
     TabletDataState delete_type,
     const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
     const scoped_refptr<TableInfo>& table,
-    TSDescriptor* ts_desc,
+    const string& ts_uuid,
     const string& reason) {
   LOG_WITH_PREFIX(INFO) << Substitute("Deleting tablet $0 on peer $1 "
                                       "with delete type $2 ($3)",
-                                      tablet_id, ts_desc->permanent_uuid(),
+                                      tablet_id, ts_uuid,
                                       TabletDataState_Name(delete_type),
                                       reason);
   AsyncDeleteReplica* call =
-      new AsyncDeleteReplica(master_, worker_pool_.get(), ts_desc->permanent_uuid(), table,
+      new AsyncDeleteReplica(master_, worker_pool_.get(), ts_uuid, table,
                              tablet_id, delete_type, cas_config_opid_index_less_or_equal,
                              reason);
   if (table != nullptr) {
@@ -2643,7 +2617,7 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
                                                 DeferredAssignmentActions* deferred,
                                                 vector<scoped_refptr<TabletInfo> >* new_tablets) {
   MonoDelta time_since_updated =
-      MonoTime::Now(MonoTime::FINE).GetDeltaSince(tablet->last_update_time());
+      MonoTime::Now(MonoTime::FINE).GetDeltaSince(tablet->last_create_tablet_time());
   int64_t remaining_timeout_ms =
       FLAGS_tablet_creation_timeout_ms - time_since_updated.ToMilliseconds();
 
@@ -2871,7 +2845,7 @@ void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets
   for (TabletInfo *tablet : tablets) {
     const consensus::RaftConfigPB& config =
         tablet->metadata().state().pb.committed_consensus_state().config();
-    tablet->set_last_update_time(MonoTime::Now(MonoTime::FINE));
+    tablet->set_last_create_tablet_time(MonoTime::Now(MonoTime::FINE));
     for (const RaftPeerPB& peer : config.peers()) {
       AsyncCreateReplica* task = new AsyncCreateReplica(master_, worker_pool_.get(),
                                                         peer.permanent_uuid(), tablet);
@@ -2994,59 +2968,47 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
 
 Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
                                                TabletLocationsPB* locs_pb) {
-  TSRegistrationPB reg;
-
-  TabletInfo::ReplicaMap locs;
-  consensus::ConsensusStatePB cstate;
-  {
-    TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
-    if (PREDICT_FALSE(l_tablet.data().is_deleted())) {
-      return Status::NotFound("Tablet deleted", l_tablet.data().pb.state_msg());
-    }
-
-    if (PREDICT_FALSE(!l_tablet.data().is_running())) {
-      return Status::ServiceUnavailable("Tablet not running");
-    }
-
-    tablet->GetReplicaLocations(&locs);
-    if (locs.empty() && l_tablet.data().pb.has_committed_consensus_state()) {
-      cstate = l_tablet.data().pb.committed_consensus_state();
-    }
-
-    locs_pb->mutable_partition()->CopyFrom(tablet->metadata().state().pb.partition());
+  TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
+  if (PREDICT_FALSE(l_tablet.data().is_deleted())) {
+    return Status::NotFound("Tablet deleted", l_tablet.data().pb.state_msg());
   }
 
-  locs_pb->set_tablet_id(tablet->tablet_id());
-  locs_pb->set_stale(locs.empty());
+  if (PREDICT_FALSE(!l_tablet.data().is_running())) {
+    return Status::ServiceUnavailable("Tablet not running");
+  }
 
-  // If the locations are cached.
-  if (!locs.empty()) {
-    for (const TabletInfo::ReplicaMap::value_type& replica : locs) {
-      TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
-      replica_pb->set_role(replica.second.role);
+  // Guaranteed because the tablet is RUNNING.
+  DCHECK(l_tablet.data().pb.has_committed_consensus_state());
 
-      TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
-      tsinfo_pb->set_permanent_uuid(replica.second.ts_desc->permanent_uuid());
+  const ConsensusStatePB& cstate = l_tablet.data().pb.committed_consensus_state();
+  for (const consensus::RaftPeerPB& peer : cstate.config().peers()) {
+    // TODO: GetConsensusRole() iterates over all of the peers, making this an
+    // O(n^2) loop. If replication counts get high, it should be optimized.
+    TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
+    replica_pb->set_role(GetConsensusRole(peer.permanent_uuid(), cstate));
 
-      replica.second.ts_desc->GetRegistration(&reg);
+    TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
+    tsinfo_pb->set_permanent_uuid(peer.permanent_uuid());
+
+    shared_ptr<TSDescriptor> ts_desc;
+    if (master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
+      TSRegistrationPB reg;
+      ts_desc->GetRegistration(&reg);
       tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
-    }
-    return Status::OK();
-  }
-
-  // If the locations were not cached.
-  // TODO: Why would this ever happen? See KUDU-759.
-  if (cstate.IsInitialized()) {
-    for (const consensus::RaftPeerPB& peer : cstate.config().peers()) {
-      TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
-      CHECK(peer.has_permanent_uuid()) << "Missing UUID: " << peer.ShortDebugString();
-      replica_pb->set_role(GetConsensusRole(peer.permanent_uuid(), cstate));
-
-      TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
-      tsinfo_pb->set_permanent_uuid(peer.permanent_uuid());
+    } else {
+      // If we've never received a heartbeat from the tserver, we'll fall back
+      // to the last known RPC address in the RaftPeerPB.
+      //
+      // TODO: We should track these RPC addresses in the master table itself.
       tsinfo_pb->add_rpc_addresses()->CopyFrom(peer.last_known_addr());
     }
   }
+
+  locs_pb->mutable_partition()->CopyFrom(tablet->metadata().state().pb.partition());
+  locs_pb->set_tablet_id(tablet->tablet_id());
+
+  // No longer used; always set to false.
+  locs_pb->set_deprecated_stale(false);
 
   return Status::OK();
 }
@@ -3097,7 +3059,6 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   table->GetTabletsInRange(req, &tablets_in_range);
 
   TSRegistrationPB reg;
-  vector<TabletReplica> locs;
   for (const scoped_refptr<TabletInfo>& tablet : tablets_in_range) {
     Status s = BuildLocationsForTablet(tablet, resp->add_tablet_locations());
     if (s.ok()) {
@@ -3196,36 +3157,20 @@ TabletInfo::TabletInfo(const scoped_refptr<TableInfo>& table,
                        std::string tablet_id)
     : tablet_id_(std::move(tablet_id)),
       table_(table),
-      last_update_time_(MonoTime::Now(MonoTime::FINE)),
+      last_create_tablet_time_(MonoTime::Now(MonoTime::FINE)),
       reported_schema_version_(0) {}
 
 TabletInfo::~TabletInfo() {
 }
 
-void TabletInfo::SetReplicaLocations(const ReplicaMap& replica_locations) {
+void TabletInfo::set_last_create_tablet_time(const MonoTime& ts) {
   std::lock_guard<simple_spinlock> l(lock_);
-  last_update_time_ = MonoTime::Now(MonoTime::FINE);
-  replica_locations_ = replica_locations;
+  last_create_tablet_time_ = ts;
 }
 
-void TabletInfo::GetReplicaLocations(ReplicaMap* replica_locations) const {
+MonoTime TabletInfo::last_create_tablet_time() const {
   std::lock_guard<simple_spinlock> l(lock_);
-  *replica_locations = replica_locations_;
-}
-
-bool TabletInfo::AddToReplicaLocations(const TabletReplica& replica) {
-  std::lock_guard<simple_spinlock> l(lock_);
-  return InsertIfNotPresent(&replica_locations_, replica.ts_desc->permanent_uuid(), replica);
-}
-
-void TabletInfo::set_last_update_time(const MonoTime& ts) {
-  std::lock_guard<simple_spinlock> l(lock_);
-  last_update_time_ = ts;
-}
-
-MonoTime TabletInfo::last_update_time() const {
-  std::lock_guard<simple_spinlock> l(lock_);
-  return last_update_time_;
+  return last_create_tablet_time_;
 }
 
 bool TabletInfo::set_reported_schema_version(uint32_t version) {
