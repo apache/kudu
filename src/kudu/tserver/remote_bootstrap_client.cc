@@ -61,6 +61,8 @@ DEFINE_int32(remote_bootstrap_dowload_file_inject_latency_ms, 0,
              "to take much longer. For use in tests only.");
 TAG_FLAG(remote_bootstrap_dowload_file_inject_latency_ms, hidden);
 
+DECLARE_int32(remote_bootstrap_transfer_chunk_size_bytes);
+
 // RETURN_NOT_OK_PREPEND() with a remote-error unwinding step.
 #define RETURN_NOT_OK_UNWIND_PREPEND(status, controller, msg) \
   RETURN_NOT_OK_PREPEND(UnwindRemoteError(status, controller), msg)
@@ -497,8 +499,6 @@ template<class Appendable>
 Status RemoteBootstrapClient::DownloadFile(const DataIdPB& data_id,
                                            Appendable* appendable) {
   uint64_t offset = 0;
-  int32_t max_length = FLAGS_rpc_max_message_size - 1024; // Leave 1K for message headers.
-
   rpc::RpcController controller;
   controller.set_timeout(MonoDelta::FromMilliseconds(session_idle_timeout_millis_));
   FetchDataRequestPB req;
@@ -509,7 +509,7 @@ Status RemoteBootstrapClient::DownloadFile(const DataIdPB& data_id,
     req.set_session_id(session_id_);
     req.mutable_data_id()->CopyFrom(data_id);
     req.set_offset(offset);
-    req.set_max_length(max_length);
+    req.set_max_length(FLAGS_remote_bootstrap_transfer_chunk_size_bytes);
 
     FetchDataResponsePB resp;
     RETURN_NOT_OK_UNWIND_PREPEND(proxy_->FetchData(req, &resp, &controller),

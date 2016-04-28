@@ -27,8 +27,14 @@
 #include "kudu/rpc/transfer.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet_peer.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
+
+DEFINE_int32(remote_bootstrap_transfer_chunk_size_bytes, 4 * 1024 * 1024,
+             "Size of chunks to transfer when copying tablets between "
+             "tablet servers.");
+TAG_FLAG(remote_bootstrap_transfer_chunk_size_bytes, hidden);
 
 namespace kudu {
 namespace tserver {
@@ -153,20 +159,19 @@ const std::string& RemoteBootstrapSession::requestor_uuid() const {
 
 // Determine the length of the data chunk to return to the client.
 static int64_t DetermineReadLength(int64_t bytes_remaining, int64_t requested_len) {
-  // Determine the size of the chunks we want to read.
-  // Choose "system max" as a multiple of typical HDD block size (4K) with 4K to
-  // spare for other stuff in the message, like headers, other protobufs, etc.
-  const int32_t kSpareBytes = 4096;
-  const int32_t kDiskSectorSize = 4096;
-  int32_t system_max_chunk_size =
-      ((FLAGS_rpc_max_message_size - kSpareBytes) / kDiskSectorSize) * kDiskSectorSize;
-  CHECK_GT(system_max_chunk_size, 0) << "rpc_max_message_size is too low to transfer data: "
-                                     << FLAGS_rpc_max_message_size;
+  // Overhead in the RPC for things like headers, protobuf data, etc.
+  static const int kOverhead = 4096;
 
-  // The min of the {requested, system} maxes is the effective max.
-  int64_t maxlen = (requested_len > 0) ? std::min<int64_t>(requested_len, system_max_chunk_size) :
-                                        system_max_chunk_size;
-  return std::min(bytes_remaining, maxlen);
+  if (requested_len <= 0) {
+    requested_len = FLAGS_remote_bootstrap_transfer_chunk_size_bytes;
+  } else {
+    requested_len = std::min<int64_t>(requested_len,
+                                      FLAGS_remote_bootstrap_transfer_chunk_size_bytes);
+  }
+  requested_len = std::min<int64_t>(requested_len, FLAGS_rpc_max_message_size - kOverhead);
+  CHECK_GT(requested_len, 0) << "rpc_max_message_size is too low to transfer data: "
+                                     << FLAGS_rpc_max_message_size;
+  return std::min(bytes_remaining, requested_len);
 }
 
 // Calculate the size of the data to return given a maximum client message
