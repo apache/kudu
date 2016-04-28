@@ -20,7 +20,7 @@ visualization.
 
 Here's a recording of the session:
 
-[![YouTube video](https://img.youtube.com/vi/wdX_uvfVP0g/0.jpg)](https://www.youtube.com/watch?v=wdX_uvfVP0g)
+[![YouTube video](https://img.youtube.com/vi/LTONR-L40Xg/0.jpg)](https://www.youtube.com/watch?v=LTONR-L40Xg)
 
 The Apache Kudu destination is new in StreamSets Data Collector 1.3.0.0, 
 [released this week](https://streamsets.com/blog/announcing-data-collector-ver-1-3-0-0/) 
