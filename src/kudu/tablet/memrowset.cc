@@ -315,7 +315,6 @@ class MemRowSet::Iterator::MRSRowProjector {
                                    RowBlockRow* dst_row,
                                    Arena* arena) = 0;
   virtual const vector<ProjectionIdxMapping>& base_cols_mapping() const = 0;
-  virtual const vector<ProjectionIdxMapping>& adapter_cols_mapping() const = 0;
   virtual Status Init() = 0;
 };
 
@@ -343,9 +342,6 @@ class MRSRowProjectorImpl : public MRSRowProjector {
 
   const vector<ProjectionIdxMapping>& base_cols_mapping() const override {
     return actual_->base_cols_mapping();
-  }
-  const vector<ProjectionIdxMapping>& adapter_cols_mapping() const override {
-    return actual_->adapter_cols_mapping();
   }
 
  private:
@@ -567,9 +563,6 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
                                                memrowset_->schema_nonvirtual(),
                                                mapping.second, dst_arena));
       }
-
-      // TODO: Handle Delta Apply on projector_.adapter_cols_mapping()
-      DCHECK_EQ(projector_->adapter_cols_mapping().size(), 0) << "alter type is not supported";
     }
   }
 

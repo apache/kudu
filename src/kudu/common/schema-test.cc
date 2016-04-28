@@ -145,7 +145,6 @@ TEST(TestSchema, TestProjectSubset) {
 
   // Verify the mapping
   ASSERT_EQ(2, row_projector.base_cols_mapping().size());
-  ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
   ASSERT_EQ(0, row_projector.projection_defaults().size());
 
   const vector<RowProjector::ProjectionIdxMapping>& mapping = row_projector.base_cols_mapping();
@@ -190,7 +189,6 @@ TEST(TestSchema, TestProjectMissingColumn) {
   ASSERT_OK(row_projector.Reset(&schema1, &schema3));
 
   ASSERT_EQ(1, row_projector.base_cols_mapping().size());
-  ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
   ASSERT_EQ(1, row_projector.projection_defaults().size());
 
   ASSERT_EQ(row_projector.base_cols_mapping()[0].first, 0);  // val schema2
@@ -201,7 +199,6 @@ TEST(TestSchema, TestProjectMissingColumn) {
   ASSERT_OK(row_projector.Reset(&schema1, &schema4));
 
   ASSERT_EQ(1, row_projector.base_cols_mapping().size());
-  ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
   ASSERT_EQ(1, row_projector.projection_defaults().size());
 
   ASSERT_EQ(row_projector.base_cols_mapping()[0].first, 0);  // val schema4
@@ -227,7 +224,6 @@ TEST(TestSchema, TestProjectRename) {
   ASSERT_OK(row_projector.Init());
 
   ASSERT_EQ(2, row_projector.base_cols_mapping().size());
-  ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
   ASSERT_EQ(1, row_projector.projection_defaults().size());
 
   ASSERT_EQ(row_projector.base_cols_mapping()[0].first, 0);  // key schema2

@@ -130,9 +130,6 @@ class RowProjector {
   const vector<ProjectionIdxMapping>& base_cols_mapping() const {
     return projector_.base_cols_mapping();
   }
-  const vector<ProjectionIdxMapping>& adapter_cols_mapping() const {
-    return projector_.adapter_cols_mapping();
-  }
   const vector<size_t>& projection_defaults() const {
     return projector_.projection_defaults();
   }

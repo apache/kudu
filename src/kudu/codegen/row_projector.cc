@@ -204,10 +204,6 @@ llvm::Function* MakeProjection(const string& name,
     success->setName(StrCat("success", success_update_number++));
   }
 
-  // TODO: Copy adapted base data
-  DCHECK(proj.adapter_cols_mapping().size() == 0)
-    << "Value Adapter not supported yet";
-
   // Fill defaults
   for (size_t dfl_idx : proj.projection_defaults()) {
     // Retrieve mapping information
@@ -444,9 +440,6 @@ Status ProjectionsCompatible(const Schema& base1, const Schema& proj1,
 
   if (!ContainerEquals(rp1.base_cols_mapping(), rp2.base_cols_mapping())) {
     return Status::IllegalState("base column mappings do not match");
-  }
-  if (!ContainerEquals(rp1.adapter_cols_mapping(), rp2.adapter_cols_mapping())) {
-    return Status::IllegalState("adapter column mappings do not match");
   }
   if (!ContainerEquals(rp1.projection_defaults(), rp2.projection_defaults())) {
     return Status::IllegalState("projection default indices do not match");

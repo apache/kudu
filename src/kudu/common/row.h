@@ -154,7 +154,6 @@ class RowProjector {
     base_schema_ = base_schema;
     projection_ = projection;
     base_cols_mapping_.clear();
-    adapter_cols_mapping_.clear();
     projection_defaults_.clear();
     is_identity_ = base_schema->Equals(*projection);
     return Init();
@@ -189,10 +188,6 @@ class RowProjector {
   // first: is the projection column index, second: is the base_schema  index
   const vector<ProjectionIdxMapping>& base_cols_mapping() const { return base_cols_mapping_; }
 
-  // Returns the mapping between base schema and projection schema columns
-  // that requires a type adapter.
-  // first: is the projection column index, second: is the base_schema  index
-  const vector<ProjectionIdxMapping>& adapter_cols_mapping() const { return adapter_cols_mapping_; }
 
   // Returns the projection indexes of the columns to add with a default value.
   //
@@ -205,11 +200,6 @@ class RowProjector {
 
   Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
     base_cols_mapping_.push_back(ProjectionIdxMapping(proj_col_idx, base_col_idx));
-    return Status::OK();
-  }
-
-  Status ProjectAdaptedColumn(size_t proj_col_idx, size_t base_col_idx) {
-    adapter_cols_mapping_.push_back(ProjectionIdxMapping(proj_col_idx, base_col_idx));
     return Status::OK();
   }
 
@@ -240,9 +230,6 @@ class RowProjector {
       RETURN_NOT_OK(CopyCell(src_cell, &dst_cell, dst_arena));
     }
 
-    // TODO: Copy Adapted base Data
-    DCHECK(adapter_cols_mapping_.size() == 0) << "Value Adapter not supported yet";
-
     // Fill with Defaults
     for (auto proj_idx : projection_defaults_) {
       const ColumnSchema& col_proj = projection_->column(proj_idx);
@@ -260,7 +247,6 @@ class RowProjector {
   DISALLOW_COPY_AND_ASSIGN(RowProjector);
 
   vector<ProjectionIdxMapping> base_cols_mapping_;
-  vector<ProjectionIdxMapping> adapter_cols_mapping_;
   vector<size_t> projection_defaults_;
 
   const Schema* base_schema_;
@@ -302,17 +288,9 @@ class DeltaProjector {
     return FindCopy(base_cols_mapping_, proj_col_idx, base_col_idx);
   }
 
-  bool get_adapter_col_from_proj_idx(size_t proj_col_idx, size_t *base_col_idx) const {
-    return FindCopy(adapter_cols_mapping_, proj_col_idx, base_col_idx);
-  }
-
   // TODO: Discourage the use of this. At the moment is only in RowChangeList::Project
   bool get_proj_col_from_base_id(size_t col_id, size_t *proj_col_idx) const {
     return FindCopy(rbase_cols_mapping_, col_id, proj_col_idx);
-  }
-
-  bool get_proj_col_from_adapter_id(size_t col_id, size_t *proj_col_idx) const {
-    return FindCopy(radapter_cols_mapping_, col_id, proj_col_idx);
   }
 
  private:
@@ -324,16 +302,6 @@ class DeltaProjector {
       rbase_cols_mapping_[delta_schema_->column_id(base_col_idx)] = proj_col_idx;
     } else {
       rbase_cols_mapping_[proj_col_idx] = proj_col_idx;
-    }
-    return Status::OK();
-  }
-
-  Status ProjectAdaptedColumn(size_t proj_col_idx, size_t base_col_idx) {
-    adapter_cols_mapping_[proj_col_idx] = base_col_idx;
-    if (delta_schema_->has_column_ids()) {
-      radapter_cols_mapping_[delta_schema_->column_id(base_col_idx)] = proj_col_idx;
-    } else {
-      radapter_cols_mapping_[proj_col_idx] = proj_col_idx;
     }
     return Status::OK();
   }
@@ -356,9 +324,6 @@ class DeltaProjector {
 
   std::unordered_map<size_t, size_t> base_cols_mapping_;     // [proj_idx] = base_idx
   std::unordered_map<size_t, size_t> rbase_cols_mapping_;    // [id] = proj_idx
-
-  std::unordered_map<size_t, size_t> adapter_cols_mapping_;  // [proj_idx] = base_idx
-  std::unordered_map<size_t, size_t> radapter_cols_mapping_; // [id] = proj_idx
 
   const Schema* delta_schema_;
   const Schema* projection_;
