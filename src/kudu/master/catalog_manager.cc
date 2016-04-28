@@ -708,8 +708,18 @@ void CatalogManager::Shutdown() {
     background_tasks_->Shutdown();
   }
 
-  // Abort and Wait tables task completion
-  for (const TableInfoMap::value_type& e : table_ids_map_) {
+  // Mark all outstanding table tasks as aborted and wait for them to fail.
+  //
+  // There may be an outstanding table visitor thread modifying the table map,
+  // so we must make a copy of it before we iterate. It's OK if the visitor
+  // adds more entries to the map even after we finish, but it may not start
+  // any new tasks for those entries.
+  TableInfoMap copy;
+  {
+    boost::lock_guard<simple_spinlock> l(state_lock_);
+    copy = table_ids_map_;
+  }
+  for (const TableInfoMap::value_type &e : copy) {
     e.second->AbortTasks();
     e.second->WaitTasksCompletion();
   }
