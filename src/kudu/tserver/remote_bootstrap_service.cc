@@ -17,8 +17,6 @@
 #include "kudu/tserver/remote_bootstrap_service.h"
 
 #include <algorithm>
-#include <boost/date_time/time_duration.hpp>
-#include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <string>
@@ -120,11 +118,12 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
 
   scoped_refptr<RemoteBootstrapSession> session;
   {
-    boost::lock_guard<simple_spinlock> l(sessions_lock_);
+    MutexLock l(sessions_lock_);
     if (!FindCopy(sessions_, session_id, &session)) {
-      LOG(INFO) << "Beginning new remote bootstrap session on tablet " << tablet_id
-                << " from peer " << requestor_uuid << " at " << context->requestor_string()
-                << ": session id = " << session_id;
+      LOG(INFO) << Substitute(
+          "Beginning new remote bootstrap session on tablet $0 from peer $1"
+          " at $2: session id = $3",
+          tablet_id, requestor_uuid, context->requestor_string(), session_id);
       session.reset(new RemoteBootstrapSession(tablet_peer, session_id,
                                                requestor_uuid, fs_manager_));
       RPC_RETURN_NOT_OK(session->Init(),
@@ -133,13 +132,10 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
                                    tablet_id));
       InsertOrDie(&sessions_, session_id, session);
     } else {
-      LOG(INFO) << "Re-initializing existing remote bootstrap session on tablet " << tablet_id
-                << " from peer " << requestor_uuid << " at " << context->requestor_string()
-                << ": session id = " << session_id;
-      RPC_RETURN_NOT_OK(session->Init(),
-                        RemoteBootstrapErrorPB::UNKNOWN_ERROR,
-                        Substitute("Error initializing remote bootstrap session for tablet $0",
-                                   tablet_id));
+      LOG(INFO) << Substitute(
+          "Re-sending initialization info for existing remote bootstrap session on tablet $0"
+          " from peer $1 at $2: session_id = $3",
+          tablet_id, requestor_uuid, context->requestor_string(), session_id);
     }
     ResetSessionExpirationUnlocked(session_id);
   }
@@ -164,7 +160,7 @@ void RemoteBootstrapServiceImpl::CheckSessionActive(
 
   // Look up and validate remote bootstrap session.
   scoped_refptr<RemoteBootstrapSession> session;
-  boost::lock_guard<simple_spinlock> l(sessions_lock_);
+  MutexLock l(sessions_lock_);
   RemoteBootstrapErrorPB::Code app_error;
   Status status = FindSessionUnlocked(session_id, &app_error, &session);
   if (status.ok()) {
@@ -192,7 +188,7 @@ void RemoteBootstrapServiceImpl::FetchData(const FetchDataRequestPB* req,
   // Look up and validate remote bootstrap session.
   scoped_refptr<RemoteBootstrapSession> session;
   {
-    boost::lock_guard<simple_spinlock> l(sessions_lock_);
+    MutexLock l(sessions_lock_);
     RemoteBootstrapErrorPB::Code app_error;
     RPC_RETURN_NOT_OK(FindSessionUnlocked(session_id, &app_error, &session),
                       app_error, "No such session");
@@ -241,7 +237,7 @@ void RemoteBootstrapServiceImpl::EndRemoteBootstrapSession(
         EndRemoteBootstrapSessionResponsePB* resp,
         rpc::RpcContext* context) {
   {
-    boost::lock_guard<simple_spinlock> l(sessions_lock_);
+    MutexLock l(sessions_lock_);
     RemoteBootstrapErrorPB::Code app_error;
     LOG(INFO) << "Request end of remote bootstrap session " << req->session_id()
       << " received from " << context->requestor_string();
@@ -334,7 +330,7 @@ Status RemoteBootstrapServiceImpl::DoEndRemoteBootstrapSessionUnlocked(
 
 void RemoteBootstrapServiceImpl::EndExpiredSessions() {
   do {
-    boost::lock_guard<simple_spinlock> l(sessions_lock_);
+    MutexLock l(sessions_lock_);
     MonoTime now = MonoTime::Now(MonoTime::FINE);
 
     vector<string> expired_session_ids;

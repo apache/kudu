@@ -92,6 +92,8 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
 
   // Initialize the session, including anchoring files (TODO) and fetching the
   // tablet superblock and list of WAL segments.
+  //
+  // Must not be called more than once.
   Status Init();
 
   // Return ID of tablet corresponding to this session.
@@ -121,13 +123,20 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
                             std::string* data, int64_t* log_file_size,
                             RemoteBootstrapErrorPB::Code* error_code);
 
-  const tablet::TabletSuperBlockPB& tablet_superblock() const { return tablet_superblock_; }
+  const tablet::TabletSuperBlockPB& tablet_superblock() const {
+    DCHECK(initted_);
+    return tablet_superblock_;
+  }
 
   const consensus::ConsensusStatePB& initial_committed_cstate() const {
+    DCHECK(initted_);
     return initial_committed_cstate_;
   }
 
-  const log::SegmentSequence& log_segments() const { return log_segments_; }
+  const log::SegmentSequence& log_segments() const {
+    DCHECK(initted_);
+    return log_segments_;
+  }
 
   // Check if a block is currently open.
   bool IsBlockOpenForTests(const BlockId& block_id) const;
@@ -164,8 +173,8 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   const std::string requestor_uuid_;
   FsManager* const fs_manager_;
 
-  mutable simple_spinlock session_lock_;
-
+  mutable Mutex session_lock_;
+  bool initted_ = false;
   BlockMap blocks_; // Protected by session_lock_.
   LogMap logs_;     // Protected by session_lock_.
   ValueDeleter blocks_deleter_;

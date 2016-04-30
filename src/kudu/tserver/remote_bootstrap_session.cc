@@ -17,6 +17,7 @@
 #include "kudu/tserver/remote_bootstrap_session.h"
 
 #include <algorithm>
+#include <mutex>
 
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_reader.h"
@@ -28,6 +29,7 @@
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
 
@@ -69,14 +71,8 @@ RemoteBootstrapSession::~RemoteBootstrapSession() {
 }
 
 Status RemoteBootstrapSession::Init() {
-  // Take locks to support re-initialization of the same session.
-  boost::lock_guard<simple_spinlock> l(session_lock_);
-  RETURN_NOT_OK(UnregisterAnchorIfNeededUnlocked());
-
-  STLDeleteValues(&blocks_);
-  STLDeleteValues(&logs_);
-  blocks_.clear();
-  logs_.clear();
+  MutexLock l(session_lock_);
+  CHECK(!initted_);
 
   const string& tablet_id = tablet_peer_->tablet_id();
 
@@ -146,14 +142,17 @@ Status RemoteBootstrapSession::Init() {
   LOG(INFO) << Substitute(
       "T $0 P $1: Remote bootstrap: opened $2 blocks and $3 log segments",
       tablet_id, consensus->peer_uuid(), data_blocks.size(), log_segments_.size());
+  initted_ = true;
   return Status::OK();
 }
 
 const std::string& RemoteBootstrapSession::tablet_id() const {
+  DCHECK(initted_);
   return tablet_peer_->tablet_id();
 }
 
 const std::string& RemoteBootstrapSession::requestor_uuid() const {
+  DCHECK(initted_);
   return requestor_uuid_;
 }
 
@@ -277,7 +276,7 @@ Status RemoteBootstrapSession::GetLogSegmentPiece(uint64_t segment_seqno,
 }
 
 bool RemoteBootstrapSession::IsBlockOpenForTests(const BlockId& block_id) const {
-  boost::lock_guard<simple_spinlock> l(session_lock_);
+  MutexLock l(session_lock_);
   return ContainsKey(blocks_, block_id);
 }
 
@@ -302,7 +301,7 @@ static Status AddImmutableFileToMap(Collection* const cache,
 }
 
 Status RemoteBootstrapSession::OpenBlockUnlocked(const BlockId& block_id) {
-  DCHECK(session_lock_.is_locked());
+  session_lock_.AssertAcquired();
 
   gscoped_ptr<ReadableBlock> block;
   Status s = fs_manager_->OpenBlock(block_id, &block);
@@ -333,7 +332,7 @@ Status RemoteBootstrapSession::FindBlock(const BlockId& block_id,
                                          ImmutableReadableBlockInfo** block_info,
                                          RemoteBootstrapErrorPB::Code* error_code) {
   Status s;
-  boost::lock_guard<simple_spinlock> l(session_lock_);
+  MutexLock l(session_lock_);
   if (!FindCopy(blocks_, block_id, block_info)) {
     *error_code = RemoteBootstrapErrorPB::BLOCK_NOT_FOUND;
     s = Status::NotFound("Block not found", block_id.ToString());
@@ -342,7 +341,7 @@ Status RemoteBootstrapSession::FindBlock(const BlockId& block_id,
 }
 
 Status RemoteBootstrapSession::OpenLogSegmentUnlocked(uint64_t segment_seqno) {
-  DCHECK(session_lock_.is_locked());
+  session_lock_.AssertAcquired();
 
   scoped_refptr<log::ReadableLogSegment> log_segment;
   int position = -1;
@@ -370,7 +369,7 @@ Status RemoteBootstrapSession::OpenLogSegmentUnlocked(uint64_t segment_seqno) {
 Status RemoteBootstrapSession::FindLogSegment(uint64_t segment_seqno,
                                               ImmutableRandomAccessFileInfo** file_info,
                                               RemoteBootstrapErrorPB::Code* error_code) {
-  boost::lock_guard<simple_spinlock> l(session_lock_);
+  MutexLock l(session_lock_);
   if (!FindCopy(logs_, segment_seqno, file_info)) {
     *error_code = RemoteBootstrapErrorPB::WAL_SEGMENT_NOT_FOUND;
     return Status::NotFound(Substitute("Segment with sequence number $0 not found",

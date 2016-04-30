@@ -18,6 +18,8 @@
 
 #include <gflags/gflags.h>
 #include <limits>
+#include <thread>
+#include <vector>
 
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -51,6 +53,8 @@ using env_util::ReadFully;
 using log::ReadableLogSegment;
 using rpc::ErrorStatusPB;
 using rpc::RpcController;
+using std::thread;
+using std::vector;
 
 class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
  public:
@@ -213,6 +217,29 @@ TEST_F(RemoteBootstrapServiceTest, TestBeginTwice) {
     string session_id;
     ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id));
     ASSERT_FALSE(session_id.empty());
+  }
+}
+
+// Regression test for KUDU-1436: race conditions if multiple requests
+// to begin the same remote bootstrap session arrive at more or less the
+// same time.
+TEST_F(RemoteBootstrapServiceTest, TestBeginConcurrently) {
+  const int kNumThreads = 5;
+  vector<thread> threads;
+  vector<tablet::TabletSuperBlockPB> sblocks(kNumThreads);
+  for (int i = 0 ; i < kNumThreads; i++) {
+    threads.emplace_back([this, &sblocks, i]{
+        string session_id;
+        CHECK_OK(DoBeginValidRemoteBootstrapSession(&session_id, &sblocks[i]));
+        CHECK(!session_id.empty());
+      });
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+  // Verify that all threads got the same result.
+  for (int i = 1; i < threads.size(); i++) {
+    ASSERT_EQ(sblocks[i].DebugString(), sblocks[0].DebugString());
   }
 }
 

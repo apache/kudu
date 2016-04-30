@@ -95,7 +95,7 @@ class RemoteBootstrapServiceImpl : public RemoteBootstrapServiceIf {
   TabletPeerLookupIf* tablet_peer_lookup_;
 
   // Protects sessions_ and session_expirations_ maps.
-  mutable simple_spinlock sessions_lock_;
+  mutable Mutex sessions_lock_;
   SessionMap sessions_;
   MonoTimeMap session_expirations_;
 
