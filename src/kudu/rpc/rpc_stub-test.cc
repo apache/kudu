@@ -244,6 +244,20 @@ TEST_F(RpcStubTest, TestResponseWithMissingField) {
                       "invalid RPC response, missing fields: response");
 }
 
+// Test case where the server responds with a message which is larger than the maximum
+// configured RPC message size. The server should send the response, but the client
+// will reject it.
+TEST_F(RpcStubTest, TestResponseLargerThanFrameSize) {
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+  RpcController rpc;
+  TestInvalidResponseRequestPB req;
+  TestInvalidResponseResponsePB resp;
+  req.set_error_type(rpc_test::TestInvalidResponseRequestPB_ErrorType_RESPONSE_TOO_LARGE);
+  Status s = p.TestInvalidResponse(req, &resp, &rpc);
+  ASSERT_STR_CONTAINS(s.ToString(), "Network error: RPC frame had a length of");
+}
+
 // Test sending a call which isn't implemented by the server.
 TEST_F(RpcStubTest, TestCallMissingMethod) {
   Proxy p(client_messenger_, server_addr_, CalculatorService::static_service_name());

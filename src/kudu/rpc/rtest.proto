@@ -93,6 +93,7 @@ message PanicResponsePB {}
 message TestInvalidResponseRequestPB {
   enum ErrorType {
     MISSING_REQUIRED_FIELD = 1;
+    RESPONSE_TOO_LARGE = 2;
   }
   required ErrorType error_type = 1;
 }

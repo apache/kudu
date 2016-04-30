@@ -240,6 +240,10 @@ class CalculatorService : public CalculatorServiceIf {
         // marked as required. This exercises the error path of invalid responses.
         context->RespondSuccess();
         break;
+      case rpc_test::TestInvalidResponseRequestPB_ErrorType_RESPONSE_TOO_LARGE:
+        resp->mutable_response()->resize(FLAGS_rpc_max_message_size + 1000);
+        context->RespondSuccess();
+        break;
       default:
         LOG(FATAL);
     }

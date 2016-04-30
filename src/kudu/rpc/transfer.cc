@@ -25,7 +25,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/endian.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/messenger.h"
@@ -55,6 +54,7 @@ namespace rpc {
 using std::ostringstream;
 using std::set;
 using std::string;
+using strings::Substitute;
 
 #define RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status) \
   if (PREDICT_FALSE(!status.ok())) {                            \
@@ -98,13 +98,13 @@ Status InboundTransfer::ReceiveBuffer(Socket &socket) {
     // add that back in.
     total_length_ = NetworkByteOrder::Load32(&buf_[0]) + kMsgLengthPrefixLength;
     if (total_length_ > FLAGS_rpc_max_message_size) {
-      return Status::NetworkError(StringPrintf("the frame had a "
-               "length of %d, but we only support messages up to %d bytes "
-               "long.", total_length_, FLAGS_rpc_max_message_size));
+      return Status::NetworkError(Substitute(
+          "RPC frame had a length of $0, but we only support messages up to $1 bytes "
+          "long.", total_length_, FLAGS_rpc_max_message_size));
     }
     if (total_length_ <= kMsgLengthPrefixLength) {
-      return Status::NetworkError(StringPrintf("the frame had a "
-               "length of %d, which is invalid", total_length_));
+      return Status::NetworkError(Substitute("RPC frame had invalid length of $0",
+                                             total_length_));
     }
     buf_.resize(total_length_);
 
@@ -131,7 +131,7 @@ bool InboundTransfer::TransferFinished() const {
 }
 
 string InboundTransfer::StatusAsString() const {
-  return strings::Substitute("$0/$1 bytes received", cur_offset_, total_length_);
+  return Substitute("$0/$1 bytes received", cur_offset_, total_length_);
 }
 
 OutboundTransfer::OutboundTransfer(int32_t call_id,
