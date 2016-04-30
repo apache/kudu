@@ -169,7 +169,7 @@ class OutboundCall {
   //
   // Because the data is fully serialized by this call, 'req' may be
   // subsequently mutated with no ill effects.
-  Status SetRequestParam(const google::protobuf::Message& req);
+  void SetRequestParam(const google::protobuf::Message& req);
 
   // Assign the call ID for this call. This is called from the reactor
   // thread once a connection has been assigned. Must only be called once.

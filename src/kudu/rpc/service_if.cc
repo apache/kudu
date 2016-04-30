@@ -48,7 +48,7 @@ bool ServiceIf::SupportsFeature(uint32_t feature) const {
 bool ServiceIf::ParseParam(InboundCall *call, google::protobuf::Message *message) {
   Slice param(call->serialized_request());
   if (PREDICT_FALSE(!message->ParseFromArray(param.data(), param.size()))) {
-    string err = Substitute("Invalid parameter for call $0: $1",
+    string err = Substitute("invalid parameter for call $0: missing fields: $1",
                             call->remote_method().ToString(),
                             message->InitializationErrorString().c_str());
     LOG(WARNING) << err;

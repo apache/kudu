@@ -197,8 +197,8 @@ class InboundCall {
   // Serialize a response message for either success or failure. If it is a success,
   // 'response' should be the user-defined response type for the call. If it is a
   // failure, 'response' should be an ErrorStatusPB instance.
-  Status SerializeResponseBuffer(const google::protobuf::MessageLite& response,
-                                 bool is_success);
+  void SerializeResponseBuffer(const google::protobuf::MessageLite& response,
+                               bool is_success);
 
   // When RPC call Handle() completed execution on the server side.
   // Updates the Histogram with time elapsed since the call was started,

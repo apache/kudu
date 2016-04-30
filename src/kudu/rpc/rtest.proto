@@ -90,6 +90,17 @@ message CalculatorError {
 message PanicRequestPB {}
 message PanicResponsePB {}
 
+message TestInvalidResponseRequestPB {
+  enum ErrorType {
+    MISSING_REQUIRED_FIELD = 1;
+  }
+  required ErrorType error_type = 1;
+}
+
+message TestInvalidResponseResponsePB {
+  required bytes response = 1;
+}
+
 enum FeatureFlags {
   UNKNOWN=0;
   FOO=1;
@@ -103,4 +114,6 @@ service CalculatorService {
   rpc TestArgumentsInDiffPackage(kudu.rpc_test_diff_package.ReqDiffPackagePB)
     returns(kudu.rpc_test_diff_package.RespDiffPackagePB);
   rpc Panic(PanicRequestPB) returns (PanicResponsePB);
+
+  rpc TestInvalidResponse(TestInvalidResponseRequestPB) returns (TestInvalidResponseResponsePB);
 }

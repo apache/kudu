@@ -59,6 +59,8 @@ using kudu::rpc_test::SendTwoStringsRequestPB;
 using kudu::rpc_test::SendTwoStringsResponsePB;
 using kudu::rpc_test::SleepRequestPB;
 using kudu::rpc_test::SleepResponsePB;
+using kudu::rpc_test::TestInvalidResponseRequestPB;
+using kudu::rpc_test::TestInvalidResponseResponsePB;
 using kudu::rpc_test::WhoAmIRequestPB;
 using kudu::rpc_test::WhoAmIResponsePB;
 using kudu::rpc_test_diff_package::ReqDiffPackagePB;
@@ -227,6 +229,20 @@ class CalculatorService : public CalculatorServiceIf {
   void Panic(const PanicRequestPB* req, PanicResponsePB* resp, RpcContext* context) override {
     TRACE("Got panic request");
     PANIC_RPC(context, "Test method panicking!");
+  }
+
+  void TestInvalidResponse(const TestInvalidResponseRequestPB* req,
+                           TestInvalidResponseResponsePB* resp,
+                           RpcContext* context) override {
+    switch (req->error_type()) {
+      case rpc_test::TestInvalidResponseRequestPB_ErrorType_MISSING_REQUIRED_FIELD:
+        // Respond without setting the 'resp->response' protobuf field, which is
+        // marked as required. This exercises the error path of invalid responses.
+        context->RespondSuccess();
+        break;
+      default:
+        LOG(FATAL);
+    }
   }
 
   bool SupportsFeature(uint32_t feature) const override {

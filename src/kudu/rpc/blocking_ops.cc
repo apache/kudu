@@ -63,11 +63,11 @@ Status SendFramedMessageBlocking(Socket* sock, const MessageLite& header, const 
 
   // Serialize message
   faststring param_buf;
-  RETURN_NOT_OK(serialization::SerializeMessage(msg, &param_buf));
+  serialization::SerializeMessage(msg, &param_buf);
 
   // Serialize header and initial length
   faststring header_buf;
-  RETURN_NOT_OK(serialization::SerializeHeader(header, param_buf.size(), &header_buf));
+  serialization::SerializeHeader(header, param_buf.size(), &header_buf);
 
   // Write header & param to stream
   size_t nsent;

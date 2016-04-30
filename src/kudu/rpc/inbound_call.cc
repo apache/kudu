@@ -123,11 +123,7 @@ void InboundCall::ApplicationErrorToPB(int error_ext_id, const std::string& mess
 void InboundCall::Respond(const MessageLite& response,
                           bool is_success) {
   TRACE_EVENT_FLOW_END0("rpc", "InboundCall", this);
-  Status s = SerializeResponseBuffer(response, is_success);
-  if (PREDICT_FALSE(!s.ok())) {
-    // TODO: test error case, serialize error response instead
-    LOG(DFATAL) << "Unable to serialize response: " << s.ToString();
-  }
+  SerializeResponseBuffer(response, is_success);
 
   TRACE_EVENT_ASYNC_END1("rpc", "InboundCall", this,
                          "method", remote_method_.method_name());
@@ -137,8 +133,18 @@ void InboundCall::Respond(const MessageLite& response,
   conn_->QueueResponseForCall(gscoped_ptr<InboundCall>(this));
 }
 
-Status InboundCall::SerializeResponseBuffer(const MessageLite& response,
-                                            bool is_success) {
+void InboundCall::SerializeResponseBuffer(const MessageLite& response,
+                                          bool is_success) {
+  if (PREDICT_FALSE(!response.IsInitialized())) {
+    LOG(ERROR) << "Invalid RPC response for " << ToString()
+               << ": protobuf missing required fields: "
+               << response.InitializationErrorString();
+    // Send it along anyway -- the client will also notice the missing fields
+    // and produce an error on the other side, but this will at least
+    // make it clear on both sides of the RPC connection what kind of error
+    // happened.
+  }
+
   uint32_t protobuf_msg_size = response.ByteSize();
 
   ResponseHeader resp_hdr;
@@ -151,13 +157,11 @@ Status InboundCall::SerializeResponseBuffer(const MessageLite& response,
   }
 
   int additional_size = absolute_sidecar_offset - protobuf_msg_size;
-  RETURN_NOT_OK(serialization::SerializeMessage(response, &response_msg_buf_,
-                                                additional_size, true));
+  serialization::SerializeMessage(response, &response_msg_buf_,
+                                  additional_size, true);
   int main_msg_size = additional_size + response_msg_buf_.size();
-  RETURN_NOT_OK(serialization::SerializeHeader(resp_hdr, main_msg_size,
-                                               &response_hdr_buf_));
-
-  return Status::OK();
+  serialization::SerializeHeader(resp_hdr, main_msg_size,
+                                 &response_hdr_buf_);
 }
 
 void InboundCall::SerializeResponseTo(vector<Slice>* slices) const {

@@ -79,13 +79,7 @@ void Proxy::AsyncRequest(const string& method,
   RemoteMethod remote_method(service_name_, method);
   OutboundCall* call = new OutboundCall(conn_id_, remote_method, response, controller, callback);
   controller->call_.reset(call);
-  Status s = call->SetRequestParam(req);
-  if (PREDICT_FALSE(!s.ok())) {
-    // Failed to serialize request: likely the request is missing a required
-    // field.
-    call->SetFailed(s); // calls callback internally
-    return;
-  }
+  call->SetRequestParam(req);
 
   // If this fails to queue, the callback will get called immediately
   // and the controller will be in an ERROR state.

@@ -51,9 +51,9 @@ namespace serialization {
 //        needs to be serialized for the protobuf (i.e., no additional space
 //        is reserved for 'additional_size', which only affects the
 //        size indicator prefix in 'param_buf').
-Status SerializeMessage(const google::protobuf::MessageLite& message,
-                        faststring* param_buf, int additional_size = 0,
-                        bool use_cached_size = false);
+void SerializeMessage(const google::protobuf::MessageLite& message,
+                      faststring* param_buf, int additional_size = 0,
+                      bool use_cached_size = false);
 
 // Serialize the request or response header into a buffer which is allocated
 // by this function.
@@ -61,9 +61,9 @@ Status SerializeMessage(const google::protobuf::MessageLite& message,
 // In: Protobuf Header to serialize,
 //     Length of the message param following this header in the frame.
 // Out: faststring to be populated with the serialized bytes.
-Status SerializeHeader(const google::protobuf::MessageLite& header,
-                       size_t param_len,
-                       faststring* header_buf);
+void SerializeHeader(const google::protobuf::MessageLite& header,
+                     size_t param_len,
+                     faststring* header_buf);
 
 // Deserialize the request.
 // In: data buffer Slice.

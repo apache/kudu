@@ -198,8 +198,9 @@ TEST_F(RpcStubTest, TestCallWithInvalidParam) {
   Status s = p.SyncRequest("Add", req, &resp, &controller);
   ASSERT_TRUE(s.IsRemoteError()) << "Bad status: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
-                      "Invalid argument: Invalid parameter for call "
-                      "kudu.rpc_test.CalculatorService.Add: y");
+                      "Invalid argument: invalid parameter for call "
+                      "kudu.rpc_test.CalculatorService.Add: "
+                      "missing fields: y");
 }
 
 // Wrapper around AtomicIncrement, since AtomicIncrement returns the 'old'
@@ -227,7 +228,20 @@ TEST_F(RpcStubTest, TestCallWithMissingPBFieldClientSide) {
   SleepFor(MonoDelta::FromMicroseconds(100));
   ASSERT_EQ(1, NoBarrier_Load(&callback_count));
   ASSERT_STR_CONTAINS(controller.status().ToString(),
-                      "Invalid argument: RPC argument missing required fields: y");
+                      "Invalid argument: invalid parameter for call "
+                      "kudu.rpc_test.CalculatorService.Add: missing fields: y");
+}
+
+TEST_F(RpcStubTest, TestResponseWithMissingField) {
+  CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+  RpcController rpc;
+  TestInvalidResponseRequestPB req;
+  TestInvalidResponseResponsePB resp;
+  req.set_error_type(rpc_test::TestInvalidResponseRequestPB_ErrorType_MISSING_REQUIRED_FIELD);
+  Status s = p.TestInvalidResponse(req, &resp, &rpc);
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "invalid RPC response, missing fields: response");
 }
 
 // Test sending a call which isn't implemented by the server.

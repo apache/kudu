@@ -150,7 +150,8 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
 
   // Enhance a RemoteError Status message with additional details from the remote.
   Status UnwindRemoteError(Status status, const RpcController* controller) {
-    if (!status.IsRemoteError()) {
+    if (!status.IsRemoteError() ||
+        controller->error_response()->code() != ErrorStatusPB::ERROR_APPLICATION) {
       return status;
     }
     Status remote_error = ExtractRemoteError(controller->error_response());
@@ -285,14 +286,18 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
   }
 
   // Empty data type with BlockId.
-  // The RPC system will not let us send the required type field.
+  // The server will reject the request since we are missing the required 'type' field.
   {
     FetchDataResponsePB resp;
     RpcController controller;
     DataIdPB data_id;
     data_id.mutable_block_id()->set_id(1);
     Status status = DoFetchData(session_id, data_id, nullptr, nullptr, &resp, &controller);
-    ASSERT_TRUE(status.IsInvalidArgument());
+    ASSERT_TRUE(status.IsRemoteError()) << status.ToString();
+    ASSERT_STR_CONTAINS(status.ToString(),
+                        "Invalid argument: invalid parameter for call "
+                        "kudu.tserver.RemoteBootstrapService.FetchData: "
+                        "missing fields: data_id.type");
   }
 
   // Empty data type id (no BlockId, no Segment Sequence Number);

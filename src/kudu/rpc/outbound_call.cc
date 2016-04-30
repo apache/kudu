@@ -96,7 +96,7 @@ Status OutboundCall::SerializeTo(vector<Slice>* slices) {
     header_.add_required_feature_flags(feature);
   }
 
-  CHECK_OK(serialization::SerializeHeader(header_, param_len, &header_buf_));
+  serialization::SerializeHeader(header_, param_len, &header_buf_);
 
   // Return the concatenated packet.
   slices->push_back(Slice(header_buf_));
@@ -112,8 +112,8 @@ set<RpcFeatureFlag> OutboundCall::RequiredRpcFeatures() const {
   return s;
 }
 
-Status OutboundCall::SetRequestParam(const Message& message) {
-  return serialization::SerializeMessage(message, &request_buf_);
+void OutboundCall::SetRequestParam(const Message& message) {
+  serialization::SerializeMessage(message, &request_buf_);
 }
 
 Status OutboundCall::status() const {
@@ -212,7 +212,7 @@ void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
     // which isn't great, since it would block processing of other RPCs in parallel.
     // Should look into a way to avoid this.
     if (!response_->ParseFromArray(r.data(), r.size())) {
-      SetFailed(Status::IOError("Invalid response, missing fields",
+      SetFailed(Status::IOError("invalid RPC response, missing fields",
                                 response_->InitializationErrorString()));
       return;
     }

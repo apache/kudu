@@ -44,13 +44,8 @@ enum {
   kHeaderPosAuthProto = 2
 };
 
-Status SerializeMessage(const MessageLite& message, faststring* param_buf,
+void SerializeMessage(const MessageLite& message, faststring* param_buf,
                         int additional_size, bool use_cached_size) {
-
-  if (PREDICT_FALSE(!message.IsInitialized())) {
-    return Status::InvalidArgument("RPC argument missing required fields",
-        message.InitializationErrorString());
-  }
   int pb_size = use_cached_size ? message.GetCachedSize() : message.ByteSize();
   DCHECK_EQ(message.ByteSize(), pb_size);
   int recorded_size = pb_size + additional_size;
@@ -58,7 +53,7 @@ Status SerializeMessage(const MessageLite& message, faststring* param_buf,
   int total_size = size_with_delim + additional_size;
 
   if (total_size > FLAGS_rpc_max_message_size) {
-    LOG(DFATAL) << "Sending too long of an RPC message (" << total_size
+    LOG(WARNING) << "Sending too long of an RPC message (" << total_size
                 << " bytes)";
   }
 
@@ -67,19 +62,14 @@ Status SerializeMessage(const MessageLite& message, faststring* param_buf,
   dst = CodedOutputStream::WriteVarint32ToArray(recorded_size, dst);
   dst = message.SerializeWithCachedSizesToArray(dst);
   CHECK_EQ(dst, param_buf->data() + size_with_delim);
-
-  return Status::OK();
 }
 
-Status SerializeHeader(const MessageLite& header,
-                       size_t param_len,
-                       faststring* header_buf) {
+void SerializeHeader(const MessageLite& header,
+                     size_t param_len,
+                     faststring* header_buf) {
 
-  if (PREDICT_FALSE(!header.IsInitialized())) {
-    LOG(DFATAL) << "Uninitialized RPC header";
-    return Status::InvalidArgument("RPC header missing required fields",
-                                  header.InitializationErrorString());
-  }
+  CHECK(header.IsInitialized())
+      << "RPC header missing fields: " << header.InitializationErrorString();
 
   // Compute all the lengths for the packet.
   size_t header_pb_len = header.ByteSize();
@@ -102,8 +92,6 @@ Status SerializeHeader(const MessageLite& header,
 
   // We should have used the whole buffer we allocated.
   CHECK_EQ(dst, header_buf->data() + header_tot_len);
-
-  return Status::OK();
 }
 
 Status ParseMessage(const Slice& buf,
