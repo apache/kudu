@@ -204,11 +204,7 @@ void ReactorThread::AsyncHandler(ev::async &watcher, int revents) {
 void ReactorThread::RegisterConnection(const scoped_refptr<Connection>& conn) {
   DCHECK(IsCurrentThread());
 
-  // Set a limit on how long the server will negotiate with a new client.
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_rpc_negotiation_timeout_ms));
-
-  Status s = StartConnectionNegotiation(conn, deadline);
+  Status s = StartConnectionNegotiation(conn);
   if (!s.ok()) {
     LOG(ERROR) << "Server connection negotiation failed: " << s.ToString();
     DestroyConnection(conn.get(), s);
@@ -220,20 +216,7 @@ void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall> &call) {
   DCHECK(IsCurrentThread());
   scoped_refptr<Connection> conn;
 
-  // TODO: Move call deadline timeout computation into OutboundCall constructor.
-  const MonoDelta &timeout = call->controller()->timeout();
-  MonoTime deadline;
-  if (!timeout.Initialized()) {
-    LOG(WARNING) << "Client call " << call->remote_method().ToString()
-                 << " has no timeout set for connection id: "
-                 << call->conn_id().ToString();
-    deadline = MonoTime::Max();
-  } else {
-    deadline = MonoTime::Now(MonoTime::FINE);
-    deadline.AddDelta(timeout);
-  }
-
-  Status s = FindOrStartConnection(call->conn_id(), &conn, deadline);
+  Status s = FindOrStartConnection(call->conn_id(), &conn);
   if (PREDICT_FALSE(!s.ok())) {
     call->SetFailed(s);
     return;
@@ -330,8 +313,7 @@ void ReactorThread::RunThread() {
 }
 
 Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
-                                            scoped_refptr<Connection>* conn,
-                                            const MonoTime &deadline) {
+                                            scoped_refptr<Connection>* conn) {
   DCHECK(IsCurrentThread());
   conn_map_t::const_iterator c = client_conns_.find(conn_id);
   if (c != client_conns_.end()) {
@@ -354,7 +336,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
   (*conn)->set_user_credentials(conn_id.user_credentials());
 
   // Kick off blocking client connection negotiation.
-  Status s = StartConnectionNegotiation(*conn, deadline);
+  Status s = StartConnectionNegotiation(*conn);
   if (s.IsIllegalState()) {
     // Return a nicer error message to the user indicating -- if we just
     // forward the status we'd get something generic like "ThreadPool is closing".
@@ -368,9 +350,12 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
   return Status::OK();
 }
 
-Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>& conn,
-    const MonoTime &deadline) {
+Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>& conn) {
   DCHECK(IsCurrentThread());
+
+  // Set a limit on how long the server will negotiate with a new client.
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_rpc_negotiation_timeout_ms));
 
   scoped_refptr<Trace> trace(new Trace());
   ADOPT_TRACE(trace.get());

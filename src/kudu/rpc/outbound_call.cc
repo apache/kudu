@@ -74,6 +74,10 @@ OutboundCall::OutboundCall(const ConnectionId& conn_id,
   header_.set_call_id(kInvalidCallId);
   remote_method.ToPB(header_.mutable_remote_method());
   start_time_ = MonoTime::Now(MonoTime::FINE);
+
+  if (!controller_->required_server_features().empty()) {
+    required_rpc_features_.insert(RpcFeatureFlag::APPLICATION_FEATURE_FLAGS);
+  }
 }
 
 OutboundCall::~OutboundCall() {
@@ -102,14 +106,6 @@ Status OutboundCall::SerializeTo(vector<Slice>* slices) {
   slices->push_back(Slice(header_buf_));
   slices->push_back(Slice(request_buf_));
   return Status::OK();
-}
-
-set<RpcFeatureFlag> OutboundCall::RequiredRpcFeatures() const {
-  set<RpcFeatureFlag> s;
-  if (!controller_->required_server_features().empty()) {
-    s.insert(RpcFeatureFlag::APPLICATION_FEATURE_FLAGS);
-  }
-  return s;
 }
 
 void OutboundCall::SetRequestParam(const Message& message) {

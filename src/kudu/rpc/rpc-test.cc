@@ -36,6 +36,8 @@
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
+DECLARE_int32(rpc_negotiation_inject_delay_ms);
+
 using std::string;
 using std::shared_ptr;
 using std::unordered_map;
@@ -301,6 +303,30 @@ TEST_F(TestRpc, TestCallTimeout) {
   // Test a longer timeout - expect this will trigger the "two-stage timeout"
   // code path.
   ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(1500)));
+}
+
+// Inject 500ms delay in negotiation, and send a call with a short timeout, followed by
+// one with a long timeout. The call with the long timeout should succeed even though
+// the previous one failed.
+//
+// This is a regression test against prior behavior where the connection negotiation
+// was assigned the timeout of the first call on that connection. So, if the first
+// call had a short timeout, the later call would also inherit the timed-out negotiation.
+TEST_F(TestRpc, TestCallTimeoutDoesntAffectNegotiation) {
+  Sockaddr server_addr;
+  StartTestServer(&server_addr);
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+
+  FLAGS_rpc_negotiation_inject_delay_ms = 500;
+  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(50)));
+  ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
+
+  // Only the second call should have been received by the server, because we
+  // don't bother sending an already-timed-out call.
+  auto metric_map = server_messenger_->metric_entity()->UnsafeMetricsMapForTests();
+  auto* metric = FindOrDie(metric_map, &METRIC_rpc_incoming_queue_time).get();
+  ASSERT_EQ(1, down_cast<Histogram*>(metric)->TotalCount());
 }
 
 static void AcceptAndReadForever(Socket* listen_sock) {

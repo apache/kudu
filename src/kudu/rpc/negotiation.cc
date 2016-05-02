@@ -44,6 +44,11 @@ TAG_FLAG(rpc_trace_negotiation, runtime);
 TAG_FLAG(rpc_trace_negotiation, advanced);
 TAG_FLAG(rpc_trace_negotiation, experimental);
 
+DEFINE_int32(rpc_negotiation_inject_delay_ms, 0,
+             "If enabled, injects the given number of milliseconds delay into "
+             "the RPC negotiation process on the server side.");
+TAG_FLAG(rpc_negotiation_inject_delay_ms, unsafe);
+
 namespace kudu {
 namespace rpc {
 
@@ -194,6 +199,11 @@ static Status DoClientNegotiation(Connection* conn,
 // Perform server negotiation. We don't LOG() anything, we leave that to our caller.
 static Status DoServerNegotiation(Connection* conn,
                                   const MonoTime& deadline) {
+  if (FLAGS_rpc_negotiation_inject_delay_ms > 0) {
+    LOG(WARNING) << "Injecting " << FLAGS_rpc_negotiation_inject_delay_ms
+                 << "ms delay in negotiation";
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_rpc_negotiation_inject_delay_ms));
+  }
   RETURN_NOT_OK(conn->SetNonBlocking(false));
   RETURN_NOT_OK(conn->InitSaslServer());
   conn->sasl_server().set_deadline(deadline);

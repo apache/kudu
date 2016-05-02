@@ -206,7 +206,9 @@ class OutboundCall {
   // Fill in the call response.
   void SetResponse(gscoped_ptr<CallResponse> resp);
 
-  std::set<RpcFeatureFlag> RequiredRpcFeatures() const;
+  const std::set<RpcFeatureFlag>& required_rpc_features() const {
+    return required_rpc_features_;
+  }
 
   std::string ToString() const;
 
@@ -284,6 +286,9 @@ class OutboundCall {
 
   // The remote method being called.
   RemoteMethod remote_method_;
+
+  // RPC-system features required to send this call.
+  std::set<RpcFeatureFlag> required_rpc_features_;
 
   ConnectionId conn_id_;
   ResponseCallback callback_;

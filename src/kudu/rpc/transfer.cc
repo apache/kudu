@@ -134,13 +134,24 @@ string InboundTransfer::StatusAsString() const {
   return Substitute("$0/$1 bytes received", cur_offset_, total_length_);
 }
 
+OutboundTransfer* OutboundTransfer::CreateForCallRequest(
+    int32_t call_id,
+    const std::vector<Slice> &payload,
+    TransferCallbacks *callbacks) {
+  return new OutboundTransfer(call_id, payload, callbacks);
+}
+
+OutboundTransfer* OutboundTransfer::CreateForCallResponse(const std::vector<Slice> &payload,
+                                                          TransferCallbacks *callbacks) {
+  return new OutboundTransfer(kInvalidCallId, payload, callbacks);
+}
+
+
 OutboundTransfer::OutboundTransfer(int32_t call_id,
                                    const std::vector<Slice> &payload,
-                                   set<RpcFeatureFlag> required_features,
                                    TransferCallbacks *callbacks)
   : cur_slice_idx_(0),
     cur_offset_in_slice_(0),
-    required_features_(std::move(required_features)),
     callbacks_(callbacks),
     call_id_(call_id),
     aborted_(false) {

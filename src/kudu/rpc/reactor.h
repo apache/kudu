@@ -167,9 +167,7 @@ class ReactorThread {
 
   // Begin the process of connection negotiation.
   // Must be called from the reactor thread.
-  // Deadline specifies latest time negotiation may complete before timeout.
-  Status StartConnectionNegotiation(const scoped_refptr<Connection>& conn,
-                                    const MonoTime& deadline);
+  Status StartConnectionNegotiation(const scoped_refptr<Connection>& conn);
 
   // Transition back from negotiating to processing requests.
   // Must be called from the reactor thread.
@@ -192,10 +190,8 @@ class ReactorThread {
   // If such a connection already exists, returns that, otherwise creates a new one.
   // May return a bad Status if the connect() call fails.
   // The resulting connection object is managed internally by the reactor thread.
-  // Deadline specifies latest time allowed for initializing the connection.
   Status FindOrStartConnection(const ConnectionId& conn_id,
-                               scoped_refptr<Connection>* conn,
-                               const MonoTime& deadline);
+                               scoped_refptr<Connection>* conn);
 
   // Shut down the given connection, removing it from the connection tracking
   // structures of this reactor.

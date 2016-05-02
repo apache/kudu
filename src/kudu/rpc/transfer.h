@@ -27,7 +27,7 @@
 #include <string>
 #include <vector>
 
-#include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/rpc/constants.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
@@ -98,7 +98,8 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
  public:
   enum { kMaxPayloadSlices = 10 };
 
-  // Create a new transfer. The 'payload' slices will be concatenated and
+  // Factory methods for creating transfers associated with call requests
+  // or responses. The 'payload' slices will be concatenated and
   // written to the socket. When the transfer completes or errors, the
   // appropriate method of 'callbacks' is invoked.
   //
@@ -106,18 +107,19 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
   // memory of the slices. The slices must remain valid until the callback
   // is triggered.
   //
-  // When the transfer starts, the required features are checked against the set
-  // of features which the server supports. The check is delayed until just
-  // before the transfer starts because it depends on the negotiation with the
-  // server being complete. The call_id allows the call to be canceled if
-  // required features are not supported.
-  //
   // NOTE: 'payload' is currently restricted to a maximum of kMaxPayloadSlices
   // slices.
-  OutboundTransfer(int32_t call_id,
-                   const std::vector<Slice> &payload,
-                   std::set<RpcFeatureFlag> required_features,
-                   TransferCallbacks *callbacks);
+  // ------------------------------------------------------------
+
+  // Create an outbound transfer for a call request.
+  static OutboundTransfer* CreateForCallRequest(int32_t call_id,
+                                                const std::vector<Slice> &payload,
+                                                TransferCallbacks *callbacks);
+
+  // Create an outbound transfer for a call response.
+  // See above for details.
+  static OutboundTransfer* CreateForCallResponse(const std::vector<Slice> &payload,
+                                                 TransferCallbacks *callbacks);
 
   // Destruct the transfer. A transfer object should never be deallocated
   // before it has either (a) finished transferring, or (b) been Abort()ed.
@@ -136,20 +138,27 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
   // Return true if the entire transfer has been sent.
   bool TransferFinished() const;
 
-  const std::set<RpcFeatureFlag>& required_features() const {
-    return required_features_;
-  }
-
   // Return the total number of bytes to be sent (including those already sent)
   int32_t TotalLength() const;
 
   std::string HexDump() const;
 
+  bool is_for_outbound_call() const {
+    return call_id_ != kInvalidCallId;
+  }
+
+  // Returns the call ID for a transfer associated with an outbound
+  // call. Must not be called for call responses.
   int32_t call_id() const {
+    DCHECK_NE(call_id_, kInvalidCallId);
     return call_id_;
   }
 
  private:
+  OutboundTransfer(int32_t call_id,
+                   const std::vector<Slice> &payload,
+                   TransferCallbacks *callbacks);
+
   // Slices to send. Uses an array here instead of a vector to avoid an expensive
   // vector construction (improved performance a couple percent).
   Slice payload_slices_[kMaxPayloadSlices];
@@ -160,10 +169,10 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
   // The number of bytes in the above slice which has already been sent.
   int32_t cur_offset_in_slice_;
 
-  std::set<RpcFeatureFlag> required_features_;
-
   TransferCallbacks *callbacks_;
 
+  // In the case of outbound calls, the associated call ID.
+  // In the case of call responses, kInvalidCallId
   int32_t call_id_;
 
   bool aborted_;

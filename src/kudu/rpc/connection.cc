@@ -132,7 +132,7 @@ bool Connection::Idle() const {
 
 void Connection::Shutdown(const Status &status) {
   DCHECK(reactor_thread_->IsCurrentThread());
-  shutdown_status_ = status;
+  shutdown_status_ = status.CloneAndPrepend("RPC connection failed");
 
   if (inbound_ && inbound_->TransferStarted()) {
     double secs_since_active = reactor_thread_->cur_time()
@@ -254,8 +254,8 @@ struct CallTransferCallbacks : public TransferCallbacks {
   }
 
   virtual void NotifyTransferAborted(const Status &status) OVERRIDE {
-    VLOG(1) << "Connection torn down before " <<
-      call_->ToString() << " could send its call: " << status.ToString();
+    VLOG(1) << "Transfer of RPC call " << call_->ToString() << " aborted: "
+            << status.ToString();
     delete this;
   }
 
@@ -343,7 +343,7 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   TransferCallbacks *cb = new CallTransferCallbacks(call);
   awaiting_response_[call_id] = car.release();
   QueueOutbound(gscoped_ptr<OutboundTransfer>(
-        new OutboundTransfer(call_id, slices_tmp_, call->RequiredRpcFeatures(), cb)));
+      OutboundTransfer::CreateForCallRequest(call_id, slices_tmp_, cb)));
 }
 
 // Callbacks for sending an RPC call response from the server.
@@ -421,7 +421,7 @@ void Connection::QueueResponseForCall(gscoped_ptr<InboundCall> call) {
   // After the response is sent, can delete the InboundCall object.
   // We set a dummy call ID and required feature set, since these are not needed
   // when sending responses.
-  gscoped_ptr<OutboundTransfer> t(new OutboundTransfer(-1, slices, {}, cb));
+  gscoped_ptr<OutboundTransfer> t(OutboundTransfer::CreateForCallResponse(slices, cb));
 
   QueueTransferTask *task = new QueueTransferTask(std::move(t), this);
   reactor_thread_->reactor()->ScheduleReactorTask(task);
@@ -556,22 +556,34 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
     transfer = &(outbound_transfers_.front());
 
     if (!transfer->TransferStarted()) {
-      // If this is the start of the transfer, then check if the server has the
-      // required RPC flags. We have to wait until just before the transfer in
-      // order to ensure that the negotiation has taken place, so that the flags
-      // are available.
-      const set<RpcFeatureFlag>& required_features = transfer->required_features();
-      const set<RpcFeatureFlag>& server_features = sasl_client_.server_features();
-      if (!includes(server_features.begin(), server_features.end(),
-                    required_features.begin(), required_features.end())) {
-        outbound_transfers_.pop_front();
+
+      if (transfer->is_for_outbound_call()) {
         CallAwaitingResponse* car = FindOrDie(awaiting_response_, transfer->call_id());
-        Status s = Status::NotSupported("server does not support the required RPC features");
-        transfer->Abort(s);
-        car->call->SetFailed(s);
-        car->call.reset();
-        delete transfer;
-        continue;
+        if (!car->call) {
+          // If the call has already timed out, then the 'call' field will have been nulled.
+          // In that case, we don't need to bother sending it.
+          outbound_transfers_.pop_front();
+          transfer->Abort(Status::Aborted("already timed out"));
+          delete transfer;
+          continue;
+        }
+
+        // If this is the start of the transfer, then check if the server has the
+        // required RPC flags. We have to wait until just before the transfer in
+        // order to ensure that the negotiation has taken place, so that the flags
+        // are available.
+        const set<RpcFeatureFlag>& required_features = car->call->required_rpc_features();
+        const set<RpcFeatureFlag>& server_features = sasl_client_.server_features();
+        if (!includes(server_features.begin(), server_features.end(),
+                      required_features.begin(), required_features.end())) {
+          outbound_transfers_.pop_front();
+          Status s = Status::NotSupported("server does not support the required RPC features");
+          transfer->Abort(s);
+          car->call->SetFailed(s);
+          car->call.reset();
+          delete transfer;
+          continue;
+        }
       }
     }
 
