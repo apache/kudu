@@ -240,7 +240,12 @@ void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const stri
                         << RaftPeerPB::Role_Name(new_role)
                         << ", previous role was: " << RaftPeerPB::Role_Name(old_role_);
   if (new_role == RaftPeerPB::LEADER) {
-    CHECK_OK(leader_cb_.Run());
+    Status s = leader_cb_.Run();
+
+    // Callback errors are non-fatal only if the catalog manager has shut down.
+    if (!s.ok()) {
+      CHECK(!master_->catalog_manager()->IsInitialized()) << s.ToString();
+    }
   }
 }
 
