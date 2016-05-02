@@ -260,7 +260,7 @@ void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
   string cmd = strings::Substitute(
       "export PATH=$$PATH:/usr/sbin ; "
       "lsof -n -i 'TCP:$0' -sTCP:LISTEN ; "
-      "for pid in $$(lsof -F p -n -i 'TCP:$0' -sTCP:LISTEN | cut -f 2 -dp) ; do"
+      "for pid in $$(lsof -F p -n -i 'TCP:$0' -sTCP:LISTEN | grep p | cut -f 2 -dp) ; do"
       "  while [ $$pid -gt 1 ] ; do"
       "    ps h -fp $$pid ;"
       "    stat=($$(</proc/$$pid/stat)) ;"
