@@ -294,6 +294,7 @@ class PeriodicWebUIChecker {
     ts_pages.push_back("/metrics");
     ts_pages.push_back("/tablets");
     ts_pages.push_back(strings::Substitute("/transactions?tablet_id=$0", tablet_id));
+    ts_pages.push_back("/maintenance-manager");
 
     // Generate list of urls for each master and tablet server
     for (int i = 0; i < cluster.num_masters(); i++) {
