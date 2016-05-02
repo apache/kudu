@@ -153,11 +153,6 @@ else
   CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
 fi
 
-# Before running cmake below, clean out any errant cmake state from the source
-# tree. We need this to help transition into a world where out-of-tree builds
-# are required. Once that's done, the cleanup can be removed.
-rm -rf $SOURCE_ROOT/CMakeCache.txt $SOURCE_ROOT/CMakeFiles
-
 # Configure the build
 #
 # ASAN/TSAN can't build the Python bindings because the exported Kudu client
@@ -317,6 +312,11 @@ if [ "$BUILD_JAVA" == "1" ]; then
   echo
   echo Building and testing java...
   echo ------------------------------------------------------------
+
+  # Remove testing artifacts from the previous run.
+  rm -rf $SOURCE_ROOT/java/*/target/surefire-reports
+  rm -rf $SOURCE_ROOT/java/*/target/testdata
+
   # Make sure we use JDK7
   export JAVA_HOME=$JAVA7_HOME
   export PATH=$JAVA_HOME/bin:$PATH
