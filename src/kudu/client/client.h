@@ -48,6 +48,7 @@
 
 namespace kudu {
 
+class ClientStressTest_TestUniqueClientIds_Test;
 class LinkedListTester;
 class PartitionSchema;
 
@@ -286,6 +287,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class KuduTableAlterer;
   friend class KuduTableCreator;
 
+  FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);
   FRIEND_TEST(ClientTest, TestGetTabletServerBlacklist);
   FRIEND_TEST(ClientTest, TestMasterDown);
   FRIEND_TEST(ClientTest, TestMasterLookupPermits);

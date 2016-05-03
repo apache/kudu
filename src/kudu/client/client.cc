@@ -55,6 +55,7 @@
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
+#include "kudu/util/oid_generator.h"
 #include "kudu/util/version_info.h"
 
 using kudu::master::AlterTableRequestPB;
@@ -241,6 +242,8 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
 
 KuduClient::KuduClient()
   : data_(new KuduClient::Data()) {
+  static ObjectIdGenerator oid_generator;
+  data_->client_id_ = oid_generator.Next();
 }
 
 KuduClient::~KuduClient() {

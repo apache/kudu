@@ -186,6 +186,9 @@ class KuduClient::Data {
                                    const ReqClass&, RespClass*,
                                    rpc::RpcController*)>& func);
 
+  // The unique id of this client.
+  std::string client_id_;
+
   std::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<DnsResolver> dns_resolver_;
   scoped_refptr<internal::MetaCache> meta_cache_;
