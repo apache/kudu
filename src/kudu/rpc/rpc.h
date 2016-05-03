@@ -32,6 +32,37 @@ namespace rpc {
 class Messenger;
 class Rpc;
 
+// Result status of a retriable Rpc.
+//
+// TODO Consider merging this with ScanRpcStatus.
+struct RetriableRpcStatus {
+  enum Result {
+    // There was no error, i.e. the Rpc was successful.
+    OK,
+
+    // The Rpc got an error and it's not retriable.
+    NON_RETRIABLE_ERROR,
+
+    // The server couldn't be reached, i.e. there was a network error while
+    // reaching the replica or a DNS resolution problem.
+    SERVER_NOT_ACCESSIBLE,
+
+    // The server is too busy to serve the request.
+    SERVER_BUSY,
+
+    // For rpc's that are meant only for the leader of a shared resource, when the server
+    // we're interacting with is not the leader.
+    REPLICA_NOT_LEADER,
+
+    // The server doesn't know the resource we're interacting with. For instance a TabletServer
+    // is not part of the config for the tablet we're trying to write to.
+    RESOURCE_NOT_FOUND
+  };
+
+  Result result;
+  Status status;
+};
+
 // Provides utilities for retrying failed RPCs.
 //
 // All RPCs should use HandleResponse() to retry certain generic errors.
