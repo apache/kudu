@@ -188,7 +188,8 @@ run_benchmarks() {
 
   # run rpc-bench test 5 times. 10 seconds per run
   for i in $(seq 1 $NUM_SAMPLES); do
-    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/rpc-bench &> $LOGDIR/$RPC_BENCH_TEST$i.log
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/rpc-bench \
+      --gtest_filter=*BenchmarkCalls &> $LOGDIR/$RPC_BENCH_TEST$i.log
   done
 
   # run cbtree-test 5 times. 20 seconds per run

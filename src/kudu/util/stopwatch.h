@@ -107,8 +107,9 @@ struct CpuTimes {
   nanosecond_type wall;
   nanosecond_type user;
   nanosecond_type system;
+  int64_t context_switches;
 
-  void clear() { wall = user = system = 0LL; }
+  void clear() { wall = user = system = context_switches = 0LL; }
 
   // Return a string formatted similar to the output of the "time" shell command.
   std::string ToString() const {
@@ -183,6 +184,7 @@ class Stopwatch {
     times_.wall = current.wall - times_.wall;
     times_.user = current.user - times_.user;
     times_.system = current.system - times_.system;
+    times_.context_switches = current.context_switches - times_.context_switches;
   }
 
   // Return the elapsed amount of time. If the stopwatch is running, then returns
@@ -197,6 +199,7 @@ class Stopwatch {
     current.wall -= times_.wall;
     current.user -= times_.user;
     current.system -= times_.system;
+    current.context_switches -= times_.context_switches;
     return current;
   }
 
@@ -218,6 +221,7 @@ class Stopwatch {
     times_.wall   -= current.wall;
     times_.user   -= current.user;
     times_.system -= current.system;
+    times_.context_switches -= current.context_switches;
   }
 
   bool is_stopped() const {
@@ -255,6 +259,7 @@ class Stopwatch {
     times->wall   = wall.tv_sec * 1000000000L + wall.tv_nsec;
     times->user   = usage.ru_utime.tv_sec * 1000000000L + usage.ru_utime.tv_usec * 1000;
     times->system = usage.ru_stime.tv_sec * 1000000000L + usage.ru_stime.tv_usec * 1000;
+    times->context_switches = usage.ru_nvcsw + usage.ru_nivcsw;
   }
 
   bool stopped_;
