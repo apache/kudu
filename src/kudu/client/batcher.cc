@@ -45,6 +45,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/retriable_rpc.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/tserver/tserver_service.proxy.h"
@@ -62,6 +63,7 @@ namespace kudu {
 
 using rpc::ErrorStatusPB;
 using rpc::Messenger;
+using rpc::RequestTracker;
 using rpc::ResponseCallback;
 using rpc::RetriableRpc;
 using rpc::RetriableRpcStatus;
@@ -189,6 +191,7 @@ class WriteRpc : public RetriableRpc<RemoteTabletServer, WriteRequestPB, WriteRe
  public:
   WriteRpc(const scoped_refptr<Batcher>& batcher,
            const scoped_refptr<MetaCacheServerPicker>& replica_picker,
+           const scoped_refptr<RequestTracker>& request_tracker,
            vector<InFlightOp*> ops,
            const MonoTime& deadline,
            const shared_ptr<Messenger>& messenger,
@@ -225,11 +228,12 @@ class WriteRpc : public RetriableRpc<RemoteTabletServer, WriteRequestPB, WriteRe
 
 WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
                    const scoped_refptr<MetaCacheServerPicker>& replica_picker,
+                   const scoped_refptr<RequestTracker>& request_tracker,
                    vector<InFlightOp*> ops,
                    const MonoTime& deadline,
                    const shared_ptr<Messenger>& messenger,
                    const string& tablet_id)
-    : RetriableRpc(replica_picker, deadline, messenger),
+    : RetriableRpc(replica_picker, request_tracker, deadline, messenger),
       batcher_(batcher),
       ops_(std::move(ops)),
       tablet_id_(tablet_id) {
@@ -706,6 +710,7 @@ void Batcher::FlushBuffer(RemoteTablet* tablet, const vector<InFlightOp*>& ops) 
                                 tablet));
   WriteRpc* rpc = new WriteRpc(this,
                                server_picker,
+                               client_->data_->request_tracker_,
                                ops,
                                deadline_,
                                client_->data_->messenger_,

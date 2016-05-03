@@ -110,6 +110,7 @@ enum FeatureFlags {
 message ExactlyOnceRequestPB {
   optional uint32 sleep_for_ms = 1 [default = 0];
   required uint32 value_to_add = 2;
+  optional bool randomly_fail = 3 [default = false];
 }
 message ExactlyOnceResponsePB {
   required uint32 current_val = 1;

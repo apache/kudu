@@ -113,6 +113,9 @@ class RpcController {
   bool has_request_id() const;
 
   // Returns the currently set request id.
+  // When the request is sent to the server, it gets "moved" from RpcController
+  // so an absence of a request after send doesn't mean one wasn't sent.
+  // REQUIRES: the controller has a request ID set.
   const RequestIdPB& request_id() const;
 
   // Add a requirement that the server side must support a feature with the

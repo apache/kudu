@@ -21,12 +21,18 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/rpc.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/monotime.h"
 
 namespace kudu {
 namespace rpc {
+
+namespace internal {
+typedef rpc::RequestTracker::SequenceNumber SequenceNumber;
+}
 
 // A base class for retriable RPCs that handles replica picking and retry logic.
 //
@@ -44,12 +50,18 @@ template <class Server, class RequestPB, class ResponsePB>
 class RetriableRpc : public Rpc {
  public:
   RetriableRpc(const scoped_refptr<ServerPicker<Server>>& server_picker,
+               const scoped_refptr<RequestTracker>& request_tracker,
                const MonoTime& deadline,
                const std::shared_ptr<Messenger>& messenger)
    : Rpc(deadline, messenger),
-     server_picker_(server_picker) {}
+     server_picker_(server_picker),
+     request_tracker_(request_tracker),
+     sequence_number_(RequestTracker::NO_SEQ_NO),
+     num_attempts_(0) {}
 
-  virtual ~RetriableRpc() {}
+  virtual ~RetriableRpc() {
+    DCHECK_EQ(sequence_number_, RequestTracker::NO_SEQ_NO);
+  }
 
   // Performs server lookup/initialization.
   // If/when the server is looked up and initialized successfully RetriableRpc will call
@@ -88,9 +100,19 @@ class RetriableRpc : public Rpc {
   // Called when after the RPC was performed.
   void SendRpcCb(const Status& status) override;
 
+  // Performs final cleanup, after the RPC is done (independently of success).
+  void FinishInternal();
+
   scoped_refptr<ServerPicker<Server>> server_picker_;
+  scoped_refptr<RequestTracker> request_tracker_;
   const MonoTime deadline_;
   std::shared_ptr<Messenger> messenger_;
+
+  // The sequence number for this RPC.
+  internal::SequenceNumber sequence_number_;
+
+  // The number of times this RPC has been attempted
+  int32 num_attempts_;
 
   // Keeps track of the replica the RPCs were sent to.
   // TODO Remove this and pass the used replica around. For now we need to keep this as
@@ -101,6 +123,9 @@ class RetriableRpc : public Rpc {
 
 template <class Server, class RequestPB, class ResponsePB>
 void RetriableRpc<Server, RequestPB, ResponsePB>::SendRpc()  {
+  if (sequence_number_ == RequestTracker::NO_SEQ_NO) {
+    CHECK_OK(request_tracker_->NewSeqNo(&sequence_number_));
+  }
   server_picker_->PickLeader(Bind(&RetriableRpc::ReplicaFoundCb,
                                   Unretained(this)),
                              retrier().deadline());
@@ -144,15 +169,33 @@ bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(const RetriableR
 }
 
 template <class Server, class RequestPB, class ResponsePB>
+void RetriableRpc<Server, RequestPB, ResponsePB>::FinishInternal() {
+  // Mark the RPC as completed and set the sequence number to NO_SEQ_NO to make
+  // sure we're in the appropriate state before destruction.
+  request_tracker_->RpcCompleted(sequence_number_);
+  sequence_number_ = RequestTracker::NO_SEQ_NO;
+}
+
+template <class Server, class RequestPB, class ResponsePB>
 void RetriableRpc<Server, RequestPB, ResponsePB>::ReplicaFoundCb(const Status& status,
                                                                  Server* server) {
   RetriableRpcStatus result = AnalyzeResponse(status);
   if (RetryIfNeeded(result, server)) return;
 
   if (result.result == RetriableRpcStatus::NON_RETRIABLE_ERROR) {
+    FinishInternal();
     Finish(result.status);
     return;
   }
+
+  // We successfully found a replica, so prepare the RequestIdPB before we send out the call.
+  std::unique_ptr<RequestIdPB> request_id(new RequestIdPB());
+  request_id->set_client_id(request_tracker_->client_id());
+  request_id->set_seq_no(sequence_number_);
+  request_id->set_first_incomplete_seq_no(request_tracker_->FirstIncomplete());
+  request_id->set_attempt_no(num_attempts_++);
+
+  mutable_retrier()->mutable_controller()->SetRequestIdPB(std::move(request_id));
 
   DCHECK_EQ(result.result, RetriableRpcStatus::OK);
   current_ = server;
@@ -164,7 +207,9 @@ void RetriableRpc<Server, RequestPB, ResponsePB>::SendRpcCb(const Status& status
   RetriableRpcStatus result = AnalyzeResponse(status);
   if (RetryIfNeeded(result, current_)) return;
 
-  // From here on out the RPC has either succeeded of suffered a non-retriable
+  FinishInternal();
+
+  // From here on out the rpc has either succeeded of suffered a non-retriable
   // failure.
   Status final_status = result.status;
   if (!final_status.ok()) {
@@ -178,7 +223,6 @@ void RetriableRpc<Server, RequestPB, ResponsePB>::SendRpcCb(const Status& status
   }
   Finish(final_status);
 }
-
 
 } // namespace rpc
 } // namespace kudu

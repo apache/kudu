@@ -100,7 +100,7 @@ bool RpcController::has_request_id() const {
 
 const RequestIdPB& RpcController::request_id() const {
   DCHECK(has_request_id());
-  return *request_id_.get();
+  return *request_id_;
 }
 
 void RpcController::RequireServerFeature(uint32_t feature) {

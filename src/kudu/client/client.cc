@@ -241,6 +241,8 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   RETURN_NOT_OK_PREPEND(c->data_->InitLocalHostNames(),
                         "Could not determine local host names");
 
+  c->data_->request_tracker_ = new rpc::RequestTracker(c->data_->client_id_);
+
   client->swap(c);
   return Status::OK();
 }

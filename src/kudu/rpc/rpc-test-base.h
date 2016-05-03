@@ -267,6 +267,13 @@ class CalculatorService : public CalculatorServiceIf {
     if (req->sleep_for_ms() > 0) {
       usleep(req->sleep_for_ms() * 1000);
     }
+    // If failures are enabled, cause them some percentage of the time.
+    if (req->randomly_fail()) {
+      if (rand() % 10 < 3) {
+        context->RespondFailure(Status::ServiceUnavailable("Random injected failure."));
+        return;
+      }
+    }
     int result = exactly_once_test_val_ += req->value_to_add();
     resp->set_current_val(result);
     resp->set_current_time_micros(GetCurrentTimeMicros());

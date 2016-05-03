@@ -44,6 +44,7 @@ class MasterServiceProxy;
 
 namespace rpc {
 class Messenger;
+class RequestTracker;
 class RpcController;
 } // namespace rpc
 
@@ -195,6 +196,9 @@ class KuduClient::Data {
 
   // The unique id of this client.
   std::string client_id_;
+
+  // The request tracker for this client.
+  scoped_refptr<rpc::RequestTracker> request_tracker_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<DnsResolver> dns_resolver_;
