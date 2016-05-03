@@ -38,7 +38,7 @@ a future post.
   to completion, but initial results are looking quite promising.
 
 * Discussion continued on the design document for the upcoming
-  [http://gerrit.cloudera.org:8080/#/c/2642/](Replay Cache) feature. This feature
+  [Replay Cache](http://gerrit.cloudera.org:8080/#/c/2642/) feature. This feature
   was previously introduced in an [earlier weekly update
   post](http://getkudu.io/2016/04/11/weekly-update.html)
   and development is now fully under way.
