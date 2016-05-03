@@ -30,6 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from kudu_util import check_output
 
@@ -79,11 +80,19 @@ def checkout_java_tree(rev, path):
                          ("git archive --format=tar %s java/ | " +
                           "tar -C \"%s\" -xf -") % (rev, path)],
                         cwd=get_repo_dir())
+
   # Extract proto files which the Java build also relies on.
+  # bsdtar doesn't support --wildcards so we need to extract them in two steps.
+  git_tar_cmd = "git archive --format=tar %s src/" % rev
+  proto_filenames_file = tempfile.NamedTemporaryFile()
   subprocess.check_call(["bash", '-o', 'pipefail', "-c",
-                         ("git archive --format=tar %s src/ | " +
-                          "tar -C \"%s\" --wildcards -xf - '*.proto'") % (rev, path)],
+                         git_tar_cmd + " | tar -t | grep -a '\.proto$'"],
+                        cwd=get_repo_dir(), stdout=proto_filenames_file)
+  subprocess.check_call(["bash", '-o', 'pipefail', "-c",
+                          git_tar_cmd + " | " +
+                          ("tar -C \"%s\" -xT %s") % (path, proto_filenames_file.name)],
                         cwd=get_repo_dir())
+
   # Symlink thirdparty from the outer build so that protoc is available.
   # This may break at some point in the future if we switch protobuf versions,
   # but for now it's faster than rebuilding protobuf in both trees.
