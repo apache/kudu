@@ -53,6 +53,7 @@ set(KRPC_SRCS
     proxy.cc
     reactor.cc
     remote_method.cc
+    request_tracker.cc
     rpc.cc
     rpc_context.cc
     rpc_controller.cc
@@ -113,6 +114,7 @@ target_link_libraries(rtest_krpc
 set(KUDU_TEST_LINK_LIBS rtest_krpc krpc ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)
 ADD_KUDU_TEST(reactor-test)
+ADD_KUDU_TEST(request_tracker-test)
 ADD_KUDU_TEST(rpc-bench RUN_SERIAL true)
 ADD_KUDU_TEST(rpc-test)
 ADD_KUDU_TEST(rpc_stub-test)
