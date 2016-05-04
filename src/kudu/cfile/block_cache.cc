@@ -41,37 +41,7 @@ class MetricEntity;
 
 namespace cfile {
 
-struct CacheKey {
-  CacheKey(BlockCache::FileId file_id, uint64_t offset) :
-    file_id_(file_id.id()),
-    offset_(offset)
-  {}
-
-  const Slice slice() const {
-    return Slice(reinterpret_cast<const uint8_t *>(this), sizeof(*this));
-  }
-
-  uint64_t file_id_;
-  uint64_t offset_;
-} PACKED;
-
 namespace {
-class Deleter : public CacheDeleter {
- public:
-  explicit Deleter(Cache* cache) : cache_(cache) {
-  }
-  virtual void Delete(const Slice& slice, void* value) OVERRIDE {
-    Slice *value_slice = reinterpret_cast<Slice *>(value);
-
-    // The actual data was allocated from the cache's memory
-    // (i.e. it may be in nvm)
-    cache_->Free(value_slice->mutable_data());
-    delete value_slice;
-  }
- private:
-  Cache* cache_;
-  DISALLOW_COPY_AND_ASSIGN(Deleter);
-};
 
 Cache* CreateCache(int64_t capacity) {
   CacheType t;
@@ -90,50 +60,33 @@ Cache* CreateCache(int64_t capacity) {
 } // anonymous namespace
 
 BlockCache::BlockCache()
-  : cache_(CreateCache(FLAGS_block_cache_capacity_mb * 1024 * 1024)) {
-  deleter_.reset(new Deleter(cache_.get()));
+  : BlockCache(FLAGS_block_cache_capacity_mb * 1024 * 1024) {
 }
 
 BlockCache::BlockCache(size_t capacity)
   : cache_(CreateCache(capacity)) {
-  deleter_.reset(new Deleter(cache_.get()));
 }
 
-uint8_t* BlockCache::Allocate(size_t size) {
-  return cache_->Allocate(size);
+BlockCache::PendingEntry BlockCache::Allocate(const CacheKey& key, size_t val_size) {
+  Slice key_slice(reinterpret_cast<const uint8_t*>(&key), sizeof(key));
+  int charge = val_size;
+  return PendingEntry(cache_.get(), cache_->Allocate(key_slice, val_size, charge));
 }
 
-void BlockCache::Free(uint8_t* p) {
-  cache_->Free(p);
-}
-
-uint8_t* BlockCache::MoveToHeap(uint8_t* p, size_t size) {
-  return cache_->MoveToHeap(p, size);
-}
-
-bool BlockCache::Lookup(FileId file_id, uint64_t offset, Cache::CacheBehavior behavior,
+bool BlockCache::Lookup(const CacheKey& key, Cache::CacheBehavior behavior,
                         BlockCacheHandle *handle) {
-  CacheKey key(file_id, offset);
-  Cache::Handle *h = cache_->Lookup(key.slice(), behavior);
+  Cache::Handle *h = cache_->Lookup(Slice(reinterpret_cast<const uint8_t*>(&key),
+                                          sizeof(key)), behavior);
   if (h != nullptr) {
     handle->SetHandle(cache_.get(), h);
   }
   return h != nullptr;
 }
 
-bool BlockCache::Insert(FileId file_id, uint64_t offset, const Slice &block_data,
-                        BlockCacheHandle *inserted) {
-  CacheKey key(file_id, offset);
-  // Allocate a copy of the value Slice (not the referred-to-data!)
-  // for insertion in the cache.
-  gscoped_ptr<Slice> value(new Slice(block_data));
-  Cache::Handle *h = cache_->Insert(key.slice(), value.get(), value->size(),
-                                    deleter_.get());
-  if (h != nullptr) {
-    inserted->SetHandle(cache_.get(), h);
-    ignore_result(value.release());
-  }
-  return h != nullptr;
+void BlockCache::Insert(BlockCache::PendingEntry* entry, BlockCacheHandle* inserted) {
+  Cache::Handle *h = cache_->Insert(entry->handle_, /* eviction_callback= */ nullptr);
+  entry->handle_ = nullptr;
+  inserted->SetHandle(cache_.get(), h);
 }
 
 void BlockCache::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {

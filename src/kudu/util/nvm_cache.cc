@@ -75,25 +75,27 @@ typedef simple_spinlock MutexType;
 // An entry is a variable length heap-allocated structure.  Entries
 // are kept in a circular doubly linked list ordered by access time.
 struct LRUHandle {
-  void* value;
-  CacheDeleter* deleter;
+  Cache::EvictionCallback* eviction_callback;
   LRUHandle* next_hash;
   LRUHandle* next;
   LRUHandle* prev;
   size_t charge;      // TODO(opt): Only allow uint32_t?
-  size_t key_length;
+  uint32_t key_length;
+  uint32_t val_length;
   Atomic32 refs;
   uint32_t hash;      // Hash of key(); used for fast sharding and comparisons
-  uint8_t key_data[1];   // Beginning of key
+  uint8_t* kv_data;
 
   Slice key() const {
-    // For cheaper lookups, we allow a temporary Handle object
-    // to store a pointer to a key in "value".
-    if (next == this) {
-      return *(reinterpret_cast<Slice*>(value));
-    } else {
-      return Slice(key_data, key_length);
-    }
+    return Slice(kv_data, key_length);
+  }
+
+  Slice value() const {
+    return Slice(&kv_data[key_length], val_length);
+  }
+
+  uint8_t* val_ptr() {
+    return &kv_data[key_length];
   }
 };
 
@@ -194,10 +196,9 @@ class NvmLRUCache {
 
   void SetMetrics(CacheMetrics* metrics) { metrics_ = metrics; }
 
-  // Like Cache methods, but with an extra "hash" parameter.
-  Cache::Handle* Insert(const Slice& key, uint32_t hash,
-                        void* value, size_t charge,
-                        CacheDeleter* deleter);
+  Cache::Handle* Insert(LRUHandle* h, Cache::EvictionCallback* eviction_callback);
+
+  // Like Cache::Lookup, but with an extra "hash" parameter.
   Cache::Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
@@ -274,7 +275,9 @@ bool NvmLRUCache::Unref(LRUHandle* e) {
 
 void NvmLRUCache::FreeEntry(LRUHandle* e) {
   DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(e->refs), 0);
-  e->deleter->Delete(e->key(), e->value);
+  if (e->eviction_callback) {
+    e->eviction_callback->EvictedEntry(e->key(), e->value());
+  }
   if (PREDICT_TRUE(metrics_)) {
     metrics_->cache_usage->DecrementBy(e->charge);
     metrics_->evictions->Increment();
@@ -392,29 +395,13 @@ void NvmLRUCache::FreeLRUEntries(LRUHandle* to_free_head) {
   }
 }
 
-Cache::Handle* NvmLRUCache::Insert(const Slice& key, uint32_t hash,
-                                   void* value, size_t charge,
-                                   CacheDeleter* deleter) {
-  // Account for nvm key memory.
-  LRUHandle* e = reinterpret_cast<LRUHandle*>(
-      AllocateAndRetry(sizeof(LRUHandle) - 1 /* sizeof(LRUHandle::key_data) */ + key.size()));
+Cache::Handle* NvmLRUCache::Insert(LRUHandle* e,
+                                   Cache::EvictionCallback* eviction_callback) {
+  DCHECK(e);
   LRUHandle* to_remove_head = NULL;
 
-  if (!e) {
-    return NULL;
-  }
-
-  e->value = value;
-  memcpy(e->key_data, key.data(), key.size());
-
-  // Modify the charge to the nvm cache to account for all allocations
-  // done from the nvm address space. In this case we allocated the value
-  // slice object, the key slice and the key_data structure from nvm.
-  e->charge = charge + key.size();
-  e->hash = hash;
   e->refs = 2;  // One from LRUCache, one for the returned handle
-  e->key_length = key.size();
-  e->deleter = deleter;
+  e->eviction_callback = eviction_callback;
   if (PREDICT_TRUE(metrics_)) {
     metrics_->cache_usage->IncrementBy(e->charge);
     metrics_->inserts->Increment();
@@ -504,10 +491,10 @@ class ShardedLRUCache : public Cache {
     vmem_delete(vmp_);
   }
 
-  virtual Handle* Insert(const Slice& key, void* value, size_t charge,
-                         CacheDeleter* deleter) OVERRIDE {
-    const uint32_t hash = HashSlice(key);
-    return shards_[Shard(hash)]->Insert(key, hash, value, charge, deleter);
+  virtual Handle* Insert(PendingHandle* handle,
+                         Cache::EvictionCallback* eviction_callback) OVERRIDE {
+    LRUHandle* h = reinterpret_cast<LRUHandle*>(DCHECK_NOTNULL(handle));
+    return shards_[Shard(h->hash)]->Insert(h, eviction_callback);
   }
   virtual Handle* Lookup(const Slice& key, CacheBehavior caching) OVERRIDE {
     const uint32_t hash = HashSlice(key);
@@ -521,9 +508,13 @@ class ShardedLRUCache : public Cache {
     const uint32_t hash = HashSlice(key);
     shards_[Shard(hash)]->Erase(key, hash);
   }
-  virtual void* Value(Handle* handle) OVERRIDE {
-    return reinterpret_cast<LRUHandle*>(handle)->value;
+  virtual Slice Value(Handle* handle) OVERRIDE {
+    return reinterpret_cast<LRUHandle*>(handle)->value();
   }
+  virtual uint8_t* MutableValue(PendingHandle* handle) OVERRIDE {
+    return reinterpret_cast<LRUHandle*>(handle)->val_ptr();
+  }
+
   virtual uint64_t NewId() OVERRIDE {
     lock_guard<MutexType> l(&id_mutex_);
     return ++(last_id_);
@@ -534,27 +525,36 @@ class ShardedLRUCache : public Cache {
       cache->SetMetrics(metrics_.get());
     }
   }
-  virtual uint8_t* Allocate(int size) OVERRIDE {
+  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) OVERRIDE {
+    int key_len = key.size();
+    DCHECK_GE(key_len, 0);
+    DCHECK_GE(val_len, 0);
+    LRUHandle* handle = nullptr;
+
     // Try allocating from each of the shards -- if vmem is tight,
     // this can cause eviction, so we might have better luck in different
     // shards.
     for (NvmLRUCache* cache : shards_) {
-      uint8_t* ptr = reinterpret_cast<uint8_t*>(cache->AllocateAndRetry(size));
-      if (ptr) return ptr;
+      uint8_t* buf = static_cast<uint8_t*>(cache->AllocateAndRetry(
+          sizeof(LRUHandle) + key_len + val_len));
+      if (buf) {
+        handle = reinterpret_cast<LRUHandle*>(buf);
+        handle->kv_data = &buf[sizeof(LRUHandle)];
+        handle->val_length = val_len;
+        handle->key_length = key_len;
+        handle->charge = charge + key.size();
+        handle->hash = HashSlice(key);
+        memcpy(handle->kv_data, key.data(), key.size());
+        return reinterpret_cast<PendingHandle*>(handle);
+      }
     }
     // TODO: increment a metric here on allocation failure.
-    return NULL;
-  }
-  virtual void Free(uint8_t *ptr) OVERRIDE {
-    vmem_free(vmp_, ptr);
-  }
-  virtual uint8_t* MoveToHeap(uint8_t* ptr, int size) OVERRIDE {
-    uint8_t* ret = new uint8_t[size];
-    memcpy(ret, ptr, size);
-    vmem_free(vmp_, ptr);
-    return ret;
+    return nullptr;
   }
 
+  virtual void Free(PendingHandle* ph) OVERRIDE {
+    vmem_free(vmp_, ph);
+  }
 };
 
 } // end anonymous namespace

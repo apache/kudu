@@ -12,6 +12,7 @@
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/alignment.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
@@ -42,25 +43,35 @@ typedef simple_spinlock MutexType;
 // An entry is a variable length heap-allocated structure.  Entries
 // are kept in a circular doubly linked list ordered by access time.
 struct LRUHandle {
-  void* value;
-  CacheDeleter* deleter;
+  Cache::EvictionCallback* eviction_callback;
   LRUHandle* next_hash;
   LRUHandle* next;
   LRUHandle* prev;
   size_t charge;      // TODO(opt): Only allow uint32_t?
-  size_t key_length;
+  uint32_t key_length;
+  uint32_t val_length;
   Atomic32 refs;
   uint32_t hash;      // Hash of key(); used for fast sharding and comparisons
-  uint8_t key_data[1];   // Beginning of key
+
+  // The storage for the key/value pair itself. The data is stored as:
+  //   [key bytes ...] [padding up to 8-byte boundary] [value bytes ...]
+  uint8_t kv_data[1];   // Beginning of key/value pair
 
   Slice key() const {
-    // For cheaper lookups, we allow a temporary Handle object
-    // to store a pointer to a key in "value".
-    if (next == this) {
-      return *(reinterpret_cast<Slice*>(value));
-    } else {
-      return Slice(key_data, key_length);
-    }
+    return Slice(kv_data, key_length);
+  }
+
+  uint8_t* mutable_val_ptr() {
+    int val_offset = KUDU_ALIGN_UP(key_length, sizeof(void*));
+    return &kv_data[val_offset];
+  }
+
+  const uint8_t* val_ptr() const {
+    return const_cast<LRUHandle*>(this)->mutable_val_ptr();
+  }
+
+  Slice value() const {
+    return Slice(val_ptr(), val_length);
   }
 };
 
@@ -161,10 +172,8 @@ class LRUCache {
 
   void SetMetrics(CacheMetrics* metrics) { metrics_ = metrics; }
 
-  // Like Cache methods, but with an extra "hash" parameter.
-  Cache::Handle* Insert(const Slice& key, uint32_t hash,
-                        void* value, size_t charge,
-                        CacheDeleter* deleter);
+  Cache::Handle* Insert(LRUHandle* handle, Cache::EvictionCallback* eviction_callback);
+  // Like Cache::Lookup, but with an extra "hash" parameter.
   Cache::Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
@@ -175,7 +184,7 @@ class LRUCache {
   // Just reduce the reference count by 1.
   // Return true if last reference
   bool Unref(LRUHandle* e);
-  // Call deleter and free
+  // Call the user's eviction callback, if it exists, and free the entry.
   void FreeEntry(LRUHandle* e);
 
   // Initialized before use.
@@ -223,13 +232,15 @@ bool LRUCache::Unref(LRUHandle* e) {
 
 void LRUCache::FreeEntry(LRUHandle* e) {
   DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(e->refs), 0);
-  e->deleter->Delete(e->key(), e->value);
+  if (e->eviction_callback) {
+    e->eviction_callback->EvictedEntry(e->key(), e->value());
+  }
   mem_tracker_->Release(e->charge);
   if (PREDICT_TRUE(metrics_)) {
     metrics_->cache_usage->DecrementBy(e->charge);
     metrics_->evictions->Increment();
   }
-  free(e);
+  delete [] e;
 }
 
 void LRUCache::LRU_Remove(LRUHandle* e) {
@@ -289,27 +300,19 @@ void LRUCache::Release(Cache::Handle* handle) {
   }
 }
 
-Cache::Handle* LRUCache::Insert(
-    const Slice& key, uint32_t hash, void* value, size_t charge,
-    CacheDeleter *deleter) {
+Cache::Handle* LRUCache::Insert(LRUHandle* e, Cache::EvictionCallback *eviction_callback) {
 
-  LRUHandle* e = reinterpret_cast<LRUHandle*>(
-      malloc(sizeof(LRUHandle)-1 + key.size()));
-  LRUHandle* to_remove_head = nullptr;
-
-  e->value = value;
-  e->deleter = deleter;
-  e->charge = charge;
-  e->key_length = key.size();
-  e->hash = hash;
+  // Set the remaining LRUHandle members which were not already allocated during
+  // Allocate().
+  e->eviction_callback = eviction_callback;
   e->refs = 2;  // One from LRUCache, one for the returned handle
-  memcpy(e->key_data, key.data(), key.size());
-  mem_tracker_->Consume(charge);
+  mem_tracker_->Consume(e->charge);
   if (PREDICT_TRUE(metrics_)) {
-    metrics_->cache_usage->IncrementBy(charge);
+    metrics_->cache_usage->IncrementBy(e->charge);
     metrics_->inserts->Increment();
   }
 
+  LRUHandle* to_remove_head = nullptr;
   {
     lock_guard<MutexType> l(&mutex_);
 
@@ -405,10 +408,10 @@ class ShardedLRUCache : public Cache {
     STLDeleteElements(&shards_);
   }
 
-  virtual Handle* Insert(const Slice& key, void* value, size_t charge,
-                         CacheDeleter* deleter) OVERRIDE {
-    const uint32_t hash = HashSlice(key);
-    return shards_[Shard(hash)]->Insert(key, hash, value, charge, deleter);
+  virtual Handle* Insert(PendingHandle* handle,
+                         Cache::EvictionCallback* eviction_callback) OVERRIDE {
+    LRUHandle* h = reinterpret_cast<LRUHandle*>(DCHECK_NOTNULL(handle));
+    return shards_[Shard(h->hash)]->Insert(h, eviction_callback);
   }
   virtual Handle* Lookup(const Slice& key, CacheBehavior caching) OVERRIDE {
     const uint32_t hash = HashSlice(key);
@@ -422,8 +425,8 @@ class ShardedLRUCache : public Cache {
     const uint32_t hash = HashSlice(key);
     shards_[Shard(hash)]->Erase(key, hash);
   }
-  virtual void* Value(Handle* handle) OVERRIDE {
-    return reinterpret_cast<LRUHandle*>(handle)->value;
+  virtual Slice Value(Handle* handle) OVERRIDE {
+    return reinterpret_cast<LRUHandle*>(handle)->value();
   }
   virtual uint64_t NewId() OVERRIDE {
     lock_guard<MutexType> l(&id_mutex_);
@@ -437,18 +440,32 @@ class ShardedLRUCache : public Cache {
     }
   }
 
-  virtual uint8_t* Allocate(int bytes) OVERRIDE {
-    DCHECK_GE(bytes, 0);
-    return new uint8_t[bytes];
+  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) OVERRIDE {
+    int key_len = key.size();
+    DCHECK_GE(key_len, 0);
+    DCHECK_GE(val_len, 0);
+    int key_len_padded = KUDU_ALIGN_UP(key_len, sizeof(void*));
+    uint8_t* buf = new uint8_t[sizeof(LRUHandle)
+                               + key_len_padded + val_len // the kv_data VLA data
+                               - 1 // (the VLA has a 1-byte placeholder)
+                               ];
+    LRUHandle* handle = reinterpret_cast<LRUHandle*>(buf);
+    handle->key_length = key_len;
+    handle->val_length = val_len;
+    handle->charge = charge;
+    handle->hash = HashSlice(key);
+    memcpy(handle->kv_data, key.data(), key_len);
+
+    return reinterpret_cast<PendingHandle*>(handle);
   }
 
-  virtual void Free(uint8_t* ptr) OVERRIDE {
-    delete[] ptr;
+  virtual void Free(PendingHandle* h) OVERRIDE {
+    uint8_t* data = reinterpret_cast<uint8_t*>(h);
+    delete [] data;
   }
 
-  virtual uint8_t* MoveToHeap(uint8_t* ptr, int size) OVERRIDE {
-    // Our allocated pointers are always on the heap.
-    return ptr;
+  virtual uint8_t* MutableValue(PendingHandle* h) OVERRIDE {
+    return reinterpret_cast<LRUHandle*>(h)->mutable_val_ptr();
   }
 
 };

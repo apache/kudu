@@ -29,25 +29,33 @@ namespace codegen {
 
 namespace {
 
-class Deleter : public CacheDeleter {
- public:
-  Deleter() {}
-  virtual void Delete(const Slice& key, void* value) OVERRIDE {
-    // The Cache from cache.h deletes the memory that it allocates for its
-    // own copy of key, but it expects its users to delete their own
-    // void* values. To delete, we just release our shared ownership.
-    static_cast<JITWrapper*>(value)->Release();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(Deleter);
-};
+// The values we store in cache are actually just pointers to JITWrapper
+// objects. This returns the 'unwrapped' pointer from a cache value.
+JITWrapper* CacheValueToJITWrapper(Slice val) {
+  JITWrapper* jw;
+  DCHECK_EQ(val.size(), sizeof(jw));
+  memcpy(&jw, val.data(), sizeof(jw));
+  return jw;
+}
 
 } // anonymous namespace
 
+// When an entry is evicted from the cache, we need to also
+// decrement the ref-count on the wrapper, since the cache
+// itself isn't managing all of the associated objects.
+class CodeCache::EvictionCallback : public Cache::EvictionCallback {
+ public:
+  EvictionCallback() {}
+  virtual void EvictedEntry(Slice key, Slice value) OVERRIDE {
+    CacheValueToJITWrapper(value)->Release();
+  }
+ private:
+  DISALLOW_COPY_AND_ASSIGN(EvictionCallback);
+};
+
 CodeCache::CodeCache(size_t capacity)
   : cache_(NewLRUCache(DRAM_CACHE, capacity, "code_cache")) {
-  deleter_.reset(new Deleter());
+  eviction_callback_.reset(new EvictionCallback());
 }
 
 CodeCache::~CodeCache() {}
@@ -57,14 +65,21 @@ Status CodeCache::AddEntry(const scoped_refptr<JITWrapper>& value) {
   faststring key;
   RETURN_NOT_OK(value->EncodeOwnKey(&key));
 
+  JITWrapper* val = value.get();
+  size_t val_len = sizeof(val);
+
+  // We CHECK_NOTNULL because this is always a DRAM-based cache, and if allocation
+  // failed, we'd just crash the process.
+  Cache::PendingHandle* pending = CHECK_NOTNULL(
+      cache_->Allocate(Slice(key), val_len, /*charge = */1));
+  memcpy(cache_->MutableValue(pending), &val, val_len);
+
   // Because Cache only accepts void* values, we store just the JITWrapper*
   // and increase its ref count.
   value->AddRef();
 
   // Insert into cache and release the handle (we have a local copy of a refptr).
-  // We CHECK_NOTNULL because this is always a DRAM-based cache, and if allocation
-  // failed, we'd just crash the process.
-  Cache::Handle* inserted = CHECK_NOTNULL(cache_->Insert(key, value.get(), 1, deleter_.get()));
+  Cache::Handle* inserted = DCHECK_NOTNULL(cache_->Insert(pending, eviction_callback_.get()));
   cache_->Release(inserted);
   return Status::OK();
 }
@@ -75,12 +90,10 @@ scoped_refptr<JITWrapper> CodeCache::Lookup(const Slice& key) {
   if (!found) return scoped_refptr<JITWrapper>();
 
   // Retrieve the value
-  scoped_refptr<JITWrapper> value =
-    static_cast<JITWrapper*>(cache_->Value(found));
+  scoped_refptr<JITWrapper> value = CacheValueToJITWrapper(cache_->Value(found));
 
-  // No need to hold on to handle after we have our copy
+  // No need to hold on to handle after we have our reference-counted object.
   cache_->Release(found);
-
   return value;
 }
 

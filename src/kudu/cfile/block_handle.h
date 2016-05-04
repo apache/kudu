@@ -52,12 +52,10 @@ class BlockHandle {
   }
 
   ~BlockHandle() {
-    if (is_data_owner_) {
-      delete [] data_.data();
-    }
+    Reset();
   }
 
-  const Slice &data() const {
+  Slice data() const {
     if (is_data_owner_) {
       return data_;
     } else {
@@ -81,6 +79,8 @@ class BlockHandle {
   }
 
   void TakeState(BlockHandle* other) {
+    Reset();
+
     is_data_owner_ = other->is_data_owner_;
     if (is_data_owner_) {
       data_ = other->data_;
@@ -88,6 +88,14 @@ class BlockHandle {
     } else {
       dblk_data_.swap(&other->dblk_data_);
     }
+  }
+
+  void Reset() {
+    if (is_data_owner_) {
+      delete [] data_.data();
+      is_data_owner_ = false;
+    }
+    data_ = "";
   }
 
   DISALLOW_COPY_AND_ASSIGN(BlockHandle);

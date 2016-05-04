@@ -40,19 +40,16 @@ enum CacheType {
 // of Cache uses a least-recently-used eviction policy.
 Cache* NewLRUCache(CacheType type, size_t capacity, const std::string& id);
 
-// Callback interface for deleting a value stored in the cache.
-// This is called when an inserted entry is no longer needed.
-class CacheDeleter {
- public:
-  // Delete the given 'value'.
-  // The key is only passed for convenenience -- the cache itself is
-  // responsible for managing the key's memory.
-  virtual void Delete(const Slice& key, void* value) = 0;
-  virtual ~CacheDeleter() {}
-};
-
 class Cache {
  public:
+  // Callback interface which is called when an entry is evicted from the
+  // cache.
+  class EvictionCallback {
+   public:
+    virtual void EvictedEntry(Slice key, Slice value) = 0;
+    virtual ~EvictionCallback() {}
+  };
+
   Cache() { }
 
   // Destroys all existing entries by calling the "deleter"
@@ -61,23 +58,6 @@ class Cache {
 
   // Opaque handle to an entry stored in the cache.
   struct Handle { };
-
-  // Insert a mapping from key->value into the cache and assign it
-  // the specified charge against the total cache capacity.
-  //
-  // Returns a handle that corresponds to the mapping.  The caller
-  // must call this->Release(handle) when the returned mapping is no
-  // longer needed.
-  //
-  // Note that the 'key' Slice is copied into the internal storage of
-  // the cache. The caller may free or mutate the key data freely
-  // after this method returns.
-  //
-  // When the inserted entry is no longer needed, the cache object, key and
-  // value will be passed to "deleter". The deleter callback must remain
-  // valid until it is called.
-  virtual Handle* Insert(const Slice& key, void* value, size_t charge,
-                         CacheDeleter* deleter) = 0;
 
   // Passing EXPECT_IN_CACHE will increment the hit/miss metrics that track the number of times
   // blocks were requested that the users were hoping to get the block from the cache, along with
@@ -105,7 +85,7 @@ class Cache {
   // successful Lookup().
   // REQUIRES: handle must not have been released yet.
   // REQUIRES: handle must have been returned by a method on *this.
-  virtual void* Value(Handle* handle) = 0;
+  virtual Slice Value(Handle* handle) = 0;
 
   // If the cache contains entry for key, erase it.  Note that the
   // underlying entry will be kept around until all existing handles
@@ -121,36 +101,68 @@ class Cache {
   // Pass a metric entity in order to start recoding metrics.
   virtual void SetMetrics(const scoped_refptr<MetricEntity>& metric_entity) = 0;
 
-  // Allocate 'bytes' bytes from the cache's memory pool.
+  // ------------------------------------------------------------
+  // Insertion path
+  // ------------------------------------------------------------
+  //
+  // Because some cache implementations (eg NVM) manage their own memory, and because we'd
+  // like to read blocks directly into cache-managed memory rather than causing an extra
+  // memcpy, the insertion of a new element into the cache requires two phases. First, a
+  // PendingHandle is allocated with space for the value, and then it is later inserted.
+  //
+  // For example:
+  //
+  //   PendingHandle* ph = cache_->Allocate("my entry", value_size, charge);
+  //   if (!ReadDataFromDisk(cache_->MutableValue(ph)).ok()) {
+  //     cache_->Free(ph);
+  //     ... error handling ...
+  //     return;
+  //   }
+  //   Handle* h = cache_->Insert(ph, my_eviction_callback);
+  //   ...
+  //   cache_->Release(h);
+
+  // Opaque handle to an entry which is being prepared to be added to
+  // the cache.
+  struct PendingHandle { };
+
+  // Allocate space for a new entry to be inserted into the cache.
+  //
+  // The provided 'key' is copied into the resulting handle object.
+  // The allocated handle has enough space such that the value can
+  // be written into cache_->MutableValue(handle).
+  //
+  // Note that this does not mutate the cache itself: lookups will
+  // not be able to find the provided key until it is inserted.
   //
   // It is possible that this will return NULL if the cache is above its capacity
   // and eviction fails to free up enough space for the requested allocation.
   //
   // NOTE: the returned memory is not automatically freed by the cache: the
-  // caller must either free it using Free(), or MoveToHeap() followed by
-  // delete[].
-  virtual uint8_t* Allocate(int bytes) = 0;
+  // caller must either free it using Free(), or insert it using Insert().
+  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) = 0;
+
+  virtual uint8_t* MutableValue(PendingHandle* handle) = 0;
+
+  // Commit a prepared entry into the cache.
+  //
+  // Returns a handle that corresponds to the mapping.  The caller
+  // must call this->Release(handle) when the returned mapping is no
+  // longer needed. This method always succeeds and returns a non-null
+  // entry, since the space was reserved above.
+  //
+  // The 'pending' entry passed here should have been allocated using
+  // Cache::Allocate() above.
+  //
+  // If 'eviction_callback' is non-NULL, then it will be called when the
+  // entry is later evicted or when the cache shuts down.
+  virtual Handle* Insert(PendingHandle* pending, EvictionCallback* eviction_callback) = 0;
 
   // Free 'ptr', which must have been previously allocated using 'Allocate'.
-  virtual void Free(uint8_t* ptr) = 0;
-
-  // Moves 'ptr' to the normal C++ heap, if it is not already there.
-  // 'ptr' must have previously been allocated using Allocate(bytes).
-  // If 'ptr' is already on the C++ heap, then returns the same value.
-  //
-  // The returned value should be freed by the caller using the 'delete[]'
-  // operator.
-  virtual uint8_t* MoveToHeap(uint8_t* ptr, int bytes) = 0;
+  virtual void Free(PendingHandle* ptr) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Cache);
-
-  void LRU_Remove(Handle* e);
-  void LRU_Append(Handle* e);
-  void Unref(Handle* e);
-
-  struct Rep;
-  Rep* rep_;
 };
 
 }  // namespace kudu

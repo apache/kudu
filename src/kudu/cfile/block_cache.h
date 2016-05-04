@@ -45,6 +45,66 @@ class BlockCache {
   // which is just a portion of a CFile.
   typedef BlockId FileId;
 
+  // The unique key identifying entries in the block cache.
+  // Each cached block corresponds to a specific offset within
+  // a file (called a "block" in other parts of Kudu).
+  //
+  // This structure's in-memory representation is internally memcpyed
+  // and treated as a string. It may also be persisted across restarts
+  // and upgrades of Kudu in persistent cache implementations. So, it's
+  // important that the layout be fixed and kept compatible for all
+  // future releases.
+  struct CacheKey {
+    CacheKey(BlockCache::FileId file_id, uint64_t offset) :
+      file_id_(file_id.id()),
+      offset_(offset)
+    {}
+
+    uint64_t file_id_;
+    uint64_t offset_;
+  } PACKED;
+
+  // An entry that is in the process of being inserted into the block
+  // cache. See the documentation above 'Allocate' below on the block
+  // cache insertion path.
+  class PendingEntry {
+   public:
+    PendingEntry() : cache_(nullptr), handle_(nullptr) {}
+    PendingEntry(Cache* cache, Cache::PendingHandle* handle)
+        : cache_(cache), handle_(handle) {
+    }
+    PendingEntry(PendingEntry&& other) : PendingEntry() {
+      *this = std::move(other);
+    }
+
+    ~PendingEntry() {
+      reset();
+    }
+
+    PendingEntry& operator=(PendingEntry&& other);
+    PendingEntry& operator=(const PendingEntry& other) = delete;
+
+    // Free the pending entry back to the block cache.
+    // This is safe to call multiple times.
+    void reset();
+
+    // Return true if this is a valid pending entry.
+    bool valid() const {
+      return handle_ != nullptr;
+    }
+
+    // Return the pointer into which the value should be written.
+    uint8_t* val_ptr() {
+      return cache_->MutableValue(handle_);
+    }
+
+   private:
+    friend class BlockCache;
+
+    Cache* cache_;
+    Cache::PendingHandle* handle_;
+  };
+
   static BlockCache *GetSingleton() {
     return Singleton<BlockCache>::get();
   }
@@ -58,18 +118,8 @@ class BlockCache {
   // Alternatively,  handle->Release() may be used to explicitly release it.
   //
   // Returns true to indicate that the entry was found, false otherwise.
-  bool Lookup(FileId file_id, uint64_t offset,
-              Cache::CacheBehavior behavior, BlockCacheHandle *handle);
-
-  // Insert the given block into the cache.
-  //
-  // The data pointed to by Slice should have been allocated using Allocate().
-  // After insertion, the block cache owns this pointer and will free it upon
-  // eviction.
-  //
-  // The inserted entry is returned in *inserted.
-  bool Insert(FileId file_id, uint64_t offset, const Slice &block_data,
-              BlockCacheHandle *inserted);
+  bool Lookup(const CacheKey& key, Cache::CacheBehavior behavior,
+              BlockCacheHandle* handle);
 
   // Pass a metric entity to the cache to start recording metrics.
   // This should be called before the block cache starts serving blocks.
@@ -77,22 +127,30 @@ class BlockCache {
   // Calling StartInstrumentation multiple times will reset the metrics each time.
   void StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity);
 
-  // Allocate a chunk of memory to hold a value in this cache.
+  // Insertion path
+  // --------------------
+  // Block cache entries are written in two phases. First, a pending entry must be
+  // constructed. The data to be cached then must be copied directly into
+  // this pending entry before being inserted. For example:
   //
-  // Some cache implementations may allocate the buffer outside of the normal
-  // heap area.
-  //
-  // NOTE: The returned pointer may either be passed to Insert(), MoveToHeap(), or
-  // Free(). It must NOT be freed using free() or delete[].
-  uint8_t* Allocate(size_t size);
+  //   // Allocate space in the cache for a block of 'data_size' bytes.
+  //   PendingEntry entry = cache->Allocate(my_cache_key, data_size);
+  //   // Check for allocation failure.
+  //   if (!entry.valid()) {
+  //     // if there is no space left in the cache, handle the error.
+  //   }
+  //   // Read the actual block into the allocated buffer.
+  //   RETURN_NOT_OK(ReadDataFromDiskIntoBuffer(entry.val_ptr()));
+  //   // "Commit" the entry to the cache
+  //   BlockCacheHandle bch;
+  //   cache->Insert(&entry, &bch);
 
-  // Move a pointer previously allocated using Allocate() onto the normal heap.
-  // This is a no-op for a DRAM-based cache, but in other cases may relocate the
-  // data.
-  uint8_t* MoveToHeap(uint8_t* p, size_t size);
+  // Allocate a new entry to be inserted into the cache.
+  PendingEntry Allocate(const CacheKey& key, size_t block_size);
 
-  // Free a pointer previously allocated using Allocate().
-  void Free(uint8_t *p);
+  // Insert the given block into the cache. 'inserted' is set to refer to the
+  // entry in the cache.
+  void Insert(PendingEntry* entry, BlockCacheHandle* inserted);
 
  private:
   friend class Singleton<BlockCache>;
@@ -100,9 +158,6 @@ class BlockCache {
 
   DISALLOW_COPY_AND_ASSIGN(BlockCache);
 
-  // Deleter must be defined before cache_ so that cache_ destructs first.
-  // (the Cache needs to use the Deleter during destruction)
-  gscoped_ptr<CacheDeleter> deleter_;
   gscoped_ptr<Cache> cache_;
 };
 
@@ -136,9 +191,8 @@ class BlockCacheHandle {
   //
   // NOTE: this slice is only valid until the block cache handle is
   // destructed or explicitly Released().
-  const Slice &data() const {
-    const Slice *slice = reinterpret_cast<const Slice *>(cache_->Value(handle_));
-    return *slice;
+  Slice data() const {
+    return cache_->Value(handle_);
   }
 
   bool valid() const {
@@ -160,6 +214,24 @@ class BlockCacheHandle {
   Cache *cache_;
 };
 
+
+inline BlockCache::PendingEntry& BlockCache::PendingEntry::operator=(
+    BlockCache::PendingEntry&& other) {
+  reset();
+  cache_ = other.cache_;
+  handle_ = other.handle_;
+  other.cache_ = nullptr;
+  other.handle_ = nullptr;
+  return *this;
+}
+
+inline void BlockCache::PendingEntry::reset() {
+  if (cache_ && handle_) {
+    cache_->Free(handle_);
+  }
+  cache_ = nullptr;
+  handle_ = nullptr;
+}
 
 } // namespace cfile
 } // namespace kudu
