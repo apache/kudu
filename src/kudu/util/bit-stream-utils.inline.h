@@ -27,7 +27,9 @@ namespace kudu {
 inline void BitWriter::PutValue(uint64_t v, int num_bits) {
   // TODO: revisit this limit if necessary (can be raised to 64 by fixing some edge cases)
   DCHECK_LE(num_bits, 32);
-  DCHECK_EQ(v >> num_bits, 0) << "v = " << v << ", num_bits = " << num_bits;
+  // Truncate the higher-order bits. This is necessary to
+  // support signed values.
+  v &= (1ULL << num_bits) - 1;
 
   buffered_values_ |= v << bit_offset_;
   bit_offset_ += num_bits;

@@ -289,12 +289,14 @@ class TestEncoding : public ::testing::Test {
     // TODO : handle and verify seeking inside a run for testing RLE
     typedef typename TypeTraits<IntType>::cpp_type CppType;
 
-    const CppType kBase = 6;
+    const CppType kBase =
+        std::numeric_limits<CppType>::is_signed ? -6 : 6;
 
     CppType data[num_ints];
     for (CppType i = 0; i < num_ints; i++) {
       data[i] = kBase + i * 2;
     }
+    const CppType max_seek_target = data[num_ints - 1] + 1;
 
     CHECK_EQ(num_ints, ibb->Add(reinterpret_cast<uint8_t *>(&data[0]),
                                num_ints));
@@ -307,12 +309,16 @@ class TestEncoding : public ::testing::Test {
     LOG_TIMING(INFO, strings::Substitute("Seeking in $0 block", TypeTraits<IntType>::name())) {
       for (int i = 0; i < num_queries; i++) {
         bool exact = false;
-        CppType target = random() % (num_ints * 2 + kBase);
+        // Seek to a random value which falls between data[0] and max_seek_target
+        CppType target = kBase + random() % (max_seek_target - kBase);
         Status s = ibd.SeekAtOrAfterValue(&target, &exact);
         if (verify) {
           SCOPED_TRACE(target);
           if (s.IsNotFound()) {
-            ASSERT_EQ(kBase + num_ints * 2 - 1, target);
+            // If we didn't find a match 'at or after' the given value, then the
+            // only case that could happen is if we seeked to max_seek_target,
+            // which is larger than the largest int in the block.
+            ASSERT_EQ(max_seek_target, target);
             continue;
           }
           ASSERT_OK_FAST(s);
@@ -451,7 +457,21 @@ class TestEncoding : public ::testing::Test {
 
     std::vector<CppType> to_insert;
     for (int i = 0; i < 10003; i++) {
-      to_insert.push_back(random() % std::numeric_limits<CppType>::max());
+      auto val = random() % std::numeric_limits<CppType>::max();
+
+      // For signed types, randomly use both negative and positive values.
+      if (std::numeric_limits<CppType>::is_signed && (random() % 2) == 1) {
+        val *= -1;
+      }
+      to_insert.push_back(val);
+
+      // Occasionally insert a run of 40 identical values to exercise
+      // RLE code paths.
+      if (random() % 100 == 1) {
+        for (int run = 0; run < 40; run++) {
+          to_insert.push_back(val);
+        }
+      }
     }
 
     ibb->Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
@@ -506,12 +526,6 @@ class TestEncoding : public ::testing::Test {
     }
   }
 
-  template <DataType IntType>
-  void TestRleIntBlockRoundTrip() {
-    gscoped_ptr<RleIntBlockBuilder<IntType> > ibb(new RleIntBlockBuilder<IntType>());
-    TestIntBlockRoundTrip<RleIntBlockBuilder<IntType>, RleIntBlockDecoder<IntType>, IntType>(
-        ibb.get());
-  }
 
   // Test encoding and decoding BOOL datatypes
   template <class BuilderType, class DecoderType>
@@ -691,18 +705,6 @@ TEST_F(TestEncoding, TestGVIntBlockRoundTrip) {
   gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
   TestIntBlockRoundTrip<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get());
 }
-
-TEST_F(TestEncoding, TestRleIntBlockRoundTripAllTypes) {
-  LOG(INFO) << "Testing all integer types with RLE block encoding";
-
-  TestRleIntBlockRoundTrip<UINT8>();
-  TestRleIntBlockRoundTrip<INT8>();
-  TestRleIntBlockRoundTrip<UINT16>();
-  TestRleIntBlockRoundTrip<INT16>();
-  TestRleIntBlockRoundTrip<UINT32>();
-  TestRleIntBlockRoundTrip<INT32>();
-}
-
 
 TEST_F(TestEncoding, TestGVIntEmptyBlockEncodeDecode) {
   TestEmptyBlockEncodeDecode<GVIntBlockBuilder, GVIntBlockDecoder>();

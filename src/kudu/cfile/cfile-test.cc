@@ -426,13 +426,16 @@ TEST_P(TestCFileBothCacheTypes, TestWrite1MDuplicateFileStringsDictEncoding) {
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestFixedSizeReadWritePlainEncodingUInt32) {
-  TestReadWriteFixedSizeTypes<UInt32DataGenerator<false> >(GROUP_VARINT);
-  TestReadWriteFixedSizeTypes<UInt32DataGenerator<false> >(PLAIN_ENCODING);
+TEST_P(TestCFileBothCacheTypes, TestReadWriteUInt32) {
+  for (auto enc : { PLAIN_ENCODING, RLE, GROUP_VARINT }) {
+    TestReadWriteFixedSizeTypes<UInt32DataGenerator<false>>(enc);
+  }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestFixedSizeReadWritePlainEncodingInt32) {
-  TestReadWriteFixedSizeTypes<Int32DataGenerator<false> >(PLAIN_ENCODING);
+TEST_P(TestCFileBothCacheTypes, TestReadWriteInt32) {
+  for (auto enc : { PLAIN_ENCODING, RLE }) {
+    TestReadWriteFixedSizeTypes<Int32DataGenerator<false>>(enc);
+  }
 }
 
 TEST_P(TestCFileBothCacheTypes, TestFixedSizeReadWritePlainEncodingFloat) {
