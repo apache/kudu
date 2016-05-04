@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
+import org.kududb.Common;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
@@ -40,6 +41,7 @@ public abstract class AbstractKuduScannerBuilder
   final Map<String, KuduPredicate> predicates = new HashMap<>();
 
   AsyncKuduScanner.ReadMode readMode = AsyncKuduScanner.ReadMode.READ_LATEST;
+  Common.OrderMode orderMode = Common.OrderMode.UNORDERED;
   int batchSizeBytes = 1024*1024;
   long limit = Long.MAX_VALUE;
   boolean prefetching = false;
@@ -66,6 +68,26 @@ public abstract class AbstractKuduScannerBuilder
    */
   public S readMode(AsyncKuduScanner.ReadMode readMode) {
     this.readMode = readMode;
+    return (S) this;
+  }
+
+  /**
+   * Return scan results in primary key sorted order.
+   *
+   * If the table is hash partitioned, the scan must have an equality predicate
+   * on all hashed columns.
+   *
+   * Package private until proper hash partitioning equality predicate checks
+   * are in place.
+   *
+   * Disabled by default.
+   * @return this instance
+   */
+  @InterfaceAudience.Private
+  @InterfaceStability.Unstable
+  S sortResultsByPrimaryKey() {
+    orderMode = Common.OrderMode.ORDERED;
+    readMode = AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT;
     return (S) this;
   }
 

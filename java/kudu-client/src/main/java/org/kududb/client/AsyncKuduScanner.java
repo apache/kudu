@@ -122,7 +122,7 @@ public final class AsyncKuduScanner {
     READ_AT_SNAPSHOT(Common.ReadMode.READ_AT_SNAPSHOT);
 
     private Common.ReadMode pbVersion;
-    private ReadMode(Common.ReadMode pbVersion) {
+    ReadMode(Common.ReadMode pbVersion) {
       this.pbVersion = pbVersion;
     }
 
@@ -186,6 +186,8 @@ public final class AsyncKuduScanner {
 
   private final ReadMode readMode;
 
+  private final Common.OrderMode orderMode;
+
   private final long htTimestamp;
 
   /////////////////////
@@ -229,7 +231,8 @@ public final class AsyncKuduScanner {
   private static final AtomicBoolean PARTITION_PRUNE_WARN = new AtomicBoolean(true);
 
   AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedNames,
-                   List<Integer> projectedIndexes, ReadMode readMode, long scanRequestTimeout,
+                   List<Integer> projectedIndexes, ReadMode readMode, Common.OrderMode orderMode,
+                   long scanRequestTimeout,
                    Map<String, KuduPredicate> predicates, long limit,
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
@@ -245,10 +248,15 @@ public final class AsyncKuduScanner {
       checkArgument(readMode == ReadMode.READ_AT_SNAPSHOT, "When specifying a " +
           "HybridClock timestamp, the read mode needs to be set to READ_AT_SNAPSHOT");
     }
+    if (orderMode == Common.OrderMode.ORDERED) {
+      checkArgument(readMode == ReadMode.READ_AT_SNAPSHOT, "Returning rows in primary key order " +
+          "requires the read mode to be set to READ_AT_SNAPSHOT");
+    }
 
     this.client = client;
     this.table = table;
     this.readMode = readMode;
+    this.orderMode = orderMode;
     this.scanRequestTimeout = scanRequestTimeout;
     this.predicates = predicates;
     this.limit = limit;
@@ -381,6 +389,10 @@ public final class AsyncKuduScanner {
    */
   public ReadMode getReadMode() {
     return this.readMode;
+  }
+
+  private Common.OrderMode getOrderMode() {
+    return this.orderMode;
   }
 
   /**
@@ -713,6 +725,7 @@ public final class AsyncKuduScanner {
           newBuilder.addAllProjectedColumns(ProtobufHelper.schemaToListPb(schema));
           newBuilder.setTabletId(ZeroCopyLiteralByteString.wrap(tablet.getTabletIdAsBytes()));
           newBuilder.setReadMode(AsyncKuduScanner.this.getReadMode().pbVersion());
+          newBuilder.setOrderMode(AsyncKuduScanner.this.getOrderMode());
           newBuilder.setCacheBlocks(cacheBlocks);
           // if the last propagated timestamp is set send it with the scan
           if (table.getAsyncClient().getLastPropagatedTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
@@ -829,7 +842,7 @@ public final class AsyncKuduScanner {
      */
     public AsyncKuduScanner build() {
       return new AsyncKuduScanner(
-          client, table, projectedColumnNames, projectedColumnIndexes, readMode,
+          client, table, projectedColumnNames, projectedColumnIndexes, readMode, orderMode,
           scanRequestTimeout, predicates, limit, cacheBlocks,
           prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
           lowerBoundPartitionKey, upperBoundPartitionKey,

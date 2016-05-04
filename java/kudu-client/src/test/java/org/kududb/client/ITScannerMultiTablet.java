@@ -16,11 +16,15 @@
 // under the License.
 package org.kududb.client;
 
+import com.google.common.collect.Lists;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.kududb.Schema;
 
-import static org.junit.Assert.*;
+import java.util.Random;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Integration test that inserts enough data to trigger flushes and getting multiple data
@@ -30,11 +34,13 @@ public class ITScannerMultiTablet extends BaseKuduTest {
 
   private static final String TABLE_NAME =
       ITScannerMultiTablet.class.getName()+"-"+System.currentTimeMillis();
-  private static final int ROW_COUNT = 3000;
+  private static final int ROW_COUNT = 20000;
   private static final int TABLET_COUNT = 3;
 
   private static Schema schema = getBasicSchema();
   private static KuduTable table;
+
+  private static Random random = new Random(1234);
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -42,12 +48,9 @@ public class ITScannerMultiTablet extends BaseKuduTest {
 
     CreateTableOptions builder = new CreateTableOptions();
 
-    int step = ROW_COUNT / TABLET_COUNT;
-    for (int i = step; i < ROW_COUNT; i += step){
-      PartialRow splitRow = getBasicSchema().newPartialRow();
-      splitRow.addInt(0, i);
-      builder.addSplitRow(splitRow);
-    }
+    builder.addHashPartitions(
+        Lists.newArrayList(schema.getColumnByIndex(0).getName()),
+        TABLET_COUNT);
 
     table = createTable(TABLE_NAME, schema, builder);
 
@@ -59,7 +62,7 @@ public class ITScannerMultiTablet extends BaseKuduTest {
     for (int i = 0; i < ROW_COUNT; i++) {
       Insert insert = table.newInsert();
       PartialRow row = insert.getRow();
-      row.addInt(0, i);
+      row.addInt(0, random.nextInt());
       row.addInt(1, i);
       row.addInt(2, i);
       row.addString(3, new String(chars));
@@ -74,7 +77,7 @@ public class ITScannerMultiTablet extends BaseKuduTest {
    * Test for KUDU-1343 with a multi-batch multi-tablet scan.
    */
   @Test(timeout = 100000)
-  public void test() throws Exception {
+  public void testKudu1343() throws Exception {
     KuduScanner scanner = syncClient.newScannerBuilder(table)
         .batchSizeBytes(1) // Just a hint, won't actually be that small
         .build();
@@ -92,5 +95,35 @@ public class ITScannerMultiTablet extends BaseKuduTest {
 
     assertTrue(loopCount > TABLET_COUNT);
     assertEquals(ROW_COUNT, rowCount);
+  }
+
+  /**
+   * Makes sure we pass all the correct information down to the server by verifying we get rows in
+   * order from 4 tablets. We detect those tablet boundaries when keys suddenly become smaller than
+   * what was previously seen.
+   */
+  @Test(timeout = 100000)
+  public void testSortResultsByPrimaryKey() throws Exception {
+    KuduScanner scanner = syncClient.newScannerBuilder(table)
+        .sortResultsByPrimaryKey()
+        .setProjectedColumnIndexes(Lists.newArrayList(0))
+        .build();
+
+    int rowCount = 0;
+    int previousRow = -1;
+    int tableBoundariesCount = 0;
+    while(scanner.hasMoreRows()) {
+      RowResultIterator rri = scanner.nextRows();
+      while (rri.hasNext()) {
+        int key = rri.next().getInt(0);
+        if (key < previousRow) {
+          tableBoundariesCount++;
+        }
+        previousRow = key;
+        rowCount++;
+      }
+    }
+    assertEquals(ROW_COUNT, rowCount);
+    assertEquals(TABLET_COUNT, tableBoundariesCount);
   }
 }
