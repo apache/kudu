@@ -20,7 +20,7 @@
         <version>0.9.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>kudu-spark</artifactId>
+    <artifactId>kudu-spark_${scala.binary.version}</artifactId>
     <name>Kudu Spark Bindings</name>
 
     <properties>

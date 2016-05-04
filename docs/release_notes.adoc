@@ -64,6 +64,8 @@ Hadoop storage technologies.
   configuration key is "kudu.mapreduce.encoded.predicate". Clients using the
   TableInputFormatConfigurator should not be affected.
 
+- The kudu-spark subproject was been renamed to follow naming conventions for scala kudu-spark_2.10
+
 [[rn_0.9.0_new_features]]
 ==== New features
 
