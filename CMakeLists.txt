@@ -809,13 +809,20 @@ if (NOT "${KUDU_USE_ASAN}" AND
   set(KUDU_TCMALLOC_AVAILABLE 1)
 endif()
 
-# libvmem
+# Required pmem libraries
 if (NOT APPLE)
-  find_package(Vmem REQUIRED)
-  include_directories(SYSTEM ${VMEM_INCLUDE_DIR})
-  ADD_THIRDPARTY_LIB(vmem
-    STATIC_LIB "${VMEM_STATIC_LIB}"
-    SHARED_LIB "${VMEM_SHARED_LIB}")
+find_package(Pmem REQUIRED)
+include_directories(${PMEM_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(vmem
+  STATIC_LIB "${VMEM_STATIC_LIB}"
+  SHARED_LIB "${VMEM_SHARED_LIB}")
+ADD_THIRDPARTY_LIB(pmem
+  STATIC_LIB "${PMEM_STATIC_LIB}"
+  SHARED_LIB "${PMEM_SHARED_LIB}")
+ADD_THIRDPARTY_LIB(pmemobj
+  STATIC_LIB "${PMEMOBJ_STATIC_LIB}"
+  SHARED_LIB "${PMEMOBJ_SHARED_LIB}"
+  DEPS ${PMEMOBJ_DEPS})
 endif()
 
 ## curl

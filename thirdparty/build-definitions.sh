@@ -319,12 +319,13 @@ build_nvml() {
   if ! grep -q -e "$EXTRA_CFLAGS" jemalloc/jemalloc.cfg ; then
     perl -p -i -e "s,(EXTRA_CFLAGS=\"),\$1$EXTRA_CFLAGS ," jemalloc/jemalloc.cfg
   fi
-
-  EXTRA_CFLAGS="$EXTRA_CFLAGS" make -j$PARALLEL libvmem DEBUG=0
-  # NVML doesn't allow configuring PREFIX -- it always installs into
-  # DESTDIR/usr/lib. Additionally, the 'install' target builds all of
-  # the NVML libraries, even though we only need libvmem.
-  # So, we manually install the built artifacts.
-  cp -a $NVML_DIR/src/include/libvmem.h $PREFIX/include
-  cp -a $NVML_DIR/src/nondebug/libvmem.{so*,a} $PREFIX/lib
+  for LIB in libvmem libpmem libpmemobj; do
+    EXTRA_CFLAGS="$EXTRA_CFLAGS" make -j$PARALLEL $LIB DEBUG=0
+    # NVML doesn't allow configuring PREFIX -- it always installs into
+    # DESTDIR/usr/lib. Additionally, the 'install' target builds all of
+    # the NVML libraries, even though we only need the three libraries above.
+    # So, we manually install the built artifacts.
+    cp -a $NVML_DIR/src/include/$LIB.h $PREFIX/include
+    cp -a $NVML_DIR/src/nondebug/$LIB.{so*,a} $PREFIX/lib
+  done
 }
