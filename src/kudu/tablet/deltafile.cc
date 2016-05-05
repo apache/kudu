@@ -363,6 +363,17 @@ Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
 
   // Finish the initialization of any lazily-initialized state.
   RETURN_NOT_OK(dfr_->Init());
+
+  // Check again whether this delta file is relevant given the snapshot
+  // that we are querying. We did this already before creating the
+  // DeltaFileIterator, but due to lazy initialization, it's possible
+  // that we weren't able to check at that time.
+  if (!dfr_->IsRelevantForSnapshot(mvcc_snap_)) {
+    exhausted_ = true;
+    delta_blocks_.clear();
+    return Status::OK();
+  }
+
   if (!index_iter_) {
     index_iter_.reset(IndexTreeIterator::Create(
         dfr_->cfile_reader().get(),
@@ -450,7 +461,7 @@ string DeltaFileIterator::PreparedDeltaBlock::ToString() const {
 
 Status DeltaFileIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   DCHECK(initted_) << "Must call Init()";
-  DCHECK(index_iter_) << "Must call SeekToOrdinal()";
+  DCHECK(exhausted_ || index_iter_) << "Must call SeekToOrdinal()";
 
   CHECK_GT(nrows, 0);
 
