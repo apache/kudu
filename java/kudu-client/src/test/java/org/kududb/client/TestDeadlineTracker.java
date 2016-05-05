@@ -35,7 +35,7 @@ public class TestDeadlineTracker {
         return timeToReturn.get();
       }
     };
-    Stopwatch stopwatch = new Stopwatch(ticker);
+    Stopwatch stopwatch = Stopwatch.createUnstarted(ticker);
 
     // no timeout set
     DeadlineTracker tracker = new DeadlineTracker(stopwatch);

@@ -46,6 +46,12 @@
             <version>${guava.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.google.code.findbugs</groupId>
+            <artifactId>jsr305</artifactId>
+            <version>${jsr305.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty</artifactId>
             <version>${netty.version}</version>
@@ -192,6 +198,7 @@
                     <shadedPattern>org.kududb.client.shaded.org.jboss.netty</shadedPattern>
                   </relocation>
                 </relocations>
+                <shadeTestJar>true</shadeTestJar>
               </configuration>
               <executions>
                 <execution>

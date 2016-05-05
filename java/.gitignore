@@ -22,3 +22,4 @@
 
 # Maven build artifacts
 target/
+dependency-reduced-pom.xml

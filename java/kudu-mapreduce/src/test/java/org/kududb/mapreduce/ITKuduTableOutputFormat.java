@@ -25,10 +25,10 @@ import org.junit.Test;
 
 import static org.junit.Assert.*;
 
-public class TestKuduTableOutputFormat extends BaseKuduTest {
+public class ITKuduTableOutputFormat extends BaseKuduTest {
 
   private static final String TABLE_NAME =
-      TestKuduTableOutputFormat.class.getName() + "-" + System.currentTimeMillis();
+      ITKuduTableOutputFormat.class.getName() + "-" + System.currentTimeMillis();
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {

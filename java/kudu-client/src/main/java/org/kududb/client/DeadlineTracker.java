@@ -18,6 +18,8 @@ package org.kududb.client;
 
 import com.google.common.base.Stopwatch;
 
+import java.util.concurrent.TimeUnit;
+
 /**
  * This is a wrapper class around {@link com.google.common.base.Stopwatch} used to track a relative
  * deadline in the future.
@@ -36,7 +38,7 @@ public class DeadlineTracker {
    * Creates a new tracker, which starts the stopwatch right now.
    */
   public DeadlineTracker() {
-    this(new Stopwatch());
+    this(Stopwatch.createUnstarted());
   }
 
   /**
@@ -60,7 +62,7 @@ public class DeadlineTracker {
     if (!hasDeadline()) {
       return false;
     }
-    return deadline - stopwatch.elapsedMillis() <= 0;
+    return deadline - stopwatch.elapsed(TimeUnit.MILLISECONDS) <= 0;
   }
 
   /**
@@ -83,13 +85,13 @@ public class DeadlineTracker {
       throw new IllegalStateException("This tracker doesn't have a deadline set so it cannot " +
           "answer getMillisBeforeDeadline()");
     }
-    long millisBeforeDeadline = deadline - stopwatch.elapsedMillis();
+    long millisBeforeDeadline = deadline - stopwatch.elapsed(TimeUnit.MILLISECONDS);
     millisBeforeDeadline = millisBeforeDeadline <= 0 ? 1 : millisBeforeDeadline;
     return millisBeforeDeadline;
   }
 
   public long getElapsedMillis() {
-    return this.stopwatch.elapsedMillis();
+    return this.stopwatch.elapsed(TimeUnit.MILLISECONDS);
   }
 
   /**
@@ -148,7 +150,7 @@ public class DeadlineTracker {
   public String toString() {
     StringBuffer buf = new StringBuffer("DeadlineTracker(timeout=");
     buf.append(deadline);
-    buf.append(", elapsed=").append(stopwatch.elapsedMillis());
+    buf.append(", elapsed=").append(stopwatch.elapsed(TimeUnit.MILLISECONDS));
     buf.append(")");
     return buf.toString();
   }

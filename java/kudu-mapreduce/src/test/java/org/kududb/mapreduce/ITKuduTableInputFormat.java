@@ -31,10 +31,10 @@ import java.util.List;
 
 import static org.junit.Assert.*;
 
-public class TestKuduTableInputFormat extends BaseKuduTest {
+public class ITKuduTableInputFormat extends BaseKuduTest {
 
   private static final String TABLE_NAME =
-      TestKuduTableInputFormat.class.getName() + "-" + System.currentTimeMillis();
+      ITKuduTableInputFormat.class.getName() + "-" + System.currentTimeMillis();
 
   @Test
   public void test() throws Exception {

@@ -35,10 +35,10 @@ import java.io.IOException;
 
 import static org.junit.Assert.*;
 
-public class TestOutputFormatJob extends BaseKuduTest {
+public class ITOutputFormatJob extends BaseKuduTest {
 
   private static final String TABLE_NAME =
-      TestOutputFormatJob.class.getName() + "-" + System.currentTimeMillis();
+      ITOutputFormatJob.class.getName() + "-" + System.currentTimeMillis();
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
@@ -62,8 +62,8 @@ public class TestOutputFormatJob extends BaseKuduTest {
   public void test() throws Exception {
     Configuration conf = new Configuration();
     String testHome =
-        HADOOP_UTIL.setupAndGetTestDir(TestOutputFormatJob.class.getName(), conf).getAbsolutePath();
-    String jobName = TestOutputFormatJob.class.getName();
+        HADOOP_UTIL.setupAndGetTestDir(ITOutputFormatJob.class.getName(), conf).getAbsolutePath();
+    String jobName = ITOutputFormatJob.class.getName();
     Job job = new Job(conf, jobName);
 
 

@@ -28,6 +28,8 @@ import org.kududb.master.Master;
 
 import static org.junit.Assert.*;
 
+import java.util.concurrent.TimeUnit;
+
 public class TestAsyncKuduClient extends BaseKuduTest {
 
   private static final String TABLE_NAME =
@@ -85,8 +87,8 @@ public class TestAsyncKuduClient extends BaseKuduTest {
 
   private void disconnectAndWait() throws InterruptedException {
     client.getTableClients().get(0).disconnect();
-    Stopwatch sw = new Stopwatch().start();
-    while (sw.elapsedMillis() < DEFAULT_SLEEP) {
+    Stopwatch sw = Stopwatch.createStarted();
+    while (sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
       if (!client.getTableClients().isEmpty()) {
         Thread.sleep(50);
         continue;

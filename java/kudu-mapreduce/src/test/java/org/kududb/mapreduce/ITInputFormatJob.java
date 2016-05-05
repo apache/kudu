@@ -37,11 +37,11 @@ import java.util.List;
 
 import static org.junit.Assert.*;
 
-public class TestInputFormatJob extends BaseKuduTest {
-  private static final Logger LOG = LoggerFactory.getLogger(TestInputFormatJob.class);
+public class ITInputFormatJob extends BaseKuduTest {
+  private static final Logger LOG = LoggerFactory.getLogger(ITInputFormatJob.class);
 
   private static final String TABLE_NAME =
-      TestInputFormatJob.class.getName() + "-" + System.currentTimeMillis();
+      ITInputFormatJob.class.getName() + "-" + System.currentTimeMillis();
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
@@ -69,7 +69,7 @@ public class TestInputFormatJob extends BaseKuduTest {
     createFourTabletsTableWithNineRows(TABLE_NAME);
 
     Configuration conf = new Configuration();
-    HADOOP_UTIL.setupAndGetTestDir(TestInputFormatJob.class.getName(), conf).getAbsolutePath();
+    HADOOP_UTIL.setupAndGetTestDir(ITInputFormatJob.class.getName(), conf).getAbsolutePath();
 
     createAndTestJob(conf, new ArrayList<KuduPredicate>(), 9);
 
@@ -85,7 +85,7 @@ public class TestInputFormatJob extends BaseKuduTest {
   private void createAndTestJob(Configuration conf,
                                 List<KuduPredicate> predicates, int expectedCount)
       throws Exception {
-    String jobName = TestInputFormatJob.class.getName();
+    String jobName = ITInputFormatJob.class.getName();
     Job job = new Job(conf, jobName);
 
     Class<TestMapperTableInput> mapperClass = TestMapperTableInput.class;

@@ -19,7 +19,6 @@ package org.kududb.client;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Range;
-import com.google.common.collect.Ranges;
 import com.google.common.collect.Sets;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
@@ -84,7 +83,7 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 public class AsyncKuduSession implements SessionConfiguration {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduSession.class);
-  private static final Range<Float> PERCENTAGE_RANGE = Ranges.closed(0.0f, 1.0f);
+  private static final Range<Float> PERCENTAGE_RANGE = Range.closed(0.0f, 1.0f);
 
   private final AsyncKuduClient client;
   private final Random randomizer = new Random();

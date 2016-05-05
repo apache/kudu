@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -338,9 +339,9 @@ public class BaseKuduTest {
    * @throws Exception If we are unable to find the leader master.
    */
   protected static int findLeaderMasterPort() throws Exception {
-    Stopwatch sw = new Stopwatch().start();
+    Stopwatch sw = Stopwatch.createStarted();
     int leaderPort = -1;
-    while (leaderPort == -1 && sw.elapsedMillis() < DEFAULT_SLEEP) {
+    while (leaderPort == -1 && sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
       Deferred<Master.GetTableLocationsResponsePB> masterLocD = client.getMasterTableLocationsPB();
       Master.GetTableLocationsResponsePB r = masterLocD.join(DEFAULT_SLEEP);
       leaderPort = r.getTabletLocations(0)
