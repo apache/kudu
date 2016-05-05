@@ -293,6 +293,15 @@ Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
 }
 
 Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
+  RETURN_NOT_OK(const_cast<DeltaFileReader*>(this)->Init());
+
+  // If there are no deletes in the delta file at all, we can short-circuit
+  // the seek.
+  if (delta_stats_->delete_count() == 0) {
+    *deleted = false;
+    return Status::OK();
+  }
+
   MvccSnapshot snap_all(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
 
   // TODO: would be nice to avoid allocation here, but we don't want to
