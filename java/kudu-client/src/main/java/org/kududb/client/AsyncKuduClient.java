@@ -620,6 +620,9 @@ public class AsyncKuduClient implements AutoCloseable {
     final TabletClient client = clientFor(tablet);
     final KuduRpc<AsyncKuduScanner.Response> next_request = scanner.getNextRowsRequest();
     final Deferred<AsyncKuduScanner.Response> d = next_request.getDeferred();
+    // Important to increment the attempts before the next if statement since
+    // getSleepTimeForRpc() relies on it if the client is null or dead.
+    next_request.attempt++;
     if (client == null || !client.isAlive()) {
       // A null client means we either don't know about this tablet anymore (unlikely) or we
       // couldn't find a leader (which could be triggered by a read timeout).
@@ -627,7 +630,6 @@ public class AsyncKuduClient implements AutoCloseable {
       delayedSendRpcToTablet(next_request, null);
       return next_request.getDeferred();
     }
-    next_request.attempt++;
     client.sendRpc(next_request);
     return d;
   }
