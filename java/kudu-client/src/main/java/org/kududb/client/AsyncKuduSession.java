@@ -17,6 +17,7 @@
 package org.kududb.client;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Range;
 import com.google.common.collect.Ranges;
 import com.google.common.collect.Sets;
@@ -249,9 +250,14 @@ public class AsyncKuduSession implements SessionConfiguration {
    * everything that was buffered at the time of the call has been flushed.
    */
   public Deferred<List<OperationResponse>> close() {
-    closed = true;
-    client.removeSession(this);
-    return flush();
+    if (!closed) {
+      closed = true;
+      client.removeSession(this);
+      return flush();
+    } else {
+      // Deferred#fromResult(T) is invariant on T, so the cast is necessary.
+      return Deferred.fromResult((List<OperationResponse>) ImmutableList.<OperationResponse>of());
+    }
   }
 
   /**
@@ -803,6 +809,9 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
 
     public void run(final Timeout timeout) {
+      // This is a TOCTOU violation, but since {@link #flushTablet} is
+      // synchronized internally it is only an optimistic check, and
+      // false negatives do not cause thread safety issues.
       if (isClosed()) {
         return; // we ran too late, no-op
       }
