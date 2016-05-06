@@ -48,7 +48,9 @@ DeltaTracker::DeltaTracker(shared_ptr<RowSetMetadata> rowset_metadata,
       num_rows_(num_rows),
       open_(false),
       log_anchor_registry_(log_anchor_registry),
-      parent_tracker_(std::move(parent_tracker)) {}
+      parent_tracker_(std::move(parent_tracker)),
+      dms_empty_(true) {
+}
 
 Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
                                       vector<shared_ptr<DeltaStore> >* stores,
@@ -357,6 +359,8 @@ Status DeltaTracker::Update(Timestamp timestamp,
 
   Status s = dms_->Update(timestamp, row_idx, update, op_id);
   if (s.ok()) {
+    dms_empty_.Store(false);
+
     MemStoreTargetPB* target = result->add_mutated_stores();
     target->set_rs_id(rowset_metadata_->id());
     target->set_dms_id(dms_->id());
@@ -443,6 +447,7 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
     old_dms = dms_;
     dms_.reset(new DeltaMemStore(old_dms->id() + 1, rowset_metadata_->id(),
                                  log_anchor_registry_, parent_tracker_));
+    dms_empty_.Store(true);
 
     if (count == 0) {
       // No need to flush if there are no deltas.
@@ -487,11 +492,6 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
 size_t DeltaTracker::DeltaMemStoreSize() const {
   shared_lock<rw_spinlock> lock(&component_lock_);
   return dms_->memory_footprint();
-}
-
-bool DeltaTracker::DeltaMemStoreEmpty() const {
-  shared_lock<rw_spinlock> lock(&component_lock_);
-  return dms_->Empty();
 }
 
 int64_t DeltaTracker::MinUnflushedLogIndex() const {

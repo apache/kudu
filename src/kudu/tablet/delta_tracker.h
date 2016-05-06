@@ -28,6 +28,7 @@
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/cfile_set.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -158,7 +159,9 @@ class DeltaTracker {
   size_t DeltaMemStoreSize() const;
 
   // Returns true if the DMS has no entries. This doesn't rely on the size.
-  bool DeltaMemStoreEmpty() const;
+  bool DeltaMemStoreEmpty() const {
+    return dms_empty_.Load();
+  }
 
   // Get the minimum log index for this tracker's DMS, -1 if it wasn't set.
   int64_t MinUnflushedLogIndex() const;
@@ -243,6 +246,11 @@ class DeltaTracker {
   SharedDeltaStoreVector redo_delta_stores_;
   // The set of tracked UNDO delta stores, in decreasing timestamp order.
   SharedDeltaStoreVector undo_delta_stores_;
+
+  // The maintenance scheduler calls DeltaMemStoreEmpty() a lot.
+  // We cache this here to avoid having to take component_lock_
+  // in order to satisfy this call.
+  AtomicBool dms_empty_;
 
   // read-write lock protecting dms_ and {redo,undo}_delta_stores_.
   // - Readers and mutators take this lock in shared mode.
