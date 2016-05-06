@@ -21,6 +21,7 @@
 
 #include <boost/function.hpp>
 #include <map>
+#include <set>
 #include <string>
 #include <memory>
 #include <unordered_map>
@@ -30,6 +31,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/rpc.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -61,6 +63,8 @@ class KuduTable;
 namespace internal {
 
 class LookupRpc;
+class MetaCache;
+class RemoteTablet;
 
 // The information cached about a given tablet server in the cluster.
 //
@@ -113,6 +117,51 @@ struct RemoteReplica {
 };
 
 typedef std::unordered_map<std::string, RemoteTabletServer*> TabletServerMap;
+
+// A ServerPicker for tablets servers, backed by the MetaCache.
+// Replicas are returned fully initialized and ready to be used.
+class MetaCacheServerPicker : public rpc::ServerPicker<RemoteTabletServer> {
+ public:
+  MetaCacheServerPicker(KuduClient* client,
+                        const scoped_refptr<MetaCache>& meta_cache,
+                        const KuduTable* table,
+                        RemoteTablet* const tablet);
+
+  virtual ~MetaCacheServerPicker() {}
+  void PickLeader(const ServerPickedCallback& callback, const MonoTime& deadline) override;
+  void MarkServerFailed(RemoteTabletServer* replica, const Status& status) override;
+  void MarkReplicaNotLeader(RemoteTabletServer* replica) override;
+  void MarkResourceNotFound(RemoteTabletServer* replica) override;
+ private:
+
+  // Called whenever a tablet lookup in the metacache completes.
+  void LookUpTabletCb(const ServerPickedCallback& callback,
+                      const MonoTime& deadline,
+                      const Status& status);
+
+  // Called when the proxy is initialized.
+  void InitProxyCb(const ServerPickedCallback& callback,
+                   RemoteTabletServer* replica,
+                   const Status& status);
+
+  // Lock protecting accesses/updates to 'followers_'.
+  mutable simple_spinlock lock_;
+
+  // Reference to the client so that we can initialize a replica proxy, when we find it.
+  KuduClient* client_;
+
+  // A ref to the meta cache.
+  scoped_refptr<MetaCache> meta_cache_;
+
+  // The table we're writing to.
+  const KuduTable* table_;
+
+  // The tablet we're picking replicas for.
+  RemoteTablet* const tablet_;
+
+  // TSs that refused writes and that were marked as followers as a consequence.
+  std::set<RemoteTabletServer*> followers_;
+};
 
 // The client's view of a given tablet. This object manages lookups of
 // the tablet's locations, status, etc.

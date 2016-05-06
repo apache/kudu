@@ -35,9 +35,10 @@
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 
-using std::string;
 using std::map;
+using std::set;
 using std::shared_ptr;
+using std::string;
 using strings::Substitute;
 
 namespace kudu {
@@ -281,6 +282,160 @@ std::string RemoteTablet::ReplicasAsStringUnlocked() const {
   }
   return replicas_str;
 }
+
+MetaCacheServerPicker::MetaCacheServerPicker(KuduClient* client,
+                                             const scoped_refptr<MetaCache>& meta_cache,
+                                             const KuduTable* table,
+                                             RemoteTablet* const tablet)
+    : client_(client),
+      meta_cache_(meta_cache),
+      table_(table),
+      tablet_(tablet) {}
+
+void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
+                                       const MonoTime& deadline) {
+  // Choose a destination TS according to the following algorithm:
+  // 1. If the tablet metadata is stale, refresh it (goto step 5).
+  // 2. Select the leader, provided:
+  //    a. The current leader is known,
+  //    b. It hasn't failed, and
+  //    c. It isn't currently marked as a follower.
+  // 3. If there's no good leader select another replica, provided:
+  //    a. It hasn't failed, and
+  //    b. It hasn't rejected our write due to being a follower.
+  // 4. Preemptively mark the replica we selected in step 3 as "leader" in the
+  //    meta cache, so that our selection remains sticky until the next Master
+  //    metadata refresh.
+  // 5. If we're out of appropriate replicas, force a lookup to the master
+  //    to fetch new consensus configuration information.
+  // 6. When the lookup finishes, forget which replicas were followers and
+  //    retry the write (i.e. goto 2).
+  // 7. If we issue the write and it fails because the destination was a
+  //    follower, remember that fact and retry the write (i.e. goto 2).
+  // 8. Repeat steps 1-7 until the write succeeds, fails for other reasons,
+  //    or the write's deadline expires.
+  RemoteTabletServer* leader = nullptr;
+  if (!tablet_->stale()) {
+    leader = tablet_->LeaderTServer();
+    bool marked_as_follower = false;
+    {
+      lock_guard<simple_spinlock> lock(&lock_);
+      marked_as_follower = ContainsKey(followers_, leader);
+
+    }
+    if (leader && marked_as_follower) {
+      VLOG(2) << "Tablet " << tablet_->tablet_id() << ": We have a follower for a leader: "
+          << leader->ToString();
+
+      // Mark the node as a follower in the cache so that on the next go-round,
+      // LeaderTServer() will not return it as a leader unless a full metadata
+      // refresh has occurred. This also avoids LookupTabletByKey() going into
+      // "fast path" mode and not actually performing a metadata refresh from the
+      // Master when it needs to.
+      tablet_->MarkTServerAsFollower(leader);
+      leader = nullptr;
+    }
+    if (!leader) {
+      // Try to "guess" the next leader.
+      vector<RemoteTabletServer*> replicas;
+      tablet_->GetRemoteTabletServers(&replicas);
+      set<RemoteTabletServer*> followers_copy;
+      {
+        lock_guard<simple_spinlock> lock(&lock_);
+        followers_copy = followers_;
+
+      }
+      for (RemoteTabletServer* ts : replicas) {
+        if (!ContainsKey(followers_copy, ts)) {
+          leader = ts;
+          break;
+        }
+      }
+      if (leader) {
+        // Mark this next replica "preemptively" as the leader in the meta cache,
+        // so we go to it first on the next write if writing was successful.
+        VLOG(1) << "Tablet " << tablet_->tablet_id() << ": Previous leader failed. "
+            << "Preemptively marking tserver " << leader->ToString()
+            << " as leader in the meta cache.";
+        tablet_->MarkTServerAsLeader(leader);
+      }
+    }
+  }
+
+  // If we've tried all replicas, force a lookup to the master to find the
+  // new leader. This relies on some properties of LookupTabletByKey():
+  // 1. The fast path only works when there's a non-failed leader (which we
+  //    know is untrue here).
+  // 2. The slow path always fetches consensus configuration information and updates the
+  //    looked-up tablet.
+  // Put another way, we don't care about the lookup results at all; we're
+  // just using it to fetch the latest consensus configuration information.
+  //
+  // TODO: When we support tablet splits, we should let the lookup shift
+  // the write to another tablet (i.e. if it's since been split).
+  if (!leader) {
+    meta_cache_->LookupTabletByKey(
+        table_,
+        tablet_->partition().partition_key_start(),
+        deadline,
+        NULL,
+        Bind(&MetaCacheServerPicker::LookUpTabletCb, Unretained(this), callback, deadline));
+    return;
+  }
+
+  // If we have a current TS initialize the proxy.
+  // Make sure we have a working proxy before sending out the RPC.
+  leader->InitProxy(client_,
+                    Bind(&MetaCacheServerPicker::InitProxyCb,
+                         Unretained(this),
+                         callback,
+                         leader));
+}
+
+void MetaCacheServerPicker::MarkServerFailed(RemoteTabletServer* replica, const Status& status) {
+  tablet_->MarkReplicaFailed(replica, status);
+}
+
+void MetaCacheServerPicker::MarkReplicaNotLeader(RemoteTabletServer* replica) {
+  {
+    lock_guard<simple_spinlock> lock(&lock_);
+    followers_.insert(replica);
+  }
+}
+
+void MetaCacheServerPicker::MarkResourceNotFound(RemoteTabletServer* replica) {
+  tablet_->MarkStale();
+}
+
+// Called whenever a tablet lookup in the metacache completes.
+void MetaCacheServerPicker::LookUpTabletCb(const ServerPickedCallback& callback,
+                                           const MonoTime& deadline,
+                                           const Status& status) {
+  // Whenever we lookup the tablet, clear the set of followers.
+  {
+    lock_guard<simple_spinlock> lock(&lock_);
+    followers_.clear();
+  }
+
+  // If we couldn't lookup the tablet call the user callback immediately.
+  if (!status.ok()) {
+    callback.Run(status, nullptr);
+    return;
+  }
+
+  // If we could lookup the tablet run the picking method again.
+  //
+  // TODO if we add new Pick* methods the method to (re-)call needs to be passed as
+  // a callback, for now we just have PickLeader so we can call it directly.
+  PickLeader(callback, deadline);
+}
+
+void MetaCacheServerPicker::InitProxyCb(const ServerPickedCallback& callback,
+                                        RemoteTabletServer* replica,
+                                        const Status& status) {
+  callback.Run(status, replica);
+}
+
 
 ////////////////////////////////////////////////////////////
 
