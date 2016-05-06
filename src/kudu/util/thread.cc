@@ -42,6 +42,7 @@
 #include "kudu/util/debug-util.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/os-util.h"
@@ -491,7 +492,8 @@ std::string Thread::ToString() const {
 }
 
 Status Thread::StartThread(const std::string& category, const std::string& name,
-                           const ThreadFunctor& functor, scoped_refptr<Thread> *holder) {
+                           const ThreadFunctor& functor, uint64_t flags,
+                           scoped_refptr<Thread> *holder) {
   const string log_prefix = Substitute("$0 ($1) ", name, category);
   SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix, "starting thread");
 
@@ -500,6 +502,7 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
 
   {
     SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix, "creating pthread");
+    SCOPED_WATCH_STACK((flags & NO_STACK_WATCHDOG) ? 0 : 250);
     int ret = pthread_create(&t->thread_, NULL, &Thread::SuperviseThread, t.get());
     if (ret) {
       return Status::RuntimeError("Could not create thread", strerror(ret), ret);

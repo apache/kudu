@@ -44,9 +44,15 @@ DEFINE_STATIC_THREAD_LOCAL(KernelStackWatchdog::TLS,
 KernelStackWatchdog::KernelStackWatchdog()
   : log_collector_(nullptr),
     finish_(1) {
-  CHECK_OK(Thread::Create("kernel-watchdog", "kernel-watcher",
-                          boost::bind(&KernelStackWatchdog::RunThread, this),
-                          &thread_));
+
+  // During creation of the stack watchdog thread, we need to disable using
+  // the stack watchdog itself. Otherwise, the 'StartThread' function will
+  // try to call back into initializing the stack watchdog, and will self-deadlock.
+  CHECK_OK(Thread::CreateWithFlags(
+      "kernel-watchdog", "kernel-watcher",
+      boost::bind(&KernelStackWatchdog::RunThread, this),
+      Thread::NO_STACK_WATCHDOG,
+      &thread_));
 }
 
 KernelStackWatchdog::~KernelStackWatchdog() {
