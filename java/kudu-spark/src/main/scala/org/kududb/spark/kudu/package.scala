@@ -16,7 +16,7 @@
  */
 package org.kududb.spark
 
-import org.apache.spark.sql.{DataFrame, DataFrameReader}
+import org.apache.spark.sql.{DataFrame, DataFrameReader, DataFrameWriter}
 
 package object kudu {
 
@@ -27,4 +27,12 @@ package object kudu {
   implicit class KuduDataFrameReader(reader: DataFrameReader) {
     def kudu: DataFrame = reader.format("org.kududb.spark.kudu").load
   }
+
+  /**
+    * Adds a method, `kudu`, to DataFrameWriter that allows writes to Kudu using
+    * the DataFileWriter
+    */
+    implicit class KuduDataFrameWriter(writer: DataFrameWriter) {
+      def kudu = writer.format("org.kududb.spark.kudu").save
+    }
 }

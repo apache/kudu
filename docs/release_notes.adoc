@@ -77,6 +77,8 @@ Hadoop storage technologies.
   using mapreduce api. Includes predicate pushdowns for spark-sql and spark filters.
   Parallel retrieval for multiple tablets and column projections. link:developing.html#_kudu_integration_with_spark[Kudu integration with Spark Example]
 
+- link:http://gerrit.cloudera.org:8080/#/c/2992/ Added ability to update and insert from spark using kudu datasource
+
 [[rn_0.9.0_changes]]
 ==== Other noteworthy changes
 

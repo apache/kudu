@@ -111,11 +111,27 @@ Then import kudu-spark and create a dataframe:
 import org.kududb.spark.kudu._
 val kuduDataFrame =  sqlContext.read.options(Map("kudu.master"-> "your.kudu.master.here","kudu.table"-> "your.kudu.table.here")).kudu
 // Then query using spark api or register a temporary table and use spark sql
-scala> kuduDataFrame.select("id").filter("id">=5).show()
+kuduDataFrame.select("id").filter("id">=5).show()
 // Register kuduDataFrame as a temporary table for spark-sql
 kuduDataFrame.registerTempTable("kudu_table")
 // Select from the dataframe
 sqlContext.sql("select id from kudu_table where id>=5").show()
+
+// create a new kudu table from a dataframe
+val kuduContext = new KuduContext("your.kudu.master.here")
+kuduContext.createTable("testcreatetable", df.schema, Seq("key"), new CreateTableOptions().setNumReplicas(1))
+
+// then we can insert data into the kudu table
+df.write.options(Map("kudu.master"-> "your.kudu.master.here","kudu.table"-> "your.kudu.table.here")).mode("append").kudu
+
+// to update existing data change the mode to 'overwrite'
+df.write.options(Map("kudu.master"-> "your.kudu.master.here","kudu.table"-> "your.kudu.table.here")).mode("overwrite").kudu
+
+// to check for existance of a kudu table
+kuduContext.tableExists("your.kudu.table.here")
+
+// to delete a kudu table
+kuduContext.deleteTable("your.kudu.table.here")
 ----
 
 == Integration with MapReduce, YARN, and Other Frameworks

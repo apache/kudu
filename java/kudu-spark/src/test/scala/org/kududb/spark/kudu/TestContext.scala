@@ -84,6 +84,13 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
     if (sc != null) sc.stop()
   }
 
+  def deleteRow(key: Int): Unit = {
+    val kuduSession = kuduClient.newSession()
+    val delete = table.newDelete()
+    delete.getRow.addInt(0, key)
+    kuduSession.apply(delete)
+  }
+
   def insertRows(rowCount: Integer): IndexedSeq[(Int, Int, String)] = {
     val kuduSession = kuduClient.newSession()
 
