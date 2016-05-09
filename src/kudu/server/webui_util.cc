@@ -107,6 +107,9 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
       case DOUBLE:
         *output << "DOUBLE";
         break;
+      case BOOL:
+        *output << "BOOLEAN";
+        break;
       default:
         *output << "[unsupported type " << col.type_info()->name() << "!]";
         break;
