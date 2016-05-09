@@ -48,6 +48,7 @@
 #include "kudu/util/os-util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/url-coding.h"
+#include "kudu/util/trace.h"
 #include "kudu/util/web_callback_registry.h"
 
 using boost::bind;
@@ -494,6 +495,8 @@ std::string Thread::ToString() const {
 Status Thread::StartThread(const std::string& category, const std::string& name,
                            const ThreadFunctor& functor, uint64_t flags,
                            scoped_refptr<Thread> *holder) {
+  TRACE_COUNTER_INCREMENT("threads_started", 1);
+  TRACE_COUNTER_SCOPE_LATENCY_US("thread_start_us");
   const string log_prefix = Substitute("$0 ($1) ", name, category);
   SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix, "starting thread");
 

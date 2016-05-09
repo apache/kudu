@@ -28,6 +28,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/trace_metrics.h"
 
@@ -78,6 +79,19 @@
       _trace->metrics()->Increment(counter_name, val); \
     } \
   } while (0);
+
+// Increment a counter for the amount of wall time spent in the current
+// scope. For example:
+//
+//  void DoFoo() {
+//    TRACE_COUNTER_SCOPE_LATENCY_US("foo_us");
+//    ... do expensive Foo thing
+//  }
+//
+//  will result in a trace metric indicating the number of microseconds spent
+//  in invocations of DoFoo().
+#define TRACE_COUNTER_SCOPE_LATENCY_US(counter_name) \
+  ::kudu::ScopedTraceLatencyCounter _scoped_latency(counter_name)
 
 namespace kudu {
 
@@ -229,6 +243,24 @@ class ScopedAdoptTrace {
   Trace* old_trace_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedAdoptTrace);
+};
+
+// Implementation for TRACE_COUNTER_SCOPE_LATENCY_US(...) macro above.
+class ScopedTraceLatencyCounter {
+ public:
+  explicit ScopedTraceLatencyCounter(const char* counter)
+      : counter_(counter),
+        start_time_(GetCurrentTimeMicros()) {
+  }
+
+  ~ScopedTraceLatencyCounter() {
+    TRACE_COUNTER_INCREMENT(counter_, GetCurrentTimeMicros() - start_time_);
+  }
+
+ private:
+  const char* const counter_;
+  MicrosecondsInt64 start_time_;
+  DISALLOW_COPY_AND_ASSIGN(ScopedTraceLatencyCounter);
 };
 
 } // namespace kudu

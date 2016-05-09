@@ -829,8 +829,16 @@ TEST_F(TraceTest, TestTraceMetrics) {
   for (int i = 0; i < 1000; i++) {
     trace->metrics()->Increment("baz", i);
   }
-  ASSERT_EQ("{\"foo\":10,\"bar\":10,\"baz\":499500}",
+  EXPECT_EQ("{\"foo\":10,\"bar\":10,\"baz\":499500}",
             trace->MetricsAsJSON());
+
+  {
+    ADOPT_TRACE(trace.get());
+    TRACE_COUNTER_SCOPE_LATENCY_US("test_scope_us");
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+  auto m = trace->metrics()->Get();
+  EXPECT_GE(m["test_scope_us"], 80 * 1000);
 }
 
 } // namespace debug

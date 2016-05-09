@@ -38,6 +38,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread_restrictions.h"
+#include "kudu/util/trace.h"
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -186,10 +187,14 @@ static Status DoSync(int fd, const string& filename) {
   ThreadRestrictions::AssertIOAllowed();
   if (FLAGS_never_fsync) return Status::OK();
   if (FLAGS_writable_file_use_fsync) {
+    TRACE_COUNTER_SCOPE_LATENCY_US("fsync_us");
+    TRACE_COUNTER_INCREMENT("fsync", 1);
     if (fsync(fd) < 0) {
       return IOError(filename, errno);
     }
   } else {
+    TRACE_COUNTER_INCREMENT("fdatasync", 1);
+    TRACE_COUNTER_SCOPE_LATENCY_US("fdatasync_us");
     if (fdatasync(fd) < 0) {
       return IOError(filename, errno);
     }
