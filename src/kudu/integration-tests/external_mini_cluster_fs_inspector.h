@@ -75,6 +75,10 @@ class ExternalMiniClusterFsInspector {
                                   tablet::TabletSuperBlockPB* sb);
   Status ReadConsensusMetadataOnTS(int index, const std::string& tablet_id,
                                    consensus::ConsensusMetadataPB* cmeta_pb);
+  Status WriteConsensusMetadataOnTS(int index,
+                                    const std::string& tablet_id,
+                                    const consensus::ConsensusMetadataPB& cmeta_pb);
+
   Status CheckTabletDataStateOnTS(int index,
                                   const std::string& tablet_id,
                                   const std::vector<tablet::TabletDataState>& expected_states);
@@ -106,6 +110,9 @@ class ExternalMiniClusterFsInspector {
       const MonoDelta& timeout = MonoDelta::FromSeconds(30));
 
  private:
+  std::string GetConsensusMetadataPathOnTS(int index,
+                                           const std::string& tablet_id) const;
+
   Env* const env_;
   ExternalMiniCluster* const cluster_;
 

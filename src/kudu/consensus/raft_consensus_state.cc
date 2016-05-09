@@ -60,10 +60,14 @@ Status ReplicaState::StartUnlocked(const OpId& last_id_in_wal) {
 
   // Our last persisted term can be higher than the last persisted operation
   // (i.e. if we called an election) but reverse should never happen.
-  CHECK_LE(last_id_in_wal.term(), GetCurrentTermUnlocked()) << LogPrefixUnlocked()
-      << "The last op in the WAL with id " << OpIdToString(last_id_in_wal)
-      << " has a term (" << last_id_in_wal.term() << ") that is greater "
-      << "than the latest recorded term, which is " << GetCurrentTermUnlocked();
+  if (last_id_in_wal.term() > GetCurrentTermUnlocked()) {
+    return Status::Corruption(Substitute(
+        "The last op in the WAL with id $0 has a term ($1) that is greater "
+        "than the latest recorded term, which is $2",
+        OpIdToString(last_id_in_wal),
+        last_id_in_wal.term(),
+        GetCurrentTermUnlocked()));
+  }
 
   next_index_ = last_id_in_wal.index() + 1;
   last_received_op_id_.CopyFrom(last_id_in_wal);

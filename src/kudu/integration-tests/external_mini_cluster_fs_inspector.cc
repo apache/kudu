@@ -169,17 +169,32 @@ Status ExternalMiniClusterFsInspector::ReadTabletSuperBlockOnTS(int index,
   return pb_util::ReadPBContainerFromPath(env_, superblock_path, sb);
 }
 
+string ExternalMiniClusterFsInspector::GetConsensusMetadataPathOnTS(int index,
+                                                                    const string& tablet_id) const {
+  string data_dir = cluster_->tablet_server(index)->data_dir();
+  string cmeta_dir = JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName);
+  return JoinPathSegments(cmeta_dir, tablet_id);
+}
+
 Status ExternalMiniClusterFsInspector::ReadConsensusMetadataOnTS(int index,
                                                                  const string& tablet_id,
                                                                  ConsensusMetadataPB* cmeta_pb) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  string cmeta_dir = JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName);
-  string cmeta_file = JoinPathSegments(cmeta_dir, tablet_id);
-  if (!env_->FileExists(cmeta_file)) {
-    return Status::NotFound("Consensus metadata file not found", cmeta_file);
+  auto cmeta_path = GetConsensusMetadataPathOnTS(index, tablet_id);
+  if (!env_->FileExists(cmeta_path)) {
+    return Status::NotFound("Consensus metadata file not found", cmeta_path);
   }
-  return pb_util::ReadPBContainerFromPath(env_, cmeta_file, cmeta_pb);
+  return pb_util::ReadPBContainerFromPath(env_, cmeta_path, cmeta_pb);
 }
+
+Status ExternalMiniClusterFsInspector::WriteConsensusMetadataOnTS(
+    int index,
+    const string& tablet_id,
+    const ConsensusMetadataPB& cmeta_pb) {
+  auto cmeta_path = GetConsensusMetadataPathOnTS(index, tablet_id);
+  return pb_util::WritePBContainerToPath(env_, cmeta_path, cmeta_pb,
+                                         pb_util::OVERWRITE, pb_util::NO_SYNC);
+}
+
 
 Status ExternalMiniClusterFsInspector::CheckTabletDataStateOnTS(
     int index,

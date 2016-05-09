@@ -2471,6 +2471,46 @@ TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
   ASSERT_STR_CONTAINS(resp.ShortDebugString(), "Could not prepare a single transaction");
 }
 
+// Test that, if the raft metadata on a replica is corrupt, then the server
+// doesn't crash, but instead just marks the tablet as corrupt.
+TEST_F(RaftConsensusITest, TestCorruptReplicaMetadata) {
+  // Start cluster and wait until we have a stable leader.
+  BuildAndStart({}, {});
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_,
+                                  tablet_id_, 1));
+
+
+  // Shut down one of the tablet servers, and then muck
+  // with its consensus metadata to corrupt it.
+  auto* ts = cluster_->tablet_server(0);
+  ts->Shutdown();
+  consensus::ConsensusMetadataPB cmeta_pb;
+  ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(0, tablet_id_, &cmeta_pb));
+  cmeta_pb.set_current_term(cmeta_pb.current_term() - 1);
+  ASSERT_OK(inspect_->WriteConsensusMetadataOnTS(0, tablet_id_, cmeta_pb));
+
+  ASSERT_OK(ts->Restart());
+
+  // The server should come up with a 'FAILED' status because of the corrupt
+  // metadata.
+  ASSERT_OK(WaitUntilTabletInState(tablet_servers_[ts->uuid()],
+                                   tablet_id_,
+                                   tablet::FAILED,
+                                   MonoDelta::FromSeconds(30)));
+
+  // Currently, the tablet server does not automatically delete FAILED replicas.
+  // So, manually delete the bad replica in order to recover.
+  ASSERT_OK(itest::DeleteTablet(tablet_servers_[ts->uuid()], tablet_id_,
+                                tablet::TABLET_DATA_TOMBSTONED, boost::none,
+                                MonoDelta::FromSeconds(30)));
+
+  // A new good copy should get created.
+  ASSERT_OK(WaitUntilTabletInState(tablet_servers_[ts->uuid()],
+                                   tablet_id_,
+                                   tablet::RUNNING,
+                                   MonoDelta::FromSeconds(30)));
+}
+
 }  // namespace tserver
 }  // namespace kudu
 
