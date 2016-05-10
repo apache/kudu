@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/client/resource_metrics.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_predicate.h"
@@ -1023,6 +1024,9 @@ class KUDU_EXPORT KuduScanner {
   // More concretely, this is the server that handled the most recent Open or NextBatch
   // RPC made by the server.
   Status GetCurrentServer(KuduTabletServer** server);
+
+  // Returns the cumulative resource metrics since the scan was started.
+  const ResourceMetrics& GetResourceMetrics() const;
 
   // Set the hint for the size of the next batch in bytes.
   // If setting to 0 before calling Open(), it means that the first call

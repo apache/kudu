@@ -993,6 +993,10 @@ KuduSchema KuduScanner::GetProjectionSchema() const {
   return KuduSchema(*data_->configuration().projection());
 }
 
+const ResourceMetrics& KuduScanner::GetResourceMetrics() const {
+  return data_->resource_metrics_;
+}
+
 namespace {
 // Callback for the RPC sent by Close().
 // We can't use the KuduScanner response and RPC controller members for this

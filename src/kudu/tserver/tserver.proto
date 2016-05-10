@@ -298,6 +298,13 @@ message ScanRequestPB {
   optional bool close_scanner = 5;
 }
 
+// RPC's resource metrics.
+message ResourceMetricsPB {
+  // all metrics MUST be the type of int64.
+  optional int64 cfile_cache_miss_bytes = 1;
+  optional int64 cfile_cache_hit_bytes = 2;
+}
+
 message ScanResponsePB {
   // The error, if an error occurred with this request.
   optional TabletServerErrorPB error = 1;
@@ -330,6 +337,9 @@ message ScanResponsePB {
   // If this is a fault-tolerant scanner, this is set to the encoded primary
   // key of the last row returned in the response.
   optional bytes last_primary_key = 7;
+
+  // The resource usage of this RPC.
+  optional ResourceMetricsPB resource_metrics = 8;
 }
 
 // A scanner keep-alive request.

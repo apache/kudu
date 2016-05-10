@@ -33,6 +33,9 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/hexdump.h"
 
+using google::protobuf::FieldDescriptor;
+using google::protobuf::Reflection;
+
 using std::set;
 using std::string;
 
@@ -142,6 +145,21 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
   return err.status;
 }
 
+void KuduScanner::Data::UpdateResourceMetrics() {
+  if (last_response_.has_resource_metrics()) {
+    tserver::ResourceMetricsPB resource_metrics = last_response_.resource_metrics();
+    const Reflection* reflection = resource_metrics.GetReflection();
+    vector<const FieldDescriptor*> fields;
+    reflection->ListFields(resource_metrics, &fields);
+    for (const FieldDescriptor* field : fields) {
+      if (reflection->HasField(resource_metrics, field) &&
+          field->cpp_type() == FieldDescriptor::CPPTYPE_INT64) {
+        resource_metrics_.Increment(field->name(), reflection->GetInt64(resource_metrics, field));
+      }
+    }
+  }
+}
+
 ScanRpcStatus KuduScanner::Data::AnalyzeResponse(const Status& rpc_status,
                                                  const MonoTime& overall_deadline,
                                                  const MonoTime& deadline) {
@@ -227,11 +245,15 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
   if (!configuration_.spec().predicates().empty()) {
     controller_.RequireServerFeature(TabletServerFeatures::COLUMN_PREDICATES);
   }
-  return AnalyzeResponse(
+  ScanRpcStatus scan_status = AnalyzeResponse(
       proxy_->Scan(next_req_,
                    &last_response_,
                    &controller_),
       rpc_deadline, overall_deadline);
+  if (scan_status.result == ScanRpcStatus::OK) {
+    UpdateResourceMetrics();
+  }
+  return scan_status;
 }
 
 Status KuduScanner::Data::OpenTablet(const string& partition_key,

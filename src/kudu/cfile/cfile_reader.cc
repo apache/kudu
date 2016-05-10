@@ -54,6 +54,9 @@ using strings::Substitute;
 namespace kudu {
 namespace cfile {
 
+const char* CFILE_CACHE_MISS_BYTES_METRIC_NAME = "cfile_cache_miss_bytes";
+const char* CFILE_CACHE_HIT_BYTES_METRIC_NAME = "cfile_cache_hit_bytes";
+
 // Magic+Length: 8-byte magic, followed by 4-byte header size
 static const size_t kMagicAndLengthSize = 12;
 static const size_t kMaxHeaderFooterPBSize = 64*1024;
@@ -318,7 +321,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   BlockCache::CacheKey key(block_->id(), ptr.offset());
   if (cache->Lookup(key, cache_behavior, &bc_handle)) {
     TRACE_COUNTER_INCREMENT("cfile_cache_hit", 1);
-    TRACE_COUNTER_INCREMENT("cfile_cache_hit_bytes", ptr.size());
+    TRACE_COUNTER_INCREMENT(CFILE_CACHE_HIT_BYTES_METRIC_NAME, ptr.size());
     *ret = BlockHandle::WithDataFromCache(&bc_handle);
     // Cache hit
     return Status::OK();
@@ -331,9 +334,9 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   TRACE_EVENT1("io", "CFileReader::ReadBlock(cache miss)",
                "cfile", ToString());
   TRACE_COUNTER_INCREMENT("cfile_cache_miss", 1);
-  TRACE_COUNTER_INCREMENT("cfile_cache_miss_bytes", ptr.size());
-  ScratchMemory scratch;
+  TRACE_COUNTER_INCREMENT(CFILE_CACHE_MISS_BYTES_METRIC_NAME, ptr.size());
 
+  ScratchMemory scratch;
   // If we are reading uncompressed data and plan to cache the result,
   // then we should allocate our scratch memory directly from the cache.
   // This avoids an extra memory copy in the case of an NVM cache.

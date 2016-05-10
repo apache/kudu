@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "kudu/client/client.h"
+#include "kudu/client/resource_metrics.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_configuration.h"
 #include "kudu/common/partition_pruner.h"
@@ -206,6 +207,9 @@ class KuduScanner::Data {
   // TODO: This and the overall scan retry logic duplicates much of RpcRetrier.
   Status last_error_;
 
+  // The scanner's cumulative resource metrics since the scan was started.
+  ResourceMetrics resource_metrics_;
+
  private:
   // Analyze the response of the last Scan RPC made by this scanner.
   //
@@ -222,6 +226,8 @@ class KuduScanner::Data {
   ScanRpcStatus AnalyzeResponse(const Status& rpc_status,
                                 const MonoTime& overall_deadline,
                                 const MonoTime& rpc_deadline);
+
+  void UpdateResourceMetrics();
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

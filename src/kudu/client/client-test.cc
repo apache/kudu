@@ -20,6 +20,7 @@
 #include <glog/stl_logging.h>
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -36,6 +37,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/mini_cluster.h"
@@ -82,6 +84,7 @@ using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using std::map;
 
 namespace kudu {
 namespace client {
@@ -170,6 +173,15 @@ class ClientTest : public KuduTest {
         &req, &resp));
     CHECK(resp.tablet_locations_size() > 0);
     return resp.tablet_locations(0).tablet_id();
+  }
+
+  void FlushTablet(const string& tablet_id) {
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      scoped_refptr<TabletPeer> tablet_peer;
+      ASSERT_TRUE(cluster_->mini_tablet_server(i)->server()->tablet_manager()->LookupTablet(
+          tablet_id, &tablet_peer));
+      ASSERT_OK(tablet_peer->tablet()->Flush());
+    }
   }
 
   void CheckNoRpcOverflow() {
@@ -262,6 +274,26 @@ class ClientTest : public KuduTest {
     KuduPartialRow* row = del->mutable_row();
     CHECK_OK(row->SetInt32(0, index));
     return std::move(del);
+  }
+
+  void DoTestScanResourceMetrics() {
+    KuduScanner scanner(client_table_.get());
+    string tablet_id = GetFirstTabletId(client_table_.get());
+    // flush to ensure we scan disk later
+    FlushTablet(tablet_id);
+    ASSERT_OK(scanner.SetProjectedColumns({ "key" }));
+    LOG_TIMING(INFO, "Scanning disk with no predicates") {
+      ASSERT_OK(scanner.Open());
+      ASSERT_TRUE(scanner.HasMoreRows());
+      KuduScanBatch batch;
+      while (scanner.HasMoreRows()) {
+        ASSERT_OK(scanner.NextBatch(&batch));
+      }
+      std::map<std::string, int64_t> metrics = scanner.GetResourceMetrics().Get();
+      ASSERT_TRUE(ContainsKey(metrics, "cfile_cache_miss_bytes"));
+      ASSERT_TRUE(ContainsKey(metrics, "cfile_cache_hit_bytes"));
+      ASSERT_GT(metrics["cfile_cache_miss_bytes"] + metrics["cfile_cache_hit_bytes"], 0);
+    }
   }
 
   void DoTestScanWithoutPredicates() {
@@ -521,6 +553,7 @@ TEST_F(ClientTest, TestScan) {
 
   // Scan after insert
   DoTestScanWithoutPredicates();
+  DoTestScanResourceMetrics();
   DoTestScanWithStringPredicate();
   DoTestScanWithKeyPredicate();
 
@@ -989,12 +1022,7 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
     // disk.
     if (with_flush) {
       string tablet_id = GetFirstTabletId(table.get());
-      for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-        scoped_refptr<TabletPeer> tablet_peer;
-        ASSERT_TRUE(cluster_->mini_tablet_server(i)->server()->tablet_manager()->LookupTablet(
-                tablet_id, &tablet_peer));
-        ASSERT_OK(tablet_peer->tablet()->Flush());
-      }
+      FlushTablet(tablet_id);
     }
 
     // Test a few different recoverable server-side error conditions.

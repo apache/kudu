@@ -84,6 +84,13 @@ TAG_FLAG(scanner_inject_latency_on_each_batch_ms, unsafe);
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 
 namespace kudu {
+namespace cfile {
+extern const char* CFILE_CACHE_MISS_BYTES_METRIC_NAME;
+extern const char* CFILE_CACHE_HIT_BYTES_METRIC_NAME;
+}
+}
+
+namespace kudu {
 namespace tserver {
 
 using consensus::ChangeConfigRequestPB;
@@ -1082,7 +1089,10 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
       resp->set_last_primary_key(last.ToString());
     }
   }
-
+  resp->mutable_resource_metrics()->set_cfile_cache_miss_bytes(
+    context->trace()->metrics()->GetMetric(cfile::CFILE_CACHE_MISS_BYTES_METRIC_NAME));
+  resp->mutable_resource_metrics()->set_cfile_cache_hit_bytes(
+    context->trace()->metrics()->GetMetric(cfile::CFILE_CACHE_HIT_BYTES_METRIC_NAME));
   context->RespondSuccess();
 }
 
