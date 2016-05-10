@@ -1480,15 +1480,17 @@ public class AsyncKuduClient implements AutoCloseable {
     // 2. Terminate all connections.
     final class DisconnectCB implements Callback<Deferred<ArrayList<Void>>,
         ArrayList<List<OperationResponse>>> {
-      public Deferred<ArrayList<Void>> call(final ArrayList<List<OperationResponse>> arg) {
+      public Deferred<ArrayList<Void>> call(ArrayList<List<OperationResponse>> ignoredResponses) {
         return disconnectEverything().addCallback(new ReleaseResourcesCB());
       }
       public String toString() {
         return "disconnect callback";
       }
     }
+
     // 1. Flush everything.
-    return closeAllSessions().addBothDeferring(new DisconnectCB());
+    // Notice that we do not handle the errback, if there's an exception it will come straight out.
+    return closeAllSessions().addCallbackDeferring(new DisconnectCB());
   }
 
   private void checkIsClosed() {
