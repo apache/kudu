@@ -22,6 +22,7 @@ import org.kududb.annotations.InterfaceStability;
 import org.kududb.client.Bytes;
 import org.kududb.client.PartialRow;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,7 +43,7 @@ public class Schema {
   /**
    * The primary key columns.
    */
-  private final List<ColumnSchema> primaryKeyColumns;
+  private final List<ColumnSchema> primaryKeyColumns = new ArrayList<>();
 
   /**
    * Mapping of column name to index.
@@ -100,14 +101,11 @@ public class Schema {
     this.columnsById = hasColumnIds ? new HashMap<Integer, Integer>(columnIds.size()) : null;
     int offset = 0;
     boolean hasNulls = false;
-    int primaryKeyCount = 0;
     // pre-compute a few counts and offsets
     for (int index = 0; index < columns.size(); index++) {
       final ColumnSchema column = columns.get(index);
       if (column.isKey()) {
-        primaryKeyCount += 1;
-        if (primaryKeyCount != index + 1)
-          throw new IllegalArgumentException("Got out-of-order primary key column: " + column);
+        primaryKeyColumns.add(column);
       }
 
       hasNulls |= column.isNullable();
@@ -131,7 +129,6 @@ public class Schema {
 
     this.hasNullableColumns = hasNulls;
     this.varLengthColumnCount = varLenCnt;
-    this.primaryKeyColumns = columns.subList(0, primaryKeyCount);
     this.rowSize = getRowSize(this.columnsByIndex);
   }
 

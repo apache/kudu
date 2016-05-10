@@ -161,6 +161,17 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     builder.setProjectedColumnIndexes(Lists.newArrayList(0, 1));
     builder.setProjectedColumnNames(Lists.newArrayList(schema.getColumnByIndex(0).getName()));
     buildScannerAndCheckColumnsCount(builder, 1);
+
+    // Test with keys last with indexes.
+    builder = client.newScannerBuilder(table);
+    builder.setProjectedColumnIndexes(Lists.newArrayList(2, 1, 0));
+    buildScannerAndCheckColumnsCount(builder, 3);
+
+    // Test with keys last with column names.
+    builder = client.newScannerBuilder(table);
+    builder.setProjectedColumnNames(Lists.newArrayList(schema.getColumnByIndex(2).getName(),
+        schema.getColumnByIndex(0).getName()));
+    buildScannerAndCheckColumnsCount(builder, 2);
   }
 
   private AsyncKuduScanner getScanner(String lowerBoundKeyOne,
@@ -216,6 +227,7 @@ public class TestScannerMultiTablet extends BaseKuduTest {
         .key(true)
         .build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("val", STRING)
+        .nullable(true) // Important because we need to make sure it gets passed in projections
         .build());
     return new Schema(columns);
   }

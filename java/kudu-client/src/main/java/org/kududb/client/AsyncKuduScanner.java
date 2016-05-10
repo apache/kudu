@@ -312,21 +312,15 @@ public final class AsyncKuduScanner {
     if (projectedNames != null) {
       List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
       for (String columnName : projectedNames) {
-        ColumnSchema columnSchema = table.getSchema().getColumn(columnName);
-        if (columnSchema == null) {
-          throw new IllegalArgumentException("Unknown column " + columnName);
-        }
-        columns.add(columnSchema);
+        ColumnSchema originalColumn = table.getSchema().getColumn(columnName);
+        columns.add(getStrippedColumnSchema(originalColumn));
       }
       this.schema = new Schema(columns);
     } else if (projectedIndexes != null) {
       List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
       for (Integer columnIndex : projectedIndexes) {
-        ColumnSchema columnSchema = table.getSchema().getColumnByIndex(columnIndex);
-        if (columnSchema == null) {
-          throw new IllegalArgumentException("Unknown column index " + columnIndex);
-        }
-        columns.add(columnSchema);
+        ColumnSchema originalColumn = table.getSchema().getColumnByIndex(columnIndex);
+        columns.add(getStrippedColumnSchema(originalColumn));
       }
       this.schema = new Schema(columns);
     } else {
@@ -348,6 +342,17 @@ public final class AsyncKuduScanner {
       this.hasMore = false;
       this.closed = true;
     }
+  }
+
+  /**
+   * Clone the given column schema instance. The new instance will include only the name, type, and
+   * nullability of the passed one.
+   * @return a new column schema
+   */
+  private static ColumnSchema getStrippedColumnSchema(ColumnSchema columnToClone) {
+    return new ColumnSchema.ColumnSchemaBuilder(columnToClone.getName(), columnToClone.getType())
+        .nullable(columnToClone.isNullable())
+        .build();
   }
 
   /**

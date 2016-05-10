@@ -42,17 +42,6 @@ public class TestKuduTable extends BaseKuduTest {
     BaseKuduTest.setUpBeforeClass();
   }
 
-  @Test(expected = IllegalArgumentException.class)
-  public void testBadSchema() {
-    // Test creating a table with keys in the wrong order
-    List<ColumnSchema> badColumns = new ArrayList<ColumnSchema>(2);
-    badColumns.add(new ColumnSchema.ColumnSchemaBuilder("not_key", Type.STRING).build());
-    badColumns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING)
-        .key(true)
-        .build());
-    new Schema(badColumns);
-  }
-
   @Test(timeout = 100000)
   public void testAlterTable() throws Exception {
     String tableName = BASE_TABLE_NAME + System.currentTimeMillis();
