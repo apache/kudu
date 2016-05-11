@@ -17,23 +17,22 @@
 
 
 #include <atomic>
-#include <boost/bind.hpp>
-#include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "kudu/rpc/service_queue.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
-using std::string;
-using std::vector;
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
+using std::vector;
 
 DEFINE_int32(num_producers, 4,
              "Number of producer threads");
@@ -59,17 +58,17 @@ void ProducerThread(Queue* queue) {
       base::subtle::PauseCPU();
     }
     inprogress++;
-    InboundCall * call = new InboundCall(nullptr);
+    InboundCall* call = new InboundCall(nullptr);
     boost::optional<InboundCall*> evicted;
     auto status = queue->Put(call, &evicted);
     if (status == QUEUE_FULL) {
-      LOG(INFO) << "queue, exit";
+      LOG(INFO) << "queue full: producer exiting";
       delete call;
       break;
     }
 
     if (PREDICT_FALSE(evicted != boost::none)) {
-      LOG(INFO) << "call evicted, exit";
+      LOG(INFO) << "call evicted: producer exiting";
       delete evicted.get();
       break;
     }
@@ -87,23 +86,21 @@ void ConsumerThread(Queue* queue) {
   while (queue->BlockingGet(&call)) {
     inprogress--;
     total++;
-    call.reset(nullptr);
+    call.reset();
   }
 }
 
 TEST(TestServiceQueue, LifoServiceQueuePerf) {
   LifoServiceQueue queue(FLAGS_max_queue_size);
-  vector<shared_ptr<boost::thread>> producers;
-  vector<shared_ptr<boost::thread>> consumers;
+  vector<std::thread> producers;
+  vector<std::thread> consumers;
 
-  for (int i = 0; i< FLAGS_num_producers; i++) {
-    producers.push_back(shared_ptr<boost::thread>(
-        new boost::thread(&ProducerThread<LifoServiceQueue>, &queue)));
+  for (int i = 0; i < FLAGS_num_producers; i++) {
+    producers.emplace_back(&ProducerThread<LifoServiceQueue>, &queue);
   }
 
   for (int i = 0; i < FLAGS_num_consumers; i++) {
-    consumers.push_back(shared_ptr<boost::thread>(
-        new boost::thread(&ConsumerThread<LifoServiceQueue>, &queue)));
+    consumers.emplace_back(&ConsumerThread<LifoServiceQueue>, &queue);
   }
 
   int seconds = AllowSlowTests() ? 10 : 1;
@@ -117,19 +114,19 @@ TEST(TestServiceQueue, LifoServiceQueuePerf) {
   for (int i = 0; i < seconds * 50; i++) {
     SleepFor(MonoDelta::FromMilliseconds(20));
     total_sample++;
-    total_queue_len = queue.estimated_queue_length();
-    total_idle_workers = queue.estimated_idle_worker_count();
+    total_queue_len += queue.estimated_queue_length();
+    total_idle_workers += queue.estimated_idle_worker_count();
   }
 
   sw.stop();
   int32_t delta = total - before;
 
   queue.Shutdown();
-  for (int i = 0; i< FLAGS_num_producers; i++) {
-    producers[i]->join();
+  for (int i = 0; i < FLAGS_num_producers; i++) {
+    producers[i].join();
   }
-  for (int i = 0; i< FLAGS_num_consumers; i++) {
-    consumers[i]->join();
+  for (int i = 0; i < FLAGS_num_consumers; i++) {
+    consumers[i].join();
   }
 
   float reqs_per_second = static_cast<float>(delta / sw.elapsed().wall_seconds());

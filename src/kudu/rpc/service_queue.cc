@@ -26,6 +26,7 @@ __thread LifoServiceQueue::ConsumerState* LifoServiceQueue::tl_consumer_ = nullp
 LifoServiceQueue::LifoServiceQueue(int max_size)
    : shutdown_(false),
      max_queue_size_(max_size) {
+  CHECK_GT(max_queue_size_, 0);
 }
 
 LifoServiceQueue::~LifoServiceQueue() {
@@ -33,11 +34,11 @@ LifoServiceQueue::~LifoServiceQueue() {
       << "ServiceQueue holds bare pointers at destruction time";
 }
 
-bool LifoServiceQueue::BlockingGet(std::unique_ptr<InboundCall> *out) {
+bool LifoServiceQueue::BlockingGet(std::unique_ptr<InboundCall>* out) {
   auto consumer = tl_consumer_;
   if (PREDICT_FALSE(!consumer)) {
-    lock_guard<simple_spinlock> l(&lock_);
     consumer = tl_consumer_ = new ConsumerState(this);
+    lock_guard<simple_spinlock> l(&lock_);
     consumers_.emplace_back(consumer);
   }
 
@@ -50,7 +51,7 @@ bool LifoServiceQueue::BlockingGet(std::unique_ptr<InboundCall> *out) {
         queue_.erase(it);
         return true;
       }
-      if (shutdown_) {
+      if (PREDICT_FALSE(shutdown_)) {
         return false;
       }
       consumer->DCheckBoundInstance(this);
@@ -61,6 +62,8 @@ bool LifoServiceQueue::BlockingGet(std::unique_ptr<InboundCall> *out) {
       out->reset(call);
       return true;
     }
+    // if call == nullptr, this means we are shutting down the queue.
+    // Loop back around and re-check 'shutdown_'.
   }
 }
 

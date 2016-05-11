@@ -22,8 +22,9 @@ race:kudu::tablet::ScopedRowLock::Release
 #
 # With TSAN in clang 3.5, it's the init() function that's flagged as a data
 # race (not local_addr_space_init()), due to the former calling sigfillset()
-# on an unprotected global variable. Given that init() invokes
-# local_addr_space_init(), suppressing init() suppresses both races.
+# on an unprotected global variable. Although init() calls local_addr_space_init(),
+# it can sometimes be eliminated from the call stack by inlining or a tail-call
+# optimization, so adding the suppression on both is necessary.
 race:_ULx86_64_init
 race:_ULx86_64_local_addr_space_init
 

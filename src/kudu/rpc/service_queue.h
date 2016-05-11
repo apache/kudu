@@ -48,14 +48,14 @@ enum QueueStatus {
 // provide accurate deadlines for their calls.
 //
 // In order to improve concurrent throughput, this class uses a LIFO design:
-// Each consumer thread will has its own lock and condition variable. If a
+// Each consumer thread has its own lock and condition variable. If a
 // consumer arrives and there is no work available in the queue, it will not
 // wait on the queue lock, but rather push its own 'ConsumerState' object
 // to the 'waiting_consumers_' stack. When work arrives, if there are waiting
 // consumers, the top consumer is popped from the stack and woken up.
 //
 // This design has a few advantages over the basic BlockingQueue:
-// - the worker who was most recently busy is the one which we be selected for
+// - the worker who was most recently busy is the one which will be selected for
 //   new work. This gives an opportunity for the worker to be scheduled again
 //   without going to sleep, and also keeps CPU cache and allocator caches hot.
 // - in the common case that there are enough workers to fully service the incoming
@@ -73,7 +73,7 @@ class LifoServiceQueue {
 
   // Get an element from the queue.  Returns false if we were shut down prior to
   // getting the element.
-  bool BlockingGet(std::unique_ptr<InboundCall> *out);
+  bool BlockingGet(std::unique_ptr<InboundCall>* out);
 
   // Add a new call to the queue.
   // Returns:
@@ -204,7 +204,7 @@ class LifoServiceQueue {
   std::multiset<InboundCall*, DeadlineLessStruct> queue_;
 
   // The total set of consumers who have ever accessed this queue.
-  std::vector<std::unique_ptr<ConsumerState> > consumers_;
+  std::vector<std::unique_ptr<ConsumerState>> consumers_;
 
   DISALLOW_COPY_AND_ASSIGN(LifoServiceQueue);
 };
