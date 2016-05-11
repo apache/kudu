@@ -59,6 +59,7 @@
 #include "kudu/util/thread.h"
 
 DECLARE_bool(enable_data_block_fsync);
+DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(log_inject_latency);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(log_inject_latency_ms_mean);
@@ -1527,6 +1528,34 @@ TEST_F(ClientTest, TestWriteTimeout) {
                         "Failed to write batch of 1 ops to tablet");
     ASSERT_STR_CONTAINS(error->status().ToString(), "Write RPC to 127.0.0.1:");
     ASSERT_STR_CONTAINS(error->status().ToString(), "after 1 attempt");
+  }
+}
+
+TEST_F(ClientTest, TestFailedDnsResolution) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  // First time disable dns resolution.
+  // Set the timeout to be short since we know it can't succeed
+  {
+    google::FlagSaver saver;
+    FLAGS_fail_dns_resolution = true;
+    session->SetTimeoutMillis(100);
+    ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
+    Status s = session->Flush();
+    ASSERT_TRUE(s.IsIOError()) << "unexpected status: " << s.ToString();
+    gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
+    ASSERT_TRUE(error->status().IsTimedOut()) << error->status().ToString();
+    ASSERT_STR_CONTAINS(error->status().ToString(),
+                        "Network error: Failed to resolve address for TS");
+  }
+
+  // Now re-enable dns resolution, the write should succeed.
+  {
+    google::FlagSaver saver;
+    FLAGS_fail_dns_resolution = false;
+    ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
+    ASSERT_OK(session->Flush());
   }
 }
 

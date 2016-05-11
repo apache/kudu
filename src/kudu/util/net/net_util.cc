@@ -21,6 +21,7 @@
 #include <netdb.h>
 
 #include <algorithm>
+#include <gflags/gflags.h>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -36,6 +37,7 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/stopwatch.h"
@@ -45,6 +47,9 @@
 #ifndef HOST_NAME_MAX
 #define HOST_NAME_MAX 64
 #endif
+
+DEFINE_bool(fail_dns_resolution, false, "Wether to fail all dns resolution, for tests.");
+TAG_FLAG(fail_dns_resolution, hidden);
 
 using std::unordered_set;
 using std::vector;
@@ -123,6 +128,9 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
     }
     VLOG(2) << "Resolved address " << sockaddr.ToString()
             << " for host/port " << ToString();
+  }
+  if (PREDICT_FALSE(FLAGS_fail_dns_resolution)) {
+    addresses->clear();
   }
   return Status::OK();
 }

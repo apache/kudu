@@ -75,7 +75,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
   Status s = result_status;
 
   if (s.ok() && addrs->empty()) {
-    s = Status::NotFound("No addresses for " + hp.ToString());
+    s = Status::NetworkError("No addresses for " + hp.ToString());
   }
 
   if (!s.ok()) {
