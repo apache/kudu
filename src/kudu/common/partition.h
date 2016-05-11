@@ -176,6 +176,10 @@ class PartitionSchema {
   // Returns a text description of this partition schema suitable for debug printing.
   std::string DebugString(const Schema& schema) const;
 
+  // Returns a text description of this partition schema suitable for display in the web UI.
+  // The format of this string is not guaranteed to be identical cross-version.
+  std::string DisplayString(const Schema& schema) const;
+
   // Returns true if the other partition schema is equivalent to this one.
   bool Equals(const PartitionSchema& other) const;
 

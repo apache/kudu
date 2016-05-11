@@ -35,6 +35,7 @@ using std::vector;
 
 using google::protobuf::RepeatedPtrField;
 using strings::Substitute;
+using strings::SubstituteAndAppend;
 
 // The encoded size of a hash bucket in a partition key.
 static const size_t kEncodedBucketSize = sizeof(uint32_t);
@@ -633,6 +634,35 @@ string PartitionSchema::DebugString(const Schema& schema) const {
                                          ColumnIdsToColumnNames(schema, range_schema_.column_ids)));
   }
   return JoinStrings(component_types, ", ");
+}
+
+string PartitionSchema::DisplayString(const Schema& schema) const {
+  string display_string;
+
+  if (!hash_bucket_schemas_.empty()) {
+    display_string.append("Hash bucket schemas:\n");
+    for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
+      display_string.append("  Key columns:\n");
+      for (const ColumnId& col_id : hash_bucket_schema.column_ids) {
+        const ColumnSchema& col = schema.column(col_id);
+        SubstituteAndAppend(&display_string, "    $0 $1\n", col.name(), col.type_info()->name());
+      }
+      SubstituteAndAppend(&display_string, "  Bucket count: $0\n", hash_bucket_schema.num_buckets);
+      if (hash_bucket_schema.seed != 0) {
+        SubstituteAndAppend(&display_string, "  Seed: $0\n", hash_bucket_schema.seed);
+      }
+      display_string.append("\n");
+    }
+  }
+
+  if (!range_schema_.column_ids.empty()) {
+    display_string.append("Range columns:\n");
+    for (const ColumnId& col_id : range_schema_.column_ids) {
+      const ColumnSchema& col = schema.column(col_id);
+      SubstituteAndAppend(&display_string, "  $0 $1\n", col.name(), col.type_info()->name());
+    }
+  }
+  return display_string;
 }
 
 bool PartitionSchema::Equals(const PartitionSchema& other) const {

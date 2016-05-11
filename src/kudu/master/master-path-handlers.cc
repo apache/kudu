@@ -190,6 +190,11 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   }
   *output << "</table>\n";
 
+  *output << "<h2>Partition schema</h2>";
+  *output << "<pre>";
+  *output << EscapeForHtmlToString(partition_schema.DisplayString(schema));
+  *output << "</pre>";
+
   *output << "<h2>Impala CREATE TABLE statement</h2>\n";
 
   string master_addresses;
