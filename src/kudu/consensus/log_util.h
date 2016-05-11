@@ -18,6 +18,7 @@
 #ifndef KUDU_CONSENSUS_LOG_UTIL_H_
 #define KUDU_CONSENSUS_LOG_UTIL_H_
 
+#include <deque>
 #include <gtest/gtest.h>
 #include <iosfwd>
 #include <map>
@@ -78,6 +79,70 @@ struct LogOptions {
 
 // A sequence of segments, ordered by increasing sequence number.
 typedef std::vector<scoped_refptr<ReadableLogSegment> > SegmentSequence;
+
+// LogEntryReader provides iterator-style access to read the entries
+// from an open log segment.
+class LogEntryReader {
+ public:
+
+  // Construct a LogEntryReader to read from the provided segment.
+  // 'seg' must outlive the LogEntryReader.
+  explicit LogEntryReader(ReadableLogSegment* seg);
+
+  ~LogEntryReader();
+
+  // Read the next entry from the log, replacing the contents of 'entry'.
+  //
+  // When there are no more entries to read, returns Status::EndOfFile().
+  Status ReadNextEntry(LogEntryPB* entry);
+
+  // Return the offset of the next entry to be read from the file.
+  int64_t offset() const {
+    return offset_;
+  }
+
+ private:
+  friend class ReadableLogSegment;
+
+  // Handle an error reading an entry.
+  Status HandleReadError(const Status& s) const;
+
+  // Format a nice error message to report on a corruption in a log file.
+  Status MakeCorruptionStatus(const Status& status) const;
+
+  // The segment being read.
+  ReadableLogSegment* seg_;
+
+  // The last several entries which were successfully read.
+  struct RecentEntry {
+    int64_t offset;
+    LogEntryTypePB type;
+    consensus::OpId op_id;
+  };
+  std::deque<RecentEntry> recent_entries_;
+  static const int kNumRecentEntries = 4;
+
+  // Entries which have been read from the file and not yet returned to
+  // the caller.
+  std::deque<std::unique_ptr<LogEntryPB>> pending_entries_;
+
+  // The total number of log entry batches read from the file.
+  int64_t num_batches_read_;
+
+  // The total number of LogEntryPBs read from the file.
+  int64_t num_entries_read_;
+
+  // The offset of the next entry to be read.
+  int64_t offset_;
+
+  // The offset at which this reader will stop reading entries.
+  int64_t read_up_to_;
+
+  // Temporary buffer used for deserialization.
+  faststring tmp_buf_;
+
+  DISALLOW_COPY_AND_ASSIGN(LogEntryReader);
+};
 
 // A segment of the log can either be a ReadableLogSegment (for replay and
 // consensus catch-up) or a WritableLogSegment (where the Log actually stores
@@ -186,6 +251,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
  private:
   friend class RefCountedThreadSafe<ReadableLogSegment>;
+  friend class LogEntryReader;
   friend class LogReader;
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
 
@@ -225,12 +291,9 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // file.
   Status ScanForValidEntryHeaders(int64_t offset, bool* has_valid_entries);
 
-  // Format a nice error message to report on a corruption in a log file.
-  Status MakeCorruptionStatus(int batch_number, int64_t batch_offset,
-                              std::vector<int64_t>* recent_offsets,
-                              const std::vector<LogEntryPB*>& entries,
-                              const Status& status) const;
-
+  // Read an entry header and its associated batch at the given offset.
+  // If successful, updates '*offset' to point to the next batch
+  // in the file. If unsuccessful, '*offset' is not updated.
   Status ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,
                                  gscoped_ptr<LogEntryBatchPB>* batch);
 
