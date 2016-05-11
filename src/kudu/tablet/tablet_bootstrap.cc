@@ -102,6 +102,7 @@ using server::Clock;
 using std::map;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::unordered_map;
 using strings::Substitute;
 using tserver::AlterSchemaRequestPB;
@@ -1032,41 +1033,38 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
 
   int segment_count = 0;
   for (const scoped_refptr<ReadableLogSegment>& segment : segments) {
-    vector<LogEntryPB*> entries;
-    ElementDeleter deleter(&entries);
-    // TODO: Optimize this to not read the whole thing into memory?
-    Status read_status = segment->ReadEntries(&entries);
-    for (int entry_idx = 0; entry_idx < entries.size(); ++entry_idx) {
-      LogEntryPB* entry = entries[entry_idx];
-      Status s = HandleEntry(&state, entry);
+    log::LogEntryReader reader(segment.get());
+
+    int entry_count = 0;
+    while (true) {
+      unique_ptr<LogEntryPB> entry(new LogEntryPB);
+
+      Status s = reader.ReadNextEntry(entry.get());
+      if (PREDICT_FALSE(!s.ok())) {
+        if (s.IsEndOfFile()) {
+          break;
+        }
+        return Status::Corruption(Substitute("Error reading Log Segment of tablet $0: $1 "
+                                             "(Read up to entry $2 of segment $3, in path $4)",
+                                             tablet_->tablet_id(),
+                                             s.ToString(),
+                                             entry_count,
+                                             segment->header().sequence_number(),
+                                             segment->path()));
+      }
+      entry_count++;
+
+      s = HandleEntry(&state, entry.get());
       if (!s.ok()) {
         DumpReplayStateToLog(state);
         RETURN_NOT_OK_PREPEND(s, DebugInfo(tablet_->tablet_id(),
                                            segment->header().sequence_number(),
-                                           entry_idx, segment->path(),
+                                           entry_count, segment->path(),
                                            *entry));
       }
 
-
       // If HandleEntry returns OK, then it has taken ownership of the entry.
-      // So, we have to remove it from the entries vector to avoid it getting
-      // freed by ElementDeleter.
-      entries[entry_idx] = nullptr;
-    }
-
-    // If the LogReader failed to read for some reason, we'll still try to
-    // replay as many entries as possible, and then fail with Corruption.
-    // TODO: this is sort of scary -- why doesn't LogReader expose an
-    // entry-by-entry iterator-like API instead? Seems better to avoid
-    // exposing the idea of segments to callers.
-    if (PREDICT_FALSE(!read_status.ok())) {
-      return Status::Corruption(Substitute("Error reading Log Segment of tablet $0: $1 "
-                                           "(Read up to entry $2 of segment $3, in path $4)",
-                                           tablet_->tablet_id(),
-                                           read_status.ToString(),
-                                           entries.size(),
-                                           segment->header().sequence_number(),
-                                           segment->path()));
+      entry.release();
     }
 
     // TODO: could be more granular here and log during the segments as well,
