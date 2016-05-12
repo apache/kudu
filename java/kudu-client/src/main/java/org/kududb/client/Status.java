@@ -21,7 +21,7 @@ import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 
 /**
- * Representation of an error code and message. Wraps {@link WireProtocol.AppStatusPB}.
+ * Representation of an error code and message. Wraps {@link org.kududb.WireProtocol.AppStatusPB}.
  * See also {@code src/kudu/util/status.h} in the C++ codebase.
  *
  * <p>Do not use the {@code @deprecated} methods in this class.</p>
@@ -55,7 +55,7 @@ public class Status {
   // Factory methods.
 
   /**
-   * Create a Status object from a {@link WireProtocol.AppStatusPB} protobuf object.
+   * Create a Status object from a {@link org.kududb.WireProtocol.AppStatusPB} protobuf object.
    * Package-private because we shade Protobuf and this is not usable outside this package.
    */
   static Status fromPB(WireProtocol.AppStatusPB pb) {

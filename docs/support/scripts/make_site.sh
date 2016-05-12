@@ -62,7 +62,10 @@ fi
 
 cd "$SOURCE_ROOT/java"
 mvn clean install -DskipTests
-mvn clean javadoc:aggregate
+if mvn clean javadoc:aggregate | tee /dev/stdout | fgrep -q "Javadoc Warnings"; then
+  echo "There are Javadoc warnings. Please fix them."
+  exit 1
+fi
 
 if [ -f "$SOURCE_ROOT/java/target/site/apidocs/index.html" ]; then
   echo "Successfully built Javadocs."
