@@ -335,10 +335,12 @@ void SubmitSpinLockProfileData(const void *contendedlock, int64 wait_cycles) {
 // tcmalloc contention.
 namespace base {
 void SubmitSpinLockProfileData(const void* contendedlock, int64 wait_cycles) {
+#if !defined(__APPLE__)
   auto t = kudu::Trace::CurrentTrace();
   if (t) {
     t->metrics()->IncrementTcmallocContentionCycles(wait_cycles);
   }
+#endif // !defined(__APPLE__)
   base::subtle::NoBarrier_AtomicIncrement(&kudu::g_tcmalloc_contention.val, wait_cycles);
 }
-}
+} // namespace base
