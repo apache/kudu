@@ -218,10 +218,6 @@ class LogBlockContainer {
   // beginning from the position where the last written block ended.
   Status Preallocate(size_t length);
 
-  // Manipulates the block manager's memory tracker on behalf of blocks.
-  void ConsumeMemory(int64_t bytes);
-  void ReleaseMemory(int64_t bytes);
-
   // Reads the container's metadata from disk, sanity checking and
   // returning the records.
   Status ReadContainerRecords(deque<BlockRecordPB>* records) const;
@@ -566,14 +562,6 @@ Status LogBlockContainer::Preallocate(size_t length) {
   return data_file_->PreAllocate(total_bytes_written(), length);
 }
 
-void LogBlockContainer::ConsumeMemory(int64_t bytes) {
-  block_manager()->mem_tracker_->Consume(bytes);
-}
-
-void LogBlockContainer::ReleaseMemory(int64_t bytes) {
-  block_manager()->mem_tracker_->Release(bytes);
-}
-
 void LogBlockContainer::UpdateBytesWritten(int64_t more_bytes) {
   DCHECK_GE(more_bytes, 0);
 
@@ -660,8 +648,6 @@ LogBlock::LogBlock(LogBlockContainer* container, BlockId block_id,
       deleted_(false) {
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
-
-  container_->ConsumeMemory(kudu_malloc_usable_size(this));
 }
 
 static void DeleteBlockAsync(LogBlockContainer* container,
@@ -681,7 +667,6 @@ LogBlock::~LogBlock() {
     container_->ExecClosure(Bind(&DeleteBlockAsync, container_, block_id_,
                                  offset_, length_));
   }
-  container_->ReleaseMemory(kudu_malloc_usable_size(this));
 }
 
 void LogBlock::Delete() {
@@ -1062,6 +1047,13 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
 }
 
 LogBlockManager::~LogBlockManager() {
+  // Release all of the memory accounted by the blocks.
+  int64_t mem = 0;
+  for (const auto& entry : blocks_by_block_id_) {
+    mem += kudu_malloc_usable_size(entry.second.get());
+  }
+  mem_tracker_->Release(mem);
+
   // A LogBlock's destructor depends on its container, so all LogBlocks must be
   // destroyed before their containers.
   blocks_by_block_id_.clear();
@@ -1394,6 +1386,8 @@ bool LogBlockManager::AddLogBlock(LogBlockContainer* container,
                                   int64_t length) {
   lock_guard<simple_spinlock> l(&lock_);
   scoped_refptr<LogBlock> lb(new LogBlock(container, block_id, offset, length));
+  mem_tracker_->Consume(kudu_malloc_usable_size(lb.get()));
+
   return AddLogBlockUnlocked(lb);
 }
 
@@ -1416,18 +1410,17 @@ bool LogBlockManager::AddLogBlockUnlocked(const scoped_refptr<LogBlock>& lb) {
 
 scoped_refptr<LogBlock> LogBlockManager::RemoveLogBlock(const BlockId& block_id) {
   lock_guard<simple_spinlock> l(&lock_);
-  return RemoveLogBlockUnlocked(block_id);
-}
-
-scoped_refptr<LogBlock> LogBlockManager::RemoveLogBlockUnlocked(const BlockId& block_id) {
-  DCHECK(lock_.is_locked());
-
   scoped_refptr<LogBlock> result =
       EraseKeyReturnValuePtr(&blocks_by_block_id_, block_id);
-  if (result && metrics()) {
-    metrics()->blocks_under_management->Decrement();
-    metrics()->bytes_under_management->DecrementBy(result->length());
+  if (result) {
+    mem_tracker_->Release(kudu_malloc_usable_size(result.get()));
+
+    if (metrics()) {
+      metrics()->blocks_under_management->Decrement();
+      metrics()->bytes_under_management->DecrementBy(result->length());
+    }
   }
+
   return result;
 }
 
@@ -1517,14 +1510,20 @@ void LogBlockManager::OpenRootPath(const string& root_path,
     // the container.
     {
       lock_guard<simple_spinlock> l(&lock_);
+      // To avoid cacheline contention during startup, we aggregate all of the
+      // memory in a local and add it to the mem-tracker in a single increment
+      // at the end of this loop.
+      int64_t mem_usage = 0;
       for (const UntrackedBlockMap::value_type& e : blocks_in_container) {
         if (!AddLogBlockUnlocked(e.second)) {
           LOG(FATAL) << "Found duplicate CREATE record for block " << e.first
                      << " which already is alive from another container when "
                      << " processing container " << container->ToString();
         }
+        mem_usage += kudu_malloc_usable_size(e.second.get());
       }
 
+      mem_tracker_->Consume(mem_usage);
       AddNewContainerUnlocked(container.get());
       MakeContainerAvailableUnlocked(container.release());
     }

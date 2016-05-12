@@ -244,9 +244,6 @@ class LogBlockManager : public BlockManager {
   // already gone.
   scoped_refptr<internal::LogBlock> RemoveLogBlock(const BlockId& block_id);
 
-  // Unlocked variant of RemoveLogBlock(); must hold 'lock_'.
-  scoped_refptr<internal::LogBlock> RemoveLogBlockUnlocked(const BlockId& block_id);
-
   // Parse a block record, adding or removing it in 'block_map', and
   // accounting for it in the metadata for 'container'.
   void ProcessBlockRecord(const BlockRecordPB& record,
