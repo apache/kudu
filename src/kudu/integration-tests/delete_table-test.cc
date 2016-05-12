@@ -249,14 +249,8 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
   const string& tablet_id = tablets[0];
 
   // Delete it and wait for the replicas to get deleted.
+  // We should have no tablets at the filesystem layer after deleting the table.
   NO_FATALS(DeleteTable(TestWorkload::kDefaultTableName));
-  for (int i = 0; i < 3; i++) {
-    NO_FATALS(WaitForTabletDeletedOnTS(i, tablet_id, SUPERBLOCK_EXPECTED));
-  }
-
-  // Restart the cluster, the superblocks should be deleted on startup.
-  cluster_->Shutdown();
-  ASSERT_OK(cluster_->Restart());
   ASSERT_OK(inspect_->WaitForNoData());
 
   // Check that the master no longer exposes the table in any way:
@@ -400,27 +394,16 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
       SleepFor(MonoDelta::FromMilliseconds(10));
     }
 
-    vector<string> tablets = inspect_->ListTabletsOnTS(1);
-    ASSERT_EQ(1, tablets.size());
-    const string& tablet_id = tablets[0];
-
     // Delete it and wait for the replicas to get deleted.
     NO_FATALS(DeleteTable(workload.table_name()));
-    for (int i = 0; i < 3; i++) {
-      NO_FATALS(WaitForTabletDeletedOnTS(i, tablet_id, SUPERBLOCK_EXPECTED));
-    }
+    ASSERT_OK(inspect_->WaitForNoData());
 
     // Sleep just a little longer to make sure client threads send
     // requests to the missing tablets.
     SleepFor(MonoDelta::FromMilliseconds(50));
 
     workload.StopAndJoin();
-    cluster_->AssertNoCrashes();
-
-    // Restart the cluster, the superblocks should be deleted on startup.
-    cluster_->Shutdown();
-    ASSERT_OK(cluster_->Restart());
-    ASSERT_OK(inspect_->WaitForNoData());
+    NO_FATALS(cluster_->AssertNoCrashes());
   }
 }
 
@@ -1053,12 +1036,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
     // We need retries here, since some of the tablets may still be
     // bootstrapping after being restarted above.
     NO_FATALS(DeleteTabletWithRetries(ts, tablet_id, TABLET_DATA_DELETED, timeout));
-    NO_FATALS(WaitForTabletDeletedOnTS(kTsIndex, tablet_id, SUPERBLOCK_EXPECTED));
   }
-
-  // Restart the TS, the superblock should be deleted on startup.
-  cluster_->tablet_server(kTsIndex)->Shutdown();
-  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
   ASSERT_OK(inspect_->WaitForNoDataOnTS(kTsIndex));
 }
 
