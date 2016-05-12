@@ -51,10 +51,15 @@ public class KuduScanner {
    * {@code Scanner} is done scanning), calling it again leads to an undefined
    * behavior.
    * @return a list of rows.
+   * @throws KuduException if anything went wrong
    */
-  public RowResultIterator nextRows() throws Exception {
+  public RowResultIterator nextRows() throws KuduException {
     Deferred<RowResultIterator> d = asyncScanner.nextRows();
-    return d.join(asyncScanner.scanRequestTimeout);
+    try {
+      return d.join(asyncScanner.scanRequestTimeout);
+    } catch (Exception e) {
+      throw KuduException.transformException(e);
+    }
   }
 
   /**
@@ -62,10 +67,15 @@ public class KuduScanner {
    * <p>
    * Closing a scanner already closed has no effect.
    * @return a deferred object that indicates the completion of the request
+   * @throws KuduException if anything went wrong
    */
-  public RowResultIterator close() throws Exception {
+  public RowResultIterator close() throws KuduException {
     Deferred<RowResultIterator> d = asyncScanner.close();
-    return d.join(asyncScanner.scanRequestTimeout);
+    try {
+      return d.join(asyncScanner.scanRequestTimeout);
+    } catch (Exception e) {
+      throw KuduException.transformException(e);
+    }
   }
 
   /**

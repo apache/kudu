@@ -487,8 +487,9 @@ public class AsyncKuduSession implements SessionConfiguration {
    * for the call (e.g looking up the tablet, etc).
    * @param operation operation to apply
    * @return a Deferred to track this operation
+   * @throws KuduException if an error happens or {@link PleaseThrottleException} is triggered
    */
-  public Deferred<OperationResponse> apply(final Operation operation) {
+  public Deferred<OperationResponse> apply(final Operation operation) throws KuduException {
     Preconditions.checkNotNull(operation, "Can not apply a null operation");
 
     // Freeze the row so that the client can not concurrently modify it while it is in flight.
@@ -519,9 +520,11 @@ public class AsyncKuduSession implements SessionConfiguration {
           if (inactiveBufferAvailable()) {
             refreshActiveBuffer();
           } else {
+            Status statusServiceUnavailable =
+                Status.ServiceUnavailable("All buffers are currently flushing");
             // This can happen if the user writes into a buffer, flushes it, writes
             // into the second, flushes it, and immediately tries to write again.
-            throw new PleaseThrottleException("All buffers are currently flushing",
+            throw new PleaseThrottleException(statusServiceUnavailable,
                                               null, operation, flushNotification.get());
           }
         }
@@ -530,8 +533,9 @@ public class AsyncKuduSession implements SessionConfiguration {
           if (activeBuffer.getOperations().size() < mutationBufferSpace) {
             activeBuffer.getOperations().add(new BufferedOperation(tablet, operation));
           } else {
-            throw new NonRecoverableException(
-                "MANUAL_FLUSH mode is enabled but the buffer is full");
+            Status statusIllegalState =
+                Status.IllegalState("MANUAL_FLUSH is enabled but the buffer is too big");
+            throw new NonRecoverableException(statusIllegalState);
           }
         } else {
           assert flushMode == FlushMode.AUTO_FLUSH_BACKGROUND;
@@ -546,7 +550,9 @@ public class AsyncKuduSession implements SessionConfiguration {
             if (inactiveBufferAvailable()) {
               refreshActiveBuffer();
             } else {
-              throw new PleaseThrottleException("All buffers are currently flushing",
+              Status statusServiceUnavailable =
+                  Status.ServiceUnavailable("All buffers are currently flushing");
+              throw new PleaseThrottleException(statusServiceUnavailable,
                                                 null, operation, flushNotification.get());
             }
           }
@@ -561,10 +567,11 @@ public class AsyncKuduSession implements SessionConfiguration {
                                                      mutationBufferLowWatermark);
 
             if (randomWatermark > mutationBufferSpace) {
-              throw new PleaseThrottleException(
-                  "The previous buffer hasn't been flushed and the " +
-                      "current buffer is over the low watermark, please retry later",
-                  null, operation, flushNotification.get());
+              Status statusServiceUnavailable =
+                  Status.ServiceUnavailable("The previous buffer hasn't been flushed and the " +
+                      "current buffer is over the low watermark, please retry later");
+              throw new PleaseThrottleException(statusServiceUnavailable,
+                                                null, operation, flushNotification.get());
             }
           }
 

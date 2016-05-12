@@ -269,13 +269,12 @@ public abstract class KuduRpc<R> {
     try {
       builder.mergeFrom(payload, offset, length);
       if (!builder.isInitialized()) {
-        throw new InvalidResponseException("Could not deserialize the response," +
-            " incompatible RPC? Error is: " + builder.getInitializationErrorString(), null);
+        throw new RuntimeException("Could not deserialize the response," +
+            " incompatible RPC? Error is: " + builder.getInitializationErrorString());
       }
     } catch (InvalidProtocolBufferException e) {
-      final String msg = "Invalid RPC response: length=" + length
-          + ", payload=" + Bytes.pretty(payload);
-      throw new InvalidResponseException(msg, e);
+      throw new RuntimeException("Invalid RPC response: length=" + length +
+            ", payload=" + Bytes.pretty(payload));
     }
   }
 
@@ -294,7 +293,7 @@ public abstract class KuduRpc<R> {
       pb.writeTo(out);
       out.checkNoSpaceLeft();
     } catch (IOException e) {
-      throw new NonRecoverableException("Cannot serialize the following message " + pb, e);
+      throw new RuntimeException("Cannot serialize the following message " + pb);
     }
     chanBuf.writerIndex(buf.length);
     return chanBuf;

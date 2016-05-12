@@ -25,45 +25,75 @@
  */
 package org.kududb.client;
 
+import com.stumbleupon.async.DeferredGroupException;
+import com.stumbleupon.async.TimeoutException;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 
+import java.io.IOException;
+
 /**
- * The parent class of all {@link RuntimeException} created by this package.
+ * The parent class of all exceptions sent by the Kudu client. This is the only exception you will
+ * see if you're using the non-async API, such as {@link KuduSession} instead of
+ * {@link AsyncKuduSession}.
+ *
+ * Each instance of this class has a {@link Status} which gives more information about the error.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 @SuppressWarnings("serial")
-public abstract class KuduException extends RuntimeException {
+public abstract class KuduException extends IOException {
+
+  private final Status status;
 
   /**
    * Constructor.
-   * @param msg The message of the exception, potentially including a stack
+   * @param status object containing the reason for the exception
    * trace.
    */
-  KuduException(final String msg) {
-    super(msg);
+  KuduException(Status status) {
+    super(status.getMessage());
+    this.status = status;
   }
 
   /**
    * Constructor.
-   * @param msg The message of the exception, potentially including a stack
-   * trace.
+   * @param status object containing the reason for the exception
    * @param cause The exception that caused this one to be thrown.
    */
-  KuduException(final String msg, final Throwable cause) {
-    super(msg, cause);
+  KuduException(Status status, Throwable cause) {
+    super(status.getMessage(), cause);
+    this.status = status;
   }
 
   /**
-   * Factory method to make it possible to create an exception from another
-   * one without having to resort to reflection, which is annoying to use.
-   * Sub-classes that want to provide this internal functionality should
-   * implement this method.
-   * @param arg Some arbitrary parameter to help build the new instance.
-   * @param rpc The RPC that failed, if any.  Can be {@code null}.
+   * Get the Status object for this exception.
+   * @return a status object indicating the reason for the exception
    */
-  KuduException make(final Object arg, final KuduRpc<?> rpc) {
-    throw new AssertionError("Must not be used.");
+  public Status getStatus() {
+    return status;
+  }
+
+  /**
+   * Inspects the given exception and transforms it into a KuduException.
+   * @param e generic exception we want to transform
+   * @return a KuduException that's easier to handle
+   */
+  static KuduException transformException(Exception e) {
+    if (e instanceof KuduException) {
+      return (KuduException) e;
+    } else if (e instanceof DeferredGroupException) {
+      // TODO anything we can do to improve on that kind of exception?
+    } else if (e instanceof TimeoutException) {
+      Status statusTimeout = Status.TimedOut(e.getMessage());
+      return new NonRecoverableException(statusTimeout, e);
+    } else if (e instanceof InterruptedException) {
+      // Need to reset the interrupt flag since we caught it but aren't handling it.
+      Thread.currentThread().interrupt();
+      Status statusAborted = Status.Aborted(e.getMessage());
+      return new NonRecoverableException(statusAborted, e);
+    }
+    Status status = Status.IOError(e.getMessage());
+    return new NonRecoverableException(status, e);
   }
 }

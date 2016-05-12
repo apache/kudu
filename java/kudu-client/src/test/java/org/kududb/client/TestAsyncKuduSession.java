@@ -93,7 +93,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
         resp1.join(2000);
       } catch (TimeoutException e) {
         fail("First batch should not timeout in case of tablet server error");
-      } catch (TabletServerErrorException e) {
+      } catch (KuduException e) {
         // Expected.
         assertTrue(e.getMessage().contains("injected error for test"));
       }
@@ -101,7 +101,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
         resp2.join(2000);
       } catch (TimeoutException e) {
         fail("Second batch should not timeout in case of tablet server error");
-      } catch (TabletServerErrorException e) {
+      } catch (KuduException e) {
         // expected
         assertTrue(e.getMessage().contains("injected error for test"));
       }
@@ -139,8 +139,8 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       try {
         session.apply(createInsert(1)).join(DEFAULT_SLEEP);
         fail("Insert should not succeed");
-      } catch (MasterErrorException e) {
-        // Expect NOT_FOUND, because the table was deleted.
+      } catch (KuduException e) {
+        assertTrue(e.getStatus().isNotFound());
       } catch (Throwable e) {
         fail("Should not throw other error: " + e);
       }
@@ -217,7 +217,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     assertEquals(0, countInRange(10, 20));
     try {
       session.apply(createInsert(20));
-    } catch (NonRecoverableException ex) {
+    } catch (KuduException ex) {
       /* expected, buffer would be too big */
     }
     assertEquals(0, countInRange(10, 20)); // the buffer should still be full

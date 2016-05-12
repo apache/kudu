@@ -32,7 +32,8 @@ import org.kududb.util.Slice;
 public class RowResultIterator extends KuduRpcResponse implements Iterator<RowResult>,
     Iterable<RowResult> {
 
-  private static final RowResultIterator EMPTY = new RowResultIterator(0, null, null, null, null);
+  private static final RowResultIterator EMPTY =
+      new RowResultIterator(0, null, null, 0, null, null);
 
   private final Schema schema;
   private final Slice bs;
@@ -43,35 +44,46 @@ public class RowResultIterator extends KuduRpcResponse implements Iterator<RowRe
 
   /**
    * Package private constructor, only meant to be instantiated from AsyncKuduScanner.
-   * @param ellapsedMillis Time in milliseconds since RPC creation to now.
-   * @param schema Schema used to parse the rows
-   * @param data PB containing the data
-   * @param callResponse the call response received from the server for this
-   * RPC.
+   * @param ellapsedMillis ime in milliseconds since RPC creation to now
+   * @param tsUUID UUID of the tablet server that handled our request
+   * @param schema schema used to parse the rows
+   * @param numRows how many rows are contained in the bs slice
+   * @param bs normal row data
+   * @param indirectBs indirect row data
    */
-  RowResultIterator(long ellapsedMillis, String tsUUID, Schema schema,
-                    WireProtocol.RowwiseRowBlockPB data,
-                    final CallResponse callResponse) {
+  private RowResultIterator(long ellapsedMillis, String tsUUID, Schema schema,
+                            int numRows, Slice bs, Slice indirectBs) {
     super(ellapsedMillis, tsUUID);
     this.schema = schema;
+    this.bs = bs;
+    this.indirectBs = indirectBs;
+    this.numRows = numRows;
+
+    this.rowResult = numRows == 0 ? null : new RowResult(this.schema, this.bs, this.indirectBs);
+  }
+
+  static RowResultIterator makeRowResultIterator(long ellapsedMillis, String tsUUID,
+                                                 Schema schema,
+                                                 WireProtocol.RowwiseRowBlockPB data,
+                                                 final CallResponse callResponse)
+      throws KuduException {
     if (data == null || data.getNumRows() == 0) {
-      this.bs = this.indirectBs = null;
-      this.rowResult = null;
-      this.numRows = 0;
-      return;
+      return new RowResultIterator(ellapsedMillis, tsUUID, schema, 0, null, null);
     }
-    this.bs = callResponse.getSidecar(data.getRowsSidecar());
-    this.indirectBs = callResponse.getSidecar(data.getIndirectDataSidecar());
-    this.numRows = data.getNumRows();
+
+    Slice bs = callResponse.getSidecar(data.getRowsSidecar());
+    Slice indirectBs = callResponse.getSidecar(data.getIndirectDataSidecar());
+    int numRows = data.getNumRows();
 
     // Integrity check
     int rowSize = schema.getRowSize();
     int expectedSize = numRows * rowSize;
     if (expectedSize != bs.length()) {
-      throw new NonRecoverableException("RowResult block has " + bs.length() + " bytes of data " +
-          "but expected " + expectedSize + " for " + numRows + " rows");
+      Status statusIllegalState = Status.IllegalState("RowResult block has " + bs.length() +
+          " bytes of data but expected " + expectedSize + " for " + numRows + " rows");
+      throw new NonRecoverableException(statusIllegalState);
     }
-    this.rowResult = new RowResult(this.schema, this.bs, this.indirectBs);
+    return new RowResultIterator(ellapsedMillis, tsUUID, schema, numRows, bs, indirectBs);
   }
 
   /**

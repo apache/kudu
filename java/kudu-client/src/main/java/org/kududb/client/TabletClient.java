@@ -160,8 +160,9 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       if (!rpc.getRequiredFeatures().isEmpty() &&
           !secureRpcHelper.getServerFeatures().contains(
               RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS)) {
-        rpc.errback(new NonRecoverableException(
-            "the server does not support the APPLICATION_FEATURE_FLAGS RPC feature"));
+        Status statusNotSupported = Status.NotSupported("the server does not support the" +
+            "APPLICATION_FEATURE_FLAGS RPC feature");
+        rpc.errback(new NonRecoverableException(statusNotSupported));
       }
 
       encodedRpcAndId = encode(rpc);
@@ -200,7 +201,9 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
 
     if (failRpc) {
-      failOrRetryRpc(rpc, new ConnectionResetException(null));
+      Status statusNetworkError =
+          Status.NetworkError(getPeerUuidLoggingString() + "Connection reset on " + chan);
+      failOrRetryRpc(rpc, new RecoverableException(statusNetworkError));
     } else if (tryAgain) {
       // This recursion will not lead to a loop because we only get here if we
       // connected while entering the synchronized block above. So when trying
@@ -208,7 +211,6 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       // connected, or fail through to the code below if we got disconnected
       // in the mean time.
       sendRpc(rpc);
-      return;
     }
   }
 
@@ -253,8 +255,9 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
           + " rpcid=" + rpcid + ": " + oldrpc
           + ".  This happened when sending out: " + rpc;
       LOG.error(wtf);
+      Status statusIllegalState = Status.IllegalState(wtf);
       // Make it fail. This isn't an expected failure mode.
-      oldrpc.errback(new NonRecoverableException(wtf));
+      oldrpc.errback(new NonRecoverableException(statusIllegalState));
     }
 
     if (LOG.isDebugEnabled()) {
@@ -284,11 +287,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * @return deferred object to use to track the shutting down of this connection
    */
   public Deferred<Void> shutdown() {
+    Status statusNetworkError =
+        Status.NetworkError(getPeerUuidLoggingString() + "Client is shutting down");
+    NonRecoverableException exception = new NonRecoverableException(statusNetworkError);
     // First, check whether we have RPCs in flight and cancel them.
     for (Iterator<KuduRpc<?>> ite = rpcs_inflight.values().iterator(); ite
         .hasNext();) {
-      KuduRpc<?> rpc = ite.next();
-      rpc.errback(new ConnectionResetException(null));
+      ite.next().errback(exception);
       ite.remove();
     }
 
@@ -296,7 +301,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     synchronized (this) {
       if (pending_rpcs != null) {
         for (Iterator<KuduRpc<?>> ite = pending_rpcs.iterator(); ite.hasNext();) {
-          ite.next().errback(new ConnectionResetException(null));
+          ite.next().errback(exception);
           ite.remove();
         }
       }
@@ -335,8 +340,9 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
           } else {
             // Wrap the Throwable because Deferred doesn't handle Throwables,
             // it only uses Exception.
-            d.callback(new NonRecoverableException("Failed to shutdown: "
-                + TabletClient.this, t));
+            Status statusIllegalState = Status.IllegalState("Failed to shutdown: " +
+                TabletClient.this);
+            d.callback(new NonRecoverableException(statusIllegalState, t));
           }
         }
       });
@@ -353,7 +359,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   @Override
   @SuppressWarnings("unchecked")
   protected Object decode(ChannelHandlerContext ctx, Channel chan, ChannelBuffer buf,
-                              VoidEnum voidEnum) {
+                              VoidEnum voidEnum) throws NonRecoverableException {
     final long start = System.nanoTime();
     final int rdx = buf.readerIndex();
     LOG.debug("------------------>> ENTERING DECODE >>------------------");
@@ -363,7 +369,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     } catch (SaslException e) {
       String message = getPeerUuidLoggingString() + "Couldn't complete the SASL handshake";
       LOG.error(message);
-      throw new NonRecoverableException(message, e);
+      Status statusIOE = Status.IOError(message);
+      throw new NonRecoverableException(statusIOE, e);
     }
     if (buf == null) {
       return null;
@@ -377,7 +384,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       final String msg = getPeerUuidLoggingString() + "RPC response (size: " + size + ") doesn't"
           + " have a call ID: " + header + ", buf=" + Bytes.pretty(buf);
       LOG.error(msg);
-      throw new NonRecoverableException(msg);
+      Status statusIncomplete = Status.Incomplete(msg);
+      throw new NonRecoverableException(statusIncomplete);
     }
     final int rpcid = header.getCallId();
 
@@ -388,6 +396,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       final String msg = getPeerUuidLoggingString() + "Invalid rpcid: " + rpcid + " found in "
           + buf + '=' + Bytes.pretty(buf);
       LOG.error(msg);
+      Status statusIllegalState = Status.IllegalState(msg);
       // The problem here is that we don't know which Deferred corresponds to
       // this RPC, since we don't have a valid ID.  So we're hopeless, we'll
       // never be able to recover because responses are not framed, we don't
@@ -395,24 +404,25 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       // and throw this outside of our Netty handler, so Netty will call our
       // exception handler where we'll close this channel, which will cause
       // all RPCs in flight to be failed.
-      throw new NonRecoverableException(msg);
+      throw new NonRecoverableException(statusIllegalState);
     }
 
     Pair<Object, Object> decoded = null;
     Exception exception = null;
-    KuduException retryableHeaderException = null;
+    Status retryableHeaderError = Status.OK();
     if (header.hasIsError() && header.getIsError()) {
       RpcHeader.ErrorStatusPB.Builder errorBuilder = RpcHeader.ErrorStatusPB.newBuilder();
       KuduRpc.readProtobuf(response.getPBMessage(), errorBuilder);
       RpcHeader.ErrorStatusPB error = errorBuilder.build();
       if (error.getCode().equals(RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_SERVER_TOO_BUSY)) {
         // We can't return right away, we still need to remove ourselves from 'rpcs_inflight', so we
-        // populate 'retryableHeaderException'.
-        retryableHeaderException = new TabletServerErrorException(uuid, error);
+        // populate 'retryableHeaderError'.
+        retryableHeaderError = Status.ServiceUnavailable(error.getMessage());
       } else {
         String message = getPeerUuidLoggingString() +
             "Tablet server sent error " + error.getMessage();
-        exception = new NonRecoverableException(message);
+        Status status = Status.RemoteError(message);
+        exception = new NonRecoverableException(status);
         LOG.error(message); // can be useful
       }
     } else {
@@ -433,13 +443,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       final KuduRpc<?> removed = rpcs_inflight.remove(rpcid);
       if (removed == null) {
         // The RPC we were decoding was cleaned up already, give up.
-        throw new NonRecoverableException("RPC not found");
+        Status statusIllegalState = Status.IllegalState("RPC not found");
+        throw new NonRecoverableException(statusIllegalState);
       }
     }
 
     // This check is specifically for the ERROR_SERVER_TOO_BUSY case above.
-    if (retryableHeaderException != null) {
-      kuduClient.handleRetryableError(rpc, retryableHeaderException);
+    if (!retryableHeaderError.ok()) {
+      kuduClient.handleRetryableError(rpc, new RecoverableException(retryableHeaderError));
       return null;
     }
 
@@ -504,18 +515,18 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   private Exception dispatchTSErrorOrReturnException(KuduRpc rpc,
                                                      Tserver.TabletServerErrorPB error) {
     WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
-    TabletServerErrorException ex = new TabletServerErrorException(uuid, error.getStatus());
+    Status status = Status.fromTabletServerErrorPB(error);
     if (error.getCode() == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND) {
-      kuduClient.handleTabletNotFound(rpc, ex, this);
+      kuduClient.handleTabletNotFound(rpc, new RecoverableException(status), this);
       // we're not calling rpc.callback() so we rely on the client to retry that RPC
     } else if (code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
-      kuduClient.handleRetryableError(rpc, ex);
+      kuduClient.handleRetryableError(rpc, new RecoverableException(status));
       // The following two error codes are an indication that the tablet isn't a leader.
     } else if (code == WireProtocol.AppStatusPB.ErrorCode.ILLEGAL_STATE ||
         code == WireProtocol.AppStatusPB.ErrorCode.ABORTED) {
-      kuduClient.handleNotLeader(rpc, ex, this);
+      kuduClient.handleNotLeader(rpc, new RecoverableException(status), this);
     } else {
-      return ex;
+      return new NonRecoverableException(status);
     }
     return null;
   }
@@ -530,16 +541,22 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   private Exception dispatchMasterErrorOrReturnException(KuduRpc rpc,
                                                          Master.MasterErrorPB error) {
     WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
-    MasterErrorException ex = new MasterErrorException(uuid, error);
+    Status status = Status.fromMasterErrorPB(error);
     if (error.getCode() == Master.MasterErrorPB.Code.NOT_THE_LEADER) {
-      kuduClient.handleNotLeader(rpc, ex, this);
-    } else if (code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE &&
-        (!(rpc instanceof GetMasterRegistrationRequest))) {
-      // TODO: This is a crutch until we either don't have to retry RPCs going to the
-      // same server or use retry policies.
-      kuduClient.handleRetryableError(rpc, ex);
+      kuduClient.handleNotLeader(rpc, new RecoverableException(status), this);
+    } else if (code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
+      if (rpc instanceof GetMasterRegistrationRequest) {
+        // Special case:
+        // We never want to retry this RPC, we only use it to poke masters to learn where the leader
+        // is. If the error is truly non recoverable, it'll be handled later.
+        return new RecoverableException(status);
+      } else {
+        // TODO: This is a crutch until we either don't have to retry RPCs going to the
+        // same server or use retry policies.
+        kuduClient.handleRetryableError(rpc, new RecoverableException(status));
+      }
     } else {
-      return ex;
+      return new NonRecoverableException(status);
     }
     return null;
   }
@@ -559,7 +576,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   protected Object decodeLast(final ChannelHandlerContext ctx,
                               final Channel chan,
                               final ChannelBuffer buf,
-                              final VoidEnum unused) {
+                              final VoidEnum unused) throws NonRecoverableException {
     // When we disconnect, decodeLast is called instead of decode.
     // We simply check whether there's any data left in the buffer, in which
     // case we attempt to process it.  But if there's no data left, then we
@@ -595,7 +612,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * from the server and sending an RPC (via {@link #sendRpc} or any other
    * indirect means such as {@code GetTableLocations()}) will fail immediately
    * by having the RPC's {@link Deferred} called back immediately with a
-   * {@link ConnectionResetException}.  This typically means that you got a
+   * {@link RecoverableException}.  This typically means that you got a
    * stale reference (or that the reference to this instance is just about to
    * be invalidated) and that you shouldn't use this instance.
    */
@@ -660,7 +677,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   /**
    * Cleans up any outstanding or lingering RPC (used when shutting down).
    * <p>
-   * All RPCs in flight will fail with a {@link ConnectionResetException} and
+   * All RPCs in flight will fail with a {@link RecoverableException} and
    * all edits buffered will be re-scheduled.
    */
   private void cleanup(final Channel chan) {
@@ -688,8 +705,9 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
       pending_rpcs = null;
     }
-    final ConnectionResetException exception =
-        new ConnectionResetException(getPeerUuidLoggingString() + "Connection reset on " + chan);
+    Status statusNetworkError =
+        Status.NetworkError(getPeerUuidLoggingString() + "Connection reset on " + chan);
+    RecoverableException exception = new RecoverableException(statusNetworkError);
 
     failOrRetryRpcs(rpcs, exception);
   }
@@ -700,7 +718,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * @param exception an exception to propagate with the RPCs
    */
   private void failOrRetryRpcs(final Collection<KuduRpc<?>> rpcs,
-                               final ConnectionResetException exception) {
+                               final RecoverableException exception) {
     for (final KuduRpc<?> rpc : rpcs) {
       failOrRetryRpc(rpc, exception);
     }
@@ -712,7 +730,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * @param exception an exception to propagate with the RPC
    */
   private void failOrRetryRpc(final KuduRpc<?> rpc,
-                              final ConnectionResetException exception) {
+                              final RecoverableException exception) {
     AsyncKuduClient.RemoteTablet tablet = rpc.getTablet();
     // Note As of the time of writing (03/11/16), a null tablet doesn't make sense, if we see a null
     // tablet it's because we didn't set it properly before calling sendRpc().

@@ -16,6 +16,8 @@
 // under the License.
 package org.kududb.client;
 
+import com.stumbleupon.async.DeferredGroupException;
+import com.stumbleupon.async.TimeoutException;
 import org.kududb.annotations.*;
 
 import com.stumbleupon.async.Deferred;
@@ -59,14 +61,14 @@ public class KuduSession implements SessionConfiguration {
    * errors can be checked by calling {@link #countPendingErrors()} and can be retrieved by calling
    * {@link #getPendingErrors()}.
    * <li>MANUAL_FLUSH: the call returns when the operation has been added to the buffer,
-   * else it throws an exception such as a NonRecoverableException if the buffer is full.
+   * else it throws a KuduException if the buffer is full.
    * </ul>
    *
    * @param operation operation to apply
    * @return an OperationResponse for the applied Operation
-   * @throws Exception if anything went wrong
+   * @throws KuduException if anything went wrong
    */
-  public OperationResponse apply(Operation operation) throws Exception {
+  public OperationResponse apply(Operation operation) throws KuduException {
     while (true) {
       try {
         Deferred<OperationResponse> d = session.apply(operation);
@@ -83,7 +85,7 @@ public class KuduSession implements SessionConfiguration {
           LOG.error("Previous batch had this exception", e);
         }
       } catch (Exception e) {
-        throw e;
+        throw KuduException.transformException(e);
       }
     }
     return null;
@@ -93,21 +95,27 @@ public class KuduSession implements SessionConfiguration {
    * Blocking call that force flushes this session's buffers. Data is persisted when this call
    * returns, else it will throw an exception.
    * @return a list of OperationResponse, one per operation that was flushed
-   * @throws Exception if anything went wrong. If it's an issue with some or all batches,
-   * it will be of type DeferredGroupException.
+   * @throws KuduException if anything went wrong
    */
-  public List<OperationResponse> flush() throws Exception {
-    return session.flush().join(getTimeoutMillis());
+  public List<OperationResponse> flush() throws KuduException {
+    try {
+      return session.flush().join(getTimeoutMillis());
+    } catch (Exception e) {
+      throw KuduException.transformException(e);
+    }
   }
 
   /**
    * Blocking call that flushes the buffers (see {@link #flush()} and closes the sessions.
    * @return List of OperationResponse, one per operation that was flushed
-   * @throws Exception if anything went wrong. If it's an issue with some or all batches,
-   * it will be of type DeferredGroupException.
+   * @throws KuduException if anything went wrong
    */
-  public List<OperationResponse> close() throws Exception {
-    return session.close().join(getTimeoutMillis());
+  public List<OperationResponse> close() throws KuduException {
+    try {
+      return session.close().join(getTimeoutMillis());
+    } catch (Exception e) {
+      throw KuduException.transformException(e);
+    }
   }
 
   @Override

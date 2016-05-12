@@ -22,14 +22,13 @@ import org.kududb.annotations.InterfaceStability;
 /**
  * Exception indicating that an operation attempted to access a non-covered range partition.
  */
-@InterfaceAudience.Public
-@InterfaceStability.Unstable
-public class NonCoveredRangeException extends KuduException {
+@InterfaceAudience.Private
+class NonCoveredRangeException extends NonRecoverableException {
   private final byte[] nonCoveredRangeStart;
   private final byte[] nonCoveredRangeEnd;
 
   public NonCoveredRangeException(byte[] nonCoveredRangeStart, byte[] nonCoveredRangeEnd) {
-    super("non-covered range");
+    super(Status.NotFound("non-covered range"));
     this.nonCoveredRangeStart = nonCoveredRangeStart;
     this.nonCoveredRangeEnd = nonCoveredRangeEnd;
   }

@@ -16,6 +16,9 @@
 // under the License.
 package org.kududb.client;
 
+import com.google.common.base.Functions;
+import com.google.common.base.Joiner;
+import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Callback;
@@ -115,18 +118,28 @@ final class GetMasterRegistrationReceived {
         String allHosts = NetUtil.hostsAndPortsToString(masterAddrs);
         // Doing a negative check because allUnrecoverable stays true if there are no exceptions.
         if (!allUnrecoverable) {
+          String message = "Master config (" + allHosts + ") has no leader.";
+          Exception ex;
           if (exceptionsReceived.isEmpty()) {
             LOG.warn("None of the provided masters (" + allHosts + ") is a leader, will retry.");
+            ex = new NoLeaderMasterFoundException(Status.ServiceUnavailable(message));
           } else {
             LOG.warn("Unable to find the leader master (" + allHosts + "), will retry");
+            String joinedMsg = message + ". Exceptions received: " +
+                Joiner.on(",").join(
+                    Lists.transform(exceptionsReceived, Functions.toStringFunction()));
+            Status statusServiceUnavailable = Status.ServiceUnavailable(joinedMsg);
+            ex = new NoLeaderMasterFoundException(
+                statusServiceUnavailable,
+                exceptionsReceived.get(exceptionsReceived.size() - 1));
           }
-          responseD.callback(NoLeaderMasterFoundException.create(
-              "Master config (" + allHosts + ") has no leader.",
-              exceptionsReceived));
+          responseD.callback(ex);
         } else {
+          Status statusConfigurationError = Status.ConfigurationError(
+              "Couldn't find a valid master in (" + allHosts +
+                  "), exceptions: " + exceptionsReceived);
           // This will stop retries.
-          responseD.callback(new NonRecoverableException("Couldn't find a valid master in (" +
-              allHosts + "), exceptions: " + exceptionsReceived));
+          responseD.callback(new NonRecoverableException(statusConfigurationError));
         }
       }
     }

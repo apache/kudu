@@ -77,6 +77,23 @@ public class TestKuduTable extends BaseKuduTest {
           .addColumn("testaddmulticolnotnull", Type.INT32, 4)
           .addNullableColumn("testaddmulticolnull", Type.STRING);
       submitAlterAndCheck(ato, tableName);
+
+
+      // Try altering a table that doesn't exist.
+      String nonExistingTableName = "table_does_not_exist";
+      try {
+        syncClient.alterTable(nonExistingTableName, ato);
+        fail("Shouldn't be able to alter a table that doesn't exist");
+      } catch (KuduException ex) {
+        assertTrue(ex.getStatus().isNotFound());
+      }
+
+      try {
+        syncClient.isAlterTableDone(nonExistingTableName);
+        fail("Shouldn't be able to query if an alter table is done here");
+      } catch (KuduException ex) {
+        assertTrue(ex.getStatus().isNotFound());
+      }
     } finally {
       // Normally Java tests accumulate tables without issue, deleting them all
       // when shutting down the mini cluster at the end of every test class.

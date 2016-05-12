@@ -823,24 +823,27 @@ public final class AsyncKuduScanner {
       ScanResponsePB resp = builder.build();
       final byte[] id = resp.getScannerId().toByteArray();
       TabletServerErrorPB error = resp.hasError() ? resp.getError() : null;
+
       if (error != null && error.getCode().equals(TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
         if (state == State.OPENING) {
           // Doing this will trigger finding the new location.
           return new Pair<Response, Object>(null, error);
         } else {
-          throw new NonRecoverableException("Cannot continue scanning, " +
+          Status statusIncomplete = Status.Incomplete("Cannot continue scanning, " +
               "the tablet has moved and this isn't a fault tolerant scan");
+          throw new NonRecoverableException(statusIncomplete);
         }
       }
-      RowResultIterator iterator = new RowResultIterator(
+      RowResultIterator iterator = RowResultIterator.makeRowResultIterator(
           deadlineTracker.getElapsedMillis(), tsUUID, schema, resp.getData(),
           callResponse);
 
       boolean hasMore = resp.getHasMoreResults();
       if (id.length  != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {
-        throw new InvalidResponseException("Scan RPC response was for scanner"
+        Status statusIllegalState = Status.IllegalState("Scan RPC response was for scanner"
             + " ID " + Bytes.pretty(id) + " but we expected "
-            + Bytes.pretty(scannerId), resp);
+            + Bytes.pretty(scannerId));
+        throw new NonRecoverableException(statusIllegalState);
       }
       Response response = new Response(id, iterator, hasMore);
       if (LOG.isDebugEnabled()) {

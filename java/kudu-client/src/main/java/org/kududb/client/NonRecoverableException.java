@@ -28,27 +28,26 @@ package org.kududb.client;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 
-@InterfaceAudience.Public
+@InterfaceAudience.Private
 @InterfaceStability.Evolving
 @SuppressWarnings("serial")
-public class NonRecoverableException extends KuduException {
+class NonRecoverableException extends KuduException {
 
   /**
    * Constructor.
-   * @param msg The message of the exception, potentially including a stack
+   * @param status status object containing the reason for the exception
    * trace.
    */
-  NonRecoverableException(final String msg) {
-    super(msg);
+  NonRecoverableException(Status status) {
+    super(status);
   }
 
   /**
    * Constructor.
-   * @param msg The message of the exception, potentially including a stack
-   * trace.
+   * @param status status object containing the reason for the exception
    * @param cause The exception that caused this one to be thrown.
    */
-  NonRecoverableException(final String msg, final Throwable cause) {
-    super(msg, cause);
+  NonRecoverableException(Status status, Throwable cause) {
+    super(status, cause);
   }
 }

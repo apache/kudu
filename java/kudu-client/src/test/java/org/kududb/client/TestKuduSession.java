@@ -273,8 +273,8 @@ public class TestKuduSession extends BaseKuduTest {
       try {
         session.apply(createBasicSchemaInsert(table, key));
         fail("apply should have thrown");
-      } catch (NonCoveredRangeException e) {
-        // Expected
+      } catch (KuduException e) {
+        assertTrue(e.getStatus().isNotFound());
       }
     }
   }

@@ -19,16 +19,20 @@ package org.kududb.client;
 import org.kududb.WireProtocol;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
+import org.kududb.master.Master;
+import org.kududb.tserver.Tserver;
 
 /**
- * Representation of an error code and message. Wraps {@link org.kududb.WireProtocol.AppStatusPB}.
+ * Representation of an error code and message.
  * See also {@code src/kudu/util/status.h} in the C++ codebase.
- *
- * <p>Do not use the {@code @deprecated} methods in this class.</p>
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public class Status {
+
+  // Keep a single OK status object else we'll end up instantiating tons of them.
+  private static final Status STATIC_OK = new Status(WireProtocol.AppStatusPB.ErrorCode.OK);
+
   private final WireProtocol.AppStatusPB appStatusPB;
 
   private Status(WireProtocol.AppStatusPB appStatusPB) {
@@ -55,7 +59,33 @@ public class Status {
   // Factory methods.
 
   /**
-   * Create a Status object from a {@link org.kududb.WireProtocol.AppStatusPB} protobuf object.
+   * Create a status object from a master error.
+   * @param masterErrorPB pb object received via RPC from the master
+   * @return status object equivalent to the pb
+   */
+  static Status fromMasterErrorPB(Master.MasterErrorPB masterErrorPB) {
+    if (masterErrorPB == Master.MasterErrorPB.getDefaultInstance()) {
+      return Status.OK();
+    } else {
+      return new Status(masterErrorPB.getStatus());
+    }
+  }
+
+  /**
+   * Create a status object from a tablet server error.
+   * @param tserverErrorPB pb object received via RPC from the TS
+   * @return status object equivalent to the pb
+   */
+  static Status fromTabletServerErrorPB(Tserver.TabletServerErrorPB tserverErrorPB) {
+    if (tserverErrorPB == Tserver.TabletServerErrorPB.getDefaultInstance()) {
+      return Status.OK();
+    } else {
+      return new Status(tserverErrorPB.getStatus());
+    }
+  }
+
+  /**
+   * Create a Status object from a {@link WireProtocol.AppStatusPB} protobuf object.
    * Package-private because we shade Protobuf and this is not usable outside this package.
    */
   static Status fromPB(WireProtocol.AppStatusPB pb) {
@@ -63,7 +93,7 @@ public class Status {
   }
 
   public static Status OK() {
-    return new Status(WireProtocol.AppStatusPB.ErrorCode.OK);
+    return STATIC_OK;
   }
 
   public static Status NotFound(String msg) {

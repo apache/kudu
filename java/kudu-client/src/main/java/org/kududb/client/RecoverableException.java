@@ -29,33 +29,28 @@ import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 
 /**
- * An exception for which it's typically useful to retry
- * <p>
- * The retry strategy is up to you, but it's typically recommended to put an
- * upper bound on the number of retries and to use some kind of an exponential
- * backoff.
+ * An exception that's possible to retry.
  */
-@InterfaceAudience.Public
+@InterfaceAudience.Private
 @InterfaceStability.Evolving
 @SuppressWarnings("serial")
-public abstract class RecoverableException extends KuduException {
+class RecoverableException extends KuduException {
 
   /**
    * Constructor.
-   * @param msg The message of the exception, potentially including a stack
+   * @param status status object containing the reason for the exception
    * trace.
    */
-  RecoverableException(final String msg) {
-    super(msg);
+  RecoverableException(Status status) {
+    super(status);
   }
 
   /**
    * Constructor.
-   * @param msg The message of the exception, potentially including a stack
-   * trace.
+   * @param status status object containing the reason for the exception
    * @param cause The exception that caused this one to be thrown.
    */
-  RecoverableException(final String msg, final Exception cause) {
-    super(msg, cause);
+  RecoverableException(Status status, Throwable cause) {
+    super(status, cause);
   }
 }

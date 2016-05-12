@@ -364,7 +364,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param name the table's name, if the table was renamed then that name must be checked against
    * @return a deferred object to track the progress of the isAlterTableDone command
    */
-  public Deferred<IsAlterTableDoneResponse> isAlterTableDone(String name) throws Exception {
+  public Deferred<IsAlterTableDoneResponse> isAlterTableDone(String name) {
     checkIsClosed();
     IsAlterTableDoneRequest request = new IsAlterTableDoneRequest(this.masterTable, name);
     request.setTimeoutMillis(defaultAdminOperationTimeoutMs);
@@ -1000,12 +1000,10 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Checks whether or not an RPC can be retried once more.
-   * @param rpc The RPC we're going to attempt to execute.
+   * Checks whether or not an RPC can be retried once more
+   * @param rpc The RPC we're going to attempt to execute
    * @return {@code true} if this RPC already had too many attempts,
-   * {@code false} otherwise (in which case it's OK to retry once more).
-   * @throws NonRecoverableException if the request has had too many attempts
-   * already.
+   * {@code false} otherwise (in which case it's OK to retry once more)
    */
   static boolean cannotRetryRequest(final KuduRpc<?> rpc) {
     return rpc.deadlineTracker.timedOut() || rpc.attempt > MAX_RPC_ATTEMPTS;
@@ -1026,7 +1024,8 @@ public class AsyncKuduClient implements AutoCloseable {
     } else {
       message = "RPC can not complete before timeout: ";
     }
-    final Exception e = new NonRecoverableException(message + request, cause);
+    Status statusTimedOut = Status.TimedOut(message + request);
+    final Exception e = new NonRecoverableException(statusTimedOut, cause);
     request.errback(e);
     LOG.debug("Cannot continue with this RPC: {} because of: {}", request, message, e);
     return Deferred.fromError(e);
@@ -1091,7 +1090,8 @@ public class AsyncKuduClient implements AutoCloseable {
       if (clientForHostAndPort == null) {
         String message = "Couldn't resolve this master's address " + hostAndPort.toString();
         LOG.warn(message);
-        d = Deferred.fromError(new NonRecoverableException(message));
+        Status statusIOE = Status.IOError(message);
+        d = Deferred.fromError(new NonRecoverableException(statusIOE));
       } else {
         d = getMasterRegistration(clientForHostAndPort);
       }
@@ -1157,8 +1157,9 @@ public class AsyncKuduClient implements AutoCloseable {
       }
 
       if (deadlineTracker.timedOut()) {
-        return Deferred.fromError(new NonRecoverableException(
-            "Took too long getting the list of tablets, " + deadlineTracker));
+        Status statusTimedOut = Status.TimedOut("Took too long getting the list of tablets, " +
+            deadlineTracker);
+        return Deferred.fromError(new NonRecoverableException(statusTimedOut));
       }
 
       // If the partition key location isn't cached, and the request hasn't timed out,
@@ -1273,10 +1274,15 @@ public class AsyncKuduClient implements AutoCloseable {
           LOG.debug("Table {} has a non-running tablet", table.getName());
           tablesNotServed.add(table.getTableId());
         } else {
-          return new MasterErrorException("GetTableLocations error", response.getError());
+          Status status = Status.fromMasterErrorPB(response.getError());
+          return new NonRecoverableException(status);
         }
       } else {
-        discoverTablets(table, response.getTabletLocationsList());
+        try {
+          discoverTablets(table, response.getTabletLocationsList());
+        } catch (NonRecoverableException e) {
+          return e;
+        }
         if (partitionKey != null) {
           discoverNonCoveredRangePartitions(table.getTableId(), partitionKey,
                                             response.getTabletLocationsList());
@@ -2058,8 +2064,9 @@ public class AsyncKuduClient implements AutoCloseable {
         // no point in retrying.
         if (!lookupExceptions.isEmpty() &&
             lookupExceptions.size() == tabletLocations.getReplicasCount()) {
-          throw new NonRecoverableException("Couldn't find any valid locations, exceptions: " +
+          Status statusIOE = Status.IOError("Couldn't find any valid locations, exceptions: " +
               lookupExceptions);
+          throw new NonRecoverableException(statusIOE);
         }
 
       }

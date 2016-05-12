@@ -53,21 +53,23 @@ public class KuduClient implements AutoCloseable {
    * @param schema the table's schema
    * @param builder a builder containing the table's configurations
    * @return an object to communicate with the created table
+   * @throws KuduException if anything went wrong
    */
   public KuduTable createTable(String name, Schema schema, CreateTableOptions builder)
-      throws Exception {
+      throws KuduException {
     Deferred<KuduTable> d = asyncClient.createTable(name, schema, builder);
-    return d.join(getDefaultAdminOperationTimeoutMs());
+    return joinAndHandleException(d);
   }
 
   /**
    * Delete a table on the cluster with the specified name.
    * @param name the table's name
    * @return an rpc response object
+   * @throws KuduException if anything went wrong
    */
-  public DeleteTableResponse deleteTable(String name) throws Exception {
+  public DeleteTableResponse deleteTable(String name) throws KuduException {
     Deferred<DeleteTableResponse> d = asyncClient.deleteTable(name);
-    return d.join(getDefaultAdminOperationTimeoutMs());
+    return joinAndHandleException(d);
   }
 
   /**
@@ -78,10 +80,11 @@ public class KuduClient implements AutoCloseable {
    * @param name the table's name, if this is a table rename then the old table name must be passed
    * @param ato the alter table builder
    * @return an rpc response object
+   * @throws KuduException if anything went wrong
    */
-  public AlterTableResponse alterTable(String name, AlterTableOptions ato) throws Exception {
+  public AlterTableResponse alterTable(String name, AlterTableOptions ato) throws KuduException {
     Deferred<AlterTableResponse> d = asyncClient.alterTable(name, ato);
-    return d.join(getDefaultAdminOperationTimeoutMs());
+    return joinAndHandleException(d);
   }
 
   /**
@@ -89,38 +92,39 @@ public class KuduClient implements AutoCloseable {
    * It will block until the alter command is done or the timeout is reached.
    * @param name Table's name, if the table was renamed then that name must be checked against
    * @return a boolean indicating if the table is done being altered
+   * @throws KuduException for any error returned by sending RPCs to the master
    */
-  public boolean isAlterTableDone(String name) throws Exception {
+  public boolean isAlterTableDone(String name) throws KuduException {
     long totalSleepTime = 0;
     while (totalSleepTime < getDefaultAdminOperationTimeoutMs()) {
       long start = System.currentTimeMillis();
 
-      Deferred<IsAlterTableDoneResponse> d = asyncClient.isAlterTableDone(name);
-      IsAlterTableDoneResponse response;
       try {
+        Deferred<IsAlterTableDoneResponse> d = asyncClient.isAlterTableDone(name);
+        IsAlterTableDoneResponse response;
+
         response = d.join(AsyncKuduClient.SLEEP_TIME);
+        if (response.isDone()) {
+          return true;
+        }
+
+        // Count time that was slept and see if we need to wait a little more.
+        long elapsed = System.currentTimeMillis() - start;
+        // Don't oversleep the deadline.
+        if (totalSleepTime + AsyncKuduClient.SLEEP_TIME > getDefaultAdminOperationTimeoutMs()) {
+          return false;
+        }
+        // elapsed can be bigger if we slept about 500ms
+        if (elapsed <= AsyncKuduClient.SLEEP_TIME) {
+          LOG.debug("Alter not done, sleep " + (AsyncKuduClient.SLEEP_TIME - elapsed) +
+              " and slept " + totalSleepTime);
+          Thread.sleep(AsyncKuduClient.SLEEP_TIME - elapsed);
+          totalSleepTime += AsyncKuduClient.SLEEP_TIME;
+        } else {
+          totalSleepTime += elapsed;
+        }
       } catch (Exception ex) {
-        throw ex;
-      }
-
-      if (response.isDone()) {
-        return true;
-      }
-
-      // Count time that was slept and see if we need to wait a little more.
-      long elapsed = System.currentTimeMillis() - start;
-      // Don't oversleep the deadline.
-      if (totalSleepTime + AsyncKuduClient.SLEEP_TIME > getDefaultAdminOperationTimeoutMs()) {
-        return false;
-      }
-      // elapsed can be bigger if we slept about 500ms
-      if (elapsed <= AsyncKuduClient.SLEEP_TIME) {
-        LOG.debug("Alter not done, sleep " + (AsyncKuduClient.SLEEP_TIME - elapsed) +
-            " and slept " + totalSleepTime);
-        Thread.sleep(AsyncKuduClient.SLEEP_TIME - elapsed);
-        totalSleepTime += AsyncKuduClient.SLEEP_TIME;
-      } else {
-        totalSleepTime += elapsed;
+        throw KuduException.transformException(ex);
       }
     }
     return false;
@@ -129,17 +133,19 @@ public class KuduClient implements AutoCloseable {
   /**
    * Get the list of running tablet servers.
    * @return a list of tablet servers
+   * @throws KuduException if anything went wrong
    */
-  public ListTabletServersResponse listTabletServers() throws Exception {
+  public ListTabletServersResponse listTabletServers() throws KuduException {
     Deferred<ListTabletServersResponse> d = asyncClient.listTabletServers();
-    return d.join(getDefaultAdminOperationTimeoutMs());
+    return joinAndHandleException(d);
   }
 
   /**
    * Get the list of all the tables.
    * @return a list of all the tables
+   * @throws KuduException if anything went wrong
    */
-  public ListTablesResponse getTablesList() throws Exception {
+  public ListTablesResponse getTablesList() throws KuduException {
     return getTablesList(null);
   }
 
@@ -148,31 +154,34 @@ public class KuduClient implements AutoCloseable {
    * specified, it only returns tables that satisfy a substring match.
    * @param nameFilter an optional table name filter
    * @return a deferred that contains the list of table names
+   * @throws KuduException if anything went wrong
    */
-  public ListTablesResponse getTablesList(String nameFilter) throws Exception {
+  public ListTablesResponse getTablesList(String nameFilter) throws KuduException {
     Deferred<ListTablesResponse> d = asyncClient.getTablesList(nameFilter);
-    return d.join(getDefaultAdminOperationTimeoutMs());
+    return joinAndHandleException(d);
   }
 
   /**
    * Test if a table exists.
    * @param name a non-null table name
    * @return true if the table exists, else false
+   * @throws KuduException if anything went wrong
    */
-  public boolean tableExists(String name) throws Exception {
+  public boolean tableExists(String name) throws KuduException {
     Deferred<Boolean> d = asyncClient.tableExists(name);
-    return d.join(getDefaultAdminOperationTimeoutMs());
+    return joinAndHandleException(d);
   }
 
   /**
    * Open the table with the given name. If the table was just created, this method will block until
    * all its tablets have also been created.
    * @param name table to open
-   * @return a KuduTable if the table exists, else a MasterErrorException
+   * @return a KuduTable if the table exists
+   * @throws KuduException if anything went wrong
    */
-  public KuduTable openTable(final String name) throws Exception {
+  public KuduTable openTable(final String name) throws KuduException {
     Deferred<KuduTable> d = asyncClient.openTable(name);
-    return d.join(getDefaultAdminOperationTimeoutMs());
+    return joinAndHandleException(d);
   }
 
   /**
@@ -226,20 +235,24 @@ public class KuduClient implements AutoCloseable {
 
   /**
    * Analogous to {@link #shutdown()}.
-   * @throws Exception if an error happens while closing the connections
+   * @throws KuduException if an error happens while closing the connections
    */
   @Override
-  public void close() throws Exception {
-    asyncClient.close();
+  public void close() throws KuduException {
+    try {
+      asyncClient.close();
+    } catch (Exception e) {
+      KuduException.transformException(e);
+    }
   }
 
   /**
    * Performs a graceful shutdown of this instance.
-   * @throws Exception
+   * @throws KuduException if anything went wrong
    */
-  public void shutdown() throws Exception {
+  public void shutdown() throws KuduException {
     Deferred<ArrayList<Void>> d = asyncClient.shutdown();
-    d.join(getDefaultAdminOperationTimeoutMs());
+    joinAndHandleException(d);
   }
 
   /**
@@ -256,6 +269,15 @@ public class KuduClient implements AutoCloseable {
    */
   public long getDefaultAdminOperationTimeoutMs() {
     return asyncClient.getDefaultAdminOperationTimeoutMs();
+  }
+
+  // Helper method to handle joining and transforming the Exception we receive.
+  private <R> R joinAndHandleException(Deferred<R> deferred) throws KuduException {
+    try {
+      return deferred.join(getDefaultAdminOperationTimeoutMs());
+    } catch (Exception e) {
+      throw KuduException.transformException(e);
+    }
   }
 
   /**

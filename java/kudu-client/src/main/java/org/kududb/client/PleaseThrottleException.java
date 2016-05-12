@@ -61,7 +61,7 @@ import org.kududb.annotations.InterfaceStability;
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 @SuppressWarnings("serial")
-public final class PleaseThrottleException extends NonRecoverableException
+public final class PleaseThrottleException extends RecoverableException
     implements HasFailedRpcException {
 
   /** The RPC that was failed with this exception.  */
@@ -72,17 +72,17 @@ public final class PleaseThrottleException extends NonRecoverableException
 
   /**
    * Constructor.
-   * @param msg A message explaining why the application has to throttle.
+   * @param status status object containing the reason for the exception
    * @param cause The exception that requires the application to throttle
-   * itself (can be {@code null}).
-   * @param rpc The RPC that was made to fail with this exception.
-   * @param deferred A deferred one can wait on before retrying the failed RPC.
+   * itself (can be {@code null})
+   * @param rpc The RPC that was made to fail with this exception
+   * @param deferred A deferred one can wait on before retrying the failed RPC
    */
-  PleaseThrottleException(final String msg,
-                          final KuduException cause,
-                          final Operation rpc,
-                          final Deferred deferred) {
-    super(msg, cause);
+  PleaseThrottleException(Status status,
+                          KuduException cause,
+                          Operation rpc,
+                          Deferred deferred) {
+    super(status, cause);
     this.rpc = rpc;
     this.deferred = deferred;
   }

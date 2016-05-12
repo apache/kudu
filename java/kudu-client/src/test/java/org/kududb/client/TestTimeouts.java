@@ -16,9 +16,9 @@
 // under the License.
 package org.kududb.client;
 
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.TimeoutException;
 import org.junit.Test;
 
@@ -41,7 +41,7 @@ public class TestTimeouts extends BaseKuduTest {
     try {
       lowTimeoutsClient.listTabletServers();
       fail("Should have timed out");
-    } catch (TimeoutException ex) {
+    } catch (KuduException ex) {
       // Expected.
     }
 
@@ -53,20 +53,16 @@ public class TestTimeouts extends BaseKuduTest {
     try {
       lowTimeoutSession.apply(createBasicSchemaInsert(table, 1));
       fail("Should have timed out");
-    } catch (TimeoutException ex) { // If we timeout on the Deferred
-      // Expected.
-    } catch (NonRecoverableException ex) { // If we timeout when doing an internal deadline check
-    // Expected.
+    } catch (KuduException ex) {
+      assertTrue(ex.getStatus().isTimedOut());
     }
 
     KuduScanner lowTimeoutScanner = lowTimeoutsClient.newScannerBuilder(table).build();
     try {
       lowTimeoutScanner.nextRows();
       fail("Should have timed out");
-    } catch (TimeoutException ex) {
-      // Expected.
-    } catch (NonRecoverableException ex) {
-      // Expected.
+    } catch (KuduException ex) {
+      assertTrue(ex.getStatus().isTimedOut());
     }
   }
 }
