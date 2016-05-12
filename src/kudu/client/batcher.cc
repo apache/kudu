@@ -44,6 +44,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/retriable_rpc.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/debug-util.h"
@@ -52,6 +53,7 @@
 using std::pair;
 using std::set;
 using std::shared_ptr;
+using std::unique_ptr;
 using std::unordered_map;
 using strings::Substitute;
 
@@ -59,6 +61,8 @@ namespace kudu {
 
 using rpc::ErrorStatusPB;
 using rpc::Messenger;
+using rpc::ResponseCallback;
+using rpc::RetriableRpc;
 using rpc::RetriableRpcStatus;
 using rpc::Rpc;
 using rpc::RpcController;
@@ -180,17 +184,16 @@ struct InFlightOp {
 // leader fails.
 //
 // Keeps a reference on the owning batcher while alive.
-class WriteRpc : public Rpc {
+class WriteRpc : public RetriableRpc<RemoteTabletServer, WriteRequestPB, WriteResponsePB> {
  public:
   WriteRpc(const scoped_refptr<Batcher>& batcher,
-           const scoped_refptr<MetaCacheServerPicker>& server_picker,
+           const scoped_refptr<MetaCacheServerPicker>& replica_picker,
            vector<InFlightOp*> ops,
            const MonoTime& deadline,
            const shared_ptr<Messenger>& messenger,
            const string& tablet_id);
   virtual ~WriteRpc();
-  virtual void SendRpc() OVERRIDE;
-  virtual string ToString() const OVERRIDE;
+  string ToString() const override;
 
   const KuduTable* table() const {
     // All of the ops for a given tablet obviously correspond to the same table,
@@ -201,39 +204,15 @@ class WriteRpc : public Rpc {
   const WriteResponsePB& resp() const { return resp_; }
   const string& tablet_id() const { return tablet_id_; }
 
+ protected:
+  void Try(RemoteTabletServer* replica, const ResponseCallback& callback) override;
+  RetriableRpcStatus AnalyzeResponse(const Status& rpc_cb_status) override;
+  void Finish(const Status& status) override;
+
  private:
-  // Analyzes the response/current status and returns a RetriableRpcStatus containing
-  // an enum that can be used to choose the action to take.
-  RetriableRpcStatus AnalyzeResponse(const Status& rpc_cb_status);
-
-  // Retries the rpc, if possible. Returns true if a retry occurred or
-  // false otherwise.
-  bool RetryIfNeeded(const RetriableRpcStatus& status,  RemoteTabletServer* replica);
-
-  // Called with an OK status when the leader has been found and the proxy initialized.
-  // Called with any other status if something failed with 'replica' set to 'nullptr'.
-  void ReplicaFoundCb(const Status& status, RemoteTabletServer* replica);
-
-  virtual void SendRpcCb(const Status& status) OVERRIDE;
-
   // Pointer back to the batcher. Processes the write response when it
   // completes, regardless of success or failure.
   scoped_refptr<Batcher> batcher_;
-
-  // The tablet that should receive this write.
-  scoped_refptr<MetaCacheServerPicker> server_picker_;
-
-  // Request body.
-  WriteRequestPB req_;
-
-  // Response body.
-  WriteResponsePB resp_;
-
-  // Keeps track of the tablet server the write was sent to.
-  // TODO Remove this and pass the used replica around. For now we need to keep this as
-  // the retrier calls the SendRpcCb directly and doesn't know the replica that was
-  // being written to.
-  RemoteTabletServer* current_ts_;
 
   // Operations which were batched into this RPC.
   // These operations are in kRequestSent state.
@@ -244,15 +223,13 @@ class WriteRpc : public Rpc {
 };
 
 WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
-                   const scoped_refptr<MetaCacheServerPicker>& server_picker,
+                   const scoped_refptr<MetaCacheServerPicker>& replica_picker,
                    vector<InFlightOp*> ops,
                    const MonoTime& deadline,
                    const shared_ptr<Messenger>& messenger,
                    const string& tablet_id)
-    : Rpc(deadline, messenger),
+    : RetriableRpc(replica_picker, deadline, messenger),
       batcher_(batcher),
-      server_picker_(server_picker),
-      current_ts_(nullptr),
       ops_(std::move(ops)),
       tablet_id_(tablet_id) {
   const Schema* schema = table()->schema().schema_;
@@ -311,35 +288,29 @@ WriteRpc::~WriteRpc() {
   STLDeleteElements(&ops_);
 }
 
-void WriteRpc::SendRpc() {
-  server_picker_->PickLeader(Bind(&WriteRpc::ReplicaFoundCb,
-                                  Unretained(this)),
-                              retrier().deadline());
-}
-
 string WriteRpc::ToString() const {
   return Substitute("Write(tablet: $0, num_ops: $1, num_attempts: $2)",
                     tablet_id_, ops_.size(), num_attempts());
 }
 
-void WriteRpc::ReplicaFoundCb(const Status& status, RemoteTabletServer* replica) {
-  RetriableRpcStatus result = AnalyzeResponse(status);
-  if (RetryIfNeeded(result, replica)) return;
-
-  if (result.result == RetriableRpcStatus::NON_RETRIABLE_ERROR) {
-    batcher_->ProcessWriteResponse(*this, status);
-    delete this;
-    return;
-  }
-
-  DCHECK_EQ(result.result, RetriableRpcStatus::OK);
-
+void WriteRpc::Try(RemoteTabletServer* replica, const ResponseCallback& callback) {
   VLOG(2) << "Tablet " << tablet_id_ << ": Writing batch to replica "
-          << replica->ToString();
-  current_ts_ = replica;
+      << replica->ToString();
   replica->proxy()->WriteAsync(req_, &resp_,
                                mutable_retrier()->mutable_controller(),
-                               boost::bind(&WriteRpc::SendRpcCb, this, Status::OK()));
+                               callback);
+}
+
+void WriteRpc::Finish(const Status& status) {
+  unique_ptr<WriteRpc> this_instance(this);
+  Status final_status = status;
+  if (!final_status.ok()) {
+    final_status = final_status.CloneAndPrepend(
+        Substitute("Failed to write batch of $0 ops to tablet $1 after $2 attempt(s)",
+                   ops_.size(), tablet_id_, num_attempts()));
+    LOG(WARNING) << final_status.ToString();
+  }
+  batcher_->ProcessWriteResponse(*this, final_status);
 }
 
 RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
@@ -402,62 +373,6 @@ RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
     result.result = RetriableRpcStatus::NON_RETRIABLE_ERROR;
   }
   return result;
-}
-
-bool WriteRpc::RetryIfNeeded(const RetriableRpcStatus& result, RemoteTabletServer* replica) {
-  // Handle the cases where we retry.
-  switch (result.result) {
-    // For writes, always retry a SERVER_BUSY error on the same server.
-    case RetriableRpcStatus::SERVER_BUSY: {
-      break;
-    }
-    case RetriableRpcStatus::SERVER_NOT_ACCESSIBLE: {
-      VLOG(1) << "Failing " << ToString() << " to a new replica: " << result.status.ToString();
-      server_picker_->MarkServerFailed(replica, result.status);
-      break;
-    }
-    // The TabletServer was not part of the config serving the tablet.
-    // We mark our tablet cache as stale, forcing a master lookup on the next attempt.
-    // TODO: Don't backoff the first time we hit this error (see KUDU-1314).
-    case RetriableRpcStatus::RESOURCE_NOT_FOUND: {
-      server_picker_->MarkResourceNotFound(replica);
-      break;
-    }
-    // The TabletServer was not the leader of the quorum.
-    case RetriableRpcStatus::REPLICA_NOT_LEADER: {
-      server_picker_->MarkReplicaNotLeader(replica);
-      break;
-    }
-    // For the OK and NON_RETRIABLE_ERROR cases we can't/won't retry.
-    default:
-      return false;
-  }
-  resp_.Clear();
-  mutable_retrier()->DelayedRetry(this, result.status);
-  return true;
-}
-
-void WriteRpc::SendRpcCb(const Status& status) {
-  RetriableRpcStatus result = AnalyzeResponse(status);
-  if (RetryIfNeeded(result, current_ts_)) return;
-
-  // From here on out the rpc has either succeeded of suffered a non-retriable
-  // failure.
-  Status final_status = result.status;
-  if (!final_status.ok()) {
-    string current_ts_string;
-    if (current_ts_) {
-      current_ts_string = Substitute("on tablet server $0", current_ts_->ToString());
-    } else {
-      current_ts_string = "(no tablet server available)";
-    }
-    final_status = final_status.CloneAndPrepend(
-        Substitute("Failed to write batch of $0 ops to tablet $1 $2 after $3 attempt(s)",
-                   ops_.size(), tablet_id_, current_ts_string, num_attempts()));
-    LOG(WARNING) << final_status.ToString();
-  }
-  batcher_->ProcessWriteResponse(*this, final_status);
-  delete this;
 }
 
 Batcher::Batcher(KuduClient* client,
