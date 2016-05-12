@@ -231,31 +231,31 @@ class TabletBootstrap {
   Status PlayNoOpRequest(ReplicateMsg* replicate_msg,
                          const CommitMsg& commit_msg);
 
-  // Plays operations, skipping those that have already been flushed.
+  // Plays operations, skipping those that have already been flushed,
+  // as indicated in the 'already_flushed' vector.
   Status PlayRowOperations(WriteTransactionState* tx_state,
                            const SchemaPB& schema_pb,
                            const RowOperationsPB& ops_pb,
-                           const TxResultPB& result);
+                           const TxResultPB& result,
+                           const vector<bool>& already_flushed);
+
+  // Determine which of the operations from 'result' correspond to already-flushed
+  // stores.
+  Status DetermineFlushedOps(const TxResultPB& result,
+                             vector<bool>* flushed_by_op);
 
   // Pass through all of the decoded operations in tx_state. For
   // each op:
   // - if it was previously failed, mark as failed
-  // - if it previously succeeded but was flushed, mark as skipped
+  // - if it previously succeeded but was flushed, skip it.
   // - otherwise, re-apply to the tablet being bootstrapped.
-  Status FilterAndApplyOperations(WriteTransactionState* tx_state,
-                                  const TxResultPB& orig_result);
+  Status ApplyOperations(WriteTransactionState* tx_state,
+                         const TxResultPB& orig_result);
 
-  // Filter a single insert operation, setting it to failed if
+  // Filter a row  operation, setting '*already_flushed' to indicate if
   // it was already flushed.
-  Status FilterInsert(WriteTransactionState* tx_state,
-                      RowOp* op,
-                      const OperationResultPB& op_result);
-
-  // Filter a single mutate operation, setting it to failed if
-  // it was already flushed.
-  Status FilterMutate(WriteTransactionState* tx_state,
-                      RowOp* op,
-                      const OperationResultPB& op_result);
+  Status FilterOperation(const OperationResultPB& op_result,
+                         bool* already_flushed);
 
   // Returns true if any of the memory stores referenced in 'commit' are still
   // active, in which case the operation needs to be replayed.
@@ -302,6 +302,7 @@ class TabletBootstrap {
     Stats()
       : ops_read(0),
         ops_overwritten(0),
+        ops_ignored(0),
         ops_committed(0),
         inserts_seen(0),
         inserts_ignored(0),
@@ -311,11 +312,11 @@ class TabletBootstrap {
     }
 
     string ToString() const {
-      return Substitute("ops{read=$0 overwritten=$1 applied=$2} "
-                        "inserts{seen=$3 ignored=$4} "
-                        "mutations{seen=$5 ignored=$6} "
-                        "orphaned_commits=$7",
-                        ops_read, ops_overwritten, ops_committed,
+      return Substitute("ops{read=$0 overwritten=$1 applied=$2 ignored=$3} "
+                        "inserts{seen=$4 ignored=$5} "
+                        "mutations{seen=$6 ignored=$7} "
+                        "orphaned_commits=$8",
+                        ops_read, ops_overwritten, ops_committed, ops_ignored,
                         inserts_seen, inserts_ignored,
                         mutations_seen, mutations_ignored,
                         orphaned_commits);
@@ -325,6 +326,10 @@ class TabletBootstrap {
     int ops_read;
     // Number of REPLICATE messages which were overwritten by later entries.
     int ops_overwritten;
+    // Number of REPLICATE messages which were able to be completely ignored
+    // because the COMMIT message indicated that all of the contained operations
+    // were already flushed.
+    int ops_ignored;
     // Number of REPLICATE messages for which a matching COMMIT was found.
     int ops_committed;
 
@@ -1154,8 +1159,31 @@ Status TabletBootstrap::AppendCommitMsg(const CommitMsg& commit_msg) {
   return log_->Append(&commit_entry);
 }
 
+Status TabletBootstrap::DetermineFlushedOps(const TxResultPB& result,
+                                            vector<bool>* flushed_by_op) {
+  int num_ops = result.ops_size();
+  flushed_by_op->resize(num_ops);
+
+  for (int i = 0; i < num_ops; i++) {
+    const auto& orig_op_result = result.ops(i);
+    bool f;
+    RETURN_NOT_OK(FilterOperation(orig_op_result, &f));
+    (*flushed_by_op)[i] = f;
+  }
+  return Status::OK();
+}
+
 Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
                                          const CommitMsg& commit_msg) {
+  // Prepare the commit entry for the rewritten log.
+  LogEntryPB commit_entry;
+  commit_entry.set_type(log::COMMIT);
+  CommitMsg* commit = commit_entry.mutable_commit();
+  commit->CopyFrom(commit_msg);
+
+  // Set up the new transaction.
+  // Even if we're going to ignore the transaction, it's important to
+  // do this so that MVCC advances.
   DCHECK(replicate_msg->has_timestamp());
   WriteRequestPB* write = replicate_msg->mutable_write_request();
 
@@ -1166,23 +1194,36 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
   tablet_->StartTransaction(&tx_state);
   tablet_->StartApplying(&tx_state);
 
-  // Use committed OpId for mem store anchoring.
-  tx_state.mutable_op_id()->CopyFrom(replicate_msg->id());
+  // Determine which of the operations are already flushed to persistent
+  // storage and don't need to be re-applied. We can do this even before
+  // we decode any row operations, so we can short-circuit that decoding
+  // in the case that the entire op has been already flushed.
+  vector<bool> already_flushed;
+  RETURN_NOT_OK(DetermineFlushedOps(commit_msg.result(), &already_flushed));
 
-  if (write->has_row_operations()) {
-    // TODO: get rid of redundant params below - they can be gotten from the Request
-    RETURN_NOT_OK(PlayRowOperations(&tx_state,
-                                    write->schema(),
-                                    write->row_operations(),
-                                    commit_msg.result()));
+  bool all_already_flushed = std::all_of(already_flushed.begin(),
+                                         already_flushed.end(),
+                                         [](bool f) { return f; });
+  if (all_already_flushed) {
+    stats_.ops_ignored++;
+    for (auto& op : *commit->mutable_result()->mutable_ops()) {
+      op.Clear();
+      op.set_flushed(true);
+    }
+  } else {
+    if (write->has_row_operations()) {
+      // TODO: get rid of redundant params below - they can be gotten from the Request
+      RETURN_NOT_OK(PlayRowOperations(&tx_state,
+                                      write->schema(),
+                                      write->row_operations(),
+                                      commit_msg.result(),
+                                      already_flushed));
+    }
+    // Replace the original commit message's result with the new one from
+    // the replayed operation.
+    tx_state.ReleaseTxResultPB(commit->mutable_result());
   }
 
-  // Append the commit msg to the log but replace the result with the new one.
-  LogEntryPB commit_entry;
-  commit_entry.set_type(log::COMMIT);
-  CommitMsg* commit = commit_entry.mutable_commit();
-  commit->CopyFrom(commit_msg);
-  tx_state.ReleaseTxResultPB(commit->mutable_result());
   RETURN_NOT_OK(log_->Append(&commit_entry));
 
   return Status::OK();
@@ -1248,7 +1289,8 @@ Status TabletBootstrap::PlayNoOpRequest(ReplicateMsg* replicate_msg, const Commi
 Status TabletBootstrap::PlayRowOperations(WriteTransactionState* tx_state,
                                           const SchemaPB& schema_pb,
                                           const RowOperationsPB& ops_pb,
-                                          const TxResultPB& result) {
+                                          const TxResultPB& result,
+                                          const vector<bool>& already_flushed) {
   Schema inserts_schema;
   RETURN_NOT_OK_PREPEND(SchemaFromPB(schema_pb, &inserts_schema),
                         "Couldn't decode client schema");
@@ -1256,22 +1298,60 @@ Status TabletBootstrap::PlayRowOperations(WriteTransactionState* tx_state,
   RETURN_NOT_OK_PREPEND(tablet_->DecodeWriteOperations(&inserts_schema, tx_state),
                         Substitute("Could not decode row operations: $0",
                                    ops_pb.ShortDebugString()));
-  CHECK_EQ(tx_state->row_ops().size(), result.ops_size());
+  DCHECK_EQ(tx_state->row_ops().size(), already_flushed.size());
+
+  // Propagate the 'already_flushed' information into the decoded operations.
+  // This signals to ApplyOperations() below that it doesn't need to actually
+  // apply these ops again.
+  for (int i = 0; i < already_flushed.size(); i++) {
+    if (already_flushed[i]) {
+      tx_state->row_ops()[i]->SetAlreadyFlushed();
+    }
+  }
 
   // Run AcquireRowLocks, Apply, etc!
   RETURN_NOT_OK_PREPEND(tablet_->AcquireRowLocks(tx_state),
                         "Failed to acquire row locks");
 
-  RETURN_NOT_OK(FilterAndApplyOperations(tx_state, result));
+  RETURN_NOT_OK(ApplyOperations(tx_state, result));
 
   return Status::OK();
 }
 
-Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state,
-                                                 const TxResultPB& orig_result) {
+Status TabletBootstrap::ApplyOperations(WriteTransactionState* tx_state,
+                                        const TxResultPB& orig_result) {
   int32_t op_idx = 0;
   for (RowOp* op : tx_state->row_ops()) {
     const OperationResultPB& orig_op_result = orig_result.ops(op_idx++);
+
+    // Increment the seen/ignored stats.
+    switch (op->decoded_op.type) {
+      case RowOperationsPB::INSERT: {
+        stats_.inserts_seen++;
+        if (op->has_result()) {
+          stats_.inserts_ignored++;
+        }
+        break;
+      }
+      case RowOperationsPB::UPDATE:
+      case RowOperationsPB::DELETE: {
+        stats_.mutations_seen++;
+        if (op->has_result()) {
+          stats_.mutations_ignored++;
+        }
+        break;
+      }
+      default:
+        LOG_WITH_PREFIX(FATAL) << "Bad op type: " << op->decoded_op.type;
+        break;
+    }
+
+    // If the op is already flushed, no need to replay it.
+    if (op->has_result()) {
+      DCHECK(op->result->flushed());
+      continue;
+    }
+
     op->set_original_result_from_log(&orig_op_result);
 
     // check if the operation failed in the original transaction
@@ -1284,37 +1364,6 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
                             << status.ToString();
       }
       op->SetFailed(status);
-      continue;
-    }
-
-    // Check if it should be filtered out because it's already flushed.
-    switch (op->decoded_op.type) {
-      case RowOperationsPB::INSERT:
-        stats_.inserts_seen++;
-        if (!orig_op_result.flushed()) {
-          RETURN_NOT_OK(FilterInsert(tx_state, op, orig_op_result));
-        } else {
-          op->SetAlreadyFlushed();
-          stats_.inserts_ignored++;
-          continue;
-        }
-        break;
-      case RowOperationsPB::UPDATE:
-      case RowOperationsPB::DELETE:
-        stats_.mutations_seen++;
-        if (!orig_op_result.flushed()) {
-          RETURN_NOT_OK(FilterMutate(tx_state, op, orig_op_result));
-        } else {
-          op->SetAlreadyFlushed();
-          stats_.mutations_ignored++;
-          continue;
-        }
-        break;
-      default:
-        LOG_WITH_PREFIX(FATAL) << "Bad op type: " << op->decoded_op.type;
-        break;
-    }
-    if (op->result != nullptr) {
       continue;
     }
 
@@ -1338,43 +1387,17 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
   return Status::OK();
 }
 
-Status TabletBootstrap::FilterInsert(WriteTransactionState* tx_state,
-                                     RowOp* op,
-                                     const OperationResultPB& op_result) {
-  DCHECK_EQ(op->decoded_op.type, RowOperationsPB::INSERT);
-
-  // INSERTs are never duplicated.
-  if (PREDICT_FALSE(op_result.mutated_stores_size() != 1 ||
-                    !op_result.mutated_stores(0).has_mrs_id())) {
-    return Status::Corruption(Substitute("Insert operation result must have an mrs_id: $0",
-                                         op_result.ShortDebugString()));
+Status TabletBootstrap::FilterOperation(const OperationResultPB& op_result,
+                                        bool* already_flushed) {
+  // If the operation failed or was skipped, originally, no need to re-apply it.
+  if (op_result.has_failed_status() || op_result.flushed()) {
+    *already_flushed = true;
+    return Status::OK();
   }
-  // check if the insert is already flushed
-  if (!flushed_stores_.IsMemStoreActive(op_result.mutated_stores(0))) {
-    if (VLOG_IS_ON(1)) {
-      VLOG_WITH_PREFIX(1) << "Skipping insert that was already flushed. OpId: "
-                          << tx_state->op_id().DebugString()
-                          << " flushed to: " << op_result.mutated_stores(0).mrs_id()
-                          << " latest durable mrs id: "
-                          << tablet_->metadata()->last_durable_mrs_id();
-    }
-
-    op->SetAlreadyFlushed();
-    stats_.inserts_ignored++;
-  }
-  return Status::OK();
-}
-
-Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
-                                     RowOp* op,
-                                     const OperationResultPB& op_result) {
-  DCHECK(op->decoded_op.type == RowOperationsPB::UPDATE ||
-         op->decoded_op.type == RowOperationsPB::DELETE)
-    << RowOperationsPB::Type_Name(op->decoded_op.type);
 
   int num_mutated_stores = op_result.mutated_stores_size();
   if (PREDICT_FALSE(num_mutated_stores == 0 || num_mutated_stores > 2)) {
-    return Status::Corruption(Substitute("Mutations must have one or two mutated_stores: $0",
+    return Status::Corruption(Substitute("All operations must have one or two mutated_stores: $0",
                                          op_result.ShortDebugString()));
   }
 
@@ -1384,19 +1407,12 @@ Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
   for (const MemStoreTargetPB& mutated_store : op_result.mutated_stores()) {
     if (flushed_stores_.IsMemStoreActive(mutated_store)) {
       num_active_stores++;
-    } else {
-      if (VLOG_IS_ON(1)) {
-        string mutation = op->decoded_op.changelist.ToString(*tablet_->schema());
-        VLOG_WITH_PREFIX(1) << "Skipping mutation to " << mutated_store.ShortDebugString()
-                            << " that was not active. OpId: " << tx_state->op_id().DebugString();
-      }
     }
   }
 
   if (num_active_stores == 0) {
     // The mutation was fully flushed.
-    op->SetFailed(Status::AlreadyPresent("Update was already flushed."));
-    stats_.mutations_ignored++;
+    *already_flushed = true;
     return Status::OK();
   }
 
@@ -1410,6 +1426,7 @@ Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
                               op_result.ShortDebugString());
   }
 
+  *already_flushed = false;
   return Status::OK();
 }
 

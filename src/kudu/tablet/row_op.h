@@ -57,6 +57,10 @@ struct RowOp {
     return row_lock.acquired();
   }
 
+  bool has_result() const {
+    return result != nullptr;
+  }
+
   std::string ToString(const Schema& schema) const;
 
   // The original operation as decoded from the client request.
