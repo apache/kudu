@@ -48,7 +48,7 @@
 #define HOST_NAME_MAX 64
 #endif
 
-DEFINE_bool(fail_dns_resolution, false, "Wether to fail all dns resolution, for tests.");
+DEFINE_bool(fail_dns_resolution, false, "Whether to fail all dns resolution, for tests.");
 TAG_FLAG(fail_dns_resolution, hidden);
 
 using std::unordered_set;

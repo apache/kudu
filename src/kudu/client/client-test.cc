@@ -1551,12 +1551,9 @@ TEST_F(ClientTest, TestFailedDnsResolution) {
   }
 
   // Now re-enable dns resolution, the write should succeed.
-  {
-    google::FlagSaver saver;
-    FLAGS_fail_dns_resolution = false;
-    ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
-    ASSERT_OK(session->Flush());
-  }
+  FLAGS_fail_dns_resolution = false;
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
+  ASSERT_OK(session->Flush());
 }
 
 // Test which does an async flush and then drops the reference
