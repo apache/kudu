@@ -187,11 +187,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // If the log is corrupted (i.e. the returned 'Status' is 'Corruption') all
   // the log entries read up to the corrupted one are returned in the 'entries'
   // vector.
-  //
-  // If 'end_offset' is not NULL, then returns the file offset following the last
-  // successfully read entry.
-  Status ReadEntries(std::vector<LogEntryPB*>* entries,
-                     int64_t* end_offset = NULL);
+  Status ReadEntries(std::vector<LogEntryPB*>* entries);
 
   // Rebuilds this segment's footer by scanning its entries.
   // This is an expensive operation as it reads and parses the whole segment
@@ -453,6 +449,11 @@ void CreateBatchFromAllocatedOperations(const std::vector<consensus::ReplicateRe
 
 // Checks if 'fname' is a correctly formatted name of log segment file.
 bool IsLogFileName(const std::string& fname);
+
+// Update 'footer' to reflect the given REPLICATE message 'entry_pb'.
+// In particular, updates the min/max seen replicate OpID.
+void UpdateFooterForReplicateEntry(
+    const LogEntryPB& entry_pb, LogSegmentFooterPB* footer);
 
 }  // namespace log
 }  // namespace kudu

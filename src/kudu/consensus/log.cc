@@ -572,15 +572,7 @@ void Log::UpdateFooterForBatch(LogEntryBatch* batch) {
   if (batch->type_ == REPLICATE) {
     // Update the index bounds for the current segment.
     for (const LogEntryPB& entry_pb : batch->entry_batch_pb_->entry()) {
-      int64_t index = entry_pb.replicate().id().index();
-      if (!footer_builder_.has_min_replicate_index() ||
-          index < footer_builder_.min_replicate_index()) {
-        footer_builder_.set_min_replicate_index(index);
-      }
-      if (!footer_builder_.has_max_replicate_index() ||
-          index > footer_builder_.max_replicate_index()) {
-        footer_builder_.set_max_replicate_index(index);
-      }
+      UpdateFooterForReplicateEntry(entry_pb, &footer_builder_);
     }
   }
 }

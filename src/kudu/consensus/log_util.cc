@@ -333,37 +333,31 @@ Status ReadableLogSegment::RebuildFooterByScanning() {
                "path", path_);
 
   DCHECK(!footer_.IsInitialized());
-  vector<LogEntryPB*> entries;
-  ElementDeleter deleter(&entries);
-  int64_t end_offset = 0;
-  RETURN_NOT_OK(ReadEntries(&entries, &end_offset));
 
-  footer_.set_num_entries(entries.size());
+  LogEntryReader reader(this);
 
-  // Rebuild the min/max replicate index (by scanning)
-  for (const LogEntryPB* entry : entries) {
-    if (entry->has_replicate()) {
-      int64_t index = entry->replicate().id().index();
-      // TODO: common code with Log::UpdateFooterForBatch
-      if (!footer_.has_min_replicate_index() ||
-          index < footer_.min_replicate_index()) {
-        footer_.set_min_replicate_index(index);
-      }
-      if (!footer_.has_max_replicate_index() ||
-          index > footer_.max_replicate_index()) {
-        footer_.set_max_replicate_index(index);
-      }
+  LogSegmentFooterPB new_footer;
+  int num_entries = 0;
+  LogEntryPB entry;
+  while (true) {
+    Status s = reader.ReadNextEntry(&entry);
+    if (s.IsEndOfFile()) break;
+    RETURN_NOT_OK(s);
+
+    if (entry.has_replicate()) {
+      UpdateFooterForReplicateEntry(entry, &new_footer);
     }
+    num_entries++;
   }
 
+  new_footer.set_num_entries(num_entries);
+  footer_ = new_footer;
   DCHECK(footer_.IsInitialized());
-  DCHECK_EQ(entries.size(), footer_.num_entries());
   footer_was_rebuilt_ = true;
-
-  readable_to_offset_.Store(end_offset);
+  readable_to_offset_.Store(reader.offset());
 
   LOG(INFO) << "Successfully rebuilt footer for segment: " << path_
-            << " (valid entries through byte offset " << end_offset << ")";
+            << " (valid entries through byte offset " << reader.offset() << ")";
   return Status::OK();
 }
 
@@ -553,21 +547,10 @@ Status ReadableLogSegment::ParseFooterMagicAndFooterLength(const Slice &data,
   return Status::OK();
 }
 
-Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries,
-                                       int64_t* end_offset) {
+Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries) {
   TRACE_EVENT1("log", "ReadableLogSegment::ReadEntries",
                "path", path_);
   LogEntryReader reader(this);
-
-  // On any exit from this function, callers expect 'end_offset' to be
-  // set to the offset of the last successfully read operation.
-  // TODO: once RebuildFooterByScanning() is converted to use the iterator
-  // directly, we can remove the 'end_offset' argument.
-  auto set_end_offset = MakeScopedCleanup([&] {
-      if (end_offset != nullptr) {
-        *end_offset = reader.offset();
-      }
-    });
 
   while (true) {
     unique_ptr<LogEntryPB> entry(new LogEntryPB());
@@ -837,6 +820,20 @@ bool IsLogFileName(const string& fname) {
   }
 
   return true;
+}
+
+void UpdateFooterForReplicateEntry(const LogEntryPB& entry_pb,
+                                   LogSegmentFooterPB* footer) {
+  DCHECK(entry_pb.has_replicate());
+  int64_t index = entry_pb.replicate().id().index();
+  if (!footer->has_min_replicate_index() ||
+      index < footer->min_replicate_index()) {
+    footer->set_min_replicate_index(index);
+  }
+  if (!footer->has_max_replicate_index() ||
+      index > footer->max_replicate_index()) {
+    footer->set_max_replicate_index(index);
+  }
 }
 
 }  // namespace log

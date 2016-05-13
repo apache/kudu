@@ -228,7 +228,6 @@ class Log : public RefCountedThreadSafe<Log> {
   //
   // This method is thread-safe.
   void SetSchemaForNextLogSegment(const Schema& schema, uint32_t version);
-
  private:
   friend class LogTest;
   friend class LogTestBase;
