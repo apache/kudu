@@ -266,7 +266,7 @@
     </repository>
     <snapshotRepository>
       <id>cdh.snapshots.repo</id>
-      <url>http://maven.jenkins.cloudera.com:8081/artifactory/libs-snapshot-local</url>
+      <url>http://maven.jenkins.cloudera.com:8081/artifactory/cdh-snapshot-local</url>
       <name>Snapshots Repository</name>
     </snapshotRepository>
   </distributionManagement>
