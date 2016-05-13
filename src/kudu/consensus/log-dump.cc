@@ -156,26 +156,28 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   if (FLAGS_print_headers) {
     cout << "Header:\n" << segment->header().DebugString();
   }
-  vector<LogEntryPB*> entries;
-  RETURN_NOT_OK(segment->ReadEntries(&entries));
-
   if (print_type == DONT_PRINT) return Status::OK();
 
   Schema tablet_schema;
   RETURN_NOT_OK(SchemaFromPB(segment->header().schema(), &tablet_schema));
 
-  for (LogEntryPB* entry : entries) {
+  LogEntryReader reader(segment.get());
+  LogEntryPB entry;
+  while (true) {
+    Status s = reader.ReadNextEntry(&entry);
+    if (s.IsEndOfFile()) break;
+    RETURN_NOT_OK(s);
 
     if (print_type == PRINT_PB) {
       if (FLAGS_truncate_data > 0) {
-        pb_util::TruncateFields(entry, FLAGS_truncate_data);
+        pb_util::TruncateFields(&entry, FLAGS_truncate_data);
       }
 
-      cout << "Entry:\n" << entry->DebugString();
+      cout << "Entry:\n" << entry.DebugString();
     } else if (print_type == PRINT_DECODED) {
-      RETURN_NOT_OK(PrintDecoded(*entry, tablet_schema));
+      RETURN_NOT_OK(PrintDecoded(entry, tablet_schema));
     } else if (print_type == PRINT_ID) {
-      PrintIdOnly(*entry);
+      PrintIdOnly(entry);
     }
   }
   if (FLAGS_print_headers && segment->HasFooter()) {
