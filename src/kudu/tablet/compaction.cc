@@ -637,7 +637,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 
     // Skip anything not committed.
     if (!snap.IsCommitted(redo_mut->timestamp())) {
-      continue;
+      break;
     }
 
     undo_encoder.Reset();
