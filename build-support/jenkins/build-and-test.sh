@@ -117,6 +117,10 @@ BUILD_ROOT=$SOURCE_ROOT/build/$BUILD_TYPE_LOWER
 rm -rf $BUILD_ROOT
 mkdir -p $BUILD_ROOT
 
+# Same for the Java tests, which aren't inside BUILD_ROOT
+rm -rf $SOURCE_ROOT/java/*/target/surefire-reports
+rm -rf $SOURCE_ROOT/java/*/target/testdata
+
 list_flaky_tests() {
   local url="http://$TEST_RESULT_SERVER/list_failed_tests?num_days=3&build_pattern=%25kudu-test%25"
   >&2 echo Fetching flaky test list from "$url" ...
@@ -312,10 +316,6 @@ if [ "$BUILD_JAVA" == "1" ]; then
   echo
   echo Building and testing java...
   echo ------------------------------------------------------------
-
-  # Remove testing artifacts from the previous run.
-  rm -rf $SOURCE_ROOT/java/*/target/surefire-reports
-  rm -rf $SOURCE_ROOT/java/*/target/testdata
 
   # Make sure we use JDK7
   export JAVA_HOME=$JAVA7_HOME
