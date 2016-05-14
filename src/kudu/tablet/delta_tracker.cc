@@ -269,41 +269,24 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
   return Status::OK();
 }
 
-void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore> > *deltas) const {
+void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore>>* deltas,
+                                 WhichStores which) const {
   lock_guard<rw_spinlock> lock(&component_lock_);
-  deltas->assign(undo_delta_stores_.begin(), undo_delta_stores_.end());
-  deltas->insert(deltas->end(), redo_delta_stores_.begin(), redo_delta_stores_.end());
-  deltas->push_back(dms_);
-}
-
-Status DeltaTracker::CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) const {
-  std::vector<shared_ptr<DeltaStore> > undos;
-  {
-    lock_guard<rw_spinlock> lock(&component_lock_);
-    undos = undo_delta_stores_;
+  if (which != REDOS_ONLY) {
+    deltas->assign(undo_delta_stores_.begin(), undo_delta_stores_.end());
   }
-  for (const shared_ptr<DeltaStore>& undo : undos) {
-    DeltaFileReader* dfr = down_cast<DeltaFileReader*>(undo.get());
-
-    // Even though IsRelevantForSnapshot() is safe to call without
-    // initializing the reader, the assertion being tested by this function
-    // will probably fail without real delta stats.
-    RETURN_NOT_OK(dfr->Init());
-
-    CHECK(!dfr->IsRelevantForSnapshot(snap))
-      << "Invalid snapshot " << snap.ToString()
-      << " does not come after undo file " << undo->ToString()
-      << " with stats: " << dfr->delta_stats().ToString();
+  if (which != UNDOS_ONLY) {
+    deltas->insert(deltas->end(), redo_delta_stores_.begin(), redo_delta_stores_.end());
+    deltas->push_back(dms_);
   }
-
-  return Status::OK();
 }
 
 Status DeltaTracker::NewDeltaIterator(const Schema* schema,
                                       const MvccSnapshot& snap,
+                                      WhichStores which,
                                       shared_ptr<DeltaIterator>* out) const {
   std::vector<shared_ptr<DeltaStore> > stores;
-  CollectStores(&stores);
+  CollectStores(&stores, which);
   return DeltaIteratorMerger::Create(stores, schema, snap, out);
 }
 
@@ -411,7 +394,8 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   gscoped_ptr<DeltaStats> stats;
   RETURN_NOT_OK(dms->FlushToFile(&dfw, &stats));
   RETURN_NOT_OK(dfw.Finish());
-  LOG(INFO) << "Flushed delta block: " << block_id.ToString();
+  LOG(INFO) << "Flushed delta block: " << block_id.ToString()
+            << " ts range: [" << stats->min_timestamp() << ", " << stats->max_timestamp() << "]";
 
   // Now re-open for read
   gscoped_ptr<ReadableBlock> readable_block;

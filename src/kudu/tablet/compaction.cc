@@ -523,28 +523,19 @@ Status CompactionInput::Create(const DiskRowSet &rowset,
                                gscoped_ptr<CompactionInput>* out) {
   CHECK(projection->has_column_ids());
 
-  // Assertion which checks for an earlier bug where the compaction snapshot
-  // chosen was too early. This resulted in UNDO files being mistakenly
-  // identified as REDO files and corruption ensued. If the assertion fails,
-  // the process crashes; only unrelated I/O-related errors are returned.
-  RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->CheckSnapshotComesAfterAllUndos(snap),
-                        "Could not open UNDOs");
-
   shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection));
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
-  // Creates a DeltaIteratorMerger that will only include part of the redo deltas,
-  // since 'snap' will be after the snapshot of the last flush/compaction,
-  // i.e. past all undo deltas's max transaction ID.
+
+  // Creates a DeltaIteratorMerger that will only include the relevant REDO deltas.
   shared_ptr<DeltaIterator> redo_deltas;
-  RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(projection, snap, &redo_deltas),
-                        "Could not open REDOs");
-  // Creates a DeltaIteratorMerger that will only include undo deltas, since
-  // MvccSnapshot::CreateSnapshotIncludingNoTransactions() excludes all redo
-  // deltas's min transaction ID.
+  RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(
+      projection, snap, DeltaTracker::REDOS_ONLY, &redo_deltas), "Could not open REDOs");
+  // Creates a DeltaIteratorMerger that will only include UNDO deltas. Using the
+  // "empty" snapshot ensures that all deltas are included.
   shared_ptr<DeltaIterator> undo_deltas;
-  RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(projection,
-          MvccSnapshot::CreateSnapshotIncludingNoTransactions(),
-          &undo_deltas), "Could not open UNDOs");
+  RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(
+      projection, MvccSnapshot::CreateSnapshotIncludingNoTransactions(),
+      DeltaTracker::UNDOS_ONLY, &undo_deltas), "Could not open UNDOs");
 
   out->reset(new DiskRowSetCompactionInput(std::move(base_iter), redo_deltas, undo_deltas));
   return Status::OK();

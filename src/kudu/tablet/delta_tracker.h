@@ -76,14 +76,35 @@ class DeltaTracker {
                       const MvccSnapshot &mvcc_snap,
                       gscoped_ptr<ColumnwiseIterator>* out) const;
 
-  // TODO: this shouldn't need to return a shared_ptr, but there is some messiness
-  // where this has bled around.
+  // Enum used for NewDeltaIterator() and CollectStores() below.
+  // Determines whether all types of stores should be considered,
+  // or just UNDO or REDO stores.
+  enum WhichStores {
+    UNDOS_AND_REDOS,
+    UNDOS_ONLY,
+    REDOS_ONLY
+  };
+
+  // Create a new DeltaIterator which merges the delta stores tracked
+  // by this DeltaTracker. Depending on the value of 'which' (see above),
+  // this iterator may include UNDOs, REDOs, or both.
   //
   // 'schema' is the schema of the rows that are being read by the client.
   // It must remain valid for the lifetime of the returned iterator.
+  //
+  // TODO: this shouldn't need to return a shared_ptr, but there is some messiness
+  // where this has bled around.
   Status NewDeltaIterator(const Schema* schema,
                           const MvccSnapshot& snap,
+                          WhichStores which,
                           std::shared_ptr<DeltaIterator>* out) const;
+
+  Status NewDeltaIterator(const Schema* schema,
+                          const MvccSnapshot& snap,
+                          std::shared_ptr<DeltaIterator>* out) const {
+    return NewDeltaIterator(schema, snap, UNDOS_AND_REDOS, out);
+  }
+
 
   // Like NewDeltaIterator() but only includes file based stores, does not include
   // the DMS.
@@ -94,14 +115,6 @@ class DeltaTracker {
     DeltaType type,
     std::vector<std::shared_ptr<DeltaStore> >* included_stores,
     std::shared_ptr<DeltaIterator>* out) const;
-
-  // CHECKs that the given snapshot includes all of the UNDO stores in this
-  // delta tracker. If this is not the case, crashes the process. This is
-  // used as an assertion during compaction, where we always expect the
-  // compaction snapshot to be in the future relative to any UNDOs.
-  //
-  // Returns a bad status in the event of an I/O related error.
-  Status CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) const;
 
   Status Open();
 
@@ -197,8 +210,9 @@ class DeltaTracker {
                   std::shared_ptr<DeltaFileReader>* dfr,
                   MetadataFlushType flush_type);
 
-  // This collects all undo and redo stores.
-  void CollectStores(vector<std::shared_ptr<DeltaStore> > *stores) const;
+  // This collects undo and/or redo stores into '*stores'.
+  void CollectStores(vector<std::shared_ptr<DeltaStore>>* stores,
+                     WhichStores which) const;
 
   // Performs the actual compaction. Results of compaction are written to "block",
   // while delta stores that underwent compaction are appended to "compacted_stores", while
