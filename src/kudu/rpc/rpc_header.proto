@@ -110,6 +110,23 @@ message RemoteMethodPB {
   required string method_name = 2;
 };
 
+// The Id of a retriable RPC, whose results should be tracked on the server (see result_tracker.h).
+// This also includes some information that is useful for execution/garbage collection.
+message RequestIdPB {
+  // The (globally unique) id of the client performing this RPC.
+  required string client_id = 1;
+
+  // The (per-client unique) sequence number of this RPC.
+  required int64 seq_no = 2;
+
+  // The sequence number of the first RPC that has not been marked as completed by the client.
+  // Unset if there isn't an incomplete RPC.
+  optional int64 first_incomplete_seq_no = 3;
+
+  // The number of times this RPC has been tried, only set after the first attempt.
+  optional int32 attempt_no = 4;
+}
+
 // The header for the RPC request frame.
 message RequestHeader {
   // A sequence number that is sent back in the Response. Hadoop specifies a uint32 and
@@ -142,6 +159,11 @@ message RequestHeader {
   // NOTE: the server will only interpret this field if it supports the
   // APPLICATION_FEATURE_FLAGS flag.
   repeated uint32 required_feature_flags = 11;
+
+  // The unique id of this request, if it's retriable and if the results are to be tracked.
+  // Optional for requests that are naturally idempotent or to maintain compatibility with
+  // older clients for requests that are not.
+  optional RequestIdPB request_id = 15;
 }
 
 message ResponseHeader {
