@@ -143,7 +143,7 @@ Get familiar with these guidelines so that your contributions can be reviewed an
 integrated quickly and easily.
 
 In general, Kudu follows the
-link:http://google-styleguide.googlecode.com/svn/trunk/cppguide.xml[Google {cpp} Style Guide],
+link:https://google.github.io/styleguide/cppguide.html[Google {cpp} Style Guide],
 with the following exceptions:
 
 === Limitations on `boost` Library Use
