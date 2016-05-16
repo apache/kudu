@@ -1536,11 +1536,12 @@ TEST_F(ClientTest, TestFailedDnsResolution) {
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   // First time disable dns resolution.
-  // Set the timeout to be short since we know it can't succeed
+  // Set the timeout to be short since we know it can't succeed, but not to the point where we
+  // can timeout before getting the dns error.
   {
     google::FlagSaver saver;
     FLAGS_fail_dns_resolution = true;
-    session->SetTimeoutMillis(100);
+    session->SetTimeoutMillis(500);
     ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
     Status s = session->Flush();
     ASSERT_TRUE(s.IsIOError()) << "unexpected status: " << s.ToString();
