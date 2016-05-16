@@ -21,9 +21,9 @@
 #include <iostream>
 
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/metadata.h"
 #include "kudu/server/clock.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"

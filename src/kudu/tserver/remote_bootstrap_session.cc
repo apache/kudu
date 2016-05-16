@@ -21,12 +21,12 @@
 
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/type_traits.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mutex.h"

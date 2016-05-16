@@ -24,8 +24,8 @@
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/rowid.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/server/metadata.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/util/atomic.h"

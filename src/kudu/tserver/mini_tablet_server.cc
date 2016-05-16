@@ -22,9 +22,14 @@
 #include <glog/logging.h>
 
 #include "kudu/common/schema.h"
+#include "kudu/consensus/consensus.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/local_consensus.h"
+#include "kudu/consensus/log.h"
+#include "kudu/consensus/log.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/metadata.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver.h"
 #include "kudu/tablet/maintenance_manager.h"
@@ -33,11 +38,6 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
-#include "kudu/consensus/log.h"
-#include "kudu/consensus/log.pb.h"
-#include "kudu/consensus/consensus.h"
-#include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/local_consensus.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 

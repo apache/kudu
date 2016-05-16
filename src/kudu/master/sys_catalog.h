@@ -20,8 +20,8 @@
 #include <string>
 #include <vector>
 
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/status.h"
 

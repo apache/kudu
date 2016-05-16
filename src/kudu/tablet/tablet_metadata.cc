@@ -24,6 +24,7 @@
 #include <string>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/atomicops.h"
@@ -32,7 +33,6 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/metadata.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"

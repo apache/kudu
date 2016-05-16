@@ -24,8 +24,8 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/server/logical_clock.h"
-#include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/env.h"
 #include "kudu/util/mem_tracker.h"
