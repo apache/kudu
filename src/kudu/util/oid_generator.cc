@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/thread/locks.hpp>
 #include <string>
 
 #include "kudu/gutil/stringprintf.h"
@@ -24,7 +23,7 @@
 namespace kudu {
 
 string ObjectIdGenerator::Next() {
-  boost::lock_guard<LockType> l(oid_lock_);
+  lock_guard<LockType> l(&oid_lock_);
   boost::uuids::uuid oid = oid_generator_();
   const uint8_t *uuid = oid.data;
   return StringPrintf("%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
