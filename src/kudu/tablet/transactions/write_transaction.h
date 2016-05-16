@@ -216,7 +216,7 @@ class WriteTransactionState : public TransactionState {
 // Executes a write transaction.
 class WriteTransaction : public Transaction {
  public:
-  WriteTransaction(WriteTransactionState* tx_state, consensus::DriverType type);
+  WriteTransaction(std::unique_ptr<WriteTransactionState> tx_state, consensus::DriverType type);
 
   virtual WriteTransactionState* state() OVERRIDE { return state_.get(); }
   virtual const WriteTransactionState* state() const OVERRIDE { return state_.get(); }
@@ -263,7 +263,7 @@ class WriteTransaction : public Transaction {
   // this transaction's start time
   MonoTime start_time_;
 
-  gscoped_ptr<WriteTransactionState> state_;
+  std::unique_ptr<WriteTransactionState> state_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WriteTransaction);

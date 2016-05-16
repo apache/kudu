@@ -63,6 +63,7 @@ using kudu::tablet::TabletPeer;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
 using std::shared_ptr;
+using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
@@ -331,10 +332,11 @@ Status SysCatalogTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *re
   CountDownLatch latch(1);
   gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
     new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, resp));
-  auto tx_state = new tablet::WriteTransactionState(tablet_peer_.get(), req, resp);
+  unique_ptr<tablet::WriteTransactionState> tx_state(
+      new tablet::WriteTransactionState(tablet_peer_.get(), req, resp));
   tx_state->set_completion_callback(std::move(txn_callback));
 
-  RETURN_NOT_OK(tablet_peer_->SubmitWrite(tx_state));
+  RETURN_NOT_OK(tablet_peer_->SubmitWrite(std::move(tx_state)));
   latch.Wait();
 
   if (resp->has_error()) {

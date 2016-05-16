@@ -109,6 +109,7 @@ using consensus::VoteResponsePB;
 using google::protobuf::RepeatedPtrField;
 using rpc::RpcContext;
 using std::shared_ptr;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::AlterSchemaTransactionState;
@@ -553,7 +554,7 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
     return;
   }
 
-  gscoped_ptr<AlterSchemaTransactionState> tx_state(
+  unique_ptr<AlterSchemaTransactionState> tx_state(
     new AlterSchemaTransactionState(tablet_peer.get(), req, resp));
 
   tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
@@ -723,7 +724,9 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     return;
   }
 
-  auto tx_state = new WriteTransactionState(tablet_peer.get(), req, resp);
+  unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(tablet_peer.get(),
+                                                                       req,
+                                                                       resp));
 
   // If the client sent us a timestamp, decode it and update the clock so that all future
   // timestamps are greater than the passed timestamp.
@@ -743,7 +746,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                                                             resp)));
 
   // Submit the write. The RPC will be responded to asynchronously.
-  s = tablet_peer->SubmitWrite(tx_state);
+  s = tablet_peer->SubmitWrite(std::move(tx_state));
 
   // Check that we could submit the write
   if (PREDICT_FALSE(!s.ok())) {

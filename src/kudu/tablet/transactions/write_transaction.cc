@@ -53,11 +53,12 @@ using consensus::WRITE_OP;
 using tserver::TabletServerErrorPB;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
+using std::unique_ptr;
 using strings::Substitute;
 
-WriteTransaction::WriteTransaction(WriteTransactionState* state, DriverType type)
-  : Transaction(state, type, Transaction::WRITE_TXN),
-  state_(state) {
+WriteTransaction::WriteTransaction(unique_ptr<WriteTransactionState> state, DriverType type)
+  : Transaction(state.get(), type, Transaction::WRITE_TXN),
+  state_(std::move(state)) {
   start_time_ = MonoTime::Now(MonoTime::FINE);
 }
 

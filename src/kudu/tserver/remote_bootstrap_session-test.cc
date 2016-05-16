@@ -44,6 +44,7 @@ METRIC_DECLARE_entity(tablet);
 
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 
 namespace kudu {
 namespace tserver {
@@ -160,10 +161,11 @@ class RemoteBootstrapTest : public KuduTabletTest {
       WriteResponsePB resp;
       CountDownLatch latch(1);
 
-      auto state = new WriteTransactionState(tablet_peer_.get(), &req, &resp);
+      unique_ptr<tablet::WriteTransactionState> state(
+          new tablet::WriteTransactionState(tablet_peer_.get(), &req, &resp));
       state->set_completion_callback(gscoped_ptr<tablet::TransactionCompletionCallback>(
           new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)));
-      ASSERT_OK(tablet_peer_->SubmitWrite(state));
+      ASSERT_OK(tablet_peer_->SubmitWrite(std::move(state)));
       latch.Wait();
       ASSERT_FALSE(resp.has_error()) << "Request failed: " << resp.error().ShortDebugString();
       ASSERT_EQ(0, resp.per_row_errors_size()) << "Insert error: " << resp.ShortDebugString();

@@ -100,7 +100,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // The caller is expected to build and pass a TrasactionContext that points
   // to the RPC WriteRequest, WriteResponse, RpcContext and to the tablet's
   // MvccManager.
-  Status SubmitWrite(WriteTransactionState *tx_state);
+  Status SubmitWrite(std::unique_ptr<WriteTransactionState> tx_state);
 
   // Called by the tablet service to start an alter schema transaction.
   //
@@ -113,7 +113,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // The AlterSchema operation is taking the tablet component lock in exclusive mode
   // meaning that no other operation on the tablet can be executed while the
   // AlterSchema is in progress.
-  Status SubmitAlterSchema(gscoped_ptr<AlterSchemaTransactionState> tx_state);
+  Status SubmitAlterSchema(std::unique_ptr<AlterSchemaTransactionState> tx_state);
 
   void GetTabletStatusPB(TabletStatusPB* status_pb_out) const;
 

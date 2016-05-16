@@ -36,6 +36,7 @@ using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::DriverType;
+using std::unique_ptr;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 using tserver::AlterSchemaRequestPB;
@@ -62,10 +63,10 @@ void AlterSchemaTransactionState::ReleaseSchemaLock() {
 }
 
 
-AlterSchemaTransaction::AlterSchemaTransaction(AlterSchemaTransactionState* state,
+AlterSchemaTransaction::AlterSchemaTransaction(unique_ptr<AlterSchemaTransactionState> state,
                                                DriverType type)
-    : Transaction(state, type, Transaction::ALTER_SCHEMA_TXN),
-      state_(state) {
+    : Transaction(state.get(), type, Transaction::ALTER_SCHEMA_TXN),
+      state_(std::move(state)) {
 }
 
 void AlterSchemaTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {

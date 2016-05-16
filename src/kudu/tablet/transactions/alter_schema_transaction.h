@@ -102,7 +102,8 @@ class AlterSchemaTransactionState : public TransactionState {
 // Executes the alter schema transaction,.
 class AlterSchemaTransaction : public Transaction {
  public:
-  AlterSchemaTransaction(AlterSchemaTransactionState* tx_state, consensus::DriverType type);
+  AlterSchemaTransaction(std::unique_ptr<AlterSchemaTransactionState> tx_state,
+                         consensus::DriverType type);
 
   virtual AlterSchemaTransactionState* state() OVERRIDE { return state_.get(); }
   virtual const AlterSchemaTransactionState* state() const OVERRIDE { return state_.get(); }
@@ -127,7 +128,7 @@ class AlterSchemaTransaction : public Transaction {
   virtual std::string ToString() const OVERRIDE;
 
  private:
-  gscoped_ptr<AlterSchemaTransactionState> state_;
+  std::unique_ptr<AlterSchemaTransactionState> state_;
   DISALLOW_COPY_AND_ASSIGN(AlterSchemaTransaction);
 };
 

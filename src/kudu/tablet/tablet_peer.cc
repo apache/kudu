@@ -51,6 +51,7 @@
 #include "kudu/util/trace.h"
 
 using std::shared_ptr;
+using std::unique_ptr;
 
 namespace kudu {
 namespace tablet {
@@ -326,20 +327,21 @@ Status TabletPeer::WaitUntilConsensusRunning(const MonoDelta& timeout) {
   return Status::OK();
 }
 
-Status TabletPeer::SubmitWrite(WriteTransactionState *state) {
+Status TabletPeer::SubmitWrite(unique_ptr<WriteTransactionState> state) {
   RETURN_NOT_OK(CheckRunning());
 
-  gscoped_ptr<WriteTransaction> transaction(new WriteTransaction(state, consensus::LEADER));
+  gscoped_ptr<WriteTransaction> transaction(new WriteTransaction(std::move(state),
+                                                                 consensus::LEADER));
   scoped_refptr<TransactionDriver> driver;
   RETURN_NOT_OK(NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver));
   return driver->ExecuteAsync();
 }
 
-Status TabletPeer::SubmitAlterSchema(gscoped_ptr<AlterSchemaTransactionState> state) {
+Status TabletPeer::SubmitAlterSchema(unique_ptr<AlterSchemaTransactionState> state) {
   RETURN_NOT_OK(CheckRunning());
 
   gscoped_ptr<AlterSchemaTransaction> transaction(
-      new AlterSchemaTransaction(state.release(), consensus::LEADER));
+      new AlterSchemaTransaction(std::move(state), consensus::LEADER));
   scoped_refptr<TransactionDriver> driver;
   RETURN_NOT_OK(NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver));
   return driver->ExecuteAsync();
@@ -491,20 +493,21 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
     {
       DCHECK(replicate_msg->has_write_request()) << "WRITE_OP replica"
           " transaction must receive a WriteRequestPB";
-      transaction.reset(new WriteTransaction(
-          new WriteTransactionState(this, &replicate_msg->write_request()),
-          consensus::REPLICA));
+      unique_ptr<WriteTransactionState> tx_state(
+          new WriteTransactionState(this, &replicate_msg->write_request()));
+
+      transaction.reset(new WriteTransaction(std::move(tx_state), consensus::REPLICA));
       break;
     }
     case ALTER_SCHEMA_OP:
     {
       DCHECK(replicate_msg->has_alter_schema_request()) << "ALTER_SCHEMA_OP replica"
           " transaction must receive an AlterSchemaRequestPB";
+      unique_ptr<AlterSchemaTransactionState> tx_state(
+          new AlterSchemaTransactionState(this, &replicate_msg->alter_schema_request(),
+                                          nullptr));
       transaction.reset(
-          new AlterSchemaTransaction(
-              new AlterSchemaTransactionState(this, &replicate_msg->alter_schema_request(),
-                                              nullptr),
-              consensus::REPLICA));
+          new AlterSchemaTransaction(std::move(tx_state), consensus::REPLICA));
       break;
     }
     default:
