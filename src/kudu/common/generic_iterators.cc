@@ -37,6 +37,7 @@ using std::remove_if;
 using std::shared_ptr;
 using std::sort;
 using std::string;
+using std::unique_ptr;
 using std::tuple;
 
 DEFINE_bool(materializing_iterator_do_pushdown, true,
@@ -160,13 +161,15 @@ MergeIterator::MergeIterator(
   orig_iters_.assign(iters.begin(), iters.end());
 }
 
+MergeIterator::~MergeIterator() {}
+
 Status MergeIterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
   // TODO: check that schemas match up!
 
   RETURN_NOT_OK(InitSubIterators(spec));
 
-  for (shared_ptr<MergeIterState> &state : iters_) {
+  for (unique_ptr<MergeIterState> &state : iters_) {
     RETURN_NOT_OK(state->PullNextBlock());
   }
 
@@ -174,7 +177,7 @@ Status MergeIterator::Init(ScanSpec *spec) {
   // to start with. Otherwise, HasNext() won't properly return false
   // if we were passed only empty iterators.
   iters_.erase(
-      remove_if(iters_.begin(), iters_.end(), [] (const shared_ptr<MergeIterState>& iter) {
+      remove_if(iters_.begin(), iters_.end(), [] (const unique_ptr<MergeIterState>& iter) {
         return PREDICT_FALSE(iter->IsFullyExhausted());
       }),
       iters_.end());
@@ -193,7 +196,7 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   for (shared_ptr<RowwiseIterator> &iter : orig_iters_) {
     ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
     RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, spec_copy));
-    iters_.push_back(shared_ptr<MergeIterState>(new MergeIterState(iter)));
+    iters_.push_back(unique_ptr<MergeIterState>(new MergeIterState(iter)));
   }
 
   // Since we handle predicates in all the wrapped iterators, we can clear
@@ -222,7 +225,7 @@ void MergeIterator::PrepareBatch(RowBlock* dst) {
   // We can always provide at least as many rows as are remaining
   // in the currently queued up blocks.
   size_t available = 0;
-  for (shared_ptr<MergeIterState> &iter : iters_) {
+  for (unique_ptr<MergeIterState> &iter : iters_) {
     available += iter->remaining_in_block();
   }
 
@@ -246,7 +249,7 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
     // Typically the number of iters_ is not that large, so using a priority
     // queue is not worth it
     for (size_t i = 0; i < iters_.size(); i++) {
-      shared_ptr<MergeIterState> &state = iters_[i];
+      unique_ptr<MergeIterState> &state = iters_[i];
 
       if (smallest == nullptr ||
           schema_.Compare(state->next_row(), smallest->next_row()) < 0) {

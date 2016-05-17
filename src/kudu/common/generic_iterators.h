@@ -43,6 +43,7 @@ class MergeIterator : public RowwiseIterator {
   // a subset of the columns in 'iters'.
   MergeIterator(const Schema &schema,
                 const std::vector<std::shared_ptr<RowwiseIterator> > &iters);
+  virtual ~MergeIterator();
 
   // The passed-in iterators should be already initialized.
   Status Init(ScanSpec *spec) OVERRIDE;
@@ -69,7 +70,7 @@ class MergeIterator : public RowwiseIterator {
   // Holds the subiterators until Init is called.
   // This is required because we can't create a MergeIterState of an uninitialized iterator.
   std::deque<std::shared_ptr<RowwiseIterator> > orig_iters_;
-  std::vector<std::shared_ptr<MergeIterState> > iters_;
+  std::vector<std::unique_ptr<MergeIterState> > iters_;
 
   // When the underlying iterators are initialized, each needs its own
   // copy of the scan spec in order to do its own pushdown calculations, etc.
