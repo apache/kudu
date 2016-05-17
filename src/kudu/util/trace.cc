@@ -246,4 +246,9 @@ void Trace::AddChildTrace(StringPiece label, Trace* child_trace) {
   child_traces_.emplace_back(label, ptr);
 }
 
+std::vector<std::pair<StringPiece, scoped_refptr<Trace>>> Trace::ChildTraces() const {
+  lock_guard<simple_spinlock> l(&lock_);
+  return child_traces_;
+}
+
 } // namespace kudu

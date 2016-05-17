@@ -257,6 +257,13 @@ class CalculatorService : public CalculatorServiceIf {
   void DoSleep(const SleepRequestPB *req,
                RpcContext *context) {
     TRACE_COUNTER_INCREMENT("test_sleep_us", req->sleep_micros());
+    if (Trace::CurrentTrace()) {
+      scoped_refptr<Trace> child_trace(new Trace());
+      Trace::CurrentTrace()->AddChildTrace("test_child", child_trace.get());
+      ADOPT_TRACE(child_trace.get());
+      TRACE_COUNTER_INCREMENT("related_trace_metric", 1);
+    }
+
     SleepFor(MonoDelta::FromMicroseconds(req->sleep_micros()));
     context->RespondSuccess();
   }
