@@ -55,6 +55,14 @@ message DumpRunningRpcsResponsePB {
 
 //------------------------------------------------------------
 
+// A particular TraceMetric key/value pair from a sampled RPC.
+message TraceMetricPB {
+  // A '.'-separated path through the parent-child trace hierarchy.
+  optional string child_path = 1;
+  optional string key = 2;
+  optional int64 value = 3;
+}
+
 // A single sampled RPC call.
 message RpczSamplePB {
   // The original request header.
@@ -63,6 +71,8 @@ message RpczSamplePB {
   optional string trace = 2;
   // The number of millis that this call took to complete.
   optional int32 duration_ms = 3;
+  // The metrics from the sampled trace.
+  repeated TraceMetricPB metrics = 4;
 }
 
 // A set of samples for a particular RPC method.

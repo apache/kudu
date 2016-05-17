@@ -538,8 +538,22 @@ TEST_F(RpcStubTest, TestDumpSampledCalls) {
   DumpRpczStoreResponsePB sampled_rpcs;
   server_messenger_->rpcz_store()->DumpPB(DumpRpczStoreRequestPB(), &sampled_rpcs);
   EXPECT_EQ(sampled_rpcs.methods_size(), 1);
-  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(), "{\\\"test_sleep_us\\\":150000");
-  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(), "{\\\"test_sleep_us\\\":1500000}");
+  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(),
+                      "    metrics {\n"
+                      "      key: \"test_sleep_us\"\n"
+                      "      value: 150000\n"
+                      "    }\n");
+  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(),
+                      "    metrics {\n"
+                      "      key: \"test_sleep_us\"\n"
+                      "      value: 1500000\n"
+                      "    }\n");
+  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(),
+                      "    metrics {\n"
+                      "      child_path: \"test_child\"\n"
+                      "      key: \"related_trace_metric\"\n"
+                      "      value: 1\n"
+                      "    }");
   ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(), "SleepRequestPB");
   ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(), "duration_ms");
 }

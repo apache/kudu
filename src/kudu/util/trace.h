@@ -166,6 +166,9 @@ class Trace : public RefCountedThreadSafe<Trace> {
   // into this trace's arena.
   void AddChildTrace(StringPiece label, Trace* child_trace);
 
+  // Return a copy of the current set of related "child" traces.
+  std::vector<std::pair<StringPiece, scoped_refptr<Trace>>> ChildTraces() const;
+
   // Return the current trace attached to this thread, if there is one.
   static Trace* CurrentTrace() {
     return threadlocal_trace_;
@@ -178,6 +181,9 @@ class Trace : public RefCountedThreadSafe<Trace> {
 
   TraceMetrics* metrics() {
     return &metrics_;
+  }
+  const TraceMetrics& metrics() const {
+    return metrics_;
   }
 
  private:
