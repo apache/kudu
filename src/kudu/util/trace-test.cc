@@ -829,7 +829,7 @@ TEST_F(TraceTest, TestTraceMetrics) {
   for (int i = 0; i < 1000; i++) {
     trace->metrics()->Increment("baz", i);
   }
-  EXPECT_EQ("{\"foo\":10,\"bar\":10,\"baz\":499500}",
+  EXPECT_EQ("{\"bar\":10,\"baz\":499500,\"foo\":10}",
             trace->MetricsAsJSON());
 
   {

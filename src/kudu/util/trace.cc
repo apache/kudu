@@ -20,8 +20,9 @@
 #include <iomanip>
 #include <ios>
 #include <iostream>
-#include <strstream>
+#include <map>
 #include <string>
+#include <strstream>
 #include <utility>
 #include <vector>
 
@@ -201,9 +202,15 @@ string Trace::MetricsAsJSON() const {
 }
 
 void Trace::MetricsToJSON(JsonWriter* jw) const {
+  // Convert into a map with 'std::string' keys instead of 'const char*'
+  // keys, so that the results are in a consistent (sorted) order.
+  std::map<string, int64_t> counters;
+  for (const auto& entry : metrics_.Get()) {
+    counters[entry.first] = entry.second;
+  }
+
   jw->StartObject();
-  auto m = metrics_.Get();
-  for (const auto& e : m) {
+  for (const auto& e : counters) {
     jw->String(e.first);
     jw->Int64(e.second);
   }
