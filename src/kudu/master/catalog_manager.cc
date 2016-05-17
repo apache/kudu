@@ -277,8 +277,11 @@ class TabletLoader : public TabletVisitor {
 class CatalogManagerBgTasks {
  public:
   explicit CatalogManagerBgTasks(CatalogManager *catalog_manager)
-    : closing_(false), pending_updates_(false),
-      thread_(nullptr), catalog_manager_(catalog_manager) {
+    : closing_(false),
+      pending_updates_(false),
+      cond_(&lock_),
+      thread_(nullptr),
+      catalog_manager_(catalog_manager) {
   }
 
   ~CatalogManagerBgTasks() {}
@@ -287,25 +290,24 @@ class CatalogManagerBgTasks {
   void Shutdown();
 
   void Wake() {
-    boost::lock_guard<boost::mutex> lock(lock_);
+    MutexLock lock(lock_);
     pending_updates_ = true;
-    cond_.notify_all();
+    cond_.Broadcast();
   }
 
   void Wait(int msec) {
-    boost::unique_lock<boost::mutex> lock(lock_);
+    MutexLock lock(lock_);
     if (closing_) return;
     if (!pending_updates_) {
-      boost::system_time wtime = boost::get_system_time() + boost::posix_time::milliseconds(msec);
-      cond_.timed_wait(lock, wtime);
+      cond_.TimedWait(MonoDelta::FromMilliseconds(msec));
     }
     pending_updates_ = false;
   }
 
   void WakeIfHasPendingUpdates() {
-    boost::lock_guard<boost::mutex> lock(lock_);
+    MutexLock lock(lock_);
     if (pending_updates_) {
-      cond_.notify_all();
+      cond_.Broadcast();
     }
   }
 
@@ -315,8 +317,8 @@ class CatalogManagerBgTasks {
  private:
   Atomic32 closing_;
   bool pending_updates_;
-  mutable boost::mutex lock_;
-  boost::condition_variable cond_;
+  mutable Mutex lock_;
+  ConditionVariable cond_;
   scoped_refptr<kudu::Thread> thread_;
   CatalogManager *catalog_manager_;
 };

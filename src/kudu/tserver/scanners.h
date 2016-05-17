@@ -33,6 +33,7 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/oid_generator.h"
 
 namespace kudu {
@@ -123,8 +124,8 @@ class ScannerManager {
   // If true, removal thread should shut itself down. Protected
   // by 'shutdown_lock_' and 'shutdown_cv_'.
   bool shutdown_;
-  mutable boost::mutex shutdown_lock_;
-  boost::condition_variable shutdown_cv_;
+  mutable Mutex shutdown_lock_;
+  ConditionVariable shutdown_cv_;
 
   std::vector<ScannerMapStripe*> scanner_maps_;
 

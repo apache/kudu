@@ -51,7 +51,8 @@ using tablet::TabletPeer;
 namespace tserver {
 
 ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
-  : shutdown_(false) {
+    : shutdown_(false),
+      shutdown_cv_(&shutdown_lock_) {
   if (metric_entity) {
     metrics_.reset(new ScannerMetrics(metric_entity));
     METRIC_active_scanners.InstantiateFunctionGauge(
@@ -66,9 +67,9 @@ ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
 
 ScannerManager::~ScannerManager() {
   {
-    boost::lock_guard<boost::mutex> l(shutdown_lock_);
+    MutexLock l(shutdown_lock_);
     shutdown_ = true;
-    shutdown_cv_.notify_all();
+    shutdown_cv_.Broadcast();
   }
   if (removal_thread_.get() != nullptr) {
     CHECK_OK(ThreadJoiner(removal_thread_.get()).Join());
@@ -87,13 +88,11 @@ void ScannerManager::RunRemovalThread() {
   while (true) {
     // Loop until we are shutdown.
     {
-      boost::unique_lock<boost::mutex> l(shutdown_lock_);
+      MutexLock l(shutdown_lock_);
       if (shutdown_) {
         return;
       }
-      boost::system_time wtime = boost::get_system_time() +
-          boost::posix_time::microseconds(FLAGS_scanner_gc_check_interval_us);
-      shutdown_cv_.timed_wait(l, wtime);
+      shutdown_cv_.TimedWait(MonoDelta::FromMicroseconds(FLAGS_scanner_gc_check_interval_us));
     }
     RemoveExpiredScanners();
   }
