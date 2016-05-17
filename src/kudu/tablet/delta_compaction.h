@@ -54,7 +54,7 @@ class MajorDeltaCompaction {
   // in an ALTER scenario?
   MajorDeltaCompaction(
       FsManager* fs_manager, const Schema& base_schema, CFileSet* base_data,
-      std::shared_ptr<DeltaIterator> delta_iter,
+      std::unique_ptr<DeltaIterator> delta_iter,
       std::vector<std::shared_ptr<DeltaStore> > included_stores,
       const std::vector<ColumnId>& col_ids);
   ~MajorDeltaCompaction();
@@ -113,7 +113,7 @@ class MajorDeltaCompaction {
   const SharedDeltaStoreVector included_stores_;
 
   // The merged view of the deltas from included_stores_.
-  const std::shared_ptr<DeltaIterator> delta_iter_;
+  const std::unique_ptr<DeltaIterator> delta_iter_;
 
   // Outputs:
   gscoped_ptr<MultiColumnWriter> base_data_writer_;

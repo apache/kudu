@@ -39,6 +39,7 @@
 #include "kudu/util/debug/trace_event.h"
 
 using std::shared_ptr;
+using std::unique_ptr;
 using std::unordered_set;
 using strings::Substitute;
 
@@ -134,8 +135,8 @@ class MemRowSetCompactionInput : public CompactionInput {
 class DiskRowSetCompactionInput : public CompactionInput {
  public:
   DiskRowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
-                            shared_ptr<DeltaIterator> redo_delta_iter,
-                            shared_ptr<DeltaIterator> undo_delta_iter)
+                            unique_ptr<DeltaIterator> redo_delta_iter,
+                            unique_ptr<DeltaIterator> undo_delta_iter)
       : base_iter_(std::move(base_iter)),
         redo_delta_iter_(std::move(redo_delta_iter)),
         undo_delta_iter_(std::move(undo_delta_iter)),
@@ -198,8 +199,8 @@ class DiskRowSetCompactionInput : public CompactionInput {
  private:
   DISALLOW_COPY_AND_ASSIGN(DiskRowSetCompactionInput);
   gscoped_ptr<RowwiseIterator> base_iter_;
-  shared_ptr<DeltaIterator> redo_delta_iter_;
-  shared_ptr<DeltaIterator> undo_delta_iter_;
+  unique_ptr<DeltaIterator> redo_delta_iter_;
+  unique_ptr<DeltaIterator> undo_delta_iter_;
 
   Arena arena_;
 
@@ -527,17 +528,19 @@ Status CompactionInput::Create(const DiskRowSet &rowset,
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
 
   // Creates a DeltaIteratorMerger that will only include the relevant REDO deltas.
-  shared_ptr<DeltaIterator> redo_deltas;
+  unique_ptr<DeltaIterator> redo_deltas;
   RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(
       projection, snap, DeltaTracker::REDOS_ONLY, &redo_deltas), "Could not open REDOs");
   // Creates a DeltaIteratorMerger that will only include UNDO deltas. Using the
   // "empty" snapshot ensures that all deltas are included.
-  shared_ptr<DeltaIterator> undo_deltas;
+  unique_ptr<DeltaIterator> undo_deltas;
   RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(
       projection, MvccSnapshot::CreateSnapshotIncludingNoTransactions(),
       DeltaTracker::UNDOS_ONLY, &undo_deltas), "Could not open UNDOs");
 
-  out->reset(new DiskRowSetCompactionInput(std::move(base_iter), redo_deltas, undo_deltas));
+  out->reset(new DiskRowSetCompactionInput(std::move(base_iter),
+                                           std::move(redo_deltas),
+                                           std::move(undo_deltas)));
   return Status::OK();
 }
 

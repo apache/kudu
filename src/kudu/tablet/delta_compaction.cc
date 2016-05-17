@@ -43,6 +43,7 @@ using cfile::CFileIterator;
 using cfile::CFileReader;
 using cfile::IndexTreeIterator;
 using fs::WritableBlock;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -58,7 +59,7 @@ const size_t kRowsPerBlock = 100; // Number of rows per block of columns
 // to materialize it? should write a test for this.
 MajorDeltaCompaction::MajorDeltaCompaction(
     FsManager* fs_manager, const Schema& base_schema, CFileSet* base_data,
-    shared_ptr<DeltaIterator> delta_iter,
+    unique_ptr<DeltaIterator> delta_iter,
     vector<shared_ptr<DeltaStore> > included_stores,
     const vector<ColumnId>& col_ids)
     : fs_manager_(fs_manager),

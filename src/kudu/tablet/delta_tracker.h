@@ -91,17 +91,14 @@ class DeltaTracker {
   //
   // 'schema' is the schema of the rows that are being read by the client.
   // It must remain valid for the lifetime of the returned iterator.
-  //
-  // TODO: this shouldn't need to return a shared_ptr, but there is some messiness
-  // where this has bled around.
   Status NewDeltaIterator(const Schema* schema,
                           const MvccSnapshot& snap,
                           WhichStores which,
-                          std::shared_ptr<DeltaIterator>* out) const;
+                          std::unique_ptr<DeltaIterator>* out) const;
 
   Status NewDeltaIterator(const Schema* schema,
                           const MvccSnapshot& snap,
-                          std::shared_ptr<DeltaIterator>* out) const {
+                          std::unique_ptr<DeltaIterator>* out) const {
     return NewDeltaIterator(schema, snap, UNDOS_AND_REDOS, out);
   }
 
@@ -114,7 +111,7 @@ class DeltaTracker {
     const MvccSnapshot &snap,
     DeltaType type,
     std::vector<std::shared_ptr<DeltaStore> >* included_stores,
-    std::shared_ptr<DeltaIterator>* out) const;
+    std::unique_ptr<DeltaIterator>* out) const;
 
   Status Open();
 
@@ -239,7 +236,7 @@ class DeltaTracker {
                                          const Schema* schema,
                                          vector<std::shared_ptr<DeltaStore > > *target_stores,
                                          vector<BlockId> *target_blocks,
-                                         std::shared_ptr<DeltaIterator> *out);
+                                         std::unique_ptr<DeltaIterator> *out);
 
   std::shared_ptr<RowSetMetadata> rowset_metadata_;
 

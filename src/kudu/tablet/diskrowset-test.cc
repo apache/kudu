@@ -41,6 +41,7 @@ DECLARE_int32(tablet_delta_store_minor_compact_max);
 
 using std::is_sorted;
 using std::shared_ptr;
+using std::unique_ptr;
 using std::unordered_set;
 
 namespace kudu {
@@ -446,7 +447,7 @@ TEST_F(TestRowSet, TestMakeDeltaIteratorMergerUnlocked) {
   int num_stores = dt->redo_delta_stores_.size();
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
-  shared_ptr<DeltaIterator> merge_iter;
+  unique_ptr<DeltaIterator> merge_iter;
   ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(0, num_stores - 1, &schema_,
                                                        &compacted_stores,
                                                        &compacted_blocks, &merge_iter));
@@ -521,7 +522,7 @@ TEST_F(TestRowSet, TestCompactStores) {
   // Verify that the resulting deltafile is valid
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
-  shared_ptr<DeltaIterator> merge_iter;
+  unique_ptr<DeltaIterator> merge_iter;
   ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(0, num_stores - 1, &schema_,
                                                        &compacted_stores,
                                                        &compacted_blocks, &merge_iter));

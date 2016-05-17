@@ -38,6 +38,7 @@ using fs::ReadableBlock;
 using fs::WritableBlock;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using strings::Substitute;
 
 DeltaTracker::DeltaTracker(shared_ptr<RowSetMetadata> rowset_metadata,
@@ -109,7 +110,7 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t en
                                                      const Schema* projection,
                                                      vector<shared_ptr<DeltaStore> > *target_stores,
                                                      vector<BlockId> *target_blocks,
-                                                     std::shared_ptr<DeltaIterator> *out) {
+                                                     std::unique_ptr<DeltaIterator> *out) {
   CHECK(open_);
   CHECK_LE(start_idx, end_idx);
   CHECK_LT(end_idx, redo_delta_stores_.size());
@@ -249,7 +250,7 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
          gscoped_ptr<WritableBlock> block,
          vector<shared_ptr<DeltaStore> > *compacted_stores,
          vector<BlockId> *compacted_blocks) {
-  shared_ptr<DeltaIterator> inputs_merge;
+  unique_ptr<DeltaIterator> inputs_merge;
 
   // Currently, DeltaFile iterators ignore the passed-in projection in
   // FilterColumnIdsAndCollectDeltas(). So, we just pass an empty schema here.
@@ -284,7 +285,7 @@ void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore>>* deltas,
 Status DeltaTracker::NewDeltaIterator(const Schema* schema,
                                       const MvccSnapshot& snap,
                                       WhichStores which,
-                                      shared_ptr<DeltaIterator>* out) const {
+                                      unique_ptr<DeltaIterator>* out) const {
   std::vector<shared_ptr<DeltaStore> > stores;
   CollectStores(&stores, which);
   return DeltaIteratorMerger::Create(stores, schema, snap, out);
@@ -295,7 +296,7 @@ Status DeltaTracker::NewDeltaFileIterator(
     const MvccSnapshot& snap,
     DeltaType type,
     vector<shared_ptr<DeltaStore> >* included_stores,
-    shared_ptr<DeltaIterator>* out) const {
+    unique_ptr<DeltaIterator>* out) const {
   {
     lock_guard<rw_spinlock> lock(&component_lock_);
     // TODO perf: is this really needed? Will check
@@ -323,10 +324,10 @@ Status DeltaTracker::NewDeltaFileIterator(
 Status DeltaTracker::WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
                                   const MvccSnapshot &mvcc_snap,
                                   gscoped_ptr<ColumnwiseIterator>* out) const {
-  shared_ptr<DeltaIterator> iter;
+  unique_ptr<DeltaIterator> iter;
   RETURN_NOT_OK(NewDeltaIterator(&base->schema(), mvcc_snap, &iter));
 
-  out->reset(new DeltaApplier(base, iter));
+  out->reset(new DeltaApplier(base, std::move(iter)));
   return Status::OK();
 }
 

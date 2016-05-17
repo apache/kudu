@@ -63,6 +63,7 @@ using fs::WritableBlock;
 using log::LogAnchorRegistry;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 
 const char *DiskRowSet::kMinKeyMetaEntryName = "min_key";
 const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";
@@ -554,7 +555,7 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
   const Schema* schema = &rowset_metadata_->tablet_schema();
 
   vector<shared_ptr<DeltaStore> > included_stores;
-  shared_ptr<DeltaIterator> delta_iter;
+  unique_ptr<DeltaIterator> delta_iter;
   RETURN_NOT_OK(delta_tracker_->NewDeltaFileIterator(
     schema,
     MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
@@ -565,7 +566,7 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
   out->reset(new MajorDeltaCompaction(rowset_metadata_->fs_manager(),
                                       *schema,
                                       base_data_.get(),
-                                      delta_iter,
+                                      std::move(delta_iter),
                                       included_stores,
                                       col_ids));
   return Status::OK();

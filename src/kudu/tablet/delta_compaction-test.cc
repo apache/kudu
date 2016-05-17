@@ -42,6 +42,7 @@ DEFINE_int32(num_delta_files, 3, "number of delta files");
 using std::is_sorted;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -181,7 +182,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   // Merge
   MvccSnapshot snap(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
   const Schema& merge_schema = schemas.back();
-  shared_ptr<DeltaIterator> merge_iter;
+  unique_ptr<DeltaIterator> merge_iter;
   ASSERT_OK(DeltaIteratorMerger::Create(inputs, &merge_schema,
                                         snap, &merge_iter));
   gscoped_ptr<DeltaFileWriter> dfw;

@@ -26,13 +26,14 @@
 
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 
 namespace kudu {
 namespace tablet {
 
   // Construct. The base_iter and delta_iter should not be Initted.
 DeltaApplier::DeltaApplier(shared_ptr<CFileSet::Iterator> base_iter,
-                           shared_ptr<DeltaIterator> delta_iter)
+                           unique_ptr<DeltaIterator> delta_iter)
     : base_iter_(std::move(base_iter)),
       delta_iter_(std::move(delta_iter)),
       first_prepare_(true) {}
