@@ -403,24 +403,23 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
     cur_undo_writer_->WriteDeltaStats(*cur_undo_delta_stats);
     cur_redo_writer_->WriteDeltaStats(*cur_redo_delta_stats);
 
-    RETURN_NOT_OK(cur_undo_writer_->FinishAndReleaseBlock(&block_closer_));
-    RETURN_NOT_OK(cur_redo_writer_->FinishAndReleaseBlock(&block_closer_));
-
-    // If the writer is not null _AND_ we've written something to the undo
-    // delta store commit the undo delta block.
-    if (cur_undo_writer_.get() != nullptr &&
-        cur_undo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
+    // Commit the UNDO block. Status::Aborted() indicates that there
+    // were no UNDOs written.
+    Status s = cur_undo_writer_->FinishAndReleaseBlock(&block_closer_);
+    if (!s.IsAborted()) {
+      RETURN_NOT_OK(s);
       cur_drs_metadata_->CommitUndoDeltaDataBlock(cur_undo_ds_block_id_);
+    } else {
+      DCHECK_EQ(cur_undo_delta_stats->min_timestamp(), Timestamp::kMax);
     }
 
-    // If the writer is not null _AND_ we've written something to the redo
-    // delta store commit the redo delta block.
-    if (cur_redo_writer_.get() != nullptr &&
-        cur_redo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
+    // Same for the REDO block.
+    s = cur_redo_writer_->FinishAndReleaseBlock(&block_closer_);
+    if (!s.IsAborted()) {
+      RETURN_NOT_OK(s);
       cur_drs_metadata_->CommitRedoDeltaDataBlock(0, cur_redo_ds_block_id_);
     } else {
-      // TODO: KUDU-678: the block will get orphaned here, since we're not putting
-      // it in the metadata, nor deleting it.
+      DCHECK_EQ(cur_redo_delta_stats->min_timestamp(), Timestamp::kMax);
     }
 
     written_size_ += cur_writer_->written_size();

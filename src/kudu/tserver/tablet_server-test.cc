@@ -1930,10 +1930,9 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
                               &buf));
 
   // Verify data was actually removed.
-  // TODO(KUDU-678): this should be 0 but we leak an empty delta block.
   const int block_count_after_delete = ondisk->value();
   if (FLAGS_block_manager == "log") {
-    ASSERT_EQ(block_count_after_delete, 1);
+    ASSERT_EQ(block_count_after_delete, 0);
   }
 
   // Verify that after restarting the TS, the tablet is still not in the tablet manager.

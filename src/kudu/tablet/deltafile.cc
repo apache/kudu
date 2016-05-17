@@ -88,6 +88,10 @@ Status DeltaFileWriter::Finish() {
 }
 
 Status DeltaFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
+  if (writer_->written_value_count() == 0) {
+    LOG(WARNING) << "no deltas written, off=" << writer_->written_size();
+    return Status::Aborted("no deltas written");
+  }
   return writer_->FinishAndReleaseBlock(closer);
 }
 

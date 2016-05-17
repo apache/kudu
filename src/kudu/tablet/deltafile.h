@@ -65,9 +65,13 @@ class DeltaFileWriter {
   Status Start();
 
   // Closes the delta file, including the underlying writable block.
+  // Returns Status::Aborted() if no deltas were ever appended to this
+  // writer.
   Status Finish();
 
   // Closes the delta file, releasing the underlying block to 'closer'.
+  // Returns Status::Aborted() if no deltas were ever appended to this
+  // writer.
   Status FinishAndReleaseBlock(fs::ScopedWritableBlockCloser* closer);
 
   // Append a given delta to the file. This must be called in ascending order

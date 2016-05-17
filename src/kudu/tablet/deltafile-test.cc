@@ -367,5 +367,22 @@ TEST_F(TestDeltaFile, TestLazyInit) {
   ASSERT_EQ(bytes_read_after_init, bytes_read);
 }
 
+// Check that, if a delta file is opened but no deltas are written,
+// Finish() will return Status::Aborted().
+TEST_F(TestDeltaFile, TestEmptyFileIsAborted) {
+  gscoped_ptr<WritableBlock> block;
+  ASSERT_OK(fs_manager_->CreateNewBlock(&block));
+  test_block_ = block->id();
+  DeltaFileWriter dfw(std::move(block));
+  ASSERT_OK(dfw.Start());
+  Status s = dfw.Finish();
+  ASSERT_TRUE(s.IsAborted());
+
+  // The block should have been deleted as well.
+  gscoped_ptr<ReadableBlock> rb;
+  s = fs_manager_->OpenBlock(test_block_, &rb);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+}
+
 } // namespace tablet
 } // namespace kudu

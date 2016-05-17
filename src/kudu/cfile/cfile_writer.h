@@ -150,6 +150,13 @@ class CFileWriter {
   // More data may be written by Finish(), but this is an approximation.
   size_t written_size() const;
 
+  // Return the number of values written to the file.
+  // This includes NULL cells, but does not include any "raw" blocks
+  // appended.
+  int written_value_count() const {
+    return value_count_;
+  }
+
   std::string ToString() const { return block_->id().ToString(); }
 
   // Wrapper for AddBlock() to append the dictionary block to the end of a Cfile.
