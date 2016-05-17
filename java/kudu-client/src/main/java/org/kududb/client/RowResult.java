@@ -132,6 +132,7 @@ public class RowResult {
   public int getInt(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
+    checkType(columnIndex, Type.INT32);
     return Bytes.getInt(this.rowData.getRawArray(),
         this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex));
   }
@@ -156,6 +157,7 @@ public class RowResult {
   public short getShort(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
+    checkType(columnIndex, Type.INT16);
     return Bytes.getShort(this.rowData.getRawArray(),
         this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex));
   }
@@ -180,6 +182,7 @@ public class RowResult {
   public boolean getBoolean(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
+    checkType(columnIndex, Type.BOOL);
     byte b = Bytes.getByte(this.rowData.getRawArray(),
                          this.rowData.getRawOffset()
                          + getCurrentRowDataOffsetForColumn(columnIndex));
@@ -207,6 +210,7 @@ public class RowResult {
   public byte getByte(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
+    checkType(columnIndex, Type.INT8);
     return Bytes.getByte(this.rowData.getRawArray(),
         this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex));
   }
@@ -239,6 +243,7 @@ public class RowResult {
   public long getLong(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
+    // Can't check type because this could be a long, string, or Timestamp
     return Bytes.getLong(this.rowData.getRawArray(),
                          this.rowData.getRawOffset()
                          + getCurrentRowDataOffsetForColumn(columnIndex));
@@ -251,7 +256,6 @@ public class RowResult {
    */
   public float getFloat(String columnName) {
     return getFloat(this.schema.getColumnIndex(columnName));
-
   }
 
   /**
@@ -262,6 +266,7 @@ public class RowResult {
   public float getFloat(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
+    checkType(columnIndex, Type.FLOAT);
     return Bytes.getFloat(this.rowData.getRawArray(),
                           this.rowData.getRawOffset()
                           + getCurrentRowDataOffsetForColumn(columnIndex));
@@ -285,6 +290,7 @@ public class RowResult {
   public double getDouble(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
+    checkType(columnIndex, Type.DOUBLE);
     return Bytes.getDouble(this.rowData.getRawArray(),
                            this.rowData.getRawOffset()
                            + getCurrentRowDataOffsetForColumn(columnIndex));
@@ -319,6 +325,7 @@ public class RowResult {
   public String getString(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
+    checkType(columnIndex, Type.STRING);
     // C++ puts a Slice in rowData which is 16 bytes long for simplity, but we only support ints
     long offset = getLong(columnIndex);
     long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
@@ -390,6 +397,7 @@ public class RowResult {
   public ByteBuffer getBinary(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
+    checkType(columnIndex, Type.BINARY);
     // C++ puts a Slice in rowData which is 16 bytes long for simplicity,
     // but we only support ints
     long offset = getLong(columnIndex);
@@ -473,6 +481,15 @@ public class RowResult {
     }
     if (isNull(columnIndex)) {
       throw new IllegalArgumentException("The requested column (" + columnIndex + ")  is null");
+    }
+  }
+
+  private void checkType(int columnIndex, Type expectedType) {
+    ColumnSchema columnSchema = schema.getColumnByIndex(columnIndex);
+    Type columnType = columnSchema.getType();
+    if (!columnType.equals(expectedType)) {
+      throw new IllegalArgumentException("Column (" + columnIndex + ") is of type " +
+              columnType.getName() + " but was requested as a type " + expectedType.getName());
     }
   }
 

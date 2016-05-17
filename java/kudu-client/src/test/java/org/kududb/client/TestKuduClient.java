@@ -148,6 +148,20 @@ public class TestKuduClient extends BaseKuduTest {
     assertEquals(
         "STRING key=key_04, STRING c1=c1_4, STRING c2=c2_4, STRING c3=NULL, STRING c4=c4_4",
         rowStrings.get(4));
+
+    KuduScanner scanner = syncClient.newScannerBuilder(table).build();
+
+    assertTrue("Scanner should have returned row", scanner.hasMoreRows());
+
+    RowResultIterator rows = scanner.nextRows();
+    final RowResult next = rows.next();
+
+    // Do negative testing on string type.
+    try {
+      next.getInt("c2");
+      fail("IllegalArgumentException was not thrown when accessing " +
+              "a string column with getInt");
+    } catch (IllegalArgumentException ignored) {}
   }
 
   /**
