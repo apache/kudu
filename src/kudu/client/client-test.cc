@@ -1475,6 +1475,18 @@ static Status ApplyInsertToSession(KuduSession* session,
   return session->Apply(insert.release());
 }
 
+static Status ApplyUpsertToSession(KuduSession* session,
+                                   const shared_ptr<KuduTable>& table,
+                                   int row_key,
+                                   int int_val,
+                                   const char* string_val) {
+  gscoped_ptr<KuduUpsert> upsert(table->NewUpsert());
+  RETURN_NOT_OK(upsert->mutable_row()->SetInt32("key", row_key));
+  RETURN_NOT_OK(upsert->mutable_row()->SetInt32("int_val", int_val));
+  RETURN_NOT_OK(upsert->mutable_row()->SetStringCopy("string_val", string_val));
+  return session->Apply(upsert.release());
+}
+
 static Status ApplyUpdateToSession(KuduSession* session,
                                    const shared_ptr<KuduTable>& table,
                                    int row_key,
@@ -1876,6 +1888,75 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 }
+
+TEST_F(ClientTest, TestUpsert) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  // Perform and verify UPSERT which acts as an INSERT.
+  ASSERT_OK(ApplyUpsertToSession(session.get(), client_table_, 1, 1, "original row"));
+  FlushSessionOrDie(session);
+
+  {
+    vector<string> rows;
+    ScanTableToStrings(client_table_.get(), &rows);
+    EXPECT_EQ(vector<string>({"(int32 key=1, int32 int_val=1, string string_val=original row, "
+              "int32 non_null_with_default=12345)"}),
+      rows);
+  }
+
+  // Perform and verify UPSERT which acts as an UPDATE.
+  ASSERT_OK(ApplyUpsertToSession(session.get(), client_table_, 1, 2, "upserted row"));
+  FlushSessionOrDie(session);
+
+  {
+    vector<string> rows;
+    ScanTableToStrings(client_table_.get(), &rows);
+    EXPECT_EQ(vector<string>({"(int32 key=1, int32 int_val=2, string string_val=upserted row, "
+              "int32 non_null_with_default=12345)"}),
+        rows);
+  }
+
+  // Apply an UPDATE including the column that has a default and verify it.
+  {
+    gscoped_ptr<KuduUpdate> update(client_table_->NewUpdate());
+    KuduPartialRow* row = update->mutable_row();
+    ASSERT_OK(row->SetInt32("key", 1));
+    ASSERT_OK(row->SetStringCopy("string_val", "updated row"));
+    ASSERT_OK(row->SetInt32("non_null_with_default", 999));
+    ASSERT_OK(session->Apply(update.release()));
+    FlushSessionOrDie(session);
+  }
+  {
+    vector<string> rows;
+    ScanTableToStrings(client_table_.get(), &rows);
+    EXPECT_EQ(vector<string>({"(int32 key=1, int32 int_val=2, string string_val=updated row, "
+              "int32 non_null_with_default=999)"}),
+        rows);
+  }
+
+  // Perform another UPSERT. This upsert doesn't specify the 'non_null_with_default'
+  // column, and therefore should not revert it back to its default.
+  ASSERT_OK(ApplyUpsertToSession(session.get(), client_table_, 1, 3, "upserted row 2"));
+  FlushSessionOrDie(session);
+  {
+    vector<string> rows;
+    ScanTableToStrings(client_table_.get(), &rows);
+    EXPECT_EQ(vector<string>({"(int32 key=1, int32 int_val=3, string string_val=upserted row 2, "
+              "int32 non_null_with_default=999)"}),
+        rows);
+  }
+
+  // Delete the row.
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  FlushSessionOrDie(session);
+  {
+    vector<string> rows;
+    ScanTableToStrings(client_table_.get(), &rows);
+    EXPECT_EQ(vector<string>({}), rows);
+  }
+}
+
 
 TEST_F(ClientTest, TestWriteWithBadColumn) {
   shared_ptr<KuduTable> table;

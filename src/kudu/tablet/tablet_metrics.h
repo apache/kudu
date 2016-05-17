@@ -47,6 +47,7 @@ struct TabletMetrics {
 
   // Operation rates
   scoped_refptr<Counter> rows_inserted;
+  scoped_refptr<Counter> rows_upserted;
   scoped_refptr<Counter> rows_updated;
   scoped_refptr<Counter> rows_deleted;
   scoped_refptr<Counter> insertions_failed_dup_key;

@@ -35,6 +35,8 @@ string DecodedRowOperation::ToString(const Schema& schema) const {
   switch (type) {
     case RowOperationsPB::INSERT:
       return "INSERT " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
+    case RowOperationsPB::UPSERT:
+      return "UPSERT " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
     case RowOperationsPB::UPDATE:
     case RowOperationsPB::DELETE:
       return Substitute("MUTATE $0 $1",
@@ -298,9 +300,9 @@ class ClientServerMapping {
 };
 
 
-Status RowOperationsPBDecoder::DecodeInsert(const uint8_t* prototype_row_storage,
-                                            const ClientServerMapping& mapping,
-                                            DecodedRowOperation* op) {
+Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row_storage,
+                                                    const ClientServerMapping& mapping,
+                                                    DecodedRowOperation* op) {
   const uint8_t* client_isset_map;
   const uint8_t* client_null_map;
 
@@ -312,8 +314,10 @@ Status RowOperationsPBDecoder::DecodeInsert(const uint8_t* prototype_row_storage
 
   // Allocate a row with the tablet's layout.
   uint8_t* tablet_row_storage = reinterpret_cast<uint8_t*>(
-    dst_arena_->AllocateBytesAligned(tablet_row_size_, 8));
-  if (PREDICT_FALSE(!tablet_row_storage)) {
+      dst_arena_->AllocateBytesAligned(tablet_row_size_, 8));
+  uint8_t* tablet_isset_bitmap = reinterpret_cast<uint8_t*>(
+      dst_arena_->AllocateBytes(BitmapSize(tablet_schema_->num_columns())));
+  if (PREDICT_FALSE(!tablet_row_storage || !tablet_isset_bitmap)) {
     return Status::RuntimeError("Out of memory");
   }
 
@@ -335,7 +339,9 @@ Status RowOperationsPBDecoder::DecodeInsert(const uint8_t* prototype_row_storage
     DCHECK_GE(tablet_col_idx, 0);
     const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
-    if (BitmapTest(client_isset_map, client_col_idx)) {
+    bool isset = BitmapTest(client_isset_map, client_col_idx);
+    BitmapChange(tablet_isset_bitmap, tablet_col_idx, isset);
+    if (isset) {
       // If the client provided a value for this column, copy it.
 
       // Copy null-ness, if the server side column is nullable.
@@ -362,6 +368,7 @@ Status RowOperationsPBDecoder::DecodeInsert(const uint8_t* prototype_row_storage
   }
 
   op->row_data = tablet_row_storage;
+  op->isset_bitmap = tablet_isset_bitmap;
   return Status::OK();
 }
 
@@ -557,7 +564,8 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
       case RowOperationsPB::UNKNOWN:
         return Status::NotSupported("Unknown row operation type");
       case RowOperationsPB::INSERT:
-        RETURN_NOT_OK(DecodeInsert(prototype_row_storage, mapping, &op));
+      case RowOperationsPB::UPSERT:
+        RETURN_NOT_OK(DecodeInsertOrUpsert(prototype_row_storage, mapping, &op));
         break;
       case RowOperationsPB::UPDATE:
       case RowOperationsPB::DELETE:

@@ -51,9 +51,14 @@ class RowOperationsPBEncoder {
 struct DecodedRowOperation {
   RowOperationsPB::Type type;
 
-  // For INSERT, the whole projected row.
+  // For INSERT or UPSERT, the whole projected row.
   // For UPDATE or DELETE, the row key.
   const uint8_t* row_data;
+
+  // For INSERT or UPDATE, a bitmap indicating which of the cells were
+  // explicitly set by the client, versus being filled-in defaults.
+  // A set bit indicates that the client explicitly set the cell.
+  const uint8_t* isset_bitmap;
 
   // For UPDATE and DELETE types, the changelist
   RowChangeList changelist;
@@ -82,9 +87,9 @@ class RowOperationsPBDecoder {
   Status ReadColumn(const ColumnSchema& col, uint8_t* dst);
   bool HasNext() const;
 
-  Status DecodeInsert(const uint8_t* prototype_row_storage,
-                      const ClientServerMapping& mapping,
-                      DecodedRowOperation* op);
+  Status DecodeInsertOrUpsert(const uint8_t* prototype_row_storage,
+                              const ClientServerMapping& mapping,
+                              DecodedRowOperation* op);
   //------------------------------------------------------------
   // Serialization/deserialization support
   //------------------------------------------------------------

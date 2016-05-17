@@ -71,6 +71,7 @@ TransactionCompletionCallback::~TransactionCompletionCallback() {}
 
 TransactionMetrics::TransactionMetrics()
   : successful_inserts(0),
+    successful_upserts(0),
     successful_updates(0),
     successful_deletes(0),
     commit_wait_duration_usec(0) {

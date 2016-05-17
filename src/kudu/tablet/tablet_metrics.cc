@@ -29,6 +29,9 @@
 METRIC_DEFINE_counter(tablet, rows_inserted, "Rows Inserted",
     kudu::MetricUnit::kRows,
     "Number of rows inserted into this tablet since service start");
+METRIC_DEFINE_counter(tablet, rows_upserted, "Rows Upserted",
+    kudu::MetricUnit::kRows,
+    "Number of rows upserted into this tablet since service start");
 METRIC_DEFINE_counter(tablet, rows_updated, "Rows Updated",
     kudu::MetricUnit::kRows,
     "Number of row update operations performed on this tablet since service start");
@@ -220,6 +223,7 @@ namespace tablet {
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
 TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
   : MINIT(rows_inserted),
+    MINIT(rows_upserted),
     MINIT(rows_updated),
     MINIT(rows_deleted),
     MINIT(insertions_failed_dup_key),

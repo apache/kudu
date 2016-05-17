@@ -383,19 +383,27 @@ class Tablet {
 
   Status FlushUnlocked();
 
-  // A version of Insert that does not acquire locks and instead assumes that
-  // they were already acquired. Requires that handles for the relevant locks
-  // and MVCC transaction are present in the transaction state.
-  Status InsertUnlocked(WriteTransactionState *tx_state,
-                        RowOp* insert,
-                        ProbeStats* stats);
 
-  // A version of MutateRow that does not acquire locks and instead assumes
-  // they were already acquired. Requires that handles for the relevant locks
-  // and MVCC transaction are present in the transaction state.
+  // Perform an INSERT or UPSERT operation, assuming that the transaction is already in
+  // prepared state. This state ensures that:
+  // - the row lock is acquired
+  // - the tablet components have been acquired
+  // - the operation has been decoded
+  Status InsertOrUpsertUnlocked(WriteTransactionState *tx_state,
+                                RowOp* insert,
+                                ProbeStats* stats);
+
+  // Same as above, but for UPDATE.
   Status MutateRowUnlocked(WriteTransactionState *tx_state,
                            RowOp* mutate,
                            ProbeStats* stats);
+
+  // In the case of an UPSERT against a duplicate row, converts the UPSERT
+  // into an internal UPDATE operation and performs it.
+  Status ApplyUpsertAsUpdate(WriteTransactionState *tx_state,
+                             RowOp* upsert,
+                             RowSet* rowset,
+                             ProbeStats* stats);
 
   // Return the list of RowSets that need to be consulted when processing the
   // given mutation.

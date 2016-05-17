@@ -51,6 +51,7 @@ using std::unique_ptr;
 // the fuzz test.
 enum TestOpType {
   TEST_INSERT,
+  TEST_UPSERT,
   TEST_UPDATE,
   TEST_DELETE,
   TEST_FLUSH_OPS,
@@ -82,13 +83,16 @@ using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
 using client::KuduUpdate;
+using client::KuduUpsert;
 using client::KuduValue;
+using client::KuduWriteOperation;
 using client::sp::shared_ptr;
 
 namespace tablet {
 
 const char* TestOpType_names[] = {
   "TEST_INSERT",
+  "TEST_UPSERT",
   "TEST_UPDATE",
   "TEST_DELETE",
   "TEST_FLUSH_OPS",
@@ -105,7 +109,7 @@ struct TestOp {
   // The op to run.
   TestOpType type;
 
-  // For INSERT/UPDATE/DELETE, the key of the row to be modified. Otherwise, unused.
+  // For INSERT/UPSERT/UPDATE/DELETE, the key of the row to be modified. Otherwise, unused.
   int row_key;
 
   string ToString() const {
@@ -189,9 +193,14 @@ class FuzzTest : public KuduTest {
 
   // Adds an insert for the given key/value pair to 'ops', returning the new stringified
   // value of the row.
-  string InsertRow(int key, int val) {
-    unique_ptr<KuduInsert> ins(table_->NewInsert());
-    KuduPartialRow* row = ins->mutable_row();
+  string InsertOrUpsertRow(int key, int val, TestOpType type) {
+    unique_ptr<KuduWriteOperation> op;
+    if (type == TEST_INSERT) {
+      op.reset(table_->NewInsert());
+    } else {
+      op.reset(table_->NewUpsert());
+    }
+    KuduPartialRow* row = op->mutable_row();
     CHECK_OK(row->SetInt32(0, key));
     if (val & 1) {
       CHECK_OK(row->SetNull(1));
@@ -199,7 +208,7 @@ class FuzzTest : public KuduTest {
       CHECK_OK(row->SetInt32(1, val));
     }
     string ret = row->ToString();
-    CHECK_OK(session_->Apply(ins.release()));
+    CHECK_OK(session_->Apply(op.release()));
     return ret;
   }
 
@@ -278,6 +287,20 @@ void GenerateTestCase(vector<TestOp>* ops, int len) {
         exists[row_key] = true;
         ops_pending = true;
         data_in_mrs = true;
+        break;
+      case TEST_UPSERT:
+        ops->push_back({TEST_UPSERT, row_key});
+        exists[row_key] = true;
+        ops_pending = true;
+        // If the row doesn't currently exist, this will act like an insert
+        // and put it into MRS.
+        if (!exists[row_key]) {
+          data_in_mrs = true;
+        } else if (!data_in_mrs) {
+          // If it does exist, but not in MRS, then this will put data into
+          // a DMS.
+          data_in_dms = true;
+        }
         break;
       case TEST_UPDATE:
         if (!exists[row_key]) continue;
@@ -374,7 +397,8 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
     LOG(INFO) << test_op.ToString();
     switch (test_op.type) {
       case TEST_INSERT:
-        pending_val[test_op.row_key] = InsertRow(test_op.row_key, i++);
+      case TEST_UPSERT:
+        pending_val[test_op.row_key] = InsertOrUpsertRow(test_op.row_key, i++, test_op.type);
         break;
       case TEST_UPDATE:
         for (int j = 0; j < update_multiplier; j++) {

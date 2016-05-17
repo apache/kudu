@@ -567,6 +567,28 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
   // TODO: add some more data, re-flush
 }
 
+TYPED_TEST(TestTablet, TestUpsert) {
+  vector<string> rows;
+  this->UpsertTestRows(0, 1, 1000);
+
+  // UPSERT a row that is in MRS.
+  this->UpsertTestRows(0, 1, 1001);
+
+  ASSERT_OK(this->IterateToStringList(&rows));
+  EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1001, false) }, rows);
+
+  // Flush it.
+  ASSERT_OK(this->tablet()->Flush());
+  ASSERT_OK(this->IterateToStringList(&rows));
+  EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1001, false) }, rows);
+
+  // UPSERT a row that is in DRS.
+  this->UpsertTestRows(0, 1, 1002);
+  ASSERT_OK(this->IterateToStringList(&rows));
+  EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1002, false) }, rows);
+}
+
+
 // Test that when a row has been updated many times, it always yields
 // the most recent value.
 TYPED_TEST(TestTablet, TestMultipleUpdates) {

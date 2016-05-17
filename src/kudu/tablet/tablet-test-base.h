@@ -317,14 +317,35 @@ class TabletTestBase : public KuduTabletTest {
                       int64_t count,
                       int32_t val,
                       TimeSeries *ts = NULL) {
+    InsertOrUpsertTestRows(RowOperationsPB::INSERT, first_row, count, val, ts);
+  }
 
+  // Upserts "count" rows.
+  void UpsertTestRows(int64_t first_row,
+                      int64_t count,
+                      int32_t val,
+                      TimeSeries *ts = NULL) {
+    InsertOrUpsertTestRows(RowOperationsPB::UPSERT, first_row, count, val, ts);
+  }
+
+  void InsertOrUpsertTestRows(RowOperationsPB::Type type,
+                              int64_t first_row,
+                              int64_t count,
+                              int32_t val,
+                              TimeSeries *ts = NULL) {
     LocalTabletWriter writer(tablet().get(), &client_schema_);
     KuduPartialRow row(&client_schema_);
 
     uint64_t inserted_since_last_report = 0;
     for (int64_t i = first_row; i < first_row + count; i++) {
       setup_.BuildRow(&row, i, val);
-      CHECK_OK(writer.Insert(row));
+      if (type == RowOperationsPB::INSERT) {
+        CHECK_OK(writer.Insert(row));
+      } else if (type == RowOperationsPB::UPSERT) {
+        CHECK_OK(writer.Upsert(row));
+      } else {
+        LOG(FATAL) << "bad type: " << type;
+      }
 
       if ((inserted_since_last_report++ > 100) && ts) {
         ts->AddValue(static_cast<double>(inserted_since_last_report));

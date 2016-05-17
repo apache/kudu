@@ -96,7 +96,7 @@ void RowOperationsTest::CheckDecodeDoesntCrash(const Schema& client_schema,
 void RowOperationsTest::DoFuzzTest(const Schema& server_schema,
                                    const KuduPartialRow& row,
                                    int n_random_changes) {
-  for (int operation = 0; operation < 3; operation++) {
+  for (int operation = 0; operation <= 4; operation++) {
     RowOperationsPB pb;
     RowOperationsPBEncoder enc(&pb);
 
@@ -105,12 +105,15 @@ void RowOperationsTest::DoFuzzTest(const Schema& server_schema,
         enc.Add(RowOperationsPB::INSERT, row);
         break;
       case 1:
-        enc.Add(RowOperationsPB::UPDATE, row);
+        enc.Add(RowOperationsPB::UPSERT, row);
         break;
       case 2:
-        enc.Add(RowOperationsPB::DELETE, row);
+        enc.Add(RowOperationsPB::UPDATE, row);
         break;
       case 3:
+        enc.Add(RowOperationsPB::DELETE, row);
+        break;
+      case 4:
         enc.Add(RowOperationsPB::SPLIT_ROW, row);
         break;
     }

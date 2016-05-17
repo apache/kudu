@@ -91,13 +91,23 @@ class TestRandomAccess : public KuduTabletTest {
     for (int i = 0; i < 3; i++) {
       int new_val = rand();
       if (cur_val.empty()) {
-        // If there is no row, then insert one.
-        cur_val = InsertRow(key, new_val, &pending);
+        // If there is no row, then randomly insert or upsert.
+        if (rand() % 2 == 1) {
+          cur_val = InsertRow(key, new_val, &pending);
+        } else {
+          cur_val = UpsertRow(key, new_val, &pending);
+        }
       } else {
         if (new_val % (FLAGS_update_delete_ratio + 1) == 0) {
           cur_val = DeleteRow(key, &pending);
         } else {
-          cur_val = MutateRow(key, new_val, &pending);
+          // If we are meant to update an existing row, randomly choose
+          // between update and upsert.
+          if (rand() % 2 == 1) {
+            cur_val = MutateRow(key, new_val, &pending);
+          } else {
+            cur_val = UpsertRow(key, new_val, &pending);
+          }
         }
       }
     }
@@ -144,6 +154,15 @@ class TestRandomAccess : public KuduTabletTest {
   // Adds an insert for the given key/value pair to 'ops', returning the new stringified
   // value of the row.
   string InsertRow(int key, int val, vector<LocalTabletWriter::Op>* ops) {
+    return InsertOrUpsertRow(RowOperationsPB::INSERT, key, val, ops);
+  }
+
+  string UpsertRow(int key, int val, vector<LocalTabletWriter::Op>* ops) {
+    return InsertOrUpsertRow(RowOperationsPB::UPSERT, key, val, ops);
+  }
+
+  string InsertOrUpsertRow(RowOperationsPB::Type type, int key, int val,
+                           vector<LocalTabletWriter::Op>* ops) {
     gscoped_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
     CHECK_OK(row->SetInt32(0, key));
     if (val & 1) {
@@ -152,7 +171,7 @@ class TestRandomAccess : public KuduTabletTest {
       CHECK_OK(row->SetInt32(1, val));
     }
     string ret = row->ToString();
-    ops->push_back(LocalTabletWriter::Op(RowOperationsPB::INSERT, row.release()));
+    ops->push_back(LocalTabletWriter::Op(type, row.release()));
     return ret;
   }
 

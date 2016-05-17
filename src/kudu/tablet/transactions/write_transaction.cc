@@ -166,6 +166,7 @@ void WriteTransaction::Finish(TransactionResult result) {
     // TODO: should we change this so it's actually incremented by the
     // Tablet code itself instead of this wrapper code?
     metrics->rows_inserted->IncrementBy(state_->metrics().successful_inserts);
+    metrics->rows_upserted->IncrementBy(state_->metrics().successful_upserts);
     metrics->rows_updated->IncrementBy(state_->metrics().successful_updates);
     metrics->rows_deleted->IncrementBy(state_->metrics().successful_deletes);
 
@@ -288,6 +289,9 @@ void WriteTransactionState::UpdateMetricsForOp(const RowOp& op) {
   switch (op.decoded_op.type) {
     case RowOperationsPB::INSERT:
       tx_metrics_.successful_inserts++;
+      break;
+    case RowOperationsPB::UPSERT:
+      tx_metrics_.successful_upserts++;
       break;
     case RowOperationsPB::UPDATE:
       tx_metrics_.successful_updates++;

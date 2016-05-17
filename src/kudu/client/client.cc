@@ -563,6 +563,10 @@ KuduInsert* KuduTable::NewInsert() {
   return new KuduInsert(shared_from_this());
 }
 
+KuduUpsert* KuduTable::NewUpsert() {
+  return new KuduUpsert(shared_from_this());
+}
+
 KuduUpdate* KuduTable::NewUpdate() {
   return new KuduUpdate(shared_from_this());
 }

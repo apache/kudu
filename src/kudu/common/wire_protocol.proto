@@ -138,13 +138,15 @@ message RowwiseRowBlockPB {
   optional int32 indirect_data_sidecar = 3;
 }
 
-// A set of operations (INSERT, UPDATE, or DELETE) to apply to a table.
+// A set of operations to apply to a table.
 message RowOperationsPB {
   enum Type {
     UNKNOWN = 0;
     INSERT = 1;
     UPDATE = 2;
     DELETE = 3;
+    UPSERT = 5;
+
     // Used when specifying split rows on table creation.
     SPLIT_ROW = 4;
   }

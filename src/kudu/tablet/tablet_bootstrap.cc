@@ -1324,7 +1324,9 @@ Status TabletBootstrap::ApplyOperations(WriteTransactionState* tx_state,
 
     // Increment the seen/ignored stats.
     switch (op->decoded_op.type) {
-      case RowOperationsPB::INSERT: {
+      case RowOperationsPB::INSERT:
+      case RowOperationsPB::UPSERT: {
+        // TODO: should we have a separate counter for upserts?
         stats_.inserts_seen++;
         if (op->has_result()) {
           stats_.inserts_ignored++;

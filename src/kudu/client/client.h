@@ -417,7 +417,14 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
 
   // Create a new write operation for this table. It is the caller's
   // responsibility to free it, unless it is passed to KuduSession::Apply().
+  //
+  // The provided operations are:
+  //   INSERT: Adds a new row. Fails if the row already exists.
+  //   UPSERT: Adds a new row. If there's an existing row, updates it.
+  //   UPDATE: Updates an existing row. Fails if the row does not exist.
+  //   DELETE: Deletes an existing row. Fails if the row does not exist.
   KuduInsert* NewInsert();
+  KuduUpsert* NewUpsert();
   KuduUpdate* NewUpdate();
   KuduDelete* NewDelete();
 

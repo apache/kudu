@@ -63,6 +63,10 @@ class LocalTabletWriter {
     return Write(RowOperationsPB::INSERT, row);
   }
 
+  Status Upsert(const KuduPartialRow& row) {
+    return Write(RowOperationsPB::UPSERT, row);
+  }
+
   Status Delete(const KuduPartialRow& row) {
     return Write(RowOperationsPB::DELETE, row);
   }
