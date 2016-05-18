@@ -18,6 +18,7 @@ package org.kududb.client;
 
 import static org.junit.Assert.fail;
 
+import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.TimeoutException;
 import org.junit.Test;
 
@@ -44,7 +45,7 @@ public class TestTimeouts extends BaseKuduTest {
       // Expected.
     }
 
-    createTable(TABLE_NAME, basicSchema, new CreateTableOptions());
+    createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
     KuduTable table = openTable(TABLE_NAME);
 
     KuduSession lowTimeoutSession = lowTimeoutsClient.newSession();

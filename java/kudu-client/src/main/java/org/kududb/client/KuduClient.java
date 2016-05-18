@@ -48,17 +48,6 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
-   * Create a table on the cluster with the specified name and schema. Default table
-   * configurations are used, mainly the table will have one tablet.
-   * @param name Table's name
-   * @param schema Table's schema
-   * @return an object to communicate with the created table
-   */
-  public KuduTable createTable(String name, Schema schema) throws Exception {
-    return createTable(name, schema, new CreateTableOptions());
-  }
-
-  /**
    * Create a table on the cluster with the specified name, schema, and table configurations.
    * @param name the table's name
    * @param schema the table's schema

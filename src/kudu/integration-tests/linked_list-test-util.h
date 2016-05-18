@@ -419,6 +419,7 @@ Status LinkedListTester::CreateLinkedListTable() {
   gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
   RETURN_NOT_OK_PREPEND(table_creator->table_name(table_name_)
                         .schema(&schema_)
+                        .set_range_partition_columns({ kKeyColumnName })
                         .split_rows(GenerateSplitRows(schema_))
                         .num_replicas(num_replicas_)
                         .Create(),

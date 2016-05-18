@@ -16,6 +16,7 @@
 // under the License.
 package org.kududb.client;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.stumbleupon.async.Deferred;
 import org.kududb.ColumnSchema;
@@ -41,7 +42,8 @@ public class TestScannerMultiTablet extends BaseKuduTest {
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
     // create a 4-tablets table for scanning
-    CreateTableOptions builder = new CreateTableOptions();
+    CreateTableOptions builder =
+        new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key1", "key2"));
 
     for (int i = 1; i < 4; i++){
       PartialRow splitRow = schema.newPartialRow();

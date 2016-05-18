@@ -20,6 +20,9 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Stopwatch;
 import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
+
+import java.util.concurrent.TimeUnit;
+
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.kududb.Common;
@@ -27,8 +30,6 @@ import org.kududb.consensus.Metadata;
 import org.kududb.master.Master;
 
 import static org.junit.Assert.*;
-
-import java.util.concurrent.TimeUnit;
 
 public class TestAsyncKuduClient extends BaseKuduTest {
 
@@ -40,7 +41,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
     // Set to 1 for testDisconnect to always test disconnecting the right server.
-    CreateTableOptions options = new CreateTableOptions().setNumReplicas(1);
+    CreateTableOptions options = getBasicCreateTableOptions().setNumReplicas(1);
     table = createTable(TABLE_NAME, basicSchema, options);
   }
 

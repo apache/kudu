@@ -20,6 +20,8 @@ package org.kududb.flume.sink;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
+
 import org.apache.flume.Channel;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
@@ -52,14 +54,15 @@ import static org.junit.Assert.fail;
 public class KuduSinkTest extends BaseKuduTest {
   private static final Logger LOG = LoggerFactory.getLogger(KuduSinkTest.class);
 
-  private KuduTable createNewTable(String tableName) {
+  private KuduTable createNewTable(String tableName) throws Exception {
     LOG.info("Creating new table...");
 
-    CreateTableOptions options = new CreateTableOptions().setNumReplicas(1);
     ArrayList<ColumnSchema> columns = new ArrayList<>(1);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("payload", Type.BINARY).key(true).build());
-    basicSchema = new Schema(columns);
-    KuduTable table = createTable(tableName, basicSchema, options);
+    CreateTableOptions createOptions =
+        new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("payload"))
+                                .setNumReplicas(1);
+    KuduTable table = createTable(tableName, new Schema(columns), createOptions);
 
     LOG.info("Created new table.");
 
@@ -131,7 +134,7 @@ public class KuduSinkTest extends BaseKuduTest {
     doTestDuplicateRows(false);
   }
 
-  private void doTestDuplicateRows(boolean ignoreDuplicateRows) {
+  private void doTestDuplicateRows(boolean ignoreDuplicateRows) throws Exception {
     KuduTable table = createNewTable("testDuplicateRows" + ignoreDuplicateRows);
     String tableName = table.getName();
     Context sinkContext = new Context();

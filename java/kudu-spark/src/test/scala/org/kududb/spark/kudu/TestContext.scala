@@ -27,6 +27,7 @@ import org.kududb.client.{CreateTableOptions, KuduClient, KuduTable, MiniKuduClu
 import org.kududb.{Schema, Type}
 import org.scalatest.{BeforeAndAfterAll, Suite}
 
+import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 
 trait TestContext extends BeforeAndAfterAll { self: Suite =>
@@ -74,7 +75,8 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
 
     kuduContext = new KuduContext(miniCluster.getMasterAddresses)
 
-    val tableOptions = new CreateTableOptions().setNumReplicas(1)
+    val tableOptions = new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
+                                               .setNumReplicas(1)
     table = kuduClient.createTable(tableName, schema, tableOptions)
   }
 

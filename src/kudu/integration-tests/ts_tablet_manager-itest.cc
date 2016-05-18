@@ -120,6 +120,7 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&schema_)
+            .set_range_partition_columns({ "key" })
             .num_replicas(kNumReplicas)
             .Create());
   ASSERT_OK(client_->OpenTable(kTableName, &table));

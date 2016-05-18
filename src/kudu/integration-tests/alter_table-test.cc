@@ -119,6 +119,7 @@ class AlterTableTest : public KuduTest {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     CHECK_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
+             .set_range_partition_columns({ "c0" })
              .num_replicas(num_replicas())
              .Create());
 
@@ -226,6 +227,7 @@ class AlterTableTest : public KuduTest {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     return table_creator->table_name(table_name)
         .schema(&schema_)
+        .set_range_partition_columns({ "c0" })
         .num_replicas(num_replicas())
         .split_rows(split_rows)
         .Create();

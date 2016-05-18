@@ -149,6 +149,7 @@ class FuzzTest : public KuduTest {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     CHECK_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
+             .set_range_partition_columns({ "key" })
              .num_replicas(1)
              .Create());
 

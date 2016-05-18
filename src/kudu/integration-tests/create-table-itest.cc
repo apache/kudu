@@ -66,6 +66,7 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
   client::KuduSchema client_schema(client::KuduSchemaFromSchema(GetSimpleTestSchema()));
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&client_schema)
+            .set_range_partition_columns({ "key" })
             .num_replicas(3)
             .wait(false)
             .Create());
@@ -132,6 +133,7 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenly) {
   client::KuduSchema client_schema(client::KuduSchemaFromSchema(GetSimpleTestSchema()));
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&client_schema)
+            .set_range_partition_columns({ "key" })
             .num_replicas(3)
             .add_hash_partitions({ "key" }, kNumTablets)
             .Create());
@@ -266,6 +268,7 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
   // because all of the tservers are dead.
   CHECK_OK(table_creator->table_name(kTableName)
            .schema(&client_schema)
+           .set_range_partition_columns({ "key" })
            .wait(false)
            .Create());
 

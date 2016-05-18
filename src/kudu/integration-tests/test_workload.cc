@@ -192,6 +192,7 @@ void TestWorkload::Setup() {
     CHECK_OK(table_creator->table_name(table_name_)
              .schema(&client_schema)
              .num_replicas(num_replicas_)
+             .set_range_partition_columns({ "key" })
              .split_rows(splits)
              // NOTE: this is quite high as a timeout, but the default (5 sec) does not
              // seem to be high enough in some cases (see KUDU-550). We should remove

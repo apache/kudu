@@ -226,7 +226,7 @@ cdef class Client:
         # Nothing yet to clean up here
         pass
 
-    def create_table(self, table_name, Schema schema, partitioning=None):
+    def create_table(self, table_name, Schema schema, partitioning):
         """
         Creates a new Kudu table from the passed Schema and options.
 
@@ -244,8 +244,7 @@ cdef class Client:
         try:
             c.table_name(tobytes(table_name))
             c.schema(schema.schema)
-            if partitioning is not None:
-                self._apply_partitioning(c, partitioning)
+            self._apply_partitioning(c, partitioning)
             s = c.Create()
             check_status(s)
         finally:

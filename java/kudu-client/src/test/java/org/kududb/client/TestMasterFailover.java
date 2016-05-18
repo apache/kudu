@@ -36,7 +36,7 @@ public class TestMasterFailover extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    createTable(TABLE_NAME, basicSchema, new CreateTableOptions());
+    createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
   }
 
   /**

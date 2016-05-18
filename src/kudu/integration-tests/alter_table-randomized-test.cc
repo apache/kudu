@@ -234,6 +234,7 @@ struct MirrorTable {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     RETURN_NOT_OK(table_creator->table_name(kTableName)
              .schema(&schema)
+             .set_range_partition_columns({ "key" })
              .num_replicas(3)
              .Create());
     return Status::OK();

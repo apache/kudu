@@ -280,18 +280,6 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Create a table on the cluster with the specified name and schema. Default table
-   * configurations are used, mainly the table will have one tablet.
-   * @param name the table's name
-   * @param schema the table's schema
-   * @return a deferred object to track the progress of the createTable command that gives
-   * an object to communicate with the created table
-   */
-  public Deferred<KuduTable> createTable(String name, Schema schema) {
-    return this.createTable(name, schema, new CreateTableOptions());
-  }
-
-  /**
    * Create a table on the cluster with the specified name, schema, and table configurations.
    * @param name the table's name
    * @param schema the table's schema
@@ -303,10 +291,15 @@ public class AsyncKuduClient implements AutoCloseable {
                                          CreateTableOptions builder) {
     checkIsClosed();
     if (builder == null) {
-      builder = new CreateTableOptions();
+      throw new IllegalArgumentException("CreateTableOptions may not be null");
     }
-    CreateTableRequest create = new CreateTableRequest(this.masterTable, name, schema,
-        builder);
+    if (!builder.getBuilder().getPartitionSchema().hasRangeSchema() &&
+        builder.getBuilder().getPartitionSchema().getHashBucketSchemasCount() == 0) {
+      throw new IllegalArgumentException("Table partitioning must be specified using " +
+                                         "setRangePartitionColumns or addHashPartitions");
+
+    }
+    CreateTableRequest create = new CreateTableRequest(this.masterTable, name, schema, builder);
     create.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(create).addCallbackDeferring(
         new Callback<Deferred<KuduTable>, CreateTableResponse>() {

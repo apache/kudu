@@ -16,13 +16,14 @@
 // under the License.
 package org.kududb.client;
 
-import org.kududb.Common;
 import com.google.common.collect.Lists;
+
+import java.util.List;
+
+import org.kududb.Common;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 import org.kududb.master.Master;
-
-import java.util.List;
 
 /**
  * This is a builder class for all the options that can be provided while creating a table.
@@ -94,10 +95,14 @@ public class CreateTableOptions {
   /**
    * Set the columns on which the table will be range-partitioned.
    *
-   * Every column must be a part of the table's primary key. If not set, the
-   * table will be created with the primary-key columns as the range-partition
-   * columns. If called with an empty vector, the table will be created without
-   * range partitioning.
+   * Every column must be a part of the table's primary key. If not set or if
+   * called with an empty vector, the table will be created without range
+   * partitioning.
+   *
+   * Tables must be created with either range, hash, or range and hash
+   * partitioning. To force the use of a single tablet (not recommended),
+   * call this method with an empty list and set no split rows and no hash
+   * partitions.
    *
    * @param columns the range partitioned columns
    * @return this instance

@@ -16,7 +16,6 @@
 // under the License.
 package org.kududb.client;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.Test;
@@ -33,7 +32,7 @@ public class TestKuduSession extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testBasicOps() throws Exception {
     String tableName = TABLE_NAME_PREFIX + "-testBasicOps";
-    table = createTable(tableName, basicSchema, new CreateTableOptions());
+    table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
     for (int i = 0; i < 10; i++) {
@@ -56,7 +55,7 @@ public class TestKuduSession extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testIgnoreAllDuplicateRows() throws Exception {
     String tableName = TABLE_NAME_PREFIX + "-testIgnoreAllDuplicateRows";
-    table = createTable(tableName, basicSchema, new CreateTableOptions());
+    table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
     session.setIgnoreAllDuplicateRows(true);
@@ -88,7 +87,7 @@ public class TestKuduSession extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testBatchWithSameRow() throws Exception {
     String tableName = TABLE_NAME_PREFIX + "-testBatchWithSameRow";
-    table = createTable(tableName, basicSchema, new CreateTableOptions());
+    table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
@@ -125,7 +124,7 @@ public class TestKuduSession extends BaseKuduTest {
   @Test(timeout = 10000)
   public void testConcurrentFlushes() throws Exception {
     String tableName = TABLE_NAME_PREFIX + "-testConcurrentFlushes";
-    CreateTableOptions builder = new CreateTableOptions();
+    CreateTableOptions builder = getBasicCreateTableOptions();
     int numTablets = 4;
     int numRowsPerTablet = 100;
 
@@ -155,7 +154,7 @@ public class TestKuduSession extends BaseKuduTest {
   @Test(timeout = 10000)
   public void testOverWritingValues() throws Exception {
     String tableName = TABLE_NAME_PREFIX + "-OverridingValues";
-    table = createTable(tableName, basicSchema, null);
+    table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
     KuduSession session = syncClient.newSession();
     Insert insert = createInsert(0);
     PartialRow row = insert.getRow();
@@ -192,7 +191,7 @@ public class TestKuduSession extends BaseKuduTest {
   @Test(timeout = 10000)
   public void testUpsert() throws Exception {
     String tableName = TABLE_NAME_PREFIX + "-Upsert";
-    table = createTable(tableName, basicSchema, null);
+    table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
     KuduSession session = syncClient.newSession();
 
     // Test an Upsert that acts as an Insert.

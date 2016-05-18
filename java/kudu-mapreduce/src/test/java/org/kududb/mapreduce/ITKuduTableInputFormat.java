@@ -38,7 +38,7 @@ public class ITKuduTableInputFormat extends BaseKuduTest {
 
   @Test
   public void test() throws Exception {
-    createTable(TABLE_NAME, getBasicSchema(), new CreateTableOptions());
+    createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
 
     KuduTable table = openTable(TABLE_NAME);
     Schema schema = getBasicSchema();

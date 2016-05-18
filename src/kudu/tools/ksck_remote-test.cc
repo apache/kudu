@@ -79,6 +79,7 @@ class RemoteKsckTest : public KuduTest {
     ASSERT_OK(table_creator->table_name(kTableName)
                      .schema(&schema_)
                      .num_replicas(3)
+                     .set_range_partition_columns({ "key" })
                      .split_rows(GenerateSplitRows())
                      .Create());
     // Make sure we can open the table.

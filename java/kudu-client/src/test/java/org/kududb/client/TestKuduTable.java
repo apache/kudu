@@ -29,6 +29,8 @@ import java.util.List;
 
 import static org.junit.Assert.*;
 
+import com.google.common.collect.ImmutableList;
+
 public class TestKuduTable extends BaseKuduTest {
 
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduTable.class);
@@ -45,7 +47,7 @@ public class TestKuduTable extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testAlterTable() throws Exception {
     String tableName = BASE_TABLE_NAME + System.currentTimeMillis();
-    createTable(tableName, basicSchema, null);
+    createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     // Add a col.
     AlterTableOptions ato = new AlterTableOptions().addColumn("testaddint", Type.INT32, 4);
@@ -115,7 +117,7 @@ public class TestKuduTable extends BaseKuduTest {
     }
     // Test with defaults
     String tableWithDefault = BASE_TABLE_NAME + "WithDefault" + System.currentTimeMillis();
-    CreateTableOptions builder = new CreateTableOptions();
+    CreateTableOptions builder = getBasicCreateTableOptions();
     List<ColumnSchema> columns = new ArrayList<ColumnSchema>(schema.getColumnCount());
     int defaultInt = 30;
     String defaultString = "data";
@@ -211,7 +213,7 @@ public class TestKuduTable extends BaseKuduTest {
 
   public KuduTable createTableWithSplitsAndTest(int splitsCount) throws Exception {
     String tableName = BASE_TABLE_NAME + System.currentTimeMillis();
-    CreateTableOptions builder = new CreateTableOptions();
+    CreateTableOptions builder = getBasicCreateTableOptions();
 
     if (splitsCount != 0) {
       for (int i = 1; i <= splitsCount; i++) {

@@ -119,6 +119,7 @@ class MasterReplicationTest : public KuduTest {
     CHECK_OK(b.Build(&schema));
     gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
     return table_creator->table_name(table_name)
+        .set_range_partition_columns({ "key" })
         .schema(&schema)
         .Create();
   }

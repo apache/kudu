@@ -45,7 +45,7 @@ public class ITOutputFormatJob extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    createTable(TABLE_NAME, getBasicSchema(), new CreateTableOptions());
+    createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
   }
 
   @AfterClass

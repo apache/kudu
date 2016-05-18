@@ -98,10 +98,14 @@ static Status CreateTable(const shared_ptr<KuduClient>& client,
     splits.push_back(row);
   }
 
+  vector<string> column_names;
+  column_names.push_back("key");
+
   // Create the table.
   KuduTableCreator* table_creator = client->NewTableCreator();
   Status s = table_creator->table_name(table_name)
       .schema(&schema)
+      .set_range_partition_columns(column_names)
       .split_rows(splits)
       .Create();
   delete table_creator;

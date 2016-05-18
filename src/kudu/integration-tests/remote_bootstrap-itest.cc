@@ -423,6 +423,7 @@ TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
   ASSERT_OK(table_creator->table_name(TestWorkload::kDefaultTableName)
                           .split_rows(splits)
                           .schema(&client_schema)
+                          .set_range_partition_columns({ "key" })
                           .num_replicas(3)
                           .Create());
 

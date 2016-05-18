@@ -77,13 +77,17 @@ public class TestKuduClient extends BaseKuduTest {
     return new Schema(columns);
   }
 
+  private static CreateTableOptions createTableOptions() {
+    return new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key"));
+  }
+
   /**
    * Test creating and deleting a table through a KuduClient.
    */
   @Test(timeout = 100000)
   public void testCreateDeleteTable() throws Exception {
     // Check that we can create a table.
-    syncClient.createTable(tableName, basicSchema);
+    syncClient.createTable(tableName, basicSchema, getBasicCreateTableOptions());
     assertFalse(syncClient.getTablesList().getTablesList().isEmpty());
     assertTrue(syncClient.getTablesList().getTablesList().contains(tableName));
 
@@ -95,7 +99,7 @@ public class TestKuduClient extends BaseKuduTest {
     List<ColumnSchema> columns = new ArrayList<>(basicSchema.getColumns());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("one more", Type.STRING).build());
     Schema newSchema = new Schema(columns);
-    syncClient.createTable(tableName, newSchema);
+    syncClient.createTable(tableName, newSchema, getBasicCreateTableOptions());
 
     // Check that we can open a table and see that it has the new schema.
     KuduTable table = syncClient.openTable(tableName);
@@ -116,7 +120,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testStrings() throws Exception {
     Schema schema = createManyStringsSchema();
-    syncClient.createTable(tableName, schema);
+    syncClient.createTable(tableName, schema, createTableOptions());
 
     KuduSession session = syncClient.newSession();
     KuduTable table = syncClient.openTable(tableName);
@@ -156,7 +160,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testUTF8() throws Exception {
     Schema schema = createManyStringsSchema();
-    syncClient.createTable(tableName, schema);
+    syncClient.createTable(tableName, schema, createTableOptions());
 
     KuduSession session = syncClient.newSession();
     KuduTable table = syncClient.openTable(tableName);
@@ -183,7 +187,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testBinaryColumns() throws Exception {
     Schema schema = createSchemaWithBinaryColumns();
-    syncClient.createTable(tableName, schema);
+    syncClient.createTable(tableName, schema, createTableOptions());
 
     byte[] testArray = new byte[] {1, 2, 3, 4, 5, 6 ,7, 8, 9};
 
@@ -226,7 +230,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testTimestampColumns() throws Exception {
     Schema schema = createSchemaWithTimestampColumns();
-    syncClient.createTable(tableName, schema);
+    syncClient.createTable(tableName, schema, createTableOptions());
 
     List<Long> timestamps = new ArrayList<>();
 
@@ -274,7 +278,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test
   public void testScanWithPredicates() throws Exception {
     Schema schema = createManyStringsSchema();
-    syncClient.createTable(tableName, schema);
+    syncClient.createTable(tableName, schema, createTableOptions());
 
     KuduSession session = syncClient.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
@@ -394,7 +398,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testAutoClose() throws Exception {
     try (KuduClient localClient = new KuduClient.KuduClientBuilder(masterAddresses).build()) {
-      localClient.createTable(tableName, basicSchema);
+      localClient.createTable(tableName, basicSchema, getBasicCreateTableOptions());
       KuduTable table = localClient.openTable(tableName);
       KuduSession session = localClient.newSession();
 
@@ -418,7 +422,7 @@ public class TestKuduClient extends BaseKuduTest {
         .build();
     long buildTime = (System.nanoTime() - startTime) / 1000000000L;
     assertTrue("Building KuduClient is slow, maybe netty get stuck", buildTime < 3);
-    localClient.createTable(tableName, basicSchema);
+    localClient.createTable(tableName, basicSchema, getBasicCreateTableOptions());
     Thread[] threads = new Thread[4];
     for (int t = 0; t < 4; t++) {
       final int id = t;
@@ -445,5 +449,10 @@ public class TestKuduClient extends BaseKuduTest {
       threads[t].join();
     }
     localClient.shutdown();
+  }
+
+  @Test(expected=IllegalArgumentException.class)
+  public void testNoDefaultPartitioning() throws Exception {
+    syncClient.createTable(tableName, basicSchema, new CreateTableOptions());
   }
 }
