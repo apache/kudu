@@ -108,6 +108,7 @@ class MasterFailoverTest : public KuduTest {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     return table_creator->table_name(table_name)
         .schema(&schema)
+        .set_range_partition_columns({ "key" })
         .wait(mode == kWaitForCreate)
         .Create();
   }

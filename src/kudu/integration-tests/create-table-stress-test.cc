@@ -132,6 +132,7 @@ void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tab
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(table_name)
             .schema(&schema_)
+            .set_range_partition_columns({ "key" })
             .split_rows(split_rows)
             .num_replicas(3)
             .wait(false)

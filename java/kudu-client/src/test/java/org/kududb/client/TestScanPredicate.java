@@ -39,6 +39,9 @@ public class TestScanPredicate extends BaseKuduTest {
     return new Schema(ImmutableList.of(key, val));
   }
 
+  private static CreateTableOptions createTableOptions() {
+    return new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key"));
+  }
 
   private int countRows(KuduTable table, KuduPredicate... predicates) throws Exception {
     KuduScanner.KuduScannerBuilder scanBuilder =  new KuduScanner.KuduScannerBuilder(client, table);
@@ -213,7 +216,7 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testBoolPredicates() throws Exception {
     Schema schema = createTableSchema(Type.BOOL);
-    syncClient.createTable("bool-table", schema);
+    syncClient.createTable("bool-table", schema, createTableOptions());
     KuduTable table = syncClient.openTable("bool-table");
 
     NavigableSet<Boolean> values = ImmutableSortedSet.of(false, true);
@@ -265,7 +268,7 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testBytePredicates() throws Exception {
     Schema schema = createTableSchema(Type.INT8);
-    syncClient.createTable("byte-table", schema);
+    syncClient.createTable("byte-table", schema, createTableOptions());
     KuduTable table = syncClient.openTable("byte-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT8);
@@ -290,7 +293,9 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testShortPredicates() throws Exception {
     Schema schema = createTableSchema(Type.INT16);
-    syncClient.createTable("short-table", schema);
+    syncClient.createTable("short-table", schema,
+                           new CreateTableOptions().setRangePartitionColumns(
+                               ImmutableList.<String>of()));
     KuduTable table = syncClient.openTable("short-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT16);
@@ -315,7 +320,7 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testIntPredicates() throws Exception {
     Schema schema = createTableSchema(Type.INT32);
-    syncClient.createTable("int-table", schema);
+    syncClient.createTable("int-table", schema, createTableOptions());
     KuduTable table = syncClient.openTable("int-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT32);
@@ -340,7 +345,9 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testLongPredicates() throws Exception {
     Schema schema = createTableSchema(Type.INT64);
-    syncClient.createTable("long-table", schema);
+    syncClient.createTable("long-table", schema,
+                           new CreateTableOptions().setRangePartitionColumns(
+                               ImmutableList.<String>of()));
     KuduTable table = syncClient.openTable("long-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT64);
@@ -365,7 +372,7 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testTimestampPredicate() throws Exception {
     Schema schema = createTableSchema(Type.INT64);
-    syncClient.createTable("timestamp-table", schema);
+    syncClient.createTable("timestamp-table", schema, createTableOptions());
     KuduTable table = syncClient.openTable("timestamp-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT64);
@@ -390,7 +397,7 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testFloatPredicates() throws Exception {
     Schema schema = createTableSchema(Type.FLOAT);
-    syncClient.createTable("float-table", schema);
+    syncClient.createTable("float-table", schema, createTableOptions());
     KuduTable table = syncClient.openTable("float-table");
 
     NavigableSet<Float> values = createFloatValues();
@@ -443,7 +450,7 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testDoublePredicates() throws Exception {
     Schema schema = createTableSchema(Type.DOUBLE);
-    syncClient.createTable("double-table", schema);
+    syncClient.createTable("double-table", schema, createTableOptions());
     KuduTable table = syncClient.openTable("double-table");
 
     NavigableSet<Double> values = createDoubleValues();
@@ -496,7 +503,7 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testStringPredicates() throws Exception {
     Schema schema = createTableSchema(Type.STRING);
-    syncClient.createTable("string-table", schema);
+    syncClient.createTable("string-table", schema, createTableOptions());
     KuduTable table = syncClient.openTable("string-table");
 
     NavigableSet<String> values = createStringValues();
@@ -549,7 +556,7 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testBinaryPredicates() throws Exception {
     Schema schema = createTableSchema(Type.BINARY);
-    syncClient.createTable("binary-table", schema);
+    syncClient.createTable("binary-table", schema, createTableOptions());
     KuduTable table = syncClient.openTable("binary-table");
 
     NavigableSet<String> values = createStringValues();

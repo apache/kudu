@@ -74,6 +74,7 @@ class PredicateTest : public KuduTest {
     unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
     CHECK_OK(table_creator->table_name("table")
         .schema(&schema)
+        .set_range_partition_columns({ "key" })
         .num_replicas(1)
         .Create());
 

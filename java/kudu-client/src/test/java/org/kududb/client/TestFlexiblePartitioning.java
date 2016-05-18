@@ -247,7 +247,8 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
   @Test
   public void testSimplePartitionedTable() throws Exception {
     Schema schema = createSchema();
-    CreateTableOptions tableBuilder = new CreateTableOptions();
+    CreateTableOptions tableBuilder =
+        new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("a", "b", "c"));
 
     PartialRow split = schema.newPartialRow();
     split.addString("c", "3");
@@ -258,6 +259,13 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     split.addString("b", "3");
     tableBuilder.addSplitRow(split);
 
+    testPartitionSchema(tableBuilder);
+  }
+
+  @Test
+  public void testUnpartitionedTable() throws Exception {
+    CreateTableOptions tableBuilder =
+        new CreateTableOptions().setRangePartitionColumns(ImmutableList.<String>of());
     testPartitionSchema(tableBuilder);
   }
 

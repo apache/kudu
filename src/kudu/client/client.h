@@ -323,6 +323,9 @@ class KUDU_EXPORT KuduTableCreator {
   // table is created with 3 split rows, and two hash partitions with 4 and 5
   // buckets respectively, the total number of table partitions will be 80
   // (4 range partitions * 4 hash buckets * 5 hash buckets).
+  //
+  // Tables must be created with either range, hash, or range and hash
+  // partitioning.
   KuduTableCreator& add_hash_partitions(const std::vector<std::string>& columns,
                                         int32_t num_buckets);
 
@@ -337,12 +340,14 @@ class KUDU_EXPORT KuduTableCreator {
 
   // Sets the columns on which the table will be range-partitioned.
   //
-  // Every column must be a part of the table's primary key. If not set, the
-  // table will be created with the primary-key columns as the range-partition
-  // columns. If called with an empty vector, the table will be created without
-  // range partitioning.
+  // Every column must be a part of the table's primary key. If not set, or if
+  // called with an empty vector, the table will be created without range
+  // partitioning.
   //
-  // Optional.
+  // Tables must be created with either range, hash, or range and hash
+  // partitioning. To force the use of a single tablet (not recommended), call
+  // this method with an empty vector and set no split rows an no hash
+  // partitions.
   KuduTableCreator& set_range_partition_columns(const std::vector<std::string>& columns);
 
   // Sets the rows on which to pre-split the table.

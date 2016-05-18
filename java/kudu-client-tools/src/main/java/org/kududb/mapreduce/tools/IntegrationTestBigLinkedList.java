@@ -611,7 +611,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         }
 
         CreateTableOptions builder =
-            new CreateTableOptions().setNumReplicas(parser.getNumReplicas());
+            new CreateTableOptions().setNumReplicas(parser.getNumReplicas())
+                                    .setRangePartitionColumns(ImmutableList.of("key1"));
         if (numTablets > 1) {
           BigInteger min = BigInteger.valueOf(Long.MIN_VALUE);
           BigInteger max = BigInteger.valueOf(Long.MAX_VALUE);

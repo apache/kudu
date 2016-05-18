@@ -399,6 +399,7 @@ class ClientTest : public KuduTest {
     ASSERT_OK(table_creator->table_name(table_name)
                             .schema(&schema_)
                             .num_replicas(num_replicas)
+                            .set_range_partition_columns({ "key" })
                             .split_rows(split_rows)
                             .Create());
 
@@ -2706,6 +2707,7 @@ TEST_F(ClientTest, TestDeadlockSimulation) {
 TEST_F(ClientTest, TestCreateDuplicateTable) {
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_TRUE(table_creator->table_name(kTableName)
+              .set_range_partition_columns({ "key" })
               .schema(&schema_)
               .num_replicas(1)
               .Create().IsAlreadyPresent());
@@ -2723,6 +2725,7 @@ TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   Status s = table_creator->table_name("foobar")
       .schema(&schema_)
+      .set_range_partition_columns({ "key" })
       .split_rows({ split1, split2 })
       .num_replicas(3)
       .Create();
@@ -2741,6 +2744,7 @@ TEST_F(ClientTest, TestCreateTableWithTooManyReplicas) {
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   Status s = table_creator->table_name("foobar")
       .schema(&schema_)
+      .set_range_partition_columns({ "key" })
       .split_rows({ split1, split2 })
       .num_replicas(3)
       .Create();
@@ -2879,6 +2883,14 @@ TEST_F(ClientTest, TestLastErrorEmbeddedInScanTimeoutStatus) {
     ASSERT_TRUE(s.IsTimedOut());
     ASSERT_STR_CONTAINS(s.ToString(), "Illegal state: Tablet not RUNNING");
   }
+}
+
+TEST_F(ClientTest, TestNoDefaultPartitioning) {
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    Status s = table_creator->table_name("TestNoDefaultPartitioning").schema(&schema_).Create();
+
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "Table partitioning must be specified");
 }
 
 } // namespace client

@@ -242,6 +242,7 @@ class AllTypesItest : public KuduTest {
 
     RETURN_NOT_OK(table_creator->table_name("all-types-table")
                   .schema(&schema_)
+                  .set_range_partition_columns({ "key" })
                   .split_rows(split_rows)
                   .num_replicas(kNumTabletServers)
                   .Create());

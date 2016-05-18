@@ -70,8 +70,8 @@ public class BaseKuduTest {
   // We create both versions of the client for ease of use.
   protected static AsyncKuduClient client;
   protected static KuduClient syncClient;
-  protected static Schema basicSchema = getBasicSchema();
-  protected static Schema allTypesSchema = getSchemaWithAllTypes();
+  protected static final Schema basicSchema = getBasicSchema();
+  protected static final Schema allTypesSchema = getSchemaWithAllTypes();
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -114,29 +114,9 @@ public class BaseKuduTest {
   }
 
   protected static KuduTable createTable(String tableName, Schema schema,
-                                         CreateTableOptions builder) {
+                                         CreateTableOptions builder) throws Exception {
     LOG.info("Creating table: {}", tableName);
-    Deferred<KuduTable> d = client.createTable(tableName, schema, builder);
-    final AtomicBoolean gotError = new AtomicBoolean(false);
-    d.addErrback(new Callback<Object, Object>() {
-      @Override
-      public Object call(Object arg) throws Exception {
-        gotError.set(true);
-        LOG.error("Error : " + arg);
-        return null;
-      }
-    });
-    KuduTable table = null;
-    try {
-      table = d.join(DEFAULT_SLEEP);
-    } catch (Exception e) {
-      fail("Timed out");
-    }
-    if (gotError.get()) {
-      fail("Got error during table creation, is the Kudu master running at " +
-          masterAddresses + "?");
-    }
-    return table;
+    return client.syncClient().createTable(tableName, schema, builder);
   }
 
   /**
@@ -189,7 +169,7 @@ public class BaseKuduTest {
   private static final int[] KEYS = new int[] {10, 20, 30};
   protected static KuduTable createFourTabletsTableWithNineRows(String tableName) throws
       Exception {
-    CreateTableOptions builder = new CreateTableOptions();
+    CreateTableOptions builder = getBasicCreateTableOptions();
     for (int i : KEYS) {
       PartialRow splitRow = basicSchema.newPartialRow();
       splitRow.addInt(0, i);
@@ -234,6 +214,10 @@ public class BaseKuduTest {
     return new Schema(columns);
   }
 
+  public static CreateTableOptions getAllTypesCreateTableOptions() {
+    return new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("int8"));
+  }
+
   public static Schema getBasicSchema() {
     ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(5);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build());
@@ -247,6 +231,10 @@ public class BaseKuduTest {
         .build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column4_b", Type.BOOL).build());
     return new Schema(columns);
+  }
+
+  public static CreateTableOptions getBasicCreateTableOptions() {
+    return new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key"));
   }
 
   protected Insert createBasicSchemaInsert(KuduTable table, int key) {

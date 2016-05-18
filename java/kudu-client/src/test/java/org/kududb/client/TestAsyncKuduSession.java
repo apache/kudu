@@ -19,6 +19,8 @@ package org.kududb.client;
 import org.kududb.Schema;
 import org.kududb.WireProtocol.AppStatusPB;
 import org.kududb.tserver.Tserver.TabletServerErrorPB;
+
+import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import com.stumbleupon.async.TimeoutException;
@@ -54,7 +56,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    table = createTable(TABLE_NAME, schema, new CreateTableOptions());
+    table = createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
   }
 
   /**

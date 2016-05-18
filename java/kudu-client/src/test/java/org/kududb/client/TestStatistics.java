@@ -31,7 +31,7 @@ public class TestStatistics extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    CreateTableOptions options = new CreateTableOptions().setNumReplicas(1);
+    CreateTableOptions options = getBasicCreateTableOptions().setNumReplicas(1);
     table = createTable(TABLE_NAME, basicSchema, options);
   }
 

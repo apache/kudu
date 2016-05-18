@@ -38,6 +38,8 @@ import java.util.ArrayList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import com.google.common.collect.ImmutableList;
+
 public class ITImportCsv extends BaseKuduTest {
 
   private static final String TABLE_NAME =
@@ -66,7 +68,8 @@ public class ITImportCsv extends BaseKuduTest {
         .build());
     schema = new Schema(columns);
 
-    createTable(TABLE_NAME, schema, new CreateTableOptions());
+    createTable(TABLE_NAME, schema,
+                new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key")));
   }
 
   @AfterClass

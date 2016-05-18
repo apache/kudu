@@ -21,13 +21,14 @@ import java.text.SimpleDateFormat
 import java.util.TimeZone
 
 import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.functions._
 import org.junit.Assert._
 import org.junit.runner.RunWith
 import org.kududb.client.CreateTableOptions
-import org.scalatest.{BeforeAndAfter, FunSuite}
 import org.scalatest.junit.JUnitRunner
-import org.apache.spark.sql.functions._
+import org.scalatest.{BeforeAndAfter, FunSuite}
 
+import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 
 @RunWith(classOf[JUnitRunner])
@@ -67,8 +68,7 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
       "kudu.table" -> tableName,
       "kudu.master" -> miniCluster.getMasterAddresses)
 
-    sqlContext.read.options(kuduOptions).kudu
-      .registerTempTable(tableName)
+    sqlContext.read.options(kuduOptions).kudu.registerTempTable(tableName)
   }
 
   test("table creation") {
@@ -78,7 +78,9 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
 
     val df = sqlContext.read.options(kuduOptions).kudu
 
-    kuduContext.createTable("testcreatetable", df.schema, Seq("key"), new CreateTableOptions().setNumReplicas(1))
+    kuduContext.createTable("testcreatetable", df.schema, Seq("key"),
+                            new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
+                                                    .setNumReplicas(1))
 
     // now use new options to refer to the new table name
     val newOptions: Map[String, String] = Map(

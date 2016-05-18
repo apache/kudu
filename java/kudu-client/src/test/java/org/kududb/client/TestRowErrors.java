@@ -23,6 +23,8 @@ import java.util.List;
 
 import static org.junit.Assert.*;
 
+import com.google.common.collect.ImmutableList;
+
 public class TestRowErrors extends BaseKuduTest {
 
   private static KuduTable table;
@@ -33,11 +35,10 @@ public class TestRowErrors extends BaseKuduTest {
 
   }
 
-
   @Test(timeout = 100000)
   public void singleTabletTest() throws Exception {
     String tableName = TestRowErrors.class.getName() + "-" + System.currentTimeMillis();
-    createTable(tableName, basicSchema, new CreateTableOptions());
+    createTable(tableName, basicSchema, getBasicCreateTableOptions());
     table = openTable(tableName);
     AsyncKuduSession session = client.newSession();
 

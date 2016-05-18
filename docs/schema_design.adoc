@@ -160,6 +160,15 @@ can be improved if all of the data for the scan is located in the same
 tablet. Understanding these fundamental trade-offs is central to designing an effective
 partition schema.
 
+[[no_default_partitioning]]
+[IMPORTANT]
+.No Default Partitioning
+===
+Kudu does not provide a default partitioning strategy when creating tables. It
+is strongly recommended to ensure that new tables have at least as many tablets
+as tablet servers (but Kudu can support many tablets per tablet server).
+===
+
 Kudu provides two types of partition schema: <<range-partitioning, range partitioning>> and
 <<hash-bucketing,hash bucketing>>. These schema types can be <<hash-and-range, used
 together>> or independently. Kudu does not yet allow tablets to be split after
@@ -171,21 +180,19 @@ a sufficient number of tablets are created.
 
 With range partitioning, rows are distributed into tablets using a totally-ordered
 distribution key. Each tablet is assigned a contiguous segment of the table's
-distribution keyspace. By default, the distribution key uses all of the columns of the
-primary key, but it may be configured to use any subset of the primary key
-columns.
+distribution keyspace. Tables may be range partitioned on any subset of the
+primary key columns.
 
 During table creation, tablet boundaries are specified as a sequence of _split
 rows_. Consider the following table schema (using SQL syntax for clarity):
 
 [source,sql]
 ----
-CREATE TABLE customers (
-  first_name STRING NOT NULL,
-  last_name STRING NOT NULL,
-  order_count INT32,
-  PRIMARY KEY (last_name, first_name),
-)
+CREATE TABLE customers (last_name STRING NOT NULL,
+                        first_name STRING NOT NULL,
+                        order_count INT32)
+PRIMARY KEY (last_name, first_name)
+DISTRIBUTE BY RANGE (last_name, first_name);
 ----
 
 Specifying the split rows as `\(("b", ""), ("c", ""), ("d", ""), .., ("z", ""))`
@@ -226,7 +233,7 @@ CREATE TABLE metrics (
 )
 ----
 
-If you use the default range partitioning over the primary key columns, inserts will
+If you use range partitioning over the primary key columns, inserts will
 tend to only go to the tablet covering the current time, which limits the
 maximum write throughput to the throughput of a single tablet. If you use hash
 partitioning, you can guarantee a number of parallel writes equal to the number

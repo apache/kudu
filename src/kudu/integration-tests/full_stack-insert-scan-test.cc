@@ -134,6 +134,7 @@ class FullStackInsertScanTest : public KuduTest {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
+             .set_range_partition_columns({ "key" })
              .num_replicas(1)
              .Create());
     ASSERT_OK(client_->OpenTable(kTableName, &reader_table_));

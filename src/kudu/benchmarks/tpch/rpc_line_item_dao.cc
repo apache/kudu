@@ -111,6 +111,7 @@ void RpcLineItemDAO::Init() {
     CHECK_OK(table_creator->table_name(table_name_)
              .schema(&schema)
              .num_replicas(1)
+             .set_range_partition_columns({ tpch::kOrderKeyColName, tpch::kLineNumberColName })
              .split_rows(tablet_splits_)
              .Create());
     CHECK_OK(client_->OpenTable(table_name_, &client_table_));

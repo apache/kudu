@@ -490,6 +490,12 @@ Status KuduTableCreator::Create() {
   if (!data_->schema_) {
     return Status::InvalidArgument("Missing schema");
   }
+  if (!data_->partition_schema_.has_range_schema() &&
+      data_->partition_schema_.hash_bucket_schemas().empty()) {
+    return Status::InvalidArgument(
+        "Table partitioning must be specified using "
+        "add_hash_partitions or set_range_partition_columns");
+  }
 
   // Build request.
   CreateTableRequestPB req;

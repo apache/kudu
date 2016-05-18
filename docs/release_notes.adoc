@@ -66,6 +66,11 @@ Hadoop storage technologies.
 
 - The kudu-spark subproject was been renamed to follow naming conventions for scala kudu-spark_2.10
 
+- Default table partitioning has been removed. All tables must now be created
+  with explicit partitioning. Existing tables are unaffected. See the
+  link:schema_design.html#no_default_partitioning[schema design guide] for more
+  details.
+
 [[rn_0.9.0_new_features]]
 ==== New features
 

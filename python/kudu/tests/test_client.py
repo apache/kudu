@@ -61,10 +61,11 @@ class TestClient(KuduTestBase, unittest.TestCase):
 
     def test_list_tables(self):
         schema = self.example_schema()
+        partitioning = self.example_partitioning()
 
         to_create = ['foo1', 'foo2', 'foo3']
         for name in to_create:
-            self.client.create_table(name, schema)
+            self.client.create_table(name, schema, partitioning)
 
         result = self.client.list_tables()
         expected = [self.ex_table] + to_create
@@ -81,7 +82,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
 
     def test_delete_table(self):
         name = "peekaboo"
-        self.client.create_table(name, self.schema)
+        self.client.create_table(name, self.schema, self.partitioning)
         self.client.delete_table(name)
         assert not self.client.table_exists(name)
 

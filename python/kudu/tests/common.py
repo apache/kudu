@@ -27,7 +27,7 @@ import tempfile
 import time
 
 import kudu
-
+from kudu.client import Partitioning
 
 class KuduTestBase(object):
 
@@ -132,11 +132,12 @@ class KuduTestBase(object):
         cls.client = kudu.connect(cls.master_host, cls.master_port)
 
         cls.schema = cls.example_schema()
+        cls.partitioning = cls.example_partitioning()
 
         cls.ex_table = 'example-table'
         if cls.client.table_exists(cls.ex_table):
             cls.client.delete_table(cls.ex_table)
-        cls.client.create_table(cls.ex_table, cls.schema)
+        cls.client.create_table(cls.ex_table, cls.schema, cls.partitioning)
 
     @classmethod
     def tearDownClass(cls):
@@ -151,3 +152,7 @@ class KuduTestBase(object):
         builder.set_primary_keys(['key'])
 
         return builder.build()
+
+    @classmethod
+    def example_partitioning(cls):
+        return Partitioning().set_range_partition_columns(['key'])
