@@ -39,6 +39,13 @@ Status OpenFileForRandom(Env *env, const std::string &path,
 Status OpenFileForSequential(Env *env, const std::string &path,
                              std::shared_ptr<SequentialFile> *file);
 
+// Returns Status::IOError with POSIX code ENOSPC if there is not sufficient
+// disk space to write 'bytes' bytes to the file system represented by 'path'.
+// Otherwise returns OK.
+
+Status VerifySufficientDiskSpace(Env *env, const std::string& path,
+                                 int64_t requested_bytes, int64_t reserved_bytes);
+
 // Read exactly 'n' bytes from the given file. If fewer than 'n' bytes
 // are read, returns an IOError. This differs from the underlying
 // RandomAccessFile::Read(), which may return a "short read".

@@ -32,6 +32,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
@@ -41,6 +42,9 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
+
+DECLARE_bool(enable_data_block_fsync);
+DECLARE_bool(block_manager_lock_dirs);
 
 // TODO: How should this be configured? Should provide some guidance.
 DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,
@@ -57,8 +61,18 @@ DEFINE_bool(log_block_manager_test_hole_punching, true,
 TAG_FLAG(log_block_manager_test_hole_punching, advanced);
 TAG_FLAG(log_block_manager_test_hole_punching, unsafe);
 
-DECLARE_bool(enable_data_block_fsync);
-DECLARE_bool(block_manager_lock_dirs);
+DEFINE_int32(log_block_manager_full_disk_cache_seconds, 30,
+             "Number of seconds we cache the full-disk status in the block manager. "
+             "During this time, writes to the corresponding root path will not be attempted.");
+TAG_FLAG(log_block_manager_full_disk_cache_seconds, advanced);
+TAG_FLAG(log_block_manager_full_disk_cache_seconds, evolving);
+
+DEFINE_int64(fs_data_dirs_reserved_bytes, 0,
+             "Number of bytes to reserve on each data directory filesystem for non-Kudu usage. "
+             "Only works with the log block manager and when --log_container_preallocate_bytes "
+             "is non-zero.");
+TAG_FLAG(fs_data_dirs_reserved_bytes, runtime);
+TAG_FLAG(fs_data_dirs_reserved_bytes, evolving);
 
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_bytes_under_management,
                            "Bytes Under Management",
@@ -80,19 +94,23 @@ METRIC_DEFINE_counter(server, log_block_manager_full_containers,
                       kudu::MetricUnit::kLogBlockContainers,
                       "Number of full log block containers");
 
-using std::unordered_map;
-using std::unordered_set;
-using strings::Substitute;
+METRIC_DEFINE_counter(server, log_block_manager_unavailable_containers,
+                      "Number of Unavailable Log Block Containers",
+                      kudu::MetricUnit::kLogBlockContainers,
+                      "Number of non-full log block containers that are under root paths "
+                      "whose disks are full");
+
 using kudu::env_util::ScopedFileDeleter;
 using kudu::fs::internal::LogBlock;
 using kudu::fs::internal::LogBlockContainer;
 using kudu::pb_util::ReadablePBContainerFile;
 using kudu::pb_util::WritablePBContainerFile;
+using std::unordered_map;
+using std::unordered_set;
+using strings::Substitute;
 
 namespace kudu {
-
 namespace fs {
-
 namespace internal {
 
 ////////////////////////////////////////////////////////////
@@ -114,6 +132,7 @@ struct LogBlockManagerMetrics {
 
   scoped_refptr<Counter> containers;
   scoped_refptr<Counter> full_containers;
+  scoped_refptr<Counter> unavailable_containers;
 };
 
 #define MINIT(x) x(METRIC_log_block_manager_##x.Instantiate(metric_entity))
@@ -123,7 +142,8 @@ LogBlockManagerMetrics::LogBlockManagerMetrics(const scoped_refptr<MetricEntity>
     GINIT(bytes_under_management),
     GINIT(blocks_under_management),
     MINIT(containers),
-    MINIT(full_containers) {
+    MINIT(full_containers),
+    MINIT(unavailable_containers) {
 }
 #undef GINIT
 #undef MINIT
@@ -220,6 +240,12 @@ class LogBlockContainer {
   // beginning from the position where the last written block ended.
   Status Preallocate(size_t length);
 
+  // Returns the path to the metadata file.
+  string MetadataFilePath() const;
+
+  // Returns the path to the data file.
+  string DataFilePath() const;
+
   // Reads the container's metadata from disk, sanity checking and
   // returning the records.
   Status ReadContainerRecords(deque<BlockRecordPB>* records) const;
@@ -243,10 +269,11 @@ class LogBlockContainer {
   LogBlockManager* block_manager() const { return block_manager_; }
   int64_t total_bytes_written() const { return total_bytes_written_; }
   bool full() const {
-    return total_bytes_written_ >=  FLAGS_log_container_max_size;
+    return total_bytes_written_ >= FLAGS_log_container_max_size;
   }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   const PathInstanceMetadataPB* instance() const { return instance_; }
+  const std::string& root_path() const { return root_path_; }
 
  private:
   // RAII-style class for finishing containers in FinishBlock().
@@ -263,8 +290,8 @@ class LogBlockContainer {
     LogBlockContainer* container_;
   };
 
-  LogBlockContainer(LogBlockManager* block_manager,
-                    PathInstanceMetadataPB* instance, std::string path,
+  LogBlockContainer(LogBlockManager* block_manager, PathInstanceMetadataPB* instance,
+                    std::string root_path, std::string path,
                     gscoped_ptr<WritablePBContainerFile> metadata_writer,
                     gscoped_ptr<RWFile> data_file);
 
@@ -275,9 +302,16 @@ class LogBlockContainer {
   // The owning block manager. Must outlive the container itself.
   LogBlockManager* const block_manager_;
 
+  // The path to the container's root path. This is the root directory under
+  // which the container lives.
+  const std::string root_path_;
+
   // The path to the container's files. Equivalent to "<dir>/<id>" (see the
   // container constructor).
   const std::string path_;
+
+  // Offset up to which we have preallocated bytes.
+  int64_t preallocated_offset_ = 0;
 
   // Opened file handles to the container's files.
   //
@@ -290,7 +324,7 @@ class LogBlockContainer {
   gscoped_ptr<RWFile> data_file_;
 
   // The amount of data written thus far in the container.
-  int64_t total_bytes_written_;
+  int64_t total_bytes_written_ = 0;
 
   // The metrics. Not owned by the log container; it has the same lifespan
   // as the block manager.
@@ -303,19 +337,19 @@ class LogBlockContainer {
 
 LogBlockContainer::LogBlockContainer(
     LogBlockManager* block_manager, PathInstanceMetadataPB* instance,
-    string path, gscoped_ptr<WritablePBContainerFile> metadata_writer,
+    string root_path, string path, gscoped_ptr<WritablePBContainerFile> metadata_writer,
     gscoped_ptr<RWFile> data_file)
     : block_manager_(block_manager),
+      root_path_(std::move(root_path)),
       path_(std::move(path)),
       metadata_pb_writer_(std::move(metadata_writer)),
       data_file_(std::move(data_file)),
-      total_bytes_written_(0),
       metrics_(block_manager->metrics()),
       instance_(instance) {}
 
 Status LogBlockContainer::Create(LogBlockManager* block_manager,
                                  PathInstanceMetadataPB* instance,
-                                 const string& dir,
+                                 const string& root_path,
                                  gscoped_ptr<LogBlockContainer>* container) {
   string common_path;
   string metadata_path;
@@ -334,7 +368,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
     if (metadata_writer) {
       block_manager->env()->DeleteFile(metadata_path);
     }
-    common_path = JoinPathSegments(dir, block_manager->oid_generator()->Next());
+    common_path = JoinPathSegments(root_path, block_manager->oid_generator()->Next());
     metadata_path = StrCat(common_path, LogBlockManager::kContainerMetadataFileSuffix);
     metadata_status = block_manager->env()->NewRWFile(wr_opts,
                                                       metadata_path,
@@ -356,6 +390,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
     RETURN_NOT_OK(metadata_pb_writer->Init(BlockRecordPB()));
     container->reset(new LogBlockContainer(block_manager,
                                            instance,
+                                           root_path,
                                            common_path,
                                            std::move(metadata_pb_writer),
                                            std::move(data_file)));
@@ -368,9 +403,9 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
 
 Status LogBlockContainer::Open(LogBlockManager* block_manager,
                                PathInstanceMetadataPB* instance,
-                               const string& dir, const string& id,
+                               const string& root_path, const string& id,
                                gscoped_ptr<LogBlockContainer>* container) {
-  string common_path = JoinPathSegments(dir, id);
+  string common_path = JoinPathSegments(root_path, id);
 
   // Open the existing metadata and data files for writing.
   string metadata_path = StrCat(common_path, LogBlockManager::kContainerMetadataFileSuffix);
@@ -396,6 +431,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   // Create the in-memory container and populate it.
   gscoped_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
                                                                       instance,
+                                                                      root_path,
                                                                       common_path,
                                                                       std::move(metadata_pb_writer),
                                                                       std::move(data_file)));
@@ -404,8 +440,16 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   return Status::OK();
 }
 
+string LogBlockContainer::MetadataFilePath() const {
+  return StrCat(path_, LogBlockManager::kContainerMetadataFileSuffix);
+}
+
+string LogBlockContainer::DataFilePath() const {
+  return StrCat(path_, LogBlockManager::kContainerDataFileSuffix);
+}
+
 Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) const {
-  string metadata_path = StrCat(path_, LogBlockManager::kContainerMetadataFileSuffix);
+  string metadata_path = MetadataFilePath();
   gscoped_ptr<RandomAccessFile> metadata_reader;
   RETURN_NOT_OK(block_manager()->env()->NewRandomAccessFile(metadata_path, &metadata_reader));
   ReadablePBContainerFile pb_reader(std::move(metadata_reader));
@@ -527,6 +571,8 @@ Status LogBlockContainer::ReadData(int64_t offset, size_t length,
 }
 
 Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
+  // Note: We don't check for sufficient disk space for metadata writes in
+  // order to allow for block deletion on full disks.
   std::lock_guard<Mutex> l(metadata_pb_writer_lock_);
   return metadata_pb_writer_->Append(pb);
 }
@@ -561,7 +607,9 @@ Status LogBlockContainer::SyncMetadata() {
 }
 
 Status LogBlockContainer::Preallocate(size_t length) {
-  return data_file_->PreAllocate(total_bytes_written(), length);
+  RETURN_NOT_OK(data_file_->PreAllocate(total_bytes_written(), length));
+  preallocated_offset_ = total_bytes_written() + length;
+  return Status::OK();
 }
 
 void LogBlockContainer::UpdateBytesWritten(int64_t more_bytes) {
@@ -823,7 +871,7 @@ Status LogWritableBlock::FlushDataAsync() {
     VLOG(3) << "Flushing block " << id();
     RETURN_NOT_OK(container_->FlushData(block_offset_, block_length_));
 
-    RETURN_NOT_OK(AppendMetadata());
+    RETURN_NOT_OK_PREPEND(AppendMetadata(), "Unable to append block metadata");
 
     // TODO: Flush just the range we care about.
     RETURN_NOT_OK(container_->FlushMetadata());
@@ -861,7 +909,7 @@ Status LogWritableBlock::DoClose(SyncMode mode) {
     // FlushDataAsync() was not called; append the metadata now.
     if (state_ == CLEAN || state_ == DIRTY) {
       s = AppendMetadata();
-      RETURN_NOT_OK(s);
+      RETURN_NOT_OK_PREPEND(s, "Unable to flush block during close");
     }
 
     if (mode == SYNC &&
@@ -1180,48 +1228,97 @@ Status LogBlockManager::Open() {
   return Status::OK();
 }
 
-
 Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
                                     gscoped_ptr<WritableBlock>* block) {
   CHECK(!read_only_);
 
-  // Find a free container. If one cannot be found, create a new one.
-  //
-  // TODO: should we cap the number of outstanding containers and force
-  // callers to block if we've reached it?
-  LogBlockContainer* container = GetAvailableContainer();
-  if (!container) {
-    // Round robin through the root paths to select where the next
-    // container should live.
-    int32 old_idx;
-    int32 new_idx;
-    do {
-      old_idx = root_paths_idx_.Load();
-      new_idx = (old_idx + 1) % root_paths_.size();
-    } while (!root_paths_idx_.CompareAndSet(old_idx, new_idx));
-    string root_path = root_paths_[old_idx];
-
-    // Guaranteed by LogBlockManager::Open().
-    PathInstanceMetadataFile* instance = FindOrDie(instances_by_root_path_, root_path);
-
-    gscoped_ptr<LogBlockContainer> new_container;
-    RETURN_NOT_OK(LogBlockContainer::Create(this,
-                                            instance->metadata(),
-                                            root_path,
-                                            &new_container));
-    container = new_container.release();
-    {
-      std::lock_guard<simple_spinlock> l(lock_);
-      dirty_dirs_.insert(root_path);
-      AddNewContainerUnlocked(container);
+  // Root paths that are below their reserved space threshold. Initialize the
+  // paths from the FullDiskCache. This function-local cache is necessary for
+  // correctness in case the FullDiskCache expiration time is set to 0.
+  unordered_set<string> full_root_paths(root_paths_.size());
+  for (int i = 0; i < root_paths_.size(); i++) {
+    if (full_disk_cache_.IsRootFull(root_paths_[i])) {
+      InsertOrDie(&full_root_paths, root_paths_[i]);
     }
   }
 
-  // By preallocating with each CreateBlock(), we're effectively
-  // maintaining a rolling buffer of preallocated data just ahead of where
-  // the next write will fall.
-  if (FLAGS_log_container_preallocate_bytes) {
-    RETURN_NOT_OK(container->Preallocate(FLAGS_log_container_preallocate_bytes));
+  // Find a free container. If one cannot be found, create a new one.
+  // In case one or more root paths have hit their reserved space limit, we
+  // retry until we have exhausted all root paths.
+  //
+  // TODO: should we cap the number of outstanding containers and force
+  // callers to block if we've reached it?
+  LogBlockContainer* container = nullptr;
+  while (!container) {
+    container = GetAvailableContainer(full_root_paths);
+    if (!container) {
+      // If all root paths are full, we cannot allocate a block.
+      if (full_root_paths.size() == root_paths_.size()) {
+        return Status::IOError("Unable to allocate block: All data directories are full. "
+                               "Please free some disk space or consider changing the "
+                               "fs_data_dirs_reserved_bytes configuration parameter",
+                               "", ENOSPC);
+      }
+      // Round robin through the root paths to select where the next
+      // container should live.
+      // TODO: Consider a more random scheme for block placement.
+      int32 cur_idx;
+      int32 next_idx;
+      do {
+        cur_idx = root_paths_idx_.Load();
+        next_idx = (cur_idx + 1) % root_paths_.size();
+      } while (!root_paths_idx_.CompareAndSet(cur_idx, next_idx) ||
+               ContainsKey(full_root_paths, root_paths_[cur_idx]));
+      string root_path = root_paths_[cur_idx];
+      if (full_disk_cache_.IsRootFull(root_path)) {
+        InsertOrDie(&full_root_paths, root_path);
+        continue;
+      }
+
+      // Guaranteed by LogBlockManager::Open().
+      PathInstanceMetadataFile* instance = FindOrDie(instances_by_root_path_, root_path);
+
+      gscoped_ptr<LogBlockContainer> new_container;
+      RETURN_NOT_OK_PREPEND(LogBlockContainer::Create(this,
+                                                      instance->metadata(),
+                                                      root_path,
+                                                      &new_container),
+                            "Could not create new log block container at " + root_path);
+      container = new_container.release();
+      {
+        std::lock_guard<simple_spinlock> l(lock_);
+        dirty_dirs_.insert(root_path);
+        AddNewContainerUnlocked(container);
+      }
+    }
+
+    // By preallocating with each CreateBlock(), we're effectively
+    // maintaining a rolling buffer of preallocated data just ahead of where
+    // the next write will fall.
+    if (FLAGS_log_container_preallocate_bytes) {
+      // TODO: The use of FLAGS_log_container_preallocate_bytes may be a poor
+      // estimate for the number of bytes we are about to consume for a block.
+      // In the future, we may also want to implement some type of "hard" limit
+      // to ensure that a giant block doesn't blow through the configured
+      // reserved disk space.
+      Status s = env_util::VerifySufficientDiskSpace(env_, container->DataFilePath(),
+                                                     FLAGS_log_container_preallocate_bytes,
+                                                     FLAGS_fs_data_dirs_reserved_bytes);
+      if (PREDICT_FALSE(s.IsIOError() && s.posix_code() == ENOSPC)) {
+        LOG(ERROR) << Substitute("Log block manager: Insufficient disk space under path $0: "
+                                 "Creation of new data blocks under this path can be retried after "
+                                 "$1 seconds: $2", container->root_path(),
+                                 FLAGS_log_block_manager_full_disk_cache_seconds, s.ToString());
+        // Blacklist this root globally and locally.
+        full_disk_cache_.MarkRootFull(container->root_path());
+        InsertOrDie(&full_root_paths, container->root_path());
+        MakeContainerAvailable(container);
+        container = nullptr;
+        continue;
+      }
+      RETURN_NOT_OK(s); // Catch other types of IOErrors, etc.
+      RETURN_NOT_OK(container->Preallocate(FLAGS_log_container_preallocate_bytes));
+    }
   }
 
   // Generate a free block ID.
@@ -1277,7 +1374,8 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
   block_id.CopyToPB(record.mutable_block_id());
   record.set_op_type(DELETE);
   record.set_timestamp_us(GetCurrentTimeMicros());
-  RETURN_NOT_OK(lb->container()->AppendMetadata(record));
+  RETURN_NOT_OK_PREPEND(lb->container()->AppendMetadata(record),
+                        "Unable to append deletion record to block metadata");
 
   // We don't bother fsyncing the metadata append for deletes in order to avoid
   // the disk overhead. Even if we did fsync it, we'd still need to account for
@@ -1321,13 +1419,49 @@ void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {
   }
 }
 
-LogBlockContainer* LogBlockManager::GetAvailableContainer() {
+LogBlockContainer* LogBlockManager::GetAvailableContainer(
+    const unordered_set<string>& full_root_paths) {
   LogBlockContainer* container = nullptr;
-  std::lock_guard<simple_spinlock> l(lock_);
-  if (!available_containers_.empty()) {
-    container = available_containers_.front();
-    available_containers_.pop_front();
+  int64_t disk_full_containers_delta = 0;
+  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    // Move containers from disk_full -> available.
+    while (!disk_full_containers_.empty() &&
+           disk_full_containers_.top().second.ComesBefore(now)) {
+      available_containers_.push_back(disk_full_containers_.top().first);
+      disk_full_containers_.pop();
+      disk_full_containers_delta -= 1;
+    }
+
+    // Return the first currently-available non-full-disk container (according to
+    // our full-disk cache).
+    while (!container && !available_containers_.empty()) {
+      container = available_containers_.front();
+      available_containers_.pop_front();
+      MonoTime expires;
+      // Note: We must check 'full_disk_cache_' before 'full_root_paths' in
+      // order to correctly use the expiry time provided by 'full_disk_cache_'.
+      if (full_disk_cache_.IsRootFull(container->root_path(), &expires) ||
+          ContainsKey(full_root_paths, container->root_path())) {
+        if (!expires.Initialized()) {
+          // It's no longer in the cache but we still consider it unusable.
+          // It will be moved back into 'available_containers_' on the next call.
+          expires = now;
+        }
+        disk_full_containers_.emplace(container, expires);
+        disk_full_containers_delta += 1;
+        container = nullptr;
+      }
+    }
   }
+
+  // Update the metrics in a batch.
+  if (metrics()) {
+    metrics()->unavailable_containers->IncrementBy(disk_full_containers_delta);
+  }
+
+  // Return the container we found, or null if we don't have anything available.
   return container;
 }
 
@@ -1637,6 +1771,27 @@ Status LogBlockManager::Init() {
 
 std::string LogBlockManager::ContainerPathForTests(internal::LogBlockContainer* container) {
   return container->ToString();
+}
+
+bool FullDiskCache::IsRootFull(const std::string& root_path, MonoTime* expires_out) const {
+  const MonoTime* expires;
+  {
+    shared_lock<rw_spinlock> l(&lock_.get_lock());
+    expires = FindOrNull(cache_, root_path);
+  }
+  if (expires == nullptr) return false; // No entry exists.
+  if (expires->ComesBefore(MonoTime::Now(MonoTime::FINE))) return false; // Expired.
+  if (expires_out != nullptr) {
+    *expires_out = *expires;
+  }
+  return true; // Root is still full according to the cache.
+}
+
+void FullDiskCache::MarkRootFull(const string& root_path) {
+  MonoTime expires = MonoTime::Now(MonoTime::FINE);
+  expires.AddDelta(MonoDelta::FromSeconds(FLAGS_log_block_manager_full_disk_cache_seconds));
+  std::lock_guard<percpu_rwlock> l(lock_);
+  InsertOrUpdate(&cache_, root_path, expires); // Last one wins.
 }
 
 } // namespace fs

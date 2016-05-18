@@ -47,6 +47,7 @@ ADD_KUDU_TEST(client_failover-itest)
 ADD_KUDU_TEST(client-stress-test
   RESOURCE_LOCK "master-rpc-ports"
   RUN_SERIAL true)
+ADD_KUDU_TEST(disk_reservation-itest)
 ADD_KUDU_TEST(master_replication-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(master_failover-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(raft_consensus-itest RUN_SERIAL true)

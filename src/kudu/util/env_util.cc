@@ -16,18 +16,37 @@
 // under the License.
 
 #include <algorithm>
-#include <memory>
-
+#include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <memory>
 #include <string>
+#include <utility>
 
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
+#include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/flag_tags.h"
 
-using strings::Substitute;
+DEFINE_int64(disk_reserved_bytes_free_for_testing, -1,
+             "For testing only! Set to number of bytes free on each filesystem. "
+             "Set to -1 to disable this test-specific override");
+TAG_FLAG(disk_reserved_bytes_free_for_testing, runtime);
+TAG_FLAG(disk_reserved_bytes_free_for_testing, unsafe);
+
+DEFINE_string(disk_reserved_prefixes_with_bytes_free_for_testing, "",
+             "For testing only! Syntax: '/path/a:5,/path/b:7' means a has 5 bytes free, "
+             "b has 7 bytes free. Set to empty string to disable this test-specific override.");
+TAG_FLAG(disk_reserved_prefixes_with_bytes_free_for_testing, runtime);
+TAG_FLAG(disk_reserved_prefixes_with_bytes_free_for_testing, unsafe);
+
 using std::shared_ptr;
+using strings::Substitute;
 
 namespace kudu {
 namespace env_util {
@@ -59,6 +78,45 @@ Status OpenFileForSequential(Env *env, const string &path,
   gscoped_ptr<SequentialFile> r;
   RETURN_NOT_OK(env->NewSequentialFile(path, &r));
   file->reset(r.release());
+  return Status::OK();
+}
+
+// If we can parse the flag value, and the flag specifies an override for the
+// given path, then override the free bytes to match what is specified in the
+// flag. See definition of disk_reserved_prefixes_with_bytes_free_for_testing.
+static void OverrideBytesFree(const string& path, const string& flag, int64_t* bytes_free) {
+  for (const auto& str : strings::Split(flag, ",")) {
+    pair<string, string> p = strings::Split(str, ":");
+    if (HasPrefixString(path, p.first)) {
+      int64_t free_override;
+      if (!safe_strto64(p.second.c_str(), p.second.size(), &free_override)) return;
+      *bytes_free = free_override;
+      return;
+    }
+  }
+}
+
+Status VerifySufficientDiskSpace(Env *env, const std::string& path,
+                                 int64_t requested_bytes, int64_t reserved_bytes) {
+  DCHECK_GE(requested_bytes, 0);
+
+  int64_t bytes_free;
+  RETURN_NOT_OK(env->GetBytesFree(path, &bytes_free));
+
+  // Allow overriding these values by tests.
+  if (PREDICT_FALSE(FLAGS_disk_reserved_bytes_free_for_testing > -1)) {
+    bytes_free = FLAGS_disk_reserved_bytes_free_for_testing;
+  }
+  if (PREDICT_FALSE(!FLAGS_disk_reserved_prefixes_with_bytes_free_for_testing.empty())) {
+    OverrideBytesFree(path, FLAGS_disk_reserved_prefixes_with_bytes_free_for_testing, &bytes_free);
+  }
+
+  if (bytes_free - requested_bytes < reserved_bytes) {
+    return Status::IOError(Substitute("Insufficient disk space to allocate $0 bytes under path $1 "
+                                      "($2 bytes free vs $3 bytes reserved)",
+                                      requested_bytes, path, bytes_free, reserved_bytes),
+                           "", ENOSPC);
+  }
   return Status::OK();
 }
 

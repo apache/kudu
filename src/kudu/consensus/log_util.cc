@@ -760,7 +760,6 @@ Status WritableLogSegment::WriteFooterAndClose(const LogSegmentFooterPB& footer)
   return Status::OK();
 }
 
-
 Status WritableLogSegment::WriteEntryBatch(const Slice& data) {
   DCHECK(is_header_written_);
   DCHECK(!is_footer_written_);

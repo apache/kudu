@@ -35,6 +35,8 @@ DEFINE_int32(num_batches, 10000,
 
 DECLARE_int32(log_min_segments_to_retain);
 DECLARE_double(log_inject_io_error_on_preallocate_fraction);
+DECLARE_int64(fs_wal_dir_reserved_bytes);
+DECLARE_int64(disk_reserved_bytes_free_for_testing);
 
 namespace kudu {
 namespace log {
@@ -1061,6 +1063,25 @@ TEST_F(LogTest, TestFailedLogPreAllocation) {
   Status s = AppendNoOp(&opid);
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Injected IOError");
+}
+
+// Test the enforcement of reserving disk space for the log.
+TEST_F(LogTest, TestDiskSpaceCheck) {
+  FLAGS_fs_wal_dir_reserved_bytes = 1; // Keep at least 1 byte reserved in the FS.
+  FLAGS_disk_reserved_bytes_free_for_testing = 0;
+  options_.segment_size_mb = 1;
+  Status s = BuildLog();
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_EQ(ENOSPC, s.posix_code());
+  ASSERT_STR_CONTAINS(s.ToString(), "Insufficient disk space");
+
+  FLAGS_disk_reserved_bytes_free_for_testing = 2 * 1024 * 1024;
+  ASSERT_OK(BuildLog());
+
+  // TODO: We don't currently do bookkeeping to ensure that we check if the
+  // disk is past its quota if we write beyond the preallocation limit for a
+  // single segment. If we did that, we could ensure that we check once we
+  // detect that we are past the preallocation limit.
 }
 
 } // namespace log

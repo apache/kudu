@@ -17,7 +17,6 @@
 
 #include <memory>
 
-
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/log_block_manager.h"
@@ -51,6 +50,12 @@ DEFINE_int32(num_blocks_close, 500,
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
 
+DECLARE_int64(fs_data_dirs_reserved_bytes);
+DECLARE_int64(disk_reserved_bytes_free_for_testing);
+
+DECLARE_int32(log_block_manager_full_disk_cache_seconds);
+DECLARE_string(block_manager);
+
 // Generic block manager metrics.
 METRIC_DECLARE_gauge_uint64(block_manager_blocks_open_reading);
 METRIC_DECLARE_gauge_uint64(block_manager_blocks_open_writing);
@@ -64,6 +69,15 @@ METRIC_DECLARE_gauge_uint64(log_block_manager_bytes_under_management);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 METRIC_DECLARE_counter(log_block_manager_containers);
 METRIC_DECLARE_counter(log_block_manager_full_containers);
+
+// The LogBlockManager is only supported on Linux, since it requires hole punching.
+#define RETURN_NOT_LOG_BLOCK_MANAGER() \
+  do { \
+    if (FLAGS_block_manager != "log") { \
+      LOG(INFO) << "This platform does not use the log block manager by default. Skipping test."; \
+      return; \
+    } \
+  } while (false)
 
 namespace kudu {
 namespace fs {
@@ -691,15 +705,15 @@ TYPED_TEST(BlockManagerTest, MemTrackerTest) {
   ASSERT_NO_FATAL_FAILURE(this->RunMemTrackerTest());
 }
 
-// The LogBlockManager is only supported on Linux, since it requires hole punching.
-#if defined(__linux__)
-// LogBlockManager-specific tests
+// LogBlockManager-specific tests.
 class LogBlockManagerTest : public BlockManagerTest<LogBlockManager> {
 };
 
 // Regression test for KUDU-1190, a crash at startup when a block ID has been
 // reused.
 TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
+  RETURN_NOT_LOG_BLOCK_MANAGER();
+
   // Set a deterministic random seed, so that we can reproduce the sequence
   // of random numbers.
   bm_->rand_.Reset(1);
@@ -769,6 +783,8 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
 // Note that we rely on filesystem integrity to ensure that we do not lose
 // trailing, fsync()ed metadata.
 TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
+  RETURN_NOT_LOG_BLOCK_MANAGER();
+
   // Create several blocks.
   vector<BlockId> created_blocks;
   BlockId last_block_id;
@@ -931,7 +947,30 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   ASSERT_STR_CONTAINS(s.ToString(), "Incorrect checksum");
 }
 
-#endif // defined(__linux__)
+TEST_F(LogBlockManagerTest, TestDiskSpaceCheck) {
+  RETURN_NOT_LOG_BLOCK_MANAGER();
+
+  FLAGS_log_block_manager_full_disk_cache_seconds = 0; // Don't cache device fullness.
+
+  FLAGS_fs_data_dirs_reserved_bytes = 1; // Keep at least 1 byte reserved in the FS.
+  FLAGS_disk_reserved_bytes_free_for_testing = 0;
+  FLAGS_log_container_preallocate_bytes = 100;
+
+  vector<BlockId> created_blocks;
+  gscoped_ptr<WritableBlock> writer;
+  Status s = bm_->CreateBlock(&writer);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "All data directories are full");
+
+  FLAGS_disk_reserved_bytes_free_for_testing = 101;
+  ASSERT_OK(bm_->CreateBlock(&writer));
+
+  FLAGS_disk_reserved_bytes_free_for_testing = 0;
+  s = bm_->CreateBlock(&writer);
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+
+  ASSERT_OK(writer->Close());
+}
 
 } // namespace fs
 } // namespace kudu
