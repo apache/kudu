@@ -389,13 +389,6 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
                               ProbeStats* stats) {
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
 
-  CHECK(state_ == kOpen || state_ == kBootstrapping);
-  // make sure that the WriteTransactionState has the component lock and that
-  // there the RowOp has the row lock.
-  DCHECK(insert->has_row_lock()) << "RowOp must hold the row lock.";
-  DCHECK_EQ(tx_state->schema_at_decode_time(), schema()) << "Raced against schema change";
-  DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
-
   // First, ensure that it is a unique key by checking all the open RowSets.
   vector<RowSet *> to_check;
   comps->rowsets->FindRowSetsWithKeyInRange(insert->key_probe->encoded_key_slice(),
@@ -477,10 +470,6 @@ vector<RowSet*> Tablet::FindRowSetsToCheck(RowOp* mutate,
 Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
                                  RowOp* mutate,
                                  ProbeStats* stats) {
-  DCHECK(tx_state != nullptr) << "you must have a WriteTransactionState";
-  DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
-  DCHECK_EQ(tx_state->schema_at_decode_time(), schema());
-
   gscoped_ptr<OperationResultPB> result(new OperationResultPB());
 
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
@@ -573,6 +562,12 @@ void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
 void Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
                                RowOp* row_op,
                                ProbeStats* stats) {
+  CHECK(state_ == kOpen || state_ == kBootstrapping);
+  DCHECK(row_op->has_row_lock()) << "RowOp must hold the row lock.";
+  DCHECK(tx_state != nullptr) << "must have a WriteTransactionState";
+  DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
+  DCHECK_EQ(tx_state->schema_at_decode_time(), schema());
+
   switch (row_op->decoded_op.type) {
     case RowOperationsPB::INSERT:
       ignore_result(InsertUnlocked(tx_state, row_op, stats));
