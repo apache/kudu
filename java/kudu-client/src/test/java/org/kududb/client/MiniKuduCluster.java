@@ -115,6 +115,7 @@ public class MiniKuduCluster implements AutoCloseable {
     LOG.info("Starting {} tablet servers...", numTservers);
     List<Integer> ports = TestUtils.findFreePorts(startPort, numTservers * 2);
     for (int i = 0; i < numTservers; i++) {
+      int rpcPort = ports.get(i * 2);
       String dataDirPath = baseDirPath + "/ts-" + i + "-" + now;
       String flagsPath = TestUtils.getFlagsPath();
       String[] tsCmdLine = {
@@ -126,10 +127,10 @@ public class MiniKuduCluster implements AutoCloseable {
           "--tserver_master_addrs=" + masterAddresses,
           "--webserver_interface=" + localhost,
           "--local_ip_for_outbound_sockets=" + localhost,
-          "--webserver_port=" + ports.get((i * 2) + 1),
-          "--rpc_bind_addresses=" + localhost + ":" + ports.get(i * 2)};
-      tserverProcesses.put(ports.get(i * 2), configureAndStartProcess(tsCmdLine));
-      commandLines.put(ports.get(i * 2), tsCmdLine);
+          "--webserver_port=" + (rpcPort + 1),
+          "--rpc_bind_addresses=" + localhost + ":" + rpcPort};
+      tserverProcesses.put(rpcPort, configureAndStartProcess(rpcPort, tsCmdLine));
+      commandLines.put(rpcPort, tsCmdLine);
 
       if (flagsPath.startsWith(baseDirPath)) {
         // We made a temporary copy of the flags; delete them later.
@@ -194,7 +195,7 @@ public class MiniKuduCluster implements AutoCloseable {
         masterCmdLine.add("--master_addresses=" + masterAddresses);
       }
       String[] commandLine = masterCmdLine.toArray(new String[masterCmdLine.size()]);
-      masterProcesses.put(port, configureAndStartProcess(commandLine));
+      masterProcesses.put(port, configureAndStartProcess(port, commandLine));
       commandLines.put(port, commandLine);
 
       if (flagsPath.startsWith(baseDirPath)) {
@@ -210,19 +211,20 @@ public class MiniKuduCluster implements AutoCloseable {
    * Starts a process using the provided command and configures it to be daemon,
    * redirects the stderr to stdout, and starts a thread that will read from the process' input
    * stream and redirect that to LOG.
-   * @param command Process and options
+   * @param port rpc port used to identify the process
+   * @param command process and options
    * @return The started process
    * @throws Exception Exception if an error prevents us from starting the process,
    * or if we were able to start the process but noticed that it was then killed (in which case
    * we'll log the exit value).
    */
-  private Process configureAndStartProcess(String[] command) throws Exception {
+  private Process configureAndStartProcess(int port, String[] command) throws Exception {
     LOG.info("Starting process: {}", Joiner.on(" ").join(command));
     ProcessBuilder processBuilder = new ProcessBuilder(command);
     processBuilder.redirectErrorStream(true);
     Process proc = processBuilder.start();
     ProcessInputStreamLogPrinterRunnable printer =
-        new ProcessInputStreamLogPrinterRunnable(proc.getInputStream());
+        new ProcessInputStreamLogPrinterRunnable(port, proc.getInputStream());
     Thread thread = new Thread(printer);
     thread.setDaemon(true);
     thread.setName(command[0]);
@@ -274,7 +276,7 @@ public class MiniKuduCluster implements AutoCloseable {
     }
 
     String[] commandLine = commandLines.get(port);
-    map.put(port, configureAndStartProcess(commandLine));
+    map.put(port, configureAndStartProcess(port, commandLine));
   }
 
   /**
@@ -384,15 +386,16 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
-   * Helper runnable that can log what the processes are sending on their stdout and stderr that
-   * we'd otherwise miss.
+   * Helper runnable that receives stdout and logs it along with the process' identifier.
    */
   static class ProcessInputStreamLogPrinterRunnable implements Runnable {
 
     private final InputStream is;
+    private final int port;
 
-    public ProcessInputStreamLogPrinterRunnable(InputStream is) {
+    public ProcessInputStreamLogPrinterRunnable(int port, InputStream is) {
       this.is = is;
+      this.port = port;
     }
 
     @Override
@@ -401,7 +404,7 @@ public class MiniKuduCluster implements AutoCloseable {
         String line;
         BufferedReader in = new BufferedReader(new InputStreamReader(is));
         while ((line = in.readLine()) != null) {
-          LOG.info(line);
+          LOG.info("{}: {}", port, line);
         }
         in.close();
       }
