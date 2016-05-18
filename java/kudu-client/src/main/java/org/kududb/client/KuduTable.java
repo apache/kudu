@@ -129,6 +129,14 @@ public class KuduTable {
   }
 
   /**
+   * Get a new upsert configured with this table's schema. The returned object should not be reused.
+   * @return an upsert with this table's schema
+   */
+  public Upsert newUpsert() {
+    return new Upsert(this);
+  }
+
+  /**
    * Get all the tablets for this table. This may query the master multiple times if there
    * are a lot of tablets.
    * @param deadline deadline in milliseconds for this method to finish

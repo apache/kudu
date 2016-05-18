@@ -60,7 +60,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
     INSERT((byte)RowOperationsPB.Type.INSERT.getNumber()),
     UPDATE((byte)RowOperationsPB.Type.UPDATE.getNumber()),
     DELETE((byte)RowOperationsPB.Type.DELETE.getNumber()),
-    SPLIT_ROWS((byte)RowOperationsPB.Type.SPLIT_ROW.getNumber());
+    SPLIT_ROWS((byte)RowOperationsPB.Type.SPLIT_ROW.getNumber()),
+    UPSERT((byte)RowOperationsPB.Type.UPSERT.getNumber());
 
     ChangeType(byte encodedByte) {
       this.encodedByte = encodedByte;

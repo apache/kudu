@@ -189,7 +189,47 @@ public class TestKuduSession extends BaseKuduTest {
     }
   }
 
+  @Test(timeout = 10000)
+  public void testUpsert() throws Exception {
+    String tableName = TABLE_NAME_PREFIX + "-Upsert";
+    table = createTable(tableName, basicSchema, null);
+    KuduSession session = syncClient.newSession();
+
+    // Test an Upsert that acts as an Insert.
+    assertFalse(session.apply(createUpsert(1, 1, false)).hasRowError());
+
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(1, rowStrings.size());
+    assertEquals(
+        "INT32 key=1, INT32 column1_i=1, INT32 column2_i=3, " +
+            "STRING column3_s=a string, BOOL column4_b=true",
+        rowStrings.get(0));
+
+    // Test an Upsert that acts as an Update.
+    assertFalse(session.apply(createUpsert(1, 2, false)).hasRowError());
+    rowStrings = scanTableToStrings(table);
+    assertEquals(
+        "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
+            "STRING column3_s=a string, BOOL column4_b=true",
+        rowStrings.get(0));
+  }
+
   private Insert createInsert(int key) {
     return createBasicSchemaInsert(table, key);
+  }
+
+  private Upsert createUpsert(int key, int secondVal, boolean hasNull) {
+    Upsert upsert = table.newUpsert();
+    PartialRow row = upsert.getRow();
+    row.addInt(0, key);
+    row.addInt(1, secondVal);
+    row.addInt(2, 3);
+    if (hasNull) {
+      row.setNull(3);
+    } else {
+      row.addString(3, "a string");
+    }
+    row.addBoolean(4, true);
+    return upsert;
   }
 }
