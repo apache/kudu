@@ -644,7 +644,7 @@ string PartitionSchema::DisplayString(const Schema& schema) const {
     for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
       display_string.append("  Key columns:\n");
       for (const ColumnId& col_id : hash_bucket_schema.column_ids) {
-        const ColumnSchema& col = schema.column(col_id);
+        const ColumnSchema& col = schema.column_by_id(col_id);
         SubstituteAndAppend(&display_string, "    $0 $1\n", col.name(), col.type_info()->name());
       }
       SubstituteAndAppend(&display_string, "  Bucket count: $0\n", hash_bucket_schema.num_buckets);
@@ -658,7 +658,7 @@ string PartitionSchema::DisplayString(const Schema& schema) const {
   if (!range_schema_.column_ids.empty()) {
     display_string.append("Range columns:\n");
     for (const ColumnId& col_id : range_schema_.column_ids) {
-      const ColumnSchema& col = schema.column(col_id);
+      const ColumnSchema& col = schema.column_by_id(col_id);
       SubstituteAndAppend(&display_string, "  $0 $1\n", col.name(), col.type_info()->name());
     }
   }
