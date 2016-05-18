@@ -519,6 +519,16 @@ cdef class Table:
         """
         return Insert(self)
 
+    def new_upsert(self):
+        """
+        Create a new Upsert operation. Pass the completed Upsert to a Session.
+
+        Returns
+        -------
+        upsert : Upsert
+        """
+        return Upsert(self)
+
     def new_update(self):
         """
         Create a new Update operation. Pass the completed Update to a Session.
@@ -1211,15 +1221,21 @@ cdef class WriteOperation(PartialRow):
         # Whether the WriteOperation has been applied.
         # Set by subclasses.
         bint applied
+        KuduWriteOperation* op
 
     def __cinit__(self, Table table):
         self.applied = 0
 
+    cdef add_to_session(self, Session s):
+        if self.applied:
+            raise Exception
+
+        check_status(s.s.get().Apply(self.op))
+        self.op = NULL
+        self.applied = 1
+
 
 cdef class Insert(WriteOperation):
-    cdef:
-        KuduInsert* op
-
     def __cinit__(self, Table table):
         self.op = self.table.ptr().NewInsert()
         self.row = self.op.mutable_row()
@@ -1227,50 +1243,33 @@ cdef class Insert(WriteOperation):
     def __dealloc__(self):
         del self.op
 
-    cdef add_to_session(self, Session s):
-        if self.applied:
-            raise Exception
 
-        check_status(s.s.get().Apply(self.op))
-        self.op = NULL
-        self.applied = 1
+cdef class Upsert(WriteOperation):
+    def __cinit__(self, Table table):
+        self.op = table.ptr().NewUpsert()
+        self.row = self.op.mutable_row()
+
+    def __dealloc__(self):
+        del self.op
 
 
 cdef class Update(WriteOperation):
-    cdef:
-        KuduUpdate* op
-
     def __cinit__(self, Table table):
-        self.table = table
         self.op = table.ptr().NewUpdate()
         self.row = self.op.mutable_row()
 
     def __dealloc__(self):
         del self.op
 
-    cdef add_to_session(self, Session s):
-        pass
-
 
 cdef class Delete(WriteOperation):
-    cdef:
-        KuduDelete* op
-
     def __cinit__(self, Table table):
-        self.table = table
         self.op = table.ptr().NewDelete()
         self.row = self.op.mutable_row()
 
     def __dealloc__(self):
         del self.op
 
-    cdef add_to_session(self, Session s):
-        if self.applied:
-            raise Exception
-
-        check_status(s.s.get().Apply(self.op))
-        self.applied = 1
-        self.op = NULL
 
 
 cdef inline cast_pyvalue(DataType t, object o):
