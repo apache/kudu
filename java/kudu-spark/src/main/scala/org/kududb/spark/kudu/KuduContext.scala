@@ -22,14 +22,14 @@ import org.apache.hadoop.util.ShutdownHookManager
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Row}
-import org.apache.spark.sql.types.{StructField, StructType, DataType, DataTypes}
+import org.apache.spark.sql.types.{StructType, DataType, DataTypes}
 import org.kududb.{ColumnSchema, Schema, Type}
 import org.kududb.annotations.InterfaceStability
 import org.kududb.client.SessionConfiguration.FlushMode
 import org.kududb.client._
-import scala.collection.JavaConverters._
-import java.sql.Timestamp
 
+
+import scala.collection.mutable
 
 /**
   * KuduContext is a serializable container for Kudu client connections.
@@ -41,30 +41,12 @@ import java.sql.Timestamp
 @InterfaceStability.Unstable
 class KuduContext(kuduMaster: String) extends Serializable {
 
-  /**
-    * Set to
-    * [[org.apache.spark.util.ShutdownHookManager.DEFAULT_SHUTDOWN_PRIORITY]].
-    * The client instances are closed through the JVM shutdown hook
-    * mechanism in order to make sure that any unflushed writes are cleaned up
-    * properly. Spark has no shutdown notifications.
-    */
-  private val ShutdownHookPriority = 100
-
   @transient lazy val syncClient = {
-    val syncClient = new KuduClient.KuduClientBuilder(kuduMaster).build()
-    ShutdownHookManager.get().addShutdownHook(new Runnable {
-      override def run() = syncClient.close()
-    }, ShutdownHookPriority)
-    syncClient
+    KuduConnection.getSyncClient(kuduMaster)
   }
 
   @transient lazy val asyncClient = {
-    val asyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(kuduMaster).build()
-    ShutdownHookManager.get().addShutdownHook(
-      new Runnable {
-        override def run() = asyncClient.close()
-      }, ShutdownHookPriority)
-    asyncClient
+    KuduConnection.getAsyncClient(kuduMaster)
   }
 
   /**
@@ -201,4 +183,45 @@ class KuduContext(kuduMaster: String) extends Serializable {
     session.getPendingErrors
   }
 
+}
+
+private object KuduConnection {
+  private val syncCache = new mutable.HashMap[String, KuduClient]()
+  private val asyncCache = new mutable.HashMap[String, AsyncKuduClient]()
+
+  /**
+    * Set to
+    * [[org.apache.spark.util.ShutdownHookManager.DEFAULT_SHUTDOWN_PRIORITY]].
+    * The client instances are closed through the JVM shutdown hook
+    * mechanism in order to make sure that any unflushed writes are cleaned up
+    * properly. Spark has no shutdown notifications.
+    */
+  private val ShutdownHookPriority = 100
+
+  def getSyncClient(kuduMaster: String): KuduClient = {
+    syncCache.synchronized {
+      if (!syncCache.contains(kuduMaster)) {
+        val syncClient = new KuduClient.KuduClientBuilder(kuduMaster).build()
+        ShutdownHookManager.get().addShutdownHook(new Runnable {
+          override def run() = syncClient.close()
+        }, ShutdownHookPriority)
+        syncCache.put(kuduMaster, syncClient)
+      }
+      return syncCache(kuduMaster)
+    }
+  }
+
+  def getAsyncClient(kuduMaster: String): AsyncKuduClient = {
+    asyncCache.synchronized {
+      if (!asyncCache.contains(kuduMaster)) {
+        val asyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(kuduMaster).build()
+        ShutdownHookManager.get().addShutdownHook(
+          new Runnable {
+            override def run() = asyncClient.close()
+          }, ShutdownHookPriority)
+        asyncCache.put(kuduMaster, asyncClient)
+      }
+      return asyncCache(kuduMaster)
+    }
+  }
 }

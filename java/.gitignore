@@ -23,3 +23,9 @@
 # Maven build artifacts
 target/
 dependency-reduced-pom.xml
+
+# IntelliJ
+*.ipr
+*.iws
+*.iml
+.idea/
