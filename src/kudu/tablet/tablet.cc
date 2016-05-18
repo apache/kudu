@@ -68,11 +68,6 @@
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
 
-DEFINE_bool(tablet_do_dup_key_checks, true,
-            "Whether to check primary keys for duplicate on insertion. "
-            "Use at your own risk!");
-TAG_FLAG(tablet_do_dup_key_checks, unsafe);
-
 DEFINE_int32(tablet_compaction_budget_mb, 128,
              "Budget for a single compaction");
 TAG_FLAG(tablet_compaction_budget_mb, experimental);
@@ -402,22 +397,20 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
 
   // First, ensure that it is a unique key by checking all the open RowSets.
-  if (FLAGS_tablet_do_dup_key_checks) {
-    vector<RowSet *> to_check;
-    comps->rowsets->FindRowSetsWithKeyInRange(insert->key_probe->encoded_key_slice(),
-                                              &to_check);
+  vector<RowSet *> to_check;
+  comps->rowsets->FindRowSetsWithKeyInRange(insert->key_probe->encoded_key_slice(),
+                                            &to_check);
 
-    for (const RowSet *rowset : to_check) {
-      bool present = false;
-      RETURN_NOT_OK(rowset->CheckRowPresent(*insert->key_probe, &present, stats));
-      if (PREDICT_FALSE(present)) {
-        Status s = Status::AlreadyPresent("key already present");
-        if (metrics_) {
-          metrics_->insertions_failed_dup_key->Increment();
-        }
-        insert->SetFailed(s);
-        return s;
+  for (const RowSet *rowset : to_check) {
+    bool present = false;
+    RETURN_NOT_OK(rowset->CheckRowPresent(*insert->key_probe, &present, stats));
+    if (PREDICT_FALSE(present)) {
+      Status s = Status::AlreadyPresent("key already present");
+      if (metrics_) {
+        metrics_->insertions_failed_dup_key->Increment();
       }
+      insert->SetFailed(s);
+      return s;
     }
   }
 
