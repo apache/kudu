@@ -526,6 +526,7 @@ public class RowResult {
           case BINARY: buf.append(Bytes.pretty(getBinaryCopy(i))); break;
           case FLOAT: buf.append(getFloat(i)); break;
           case DOUBLE: buf.append(getDouble(i)); break;
+          case BOOL: buf.append(getBoolean(i)); break;
           default: buf.append("<unknown type!>"); break;
         }
       }
