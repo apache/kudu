@@ -142,7 +142,7 @@ void MethodSampler::SampleCall(InboundCall* call) {
       std::swap(bucket->sample, new_sample);
       bucket->last_sample_time.Store(now);
     }
-    LOG(INFO) << "Sampled call " << call->ToString();
+    VLOG(1) << "Sampled call " << call->ToString();
   }
 }
 
