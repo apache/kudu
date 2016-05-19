@@ -152,15 +152,15 @@ class LogTestBase : public KuduTest {
     STLDeleteElements(&entries_);
   }
 
-  void BuildLog() {
+  Status BuildLog() {
     Schema schema_with_ids = SchemaBuilder(schema_).Build();
-    CHECK_OK(Log::Open(options_,
-                       fs_manager_.get(),
-                       kTestTablet,
-                       schema_with_ids,
-                       0, // schema_version
-                       metric_entity_.get(),
-                       &log_));
+    return Log::Open(options_,
+                     fs_manager_.get(),
+                     kTestTablet,
+                     schema_with_ids,
+                     0, // schema_version
+                     metric_entity_.get(),
+                     &log_);
   }
 
   void CheckRightNumberOfSegmentFiles(int expected) {

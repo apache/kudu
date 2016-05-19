@@ -133,7 +133,7 @@ class LogTest : public LogTestBase {
 // If we write more than one entry in a batch, we should be able to
 // read all of those entries back.
 TEST_F(LogTest, TestMultipleEntriesInABatch) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   OpId opid;
   opid.set_term(1);
@@ -190,7 +190,7 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
 // a new log segment is initialized.
 TEST_F(LogTest, TestFsync) {
   options_.force_fsync_all = true;
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   OpId opid;
   opid.set_term(0);
@@ -206,7 +206,7 @@ TEST_F(LogTest, TestFsync) {
 // it.
 TEST_F(LogTest, TestSizeIsMaintained) {
   options_.preallocate_segments = false;
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   OpId opid = MakeOpId(0, 1);
   AppendNoOp(&opid);
@@ -228,7 +228,7 @@ TEST_F(LogTest, TestSizeIsMaintained) {
 // Test that the reader can read from the log even if it hasn't been
 // properly closed.
 TEST_F(LogTest, TestLogNotTrimmed) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   OpId opid;
   opid.set_term(0);
@@ -252,7 +252,7 @@ TEST_F(LogTest, TestLogNotTrimmed) {
 // The reader should gracefully handle this situation, but somehow expose that
 // the segment is uninitialized. See KUDU-140.
 TEST_F(LogTest, TestBlankLogFile) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   // The log's reader will have a segment...
   ASSERT_EQ(log_->reader()->num_segments(), 1);
@@ -272,7 +272,7 @@ TEST_F(LogTest, TestBlankLogFile) {
 void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
                                Status expected_status, int expected_entries) {
   const int kNumEntries = 4;
-  BuildLog();
+  ASSERT_OK(BuildLog());
   OpId op_id = MakeOpId(1, 1);
   ASSERT_OK(AppendNoOps(&op_id, kNumEntries));
 
@@ -339,7 +339,7 @@ TEST_F(LogTest, TestCorruptLogInHeader) {
 // Tests that segments roll over when max segment size is reached
 // and that the player plays all entries in the correct order.
 TEST_F(LogTest, TestSegmentRollover) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
   // Set a small segment size so that we have roll overs.
   log_->SetMaxSegmentSizeForTests(990);
   const int kNumEntriesPerBatch = 100;
@@ -380,7 +380,7 @@ TEST_F(LogTest, TestSegmentRollover) {
 
 TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   const int kNumEntries = 4;
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   SegmentSequence segments;
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
@@ -460,7 +460,7 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
 
 // Tests that segments can be GC'd while the log is running.
 TEST_F(LogTest, TestGCWithLogRunning) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   vector<LogAnchor*> anchors;
   ElementDeleter deleter(&anchors);
@@ -541,7 +541,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
 // are not necessary for recovery.
 TEST_F(LogTest, TestGCOfIndexChunks) {
   FLAGS_log_min_segments_to_retain = 4;
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   // Append some segments which cross from one index chunk into another.
   // 999990-999994        \___ the first index
@@ -581,7 +581,7 @@ TEST_F(LogTest, TestGCOfIndexChunks) {
 // all messages up to a certain point were fsync()ed without actually
 // writing them to the log.
 TEST_F(LogTest, TestWaitUntilAllFlushed) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
   // Append 2 replicate/commit pairs asynchronously
   AppendReplicateBatchAndCommitEntryPairsToLog(2, APPEND_ASYNC);
 
@@ -605,7 +605,7 @@ TEST_F(LogTest, TestWaitUntilAllFlushed) {
 
 // Tests log reopening and that GC'ing the old log's segments works.
 TEST_F(LogTest, TestLogReopenAndGC) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   SegmentSequence segments;
 
@@ -632,7 +632,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
 
   // Now reopen the log as if we had replayed the state into the stores.
   // that were in memory and do GC.
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   // The "old" data consists of 3 segments. We still hold anchors.
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments))
@@ -679,7 +679,7 @@ TEST_F(LogTest, TestWriteManyBatches) {
   if (AllowSlowTests()) {
     num_batches = FLAGS_num_batches;
   }
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   LOG(INFO)<< "Starting to write " << num_batches << " to log";
   LOG_TIMING(INFO, "Wrote all batches to log") {
@@ -774,7 +774,7 @@ TEST_F(LogTest, TestLogReader) {
 // have been properly closed, we can still read the entries as the reader
 // returns the current segment.
 TEST_F(LogTest, TestLogReaderReturnsLatestSegmentIfIndexEmpty) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   OpId opid = MakeOpId(1, 1);
   AppendCommit(opid, APPEND_ASYNC);
@@ -921,7 +921,7 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
 
   // Write the test sequence to the log.
   // TODO: should consider adding batching here of multiple replicates
-  BuildLog();
+  ASSERT_OK(BuildLog());
   AppendTestSequence(seq);
 
   const int kNumRandomReads = 100;
@@ -999,7 +999,7 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
 // min log index is.
 TEST_F(LogTest, TestGetMaxIndexesToSegmentSizeMap) {
   FLAGS_log_min_segments_to_retain = 2;
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   const int kNumTotalSegments = 5;
   const int kNumOpsPerSegment = 5;
@@ -1047,5 +1047,6 @@ TEST_F(LogTest, TestGetMaxIndexesToSegmentSizeMap) {
   log_->GetMaxIndexesToSegmentSizeMap(10, &max_idx_to_segment_size);
   ASSERT_EQ(0, max_idx_to_segment_size.size());
 }
+
 } // namespace log
 } // namespace kudu

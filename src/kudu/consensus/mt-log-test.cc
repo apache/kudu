@@ -151,7 +151,7 @@ class MultiThreadedLogTest : public LogTestBase {
 };
 
 TEST_F(MultiThreadedLogTest, TestAppends) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
   int start_current_id = current_index_;
   LOG_TIMING(INFO, strings::Substitute("inserting $0 batches($1 threads, $2 per-thread)",
                                       FLAGS_num_writer_threads * FLAGS_num_batches_per_thread,

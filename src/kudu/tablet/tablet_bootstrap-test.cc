@@ -160,7 +160,7 @@ class BootstrapTest : public LogTestBase {
 
 // Tests a normal bootstrap scenario
 TEST_F(BootstrapTest, TestBootstrap) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   AppendReplicateBatch(MakeOpId(1, current_index_));
   ASSERT_OK(RollLog());
@@ -179,7 +179,7 @@ TEST_F(BootstrapTest, TestBootstrap) {
 // Tests attempting a local bootstrap of a tablet that was in the middle of a
 // remote bootstrap before "crashing".
 TEST_F(BootstrapTest, TestIncompleteRemoteBootstrap) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   ASSERT_OK(PersistTestTabletMetadataState(TABLET_DATA_COPYING));
   shared_ptr<Tablet> tablet;
@@ -202,7 +202,7 @@ TEST_F(BootstrapTest, TestIncompleteRemoteBootstrap) {
 // 5) We crash, requiring a recovery of Segment_2 which now contains
 // the orphan 'Commit A'.
 TEST_F(BootstrapTest, TestOrphanCommit) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   OpId opid = MakeOpId(1, current_index_);
 
@@ -259,7 +259,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
 // This should result in the orphan COMMIT being ignored, but the last
 // REPLICATE/COMMIT messages ending up in the tablet.
 TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   OpId opid = MakeOpId(1, current_index_);
 
@@ -298,7 +298,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
 // Bootstrap should not replay the operation, but should return it in
 // the ConsensusBootstrapInfo
 TEST_F(BootstrapTest, TestOrphanedReplicate) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   // Append a REPLICATE with no commit
   int replicate_index = current_index_++;
@@ -328,7 +328,7 @@ TEST_F(BootstrapTest, TestOrphanedReplicate) {
 
 // Bootstrap should fail if no ConsensusMetadata file exists.
 TEST_F(BootstrapTest, TestMissingConsensusMetadata) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   scoped_refptr<TabletMetadata> meta;
   ASSERT_OK(LoadTestTabletMetadata(-1, -1, &meta));
@@ -342,7 +342,7 @@ TEST_F(BootstrapTest, TestMissingConsensusMetadata) {
 }
 
 TEST_F(BootstrapTest, TestOperationOverwriting) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   OpId opid = MakeOpId(1, 1);
 
@@ -380,7 +380,7 @@ TEST_F(BootstrapTest, TestOperationOverwriting) {
 // Tests that when we have out-of-order commits that touch the same rows, operations are
 // still applied and in the correct order.
 TEST_F(BootstrapTest, TestOutOfOrderCommits) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   consensus::ReplicateRefPtr replicate = consensus::make_scoped_refptr_replicate(
       new consensus::ReplicateMsg());
@@ -444,7 +444,7 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
 // Tests that when we have two consecutive replicates but the commit message for the
 // first one is missing, both appear as pending in ConsensusInfo.
 TEST_F(BootstrapTest, TestMissingCommitMessage) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   consensus::ReplicateRefPtr replicate = consensus::make_scoped_refptr_replicate(
       new consensus::ReplicateMsg());
@@ -498,7 +498,7 @@ TEST_F(BootstrapTest, TestMissingCommitMessage) {
 // that is higher than a timestamp assigned to a write operation that follows
 // it in the log.
 TEST_F(BootstrapTest, TestConsensusOnlyOperationOutOfOrderTimestamp) {
-  BuildLog();
+  ASSERT_OK(BuildLog());
 
   // Append NO_OP.
   ReplicateRefPtr noop_replicate = make_scoped_refptr_replicate(new ReplicateMsg());
