@@ -279,7 +279,7 @@ serialized as follows:
   body: varint-prefixed protobuf
     - for typical RPC calls, this is the user-specified request or response
       protobuf
-    - for RPC calls which caused an error, the response is a ErrorResponsePB
+    - for RPC calls which caused an error, the response is an ErrorStatusPB
     - during SASL negotiation, this is a SaslMessagePB
 ```
 
