@@ -19,7 +19,7 @@
 
 ROOT=$(cd $(dirname $BASH_SOURCE)/..; pwd)
 
-TMP=$(mktemp)
+TMP=$(mktemp -t kudu-lint.XXXXXXXXX)
 trap "rm $TMP" EXIT
 
 ONLY_CHANGED=false
@@ -56,6 +56,6 @@ $ROOT/thirdparty/installed/bin/cpplint.py \
 
 NUM_ERRORS=$(grep "Total errors found" $TMP | awk '{print $4}')
 
-if [ "$NUM_ERRORS" -ne 0 ]; then
+if [[ "$NUM_ERRORS" -ne 0 ]]; then
   exit 1
 fi
