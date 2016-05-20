@@ -263,6 +263,10 @@ Value: 192.168.56.100
    contain references to the previous VM's SSH credentials. Remove any references to
    `quickstart.cloudera` from this file.
 
+==== Failing with lack of SSE4.2 support when running inside VirtualBox
+
+* Running Kudu currently requires a CPU that supports SSE4.2 (Nehalem or later for Intel). To pass through SSE4.2 support into the guest VM, refer to the link:https://www.virtualbox.org/manual/ch09.html#sse412passthrough[VirtualBox documentation]
+
 == Next Steps
 - link:installation.html[Installing Kudu]
 - link:configuration.html[Configuring Kudu]
