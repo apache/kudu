@@ -237,7 +237,6 @@ public class KuduSink extends AbstractSink implements Configurable {
           // into Kudu successfully but the Flume transaction is rolled back for some reason,
           // and a subsequent replay of the same Flume transaction leads to a
           // duplicate key error since the row already exists in Kudu.
-          // (Kudu doesn't support "insert or overwrite" semantics yet.)
           // Note: Duplicate keys will not be reported as errors if ignoreDuplicateRows
           // is enabled in the config.
           if (response.hasRowError()) {
