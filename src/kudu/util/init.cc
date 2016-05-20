@@ -30,7 +30,8 @@ namespace kudu {
 Status BadCPUStatus(const base::CPU& cpu, const char* instruction_set) {
   return Status::NotSupported(strings::Substitute(
       "The CPU on this system ($0) does not support the $1 instruction "
-      "set which is required for running Kudu.",
+      "set which is required for running Kudu. If you are running inside a VM, "
+      "you may need to enable SSE4.2 pass-through.",
       cpu.cpu_brand(), instruction_set));
 }
 
