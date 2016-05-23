@@ -347,13 +347,15 @@ bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
 
 namespace {
 int SelectivityRank(const ColumnPredicate& predicate) {
+  int rank;
   switch (predicate.predicate_type()) {
-    case PredicateType::None: return 0;
-    case PredicateType::Equality: return 1;
-    case PredicateType::Range: return 2;
-    case PredicateType::IsNotNull: return 3;
+    case PredicateType::None: rank = 0; break;
+    case PredicateType::Equality: rank = 1; break;
+    case PredicateType::Range: rank = 2; break;
+    case PredicateType::IsNotNull: rank = 3; break;
+    default: LOG(FATAL) << "unknown predicate type";
   }
-  LOG(FATAL) << "unknown predicate type";
+  return rank * (kLargestTypeSize + 1) + predicate.column().type_info()->size();
 }
 } // anonymous namespace
 

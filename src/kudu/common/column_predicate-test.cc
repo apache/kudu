@@ -328,4 +328,46 @@ TEST_F(TestColumnPredicate, TestInclusiveRange) {
   }
 }
 
+// Test that column predicate comparison works correctly: ordered by predicate
+// type first, then size of the column type.
+TEST_F(TestColumnPredicate, TestSelectivity) {
+  int32_t one_32 = 1;
+  int64_t one_64 = 1;
+  double_t one_d = 1.0;
+  Slice one_s("one", 3);
+
+  ColumnSchema column_i32("a", INT32, true);
+  ColumnSchema column_i64("b", INT64, true);
+  ColumnSchema column_d("c", DOUBLE, true);
+  ColumnSchema column_s("d", STRING, true);
+
+  // Predicate type
+  ASSERT_LT(SelectivityComparator(ColumnPredicate::Equality(column_i32, &one_32),
+                                  ColumnPredicate::Range(column_d, &one_d, nullptr)),
+            0);
+  ASSERT_LT(SelectivityComparator(ColumnPredicate::Equality(column_i32, &one_32),
+                                  ColumnPredicate::IsNotNull(column_s)),
+            0);
+  ASSERT_LT(SelectivityComparator(ColumnPredicate::Range(column_i64, &one_64, nullptr),
+                                  ColumnPredicate::IsNotNull(column_i32)),
+            0);
+
+  // Size of column type
+  ASSERT_LT(SelectivityComparator(ColumnPredicate::Equality(column_i32, &one_32),
+                                  ColumnPredicate::Equality(column_i64, &one_64)),
+            0);
+  ASSERT_LT(SelectivityComparator(ColumnPredicate::Equality(column_i32, &one_32),
+                                  ColumnPredicate::Equality(column_d, &one_d)),
+            0);
+  ASSERT_LT(SelectivityComparator(ColumnPredicate::Equality(column_i32, &one_32),
+                                  ColumnPredicate::Equality(column_s, &one_s)),
+            0);
+  ASSERT_LT(SelectivityComparator(ColumnPredicate::Equality(column_i64, &one_64),
+                                  ColumnPredicate::Equality(column_s, &one_s)),
+            0);
+  ASSERT_LT(SelectivityComparator(ColumnPredicate::Equality(column_d, &one_d),
+                                  ColumnPredicate::Equality(column_s, &one_s)),
+            0);
+}
+
 } // namespace kudu
