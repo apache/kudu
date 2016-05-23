@@ -56,15 +56,25 @@ Hadoop storage technologies.
 [[rn_0.9.0]]
 === Release notes specific to 0.9.0
 
+Kudu 0.9.0 delivers incremental features, improvements, and bug fixes over the previous versions.
+
+See also +++<a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20%3D%20Resolved
+%20AND%20fixVersion%20%3D%200.9.0">JIRAs resolved
+for Kudu 0.9.0</a>+++ and +++<a href="https://github.com/apache/incubator-kudu/compare/0.8.0...0.9.0">Git
+changes between 0.8.0 and 0.9.0</a>+++.
+
+To upgrade to Kudu 0.9.0, see link:installation.html#upgrade[Upgrade from 0.8.0 to 0.9.0].
+
 [[rn_0.9.0_incompatible_changes]]
 ==== Incompatible changes
 
-- The KuduTableInputFormat has changed how it handles scan predicates, including
-  how it serializes predicates to the job configuration object. The new
-  configuration key is "kudu.mapreduce.encoded.predicate". Clients using the
-  TableInputFormatConfigurator should not be affected.
+- The `KuduTableInputFormat` command has changed the way in which it handles
+  scan predicates, including how it serializes predicates to the job configuration
+  object. The new configuration key is `kudu.mapreduce.encoded.predicate`. Clients
+  using the `TableInputFormatConfigurator` are not affected.
 
-- The kudu-spark subproject was been renamed to follow naming conventions for scala kudu-spark_2.10
+- The `kudu-spark` sub-project has been renamed to follow naming conventions for
+  Scala. The new name is `kudu-spark_2.10`.
 
 - Default table partitioning has been removed. All tables must now be created
   with explicit partitioning. Existing tables are unaffected. See the
@@ -75,23 +85,32 @@ Hadoop storage technologies.
 ==== New features
 
 - link:https://issues.apache.org/jira/browse/KUDU-1306[KUDU-1306] Scan token API
-  for creating partition-aware scan descriptors. Can be used by clients and
-  query engines to more easily execute parallel scans.
+  for creating partition-aware scan descriptors. This API simplifies executing
+  parallel scans for clients and query engines.
 
-- link:http://gerrit.cloudera.org:8080/#/c/2848/[Gerrit 2848] Added a kudu datasource for spark which uses the kudu client directly instead of
-  using mapreduce api. Includes predicate pushdowns for spark-sql and spark filters.
-  Parallel retrieval for multiple tablets and column projections. link:developing.html#_kudu_integration_with_spark[Kudu integration with Spark Example]
+- link:http://gerrit.cloudera.org:8080/#/c/2848/[Gerrit 2848] Added a kudu datasource
+  for Spark. This datasource uses the Kudu client directly instead of
+  using the MapReduce API. Predicate pushdowns for `spark-sql` and Spark filters are
+  included, as well as parallel retrieval for multiple tablets and column projections.
+  See an example of link:developing.html#_kudu_integration_with_spark[Kudu integration with Spark].
 
-- link:http://gerrit.cloudera.org:8080/#/c/2992/ Added ability to update and insert from spark using kudu datasource
+- link:http://gerrit.cloudera.org:8080/#/c/2992/[Gerrit 2992] Added the ability
+  to update and insert from Spark using a Kudu datasource.
 
 [[rn_0.9.0_changes]]
 ==== Other noteworthy changes
 
-- The clients have longer default timeouts. For Java, the default operation timeout and the default
-  admin operation timeout are now set to 30 seconds instead of 10. The default socket read timeout
-  is now 10 seconds instead of 5. For the C++ client, the default admin timeout is now 30 seconds
-  instead of 10, the default RPC timeout is now 10 seconds instead of 5, and the default scan
-  timeout is now 30 seconds instead of 15.
+All Kudu clients have longer default timeout values, as listed below.
+
+.Java
+- The default operation timeout and the default admin operation timeout
+  are now set to 30 seconds instead of 10.
+- The default socket read timeout is now 10 seconds instead of 5.
+
+.C++
+- The default admin timeout is now 30 seconds instead of 10.
+- The default RPC timeout is now 10 seconds instead of 5.
+- The default scan timeout is now 30 seconds instead of 15.
 
 - Some default settings related to I/O behavior during flushes and compactions have been changed:
   The default for `flush_threshold_mb` has been increased from 64MB to 1000MB. The default
