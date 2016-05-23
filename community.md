@@ -103,6 +103,8 @@ your city, get in touch by emailing the
 
 [comment]: # (Note: we are using an ordered list here to allow for special styling of it)
 
+1. Wed, May 25, 2016. [Dallas/Fort Worth Cloudera User Group](http://www.meetup.com/DFW-Cloudera-User-Group/events/230547045/).
+  _Apache Kudu: New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Ryan Bosshart.
 1. Thu, May 12, 2016. [Vancouver Spark Meetup](http://www.meetup.com/Vancouver-Spark/events/229692936/). Vancouver, BC, Canada.<br/>
    _Kudu and Spark for fast analytics on streaming data_. Presented by Mike Percy and Dan Burkert.
 1. Tue, May 10, 2016. [Apache: Big Data 2016](http://apachebigdata2016.sched.org/event/6M1k/using-kafka-and-kudu-for-fast-low-latency-sql-analytics-on-streaming-data-mike-percy-ashish-singh-cloudera). Vancouver, BC, Canada.<br/>
