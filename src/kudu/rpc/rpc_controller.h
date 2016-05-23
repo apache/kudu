@@ -26,13 +26,13 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
-
 namespace kudu {
 
 namespace rpc {
 
 class ErrorStatusPB;
 class OutboundCall;
+class RequestIdPB;
 
 // Controller for managing properties of a single RPC call, on the client side.
 //
@@ -104,6 +104,17 @@ class RpcController {
   // Using an uninitialized deadline means the call won't time out.
   void set_deadline(const MonoTime& deadline);
 
+  // Allows settting the request id for the next request sent to the server.
+  // A request id allows the server to identify each request sent by the client uniquely,
+  // in some cases even when sent to multiple servers, enabling exactly once semantics.
+  void SetRequestIdPB(std::unique_ptr<RequestIdPB> request_id);
+
+  // Returns whether a request id has been set on RPC header.
+  bool has_request_id() const;
+
+  // Returns the currently set request id.
+  const RequestIdPB& request_id() const;
+
   // Add a requirement that the server side must support a feature with the
   // given identifier. The set of required features is sent to the server
   // with the RPC call, and if any required feature is not supported, the
@@ -172,6 +183,10 @@ class RpcController {
   std::unordered_set<uint32_t> required_server_features_;
 
   mutable simple_spinlock lock_;
+
+  // The id of this request.
+  // Ownership is transfered to OutboundCall once the call is sent.
+  std::unique_ptr<RequestIdPB> request_id_;
 
   // Once the call is sent, it is tracked here.
   std::shared_ptr<OutboundCall> call_;

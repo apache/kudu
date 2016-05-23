@@ -21,6 +21,7 @@
 #include <glog/logging.h>
 #include <mutex>
 
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/outbound_call.h"
 
 namespace kudu { namespace rpc {
@@ -87,6 +88,19 @@ void RpcController::set_timeout(const MonoDelta& timeout) {
 
 void RpcController::set_deadline(const MonoTime& deadline) {
   set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
+}
+
+void RpcController::SetRequestIdPB(std::unique_ptr<RequestIdPB> request_id) {
+  request_id_ = std::move(request_id);
+}
+
+bool RpcController::has_request_id() const {
+  return request_id_ != nullptr;
+}
+
+const RequestIdPB& RpcController::request_id() const {
+  DCHECK(has_request_id());
+  return *request_id_.get();
 }
 
 void RpcController::RequireServerFeature(uint32_t feature) {

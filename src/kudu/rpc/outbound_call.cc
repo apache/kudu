@@ -79,6 +79,10 @@ OutboundCall::OutboundCall(const ConnectionId& conn_id,
   if (!controller_->required_server_features().empty()) {
     required_rpc_features_.insert(RpcFeatureFlag::APPLICATION_FEATURE_FLAGS);
   }
+
+  if (controller_->request_id_) {
+    header_.set_allocated_request_id(controller_->request_id_.release());
+  }
 }
 
 OutboundCall::~OutboundCall() {
