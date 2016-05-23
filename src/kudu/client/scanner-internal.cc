@@ -317,12 +317,28 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
 
   for (int attempt = 1;; attempt++) {
     Synchronizer sync;
-    table_->client()->data_->meta_cache_->LookupTabletByKey(table_.get(),
-                                                            partition_key,
-                                                            deadline,
-                                                            &remote_,
-                                                            sync.AsStatusCallback());
-    RETURN_NOT_OK(sync.Wait());
+    table_->client()->data_->meta_cache_->LookupTabletByKeyOrNext(table_.get(),
+                                                                  partition_key,
+                                                                  deadline,
+                                                                  &remote_,
+                                                                  sync.AsStatusCallback());
+    Status s = sync.Wait();
+    if (s.IsNotFound()) {
+      // No more tablets in the table.
+      partition_pruner_.RemovePartitionKeyRange("");
+      return Status::OK();
+    } else {
+      RETURN_NOT_OK(s);
+    }
+
+    // Check if the meta cache returned a tablet covering a partition key range past
+    // what we asked for. This can happen if the requested partition key falls
+    // in a non-covered range. In this case we can potentially prune the tablet.
+    if (partition_key < remote_->partition().partition_key_start() &&
+        partition_pruner_.ShouldPrune(remote_->partition())) {
+      partition_pruner_.RemovePartitionKeyRange(remote_->partition().partition_key_end());
+      return Status::OK();
+    }
 
     scan->set_tablet_id(remote_->tablet_id());
 

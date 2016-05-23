@@ -104,7 +104,9 @@ class KuduScanner::Data {
                      const MonoTime& deadline,
                      std::set<std::string>* blacklist);
 
-  // Open the next tablet in the scan.
+  // Opens the next tablet in the scan, or returns Status::NotFound if there are
+  // no more tablets to scan.
+  //
   // The deadline is the time budget for this operation.
   // The blacklist is used to temporarily filter out nodes that are experiencing transient errors.
   // This blacklist may be modified by the callee.
@@ -121,7 +123,10 @@ class KuduScanner::Data {
 
   Status KeepAlive();
 
-  // Returns whether there exist more tablets we should scan.
+  // Returns whether there may exist more tablets to scan.
+  //
+  // This method does not take into account any non-covered range partitions
+  // that may exist in the table, so it should only be used as a hint.
   //
   // Note: there may not be any actual matching rows in subsequent tablets,
   // but we won't know until we scan them.

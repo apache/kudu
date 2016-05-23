@@ -22,6 +22,9 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <set>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/client/callbacks.h"
@@ -80,6 +83,7 @@ METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetMasterRegi
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTabletLocations);
 
+using std::pair;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -131,8 +135,8 @@ class ClientTest : public KuduTest {
                      .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                      .Build(&client_));
 
-    ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitRows(), &client_table_));
-    ASSERT_NO_FATAL_FAILURE(CreateTable(kTable2Name, 1, {}, &client_table2_));
+    ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
+    ASSERT_NO_FATAL_FAILURE(CreateTable(kTable2Name, 1, {}, {}, &client_table2_));
   }
 
   // Generate a set of split rows for tablets used in this test.
@@ -410,11 +414,13 @@ class ClientTest : public KuduTest {
     return count;
   }
 
-  // Creates a table with 'num_replicas', split into tablets based on 'split_rows'
-  // (or single tablet if 'split_rows' is empty).
+  // Creates a table with 'num_replicas', split into tablets based on
+  // 'split_rows' and 'range_bounds' (or single tablet if both are empty).
   void CreateTable(const string& table_name,
                    int num_replicas,
                    vector<unique_ptr<KuduPartialRow>> split_rows,
+                   vector<pair<unique_ptr<KuduPartialRow>,
+                               unique_ptr<KuduPartialRow>>> range_bounds,
                    shared_ptr<KuduTable>* table) {
 
     bool added_replicas = false;
@@ -432,7 +438,9 @@ class ClientTest : public KuduTest {
     for (auto& split_row : split_rows) {
       table_creator->add_range_split(split_row.release());
     }
-
+    for (auto& bound : range_bounds) {
+      table_creator->add_range_bound(bound.first.release(), bound.second.release());
+    }
     ASSERT_OK(table_creator->table_name(table_name)
                             .schema(&schema_)
                             .num_replicas(num_replicas)
@@ -654,7 +662,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   }
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable("TestScanMultiTablet", 1, std::move(rows), &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable("TestScanMultiTablet", 1, std::move(rows), {}, &table));
 
   // Insert rows with keys 12, 13, 15, 17, 22, 23, 25, 27...47 into each
   // tablet, except the first which is empty.
@@ -917,7 +925,7 @@ TEST_F(ClientTest, TestInvalidPredicates) {
 TEST_F(ClientTest, TestScanCloseProxy) {
   const string kEmptyTable = "TestScanCloseProxy";
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kEmptyTable, 3, GenerateSplitRows(), &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kEmptyTable, 3, GenerateSplitRows(), {}, &table));
 
   {
     // Open and close an empty scanner.
@@ -1009,7 +1017,7 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   // to read from a replica that is lagging for some reason. This won't be necessary once
   // we implement full support for snapshot consistency (KUDU-430).
   const int kNumReplicas = 2;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, kNumReplicas, {}, &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
 
   // Do an initial scan to determine the expected rows for later verification.
@@ -1062,11 +1070,155 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   }
 }
 
+TEST_F(ClientTest, TestNonCoveringRangePartitions) {
+  // Create test table and insert test rows.
+  const string kTableName = "TestNonCoveringRangePartitions";
+  shared_ptr<KuduTable> table;
+
+  vector<pair<unique_ptr<KuduPartialRow>, unique_ptr<KuduPartialRow>>> bounds;
+  unique_ptr<KuduPartialRow> a_lower_bound(schema_.NewRow());
+  ASSERT_OK(a_lower_bound->SetInt32("key", 0));
+  unique_ptr<KuduPartialRow> a_upper_bound(schema_.NewRow());
+  ASSERT_OK(a_upper_bound->SetInt32("key", 100));
+  bounds.emplace_back(std::move(a_lower_bound), std::move(a_upper_bound));
+
+  unique_ptr<KuduPartialRow> b_lower_bound(schema_.NewRow());
+  ASSERT_OK(b_lower_bound->SetInt32("key", 200));
+  unique_ptr<KuduPartialRow> b_upper_bound(schema_.NewRow());
+  ASSERT_OK(b_upper_bound->SetInt32("key", 300));
+  bounds.emplace_back(std::move(b_lower_bound), std::move(b_upper_bound));
+
+  vector<unique_ptr<KuduPartialRow>> splits;
+  unique_ptr<KuduPartialRow> split(schema_.NewRow());
+  ASSERT_OK(split->SetInt32("key", 50));
+  splits.push_back(std::move(split));
+
+  CreateTable(kTableName, 1, std::move(splits), std::move(bounds), &table);
+
+  // Aggresively clear the meta cache between insert batches so that the meta
+  // cache will execute GetTableLocation RPCs at different partition keys.
+
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 50, 0));
+  client_->data_->meta_cache_->ClearCacheForTesting();
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 50, 50));
+  client_->data_->meta_cache_->ClearCacheForTesting();
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100, 200));
+  client_->data_->meta_cache_->ClearCacheForTesting();
+
+  // Insert out-of-range rows.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+  session->SetTimeoutMillis(60000);
+  vector<gscoped_ptr<KuduInsert>> out_of_range_inserts;
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), -50));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), -1));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 100));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 150));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 199));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 300));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 350));
+
+  for (auto& insert : out_of_range_inserts) {
+    client_->data_->meta_cache_->ClearCacheForTesting();
+    Status result = session->Apply(insert.release());
+    EXPECT_TRUE(result.IsIOError());
+    vector<KuduError*> errors;
+    bool overflowed;
+    session->GetPendingErrors(&errors, &overflowed);
+    EXPECT_FALSE(overflowed);
+    EXPECT_EQ(1, errors.size());
+    EXPECT_TRUE(errors[0]->status().IsNotFound());
+    STLDeleteElements(&errors);
+  }
+
+
+  // Scans
+
+  { // full table scan
+    vector<string> rows;
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetFaultTolerant());
+    ScanToStrings(&scanner, &rows);
+
+    ASSERT_EQ(200, rows.size());
+    ASSERT_EQ("(int32 key=0, int32 int_val=0, string string_val=hello 0,"
+              " int32 non_null_with_default=0)", rows.front());
+    ASSERT_EQ("(int32 key=299, int32 int_val=598, string string_val=hello 299,"
+              " int32 non_null_with_default=897)", rows.back());
+  }
+
+  { // Lower bound PK
+    vector<string> rows;
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetFaultTolerant());
+    ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
+              "key", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(100))));
+    ScanToStrings(&scanner, &rows);
+
+    ASSERT_EQ(100, rows.size());
+    ASSERT_EQ("(int32 key=200, int32 int_val=400, string string_val=hello 200,"
+              " int32 non_null_with_default=600)", rows.front());
+    ASSERT_EQ("(int32 key=299, int32 int_val=598, string string_val=hello 299,"
+              " int32 non_null_with_default=897)", rows.back());
+  }
+
+  { // Upper bound PK
+    vector<string> rows;
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetFaultTolerant());
+    ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
+              "key", KuduPredicate::LESS_EQUAL, KuduValue::FromInt(199))));
+    ScanToStrings(&scanner, &rows);
+
+    ASSERT_EQ(100, rows.size());
+    ASSERT_EQ("(int32 key=0, int32 int_val=0, string string_val=hello 0,"
+              " int32 non_null_with_default=0)", rows.front());
+    ASSERT_EQ("(int32 key=99, int32 int_val=198, string string_val=hello 99,"
+              " int32 non_null_with_default=297)", rows.back());
+  }
+
+  { // key <= -1
+    vector<string> rows;
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetFaultTolerant());
+    ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
+              "key", KuduPredicate::LESS_EQUAL, KuduValue::FromInt(-1))));
+    ScanToStrings(&scanner, &rows);
+
+    ASSERT_EQ(0, rows.size());
+  }
+
+  { // key >= 120 && key <= 180
+    vector<string> rows;
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetFaultTolerant());
+    ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
+              "key", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(120))));
+    ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
+              "key", KuduPredicate::LESS_EQUAL, KuduValue::FromInt(180))));
+    ScanToStrings(&scanner, &rows);
+
+    ASSERT_EQ(0, rows.size());
+  }
+
+  { // key >= 300
+    vector<string> rows;
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetFaultTolerant());
+    ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
+              "key", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(300))));
+    ScanToStrings(&scanner, &rows);
+
+    ASSERT_EQ(0, rows.size());
+  }
+}
+
 TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable("blacklist",
                                       3,
                                       GenerateSplitRows(),
+                                      {},
                                       &table));
   InsertTestRows(table.get(), 1, 0);
 
@@ -1146,6 +1298,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   ASSERT_NO_FATAL_FAILURE(CreateTable("split-table",
                                       1, /* replicas */
                                       GenerateSplitRows(),
+                                      {},
                                       &table));
 
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100));
@@ -2167,7 +2320,7 @@ TEST_F(ClientTest, TestDeleteTable) {
 
   // Create a new table with the same name. This is to ensure that the client
   // doesn't cache anything inappropriately by table name (see KUDU-1055).
-  NO_FATALS(CreateTable(kTableName, 1, GenerateSplitRows(), &client_table_));
+  NO_FATALS(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
 
   // Should be able to insert successfully into the new table.
   NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
@@ -2240,6 +2393,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
   ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
                                       kNumReplicas,
                                       GenerateSplitRows(),
+                                      {},
                                       &table));
 
   // Should have no rows to begin with.
@@ -2265,6 +2419,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
                                       kNumReplicas,
                                       GenerateSplitRows(),
+                                      {},
                                       &table));
 
   // Insert some data.
@@ -2324,7 +2479,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   const int kNumReplicas = 3;
 
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable, kNumReplicas, {}, &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable, kNumReplicas, {}, {}, &table));
 
   // Insert some data.
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));

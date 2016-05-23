@@ -393,7 +393,7 @@ void PartitionPruner::RemovePartitionKeyRange(const string& upper_bound) {
   }
 }
 
-bool PartitionPruner::ShouldPruneForTests(const Partition& partition) const {
+bool PartitionPruner::ShouldPrune(const Partition& partition) const {
   // range is an iterator that points to the first partition key range which
   // overlaps or is greater than the partition.
   auto range = lower_bound(partition_key_ranges_.rbegin(), partition_key_ranges_.rend(), partition,

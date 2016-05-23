@@ -57,6 +57,7 @@ class TSInfoPB;
 namespace client {
 
 class ClientTest_TestMasterLookupPermits_Test;
+class ClientTest_TestNonCoveringRangePartitions_Test;
 class KuduClient;
 class KuduTable;
 
@@ -272,6 +273,14 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                          scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
 
+  // Look up which tablet hosts the given partition key, or the next tablet if
+  // the key falls in a non-covered range partition.
+  void LookupTabletByKeyOrNext(const KuduTable* table,
+                               const std::string& partition_key,
+                               const MonoTime& deadline,
+                               scoped_refptr<RemoteTablet>* remote_tablet,
+                               const StatusCallback& callback);
+
   // Mark any replicas of any tablets hosted by 'ts' as failed. They will
   // not be returned in future cache lookups.
   void MarkTSFailed(RemoteTabletServer* ts, const Status& status);
@@ -287,16 +296,20 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   friend class LookupRpc;
 
   FRIEND_TEST(client::ClientTest, TestMasterLookupPermits);
+  FRIEND_TEST(client::ClientTest, TestNonCoveringRangePartitions);
 
   // Called on the slow LookupTablet path when the master responds. Populates
   // the tablet caches and returns a reference to the first one.
-  const scoped_refptr<RemoteTablet>& ProcessLookupResponse(const LookupRpc& rpc);
+  Status ProcessLookupResponse(const LookupRpc& rpc, scoped_refptr<RemoteTablet>* remote_tablet);
 
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *remote_tablet if successful.
   bool LookupTabletByKeyFastPath(const KuduTable* table,
                                  const std::string& partition_key,
                                  scoped_refptr<RemoteTablet>* remote_tablet);
+
+  // Clears the meta cache for testing purposes.
+  void ClearCacheForTesting();
 
   // Update our information about the given tablet server.
   //

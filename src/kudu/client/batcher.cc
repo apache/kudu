@@ -267,7 +267,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
     CHECK(partition_schema.PartitionContainsRow(partition, row, &partition_contains_row).ok());
     CHECK(partition_contains_row)
         << "Row " << partition_schema.RowDebugString(row)
-        << "not in partition " << partition_schema.PartitionDebugString(partition, *schema);
+        << " not in partition " << partition_schema.PartitionDebugString(partition, *schema);
 #endif
 
     enc.Add(ToInternalWriteType(op->write_op->type()), op->write_op->row());

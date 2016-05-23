@@ -37,35 +37,116 @@
 #include "kudu/util/test_util.h"
 #include "kudu/gutil/strings/escaping.h"
 
-namespace kudu {
-namespace itest {
-
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduInsert;
-using client::KuduPredicate;
-using client::KuduScanner;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
-using client::KuduSession;
-using client::KuduTable;
-using client::KuduTableCreator;
-using client::KuduValue;
-using client::sp::shared_ptr;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduInsert;
+using kudu::client::KuduPredicate;
+using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduSession;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
+using kudu::client::KuduValue;
+using kudu::client::sp::shared_ptr;
+using kudu::master::GetTableLocationsRequestPB;
+using kudu::master::GetTableLocationsResponsePB;
+using kudu::master::MasterErrorPB;
+using kudu::rpc::RpcController;
+using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
+namespace kudu {
+namespace itest {
+
 static const char* const kTableName = "test-table";
-static const int kNumRows = 1000;
+
+struct HashPartitionOptions {
+  vector<string> columns;
+  int32_t num_buckets;
+};
+
+struct RangePartitionOptions {
+  vector<string> columns;
+  vector<vector<int32_t>> splits;
+  vector<pair<vector<int32_t>, vector<int32_t>>> bounds;
+};
+
+int NumPartitions(const vector<HashPartitionOptions>& hash_partitions,
+                  const RangePartitionOptions& range_partition) {
+  int partitions = std::max(1UL, range_partition.bounds.size()) + range_partition.splits.size();
+  for (const auto& hash_partition : hash_partitions) {
+    partitions *= hash_partition.num_buckets;
+  }
+  return partitions;
+}
+
+string RowToString(const vector<int32_t> row) {
+  string s = "(";
+  for (int i = 0; i < row.size(); i++) {
+    if (i != 0) s.append(", ");
+    s.append(std::to_string(row[i]));
+  }
+  s.append(")");
+  return s;
+}
+
+string PartitionOptionsToString(const vector<HashPartitionOptions>& hash_partitions,
+                                const RangePartitionOptions& range_partition) {
+  string s;
+  for (const auto& hash_partition : hash_partitions) {
+    s.append("HASH (");
+    for (int i = 0; i < hash_partition.columns.size(); i++) {
+      if (i != 0) s.append(", ");
+      s.append(hash_partition.columns[i]);
+    }
+    s.append(") INTO ");
+    s.append(std::to_string(hash_partition.num_buckets));
+    s.append(" BUCKETS, ");
+  }
+
+  s.append("RANGE (");
+  for (int i = 0; i < range_partition.columns.size(); i++) {
+    if (i != 0) s.append(", ");
+    s.append(range_partition.columns[i]);
+  }
+  s.append(")");
+
+  if (!range_partition.splits.empty()) {
+    s.append(" SPLIT ROWS ");
+
+    for (int i = 0; i < range_partition.splits.size(); i++) {
+      if (i != 0) s.append(", ");
+      s.append(RowToString(range_partition.splits[i]));
+    }
+  }
+
+  if (!range_partition.bounds.empty()) {
+    s.append(" BOUNDS (");
+
+    for (int i = 0; i < range_partition.bounds.size(); i++) {
+      if (i != 0) s.append(", ");
+      s.append("[");
+      s.append(RowToString(range_partition.bounds[i].first));
+      s.append(", ");
+      s.append(RowToString(range_partition.bounds[i].second));
+      s.append(")");
+    }
+    s.append(")");
+  }
+  return s;
+}
 
 class FlexPartitioningITest : public KuduTest {
  public:
   FlexPartitioningITest()
     : random_(GetRandomSeed32()) {
   }
-  virtual void SetUp() OVERRIDE {
+
+  void SetUp() override {
     KuduTest::SetUp();
 
     ExternalMiniClusterOptions opts;
@@ -79,35 +160,29 @@ class FlexPartitioningITest : public KuduTest {
 
     KuduClientBuilder builder;
     ASSERT_OK(cluster_->CreateClient(builder, &client_));
-
-    ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
-                                           cluster_->messenger(),
-                                           &ts_map_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     cluster_->Shutdown();
     KuduTest::TearDown();
-    STLDeleteValues(&ts_map_);
-    STLDeleteElements(&inserted_rows_);
   }
 
  protected:
-  void CreateTable(int num_columns,
-                   const vector<string>& bucket_a, int num_buckets_a,
-                   const vector<string>& bucket_b, int num_buckets_b,
-                   const vector<string>& range_cols,
-                   int num_splits) {
-    // Set up the actual PK columns based on num_columns. The PK is made up
-    // of all the columns.
+
+  void TestPartitionOptions(const vector<HashPartitionOptions> hash_options,
+                            const RangePartitionOptions range_options) {
+    NO_FATALS(CreateTable(hash_options, range_options));
+    NO_FATALS(InsertAndVerifyScans(range_options));
+    DeleteTable();
+  }
+
+  void CreateTable(const vector<HashPartitionOptions> hash_partitions,
+                   const RangePartitionOptions range_partition) {
     KuduSchemaBuilder b;
-    vector<string> pk;
-    for (int i = 0; i < num_columns; i++) {
-      string name = Substitute("c$0", i);
-      b.AddColumn(name)->Type(KuduColumnSchema::INT32)->NotNull();
-      pk.push_back(name);
-    }
-    b.SetPrimaryKey(pk);
+    b.AddColumn("c0")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn("c1")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn("c2")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.SetPrimaryKey({ "c0", "c1", "c2" });
     KuduSchema schema;
     ASSERT_OK(b.Build(&schema));
 
@@ -116,47 +191,74 @@ class FlexPartitioningITest : public KuduTest {
         .schema(&schema)
         .num_replicas(1);
 
-    // Set up partitioning.
-    if (!bucket_a.empty()) {
-      table_creator->add_hash_partitions(bucket_a, num_buckets_a);
+    for (const auto& hash_partition : hash_partitions) {
+      table_creator->add_hash_partitions(hash_partition.columns, hash_partition.num_buckets);
     }
-    if (!bucket_b.empty()) {
-      table_creator->add_hash_partitions(bucket_b, num_buckets_b);
-    }
-    table_creator->set_range_partition_columns(range_cols);
 
-    // Compute split points.
     vector<const KuduPartialRow*> split_rows;
-    int increment = kNumRows / num_splits;
-    for (int i = 1; i < num_splits; i++) {
+    for (const vector<int32_t> split : range_partition.splits) {
       KuduPartialRow* row = schema.NewRow();
-      for (int j = 0; j < range_cols.size(); j++) {
-        const string& range_col = range_cols[j];
-        if (j == 0) {
-          // Set the first component of the range to a set increment.
-          ASSERT_OK(row->SetInt32(range_col, increment * i));
-        } else {
-          ASSERT_OK(row->SetInt32(range_col, random_.Next32()));
-        }
+      for (int i = 0; i < split.size(); i++) {
+        ASSERT_OK(row->SetInt32(range_partition.columns[i], split[i]));
       }
       split_rows.push_back(row);
     }
+
+    table_creator->set_range_partition_columns(range_partition.columns);
     table_creator->split_rows(split_rows);
 
-    ASSERT_OK(table_creator->Create());
+    for (const auto& bound : range_partition.bounds) {
+      KuduPartialRow* lower = schema.NewRow();
+      KuduPartialRow* upper = schema.NewRow();
 
+      for (int i = 0; i < bound.first.size(); i++) {
+        ASSERT_OK(lower->SetInt32(range_partition.columns[i], bound.first[i]));
+      }
+      for (int i = 0; i < bound.second.size(); i++) {
+        ASSERT_OK(upper->SetInt32(range_partition.columns[i], bound.second[i]));
+      }
+      table_creator->add_range_bound(lower, upper);
+    }
+
+    ASSERT_OK(table_creator->Create());
     ASSERT_OK(client_->OpenTable(kTableName, &table_));
+    ASSERT_EQ(NumPartitions(hash_partitions, range_partition), CountTablets());
+  }
+
+  void DeleteTable() {
+    inserted_rows_.clear();
+    client_->DeleteTable(table_->name());
+    table_.reset();
   }
 
   int CountTablets() {
-    vector<tserver::ListTabletsResponsePB_StatusAndSchemaPB> tablets;
-    CHECK_OK(ListTablets(ts_map_.begin()->second, MonoDelta::FromSeconds(10), &tablets));
-    return tablets.size();
+    GetTableLocationsRequestPB req;
+    GetTableLocationsResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(kTableName);
+    req.set_max_returned_locations(100);
+
+    for (int i = 1; ; i++) {
+      CHECK_LE(i, 10) << "CountTablets timed out";
+
+      controller.Reset();
+      CHECK_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
+
+      if (resp.has_error()) {
+        CHECK_EQ(MasterErrorPB::TABLET_NOT_RUNNING, resp.error().code());
+        SleepFor(MonoDelta::FromMilliseconds(i * i * 100));
+      } else {
+        return resp.tablet_locations().size();
+      }
+    }
   }
 
-  // Insert 'kNumRows' rows into the given table. The first column 'c0' is ascending,
-  // but the rest are random int32s.
-  Status InsertRandomRows();
+  // Insert rows into the given table. The first column 'c0' is ascending,
+  // but the rest are random int32s. A single row will be inserted for each
+  // unique c0 value in the range bounds. If there are no range bounds, then
+  // c0 values [0, 1000) will be used. The number of inserted rows is returned
+  // in 'row_count'.
+  Status InsertRows(const RangePartitionOptions& range_partition, int* row_count);
 
   // Perform a scan with a predicate on 'col_name' BETWEEN 'lower' AND 'upper'.
   // Verifies that the results match up with applying the same scan against our
@@ -175,35 +277,47 @@ class FlexPartitioningITest : public KuduTest {
 
   // Inserts data into the table, then performs a number of scans to verify that
   // the data can be retrieved.
-  void InsertAndVerifyScans();
+  void InsertAndVerifyScans(const RangePartitionOptions& range_partition);
 
   Random random_;
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
-  unordered_map<string, TServerDetails*> ts_map_;
 
   shared_ptr<KuduClient> client_;
   shared_ptr<KuduTable> table_;
-  vector<KuduPartialRow*> inserted_rows_;
+  vector<unique_ptr<KuduPartialRow>> inserted_rows_;
 };
 
-Status FlexPartitioningITest::InsertRandomRows() {
+Status FlexPartitioningITest::InsertRows(const RangePartitionOptions& range_partition,
+                                         int* row_count) {
+  static const vector<pair<vector<int32_t>, vector<int32_t>>> kDefaultBounds =
+    {{ { 0 }, { 1000 } }};
   CHECK(inserted_rows_.empty());
+
+  const vector<pair<vector<int32_t>, vector<int32_t>>>& bounds =
+    range_partition.bounds.empty() ? kDefaultBounds : range_partition.bounds;
 
   shared_ptr<KuduSession> session(client_->NewSession());
   session->SetTimeoutMillis(10000);
   RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  for (uint64_t i = 0; i < kNumRows; i++) {
-    gscoped_ptr<KuduInsert> insert(table_->NewInsert());
-    tools::GenerateDataForRow(table_->schema(), i, &random_, insert->mutable_row());
-    inserted_rows_.push_back(new KuduPartialRow(*insert->mutable_row()));
-    RETURN_NOT_OK(session->Apply(insert.release()));
 
-    if (i > 0 && i % 1000 == 0) {
-      RETURN_NOT_OK(session->Flush());
+  int count = 0;
+  for (const auto& bound : bounds) {
+    for (int32_t i = bound.first[0]; i < bound.second[0]; i++) {
+      gscoped_ptr<KuduInsert> insert(table_->NewInsert());
+      tools::GenerateDataForRow(table_->schema(), i, &random_, insert->mutable_row());
+      inserted_rows_.emplace_back(new KuduPartialRow(*insert->mutable_row()));
+      RETURN_NOT_OK(session->Apply(insert.release()));
+      count++;
+
+      if (i > 0 && i % 1000 == 0) {
+        RETURN_NOT_OK(session->Flush());
+      }
     }
   }
+
   RETURN_NOT_OK(session->Flush());
+  *row_count = count;
   return Status::OK();
 }
 
@@ -221,7 +335,7 @@ void FlexPartitioningITest::CheckScanWithColumnPredicate(Slice col_name, int low
 
   // Manually evaluate the predicate against the data we think we inserted.
   vector<string> expected_rows;
-  for (const KuduPartialRow* row : inserted_rows_) {
+  for (auto& row : inserted_rows_) {
     int32_t val;
     CHECK_OK(row->GetInt32(col_name, &val));
     if (val >= lower && val <= upper) {
@@ -254,7 +368,7 @@ void FlexPartitioningITest::CheckPKRangeScan(int lower, int upper) {
 }
 
 void FlexPartitioningITest::CheckPartitionKeyRangeScan() {
-  master::GetTableLocationsResponsePB table_locations;
+  GetTableLocationsResponsePB table_locations;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(),
                     table_->name(),
                     MonoDelta::FromSeconds(32),
@@ -277,7 +391,7 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScan() {
   std::sort(rows.begin(), rows.end());
 
   vector<string> expected_rows;
-  for (KuduPartialRow* row : inserted_rows_) {
+  for (auto& row : inserted_rows_) {
     expected_rows.push_back("(" + row->ToString() + ")");
   }
   std::sort(expected_rows.begin(), expected_rows.end());
@@ -287,7 +401,7 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScan() {
 }
 
 void FlexPartitioningITest::CheckPartitionKeyRangeScanWithPKRange(int lower, int upper) {
-  master::GetTableLocationsResponsePB table_locations;
+  GetTableLocationsResponsePB table_locations;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(),
                     table_->name(),
                     MonoDelta::FromSeconds(32),
@@ -321,15 +435,16 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScanWithPKRange(int lower, int
   ASSERT_EQ(rows, expected_rows);
 }
 
-void FlexPartitioningITest::InsertAndVerifyScans() {
-  ASSERT_OK(InsertRandomRows());
+void FlexPartitioningITest::InsertAndVerifyScans(const RangePartitionOptions& range_partition) {
+  int row_count;
+  ASSERT_OK(InsertRows(range_partition, &row_count));
 
   // First, ensure that we get back the same number we put in.
   {
     vector<string> rows;
     ScanTableToStrings(table_.get(), &rows);
     std::sort(rows.begin(), rows.end());
-    ASSERT_EQ(kNumRows, rows.size());
+    ASSERT_EQ(row_count, rows.size());
   }
 
   // Perform some scans with predicates.
@@ -394,178 +509,48 @@ void FlexPartitioningITest::InsertAndVerifyScans() {
   }
 }
 
-// CREATE TABLE t (
-//   c0 INT32,
-//   c1 INT32,
-//   PRIMARY KEY (c0, c1)
-//   RANGE PARTITION BY (c0, c1),
-// );
-TEST_F(FlexPartitioningITest, TestSimplePartitioning) {
-  NO_FATALS(CreateTable(1, // 2 columns
-                        vector<string>(), 0, // No hash buckets
-                        vector<string>(), 0, // No hash buckets
-                        { "c0" }, // no range partitioning
-                        2)); // 1 split;
-  ASSERT_EQ(2, CountTablets());
+TEST_F(FlexPartitioningITest, TestFlexPartitioning) {
+  vector<vector<HashPartitionOptions>> hash_options {
+    // No hash partitioning
+    {},
+    // HASH (c1) INTO 4 BUCKETS
+    { HashPartitionOptions { { "c1" }, 4 } },
+    // HASH (c0, c1) INTO 3 BUCKETS
+    { HashPartitionOptions { { "c0", "c1" }, 3 } },
+    // HASH (c1, c0) INTO 3 BUCKETS, HASH (c2) INTO 3 BUCKETS
+    { HashPartitionOptions { { "c1", "c0" }, 3 },
+      HashPartitionOptions { { "c2" }, 3 } },
+    // HASH (c2) INTO 2 BUCKETS, HASH (c1) INTO 2 BUCKETS, HASH (c0) INTO 2 BUCKETS
+    { HashPartitionOptions { { "c2" }, 2 },
+      HashPartitionOptions { { "c1" }, 2 },
+      HashPartitionOptions { { "c0" }, 2 } },
+  };
 
-  InsertAndVerifyScans();
+  vector<RangePartitionOptions> range_options {
+    // No range partitioning
+    RangePartitionOptions { {}, {}, {} },
+    // RANGE (c0)
+    RangePartitionOptions { { "c0" }, { }, { } },
+    // RANGE (c0) SPLIT ROWS (500)
+    RangePartitionOptions { { "c0" }, { { 500 } }, { } },
+    // RANGE (c2, c1) SPLIT ROWS (500, 0), (500, 500), (1000, 0)
+    RangePartitionOptions { { "c2", "c1" }, { { 500, 0 }, { 500, 500 }, { 1000, 0 } }, { } },
+    // RANGE (c0) BOUNDS ((0), (500)), ((500), (1000))
+    RangePartitionOptions { { "c0" }, { }, { { { 0 }, { 500 } }, { { 500 }, { 1000 } } } },
+    // RANGE (c0) SPLIT ROWS (500) BOUNDS ((0), (1000))
+    RangePartitionOptions { { "c0" }, { }, { { { 0 }, { 500 } }, { { 500 }, { 1000 } } } },
+    // RANGE (c0, c1) SPLIT ROWS (500), (2001), (2500), (2999)
+    //                BOUNDS ((0), (1000)), ((2000), (3000))
+     RangePartitionOptions{ { "c0", "c1" }, { { 500 }, { 2001 }, { 2500 }, { 2999 } },
+                            { { { 0 }, { 1000 } }, { { 2000 }, { 3000 } } } },
+  };
+
+  for (const auto& hash_option : hash_options) {
+    for (const auto& range_option: range_options) {
+      SCOPED_TRACE(PartitionOptionsToString(hash_option, range_option));
+      NO_FATALS(TestPartitionOptions(hash_option, range_option));
+    }
+  }
 }
-
-// CREATE TABLE t (
-//   c0 INT32 PRIMARY KEY,
-//   BUCKET BY (c0) INTO 3 BUCKETS
-// );
-TEST_F(FlexPartitioningITest, TestSinglePKBucketed) {
-  NO_FATALS(CreateTable(1, // 1 column
-                        { "c0" }, 3, // bucket by "c0" in 3 buckets
-                        vector<string>(), 0, // no other buckets
-                        { "c0" }, // default range
-                        2)); // one split
-  ASSERT_EQ(6, CountTablets());
-
-  InsertAndVerifyScans();
-}
-
-// CREATE TABLE t (
-//   c0 INT32,
-//   c1 INT32,
-//   PRIMARY KEY (c0, c1)
-//   BUCKET BY (c1) INTO 3 BUCKETS
-// );
-TEST_F(FlexPartitioningITest, TestCompositePK_BucketOnSecondColumn) {
-  NO_FATALS(CreateTable(2, // 2 columns
-                        { "c1" }, 3, // bucket by "c0" in 3 buckets
-                        vector<string>(), 0, // no other buckets
-                        { "c0", "c1" }, // default range
-                        1)); // no splits;
-  ASSERT_EQ(3, CountTablets());
-
-  InsertAndVerifyScans();
-}
-
-// CREATE TABLE t (
-//   c0 INT32,
-//   c1 INT32,
-//   PRIMARY KEY (c0, c1)
-//   RANGE PARTITION BY (c1, c0)
-// );
-TEST_F(FlexPartitioningITest, TestCompositePK_RangePartitionByReversedPK) {
-  NO_FATALS(CreateTable(2, // 2 columns
-                        vector<string>(), 0, // no buckets
-                        vector<string>(), 0, // no buckets
-                        { "c1", "c0" }, // range partition by reversed PK
-                        2)); // one split
-  ASSERT_EQ(2, CountTablets());
-
-  InsertAndVerifyScans();
-}
-
-// CREATE TABLE t (
-//   c0 INT32,
-//   c1 INT32,
-//   PRIMARY KEY (c0, c1)
-//   RANGE PARTITION BY (c0)
-// );
-TEST_F(FlexPartitioningITest, TestCompositePK_RangePartitionByPKPrefix) {
-  NO_FATALS(CreateTable(2, // 2 columns
-                        vector<string>(), 0, // no buckets
-                        vector<string>(), 0, // no buckets
-                        { "c0" }, // range partition by c0
-                        2)); // one split
-  ASSERT_EQ(2, CountTablets());
-
-  InsertAndVerifyScans();
-}
-
-// CREATE TABLE t (
-//   c0 INT32,
-//   c1 INT32,
-//   PRIMARY KEY (c0, c1)
-//   RANGE PARTITION BY (c1)
-// );
-TEST_F(FlexPartitioningITest, TestCompositePK_RangePartitionByPKSuffix) {
-  NO_FATALS(CreateTable(2, // 2 columns
-                        vector<string>(), 0, // no buckets
-                        vector<string>(), 0, // no buckets
-                        { "c1" }, // range partition by c1
-                        2)); // one split
-  ASSERT_EQ(2, CountTablets());
-
-  InsertAndVerifyScans();
-}
-
-// CREATE TABLE t (
-//   c0 INT32,
-//   c1 INT32,
-//   PRIMARY KEY (c0, c1)
-//   RANGE PARTITION BY (c0),
-//   BUCKET BY (c1) INTO 4 BUCKETS
-// );
-TEST_F(FlexPartitioningITest, TestCompositePK_RangeAndBucket) {
-  NO_FATALS(CreateTable(2, // 2 columns
-                        { "c1" }, 4, // BUCKET BY c1 INTO 4 BUCKETS
-                        vector<string>(), 0, // no buckets
-                        { "c0" }, // range partition by c0
-                        2)); // 1 split;
-  ASSERT_EQ(8, CountTablets());
-
-  InsertAndVerifyScans();
-}
-
-// CREATE TABLE t (
-//   c0 INT32,
-//   c1 INT32,
-//   PRIMARY KEY (c0, c1)
-//   BUCKET BY (c1) INTO 4 BUCKETS,
-//   BUCKET BY (c0) INTO 3 BUCKETS
-// );
-TEST_F(FlexPartitioningITest, TestCompositePK_MultipleBucketings) {
-  NO_FATALS(CreateTable(2, // 2 columns
-                        { "c1" }, 4, // BUCKET BY c1 INTO 4 BUCKETS
-                        { "c0" }, 3, // BUCKET BY c0 INTO 3 BUCKETS
-                        { "c0", "c1" }, // default range partitioning
-                        2)); // 1 split;
-  ASSERT_EQ(4 * 3 * 2, CountTablets());
-
-  InsertAndVerifyScans();
-}
-
-// CREATE TABLE t (
-//   c0 INT32,
-//   c1 INT32,
-//   PRIMARY KEY (c0, c1)
-//   RANGE PARTITION BY (),
-//   BUCKET BY (c0) INTO 4 BUCKETS,
-// );
-TEST_F(FlexPartitioningITest, TestCompositePK_SingleBucketNoRange) {
-  NO_FATALS(CreateTable(2, // 2 columns
-                        { "c0" }, 4, // BUCKET BY c0 INTO 4 BUCKETS
-                        vector<string>(), 0, // no buckets
-                        vector<string>(), // no range partitioning
-                        1)); // 0 splits;
-  ASSERT_EQ(4, CountTablets());
-
-  InsertAndVerifyScans();
-}
-
-// CREATE TABLE t (
-//   c0 INT32,
-//   c1 INT32,
-//   PRIMARY KEY (c0, c1)
-//   RANGE PARTITION BY (),
-//   BUCKET BY (c0) INTO 4 BUCKETS,
-//   BUCKET BY (c1) INTO 5 BUCKETS,
-// );
-TEST_F(FlexPartitioningITest, TestCompositePK_MultipleBucketingsNoRange) {
-  NO_FATALS(CreateTable(2, // 2 columns
-                        { "c0" }, 4, // BUCKET BY c0 INTO 4 BUCKETS
-                        { "c1" }, 5, // BUCKET BY c1 INTO 5 BUCKETS
-                        vector<string>(), // no range partitioning
-                        1)); // 0 splits;
-  ASSERT_EQ(20, CountTablets());
-
-  InsertAndVerifyScans();
-}
-
 } // namespace itest
 } // namespace kudu

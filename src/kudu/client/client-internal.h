@@ -71,7 +71,8 @@ class KuduClient::Data {
   Status CreateTable(KuduClient* client,
                      const master::CreateTableRequestPB& req,
                      const KuduSchema& schema,
-                     const MonoTime& deadline);
+                     const MonoTime& deadline,
+                     bool has_range_partition_bounds);
 
   Status IsCreateTableInProgress(KuduClient* client,
                                  const std::string& table_name,
@@ -184,7 +185,8 @@ class KuduClient::Data {
       const char* func_name,
       const boost::function<Status(master::MasterServiceProxy*,
                                    const ReqClass&, RespClass*,
-                                   rpc::RpcController*)>& func);
+                                   rpc::RpcController*)>& func,
+      std::vector<uint32_t> required_feature_flags);
 
   // The unique id of this client.
   std::string client_id_;

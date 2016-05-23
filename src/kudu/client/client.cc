@@ -19,10 +19,12 @@
 
 #include <algorithm>
 #include <boost/bind.hpp>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "kudu/client/batcher.h"
@@ -79,8 +81,10 @@ using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::tserver::ScanResponsePB;
+using std::pair;
 using std::set;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 MAKE_ENUM_LIMITS(kudu::client::KuduSession::FlushMode,
@@ -307,7 +311,8 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
           &resp,
           nullptr,
           "ListTabletServers",
-          &MasterServiceProxy::ListTabletServers);
+          &MasterServiceProxy::ListTabletServers,
+          {});
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
@@ -340,7 +345,8 @@ Status KuduClient::ListTables(vector<string>* tables,
           &resp,
           nullptr,
           "ListTables",
-          &MasterServiceProxy::ListTables);
+          &MasterServiceProxy::ListTables,
+          {});
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
@@ -479,6 +485,13 @@ KuduTableCreator& KuduTableCreator::split_rows(const vector<const KuduPartialRow
   return *this;
 }
 
+KuduTableCreator& KuduTableCreator::add_range_bound(KuduPartialRow* lower_bound,
+                                                    KuduPartialRow* upper_bound) {
+  data_->range_bounds_.emplace_back(unique_ptr<KuduPartialRow>(lower_bound),
+                                    unique_ptr<KuduPartialRow>(upper_bound));
+  return *this;
+}
+
 KuduTableCreator& KuduTableCreator::num_replicas(int num_replicas) {
   data_->num_replicas_ = num_replicas;
   return *this;
@@ -525,6 +538,15 @@ Status KuduTableCreator::Create() {
     }
     encoder.Add(RowOperationsPB::SPLIT_ROW, *row);
   }
+
+  for (const auto& bound : data_->range_bounds_) {
+    if (!bound.first || !bound.second) {
+      return Status::InvalidArgument("range bounds must not be null");
+    }
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, *bound.first);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, *bound.second);
+  }
+
   req.mutable_partition_schema()->CopyFrom(data_->partition_schema_);
 
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
@@ -537,7 +559,8 @@ Status KuduTableCreator::Create() {
   RETURN_NOT_OK_PREPEND(data_->client_->data_->CreateTable(data_->client_,
                                                            req,
                                                            *data_->schema_,
-                                                           deadline),
+                                                           deadline,
+                                                           !data_->range_bounds_.empty()),
                         strings::Substitute("Error creating table $0 on the master",
                                             data_->table_name_));
 

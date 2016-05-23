@@ -66,8 +66,9 @@ using master::ListTablesRequestPB;
 using master::ListTablesResponsePB;
 using master::ListTabletServersRequestPB;
 using master::ListTabletServersResponsePB;
-using master::MasterServiceProxy;
 using master::MasterErrorPB;
+using master::MasterFeatures;
+using master::MasterServiceProxy;
 using rpc::Rpc;
 using rpc::RpcController;
 using strings::Substitute;
@@ -136,7 +137,8 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     const boost::function<Status(MasterServiceProxy*,
                                  const ReqClass&,
                                  RespClass*,
-                                 RpcController*)>& func) {
+                                 RpcController*)>& func,
+    vector<uint32_t> required_feature_flags) {
   DCHECK(deadline.Initialized());
 
   while (true) {
@@ -161,6 +163,11 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     if (num_attempts != nullptr) {
       ++*num_attempts;
     }
+
+    for (uint32_t required_feature_flag : required_feature_flags) {
+      rpc.RequireServerFeature(required_feature_flag);
+    }
+
     Status s = func(master_proxy_.get(), req, resp, &rpc);
     if (s.IsNetworkError()) {
       LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
@@ -219,7 +226,8 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     const boost::function<Status(MasterServiceProxy*,
                                  const ListTablesRequestPB&,
                                  ListTablesResponsePB*,
-                                 RpcController*)>& func);
+                                 RpcController*)>& func,
+    vector<uint32_t> required_feature_flags);
 template
 Status KuduClient::Data::SyncLeaderMasterRpc(
     const MonoTime& deadline,
@@ -231,7 +239,8 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     const boost::function<Status(MasterServiceProxy*,
                                  const ListTabletServersRequestPB&,
                                  ListTabletServersResponsePB*,
-                                 RpcController*)>& func);
+                                 RpcController*)>& func,
+    vector<uint32_t> required_feature_flags);
 
 KuduClient::Data::Data()
     : latest_observed_timestamp_(KuduClient::kNoTimestamp) {
@@ -336,12 +345,18 @@ Status KuduClient::Data::GetTabletServer(KuduClient* client,
 Status KuduClient::Data::CreateTable(KuduClient* client,
                                      const CreateTableRequestPB& req,
                                      const KuduSchema& schema,
-                                     const MonoTime& deadline) {
+                                     const MonoTime& deadline,
+                                     bool has_range_partition_bounds) {
   CreateTableResponsePB resp;
 
   int attempts = 0;
+  vector<uint32_t> features;
+  if (has_range_partition_bounds) {
+    features.push_back(MasterFeatures::RANGE_PARTITION_BOUNDS);
+  }
   Status s = SyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB>(
-      deadline, client, req, &resp, &attempts, "CreateTable", &MasterServiceProxy::CreateTable);
+      deadline, client, req, &resp, &attempts, "CreateTable", &MasterServiceProxy::CreateTable,
+      features);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
     if (resp.error().code() == MasterErrorPB::TABLE_ALREADY_PRESENT && attempts > 1) {
@@ -403,7 +418,8 @@ Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
           &resp,
           nullptr,
           "IsCreateTableDone",
-          &MasterServiceProxy::IsCreateTableDone);
+          &MasterServiceProxy::IsCreateTableDone,
+          {});
   // RETURN_NOT_OK macro can't take templated function call as param,
   // and SyncLeaderMasterRpc must be explicitly instantiated, else the
   // compiler complains.
@@ -436,7 +452,7 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
   req.mutable_table()->set_table_name(table_name);
   Status s = SyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB>(
       deadline, client, req, &resp,
-      &attempts, "DeleteTable", &MasterServiceProxy::DeleteTable);
+      &attempts, "DeleteTable", &MasterServiceProxy::DeleteTable, {});
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
     if (resp.error().code() == MasterErrorPB::TABLE_NOT_FOUND && attempts > 1) {
@@ -462,7 +478,8 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
           &resp,
           nullptr,
           "AlterTable",
-          &MasterServiceProxy::AlterTable);
+          &MasterServiceProxy::AlterTable,
+          {});
   RETURN_NOT_OK(s);
   // TODO: Consider the situation where the request is sent to the
   // server, gets executed on the server and written to the server,
@@ -491,7 +508,8 @@ Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
           &resp,
           nullptr,
           "IsAlterTableDone",
-          &MasterServiceProxy::IsAlterTableDone);
+          &MasterServiceProxy::IsAlterTableDone,
+          {});
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());

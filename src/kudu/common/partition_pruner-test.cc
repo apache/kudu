@@ -60,7 +60,7 @@ void CheckPrunedPartitions(const Schema& schema,
 
   int pruned_partitions = count_if(partitions.begin(), partitions.end(),
                                     [&] (const Partition& partition) {
-                                      return pruner.ShouldPruneForTests(partition);
+                                      return pruner.ShouldPrune(partition);
                                     });
   ASSERT_EQ(remaining_tablets, partitions.size() - pruned_partitions);
 }

@@ -218,11 +218,11 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
   while (pruner.HasMorePartitionKeyRanges()) {
     scoped_refptr<internal::RemoteTablet> tablet;
     Synchronizer sync;
-    client->data_->meta_cache_->LookupTabletByKey(table,
-                                                  pruner.NextPartitionKey(),
-                                                  deadline,
-                                                  &tablet,
-                                                  sync.AsStatusCallback());
+    client->data_->meta_cache_->LookupTabletByKeyOrNext(table,
+                                                        pruner.NextPartitionKey(),
+                                                        deadline,
+                                                        &tablet,
+                                                        sync.AsStatusCallback());
     RETURN_NOT_OK(sync.Wait());
     CHECK(tablet);
 
