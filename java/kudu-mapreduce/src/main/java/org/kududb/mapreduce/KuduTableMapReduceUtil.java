@@ -37,7 +37,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.TaskInputOutputContext;
-import org.apache.hadoop.util.JarFinder;
 import org.apache.hadoop.util.StringUtils;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
@@ -446,9 +445,8 @@ public class KuduTableMapReduceUtil {
   }
 
   /**
-   * If org.apache.hadoop.util.JarFinder is available (0.23+ hadoop), finds
-   * the Jar for a class or creates it if it doesn't exist. If the class is in
-   * a directory in the classpath, it creates a Jar on the fly with the
+   * Finds the Jar for a class or creates it if it doesn't exist. If the class
+   * is in a directory in the classpath, it creates a Jar on the fly with the
    * contents of the directory and returns the path to that Jar. If a Jar is
    * created, it is created in the system temporary directory. Otherwise,
    * returns an existing jar that contains a class of the same name. Maintains
