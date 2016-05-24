@@ -29,6 +29,7 @@
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_queue.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
@@ -113,7 +114,7 @@ void ServicePool::RejectTooBusy(InboundCall* c) {
                  c->remote_address().ToString(),
                  service_queue_.max_size());
   rpcs_queue_overflow_->Increment();
-  LOG(WARNING) << err_msg;
+  KLOG_EVERY_N_SECS(WARNING, 1) << err_msg;
   c->RespondFailure(ErrorStatusPB::ERROR_SERVER_TOO_BUSY,
                     Status::ServiceUnavailable(err_msg));
   DLOG(INFO) << err_msg << " Contents of service queue:\n"
