@@ -16,7 +16,9 @@ package org.kududb.client;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Splitter;
 import com.google.common.base.Stopwatch;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import org.apache.commons.io.FileUtils;
@@ -224,10 +226,10 @@ public class MiniKuduCluster implements AutoCloseable {
     processBuilder.redirectErrorStream(true);
     Process proc = processBuilder.start();
     ProcessInputStreamLogPrinterRunnable printer =
-        new ProcessInputStreamLogPrinterRunnable(port, proc.getInputStream());
+        new ProcessInputStreamLogPrinterRunnable(proc.getInputStream());
     Thread thread = new Thread(printer);
     thread.setDaemon(true);
-    thread.setName(command[0]);
+    thread.setName(Iterables.getLast(Splitter.on(File.separatorChar).split(command[0])) + ":" + port);
     PROCESS_INPUT_PRINTERS.add(thread);
     thread.start();
 
@@ -245,7 +247,6 @@ public class MiniKuduCluster implements AutoCloseable {
   /**
    * Starts a previously killed master process on the specified port.
    * @param port which port the master was listening on for RPCs
-   * @return true if it was successful, false otherwise
    * @throws Exception
    */
   public void restartDeadMasterOnPort(int port) throws Exception {
@@ -255,7 +256,6 @@ public class MiniKuduCluster implements AutoCloseable {
   /**
    * Starts a previously killed tablet server process on the specified port.
    * @param port which port the TS was listening on for RPCs
-   * @return true if it was successful, false otherwise
    * @throws Exception
    */
   public void restartDeadTabletServerOnPort(int port) throws Exception {
@@ -388,14 +388,12 @@ public class MiniKuduCluster implements AutoCloseable {
   /**
    * Helper runnable that receives stdout and logs it along with the process' identifier.
    */
-  static class ProcessInputStreamLogPrinterRunnable implements Runnable {
+  private static class ProcessInputStreamLogPrinterRunnable implements Runnable {
 
     private final InputStream is;
-    private final int port;
 
-    public ProcessInputStreamLogPrinterRunnable(int port, InputStream is) {
+    public ProcessInputStreamLogPrinterRunnable(InputStream is) {
       this.is = is;
-      this.port = port;
     }
 
     @Override
@@ -404,7 +402,7 @@ public class MiniKuduCluster implements AutoCloseable {
         String line;
         BufferedReader in = new BufferedReader(new InputStreamReader(is));
         while ((line = in.readLine()) != null) {
-          LOG.info("{}: {}", port, line);
+          LOG.info(line);
         }
         in.close();
       }
