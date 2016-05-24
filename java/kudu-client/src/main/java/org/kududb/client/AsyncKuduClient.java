@@ -921,8 +921,9 @@ public class AsyncKuduClient implements AutoCloseable {
           new Exception("Exception created to collect stack trace"));
       attemptCount = 1;
     }
-    // TODO backoffs? Sleep in increments of 500 ms, plus some random time up to 50
-    long sleepTime = (attemptCount * SLEEP_TIME) + sleepRandomizer.nextInt(50);
+    // Randomized exponential backoff, truncated at 4096ms.
+    long sleepTime = (long)(Math.pow(2.0, Math.min(attemptCount, 12))
+        * sleepRandomizer.nextDouble());
     if (LOG.isDebugEnabled()) {
       LOG.debug("Going to sleep for " + sleepTime + " at retry " + rpc.attempt);
     }
