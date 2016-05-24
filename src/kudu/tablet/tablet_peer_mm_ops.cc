@@ -29,9 +29,10 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 
-DEFINE_int32(flush_threshold_mb, 64,
+DEFINE_int32(flush_threshold_mb, 1024,
              "Size at which MemRowSet flushes are triggered. "
-             "A MRS can still flush below this threshold if it if hasn't flushed in a while");
+             "A MRS can still flush below this threshold if it if hasn't flushed in a while, "
+             "or if the server-wide memory limit has been reached.");
 TAG_FLAG(flush_threshold_mb, experimental);
 
 METRIC_DEFINE_gauge_uint32(tablet, log_gc_running,

@@ -112,6 +112,12 @@ All Kudu clients have longer default timeout values, as listed below.
 - The default RPC timeout is now 10 seconds instead of 5.
 - The default scan timeout is now 30 seconds instead of 15.
 
+- Some default settings related to I/O behavior during flushes and compactions have been changed:
+  The default for `flush_threshold_mb` has been increased from 64MB to 1000MB. The default
+  `cfile_do_on_finish` has been changed from `close` to `flush`.
+  link:http://getkudu.io/2016/04/26/ycsb.html[Experiments using YCSB] indicate that these
+  values will provide better throughput for write-heavy applications on typical server hardware.
+
 [[rn_0.8.0]]
 === Release notes specific to 0.8.0
 

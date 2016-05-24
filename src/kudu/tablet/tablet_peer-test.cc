@@ -48,6 +48,7 @@
 METRIC_DECLARE_entity(tablet);
 
 DECLARE_int32(log_min_seconds_to_retain);
+DECLARE_int32(flush_threshold_mb);
 
 namespace kudu {
 namespace tablet {
@@ -542,6 +543,8 @@ TEST_F(TabletPeerTest, TestGCEmptyLog) {
 }
 
 TEST_F(TabletPeerTest, TestFlushOpsPerfImprovements) {
+  FLAGS_flush_threshold_mb = 64;
+
   MaintenanceOpStats stats;
 
   // Just on the threshold and not enough time has passed for a time-based flush.
