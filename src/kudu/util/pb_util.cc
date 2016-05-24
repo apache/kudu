@@ -55,6 +55,7 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/jsonwriter.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util-internal.h"
 #include "kudu/util/pb_util.pb.h"
@@ -872,6 +873,23 @@ Status WritePBContainerToPath(Env* env, const std::string& path,
                           "Failed to SyncDir() parent of " + path);
   }
   return Status::OK();
+}
+
+
+scoped_refptr<debug::ConvertableToTraceFormat> PbTracer::TracePb(const Message& msg) {
+  return make_scoped_refptr(new PbTracer(msg));
+}
+
+PbTracer::PbTracer(const Message& msg) : msg_(msg.New()) {
+  msg_->CopyFrom(msg);
+}
+
+void PbTracer::AppendAsTraceFormat(std::string* out) const {
+  pb_util::TruncateFields(msg_.get(), kMaxFieldLengthToTrace);
+  std::stringstream ss;
+  JsonWriter jw(&ss, JsonWriter::COMPACT);
+  jw.Protobuf(*msg_);
+  out->append(ss.str());
 }
 
 } // namespace pb_util

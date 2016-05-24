@@ -26,6 +26,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
 
 namespace google {
@@ -423,6 +424,38 @@ Status WritePBContainerToPath(Env* env, const std::string& path,
                               const google::protobuf::Message& msg,
                               CreateMode create,
                               SyncMode sync);
+
+// Wrapper for a protobuf message which lazily converts to JSON when
+// the trace buffer is dumped.
+//
+// When tracing, an instance of this class can be associated with
+// a given trace, instead of a stringified PB, thus avoiding doing
+// stringification inline and moving that work to the tracing process.
+//
+// Example usage:
+//  TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
+//                         "response", pb_util::PbTracer::TracePb(*response_pb_),
+//                         ...);
+//
+class PbTracer : public debug::ConvertableToTraceFormat {
+ public:
+  enum {
+    kMaxFieldLengthToTrace = 100
+  };
+
+  // Static helper to be called when adding a stringified PB to a trace.
+  // This does not actually stringify 'msg', that will be done later
+  // when/if AppendAsTraceFormat() is called on the returned object.
+  static scoped_refptr<debug::ConvertableToTraceFormat> TracePb(
+      const google::protobuf::Message& msg);
+
+  explicit PbTracer(const google::protobuf::Message& msg);
+
+  // Actually stringifies the PB and appends the string to 'out'.
+  void AppendAsTraceFormat(std::string* out) const override;
+ private:
+  const gscoped_ptr<google::protobuf::Message> msg_;
+};
 
 } // namespace pb_util
 } // namespace kudu
