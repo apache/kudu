@@ -18,6 +18,7 @@
 
 from kudu.compat import unittest, long
 from kudu.tests.common import KuduTestBase
+from kudu.client import Partitioning
 import kudu
 
 
@@ -91,6 +92,27 @@ class TestClient(KuduTestBase, unittest.TestCase):
     def test_table_nonexistent(self):
         self.assertRaises(kudu.KuduNotFound, self.client.table,
                           '__donotexist__')
+
+    def test_create_partitioned_table(self):
+        name = 'partitioned_table'
+        try:
+            self.client.create_table(
+                name, self.schema,
+                partitioning=Partitioning().add_hash_partitions(['key'], 2))
+            # TODO: once the Python client can list partition info, assert that it was
+            # created successfully here.
+            self.client.delete_table(name)
+
+            self.client.create_table(
+                name, self.schema,
+                partitioning=Partitioning().set_range_partition_columns([]))
+            self.client.delete_table(name)
+
+        finally:
+            try:
+                self.client.delete_table(name)
+            except:
+                pass
 
     def test_insert_nonexistent_field(self):
         table = self.client.table(self.ex_table)

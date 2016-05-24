@@ -226,7 +226,7 @@ cdef class Client:
         # Nothing yet to clean up here
         pass
 
-    def create_table(self, table_name, Schema schema):
+    def create_table(self, table_name, Schema schema, partitioning=None):
         """
         Creates a new Kudu table from the passed Schema and options.
 
@@ -235,18 +235,38 @@ cdef class Client:
         table_name : string
         schema : kudu.Schema
           Create using kudu.schema_builder
+        partitioning : Partitioning object
         """
         cdef:
             KuduTableCreator* c
             Status s
         c = self.cp.NewTableCreator()
         try:
-            s = (c.table_name(tobytes(table_name))
-                 .schema(schema.schema)
-                 .Create())
+            c.table_name(tobytes(table_name))
+            c.schema(schema.schema)
+            if partitioning is not None:
+                self._apply_partitioning(c, partitioning)
+            s = c.Create()
             check_status(s)
         finally:
             del c
+
+    cdef _apply_partitioning(self, KuduTableCreator* c, part):
+        cdef:
+            vector[string] v
+            PartialRow py_row
+        # Apply hash partitioning.
+        for col_names, num_buckets in part._hash_partitions:
+            v.clear()
+            for n in col_names:
+                v.push_back(tobytes(n))
+            c.add_hash_partitions(v, num_buckets)
+        # Apply range partitioning
+        if part._range_partition_cols is not None:
+            v.clear()
+            for n in part._range_partition_cols:
+                v.push_back(tobytes(n))
+            c.set_range_partition_columns(v)
 
     def delete_table(self, table_name):
         """
@@ -657,6 +677,62 @@ cdef class Column:
         result.init(pred)
 
         return result
+
+
+class Partitioning(object):
+    """ Argument to Client.create_table(...) to describe table partitioning. """
+
+    def __init__(self):
+        self._hash_partitions = []
+        self._range_partition_cols = None
+
+    def add_hash_partitions(self, column_names, num_buckets):
+        """
+        Adds a set of hash partitions to the table.
+
+        For each set of hash partitions added to the table, the total number of
+        table partitions is multiplied by the number of buckets. For example, if a
+        table is created with 3 split rows, and two hash partitions with 4 and 5
+        buckets respectively, the total number of table partitions will be 80
+        (4 range partitions * 4 hash buckets * 5 hash buckets).
+
+        Parameters
+        ----------
+        column_names : list of string column names on which to partition
+        num_buckets : the number of buckets to create
+
+        Returns
+        -------
+        self: this object
+        """
+        if isinstance(column_names, str):
+            column_names = [column_names]
+        self._hash_partitions.append( (column_names, num_buckets) )
+        return self
+
+    def set_range_partition_columns(self, column_names):
+        """
+        Sets the columns on which the table will be range-partitioned.
+
+        Every column must be a part of the table's primary key. If not set, the
+        table will be created with the primary-key columns as the range-partition
+        columns. If called with an empty vector, the table will be created without
+        range partitioning.
+
+        Parameters
+        ----------
+        column_names : list of string column names on which to partition
+
+        Returns
+        -------
+        self: this object
+        """
+        self._range_partition_cols = column_names
+        return self
+
+    # TODO: implement split_rows.
+    # This is slightly tricky since currently the PartialRow constructor requires a
+    # Table object, which doesn't exist yet. Should we use tuples instead?
 
 
 cdef class Predicate:
