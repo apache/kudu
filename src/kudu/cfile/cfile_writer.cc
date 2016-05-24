@@ -45,14 +45,20 @@ DEFINE_string(cfile_default_compression_codec, "none",
               "Default cfile block compression codec.");
 TAG_FLAG(cfile_default_compression_codec, advanced);
 
-// The default value is optimized for the case where:
-// 1. the cfile blocks are colocated with the WALs.
-// 2. The underlying hardware is a spinning disk.
-// 3. The underlying filesystem is either XFS or EXT4.
-// 4. block_coalesce_close is false (see fs/block_manager.cc).
+// The default value is optimized for throughput in the case that
+// there are multiple drives backing the tablet. By asynchronously
+// flushing each cfile before issuing any fsyncs, the IO across
+// disks is done in parallel.
 //
-// When all conditions hold, this value ensures low latency for WAL writes.
-DEFINE_string(cfile_do_on_finish, "close",
+// This increases throughput but can harm latency in the case that
+// there are few disks and the WAL is on the same disk as the
+// data blocks. The default is chosen based on the assumptions that:
+// - latency is leveled across machines by Raft
+// - latency-sensitive applications can devote a disk to the WAL
+// - super-sensitive applications can devote an SSD to the WAL.
+// - users could always change this to "close", which slows down throughput
+//   but may improve write latency.
+DEFINE_string(cfile_do_on_finish, "flush",
               "What to do to cfile blocks when writing is finished. "
               "Possible values are 'close', 'flush', or 'nothing'.");
 TAG_FLAG(cfile_do_on_finish, experimental);
