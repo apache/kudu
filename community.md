@@ -24,6 +24,12 @@ Get help using Kudu or contribute to the project on our mailing lists or our cha
   ([subscribe](mailto:issues-subscribe@kudu.incubator.apache.org))
   ([unsubscribe](mailto:issues-unsubscribe@kudu.incubator.apache.org))
   ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-issues/))
+* [reviews@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-reviews/)
+  receives an email copy of all code review requests and responses on the
+  [Kudu Gerrit](http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu).
+  ([subscribe](mailto:reviews-subscribe@kudu.incubator.apache.org))
+  ([unsubscribe](mailto:reviews-unsubscribe@kudu.incubator.apache.org))
+  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-reviews/))
 * The [Kudu slack chat room](https://getkudu-slack.herokuapp.com/) is where
   many Kudu developers and users hang out to answer questions and chat.
 
