@@ -41,7 +41,7 @@
 
         <!-- Maven plugins -->
         <maven-antrun-plugin.version>1.7</maven-antrun-plugin.version>
-        <maven-assembly-plugin.version>2.2.1</maven-assembly-plugin.version>
+        <maven-assembly-plugin.version>2.6</maven-assembly-plugin.version>
         <maven-enforcer-plugin.version>1.4</maven-enforcer-plugin.version>
         <maven-protoc-plugin.version>0.1.10</maven-protoc-plugin.version>
         <maven-surefire-plugin.version>2.18</maven-surefire-plugin.version>
