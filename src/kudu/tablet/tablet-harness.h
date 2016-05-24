@@ -89,6 +89,7 @@ class TabletHarness {
     RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                options_.tablet_id,
                                                "KuduTableTest",
+                                               "KuduTableTestId",
                                                schema_,
                                                partition.first,
                                                partition.second,

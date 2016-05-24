@@ -69,6 +69,7 @@ using tablet::OperationResultPB;
 using tablet::MemStoreTargetPB;
 
 const char* kTestTable = "test-log-table";
+const char* kTestTableId = "test-log-table-id";
 const char* kTestTablet = "test-log-tablet";
 const bool APPEND_SYNC = true;
 const bool APPEND_ASYNC = false;

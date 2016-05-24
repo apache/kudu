@@ -119,6 +119,7 @@ class SysCatalogTable {
   friend class CatalogManager;
 
   const char *table_name() const { return "sys.catalog"; }
+  const char *table_id() const { return "sys.catalog.id"; }
 
   // Return the schema of the table.
   // NOTE: This is the "server-side" schema, so it must have the column IDs.

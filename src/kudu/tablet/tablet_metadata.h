@@ -65,6 +65,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   static Status CreateNew(FsManager* fs_manager,
                           const std::string& tablet_id,
                           const std::string& table_name,
+                          const std::string& table_id,
                           const Schema& schema,
                           const PartitionSchema& partition_schema,
                           const Partition& partition,
@@ -84,6 +85,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   static Status LoadOrCreate(FsManager* fs_manager,
                              const std::string& tablet_id,
                              const std::string& table_name,
+                             const std::string& table_id,
                              const Schema& schema,
                              const PartitionSchema& partition_schema,
                              const Partition& partition,
@@ -233,8 +235,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // TODO: get rid of this many-arg constructor in favor of just passing in a
   // SuperBlock, which already contains all of these fields.
   TabletMetadata(FsManager* fs_manager, std::string tablet_id,
-                 std::string table_name, const Schema& schema,
-                 PartitionSchema partition_schema, Partition partition,
+                 std::string table_name, std::string table_id,
+                 const Schema& schema, PartitionSchema partition_schema,
+                 Partition partition,
                  const TabletDataState& tablet_data_state);
 
   // Constructor for loading an existing tablet.

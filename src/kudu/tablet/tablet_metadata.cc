@@ -69,6 +69,7 @@ const int64 kNoDurableMemStore = -1;
 Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const string& tablet_id,
                                  const string& table_name,
+                                 const string& table_id,
                                  const Schema& schema,
                                  const PartitionSchema& partition_schema,
                                  const Partition& partition,
@@ -83,6 +84,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
   scoped_refptr<TabletMetadata> ret(new TabletMetadata(fs_manager,
                                                        tablet_id,
                                                        table_name,
+                                                       table_id,
                                                        schema,
                                                        partition_schema,
                                                        partition,
@@ -104,6 +106,7 @@ Status TabletMetadata::Load(FsManager* fs_manager,
 Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const string& tablet_id,
                                     const string& table_name,
+                                    const string& table_id,
                                     const Schema& schema,
                                     const PartitionSchema& partition_schema,
                                     const Partition& partition,
@@ -118,7 +121,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
     }
     return Status::OK();
   } else if (s.IsNotFound()) {
-    return CreateNew(fs_manager, tablet_id, table_name, schema,
+    return CreateNew(fs_manager, tablet_id, table_name, table_id, schema,
                      partition_schema, partition, initial_tablet_data_state,
                      metadata);
   } else {
@@ -207,8 +210,8 @@ Status TabletMetadata::DeleteSuperBlock() {
 }
 
 TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
-                               string table_name, const Schema& schema,
-                               PartitionSchema partition_schema,
+                               string table_name, string table_id,
+                               const Schema& schema, PartitionSchema partition_schema,
                                Partition partition,
                                const TabletDataState& tablet_data_state)
     : state_(kNotWrittenYet),
@@ -219,6 +222,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       last_durable_mrs_id_(kNoDurableMemStore),
       schema_(new Schema(schema)),
       schema_version_(0),
+      table_id_(std::move(table_id)),
       table_name_(std::move(table_name)),
       partition_schema_(std::move(partition_schema)),
       tablet_data_state_(tablet_data_state),

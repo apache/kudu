@@ -149,6 +149,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
   RETURN_NOT_OK(tablet::TabletMetadata::CreateNew(fs_manager,
                                                   kSysCatalogTabletId,
                                                   table_name(),
+                                                  table_id(),
                                                   schema, partition_schema,
                                                   partitions[0],
                                                   tablet::TABLET_DATA_READY,

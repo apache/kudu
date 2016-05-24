@@ -76,6 +76,7 @@ class BootstrapTest : public LogTestBase {
     RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                log::kTestTablet,
                                                log::kTestTable,
+                                               log::kTestTableId,
                                                schema,
                                                partition.first,
                                                partition.second,

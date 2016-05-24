@@ -233,6 +233,7 @@ Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
     // Create the superblock on disk.
     RETURN_NOT_OK(TabletMetadata::CreateNew(fs_manager_, tablet_id_,
                                             superblock_->table_name(),
+                                            superblock_->table_id(),
                                             schema,
                                             partition_schema,
                                             partition,
