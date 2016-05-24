@@ -17,6 +17,10 @@
 package org.kududb.client;
 
 import com.google.protobuf.Message;
+
+import java.util.Collection;
+import java.util.List;
+
 import org.kududb.Schema;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.master.Master;
@@ -34,6 +38,7 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
   private final Schema schema;
   private final String name;
   private final Master.CreateTableRequestPB.Builder builder;
+  private final List<Integer> featureFlags;
 
   CreateTableRequest(KuduTable masterTable, String name, Schema schema,
                      CreateTableOptions builder) {
@@ -41,6 +46,7 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
     this.schema = schema;
     this.name = name;
     this.builder = builder.getBuilder();
+    featureFlags = builder.getRequiredFeatureFlags();
   }
 
   @Override
@@ -68,5 +74,10 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
         new CreateTableResponse(deadlineTracker.getElapsedMillis(), tsUUID);
     return new Pair<CreateTableResponse, Object>(
         response, builder.hasError() ? builder.getError() : null);
+  }
+
+  @Override
+  Collection<Integer> getRequiredFeatures() {
+    return featureFlags;
   }
 }

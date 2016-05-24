@@ -197,7 +197,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     }
   }
 
-  @Test
+  @Test(timeout = 100000)
   public void testHashBucketedTable() throws Exception {
     CreateTableOptions tableBuilder = new CreateTableOptions();
     tableBuilder.addHashPartitions(ImmutableList.of("a"), 3);
@@ -206,7 +206,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     testPartitionSchema(tableBuilder);
   }
 
-  @Test
+  @Test(timeout = 100000)
   public void testNonDefaultRangePartitionedTable() throws Exception {
     Schema schema = createSchema();
     CreateTableOptions tableBuilder = new CreateTableOptions();
@@ -224,7 +224,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     testPartitionSchema(tableBuilder);
   }
 
-  @Test
+  @Test(timeout = 100000)
   public void testHashBucketedAndRangePartitionedTable() throws Exception {
     Schema schema = createSchema();
     CreateTableOptions tableBuilder = new CreateTableOptions();
@@ -244,7 +244,71 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     testPartitionSchema(tableBuilder);
   }
 
-  @Test
+  @Test(timeout = 100000)
+  public void testNonCoveredRangePartitionedTable() throws Exception {
+    Schema schema = createSchema();
+    CreateTableOptions tableBuilder = new CreateTableOptions();
+    tableBuilder.setRangePartitionColumns(ImmutableList.of("a", "b", "c"));
+
+    // Create a non covered range between (3, 5, 6) and (4, 0, 0)
+
+    PartialRow lowerBoundA = schema.newPartialRow();
+    lowerBoundA.addString("a", "0");
+    lowerBoundA.addString("b", "0");
+    lowerBoundA.addString("c", "0");
+    PartialRow upperBoundA = schema.newPartialRow();
+    upperBoundA.addString("a", "3");
+    upperBoundA.addString("b", "5");
+    upperBoundA.addString("b", "6");
+    tableBuilder.addRangeBound(lowerBoundA, upperBoundA);
+
+    PartialRow lowerBoundB = schema.newPartialRow();
+    lowerBoundB.addString("a", "4");
+    lowerBoundB.addString("b", "0");
+    lowerBoundB.addString("c", "0");
+    PartialRow upperBoundB = schema.newPartialRow();
+    upperBoundB.addString("a", "5");
+    upperBoundB.addString("b", "5");
+    upperBoundB.addString("b", "6");
+    tableBuilder.addRangeBound(lowerBoundB, upperBoundB);
+
+    testPartitionSchema(tableBuilder);
+  }
+
+  @Test(timeout = 100000)
+  public void testHashBucketedAndNonCoveredRangePartitionedTable() throws Exception {
+    Schema schema = createSchema();
+    CreateTableOptions tableBuilder = new CreateTableOptions();
+    tableBuilder.setRangePartitionColumns(ImmutableList.of("a", "b", "c"));
+
+    // Create a non covered range between (3, 5, 6) and (4, 0, 0)
+
+    PartialRow lowerBoundA = schema.newPartialRow();
+    lowerBoundA.addString("a", "0");
+    lowerBoundA.addString("b", "0");
+    lowerBoundA.addString("c", "0");
+    PartialRow upperBoundA = schema.newPartialRow();
+    upperBoundA.addString("a", "3");
+    upperBoundA.addString("b", "5");
+    upperBoundA.addString("c", "6");
+    tableBuilder.addRangeBound(lowerBoundA, upperBoundA);
+
+    PartialRow lowerBoundB = schema.newPartialRow();
+    lowerBoundB.addString("a", "4");
+    lowerBoundB.addString("b", "0");
+    lowerBoundB.addString("c", "0");
+    PartialRow upperBoundB = schema.newPartialRow();
+    upperBoundB.addString("a", "5");
+    upperBoundB.addString("b", "5");
+    upperBoundB.addString("c", "6");
+    tableBuilder.addRangeBound(lowerBoundB, upperBoundB);
+
+    tableBuilder.addHashPartitions(ImmutableList.of("a", "b", "c"), 4);
+
+    testPartitionSchema(tableBuilder);
+  }
+
+  @Test(timeout = 100000)
   public void testSimplePartitionedTable() throws Exception {
     Schema schema = createSchema();
     CreateTableOptions tableBuilder =
@@ -262,7 +326,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     testPartitionSchema(tableBuilder);
   }
 
-  @Test
+  @Test(timeout = 100000)
   public void testUnpartitionedTable() throws Exception {
     CreateTableOptions tableBuilder =
         new CreateTableOptions().setRangePartitionColumns(ImmutableList.<String>of());

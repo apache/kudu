@@ -25,6 +25,7 @@
  */
 package org.kududb.client;
 
+import com.google.common.io.BaseEncoding;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.annotations.InterfaceAudience;
@@ -792,11 +793,6 @@ public final class Bytes {
 
   /**
    * Convert a byte array to a hex encoded string.
-   *
-   * TODO: replace this with {@link com.google.common.io.BaseEncoding}
-   * when the Guava version is bumped.
-   *
-   * https://stackoverflow.com/questions/9655181/how-to-convert-a-byte-array-to-a-hex-string-in-java
    * @param bytes the bytes to encode
    * @return the hex encoded bytes
    */
@@ -804,12 +800,7 @@ public final class Bytes {
     StringBuilder sb = new StringBuilder(2 + bytes.length * 2);
     sb.append('0');
     sb.append('x');
-
-    for (byte b : bytes) {
-      int v = b & 0xFF;
-      sb.append(HEX[v >>> 4]);
-      sb.append(HEX[v & 0x0F]);
-    }
+    sb.append(BaseEncoding.base16().encode(bytes));
     return sb.toString();
   }
 

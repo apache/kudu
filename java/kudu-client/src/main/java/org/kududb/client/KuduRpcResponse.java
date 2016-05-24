@@ -28,8 +28,8 @@ abstract class KuduRpcResponse {
 
   /**
    * Constructor with information common to all RPCs.
-   * @param elapsedMillis Time in milliseconds since RPC creation to now.
-   * @param tsUUID A string that contains the UUID of the server that answered the RPC.
+   * @param elapsedMillis time in milliseconds since RPC creation to now
+   * @param tsUUID a string that contains the UUID of the server that answered the RPC
    */
   KuduRpcResponse(long elapsedMillis, String tsUUID) {
     this.elapsedMillis = elapsedMillis;
@@ -39,15 +39,16 @@ abstract class KuduRpcResponse {
   /**
    * Get the number of milliseconds elapsed since the RPC was created up to the moment when this
    * response was created.
-   * @return Elapsed time in milliseconds.
+   * @return elapsed time in milliseconds
    */
   public long getElapsedMillis() {
     return elapsedMillis;
   }
 
   /**
-   * Get the identifier of the tablet server that sent the response.
-   * @return A string containing a UUID.
+   * Get the identifier of the tablet server that sent the response. May be
+   * {@code null} if the RPC failed before tablet location lookup succeeded.
+   * @return a string containing a UUID
    */
   public String getTsUUID() {
     return tsUUID;

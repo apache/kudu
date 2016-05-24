@@ -40,7 +40,7 @@ import org.kududb.util.Slice;
  * server.
  */
 @InterfaceAudience.Private
-public class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
+class Batch extends KuduRpc<BatchResponse> {
 
   /** Holds batched operations. */
   final List<Operation> operations = new ArrayList<>();

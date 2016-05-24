@@ -16,6 +16,8 @@
 // under the License.
 package org.kududb.client;
 
+import org.junit.Rule;
+import org.junit.rules.TestName;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
@@ -29,13 +31,11 @@ import java.util.List;
 
 import static org.junit.Assert.*;
 
-import com.google.common.collect.ImmutableList;
-
 public class TestKuduTable extends BaseKuduTest {
-
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduTable.class);
 
-  private static final String BASE_TABLE_NAME = TestKuduTable.class.getName();
+  @Rule
+  public TestName name = new TestName();
 
   private static Schema schema = getBasicSchema();
 
@@ -46,7 +46,7 @@ public class TestKuduTable extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testAlterTable() throws Exception {
-    String tableName = BASE_TABLE_NAME + System.currentTimeMillis();
+    String tableName = name.getMethodName();
     createTable(tableName, basicSchema, getBasicCreateTableOptions());
     try {
 
@@ -114,7 +114,7 @@ public class TestKuduTable extends BaseKuduTest {
    */
   @Test
   public void testGetLocations() throws Exception {
-    String table1 = BASE_TABLE_NAME + System.currentTimeMillis();
+    String table1 = name.getMethodName() + System.currentTimeMillis();
 
     // Test a non-existing table
     try {
@@ -124,7 +124,7 @@ public class TestKuduTable extends BaseKuduTest {
       // expected
     }
     // Test with defaults
-    String tableWithDefault = BASE_TABLE_NAME + "WithDefault" + System.currentTimeMillis();
+    String tableWithDefault = name.getMethodName() + "WithDefault" + System.currentTimeMillis();
     CreateTableOptions builder = getBasicCreateTableOptions();
     List<ColumnSchema> columns = new ArrayList<ColumnSchema>(schema.getColumnCount());
     int defaultInt = 30;
@@ -213,6 +213,47 @@ public class TestKuduTable extends BaseKuduTest {
     assertTrue(client.tableExists(tableWithDefault).join(DEFAULT_SLEEP));
   }
 
+  @Test(timeout = 100000)
+  public void testLocateTableNonCoveringRange() throws Exception {
+    String tableName = name.getMethodName();
+    syncClient.createTable(tableName, basicSchema, getBasicTableOptionsWithNonCoveredRange());
+    KuduTable table = syncClient.openTable(tableName);
+
+    List<LocatedTablet> tablets;
+
+    // all tablets
+    tablets = table.getTabletsLocations(null, null, 100000);
+    assertEquals(3, tablets.size());
+    assertArrayEquals(getKeyInBytes(0), tablets.get(0).getPartition().getPartitionKeyStart());
+    assertArrayEquals(getKeyInBytes(50), tablets.get(0).getPartition().getPartitionKeyEnd());
+    assertArrayEquals(getKeyInBytes(50), tablets.get(1).getPartition().getPartitionKeyStart());
+    assertArrayEquals(getKeyInBytes(100), tablets.get(1).getPartition().getPartitionKeyEnd());
+    assertArrayEquals(getKeyInBytes(200), tablets.get(2).getPartition().getPartitionKeyStart());
+    assertArrayEquals(getKeyInBytes(300), tablets.get(2).getPartition().getPartitionKeyEnd());
+
+    // key < 50
+    tablets = table.getTabletsLocations(null, getKeyInBytes(50), 100000);
+    assertEquals(1, tablets.size());
+    assertArrayEquals(getKeyInBytes(0), tablets.get(0).getPartition().getPartitionKeyStart());
+    assertArrayEquals(getKeyInBytes(50), tablets.get(0).getPartition().getPartitionKeyEnd());
+
+    // key >= 300
+    tablets = table.getTabletsLocations(getKeyInBytes(300), null, 100000);
+    assertEquals(0, tablets.size());
+
+    // key >= 299
+    tablets = table.getTabletsLocations(getKeyInBytes(299), null, 100000);
+    assertEquals(1, tablets.size());
+    assertArrayEquals(getKeyInBytes(200), tablets.get(0).getPartition().getPartitionKeyStart());
+    assertArrayEquals(getKeyInBytes(300), tablets.get(0).getPartition().getPartitionKeyEnd());
+
+    // key >= 150 && key < 250
+    tablets = table.getTabletsLocations(getKeyInBytes(150), getKeyInBytes(250), 100000);
+    assertEquals(1, tablets.size());
+    assertArrayEquals(getKeyInBytes(200), tablets.get(0).getPartition().getPartitionKeyStart());
+    assertArrayEquals(getKeyInBytes(300), tablets.get(0).getPartition().getPartitionKeyEnd());
+  }
+
   public byte[] getKeyInBytes(int i) {
     PartialRow row = schema.newPartialRow();
     row.addInt(0, i);
@@ -220,7 +261,7 @@ public class TestKuduTable extends BaseKuduTest {
   }
 
   public KuduTable createTableWithSplitsAndTest(int splitsCount) throws Exception {
-    String tableName = BASE_TABLE_NAME + System.currentTimeMillis();
+    String tableName = name.getMethodName() + System.currentTimeMillis();
     CreateTableOptions builder = getBasicCreateTableOptions();
 
     if (splitsCount != 0) {

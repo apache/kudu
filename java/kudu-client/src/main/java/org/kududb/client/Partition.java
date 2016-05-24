@@ -176,7 +176,7 @@ public class Partition implements Comparable<Partition> {
   @Override
   public String toString() {
     return String.format("[%s, %s)",
-                         Bytes.pretty(partitionKeyStart),
-                         Bytes.pretty(partitionKeyEnd));
+                         partitionKeyStart.length == 0 ? "<start>" : Bytes.hex(partitionKeyStart),
+                         partitionKeyEnd.length == 0 ? "<end>" : Bytes.hex(partitionKeyEnd));
   }
 }

@@ -78,8 +78,8 @@ public class OperationResponse extends KuduRpcResponse {
 
   /**
    * Gives the write timestamp that was returned by the Tablet Server.
-   * @return a timestamp in milliseconds, 0 if the external consistency mode set in AsyncKuduSession
-   * wasn't CLIENT_PROPAGATED
+   * @return a timestamp in milliseconds, 0 if the external consistency mode set
+   *         in AsyncKuduSession wasn't CLIENT_PROPAGATED, or if the operation failed.
    */
   public long getWriteTimestamp() {
     return writeTimestamp;

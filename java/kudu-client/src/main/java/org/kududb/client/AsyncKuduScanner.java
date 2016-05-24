@@ -426,27 +426,61 @@ public final class AsyncKuduScanner {
       return Deferred.fromResult(null);
     } else if (tablet == null) {
 
+      Callback<Deferred<RowResultIterator>, AsyncKuduScanner.Response> cb =
+          new Callback<Deferred<RowResultIterator>, Response>() {
+        @Override
+        public Deferred<RowResultIterator> call(Response resp) throws Exception {
+          if (!resp.more || resp.scanner_id == null) {
+            scanFinished();
+            return Deferred.fromResult(resp.data); // there might be data to return
+          }
+          scannerId = resp.scanner_id;
+          sequenceId++;
+          hasMore = resp.more;
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Scanner " + Bytes.pretty(scannerId) + " opened on " + tablet);
+          }
+          return Deferred.fromResult(resp.data);
+        }
+        public String toString() {
+          return "scanner opened";
+        }
+      };
+
+      Callback<Deferred<RowResultIterator>, Exception> eb =
+          new Callback<Deferred<RowResultIterator>, Exception>() {
+        @Override
+        public Deferred<RowResultIterator> call(Exception e) throws Exception {
+          invalidate();
+          if (e instanceof NonCoveredRangeException) {
+            NonCoveredRangeException ncre = (NonCoveredRangeException) e;
+            nextPartitionKey = ncre.getNonCoveredRangeEnd();
+
+            // Stop scanning if the non-covered range is past the end partition key.
+            if (ncre.getNonCoveredRangeEnd().length == 0
+                || (endPartitionKey != AsyncKuduClient.EMPTY_ARRAY
+                && Bytes.memcmp(endPartitionKey, ncre.getNonCoveredRangeEnd()) <= 0)) {
+              hasMore = false;
+              closed = true; // the scanner is closed on the other side at this point
+              return Deferred.fromResult(RowResultIterator.empty());
+            }
+            nextPartitionKey = ncre.getNonCoveredRangeEnd();
+            scannerId = null;
+            sequenceId = 0;
+            return nextRows();
+          } else {
+            LOG.warn("Can not open scanner", e);
+            // Don't let the scanner think it's opened on this tablet.
+            return Deferred.fromError(e); // Let the error propogate.
+          }
+        }
+        public String toString() {
+          return "open scanner errback";
+        }
+      };
+
       // We need to open the scanner first.
-      return client.openScanner(this).addCallbackDeferring(
-          new Callback<Deferred<RowResultIterator>, AsyncKuduScanner.Response>() {
-            public Deferred<RowResultIterator> call(final AsyncKuduScanner.Response resp) {
-              if (!resp.more || resp.scanner_id == null) {
-                scanFinished();
-                return Deferred.fromResult(resp.data); // there might be data to return
-              }
-              scannerId = resp.scanner_id;
-              sequenceId++;
-              hasMore = resp.more;
-              if (LOG.isDebugEnabled()) {
-                LOG.debug("Scanner " + Bytes.pretty(scannerId) + " opened on " + tablet);
-              }
-              //LOG.info("Scan.open is returning rows: " + resp.data.getNumRows());
-              return Deferred.fromResult(resp.data);
-            }
-            public String toString() {
-              return "scanner opened";
-            }
-          });
+      return client.sendRpcToTablet(getOpenRequest()).addCallbackDeferring(cb).addErrback(eb);
     } else if (prefetching && prefetcherDeferred != null) {
       // TODO KUDU-1260 - Check if this works and add a test
       prefetcherDeferred.chain(new Deferred<RowResultIterator>().addCallback(prefetch));
@@ -652,7 +686,7 @@ public final class AsyncKuduScanner {
   }
 
   /**
-   *  Helper object that contains all the info sent by a TS afer a Scan request
+   *  Helper object that contains all the info sent by a TS after a Scan request.
    */
   static final class Response {
     /** The ID associated with the scanner that issued the request.  */
@@ -690,7 +724,7 @@ public final class AsyncKuduScanner {
   /**
    * RPC sent out to fetch the next rows from the TabletServer.
    */
-  private final class ScanRequest extends KuduRpc<Response> implements KuduRpc.HasKey {
+  private final class ScanRequest extends KuduRpc<Response> {
 
     State state;
 

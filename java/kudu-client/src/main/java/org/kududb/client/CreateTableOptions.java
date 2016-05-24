@@ -16,6 +16,7 @@
 // under the License.
 package org.kududb.client;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
 import java.util.List;
@@ -24,6 +25,7 @@ import org.kududb.Common;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 import org.kududb.master.Master;
+import org.kududb.util.Pair;
 
 /**
  * This is a builder class for all the options that can be provided while creating a table.
@@ -34,6 +36,7 @@ public class CreateTableOptions {
 
   private Master.CreateTableRequestPB.Builder pb = Master.CreateTableRequestPB.newBuilder();
   private final List<PartialRow> splitRows = Lists.newArrayList();
+  private final List<Pair<PartialRow, PartialRow>> rangeBounds = Lists.newArrayList();
 
   /**
    * Add a split point for the table. The table in the end will have splits + 1 tablets.
@@ -44,6 +47,29 @@ public class CreateTableOptions {
    */
   public CreateTableOptions addSplitRow(PartialRow row) {
     splitRows.add(new PartialRow(row));
+    return this;
+  }
+
+  /**
+   * Add a partition range bound to the table with an inclusive lower bound and
+   * exclusive upper bound.
+   *
+   * If either row is empty, then that end of the range will be unbounded. If a
+   * range column is missing a value, the logical minimum value for that column
+   * type will be used as the default.
+   *
+   * Multiple range bounds may be added, but they must not overlap. All split
+   * rows must fall in one of the range bounds. The lower bound must be less
+   * than the upper bound.
+   *
+   * If not provided, the table's range will be unbounded.
+   *
+   * @param lower the inclusive lower bound
+   * @param upper the exclusive upper bound
+   * @return this instance
+   */
+  public CreateTableOptions addRangeBound(PartialRow lower, PartialRow upper) {
+    rangeBounds.add(new Pair<>(new PartialRow(lower), new PartialRow(upper)));
     return this;
   }
 
@@ -129,9 +155,18 @@ public class CreateTableOptions {
   }
 
   Master.CreateTableRequestPB.Builder getBuilder() {
-    if (!splitRows.isEmpty()) {
-      pb.setSplitRowsRangeBounds(new Operation.OperationsEncoder().encodeSplitRows(splitRows));
+    if (!splitRows.isEmpty() || !rangeBounds.isEmpty()) {
+      pb.setSplitRowsRangeBounds(new Operation.OperationsEncoder()
+                                     .encodeSplitRowsRangeBounds(splitRows, rangeBounds));
     }
     return pb;
+  }
+
+  List<Integer> getRequiredFeatureFlags() {
+    if (rangeBounds.isEmpty()) {
+      return ImmutableList.of();
+    } else {
+      return ImmutableList.of(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE);
+    }
   }
 }

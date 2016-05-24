@@ -32,6 +32,8 @@ import org.kududb.util.Slice;
 public class RowResultIterator extends KuduRpcResponse implements Iterator<RowResult>,
     Iterable<RowResult> {
 
+  private static final RowResultIterator EMPTY = new RowResultIterator(0, null, null, null, null);
+
   private final Schema schema;
   private final Slice bs;
   private final Slice indirectBs;
@@ -70,6 +72,13 @@ public class RowResultIterator extends KuduRpcResponse implements Iterator<RowRe
           "but expected " + expectedSize + " for " + numRows + " rows");
     }
     this.rowResult = new RowResult(this.schema, this.bs, this.indirectBs);
+  }
+
+  /**
+   * @return an empty row result iterator
+   */
+  static RowResultIterator empty() {
+    return EMPTY;
   }
 
   @Override

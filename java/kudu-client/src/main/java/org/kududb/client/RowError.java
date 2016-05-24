@@ -32,12 +32,22 @@ public class RowError {
   private final String tsUUID;
 
   /**
-   * Package-private for unit tests.
+   * Creates a new {@code RowError} with the provided status, operation, and tablet server UUID.
    */
   RowError(Status status, Operation operation, String tsUUID) {
     this.status = status;
     this.operation = operation;
     this.tsUUID = tsUUID;
+  }
+
+  /**
+   * Creates a new {@code RowError} with the provided status, and operation.
+   *
+   * This constructor should be used when the operation fails before the tablet
+   * lookup is complete.
+   */
+  RowError(Status status, Operation operation) {
+    this(status, operation, null);
   }
 
   /**
@@ -67,7 +77,7 @@ public class RowError {
 
   /**
    * Get the Operation that failed.
-   * @return The same Operation instance that failed.
+   * @return The same Operation instance that failed
    */
   public Operation getOperation() {
     return operation;
@@ -75,7 +85,9 @@ public class RowError {
 
   /**
    * Get the identifier of the tablet server that sent the error.
-   * @return A string containing a UUID.
+   * The UUID may be {@code null} if the failure occurred before sending the row
+   * to a tablet server (for instance, if the row falls in a non-covered range partition).
+   * @return A string containing a UUID
    */
   public String getTsUUID() {
     return tsUUID;

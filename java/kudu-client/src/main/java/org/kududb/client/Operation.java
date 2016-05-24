@@ -46,7 +46,7 @@ import java.util.List;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public abstract class Operation extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
+public abstract class Operation extends KuduRpc<OperationResponse> {
   /**
    * This size will be set when serialize is called. It stands for the size of the row in this
    * operation.
@@ -58,7 +58,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
     UPDATE((byte)RowOperationsPB.Type.UPDATE.getNumber()),
     DELETE((byte)RowOperationsPB.Type.DELETE.getNumber()),
     SPLIT_ROWS((byte)RowOperationsPB.Type.SPLIT_ROW.getNumber()),
-    UPSERT((byte)RowOperationsPB.Type.UPSERT.getNumber());
+    UPSERT((byte)RowOperationsPB.Type.UPSERT.getNumber()),
+    RANGE_LOWER_BOUND((byte) RowOperationsPB.Type.RANGE_LOWER_BOUND.getNumber()),
+    RANGE_UPPER_BOUND((byte) RowOperationsPB.Type.RANGE_UPPER_BOUND.getNumber());
 
     ChangeType(byte encodedByte) {
       this.encodedByte = encodedByte;
@@ -147,7 +149,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
       }
     }
     OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
-        builder.getTimestamp(), this, error);
+                                                       builder.getTimestamp(), this, error);
     return new Pair<OperationResponse, Object>(
         response, builder.hasError() ? builder.getError() : null);
   }
@@ -313,12 +315,25 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
       return toPB();
     }
 
-    public RowOperationsPB encodeSplitRows(List<PartialRow> rows) {
-      if (rows == null || rows.isEmpty()) return null;
-      init(rows.get(0).getSchema(), rows.size());
-      for (PartialRow row : rows) {
+    public RowOperationsPB encodeSplitRowsRangeBounds(List<PartialRow> splitRows,
+                                                      List<Pair<PartialRow, PartialRow>> rangeBounds) {
+      if (splitRows.isEmpty() && rangeBounds.isEmpty()) {
+        return null;
+      }
+
+      Schema schema = splitRows.isEmpty() ? rangeBounds.get(0).getFirst().getSchema()
+                                          : splitRows.get(0).getSchema();
+      init(schema, splitRows.size() + 2 * rangeBounds.size());
+
+      for (PartialRow row : splitRows) {
         encodeRow(row, ChangeType.SPLIT_ROWS);
       }
+
+      for (Pair<PartialRow, PartialRow> bound : rangeBounds) {
+        encodeRow(bound.getFirst(), ChangeType.RANGE_LOWER_BOUND);
+        encodeRow(bound.getSecond(), ChangeType.RANGE_UPPER_BOUND);
+      }
+
       return toPB();
     }
   }

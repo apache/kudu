@@ -28,8 +28,10 @@ import static org.kududb.client.RowResult.timestampToString;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -403,6 +405,67 @@ public class TestKuduClient extends BaseKuduTest {
       thread.join();
     }
     assertEquals(100, count.get());
+  }
+
+  /**
+   * Counts the rows in a table between two optional bounds.
+   * @param table the table to scan, must have the basic schema
+   * @param lowerBound an optional lower bound key
+   * @param upperBound an optional upper bound key
+   * @return the row count
+   * @throws Exception on error
+   */
+  private int countRowsForTestScanNonCoveredTable(KuduTable table,
+                                                  Integer lowerBound,
+                                                  Integer upperBound) throws Exception {
+
+    KuduScanner.KuduScannerBuilder scanBuilder = syncClient.newScannerBuilder(table);
+    if (lowerBound != null) {
+      PartialRow bound = basicSchema.newPartialRow();
+      bound.addInt(0, lowerBound);
+      scanBuilder.lowerBound(bound);
+    }
+    if (upperBound != null) {
+      PartialRow bound = basicSchema.newPartialRow();
+      bound.addInt(0, upperBound);
+      scanBuilder.exclusiveUpperBound(bound);
+    }
+
+    KuduScanner scanner = scanBuilder.build();
+    int count = 0;
+    while (scanner.hasMoreRows()) {
+      count += scanner.nextRows().getNumRows();
+    }
+    return count;
+  }
+
+  /**
+   * Tests scanning a table with non-covering range partitions.
+   */
+  @Test(timeout = 100000)
+  public void testScanNonCoveredTable() throws Exception {
+
+    Schema schema = basicSchema;
+    syncClient.createTable(tableName, schema, getBasicTableOptionsWithNonCoveredRange());
+
+    KuduSession session = syncClient.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+    KuduTable table = syncClient.openTable(tableName);
+
+    for (int key = 0; key < 100; key++) {
+      session.apply(createBasicSchemaInsert(table, key));
+    }
+    for (int key = 200; key < 300; key++) {
+      session.apply(createBasicSchemaInsert(table, key));
+    }
+    session.flush();
+    assertEquals(0, session.countPendingErrors());
+
+    assertEquals(200, countRowsForTestScanNonCoveredTable(table, null, null));
+    assertEquals(100, countRowsForTestScanNonCoveredTable(table, null, 200));
+    assertEquals(0, countRowsForTestScanNonCoveredTable(table, null, -1));
+    assertEquals(0, countRowsForTestScanNonCoveredTable(table, 120, 180));
+    assertEquals(0, countRowsForTestScanNonCoveredTable(table, 300, null));
   }
 
   /**

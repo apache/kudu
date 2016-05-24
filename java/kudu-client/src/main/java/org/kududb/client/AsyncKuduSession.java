@@ -319,13 +319,33 @@ public class AsyncKuduSession implements SessionConfiguration {
 
       // Group the operations by tablet.
       Map<Slice, Batch> batches = new HashMap<>();
+      List<OperationResponse> opsFailedInLookup = new ArrayList<>();
 
       for (BufferedOperation bufferedOp : buffer.getOperations()) {
         Operation operation = bufferedOp.getOperation();
-        // TODO: when we have non-covered range partitioning the tablet lookup
-        // may fail with a NonCoveredRangeException. In this case we need to
-        // handle the exception, by adding it to a special BatchResponse below
-        // containing all such failed rows.
+        if (bufferedOp.tabletLookupFailed()) {
+          Exception failure = bufferedOp.getTabletLookupFailure();
+          RowError error;
+          if (failure instanceof NonCoveredRangeException) {
+            // TODO: this should be something different than NotFound so that
+            // applications can distinguish from updates on missing rows.
+            error = new RowError(Status.NotFound(failure.getMessage()), operation);
+          } else {
+            LOG.warn("unexpected tablet lookup failure for operation {}", operation, failure);
+            error = new RowError(Status.RuntimeError(failure.getMessage()), operation);
+          }
+          OperationResponse response = new OperationResponse(0, null, 0, operation, error);
+          // Add the row error to the error collector if the session is in background flush mode,
+          // and complete the operation's deferred with the error response. The ordering between
+          // adding to the error collector and completing the deferred should not matter since
+          // applications should be using one or the other method for error handling, not both.
+          if (flushMode == FlushMode.AUTO_FLUSH_BACKGROUND) {
+            errorCollector.addError(error);
+          }
+          operation.callback(response);
+          opsFailedInLookup.add(response);
+          continue;
+        }
         LocatedTablet tablet = bufferedOp.getTablet();
         Slice tabletId = new Slice(tablet.getTabletId());
 
@@ -337,7 +357,10 @@ public class AsyncKuduSession implements SessionConfiguration {
         batch.add(operation);
       }
 
-      List<Deferred<BatchResponse>> batchResponses = new ArrayList<>(batches.size());
+      List<Deferred<BatchResponse>> batchResponses = new ArrayList<>(batches.size() + 1);
+      if (!opsFailedInLookup.isEmpty()) {
+        batchResponses.add(Deferred.fromResult(new BatchResponse(opsFailedInLookup)));
+      }
 
       for (Batch batch : batches.values()) {
         if (timeoutMs != 0) {
@@ -762,15 +785,16 @@ public class AsyncKuduSession implements SessionConfiguration {
    * Container class holding all the state associated with a buffered operation.
    */
   private static final class BufferedOperation {
-    private LocatedTablet tablet = null;
+    /** Holds either a {@link LocatedTablet} or the failure exception if the lookup failed. */
+    private Object tablet = null;
     private final Deferred<Void> tabletLookup;
     private final Operation operation;
 
     public BufferedOperation(Deferred<LocatedTablet> tablet,
                              Operation operation) {
-      tabletLookup = tablet.addCallback(new Callback<Void, LocatedTablet>() {
+      tabletLookup = AsyncUtil.addBoth(tablet, new Callback<Void, Object>() {
         @Override
-        public Void call(final LocatedTablet tablet) {
+        public Void call(final Object tablet) {
           BufferedOperation.this.tablet = tablet;
           return null;
         }
@@ -778,8 +802,29 @@ public class AsyncKuduSession implements SessionConfiguration {
       this.operation = Preconditions.checkNotNull(operation);
     }
 
+    /**
+     * @return {@code true} if the tablet lookup failed.
+     */
+    public boolean tabletLookupFailed() {
+      return !(tablet instanceof LocatedTablet);
+    }
+
+    /**
+     * @return the located tablet
+     * @throws ClassCastException if the tablet lookup failed,
+     *         check with {@link #tabletLookupFailed} before calling
+     */
     public LocatedTablet getTablet() {
-      return tablet;
+      return (LocatedTablet) tablet;
+    }
+
+    /**
+     * @return the cause of the failed lookup
+     * @throws ClassCastException if the tablet lookup succeeded,
+     *         check with {@link #tabletLookupFailed} before calling
+     */
+    public Exception getTabletLookupFailure() {
+      return (Exception) tablet;
     }
 
     public Deferred<Void> getTabletLookup() {

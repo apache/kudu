@@ -18,20 +18,24 @@ package org.kududb.client;
 
 import java.util.List;
 
+import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestName;
 
 import static org.junit.Assert.*;
 
+import com.google.common.collect.ImmutableList;
+
 public class TestKuduSession extends BaseKuduTest {
-  // Generate a unique table name
-  private static final String TABLE_NAME_PREFIX =
-      TestKuduSession.class.getName()+"-"+System.currentTimeMillis();
+  @Rule
+  public TestName name = new TestName();
 
   private KuduTable table;
 
   @Test(timeout = 100000)
   public void testBasicOps() throws Exception {
-    String tableName = TABLE_NAME_PREFIX + "-testBasicOps";
+    String tableName = name.getMethodName();
     table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
@@ -54,7 +58,7 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testIgnoreAllDuplicateRows() throws Exception {
-    String tableName = TABLE_NAME_PREFIX + "-testIgnoreAllDuplicateRows";
+    String tableName = name.getMethodName();
     table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
@@ -86,7 +90,7 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testBatchWithSameRow() throws Exception {
-    String tableName = TABLE_NAME_PREFIX + "-testBatchWithSameRow";
+    String tableName = name.getMethodName();
     table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
@@ -123,7 +127,7 @@ public class TestKuduSession extends BaseKuduTest {
    */
   @Test(timeout = 10000)
   public void testConcurrentFlushes() throws Exception {
-    String tableName = TABLE_NAME_PREFIX + "-testConcurrentFlushes";
+    String tableName = name.getMethodName();
     CreateTableOptions builder = getBasicCreateTableOptions();
     int numTablets = 4;
     int numRowsPerTablet = 100;
@@ -153,7 +157,7 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 10000)
   public void testOverWritingValues() throws Exception {
-    String tableName = TABLE_NAME_PREFIX + "-OverridingValues";
+    String tableName = name.getMethodName();
     table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
     KuduSession session = syncClient.newSession();
     Insert insert = createInsert(0);
@@ -190,7 +194,7 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 10000)
   public void testUpsert() throws Exception {
-    String tableName = TABLE_NAME_PREFIX + "-Upsert";
+    String tableName = name.getMethodName();
     table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
     KuduSession session = syncClient.newSession();
 
@@ -211,6 +215,105 @@ public class TestKuduSession extends BaseKuduTest {
         "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
             "STRING column3_s=a string, BOOL column4_b=true",
         rowStrings.get(0));
+  }
+
+  @Test(timeout = 10000)
+  public void testInsertManualFlushNonCoveredRange() throws Exception {
+    String tableName = name.getMethodName();
+    CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
+    createOptions.setNumReplicas(1);
+    syncClient.createTable(tableName, basicSchema, createOptions);
+    KuduTable table = syncClient.openTable(tableName);
+
+    KuduSession session = syncClient.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+
+    // Insert in reverse sorted order so that more table location lookups occur
+    // (the extra results in table location lookups always occur past the inserted key).
+    List<Integer> nonCoveredKeys = ImmutableList.of(350, 300, 199, 150, 100, -1, -50);
+    for (int key : nonCoveredKeys) {
+      assertNull(session.apply(createBasicSchemaInsert(table, key)));
+    }
+    List<OperationResponse> results = session.flush();
+    assertEquals(nonCoveredKeys.size(), results.size());
+    for (OperationResponse result : results) {
+      assertTrue(result.hasRowError());
+      assertTrue(result.getRowError().getErrorStatus().isNotFound());
+    }
+
+    // Insert a batch of some valid and some invalid.
+    for (int key = 90; key < 110; key++) {
+      session.apply(createBasicSchemaInsert(table, key));
+    }
+    results = session.flush();
+
+    int failures = 0;
+    for (OperationResponse result : results) {
+      if (result.hasRowError()) {
+        failures++;
+        assertTrue(result.getRowError().getErrorStatus().isNotFound());
+      }
+    }
+    assertEquals(10, failures);
+  }
+
+  @Test(timeout = 10000)
+  public void testInsertAutoFlushSyncNonCoveredRange() throws Exception {
+    String tableName = name.getMethodName();
+    CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
+    createOptions.setNumReplicas(1);
+    syncClient.createTable(tableName, basicSchema, createOptions);
+    KuduTable table = syncClient.openTable(tableName);
+
+    KuduSession session = syncClient.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
+
+    List<Integer> nonCoveredKeys = ImmutableList.of(350, 300, 199, 150, 100, -1, -50);
+    for (int key : nonCoveredKeys) {
+      try {
+        session.apply(createBasicSchemaInsert(table, key));
+        fail("apply should have thrown");
+      } catch (NonCoveredRangeException e) {
+        // Expected
+      }
+    }
+  }
+
+  @Test(timeout = 10000)
+  public void testInsertAutoFlushBackgrounNonCoveredRange() throws Exception {
+    String tableName = name.getMethodName();
+    CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
+    createOptions.setNumReplicas(1);
+    syncClient.createTable(tableName, basicSchema, createOptions);
+    KuduTable table = syncClient.openTable(tableName);
+
+    AsyncKuduSession session = client.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+
+    List<Integer> nonCoveredKeys = ImmutableList.of(350, 300, 199, 150, 100, -1, -50);
+    for (int key : nonCoveredKeys) {
+      OperationResponse result = session.apply(createBasicSchemaInsert(table, key)).join(5000);
+      assertTrue(result.hasRowError());
+      assertTrue(result.getRowError().getErrorStatus().isNotFound());
+    }
+
+    RowErrorsAndOverflowStatus errors = session.getPendingErrors();
+    assertEquals(nonCoveredKeys.size(), errors.getRowErrors().length);
+    for (RowError error : errors.getRowErrors()) {
+      assertTrue(error.getErrorStatus().isNotFound());
+    }
+
+    // Insert a batch of some valid and some invalid.
+    for (int key = 90; key < 110; key++) {
+      session.apply(createBasicSchemaInsert(table, key));
+    }
+    session.flush();
+
+    errors = session.getPendingErrors();
+    assertEquals(10, errors.getRowErrors().length);
+    for (RowError error : errors.getRowErrors()) {
+      assertTrue(error.getErrorStatus().isNotFound());
+    }
   }
 
   private Insert createInsert(int key) {

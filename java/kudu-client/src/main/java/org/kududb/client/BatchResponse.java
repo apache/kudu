@@ -16,6 +16,8 @@
 // under the License.
 package org.kududb.client;
 
+import com.google.common.collect.ImmutableList;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -74,6 +76,13 @@ public class BatchResponse extends KuduRpcResponse {
     }
     assert (rowErrors.size() == errorsPB.size());
     assert (individualResponses.size() == operations.size());
+  }
+
+  BatchResponse(List<OperationResponse> individualResponses) {
+    super(0, null);
+    writeTimestamp = 0;
+    rowErrors = ImmutableList.of();
+    this.individualResponses = individualResponses;
   }
 
   /**
