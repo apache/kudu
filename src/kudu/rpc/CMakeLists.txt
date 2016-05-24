@@ -54,6 +54,7 @@ set(KRPC_SRCS
     reactor.cc
     remote_method.cc
     request_tracker.cc
+    result_tracker.cc
     rpc.cc
     rpc_context.cc
     rpc_controller.cc
