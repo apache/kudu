@@ -38,6 +38,7 @@ class Trace;
 namespace rpc {
 
 class InboundCall;
+class ResultTracker;
 class RpcSidecar;
 class UserCredentials;
 
@@ -63,7 +64,8 @@ class RpcContext {
   // and is not a public API.
   RpcContext(InboundCall *call,
              const google::protobuf::Message *request_pb,
-             google::protobuf::Message *response_pb);
+             google::protobuf::Message *response_pb,
+             const scoped_refptr<ResultTracker>& result_tracker);
 
   ~RpcContext();
 
@@ -166,6 +168,18 @@ class RpcContext {
   // If the client did not specify a deadline, returns MonoTime::Max().
   MonoTime GetClientDeadline() const;
 
+  // Whether the results of this RPC are tracked with a ResultTracker.
+  // If this returns true, both result_tracker() and request_id() should return non-null results.
+  bool AreResultsTracked() const { return result_tracker_.get() != nullptr; }
+
+  // Returns this call's result tracker, if it is set.
+  const scoped_refptr<ResultTracker>& result_tracker() const {
+    return result_tracker_;
+  }
+
+  // Returns this call's request id, if it is set.
+  const rpc::RequestIdPB* request_id() const;
+
   // Panic the server. This logs a fatal error with the given message, and
   // also includes the current RPC request, requestor, trace information, etc,
   // to make it easier to debug.
@@ -179,6 +193,7 @@ class RpcContext {
   InboundCall* const call_;
   const gscoped_ptr<const google::protobuf::Message> request_pb_;
   const gscoped_ptr<google::protobuf::Message> response_pb_;
+  scoped_refptr<ResultTracker> result_tracker_;
 };
 
 } // namespace rpc

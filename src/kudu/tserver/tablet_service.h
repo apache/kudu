@@ -122,6 +122,7 @@ class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
 class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
  public:
   ConsensusServiceImpl(const scoped_refptr<MetricEntity>& metric_entity,
+                       const scoped_refptr<rpc::ResultTracker>& result_tracker,
                        TabletPeerLookupIf* tablet_manager_);
 
   virtual ~ConsensusServiceImpl();

@@ -81,6 +81,8 @@ class ServerBase {
 
   MetricRegistry* metric_registry() { return metric_registry_.get(); }
 
+  const scoped_refptr<rpc::ResultTracker>& result_tracker() const { return result_tracker_; }
+
   // Returns this server's clock.
   Clock* clock() { return clock_.get(); }
 
@@ -106,6 +108,7 @@ class ServerBase {
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;
   std::shared_ptr<rpc::Messenger> messenger_;
+  scoped_refptr<rpc::ResultTracker> result_tracker_;
   bool is_first_run_;
 
   scoped_refptr<Clock> clock_;

@@ -107,6 +107,15 @@ enum FeatureFlags {
   FOO=1;
 }
 
+message ExactlyOnceRequestPB {
+  optional uint32 sleep_for_ms = 1 [default = 0];
+  required uint32 value_to_add = 2;
+}
+message ExactlyOnceResponsePB {
+  required uint32 current_val = 1;
+  required fixed64 current_time_micros = 2;
+}
+
 service CalculatorService {
   rpc Add(AddRequestPB) returns(AddResponsePB);
   rpc Sleep(SleepRequestPB) returns(SleepResponsePB);
@@ -115,6 +124,8 @@ service CalculatorService {
   rpc TestArgumentsInDiffPackage(kudu.rpc_test_diff_package.ReqDiffPackagePB)
     returns(kudu.rpc_test_diff_package.RespDiffPackagePB);
   rpc Panic(PanicRequestPB) returns (PanicResponsePB);
-
+  rpc AddExactlyOnce(ExactlyOnceRequestPB) returns (ExactlyOnceResponsePB) {
+    option (kudu.rpc.track_rpc_result) = true;
+  }
   rpc TestInvalidResponse(TestInvalidResponseRequestPB) returns (TestInvalidResponseResponsePB);
 }

@@ -21,6 +21,8 @@ package kudu.rpc;
 
 option java_package = "org.kududb.rpc";
 
+import "google/protobuf/descriptor.proto";
+
 // The Kudu RPC protocol is similar to the RPC protocol of Hadoop and HBase.
 // See the following for reference on those other protocols:
 //  - https://issues.apache.org/jira/browse/HBASE-7898
@@ -241,4 +243,10 @@ message ErrorStatusPB {
   // should also fill in exactly one of these extension fields, which contains
   // more details on the service-specific error.
   extensions 100 to max;
+}
+
+// An option for RPC methods that allows to set whether that method's
+// RPC results should be tracked with a ResultTracker.
+extend google.protobuf.MethodOptions {
+  optional bool track_rpc_result = 50006 [default=false];
 }

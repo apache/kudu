@@ -62,7 +62,7 @@ void CheckRespErrorOrSetUnknown(const Status& s, RespClass* resp) {
 } // anonymous namespace
 
 MasterServiceImpl::MasterServiceImpl(Master* server)
-  : MasterServiceIf(server->metric_entity()),
+  : MasterServiceIf(server->metric_entity(), server->result_tracker()),
     server_(server) {
 }
 

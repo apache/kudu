@@ -24,6 +24,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/rpc/result_tracker.h"
 
 namespace google {
 namespace protobuf {
@@ -53,6 +54,9 @@ struct RpcMethodInfo : public RefCountedThreadSafe<RpcMethodInfo> {
   std::unique_ptr<google::protobuf::Message> resp_prototype;
 
   scoped_refptr<Histogram> handler_latency_histogram;
+
+  // Whether we should track this method's result, using ResultTracker.
+  bool track_result;
 
   // The actual function to be called.
   std::function<void(const google::protobuf::Message* req,
@@ -105,6 +109,9 @@ class GeneratedServiceIf : public ServiceIf {
   // After construction, this map is accessed by multiple threads and therefore
   // must not be modified.
   std::unordered_map<std::string, scoped_refptr<RpcMethodInfo>> methods_by_name_;
+
+  // The result tracker for this service's methods.
+  scoped_refptr<ResultTracker> result_tracker_;
 };
 
 } // namespace rpc

@@ -46,7 +46,8 @@ class RemoteBootstrapServiceImpl : public RemoteBootstrapServiceIf {
  public:
   RemoteBootstrapServiceImpl(FsManager* fs_manager,
                              TabletPeerLookupIf* tablet_peer_lookup,
-                             const scoped_refptr<MetricEntity>& metric_entity);
+                             const scoped_refptr<MetricEntity>& metric_entity,
+                             const scoped_refptr<rpc::ResultTracker>& result_tracker);
 
   virtual void BeginRemoteBootstrapSession(const BeginRemoteBootstrapSessionRequestPB* req,
                                            BeginRemoteBootstrapSessionResponsePB* resp,

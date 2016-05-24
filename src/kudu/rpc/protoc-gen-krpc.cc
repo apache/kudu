@@ -25,6 +25,7 @@
 #include <google/protobuf/compiler/code_generator.h>
 #include <google/protobuf/compiler/plugin.h>
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/io/printer.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/stubs/common.h>
@@ -42,6 +43,7 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
 
@@ -167,6 +169,7 @@ class MethodSubstitutions : public Substituter {
   }
 
   virtual void InitSubstitutionMap(map<string, string> *map) const OVERRIDE {
+
     (*map)["rpc_name"] = method_->name();
     (*map)["rpc_full_name"] = method_->full_name();
     (*map)["rpc_full_name_plainchars"] =
@@ -180,6 +183,8 @@ class MethodSubstitutions : public Substituter {
             StripNamespaceIfPossible(method_->service()->full_name(),
                                      method_->output_type()->full_name()));
     (*map)["metric_enum_key"] = strings::Substitute("kMetricIndex$0", method_->name());
+    bool track_result = static_cast<bool>(method_->options().GetExtension(track_rpc_result));
+    (*map)["track_result"] = track_result ? " true" : "false";
   }
 
   // Strips the package from method arguments if they are in the same package as
@@ -337,6 +342,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "class MetricEntity;\n"
       "namespace rpc {\n"
       "class Messenger;\n"
+      "class ResultTracker;\n"
       "class RpcContext;\n"
       "} // namespace rpc\n"
       "} // namespace kudu\n"
@@ -353,7 +359,8 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       Print(printer, *subs,
         "class $service_name$If : public ::kudu::rpc::GeneratedServiceIf {\n"
         " public:\n"
-        "  explicit $service_name$If(const scoped_refptr<MetricEntity>& entity);\n"
+        "  explicit $service_name$If(const scoped_refptr<MetricEntity>& entity,"
+            " const scoped_refptr<rpc::ResultTracker>& result_tracker);\n"
         "  virtual ~$service_name$If();\n"
         "  std::string service_name() const override;\n"
         "  static std::string static_service_name();\n"
@@ -430,6 +437,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
 
     Print(printer, *subs,
       "using google::protobuf::Message;\n"
+      "using kudu::rpc::ResultTracker;\n"
       "using kudu::rpc::RpcContext;\n"
       "using kudu::rpc::RpcMethodInfo;\n"
       "using std::unique_ptr;\n"
@@ -443,7 +451,10 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       subs->PushService(service);
 
       Print(printer, *subs,
-        "$service_name$If::$service_name$If(const scoped_refptr<MetricEntity>& entity) {\n");
+        "$service_name$If::$service_name$If(const scoped_refptr<MetricEntity>& entity,"
+            " const scoped_refptr<ResultTracker>& result_tracker) {\n"
+            "result_tracker_ = result_tracker;"
+      );
       for (int method_idx = 0; method_idx < service->method_count();
            ++method_idx) {
         const MethodDescriptor *method = service->method(method_idx);
@@ -454,6 +465,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
               "    scoped_refptr<RpcMethodInfo> mi(new RpcMethodInfo());\n"
               "    mi->req_prototype.reset(new $request$());\n"
               "    mi->resp_prototype.reset(new $response$());\n"
+              "    mi->track_result = $track_result$;\n"
               "    mi->handler_latency_histogram =\n"
               "        METRIC_handler_latency_$rpc_full_name_plainchars$.Instantiate(entity);\n"
               "    mi->func = [this](const Message* req, Message* resp, RpcContext* ctx) {\n"

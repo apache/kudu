@@ -18,15 +18,18 @@
 #define KUDU_RPC_RPC_TEST_BASE_H
 
 #include <algorithm>
+#include <atomic>
 #include <list>
 #include <memory>
 #include <string>
 
+#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/acceptor_pool.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/proxy.h"
 #include "kudu/rpc/reactor.h"
 #include "kudu/rpc/remote_method.h"
+#include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/rtest.pb.h"
@@ -52,6 +55,8 @@ using kudu::rpc_test::CalculatorServiceIf;
 using kudu::rpc_test::CalculatorServiceProxy;
 using kudu::rpc_test::EchoRequestPB;
 using kudu::rpc_test::EchoResponsePB;
+using kudu::rpc_test::ExactlyOnceRequestPB;
+using kudu::rpc_test::ExactlyOnceResponsePB;
 using kudu::rpc_test::FeatureFlags;
 using kudu::rpc_test::PanicRequestPB;
 using kudu::rpc_test::PanicResponsePB;
@@ -74,6 +79,7 @@ class GenericCalculatorService : public ServiceIf {
   static const char *kAddMethodName;
   static const char *kSleepMethodName;
   static const char *kSendTwoStringsMethodName;
+  static const char *kAddExactlyOnce;
 
   static const char* kFirstString;
   static const char* kSecondString;
@@ -82,7 +88,8 @@ class GenericCalculatorService : public ServiceIf {
   }
 
   // To match the argument list of the generated CalculatorService.
-  explicit GenericCalculatorService(const scoped_refptr<MetricEntity>& entity) {
+  explicit GenericCalculatorService(const scoped_refptr<MetricEntity>& entity,
+                                    const scoped_refptr<ResultTracker>& result_tracker) {
     // this test doesn't generate metrics, so we ignore the argument.
   }
 
@@ -163,8 +170,10 @@ class GenericCalculatorService : public ServiceIf {
 
 class CalculatorService : public CalculatorServiceIf {
  public:
-  explicit CalculatorService(const scoped_refptr<MetricEntity>& entity)
-    : CalculatorServiceIf(entity) {
+  explicit CalculatorService(const scoped_refptr<MetricEntity>& entity,
+                             const scoped_refptr<ResultTracker> result_tracker)
+    : CalculatorServiceIf(entity, result_tracker),
+      exactly_once_test_val_(0) {
   }
 
   void Add(const AddRequestPB *req, AddResponsePB *resp, RpcContext *context) override {
@@ -253,6 +262,17 @@ class CalculatorService : public CalculatorServiceIf {
     return feature == FeatureFlags::FOO;
   }
 
+  void AddExactlyOnce(const ExactlyOnceRequestPB* req, ExactlyOnceResponsePB* resp,
+                      ::kudu::rpc::RpcContext* context) override {
+    if (req->sleep_for_ms() > 0) {
+      usleep(req->sleep_for_ms() * 1000);
+    }
+    int result = exactly_once_test_val_ += req->value_to_add();
+    resp->set_current_val(result);
+    resp->set_current_time_micros(GetCurrentTimeMicros());
+    context->RespondSuccess();
+  }
+
  private:
   void DoSleep(const SleepRequestPB *req,
                RpcContext *context) {
@@ -268,12 +288,15 @@ class CalculatorService : public CalculatorServiceIf {
     context->RespondSuccess();
   }
 
+  std::atomic_int exactly_once_test_val_;
+
 };
 
 const char *GenericCalculatorService::kFullServiceName = "kudu.rpc.GenericCalculatorService";
 const char *GenericCalculatorService::kAddMethodName = "Add";
 const char *GenericCalculatorService::kSleepMethodName = "Sleep";
 const char *GenericCalculatorService::kSendTwoStringsMethodName = "SendTwoStrings";
+const char *GenericCalculatorService::kAddExactlyOnce = "AddExactlyOnce";
 
 const char *GenericCalculatorService::kFirstString =
     "1111111111111111111111111111111111111111111111111111111111";
@@ -329,7 +352,6 @@ class RpcTestBase : public KuduTest {
     controller.set_timeout(MonoDelta::FromMilliseconds(10000));
     RETURN_NOT_OK(p.SyncRequest(method, req, &resp, &controller));
 
-    LOG(INFO) << "Result: " << resp.ShortDebugString();
     CHECK_EQ(req.x() + req.y(), resp.result());
     return Status::OK();
   }
@@ -426,8 +448,9 @@ class RpcTestBase : public KuduTest {
     ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), &pool));
     ASSERT_OK(pool->Start(2));
     *server_addr = pool->bind_address();
+    result_tracker_.reset(new ResultTracker());
 
-    gscoped_ptr<ServiceIf> service(new ServiceClass(metric_entity_));
+    gscoped_ptr<ServiceIf> service(new ServiceClass(metric_entity_, result_tracker_));
     service_name_ = service->service_name();
     scoped_refptr<MetricEntity> metric_entity = server_messenger_->metric_entity();
     service_pool_ = new ServicePool(std::move(service), metric_entity, service_queue_length_);
@@ -439,6 +462,7 @@ class RpcTestBase : public KuduTest {
   string service_name_;
   std::shared_ptr<Messenger> server_messenger_;
   scoped_refptr<ServicePool> service_pool_;
+  scoped_refptr<ResultTracker> result_tracker_;
   int n_worker_threads_;
   int service_queue_length_;
   int n_server_reactor_threads_;

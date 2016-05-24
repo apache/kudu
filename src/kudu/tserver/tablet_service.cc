@@ -114,6 +114,7 @@ using consensus::VoteRequestPB;
 using consensus::VoteResponsePB;
 
 using google::protobuf::RepeatedPtrField;
+using rpc::ResultTracker;
 using rpc::RpcContext;
 using std::shared_ptr;
 using std::unique_ptr;
@@ -490,7 +491,7 @@ static size_t GetMaxBatchSizeBytesHint(const ScanRequestPB* req) {
 }
 
 TabletServiceImpl::TabletServiceImpl(TabletServer* server)
-  : TabletServerServiceIf(server->metric_entity()),
+  : TabletServerServiceIf(server->metric_entity(), server->result_tracker()),
     server_(server) {
 }
 
@@ -501,7 +502,7 @@ void TabletServiceImpl::Ping(const PingRequestPB* req,
 }
 
 TabletServiceAdminImpl::TabletServiceAdminImpl(TabletServer* server)
-  : TabletServerAdminServiceIf(server->metric_entity()),
+  : TabletServerAdminServiceIf(server->metric_entity(), server->result_tracker()),
     server_(server) {
 }
 
@@ -765,8 +766,9 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
 }
 
 ConsensusServiceImpl::ConsensusServiceImpl(const scoped_refptr<MetricEntity>& metric_entity,
+                                           const scoped_refptr<ResultTracker>& result_tracker,
                                            TabletPeerLookupIf* tablet_manager)
-  : ConsensusServiceIf(metric_entity),
+  : ConsensusServiceIf(metric_entity, result_tracker),
     tablet_manager_(tablet_manager) {
 }
 

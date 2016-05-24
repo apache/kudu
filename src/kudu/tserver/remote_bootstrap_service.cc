@@ -90,8 +90,9 @@ static void SetupErrorAndRespond(rpc::RpcContext* context,
 RemoteBootstrapServiceImpl::RemoteBootstrapServiceImpl(
     FsManager* fs_manager,
     TabletPeerLookupIf* tablet_peer_lookup,
-    const scoped_refptr<MetricEntity>& metric_entity)
-    : RemoteBootstrapServiceIf(metric_entity),
+    const scoped_refptr<MetricEntity>& metric_entity,
+    const scoped_refptr<rpc::ResultTracker>& result_tracker)
+    : RemoteBootstrapServiceIf(metric_entity, result_tracker),
       fs_manager_(CHECK_NOTNULL(fs_manager)),
       tablet_peer_lookup_(CHECK_NOTNULL(tablet_peer_lookup)),
       shutdown_latch_(1) {

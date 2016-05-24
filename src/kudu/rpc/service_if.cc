@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <string>
+#include <google/protobuf/descriptor.pb.h>
 
 #include "kudu/gutil/strings/substitute.h"
 
@@ -90,8 +91,31 @@ void GeneratedServiceIf::Handle(InboundCall *call) {
     return;
   }
   Message* resp = method_info->resp_prototype->New();
-  RpcContext* ctx = new RpcContext(call, req.get(), resp);
-  method_info->func(req.release(), resp, ctx);
+
+  bool track_result = call->header().has_request_id() && method_info->track_result;
+  RpcContext* ctx = new RpcContext(call,
+                                   req.release(),
+                                   resp,
+                                   track_result ? result_tracker_ : nullptr);
+  if (track_result) {
+    RequestIdPB request_id(call->header().request_id());
+    ResultTracker::RpcState state = ctx->result_tracker()->TrackRpc(
+        call->header().request_id(),
+        resp,
+        ctx);
+    switch (state) {
+      case ResultTracker::NEW:
+        method_info->func(ctx->request_pb(), resp, ctx);
+        break;
+      case ResultTracker::COMPLETED:
+      case ResultTracker::IN_PROGRESS:
+        return;
+      default:
+        LOG(FATAL) << "Unknown state: " << state;
+    }
+  } else {
+    method_info->func(ctx->request_pb(), resp, ctx);
+  }
 }
 
 
