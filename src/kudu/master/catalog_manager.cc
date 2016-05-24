@@ -2168,11 +2168,11 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
   }
 
   virtual bool SendRequest(int attempt) OVERRIDE {
-    ts_proxy_->CreateTabletAsync(req_, &resp_, &rpc_,
-                                 boost::bind(&AsyncCreateReplica::RpcCallback, this));
     VLOG(1) << "Send create tablet request to " << permanent_uuid_ << ":\n"
             << " (attempt " << attempt << "):\n"
             << req_.DebugString();
+    ts_proxy_->CreateTabletAsync(req_, &resp_, &rpc_,
+                                 boost::bind(&AsyncCreateReplica::RpcCallback, this));
     return true;
   }
 
@@ -2255,11 +2255,11 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
       req.set_cas_config_opid_index_less_or_equal(*cas_config_opid_index_less_or_equal_);
     }
 
-    ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
-                                 boost::bind(&AsyncDeleteReplica::RpcCallback, this));
     VLOG(1) << "Send delete tablet request to " << permanent_uuid_
             << " (attempt " << attempt << "):\n"
             << req.DebugString();
+    ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
+                                 boost::bind(&AsyncDeleteReplica::RpcCallback, this));
     return true;
   }
 
@@ -2344,11 +2344,11 @@ class AsyncAlterTable : public RetryingTSRpcTask {
 
     l.Unlock();
 
-    ts_proxy_->AlterSchemaAsync(req, &resp_, &rpc_,
-                                boost::bind(&AsyncAlterTable::RpcCallback, this));
     VLOG(1) << "Send alter table request to " << permanent_uuid()
             << " (attempt " << attempt << "):\n"
             << req.DebugString();
+    ts_proxy_->AlterSchemaAsync(req, &resp_, &rpc_,
+                                boost::bind(&AsyncAlterTable::RpcCallback, this));
     return true;
   }
 
@@ -2467,10 +2467,10 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
   }
   *peer->mutable_last_known_addr() = peer_reg.rpc_addresses(0);
   peer->set_member_type(RaftPeerPB::VOTER);
+  VLOG(1) << "Sending AddServer ChangeConfig request to " << permanent_uuid() << ":\n"
+          << req_.DebugString();
   consensus_proxy_->ChangeConfigAsync(req_, &resp_, &rpc_,
                                       boost::bind(&AsyncAddServerTask::RpcCallback, this));
-  VLOG(1) << "Sent AddServer ChangeConfig request to " << permanent_uuid() << ":\n"
-          << req_.DebugString();
   return true;
 }
 
