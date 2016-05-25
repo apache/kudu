@@ -344,7 +344,7 @@ Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
     uint32_t rel_idx = key.row_idx() - prepared_idx_;
 
     Mutation *mutation = Mutation::CreateInArena(arena, key.timestamp(), changelist);
-    mutation->AppendToList(&dst->at(rel_idx));
+    mutation->PrependToList(&dst->at(rel_idx));
   }
   return Status::OK();
 }

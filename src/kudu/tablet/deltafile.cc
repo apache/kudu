@@ -756,9 +756,8 @@ Status DeltaFileIterator::ApplyDeletes(SelectionVector *sel_vec) {
   }
 }
 
-// Visitor which, for each mutation, appends it into a ColumnBlock of
-// Mutation *s. See CollectMutations()
-// Each mutation is projected into the iterator schema, if required.
+// Visitor which, for each mutation, adds it into a ColumnBlock of
+// Mutation *s, prepending to each linked list. See CollectMutations().
 template<DeltaType Type>
 struct CollectingVisitor {
 
@@ -770,7 +769,7 @@ struct CollectingVisitor {
 
     RowChangeList changelist(deltas);
     Mutation *mutation = Mutation::CreateInArena(dst_arena, key.timestamp(), changelist);
-    mutation->AppendToList(&dst->at(rel_idx));
+    mutation->PrependToList(&dst->at(rel_idx));
 
     return Status::OK();
   }

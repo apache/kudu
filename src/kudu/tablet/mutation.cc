@@ -46,43 +46,19 @@ string Mutation::StringifyMutationList(const Schema &schema, const Mutation *hea
   return ret;
 }
 
-
 void Mutation::AppendToListAtomic(Mutation **list) {
-  DoAppendToList<true>(list);
-}
-
-void Mutation::AppendToList(Mutation **list) {
-  DoAppendToList<false>(list);
-}
-
-namespace {
-template<bool ATOMIC>
-inline void Store(Mutation** pointer, Mutation* val);
-
-template<>
-inline void Store<true>(Mutation** pointer, Mutation* val) {
-  Release_Store(reinterpret_cast<AtomicWord*>(pointer),
-                reinterpret_cast<AtomicWord>(val));
-}
-
-template<>
-inline void Store<false>(Mutation** pointer, Mutation* val) {
-  *pointer = val;
-}
-} // anonymous namespace
-
-template<bool ATOMIC>
-inline void Mutation::DoAppendToList(Mutation **list) {
   next_ = nullptr;
   if (*list == nullptr) {
-    Store<ATOMIC>(list, this);
+    Release_Store(reinterpret_cast<AtomicWord*>(list),
+                  reinterpret_cast<AtomicWord>(this));
   } else {
     // Find tail and append.
     Mutation *tail = *list;
     while (tail->next_ != nullptr) {
       tail = tail->next_;
     }
-    Store<ATOMIC>(&tail->next_, this);
+    Release_Store(reinterpret_cast<AtomicWord*>(&tail->next_),
+                  reinterpret_cast<AtomicWord>(this));
   }
 }
 

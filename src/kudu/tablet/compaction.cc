@@ -179,7 +179,9 @@ class DiskRowSetCompactionInput : public CompactionInput {
       CompactionInputRow &input_row = block->at(i);
       input_row.row.Reset(&block_, i);
       input_row.redo_head = redo_mutation_block_[i];
+      Mutation::ReverseMutationList(&input_row.redo_head);
       input_row.undo_head = undo_mutation_block_[i];
+      Mutation::ReverseMutationList(&input_row.undo_head);
     }
 
     first_rowid_in_block_ += block_.nrows();

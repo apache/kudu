@@ -135,6 +135,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
       CompactionInputRow &input_row = input_rows.at(i);
       input_row.row.Reset(&block, i);
       input_row.redo_head = redo_mutation_block[i];
+      Mutation::ReverseMutationList(&input_row.redo_head);
       input_row.undo_head = nullptr;
 
       RowBlockRow dst_row = block.row(i);
