@@ -391,10 +391,7 @@ Status Tablet::InsertOrUpsertUnlocked(WriteTransactionState *tx_state,
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
 
   // First, ensure that it is a unique key by checking all the open RowSets.
-  vector<RowSet *> to_check;
-  comps->rowsets->FindRowSetsWithKeyInRange(op->key_probe->encoded_key_slice(),
-                                            &to_check);
-
+  vector<RowSet *> to_check = FindRowSetsToCheck(op, comps);
   for (RowSet *rowset : to_check) {
     bool present = false;
     RETURN_NOT_OK(rowset->CheckRowPresent(*op->key_probe, &present, stats));
@@ -474,14 +471,14 @@ Status Tablet::ApplyUpsertAsUpdate(WriteTransactionState* tx_state,
   return s;
 }
 
-vector<RowSet*> Tablet::FindRowSetsToCheck(RowOp* mutate,
+vector<RowSet*> Tablet::FindRowSetsToCheck(RowOp* op,
                                            const TabletComponents* comps) {
   vector<RowSet*> to_check;
-  if (PREDICT_TRUE(!mutate->orig_result_from_log_)) {
+  if (PREDICT_TRUE(!op->orig_result_from_log_)) {
     // TODO: could iterate the rowsets in a smart order
     // based on recent statistics - eg if a rowset is getting
     // updated frequently, pick that one first.
-    comps->rowsets->FindRowSetsWithKeyInRange(mutate->key_probe->encoded_key_slice(),
+    comps->rowsets->FindRowSetsWithKeyInRange(op->key_probe->encoded_key_slice(),
                                               &to_check);
 #ifndef NDEBUG
     // The order in which the rowset tree returns its results doesn't have semantic
@@ -495,7 +492,7 @@ vector<RowSet*> Tablet::FindRowSetsToCheck(RowOp* mutate,
 
   // If we are replaying an operation during bootstrap, then we already have a
   // COMMIT message which tells us specifically which memory store to apply it to.
-  for (const auto& store : mutate->orig_result_from_log_->mutated_stores()) {
+  for (const auto& store : op->orig_result_from_log_->mutated_stores()) {
     if (store.has_mrs_id()) {
       to_check.push_back(comps->memrowset.get());
     } else {

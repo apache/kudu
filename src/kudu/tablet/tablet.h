@@ -406,8 +406,8 @@ class Tablet {
                              ProbeStats* stats);
 
   // Return the list of RowSets that need to be consulted when processing the
-  // given mutation.
-  static std::vector<RowSet*> FindRowSetsToCheck(RowOp* mutate,
+  // given insertion or mutation.
+  static std::vector<RowSet*> FindRowSetsToCheck(RowOp* op,
                                                  const TabletComponents* comps);
 
 

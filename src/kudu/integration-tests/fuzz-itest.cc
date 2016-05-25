@@ -649,5 +649,24 @@ TEST_F(FuzzTest, TestFuzzWithRestarts2) {
     });
 }
 
+// Regression test for KUDU-1467: a sequence involving
+// UPSERT which failed to replay properly upon bootstrap.
+TEST_F(FuzzTest, TestUpsertSeq) {
+  RunFuzzCase({
+      {TEST_INSERT, 1},
+      {TEST_UPSERT, 1},
+      {TEST_FLUSH_OPS, 0},
+      {TEST_FLUSH_TABLET, 0},
+      {TEST_UPSERT, 1},
+      {TEST_DELETE, 1},
+      {TEST_UPSERT, 1},
+      {TEST_INSERT, 0},
+      {TEST_FLUSH_OPS, 0},
+      {TEST_FLUSH_TABLET, 0},
+      {TEST_RESTART_TS, 0},
+      {TEST_UPDATE, 1},
+    });
+}
+
 } // namespace tablet
 } // namespace kudu
