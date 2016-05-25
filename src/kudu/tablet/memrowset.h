@@ -423,7 +423,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   // Copy the current MRSRow to the 'dst_row' provided using the iterator projection schema.
   Status GetCurrentRow(RowBlockRow* dst_row,
                        Arena* row_arena,
-                       const Mutation** redo_head,
+                       Mutation** redo_head,
                        Arena* mutation_arena,
                        Timestamp* insertion_timestamp);
 

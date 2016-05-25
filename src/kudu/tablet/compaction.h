@@ -115,9 +115,9 @@ struct CompactionInputRow {
   // The compaction input base row.
   RowBlockRow row;
   // The current redo head for this row, may be null if the base row has no mutations.
-  const Mutation* redo_head;
+  Mutation* redo_head;
   // The current undo head for this row, may be null if all undos were garbage collected.
-  const Mutation* undo_head;
+  Mutation* undo_head;
 };
 
 // Function shared by flushes, compactions and major delta compactions. Applies all the REDO
