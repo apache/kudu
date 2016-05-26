@@ -277,14 +277,14 @@ Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table)
   bool more_tablets = true;
   string last_key;
   while (more_tablets) {
-    GetTabletsBatch(table->name(), &last_key, tablets, &more_tablets);
+    GetTabletsBatch(table, &last_key, tablets, &more_tablets);
   }
 
   table->set_tablets(tablets);
   return Status::OK();
 }
 
-Status RemoteKsckMaster::GetTabletsBatch(const string& table_name,
+Status RemoteKsckMaster::GetTabletsBatch(const shared_ptr<KsckTable>& table,
                                          string* last_partition_key,
                                          vector<shared_ptr<KsckTablet> >& tablets,
                                          bool* more_tablets) {
@@ -292,14 +292,14 @@ Status RemoteKsckMaster::GetTabletsBatch(const string& table_name,
   master::GetTableLocationsResponsePB resp;
   RpcController rpc;
 
-  req.mutable_table()->set_table_name(table_name);
+  req.mutable_table()->set_table_name(table->name());
   req.set_max_returned_locations(FLAGS_tablets_batch_size_max);
   req.set_partition_key_start(*last_partition_key);
 
   rpc.set_timeout(GetDefaultTimeout());
   RETURN_NOT_OK(proxy_->GetTableLocations(req, &resp, &rpc));
   for (const master::TabletLocationsPB& locations : resp.tablet_locations()) {
-    shared_ptr<KsckTablet> tablet(new KsckTablet(locations.tablet_id()));
+    shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), locations.tablet_id()));
     vector<shared_ptr<KsckTabletReplica> > replicas;
     for (const master::TabletLocationsPB_ReplicaPB& replica : locations.replicas()) {
       bool is_leader = replica.role() == consensus::RaftPeerPB::LEADER;
@@ -315,7 +315,7 @@ Status RemoteKsckMaster::GetTabletsBatch(const string& table_name,
   } else {
     return Status::NotFound(Substitute(
       "The Master returned 0 tablets for GetTableLocations of table $0 at start key $1",
-      table_name, *(last_partition_key)));
+      table->name(), *(last_partition_key)));
   }
   if (last_partition_key->empty()) {
     *more_tablets = false;

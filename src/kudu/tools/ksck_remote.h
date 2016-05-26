@@ -103,8 +103,10 @@ class RemoteKsckMaster : public KsckMaster {
   // seen last key that will be used as the new start key. The
   // last_partition_key is updated to point at the new last key that came in
   // the batch.
-  Status GetTabletsBatch(const std::string& table_name, std::string* last_partition_key,
-    std::vector<std::shared_ptr<KsckTablet> >& tablets, bool* more_tablets);
+  Status GetTabletsBatch(const std::shared_ptr<KsckTable>& table,
+                         std::string* last_partition_key,
+                         std::vector<std::shared_ptr<KsckTablet> >& tablets,
+                         bool* more_tablets);
 
   std::shared_ptr<rpc::Messenger> messenger_;
   std::shared_ptr<master::MasterServiceProxy> proxy_;

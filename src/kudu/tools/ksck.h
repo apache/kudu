@@ -35,6 +35,8 @@ namespace kudu {
 class MonoDelta;
 namespace tools {
 
+class KsckTable;
+
 // Options for checksum scans.
 struct ChecksumOptions {
  public:
@@ -94,7 +96,10 @@ class KsckTabletReplica {
 class KsckTablet {
  public:
   // TODO add start/end keys, stale.
-  explicit KsckTablet(std::string id) : id_(std::move(id)) {}
+  KsckTablet(KsckTable* table, std::string id)
+      : id_(std::move(id)),
+        table_(table) {
+  }
 
   const std::string& id() const {
     return id_;
@@ -107,9 +112,15 @@ class KsckTablet {
   void set_replicas(std::vector<std::shared_ptr<KsckTabletReplica> >& replicas) {
     replicas_.assign(replicas.begin(), replicas.end());
   }
+
+  KsckTable* table() {
+    return table_;
+  }
+
  private:
   const std::string id_;
   std::vector<std::shared_ptr<KsckTabletReplica>> replicas_;
+  KsckTable* table_;
   DISALLOW_COPY_AND_ASSIGN(KsckTablet);
 };
 
@@ -131,8 +142,8 @@ class KsckTable {
     return num_replicas_;
   }
 
-  void set_tablets(std::vector<std::shared_ptr<KsckTablet>>& tablets) {
-    tablets_.assign(tablets.begin(), tablets.end());
+  void set_tablets(std::vector<std::shared_ptr<KsckTablet>> tablets) {
+    tablets_ = std::move(tablets);
   }
 
   std::vector<std::shared_ptr<KsckTablet> >& tablets() {
