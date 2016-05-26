@@ -60,6 +60,9 @@ message MasterErrorPB {
     // The number of replicas requested is greater than the number of live servers
     // in the cluster.
     REPLICATION_FACTOR_TOO_HIGH = 8;
+
+    // The request or response involved a tablet which is not yet running.
+    TABLET_NOT_RUNNING = 9;
   }
 
   // The error code.
@@ -400,6 +403,19 @@ message GetTableLocationsRequestPB {
   optional uint32 max_returned_locations = 5 [ default = 10 ];
 }
 
+// The response to a GetTableLocations RPC. The master guarantees that:
+//
+// * The response contains a location for all tablets in the requested range,
+//   limited by the request's 'max_returned_locations'.
+// * The tablet locations are returned in sorted order by the partition key range.
+// * If *any* tablet in the response is not running, then the entire response
+//   will fail with MasterErrorPB::TABLET_NOT_RUNNING, and the tablet_locations
+//   field will be empty.
+// * A gap between the partition key ranges of consecutive tablets indicates a
+//   non-covered partition range.
+// * If the request's start partition key falls in a non-covered partition
+//   range, the response will contain the tablet immediately before the
+//   non-covered range, if it exists.
 message GetTableLocationsResponsePB {
   // The error, if an error occurred with this request.
   optional MasterErrorPB error = 1;

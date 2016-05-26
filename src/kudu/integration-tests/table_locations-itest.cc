@@ -109,28 +109,7 @@ Status TableLocationsTest::CreateTable(const string& table_name,
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
   }
 
-  RETURN_NOT_OK(proxy_->CreateTable(req, &resp, &controller));
-  if (resp.has_error()) {
-    RETURN_NOT_OK(StatusFromPB(resp.error().status()));
-  }
-
-  IsCreateTableDoneRequestPB done_req;
-  IsCreateTableDoneResponsePB done_resp;
-  done_req.mutable_table()->set_table_name(table_name);
-
-  for (int i = 1; i <= 20; i++) {
-    controller.Reset();
-    RETURN_NOT_OK(proxy_->IsCreateTableDone(done_req, &done_resp, &controller));
-    if (done_resp.has_error()) {
-      RETURN_NOT_OK(StatusFromPB(done_resp.error().status()));
-    }
-    if (done_resp.done()) {
-      return Status::OK();
-    } else {
-      SleepFor(MonoDelta::FromMilliseconds(i * 100));
-    }
-  }
-  return Status::TimedOut("CreateTable", req.DebugString());
+  return proxy_->CreateTable(req, &resp, &controller);
 }
 
 // Test that when the client requests table locations for a non-covered
@@ -157,6 +136,31 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
   ASSERT_OK(bounds[1].second.SetString(0, "d"));
 
   ASSERT_OK(CreateTable(table_name, schema, splits, bounds));
+
+  { // Check that the master doesn't give back partial results while the table is being created.
+    GetTableLocationsRequestPB req;
+    GetTableLocationsResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(table_name);
+
+    for (int i = 1; ; i++) {
+      if (i > 10) {
+        FAIL() << "Create table timed out";
+      }
+
+      controller.Reset();
+      ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
+      SCOPED_TRACE(resp.DebugString());
+
+      if (resp.has_error()) {
+        ASSERT_EQ(MasterErrorPB::TABLET_NOT_RUNNING, resp.error().code());
+        SleepFor(MonoDelta::FromMilliseconds(i * 100));
+      } else {
+        ASSERT_EQ(8, resp.tablet_locations().size());
+        break;
+      }
+    }
+  }
 
   { // from "a"
     GetTableLocationsRequestPB req;

@@ -3100,9 +3100,21 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   TSRegistrationPB reg;
   vector<TabletReplica> locs;
   for (const scoped_refptr<TabletInfo>& tablet : tablets_in_range) {
-    if (!BuildLocationsForTablet(tablet, resp->add_tablet_locations()).ok()) {
-      // Not running.
+    Status s = BuildLocationsForTablet(tablet, resp->add_tablet_locations());
+    if (s.ok()) {
+      continue;
+    } else if (s.IsNotFound()) {
+      // The tablet has been deleted; filter it from the results.
       resp->mutable_tablet_locations()->RemoveLast();
+    } else if (s.IsServiceUnavailable()) {
+      // The tablet is not yet running; fail the request.
+      resp->Clear();
+      resp->mutable_error()->set_code(MasterErrorPB_Code::MasterErrorPB_Code_TABLET_NOT_RUNNING);
+      StatusToPB(Status::ServiceUnavailable("Tablet not running"),
+                 resp->mutable_error()->mutable_status());
+      break;
+    } else {
+      LOG(FATAL) << "Unexpected error while building tablet locations: " << s.ToString();
     }
   }
   return Status::OK();

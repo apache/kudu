@@ -346,6 +346,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   Status ListTables(const ListTablesRequestPB* req,
                     ListTablesResponsePB* resp);
 
+  // Lookup the tablets contained in the partition range of the request.
+  // Returns an error if any of the tablets are not running.
   Status GetTableLocations(const GetTableLocationsRequestPB* req,
                            GetTableLocationsResponsePB* resp);
 
