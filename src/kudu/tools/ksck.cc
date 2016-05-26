@@ -158,8 +158,8 @@ Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
   if (s.ok()) {
     VLOG(1) << "Connected to Tablet Server: " << ts->uuid();
   } else {
-    Warn() << Substitute("Unable to connect to Tablet Server $0 because $1",
-                         ts->uuid(), s.ToString()) << endl;
+    Warn() << Substitute("Unable to connect to Tablet Server $0 ($1) because $2",
+                         ts->uuid(), ts->address(), s.ToString()) << endl;
   }
   return s;
 }
@@ -458,11 +458,13 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
 }
 
 bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_replicas) {
+  string tablet_str = Substitute("Tablet $0 of table '$1'",
+                                 tablet->id(), tablet->table()->name());
   vector<shared_ptr<KsckTabletReplica> > replicas = tablet->replicas();
   bool good_tablet = true;
   if (replicas.size() != table_num_replicas) {
-    Warn() << Substitute("Tablet $0 has $1 instead of $2 replicas",
-                         tablet->id(), replicas.size(), table_num_replicas) << endl;
+    Warn() << Substitute("$0 has $1 instead of $2 replicas",
+                         tablet_str, replicas.size(), table_num_replicas) << endl;
     // We only fail the "goodness" check if the tablet is under-replicated.
     if (replicas.size() < table_num_replicas) {
       good_tablet = false;
@@ -480,11 +482,11 @@ bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_repl
     }
   }
   if (leaders_count == 0) {
-    Warn() << Substitute("Tablet $0 doesn't have a leader", tablet->id()) << endl;
+    Warn() << Substitute("$0 doesn't have a leader", tablet_str) << endl;
     good_tablet = false;
   }
-  VLOG(1) << Substitute("Tablet $0 has $1 leader and $2 followers",
-                        tablet->id(), leaders_count, followers_count);
+  VLOG(1) << Substitute("$0 has $1 leader and $2 followers",
+                        tablet_str, leaders_count, followers_count);
   return good_tablet;
 }
 

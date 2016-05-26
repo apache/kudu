@@ -128,43 +128,44 @@ class KsckTest : public KuduTest {
   void CreateOneTableOneTablet() {
     CreateDefaultAssignmentPlan(1);
 
-    shared_ptr<KsckTablet> tablet(new KsckTablet("1"));
+    auto table = CreateAndAddTable("test", 1);
+    shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), "1"));
     CreateAndFillTablet(tablet, 1, true);
-
-    CreateAndAddTable({ tablet }, "test", 1);
+    table->set_tablets({ tablet });
   }
 
   void CreateOneSmallReplicatedTable() {
     int num_replicas = 3;
     int num_tablets = 3;
-    vector<shared_ptr<KsckTablet>> tablets;
     CreateDefaultAssignmentPlan(num_replicas * num_tablets);
+    auto table = CreateAndAddTable("test", num_replicas);
+
+    vector<shared_ptr<KsckTablet>> tablets;
     for (int i = 0; i < num_tablets; i++) {
-      shared_ptr<KsckTablet> tablet(new KsckTablet(boost::lexical_cast<string>(i)));
+      shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), boost::lexical_cast<string>(i)));
       CreateAndFillTablet(tablet, num_replicas, true);
       tablets.push_back(tablet);
     }
-
-    CreateAndAddTable(tablets, "test", num_replicas);
+    table->set_tablets(tablets);
   }
 
   void CreateOneOneTabletReplicatedBrokenTable() {
     // We're placing only two tablets, the 3rd goes nowhere.
     CreateDefaultAssignmentPlan(2);
 
-    shared_ptr<KsckTablet> tablet(new KsckTablet("1"));
-    CreateAndFillTablet(tablet, 2, false);
+    auto table = CreateAndAddTable("test", 3);
 
-    CreateAndAddTable({ tablet }, "test", 3);
+    shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), "1"));
+    CreateAndFillTablet(tablet, 2, false);
+    table->set_tablets({ tablet });
+
   }
 
-  void CreateAndAddTable(vector<shared_ptr<KsckTablet>> tablets,
-                         const string& name, int num_replicas) {
+  shared_ptr<KsckTable> CreateAndAddTable(const string& name, int num_replicas) {
     shared_ptr<KsckTable> table(new KsckTable(name, Schema(), num_replicas));
-    table->set_tablets(tablets);
-
     vector<shared_ptr<KsckTable>> tables = { table };
     master_->tables_.assign(tables.begin(), tables.end());
+    return table;
   }
 
   void CreateAndFillTablet(shared_ptr<KsckTablet>& tablet, int num_replicas, bool has_leader) {
