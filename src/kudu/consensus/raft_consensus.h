@@ -176,7 +176,7 @@ class RaftConsensus : public Consensus,
                                              const StatusCallback& client_cb,
                                              const Status& status);
 
-  // As a leader, append a new ConsensusRond to the queue.
+  // As a leader, append a new ConsensusRound to the queue.
   // Only virtual and protected for mocking purposes.
   virtual Status AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round);
 

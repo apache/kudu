@@ -2510,6 +2510,107 @@ TEST_F(RaftConsensusITest, TestCorruptReplicaMetadata) {
                                    MonoDelta::FromSeconds(30)));
 }
 
+// Test that an IOError when writing to the write-ahead log is a fatal error.
+// First, we test that failed replicates are fatal. Then, we test that failed
+// commits are fatal.
+TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
+  FLAGS_num_replicas = 3;
+  FLAGS_num_tablet_servers = 3;
+  vector<string> ts_flags, master_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  NO_FATALS(BuildAndStart(ts_flags, master_flags));
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(3, tservers.size());
+
+  // Test failed replicates.
+
+  // Elect server 2 as leader and wait for log index 1 to propagate to all servers.
+  ASSERT_OK(StartElection(tservers[2], tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+
+  // Inject an IOError the next time servers 1 and 2 write to their WAL.
+  // Then, cause server 0 to start and win a leader election.
+  // This will cause servers 0 and 1 to crash.
+  for (int i = 1; i <= 2; i++) {
+    ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(i),
+              "log_inject_io_error_on_append_fraction", "1.0"));
+  }
+  ASSERT_OK(StartElection(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
+  for (int i = 1; i <= 2; i++) {
+    ASSERT_OK(cluster_->tablet_server(i)->WaitForCrash(MonoDelta::FromSeconds(10)));
+  }
+
+  // Now we know followers crash when they write to their log.
+  // Let's verify the same for the leader (server 0).
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+            "log_inject_io_error_on_append_fraction", "1.0"));
+
+  // Attempt to write to the leader, but with a short timeout.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_timeout_allowed(true);
+  workload.set_write_timeout_millis(100);
+  workload.set_num_write_threads(1);
+  workload.set_write_batch_size(1);
+  workload.Setup();
+  workload.Start();
+
+  // Leader should crash as well.
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(10)));
+  workload.StopAndJoin();
+
+  LOG(INFO) << "Everything crashed!";
+
+  // Test failed commits.
+
+  cluster_->Shutdown();
+  ASSERT_OK(cluster_->Restart());
+  NO_FATALS(WaitForTSAndReplicas());
+  tservers.clear();
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(3, tservers.size());
+
+  // Elect server 0 as leader, wait until writes are going through.
+  ASSERT_OK(StartElection(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
+  workload.Start();
+  int64_t prev_inserted = workload.rows_inserted();
+  while (workload.rows_inserted() == prev_inserted) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+
+  // Now shutdown servers 1 and 2 so that writes cannot commit. Write to the
+  // leader, set flags so that commits crash the server, then bring the
+  // followers back up.
+  for (int i = 1; i <= 2; i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+
+  OpId prev_opid, cur_opid;
+  ASSERT_OK(GetLastOpIdForReplica(tablet_id_, tservers[0], consensus::RECEIVED_OPID,
+                                  MonoDelta::FromSeconds(10), &prev_opid));
+  VLOG(1) << "Previous OpId on server 0: " << OpIdToString(prev_opid);
+  workload.Start();
+  // Wait until we've got (uncommitted) entries into the leader's log.
+  do {
+    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, tservers[0], consensus::RECEIVED_OPID,
+                                    MonoDelta::FromSeconds(10), &cur_opid));
+    VLOG(1) << "Current OpId on server 0: " << OpIdToString(cur_opid);
+  } while (consensus::OpIdEquals(prev_opid, cur_opid));
+  workload.StopAndJoin();
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+            "log_inject_io_error_on_append_fraction", "1.0"));
+  for (int i = 1; i <= 2; i++) {
+    ASSERT_OK(cluster_->tablet_server(i)->Restart());
+  }
+  // Leader will crash.
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(10)));
+}
+
 }  // namespace tserver
 }  // namespace kudu
 

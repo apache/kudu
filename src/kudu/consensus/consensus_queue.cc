@@ -239,7 +239,8 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
 }
 
 Status PeerMessageQueue::AppendOperation(const ReplicateRefPtr& msg) {
-  return AppendOperations({ msg }, Bind(DoNothingStatusCB));
+  return AppendOperations({ msg }, Bind(CrashIfNotOkStatusCB,
+                                        "Enqueued replicate operation failed to write to WAL"));
 }
 
 Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,

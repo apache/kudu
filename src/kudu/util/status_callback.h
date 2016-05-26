@@ -17,6 +17,8 @@
 #ifndef KUDU_UTIL_STATUS_CALLBACK_H
 #define KUDU_UTIL_STATUS_CALLBACK_H
 
+#include <string>
+
 #include "kudu/gutil/callback_forward.h"
 
 namespace kudu {
@@ -30,6 +32,9 @@ typedef Callback<void(const Status& status)> StatusCallback;
 // To be used when a function signature requires a StatusCallback but none
 // is needed.
 extern void DoNothingStatusCB(const Status& status);
+
+// A callback that crashes with a FATAL log message if the given Status is not OK.
+extern void CrashIfNotOkStatusCB(const std::string& message, const Status& status);
 
 // A closure (callback without arguments) that returns a Status indicating
 // whether it was successful or not.

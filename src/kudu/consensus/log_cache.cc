@@ -191,7 +191,7 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
                callback));
   l.lock();
   if (!log_status.ok()) {
-    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Couldn't append to log: " << log_status.ToString();
+    LOG_WITH_PREFIX_UNLOCKED(ERROR) << "Couldn't append to log: " << log_status.ToString();
     tracker_->Release(mem_required);
     return log_status;
   }

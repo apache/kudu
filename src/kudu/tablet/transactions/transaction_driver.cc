@@ -380,7 +380,9 @@ void TransactionDriver::ApplyTask() {
 
     {
       TRACE_EVENT1("txn", "AsyncAppendCommit", "txn", this);
-      CHECK_OK(log_->AsyncAppendCommit(std::move(commit_msg), Bind(DoNothingStatusCB)));
+      CHECK_OK(log_->AsyncAppendCommit(std::move(commit_msg),
+                                       Bind(CrashIfNotOkStatusCB,
+                                       "Enqueued commit operation failed to write to WAL")));
     }
 
     // If the client requested COMMIT_WAIT as the external consistency mode

@@ -95,6 +95,12 @@ TAG_FLAG(log_inject_latency_ms_mean, unsafe);
 TAG_FLAG(log_inject_latency_ms_stddev, unsafe);
 TAG_FLAG(fault_crash_before_append_commit, unsafe);
 
+DEFINE_double(log_inject_io_error_on_append_fraction, 0.0,
+              "Fraction of the time when the log will fail to append and return an IOError. "
+              "(For testing only!)");
+TAG_FLAG(log_inject_io_error_on_append_fraction, unsafe);
+TAG_FLAG(log_inject_io_error_on_append_fraction, runtime);
+
 // Validate that log_min_segments_to_retain >= 1
 static bool ValidateLogsToRetain(const char* flagname, int value) {
   if (value >= 1) {
@@ -186,7 +192,6 @@ void Log::AppendThread::RunThread() {
       Status s = log_->DoAppend(entry_batch);
       if (PREDICT_FALSE(!s.ok())) {
         LOG(ERROR) << "Error appending to the log: " << s.ToString();
-        DLOG(FATAL) << "Aborting: " << s.ToString();
         entry_batch->set_failed_to_append();
         // TODO If a single transaction fails to append, should we
         // abort all subsequent transactions in this batch or allow
@@ -207,7 +212,6 @@ void Log::AppendThread::RunThread() {
     }
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Error syncing log" << s.ToString();
-      DLOG(FATAL) << "Aborting: " << s.ToString();
       for (LogEntryBatch* entry_batch : entry_batches) {
         if (!entry_batch->callback().is_null()) {
           entry_batch->callback().Run(s);
@@ -472,6 +476,9 @@ Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
 Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
   size_t num_entries = entry_batch->count();
   DCHECK_GT(num_entries, 0) << "Cannot call DoAppend() with zero entries reserved";
+
+  MAYBE_RETURN_FAILURE(FLAGS_log_inject_io_error_on_append_fraction,
+                       Status::IOError("Injected IOError in Log::DoAppend()"));
 
   Slice entry_batch_data = entry_batch->data();
   uint32_t entry_batch_bytes = entry_batch->total_size_bytes();

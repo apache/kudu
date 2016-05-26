@@ -562,6 +562,9 @@ Status RaftConsensus::AppendNewRoundToQueueUnlocked(const scoped_refptr<Consensu
 
     // TODO Possibly evict a dangling peer from the configuration here.
     // TODO count of number of ops failed due to consensus queue overflow.
+  } else if (PREDICT_FALSE(s.IsIOError())) {
+    // This likely came from the log.
+    LOG(FATAL) << "IO error appending to the queue: " << s.ToString();
   }
   RETURN_NOT_OK_PREPEND(s, "Unable to append operation to consensus queue");
   state_->UpdateLastReceivedOpIdUnlocked(round->id());
@@ -1922,8 +1925,10 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   commit_msg->set_op_type(round->replicate_msg()->op_type());
   *commit_msg->mutable_commited_op_id() = round->id();
 
-  WARN_NOT_OK(log_->AsyncAppendCommit(std::move(commit_msg), Bind(&DoNothingStatusCB)),
-              "Unable to append commit message");
+  CHECK_OK(log_->AsyncAppendCommit(std::move(commit_msg),
+                                   Bind(CrashIfNotOkStatusCB,
+                                        "Enqueued commit operation failed to write to WAL")));
+
   client_cb.Run(status);
 }
 
