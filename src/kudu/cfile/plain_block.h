@@ -87,6 +87,13 @@ class PlainBlockBuilder : public BlockBuilder {
     return Status::OK();
   }
 
+  virtual Status GetLastKey(void *key) const OVERRIDE {
+    DCHECK_GT(count_, 0);
+    size_t idx = kPlainBlockHeaderSize + (count_ - 1) * kCppTypeSize;
+    *reinterpret_cast<CppType *>(key) = Decode<CppType>(&buffer_[idx]);
+    return Status::OK();
+  }
+
  private:
   faststring buffer_;
   const WriterOptions *options_;

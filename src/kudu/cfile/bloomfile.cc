@@ -92,11 +92,13 @@ Status BloomFileWriter::AppendKeys(
     if (PREDICT_FALSE(bloom_builder_.count() >= bloom_builder_.expected_count())) {
       RETURN_NOT_OK(FinishCurrentBloomBlock());
 
-      // Copy the next key as the first key of the next block.
-      // Doing this here avoids having to do it in normal code path of the loop.
+      // Update the last key and set the next key as the first key of the next block.
+      // Setting the first key here avoids having to do it in normal code path of the loop.
+      last_key_.assign_copy(keys[i].data(), keys[i].size());
       if (i < n_keys - 1) {
         first_key_.assign_copy(keys[i + 1].data(), keys[i + 1].size());
       }
+
     }
   }
 
@@ -120,7 +122,8 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 
   // Append to the file.
   Slice start_key(first_key_);
-  RETURN_NOT_OK(writer_->AppendRawBlock(slices, 0, &start_key, "bloom block"));
+  Slice last_key(last_key_);
+  RETURN_NOT_OK(writer_->AppendRawBlock(slices, 0, &start_key, last_key, "bloom block"));
 
   bloom_builder_.Clear();
 

@@ -111,7 +111,7 @@ int BinaryDictBlockBuilder::AddCodeWords(const uint8_t* vals, size_t count) {
       const uint8_t* s_ptr = dictionary_strings_arena_.AddSlice(*src);
       if (s_ptr == nullptr) {
         // Arena does not have enough space for string content
-        // Ideally, it should not happen.
+        // Ideally, this should not happen.
         LOG(ERROR) << "Arena of Dictionary Encoder does not have enough memory for strings";
         break;
       }
@@ -166,6 +166,18 @@ Status BinaryDictBlockBuilder::GetFirstKey(void* key_void) const {
   } else {
     DCHECK_EQ(mode_, kPlainBinaryMode);
     return data_builder_->GetFirstKey(key_void);
+  }
+}
+
+Status BinaryDictBlockBuilder::GetLastKey(void* key_void) const {
+  if (mode_ == kCodeWordMode) {
+    CHECK(finished_);
+    uint32_t last_codeword;
+    RETURN_NOT_OK(data_builder_->GetLastKey(reinterpret_cast<void*>(&last_codeword)));
+    return dict_block_.GetKeyAtIdx(key_void, last_codeword);
+  } else {
+    DCHECK_EQ(mode_, kPlainBinaryMode);
+    return data_builder_->GetLastKey(key_void);
   }
 }
 

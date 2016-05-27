@@ -223,7 +223,7 @@ class TestCFile : public CFileTestBase {
       slices.push_back(Slice("Body"));
       slices.push_back(Slice("Tail"));
       slices.push_back(Slice(reinterpret_cast<uint8_t *>(&i), 4));
-      ASSERT_OK(w.AppendRawBlock(slices, i, nullptr, "raw-data"));
+      ASSERT_OK(w.AppendRawBlock(slices, i, nullptr, Slice(), "raw-data"));
     }
     ASSERT_OK(w.Finish());
 

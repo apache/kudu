@@ -56,6 +56,10 @@ struct WriterOptions {
   // Whether the file needs a value index
   bool write_validx;
 
+  // Whether to optimize index keys by storing shortest separating prefixes
+  // instead of entire keys.
+  bool optimize_index_keys;
+
   // Column storage attributes.
   //
   // Default: all default values as specified in the constructor in
@@ -97,6 +101,12 @@ Status DumpIterator(const CFileReader& reader,
                     std::ostream* out,
                     const DumpIteratorOptions& opts,
                     int indent);
+
+// Return the length of the common prefix shared by the two strings.
+size_t CommonPrefixLength(const Slice& a, const Slice& b);
+
+// Truncate right to give a shortest key satisfying left <= key <= right.
+void GetSeparatingKey(const Slice& left, Slice* right);
 
 }  // namespace cfile
 }  // namespace kudu

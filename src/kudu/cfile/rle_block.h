@@ -90,6 +90,11 @@ class RleBitMapBlockBuilder : public BlockBuilder {
     return Status::NotSupported("BOOL keys not supported");
   }
 
+  // TODO Implement this method
+  virtual Status GetLastKey(void* key) const OVERRIDE {
+    return Status::NotSupported("BOOL keys not supported");
+  }
+
  private:
   faststring buf_;
   RleEncoder<bool> encoder_;
@@ -225,6 +230,9 @@ class RleIntBlockBuilder : public BlockBuilder {
       rle_encoder_.Put(vals[i], 1);
     }
     count_ += count;
+    if (count > 0) {
+      last_key_ = vals[count - 1];
+    }
     return count;
   }
 
@@ -246,11 +254,19 @@ class RleIntBlockBuilder : public BlockBuilder {
   }
 
   virtual Status GetFirstKey(void* key) const OVERRIDE {
-    if (count_ > 0) {
-      *reinterpret_cast<CppType*>(key) = first_key_;
-      return Status::OK();
+    if (PREDICT_FALSE(count_ == 0)) {
+      return Status::NotFound("No keys in the block");
     }
-    return Status::NotFound("No keys in the block");
+    *reinterpret_cast<CppType*>(key) = first_key_;
+    return Status::OK();
+  }
+
+  virtual Status GetLastKey(void* key) const OVERRIDE {
+    if (PREDICT_FALSE(count_ == 0)) {
+      return Status::NotFound("No keys in the block");
+    }
+    *reinterpret_cast<CppType*>(key) = last_key_;
+    return Status::OK();
   }
 
  private:
@@ -261,6 +277,7 @@ class RleIntBlockBuilder : public BlockBuilder {
   };
 
   CppType first_key_;
+  CppType last_key_;
   faststring buf_;
   size_t count_;
   RleEncoder<CppType> rle_encoder_;

@@ -323,5 +323,23 @@ TEST(TestIndexBlock, TestIterator) {
   ASSERT_TRUE(iter->HasNext());
 }
 
+TEST(TestIndexKeys, TestGetSeparatingKey) {
+  // Test example cases
+  Slice left = "";
+  Slice right = "apple";
+  GetSeparatingKey(left, &right);
+  ASSERT_EQ(right, Slice("a"));
+
+  left = "cardamom";
+  right = "carrot";
+  GetSeparatingKey(left, &right);
+  ASSERT_EQ(right, Slice("carr"));
+
+  left = "fennel";
+  right = "fig";
+  GetSeparatingKey(left, &right);
+  ASSERT_EQ(right, Slice("fi"));
+}
+
 } // namespace cfile
 } // namespace kudu

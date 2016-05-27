@@ -61,6 +61,9 @@ class BloomFileWriter {
 
   // first key inserted in the current block.
   faststring first_key_;
+
+  // last key inserted in the previous block
+  faststring last_key_;
 };
 
 // Reader for a bloom file.

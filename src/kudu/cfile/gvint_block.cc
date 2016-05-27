@@ -80,6 +80,15 @@ Status GVIntBlockBuilder::GetFirstKey(void *key) const {
   return Status::OK();
 }
 
+Status GVIntBlockBuilder::GetLastKey(void *key) const {
+  if (ints_.empty()) {
+    return Status::NotFound("no keys in data block");
+  }
+
+  *reinterpret_cast<uint32_t *>(key) = ints_[ints_.size() - 1];
+  return Status::OK();
+}
+
 Slice GVIntBlockBuilder::Finish(rowid_t ordinal_pos) {
   int size_estimate = EstimateEncodedSize();
   buffer_.reserve(size_estimate);

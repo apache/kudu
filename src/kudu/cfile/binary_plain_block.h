@@ -58,9 +58,17 @@ class BinaryPlainBlockBuilder : public BlockBuilder {
 
   size_t Count() const OVERRIDE;
 
+  // Return the key at index idx.
+  // key should be a Slice*
+  Status GetKeyAtIdx(void* key_void, int idx) const;
+
   // Return the first added key.
-  // key should be a Slice *
-  Status GetFirstKey(void *key) const OVERRIDE;
+  // key should be a Slice*
+  Status GetFirstKey(void* key) const OVERRIDE;
+
+  // Return the last added key.
+  // key should be a Slice*
+  Status GetLastKey(void* key) const OVERRIDE;
 
   // Length of a header.
   static const size_t kMaxHeaderSize = sizeof(uint32_t) * 3;

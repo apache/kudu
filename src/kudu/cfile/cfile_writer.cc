@@ -25,6 +25,7 @@
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/cfile/type_encodings.h"
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/gutil/endian.h"
 #include "kudu/util/coding.h"
@@ -82,7 +83,8 @@ WriterOptions::WriterOptions()
   : index_block_size(32*1024),
     block_restart_interval(16),
     write_posidx(false),
-    write_validx(false) {
+    write_validx(false),
+    optimize_index_keys(true) {
 }
 
 
@@ -131,14 +133,12 @@ CFileWriter::CFileWriter(const WriterOptions &options,
   }
 
   if (options.write_posidx) {
-    posidx_builder_.reset(new IndexTreeBuilder(&options_,
-                                               this));
+    posidx_builder_.reset(new IndexTreeBuilder(&options_, this));
   }
 
   if (options.write_validx) {
     key_encoder_ = &GetKeyEncoder<faststring>(typeinfo_);
-    validx_builder_.reset(new IndexTreeBuilder(&options_,
-                                               this));
+    validx_builder_.reset(new IndexTreeBuilder(&options_, this));
   }
 }
 
@@ -368,7 +368,6 @@ Status CFileWriter::FinishCurDataBlock() {
   VLOG(2) << " actual size=" << data.size();
 
   uint8_t key_tmp_space[typeinfo_->size()];
-
   if (validx_builder_ != nullptr) {
     // If we're building an index, we need to copy the first
     // key from the block locally, so we can write it into that index.
@@ -389,10 +388,16 @@ Status CFileWriter::FinishCurDataBlock() {
   v.push_back(data);
   Status s = AppendRawBlock(v, first_elem_ord,
                             reinterpret_cast<const void *>(key_tmp_space),
+                            Slice(last_key_),
                             "data block");
 
   if (is_nullable_) {
     null_bitmap_builder_->Reset();
+  }
+
+  if (validx_builder_ != nullptr) {
+    RETURN_NOT_OK(data_block_->GetLastKey(key_tmp_space));
+    key_encoder_->ResetAndEncode(key_tmp_space, &last_key_);
   }
   data_block_->Reset();
 
@@ -401,7 +406,8 @@ Status CFileWriter::FinishCurDataBlock() {
 
 Status CFileWriter::AppendRawBlock(const vector<Slice> &data_slices,
                                    size_t ordinal_pos,
-                                   const void *validx_key,
+                                   const void *validx_curr,
+                                   const Slice &validx_prev,
                                    const char *name_for_log) {
   CHECK_EQ(state_, kWriterWriting);
 
@@ -420,13 +426,17 @@ Status CFileWriter::AppendRawBlock(const vector<Slice> &data_slices,
   }
 
   if (validx_builder_ != nullptr) {
-    CHECK(validx_key != nullptr) <<
-      "must pass a  key for raw block if validx is configured";
+    CHECK(validx_curr != nullptr) <<
+      "must pass a key for raw block if validx is configured";
+
+    key_encoder_->ResetAndEncode(validx_curr, &tmp_buf_);
+    Slice idx_key = Slice(tmp_buf_);
+    if (options_.optimize_index_keys) {
+      GetSeparatingKey(validx_prev, &idx_key);
+    }
     VLOG(1) << "Appending validx entry\n" <<
-      kudu::HexDump(Slice(reinterpret_cast<const uint8_t *>(validx_key),
-                          typeinfo_->size()));
-    key_encoder_->ResetAndEncode(validx_key, &tmp_buf_);
-    s = validx_builder_->Append(Slice(tmp_buf_), ptr);
+            kudu::HexDump(idx_key);
+    s = validx_builder_->Append(idx_key, ptr);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to append to value index: " << s.ToString();
       return s;

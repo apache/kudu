@@ -80,6 +80,13 @@ class BlockBuilder {
   // If no keys have been added, returns Status::NotFound
   virtual Status GetFirstKey(void *key) const = 0;
 
+  // Return the key of the last entry in this index block.
+  // For pointer-based types (such as strings), the pointed-to
+  // data is only valid until the next call to Reset().
+  //
+  // If no keys have been added, returns Status::NotFound
+  virtual Status GetLastKey(void *key) const = 0;
+
   virtual ~BlockBuilder() {}
  private:
   DISALLOW_COPY_AND_ASSIGN(BlockBuilder);

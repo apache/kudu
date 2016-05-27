@@ -110,10 +110,12 @@ size_t BinaryPlainBlockBuilder::Count() const {
   return offsets_.size();
 }
 
-Status BinaryPlainBlockBuilder::GetFirstKey(void *key_void) const {
-  CHECK(finished_);
-
+Status BinaryPlainBlockBuilder::GetKeyAtIdx(void *key_void, int idx) const {
   Slice *slice = reinterpret_cast<Slice *>(key_void);
+
+  if (idx >= offsets_.size()) {
+    return Status::InvalidArgument("index too large");
+  }
 
   if (offsets_.empty()) {
     return Status::NotFound("no keys in data block");
@@ -122,11 +124,24 @@ Status BinaryPlainBlockBuilder::GetFirstKey(void *key_void) const {
   if (PREDICT_FALSE(offsets_.size() == 1)) {
     *slice = Slice(&buffer_[kMaxHeaderSize],
                    end_of_data_offset_ - kMaxHeaderSize);
+  } else if (idx + 1 == offsets_.size()) {
+    *slice = Slice(&buffer_[offsets_[idx]],
+                   end_of_data_offset_ - offsets_[idx]);
   } else {
-    *slice = Slice(&buffer_[kMaxHeaderSize],
-                   offsets_[1] - offsets_[0]);
+    *slice = Slice(&buffer_[offsets_[idx]],
+                   offsets_[idx + 1] - offsets_[idx]);
   }
   return Status::OK();
+}
+
+Status BinaryPlainBlockBuilder::GetFirstKey(void *key_void) const {
+  CHECK(finished_);
+  return GetKeyAtIdx(key_void, 0);
+}
+
+Status BinaryPlainBlockBuilder::GetLastKey(void *key_void) const {
+  CHECK(finished_);
+  return GetKeyAtIdx(key_void, offsets_.size() - 1);
 }
 
 ////////////////////////////////////////////////////////////

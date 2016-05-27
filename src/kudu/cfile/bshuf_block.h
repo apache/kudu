@@ -104,6 +104,14 @@ class BShufBlockBuilder : public BlockBuilder {
     return Status::OK();
   }
 
+  Status GetLastKey(void* key) const OVERRIDE {
+    if (count_ == 0) {
+      return Status::NotFound("no keys in data block");
+    }
+    memcpy(key, &data_[count_ - 1], size_of_type);
+    return Status::OK();
+  }
+
   Slice Finish(rowid_t ordinal_pos) OVERRIDE {
     return Finish(ordinal_pos, size_of_type);
   }

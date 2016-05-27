@@ -272,7 +272,7 @@ Status IndexBlockIterator::SeekAtOrBefore(const Slice &search_key) {
   // closest is now 'left'
   int compare = reader_->CompareKey(left, search_key);
   if (compare > 0) {
-    // The last midpoint was still greather then the
+    // The last midpoint was still greater than the
     // provided key, which implies that the key is
     // lower than the lowest in the block.
     return Status::NotFound("key not present");

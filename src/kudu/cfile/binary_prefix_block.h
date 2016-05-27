@@ -56,10 +56,11 @@ class BinaryPrefixBlockBuilder : public BlockBuilder {
   // key should be a Slice *
   Status GetFirstKey(void *key) const OVERRIDE;
 
- private:
-  // Return the length of the common prefix shared by the two strings.
-  static size_t CommonPrefixLength(const Slice& a, const Slice& b);
+  // Return the last added key.
+  // key should be a Slice *
+  Status GetLastKey(void *key) const OVERRIDE;
 
+ private:
   faststring buffer_;
   faststring last_val_;
 

@@ -73,6 +73,8 @@ DeltaFileWriter::DeltaFileWriter(gscoped_ptr<WritableBlock> block)
   opts.write_validx = true;
   opts.storage_attributes.cfile_block_size = FLAGS_deltafile_default_block_size;
   opts.storage_attributes.encoding = PLAIN_ENCODING;
+  // No optimization for deltafiles because a deltafile index key must decode into a DeltaKey
+  opts.optimize_index_keys = false;
   writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, std::move(block)));
 }
 

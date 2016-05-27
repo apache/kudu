@@ -87,6 +87,11 @@ class PlainBitMapBlockBuilder : public BlockBuilder {
     return Status::NotSupported("BOOL keys not supported");
   }
 
+  // TODO Implement this method
+  virtual Status GetLastKey(void* key) const OVERRIDE {
+    return Status::NotSupported("BOOL keys not supported");
+  }
+
  private:
   faststring buf_;
   BitWriter writer_;

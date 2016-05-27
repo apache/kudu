@@ -61,6 +61,10 @@ class GVIntBlockBuilder : public BlockBuilder {
   // key should be a uint32_t *
   Status GetFirstKey(void *key) const OVERRIDE;
 
+  // Return the last added key.
+  // key should be a uint32_t *
+  Status GetLastKey(void *key) const OVERRIDE;
+
  private:
 
   // TODO: this currently does not do a good job of estimating
