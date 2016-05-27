@@ -480,7 +480,9 @@ public class RowResult {
       return;
     }
     if (isNull(columnIndex)) {
-      throw new IllegalArgumentException("The requested column (" + columnIndex + ")  is null");
+      ColumnSchema columnSchema = schema.getColumnByIndex(columnIndex);
+      throw new IllegalArgumentException("The requested column (name: " + columnSchema.getName() +
+          ", index: " + columnIndex + ") is null");
     }
   }
 
@@ -488,8 +490,9 @@ public class RowResult {
     ColumnSchema columnSchema = schema.getColumnByIndex(columnIndex);
     Type columnType = columnSchema.getType();
     if (!columnType.equals(expectedType)) {
-      throw new IllegalArgumentException("Column (" + columnIndex + ") is of type " +
-              columnType.getName() + " but was requested as a type " + expectedType.getName());
+      throw new IllegalArgumentException("Column (name: " + columnSchema.getName() +
+          ", index: " + columnIndex +") is of type " +
+          columnType.getName() + " but was requested as a type " + expectedType.getName());
     }
   }
 
