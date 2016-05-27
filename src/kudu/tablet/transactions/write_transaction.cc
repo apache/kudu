@@ -203,17 +203,12 @@ WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
                                              const tserver::WriteRequestPB *request,
                                              tserver::WriteResponsePB *response)
   : TransactionState(tablet_peer),
-    request_(request),
+    request_(DCHECK_NOTNULL(request)),
     response_(response),
     mvcc_tx_(nullptr),
     schema_at_decode_time_(nullptr) {
-  if (request) {
-    external_consistency_mode_ = request->external_consistency_mode();
-  } else {
-    external_consistency_mode_ = CLIENT_PROPAGATED;
-  }
+  external_consistency_mode_ = request_->external_consistency_mode();
 }
-
 
 void WriteTransactionState::SetMvccTxAndTimestamp(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(!mvcc_tx_) << "Mvcc transaction already started/set.";
