@@ -637,6 +637,10 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
   consensus::ConsensusBootstrapInfo bootstrap_info;
   Status s;
   LOG_TIMING_PREFIX(INFO, LogPrefix(tablet_id), "bootstrapping tablet") {
+    // Disable tracing for the bootstrap, since this would result in
+    // potentially millions of transaction traces being attached to the
+    // RemoteBootstrap trace.
+    ADOPT_TRACE(nullptr);
     // TODO: handle crash mid-creation of tablet? do we ever end up with a
     // partially created tablet here?
     tablet_peer->SetBootstrapping();
