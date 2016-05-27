@@ -26,14 +26,14 @@
 #include "kudu/tablet/delta_tracker.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/util/memenv/memenv.h"
-#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DECLARE_int32(deltafile_default_block_size);
-DECLARE_bool(log_block_manager_test_hole_punching);
 DEFINE_int32(first_row_to_update, 10000, "the first row to update");
 DEFINE_int32(last_row_to_update, 100000, "the last row to update");
 DEFINE_int32(n_verify, 1, "number of times to verify the updates"
              "(useful for benchmarks");
+DECLARE_bool(never_fsync);
 
 using std::is_sorted;
 using std::shared_ptr;
@@ -48,19 +48,18 @@ using fs::WritableBlock;
 // Test path to write delta file to (in in-memory environment)
 const char kTestPath[] = "/tmp/test";
 
-class TestDeltaFile : public ::testing::Test {
+class TestDeltaFile : public KuduTest {
  public:
   TestDeltaFile() :
-    env_(NewMemEnv(Env::Default())),
     schema_(CreateSchema()),
     arena_(1024, 1024) {
-    // Can't check on-disk file size with a memenv.
-    FLAGS_log_block_manager_test_hole_punching = false;
+    // Speed up unit tests.
+    FLAGS_never_fsync = true;
   }
 
  public:
   void SetUp() OVERRIDE {
-    fs_manager_.reset(new FsManager(env_.get(), kTestPath));
+    fs_manager_.reset(new FsManager(env_.get(), GetTestDataDirectory() + "/fs"));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
   }
@@ -186,7 +185,6 @@ class TestDeltaFile : public ::testing::Test {
   }
 
  protected:
-  gscoped_ptr<Env> env_;
   gscoped_ptr<FsManager> fs_manager_;
   Schema schema_;
   Arena arena_;
