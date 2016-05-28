@@ -1399,8 +1399,10 @@ public class AsyncKuduClient implements AutoCloseable {
       client = pipeline.init(uuid, host, port);
       chan = channelFactory.newChannel(pipeline);
       ip2client.put(hostport, client);  // This is guaranteed to return null.
+
+      // The client2tables map is assumed to contain `client` after it is published in ip2client.
+      this.client2tablets.put(client, new ArrayList<RemoteTablet>());
     }
-    this.client2tablets.put(client, new ArrayList<RemoteTablet>());
     final SocketChannelConfig config = chan.getConfig();
     config.setConnectTimeoutMillis(5000);
     config.setTcpNoDelay(true);
