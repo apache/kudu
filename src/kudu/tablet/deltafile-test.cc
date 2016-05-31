@@ -25,7 +25,6 @@
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/delta_tracker.h"
 #include "kudu/gutil/strings/strcat.h"
-#include "kudu/util/memenv/memenv.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(deltafile_default_block_size);

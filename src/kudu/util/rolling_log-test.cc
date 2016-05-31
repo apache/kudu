@@ -25,7 +25,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/env.h"
-#include "kudu/util/memenv/memenv.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/test_util.h"
 
