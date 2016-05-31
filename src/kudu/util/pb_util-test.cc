@@ -28,7 +28,6 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/env_util.h"
-#include "kudu/util/memenv/memenv.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/pb_util-internal.h"
 #include "kudu/util/proto_container_test.pb.h"
@@ -179,9 +178,9 @@ Status TestPBUtil::TruncateFile(const string& path, uint64_t size) {
 }
 
 TEST_F(TestPBUtil, TestWritableFileOutputStream) {
-  gscoped_ptr<Env> env(NewMemEnv(Env::Default()));
   shared_ptr<WritableFile> file;
-  ASSERT_OK(env_util::OpenFileForWrite(env.get(), "/test", &file));
+  string path = GetTestPath("test.out");
+  ASSERT_OK(env_util::OpenFileForWrite(env_.get(), path, &file));
 
   WritableFileOutputStream stream(file.get(), 4096);
 

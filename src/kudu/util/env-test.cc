@@ -29,7 +29,6 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/malloc.h"
-#include "kudu/util/memenv/memenv.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -419,20 +418,18 @@ static void WriteTestFile(Env* env, const string& path, size_t size) {
   ASSERT_OK(wf->Close());
 }
 
-
-
 TEST_F(TestEnv, TestReadFully) {
   SeedRandom();
-  const string kTestPath = "test";
+  const string kTestPath = GetTestPath("test");
   const int kFileSize = 64 * 1024;
-  gscoped_ptr<Env> mem(NewMemEnv(Env::Default()));
+  Env* env = Env::Default();
 
-  WriteTestFile(mem.get(), kTestPath, kFileSize);
+  WriteTestFile(env, kTestPath, kFileSize);
   ASSERT_NO_FATAL_FAILURE();
 
   // Reopen for read
   shared_ptr<RandomAccessFile> raf;
-  ASSERT_OK(env_util::OpenFileForRandom(mem.get(), kTestPath, &raf));
+  ASSERT_OK(env_util::OpenFileForRandom(env, kTestPath, &raf));
 
   ShortReadRandomAccessFile sr_raf(raf);
 
