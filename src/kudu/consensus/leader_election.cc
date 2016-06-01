@@ -18,6 +18,7 @@
 #include "kudu/consensus/leader_election.h"
 
 #include <boost/bind.hpp>
+#include <mutex>
 
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -182,7 +183,7 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
 }
 
 LeaderElection::~LeaderElection() {
-  lock_guard<Lock> guard(&lock_);
+  std::lock_guard<Lock> guard(lock_);
   DCHECK(has_responded_); // We must always call the callback exactly once.
   STLDeleteValues(&voter_state_);
 }
@@ -198,7 +199,7 @@ void LeaderElection::Run() {
   for (const std::string& voter_uuid : follower_uuids_) {
     VoterState* state = nullptr;
     {
-      lock_guard<Lock> guard(&lock_);
+      std::lock_guard<Lock> guard(lock_);
       state = FindOrDie(voter_state_, voter_uuid);
       // Safe to drop the lock because voter_state_ is not mutated outside of
       // the constructor / destructor. We do this to avoid deadlocks below.
@@ -211,7 +212,7 @@ void LeaderElection::Run() {
                                << voter_uuid << ": " << state->proxy_status.ToString()
                                << ". Counting it as a 'NO' vote.";
       {
-        lock_guard<Lock> guard(&lock_);
+        std::lock_guard<Lock> guard(lock_);
         RecordVoteUnlocked(voter_uuid, VOTE_DENIED);
       }
       CheckForDecision();
@@ -239,7 +240,7 @@ void LeaderElection::Run() {
 void LeaderElection::CheckForDecision() {
   bool to_respond = false;
   {
-    lock_guard<Lock> guard(&lock_);
+    std::lock_guard<Lock> guard(lock_);
     // Check if the vote has been newly decided.
     if (!result_ && vote_counter_->IsDecided()) {
       ElectionVote decision;
@@ -266,7 +267,7 @@ void LeaderElection::CheckForDecision() {
 
 void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid) {
   {
-    lock_guard<Lock> guard(&lock_);
+    std::lock_guard<Lock> guard(lock_);
     VoterState* state = FindOrDie(voter_state_, voter_uuid);
 
     // Check for RPC errors.

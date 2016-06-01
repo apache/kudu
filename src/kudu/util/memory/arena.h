@@ -26,18 +26,20 @@
 #include <boost/signals2/dummy_mutex.hpp>
 #include <glog/logging.h>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <stddef.h>
 #include <string.h>
 #include <vector>
 
 #include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/alignment.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/memory/memory.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/slice.h"
 
 using std::allocator;
@@ -426,7 +428,7 @@ inline uint8_t *ArenaBase<false>::Component::AllocateBytesAligned(
 template <bool THREADSAFE>
 inline void ArenaBase<THREADSAFE>::Component::AsanUnpoison(const void* addr, size_t size) {
 #ifdef ADDRESS_SANITIZER
-  lock_guard<spinlock_type> l(&asan_lock_);
+  std::lock_guard<spinlock_type> l(asan_lock_);
   ASAN_UNPOISON_MEMORY_REGION(addr, size);
 #endif
 }

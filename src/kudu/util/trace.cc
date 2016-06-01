@@ -21,6 +21,7 @@
 #include <ios>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <string>
 #include <strstream>
 #include <utility>
@@ -106,7 +107,7 @@ TraceEntry* Trace::NewEntry(int msg_len, const char* file_path, int line_number)
 }
 
 void Trace::AddEntry(TraceEntry* entry) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   entry->next = nullptr;
 
   if (entries_tail_ != nullptr) {
@@ -126,7 +127,7 @@ void Trace::Dump(std::ostream* out, int flags) const {
   vector<TraceEntry*> entries;
   vector<pair<StringPiece, scoped_refptr<Trace>>> child_traces;
   {
-    lock_guard<simple_spinlock> l(&lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
     for (TraceEntry* cur = entries_head_;
          cur != nullptr;
          cur = cur->next) {
@@ -241,13 +242,13 @@ void Trace::DumpCurrentTrace() {
 void Trace::AddChildTrace(StringPiece label, Trace* child_trace) {
   CHECK(arena_->RelocateStringPiece(label, &label));
 
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   scoped_refptr<Trace> ptr(child_trace);
   child_traces_.emplace_back(label, ptr);
 }
 
 std::vector<std::pair<StringPiece, scoped_refptr<Trace>>> Trace::ChildTraces() const {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   return child_traces_;
 }
 

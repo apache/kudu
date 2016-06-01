@@ -23,6 +23,7 @@
 #include <limits>
 #include <list>
 #include <memory>
+#include <mutex>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/once.h"
@@ -461,7 +462,7 @@ bool MemTracker::GcMemory(int64_t max_consumption) {
     return true;
   }
 
-  lock_guard<simple_spinlock> l(&gc_lock_);
+  std::lock_guard<simple_spinlock> l(gc_lock_);
   if (!consumption_func_.empty()) {
     UpdateConsumption();
   }

@@ -15,14 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/test_graph.h"
+
 #include <glog/logging.h>
+#include <mutex>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
-#include "kudu/util/test_graph.h"
 #include "kudu/util/thread.h"
 
 using std::shared_ptr;
@@ -31,17 +33,17 @@ using std::string;
 namespace kudu {
 
 void TimeSeries::AddValue(double val) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   val_ += val;
 }
 
 void TimeSeries::SetValue(double val) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   val_ = val;
 }
 
 double TimeSeries::value() const {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   return val_;
 }
 

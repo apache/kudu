@@ -18,6 +18,7 @@
 #define KUDU_TABLET_MVCC_H
 
 #include <gtest/gtest_prod.h>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -367,7 +368,7 @@ class MvccManager {
   void AdvanceEarliestInFlightTimestamp();
 
   int GetNumWaitersForTests() const {
-    lock_guard<simple_spinlock> l(&lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
     return waiters_.size();
   }
 

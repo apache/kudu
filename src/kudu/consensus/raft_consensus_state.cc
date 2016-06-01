@@ -78,48 +78,48 @@ Status ReplicaState::StartUnlocked(const OpId& last_id_in_wal) {
 
 Status ReplicaState::LockForStart(UniqueLock* lock) const {
   ThreadRestrictions::AssertWaitAllowed();
-  UniqueLock l(&update_lock_);
+  UniqueLock l(update_lock_);
   CHECK_EQ(state_, kInitialized) << "Illegal state for Start()."
       << " Replica is not in kInitialized state";
-  lock->swap(&l);
+  lock->swap(l);
   return Status::OK();
 }
 
 Status ReplicaState::LockForRead(UniqueLock* lock) const {
   ThreadRestrictions::AssertWaitAllowed();
-  UniqueLock l(&update_lock_);
-  lock->swap(&l);
+  UniqueLock l(update_lock_);
+  lock->swap(l);
   return Status::OK();
 }
 
 Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) const {
   ThreadRestrictions::AssertWaitAllowed();
   DCHECK(!msg.has_id()) << "Should not have an ID yet: " << msg.ShortDebugString();
-  UniqueLock l(&update_lock_);
+  UniqueLock l(update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
   }
 
   RETURN_NOT_OK(CheckActiveLeaderUnlocked());
-  lock->swap(&l);
+  lock->swap(l);
   return Status::OK();
 }
 
 Status ReplicaState::LockForCommit(UniqueLock* lock) const {
   TRACE_EVENT0("consensus", "ReplicaState::LockForCommit");
   ThreadRestrictions::AssertWaitAllowed();
-  UniqueLock l(&update_lock_);
+  UniqueLock l(update_lock_);
   if (PREDICT_FALSE(state_ != kRunning && state_ != kShuttingDown)) {
     return Status::IllegalState("Replica not in running state");
   }
-  lock->swap(&l);
+  lock->swap(l);
   return Status::OK();
 }
 
 Status ReplicaState::LockForMajorityReplicatedIndexUpdate(UniqueLock* lock) const {
   TRACE_EVENT0("consensus", "ReplicaState::LockForMajorityReplicatedIndexUpdate");
   ThreadRestrictions::AssertWaitAllowed();
-  UniqueLock l(&update_lock_);
+  UniqueLock l(update_lock_);
 
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
@@ -128,7 +128,7 @@ Status ReplicaState::LockForMajorityReplicatedIndexUpdate(UniqueLock* lock) cons
   if (PREDICT_FALSE(GetActiveRoleUnlocked() != RaftPeerPB::LEADER)) {
     return Status::IllegalState("Replica not LEADER");
   }
-  lock->swap(&l);
+  lock->swap(l);
   return Status::OK();
 }
 
@@ -151,38 +151,38 @@ Status ReplicaState::LockForConfigChange(UniqueLock* lock) const {
   TRACE_EVENT0("consensus", "ReplicaState::LockForConfigChange");
 
   ThreadRestrictions::AssertWaitAllowed();
-  UniqueLock l(&update_lock_);
+  UniqueLock l(update_lock_);
   // Can only change the config on running replicas.
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Unable to lock ReplicaState for config change",
                                 Substitute("State = $0", state_));
   }
-  lock->swap(&l);
+  lock->swap(l);
   return Status::OK();
 }
 
 Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
   TRACE_EVENT0("consensus", "ReplicaState::LockForUpdate");
   ThreadRestrictions::AssertWaitAllowed();
-  UniqueLock l(&update_lock_);
+  UniqueLock l(update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
   }
   if (!IsRaftConfigVoter(peer_uuid_, ConsensusStateUnlocked(CONSENSUS_CONFIG_ACTIVE).config())) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Allowing update even though not a member of the config";
   }
-  lock->swap(&l);
+  lock->swap(l);
   return Status::OK();
 }
 
 Status ReplicaState::LockForShutdown(UniqueLock* lock) {
   TRACE_EVENT0("consensus", "ReplicaState::LockForShutdown");
   ThreadRestrictions::AssertWaitAllowed();
-  UniqueLock l(&update_lock_);
+  UniqueLock l(update_lock_);
   if (state_ != kShuttingDown && state_ != kShutDown) {
     state_ = kShuttingDown;
   }
-  lock->swap(&l);
+  lock->swap(l);
   return Status::OK();
 }
 
@@ -366,7 +366,7 @@ int ReplicaState::GetNumPendingTxnsUnlocked() const {
 Status ReplicaState::CancelPendingTransactions() {
   {
     ThreadRestrictions::AssertWaitAllowed();
-    UniqueLock lock(&update_lock_);
+    UniqueLock lock(update_lock_);
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
@@ -723,7 +723,7 @@ ReplicaState::State ReplicaState::state() const {
 
 string ReplicaState::ToString() const {
   ThreadRestrictions::AssertWaitAllowed();
-  ReplicaState::UniqueLock lock(&update_lock_);
+  ReplicaState::UniqueLock lock(update_lock_);
   return ToStringUnlocked();
 }
 

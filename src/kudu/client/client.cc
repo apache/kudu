@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <boost/bind.hpp>
+#include <mutex>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -714,7 +715,7 @@ void KuduSession::FlushAsync(KuduStatusCallback* user_callback) {
   // Save off the old batcher.
   scoped_refptr<Batcher> old_batcher;
   {
-    lock_guard<simple_spinlock> l(&data_->lock_);
+    std::lock_guard<simple_spinlock> l(data_->lock_);
     data_->NewBatcher(shared_from_this(), &old_batcher);
     InsertOrDie(&data_->flushed_batchers_, old_batcher.get());
   }
@@ -726,7 +727,7 @@ void KuduSession::FlushAsync(KuduStatusCallback* user_callback) {
 }
 
 bool KuduSession::HasPendingOperations() const {
-  lock_guard<simple_spinlock> l(&data_->lock_);
+  std::lock_guard<simple_spinlock> l(data_->lock_);
   if (data_->batcher_->HasPendingOperations()) {
     return true;
   }
@@ -761,7 +762,7 @@ Status KuduSession::Apply(KuduWriteOperation* write_op) {
 }
 
 int KuduSession::CountBufferedOperations() const {
-  lock_guard<simple_spinlock> l(&data_->lock_);
+  std::lock_guard<simple_spinlock> l(data_->lock_);
   CHECK_EQ(data_->flush_mode_, MANUAL_FLUSH);
 
   return data_->batcher_->CountBufferedOperations();

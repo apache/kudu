@@ -16,6 +16,9 @@
 // under the License.
 
 #include "kudu/rpc/request_tracker.h"
+
+#include <mutex>
+
 #include "kudu/gutil/map-util.h"
 
 namespace kudu {
@@ -26,7 +29,7 @@ RequestTracker::RequestTracker(const string& client_id)
       next_(0) {}
 
 Status RequestTracker::NewSeqNo(SequenceNumber* seq_no) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   *seq_no = next_;
   InsertOrDie(&incomplete_rpcs_, *seq_no);
   next_++;
@@ -34,14 +37,14 @@ Status RequestTracker::NewSeqNo(SequenceNumber* seq_no) {
 }
 
 Status RequestTracker::FirstIncomplete(SequenceNumber* seq_no) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   if (incomplete_rpcs_.empty()) return Status::NotFound("There are no incomplete RPCs");
   *seq_no = *incomplete_rpcs_.begin();
   return Status::OK();
 }
 
 void RequestTracker::RpcCompleted(const SequenceNumber& seq_no) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   incomplete_rpcs_.erase(seq_no);
 }
 

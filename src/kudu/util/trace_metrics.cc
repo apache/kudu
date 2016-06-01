@@ -21,6 +21,7 @@
 #include <ctype.h>
 #include <glog/stl_logging.h>
 #include <map>
+#include <mutex>
 #include <string>
 
 #include "kudu/util/debug/leakcheck_disabler.h"
@@ -42,7 +43,7 @@ const char* TraceMetrics::InternName(const string& name) {
       << "not printable: " << name;
 
   debug::ScopedLeakCheckDisabler no_leakcheck;
-  lock_guard<simple_spinlock> l(&g_intern_map_lock);
+  std::lock_guard<simple_spinlock> l(g_intern_map_lock);
   if (g_intern_map == nullptr) {
     g_intern_map = new InternMap();
   }

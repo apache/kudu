@@ -231,74 +231,9 @@ class percpu_rwlock {
   padded_lock *locks_;
 };
 
-// Simpler version of std::lock_guard. Only supports the basic object
-// lifecycle and defers any error checking to the underlying mutex.
-template <typename Mutex>
-class lock_guard {
- public:
-  explicit lock_guard(Mutex* m)
-    : m_(DCHECK_NOTNULL(m)) {
-    m_->lock();
-  }
-
-  ~lock_guard() {
-    m_->unlock();
-  }
-
- private:
-  Mutex* m_;
-  DISALLOW_COPY_AND_ASSIGN(lock_guard<Mutex>);
-};
-
-// Simpler version of boost::unique_lock. Tracks lock acquisition and will
-// report attempts to double lock() or unlock().
-template <typename Mutex>
-class unique_lock {
- public:
-  unique_lock()
-    : locked_(false),
-      m_(NULL) {
-  }
-
-  explicit unique_lock(Mutex* m)
-    : locked_(true),
-      m_(m) {
-    m_->lock();
-  }
-
-  ~unique_lock() {
-    if (locked_) {
-      m_->unlock();
-      locked_ = false;
-    }
-  }
-
-  void lock() {
-    DCHECK(!locked_);
-    m_->lock();
-    locked_ = true;
-  }
-
-  void unlock() {
-    DCHECK(locked_);
-    m_->unlock();
-    locked_ = false;
-  }
-
-  void swap(unique_lock<Mutex>* other) {
-    DCHECK(other != NULL) << "The passed unique_lock is null";
-    std::swap(locked_, other->locked_);
-    std::swap(m_, other->m_);
-  }
-
- private:
-  bool locked_;
-  Mutex* m_;
-  DISALLOW_COPY_AND_ASSIGN(unique_lock<Mutex>);
-};
-
-// Simpler version of boost::shared_lock. Defers error checking to the
-// underlying mutex.
+// Simple implementation of the std::shared_lock API, which is not available in
+// the standard library until C++17. Defers error checking to the underlying
+// mutex.
 template <typename Mutex>
 class shared_lock {
  public:

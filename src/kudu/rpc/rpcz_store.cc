@@ -114,7 +114,7 @@ MethodSampler* RpczStore::SamplerForCall(InboundCall* call) {
 
   // If missing, create a new sampler for this method and try to insert it.
   unique_ptr<MethodSampler> ms(new MethodSampler());
-  lock_guard<percpu_rwlock> lock(&samplers_lock_);
+  std::lock_guard<percpu_rwlock> lock(samplers_lock_);
   auto it = method_samplers_.find(call->method_info());
   if (it != method_samplers_.end()) {
     return it->second.get();

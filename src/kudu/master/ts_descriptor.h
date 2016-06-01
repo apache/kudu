@@ -18,6 +18,7 @@
 #define KUDU_MASTER_TS_DESCRIPTOR_H
 
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -103,13 +104,13 @@ class TSDescriptor {
   // Set the number of live replicas (i.e. running or bootstrapping).
   void set_num_live_replicas(int n) {
     DCHECK_GE(n, 0);
-    lock_guard<simple_spinlock> l(&lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
     num_live_replicas_ = n;
   }
 
   // Return the number of live replicas (i.e running or bootstrapping).
   int num_live_replicas() const {
-    lock_guard<simple_spinlock> l(&lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
     return num_live_replicas_;
   }
 

@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -757,7 +758,7 @@ void KuduClient::Data::LeaderMasterDetermined(const Status& status,
 
   vector<StatusCallback> cbs;
   {
-    lock_guard<simple_spinlock> l(&leader_master_lock_);
+    std::lock_guard<simple_spinlock> l(leader_master_lock_);
     cbs.swap(leader_master_callbacks_);
     leader_master_rpc_.reset();
 
@@ -818,7 +819,7 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
   // in parallel, since the requests should end up with the same result.
   // Instead, we simply piggy-back onto the existing request by adding our own
   // callback to leader_master_callbacks_.
-  unique_lock<simple_spinlock> l(&leader_master_lock_);
+  std::unique_lock<simple_spinlock> l(leader_master_lock_);
   leader_master_callbacks_.push_back(cb);
   if (!leader_master_rpc_) {
     // No one is sending a request yet - we need to be the one to do it.
@@ -836,12 +837,12 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
 }
 
 HostPort KuduClient::Data::leader_master_hostport() const {
-  lock_guard<simple_spinlock> l(&leader_master_lock_);
+  std::lock_guard<simple_spinlock> l(leader_master_lock_);
   return leader_master_hostport_;
 }
 
 shared_ptr<master::MasterServiceProxy> KuduClient::Data::master_proxy() const {
-  lock_guard<simple_spinlock> l(&leader_master_lock_);
+  std::lock_guard<simple_spinlock> l(leader_master_lock_);
   return master_proxy_;
 }
 

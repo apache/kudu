@@ -16,6 +16,9 @@
 // under the License.
 
 #include "kudu/rpc/service_queue.h"
+
+#include <mutex>
+
 #include "kudu/util/logging.h"
 
 namespace kudu {
@@ -38,13 +41,13 @@ bool LifoServiceQueue::BlockingGet(std::unique_ptr<InboundCall>* out) {
   auto consumer = tl_consumer_;
   if (PREDICT_FALSE(!consumer)) {
     consumer = tl_consumer_ = new ConsumerState(this);
-    lock_guard<simple_spinlock> l(&lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
     consumers_.emplace_back(consumer);
   }
 
   while (true) {
     {
-      lock_guard<simple_spinlock> l(&lock_);
+      std::lock_guard<simple_spinlock> l(lock_);
       if (!queue_.empty()) {
         auto it = queue_.begin();
         out->reset(*it);
@@ -69,7 +72,7 @@ bool LifoServiceQueue::BlockingGet(std::unique_ptr<InboundCall>* out) {
 
 QueueStatus LifoServiceQueue::Put(InboundCall* call,
                                   boost::optional<InboundCall*>* evicted) {
-  unique_lock<simple_spinlock> l(&lock_);
+  std::unique_lock<simple_spinlock> l(lock_);
   if (PREDICT_FALSE(shutdown_)) {
     return QUEUE_SHUTDOWN;
   }
@@ -105,7 +108,7 @@ QueueStatus LifoServiceQueue::Put(InboundCall* call,
 }
 
 void LifoServiceQueue::Shutdown() {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   shutdown_ = true;
 
   // Post a nullptr to wake up any consumers which are waiting.
@@ -116,7 +119,7 @@ void LifoServiceQueue::Shutdown() {
 }
 
 bool LifoServiceQueue::empty() const {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   return queue_.empty();
 }
 
@@ -127,7 +130,7 @@ int LifoServiceQueue::max_size() const {
 std::string LifoServiceQueue::ToString() const {
   std::string ret;
 
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   for (const auto* t : queue_) {
     ret.append(t->ToString());
     ret.append("\n");

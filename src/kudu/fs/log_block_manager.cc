@@ -17,6 +17,8 @@
 
 #include "kudu/fs/log_block_manager.h"
 
+#include <mutex>
+
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/gutil/callback.h"
@@ -498,7 +500,7 @@ Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
 
   // It is invalid to punch a zero-size hole.
   if (length) {
-    lock_guard<Mutex> l(&data_writer_lock_);
+    std::lock_guard<Mutex> l(data_writer_lock_);
     // Round up to the nearest filesystem block so that the kernel will
     // actually reclaim disk space.
     //
@@ -513,7 +515,7 @@ Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
 Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
   DCHECK_GE(offset, 0);
 
-  lock_guard<Mutex> l(&data_writer_lock_);
+  std::lock_guard<Mutex> l(data_writer_lock_);
   return data_file_->Write(offset, data);
 }
 
@@ -525,7 +527,7 @@ Status LogBlockContainer::ReadData(int64_t offset, size_t length,
 }
 
 Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
-  lock_guard<Mutex> l(&metadata_pb_writer_lock_);
+  std::lock_guard<Mutex> l(metadata_pb_writer_lock_);
   return metadata_pb_writer_->Append(pb);
 }
 
@@ -533,18 +535,18 @@ Status LogBlockContainer::FlushData(int64_t offset, int64_t length) {
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
 
-  lock_guard<Mutex> l(&data_writer_lock_);
+  std::lock_guard<Mutex> l(data_writer_lock_);
   return data_file_->Flush(RWFile::FLUSH_ASYNC, offset, length);
 }
 
 Status LogBlockContainer::FlushMetadata() {
-  lock_guard<Mutex> l(&metadata_pb_writer_lock_);
+  std::lock_guard<Mutex> l(metadata_pb_writer_lock_);
   return metadata_pb_writer_->Flush();
 }
 
 Status LogBlockContainer::SyncData() {
   if (FLAGS_enable_data_block_fsync) {
-    lock_guard<Mutex> l(&data_writer_lock_);
+    std::lock_guard<Mutex> l(data_writer_lock_);
     return data_file_->Sync();
   }
   return Status::OK();
@@ -552,7 +554,7 @@ Status LogBlockContainer::SyncData() {
 
 Status LogBlockContainer::SyncMetadata() {
   if (FLAGS_enable_data_block_fsync) {
-    lock_guard<Mutex> l(&metadata_pb_writer_lock_);
+    std::lock_guard<Mutex> l(metadata_pb_writer_lock_);
     return metadata_pb_writer_->Sync();
   }
   return Status::OK();
@@ -1209,7 +1211,7 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
                                             &new_container));
     container = new_container.release();
     {
-      lock_guard<simple_spinlock> l(&lock_);
+      std::lock_guard<simple_spinlock> l(lock_);
       dirty_dirs_.insert(root_path);
       AddNewContainerUnlocked(container);
     }
@@ -1244,7 +1246,7 @@ Status LogBlockManager::OpenBlock(const BlockId& block_id,
                                   gscoped_ptr<ReadableBlock>* block) {
   scoped_refptr<LogBlock> lb;
   {
-    lock_guard<simple_spinlock> l(&lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
     lb = FindPtrOrNull(blocks_by_block_id_, block_id);
   }
   if (!lb) {
@@ -1304,7 +1306,7 @@ Status LogBlockManager::CloseBlocks(const std::vector<WritableBlock*>& blocks) {
 }
 
 int64_t LogBlockManager::CountBlocksForTests() const {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   return blocks_by_block_id_.size();
 }
 
@@ -1321,7 +1323,7 @@ void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {
 
 LogBlockContainer* LogBlockManager::GetAvailableContainer() {
   LogBlockContainer* container = nullptr;
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   if (!available_containers_.empty()) {
     container = available_containers_.front();
     available_containers_.pop_front();
@@ -1330,7 +1332,7 @@ LogBlockContainer* LogBlockManager::GetAvailableContainer() {
 }
 
 void LogBlockManager::MakeContainerAvailable(LogBlockContainer* container) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   MakeContainerAvailableUnlocked(container);
 }
 
@@ -1346,7 +1348,7 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
   Status s;
   bool to_sync = false;
   {
-    lock_guard<simple_spinlock> l(&lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
     to_sync = dirty_dirs_.erase(container.dir());
   }
 
@@ -1361,7 +1363,7 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
     // In the worst case (another block synced this container as we did),
     // we'll sync it again needlessly.
     if (!s.ok()) {
-      lock_guard<simple_spinlock> l(&lock_);
+      std::lock_guard<simple_spinlock> l(lock_);
       dirty_dirs_.insert(container.dir());
     }
   }
@@ -1373,7 +1375,7 @@ bool LogBlockManager::TryUseBlockId(const BlockId& block_id) {
     return false;
   }
 
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   if (ContainsKey(blocks_by_block_id_, block_id)) {
     return false;
   }
@@ -1384,7 +1386,7 @@ bool LogBlockManager::AddLogBlock(LogBlockContainer* container,
                                   const BlockId& block_id,
                                   int64_t offset,
                                   int64_t length) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   scoped_refptr<LogBlock> lb(new LogBlock(container, block_id, offset, length));
   mem_tracker_->Consume(kudu_malloc_usable_size(lb.get()));
 
@@ -1409,7 +1411,7 @@ bool LogBlockManager::AddLogBlockUnlocked(const scoped_refptr<LogBlock>& lb) {
 }
 
 scoped_refptr<LogBlock> LogBlockManager::RemoveLogBlock(const BlockId& block_id) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   scoped_refptr<LogBlock> result =
       EraseKeyReturnValuePtr(&blocks_by_block_id_, block_id);
   if (result) {
@@ -1509,7 +1511,7 @@ void LogBlockManager::OpenRootPath(const string& root_path,
     // Under the lock, merge this map into the main block map and add
     // the container.
     {
-      lock_guard<simple_spinlock> l(&lock_);
+      std::lock_guard<simple_spinlock> l(lock_);
       // To avoid cacheline contention during startup, we aggregate all of the
       // memory in a local and add it to the mem-tracker in a single increment
       // at the end of this loop.

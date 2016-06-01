@@ -17,6 +17,8 @@
 
 #include "kudu/client/session-internal.h"
 
+#include <mutex>
+
 #include "kudu/client/batcher.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/shared_ptr.h"
@@ -42,7 +44,7 @@ KuduSession::Data::~Data() {
 }
 
 void KuduSession::Data::Init(const shared_ptr<KuduSession>& session) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   CHECK(!batcher_);
   NewBatcher(session, NULL);
 }
@@ -65,7 +67,7 @@ void KuduSession::Data::NewBatcher(const shared_ptr<KuduSession>& session,
 }
 
 void KuduSession::Data::FlushFinished(Batcher* batcher) {
-  lock_guard<simple_spinlock> l(&lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   CHECK_EQ(flushed_batchers_.erase(batcher), 1);
 }
 
