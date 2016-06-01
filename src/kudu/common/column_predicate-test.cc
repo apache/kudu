@@ -296,11 +296,11 @@ TEST_F(TestColumnPredicate, TestInclusiveRange) {
     int32_t max = INT32_MAX;
 
     ASSERT_EQ(ColumnPredicate::Range(column, &zero, &three),
-              ColumnPredicate::InclusiveRange(column, &zero, &two, &arena));
+              *ColumnPredicate::InclusiveRange(column, &zero, &two, &arena));
     ASSERT_EQ(ColumnPredicate::Range(column, &zero, nullptr),
-              ColumnPredicate::InclusiveRange(column, &zero, &max, &arena));
+              *ColumnPredicate::InclusiveRange(column, &zero, &max, &arena));
 
-    ASSERT_EQ(boost::none, ColumnPredicate::InclusiveRange(column, nullptr, &max, &arena));
+    ASSERT_FALSE(ColumnPredicate::InclusiveRange(column, nullptr, &max, &arena));
   }
   {
     ColumnSchema column("c", INT32, true);
@@ -310,12 +310,12 @@ TEST_F(TestColumnPredicate, TestInclusiveRange) {
     int32_t max = INT32_MAX;
 
     ASSERT_EQ(ColumnPredicate::Range(column, &zero, &three),
-              ColumnPredicate::InclusiveRange(column, &zero, &two, &arena));
+              *ColumnPredicate::InclusiveRange(column, &zero, &two, &arena));
     ASSERT_EQ(ColumnPredicate::Range(column, &zero, nullptr),
-              ColumnPredicate::InclusiveRange(column, &zero, &max, &arena));
+              *ColumnPredicate::InclusiveRange(column, &zero, &max, &arena));
 
     ASSERT_EQ(ColumnPredicate::IsNotNull(column),
-              ColumnPredicate::InclusiveRange(column, nullptr, &max, &arena));
+              *ColumnPredicate::InclusiveRange(column, nullptr, &max, &arena));
   }
   {
     ColumnSchema column("c", STRING);
@@ -324,7 +324,7 @@ TEST_F(TestColumnPredicate, TestInclusiveRange) {
     Slice three("\0\0\0", 3);
 
     ASSERT_EQ(ColumnPredicate::Range(column, &zero, &three),
-              ColumnPredicate::InclusiveRange(column, &zero, &two, &arena));
+              *ColumnPredicate::InclusiveRange(column, &zero, &two, &arena));
   }
 }
 
