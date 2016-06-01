@@ -26,6 +26,7 @@ java/kudu-client/src/main/java/org/kududb/client/TabletClient.java
 java/kudu-client/src/test/resources/flags
 python/MANIFEST.in
 python/README.md
+python/pytest.ini
 python/requirements.txt
 python/setup.cfg
 src/kudu/client/symbols.map
