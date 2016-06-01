@@ -19,8 +19,9 @@
 #include <gflags/gflags.h>
 #include <glog/stl_logging.h>
 
-#include <vector>
 #include <algorithm>
+#include <memory>
+#include <vector>
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
@@ -77,8 +78,9 @@ METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetMasterRegi
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTabletLocations);
 
-using std::string;
 using std::set;
+using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -110,7 +112,7 @@ class ClientTest : public KuduTest {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
 
     // Reduce the TS<->Master heartbeat interval
@@ -127,20 +129,19 @@ class ClientTest : public KuduTest {
                      .Build(&client_));
 
     ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitRows(), &client_table_));
-    ASSERT_NO_FATAL_FAILURE(CreateTable(kTable2Name, 1, vector<const KuduPartialRow*>(),
-                                        &client_table2_));
+    ASSERT_NO_FATAL_FAILURE(CreateTable(kTable2Name, 1, {}, &client_table2_));
   }
 
   // Generate a set of split rows for tablets used in this test.
-  vector<const KuduPartialRow*> GenerateSplitRows() {
-    vector<const KuduPartialRow*> rows;
-    KuduPartialRow* row = schema_.NewRow();
+  vector<unique_ptr<KuduPartialRow>> GenerateSplitRows() {
+    vector<unique_ptr<KuduPartialRow>> rows;
+    unique_ptr<KuduPartialRow> row(schema_.NewRow());
     CHECK_OK(row->SetInt32(0, 9));
-    rows.push_back(row);
+    rows.push_back(std::move(row));
     return rows;
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (cluster_) {
       cluster_->Shutdown();
       cluster_.reset();
@@ -381,7 +382,7 @@ class ClientTest : public KuduTest {
   // (or single tablet if 'split_rows' is empty).
   void CreateTable(const string& table_name,
                    int num_replicas,
-                   const vector<const KuduPartialRow*>& split_rows,
+                   vector<unique_ptr<KuduPartialRow>> split_rows,
                    shared_ptr<KuduTable>* table) {
 
     bool added_replicas = false;
@@ -396,11 +397,14 @@ class ClientTest : public KuduTest {
     }
 
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    for (auto& split_row : split_rows) {
+      table_creator->add_range_split(split_row.release());
+    }
+
     ASSERT_OK(table_creator->table_name(table_name)
                             .schema(&schema_)
                             .num_replicas(num_replicas)
                             .set_range_partition_columns({ "key" })
-                            .split_rows(split_rows)
                             .Create());
 
     ASSERT_OK(client_->OpenTable(table_name, table));
@@ -609,15 +613,15 @@ TEST_F(ClientTest, TestScanAtFutureTimestamp) {
 TEST_F(ClientTest, TestScanMultiTablet) {
   // 5 tablets, each with 10 rows worth of space.
   gscoped_ptr<KuduPartialRow> row(schema_.NewRow());
-  vector<const KuduPartialRow*> rows;
+  vector<unique_ptr<KuduPartialRow>> rows;
   for (int i = 1; i < 5; i++) {
-    KuduPartialRow* row = schema_.NewRow();
+    unique_ptr<KuduPartialRow> row(schema_.NewRow());
     CHECK_OK(row->SetInt32(0, i * 10));
-    rows.push_back(row);
+    rows.push_back(std::move(row));
   }
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable("TestScanMultiTablet", 1, rows, &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable("TestScanMultiTablet", 1, std::move(rows), &table));
 
   // Insert rows with keys 12, 13, 15, 17, 22, 23, 25, 27...47 into each
   // tablet, except the first which is empty.
@@ -2292,10 +2296,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   const int kNumReplicas = 3;
 
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
-                                      kNumReplicas,
-                                      vector<const KuduPartialRow*>(),
-                                      &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable, kNumReplicas, {}, &table));
 
   // Insert some data.
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));

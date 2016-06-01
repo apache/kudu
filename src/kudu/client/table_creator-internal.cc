@@ -32,7 +32,6 @@ KuduTableCreator::Data::Data(KuduClient* client)
 }
 
 KuduTableCreator::Data::~Data() {
-  STLDeleteElements(&split_rows_);
 }
 
 } // namespace client

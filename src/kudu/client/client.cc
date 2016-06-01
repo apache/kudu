@@ -467,8 +467,15 @@ KuduTableCreator& KuduTableCreator::set_range_partition_columns(
   return *this;
 }
 
+KuduTableCreator& KuduTableCreator::add_range_split(KuduPartialRow* split_row) {
+  data_->range_splits_.emplace_back(split_row);
+  return *this;
+}
+
 KuduTableCreator& KuduTableCreator::split_rows(const vector<const KuduPartialRow*>& rows) {
-  data_->split_rows_ = rows;
+  for (const KuduPartialRow* row : rows) {
+    data_->range_splits_.emplace_back(const_cast<KuduPartialRow*>(row));
+  }
   return *this;
 }
 
@@ -512,7 +519,10 @@ Status KuduTableCreator::Create() {
 
   RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
 
-  for (const KuduPartialRow* row : data_->split_rows_) {
+  for (const auto& row : data_->range_splits_) {
+    if (!row) {
+      return Status::InvalidArgument("range split row must not be null");
+    }
     encoder.Add(RowOperationsPB::SPLIT_ROW, *row);
   }
   req.mutable_partition_schema()->CopyFrom(data_->partition_schema_);

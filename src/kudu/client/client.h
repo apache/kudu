@@ -352,16 +352,19 @@ class KUDU_EXPORT KuduTableCreator {
   // partitions.
   KuduTableCreator& set_range_partition_columns(const std::vector<std::string>& columns);
 
-  // Sets the rows on which to pre-split the table.
-  // The table creator takes ownership of the rows.
+  // Adds a range partition split at the provided row.
   //
-  // If any provided row is missing a value for any of the range partition
-  // columns, the logical minimum value for that column type will be used by
-  // default.
+  // The table creator takes ownership of the row.
   //
-  // If not provided, no range-based pre-splitting is performed.
+  // If the row is missing a value for any of the range partition columns, the
+  // logical minimum value for that column type will be used by default.
+  //
+  // If no range split rows are added, no range pre-splitting is performed.
   //
   // Optional.
+  KuduTableCreator& add_range_split(KuduPartialRow* split_row);
+
+  // DEPRECATED: use add_range_split
   KuduTableCreator& split_rows(const std::vector<const KuduPartialRow*>& split_rows);
 
   // Sets the number of replicas for each tablet in the table.

@@ -38,7 +38,7 @@ class KuduTableCreator::Data {
 
   const KuduSchema* schema_;
 
-  std::vector<const KuduPartialRow*> split_rows_;
+  std::vector<std::unique_ptr<KuduPartialRow>> range_splits_;
 
   PartitionSchemaPB partition_schema_;
 
