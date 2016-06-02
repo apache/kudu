@@ -123,8 +123,9 @@ message RequestIdPB {
   // Unset if there isn't an incomplete RPC.
   optional int64 first_incomplete_seq_no = 3;
 
-  // The number of times this RPC has been tried, only set after the first attempt.
-  optional int32 attempt_no = 4;
+  // The number of times this RPC has been tried.
+  // Set to 1 in the first attempt.
+  required int32 attempt_no = 4;
 }
 
 // The header for the RPC request frame.
