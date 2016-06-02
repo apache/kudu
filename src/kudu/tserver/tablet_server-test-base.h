@@ -109,14 +109,14 @@ class TabletServerTestBase : public KuduTest {
     mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"), 0));
     mini_server_->options()->master_addresses.clear();
     mini_server_->options()->master_addresses.push_back(HostPort("255.255.255.255", 1));
-    CHECK_OK(mini_server_->Start());
+    ASSERT_OK(mini_server_->Start());
 
     // Set up a tablet inside the server.
-    CHECK_OK(mini_server_->AddTestTablet(kTableId, kTabletId, schema_));
-    CHECK(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
+    ASSERT_OK(mini_server_->AddTestTablet(kTableId, kTabletId, schema_));
+    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
 
     // Creating a tablet is async, we wait here instead of having to handle errors later.
-    CHECK_OK(WaitForTabletRunning(kTabletId));
+    ASSERT_OK(WaitForTabletRunning(kTabletId));
 
     // Connect to it.
     ResetClientProxies();
@@ -125,7 +125,9 @@ class TabletServerTestBase : public KuduTest {
   Status WaitForTabletRunning(const char *tablet_id) {
     scoped_refptr<tablet::TabletPeer> tablet_peer;
     RETURN_NOT_OK(mini_server_->server()->tablet_manager()->GetTabletPeer(tablet_id, &tablet_peer));
-    return tablet_peer->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10));
+    RETURN_NOT_OK(tablet_peer->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
+    RETURN_NOT_OK(tablet_peer->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+    return Status::OK();
   }
 
   void UpdateTestRowRemote(int tid,
@@ -361,7 +363,6 @@ class TabletServerTestBase : public KuduTest {
     // Opening a tablet is async, we wait here instead of having to handle errors later.
     RETURN_NOT_OK(WaitForTabletRunning(kTabletId));
     return Status::OK();
-
   }
 
   // Verifies that a set of expected rows (key, value) is present in the tablet.

@@ -420,6 +420,20 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
   return Status::OK();
 }
 
+Status RaftConsensus::WaitUntilLeaderForTests(const MonoDelta& timeout) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+  while (role() != consensus::RaftPeerPB::LEADER) {
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    if (!now.ComesBefore(deadline)) {
+      return Status::TimedOut(Substitute("Peer $0 is not leader of tablet $1 after $2. Role: $3",
+                                         peer_uuid(), tablet_id(), timeout.ToString(), role()));
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  return Status::OK();
+}
+
 Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
   TRACE_EVENT0("consensus", "RaftConsensus::StepDown");
   ReplicaState::UniqueLock lock;

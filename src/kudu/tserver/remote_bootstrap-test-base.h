@@ -42,20 +42,20 @@ static const int kNumLogRolls = 2;
 class RemoteBootstrapTest : public TabletServerTestBase {
  public:
   virtual void SetUp() OVERRIDE {
-    TabletServerTestBase::SetUp();
-    StartTabletServer();
+    NO_FATALS(TabletServerTestBase::SetUp());
+    NO_FATALS(StartTabletServer());
     // Prevent logs from being deleted out from under us until / unless we want
     // to test that we are anchoring correctly. Since GenerateTestData() does a
     // Flush(), Log GC is allowed to eat the logs before we get around to
     // starting a remote bootstrap session.
     tablet_peer_->log_anchor_registry()->Register(
       MinimumOpId().index(), CURRENT_TEST_NAME(), &anchor_);
-    ASSERT_NO_FATAL_FAILURE(GenerateTestData());
+    NO_FATALS(GenerateTestData());
   }
 
   virtual void TearDown() OVERRIDE {
     ASSERT_OK(tablet_peer_->log_anchor_registry()->Unregister(&anchor_));
-    TabletServerTestBase::TearDown();
+    NO_FATALS(TabletServerTestBase::TearDown());
   }
 
  protected:

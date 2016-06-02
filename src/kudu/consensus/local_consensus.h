@@ -60,6 +60,8 @@ class LocalConsensus : public Consensus {
 
   virtual Status StartElection(ElectionMode mode) OVERRIDE { return Status::OK(); }
 
+  virtual Status WaitUntilLeaderForTests(const MonoDelta& timeout) OVERRIDE { return Status::OK(); }
+
   virtual Status Replicate(const scoped_refptr<ConsensusRound>& context) OVERRIDE;
 
   virtual RaftPeerPB::Role role() const OVERRIDE;

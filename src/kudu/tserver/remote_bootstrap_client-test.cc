@@ -35,7 +35,7 @@ using tablet::TabletStatusListener;
 class RemoteBootstrapClientTest : public RemoteBootstrapTest {
  public:
   virtual void SetUp() OVERRIDE {
-    RemoteBootstrapTest::SetUp();
+    NO_FATALS(RemoteBootstrapTest::SetUp());
 
     fs_manager_.reset(new FsManager(Env::Default(), GetTestPath("client_tablet")));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());

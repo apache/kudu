@@ -111,7 +111,7 @@ Status MiniTabletServer::Restart() {
 RaftConfigPB MiniTabletServer::CreateLocalConfig() const {
   CHECK(started_) << "Must Start()";
   RaftConfigPB config;
-  config.set_local(true);
+  config.set_local(false);
   RaftPeerPB* peer = config.add_peers();
   peer->set_permanent_uuid(server_->instance_pb().permanent_uuid());
   peer->set_member_type(RaftPeerPB::VOTER);

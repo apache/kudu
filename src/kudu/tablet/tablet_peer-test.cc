@@ -100,6 +100,8 @@ class TabletPeerTest : public KuduTabletTest {
 
     RaftPeerPB config_peer;
     config_peer.set_permanent_uuid(tablet()->metadata()->fs_manager()->uuid());
+    config_peer.mutable_last_known_addr()->set_host("0.0.0.0");
+    config_peer.mutable_last_known_addr()->set_port(0);
     config_peer.set_member_type(RaftPeerPB::VOTER);
 
     // "Bootstrap" and start the TabletPeer.
@@ -117,7 +119,7 @@ class TabletPeerTest : public KuduTabletTest {
     tablet_peer_->log_anchor_registry_ = tablet()->log_anchor_registry_;
 
     RaftConfigPB config;
-    config.set_local(true);
+    config.set_local(false);
     config.add_peers()->CopyFrom(config_peer);
     config.set_opid_index(consensus::kInvalidOpIdIndex);
 
@@ -143,7 +145,7 @@ class TabletPeerTest : public KuduTabletTest {
 
   Status StartPeer(const ConsensusBootstrapInfo& info) {
     RETURN_NOT_OK(tablet_peer_->Start(info));
-
+    RETURN_NOT_OK(tablet_peer_->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
     return Status::OK();
   }
 
