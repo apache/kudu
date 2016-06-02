@@ -44,9 +44,6 @@ using fs::CountingReadableBlock;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 
-// Test path to write delta file to (in in-memory environment)
-const char kTestPath[] = "/tmp/test";
-
 class TestDeltaFile : public KuduTest {
  public:
   TestDeltaFile() :
