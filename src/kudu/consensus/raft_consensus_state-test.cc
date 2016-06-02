@@ -47,9 +47,10 @@ class RaftConsensusStateTest : public KuduTest {
     ASSERT_OK(fs_manager_.Open());
 
     // Initialize test configuration.
-    config_.set_local(true);
-    config_.add_peers()->set_permanent_uuid(fs_manager_.uuid());
     config_.set_opid_index(kInvalidOpIdIndex);
+    RaftPeerPB* peer = config_.add_peers();
+    peer->set_permanent_uuid(fs_manager_.uuid());
+    peer->set_member_type(RaftPeerPB::VOTER);
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),

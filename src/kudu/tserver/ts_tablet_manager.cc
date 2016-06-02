@@ -250,13 +250,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         RaftConfigPB config,
                                         scoped_refptr<TabletPeer>* tablet_peer) {
   CHECK_EQ(state(), MANAGER_RUNNING);
-
-  // If the consensus configuration is specified to use local consensus, verify that the peer
-  // matches up with our local info.
-  if (config.local()) {
-    CHECK_EQ(1, config.peers_size());
-    CHECK_EQ(server_->instance_pb().permanent_uuid(), config.peers(0).permanent_uuid());
-  }
+  CHECK(IsRaftConfigMember(server_->instance_pb().permanent_uuid(), config));
 
   // Set the initial opid_index for a RaftConfigPB to -1.
   config.set_opid_index(consensus::kInvalidOpIdIndex);

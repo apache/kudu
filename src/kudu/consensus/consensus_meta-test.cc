@@ -54,9 +54,10 @@ class ConsensusMetadataTest : public KuduTest {
     ASSERT_OK(fs_manager_.Open());
 
     // Initialize test configuration.
-    config_.set_local(true);
-    config_.add_peers()->set_permanent_uuid(fs_manager_.uuid());
     config_.set_opid_index(kInvalidOpIdIndex);
+    RaftPeerPB* peer = config_.add_peers();
+    peer->set_permanent_uuid(fs_manager_.uuid());
+    peer->set_member_type(RaftPeerPB::VOTER);
   }
 
  protected:
@@ -73,7 +74,6 @@ void ConsensusMetadataTest::AssertValuesEqual(const ConsensusMetadata& cmeta,
                                               const string& permanant_uuid,
                                               int64_t term) {
   // Sanity checks.
-  ASSERT_TRUE(cmeta.committed_config().local());
   ASSERT_EQ(1, cmeta.committed_config().peers_size());
 
   // Value checks.
@@ -134,7 +134,6 @@ TEST_F(ConsensusMetadataTest, TestFlush) {
 // Builds a distributed configuration of voters with the given uuids.
 RaftConfigPB BuildConfig(const vector<string>& uuids) {
   RaftConfigPB config;
-  config.set_local(false);
   for (const string& uuid : uuids) {
     RaftPeerPB* peer = config.add_peers();
     peer->set_permanent_uuid(uuid);

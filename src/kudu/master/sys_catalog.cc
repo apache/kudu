@@ -160,7 +160,6 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
     RETURN_NOT_OK_PREPEND(SetupDistributedConfig(master_->opts(), &config),
                           "Failed to initialize distributed config");
   } else {
-    config.set_local(true);
     config.set_opid_index(consensus::kInvalidOpIdIndex);
     RaftPeerPB* peer = config.add_peers();
     peer->set_permanent_uuid(fs_manager->uuid());
@@ -181,7 +180,6 @@ Status SysCatalogTable::SetupDistributedConfig(const MasterOptions& options,
   DCHECK(options.IsDistributed());
 
   RaftConfigPB new_config;
-  new_config.set_local(false);
   new_config.set_opid_index(consensus::kInvalidOpIdIndex);
 
   // Build the set of followers from our server options.

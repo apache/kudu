@@ -1072,9 +1072,7 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
 TEST_F(RaftConsensusITest, TestAutomaticLeaderElectionOneReplica) {
   FLAGS_num_tablet_servers = 1;
   FLAGS_num_replicas = 1;
-  vector<string> ts_flags;
-  vector<string> master_flags = { "--catalog_manager_allow_local_consensus=false" };
-  BuildAndStart(ts_flags, master_flags);
+  NO_FATALS(BuildAndStart());
   // Ensure that single-node Raft configs elect themselves as leader
   // immediately upon Consensus startup.
   ASSERT_OK(GetReplicaStatusAndCheckIfLeader(tablet_servers_[cluster_->tablet_server(0)->uuid()],

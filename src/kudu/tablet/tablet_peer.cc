@@ -26,7 +26,6 @@
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_meta.h"
-#include "kudu/consensus/local_consensus.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
@@ -83,7 +82,6 @@ using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusOptions;
 using consensus::ConsensusRound;
-using consensus::LocalConsensus;
 using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
@@ -155,25 +153,16 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     RETURN_NOT_OK(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id_,
                                           meta_->fs_manager()->uuid(), &cmeta));
 
-    if (cmeta->committed_config().local()) {
-      consensus_.reset(new LocalConsensus(options,
-                                          std::move(cmeta),
-                                          meta_->fs_manager()->uuid(),
-                                          clock_,
-                                          this,
-                                          log_.get()));
-    } else {
-      consensus_ = RaftConsensus::Create(options,
-                                         std::move(cmeta),
-                                         local_peer_pb_,
-                                         metric_entity,
-                                         clock_,
-                                         this,
-                                         messenger_,
-                                         log_.get(),
-                                         tablet_->mem_tracker(),
-                                         mark_dirty_clbk_);
-    }
+    consensus_ = RaftConsensus::Create(options,
+                                        std::move(cmeta),
+                                        local_peer_pb_,
+                                        metric_entity,
+                                        clock_,
+                                        this,
+                                        messenger_,
+                                        log_.get(),
+                                        tablet_->mem_tracker(),
+                                        mark_dirty_clbk_);
   }
 
   if (tablet_->metrics() != nullptr) {

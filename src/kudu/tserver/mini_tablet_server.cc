@@ -24,7 +24,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/local_consensus.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -111,7 +110,6 @@ Status MiniTabletServer::Restart() {
 RaftConfigPB MiniTabletServer::CreateLocalConfig() const {
   CHECK(started_) << "Must Start()";
   RaftConfigPB config;
-  config.set_local(false);
   RaftPeerPB* peer = config.add_peers();
   peer->set_permanent_uuid(server_->instance_pb().permanent_uuid());
   peer->set_member_type(RaftPeerPB::VOTER);

@@ -116,7 +116,6 @@ class RemoteBootstrapTest : public KuduTabletTest {
 
     // TODO similar to code in tablet_peer-test, consider refactor.
     RaftConfigPB config;
-    config.set_local(false);
     config.add_peers()->CopyFrom(config_peer);
     config.set_opid_index(consensus::kInvalidOpIdIndex);
 

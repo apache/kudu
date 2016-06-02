@@ -103,7 +103,6 @@ static inline void AppendReplicateMessagesToQueue(
 // Builds a configuration of 'num' voters.
 RaftConfigPB BuildRaftConfigPBForTests(int num) {
   RaftConfigPB raft_config;
-  raft_config.set_local(false);
   for (int i = 0; i < num; i++) {
     RaftPeerPB* peer_pb = raft_config.add_peers();
     peer_pb->set_member_type(RaftPeerPB::VOTER);

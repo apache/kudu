@@ -127,12 +127,6 @@ Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type) {
                    config.ShortDebugString()));
   }
 
-  if (!config.has_local()) {
-    return Status::IllegalState(
-        Substitute("RaftConfig must specify whether it is local. RaftConfig: ",
-                   config.ShortDebugString()));
-  }
-
   if (type == COMMITTED_QUORUM) {
     // Committed configurations must have 'opid_index' populated.
     if (!config.has_opid_index()) {
@@ -149,23 +143,6 @@ Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type) {
     }
   }
 
-  // Local configurations must have only one peer and it may or may not
-  // have an address.
-  if (config.local()) {
-    if (config.peers_size() != 1) {
-      return Status::IllegalState(
-          Substitute("Local configs must have 1 and only one peer. RaftConfig: ",
-                     config.ShortDebugString()));
-    }
-    if (!config.peers(0).has_permanent_uuid() ||
-        config.peers(0).permanent_uuid() == "") {
-      return Status::IllegalState(
-          Substitute("Local peer must have an UUID. RaftConfig: ",
-                     config.ShortDebugString()));
-    }
-    return Status::OK();
-  }
-
   for (const RaftPeerPB& peer : config.peers()) {
     if (!peer.has_permanent_uuid() || peer.permanent_uuid() == "") {
       return Status::IllegalState(Substitute("One peer didn't have an uuid or had the empty"
@@ -178,7 +155,7 @@ Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type) {
     }
     uuids.insert(peer.permanent_uuid());
 
-    if (!peer.has_last_known_addr()) {
+    if (config.peers_size() > 1 && !peer.has_last_known_addr()) {
       return Status::IllegalState(
           Substitute("Peer: $0 has no address. RaftConfig: $1",
                      peer.permanent_uuid(), config.ShortDebugString()));

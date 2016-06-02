@@ -60,7 +60,7 @@ reserved entry and a callback that will be invoked upon completion of
 the append. AsyncAppend method performs serialization and copying
 outside of the lock.
 
-For sample usage see local_consensus.cc and mt-log-test.cc.
+For sample usage see mt-log-test.cc.
 
 ### Group commit implementation details
 
