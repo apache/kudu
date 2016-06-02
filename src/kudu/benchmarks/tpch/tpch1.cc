@@ -81,6 +81,7 @@ DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
 DEFINE_int32(tpch_num_query_iterations, 1, "Number of times the query will be run.");
 DEFINE_int32(tpch_expected_matching_rows, 5916591, "Number of rows that should match the query.");
+DEFINE_bool(tpch_check_matching_rows, true, "Whether to check the number of matching rows.");
 DEFINE_bool(use_mini_cluster, true,
             "Create a mini cluster for the work to be performed against.");
 DEFINE_string(mini_cluster_base_dir, "/tmp/tpch",
@@ -231,7 +232,9 @@ void Tpch1(RpcLineItemDAO *dao) {
     delete maps;
     delete returnflag.slice.data();
   }
-  CHECK_EQ(matching_rows, FLAGS_tpch_expected_matching_rows) << "Wrong number of rows returned";
+  if (FLAGS_tpch_check_matching_rows) {
+    CHECK_EQ(matching_rows, FLAGS_tpch_expected_matching_rows) << "Wrong number of rows returned";
+  }
 }
 
 } // namespace kudu
@@ -246,7 +249,7 @@ int main(int argc, char **argv) {
   if (FLAGS_use_mini_cluster) {
     env.reset(new kudu::EnvWrapper(kudu::Env::Default()));
     kudu::Status s = env->CreateDir(FLAGS_mini_cluster_base_dir);
-    CHECK(s.IsAlreadyPresent() || s.ok());
+    CHECK(s.IsAlreadyPresent() || s.ok()) << s.ToString();
     kudu::MiniClusterOptions options;
     options.data_root = FLAGS_mini_cluster_base_dir;
     cluster.reset(new kudu::MiniCluster(env.get(), options));
