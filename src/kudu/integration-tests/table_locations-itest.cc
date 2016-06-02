@@ -154,7 +154,7 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
 
       if (resp.has_error()) {
         ASSERT_EQ(MasterErrorPB::TABLET_NOT_RUNNING, resp.error().code());
-        SleepFor(MonoDelta::FromMilliseconds(i * 100));
+        SleepFor(MonoDelta::FromMilliseconds(i * i * 100));
       } else {
         ASSERT_EQ(8, resp.tablet_locations().size());
         break;
