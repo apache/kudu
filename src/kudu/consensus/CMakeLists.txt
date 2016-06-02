@@ -138,6 +138,14 @@ ADD_KUDU_TEST(raft_consensus_quorum-test)
 ADD_KUDU_TEST(raft_consensus_state-test)
 ADD_KUDU_TEST(raft_consensus-test)
 
+# Our current version of gmock overrides virtual functions without adding
+# the 'override' keyword which, since our move to c++11, make the compiler
+# issue warnings. This suppresses those warnings.
+# TODO This problem has been resolved in recent versions of gtest/gmock (now
+# googletest). Remove this when we upgrade.
+set_source_files_properties(raft_consensus-test.cc
+    PROPERTIES COMPILE_FLAGS -Wno-inconsistent-missing-override)
+
 #Tools
 add_executable(log-dump log-dump.cc)
 target_link_libraries(log-dump
