@@ -18,6 +18,7 @@ package org.kududb.client;
 
 import org.kududb.Schema;
 import org.kududb.WireProtocol.AppStatusPB;
+import org.kududb.client.AsyncKuduClient.RemoteTablet;
 import org.kududb.tserver.Tserver.TabletServerErrorPB;
 
 import com.stumbleupon.async.Callback;
@@ -105,6 +106,45 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       }
     } finally {
       Batch.injectTabletServerErrorAndLatency(null, 0);
+    }
+  }
+
+  /**
+   * Regression test for case when tablet lookup error causes original RPC to get stuck.
+   * @throws Exception
+   */
+  @Test(timeout = 100000)
+  public void testGetTableLocationsErrorCauseSessionStuck() throws Exception {
+    AsyncKuduSession session = client.newSession();
+    // Make sure tablet locations is cached.
+    Insert insert = createInsert(1);
+    session.apply(insert).join(DEFAULT_SLEEP);
+    RemoteTablet rt = client.getTablet(table.getTableId(), insert.partitionKey());
+    String tabletId = rt.getTabletIdAsString();
+    TabletClient tc = client.clientFor(rt);
+    try {
+      // Delete table so we get table not found error.
+      client.deleteTable(TABLE_NAME).join();
+      // Wait until tablet is deleted on TS.
+      while (true) {
+        ListTabletsRequest req = new ListTabletsRequest();
+        tc.sendRpc(req);
+        ListTabletsResponse resp = req.getDeferred().join();
+        if (!resp.getTabletsList().contains(tabletId)) {
+          break;
+        }
+        Thread.sleep(100);
+      }
+      try {
+        session.apply(createInsert(1)).join(DEFAULT_SLEEP);
+        fail("Insert should not succeed");
+      } catch (MasterErrorException e) {
+        // Expect NOT_FOUND, because the table was deleted.
+      } catch (Throwable e) {
+        fail("Should not throw other error: " + e);
+      }
+    } finally {
+      table = createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
     }
   }
 

@@ -785,7 +785,8 @@ public class AsyncKuduClient implements AutoCloseable {
 
   /**
    * "Errback" used to delayed-retry a RPC if it fails due to no leader master being found.
-   * Other exceptions are passed through to be handled by the caller.
+   * Other exceptions are used to notify request RPC error, and passed through to be handled
+   * by the caller.
    * <p>
    * Use {@code AsyncUtil.addCallbacksDeferring} to add this as the "errback" and
    * {@link RetryRpcCB} as the callback to the {@code Deferred} returned by
@@ -805,14 +806,16 @@ public class AsyncKuduClient implements AutoCloseable {
       if (arg instanceof NoLeaderMasterFoundException) {
         // If we could not find the leader master, try looking up the leader master
         // again.
-        Deferred<R> d = request.getDeferred();
         // TODO: Handle the situation when multiple in-flight RPCs are queued waiting
         // for the leader master to be determine (either after a failure or at initialization
         // time). This could re-use some of the existing piping in place for non-master tablets.
         delayedSendRpcToTablet(request, (NoLeaderMasterFoundException) arg);
-        return d;
+      } else {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug(String.format("Notify RPC %s after lookup exception", request), arg);
+        }
+        request.errback(arg);
       }
-      // Pass all other exceptions through.
       return Deferred.fromError(arg);
     }
 
