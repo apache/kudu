@@ -133,10 +133,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // Waits that all replicas for a all tablets of 'kTableId' table are online
   // and creates the tablet_replicas_ map.
   void WaitForReplicasAndUpdateLocations() {
-    int num_retries = 0;
-
     bool replicas_missing = true;
-    do {
+    for (int num_retries = 0; replicas_missing && num_retries < kMaxRetries; num_retries++) {
       std::unordered_multimap<std::string, TServerDetails*> tablet_replicas;
       GetTableLocationsRequestPB req;
       GetTableLocationsResponsePB resp;
@@ -145,7 +143,14 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       controller.set_timeout(MonoDelta::FromSeconds(1));
       CHECK_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
       CHECK_OK(controller.status());
-      CHECK(!resp.has_error()) << "Response had an error: " << resp.error().ShortDebugString();
+      if (resp.has_error()) {
+        if (resp.error().code() == master::MasterErrorPB::TABLET_NOT_RUNNING) {
+          LOG(WARNING)<< "At least one tablet is not yet running";
+          SleepFor(MonoDelta::FromSeconds(1));
+          continue;
+        }
+        FAIL() << "Response had a fatal error: " << resp.error().ShortDebugString();
+      }
 
       for (const master::TabletLocationsPB& location : resp.tablet_locations()) {
         for (const master::TabletLocationsPB_ReplicaPB& replica : location.replicas()) {
@@ -158,7 +163,6 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
               << location.ShortDebugString();
           replicas_missing = true;
           SleepFor(MonoDelta::FromSeconds(1));
-          num_retries++;
           break;
         }
 
@@ -167,7 +171,29 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       if (!replicas_missing) {
         tablet_replicas_ = tablet_replicas;
       }
-    } while (replicas_missing && num_retries < kMaxRetries);
+    }
+
+    // GetTableLocations() does not guarantee that all replicas are actually
+    // running. Some may still be bootstrapping. Wait for them before
+    // returning.
+    //
+    // Just as with the above loop and its behavior once kMaxRetries is
+    // reached, the wait here is best effort only. That is, if the wait
+    // deadline expires, the resulting timeout failure is ignored.
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      ExternalTabletServer* ts = cluster_->tablet_server(i);
+      int expected_tablet_count = 0;
+      for (const auto& e : tablet_replicas_) {
+        if (ts->uuid() == e.second->uuid()) {
+          expected_tablet_count++;
+        }
+      }
+      LOG(INFO) << strings::Substitute(
+          "Waiting for $0 tablets on tserver $1 to finish bootstrapping",
+          expected_tablet_count, ts->uuid());
+      cluster_->WaitForTabletsRunning(ts, expected_tablet_count,
+                                      MonoDelta::FromSeconds(20));
+    }
   }
 
   // Returns the last committed leader of the consensus configuration. Tries to get it from master

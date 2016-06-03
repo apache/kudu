@@ -231,9 +231,15 @@ class ExternalMiniCluster {
   // Runs gtest assertions that no servers have crashed.
   void AssertNoCrashes();
 
-  // Wait until all tablets on the given tablet server are in 'RUNNING'
-  // state.
-  Status WaitForTabletsRunning(ExternalTabletServer* ts, const MonoDelta& timeout);
+  // Wait until all tablets on the given tablet server are in the RUNNING
+  // state. Returns Status::TimedOut if 'timeout' elapses and at least one
+  // tablet is not yet RUNNING.
+  //
+  // If 'min_tablet_count' is not -1, will also wait for at least that many
+  // RUNNING tablets to appear before returning (potentially timing out if that
+  // number is never reached).
+  Status WaitForTabletsRunning(ExternalTabletServer* ts, int min_tablet_count,
+                               const MonoDelta& timeout);
 
   // Create a client configured to talk to this cluster.
   // Builder may contain override options for the client. The master address will

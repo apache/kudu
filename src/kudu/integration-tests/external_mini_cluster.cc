@@ -333,6 +333,7 @@ void ExternalMiniCluster::AssertNoCrashes() {
 }
 
 Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
+                                                  int min_tablet_count,
                                                   const MonoDelta& timeout) {
   TabletServerServiceProxy proxy(messenger_, ts->bound_rpc_addr());
   ListTabletsRequestPB req;
@@ -348,14 +349,17 @@ Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
       return StatusFromPB(resp.error().status());
     }
 
-    int num_not_running = 0;
+    bool all_running = true;
     for (const StatusAndSchemaPB& status : resp.status_and_schema()) {
       if (status.tablet_status().state() != tablet::RUNNING) {
-        num_not_running++;
+        all_running = false;
       }
     }
 
-    if (num_not_running == 0) {
+    // We're done if:
+    // 1. All the tablets are running, and
+    // 2. We've observed as many tablets as we had expected or more.
+    if (all_running && resp.status_and_schema_size() >= min_tablet_count) {
       return Status::OK();
     }
 
