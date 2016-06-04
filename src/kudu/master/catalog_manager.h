@@ -557,7 +557,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   Status HandleTabletSchemaVersionReport(TabletInfo *tablet,
                                          uint32_t version);
 
-  // Send the create tablet requests to the selected peers of the consensus configurations.
+  // Send the "create tablet request" to all peers of a particular tablet.
+  //.
   // The creation is async, and at the moment there is no error checking on the
   // caller side. We rely on the assignment timeout. If we don't see the tablet
   // after the timeout, we regenerate a new one and proceed with a new
@@ -567,7 +568,10 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   //
   // This must be called after persisting the tablet state as
   // CREATING to ensure coherent state after Master failover.
-  void SendCreateTabletRequests(const std::vector<TabletInfo*>& tablets);
+  //
+  // The tablet lock must be acquired for reading before making this call.
+  void SendCreateTabletRequest(const scoped_refptr<TabletInfo>& tablet,
+                               const TabletMetadataLock& tablet_lock);
 
   // Send the "alter table request" to all tablets of the specified table.
   void SendAlterTableRequest(const scoped_refptr<TableInfo>& table);

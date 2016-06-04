@@ -2119,26 +2119,29 @@ class RetrySpecificTSRpcTask : public RetryingTSRpcTask {
 // consensus configuration information has been filled into the 'dirty' data.
 class AsyncCreateReplica : public RetrySpecificTSRpcTask {
  public:
+
+  // The tablet lock must be acquired for reading before making this call.
   AsyncCreateReplica(Master *master,
                      ThreadPool *callback_pool,
                      const string& permanent_uuid,
-                     const scoped_refptr<TabletInfo>& tablet)
+                     const scoped_refptr<TabletInfo>& tablet,
+                     const TabletMetadataLock& tablet_lock)
     : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, tablet->table().get()),
       tablet_id_(tablet->tablet_id()) {
     deadline_ = start_ts_;
     deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_tablet_creation_timeout_ms));
 
     TableMetadataLock table_lock(tablet->table().get(), TableMetadataLock::READ);
-    const SysTabletsEntryPB& tablet_pb = tablet->metadata().state().pb;
-
     req_.set_dest_uuid(permanent_uuid);
     req_.set_table_id(tablet->table()->id());
     req_.set_tablet_id(tablet->tablet_id());
-    req_.mutable_partition()->CopyFrom(tablet_pb.partition());
+    req_.mutable_partition()->CopyFrom(tablet_lock.data().pb.partition());
     req_.set_table_name(table_lock.data().pb.name());
     req_.mutable_schema()->CopyFrom(table_lock.data().pb.schema());
-    req_.mutable_partition_schema()->CopyFrom(table_lock.data().pb.partition_schema());
-    req_.mutable_config()->CopyFrom(tablet_pb.committed_consensus_state().config());
+    req_.mutable_partition_schema()->CopyFrom(
+        table_lock.data().pb.partition_schema());
+    req_.mutable_config()->CopyFrom(
+        tablet_lock.data().pb.committed_consensus_state().config());
   }
 
   virtual string type_name() const OVERRIDE { return "Create Tablet"; }
@@ -2809,12 +2812,16 @@ Status CatalogManager::ProcessPendingAssignments(
   // Send DeleteTablet requests to tablet servers serving deleted tablets.
   // This is asynchronous / non-blocking.
   for (TabletInfo* tablet : deferred.tablets_to_update) {
-    if (tablet->metadata().state().is_deleted()) {
-      SendDeleteTabletRequest(tablet, tablet->metadata().state().pb.state_msg());
+    TabletMetadataLock l(tablet, TabletMetadataLock::READ);
+    if (l.data().is_deleted()) {
+      SendDeleteTabletRequest(tablet, l.data().pb.state_msg());
     }
   }
   // Send the CreateTablet() requests to the servers. This is asynchronous / non-blocking.
-  SendCreateTabletRequests(deferred.needs_create_rpc);
+  for (TabletInfo* tablet : deferred.needs_create_rpc) {
+    TabletMetadataLock l(tablet, TabletMetadataLock::READ);
+    SendCreateTabletRequest(tablet, l);
+  }
   return Status::OK();
 }
 
@@ -2853,17 +2860,17 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
   return Status::OK();
 }
 
-void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets) {
-  for (TabletInfo *tablet : tablets) {
-    const consensus::RaftConfigPB& config =
-        tablet->metadata().state().pb.committed_consensus_state().config();
-    tablet->set_last_update_time(MonoTime::Now(MonoTime::FINE));
-    for (const RaftPeerPB& peer : config.peers()) {
-      AsyncCreateReplica* task = new AsyncCreateReplica(master_, worker_pool_.get(),
-                                                        peer.permanent_uuid(), tablet);
-      tablet->table()->AddTask(task);
-      WARN_NOT_OK(task->Run(), "Failed to send new tablet request");
-    }
+void CatalogManager::SendCreateTabletRequest(const scoped_refptr<TabletInfo>& tablet,
+                                             const TabletMetadataLock& tablet_lock) {
+  const consensus::RaftConfigPB& config =
+      tablet_lock.data().pb.committed_consensus_state().config();
+  tablet->set_last_update_time(MonoTime::Now(MonoTime::FINE));
+  for (const RaftPeerPB& peer : config.peers()) {
+    AsyncCreateReplica* task = new AsyncCreateReplica(master_, worker_pool_.get(),
+                                                      peer.permanent_uuid(),
+                                                      tablet, tablet_lock);
+    tablet->table()->AddTask(task);
+    WARN_NOT_OK(task->Run(), "Failed to send new tablet request");
   }
 }
 
