@@ -198,6 +198,11 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     return ret;
   }
 
+  // Insert 'num_rows' rows starting with row key 'start_row'.
+  // Each row will have size 'payload_size'. A short (100ms) timeout is
+  // used. If the flush generates any errors they will be ignored.
+  void InsertPayloadIgnoreErrors(int start_row, int num_rows, int payload_size);
+
   void InsertTestRowsRemoteThread(uint64_t first_row,
                                   uint64_t count,
                                   uint64_t num_batches,
@@ -2289,6 +2294,128 @@ TEST_F(RaftConsensusITest, TestSlowLeader) {
   workload.Setup();
   workload.Start();
   SleepFor(MonoDelta::FromSeconds(60));
+}
+
+void RaftConsensusITest::InsertPayloadIgnoreErrors(int start_row, int num_rows, int payload_size) {
+  shared_ptr<KuduTable> table;
+  CHECK_OK(client_->OpenTable(kTableId, &table));
+  shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(100);
+  CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  string payload(payload_size, 'x');
+  for (int i = 0; i < num_rows; i++) {
+    gscoped_ptr<KuduInsert> insert(table->NewInsert());
+    KuduPartialRow* row = insert->mutable_row();
+    CHECK_OK(row->SetInt32(0, i + start_row));
+    CHECK_OK(row->SetInt32(1, 0));
+    CHECK_OK(row->SetStringCopy(2, payload));
+    CHECK_OK(session->Apply(insert.release()));
+    ignore_result(session->Flush());
+  }
+}
+
+// Regression test for KUDU-1469, a case in which a leader and follower could get "stuck"
+// in a tight RPC loop, in which the leader would repeatedly send a batch of ops that the
+// follower already had, the follower would fully de-dupe them, and yet the leader would
+// never advance to the next batch.
+//
+// The 'perfect storm' reproduced here consists of:
+// - the commit index has fallen far behind due to a slow log on the leader
+//   and one of the three replicas being inaccessible
+// - the other replica elects itself
+// - before the old leader notices it has been ousted, it writes at least one more
+//   operation to its local log.
+// - before the replica can replicate anything to the old leader, it receives
+//   more writes, such that the first batch's preceding_op_id is ahead of
+//   the old leader's last written
+//
+// See the detailed comments below for more details.
+TEST_F(RaftConsensusITest, TestCommitIndexFarBehindAfterLeaderElection) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+
+  if (!AllowSlowTests()) return;
+
+  // Set the batch size low so that, after the new leader takes
+  // over below, the ops required to catch up from the committed index
+  // to the newly replicated index don't fit into a single batch.
+  BuildAndStart({"--consensus_max_batch_size_bytes=50000"});
+
+  // Get the leader and the two replica tablet servers.
+  // These will have the following roles in this test:
+  // 1) 'first_leader_ts' is the initial leader.
+  // 2) 'second_leader_ts' will be forced to be elected as the second leader
+  // 3) 'only_vote_ts' will simulate a heavily overloaded (or corrupted) TS
+  //     which is far enough behind (or failed) such that it only participates
+  //     by voting.
+  TServerDetails* leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+  ExternalTabletServer* first_leader_ts = cluster_->tablet_server_by_uuid(leader->uuid());
+  ExternalTabletServer* second_leader_ts = nullptr;
+  ExternalTabletServer* only_vote_ts = nullptr;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ExternalTabletServer* ts = cluster_->tablet_server(i);
+    if (ts->instance_id().permanent_uuid() != leader->uuid()) {
+      if (second_leader_ts == nullptr) {
+        second_leader_ts = ts;
+      } else {
+        only_vote_ts = ts;
+      }
+    }
+  }
+
+  // The 'only_vote' tablet server doesn't participate in replication.
+  ASSERT_OK(cluster_->SetFlag(only_vote_ts, "follower_reject_update_consensus_requests", "true"));
+
+  // Inject a long delay in the log of the first leader, and write 10 operations.
+  // This delay ensures that it will replicate them to both itself and its follower,
+  // but due to its log sync not completing, it won't know that it is safe to advance its
+  // commit index until long after it has lost its leadership.
+  ASSERT_OK(cluster_->SetFlag(first_leader_ts, "log_inject_latency_ms_mean", "6000"));
+  ASSERT_OK(cluster_->SetFlag(first_leader_ts, "log_inject_latency", "true"));
+  InsertPayloadIgnoreErrors(0, 10, 10000);
+
+  // Write one more operation to the leader, but disable consensus on the follower so that
+  // it doesn't get replicated.
+  ASSERT_OK(cluster_->SetFlag(
+      second_leader_ts, "follower_reject_update_consensus_requests", "true"));
+  InsertPayloadIgnoreErrors(10, 1, 10000);
+
+  // Pause the initial leader and wait for the replica to elect itself. The third TS participates
+  // here by voting.
+  first_leader_ts->Pause();
+  ASSERT_OK(WaitUntilLeader(tablet_servers_[second_leader_ts->uuid()], tablet_id_, kTimeout));
+
+  // The voter TS has done its duty. Shut it down to avoid log spam where it tries to run
+  // elections.
+  only_vote_ts->Shutdown();
+
+  // Perform one insert on the new leader. The new leader has not yet replicated its NO_OP to
+  // the old leader, since the old leader is still paused.
+  NO_FATALS(CreateClient(&client_));
+  InsertPayloadIgnoreErrors(13, 1, 10000);
+
+  // Now we expect to have the following logs:
+  //
+  // first_leader_ts         second_leader_ts
+  // -------------------     ------------
+  // 1.1  NO_OP      1.1     NO_OP
+  // 1.2  WRITE_OP   1.2     WRITE_OP
+  // ................................
+  // 1.11 WRITE_OP   1.11    WRITE_OP
+  // 1.12 WRITE_OP   2.12    NO_OP
+  //                 2.13    WRITE_OP
+  //
+  // Both servers should have a committed_idx of 1.1 since the log was delayed.
+
+  // Now, when we resume the original leader, we expect them to recover properly.
+  // Previously this triggered KUDU-1469.
+  first_leader_ts->Resume();
+
+  TabletServerMap active_tservers = tablet_servers_;
+  active_tservers.erase(only_vote_ts->uuid());
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(30),
+                                  active_tservers,
+                                  tablet_id_, 13));
 }
 
 // Run a regular workload with one follower that's writing to its WAL slowly.

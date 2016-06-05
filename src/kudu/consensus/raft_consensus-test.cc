@@ -685,8 +685,10 @@ TEST_F(RaftConsensusTest, TestResetRcvdFromCurrentLeaderOnNewTerm) {
   ASSERT_OPID_EQ(response.status().last_received_current_leader(),  noop_opid);
 
   // New leader heartbeat. Term increase to 2.
-  // Expect current term replicated to be nothing (MinimumOpId) but log
-  // replicated to be everything sent so far.
+  // The preceding_opid is the no-op replicated above. This will match on the
+  // follower side, so it can update its last_received_current_leader to
+  // the same operation (indicating to the queue that it doesn't need to re-replicate
+  // this operation).
   caller_term = 2;
   caller_uuid = config_.peers(1).permanent_uuid();
   preceding_opid = noop_opid;
@@ -696,7 +698,7 @@ TEST_F(RaftConsensusTest, TestResetRcvdFromCurrentLeaderOnNewTerm) {
   ASSERT_FALSE(response.status().has_error()) << response.ShortDebugString();
   ASSERT_EQ(caller_term, response.responder_term());
   ASSERT_OPID_EQ(response.status().last_received(), preceding_opid);
-  ASSERT_OPID_EQ(response.status().last_received_current_leader(), MinimumOpId());
+  ASSERT_OPID_EQ(response.status().last_received_current_leader(), preceding_opid);
 
   // Append a no-op.
   noop_opid = MakeOpId(caller_term, ++log_index);

@@ -560,6 +560,11 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       // the hope that doing so will result in a faster catch-up process.
       DCHECK_GE(peer->last_known_committed_idx, 0);
       peer->next_index = peer->last_known_committed_idx + 1;
+      LOG_WITH_PREFIX_UNLOCKED(INFO)
+          << "Peer " << peer_uuid << " log is divergent from this leader: "
+          << "its last log entry " << OpIdToString(status.last_received()) << " is not in "
+          << "this leader's log and it has not received anything from this leader yet. "
+          << "Falling back to committed index " << peer->last_known_committed_idx;
     }
 
     if (PREDICT_FALSE(status.has_error())) {
