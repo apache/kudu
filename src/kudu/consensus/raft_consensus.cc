@@ -1225,17 +1225,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // If any messages failed to be started locally, then we already have removed them
     // from 'deduped_req' at this point. So, we can simply update our last-received
     // watermark to the last message that remains in 'deduped_req'.
-    //
-    // It's possible that the leader didn't send us any new data -- it might be a completely
-    // duplicate request. In that case, we don't need to update LastReceived at all.
-    if (!deduped_req.messages.empty()) {
-      OpId last_appended = deduped_req.messages.back()->get()->id();
-      TRACE(Substitute("Updating last received op as $0", last_appended.ShortDebugString()));
-      state_->UpdateLastReceivedOpIdUnlocked(last_appended);
-    } else {
-      DCHECK_GE(state_->GetLastReceivedOpIdUnlocked().index(),
-                deduped_req.preceding_opid->index());
-    }
+    state_->UpdateLastReceivedOpIdUnlocked(last_from_leader);
 
     // Fill the response with the current state. We will not mutate anymore state until
     // we actually reply to the leader, we'll just wait for the messages to be durable.

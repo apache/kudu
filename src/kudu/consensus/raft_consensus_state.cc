@@ -645,13 +645,12 @@ Status ReplicaState::CheckHasCommittedOpInCurrentTermUnlocked() const {
 
 void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
   DCHECK(update_lock_.is_locked());
-  DCHECK_LE(OpIdCompare(last_received_op_id_, op_id), 0)
-    << "Previously received OpId: " << last_received_op_id_.ShortDebugString()
-    << ", updated OpId: " << op_id.ShortDebugString()
-    << ", Trace:" << std::endl << Trace::CurrentTrace()->DumpToString();
-  last_received_op_id_ = op_id;
-  last_received_op_id_current_leader_ = last_received_op_id_;
-  next_index_ = op_id.index() + 1;
+  if (OpIdCompare(op_id, last_received_op_id_) > 0) {
+    TRACE("Updating last received op as $0", OpIdToString(op_id));
+    last_received_op_id_ = op_id;
+    next_index_ = op_id.index() + 1;
+  }
+  last_received_op_id_current_leader_ = op_id;
 }
 
 const OpId& ReplicaState::GetLastReceivedOpIdUnlocked() const {

@@ -229,6 +229,12 @@ message ConsensusStatusPB {
   // (PRECEDING_ENTRY_DIDNT_MATCH), this field is important and may still be
   // set, since the leader queue uses this field in conjuction with
   // last_received to decide on the next id to send to the follower.
+  //
+  // NOTE: it might seem that the leader itself could track this based on knowing
+  // which batches were successfully sent. However, the follower is free to
+  // truncate the batch if an operation in the middle of the batch fails
+  // to prepare (eg due to memory limiting). In that case, the leader
+  // will get a success response but still need to re-send some operations.
   optional OpId last_received_current_leader = 4;
 
   // The last committed index that is known to the peer.

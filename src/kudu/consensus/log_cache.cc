@@ -304,8 +304,10 @@ Status LogCache::ReadOps(int64_t after_op_index,
           next_index, up_to, remaining_space, &raw_replicate_ptrs),
         Substitute("Failed to read ops $0..$1", next_index, up_to));
       l.lock();
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Successfully read " << raw_replicate_ptrs.size() << " ops "
-                            << "from disk.";
+      LOG_WITH_PREFIX_UNLOCKED(INFO)
+          << "Successfully read " << raw_replicate_ptrs.size() << " ops "
+          << "from disk (" << next_index << ".."
+          << (next_index + raw_replicate_ptrs.size() - 1) << ")";
 
       for (ReplicateMsg* msg : raw_replicate_ptrs) {
         CHECK_EQ(next_index, msg->id().index());

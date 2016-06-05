@@ -271,7 +271,10 @@ class ReplicaState {
   // Returns OK iff an op from the current term has been committed.
   Status CheckHasCommittedOpInCurrentTermUnlocked() const;
 
-  // Updates the last received operation.
+  // Updates the last received operation, if 'op_id''s index is higher than
+  // the previous last received. Also updates 'last_received_from_current_leader_'
+  // regardless of whether it is higher or lower than the prior value.
+  //
   // This must be called under a lock.
   void UpdateLastReceivedOpIdUnlocked(const OpId& op_id);
 
