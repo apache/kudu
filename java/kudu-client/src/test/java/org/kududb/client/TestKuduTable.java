@@ -48,34 +48,42 @@ public class TestKuduTable extends BaseKuduTest {
   public void testAlterTable() throws Exception {
     String tableName = BASE_TABLE_NAME + System.currentTimeMillis();
     createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    try {
 
-    // Add a col.
-    AlterTableOptions ato = new AlterTableOptions().addColumn("testaddint", Type.INT32, 4);
-    submitAlterAndCheck(ato, tableName);
+      // Add a col.
+      AlterTableOptions ato = new AlterTableOptions().addColumn("testaddint", Type.INT32, 4);
+      submitAlterAndCheck(ato, tableName);
 
-    // Rename that col.
-    ato = new AlterTableOptions().renameColumn("testaddint", "newtestaddint");
-    submitAlterAndCheck(ato, tableName);
+      // Rename that col.
+      ato = new AlterTableOptions().renameColumn("testaddint", "newtestaddint");
+      submitAlterAndCheck(ato, tableName);
 
-    // Delete it.
-    ato = new AlterTableOptions().dropColumn("newtestaddint");
-    submitAlterAndCheck(ato, tableName);
+      // Delete it.
+      ato = new AlterTableOptions().dropColumn("newtestaddint");
+      submitAlterAndCheck(ato, tableName);
 
-    String newTableName = tableName +"new";
+      String newTableName = tableName +"new";
 
-    // Rename our table.
-    ato = new AlterTableOptions().renameTable(newTableName);
-    submitAlterAndCheck(ato, tableName, newTableName);
+      // Rename our table.
+      ato = new AlterTableOptions().renameTable(newTableName);
+      submitAlterAndCheck(ato, tableName, newTableName);
 
-    // Rename it back.
-    ato = new AlterTableOptions().renameTable(tableName);
-    submitAlterAndCheck(ato, newTableName, tableName);
+      // Rename it back.
+      ato = new AlterTableOptions().renameTable(tableName);
+      submitAlterAndCheck(ato, newTableName, tableName);
 
-    // Try adding two columns, where one is nullable.
-    ato = new AlterTableOptions()
-        .addColumn("testaddmulticolnotnull", Type.INT32, 4)
-        .addNullableColumn("testaddmulticolnull", Type.STRING);
-    submitAlterAndCheck(ato, tableName);
+      // Try adding two columns, where one is nullable.
+      ato = new AlterTableOptions()
+          .addColumn("testaddmulticolnotnull", Type.INT32, 4)
+          .addNullableColumn("testaddmulticolnull", Type.STRING);
+      submitAlterAndCheck(ato, tableName);
+    } finally {
+      // Normally Java tests accumulate tables without issue, deleting them all
+      // when shutting down the mini cluster at the end of every test class.
+      // However, testGetLocations below expects a certain table count, so
+      // we'll delete our table to ensure there's no interaction between them.
+      syncClient.deleteTable(tableName);
+    }
   }
 
   /**
@@ -197,7 +205,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals(0, client.getTablesList(table1).join(DEFAULT_SLEEP).getTablesList().size());
     assertEquals(1, client.getTablesList(tableWithDefault)
                           .join(DEFAULT_SLEEP).getTablesList().size());
-    assertEquals(6, client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
+    assertEquals(5, client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
     assertFalse(client.getTablesList(tableWithDefault).
         join(DEFAULT_SLEEP).getTablesList().isEmpty());
 
