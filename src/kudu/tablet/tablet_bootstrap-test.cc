@@ -250,6 +250,30 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   }
 }
 
+// Regression test for KUDU-1477: we should successfully start up
+// even if a pending commit contains only failed operations.
+TEST_F(BootstrapTest, TestPendingFailedCommit) {
+  BuildLog();
+
+  OpId opid_1 = MakeOpId(1, current_index_++);
+  OpId opid_2 = MakeOpId(1, current_index_++);
+
+  // Step 2) Write the corresponding COMMIT in the second segment,
+  // with a status indicating that the writes had 'NotFound' results.
+  AppendReplicateBatch(opid_1);
+  AppendReplicateBatch(opid_2);
+  AppendCommitWithNotFoundOpResults(opid_2);
+
+  {
+    shared_ptr<Tablet> tablet;
+    ConsensusBootstrapInfo boot_info;
+
+    // Step 3) Apply the operations in the log to the tablet and flush
+    // the tablet to disk.
+    ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  }
+}
+
 // Tests this scenario:
 // Orphan COMMIT with id <= current mrs id, followed by a REPLICATE
 // message with mrs_id > current mrs_id, and a COMMIT message for that

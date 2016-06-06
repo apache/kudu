@@ -86,9 +86,7 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   work.Start();
 
   // Wait for the process to crash due to the injected fault.
-  while (cluster_->tablet_server(0)->IsProcessAlive()) {
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(30)));
 
   // Stop the writers.
   work.StopAndJoin();
@@ -103,6 +101,47 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   // allow reading while those are being replayed, which means we
   // can "go back in time" briefly. So, we have some retries here.
   // When KUDU-796 is fixed, remove the retries.
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckRowCountWithRetries(work.table_name(),
+                                       ClusterVerifier::AT_LEAST,
+                                       work.rows_inserted(),
+                                       MonoDelta::FromSeconds(20)));
+}
+
+// Regression test for KUDU-1477: a pending commit message would cause
+// bootstrap to fail if that message only included errors and no
+// successful operations.
+TEST_F(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
+  NO_FATALS(StartCluster());
+  cluster_->SetFlag(cluster_->tablet_server(0),
+                    "fault_crash_before_append_commit", "0.01");
+
+  // Set up the workload to write many duplicate rows, and with only
+  // one operation per batch. This means that by the time we crash
+  // it's likely that most of the recently appended commit messages
+  // are for failed insertions (dup key). We also use many threads
+  // to increase the probability that commits will be written
+  // out-of-order and trigger the bug.
+  TestWorkload work(cluster_.get());
+  work.set_num_replicas(1);
+  work.set_num_write_threads(20);
+  work.set_write_timeout_millis(100);
+  work.set_timeout_allowed(true);
+  work.set_write_batch_size(1);
+  work.set_write_pattern(TestWorkload::INSERT_WITH_MANY_DUP_KEYS);
+  work.Setup();
+  work.Start();
+
+  // Wait for the process to crash due to the injected fault.
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(10)));
+
+  // Stop the writers.
+  work.StopAndJoin();
+
+  // Restart the server, and it should recover.
+  cluster_->tablet_server(0)->Shutdown();
+  ASSERT_OK(cluster_->tablet_server(0)->Restart());
+
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckRowCountWithRetries(work.table_name(),
                                        ClusterVerifier::AT_LEAST,
@@ -137,10 +176,7 @@ TEST_F(TsRecoveryITest, TestCrashDuringLogReplay) {
   ignore_result(cluster_->tablet_server(0)->Restart());
 
   // Wait for the process to crash during log replay.
-  for (int i = 0; i < 3000 && cluster_->tablet_server(0)->IsProcessAlive(); i++) {
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-  ASSERT_FALSE(cluster_->tablet_server(0)->IsProcessAlive()) << "TS didn't crash!";
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(30)));
 
   // Now remove the crash flag, so the next replay will complete, and restart
   // the server once more.

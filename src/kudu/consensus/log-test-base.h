@@ -267,6 +267,25 @@ class LogTestBase : public KuduTest {
     AppendCommit(std::move(commit), sync);
   }
 
+  // Append a COMMIT message for 'original_opid', but with results
+  // indicating that the associated writes failed due to
+  // "NotFound" errors.
+  void AppendCommitWithNotFoundOpResults(const OpId& original_opid) {
+    gscoped_ptr<CommitMsg> commit(new CommitMsg);
+    commit->set_op_type(WRITE_OP);
+
+    commit->mutable_commited_op_id()->CopyFrom(original_opid);
+
+    TxResultPB* result = commit->mutable_result();
+
+    OperationResultPB* insert = result->add_ops();
+    StatusToPB(Status::NotFound("fake failed write"), insert->mutable_failed_status());
+    OperationResultPB* mutate = result->add_ops();
+    StatusToPB(Status::NotFound("fake failed write"), mutate->mutable_failed_status());
+
+    AppendCommit(std::move(commit));
+  }
+
   void AppendCommit(gscoped_ptr<CommitMsg> commit, bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;
