@@ -58,7 +58,6 @@ TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
     write_timeout_millis_(20000),
     timeout_allowed_(false),
     not_found_allowed_(false),
-    pathological_one_row_enabled_(false),
     num_replicas_(3),
     num_tablets_(1),
     table_name_(kDefaultTableName),
@@ -106,7 +105,7 @@ void TestWorkload::WriteThread() {
 
   while (should_run_.Load()) {
     for (int i = 0; i < write_batch_size_; i++) {
-      if (pathological_one_row_enabled_) {
+      if (write_pattern_ == UPDATE_ONE_ROW) {
         gscoped_ptr<KuduUpdate> update(table->NewUpdate());
         KuduPartialRow* row = update->mutable_row();
         CHECK_OK(row->SetInt32(0, 0));
@@ -115,7 +114,11 @@ void TestWorkload::WriteThread() {
       } else {
         gscoped_ptr<KuduInsert> insert(table->NewInsert());
         KuduPartialRow* row = insert->mutable_row();
-        CHECK_OK(row->SetInt32(0, r.Next()));
+        int32_t key = r.Next();
+        if (write_pattern_ == INSERT_WITH_MANY_DUP_KEYS) {
+          key %= kNumRowsForDuplicateKeyWorkload;
+        }
+        CHECK_OK(row->SetInt32(0, key));
         CHECK_OK(row->SetInt32(1, r.Next()));
         string test_payload("hello world");
         if (payload_bytes_ != 11) {
@@ -205,7 +208,7 @@ void TestWorkload::Setup() {
   }
 
 
-  if (pathological_one_row_enabled_) {
+  if (write_pattern_ == UPDATE_ONE_ROW) {
     shared_ptr<KuduSession> session = client_->NewSession();
     session->SetTimeoutMillis(20000);
     CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));

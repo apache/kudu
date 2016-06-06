@@ -2461,7 +2461,7 @@ TEST_F(RaftConsensusITest, TestHammerOneRow) {
 
   TestWorkload workload(cluster_.get());
   workload.set_table_name(kTableId);
-  workload.set_pathological_one_row_enabled(true);
+  workload.set_write_pattern(TestWorkload::UPDATE_ONE_ROW);
   workload.set_num_write_threads(20);
   workload.Setup();
   workload.Start();

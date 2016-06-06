@@ -257,9 +257,26 @@ class TabletBootstrap {
   Status FilterOperation(const OperationResultPB& op_result,
                          bool* already_flushed);
 
-  // Returns true if any of the memory stores referenced in 'commit' are still
-  // active, in which case the operation needs to be replayed.
-  bool AreAnyStoresActive(const CommitMsg& commit);
+  enum ActiveStores {
+    // The OperationResultPBs in the commit message do not reference any stores.
+    // This can happen in the case that the operations did not result in any mutations
+    // (e.g. because they were updates for not-found row keys).
+    NO_MUTATED_STORES,
+
+    // At least one operation resulted in a mutation to a store, but none of the
+    // mutated stores are still active. Therefore the operation does not need to
+    // be replayed.
+    NO_STORES_ACTIVE,
+
+    // At least one operation resulted in a mutation to a store, and at least
+    // one of those mutated stores is still active. This implies that the operation
+    // needs to be replayed.
+    SOME_STORES_ACTIVE
+  };
+
+  // For the given commit message, analyze which memory stores were mutated
+  // by the operation, returning one of the enum values above.
+  ActiveStores AnalyzeActiveStores(const CommitMsg& commit);
 
   void DumpReplayStateToLog(const ReplayState& state);
 
@@ -870,19 +887,27 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
   return Status::OK();
 }
 
-bool TabletBootstrap::AreAnyStoresActive(const CommitMsg& commit) {
+TabletBootstrap::ActiveStores TabletBootstrap::AnalyzeActiveStores(const CommitMsg& commit) {
+  bool has_mutated_stores = false;
+  bool has_active_stores = false;
+
   for (const OperationResultPB& op_result : commit.result().ops()) {
     for (const MemStoreTargetPB& mutated_store : op_result.mutated_stores()) {
+      has_mutated_stores = true;
       if (flushed_stores_.IsMemStoreActive(mutated_store)) {
-        return true;
+        has_active_stores = true;
       }
     }
   }
-  return false;
+
+  if (!has_mutated_stores) {
+    return NO_MUTATED_STORES;
+  }
+  return has_active_stores ? SOME_STORES_ACTIVE : NO_STORES_ACTIVE;
 }
 
 Status TabletBootstrap::CheckOrphanedCommitDoesntNeedReplay(const CommitMsg& commit) {
-  if (AreAnyStoresActive(commit)) {
+  if (AnalyzeActiveStores(commit) == SOME_STORES_ACTIVE) {
     TabletSuperBlockPB super;
     WARN_NOT_OK(meta_->ToSuperBlock(&super), LogPrefix() + "Couldn't build TabletSuperBlockPB");
     return Status::Corruption(Substitute("CommitMsg was orphaned but it referred to "
@@ -1085,8 +1110,9 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
         DumpReplayStateToLog(state);
         return Status::Corruption("Had orphaned commits at the end of replay.");
       }
+
       if (entry.second->commit().op_type() == WRITE_OP &&
-          !AreAnyStoresActive(entry.second->commit())) {
+          AnalyzeActiveStores(entry.second->commit()) == NO_STORES_ACTIVE) {
         DumpReplayStateToLog(state);
         TabletSuperBlockPB super;
         WARN_NOT_OK(meta_->ToSuperBlock(&super), "Couldn't build TabletSuperBlockPB.");

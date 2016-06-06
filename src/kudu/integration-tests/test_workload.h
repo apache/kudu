@@ -97,8 +97,25 @@ class TestWorkload {
     return table_name_;
   }
 
-  void set_pathological_one_row_enabled(bool enabled) {
-    pathological_one_row_enabled_ = enabled;
+  static const int kNumRowsForDuplicateKeyWorkload = 20;
+
+  enum WritePattern {
+    // The default: insert random row keys. This may cause an occasional
+    // duplicate, but with 32-bit keys, they won't be frequent.
+    INSERT_RANDOM_ROWS,
+
+    // All threads generate updates against a single row.
+    UPDATE_ONE_ROW,
+
+    // Insert rows in random order, but restricted to only
+    // kNumRowsForDuplicateKeyWorkload unique keys. This ensures that,
+    // after a very short initial warm-up period, all inserts fail with
+    // duplicate keys.
+    INSERT_WITH_MANY_DUP_KEYS
+  };
+
+  void set_write_pattern(WritePattern pattern) {
+    write_pattern_ = pattern;
   }
 
   // Sets up the internal client and creates the table which will be used for
@@ -139,7 +156,7 @@ class TestWorkload {
   int write_timeout_millis_;
   bool timeout_allowed_;
   bool not_found_allowed_;
-  bool pathological_one_row_enabled_;
+  WritePattern write_pattern_ = INSERT_RANDOM_ROWS;
 
   int num_replicas_;
   int num_tablets_;
