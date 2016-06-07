@@ -128,6 +128,7 @@ public class AsyncKuduClient implements AutoCloseable {
   public static final long NO_TIMESTAMP = -1;
   public static final long DEFAULT_OPERATION_TIMEOUT_MS = 30000;
   public static final long DEFAULT_SOCKET_READ_TIMEOUT_MS = 10000;
+  private static final long MAX_RPC_ATTEMPTS = 100;
 
   private final ClientSocketChannelFactory channelFactory;
 
@@ -984,7 +985,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * already.
    */
   static boolean cannotRetryRequest(final KuduRpc<?> rpc) {
-    return rpc.deadlineTracker.timedOut() || rpc.attempt > 100;  // TODO Don't hardcode.
+    return rpc.deadlineTracker.timedOut() || rpc.attempt > MAX_RPC_ATTEMPTS;
   }
 
   /**
@@ -997,10 +998,10 @@ public class AsyncKuduClient implements AutoCloseable {
   static <R> Deferred<R> tooManyAttemptsOrTimeout(final KuduRpc<R> request,
                                                   final KuduException cause) {
     String message;
-    if (request.deadlineTracker.timedOut()) {
-      message = "Time out: ";
-    } else {
+    if (request.attempt > MAX_RPC_ATTEMPTS) {
       message = "Too many attempts: ";
+    } else {
+      message = "RPC can not complete before timeout: ";
     }
     final Exception e = new NonRecoverableException(message + request, cause);
     request.errback(e);
