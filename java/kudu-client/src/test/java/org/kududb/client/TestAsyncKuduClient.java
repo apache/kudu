@@ -28,10 +28,13 @@ import org.junit.Test;
 import org.kududb.Common;
 import org.kududb.consensus.Metadata;
 import org.kududb.master.Master;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.junit.Assert.*;
 
 public class TestAsyncKuduClient extends BaseKuduTest {
+  private static final Logger LOG = LoggerFactory.getLogger(TestAsyncKuduClient.class);
 
   private static final String TABLE_NAME =
       TestAsyncKuduClient.class.getName() + "-" + System.currentTimeMillis();
@@ -51,12 +54,11 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     // 1. Warm up the cache.
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
 
-    // 2. Disconnect the TabletClient.
+    // 2. Disconnect the client.
     disconnectAndWait();
 
     // 3. Count again, it will trigger a re-connection and we should not hang or fail to scan.
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
-
 
     // Test that we can reconnect to a TS while scanning.
     // 1. Insert enough rows to have to call next() multiple times.
@@ -79,7 +81,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     assertNotEquals("The TS sent all the rows back, we can't properly test disconnection",
         rowCount, numRows);
 
-    // 4. Disconnect the TS.
+    // 4. Disconnect the client.
     disconnectAndWait();
 
     // 5. Make sure that we can continue scanning and that we get the remaining rows back.
@@ -87,17 +89,18 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   }
 
   private void disconnectAndWait() throws InterruptedException {
-    client.getTableClients().get(0).disconnect();
+    for (TabletClient tabletClient : client.getTabletClients()) {
+      tabletClient.disconnect();
+    }
     Stopwatch sw = Stopwatch.createStarted();
     while (sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
-      if (!client.getTableClients().isEmpty()) {
+      if (!client.getTabletClients().isEmpty()) {
         Thread.sleep(50);
-        continue;
       } else {
         break;
       }
     }
-    assertTrue(client.getTableClients().isEmpty());
+    assertTrue(client.getTabletClients().isEmpty());
   }
 
   @Test

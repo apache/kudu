@@ -171,16 +171,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       final Channel chan = this.chan;  // Volatile read.
       if (chan != null) {  // Double check if we disconnected during encode().
         Channels.write(chan, serialized);
-      } else {
-        // The RPC was already added to rpcs_inflight so we don't need to fall down in the next big
-        // block of code, cleanup() will take care of it.
-        if (LOG.isDebugEnabled()) {
-          LOG.debug(getPeerUuidLoggingString() +
-              " connection was closed before sending rpcid {}, rpc=",
-              rpcid, rpc);
-        }
+        return;
       }
-      return;
     }
     boolean tryagain = false;
     boolean copyOfDead;
@@ -664,8 +656,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   private void cleanup(final Channel chan) {
     final ConnectionResetException exception =
         new ConnectionResetException(getPeerUuidLoggingString() + "Connection reset on " + chan);
-    for (Iterator<KuduRpc<?>> ite = rpcs_inflight.values().iterator(); ite
-        .hasNext();) {
+    for (Iterator<KuduRpc<?>> ite = rpcs_inflight.values().iterator(); ite.hasNext();) {
       KuduRpc<?> rpc = ite.next();
       failOrRetryRpc(rpc, exception);
       ite.remove();

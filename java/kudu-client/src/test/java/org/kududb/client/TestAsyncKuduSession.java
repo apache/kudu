@@ -20,7 +20,6 @@ import org.kududb.Schema;
 import org.kududb.WireProtocol.AppStatusPB;
 import org.kududb.tserver.Tserver.TabletServerErrorPB;
 
-import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import com.stumbleupon.async.TimeoutException;
@@ -270,7 +269,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     assertEquals(20, countRowsInScan(scanner));
 
     // Test removing the connection and then do a rapid set of inserts
-    client.getTableClients().get(0).shutdown().join(DEFAULT_SLEEP);
+    client.getTabletClients().get(0).shutdown().join(DEFAULT_SLEEP);
     session.setMutationBufferSpace(1);
     for (int i = 91; i < 101; i++) {
       try {

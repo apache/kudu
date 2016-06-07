@@ -174,12 +174,12 @@ public class ITClient extends BaseKuduTest {
      */
     private boolean disconnectNode() {
       try {
-        if (localAsyncClient.getTableClients().size() == 0) {
+        if (localAsyncClient.getTabletClients().size() == 0) {
           return true;
         }
 
-        int tsToDisconnect = random.nextInt(localAsyncClient.getTableClients().size());
-        localAsyncClient.getTableClients().get(tsToDisconnect).disconnect();
+        int tsToDisconnect = random.nextInt(localAsyncClient.getTabletClients().size());
+        localAsyncClient.getTabletClients().get(tsToDisconnect).disconnect();
 
       } catch (Exception e) {
         if (KEEP_RUNNING_LATCH.getCount() == 0) {

@@ -932,7 +932,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @return Copy of the current TabletClients list
    */
   @VisibleForTesting
-  List<TabletClient> getTableClients() {
+  List<TabletClient> getTabletClients() {
     synchronized (ip2client) {
       return new ArrayList<TabletClient>(ip2client.values());
     }
