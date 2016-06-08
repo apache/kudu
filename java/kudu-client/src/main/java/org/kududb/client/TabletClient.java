@@ -174,24 +174,31 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         return;
       }
     }
-    boolean tryagain = false;
-    boolean copyOfDead;
+    boolean tryAgain = false; // True when we notice we are about to get connected to the TS.
+    boolean failRpc = false; // True when the connection was closed while encoding.
     synchronized (this) {
-      copyOfDead = this.dead;
       // Check if we got connected while entering this synchronized block.
       if (chan != null) {
-        tryagain = true;
-      } else if (!copyOfDead) {
+        tryAgain = true;
+      // Check if we got disconnected.
+      } else if (dead) {
+        if (rpcs_inflight.isEmpty()) {
+          LOG.debug("rpcs_inflight is empty and this TabletClient is dead, will assume that this " +
+              "RPC was taken care of already {}", rpc);
+        } else {
+          failRpc = true;
+        }
+      } else {
         if (pending_rpcs == null) {
-          pending_rpcs = new ArrayList<KuduRpc<?>>();
+          pending_rpcs = new ArrayList<>();
         }
         pending_rpcs.add(rpc);
       }
     }
-    if (copyOfDead) {
+
+    if (failRpc) {
       failOrRetryRpc(rpc, new ConnectionResetException(null));
-      return;
-    } else if (tryagain) {
+    } else if (tryAgain) {
       // This recursion will not lead to a loop because we only get here if we
       // connected while entering the synchronized block above. So when trying
       // a second time,  we will either succeed to send the RPC if we're still
@@ -654,23 +661,27 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * all edits buffered will be re-scheduled.
    */
   private void cleanup(final Channel chan) {
-    final ConnectionResetException exception =
-        new ConnectionResetException(getPeerUuidLoggingString() + "Connection reset on " + chan);
-    for (Iterator<KuduRpc<?>> ite = rpcs_inflight.values().iterator(); ite.hasNext();) {
-      KuduRpc<?> rpc = ite.next();
-      failOrRetryRpc(rpc, exception);
-      ite.remove();
-    }
-
     final ArrayList<KuduRpc<?>> rpcs;
+
+    // The timing of this block is critical. If this TabletClient is 'dead' then it means that
+    // rpcs_inflight was emptied and that anything added to it after won't be handled and needs
+    // to be sent to failOrRetryRpc.
     synchronized (this) {
+      // Cleanup can be called multiple times, but we only want to run it once so that we don't
+      // clear up rpcs_inflight multiple times.
+      if (dead) {
+        return;
+      }
       dead = true;
-      rpcs = pending_rpcs;
+      rpcs = pending_rpcs == null ? new ArrayList<KuduRpc<?>>(rpcs_inflight.size()) : pending_rpcs;
+      rpcs.addAll(rpcs_inflight.values());
+      rpcs_inflight.clear();
       pending_rpcs = null;
     }
-    if (rpcs != null) {
-      failOrRetryRpcs(rpcs, exception);
-    }
+    final ConnectionResetException exception =
+        new ConnectionResetException(getPeerUuidLoggingString() + "Connection reset on " + chan);
+
+    failOrRetryRpcs(rpcs, exception);
   }
 
   /**
