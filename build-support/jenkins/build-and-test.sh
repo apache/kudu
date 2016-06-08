@@ -373,13 +373,13 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
   echo
   echo Fetching previously submitted dist-test results...
   echo ------------------------------------------------------------
-  if ! $DIST_TEST_HOME/client.py watch ; then
+  if ! $DIST_TEST_HOME/bin/client watch ; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Distributed tests failed\n'
   fi
   DT_DIR=$TEST_LOGDIR/dist-test-out
   rm -Rf $DT_DIR
-  $DIST_TEST_HOME/client.py fetch --artifacts -d $DT_DIR
+  $DIST_TEST_HOME/bin/client fetch --artifacts -d $DT_DIR
   # Fetching the artifacts expands each log into its own directory.
   # Move them back into the main log directory
   rm -f $DT_DIR/*zip
