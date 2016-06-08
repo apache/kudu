@@ -350,7 +350,7 @@ def submit_tasks(staging, options):
         "Set the DIST_TEST_HOME environment variable to the path to the dist_test directory. " \
         % DIST_TEST_HOME,
     raise OSError("Cannot find path to dist_test tools")
-  client_py_path = os.path.join(DIST_TEST_HOME, "client.py")
+  client_py_path = os.path.join(DIST_TEST_HOME, "bin", "client")
   try:
     cmd = [client_py_path, "submit"]
     if options.no_wait:
