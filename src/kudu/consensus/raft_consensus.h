@@ -289,6 +289,10 @@ class RaftConsensus : public Consensus,
   // that uses transactions, delegates to StartConsensusOnlyRoundUnlocked().
   Status StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg);
 
+  // Returns OK and sets 'single_voter' if this node is the only voter in the
+  // Raft configuration.
+  Status IsSingleVoterConfig(bool* single_voter) const;
+
   // Return header string for RequestVote log messages. The ReplicaState lock must be held.
   std::string GetRequestVoteLogPrefixUnlocked() const;
 
