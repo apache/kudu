@@ -216,7 +216,7 @@ on a version older than 7.0, the Red Hat Developer Toolset must be installed
 ----
 $ sudo yum install gcc gcc-c++ autoconf automake libtool \
   boost-static boost-devel cyrus-sasl-devel \
-  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb git
+  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb unzip redhat-lsb-core git
 ----
 
 . If building on RHEL or CentOS older than 7.0, install the Red Hat Developer
@@ -296,7 +296,7 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 
 sudo yum -y install gcc gcc-c++ autoconf automake libtool \
   boost-static boost-devel cyrus-sasl-devel \
-  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb git
+  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb unzip redhat-lsb-core git
 DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64.noarch.rpm
 DTLS_RPM_URL=https://www.softwarecollections.org/en/scls/rhscl/devtoolset-3/epel-6-x86_64/download/${DTLS_RPM}
 wget ${DTLS_RPM_URL} -O ${DTLS_RPM}
@@ -322,7 +322,7 @@ make -j4
 ----
 $ sudo apt-get install git autoconf automake libboost-thread-dev \
   libboost-system-dev curl gcc g++ libsasl2-dev libsasl2-modules \
-  libtool ntp patch pkg-config make rsync unzip vim-common gdb python
+  libtool ntp patch pkg-config make rsync unzip vim-common gdb python lsb-release
 ----
 
 . Optional: Install additional packages to build the documentation
@@ -386,7 +386,7 @@ the steps marked *Optional* above.
 
 sudo apt-get -y install git autoconf automake libboost-thread-dev \
   libboost-system-dev curl gcc g++ libsasl2-dev libsasl2-modules \
-  libtool ntp patch pkg-config make rsync unzip vim-common gdb python
+  libtool ntp patch pkg-config make rsync unzip vim-common gdb python lsb-release
 git clone https://github.com/apache/incubator-kudu kudu
 cd kudu
 thirdparty/build-if-necessary.sh
@@ -411,7 +411,7 @@ built alongside Kudu.
 +
 ----
 $ sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
-  gdb git libtool make ntp patch pkg-config python rsync unzip vim
+  gdb git libtool make ntp patch pkg-config python rsync unzip vim lsb-release
 ----
 
 . Install Boost.
@@ -475,7 +475,7 @@ the steps marked *Optional* above.
 #!/bin/bash
 
 sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
-  gdb git libtool make ntp patch pkg-config python rsync unzip vim
+  gdb git libtool make ntp patch pkg-config python rsync unzip vim lsb-release
 wget https://downloads.sourceforge.net/project/boost/boost/1.59.0/boost_1_59_0.tar.gz
 tar xzf boost_1_59_0.tar.gz
 pushd boost_1_59_0
