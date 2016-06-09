@@ -140,11 +140,11 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
 
   const Schema& schema = *CHECK_NOTNULL(row->schema());
   int pushed_predicates = 0;
-  // Tracks whether the last pushed predicate is an equality predicate.
+  // Tracks whether the last pushed predicate is an equality or InList predicate.
   const ColumnPredicate* final_predicate = nullptr;
 
   // Step 1: copy predicates into the row in key column order, stopping after
-  // the first range predicate.
+  // the first range or missing predicate.
 
   bool break_loop = false;
   for (auto col_idx_it = first; !break_loop && col_idx_it < last; std::advance(col_idx_it, 1)) {
@@ -173,6 +173,14 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
       case PredicateType::IsNotNull:
         break_loop = true;
         break;
+      case PredicateType::InList:
+        // Since the InList predicate is a sorted vector of values, the last
+        // value provides an inclusive upper bound that can be pushed.
+        DCHECK(!predicate->raw_values().empty());
+        memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_values().back(), size);
+        pushed_predicates++;
+        final_predicate = predicate;
+        break;
       case PredicateType::None:
         LOG(FATAL) << "NONE predicate can not be pushed into key";
     }
@@ -181,9 +189,10 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
   // If no predicates were pushed, no need to do any more work.
   if (pushed_predicates == 0) { return 0; }
 
-  // Step 2: If the final predicate is an equality predicate, increment the
-  // key to convert it to an exclusive upper bound.
-  if (final_predicate->predicate_type() == PredicateType::Equality) {
+  // Step 2: If the final predicate is an equality predicate or an InList predicate,
+  // increment the key to convert it to an exclusive upper bound.
+  if (final_predicate->predicate_type() == PredicateType::Equality
+      || final_predicate->predicate_type() == PredicateType::InList) {
     if (!IncrementKey(first, std::next(first, pushed_predicates), row, arena)) {
       // If the increment fails then this bound is is not constraining the keyspace.
       return 0;
@@ -227,6 +236,13 @@ int PushLowerBoundKeyPredicates(ColIdxIter first,
         break;
       case PredicateType::IsNotNull:
         break_loop = true;
+        break;
+      case PredicateType::InList:
+        // Since the InList predicate is a sorted vector of values, the first
+        // value provides an inclusive lower bound that can be pushed.
+        DCHECK(!predicate->raw_values().empty());
+        memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_values().front(), size);
+        pushed_predicates++;
         break;
       case PredicateType::None:
         LOG(FATAL) << "NONE predicate can not be pushed into key";

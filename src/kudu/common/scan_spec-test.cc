@@ -70,6 +70,21 @@ class TestScanSpec : public KuduTest {
     }
   }
 
+  template<class T>
+  void AddInPredicate(ScanSpec* spec, StringPiece col, const vector<T>& values) {
+    int idx = schema_.find_column(col);
+    CHECK(idx != Schema::kColumnNotFound);
+
+    vector<const void*> copied_values;
+    for (const auto& val : values) {
+      void* val_void = arena_.AllocateBytes(sizeof(val));
+      memcpy(val_void, &val, sizeof(val));
+      copied_values.push_back(val_void);
+    }
+
+    spec->AddPredicate(ColumnPredicate::InList(schema_.column(idx), &copied_values));
+  }
+
   // Set the lower bound of the spec to the provided row. The row must outlive
   // the spec.
   void SetLowerBound(ScanSpec* spec, const KuduPartialRow& row) {
@@ -318,6 +333,34 @@ TEST_F(CompositeIntKeysTest, TestIsNotNullPushdown) {
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
   EXPECT_EQ("`a` IS NOT NULL", spec.ToString(schema_));
+}
+
+// Test that IN list predicates get pushed into the primary key bounds.
+TEST_F(CompositeIntKeysTest, TestInListPushdown) {
+  ScanSpec spec;
+  AddInPredicate<int8_t>(&spec, "a", { 0, 10 });
+  AddInPredicate<int8_t>(&spec, "b", { 50, 100 });
+  SCOPED_TRACE(spec.ToString(schema_));
+  spec.OptimizeScan(schema_, &arena_, &pool_, true);
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=-128) AND "
+            "PK < (int8 a=10, int8 b=101, int8 c=-128) AND "
+            "`a` IN (0, 10) AND `b` IN (50, 100)",
+            spec.ToString(schema_));
+}
+
+// Test that IN list mixed with range predicates get pushed into the primary key
+// bounds.
+TEST_F(CompositeIntKeysTest, TestInListPushdownWithRange) {
+  ScanSpec spec;
+  AddPredicate<int8_t>(&spec, "a", GE, 10);
+  AddPredicate<int8_t>(&spec, "a", LE, 100);
+  AddInPredicate<int8_t>(&spec, "b", { 50, 100 });
+  SCOPED_TRACE(spec.ToString(schema_));
+  spec.OptimizeScan(schema_, &arena_, &pool_, true);
+  EXPECT_EQ("PK >= (int8 a=10, int8 b=50, int8 c=-128) AND "
+            "PK < (int8 a=101, int8 b=-128, int8 c=-128) AND "
+            "`b` IN (50, 100)",
+            spec.ToString(schema_));
 }
 
 // Tests that a scan spec without primary key bounds will not have predicates

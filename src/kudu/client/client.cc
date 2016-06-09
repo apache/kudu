@@ -52,6 +52,7 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -177,11 +178,11 @@ Status SetInternalSignalNumber(int signum) {
   return SetStackTraceSignal(signum);
 }
 
-std::string GetShortVersionString() {
+string GetShortVersionString() {
   return VersionInfo::GetShortVersionString();
 }
 
-std::string GetAllVersionInfo() {
+string GetAllVersionInfo() {
   return VersionInfo::GetAllVersionInfo();
 }
 
@@ -357,7 +358,7 @@ Status KuduClient::ListTables(vector<string>* tables,
 }
 
 Status KuduClient::TableExists(const string& table_name, bool* exists) {
-  std::vector<std::string> tables;
+  vector<string> tables;
   RETURN_NOT_OK(ListTables(&tables, table_name));
   for (const string& table : tables) {
     if (table == table_name) {
@@ -497,12 +498,12 @@ KuduTableCreator& KuduTableCreator::schema(const KuduSchema* schema) {
   return *this;
 }
 
-KuduTableCreator& KuduTableCreator::add_hash_partitions(const std::vector<std::string>& columns,
+KuduTableCreator& KuduTableCreator::add_hash_partitions(const vector<string>& columns,
                                                         int32_t num_buckets) {
   return add_hash_partitions(columns, num_buckets, 0);
 }
 
-KuduTableCreator& KuduTableCreator::add_hash_partitions(const std::vector<std::string>& columns,
+KuduTableCreator& KuduTableCreator::add_hash_partitions(const vector<string>& columns,
                                                         int32_t num_buckets, int32_t seed) {
   PartitionSchemaPB::HashBucketSchemaPB* bucket_schema =
     data_->partition_schema_.add_hash_bucket_schemas();
@@ -514,8 +515,7 @@ KuduTableCreator& KuduTableCreator::add_hash_partitions(const std::vector<std::s
   return *this;
 }
 
-KuduTableCreator& KuduTableCreator::set_range_partition_columns(
-    const std::vector<std::string>& columns) {
+KuduTableCreator& KuduTableCreator::set_range_partition_columns(const vector<string>& columns) {
   PartitionSchemaPB::RangeSchemaPB* range_schema =
     data_->partition_schema_.mutable_range_schema();
   range_schema->Clear();
@@ -719,6 +719,24 @@ KuduPredicate* KuduTable::NewComparisonPredicate(const Slice& col_name,
   }
 
   return new KuduPredicate(new ComparisonPredicateData(s->column(col_idx), op, value));
+}
+
+KuduPredicate* KuduTable::NewInListPredicate(const Slice& col_name,
+                                             vector<KuduValue*>* values) {
+  StringPiece name_sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
+  const Schema* s = data_->schema_.schema_;
+  int col_idx = s->find_column(name_sp);
+  if (col_idx == Schema::kColumnNotFound) {
+    // Since this function doesn't return an error, instead we create a special
+    // predicate that just returns the errors when we add it to the scanner.
+    //
+    // This makes the API more "fluent".
+    STLDeleteElements(values); // we always take ownership of 'values'.
+    delete values;
+    return new KuduPredicate(new ErrorPredicateData(
+      Status::NotFound("column not found", col_name)));
+  }
+  return new KuduPredicate(new InListPredicateData(s->column(col_idx), values));
 }
 
 ////////////////////////////////////////////////////////////

@@ -826,6 +826,32 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
                                         KuduPredicate::ComparisonOp op,
                                         KuduValue* value);
 
+  /// Create a new IN list predicate which can be used for scanners on this
+  /// table.
+  ///
+  /// The IN list predicate is used to specify a list of values that a column
+  /// must match. A row is filtered from the scan if the value of the column
+  /// does not equal any value from the list.
+  ///
+  /// The type of entries in the list must correspond to the type of the column
+  /// to which the predicate is to be applied. For example, if the given column
+  /// is any type of integer, the KuduValues should also be integers, with the
+  /// values in the valid range for the column type. No attempt is made to cast
+  /// between floating point and integer values, or numeric and string values.
+  ///
+  /// @param [in] col_name
+  ///   Name of the column to which the predicate applies.
+  /// @param [in] values
+  ///   Vector of values which the column will be matched against.
+  /// @return Raw pointer to an IN list predicate. The caller owns the predicate
+  ///   until it is passed into KuduScanner::AddConjunctPredicate(). The
+  ///   returned predicate takes ownership of the values vector and its
+  ///   elements. In the case of an error (e.g. an invalid column name), a
+  ///   non-NULL value is still returned. The error will be returned when
+  ///   attempting to add this predicate to a KuduScanner.
+  KuduPredicate* NewInListPredicate(const Slice& col_name,
+                                    std::vector<KuduValue*>* values);
+
   /// @return The KuduClient object associated with the table. The caller
   ///   should not free the returned pointer.
   KuduClient* client() const;

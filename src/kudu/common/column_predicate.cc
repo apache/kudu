@@ -17,6 +17,7 @@
 
 #include "kudu/common/column_predicate.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "kudu/common/key_util.h"
@@ -26,6 +27,7 @@
 #include "kudu/util/memory/arena.h"
 
 using std::move;
+using std::vector;
 
 namespace kudu {
 
@@ -39,6 +41,16 @@ ColumnPredicate::ColumnPredicate(PredicateType predicate_type,
       upper_(upper) {
 }
 
+ColumnPredicate::ColumnPredicate(PredicateType predicate_type,
+                                 ColumnSchema column,
+                                 vector<const void*>* values)
+    : predicate_type_(predicate_type),
+      column_(move(column)),
+      lower_(nullptr),
+      upper_(nullptr) {
+  values_.swap(*values);
+}
+
 ColumnPredicate ColumnPredicate::Equality(ColumnSchema column, const void* value) {
   CHECK(value != nullptr);
   return ColumnPredicate(PredicateType::Equality, move(column), value, nullptr);
@@ -49,6 +61,26 @@ ColumnPredicate ColumnPredicate::Range(ColumnSchema column,
                                        const void* upper) {
   CHECK(lower != nullptr || upper != nullptr);
   ColumnPredicate pred(PredicateType::Range, move(column), lower, upper);
+  pred.Simplify();
+  return pred;
+}
+
+ColumnPredicate ColumnPredicate::InList(ColumnSchema column,
+                                        vector<const void*>* values) {
+  CHECK(values != nullptr);
+
+  // Sort values and remove duplicates.
+  std::sort(values->begin(), values->end(),
+            [&] (const void* a, const void* b) {
+              return column.type_info()->Compare(a, b) < 0;
+            });
+  values->erase(std::unique(values->begin(), values->end(),
+                            [&] (const void* a, const void* b) {
+                              return column.type_info()->Compare(a, b) == 0;
+                            }),
+                values->end());
+
+  ColumnPredicate pred(PredicateType::InList, move(column), values);
   pred.Simplify();
   return pred;
 }
@@ -122,6 +154,11 @@ void ColumnPredicate::SetToNone() {
 }
 
 void ColumnPredicate::Simplify() {
+  // TODO(dan): we are missing some simplification opportunities here:
+  //    * range predicates including the entire range of a bool/integer
+  //      (`my_int8 >= -127`) can be simplified to `IS NOT NULL`.
+  //    * `IN` predicates including all values of a bool/integer
+  //      (`my_bool IN (true, false)`) can be simplified to `IS NOT NULL`.
   switch (predicate_type_) {
     case PredicateType::None:
     case PredicateType::Equality:
@@ -136,6 +173,27 @@ void ColumnPredicate::Simplify() {
           predicate_type_ = PredicateType::Equality;
           upper_ = nullptr;
         }
+      }
+      return;
+    };
+    case PredicateType::InList: {
+      if (values_.empty()) {
+        // If the list is empty, no results can be returned.
+        SetToNone();
+      } else if (values_.size() == 1) {
+        // List has only one value, so convert to Equality
+        predicate_type_ = PredicateType::Equality;
+        lower_ = values_[0];
+        values_.clear();
+      } else if (column_.type_info()->type() == BOOL) {
+        // If this is a boolean IN list with both true and false in the list,
+        // then we can just convert it to IS NOT NULL. This same simplification
+        // could be done for other integer types, but it's probably not as
+        // common (and hard to test).
+        predicate_type_ = PredicateType::IsNotNull;
+        lower_ = nullptr;
+        upper_ = nullptr;
+        values_.clear();
       }
       return;
     };
@@ -165,6 +223,11 @@ void ColumnPredicate::Merge(const ColumnPredicate& other) {
       predicate_type_ = other.predicate_type_;
       lower_ = other.lower_;
       upper_ = other.upper_;
+      values_ = other.values_;
+      return;
+    };
+    case PredicateType::InList: {
+      MergeIntoInList(other);
       return;
     };
   }
@@ -210,6 +273,25 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
       return;
     };
     case PredicateType::IsNotNull: return;
+    case PredicateType::InList : {
+      // The InList predicate values are examined to check whether
+      // they lie in the range.
+      // The current predicate is then converted from a range predicate to
+      // an InList predicate (since it is more selective).
+      // The number of values in the InList will depend on how many
+      // values were within the range.
+      // The call to Simplify() will then convert the InList if appropriate:
+      // i.e an InList with zero entries gets converted to a NONE
+      //     and InList with 1 entry gets converted into an Equality.
+      values_ = other.values_;
+      values_.erase(std::remove_if(values_.begin(), values_.end(),
+                                   [this] (const void* v) {
+                                     return !CheckValueInRange(v);
+                                   }), values_.end());
+      predicate_type_ = PredicateType::InList;
+      Simplify();
+      return;
+    };
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -223,8 +305,7 @@ void ColumnPredicate::MergeIntoEquality(const ColumnPredicate& other) {
       return;
     }
     case PredicateType::Range: {
-      if ((other.lower_ != nullptr && column_.type_info()->Compare(lower_, other.lower_) < 0) ||
-          (other.upper_ != nullptr && column_.type_info()->Compare(lower_, other.upper_) >= 0)) {
+      if (!other.CheckValueInRange(lower_)) {
         // This equality value does not fall in the other range.
         SetToNone();
       }
@@ -237,8 +318,115 @@ void ColumnPredicate::MergeIntoEquality(const ColumnPredicate& other) {
       return;
     };
     case PredicateType::IsNotNull: return;
+    case PredicateType::InList : {
+      // The equality value needs to be a member of the InList
+      if (!other.CheckValueInList(lower_)) {
+        SetToNone();
+      }
+      return;
+    };
   }
   LOG(FATAL) << "unknown predicate type";
+}
+
+void ColumnPredicate::MergeIntoInList(const ColumnPredicate &other) {
+  CHECK(predicate_type_ == PredicateType::InList);
+  DCHECK(values_.size() > 1);
+
+  switch (other.predicate_type()) {
+    case PredicateType::None : {
+      SetToNone();
+      return;
+    };
+    case PredicateType::Range: {
+      // Only values within the range should be retained.
+      auto search_by = [&] (const void* lhs, const void* rhs) {
+        return this->column_.type_info()->Compare(lhs, rhs) < 0;
+      };
+
+      // Remove all values greater than the range.
+      if (other.upper_ != nullptr) {
+        // lower_bound is used here instead of upper_bound, since the upper
+        // bound of the range is exclusive, and the in list is inclusive.
+        auto upper = std::lower_bound(values_.begin(), values_.end(), other.upper_, search_by);
+        values_.erase(upper, values_.end());
+      }
+
+      // Remove all values less than the range.
+      if (other.lower_ != nullptr) {
+        auto lower = std::lower_bound(values_.begin(), values_.end(), other.lower_, search_by);
+        values_.erase(values_.begin(), lower);
+      }
+
+      Simplify();
+      return;
+    }
+    case PredicateType::Equality: {
+      if (CheckValueInList(other.lower_)) {
+        // value falls in list so change to Equality predicate
+        predicate_type_ = PredicateType::Equality;
+        lower_ = other.lower_;
+        upper_ = nullptr;
+      } else {
+        SetToNone(); // Value does not fall in list
+      }
+      return;
+    }
+    case PredicateType::IsNotNull: return;
+    case PredicateType::InList: {
+      // Merge the 'other' IN list into this IN list. The basic idea is to loop
+      // through this predicate list, retaining only the values which are also
+      // contained in the other predicate list. We apply an optimization first:
+      // all values from this in list which fall outside the range of the other
+      // IN list are removed, and the remaining values in this IN list are only
+      // checked against values in the other list which are in this list's
+      // range. This doesn't reduce the worst-case complexity, but can really
+      // speed up the merge for big lists in certain cases. This optimization
+      // relies on the lists being sorted.
+      DCHECK(other.values_.size() > 1);
+
+      auto search_by = [&] (const void* lhs, const void* rhs) {
+        return this->column_.type_info()->Compare(lhs, rhs) < 0;
+      };
+
+      // Remove all values in this IN list which are greater than the largest
+      // value in the other list.
+      values_.erase(std::upper_bound(values_.begin(), values_.end(),
+                                     other.values_.back(), search_by),
+                    values_.end());
+
+      // Remove all values in this IN list which are less than the smallest
+      // value in the other list.
+      values_.erase(values_.begin(),
+                    std::lower_bound(values_.begin(), values_.end(),
+                                     other.values_.front(), search_by));
+
+      if (values_.empty()) {
+        SetToNone();
+        return;
+      }
+
+      // Find the sublist in the other IN list which overlaps with this IN list.
+      auto other_start = std::lower_bound(other.values_.begin(), other.values_.end(),
+                                          values_.front(), search_by);
+      auto other_end = std::upper_bound(other_start, other.values_.end(),
+                                        values_.back(), search_by);
+
+      // Returns true if the value is *not* present in the other list.
+      // Modifies other_start to point at the position of v in the other list.
+      auto other_absent = [&] (const void* v) {
+        other_start = std::lower_bound(other_start, other_end, v, search_by);
+        return this->column_.type_info()->Compare(v, *other_start) != 0;
+      };
+
+      // Iterate through the values_ list and remove elements that do not exist
+      // in the other list.
+      values_.erase(std::remove_if(values_.begin(), values_.end(), other_absent), values_.end());
+      Simplify();
+      return;
+    };
+    default: LOG(FATAL) << "unknown predicate type";
+  }
 }
 
 namespace {
@@ -247,7 +435,7 @@ void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
   if (block.is_nullable()) {
     for (size_t i = 0; i < block.nrows(); i++) {
       if (!sel->IsRowSelected(i)) continue;
-      const void *cell = block.nullable_cell_ptr(i);
+      const void* cell = block.nullable_cell_ptr(i);
       if (cell == nullptr || !p(cell)) {
         BitmapClear(sel->mutable_bitmap(), i);
       }
@@ -255,7 +443,7 @@ void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
   } else {
     for (size_t i = 0; i < block.nrows(); i++) {
       if (!sel->IsRowSelected(i)) continue;
-      const void *cell = block.cell_ptr(i);
+      const void* cell = block.cell_ptr(i);
       if (!p(cell)) {
         BitmapClear(sel->mutable_bitmap(), i);
       }
@@ -301,7 +489,16 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
         }
       }
       return;
-    }
+    };
+    case PredicateType::InList: {
+      ApplyPredicate(block, sel, [this] (const void* cell) {
+        return std::binary_search(values_.begin(), values_.end(), cell,
+                                  [] (const void* lhs, const void* rhs) {
+                                    return DataTypeTraits<PhysicalType>::Compare(lhs, rhs) < 0;
+                                  });
+      });
+      return;
+    };
     default:
       LOG(FATAL) << "unknown predicate type";
   }
@@ -347,6 +544,22 @@ string ColumnPredicate::ToString() const {
     case PredicateType::IsNotNull: {
       return strings::Substitute("`$0` IS NOT NULL", column_.name());
     };
+    case PredicateType::InList: {
+      string ss = "`";
+      ss.append(column_.name());
+      ss.append("` IN (");
+      bool is_first = true;
+      for (auto* value : values_) {
+        if (is_first) {
+          is_first = false;
+        } else {
+          ss.append(", ");
+        }
+        ss.append(column_.Stringify(value));
+      }
+      ss.append(")");
+      return ss;
+    };
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -355,18 +568,39 @@ bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
   if (!column_.Equals(other.column_, false)) { return false; }
   if (predicate_type_ != other.predicate_type_) {
     return false;
-  } else if (predicate_type_ == PredicateType::Equality) {
-    return column_.type_info()->Compare(lower_, other.lower_) == 0;
-  } else if (predicate_type_ == PredicateType::Range) {
-    return (lower_ == other.lower_ ||
-            (lower_ != nullptr && other.lower_ != nullptr &&
-             column_.type_info()->Compare(lower_, other.lower_) == 0)) &&
-           (upper_ == other.upper_ ||
-            (upper_ != nullptr && other.upper_ != nullptr &&
-             column_.type_info()->Compare(upper_, other.upper_) == 0));
-  } else {
-    return true;
   }
+  switch (predicate_type_) {
+    case PredicateType::Equality: return column_.type_info()->Compare(lower_, other.lower_) == 0;
+    case PredicateType::Range: {
+      return (lower_ == other.lower_ ||
+              (lower_ != nullptr && other.lower_ != nullptr &&
+               column_.type_info()->Compare(lower_, other.lower_) == 0)) &&
+             (upper_ == other.upper_ ||
+              (upper_ != nullptr && other.upper_ != nullptr &&
+               column_.type_info()->Compare(upper_, other.upper_) == 0));
+    };
+    case PredicateType::InList: {
+      if (values_.size() != other.values_.size()) return false;
+      for (int i = 0; i < values_.size(); i++) {
+        if (column_.type_info()->Compare(values_[i], other.values_[i]) != 0) return false;
+      }
+    };
+    case PredicateType::None:
+    case PredicateType::IsNotNull: return true;
+  }
+}
+
+bool ColumnPredicate::CheckValueInRange(const void* value) const {
+  CHECK(predicate_type_ == PredicateType::Range);
+  return ((lower_ == nullptr || column_.type_info()->Compare(lower_, value) <= 0) &&
+          (upper_ == nullptr || column_.type_info()->Compare(upper_, value) > 0));
+}
+
+bool ColumnPredicate::CheckValueInList(const void* value) const {
+  return std::binary_search(values_.begin(), values_.end(), value,
+                            [this](const void* lhs, const void* rhs) {
+                              return this->column_.type_info()->Compare(lhs, rhs) < 0;
+                            });
 }
 
 namespace {
@@ -375,8 +609,9 @@ int SelectivityRank(const ColumnPredicate& predicate) {
   switch (predicate.predicate_type()) {
     case PredicateType::None: rank = 0; break;
     case PredicateType::Equality: rank = 1; break;
-    case PredicateType::Range: rank = 2; break;
-    case PredicateType::IsNotNull: rank = 3; break;
+    case PredicateType::InList: rank = 2; break;
+    case PredicateType::Range: rank = 3; break;
+    case PredicateType::IsNotNull: rank = 4; break;
     default: LOG(FATAL) << "unknown predicate type";
   }
   return rank * (kLargestTypeSize + 1) + predicate.column().type_info()->size();

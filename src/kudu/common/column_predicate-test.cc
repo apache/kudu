@@ -39,6 +39,8 @@ class TestColumnPredicate : public KuduTest {
     ColumnPredicate a_base(a);
     ColumnPredicate b_base(b);
 
+    SCOPED_TRACE(strings::Substitute("a: $0, b: $1", a.ToString(), b.ToString()));
+
     a_base.Merge(b);
     b_base.Merge(a);
 
@@ -277,6 +279,260 @@ class TestColumnPredicate : public KuduTest {
               ColumnPredicate::None(column),
               PredicateType::None);
 
+    // InList + InList
+
+    vector<const void*> top_list;
+    vector<const void*> bot_list;
+    vector<const void*> res_list;
+
+    //   | | |  AND
+    //   | | |
+    // = | | |
+    top_list = { &values[1], &values[3], &values[5] };
+    bot_list = { &values[1], &values[3], &values[5] };
+    res_list = { &values[1], &values[3], &values[5] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::InList(column, &res_list),
+              PredicateType::InList);
+
+    //   | | |  AND
+    //   | |
+    // = | |
+    top_list = { &values[1], &values[3], &values[6] };
+    bot_list = { &values[1], &values[3] };
+    res_list = { &values[1], &values[3] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::InList(column, &res_list),
+              PredicateType::InList);
+
+    //   | | |  AND
+    //     | |
+    // =   | |
+    top_list = { &values[1], &values[3], &values[6] };
+    bot_list = { &values[3], &values[6] };
+    res_list = { &values[6], &values[3] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::InList(column, &res_list),
+              PredicateType::InList);
+
+    //     | | |  AND
+    //   | | |
+    // =   | |
+    top_list = { &values[2], &values[3], &values[4] };
+    bot_list = { &values[1], &values[2], &values[3] };
+    res_list = { &values[2], &values[3] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::InList(column, &res_list),
+              PredicateType::InList);
+
+    //      | | |  AND
+    //   | | |
+    // = NONE
+    top_list = { &values[3], &values[5], &values[6] };
+    bot_list = { &values[0], &values[2], &values[4] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //       | | |  AND
+    //   | | |
+    // =     |
+    top_list = { &values[1], &values[2], &values[3] };
+    bot_list = { &values[3], &values[4], &values[5] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::Equality(column, &values[3]),
+              PredicateType::Equality);
+
+    //         | | |  AND
+    //   | | |
+    // = None
+    top_list = { &values[4], &values[5], &values[6] };
+    bot_list = { &values[1], &values[2], &values[3] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //     | | |  AND
+    //    |||||
+    // =   | |
+    top_list = { &values[1], &values[3], &values[5] };
+    bot_list = { &values[0], &values[1], &values[2], &values[3], &values[4] };
+    res_list = { &values[1], &values[3] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::InList(column, &res_list),
+              PredicateType::InList);
+
+    //    | | |  AND
+    //     | |
+    // =  none
+    top_list = { &values[1], &values[3], &values[5] };
+    bot_list = { &values[2], &values[4] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //    | | |  AND
+    //     |||
+    // =    |
+    top_list = { &values[1], &values[3], &values[5] };
+    bot_list = { &values[2], &values[3], &values[4] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::Equality(column, &values[3]),
+              PredicateType::Equality);
+
+    //   | |   AND
+    //    | |
+    // = none
+    top_list = { &values[1], &values[3] };
+    bot_list = { &values[2], &values[4] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //   | |   AND
+    //       | |
+    // = none
+    top_list = { &values[0], &values[2] };
+    bot_list = { &values[3], &values[5] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+
+    // InList + Equality
+
+    //   | | |  AND
+    // |
+    // = none
+    top_list = { &values[2], &values[3], &values[4] };
+    bot_list = { &values[1] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+
+    //   | | | AND
+    //   |
+    // = |
+    top_list = { &values[1], &values[3], &values[6] };
+    bot_list = { &values[1] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::Equality(column, &values[1]),
+              PredicateType::Equality);
+
+    //  | | | AND
+    //    |
+    // =  |
+    top_list = { &values[1], &values[3], &values[6] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::Equality(column, &values[3]),
+              ColumnPredicate::Equality(column, &values[3]),
+              PredicateType::Equality);
+
+    //  | | | AND
+    //     |
+    // = none
+    top_list = { &values[1], &values[3], &values[6] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::Equality(column, &values[4]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //  | | |  AND
+    //         |
+    // =  none
+    top_list = { &values[1], &values[3], &values[5] };
+    TestMerge(ColumnPredicate::InList(column, &top_list),
+              ColumnPredicate::Equality(column, &values[6]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+
+    // InList + Range
+
+    //     [---) AND
+    //   | | | | |
+    // =   | |
+    bot_list = { &values[0], &values[1], &values[2], &values[3], &values[4] };
+    res_list = { &values[1], &values[2] };
+    TestMerge(ColumnPredicate::Range(column, &values[1], &values[3]),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::InList(column, &res_list),
+              PredicateType::InList);
+
+    //    [------) AND
+    //  |        | |
+    // = None
+    bot_list = { &values[1], &values[4], &values[5] };
+    TestMerge(ColumnPredicate::Range(column, &values[2], &values[4]),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //  [------) AND
+    //            | |
+    // =
+    // None
+    bot_list = { &values[5], &values[6] };
+    TestMerge(ColumnPredicate::Range(column, &values[1], &values[4]),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //       [------) AND
+    //   | |
+    // =
+    // None
+    bot_list = { &values[0], &values[1] };
+    TestMerge(ColumnPredicate::Range(column, &values[3], &values[6]),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //   [------) AND
+    //        | |
+    // =
+    // None
+    bot_list = { &values[0], &values[1] };
+    TestMerge(ColumnPredicate::Range(column, &values[3], &values[6]),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //      [-----------> AND
+    //    | |  |
+    // =    |  |
+    bot_list = { &values[2], &values[3], &values[4] };
+    res_list = { &values[3], &values[4] };
+    TestMerge(ColumnPredicate::Range(column, &values[3], nullptr),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::InList(column, &res_list),
+              PredicateType::InList);
+
+    // <----) AND
+    //   |  |  |
+    // = |
+    bot_list = { &values[2], &values[3], &values[4] };
+    res_list = { &values[3], &values[4] };
+    TestMerge(ColumnPredicate::Range(column, nullptr, &values[3]),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::Equality(column, &values[2]),
+              PredicateType::Equality);
+
     // None
 
     // None AND
@@ -321,6 +577,16 @@ class TestColumnPredicate : public KuduTest {
     // None
     TestMerge(ColumnPredicate::None(column),
               ColumnPredicate::None(column),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // None AND
+    // | | |
+    // =
+    // None
+    bot_list = { &values[2], &values[3], &values[4] };
+    TestMerge(ColumnPredicate::None(column),
+              ColumnPredicate::InList(column, &bot_list),
               ColumnPredicate::None(column),
               PredicateType::None);
 
@@ -379,6 +645,17 @@ class TestColumnPredicate : public KuduTest {
               ColumnPredicate::Range(column, &values[2], nullptr),
               ColumnPredicate::Range(column, &values[2], nullptr),
               PredicateType::Range);
+
+    // IS NOT NULL AND
+    // | | |
+    // =
+    // | | |
+    bot_list = { &values[2], &values[3], &values[4] };
+    res_list = { &values[2], &values[3], &values[4] };
+    TestMerge(ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::InList(column, &res_list),
+              PredicateType::InList);
   }
 };
 
@@ -518,6 +795,64 @@ TEST_F(TestColumnPredicate, TestExclusive) {
   }
 }
 
+// Test the InList constructor.
+TEST_F(TestColumnPredicate, TestInList) {
+    vector<const void*> values;
+  {
+    ColumnSchema column("c", INT32);
+    int five = 5;
+    int six = 6;
+    int ten = 10;
+
+    values = {};
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::InList(column, &values).predicate_type());
+
+    values = { &five };
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::InList(column, &values).predicate_type());
+
+    values = { &five, &six, &ten };
+    ASSERT_EQ(PredicateType::InList,
+              ColumnPredicate::InList(column, &values).predicate_type());
+  }
+  {
+    Slice a("a");
+    Slice b("b");
+    Slice c("c");
+    ColumnSchema column("c", STRING);
+
+    values = {};
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::InList(column, &values).predicate_type());
+
+    values = { &a };
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::InList(column, &values).predicate_type());
+
+    values = { &a, &b, &c };
+    ASSERT_EQ(PredicateType::InList,
+              ColumnPredicate::InList(column, &values).predicate_type());
+  }
+  {
+    bool t = true;
+    bool f = false;
+    ColumnSchema column("c", BOOL);
+
+    values = {};
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::InList(column, &values).predicate_type());
+
+    values = { &t };
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::InList(column, &values).predicate_type());
+
+    values = { &t, &f, &t, &f };
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::InList(column, &values).predicate_type());
+  }
+}
+
 // Test that column predicate comparison works correctly: ordered by predicate
 // type first, then size of the column type.
 TEST_F(TestColumnPredicate, TestSelectivity) {
@@ -559,5 +894,4 @@ TEST_F(TestColumnPredicate, TestSelectivity) {
                                   ColumnPredicate::Equality(column_s, &one_s)),
             0);
 }
-
 } // namespace kudu

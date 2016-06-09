@@ -389,6 +389,13 @@ void ColumnPredicateToPB(const ColumnPredicate& predicate,
       pb->mutable_is_not_null();
       return;
     };
+    case PredicateType::InList: {
+      auto* values = pb->mutable_in_list()->mutable_values();
+      for (const void* value : predicate.raw_values()) {
+        CopyPredicateBoundToPB(predicate.column(), value, values->Add());
+      }
+      return;
+    };
     case PredicateType::None: LOG(FATAL) << "None predicate may not be converted to protobuf";
   }
   LOG(FATAL) << "unknown predicate type";
@@ -437,6 +444,17 @@ Status ColumnPredicateFromPB(const Schema& schema,
       const void* value = nullptr;
       RETURN_NOT_OK(CopyPredicateBoundFromPB(col, equality.value(), arena, &value));
       *predicate = ColumnPredicate::Equality(col, value);
+      break;
+    };
+    case ColumnPredicatePB::kInList: {
+      const auto& inlist = pb.in_list();
+      vector<const void*> values;
+      for (const string& pb_value : inlist.values()) {
+        const void* value = nullptr;
+        RETURN_NOT_OK(CopyPredicateBoundFromPB(col, pb_value, arena, &value));
+        values.push_back(value);
+      }
+      *predicate = ColumnPredicate::InList(col, &values);
       break;
     };
     case ColumnPredicatePB::kIsNotNull: {

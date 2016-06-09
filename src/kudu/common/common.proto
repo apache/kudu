@@ -299,11 +299,18 @@ message ColumnPredicatePB {
     optional bytes value = 1;
   }
 
+  message InList {
+    // A list of values for the field. See comment in Range for notes on
+    // the encoding.
+    repeated bytes values = 1;
+  }
+
   message IsNotNull {}
 
   oneof predicate {
     Range range = 2;
     Equality equality = 3;
     IsNotNull is_not_null = 4;
+    InList in_list = 5;
   }
 }

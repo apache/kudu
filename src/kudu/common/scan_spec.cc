@@ -150,11 +150,15 @@ void ScanSpec::PushPredicatesIntoPrimaryKeyBounds(const Schema& schema,
          col_idx < max(lower_bound_predicates_pushed, upper_bound_predicates_pushed);
          col_idx++) {
       const string& column = schema.column(col_idx).name();
-      PredicateType type = FindOrDie(predicates_, schema.column(col_idx).name()).predicate_type();
+      PredicateType type = FindOrDie(predicates_, column).predicate_type();
       if (type == PredicateType::Equality) {
         RemovePredicate(column);
       } else if (type == PredicateType::Range) {
         RemovePredicate(column);
+        break;
+      } else if (type == PredicateType::InList) {
+        // InList predicates should not be removed as the full constraints imposed by an InList
+        // cannot be translated into only a single set of lower and upper bound primary keys
         break;
       } else {
         LOG(FATAL) << "Can not remove unknown predicate type";

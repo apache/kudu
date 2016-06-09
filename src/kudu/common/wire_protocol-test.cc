@@ -15,7 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <vector>
+
+#include <boost/optional.hpp>
 #include <gtest/gtest.h>
+#include "kudu/common/column_predicate.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
@@ -24,6 +28,8 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+using std::vector;
 
 namespace kudu {
 
@@ -330,4 +336,61 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
   ASSERT_EQ(write_default_u32, *static_cast<const uint32_t *>(col5fpb.write_default_value()));
 }
 
+TEST_F(WireProtocolTest, TestColumnPredicateInList) {
+  ColumnSchema col1("col1", INT32);
+  vector<ColumnSchema> cols = { col1 };
+  Schema schema(cols, 1);
+  Arena arena(1024,1024*1024);
+  boost::optional<ColumnPredicate> predicate;
+
+  { // col1 IN (5, 6, 10)
+    int five = 5;
+    int six = 6;
+    int ten = 10;
+    vector<const void*> values { &five, &six, &ten };
+
+    kudu::ColumnPredicate cp = kudu::ColumnPredicate::InList(col1, &values);
+    ColumnPredicatePB pb;
+    ASSERT_NO_FATAL_FAILURE(ColumnPredicateToPB(cp, &pb));
+
+    ASSERT_OK(ColumnPredicateFromPB(schema, &arena, pb, &predicate));
+    ASSERT_EQ(predicate->predicate_type(), PredicateType::InList);
+    ASSERT_EQ(3, predicate->raw_values().size());
+  }
+
+  { // col1 IN (0, 0)
+    // We can't construct a single element IN list directly since it would be
+    // simplified to an equality predicate, so we hack around it by directly
+    // constructing it as a protobuf message.
+    ColumnPredicatePB pb;
+    pb.set_column("col1");
+    *pb.mutable_in_list()->mutable_values()->Add() = string("\0\0\0\0", 4);
+    *pb.mutable_in_list()->mutable_values()->Add() = string("\0\0\0\0", 4);
+
+    ASSERT_OK(ColumnPredicateFromPB(schema, &arena, pb, &predicate));
+    ASSERT_EQ(PredicateType::Equality, predicate->predicate_type());
+  }
+
+  { // col1 IN ()
+    ColumnPredicatePB pb;
+    pb.set_column("col1");
+    pb.mutable_in_list();
+
+    Arena arena(1024,1024*1024);
+    boost::optional<ColumnPredicate> predicate;
+    ASSERT_OK(ColumnPredicateFromPB(schema, &arena, pb, &predicate));
+    ASSERT_EQ(PredicateType::None, predicate->predicate_type());
+  }
+
+  { // IN list corruption
+    ColumnPredicatePB pb;
+    pb.set_column("col1");
+    pb.mutable_in_list();
+    *pb.mutable_in_list()->mutable_values()->Add() = string("\0", 1);
+
+    Arena arena(1024,1024*1024);
+    boost::optional<ColumnPredicate> predicate;
+    ASSERT_TRUE(ColumnPredicateFromPB(schema, &arena, pb, &predicate).IsInvalidArgument());
+  }
+}
 } // namespace kudu

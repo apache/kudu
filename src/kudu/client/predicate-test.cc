@@ -102,6 +102,19 @@ class PredicateTest : public KuduTest {
     return rows;
   }
 
+  template <typename T>
+  int CountMatchedRows(const vector<T>& values, const vector<T>& test_values) {
+
+    int count = 0;
+    for (const T& v : values) {
+      if (std::any_of(test_values.begin(), test_values.end(),
+                      [&] (const T& t) { return t == v; })) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   // Returns a vector of ints from -50 (inclusive) to 50 (exclusive), and
   // boundary values.
   template <typename T>
@@ -289,6 +302,20 @@ class PredicateTest : public KuduTest {
         }));
       }
     }
+
+    // IN list predicates
+    std::random_shuffle(test_values.begin(), test_values.end());
+
+    for (auto end = test_values.begin(); end <= test_values.end(); end++) {
+      vector<KuduValue*> vals;
+
+      for (auto itr = test_values.begin(); itr != end; itr++) {
+        vals.push_back(KuduValue::FromInt(*itr));
+      }
+
+      int count = CountMatchedRows<T>(values, vector<T>(test_values.begin(), end));
+      ASSERT_EQ(count, CountRows(table, { table->NewInListPredicate("value", &vals) }));
+    }
   }
 
   // Check string predicates against the specified table.
@@ -384,6 +411,20 @@ class PredicateTest : public KuduTest {
         }));
       }
     }
+
+    // IN list predicates
+    std::random_shuffle(test_values.begin(), test_values.end());
+
+    for (auto end = test_values.begin(); end <= test_values.end(); end++) {
+      vector<KuduValue*> vals;
+
+      for (auto itr = test_values.begin(); itr != end; itr++) {
+        vals.push_back(KuduValue::CopyString(*itr));
+      }
+
+      int count = CountMatchedRows<string>(values, vector<string>(test_values.begin(), end));
+      ASSERT_EQ(count, CountRows(table, { table->NewInListPredicate("value", &vals) }));
+    }
   }
 
   shared_ptr<KuduClient> client_;
@@ -478,6 +519,30 @@ TEST_F(PredicateTest, TestBoolPredicates) {
                                                         KuduPredicate::LESS,
                                                         KuduValue::FromBool(true));
     ASSERT_EQ(1, CountRows(table, { pred }));
+  }
+
+  { // value IN ()
+    vector<KuduValue*> values = { };
+    KuduPredicate* pred = table->NewInListPredicate("value", &values);
+    ASSERT_EQ(0, CountRows(table, { pred }));
+  }
+
+  { // value IN (true)
+    vector<KuduValue*> values = { KuduValue::FromBool(true) };
+    KuduPredicate* pred = table->NewInListPredicate("value", &values);
+    ASSERT_EQ(1, CountRows(table, { pred }));
+  }
+
+  { // value IN (false)
+    vector<KuduValue*> values = { KuduValue::FromBool(false) };
+    KuduPredicate* pred = table->NewInListPredicate("value", &values);
+    ASSERT_EQ(1, CountRows(table, { pred }));
+  }
+
+  { // value IN (true, false)
+    vector<KuduValue*> values = { KuduValue::FromBool(false), KuduValue::FromBool(true) };
+    KuduPredicate* pred = table->NewInListPredicate("value", &values);
+    ASSERT_EQ(2, CountRows(table, { pred }));
   }
 }
 
@@ -682,6 +747,20 @@ TEST_F(PredicateTest, TestFloatPredicates) {
       }));
     }
   }
+
+  // IN list predicates
+  std::random_shuffle(test_values.begin(), test_values.end());
+
+  for (auto end = test_values.begin(); end <= test_values.end(); end++) {
+    vector<KuduValue*> vals;
+
+    for (auto itr = test_values.begin(); itr != end; itr++) {
+      vals.push_back(KuduValue::FromFloat(*itr));
+    }
+
+    int count = CountMatchedRows<float>(values, vector<float>(test_values.begin(), end));
+    ASSERT_EQ(count, CountRows(table, { table->NewInListPredicate("value", &vals) }));
+  }
 }
 
 TEST_F(PredicateTest, TestDoublePredicates) {
@@ -784,6 +863,20 @@ TEST_F(PredicateTest, TestDoublePredicates) {
                                           KuduValue::FromDouble(0.0)),
       }));
     }
+  }
+
+  // IN list predicates
+  std::random_shuffle(test_values.begin(), test_values.end());
+
+  for (auto end = test_values.begin(); end <= test_values.end(); end++) {
+    vector<KuduValue*> vals;
+
+    for (auto itr = test_values.begin(); itr != end; itr++) {
+      vals.push_back(KuduValue::FromDouble(*itr));
+    }
+
+    int count = CountMatchedRows<double>(values, vector<double>(test_values.begin(), end));
+    ASSERT_EQ(count, CountRows(table, { table->NewInListPredicate("value", &vals) }));
   }
 }
 
