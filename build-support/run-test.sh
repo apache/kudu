@@ -136,10 +136,22 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
   # even when retries are successful.
   rm -f $XMLFILE
 
+  if [[ $OSTYPE =~ ^darwin ]]; then
+    #
+    # For builds on MacOS X 10.11, neither (g)addr2line nor atos translates
+    # address into line number.  The atos utility is able to do that only
+    # if load address (-l <addr>) or reference to currently running process
+    # (-p <pid>) is given.  This is so even for binaries linked with
+    # PIE disabled.
+    #
+    addr2line_filter=cat
+  else
+    addr2line_filter="$SOURCE_ROOT/build-support/stacktrace_addr2line.pl $ABS_TEST_PATH"
+  fi
   echo "Running $TEST_NAME, redirecting output into $LOGFILE" \
     "(attempt ${ATTEMPT_NUMBER}/$TEST_EXECUTION_ATTEMPTS)"
   $ABS_TEST_PATH "$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
-    | $SOURCE_ROOT/build-support/stacktrace_addr2line.pl $ABS_TEST_PATH \
+    | $addr2line_filter \
     | $pipe_cmd > $LOGFILE
   STATUS=$?
 
