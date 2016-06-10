@@ -264,12 +264,13 @@ Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
 }
 
 Status MiniCluster::WaitForTabletServerCount(int count) {
-  vector<shared_ptr<master::TSDescriptor> > descs;
-  return WaitForTabletServerCount(count, &descs);
+  vector<shared_ptr<master::TSDescriptor>> descs;
+  return WaitForTabletServerCount(count, MatchMode::MATCH_TSERVERS, &descs);
 }
 
 Status MiniCluster::WaitForTabletServerCount(int count,
-                                             vector<shared_ptr<TSDescriptor> >* descs) {
+                                             MatchMode mode,
+                                             vector<shared_ptr<TSDescriptor>>* descs) {
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall_seconds() < kRegistrationWaitTimeSeconds) {
@@ -279,15 +280,27 @@ Status MiniCluster::WaitForTabletServerCount(int count,
       // Do a second step of verification to verify that the descs that we got
       // are aligned (same uuid/seqno) with the TSs that we have in the cluster.
       int match_count = 0;
-      for (const shared_ptr<TSDescriptor>& desc : *descs) {
-        for (auto mini_tablet_server : mini_tablet_servers_) {
-          auto ts = mini_tablet_server->server();
-          if (ts->instance_pb().permanent_uuid() == desc->permanent_uuid() &&
-              ts->instance_pb().instance_seqno() == desc->latest_seqno()) {
-            match_count++;
-            break;
+      switch (mode) {
+        case MatchMode::MATCH_TSERVERS:
+          // GetAllDescriptors() may return servers that are no longer online.
+          // Do a second step of verification to verify that the descs that we got
+          // are aligned (same uuid/seqno) with the TSs that we have in the cluster.
+          for (const shared_ptr<TSDescriptor>& desc : *descs) {
+            for (auto mini_tablet_server : mini_tablet_servers_) {
+              auto ts = mini_tablet_server->server();
+              if (ts->instance_pb().permanent_uuid() == desc->permanent_uuid() &&
+                  ts->instance_pb().instance_seqno() == desc->latest_seqno()) {
+                match_count++;
+                break;
+              }
+            }
           }
-        }
+          break;
+        case MatchMode::DO_NOT_MATCH_TSERVERS:
+          match_count = descs->size();
+          break;
+        default:
+          LOG(FATAL) << "Invalid match mode";
       }
 
       if (match_count == count) {

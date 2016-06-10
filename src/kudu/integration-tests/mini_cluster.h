@@ -141,9 +141,21 @@ class MiniCluster {
   // Wait until the number of registered tablet servers reaches the given
   // count. Returns Status::TimedOut if the desired count is not achieved
   // within kRegistrationWaitTimeSeconds.
+  enum class MatchMode {
+    // Ensure that the tservers retrieved from each master match up against the
+    // tservers defined in this cluster. The matching is done via
+    // NodeInstancePBs comparisons. If even one match fails, the retrieved
+    // response is considered to be malformed and is retried.
+    //
+    // Note: tservers participate in matching even if they are shut down.
+    MATCH_TSERVERS,
+
+    // Do not perform any matching on the retrieved tservers.
+    DO_NOT_MATCH_TSERVERS,
+  };
   Status WaitForTabletServerCount(int count);
-  Status WaitForTabletServerCount(int count,
-                                  std::vector<std::shared_ptr<master::TSDescriptor> >* descs);
+  Status WaitForTabletServerCount(int count, MatchMode mode,
+                                  std::vector<std::shared_ptr<master::TSDescriptor>>* descs);
 
   // Create a client configured to talk to this cluster. Builder may contain
   // override options for the client. The master address will be overridden to

@@ -108,7 +108,6 @@ class AlterTableTest : public KuduTest {
     opts.num_tablet_servers = num_replicas();
     cluster_.reset(new MiniCluster(env_.get(), opts));
     ASSERT_OK(cluster_->Start());
-    ASSERT_OK(cluster_->WaitForTabletServerCount(num_replicas()));
 
     CHECK_OK(KuduClientBuilder()
              .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr_str())

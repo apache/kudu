@@ -1485,12 +1485,6 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
     VLOG(2) << "Received tablet report from " <<
       RequestorString(rpc) << ": " << report.DebugString();
   }
-  if (!ts_desc->has_tablet_report() && report.is_incremental()) {
-    string msg = "Received an incremental tablet report when a full one was needed";
-    LOG(WARNING) << "Invalid tablet report from " << RequestorString(rpc) << ": "
-                 << msg;
-    return Status::IllegalState(msg);
-  }
 
   // TODO: on a full tablet report, we may want to iterate over the tablets we think
   // the server should have, compare vs the ones being reported, and somehow mark
@@ -1502,8 +1496,6 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
     RETURN_NOT_OK_PREPEND(HandleReportedTablet(ts_desc, reported, tablet_report),
                           Substitute("Error handling $0", reported.ShortDebugString()));
   }
-
-  ts_desc->set_has_tablet_report(true);
 
   if (report.updated_tablets_size() > 0) {
     background_tasks_->WakeIfHasPendingUpdates();

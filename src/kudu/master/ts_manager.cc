@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/util/flag_tags.h"
@@ -34,6 +35,7 @@ TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
 using std::shared_ptr;
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace master {
@@ -75,16 +77,18 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
   const string& uuid = instance.permanent_uuid();
 
   if (!ContainsKey(servers_by_id_, uuid)) {
-    gscoped_ptr<TSDescriptor> new_desc;
+    shared_ptr<TSDescriptor> new_desc;
     RETURN_NOT_OK(TSDescriptor::RegisterNew(instance, registration, &new_desc));
-    InsertOrDie(&servers_by_id_, uuid, shared_ptr<TSDescriptor>(new_desc.release()));
-    LOG(INFO) << "Registered new tablet server { " << instance.ShortDebugString()
-              << " } with Master";
+    InsertOrDie(&servers_by_id_, uuid, new_desc);
+    LOG(INFO) << Substitute("Registered new tserver $0 with Master",
+                            instance.ShortDebugString());
+    desc->swap(new_desc);
   } else {
-    const shared_ptr<TSDescriptor>& found = FindOrDie(servers_by_id_, uuid);
+    shared_ptr<TSDescriptor> found(FindOrDie(servers_by_id_, uuid));
     RETURN_NOT_OK(found->Register(instance, registration));
-    LOG(INFO) << "Re-registered known tablet server { " << instance.ShortDebugString()
-              << " } with Master";
+    LOG(INFO) << Substitute("Re-registered known tserver $0 with Master",
+                            instance.ShortDebugString());
+    desc->swap(found);
   }
 
   return Status::OK();

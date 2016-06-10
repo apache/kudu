@@ -26,7 +26,10 @@
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/test_util.h"
 
 using std::vector;
@@ -65,7 +68,6 @@ class MasterReplicationTest : public KuduTest {
     KuduTest::SetUp();
     cluster_.reset(new MiniCluster(env_.get(), opts_));
     ASSERT_OK(cluster_->Start());
-    ASSERT_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -79,7 +81,6 @@ class MasterReplicationTest : public KuduTest {
   Status RestartCluster() {
     cluster_->Shutdown();
     RETURN_NOT_OK(cluster_->Start());
-    RETURN_NOT_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
     return Status::OK();
   }
 
@@ -89,7 +90,6 @@ class MasterReplicationTest : public KuduTest {
     SleepFor(MonoDelta::FromMilliseconds(millis));
     LOG(INFO) << "Attempting to start the cluster...";
     CHECK_OK(cluster_->Start());
-    CHECK_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
   }
 
   void ListMasterServerAddrs(vector<string>* out) {
@@ -152,8 +152,6 @@ TEST_F(MasterReplicationTest, TestSysTablesReplication) {
   ASSERT_OK(CreateClient(&client));
   ASSERT_OK(CreateTable(client, kTableId1));
 
-  ASSERT_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
-
   // Repeat the same for the second table.
   ASSERT_OK(CreateTable(client, kTableId2));
   ASSERT_NO_FATAL_FAILURE(VerifyTableExists(kTableId2));
@@ -209,6 +207,47 @@ TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
   EXPECT_OK(builder.Build(&client));
 
   ASSERT_OK(ThreadJoiner(start_thread.get()).Join());
+}
+
+// Test that every master accepts heartbeats, and that a heartbeat to any
+// master updates its TSDescriptor cache.
+TEST_F(MasterReplicationTest, TestHeartbeatAcceptedByAnyMaster) {
+  // Register a fake tserver with every master.
+  TSToMasterCommonPB common;
+  common.mutable_ts_instance()->set_permanent_uuid("fake-ts-uuid");
+  common.mutable_ts_instance()->set_instance_seqno(1);
+  TSRegistrationPB fake_reg;
+  HostPortPB* pb = fake_reg.add_rpc_addresses();
+  pb->set_host("localhost");
+  pb->set_port(1000);
+  pb = fake_reg.add_http_addresses();
+  pb->set_host("localhost");
+  pb->set_port(2000);
+  std::shared_ptr<rpc::Messenger> messenger;
+  rpc::MessengerBuilder bld("Client");
+  ASSERT_OK(bld.Build(&messenger));
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    rpc::RpcController rpc;
+
+    req.mutable_common()->CopyFrom(common);
+    req.mutable_registration()->CopyFrom(fake_reg);
+
+    MasterServiceProxy proxy(messenger,
+                             cluster_->mini_master(i)->bound_rpc_addr());
+
+    // All masters (including followers) should accept the heartbeat.
+    ASSERT_OK(proxy.TSHeartbeat(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // Now each master should have four registered tservers.
+  vector<std::shared_ptr<TSDescriptor>> descs;
+  ASSERT_OK(cluster_->WaitForTabletServerCount(
+      kNumTabletServerReplicas + 1,
+      MiniCluster::MatchMode::DO_NOT_MATCH_TSERVERS, &descs));
 }
 
 } // namespace master

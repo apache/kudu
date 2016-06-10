@@ -61,13 +61,12 @@ class TableLocationsTest : public KuduTest {
 
     cluster_.reset(new MiniCluster(env_.get(), opts));
     ASSERT_OK(cluster_->Start());
-    ASSERT_OK(cluster_->WaitForTabletServerCount(kNumTabletServers));
 
     // Create a client proxy to the master.
     MessengerBuilder bld("Client");
     ASSERT_OK(bld.Build(&client_messenger_));
     proxy_.reset(new MasterServiceProxy(client_messenger_,
-                                        cluster_->leader_mini_master()->bound_rpc_addr()));
+                                        cluster_->mini_master()->bound_rpc_addr()));
   }
 
   void TearDown() override {

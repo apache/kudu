@@ -28,6 +28,7 @@
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/net/net_util.h"
 
+using std::make_shared;
 using std::shared_ptr;
 
 namespace kudu {
@@ -35,8 +36,8 @@ namespace master {
 
 Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
                                  const TSRegistrationPB& registration,
-                                 gscoped_ptr<TSDescriptor>* desc) {
-  gscoped_ptr<TSDescriptor> ret(new TSDescriptor(instance.permanent_uuid()));
+                                 shared_ptr<TSDescriptor>* desc) {
+  shared_ptr<TSDescriptor> ret(make_shared<TSDescriptor>(instance.permanent_uuid()));
   RETURN_NOT_OK(ret->Register(instance, registration));
   desc->swap(ret);
   return Status::OK();
@@ -46,7 +47,6 @@ TSDescriptor::TSDescriptor(std::string perm_id)
     : permanent_uuid_(std::move(perm_id)),
       latest_seqno_(-1),
       last_heartbeat_(MonoTime::Now(MonoTime::FINE)),
-      has_tablet_report_(false),
       recent_replica_creations_(0),
       last_replica_creations_decay_(MonoTime::Now(MonoTime::FINE)),
       num_live_replicas_(0) {
@@ -87,9 +87,6 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
   }
 
   latest_seqno_ = instance.instance_seqno();
-  // After re-registering, make the TS re-report its tablets.
-  has_tablet_report_ = false;
-
   registration_.reset(new TSRegistrationPB(registration));
   ts_admin_proxy_.reset();
   consensus_proxy_.reset();
@@ -111,16 +108,6 @@ MonoDelta TSDescriptor::TimeSinceHeartbeat() const {
 int64_t TSDescriptor::latest_seqno() const {
   std::lock_guard<simple_spinlock> l(lock_);
   return latest_seqno_;
-}
-
-bool TSDescriptor::has_tablet_report() const {
-  std::lock_guard<simple_spinlock> l(lock_);
-  return has_tablet_report_;
-}
-
-void TSDescriptor::set_has_tablet_report(bool has_report) {
-  std::lock_guard<simple_spinlock> l(lock_);
-  has_tablet_report_ = has_report;
 }
 
 void TSDescriptor::DecayRecentReplicaCreationsUnlocked() {

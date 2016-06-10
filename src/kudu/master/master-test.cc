@@ -130,8 +130,10 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     req.mutable_common()->CopyFrom(common);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_TRUE(resp.leader_master());
     ASSERT_TRUE(resp.needs_reregister());
     ASSERT_TRUE(resp.needs_full_tablet_report());
+    ASSERT_FALSE(resp.has_tablet_report());
   }
 
   vector<shared_ptr<TSDescriptor> > descs;
@@ -154,11 +156,12 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     req.mutable_registration()->CopyFrom(fake_reg);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_TRUE(resp.leader_master());
     ASSERT_FALSE(resp.needs_reregister());
-    ASSERT_TRUE(resp.needs_full_tablet_report());
+    ASSERT_FALSE(resp.needs_full_tablet_report());
+    ASSERT_FALSE(resp.has_tablet_report());
   }
 
-  descs.clear();
   master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(1, descs.size()) << "Should have registered the TS";
   TSRegistrationPB reg;
@@ -179,11 +182,50 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     req.mutable_registration()->CopyFrom(fake_reg);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_TRUE(resp.leader_master());
     ASSERT_FALSE(resp.needs_reregister());
-    ASSERT_TRUE(resp.needs_full_tablet_report());
+    ASSERT_FALSE(resp.needs_full_tablet_report());
+    ASSERT_FALSE(resp.has_tablet_report());
   }
 
-  // Now send a tablet report
+  // If we send the registration RPC while the master isn't the leader, it
+  // shouldn't ask for a full tablet report.
+  {
+    CatalogManager::ScopedLeaderDisablerForTests o(master_->catalog_manager());
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    req.mutable_registration()->CopyFrom(fake_reg);
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+
+    ASSERT_FALSE(resp.leader_master());
+    ASSERT_FALSE(resp.needs_reregister());
+    ASSERT_FALSE(resp.needs_full_tablet_report());
+    ASSERT_FALSE(resp.has_tablet_report());
+  }
+
+  // Send a full tablet report, but with the master as a follower. The
+  // report will be ignored.
+  {
+    CatalogManager::ScopedLeaderDisablerForTests o(master_->catalog_manager());
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    TabletReportPB* tr = req.mutable_tablet_report();
+    tr->set_is_incremental(false);
+    tr->set_sequence_number(0);
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+
+    ASSERT_FALSE(resp.leader_master());
+    ASSERT_FALSE(resp.needs_reregister());
+    ASSERT_FALSE(resp.needs_full_tablet_report());
+    ASSERT_FALSE(resp.has_tablet_report());
+  }
+
+  // Now send a full report with the master as leader. The master will process
+  // it; this is reflected in the response.
   {
     TSHeartbeatRequestPB req;
     TSHeartbeatResponsePB resp;
@@ -194,11 +236,29 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     tr->set_sequence_number(0);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_TRUE(resp.leader_master());
     ASSERT_FALSE(resp.needs_reregister());
     ASSERT_FALSE(resp.needs_full_tablet_report());
+    ASSERT_TRUE(resp.has_tablet_report());
   }
 
-  descs.clear();
+  // Having sent a full report, an incremental report will also be processed.
+  {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    TabletReportPB* tr = req.mutable_tablet_report();
+    tr->set_is_incremental(true);
+    tr->set_sequence_number(0);
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+
+    ASSERT_TRUE(resp.leader_master());
+    ASSERT_FALSE(resp.needs_reregister());
+    ASSERT_FALSE(resp.needs_full_tablet_report());
+    ASSERT_TRUE(resp.has_tablet_report());
+  }
+
   master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(1, descs.size()) << "Should still only have one TS registered";
 

@@ -344,6 +344,29 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
     shared_lock<RWMutex> leader_shared_lock_;
     Status catalog_status_;
     Status leader_status_;
+
+    DISALLOW_COPY_AND_ASSIGN(ScopedLeaderSharedLock);
+  };
+
+  // Temporarily forces the catalog manager to be a follower. Only for tests!
+  class ScopedLeaderDisablerForTests {
+   public:
+
+    explicit ScopedLeaderDisablerForTests(CatalogManager* catalog)
+        : catalog_(catalog),
+        old_leader_ready_term_(catalog->leader_ready_term_) {
+      catalog_->leader_ready_term_ = -1;
+    }
+
+    ~ScopedLeaderDisablerForTests() {
+      catalog_->leader_ready_term_ = old_leader_ready_term_;
+    }
+
+   private:
+    CatalogManager* catalog_;
+    int64_t old_leader_ready_term_;
+
+    DISALLOW_COPY_AND_ASSIGN(ScopedLeaderDisablerForTests);
   };
 
   explicit CatalogManager(Master *master);
@@ -678,7 +701,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   std::unordered_set<std::string> reserved_table_names_;
 
   Master *master_;
-  Atomic32 closing_;
   ObjectIdGenerator oid_generator_;
 
   // Random number generator used for selecting replica locations.

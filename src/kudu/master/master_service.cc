@@ -45,6 +45,7 @@ using consensus::RaftPeerPB;
 using std::string;
 using std::vector;
 using std::shared_ptr;
+using strings::Substitute;
 
 namespace {
 
@@ -82,76 +83,60 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   if (!l.CheckIsInitializedOrRespond(resp, rpc)) {
     return;
   }
+  bool is_leader_master = l.leader_status().ok();
 
+  // 2. All responses contain this.
   resp->mutable_master_instance()->CopyFrom(server_->instance_pb());
-  if (!l.leader_status().ok()) {
-    // For the time being, ignore heartbeats sent to non-leader distributed
-    // masters.
-    //
-    // TODO KUDU-493 Allow all master processes to receive heartbeat
-    // information: by having the TabletServers send heartbeats to all
-    // masters, or by storing heartbeat information in a replicated
-    // SysTable.
-    LOG(WARNING) << "Received a heartbeat, but this Master instance is not a leader or a "
-                 << "single Master: " << l.leader_status().ToString();
-    resp->set_leader_master(false);
-    rpc->RespondSuccess();
-    return;
-  }
-  resp->set_leader_master(true);
+  resp->set_leader_master(is_leader_master);
 
+  // 3. Register or look up the tserver.
   shared_ptr<TSDescriptor> ts_desc;
-  // If the TS is registering, register in the TS manager.
   if (req->has_registration()) {
     Status s = server_->ts_manager()->RegisterTS(req->common().ts_instance(),
                                                  req->registration(),
                                                  &ts_desc);
     if (!s.ok()) {
-      LOG(WARNING) << "Unable to register tablet server (" << rpc->requestor_string() << "): "
-                   << s.ToString();
+      LOG(WARNING) << Substitute("Unable to register tserver ($0): $1",
+                                 rpc->requestor_string(), s.ToString());
       // TODO: add service-specific errors
       rpc->RespondFailure(s);
       return;
     }
-  }
+  } else {
+    Status s = server_->ts_manager()->LookupTS(req->common().ts_instance(), &ts_desc);
+    if (s.IsNotFound()) {
+      LOG(INFO) << Substitute("Got heartbeat from unknown tserver ($0) as $1; "
+          "Asking this server to re-register.",
+          req->common().ts_instance().ShortDebugString(), rpc->requestor_string());
+      resp->set_needs_reregister(true);
 
-  // TODO: KUDU-86 if something fails after this point the TS will not be able
-  //       to register again.
+      // Don't bother asking for a full tablet report if we're a follower;
+      // it'll just get ignored anyway.
+      resp->set_needs_full_tablet_report(is_leader_master);
 
-  // Look up the TS -- if it just registered above, it will be found here.
-  // This allows the TS to register and tablet-report in the same RPC.
-  Status s = server_->ts_manager()->LookupTS(req->common().ts_instance(), &ts_desc);
-  if (s.IsNotFound()) {
-    LOG(INFO) << "Got heartbeat from  unknown tablet server { "
-              << req->common().ts_instance().ShortDebugString()
-              << " } as " << rpc->requestor_string()
-              << "; Asking this server to re-register.";
-    resp->set_needs_reregister(true);
-    resp->set_needs_full_tablet_report(true);
-    rpc->RespondSuccess();
-    return;
-  } else if (!s.ok()) {
-    LOG(WARNING) << "Unable to look up tablet server for heartbeat request "
-                 << req->DebugString() << " from " << rpc->requestor_string()
-                 << "\nStatus: " << s.ToString();
-    rpc->RespondFailure(s.CloneAndPrepend("Unable to lookup TS"));
-    return;
-  }
-
-  ts_desc->UpdateHeartbeatTime();
-  ts_desc->set_num_live_replicas(req->num_live_tablets());
-
-  if (req->has_tablet_report()) {
-    s = server_->catalog_manager()->ProcessTabletReport(
-      ts_desc.get(), req->tablet_report(), resp->mutable_tablet_report(), rpc);
-    if (!s.ok()) {
-      rpc->RespondFailure(s.CloneAndPrepend("Failed to process tablet report"));
+      rpc->RespondSuccess();
+      return;
+    } else if (!s.ok()) {
+      LOG(WARNING) << Substitute("Unable to look up tserver for heartbeat "
+          "request $0 from $1: $2", req->DebugString(),
+          rpc->requestor_string(), s.ToString());
+      rpc->RespondFailure(s.CloneAndPrepend("Unable to lookup tserver"));
       return;
     }
   }
 
-  if (!ts_desc->has_tablet_report()) {
-    resp->set_needs_full_tablet_report(true);
+  // 4. Update tserver soft state based on the heartbeat contents.
+  ts_desc->UpdateHeartbeatTime();
+  ts_desc->set_num_live_replicas(req->num_live_tablets());
+
+  // 5. Only leaders handle tablet reports.
+  if (is_leader_master && req->has_tablet_report()) {
+    Status s = server_->catalog_manager()->ProcessTabletReport(
+        ts_desc.get(), req->tablet_report(), resp->mutable_tablet_report(), rpc);
+    if (!s.ok()) {
+      rpc->RespondFailure(s.CloneAndPrepend("Failed to process tablet report"));
+      return;
+    }
   }
 
   rpc->RespondSuccess();
@@ -297,11 +282,6 @@ void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
 void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
                                           ListTabletServersResponsePB* resp,
                                           rpc::RpcContext* rpc) {
-  CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
-  if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
-    return;
-  }
-
   vector<std::shared_ptr<TSDescriptor> > descs;
   server_->ts_manager()->GetAllDescriptors(&descs);
   for (const std::shared_ptr<TSDescriptor>& desc : descs) {

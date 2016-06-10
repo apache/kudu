@@ -96,7 +96,8 @@ class RegistrationTest : public KuduTest {
 TEST_F(RegistrationTest, TestTSRegisters) {
   // Wait for the TS to register.
   vector<shared_ptr<TSDescriptor> > descs;
-  ASSERT_OK(cluster_->WaitForTabletServerCount(1, &descs));
+  ASSERT_OK(cluster_->WaitForTabletServerCount(
+      1, MiniCluster::MatchMode::MATCH_TSERVERS, &descs));
   ASSERT_EQ(1, descs.size());
 
   // Verify that the registration is sane.
@@ -123,7 +124,6 @@ TEST_F(RegistrationTest, TestTSRegisters) {
 
 // Test starting multiple tablet servers and ensuring they both register with the master.
 TEST_F(RegistrationTest, TestMultipleTS) {
-  ASSERT_OK(cluster_->WaitForTabletServerCount(1));
   ASSERT_OK(cluster_->AddTabletServer());
   ASSERT_OK(cluster_->WaitForTabletServerCount(2));
 }
@@ -134,8 +134,6 @@ TEST_F(RegistrationTest, TestMultipleTS) {
 TEST_F(RegistrationTest, TestTabletReports) {
   string tablet_id_1;
   string tablet_id_2;
-
-  ASSERT_OK(cluster_->WaitForTabletServerCount(1));
 
   MiniTabletServer* ts = cluster_->mini_tablet_server(0);
   string ts_root = cluster_->GetTabletServerFsRoot(0);
