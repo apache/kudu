@@ -588,8 +588,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       int numTablets = Integer.parseInt(args[2]);
       Path tmpOutput = new Path(args[3]);
       Integer width = (args.length < 5) ? null : Integer.parseInt(args[4]);
-      Integer wrapMuplitplier = (args.length < 6) ? null : Integer.parseInt(args[5]);
-      return run(numMappers, numNodes, numTablets, tmpOutput, width, wrapMuplitplier);
+      Integer wrapMultiplier = (args.length < 6) ? null : Integer.parseInt(args[5]);
+      return run(numMappers, numNodes, numTablets, tmpOutput, width, wrapMultiplier);
     }
 
     protected void createTables(int numTablets) throws Exception {
@@ -639,7 +639,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
 
     public int runRandomInputGenerator(int numMappers, long numNodes, Path tmpOutput,
-                                       Integer width, Integer wrapMuplitplier) throws Exception {
+                                       Integer width, Integer wrapMultiplier) throws Exception {
       LOG.info("Running RandomInputGenerator with numMappers=" + numMappers
           + ", numNodes=" + numNodes);
       Job job = new Job(getConf());
@@ -652,7 +652,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       job.setOutputKeyClass(BytesWritable.class);
       job.setOutputValueClass(NullWritable.class);
 
-      setJobConf(job, numMappers, numNodes, width, wrapMuplitplier);
+      setJobConf(job, numMappers, numNodes, width, wrapMultiplier);
 
       job.setMapperClass(Mapper.class); //identity mapper
 
@@ -665,7 +665,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
 
     public int runGenerator(int numMappers, long numNodes, int numTablets, Path tmpOutput,
-                            Integer width, Integer wrapMuplitplier) throws Exception {
+                            Integer width, Integer wrapMultiplier) throws Exception {
       LOG.info("Running Generator with numMappers=" + numMappers +", numNodes=" + numNodes);
       createTables(numTablets);
 
@@ -680,7 +680,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       job.setOutputKeyClass(NullWritable.class);
       job.setOutputValueClass(NullWritable.class);
 
-      setJobConf(job, numMappers, numNodes, width, wrapMuplitplier);
+      setJobConf(job, numMappers, numNodes, width, wrapMultiplier);
 
       job.setMapperClass(GeneratorMapper.class);
 
@@ -701,12 +701,12 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
 
     public int run(int numMappers, long numNodes, int numTablets, Path tmpOutput,
-                   Integer width, Integer wrapMuplitplier) throws Exception {
-      int ret = runRandomInputGenerator(numMappers, numNodes, tmpOutput, width, wrapMuplitplier);
+                   Integer width, Integer wrapMultiplier) throws Exception {
+      int ret = runRandomInputGenerator(numMappers, numNodes, tmpOutput, width, wrapMultiplier);
       if (ret > 0) {
         return ret;
       }
-      return runGenerator(numMappers, numNodes, numTablets, tmpOutput, width, wrapMuplitplier);
+      return runGenerator(numMappers, numNodes, numTablets, tmpOutput, width, wrapMultiplier);
     }
   }
 
@@ -933,7 +933,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     FileSystem fs;
 
     protected void runGenerator(int numMappers, long numNodes, int numTablets,
-                                String outputDir, Integer width, Integer wrapMuplitplier) throws Exception {
+                                String outputDir, Integer width, Integer wrapMultiplier) throws Exception {
       Path outputPath = new Path(outputDir);
       UUID uuid = UUID.randomUUID(); //create a random UUID.
       Path generatorOutput = new Path(outputPath, uuid.toString());
@@ -941,7 +941,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       Generator generator = new Generator();
       generator.setConf(getConf());
       int retCode = generator.run(numMappers, numNodes, numTablets, generatorOutput, width,
-          wrapMuplitplier);
+          wrapMultiplier);
       if (retCode > 0) {
         throw new RuntimeException("Generator failed with return code: " + retCode);
       }
@@ -998,7 +998,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       String outputDir = args[4];
       int numReducers = Integer.parseInt(args[5]);
       Integer width = (args.length < 7) ? null : Integer.parseInt(args[6]);
-      Integer wrapMuplitplier = (args.length < 8) ? null : Integer.parseInt(args[7]);
+      Integer wrapMultiplier = (args.length < 8) ? null : Integer.parseInt(args[7]);
       long expectedNumNodes = (args.length < 9) ? 0 : Long.parseLong(args[8]);
       int numVerifyRetries = (args.length < 10) ? 3 : Integer.parseInt(args[9]);
 
@@ -1010,7 +1010,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       for (int i = 0; i < numIterations; i++) {
         LOG.info("Starting iteration = " + i);
-        runGenerator(numMappers, numNodes, numTablets, outputDir, width, wrapMuplitplier);
+        runGenerator(numMappers, numNodes, numTablets, outputDir, width, wrapMultiplier);
         expectedNumNodes += numMappers * numNodes;
 
         runVerify(outputDir, numReducers, expectedNumNodes, numVerifyRetries);
