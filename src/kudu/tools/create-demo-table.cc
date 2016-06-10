@@ -111,6 +111,7 @@ static int CreateDemoTable(int argc, char** argv) {
   gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
   CHECK_OK(table_creator->table_name(table_name)
            .schema(&schema)
+           .set_range_partition_columns({})
            .num_replicas(FLAGS_num_replicas)
            .Create());
   return 0;
