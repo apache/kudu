@@ -148,12 +148,7 @@ class MasterFailoverTest : public KuduTest {
 // Test that synchronous CreateTable (issue CreateTable call and then
 // wait until the table has been created) works even when the original
 // leader master has been paused.
-//
-// Temporarily disabled since multi-master isn't supported yet.
-// This test fails as of KUDU-1138, since the tablet servers haven't
-// registered with the follower master, and thus it's likely to deny
-// the CreateTable request thinking there are no TS available.
-TEST_F(MasterFailoverTest, DISABLED_TestCreateTableSync) {
+TEST_F(MasterFailoverTest, TestCreateTableSync) {
   const char* kTableName = "testCreateTableSync";
 
   if (!AllowSlowTests()) {
@@ -184,9 +179,6 @@ TEST_F(MasterFailoverTest, DISABLED_TestCreateTableSync) {
 // Test that we can issue a CreateTable call, pause the leader master
 // immediately after, then verify that the table has been created on
 // the newly elected leader master.
-//
-// TODO enable this test once flakiness issues are worked out and
-// eliminated on test machines.
 TEST_F(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
   const char* kTableName = "testPauseAfterCreateTableIssued";
 

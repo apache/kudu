@@ -20,6 +20,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
@@ -60,6 +61,7 @@ using kudu::master::GetLeaderMasterRpc;
 using kudu::master::ListMastersResponsePB;
 using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
+using kudu::master::TabletReportPB;
 using kudu::rpc::RpcController;
 using std::shared_ptr;
 using strings::Substitute;
@@ -92,16 +94,22 @@ Status MasterServiceProxyForHostPort(const HostPort& hostport,
 // This is basically the "PIMPL" pattern.
 class Heartbeater::Thread {
  public:
-  Thread(const TabletServerOptions& opts, TabletServer* server);
+  Thread(const HostPort& master_address, TabletServer* server);
 
   Status Start();
   Status Stop();
   void TriggerASAP();
+  void MarkTabletDirty(const string& tablet_id, const string& reason);
+  void GenerateIncrementalTabletReport(TabletReportPB* report);
+  void GenerateFullTabletReport(TabletReportPB* report);
+
+  // Mark that the master successfully received and processed the given
+  // tablet report. This uses the report sequence number to "un-dirty" any
+  // tablets which have not changed since the acknowledged report.
+  void MarkTabletReportAcknowledged(const TabletReportPB& report);
 
  private:
   void RunThread();
-  Status FindLeaderMaster(const MonoTime& deadline,
-                          HostPort* leader_hostport);
   Status ConnectToMaster();
   int GetMinimumHeartbeatMillis() const;
   int GetMillisUntilNextHeartbeat() const;
@@ -110,25 +118,18 @@ class Heartbeater::Thread {
   void SetupCommonField(master::TSToMasterCommonPB* common);
   bool IsCurrentThread() const;
 
-  // The hosts/ports of masters that we may heartbeat to.
+  // The host and port of the master that this thread will heartbeat to.
   //
   // We keep the HostPort around rather than a Sockaddr because the
-  // masters may change IP addresses, and we'd like to re-resolve on
+  // master may change IP address, and we'd like to re-resolve on
   // every new attempt at connecting.
-  vector<HostPort> master_addrs_;
-
-  // Index of the master we last succesfully obtained the master
-  // consensus configuration information from.
-  int last_locate_master_idx_;
+  HostPort master_address_;
 
   // The server for which we are heartbeating.
   TabletServer* const server_;
 
   // The actual running thread (NULL before it is started)
   scoped_refptr<kudu::Thread> thread_;
-
-  // Host and port of the most recent leader master.
-  HostPort leader_master_hostport_;
 
   // Current RPC proxy to the leader master.
   gscoped_ptr<master::MasterServiceProxy> proxy_;
@@ -139,6 +140,28 @@ class Heartbeater::Thread {
   // The number of heartbeats which have failed in a row.
   // This is tracked so as to back-off heartbeating.
   int consecutive_failed_heartbeats_;
+
+  // Each tablet report is assigned a sequence number, so that subsequent
+  // tablet reports only need to re-report those tablets which have
+  // changed since the last report. Each tablet tracks the sequence
+  // number at which it became dirty.
+  struct TabletReportState {
+    int32_t change_seq;
+  };
+  typedef std::unordered_map<std::string, TabletReportState> DirtyMap;
+
+  // Tablets to include in the next incremental tablet report.
+  // When a tablet is added/removed/added locally and needs to be
+  // reported to the master, an entry is added to this map.
+  DirtyMap dirty_tablets_;
+
+  // Lock protecting 'dirty_tablets_'.
+  //
+  // Should not be held at the same time as mutex_.
+  mutable simple_spinlock dirty_tablets_lock_;
+
+  // Next tablet report seqno.
+  std::atomic_int next_report_seq_;
 
   // Mutex/condition pair to trigger the heartbeater thread
   // to either heartbeat early or exit.
@@ -156,95 +179,105 @@ class Heartbeater::Thread {
 // Heartbeater
 ////////////////////////////////////////////////////////////
 
-Heartbeater::Heartbeater(const TabletServerOptions& opts, TabletServer* server)
-  : thread_(new Thread(opts, server)) {
+Heartbeater::Heartbeater(const TabletServerOptions& opts, TabletServer* server) {
+  DCHECK_GT(opts.master_addresses.size(), 0);
+
+  for (const auto& addr : opts.master_addresses) {
+    threads_.emplace_back(new Thread(addr, server));
+  }
 }
 Heartbeater::~Heartbeater() {
   WARN_NOT_OK(Stop(), "Unable to stop heartbeater thread");
 }
 
-Status Heartbeater::Start() { return thread_->Start(); }
-Status Heartbeater::Stop() { return thread_->Stop(); }
-void Heartbeater::TriggerASAP() { thread_->TriggerASAP(); }
+Status Heartbeater::Start() {
+  for (int i = 0; i < threads_.size(); i++) {
+    Status first_failure = threads_[i]->Start();
+    if (!first_failure.ok()) {
+      // On error, stop whichever threads were started.
+      for (int j = 0; j < i; j++) {
+        // Ignore failures; we should try to stop every thread, and
+        // 'first_failure' is the most interesting status anyway.
+        threads_[j]->Stop();
+      }
+      return first_failure;
+    }
+  }
+
+  return Status::OK();
+}
+Status Heartbeater::Stop() {
+  // Stop all threads and return the first failure (if there was one).
+  Status first_failure;
+  for (const auto& thread : threads_) {
+    Status s = thread->Stop();
+    if (!s.ok() && first_failure.ok()) {
+      first_failure = s;
+    }
+  }
+  return first_failure;
+}
+
+void Heartbeater::TriggerASAP() {
+  for (const auto& thread : threads_) {
+    thread->TriggerASAP();
+  }
+}
+
+void Heartbeater::MarkTabletDirty(const string& tablet_id, const string& reason) {
+  for (const auto& thread : threads_) {
+    thread->MarkTabletDirty(tablet_id, reason);
+  }
+}
+
+vector<TabletReportPB> Heartbeater::GenerateIncrementalTabletReportsForTests() {
+  vector<TabletReportPB> results;
+  for (const auto& thread : threads_) {
+    TabletReportPB report;
+    thread->GenerateIncrementalTabletReport(&report);
+    results.emplace_back(std::move(report));
+  }
+  return results;
+}
+
+vector<TabletReportPB> Heartbeater::GenerateFullTabletReportsForTests() {
+  vector<TabletReportPB>  results;
+  for (const auto& thread : threads_) {
+    TabletReportPB report;
+    thread->GenerateFullTabletReport(&report);
+    results.emplace_back(std::move(report));
+  }
+  return results;
+}
+
+void Heartbeater::MarkTabletReportsAcknowledgedForTests(
+    const vector<TabletReportPB>& reports) {
+  CHECK_EQ(reports.size(), threads_.size());
+
+  for (int i = 0; i < reports.size(); i++) {
+    threads_[i]->MarkTabletReportAcknowledged(reports[i]);
+  }
+}
 
 ////////////////////////////////////////////////////////////
 // Heartbeater::Thread
 ////////////////////////////////////////////////////////////
 
-Heartbeater::Thread::Thread(const TabletServerOptions& opts, TabletServer* server)
-  : master_addrs_(opts.master_addresses),
-    last_locate_master_idx_(0),
+Heartbeater::Thread::Thread(const HostPort& master_address, TabletServer* server)
+  : master_address_(master_address),
     server_(server),
     consecutive_failed_heartbeats_(0),
+    next_report_seq_(0),
     cond_(&mutex_),
     should_run_(false),
     heartbeat_asap_(true) {
-  CHECK(!master_addrs_.empty());
-}
-
-namespace {
-void LeaderMasterCallback(HostPort* dst_hostport,
-                          Synchronizer* sync,
-                          const Status& status,
-                          const HostPort& result) {
-  if (status.ok()) {
-    *dst_hostport = result;
-  }
-  sync->StatusCB(status);
-}
-} // anonymous namespace
-
-Status Heartbeater::Thread::FindLeaderMaster(const MonoTime& deadline,
-                                             HostPort* leader_hostport) {
-  Status s = Status::OK();
-  if (master_addrs_.size() == 1) {
-    // "Shortcut" the process when a single master is specified.
-    *leader_hostport = master_addrs_[0];
-    return Status::OK();
-  }
-  vector<Sockaddr> master_sock_addrs;
-  for (const HostPort& master_addr : master_addrs_) {
-    vector<Sockaddr> addrs;
-    Status s = master_addr.ResolveAddresses(&addrs);
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to resolve address '" << master_addr.ToString()
-                   << "': " << s.ToString();
-      continue;
-    }
-    if (addrs.size() > 1) {
-      LOG(WARNING) << "Master address '" << master_addr.ToString() << "' "
-                   << "resolves to " << addrs.size() << " different addresses. Using "
-                   << addrs[0].ToString();
-    }
-    master_sock_addrs.push_back(addrs[0]);
-  }
-  if (master_sock_addrs.empty()) {
-    return Status::NotFound("unable to resolve any of the master addresses!");
-  }
-  Synchronizer sync;
-  scoped_refptr<GetLeaderMasterRpc> rpc(
-      new GetLeaderMasterRpc(Bind(&LeaderMasterCallback,
-                                  leader_hostport,
-                                  &sync),
-                             std::move(master_sock_addrs),
-                             deadline,
-                             MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms),
-                             server_->messenger()));
-  rpc->SendRpc();
-  return sync.Wait();
 }
 
 Status Heartbeater::Thread::ConnectToMaster() {
-  vector<Sockaddr> addrs;
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms));
-  // TODO send heartbeats without tablet reports to non-leader masters.
-  RETURN_NOT_OK(FindLeaderMaster(deadline, &leader_master_hostport_));
   gscoped_ptr<MasterServiceProxy> new_proxy;
-  MasterServiceProxyForHostPort(leader_master_hostport_,
+  MasterServiceProxyForHostPort(master_address_,
                                 server_->messenger(),
                                 &new_proxy);
-  RETURN_NOT_OK(leader_master_hostport_.ResolveAddresses(&addrs));
 
   // Ping the master to verify that it's alive.
   master::PingRequestPB req;
@@ -252,8 +285,8 @@ Status Heartbeater::Thread::ConnectToMaster() {
   RpcController rpc;
   rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms));
   RETURN_NOT_OK_PREPEND(new_proxy->Ping(req, &resp, &rpc),
-                        Substitute("Failed to ping master at $0", addrs[0].ToString()));
-  LOG(INFO) << "Connected to a leader master server at " << leader_master_hostport_.ToString();
+                        Substitute("Failed to ping master at $0", master_address_.ToString()));
+  LOG(INFO) << "Connected to a master server at " << master_address_.ToString();
   proxy_.reset(new_proxy.release());
   return Status::OK();
 }
@@ -326,47 +359,39 @@ Status Heartbeater::Thread::DoHeartbeat() {
   }
 
   if (last_hb_response_.needs_full_tablet_report()) {
-    LOG(INFO) << "Sending a full tablet report to master...";
-    server_->tablet_manager()->GenerateFullTabletReport(
-      req.mutable_tablet_report());
+    LOG(INFO) << Substitute("Sending a full tablet report to master $0...",
+                            master_address_.ToString());
+    GenerateFullTabletReport(req.mutable_tablet_report());
   } else {
-    VLOG(2) << "Sending an incremental tablet report to master...";
-    server_->tablet_manager()->GenerateIncrementalTabletReport(
-      req.mutable_tablet_report());
+    VLOG(2) << Substitute("Sending an incremental tablet report to master $0...",
+                          master_address_.ToString());
+    GenerateIncrementalTabletReport(req.mutable_tablet_report());
   }
   req.set_num_live_tablets(server_->tablet_manager()->GetNumLiveTablets());
 
   RpcController rpc;
-  rpc.set_timeout(MonoDelta::FromSeconds(10));
+  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms));
 
   VLOG(2) << "Sending heartbeat:\n" << req.DebugString();
   master::TSHeartbeatResponsePB resp;
   RETURN_NOT_OK_PREPEND(proxy_->TSHeartbeat(req, &resp, &rpc),
-                        "Failed to send heartbeat");
+                        "Failed to send heartbeat to master");
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
 
-  VLOG(2) << "Received heartbeat response:\n" << resp.DebugString();
-  if (!resp.leader_master()) {
-    // If the master is no longer a leader, reset proxy so that we can
-    // determine the master and attempt to heartbeat during in the
-    // next heartbeat interval.
-    proxy_.reset();
-    return Status::ServiceUnavailable("master is no longer the leader");
-  }
+  VLOG(2) << Substitute("Received heartbeat response from $0:\n$1",
+                        master_address_.ToString(), resp.DebugString());
   last_hb_response_.Swap(&resp);
 
-
-  // TODO: Handle TSHeartbeatResponsePB (e.g. deleted tablets and schema changes)
-  server_->tablet_manager()->MarkTabletReportAcknowledged(req.tablet_report());
-
+  MarkTabletReportAcknowledged(req.tablet_report());
   return Status::OK();
 }
 
 void Heartbeater::Thread::RunThread() {
   CHECK(IsCurrentThread());
-  VLOG(1) << "Heartbeat thread starting";
+  VLOG(1) << Substitute("Heartbeat thread (master $0) starting",
+                        master_address_.ToString());
 
   // Set up a fake "last heartbeat response" which indicates that we
   // need to register -- since we've never registered before, we know
@@ -396,24 +421,22 @@ void Heartbeater::Thread::RunThread() {
       heartbeat_asap_ = false;
 
       if (!should_run_) {
-        VLOG(1) << "Heartbeat thread finished";
+        VLOG(1) << Substitute("Heartbeat thread (master $0) finished",
+                              master_address_.ToString());
         return;
       }
     }
 
     Status s = DoHeartbeat();
     if (!s.ok()) {
-      LOG(WARNING) << "Failed to heartbeat to " << leader_master_hostport_.ToString()
-                   << ": " << s.ToString();
+      LOG(WARNING) << Substitute("Failed to heartbeat to $0: $1",
+                                 master_address_.ToString(), s.ToString());
       consecutive_failed_heartbeats_++;
-      if (master_addrs_.size() > 1) {
-        // If we encountered a network error (e.g., connection
-        // refused) and there's more than one master available, try
-        // determining the leader master again.
-        if (s.IsNetworkError() ||
-            consecutive_failed_heartbeats_ == FLAGS_heartbeat_max_failures_before_backoff) {
-          proxy_.reset();
-        }
+      // If we encountered a network error (e.g., connection
+      // refused), try reconnecting.
+      if (s.IsNetworkError() ||
+          consecutive_failed_heartbeats_ == FLAGS_heartbeat_max_failures_before_backoff) {
+        proxy_.reset();
       }
       continue;
     }
@@ -423,6 +446,28 @@ void Heartbeater::Thread::RunThread() {
 
 bool Heartbeater::Thread::IsCurrentThread() const {
   return thread_.get() == kudu::Thread::current_thread();
+}
+
+void Heartbeater::Thread::MarkTabletReportAcknowledged(const master::TabletReportPB& report) {
+  std::lock_guard<simple_spinlock> l(dirty_tablets_lock_);
+
+  int32_t acked_seq = report.sequence_number();
+  CHECK_LT(acked_seq, next_report_seq_.load());
+
+  // Clear the "dirty" state for any tablets which have not changed since
+  // this report.
+  auto it = dirty_tablets_.begin();
+  while (it != dirty_tablets_.end()) {
+    const TabletReportState& state = it->second;
+    if (state.change_seq <= acked_seq) {
+      // This entry has not changed since this tablet report, we no longer need
+      // to track it as dirty. If it becomes dirty again, it will be re-added
+      // with a higher sequence number.
+      it = dirty_tablets_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 Status Heartbeater::Thread::Start() {
@@ -452,6 +497,51 @@ void Heartbeater::Thread::TriggerASAP() {
   MutexLock l(mutex_);
   heartbeat_asap_ = true;
   cond_.Signal();
+}
+
+void Heartbeater::Thread::MarkTabletDirty(const string& tablet_id, const string& reason) {
+  std::lock_guard<simple_spinlock> l(dirty_tablets_lock_);
+
+  // Even though this is an atomic load, it needs to hold the lock. To see why,
+  // consider this sequence:
+  // 0. Tablet t exists in dirty_tablets_.
+  // 1. T1 calls MarkTabletDirty(t), loads x from next_report_seq_, and is
+  //    descheduled.
+  // 2. T2 generates a tablet report, incrementing next_report_seq_ to x+1.
+  // 3. T3 calls MarkTabletDirty(t), loads x+1 into next_report_seq_, and
+  //    writes x+1 to state->change_seq.
+  // 4. T1 is scheduled. It tries to write x to state->change_seq, failing the
+  //    CHECK_GE().
+  int32_t seqno = next_report_seq_.load();
+
+  TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);
+  if (state != nullptr) {
+    CHECK_GE(seqno, state->change_seq);
+    state->change_seq = seqno;
+  } else {
+    TabletReportState state = { seqno };
+    InsertOrDie(&dirty_tablets_, tablet_id, std::move(state));
+  }
+}
+
+void Heartbeater::Thread::GenerateIncrementalTabletReport(TabletReportPB* report) {
+  report->Clear();
+  report->set_sequence_number(next_report_seq_.fetch_add(1));
+  report->set_is_incremental(true);
+  vector<string> dirty_tablet_ids;
+  {
+    std::lock_guard<simple_spinlock> l(dirty_tablets_lock_);
+    AppendKeysFromMap(dirty_tablets_, &dirty_tablet_ids);
+  }
+  server_->tablet_manager()->PopulateIncrementalTabletReport(
+      report, dirty_tablet_ids);
+}
+
+void Heartbeater::Thread::GenerateFullTabletReport(TabletReportPB* report) {
+  report->Clear();
+  report->set_sequence_number(next_report_seq_.fetch_add(1));
+  report->set_is_incremental(false);
+  server_->tablet_manager()->PopulateFullTabletReport(report);
 }
 
 } // namespace tserver

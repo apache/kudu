@@ -152,36 +152,23 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
       const consensus::StartRemoteBootstrapRequestPB& req,
       boost::optional<TabletServerErrorPB::Code>* error_code) OVERRIDE;
 
-  // Generate an incremental tablet report.
-  //
-  // This will report any tablets which have changed since the last acknowleged
-  // tablet report. Once the report is successfully transferred, call
-  // MarkTabletReportAcknowledged() to clear the incremental state. Otherwise, the
-  // next tablet report will continue to include the same tablets until one
-  // is acknowleged.
-  //
-  // This is thread-safe to call along with tablet modification, but not safe
-  // to call from multiple threads at the same time.
-  void GenerateIncrementalTabletReport(master::TabletReportPB* report);
+  // Adds updated tablet information to 'report'.
+  void PopulateFullTabletReport(master::TabletReportPB* report) const;
 
-  // Generate a full tablet report and reset any incremental state tracking.
-  void GenerateFullTabletReport(master::TabletReportPB* report);
-
-  // Mark that the master successfully received and processed the given
-  // tablet report. This uses the report sequence number to "un-dirty" any
-  // tablets which have not changed since the acknowledged report.
-  void MarkTabletReportAcknowledged(const master::TabletReportPB& report);
+  // Adds updated tablet information to 'report'. Only tablets in 'tablet_ids'
+  // are included.
+  void PopulateIncrementalTabletReport(master::TabletReportPB* report,
+                                       const std::vector<std::string>& tablet_ids) const;
 
   // Get all of the tablets currently hosted on this server.
   void GetTabletPeers(std::vector<scoped_refptr<tablet::TabletPeer> >* tablet_peers) const;
 
-  // Marks tablet with 'tablet_id' dirty.
-  // Used for state changes outside of the control of TsTabletManager, such as consensus role
-  // changes.
+  // Marks tablet with 'tablet_id' as dirty so that it'll be included in the
+  // next round of master heartbeats.
+  //
+  // Dirtying events typically include state changes outside of the control of
+  // TsTabletManager, such as consensus role changes.
   void MarkTabletDirty(const std::string& tablet_id, const std::string& reason);
-
-  // Returns the number of tablets in the "dirty" map, for use by unit tests.
-  int GetNumDirtyTabletsForTests() const;
 
   // Return the number of tablets in RUNNING or BOOTSTRAPPING state.
   int GetNumLiveTablets() const;
@@ -196,15 +183,6 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
     NEW_PEER,
     REPLACEMENT_PEER
   };
-
-  // Each tablet report is assigned a sequence number, so that subsequent
-  // tablet reports only need to re-report those tablets which have
-  // changed since the last report. Each tablet tracks the sequence
-  // number at which it became dirty.
-  struct TabletReportState {
-    uint32_t change_seq;
-  };
-  typedef std::unordered_map<std::string, TabletReportState> DirtyMap;
 
   // Standard log prefix, given a tablet id.
   std::string LogPrefix(const std::string& tablet_id) const;
@@ -268,13 +246,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Helper to generate the report for a single tablet.
   void CreateReportedTabletPB(const std::string& tablet_id,
                               const scoped_refptr<tablet::TabletPeer>& tablet_peer,
-                              master::ReportedTabletPB* reported_tablet);
-
-  // Mark that the provided TabletPeer's state has changed. That should be taken into
-  // account in the next report.
-  //
-  // NOTE: requires that the caller holds the lock.
-  void MarkDirtyUnlocked(const std::string& tablet_id, const std::string& reason);
+                              master::ReportedTabletPB* reported_tablet) const;
 
   // Handle the case on startup where we find a tablet that is not in
   // TABLET_DATA_READY state. Generally, we tombstone the replica.
@@ -333,14 +305,6 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Map of tablet ids -> reason strings where the keys are tablets whose
   // bootstrap, creation, or deletion is in-progress
   TransitionInProgressMap transition_in_progress_;
-
-  // Tablets to include in the next incremental tablet report.
-  // When a tablet is added/removed/added locally and needs to be
-  // reported to the master, an entry is added to this map.
-  DirtyMap dirty_tablets_;
-
-  // Next tablet report seqno.
-  int32_t next_report_seq_;
 
   MetricRegistry* metric_registry_;
 

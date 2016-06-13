@@ -27,6 +27,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/test_util.h"
@@ -67,6 +68,7 @@ class TsTabletManagerTest : public KuduTest {
 
     tablet_manager_ = mini_server_->server()->tablet_manager();
     fs_manager_ = mini_server_->server()->fs_manager();
+    heartbeater_ = mini_server_->server()->heartbeater();
   }
 
   Status CreateNewTablet(const std::string& tablet_id,
@@ -89,10 +91,29 @@ class TsTabletManagerTest : public KuduTest {
     return tablet_peer->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10));
   }
 
+  void GenerateFullTabletReport(TabletReportPB* report) {
+    vector<TabletReportPB> reports =
+        heartbeater_->GenerateFullTabletReportsForTests();
+    ASSERT_EQ(1, reports.size());
+    report->CopyFrom(reports[0]);
+  }
+
+  void GenerateIncrementalTabletReport(TabletReportPB* report) {
+    vector<TabletReportPB> reports =
+        heartbeater_->GenerateIncrementalTabletReportsForTests();
+    ASSERT_EQ(1, reports.size());
+    report->CopyFrom(reports[0]);
+  }
+
+  void MarkTabletReportAcknowledged(const TabletReportPB& report) {
+    heartbeater_->MarkTabletReportsAcknowledgedForTests({ report });
+  }
+
  protected:
   gscoped_ptr<MiniTabletServer> mini_server_;
   FsManager* fs_manager_;
   TSTabletManager* tablet_manager_;
+  Heartbeater* heartbeater_;
 
   Schema schema_;
   RaftConfigPB config_;
@@ -157,24 +178,24 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   int64_t seqno = -1;
 
   // Generate a tablet report before any tablets are loaded. Should be empty.
-  tablet_manager_->GenerateFullTabletReport(&report);
+  GenerateFullTabletReport(&report);
   ASSERT_FALSE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
   ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
-  tablet_manager_->MarkTabletReportAcknowledged(report);
+  MarkTabletReportAcknowledged(report);
 
   // Another report should now be incremental, but with no changes.
-  tablet_manager_->GenerateIncrementalTabletReport(&report);
+  GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
   ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
-  tablet_manager_->MarkTabletReportAcknowledged(report);
+  MarkTabletReportAcknowledged(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
   ASSERT_OK(CreateNewTablet("tablet-1", schema_, nullptr));
   int updated_tablets = 0;
   while (updated_tablets != 1) {
-    tablet_manager_->GenerateIncrementalTabletReport(&report);
+    GenerateIncrementalTabletReport(&report);
     updated_tablets = report.updated_tablets().size();
     ASSERT_TRUE(report.is_incremental());
     ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
@@ -184,19 +205,19 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
 
   // If we don't acknowledge the report, and ask for another incremental report,
   // it should include the tablet again.
-  tablet_manager_->GenerateIncrementalTabletReport(&report);
+  GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(1, report.updated_tablets().size());
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
   ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
 
   // Now acknowledge the last report, and further incrementals should be empty.
-  tablet_manager_->MarkTabletReportAcknowledged(report);
-  tablet_manager_->GenerateIncrementalTabletReport(&report);
+  MarkTabletReportAcknowledged(report);
+  GenerateIncrementalTabletReport(&report);
   ASSERT_TRUE(report.is_incremental());
   ASSERT_EQ(0, report.updated_tablets().size());
   ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
-  tablet_manager_->MarkTabletReportAcknowledged(report);
+  MarkTabletReportAcknowledged(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
   ASSERT_OK(CreateNewTablet("tablet-2", schema_, nullptr));
@@ -210,7 +231,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   report.Clear();
   while (true) {
     bool found_tablet_2 = false;
-    tablet_manager_->GenerateIncrementalTabletReport(&report);
+    GenerateIncrementalTabletReport(&report);
     ASSERT_TRUE(report.is_incremental()) << report.ShortDebugString();
     ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report) << report.ShortDebugString();
     for (const ReportedTabletPB& reported_tablet : report.updated_tablets()) {
@@ -227,10 +248,10 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
 
-  tablet_manager_->MarkTabletReportAcknowledged(report);
+  MarkTabletReportAcknowledged(report);
 
   // Asking for a full tablet report should re-report both tablets
-  tablet_manager_->GenerateFullTabletReport(&report);
+  GenerateFullTabletReport(&report);
   ASSERT_FALSE(report.is_incremental());
   ASSERT_EQ(2, report.updated_tablets().size());
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
