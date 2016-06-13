@@ -372,7 +372,7 @@ CREATE TABLE my_first_table
   id BIGINT,
   name STRING
 )
-DISTRIBUTE BY HASH (id) INTO 16 BUCKETS
+DISTRIBUTE BY HASH INTO 16 BUCKETS
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'my_first_table',
@@ -404,6 +404,7 @@ property. In this example, the primary key columns are `ts` and `name`.
 [source,sql]
 ----
 CREATE TABLE new_table
+DISTRIBUTE BY HASH INTO 16 BUCKETS
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'new_table',
@@ -430,8 +431,8 @@ like `SELECT name as new_name`.
 Tables are divided into tablets which are each served by one or more tablet
 servers. Ideally, tablets should split a table's data relatively equally. Kudu currently
 has no mechanism for automatically (or manually) splitting a pre-existing tablet.
-Until this feature has been implemented, you must pre-split your table when you create
-it, When designing your table schema, consider primary keys that will allow you to
+Until this feature has been implemented, *you must pre-split your table when you create
+it*. When designing your table schema, consider primary keys that will allow you to
 pre-split your table into tablets which grow at similar rates. You can provide split
 points using a `DISTRIBUTE BY` clause when creating a table using Impala:
 
@@ -455,13 +456,13 @@ CREATE TABLE cust_behavior (
   rating INT,
   fulfilled_date BIGINT
 )
-DISTRIBUTE BY RANGE(_id)
-SPLIT ROWS((1439560049342),
-           (1439566253755),
-           (1439572458168),
-           (1439578662581),
-           (1439584866994),
-           (1439591071407))
+DISTRIBUTE BY RANGE (_id)
+  SPLIT ROWS((1439560049342),
+             (1439566253755),
+             (1439572458168),
+             (1439578662581),
+             (1439584866994),
+             (1439591071407))
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'cust_behavior',
@@ -491,12 +492,13 @@ use the following SQL:
 
 [source,sql]
 ----
-CREATE DATABASE impala_kudu
+CREATE DATABASE impala_kudu;
 USE impala_kudu;
 CREATE TABLE my_first_table (
   id BIGINT,
   name STRING
 )
+DISTRIBUTE BY HASH INTO 4 BUCKETS
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'my_first_table',
@@ -605,13 +607,13 @@ CREATE TABLE customers (
   name STRING,
   purchase_count int32,
 )
-DISTRIBUTE BY RANGE(state)
-SPLIT ROWS(('al'),
-           ('ak'),
-           ('ar'),
-           ...
-           ('wv'),
-           ('wy'))
+DISTRIBUTE BY RANGE (state)
+  SPLIT ROWS (('al'),
+              ('ak'),
+              ('ar'),
+              ...
+              ('wv'),
+              ('wy'))
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'customers',
@@ -666,7 +668,7 @@ CREATE TABLE cust_behavior (
   rating INT,
   fulfilled_date BIGINT
 )
-DISTRIBUTE BY HASH (id) INTO 16 BUCKETS
+DISTRIBUTE BY HASH INTO 16 BUCKETS
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'cust_behavior',
@@ -701,14 +703,14 @@ CREATE TABLE customers (
   name STRING,
   purchase_count int32,
 )
-DISTRIBUTE BY RANGE(state, name)
-  SPLIT ROWS(('al', ''),
-             ('al', 'm'),
-             ('ak', ''),
-             ('ak', 'm'),
-             ...
-             ('wy', ''),
-             ('wy', 'm'))
+DISTRIBUTE BY RANGE (state, name)
+  SPLIT ROWS (('al', ''),
+              ('al', 'm'),
+              ('ak', ''),
+              ('ak', 'm'),
+              ...
+              ('wy', ''),
+              ('wy', 'm'))
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'customers',
@@ -727,6 +729,10 @@ buckets, and then applying range partitioning to split each bucket into four tab
 based upon the value of the `sku` string. Writes are spread across at least four tablets
 (and possibly up to 16). When you query for a contiguous range of `sku` values, you have a
 good chance of only needing to read from a quarter of the tablets to fulfill the query.
+
+NOTE: By default, the entire primary key is hashed when you use `DISTRIBUTE BY HASH`.
+To hash on only part of the primary key, specify it by using syntax like `DISTRIBUTE
+BY HASH (id, sku)`.
 
 [source,sql]
 ----
@@ -747,9 +753,9 @@ CREATE TABLE cust_behavior (
 )
 DISTRIBUTE BY HASH (id) INTO 4 BUCKETS,
 RANGE (sku)
-  SPLIT ROWS(('g'),
-             ('o'),
-             ('u'))
+  SPLIT ROWS (('g'),
+              ('o'),
+              ('u'))
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'cust_behavior',
