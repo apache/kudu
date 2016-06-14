@@ -170,20 +170,20 @@ public class TestKuduTable extends BaseKuduTest {
     KuduTable table = createTableWithSplitsAndTest(30);
 
     List<LocatedTablet>tablets = table.getTabletsLocations(null, getKeyInBytes(9), DEFAULT_SLEEP);
-    assertEquals(10, tablets.size());
-    assertEquals(10, table.asyncGetTabletsLocations(null, getKeyInBytes(9), DEFAULT_SLEEP).join().size());
+    assertEquals(9, tablets.size());
+    assertEquals(9, table.asyncGetTabletsLocations(null, getKeyInBytes(9), DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(0), getKeyInBytes(9), DEFAULT_SLEEP);
-    assertEquals(10, tablets.size());
-    assertEquals(10, table.asyncGetTabletsLocations(getKeyInBytes(0), getKeyInBytes(9), DEFAULT_SLEEP).join().size());
+    assertEquals(9, tablets.size());
+    assertEquals(9, table.asyncGetTabletsLocations(getKeyInBytes(0), getKeyInBytes(9), DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(5), getKeyInBytes(9), DEFAULT_SLEEP);
-    assertEquals(5, tablets.size());
-    assertEquals(5, table.asyncGetTabletsLocations(getKeyInBytes(5), getKeyInBytes(9), DEFAULT_SLEEP).join().size());
+    assertEquals(4, tablets.size());
+    assertEquals(4, table.asyncGetTabletsLocations(getKeyInBytes(5), getKeyInBytes(9), DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(5), getKeyInBytes(14), DEFAULT_SLEEP);
-    assertEquals(10, tablets.size());
-    assertEquals(10, table.asyncGetTabletsLocations(getKeyInBytes(5), getKeyInBytes(14), DEFAULT_SLEEP).join().size());
+    assertEquals(9, tablets.size());
+    assertEquals(9, table.asyncGetTabletsLocations(getKeyInBytes(5), getKeyInBytes(14), DEFAULT_SLEEP).join().size());
 
     tablets = table.getTabletsLocations(getKeyInBytes(5), getKeyInBytes(31), DEFAULT_SLEEP);
     assertEquals(26, tablets.size());
@@ -231,10 +231,6 @@ public class TestKuduTable extends BaseKuduTest {
       }
     }
     KuduTable table = createTable(tableName, schema, builder);
-
-    // calling getTabletsLocation won't wait on the table to be assigned so we trigger the wait
-    // by scanning
-    countRowsInScan(client.newScannerBuilder(table).build());
 
     List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
     assertEquals(splitsCount + 1, tablets.size());

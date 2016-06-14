@@ -53,6 +53,17 @@ By combining all of these properties, Kudu targets support for families of
 applications that are difficult or impossible to implement on current-generation
 Hadoop storage technologies.
 
+[[rn_1.0.0]]
+=== Release notes specific to 1.0.0
+
+[[rn_1.0.0_incompatible_changes]]
+==== Incompatible changes
+
+- The Java client's `KuduTable.getTabletsLocations` set of methods is now
+  deprecated. Additionally, they now take an exclusive end partition key instead
+  of an inclusive key. Applications are encouraged to use the scan tokens API
+  instead of these methods in the future.
+
 [[rn_0.9.0]]
 === Release notes specific to 0.9.0
 

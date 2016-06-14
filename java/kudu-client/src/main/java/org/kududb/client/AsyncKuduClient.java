@@ -30,6 +30,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ComparisonChain;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
@@ -79,7 +80,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
@@ -1080,7 +1087,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * Get all or some tablets for a given table. This may query the master multiple times if there
    * are a lot of tablets.
    * This method blocks until it gets all the tablets.
-   * @param tableId the table to locate tablets from
+   * @param table the table to locate tablets from
    * @param startPartitionKey where to start in the table, pass null to start at the beginning
    * @param endPartitionKey where to stop in the table, pass null to get all the tablets until the
    *                        end of the table
@@ -1089,62 +1096,71 @@ public class AsyncKuduClient implements AutoCloseable {
    *         each tablet
    * @throws Exception MasterErrorException if the table doesn't exist
    */
-  List<LocatedTablet> syncLocateTable(String tableId,
+  List<LocatedTablet> syncLocateTable(KuduTable table,
                                       byte[] startPartitionKey,
                                       byte[] endPartitionKey,
                                       long deadline) throws Exception {
-    return locateTable(tableId, startPartitionKey, endPartitionKey, deadline).join();
+    return locateTable(table, startPartitionKey, endPartitionKey, deadline).join();
   }
 
-  private Deferred<List<LocatedTablet>> loopLocateTable(final String tableId,
-      final byte[] startPartitionKey, final byte[] endPartitionKey, final List<LocatedTablet> ret,
-      final DeadlineTracker deadlineTracker) {
-    if (deadlineTracker.timedOut()) {
-      return Deferred.fromError(new NonRecoverableException(
-          "Took too long getting the list of tablets, " + deadlineTracker));
+  private Deferred<List<LocatedTablet>> loopLocateTable(final KuduTable table,
+                                                        final byte[] startPartitionKey,
+                                                        final byte[] endPartitionKey,
+                                                        final List<LocatedTablet> ret,
+                                                        final DeadlineTracker deadlineTracker) {
+    // We rely on the keys initially not being empty.
+    Preconditions.checkArgument(startPartitionKey == null || startPartitionKey.length > 0,
+                                "use null for unbounded start partition key");
+    Preconditions.checkArgument(endPartitionKey == null || endPartitionKey.length > 0,
+                                "use null for unbounded end partition key");
+
+    // The next partition key to look up. If null, then it represents
+    // the minimum partition key, If empty, it represents the maximum key.
+    byte[] partitionKey = startPartitionKey;
+
+    // Continue while the partition key is the minimum, or it is not the maximum
+    // and it is less than the end partition key.
+    while (partitionKey == null ||
+           (partitionKey.length > 0 &&
+            (endPartitionKey == null || Bytes.memcmp(partitionKey, endPartitionKey) < 0))) {
+      byte[] key = partitionKey == null ? EMPTY_ARRAY : partitionKey;
+      RemoteTablet tablet = getTablet(table.getTableId(), key);
+      if (tablet != null) {
+        ret.add(new LocatedTablet(tablet));
+        partitionKey = tablet.getPartition().getPartitionKeyEnd();
+        continue;
+      }
+
+      if (deadlineTracker.timedOut()) {
+        return Deferred.fromError(new NonRecoverableException(
+            "Took too long getting the list of tablets, " + deadlineTracker));
+      }
+
+      // If the partition key location isn't cached, and the request hasn't timed out,
+      // then kick off a new tablet location lookup and try again when it completes.
+      // When lookup completes, the tablet (or non-covered range) for the next
+      // partition key will be located and added to the client's cache.
+      final byte[] lookupKey = partitionKey;
+      return locateTablet(table, key).addCallbackDeferring(
+          new Callback<Deferred<List<LocatedTablet>>, GetTableLocationsResponsePB>() {
+            @Override
+            public Deferred<List<LocatedTablet>> call(GetTableLocationsResponsePB resp) {
+              return loopLocateTable(table, lookupKey, endPartitionKey, ret, deadlineTracker);
+            }
+            @Override
+            public String toString() {
+              return "LoopLocateTableCB";
+            }
+          });
     }
-    GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTable, startPartitionKey,
-        endPartitionKey, tableId);
-    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
-    final Deferred<Master.GetTableLocationsResponsePB> d = sendRpcToTablet(rpc);
-    return d.addCallbackDeferring(
-        new Callback<Deferred<List<LocatedTablet>>, Master.GetTableLocationsResponsePB>() {
-          @Override
-          public Deferred<List<LocatedTablet>> call(GetTableLocationsResponsePB response) {
-            // Table doesn't exist or is being created.
-            if (response.getTabletLocationsCount() == 0) {
-              Deferred.fromResult(ret);
-            }
-            byte[] lastEndPartition = startPartitionKey;
-            for (Master.TabletLocationsPB tabletPb : response.getTabletLocationsList()) {
-              LocatedTablet locs = new LocatedTablet(tabletPb);
-              ret.add(locs);
-              Partition partition = locs.getPartition();
-              if (lastEndPartition != null && !partition.isEndPartition()
-                  && Bytes.memcmp(partition.getPartitionKeyEnd(), lastEndPartition) < 0) {
-                return Deferred.fromError(new IllegalStateException(
-                    "Server returned tablets out of order: " + "end partition key '"
-                        + Bytes.pretty(partition.getPartitionKeyEnd()) + "' followed "
-                        + "end partition key '" + Bytes.pretty(lastEndPartition) + "'"));
-              }
-              lastEndPartition = partition.getPartitionKeyEnd();
-            }
-            // If true, we're done, else we have to go back to the master with the last end key
-            if (lastEndPartition.length == 0
-                || (endPartitionKey != null && Bytes.memcmp(lastEndPartition, endPartitionKey) > 0)) {
-              return Deferred.fromResult(ret);
-            } else {
-              return loopLocateTable(tableId, lastEndPartition, endPartitionKey, ret,
-                  deadlineTracker);
-            }
-          }
-        });
+
+    return Deferred.fromResult(ret);
   }
 
   /**
    * Get all or some tablets for a given table. This may query the master multiple times if there
    * are a lot of tablets.
-   * @param tableId the table to locate tablets from
+   * @param table the table to locate tablets from
    * @param startPartitionKey where to start in the table, pass null to start at the beginning
    * @param endPartitionKey where to stop in the table, pass null to get all the tablets until the
    *                        end of the table
@@ -1154,12 +1170,14 @@ public class AsyncKuduClient implements AutoCloseable {
    *         for metadata about each tablet
    * @throws Exception MasterErrorException if the table doesn't exist
    */
-  Deferred<List<LocatedTablet>> locateTable(final String tableId,
-      final byte[] startPartitionKey, final byte[] endPartitionKey, long deadline) {
+  Deferred<List<LocatedTablet>> locateTable(final KuduTable table,
+                                            final byte[] startPartitionKey,
+                                            final byte[] endPartitionKey,
+                                            long deadline) {
     final List<LocatedTablet> ret = Lists.newArrayList();
     final DeadlineTracker deadlineTracker = new DeadlineTracker();
     deadlineTracker.setDeadline(deadline);
-    return loopLocateTable(tableId, startPartitionKey, endPartitionKey, ret, deadlineTracker);
+    return loopLocateTable(table, startPartitionKey, endPartitionKey, ret, deadlineTracker);
   }
 
   /**
@@ -1859,7 +1877,10 @@ public class AsyncKuduClient implements AutoCloseable {
     private static final int NO_LEADER_INDEX = -1;
     private final String tableId;
     private final Slice tabletId;
-    private final ArrayList<TabletClient> tabletServers = new ArrayList<TabletClient>();
+    @GuardedBy("tabletServers")
+    private final ArrayList<TabletClient> tabletServers = new ArrayList<>();
+    private final AtomicReference<List<LocatedTablet.Replica>> replicas =
+        new AtomicReference(ImmutableList.of());
     private final Partition partition;
     private int leaderIndex = NO_LEADER_INDEX;
 
@@ -1908,7 +1929,14 @@ public class AsyncKuduClient implements AutoCloseable {
           throw new NonRecoverableException("Couldn't find any valid locations, exceptions: " +
               lookupExceptions);
         }
+
       }
+
+      ImmutableList.Builder<LocatedTablet.Replica> replicasBuilder = new ImmutableList.Builder<>();
+      for (Master.TabletLocationsPB.ReplicaPB replica : tabletLocations.getReplicasList()) {
+        replicasBuilder.add(new LocatedTablet.Replica(replica));
+      }
+      replicas.set(replicasBuilder.build());
     }
 
     // Must be called with tabletServers synchronized
@@ -2023,6 +2051,14 @@ public class AsyncKuduClient implements AutoCloseable {
               getTabletIdAsString(), leaderIndex);
         }
       }
+    }
+
+    /**
+     * Gets the replicas of this tablet. The returned list may not be mutated.
+     * @return the replicas of the tablet
+     */
+    List<LocatedTablet.Replica> getReplicas() {
+      return replicas.get();
     }
 
     public String getTableId() {

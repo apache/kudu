@@ -21,12 +21,9 @@ package org.kududb.client;
 
 import java.util.List;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.ImmutableList;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 import org.kududb.consensus.Metadata.RaftPeerPB.Role;
-import org.kududb.master.Master.TabletLocationsPB;
 import org.kududb.master.Master.TabletLocationsPB.ReplicaPB;
 
 /**
@@ -42,15 +39,10 @@ public class LocatedTablet {
 
   private final List<Replica> replicas;
 
-  LocatedTablet(TabletLocationsPB pb) {
-    this.partition = ProtobufHelper.pbToPartition(pb.getPartition());
-    this.tabletId = pb.getTabletId().toByteArray();
-
-    ImmutableList.Builder<Replica> reps = ImmutableList.builder();
-    for (ReplicaPB repPb : pb.getReplicasList()) {
-      reps.add(new Replica(repPb));
-    }
-    this.replicas = reps.build();
+  LocatedTablet(AsyncKuduClient.RemoteTablet tablet) {
+    partition = tablet.getPartition();
+    tabletId = tablet.getTabletIdAsBytes();
+    replicas = tablet.getReplicas();
   }
 
   public List<Replica> getReplicas() {
@@ -111,7 +103,7 @@ public class LocatedTablet {
   public static class Replica {
     private final ReplicaPB pb;
 
-    private Replica(ReplicaPB pb) {
+    Replica(ReplicaPB pb) {
       this.pb = pb;
     }
 
@@ -137,5 +129,4 @@ public class LocatedTablet {
       return pb.toString();
     }
   }
-
-};
+}
