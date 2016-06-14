@@ -456,7 +456,9 @@ Status SysCatalogTable::VisitTables(TableVisitor* visitor) {
 
   const int8_t tables_entry = TABLES_ENTRY;
   const int type_col_idx = schema_.find_column(kSysCatalogTableColType);
-  CHECK(type_col_idx != Schema::kColumnNotFound);
+  CHECK(type_col_idx != Schema::kColumnNotFound)
+      << "Cannot find sys catalog table column " << kSysCatalogTableColType << " in schema: "
+      << schema_.ToString();
 
   auto pred_tables = ColumnPredicate::Equality(schema_.column(type_col_idx), &tables_entry);
   ScanSpec spec;
