@@ -21,6 +21,8 @@ import com.google.common.base.Stopwatch;
 import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.BeforeClass;
@@ -117,8 +119,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
       assertTrue(ex.getMessage().contains(badHostname));
     }
 
-    Master.GetTableLocationsResponsePB.Builder builder =
-        Master.GetTableLocationsResponsePB.newBuilder();
+    List<Master.TabletLocationsPB> tabletLocations = new ArrayList<>();
 
     // Builder three bad locations.
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
@@ -139,14 +140,14 @@ public class TestAsyncKuduClient extends BaseKuduTest {
       replicaBuilder.setTsInfo(tsInfoBuilder);
       replicaBuilder.setRole(Metadata.RaftPeerPB.Role.FOLLOWER);
       tabletPb.addReplicas(replicaBuilder);
-      builder.addTabletLocations(tabletPb);
+      tabletLocations.add(tabletPb.build());
     }
 
     // Test that a tablet full of unreachable replicas won't make us retry.
     try {
       KuduTable badTable = new KuduTable(client, "Invalid table name",
           "Invalid table ID", null, null);
-      client.discoverTablets(badTable, builder.build());
+      client.discoverTablets(badTable, tabletLocations);
       fail("This should have failed quickly");
     } catch (Exception ex) {
       assertTrue(ex instanceof NonRecoverableException);
