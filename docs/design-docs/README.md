@@ -26,6 +26,7 @@ made.
 | [Codegen API and impl. details](codegen.md) | Server | N/A |
 | [Consensus design](consensus.md) | Consensus | N/A |
 | [Raft config change design](raft-config-change.md) | Consensus | N/A |
+| [Raft remote bootstrap design](raft-remote-bootstrap.md) | Consensus | N/A |
 | [Master design](master.md) | Master | N/A |
 | [RPC design and impl. details](rpc.md) | RPC | N/A |
 | [Tablet design, impl. details and comparison to other systems](tablet.md) | Tablet | N/A |
