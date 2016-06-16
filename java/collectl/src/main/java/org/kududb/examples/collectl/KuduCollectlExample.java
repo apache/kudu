@@ -14,6 +14,7 @@ import org.kududb.ColumnSchema;
 import org.kududb.ColumnSchema.ColumnSchemaBuilder;
 import org.kududb.Schema;
 import org.kududb.Type;
+import org.kududb.client.CreateTableOptions;
 import org.kududb.client.Insert;
 import org.kududb.client.KuduClient;
 import org.kududb.client.KuduSession;
@@ -64,7 +65,7 @@ public class KuduCollectlExample {
       return;
     }
     
-    ArrayList<ColumnSchema> cols = new ArrayList<>();
+    List<ColumnSchema> cols = new ArrayList<>();
     cols.add(new ColumnSchemaBuilder("host", Type.STRING).key(true).encoding(
         ColumnSchema.Encoding.DICT_ENCODING).build());
     cols.add(new ColumnSchemaBuilder("metric", Type.STRING).key(true).encoding(
@@ -74,7 +75,14 @@ public class KuduCollectlExample {
     cols.add(new ColumnSchemaBuilder("value", Type.DOUBLE)
         .encoding(ColumnSchema.Encoding.BIT_SHUFFLE).build());
 
-    client.createTable(TABLE_NAME, new Schema(cols));
+    // Need to set this up since we're not pre-partitioning.
+    List<String> rangeKeys = new ArrayList<>();
+    rangeKeys.add("host");
+    rangeKeys.add("metric");
+    rangeKeys.add("timestamp");
+
+    client.createTable(TABLE_NAME, new Schema(cols),
+                       new CreateTableOptions().setRangePartitionColumns(rangeKeys));
   }
   
   private void createIdTableIfNecessary() throws Exception {
@@ -86,7 +94,13 @@ public class KuduCollectlExample {
     cols.add(new ColumnSchemaBuilder("host", Type.STRING).key(true).build());
     cols.add(new ColumnSchemaBuilder("metric", Type.STRING).key(true).build());
 
-    client.createTable(ID_TABLE_NAME, new Schema(cols));
+    // Need to set this up since we're not pre-partitioning.
+    List<String> rangeKeys = new ArrayList<>();
+    rangeKeys.add("host");
+    rangeKeys.add("metric");
+
+    client.createTable(ID_TABLE_NAME, new Schema(cols),
+                       new CreateTableOptions().setRangePartitionColumns(rangeKeys));
   }
 
   class HandlerThread extends Thread {

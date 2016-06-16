@@ -28,8 +28,12 @@ public class Sample {
           .build());
       columns.add(new ColumnSchema.ColumnSchemaBuilder("value", Type.STRING)
           .build());
+      List<String> rangeKeys = new ArrayList<>();
+      rangeKeys.add("key");
+
       Schema schema = new Schema(columns);
-      client.createTable(tableName, schema);
+      client.createTable(tableName, schema,
+                         new CreateTableOptions().setRangePartitionColumns(rangeKeys));
 
       KuduTable table = client.openTable(tableName);
       KuduSession session = client.newSession();
