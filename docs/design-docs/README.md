@@ -39,3 +39,4 @@ made.
 | [Scan Token API](scan-tokens.md) | Client | [gerrit](http://gerrit.cloudera.org:8080/2443) |
 | [Full multi-master support for Kudu 1.0](multi-master-1.0.md) | Master, Client | [gerrit](http://gerrit.cloudera.org:8080/2527) |
 | [Non-covering Range Partitions](non-covering-range-partitions.md) | Master, Client | [gerrit](http://gerrit.cloudera.org:8080/2772) |
+| [Permanent failure handling of masters for Kudu 1.0](master-perm-failure-1.0.md) | Master | |
