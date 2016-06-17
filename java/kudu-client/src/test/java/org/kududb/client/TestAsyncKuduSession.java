@@ -202,6 +202,8 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     session.flush().join(DEFAULT_SLEEP);
     assertEquals(10, countInRange(10, 20)); // now everything should be there
 
+    session.flush().join(DEFAULT_SLEEP); // flushing empty buffer should be a no-op.
+
     session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
 
     d = session.apply(createInsert(20));

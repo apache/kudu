@@ -16,6 +16,7 @@
 // under the License.
 package org.kududb.client;
 
+import com.google.common.collect.ImmutableList;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
@@ -46,10 +47,6 @@ import java.util.List;
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public abstract class Operation extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
-
-  // Number given by the session when apply()'d for the first time. Necessary to retain operations
-  // in their original order even after tablet lookup.
-  private long sequenceNumber = -1;
   /**
    * This size will be set when serialize is called. It stands for the size of the row in this
    * operation.
@@ -102,25 +99,6 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
    */
   abstract ChangeType getChangeType();
 
-
-  /**
-   * Sets the sequence number used when batching operations. Should only be called once.
-   * @param sequenceNumber a new sequence number
-   */
-  void setSequenceNumber(long sequenceNumber) {
-    assert (this.sequenceNumber == -1);
-    this.sequenceNumber = sequenceNumber;
-  }
-
-  /**
-   * Returns the sequence number given to this operation.
-   * @return a long representing the sequence number given to this operation after it was applied,
-   * can be -1 if it wasn't set
-   */
-  long getSequenceNumber() {
-    return this.sequenceNumber;
-  }
-
   /**
    * Returns the size in bytes of this operation's row after serialization.
    * @return size in bytes
@@ -143,7 +121,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
 
   @Override
   ChannelBuffer serialize(Message header) {
-    final Tserver.WriteRequestPB.Builder builder = createAndFillWriteRequestPB(this);
+    final Tserver.WriteRequestPB.Builder builder =
+        createAndFillWriteRequestPB(ImmutableList.of(this));
     this.rowOperationSizeBytes = builder.getRowOperations().getRows().size()
         + builder.getRowOperations().getIndirectData().size();
     builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
@@ -221,9 +200,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
    * @return A fully constructed WriteRequestPB containing the passed rows, or
    *         null if no rows were passed.
    */
-  static Tserver.WriteRequestPB.Builder createAndFillWriteRequestPB(Operation... operations) {
-    if (operations == null || operations.length == 0) return null;
-    Schema schema = operations[0].table.getSchema();
+  static Tserver.WriteRequestPB.Builder createAndFillWriteRequestPB(List<Operation> operations) {
+    if (operations == null || operations.isEmpty()) return null;
+    Schema schema = operations.get(0).table.getSchema();
     RowOperationsPB rowOps = new OperationsEncoder().encodeOperations(operations);
     if (rowOps == null) return null;
 
@@ -325,9 +304,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
       }
     }
 
-    public RowOperationsPB encodeOperations(Operation... operations) {
-      if (operations == null || operations.length == 0) return null;
-      init(operations[0].table.getSchema(), operations.length);
+    public RowOperationsPB encodeOperations(List<Operation> operations) {
+      if (operations == null || operations.isEmpty()) return null;
+      init(operations.get(0).table.getSchema(), operations.size());
       for (Operation operation : operations) {
         encodeRow(operation.row, operation.getChangeType());
       }

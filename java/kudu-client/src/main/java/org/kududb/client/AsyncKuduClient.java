@@ -73,6 +73,7 @@ import java.net.SocketAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -1041,7 +1042,8 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param partitionKey can be null, if not we'll find the exact tablet that contains it
    * @return Deferred to track the progress
    */
-  Deferred<Master.GetTableLocationsResponsePB> locateTablet(KuduTable table, byte[] partitionKey) {
+  private Deferred<Master.GetTableLocationsResponsePB> locateTablet(KuduTable table,
+                                                                    byte[] partitionKey) {
     final boolean has_permit = acquireMasterLookupPermit();
     String tableId = table.getTableId();
     if (!has_permit) {
@@ -1388,6 +1390,37 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     return tabletPair.getValue();
+  }
+
+  /**
+   * Returns a deferred containing the located tablet which covers the partition key in the table.
+   * @param table the table
+   * @param partitionKey the partition key of the tablet to look up in the table
+   * @param deadline deadline in milliseconds for this lookup to finish
+   * @return a deferred containing the located tablet
+   */
+  Deferred<LocatedTablet> getTabletLocation(KuduTable table, byte[] partitionKey, long deadline) {
+    // Locate the tablets at the partition key by locating all tablets between
+    // the partition key (inclusive), and the incremented partition key (exclusive).
+
+    Deferred<List<LocatedTablet>> locatedTablets;
+    if (partitionKey.length == 0) {
+      locatedTablets = locateTable(table, null, new byte[] { 0x00 }, deadline);
+    } else {
+      locatedTablets = locateTable(table, partitionKey,
+                                   Arrays.copyOf(partitionKey, partitionKey.length + 1), deadline);
+    }
+
+    // Then pick out the single tablet result from the list.
+    return locatedTablets.addCallback(new Callback<LocatedTablet, List<LocatedTablet>>() {
+      @Override
+      public LocatedTablet call(List<LocatedTablet> tablets) {
+        Preconditions.checkArgument(tablets.size() <= 1,
+                                    "found more than one tablet for a single partition key");
+        Preconditions.checkArgument(!tablets.isEmpty(), "found non-covered partition range");
+        return tablets.get(0);
+      }
+    });
   }
 
   /**
@@ -2098,15 +2131,6 @@ public class AsyncKuduClient implements AutoCloseable {
 
     String getTabletIdAsString() {
       return tabletId.toString(Charset.defaultCharset());
-    }
-
-    List<Common.HostPortPB> getAddressesFromPb(Master.TabletLocationsPB tabletLocations) {
-      List<Common.HostPortPB> addresses = new ArrayList<Common.HostPortPB>(tabletLocations
-          .getReplicasCount());
-      for (Master.TabletLocationsPB.ReplicaPB replica : tabletLocations.getReplicasList()) {
-        addresses.add(replica.getTsInfo().getRpcAddresses(0));
-      }
-      return addresses;
     }
 
     @Override

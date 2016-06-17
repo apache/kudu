@@ -30,6 +30,7 @@ import org.kududb.client.Operation.ChangeType;
 import org.kududb.tserver.Tserver.WriteRequestPBOrBuilder;
 import org.mockito.Mockito;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Longs;
 
 /**
@@ -60,7 +61,8 @@ public class TestOperation {
     row.addString("c4", "c4_val");
 
     {
-      WriteRequestPBOrBuilder pb = Operation.createAndFillWriteRequestPB(insert);
+      WriteRequestPBOrBuilder pb =
+          Operation.createAndFillWriteRequestPB(ImmutableList.<Operation>of(insert));
       RowOperationsPB rowOps = pb.getRowOperations();
       assertEquals(6 * 5, rowOps.getIndirectData().size());
       assertEquals("c0_valc1_valc2_valc3_valc4_val", rowOps.getIndirectData().toStringUtf8());
@@ -90,7 +92,8 @@ public class TestOperation {
     // the old value from the indirect buffer.
     row.setNull("c3");
     {
-      WriteRequestPBOrBuilder pb = Operation.createAndFillWriteRequestPB(insert);
+      WriteRequestPBOrBuilder pb =
+          Operation.createAndFillWriteRequestPB(ImmutableList.<Operation>of(insert));
       RowOperationsPB rowOps = pb.getRowOperations();
       assertEquals(6 * 4, rowOps.getIndirectData().size());
       assertEquals("c0_valc1_valc2_valc4_val", rowOps.getIndirectData().toStringUtf8());

@@ -17,14 +17,15 @@
 package org.kududb.client;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.MoreObjects;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Range;
-import com.google.common.collect.Sets;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
-import org.kududb.master.Master;
+import org.kududb.util.AsyncUtil;
 import org.kududb.util.Slice;
 import org.jboss.netty.util.Timeout;
 import org.jboss.netty.util.TimerTask;
@@ -32,7 +33,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.concurrent.GuardedBy;
-import java.util.*;
+import javax.annotation.concurrent.NotThreadSafe;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
@@ -76,10 +86,11 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
  * With AUTO_FLUSH_SYNC, the timeout is set on each apply()'d operation.
  * With AUTO_FLUSH_BACKGROUND and MANUAL_FLUSH, the timeout is assigned to a whole batch of
  * operations upon flush()'ing. It means that in a situation with a timeout of 500ms and a flush
- * interval of 1000ms, an operation can be oustanding for up to 1500ms before being timed out.
+ * interval of 1000ms, an operation can be outstanding for up to 1500ms before being timed out.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Unstable
+@NotThreadSafe
 public class AsyncKuduSession implements SessionConfiguration {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduSession.class);
@@ -96,41 +107,55 @@ public class AsyncKuduSession implements SessionConfiguration {
   private ExternalConsistencyMode consistencyMode;
   private long timeoutMs;
 
-  // We assign a number to each operation that we batch, so that the batch can sort itself before
-  // being sent to the server. We never reset this number.
-  private long nextSequenceNumber = 0;
+  /**
+   * Protects internal state from concurrent access. {@code AsyncKuduSession} is not threadsafe
+   * from the application's perspective, but because internally async timers and async flushing
+   * tasks may access the session concurrently with the application, synchronization is still
+   * needed.
+   */
+  private final Object monitor = new Object();
 
   /**
-   * The following two maps are to be handled together when batching is enabled. The first one is
-   * where the batching happens, the second one is where we keep track of what's been sent but
-   * hasn't come back yet. A batch cannot be in both maps at the same time. A batch cannot be
-   * added to the in flight map if there's already another batch for the same tablet. If this
-   * happens, and the batch in the first map is full, then we fail fast and send it back to the
-   * client.
-   * The second map stores Deferreds because KuduRpc.callback clears out the Deferred it contains
-   * (as a way to reset the RPC), so we want to store the Deferred that's with the RPC that's
-   * sent out.
+   * Tracks the currently active buffer.
+   *
+   * When in mode {@link FlushMode#AUTO_FLUSH_BACKGROUND} or {@link FlushMode#AUTO_FLUSH_SYNC},
+   * {@code AsyncKuduSession} uses double buffering to improve write throughput. While the
+   * application is {@link #apply}ing operations to one buffer (the {@code activeBuffer}), the
+   * second buffer is either being flushed, or if it has already been flushed, it waits in the
+   * {@link #inactiveBuffers} queue. When the currently active buffer is flushed,
+   * {@code activeBuffer} is set to {@code null}. On the next call to {@code apply}, an inactive
+   * buffer is taken from {@code inactiveBuffers} and made the new active buffer. If both
+   * buffers are still flushing, then the {@code apply} call throws {@link PleaseThrottleException}.
    */
-  @GuardedBy("this")
-  private final Map<Slice, Batch> operations = new HashMap<>();
-
-  @GuardedBy("this")
-  private final Map<Slice, Deferred<BatchResponse>> operationsInFlight = new HashMap<>();
+  @GuardedBy("monitor")
+  private Buffer activeBuffer;
 
   /**
-   * This Set is used when not in AUTO_FLUSH_SYNC mode in order to keep track of the operations
-   * that are looking up their tablet, meaning that they aren't in any of the maps above. This is
-   * not expected to grow a lot except when a client starts and only for a short amount of time.
+   * The buffers. May either be active (pointed to by {@link #activeBuffer},
+   * inactive (in the {@link #inactiveBuffers}) queue, or flushing.
    */
-  @GuardedBy("this")
-  private final Set<Operation> operationsInLookup = Sets.newIdentityHashSet();
-  // Only populated when we're waiting to flush and there are operations in lookup
-  private Deferred<Void> lookupsDone;
+  private final Buffer bufferA = new Buffer();
+  private final Buffer bufferB = new Buffer();
+
+  /**
+   * Queue containing flushed, inactive buffers. May be accessed from callbacks (I/O threads).
+   * We restrict the session to only two buffers, so {@link BlockingQueue#add} can
+   * be used without chance of failure.
+   */
+  private final BlockingQueue<Buffer> inactiveBuffers = new ArrayBlockingQueue<>(2, false);
+
+  /**
+   * Deferred used to notify on flush events. Atomically swapped and completed every time a buffer
+   * is flushed. This can be used to notify handlers of {@link PleaseThrottleException} that more
+   * capacity may be available in the active buffer.
+   */
+  private final AtomicReference<Deferred<Void>> flushNotification =
+      new AtomicReference<>(new Deferred<Void>());
 
   /**
    * Tracks whether the session has been closed.
    */
-  volatile boolean closed;
+  private volatile boolean closed = false;
 
   private boolean ignoreAllDuplicateRows = false;
 
@@ -140,11 +165,13 @@ public class AsyncKuduSession implements SessionConfiguration {
    */
   AsyncKuduSession(AsyncKuduClient client) {
     this.client = client;
-    this.flushMode = FlushMode.AUTO_FLUSH_SYNC;
-    this.consistencyMode = CLIENT_PROPAGATED;
-    this.timeoutMs = client.getDefaultOperationTimeoutMs();
-    setMutationBufferLowWatermark(this.mutationBufferLowWatermarkPercentage);
+    flushMode = FlushMode.AUTO_FLUSH_SYNC;
+    consistencyMode = CLIENT_PROPAGATED;
+    timeoutMs = client.getDefaultOperationTimeoutMs();
+    inactiveBuffers.add(bufferA);
+    inactiveBuffers.add(bufferB);
     errorCollector = new ErrorCollector(mutationBufferSpace);
+    setMutationBufferLowWatermark(this.mutationBufferLowWatermarkPercentage);
   }
 
   @Override
@@ -243,7 +270,7 @@ public class AsyncKuduSession implements SessionConfiguration {
   }
 
   /**
-   * Flushes the buffered operations and marks this sessions as closed.
+   * Flushes the buffered operations and marks this session as closed.
    * See the javadoc on {@link #flush()} on how to deal with exceptions coming out of this method.
    * @return a Deferred whose callback chain will be invoked when.
    * everything that was buffered at the time of the call has been flushed.
@@ -252,100 +279,181 @@ public class AsyncKuduSession implements SessionConfiguration {
     if (!closed) {
       closed = true;
       client.removeSession(this);
-      return flush();
-    } else {
-      // Deferred#fromResult(T) is invariant on T, so the cast is necessary.
-      return Deferred.fromResult((List<OperationResponse>) ImmutableList.<OperationResponse>of());
+    }
+    return flush();
+  }
+
+  /**
+   * Returns a buffer to the inactive queue after flushing.
+   * @param buffer the buffer to return to the inactive queue.
+   */
+  private void queueBuffer(Buffer buffer) {
+    buffer.callbackFlushNotification();
+    Deferred<Void> localFlushNotification = flushNotification.getAndSet(new Deferred<Void>());
+    inactiveBuffers.add(buffer);
+    localFlushNotification.callback(null);
+  }
+
+  /**
+   * Callback which waits for all tablet location lookups to complete, groups all operations into
+   * batches by tablet, and dispatches them. When all of the batches are complete, a deferred is
+   * fired and the buffer is added to the inactive queue.
+   */
+  private final class TabletLookupCB implements Callback<Void, Object> {
+    private final AtomicInteger lookupsOutstanding;
+    private final Buffer buffer;
+    private final Deferred<List<BatchResponse>> deferred;
+
+    public TabletLookupCB(Buffer buffer, Deferred<List<BatchResponse>> deferred) {
+      this.lookupsOutstanding = new AtomicInteger(buffer.getOperations().size());
+      this.buffer = buffer;
+      this.deferred = deferred;
+    }
+
+    @Override
+    public Void call(Object _void) throws Exception {
+      if (lookupsOutstanding.decrementAndGet() != 0) return null;
+
+      // The final tablet lookup is complete. Batch all of the buffered
+      // operations into their respective tablet, and then send the batches.
+
+      // Group the operations by tablet.
+      Map<Slice, Batch> batches = new HashMap<>();
+
+      for (BufferedOperation bufferedOp : buffer.getOperations()) {
+        Operation operation = bufferedOp.getOperation();
+        // TODO: when we have non-covered range partitioning the tablet lookup
+        // may fail with a NonCoveredRangeException. In this case we need to
+        // handle the exception, by adding it to a special BatchResponse below
+        // containing all such failed rows.
+        LocatedTablet tablet = bufferedOp.getTablet();
+        Slice tabletId = new Slice(tablet.getTabletId());
+
+        Batch batch = batches.get(tabletId);
+        if (batch == null) {
+          batch = new Batch(operation.getTable(), tablet, ignoreAllDuplicateRows);
+          batches.put(tabletId, batch);
+        }
+        batch.add(operation);
+      }
+
+      List<Deferred<BatchResponse>> batchResponses = new ArrayList<>(batches.size());
+
+      for (Batch batch : batches.values()) {
+        if (timeoutMs != 0) {
+          batch.deadlineTracker.reset();
+          batch.setTimeoutMillis(timeoutMs);
+        }
+        addBatchCallbacks(batch);
+        batchResponses.add(client.sendRpcToTablet(batch));
+      }
+
+      // On completion of all batches, fire the completion deferred, and add the buffer
+      // back to the inactive buffers queue. This frees it up for new inserts.
+      AsyncUtil.addBoth(
+          Deferred.group(batchResponses),
+          new Callback<Void, Object>() {
+            @Override
+            public Void call(Object responses) {
+              queueBuffer(buffer);
+              deferred.callback(responses);
+              return null;
+            }
+          });
+
+      return null;
     }
   }
 
   /**
-   * Flushes the buffered operations.
-   * @return a Deferred whose callback chain will be invoked when
-   * everything that was buffered at the time of the call has been flushed.
+   * Flush buffered writes.
+   * @return a {@link Deferred} whose callback chain will be invoked when all applied operations at
+   *         the time of the call have been flushed.
    */
   public Deferred<List<OperationResponse>> flush() {
-    LOG.trace("Flushing all tablets");
-    synchronized (this) {
-      if (!operationsInLookup.isEmpty()) {
-        lookupsDone = new Deferred<>();
-        return lookupsDone
-            .addCallbackDeferring(new OperationsInLookupDoneCB())
-            .addCallbackDeferring(new ConvertBatchToListOfResponsesCB());
-      }
+    Buffer buffer;
+    Deferred<Void> nonActiveBufferFlush;
+    synchronized (monitor) {
+      nonActiveBufferFlush = getNonActiveFlushNotification();
+      buffer = activeBuffer;
+      activeBuffer = null;
     }
-    return flushAllBatches().addCallbackDeferring(new ConvertBatchToListOfResponsesCB());
-  }
 
-  class OperationsInLookupDoneCB implements
-      Callback<Deferred<ArrayList<BatchResponse>>, Void> {
-    @Override
-    public Deferred<ArrayList<BatchResponse>>
-        call(Void nothing) throws Exception {
-      return flushAllBatches();
-    }
+    final Deferred<List<OperationResponse>> activeBufferFlush = buffer == null ?
+        Deferred.<List<OperationResponse>>fromResult(ImmutableList.<OperationResponse>of()) :
+        doFlush(buffer);
+
+    return AsyncUtil.addBothDeferring(nonActiveBufferFlush,
+                                      new Callback<Deferred<List<OperationResponse>>, Object>() {
+                                        @Override
+                                        public Deferred<List<OperationResponse>> call(Object arg) {
+                                          return activeBufferFlush;
+                                        }
+                                      });
   }
 
   /**
-   * Deferring callback used to send a list of OperationResponse instead of BatchResponse since the
+   * Flushes a write buffer. This method takes ownership of the buffer, no other concurrent access
+   * is allowed.
+   *
+   * @param buffer the buffer to flush, must not be modified once passed to this method
+   * @return the operation responses
+   */
+  private Deferred<List<OperationResponse>> doFlush(Buffer buffer) {
+    LOG.info("flushing buffer: {}", buffer);
+    if (buffer.getOperations().isEmpty()) {
+      // no-op.
+      return Deferred.<List<OperationResponse>>fromResult(ImmutableList.<OperationResponse>of());
+    }
+
+    Deferred<List<BatchResponse>> batchResponses = new Deferred<>();
+    Callback<Void, Object> tabletLookupCB = new TabletLookupCB(buffer, batchResponses);
+
+    for (BufferedOperation bufferedOperation : buffer.getOperations()) {
+      AsyncUtil.addBoth(bufferedOperation.getTabletLookup(), tabletLookupCB);
+    }
+
+    return batchResponses.addCallback(ConvertBatchToListOfResponsesCB.getInstance());
+  }
+
+  /**
+   * Callback used to send a list of OperationResponse instead of BatchResponse since the
    * latter is an implementation detail.
    */
-  class ConvertBatchToListOfResponsesCB implements
-      Callback<Deferred<List<OperationResponse>>, ArrayList<BatchResponse>> {
+  private static class ConvertBatchToListOfResponsesCB implements Callback<List<OperationResponse>,
+                                                                           List<BatchResponse>> {
+    private static final ConvertBatchToListOfResponsesCB INSTANCE =
+        new ConvertBatchToListOfResponsesCB();
     @Override
-    public Deferred<List<OperationResponse>> call(ArrayList<BatchResponse> batchResponsesList)
-        throws Exception {
-      Deferred<List<OperationResponse>> deferred = new Deferred<>();
-      if (batchResponsesList == null) {
-        deferred.callback(null);
-        return deferred;
-      }
-
-      // flushTablet() can return null when a tablet we wanted to flush was already flushed. Those
-      // nulls along with BatchResponses are then put in a list by Deferred.group(). We first need
-      // to filter the nulls out.
-      batchResponsesList.removeAll(Collections.singleton(null));
-      if (batchResponsesList.isEmpty()) {
-        deferred.callback(null);
-        return deferred;
-      }
-
+    public List<OperationResponse> call(List<BatchResponse> batchResponses) throws Exception {
       // First compute the size of the union of all the lists so that we don't trigger expensive
       // list growths while adding responses to it.
       int size = 0;
-      for (BatchResponse batchResponse : batchResponsesList) {
+      for (BatchResponse batchResponse : batchResponses) {
         size += batchResponse.getIndividualResponses().size();
       }
 
-      ArrayList<OperationResponse> responsesList = new ArrayList<>(size);
-      for (BatchResponse batchResponse : batchResponsesList) {
-        responsesList.addAll(batchResponse.getIndividualResponses());
+      ArrayList<OperationResponse> responses = new ArrayList<>(size);
+      for (BatchResponse batchResponse : batchResponses) {
+        responses.addAll(batchResponse.getIndividualResponses());
       }
-      deferred.callback(responsesList);
-      return deferred;
-    }
-  }
 
-  /**
-   * This will flush all the batches but not the operations that are currently in lookup.
-   */
-  private Deferred<ArrayList<BatchResponse>> flushAllBatches() {
-    Map<Slice, Batch> copyOfOps;
-    final List<Deferred<BatchResponse>> d = new ArrayList<>(operations.size());
-    synchronized (this) {
-      copyOfOps = new HashMap<>(operations);
+      return responses;
     }
-    for (Map.Entry<Slice, Batch> entry : copyOfOps.entrySet()) {
-      d.add(flushTablet(entry.getKey(), entry.getValue()));
+    @Override
+    public String toString() {
+      return "ConvertBatchToListOfResponsesCB";
     }
-    return Deferred.group(d);
+    public static ConvertBatchToListOfResponsesCB getInstance() {
+      return INSTANCE;
+    }
   }
 
   @Override
   public boolean hasPendingOperations() {
-    synchronized (this) {
-      return !this.operations.isEmpty() || !this.operationsInFlight.isEmpty() ||
-          !this.operationsInLookup.isEmpty();
+    synchronized (monitor) {
+      return activeBuffer == null ? inactiveBuffers.size() < 2 :
+             activeBuffer.getOperations().size() > 0 || !inactiveBufferAvailable();
     }
   }
 
@@ -358,18 +466,12 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @return a Deferred to track this operation
    */
   public Deferred<OperationResponse> apply(final Operation operation) {
-    if (operation == null) {
-      throw new NullPointerException("Cannot apply a null operation");
-    }
+    Preconditions.checkNotNull(operation, "Can not apply a null operation");
 
-    if (AsyncKuduClient.cannotRetryRequest(operation)) {
-      return AsyncKuduClient.tooManyAttemptsOrTimeout(operation, null);
-    }
-
-    // This can be called multiple times but it's fine, we don't allow "thawing".
+    // Freeze the row so that the client can not concurrently modify it while it is in flight.
     operation.getRow().freeze();
 
-    // If we autoflush, just send it to the TS
+    // If immediate flush mode, send the operation directly.
     if (flushMode == FlushMode.AUTO_FLUSH_SYNC) {
       if (timeoutMs != 0) {
         operation.setTimeoutMillis(timeoutMs);
@@ -379,200 +481,135 @@ public class AsyncKuduSession implements SessionConfiguration {
       return client.sendRpcToTablet(operation);
     }
 
-    // We need this protection because apply() can be called multiple times for the same operations
-    // due to retries, but we only want to set the sequence number once. Since a session isn't
-    // thread-safe, it means that we'll always set the sequence number from the user's thread, and
-    // we'll read later from other threads.
-    if (operation.getSequenceNumber() == -1) {
-      operation.setSequenceNumber(nextSequenceNumber++);
-    }
+    // Kick off a location lookup.
+    Deferred<LocatedTablet> tablet = client.getTabletLocation(operation.getTable(),
+                                                              operation.partitionKey(),
+                                                              timeoutMs);
 
-    String tableId = operation.getTable().getTableId();
-    byte[] partitionKey = operation.partitionKey();
-    AsyncKuduClient.RemoteTablet tablet = client.getTablet(tableId, partitionKey);
-    // We go straight to the buffer if we know the tabletSlice
-    if (tablet != null) {
-      operation.setTablet(tablet);
-      // Handles the difference between manual and auto flush
-      return addToBuffer(tablet.getTabletId(), operation);
-    }
-
-    synchronized (this) {
-      operationsInLookup.add(operation);
-    }
-    // TODO starts looking a lot like sendRpcToTablet
-    operation.attempt++;
-    if (client.isTableNotServed(tableId)) {
-      Callback<Deferred<OperationResponse>, Master.IsCreateTableDoneResponsePB> cb =
-          new TabletLookupCB<>(operation);
-      return client.delayedIsCreateTableDone(operation.getTable(), operation,
-          cb, getOpInLookupErrback(operation));
-    }
-
-    Deferred<Master.GetTableLocationsResponsePB> d =
-        client.locateTablet(operation.getTable(), partitionKey);
-    d.addErrback(getOpInLookupErrback(operation));
-    return d.addCallbackDeferring(
-        new TabletLookupCB<Master.GetTableLocationsResponsePB>(operation));
-  }
-
-  /**
-   * This errback is different from the one in AsyncKuduClient because we need to be able to remove
-   * the operation from operationsInLookup if whatever master query we issue throws an Exception.
-   * @param operation Operation to errback to.
-   * @return An errback.
-   */
-  Callback<Exception, Exception> getOpInLookupErrback(final Operation operation) {
-    return new Callback<Exception, Exception>() {
-      @Override
-      public Exception call(Exception e) throws Exception {
-        // TODO maybe we can retry it?
-        synchronized (this) {
-          operationsInLookup.remove(operation);
-        }
-        operation.errback(e);
-        return e;
-      }
-    };
-  }
-
-  final class TabletLookupCB<D> implements Callback<Deferred<OperationResponse>, D> {
-    final Operation operation;
-    TabletLookupCB(Operation operation) {
-      this.operation = operation;
-    }
-    public Deferred<OperationResponse> call(final D arg) {
-      return handleOperationInLookup(operation);
-    }
-    public String toString() {
-      return "retry RPC after lookup";
-    }
-  }
-
-  // This method takes an Object since we use it for both callback and errback.
-  // The actual type doesn't matter, we just want to be called back in order to retry.
-  Callback<Deferred<OperationResponse>, Object>
-  getRetryOpInLookupCB(final Operation operation) {
-    final class RetryOpInFlightCB implements Callback<Deferred<OperationResponse>, Object> {
-      public Deferred<OperationResponse> call(final Object arg) {
-        return handleOperationInLookup(operation);
-      }
-
-      public String toString() {
-        return "retry RPC after PleaseThrottleException";
-      }
-    }
-    return new RetryOpInFlightCB();
-  }
-
-  private Deferred<OperationResponse> handleOperationInLookup(Operation operation) {
+    // Holds a buffer that should be flushed outside the synchronized block, if necessary.
+    Buffer fullBuffer = null;
     try {
-      return apply(operation); // Retry the RPC.
-    } catch (PleaseThrottleException pte) {
-      return pte.getDeferred().addBothDeferring(getRetryOpInLookupCB(operation));
+      synchronized (monitor) {
+        if (activeBuffer == null) {
+          // If the active buffer is null then we recently flushed. Check if there
+          // is an inactive buffer available to replace as the active.
+          if (inactiveBufferAvailable()) {
+            refreshActiveBuffer();
+          } else {
+            // This can happen if the user writes into a buffer, flushes it, writes
+            // into the second, flushes it, and immediately tries to write again.
+            throw new PleaseThrottleException("All buffers are currently flushing",
+                                              null, operation, flushNotification.get());
+          }
+        }
+
+        if (flushMode == FlushMode.MANUAL_FLUSH) {
+          if (activeBuffer.getOperations().size() < mutationBufferSpace) {
+            activeBuffer.getOperations().add(new BufferedOperation(tablet, operation));
+          } else {
+            throw new NonRecoverableException(
+                "MANUAL_FLUSH mode is enabled but the buffer is full");
+          }
+        } else {
+          assert flushMode == FlushMode.AUTO_FLUSH_BACKGROUND;
+          int activeBufferSize = activeBuffer.getOperations().size();
+
+          if (activeBufferSize >= mutationBufferSpace) {
+            // Save the active buffer into fullBuffer so that it gets flushed when we leave this
+            // synchronized block.
+            fullBuffer = activeBuffer;
+            activeBuffer = null;
+            if (inactiveBufferAvailable()) {
+              refreshActiveBuffer();
+            } else {
+              throw new PleaseThrottleException("All buffers are currently flushing",
+                                                null, operation, flushNotification.get());
+            }
+          }
+
+          if (mutationBufferLowWatermark < mutationBufferSpace && // low watermark is enabled
+              activeBufferSize >= mutationBufferLowWatermark &&   // buffer is over low water mark
+              !inactiveBufferAvailable()) {                       // no inactive buffers
+
+            // Check if we are over the low water mark.
+            int randomWatermark = activeBufferSize + 1 +
+                                  randomizer.nextInt(mutationBufferSpace -
+                                                     mutationBufferLowWatermark);
+
+            if (randomWatermark > mutationBufferSpace) {
+              throw new PleaseThrottleException(
+                  "The previous buffer hasn't been flushed and the " +
+                      "current buffer is over the low watermark, please retry later",
+                  null, operation, flushNotification.get());
+            }
+          }
+
+          activeBuffer.getOperations().add(new BufferedOperation(tablet, operation));
+
+          if (activeBufferSize + 1 >= mutationBufferSpace && inactiveBufferAvailable()) {
+            // If the operation filled the buffer, then flush it.
+            LOG.debug("flushing full buffer: {}", activeBuffer);
+            fullBuffer = activeBuffer;
+            activeBuffer = null;
+          } else if (activeBufferSize == 0) {
+            // If this is the first operation in the buffer, start a background flush timer.
+            client.newTimeout(activeBuffer.getFlusherTask(), interval);
+          }
+        }
+      }
+    } finally {
+      // Flush the buffer outside of the synchronized block, if required.
+      if (fullBuffer != null) {
+        doFlush(fullBuffer);
+      }
     }
+    return operation.getDeferred();
   }
 
   /**
-   * For manual and background flushing, this will batch the given operation
-   * with the others, if any, for the specified tablet.
-   * @param tablet tablet used to for batching
-   * @param operation operation to batch
-   * @return Defered to track the operation
+   * Returns {@code true} if there is an inactive buffer available.
+   * @return true if there is currently an inactive buffer available
    */
-  private Deferred<OperationResponse> addToBuffer(Slice tablet, Operation operation) {
-    boolean scheduleFlush = false;
-    boolean batchIsFull = false;
-    Batch batch;
+  private boolean inactiveBufferAvailable() {
+    return inactiveBuffers.peek() != null;
+  }
 
-    // First check if we need to flush the current batch.
-    synchronized (this) {
-      batch = operations.get(tablet);
-      if (batch != null && batch.ops.size() + 1 > mutationBufferSpace) {
-        if (flushMode == FlushMode.MANUAL_FLUSH) {
-          throw new NonRecoverableException("MANUAL_FLUSH is enabled but the buffer is too big");
+  /**
+   * Refreshes the active buffer. This should only be called after a
+   * {@link #flush()} when the active buffer is {@code null}, there is an
+   * inactive buffer available (see {@link #inactiveBufferAvailable()}, and
+   * {@link #monitor} is locked.
+   */
+  @GuardedBy("monitor")
+  private void refreshActiveBuffer() {
+    Preconditions.checkState(activeBuffer == null);
+    activeBuffer = inactiveBuffers.remove();
+    activeBuffer.reset();
+    LOG.trace("active buffer refreshed: {}", activeBuffer);
+  }
+
+  /**
+   * Returns a flush notification for the currently non-active buffers.
+   * This is used during manual {@link #flush} calls to ensure that all buffers (not just the active
+   * buffer) are fully flushed before completing.
+   */
+  @GuardedBy("monitor")
+  private Deferred<Void> getNonActiveFlushNotification() {
+    final Deferred<Void> notificationA = bufferA.getFlushNotification();
+    final Deferred<Void> notificationB = bufferB.getFlushNotification();
+    if (activeBuffer == null) {
+      // Both buffers are either flushing or inactive.
+      return AsyncUtil.addBothDeferring(notificationA, new Callback<Deferred<Void>, Object>() {
+        @Override
+        public Deferred<Void> call(Object _obj) throws Exception {
+          return notificationB;
         }
-        if (operationsInFlight.containsKey(tablet)) {
-          // There's is already another batch in flight for this tablet.
-          // We cannot continue here, we have to send this back to the client.
-          // This is our high watermark.
-          throw new PleaseThrottleException("The RPC cannot be buffered because the current " +
-              "buffer is full and the previous buffer hasn't been flushed yet", null,
-              operation, operationsInFlight.get(tablet));
-        }
-        batchIsFull = true;
-      }
+      });
+    } else if (activeBuffer == bufferA) {
+      return notificationB;
+    } else {
+      return notificationA;
     }
-
-    // We're doing this out of the synchronized block because flushTablet can take some time
-    // encoding all the data.
-    if (batchIsFull) {
-      flushTablet(tablet, batch);
-    }
-
-    Deferred<Void> lookupsDoneCopy = null;
-    synchronized (this) {
-      // We need to get the batch again since we went out of the synchronized block. We can get a
-      // new one, the same one, or null.
-      batch = operations.get(tablet);
-
-      if (mutationBufferLowWatermark < mutationBufferSpace && // look if it's enabled
-          batch != null && // and if we have a batch
-          operationsInFlight.containsKey(tablet) && // and if there's another batch outstanding
-          batch.ops.size() + 1 > mutationBufferLowWatermark) { // and if we'll be over the mark
-
-        // This is our low watermark, we throw PleaseThrottleException before hitting the high
-        // mark. As we get fuller past the watermark it becomes likelier to trigger it.
-        int randomWatermark = batch.ops.size() + 1 + randomizer.nextInt(mutationBufferSpace -
-            mutationBufferLowWatermark);
-        if (randomWatermark > mutationBufferSpace) {
-          throw new PleaseThrottleException("The previous buffer hasn't been flushed and the " +
-              "current one is over the low watermark, please retry later", null, operation,
-              operationsInFlight.get(tablet));
-        }
-      }
-      if (batch == null) {
-        // We found a tablet that needs batching, this is the only place where
-        // we schedule a flush.
-        batch = new Batch(operation.getTable(), ignoreAllDuplicateRows);
-        batch.setExternalConsistencyMode(this.consistencyMode);
-        Batch oldBatch = operations.put(tablet, batch);
-        assert (oldBatch == null);
-        addBatchCallbacks(batch);
-        scheduleFlush = true;
-      }
-      batch.ops.add(operation);
-      if (!operationsInLookup.isEmpty()) {
-
-        boolean operationWasLookingUpTablet = operationsInLookup.remove(operation);
-        if (operationWasLookingUpTablet) {
-          // We know that the operation we just added was in the 'operationsInLookup' list so we're
-          // very likely adding it out of order from a different thread.
-          // We'll need to sort the whole list later.
-          batch.needsSorting = true;
-        }
-
-        if (lookupsDone != null && operationsInLookup.isEmpty()) {
-          lookupsDoneCopy = lookupsDone;
-          lookupsDone = null;
-        }
-      }
-      if (flushMode == FlushMode.AUTO_FLUSH_BACKGROUND && scheduleFlush) {
-        // Accumulated a first insert but we're not in manual mode,
-        // schedule the flush.
-        LOG.trace("Scheduling a flush");
-        scheduleNextPeriodicFlush(tablet, batch);
-      }
-    }
-
-    // We do this outside of the synchronized block because we might end up calling flushTablet.
-    if (lookupsDoneCopy != null) {
-      lookupsDoneCopy.callback(null);
-    }
-
-    // Get here if we accumulated an insert, regardless of if it scheduled
-    // a flush.
-    return operation.getDeferred();
   }
 
   /**
@@ -580,10 +617,9 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @param request the request for which we must handle the response
    */
   private void addBatchCallbacks(final Batch request) {
-    final class BatchCallback implements
-        Callback<BatchResponse, BatchResponse> {
+    final class BatchCallback implements Callback<BatchResponse, BatchResponse> {
       public BatchResponse call(final BatchResponse response) {
-        LOG.trace("Got a Batch response for " + request.ops.size() + " rows");
+        LOG.trace("Got a Batch response for {} rows", request.operations.size());
         if (response.getWriteTimestamp() != 0) {
           AsyncKuduSession.this.client.updateLastPropagatedTimestamp(response.getWriteTimestamp());
         }
@@ -605,16 +641,15 @@ public class AsyncKuduSession implements SessionConfiguration {
       }
     }
 
-    final class BatchErrCallback implements Callback<Exception, Exception> {
+    final class BatchErrCallback implements Callback<Void, Exception> {
       @Override
-      public Exception call(Exception e) throws Exception {
+      public Void call(Exception e) throws Exception {
         // Send the same exception to all the operations.
-        for (int i = 0; i < request.ops.size(); i++) {
-          request.ops.get(i).errback(e);
+        for (Operation operation : request.operations) {
+          operation.errback(e);
         }
-        return e;
+        return null;
       }
-
       @Override
       public String toString() {
         return "apply batch error response";
@@ -625,201 +660,143 @@ public class AsyncKuduSession implements SessionConfiguration {
   }
 
   /**
-   * Schedules the next periodic flush of buffered edits.
+   * A FlusherTask is created for each active buffer in mode
+   * {@link FlushMode#AUTO_FLUSH_BACKGROUND}.
    */
-  private void scheduleNextPeriodicFlush(Slice tablet, Batch batch) {
-    client.newTimeout(new FlusherTask(tablet, batch), interval);
-  }
-
-  /**
-   * Flushes the edits for the given tablet. It will also check that the Batch we're flushing is
-   * the one that was requested. This is mostly done so that the FlusherTask doesn't trigger
-   * lots of small flushes under a write-heavy scenario where we're able to fill a Batch multiple
-   * times per interval.
-   *
-   * Also, if there's already a Batch in flight for the given tablet,
-   * the flush will be delayed and the returned Deferred will be chained to it.
-   *
-   * This method should not be called within a synchronized block because we can spend a lot of
-   * time encoding the batch.
-   */
-  private Deferred<BatchResponse> flushTablet(Slice tablet, Batch expectedBatch) {
-    assert (expectedBatch != null);
-    assert (!Thread.holdsLock(this));
-    Batch batch;
-    synchronized (this) {
-      // Check this first, no need to wait after anyone if the batch we were supposed to flush
-      // was already flushed.
-      if (operations.get(tablet) != expectedBatch) {
-        LOG.trace("Had to flush a tablet but it was already flushed: " + Bytes.getString(tablet));
-        // It is OK to return null here, since we currently do not use the returned value
-        // when doing background flush or auto flushing when buffer is full.
-        // The returned value is used when doing manual flush, but it will not run into this
-        // condition, or there is a bug.
-        return Deferred.fromResult(null);
-      }
-
-      if (operationsInFlight.containsKey(tablet)) {
-        if (LOG.isTraceEnabled()) {
-          LOG.trace("Tablet " + Bytes.getString(tablet)
-              + " is already in flight, attaching a callback to retry "
-              + expectedBatch.toDebugString() + " later.");
-        }
-        // No matter previous batch get error or not, we still have to flush this batch.
-        FlushRetryCallback retryCallback = new FlushRetryCallback(tablet, operations.get(tablet));
-        FlushRetryErrback retryErrback = new FlushRetryErrback(tablet, operations.get(tablet));
-        // Note that if we do manual flushing multiple times when previous batch is still inflight,
-        // we may add the same callback multiple times, later retry of flushTablet will return null
-        // immediately. Since it is an illegal use case, we do not handle this currently.
-        operationsInFlight.get(tablet).addCallbacks(retryCallback, retryErrback);
-        return expectedBatch.getDeferred();
-      }
-
-      batch = operations.remove(tablet);
-      if (batch == null) {
-        LOG.trace("Had to flush a tablet but there was nothing to flush: " +
-            Bytes.getString(tablet));
-        return Deferred.fromResult(null);
-      }
-      Deferred<BatchResponse> batchDeferred = batch.getDeferred();
-      batchDeferred.addCallbacks(getOpInFlightCallback(tablet), getOpInFlightErrback(tablet));
-      Deferred<BatchResponse> oldBatch = operationsInFlight.put(tablet, batchDeferred);
-      assert (oldBatch == null);
-      if (timeoutMs != 0) {
-        batch.deadlineTracker.reset();
-        batch.setTimeoutMillis(timeoutMs);
-      }
-    }
-    return client.sendRpcToTablet(batch);
-  }
-
-
-  /**
-   * Simple callback so that we try to flush this tablet again if we were waiting on the previous
-   * Batch to finish.
-   */
-  class FlushRetryCallback implements Callback<BatchResponse, BatchResponse> {
-    private final Slice tablet;
-    private final Batch expectedBatch;
-    public FlushRetryCallback(Slice tablet, Batch expectedBatch) {
-      this.tablet = tablet;
-      this.expectedBatch = expectedBatch;
-    }
-
-    @Override
-    public BatchResponse call(BatchResponse o) throws Exception {
-      if (LOG.isTraceEnabled()) {
-        LOG.trace("Previous batch in flight is done. " + toString());
-      }
-      flushTablet(tablet, expectedBatch);
-      return o;
-    }
-
-    @Override
-    public String toString() {
-      return String.format("FlushRetryCallback: retry flush tablet %s %s", Bytes.getString(tablet),
-          expectedBatch.toDebugString());
-    }
-  }
-
-  /**
-   * Same callback as above FlushRetryCallback, for the case that previous batch has error.
-   */
-  class FlushRetryErrback implements Callback<Exception, Exception> {
-    private final Slice tablet;
-    private final Batch expectedBatch;
-    public FlushRetryErrback(Slice tablet, Batch expectedBatch) {
-      this.tablet = tablet;
-      this.expectedBatch = expectedBatch;
-    }
-
-    @Override
-    public Exception call(Exception e) throws Exception {
-      if (LOG.isTraceEnabled()) {
-        LOG.trace("Previous batch ended with an error. " + toString());
-      }
-      flushTablet(tablet, expectedBatch);
-      return e;
-    }
-
-    @Override
-    public String toString() {
-      return String.format("FlushRetryErrback: retry flush tablet %s %s", Bytes.getString(tablet),
-          expectedBatch.toDebugString());
-    }
-  }
-
-  /**
-   * Simple callback that removes the tablet from the in flight operations map once it completed.
-   */
-  private Callback<BatchResponse, BatchResponse>
-      getOpInFlightCallback(final Slice tablet) {
-    return new Callback<BatchResponse, BatchResponse>() {
-      @Override
-      public BatchResponse call(BatchResponse o) throws Exception {
-        tabletInFlightDone(tablet);
-        return o;
-      }
-
-      @Override
-      public String toString() {
-        return "callback: mark tablet " + Bytes.getString(tablet) + " inflight done";
-      }
-    };
-  }
-
-  /**
-   * We need a separate callback for errors since the generics are different. We still remove the
-   * tablet from the in flight operations since there's nothing we can do about it,
-   * and by returning the Exception we will bubble it up to the user.
-   */
-  private Callback<Exception, Exception> getOpInFlightErrback(final Slice tablet) {
-    return new Callback<Exception, Exception>() {
-      @Override
-      public Exception call(Exception e) throws Exception {
-        tabletInFlightDone(tablet);
-        return e;
-      }
-
-      @Override
-      public String toString() {
-        return "errback: mark tablet " + Bytes.getString(tablet) + " inflight done";
-      }
-    };
-  }
-
-  private void tabletInFlightDone(Slice tablet) {
-    synchronized (AsyncKuduSession.this) {
-      LOG.trace("Unmarking this tablet as in flight: " + Bytes.getString(tablet));
-      operationsInFlight.remove(tablet);
-    }
-  }
-
-  /**
-   * A FlusherTask is created for each scheduled flush per tabletSlice.
-   */
-  class FlusherTask implements TimerTask {
-    final Slice tabletSlice;
-    final Batch expectedBatch;
-
-    FlusherTask(Slice tabletSlice, Batch expectedBatch) {
-      this.tabletSlice = tabletSlice;
-      this.expectedBatch = expectedBatch;
-    }
-
+  private final class FlusherTask implements TimerTask {
     public void run(final Timeout timeout) {
-      // This is a TOCTOU violation, but since {@link #flushTablet} is
-      // synchronized internally it is only an optimistic check, and
-      // false negatives do not cause thread safety issues.
-      if (isClosed()) {
-        return; // we ran too late, no-op
+      Buffer buffer = null;
+      synchronized (monitor) {
+        if (activeBuffer == null) {
+          return;
+        }
+        if (activeBuffer.getFlusherTask() == this) {
+          buffer = activeBuffer;
+          activeBuffer = null;
+        }
       }
-      LOG.trace("Timed flushing: " + Bytes.getString(tabletSlice));
-      flushTablet(this.tabletSlice, this.expectedBatch);
+
+      if (buffer != null) {
+        doFlush(buffer);
+      }
     }
+  }
+
+  /**
+   * The {@code Buffer} consists of a list of operations, an optional pointer to a flush task,
+   * and a flush notification.
+   *
+   * The {@link #flusherTask} is used in mode {@link FlushMode#AUTO_FLUSH_BACKGROUND} to point to
+   * the background flusher task assigned to the buffer when it becomes active and the first
+   * operation is applied to it. When the flusher task executes after the timeout, it checks
+   * that the currently active buffer's flusher task points to itself before executing the flush.
+   * This protects against the background task waking up after one or more manual flushes and
+   * attempting to flush the active buffer.
+   *
+   * The {@link #flushNotification} deferred is used when executing manual {@link #flush}es to
+   * ensure that non-active buffers are fully flushed. {@code flushNotification} is completed
+   * when this buffer is successfully flushed. When the buffer is promoted from inactive to active,
+   * the deferred is replaced with a new one to indicate that the buffer is not yet flushed.
+   *
+   * Buffer is externally synchronized. When the active buffer, {@link #monitor}
+   * synchronizes access to it.
+   */
+  private final class Buffer {
+    private final List<BufferedOperation> operations = new ArrayList<>();
+
+    private FlusherTask flusherTask = null;
+
+    private Deferred<Void> flushNotification = Deferred.fromResult(null);
+
+    public List<BufferedOperation> getOperations() {
+      return operations;
+    }
+
+    @GuardedBy("monitor")
+    public FlusherTask getFlusherTask() {
+      if (flusherTask == null) {
+        flusherTask = new FlusherTask();
+      }
+      return flusherTask;
+    }
+
+    /**
+     * Returns a {@link Deferred} which will be completed when this buffer is flushed. If the buffer
+     * is inactive (its flush is complete and it has been enqueued into {@link #inactiveBuffers}),
+     * then the deferred will already be complete.
+     */
+    public Deferred<Void> getFlushNotification() {
+      return flushNotification;
+    }
+
+    /**
+     * Completes the buffer's flush notification. Should be called when the buffer has been
+     * successfully flushed.
+     */
+    public void callbackFlushNotification() {
+      LOG.debug("callbackFlushNotification on {}", flushNotification);
+      flushNotification.callback(null);
+    }
+
+    /**
+     * Resets the buffer's internal state. Should be called when the buffer is promoted from
+     * inactive to active.
+     */
+    @GuardedBy("monitor")
+    public void reset() {
+      operations.clear();
+      flushNotification = new Deferred<>();
+      flusherTask = null;
+    }
+
+    @Override
     public String toString() {
-      return "flush commits of session " + AsyncKuduSession.this +
-          " for tabletSlice " + Bytes.getString(tabletSlice);
+      return MoreObjects.toStringHelper(this)
+                        .add("operations", operations.size())
+                        .add("flusherTask", flusherTask)
+                        .add("flushNotification", flushNotification)
+                        .toString();
     }
-  };
+  }
+
+  /**
+   * Container class holding all the state associated with a buffered operation.
+   */
+  private static final class BufferedOperation {
+    private LocatedTablet tablet = null;
+    private final Deferred<Void> tabletLookup;
+    private final Operation operation;
+
+    public BufferedOperation(Deferred<LocatedTablet> tablet,
+                             Operation operation) {
+      tabletLookup = tablet.addCallback(new Callback<Void, LocatedTablet>() {
+        @Override
+        public Void call(final LocatedTablet tablet) {
+          BufferedOperation.this.tablet = tablet;
+          return null;
+        }
+      });
+      this.operation = Preconditions.checkNotNull(operation);
+    }
+
+    public LocatedTablet getTablet() {
+      return tablet;
+    }
+
+    public Deferred<Void> getTabletLookup() {
+      return tabletLookup;
+    }
+
+    public Operation getOperation() {
+      return operation;
+    }
+
+    @Override
+    public String toString() {
+      return MoreObjects.toStringHelper(this)
+                        .add("tablet", tablet)
+                        .add("operation", operation)
+                        .toString();
+    }
+  }
 }

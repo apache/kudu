@@ -17,9 +17,15 @@
 package org.kududb.client;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.MoreObjects;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import org.jboss.netty.buffer.ChannelBuffer;
 import org.kududb.WireProtocol;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.client.Statistics.Statistic;
@@ -28,21 +34,19 @@ import org.kududb.tserver.Tserver;
 import org.kududb.tserver.Tserver.TabletServerErrorPB;
 import org.kududb.util.Pair;
 import org.kududb.util.Slice;
-import org.jboss.netty.buffer.ChannelBuffer;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
 
 /**
- * Used internally to batch Operations together before sending to the cluster
+ * Used internally to group Operations for a single tablet together before sending to the tablet
+ * server.
  */
 @InterfaceAudience.Private
-class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
+public class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
 
-  private static final OperationsComparatorBySequenceNumber SEQUENCE_NUMBER_COMPARATOR =
-      new OperationsComparatorBySequenceNumber();
+  /** Holds batched operations. */
+  final List<Operation> operations = new ArrayList<>();
+
+  /** The tablet this batch will be routed to. */
+  private final LocatedTablet tablet;
 
   /**
    * This size will be set when serialize is called. It stands for the size of rows in all
@@ -50,23 +54,14 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
    */
   private long rowOperationsSizeBytes = 0;
 
-  final List<Operation> ops;
-
-  // Operations can be added out of order to 'ops' if the tablet had to be looked up. We can detect
-  // this situation in AsyncKuduSession and set this to true.
-  boolean needsSorting = false;
-
   /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
-  final boolean ignoreAllDuplicateRows;
+  private final boolean ignoreAllDuplicateRows;
 
-  Batch(KuduTable table, boolean ignoreAllDuplicateRows) {
-    this(table, ignoreAllDuplicateRows, 1000);
-  }
 
-  Batch(KuduTable table, boolean ignoreAllDuplicateRows, int estimatedBatchSize) {
+  Batch(KuduTable table, LocatedTablet tablet, boolean ignoreAllDuplicateRows) {
     super(table);
-    this.ops = new ArrayList<Operation>(estimatedBatchSize);
     this.ignoreAllDuplicateRows = ignoreAllDuplicateRows;
+    this.tablet = tablet;
   }
 
   /**
@@ -81,26 +76,30 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
     return this.rowOperationsSizeBytes;
   }
 
+  public void add(Operation operation) {
+    assert Bytes.memcmp(operation.partitionKey(),
+                        tablet.getPartition().getPartitionKeyStart()) >= 0 &&
+           (tablet.getPartition().getPartitionKeyEnd().length == 0 ||
+            Bytes.memcmp(operation.partitionKey(),
+                         tablet.getPartition().getPartitionKeyEnd()) < 0);
+
+    operations.add(operation);
+  }
+
   @Override
   ChannelBuffer serialize(Message header) {
-
-    // This should only happen if at least one operation triggered a tablet lookup, which is rare
-    // on a long-running client.
-    if (needsSorting) {
-      Collections.sort(ops, SEQUENCE_NUMBER_COMPARATOR);
-    }
-
-    final Tserver.WriteRequestPB.Builder builder =
-        Operation.createAndFillWriteRequestPB(ops.toArray(new Operation[ops.size()]));
-    this.rowOperationsSizeBytes = builder.getRowOperations().getRows().size()
-        + builder.getRowOperations().getIndirectData().size();
+    final Tserver.WriteRequestPB.Builder builder = Operation.createAndFillWriteRequestPB(operations);
+    rowOperationsSizeBytes = builder.getRowOperations().getRows().size() +
+                             builder.getRowOperations().getIndirectData().size();
     builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
-    builder.setExternalConsistencyMode(this.externalConsistencyMode.pbVersion());
+    builder.setExternalConsistencyMode(externalConsistencyMode.pbVersion());
     return toChannelBuffer(header, builder.build());
   }
 
   @Override
-  String serviceName() { return TABLET_SERVER_SERVICE_NAME; }
+  String serviceName() {
+    return TABLET_SERVER_SERVICE_NAME;
+  }
 
   @Override
   String method() {
@@ -108,8 +107,8 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
   }
 
   @Override
-  Pair<BatchResponse, Object> deserialize(final CallResponse callResponse,
-                                              String tsUUID) throws Exception {
+  Pair<BatchResponse, Object> deserialize(CallResponse callResponse,
+                                          String tsUUID) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
 
@@ -128,7 +127,7 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
     }
 
     BatchResponse response = new BatchResponse(deadlineTracker.getElapsedMillis(), tsUUID,
-        builder.getTimestamp(), errorsPB, ops);
+                                               builder.getTimestamp(), errorsPB, operations);
 
     if (injectedError != null) {
       if (injectedlatencyMs > 0) {
@@ -145,8 +144,7 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
 
   @Override
   public byte[] partitionKey() {
-    assert this.ops.size() > 0;
-    return this.ops.get(0).partitionKey();
+    return tablet.getPartition().getPartitionKeyStart();
   }
 
   @Override
@@ -155,7 +153,7 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
     String tableName = this.getTable().getName();
     TabletStatistics tabletStatistics = statistics.getTabletStatistics(tableName, tabletId);
     if (response == null) {
-      tabletStatistics.incrementStatistic(Statistic.OPS_ERRORS, this.ops.size());
+      tabletStatistics.incrementStatistic(Statistic.OPS_ERRORS, operations.size());
       tabletStatistics.incrementStatistic(Statistic.RPC_ERRORS, 1);
       return;
     }
@@ -170,18 +168,13 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
     tabletStatistics.incrementStatistic(Statistic.BYTES_WRITTEN, getRowOperationsSizeBytes());
   }
 
-  public String toDebugString() {
-    return "Batch(" + ops.size() + " ops)@" + Integer.toHexString(hashCode());
-  }
-
-  /**
-   * Sorts the Operations by their sequence number.
-   */
-  private static class OperationsComparatorBySequenceNumber implements Comparator<Operation> {
-    @Override
-    public int compare(Operation o1, Operation o2) {
-      return Long.compare(o1.getSequenceNumber(), o2.getSequenceNumber());
-    }
+  @Override
+  public String toString() {
+    return MoreObjects.toStringHelper(this)
+                      .add("operations", operations.size())
+                      .add("tablet", tablet)
+                      .add("ignoreAllDuplicateRows", ignoreAllDuplicateRows)
+                      .toString();
   }
 
   private static TabletServerErrorPB injectedError;

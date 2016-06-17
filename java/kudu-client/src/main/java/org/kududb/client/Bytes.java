@@ -43,9 +43,6 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Comparator;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.TreeMap;
 
 /**
  * Helper functions to manipulate byte arrays.
@@ -1103,48 +1100,4 @@ public final class Bytes {
     dataInput.readFully(data);
     return data;
   }
-
-  /** A convenient map keyed with a byte array.  */
-  public static final class ByteMap<V> extends TreeMap<byte[], V>
-      implements Iterable<Map.Entry<byte[], V>> {
-
-    public ByteMap() {
-      super(MEMCMP);
-    }
-
-    /** Returns an iterator that goes through all the entries in this map.  */
-    @Override
-    public Iterator<Map.Entry<byte[], V>> iterator() {
-      return super.entrySet().iterator();
-    }
-
-    /** {@code byte[]} friendly implementation.  */
-    @Override
-    public String toString() {
-      final int size = size();
-      if (size == 0) {
-        return "{}";
-      }
-      final StringBuilder buf = new StringBuilder(size << 4);
-      buf.append('{');
-      for (final Map.Entry<byte[], V> e : this) {
-        Bytes.pretty(buf, e.getKey());
-        buf.append('=');
-        final V value = e.getValue();
-        if (value instanceof byte[]) {
-          Bytes.pretty(buf, (byte[]) value);
-        } else {
-          buf.append(value == this ? "(this map)" : value);
-        }
-        buf.append(", ");
-      }
-      buf.setLength(buf.length() - 2);  // Remove the extra ", ".
-      buf.append('}');
-      return buf.toString();
-    }
-
-    private static final long serialVersionUID = 1280744742;
-
-  }
-
 }

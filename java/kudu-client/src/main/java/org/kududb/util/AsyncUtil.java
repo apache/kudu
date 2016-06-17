@@ -18,6 +18,7 @@ package org.kududb.util;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+
 import org.kududb.annotations.InterfaceAudience;
 
 /**
@@ -44,7 +45,29 @@ public class AsyncUtil {
   Deferred<R> addCallbacksDeferring(final Deferred<T> d,
                                     final Callback<D, T> cb,
                                     final Callback<D, E> eb) {
-    return d.addCallbacks((Callback<R, T>) ((Object) cb),
-                          (Callback<R, E>) ((Object) eb));
+    return d.addCallbacks((Callback<R, T>) cb, eb);
+  }
+
+  /**
+   * Workaround for {@link Deferred#addBoth}'s failure to use generics correctly. Allows callers
+   * to provide a {@link Callback} which takes an {@link Object} instead of the type of the deferred
+   * it is applied to, which avoids a runtime {@link ClassCastException} when the deferred fails.
+   */
+  @SuppressWarnings("unchecked")
+  public static <T, U> Deferred<U> addBoth(final Deferred<T> deferred,
+                                           final Callback<? extends U, Object> callback) {
+    return ((Deferred) deferred).addBoth(callback);
+  }
+
+  /**
+   * Workaround for {@link Deferred#addBothDeferring}'s failure to use generics correctly. Allows
+   * callers to provide a {@link Callback} which takes an {@link Object} instead of the type of the
+   * deferred it is applied to, which avoids a runtime {@link ClassCastException} when the deferred
+   * fails.
+   */
+  @SuppressWarnings("unchecked")
+  public static <T, U> Deferred<U> addBothDeferring(final Deferred<T> deferred,
+                                                    final Callback<Deferred<U>, Object> callback) {
+    return ((Deferred) deferred).addBothDeferring(callback);
   }
 }
