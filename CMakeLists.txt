@@ -450,6 +450,15 @@ include_directories(src)
 # For generate_export_header() and add_compiler_export_flags().
 include(GenerateExportHeader)
 
+# Honor visibility properties for all target types. See
+# "cmake --help-policy CMP0063" for details.
+#
+# This policy was only added to cmake in version 3.3, so until the cmake in
+# thirdparty is updated, we must check if the policy exists before setting it.
+if(POLICY CMP0063)
+  cmake_policy(SET CMP0063 NEW)
+endif()
+
 # add_library() wrapper that adds a second variant of the library for use in the
 # exported Kudu C++ client. This variant is suffixed with "_exported" and is
 # compiled with special visibility flags to hide all symbols except those that
@@ -525,7 +534,16 @@ function(ADD_EXPORTABLE_LIBRARY LIB_NAME)
   # - default for classes annotated with KUDU_EXPORT.
   # - hidden for classes annotated with KUDU_NO_EXPORT.
   # - hidden for everything else.
+if(POLICY CMP0063)
+  set_target_properties(${EXPORTED_LIB_NAME}
+    PROPERTIES C_VISIBILITY_PRESET hidden)
+  set_target_properties(${EXPORTED_LIB_NAME}
+    PROPERTIES CXX_VISIBILITY_PRESET hidden)
+  set_target_properties(${EXPORTED_LIB_NAME}
+    PROPERTIES VISIBILITY_INLINES_HIDDEN 1)
+else()
   add_compiler_export_flags(EXPORTED_FLAGS)
+endif()
 
   # Exported variants are either static archives that will be linked to a shared
   # object, or shared objects. Either way, -fPIC is needed.
