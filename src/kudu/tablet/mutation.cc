@@ -39,7 +39,7 @@ string Mutation::StringifyMutationList(const Schema &schema, const Mutation *hea
     ret.append(head->changelist().ToString(schema));
     ret.append(")");
 
-    head = head->next();
+    head = head->acquire_next();
   }
 
   ret.append("]");

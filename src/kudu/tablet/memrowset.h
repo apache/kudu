@@ -76,6 +76,12 @@ class MRSRow {
   Timestamp insertion_timestamp() const { return header_->insertion_timestamp; }
 
   Mutation* redo_head() { return header_->redo_head; }
+
+  // Load 'redo_head' with an 'Acquire' memory barrier.
+  Mutation* acquire_redo_head() {
+    return reinterpret_cast<Mutation*>(
+        base::subtle::Acquire_Load(reinterpret_cast<AtomicWord*>(&header_->redo_head)));
+  }
   const Mutation* redo_head() const { return header_->redo_head; }
 
   const Slice &row_slice() const { return row_slice_; }

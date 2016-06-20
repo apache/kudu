@@ -40,15 +40,6 @@ race:epoll_ctl
 # a lot of stress testing.
 race:concurrent_btree.h
 
-# We're currently a little lax on using atomic instructions for mutations where
-# we might need to. There are possible bugs lurking here, though likely we are
-# hiding behind x86 TSO for now.
-race:kudu::tablet::ApplyMutationsAndGenerateUndos
-race:kudu::tablet::MemRowSet::Iterator::ApplyMutationsToProjectedRow
-race:kudu::tablet::MemRowSet::Iterator::FetchRows
-race:kudu::tablet::Mutation::*
-race:kudu::RowChangeListDecoder::Init
-
 # GLog's fatal signal handler isn't signal-safe -- it allocates memory.
 # This isn't great, but nothing we can do about it. See
 # https://code.google.com/p/google-glog/issues/detail?id=191

@@ -492,9 +492,11 @@ Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
       } else {
         RETURN_NOT_OK(projector_->ProjectRowForRead(row, &dst_row, dst->arena()));
 
+        Mutation* redo_head = reinterpret_cast<Mutation*>(
+            base::subtle::Acquire_Load(reinterpret_cast<AtomicWord*>(&row.header_->redo_head)));
         // Roll-forward MVCC for committed updates.
         RETURN_NOT_OK(ApplyMutationsToProjectedRow(
-            row.header_->redo_head, &dst_row, dst->arena()));
+            redo_head, &dst_row, dst->arena()));
       }
     } else {
       // This row was not yet committed in the current MVCC snapshot
@@ -528,7 +530,7 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
 
   for (const Mutation *mut = mutation_head;
        mut != nullptr;
-       mut = mut->next_) {
+       mut = mut->acquire_next()) {
     if (!mvcc_snap_.IsCommitted(mut->timestamp_)) {
       // Transaction which wasn't committed yet in the reader's snapshot.
       continue;
@@ -590,13 +592,15 @@ Status MemRowSet::Iterator::GetCurrentRow(RowBlockRow* dst_row,
   *insertion_timestamp = src_row.insertion_timestamp();
 
   // Project the RowChangeList if required
-  *redo_head = src_row.redo_head();
+  *redo_head = src_row.acquire_redo_head();
   if (!delta_projector_.is_identity()) {
     DCHECK(mutation_arena != nullptr);
 
     Mutation *prev_redo = nullptr;
     *redo_head = nullptr;
-    for (const Mutation *mut = src_row.redo_head(); mut != nullptr; mut = mut->next()) {
+    for (const Mutation *mut = src_row.redo_head();
+         mut != nullptr;
+         mut = mut->acquire_next()) {
       RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_,
                                                         mut->changelist(),
                                                         &delta_buf_));

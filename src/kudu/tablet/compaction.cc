@@ -629,7 +629,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 
   for (const Mutation *redo_mut = src_row.redo_head;
        redo_mut != nullptr;
-       redo_mut = redo_mut->next()) {
+       redo_mut = redo_mut->acquire_next()) {
 
     // Skip anything not committed.
     if (!snap.IsCommitted(redo_mut->timestamp())) {
