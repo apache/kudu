@@ -141,7 +141,6 @@ int GetFailureMonitorCheckStddevMs() {
 namespace kudu {
 namespace consensus {
 
-using log::LogEntryBatch;
 using std::shared_ptr;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;

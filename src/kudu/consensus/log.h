@@ -117,7 +117,6 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Synchronously append a new entry to the log.
   // Log does not take ownership of the passed 'entry'.
-  // TODO get rid of this method, transition to the asynchronous API
   Status Append(LogEntryPB* entry);
 
   // Append the given set of replicate messages, asynchronously.
@@ -283,9 +282,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // AppenderThread. If 'caller_owns_operation' is true, then the
   // 'operation' field of the entry will be released after the entry
   // is appended.
-  // TODO once Append() is removed, 'caller_owns_operation' and
-  // associated logic will no longer be needed.
-  Status DoAppend(LogEntryBatch* entry, bool caller_owns_operation = true);
+  Status DoAppend(LogEntryBatch* entry);
 
   // Update footer_builder_ to reflect the log indexes seen in 'batch'.
   void UpdateFooterForBatch(LogEntryBatch* batch);
@@ -404,8 +401,13 @@ class Log : public RefCountedThreadSafe<Log> {
 // This class represents a batch of operations to be written and
 // synced to the log. It is opaque to the user and is managed by the
 // Log class.
+//
 // A single batch must have only one type of entries in it (eg only
 // REPLICATEs or only COMMITs).
+//
+// The ReplicateMsg sub-elements of each LogEntryPB within the LogEntryBatchPB
+// 'entry_batch_pb_' are not owned by the LogEntryPBs, and at LogEntryBatch
+// destruction time they are released.
 class LogEntryBatch {
  public:
   ~LogEntryBatch();

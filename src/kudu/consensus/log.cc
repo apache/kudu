@@ -44,6 +44,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
@@ -100,6 +101,12 @@ DEFINE_double(log_inject_io_error_on_append_fraction, 0.0,
               "(For testing only!)");
 TAG_FLAG(log_inject_io_error_on_append_fraction, unsafe);
 TAG_FLAG(log_inject_io_error_on_append_fraction, runtime);
+
+DEFINE_double(log_inject_io_error_on_preallocate_fraction, 0.0,
+              "Fraction of the time when the log will fail to preallocate and return an IOError. "
+              "(For testing only!)");
+TAG_FLAG(log_inject_io_error_on_preallocate_fraction, unsafe);
+TAG_FLAG(log_inject_io_error_on_preallocate_fraction, runtime);
 
 // Validate that log_min_segments_to_retain >= 1
 static bool ValidateLogsToRetain(const char* flagname, int value) {
@@ -473,7 +480,7 @@ Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
   return Status::OK();
 }
 
-Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
+Status Log::DoAppend(LogEntryBatch* entry_batch) {
   size_t num_entries = entry_batch->count();
   DCHECK_GT(num_entries, 0) << "Cannot call DoAppend() with zero entries reserved";
 
@@ -540,15 +547,6 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
 
   CHECK_OK(UpdateIndexForBatch(*entry_batch, start_offset));
   UpdateFooterForBatch(entry_batch);
-
-  // For REPLICATE batches, we expect the caller to free the actual entries if
-  // caller_owns_operation is set.
-  if (entry_batch->type_ == REPLICATE && caller_owns_operation) {
-    for (int i = 0; i < entry_batch->entry_batch_pb_->entry_size(); i++) {
-      LogEntryPB* entry_pb = entry_batch->entry_batch_pb_->mutable_entry(i);
-      entry_pb->release_replicate();
-    }
-  }
 
   return Status::OK();
 }
@@ -677,7 +675,7 @@ Status Log::Append(LogEntryPB* phys_entry) {
   Status s = entry_batch.Serialize();
   if (s.ok()) {
     entry_batch.state_ = LogEntryBatch::kEntryReady;
-    s = DoAppend(&entry_batch, false);
+    s = DoAppend(&entry_batch);
     if (s.ok()) {
       s = Sync();
     }
@@ -824,7 +822,7 @@ Status Log::Close() {
       return Status::OK();
 
     default:
-      return Status::IllegalState(Substitute("Bad state for Close() $0", log_state_));
+      return Status::IllegalState(Substitute("Log not open. State: $0", log_state_));
   }
 }
 
@@ -843,9 +841,18 @@ Status Log::PreAllocateNewSegment() {
   TRACE_EVENT1("log", "PreAllocateNewSegment", "file", next_segment_path_);
   CHECK_EQ(allocation_state(), kAllocationInProgress);
 
+  // We must mark allocation as finished when returning from this method.
+  auto alloc_finished = MakeScopedCleanup([&] () {
+    std::lock_guard<boost::shared_mutex> l(allocation_lock_);
+    allocation_state_ = kAllocationFinished;
+  });
+
   WritableFileOptions opts;
   opts.sync_on_close = force_sync_all_;
   RETURN_NOT_OK(CreatePlaceholderSegment(opts, &next_segment_path_, &next_segment_file_));
+
+  MAYBE_RETURN_FAILURE(FLAGS_log_inject_io_error_on_preallocate_fraction,
+                       Status::IOError("Injected IOError in Log::PreAllocateNewSegment()"));
 
   if (options_.preallocate_segments) {
     TRACE("Preallocating $0 byte segment in $1", max_segment_size_, next_segment_path_);
@@ -854,10 +861,6 @@ Status Log::PreAllocateNewSegment() {
     RETURN_NOT_OK(next_segment_file_->PreAllocate(max_segment_size_));
   }
 
-  {
-    std::lock_guard<boost::shared_mutex> lock_guard(allocation_lock_);
-    allocation_state_ = kAllocationFinished;
-  }
   return Status::OK();
 }
 
@@ -976,6 +979,13 @@ LogEntryBatch::LogEntryBatch(LogEntryTypePB type,
 }
 
 LogEntryBatch::~LogEntryBatch() {
+  if (type_ == REPLICATE && entry_batch_pb_) {
+    for (LogEntryPB& entry : *entry_batch_pb_->mutable_entry()) {
+      // ReplicateMsg elements are owned by and must be freed by the caller
+      // (e.g. the LogCache).
+      entry.release_replicate();
+    }
+  }
 }
 
 void LogEntryBatch::MarkReserved() {

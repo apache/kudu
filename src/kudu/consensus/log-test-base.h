@@ -111,8 +111,7 @@ static Status AppendNoOpsToLogSync(const scoped_refptr<Clock>& clock,
   Synchronizer s;
   RETURN_NOT_OK(log->AsyncAppendReplicates(replicates,
                                            s.AsStatusCallback()));
-  s.Wait();
-  return Status::OK();
+  return s.Wait();
 }
 
 static Status AppendNoOpToLogSync(const scoped_refptr<Clock>& clock,

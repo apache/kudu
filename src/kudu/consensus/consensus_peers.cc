@@ -68,7 +68,6 @@ namespace kudu {
 namespace consensus {
 
 using log::Log;
-using log::LogEntryBatch;
 using std::shared_ptr;
 using rpc::Messenger;
 using rpc::RpcController;

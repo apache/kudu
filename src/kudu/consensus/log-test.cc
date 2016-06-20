@@ -34,6 +34,7 @@ DEFINE_int32(num_batches, 10000,
              "Number of batches to write to/read from the Log in TestWriteManyBatches");
 
 DECLARE_int32(log_min_segments_to_retain);
+DECLARE_double(log_inject_io_error_on_preallocate_fraction);
 
 namespace kudu {
 namespace log {
@@ -1046,6 +1047,20 @@ TEST_F(LogTest, TestGetMaxIndexesToSegmentSizeMap) {
   FLAGS_log_min_seconds_to_retain = 500;
   log_->GetMaxIndexesToSegmentSizeMap(10, &max_idx_to_segment_size);
   ASSERT_EQ(0, max_idx_to_segment_size.size());
+}
+
+// Regression test. Check that failed preallocation returns an error instead of
+// hanging.
+TEST_F(LogTest, TestFailedLogPreAllocation) {
+  options_.async_preallocate_segments = false;
+  ASSERT_OK(BuildLog());
+
+  log_->SetMaxSegmentSizeForTests(1);
+  FLAGS_log_inject_io_error_on_preallocate_fraction = 1.0;
+  OpId opid = MakeOpId(1, 1);
+  Status s = AppendNoOp(&opid);
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Injected IOError");
 }
 
 } // namespace log

@@ -330,7 +330,7 @@ Status LogReader::ReadReplicatesInRange(const int64_t starting_at,
     RETURN_NOT_OK_PREPEND(log_index_->GetEntry(index, &index_entry),
                           Substitute("Failed to read log index for op $0", index));
 
-    // Since a given LogEntryBatch may contain multiple REPLICATE messages,
+    // Since a given LogEntryBatchPB may contain multiple REPLICATE messages,
     // it's likely that this index entry points to the same batch as the previous
     // one. If that's the case, we've already read this REPLICATE and we can
     // skip reading the batch again.

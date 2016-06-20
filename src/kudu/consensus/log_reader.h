@@ -167,7 +167,7 @@ class LogReader {
   // written to.
   void UpdateLastSegmentOffset(int64_t readable_to_offset);
 
-  // Read the LogEntryBatch pointed to by the provided index entry.
+  // Read the LogEntryBatchPB pointed to by the provided index entry.
   // 'tmp_buf' is used as scratch space to avoid extra allocation.
   Status ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
                                   faststring* tmp_buf,
