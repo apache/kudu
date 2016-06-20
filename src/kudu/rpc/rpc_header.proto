@@ -130,9 +130,10 @@ message RequestIdPB {
 
 // The header for the RPC request frame.
 message RequestHeader {
-  // A sequence number that is sent back in the Response. Hadoop specifies a uint32 and
-  // casts it to a signed int. That is counterintuitive, so we use an int32 instead.
-  // Allowed values (inherited from Hadoop):
+  // A sequence number that uniquely identifies a call to a single remote server. This number is
+  // sent back in the Response and allows to match it to the original Request.
+  // Hadoop specifies a uint32 and casts it to a signed int. That is counterintuitive, so we use an
+  // int32 instead. Allowed values (inherited from Hadoop):
   //   0 through INT32_MAX: Regular RPC call IDs.
   //   -2: Invalid call ID.
   //   -3: Connection context call ID.
@@ -162,6 +163,11 @@ message RequestHeader {
   repeated uint32 required_feature_flags = 11;
 
   // The unique id of this request, if it's retriable and if the results are to be tracked.
+  // The request id is unique per logical request, i.e. retries of the same RPC must have the
+  // same request id.
+  // Note that this is different from 'call_id' in that a call_id is unique to a server while a
+  // request_id is unique to a logical request (i.e. the request_id remains the same when a request
+  // is retried on a different server).
   // Optional for requests that are naturally idempotent or to maintain compatibility with
   // older clients for requests that are not.
   optional RequestIdPB request_id = 15;
