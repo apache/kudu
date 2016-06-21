@@ -135,7 +135,7 @@ class TransactionState {
 
   // Returns the response PB associated with this transaction, or NULL.
   // This will only return a non-null object for leader-side transactions.
-  virtual google::protobuf::Message* response() { return NULL; }
+  virtual google::protobuf::Message* response() const { return NULL; }
 
   // Sets the ConsensusRound for this transaction, if this transaction is
   // being executed through the consensus system.
