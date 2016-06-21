@@ -715,7 +715,7 @@ void CatalogManager::Shutdown() {
   // any new tasks for those entries.
   TableInfoMap copy;
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
+    boost::shared_lock<LockType> l(lock_);
     copy = table_ids_map_;
   }
   for (const TableInfoMap::value_type &e : copy) {
