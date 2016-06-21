@@ -530,6 +530,24 @@ $ cd kudu
 ----
 $ thirdparty/build-if-necessary.sh
 ----
+  - If different versions of the dependencies are installed and used when calling
+`thirdparty/build-if-necessary.sh`, you may get stuck with output similar to the
+following:
++
+----
+./configure: line 16299: error near unexpected token `newline'
+./configure: line 16299: `  PKG_CHECK_MODULES('
+----
++
+The thirdparty builds may be cached and may reflect the incorrect versions of the
+dependencies. Ensure that you have the correct dependencies listed in Step 1, clean
+the workspace, and then try to re-build.
++
+[source,bash]
+----
+$ git clean -fdx
+$ thirdparty/build-if-necessary.sh
+----
 
 . Build Kudu. Choose a build directory for the intermediate output, which can be
 anywhere in your filesystem except for the `kudu` directory itself.
@@ -542,6 +560,7 @@ cd build/release
 make -j4
 ----
 
+====
 .OSX Build Script
 ====
 This script provides an overview of the procedure to build Kudu on OSX, and can
