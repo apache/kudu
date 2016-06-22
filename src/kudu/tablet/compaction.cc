@@ -506,8 +506,9 @@ class MergeCompactionInput : public CompactionInput {
   }
 
   static void AdvanceToLastInList(const Mutation** m) {
-    while ((*m)->next() != nullptr) {
-      *m = (*m)->next();
+    const Mutation* next;
+    while ((next = (*m)->acquire_next()) != nullptr) {
+      *m = next;
     }
   }
 
@@ -883,7 +884,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
 
       for (const Mutation *mut = row.redo_head;
            mut != nullptr;
-           mut = mut->next()) {
+           mut = mut->acquire_next()) {
         RowChangeListDecoder decoder(mut->changelist());
         RETURN_NOT_OK(decoder.Init());
 
