@@ -169,6 +169,11 @@ class Env {
   // *block_size. fname must exist but it may be a file or a directory.
   virtual Status GetBlockSize(const std::string& fname, uint64_t* block_size) = 0;
 
+  // Determine the number of bytes free on the filesystem specified by 'path'.
+  // "Free space" accounting on the underlying filesystem may be more coarse
+  // than single bytes.
+  virtual Status GetBytesFree(const std::string& path, int64_t* bytes_free) = 0;
+
   // Rename file src to target.
   virtual Status RenameFile(const std::string& src,
                             const std::string& target) = 0;
@@ -582,6 +587,9 @@ class EnvWrapper : public Env {
   }
   Status GetBlockSize(const std::string& f, uint64_t* s) OVERRIDE {
     return target_->GetBlockSize(f, s);
+  }
+  Status GetBytesFree(const std::string& path, int64_t* bytes_free) OVERRIDE {
+    return target_->GetBytesFree(path, bytes_free);
   }
   Status RenameFile(const std::string& s, const std::string& t) OVERRIDE {
     return target_->RenameFile(s, t);

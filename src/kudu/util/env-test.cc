@@ -750,4 +750,28 @@ TEST_F(TestEnv, TestTempRWFile) {
   ASSERT_OK(env_->DeleteFile(path));
 }
 
+TEST_F(TestEnv, TestGetBytesFree) {
+  const string kDataDir = GetTestPath("parent");
+  const string kTestFilePath = JoinPathSegments(kDataDir, "testfile");
+  const int kFileSizeBytes = 256;
+  int64_t orig_bytes_free;
+  int64_t cur_bytes_free;
+  ASSERT_OK(env_->CreateDir(kDataDir));
+
+  // Loop several times in case there are concurrent tests running that are
+  // modifying the filesystem.
+  const int kIters = 100;
+  for (int i = 0; i < kIters; i++) {
+    if (env_->FileExists(kTestFilePath)) {
+      ASSERT_OK(env_->DeleteFile(kTestFilePath));
+    }
+    ASSERT_OK(env_->GetBytesFree(kDataDir, &orig_bytes_free));
+    NO_FATALS(WriteTestFile(env_.get(), kTestFilePath, kFileSizeBytes));
+    ASSERT_OK(env_->GetBytesFree(kDataDir, &cur_bytes_free));
+    if (orig_bytes_free - cur_bytes_free >= kFileSizeBytes) break;
+  }
+  ASSERT_GE(orig_bytes_free - cur_bytes_free, kFileSizeBytes)
+      << "Failed after " << kIters << " attempts";
+}
+
 }  // namespace kudu

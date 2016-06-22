@@ -14,6 +14,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -910,6 +911,29 @@ class PosixEnv : public Env {
     return s;
   }
 
+  // Local convenience function for safely running statvfs().
+  static Status StatVfs(const string& path, struct statvfs* buf) {
+    ThreadRestrictions::AssertIOAllowed();
+    int ret;
+    RETRY_ON_EINTR(ret, statvfs(path.c_str(), buf));
+    if (ret == -1) {
+      return IOError(Substitute("statvfs: $0", path), errno);
+    }
+    return Status::OK();
+  }
+
+  virtual Status GetBytesFree(const string& path, int64_t* bytes_free) OVERRIDE {
+    TRACE_EVENT1("io", "PosixEnv::GetBytesFree", "path", path);
+    struct statvfs buf;
+    RETURN_NOT_OK(StatVfs(path, &buf));
+    if (geteuid() == 0) {
+      *bytes_free = buf.f_frsize * buf.f_bfree;
+    } else {
+      *bytes_free = buf.f_frsize * buf.f_bavail;
+    }
+    return Status::OK();
+  }
+
   virtual Status RenameFile(const std::string& src, const std::string& target) OVERRIDE {
     TRACE_EVENT2("io", "PosixEnv::RenameFile", "src", src, "dst", target);
     ThreadRestrictions::AssertIOAllowed();
@@ -997,7 +1021,7 @@ class PosixEnv : public Env {
 #if defined(__linux__)
       int rc = readlink("/proc/self/exe", buf.get(), size);
       if (rc == -1) {
-        return Status::IOError("Unable to determine own executable path", "", errno);
+        return IOError("Unable to determine own executable path", errno);
       } else if (rc >= size) {
         // The buffer wasn't large enough
         size *= 2;
