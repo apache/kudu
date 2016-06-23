@@ -53,6 +53,35 @@ By combining all of these properties, Kudu targets support for families of
 applications that are difficult or impossible to implement on current-generation
 Hadoop storage technologies.
 
+[[rn_0.9.1]]
+=== Release notes specific to 0.9.1
+
+Kudu 0.9.1 delivers incremental bug fixes over Kudu 0.9.0. It is fully compatible with
+Kudu 0.9.0.
+
+See also +++<a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20%3D%20Resolved
+%20AND%20fixVersion%20%3D%200.9.1">JIRAs resolved
+for Kudu 0.9.1</a>+++ and +++<a href="https://github.com/apache/incubator-kudu/compare/0.9.0...0.9.1">Git
+changes between 0.9.0 and 0.9.1</a>+++.
+
+To upgrade to Kudu 0.9.1, see link:installation.html#upgrade[Upgrade from 0.8.0 to 0.9.x].
+
+[[rn_0.9.1_fixed_issues]]
+==== Fixed Issues
+
+- link:https://issues.apache.org/jira/browse/KUDU-1469[KUDU-1469] fixed a bug in
+our Raft consensus implementation that could cause a tablet to stop making progress after a leader
+election.
+
+- link:https://gerrit.cloudera.org/#/c/3456/[Gerrit #3456] fixed a bug in which
+servers under high load could store metric information in incorrect memory
+locations, causing crashes or data corruption.
+
+- link:https://gerrit.cloudera.org/#/c/3457/[Gerrit #3457] fixed a bug in which
+errors from the Java client would carry an incorrect error message.
+
+- Several other small bug fixes were backported to improve stability.
+
 [[rn_0.9.0]]
 === Release notes specific to 0.9.0
 
@@ -63,7 +92,7 @@ See also +++<a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20
 for Kudu 0.9.0</a>+++ and +++<a href="https://github.com/apache/incubator-kudu/compare/0.8.0...0.9.0">Git
 changes between 0.8.0 and 0.9.0</a>+++.
 
-To upgrade to Kudu 0.9.0, see link:installation.html#upgrade[Upgrade from 0.8.0 to 0.9.0].
+To upgrade to Kudu 0.9.0, see link:installation.html#upgrade[Upgrade from 0.8.0 to 0.9.x].
 
 [[rn_0.9.0_incompatible_changes]]
 ==== Incompatible changes

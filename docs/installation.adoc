@@ -623,18 +623,20 @@ in `java/kudu-client/target/apidocs/index.html`.
 // end::view_api[]
 
 [[upgrade]]
-== Upgrade from 0.8.0 to 0.9.0
+== Upgrade from 0.8.0 to 0.9.x
 
 Before upgrading, see <<client_compatibility>> and <<api_compatibility>>.
 To upgrade from Kudu 0.8.0 to 0.9.0, perform the following high-level steps, which
 are detailed in <<upgrade_procedure>>:
 
 . Shut down all Kudu services.
-. Install the new Kudu packages or parcels, or install Kudu 0.9.0 from source.
+. Install the new Kudu packages or parcels, or install Kudu 0.9.1 from source.
 . Restart all Kudu services.
 
 It is technically possible to upgrade Kudu using rolling restarts, but it has not
 been tested and is not recommended.
+
+To upgrade from 0.9.0 to 0.9.1, use the same procedure as the upgrade from 0.8.0 to 0.9.0.
 
 NOTE: For the duration of the Kudu Beta, upgrade instructions are only given for going
 from the previous latest version to the newest.
