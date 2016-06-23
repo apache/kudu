@@ -582,11 +582,51 @@ TEST_F(MasterTest, TestShutdownDuringTableVisit) {
   // CatalogManager::VisitTablesAndTabletsTask.
 }
 
-static void GetTableSchema(const char* kTableName,
-                           const Schema* kSchema,
-                           MasterServiceProxy* proxy,
-                           CountDownLatch* started,
-                           AtomicBool* done) {
+// Hammers the master with GetTableLocations() calls.
+static void LoopGetTableLocations(const char* kTableName,
+                                  MasterServiceProxy* proxy,
+                                  AtomicBool* done) {
+  GetTableLocationsRequestPB req;
+  GetTableLocationsResponsePB resp;
+  req.mutable_table()->set_table_name(kTableName);
+
+  while (!done->Load()) {
+    RpcController controller;
+    CHECK_OK(proxy->GetTableLocations(req, &resp, &controller));
+  }
+}
+
+// Tests that the catalog manager handles spurious calls to ElectedAsLeaderCb()
+// (i.e. those without a term change) correctly by ignoring them. If they
+// aren't ignored, a concurrent GetTableLocations() call may trigger a
+// use-after-free.
+TEST_F(MasterTest, TestGetTableLocationsDuringRepeatedTableVisit) {
+  const char* kTableName = "test";
+  Schema schema({ ColumnSchema("key", INT32) }, 1);
+  ASSERT_OK(CreateTable(kTableName, schema));
+
+  AtomicBool done(false);
+  scoped_refptr<Thread> t;
+  ASSERT_OK(Thread::Create("test", "getTableLocationsThread",
+                           &LoopGetTableLocations, kTableName,
+                           proxy_.get(), &done, &t));
+
+  // Call ElectedAsLeaderCb() repeatedly. If these spurious calls aren't
+  // ignored, the concurrent GetTableLocations() calls may crash the master.
+  for (int i = 0; i < 100; i++) {
+    master_->catalog_manager()->ElectedAsLeaderCb();
+  }
+  done.Store(true);
+  t->Join();
+}
+
+// Hammers the master with GetTableSchema() calls, checking that the results
+// make sense.
+static void LoopGetTableSchema(const char* kTableName,
+                               const Schema* kSchema,
+                               MasterServiceProxy* proxy,
+                               CountDownLatch* started,
+                               AtomicBool* done) {
   GetTableSchemaRequestPB req;
   GetTableSchemaResponsePB resp;
   req.mutable_table()->set_table_name(kTableName);
@@ -634,7 +674,7 @@ TEST_F(MasterTest, TestGetTableSchemaIsAtomicWithCreateTable) {
   // Kick off a thread that calls GetTableSchema() in a loop.
   scoped_refptr<Thread> t;
   ASSERT_OK(Thread::Create("test", "test",
-                           &GetTableSchema, kTableName, &kTableSchema,
+                           &LoopGetTableSchema, kTableName, &kTableSchema,
                            proxy_.get(), &started, &done, &t));
 
   // Only create the table after the thread has started.

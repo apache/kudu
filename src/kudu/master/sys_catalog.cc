@@ -81,8 +81,7 @@ SysCatalogTable::SysCatalogTable(Master* master, MetricRegistry* metrics,
                                  ElectedLeaderCallback leader_cb)
     : metric_registry_(metrics),
       master_(master),
-      leader_cb_(std::move(leader_cb)),
-      old_role_(RaftPeerPB::FOLLOWER) {
+      leader_cb_(std::move(leader_cb)) {
   CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
 }
 
@@ -237,8 +236,7 @@ void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const stri
                         << "Latest consensus state: " << cstate.ShortDebugString();
   RaftPeerPB::Role new_role = GetConsensusRole(tablet_peer_->permanent_uuid(), cstate);
   LOG_WITH_PREFIX(INFO) << "This master's current role is: "
-                        << RaftPeerPB::Role_Name(new_role)
-                        << ", previous role was: " << RaftPeerPB::Role_Name(old_role_);
+                        << RaftPeerPB::Role_Name(new_role);
   if (new_role == RaftPeerPB::LEADER) {
     Status s = leader_cb_.Run();
 

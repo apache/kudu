@@ -533,6 +533,9 @@ CatalogManager::CatalogManager(Master *master)
     state_(kConstructed),
     leader_ready_term_(-1) {
   CHECK_OK(ThreadPoolBuilder("leader-initialization")
+           // Presently, this thread pool must contain only a single thread
+           // (to correctly serialize invocations of ElectedAsLeaderCb upon
+           // closely timed consecutive elections).
            .set_max_threads(1)
            .Build(&worker_pool_));
 }
@@ -574,7 +577,6 @@ Status CatalogManager::Init(bool is_first_run) {
 }
 
 Status CatalogManager::ElectedAsLeaderCb() {
-  std::lock_guard<simple_spinlock> l(state_lock_);
   return worker_pool_->SubmitClosure(
       Bind(&CatalogManager::VisitTablesAndTabletsTask, Unretained(this)));
 }
@@ -595,9 +597,20 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
 }
 
 void CatalogManager::VisitTablesAndTabletsTask() {
-
   Consensus* consensus = sys_catalog_->tablet_peer()->consensus();
   int64_t term = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
+  {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    if (leader_ready_term_ == term) {
+      // The term hasn't changed since the last time this master was the
+      // leader. It's not possible for another master to be leader for the same
+      // term, so there hasn't been any actual leadership change and thus
+      // there's no reason to reload the on-disk metadata.
+      VLOG(2) << Substitute("Term $0 hasn't changed, ignoring dirty callback",
+                            term);
+      return;
+    }
+  }
   Status s = WaitUntilCaughtUpAsLeader(
       MonoDelta::FromMilliseconds(FLAGS_master_failover_catchup_timeout_ms));
   if (!s.ok()) {
@@ -610,28 +623,25 @@ void CatalogManager::VisitTablesAndTabletsTask() {
     return;
   }
 
-  {
-    std::lock_guard<LockType> lock(lock_);
-    int64_t term_after_wait = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
-    if (term_after_wait != term) {
-      // If we got elected leader again while waiting to catch up then we will
-      // get another callback to visit the tables and tablets, so bail.
-      LOG(INFO) << "Term change from " << term << " to " << term_after_wait
-                << " while waiting for master leader catchup. Not loading sys catalog metadata";
-      return;
-    }
+  int64_t term_after_wait = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
+  if (term_after_wait != term) {
+    // If we got elected leader again while waiting to catch up then we will
+    // get another callback to visit the tables and tablets, so bail.
+    LOG(INFO) << "Term change from " << term << " to " << term_after_wait
+        << " while waiting for master leader catchup. Not loading sys catalog metadata";
+    return;
+  }
 
-    LOG(INFO) << "Loading table and tablet metadata into memory...";
-    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + "Loading metadata into memory") {
-      CHECK_OK(VisitTablesAndTabletsUnlocked());
-    }
+  LOG(INFO) << "Loading table and tablet metadata into memory...";
+  LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + "Loading metadata into memory") {
+    CHECK_OK(VisitTablesAndTablets());
   }
   std::lock_guard<simple_spinlock> l(state_lock_);
   leader_ready_term_ = term;
 }
 
-Status CatalogManager::VisitTablesAndTabletsUnlocked() {
-  DCHECK(lock_.is_locked());
+Status CatalogManager::VisitTablesAndTablets() {
+  std::lock_guard<LockType> lock(lock_);
 
   // Clear the existing state.
   table_names_map_.clear();

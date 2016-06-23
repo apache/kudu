@@ -392,15 +392,16 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   consensus::RaftPeerPB::Role Role() const;
 
  private:
-  // So that the test can call ElectedAsLeaderCb() directly.
+  // These tests call ElectedAsLeaderCb() directly.
   FRIEND_TEST(MasterTest, TestShutdownDuringTableVisit);
+  FRIEND_TEST(MasterTest, TestGetTableLocationsDuringRepeatedTableVisit);
 
   friend class TableLoader;
   friend class TabletLoader;
 
   // Called by SysCatalog::SysCatalogStateChanged when this node
   // becomes the leader of a consensus configuration. Executes VisitTablesAndTabletsTask
-  // below.
+  // via 'worker_pool_'.
   Status ElectedAsLeaderCb();
 
   // Loops and sleeps until one of the following conditions occurs:
@@ -415,24 +416,14 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // reading that data, to ensure consistency across failovers.
   Status WaitUntilCaughtUpAsLeader(const MonoDelta& timeout);
 
-  // This method is submitted to 'leader_initialization_pool_' by
-  // ElectedAsLeaderCb above. It:
-  // 1) Acquired 'lock_'
-  // 2) Resets 'tables_tablets_visited_status_'
-  // 3) Runs VisitTablesAndTabletsUnlocked below
-  // 4) Sets 'tables_tablets_visited_status_' to return value of
-  // the call to VisitTablesAndTabletsUnlocked.
-  // 5) Releases 'lock_' and if successful, updates 'leader_ready_term_'
-  // to true (under state_lock_).
+  // Performs several checks before calling VisitTablesAndTablets to actually
+  // reload table/tablet metadata into memory.
   void VisitTablesAndTabletsTask();
 
   // Clears out the existing metadata ('table_names_map_', 'table_ids_map_',
   // and 'tablet_map_'), loads tables metadata into memory and if successful
   // loads the tablets metadata.
-  //
-  // NOTE: Must be called under external synchronization, see
-  // VisitTablesAndTabletsTask() above.
-  Status VisitTablesAndTabletsUnlocked();
+  Status VisitTablesAndTablets();
 
   // Helper for initializing 'sys_catalog_'. After calling this
   // method, the caller should call WaitUntilRunning() on sys_catalog_
@@ -624,10 +615,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   // Used to defer work from reactor threads onto a thread where
   // blocking behavior is permissible.
-  //
-  // NOTE: Presently, this thread pool must contain only a single
-  // thread (to correctly serialize invocations of ElectedAsLeaderCb
-  // upon closely timed consecutive elections).
   gscoped_ptr<ThreadPool> worker_pool_;
 
   // This field is updated when a node becomes leader master,
