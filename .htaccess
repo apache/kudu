@@ -1,0 +1,18 @@
+# Don't cache content or styles / scripts served by us.
+<FilesMatch "\.(html|js|css)$">
+  FileETag None
+  <IfModule mod_headers.c>
+     Header unset ETag
+     Header set Cache-Control "no-cache"
+  </IfModule>
+</FilesMatch>
+
+# Cache large files (e.g. images) for a short period of time.
+<FilesMatch "\.(gif|jpg|png)$">
+  FileETag None
+  <IfModule mod_headers.c>
+     Header unset ETag
+     # 5 minutes
+     Header set Cache-Control "max-age=300"
+  </IfModule>
+</FilesMatch>
