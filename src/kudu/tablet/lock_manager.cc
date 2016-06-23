@@ -228,7 +228,7 @@ void LockTable::ReleaseLockEntry(LockEntry *entry) {
 void LockTable::Resize() {
   // Calculate a new table size
   size_t new_size = 16;
-  while (new_size < item_count_) {
+  while (new_size < base::subtle::NoBarrier_Load(&item_count_)) {
     new_size <<= 1;
   }
 
