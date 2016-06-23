@@ -21,7 +21,7 @@
   <parent>
     <groupId>org.kududb</groupId>
     <artifactId>kudu-parent</artifactId>
-    <version>0.9.1-SNAPSHOT</version>
+    <version>0.9.1</version>
   </parent>
 
   <artifactId>interface-annotations</artifactId>
