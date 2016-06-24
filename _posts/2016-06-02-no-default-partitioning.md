@@ -51,27 +51,27 @@ With the C++ client, creating a new table with hash partitions is as simple as
 calling `KuduTableCreator:add_hash_partitions` with the columns to hash and the
 number of buckets to use:
 
-```cpp
+{% highlight cpp %}
 unique_ptr<KuduTableCreator> table_creator(my_client->NewTableCreator());
 Status create_status = table_creator->table_name("my-table")
                                      .schema(my_schema)
                                      .add_hash_partitions({ "key_column_a", "key_column_b" }, 16)
                                      .Create();
 if (!create_status.ok() { /* handle error */ }
-```
+{% endhighlight %}
 
 Java Client
 ===========
 
 And similarly, in Java:
 
-```java
+{% highlight java %}
 List<String> hashColumns = new ArrayList<>();
 hashColumns.add("key_column_a");
 hashColumn.add("key_column_b");
 CreateTableOptions options = new CreateTableOptions().addHashPartitions(hashColumns, 16);
 myClient.createTable("my-table", my_schema, options);
-```
+{% endhighlight %}
 
 In the examples above, if the hash partition configuration is omitted the create
 table operation will fail with the error `Table partitioning must be specified
@@ -85,7 +85,7 @@ Impala
 When creating Kudu tables with Impala, the formerly optional `DISTRIBUTE BY`
 clause is now required:
 
-```SQL
+{% highlight SQL %}
 CREATE TABLE my_table (key_column_a STRING, key_column_b STRING, other_column STRING)
 DISTRIBUTE BY HASH (key_column_a, key_column_b) INTO 16 BUCKETS
 TBLPROPERTIES(
@@ -94,4 +94,4 @@ TBLPROPERTIES(
     'kudu.master_addresses' = 'kudu-master.example.com:7051',
     'kudu.key_columns' = 'key_column_a,key_column_b'
 );
-```
+{% endhighlight %}

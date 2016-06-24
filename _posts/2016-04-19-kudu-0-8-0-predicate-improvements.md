@@ -24,7 +24,7 @@ prune entire tablets during scans. For example, for the following schema and
 query Kudu will now be able to skip scanning 15 out of the 16 tablets in the
 table:
 
-```SQL
+{% highlight sql %}
 -- create a table with 16 tablets
 CREATE TABLE users (id INT64, name STRING, address STRING)
 DISTRIBUTE BY HASH (id) INTO 16 BUCKETS;
@@ -32,7 +32,7 @@ DISTRIBUTE BY HASH (id) INTO 16 BUCKETS;
 -- scan over a single tablet
 SELECT id, name, address FROM users
 WHERE id = 876932;
-```
+{% endhighlight %}
 
 For a deeper look at the newly implemented scan and partition pruning
 optimizations, see the associated [design
@@ -52,7 +52,7 @@ specifying exclusive, as well as inclusive, range predicates. The existing
 API has been deprecated, and will be removed soon. Example of transitioning from
 the old to new API:
 
-```java
+{% highlight java %}
 ColumnSchema myIntColumnSchema = ...;
 KuduScanner.KuduScannerBuilder scannerBuilder = ...;
 
@@ -64,7 +64,7 @@ scannerBuilder.addColumnRangePredicate(predicate);
 // New predicate API
 scannerBuilder.newPredicate(
     KuduPredicate.newComparisonPredicate(myIntColumnSchema, ComparisonOp.GREATER_EQUAL, 20));
-```
+{% endhighlight %}
 
 ## Under the Covers Changes
 
