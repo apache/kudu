@@ -91,7 +91,8 @@ class KuduClient::Data {
 
   Status AlterTable(KuduClient* client,
                     const master::AlterTableRequestPB& req,
-                    const MonoTime& deadline);
+                    const MonoTime& deadline,
+                    bool has_add_drop_partition);
 
   Status IsAlterTableInProgress(KuduClient* client,
                                 const std::string& table_name,

@@ -327,7 +327,11 @@ void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequest
 }
 
 bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
-  return feature == MasterFeatures::RANGE_PARTITION_BOUNDS;
+  switch (feature) {
+    case MasterFeatures::RANGE_PARTITION_BOUNDS:
+    case MasterFeatures::ADD_DROP_RANGE_PARTITIONS: return true;
+    default: return false;
+  }
 }
 
 } // namespace master

@@ -436,7 +436,12 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
 
 Status KuduClient::Data::AlterTable(KuduClient* client,
                                     const AlterTableRequestPB& req,
-                                    const MonoTime& deadline) {
+                                    const MonoTime& deadline,
+                                    bool has_add_drop_partition) {
+  vector<uint32_t> required_feature_flags;
+  if (has_add_drop_partition) {
+    required_feature_flags.push_back(MasterFeatures::ADD_DROP_RANGE_PARTITIONS);
+  }
   AlterTableResponsePB resp;
   Status s =
       SyncLeaderMasterRpc<AlterTableRequestPB, AlterTableResponsePB>(
@@ -446,7 +451,7 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
           &resp,
           "AlterTable",
           &MasterServiceProxy::AlterTable,
-          {});
+          std::move(required_feature_flags));
   RETURN_NOT_OK(s);
   // TODO: Consider the situation where the request is sent to the
   // server, gets executed on the server and written to the server,

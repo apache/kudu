@@ -179,6 +179,7 @@ struct PersistentTableInfo {
 class TableInfo : public RefCountedThreadSafe<TableInfo> {
  public:
   typedef PersistentTableInfo cow_state;
+  typedef std::map<std::string, TabletInfo*> TabletInfoMap;
 
   explicit TableInfo(std::string table_id);
 
@@ -192,6 +193,10 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   // Add multiple tablets to this table.
   void AddTablets(const std::vector<TabletInfo*>& tablets);
 
+  // Atomically add and remove multiple tablets from this table.
+  void AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablets_to_add,
+                        const vector<scoped_refptr<TabletInfo>>& tablets_to_drop);
+
   // Return true if tablet with 'partition_key_start' has been
   // removed from 'tablet_map_' below.
   bool RemoveTablet(const std::string& partition_key_start);
@@ -200,6 +205,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   void GetTabletsInRange(const GetTableLocationsRequestPB* req,
                          std::vector<scoped_refptr<TabletInfo> > *ret) const;
 
+  // Adds all tablets to the vector in partition key sorted order.
   void GetAllTablets(std::vector<scoped_refptr<TabletInfo> > *ret) const;
 
   // Access the persistent metadata. Typically you should use
@@ -221,6 +227,18 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   // Allow for showing outstanding tasks in the master UI.
   void GetTaskList(std::vector<scoped_refptr<MonitoredTask> > *tasks);
 
+  // Returns a snapshot copy of the table info's tablet map.
+  TabletInfoMap tablet_map() const {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return tablet_map_;
+  }
+
+  // Returns the number of tablets.
+  int num_tablets() const {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return tablet_map_.size();
+  }
+
  private:
   friend class RefCountedThreadSafe<TableInfo>;
   ~TableInfo();
@@ -231,7 +249,6 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
 
   // Sorted index of tablet start partition-keys to TabletInfo.
   // The TabletInfo objects are owned by the CatalogManager.
-  typedef std::map<std::string, TabletInfo *> TabletInfoMap;
   TabletInfoMap tablet_map_;
 
   // Protects tablet_map_ and pending_tasks_
@@ -569,6 +586,18 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   // Extract the set of tablets that must be processed because not running yet.
   void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo>>* tablets_to_process);
+
+  Status ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
+                               std::vector<AlterTableRequestPB::Step> steps,
+                               Schema* new_schema,
+                               ColumnId* next_col_id);
+
+  Status ApplyAlterPartitioningSteps(const TableMetadataLock& l,
+                                     TableInfo* table,
+                                     const Schema& client_schema,
+                                     std::vector<AlterTableRequestPB::Step> steps,
+                                     std::vector<scoped_refptr<TabletInfo>>* tablets_to_add,
+                                     std::vector<scoped_refptr<TabletInfo>>* tablets_to_drop);
 
   // Task that takes care of the tablet assignments/creations.
   // Loops through the "not created" tablets and sends a CreateTablet() request.

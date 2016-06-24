@@ -403,6 +403,9 @@ class ExternalMaster : public ExternalDaemon {
   // Requires that it has previously been shutdown.
   Status Restart() WARN_UNUSED_RESULT;
 
+  // Blocks until the master's catalog manager is initialized and responding to
+  // RPCs.
+  Status WaitForCatalogManager() WARN_UNUSED_RESULT;
 
  private:
   friend class RefCountedThreadSafe<ExternalMaster>;
@@ -424,7 +427,6 @@ class ExternalTabletServer : public ExternalDaemon {
   // Restarts the daemon.
   // Requires that it has previously been shutdown.
   Status Restart() WARN_UNUSED_RESULT;
-
 
  private:
   const std::string master_addrs_;

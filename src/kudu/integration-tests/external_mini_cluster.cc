@@ -48,13 +48,17 @@
 #include "kudu/util/test_util.h"
 
 using kudu::master::GetLeaderMasterRpc;
+using kudu::master::ListTablesRequestPB;
+using kudu::master::ListTablesResponsePB;
 using kudu::master::MasterServiceProxy;
+using kudu::rpc::RpcController;
 using kudu::server::ServerStatusPB;
 using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerServiceProxy;
 using rapidjson::Value;
 using std::string;
+using std::unique_ptr;
 using strings::Substitute;
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
@@ -80,7 +84,6 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
 
 ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
 }
-
 
 ExternalMiniCluster::ExternalMiniCluster(const ExternalMiniClusterOptions& opts)
   : opts_(opts) {
@@ -836,6 +839,40 @@ Status ExternalMaster::Restart() {
   flags.push_back("--webserver_interface=localhost");
   flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
   RETURN_NOT_OK(StartProcess(flags));
+  return Status::OK();
+}
+
+Status ExternalMaster::WaitForCatalogManager() {
+  unique_ptr<MasterServiceProxy> proxy(
+      new MasterServiceProxy(messenger_, bound_rpc_addr()));
+  while (true) {
+    ListTablesRequestPB req;
+    ListTablesResponsePB resp;
+    RpcController rpc;
+    Status s = proxy->ListTables(req, &resp, &rpc);
+    if (s.ok()) {
+      if (!resp.has_error()) {
+        // This master is the leader and is up and running.
+        break;
+      } else {
+        s = StatusFromPB(resp.error().status());
+        if (s.IsIllegalState()) {
+          // This master is not the leader but is otherwise up and running.
+          break;
+        } else if (!s.IsServiceUnavailable()) {
+          // Unexpected error from master.
+          return s;
+        }
+      }
+    } else if (!s.IsNetworkError()) {
+      // Unexpected error from proxy.
+      return s;
+    }
+
+    // There was some kind of transient network error or the master isn't yet
+    // ready. Sleep and retry.
+    SleepFor(MonoDelta::FromMilliseconds(50));
+  }
   return Status::OK();
 }
 

@@ -1115,11 +1115,11 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
   // cache will execute GetTableLocation RPCs at different partition keys.
 
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 50, 0));
-  client_->data_->meta_cache_->ClearCacheForTesting();
+  client_->data_->meta_cache_->ClearCache();
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 50, 50));
-  client_->data_->meta_cache_->ClearCacheForTesting();
+  client_->data_->meta_cache_->ClearCache();
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100, 200));
-  client_->data_->meta_cache_->ClearCacheForTesting();
+  client_->data_->meta_cache_->ClearCache();
 
   // Insert out-of-range rows.
   shared_ptr<KuduSession> session = client_->NewSession();
@@ -1135,7 +1135,7 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
   out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 350));
 
   for (auto& insert : out_of_range_inserts) {
-    client_->data_->meta_cache_->ClearCacheForTesting();
+    client_->data_->meta_cache_->ClearCache();
     Status result = session->Apply(insert.release());
     EXPECT_TRUE(result.IsIOError());
     vector<KuduError*> errors;
@@ -1235,7 +1235,7 @@ TEST_F(ClientTest, TestMetaCacheExpiry) {
   auto& meta_cache = client_->data_->meta_cache_;
 
   // Clear the cache.
-  meta_cache->ClearCacheForTesting();
+  meta_cache->ClearCache();
   internal::MetaCacheEntry entry;
   ASSERT_FALSE(meta_cache->LookupTabletByKeyFastPath(client_table_.get(), "", &entry));
 

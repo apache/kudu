@@ -772,6 +772,59 @@ class KUDU_EXPORT KuduTableAlterer {
   /// @return Raw pointer to this alterer object.
   KuduTableAlterer* DropColumn(const std::string& name);
 
+  /// Add a range partition to the table with an inclusive lower bound and
+  /// exclusive upper bound.
+  ///
+  /// @note The table alterer takes ownership of the rows.
+  ///
+  /// @note Multiple range partitions may be added as part of a single alter
+  ///   table transaction by calling this method multiple times on the table
+  ///   alterer.
+  ///
+  /// @note This client may immediately write and scan the new tablets when
+  ///   Alter() returns success, however other existing clients may have to wait
+  ///   for a timeout period to elapse before the tablets become visible. This
+  ///   period is configured by the master's 'table_locations_ttl_ms' flag, and
+  ///   defaults to one hour.
+  ///
+  /// @param [in] lower_bound
+  ///   The inclusive lower bound of the range partition to add. If the row is
+  ///   empty, then the lower bound is unbounded. If any of the columns are
+  ///   unset, the logical minimum value for the column's type will be used by
+  ///   default.
+  /// @param [in] upper_bound
+  ///   The exclusive upper bound of the range partition to add. If the row is
+  ///   empty, then the upper bound is unbounded. If any of the individual
+  ///   columns are unset, the logical minimum value for the column' type will
+  ///   be used by default.
+  /// @return Raw pointer to this alterer object.
+  KuduTableAlterer* AddRangePartition(KuduPartialRow* lower_bound,
+                                      KuduPartialRow* upper_bound);
+
+  /// Drop the range partition from the table with the specified inclusive lower
+  /// bound and exclusive upper bound. The bounds must match an existing range
+  /// partition exactly, and may not span multiple range partitions.
+  ///
+  /// @note The table alterer takes ownership of the rows.
+  ///
+  /// @note Multiple range partitions may be dropped as part of a single alter
+  ///   table transaction by calling this method multiple times on the table
+  ///   alterer.
+  ///
+  /// @param [in] lower_bound
+  ///   The inclusive lower bound of the range partition to drop. If the row is
+  ///   empty, then the lower bound is unbounded. If any of the columns are
+  ///   unset, the logical minimum value for the column's type will be used by
+  ///   default.
+  /// @param [in] upper_bound
+  ///   The exclusive upper bound of the range partition to add. If the row is
+  ///   empty, then the upper bound is unbounded. If any of the individual
+  ///   columns are unset, the logical minimum value for the column' type will
+  ///   be used by default.
+  /// @return Raw pointer to this alterer object.
+  KuduTableAlterer* DropRangePartition(KuduPartialRow* lower_bound,
+                                       KuduPartialRow* upper_bound);
+
   /// Set a timeout for the alteration operation.
   ///
   /// This includes any waiting after the alter has been submitted

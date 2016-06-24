@@ -830,23 +830,69 @@ KuduTableAlterer* KuduTableAlterer::RenameTo(const string& new_name) {
 }
 
 KuduColumnSpec* KuduTableAlterer::AddColumn(const string& name) {
-  Data::Step s = {AlterTableRequestPB::ADD_COLUMN,
-                  new KuduColumnSpec(name)};
-  data_->steps_.push_back(s);
+  Data::Step s = { AlterTableRequestPB::ADD_COLUMN,
+                   new KuduColumnSpec(name), nullptr, nullptr };
+  data_->steps_.emplace_back(std::move(s));
   return s.spec;
 }
 
 KuduColumnSpec* KuduTableAlterer::AlterColumn(const string& name) {
-  Data::Step s = {AlterTableRequestPB::ALTER_COLUMN,
-                  new KuduColumnSpec(name)};
-  data_->steps_.push_back(s);
+  Data::Step s = { AlterTableRequestPB::ALTER_COLUMN,
+                   new KuduColumnSpec(name), nullptr, nullptr };
+  data_->steps_.emplace_back(std::move(s));
   return s.spec;
 }
 
 KuduTableAlterer* KuduTableAlterer::DropColumn(const string& name) {
-  Data::Step s = {AlterTableRequestPB::DROP_COLUMN,
-                  new KuduColumnSpec(name)};
-  data_->steps_.push_back(s);
+  Data::Step s = { AlterTableRequestPB::DROP_COLUMN,
+                   new KuduColumnSpec(name), nullptr, nullptr };
+  data_->steps_.emplace_back(std::move(s));
+  return this;
+}
+
+KuduTableAlterer* KuduTableAlterer::AddRangePartition(KuduPartialRow* lower_bound,
+                                                      KuduPartialRow* upper_bound) {
+  if (lower_bound == nullptr || upper_bound == nullptr) {
+    data_->status_ = Status::InvalidArgument("range partition bounds may not be null");
+  }
+  if (!lower_bound->schema()->Equals(*upper_bound->schema())) {
+    data_->status_ = Status::InvalidArgument("range partition bounds must have matching schemas");
+  }
+  if (data_->schema_ == nullptr) {
+    data_->schema_ = lower_bound->schema();
+  } else if (!lower_bound->schema()->Equals(*data_->schema_)) {
+    data_->status_ = Status::InvalidArgument("range partition bounds must have matching schemas");
+  }
+
+  Data::Step s { AlterTableRequestPB::ADD_RANGE_PARTITION,
+                 nullptr,
+                 unique_ptr<KuduPartialRow>(lower_bound),
+                 unique_ptr<KuduPartialRow>(upper_bound) };
+  data_->steps_.emplace_back(std::move(s));
+  data_->has_alter_partitioning_steps = true;
+  return this;
+}
+
+KuduTableAlterer* KuduTableAlterer::DropRangePartition(KuduPartialRow* lower_bound,
+                                                       KuduPartialRow* upper_bound) {
+  if (lower_bound == nullptr || upper_bound == nullptr) {
+    data_->status_ = Status::InvalidArgument("range partition bounds may not be null");
+  }
+  if (!lower_bound->schema()->Equals(*upper_bound->schema())) {
+    data_->status_ = Status::InvalidArgument("range partition bounds must have matching schemas");
+  }
+  if (data_->schema_ == nullptr) {
+    data_->schema_ = lower_bound->schema();
+  } else if (!lower_bound->schema()->Equals(*data_->schema_)) {
+    data_->status_ = Status::InvalidArgument("range partition bounds must have matching schemas");
+  }
+
+  Data::Step s { AlterTableRequestPB::DROP_RANGE_PARTITION,
+                 nullptr,
+                 unique_ptr<KuduPartialRow>(lower_bound),
+                 unique_ptr<KuduPartialRow>(upper_bound) };
+  data_->steps_.emplace_back(std::move(s));
+  data_->has_alter_partitioning_steps = true;
   return this;
 }
 
@@ -869,7 +915,29 @@ Status KuduTableAlterer::Alter() {
     data_->client_->default_admin_operation_timeout();
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(timeout);
-  RETURN_NOT_OK(data_->client_->data_->AlterTable(data_->client_, req, deadline));
+  RETURN_NOT_OK(data_->client_->data_->AlterTable(data_->client_, req, deadline,
+                                                  data_->has_alter_partitioning_steps));
+
+  if (data_->has_alter_partitioning_steps) {
+    // If the table partitions change, clear the local meta cache so that the
+    // new tablets can immediately be written to and scanned, and the old
+    // tablets won't be seen again. This also prevents rows being batched for
+    // the wrong tablet when a partition is dropped and added in the same alter
+    // table transaction. We could clear the meta cache for just the table being
+    // altered or just the partition key ranges being changed, but that would
+    // require opening the table in order to get the ID, schema, and partition
+    // schema.
+    //
+    // It is not necessary to wait for the alteration to be completed before
+    // clearing the cache (i.e. the tablets to be created), because the master
+    // has its soft state updated as part of handling the alter table RPC. When
+    // the meta cache looks up the new tablet locations during a subsequent
+    // write or scan, the master will return a ServiceUnavailable response if
+    // the new tablets are not yet running. The meta cache will automatically
+    // retry after a delay when it encounters this error.
+    data_->client_->data_->meta_cache_->ClearCache();
+  }
+
   if (data_->wait_) {
     string alter_name = data_->rename_to_.get_value_or(data_->table_name_);
     RETURN_NOT_OK(data_->client_->data_->WaitForAlterTableToFinish(

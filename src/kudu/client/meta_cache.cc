@@ -604,11 +604,7 @@ void LookupRpc::SendRpc() {
   MetaCacheEntry entry;
   while (PREDICT_TRUE(meta_cache_->LookupTabletByKeyFastPath(table_, partition_key_, &entry))
          && (entry.is_non_covered_range() || entry.tablet()->HasLeader())) {
-    VLOG(4) << "Fast lookup: found " << entry.DebugString(table_)
-            << " for ("
-            << table_->partition_schema()
-                      .PartitionKeyDebugString(partition_key_, *table_->schema().schema_)
-            << ") of " << table_->name();
+    VLOG(4) << "Fast lookup: found " << entry.DebugString(table_) << " for " << ToString();
     if (!entry.is_non_covered_range()) {
       if (remote_tablet_) {
         *remote_tablet_ = entry.tablet();
@@ -618,10 +614,8 @@ void LookupRpc::SendRpc() {
       return;
     }
     if (is_exact_lookup_ || entry.upper_bound_partition_key().empty()) {
-      user_cb_.Run(Status::NotFound(
-            "No tablet covering the requested range partition",
-            table_->partition_schema()
-                   .PartitionKeyDebugString(partition_key_, *table_->schema().schema_)));
+      user_cb_.Run(Status::NotFound("No tablet covering the requested range partition",
+                                    entry.DebugString(table_)));
       delete this;
       return;
     }
@@ -629,10 +623,7 @@ void LookupRpc::SendRpc() {
   }
 
   // Slow path: must lookup the tablet in the master.
-  VLOG(4) << "Fast lookup: no cache entry"
-          << " for (" << table_->partition_schema()
-                                .PartitionKeyDebugString(partition_key_, *table_->schema().schema_)
-          << ") of " << table_->name()
+  VLOG(4) << "Fast lookup: no cache entry for " << ToString()
           << ": refreshing our metadata from the Master";
 
   if (!has_permit_) {
@@ -672,8 +663,9 @@ void LookupRpc::SendRpc() {
 string LookupRpc::ToString() const {
   return Substitute("GetTableLocations { table: '$0', partition-key: ($1), attempt: $2 }",
                     table_->name(),
-                    table_->partition_schema()
-                           .PartitionKeyDebugString(partition_key_, *table_->schema().schema_),
+                    (partition_key_.empty() ? "<start>" :
+                     table_->partition_schema()
+                            .PartitionKeyDebugString(partition_key_, *table_->schema().schema_)),
                     num_attempts());
 }
 
@@ -761,10 +753,8 @@ void LookupRpc::SendRpcCb(const Status& status) {
     MetaCacheEntry entry;
     new_status = meta_cache_->ProcessLookupResponse(*this, &entry);
     if (entry.is_non_covered_range()) {
-      new_status = Status::NotFound(
-          "No tablet covering the requested range partition",
-          table_->partition_schema()
-                 .PartitionKeyDebugString(partition_key_, *table_->schema().schema_));
+      new_status = Status::NotFound("No tablet covering the requested range partition",
+                                    entry.DebugString(table_));
     } else if (remote_tablet_) {
       *remote_tablet_ = entry.tablet();
     }
@@ -949,9 +939,9 @@ bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
   return false;
 }
 
-void MetaCache::ClearCacheForTesting() {
+void MetaCache::ClearCache() {
   VLOG(3) << "Clearing cache";
-  shared_lock<rw_spinlock> l(lock_);
+  std::lock_guard<rw_spinlock> l(lock_);
   STLDeleteValues(&ts_cache_);
   tablets_by_id_.clear();
   tablets_by_table_and_key_.clear();

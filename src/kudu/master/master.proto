@@ -433,6 +433,8 @@ message AlterTableRequestPB {
     // TODO(KUDU-861): this will subsume RENAME_COLUMN, but not yet implemented
     // on the master side.
     ALTER_COLUMN = 4;
+    ADD_RANGE_PARTITION = 5;
+    DROP_RANGE_PARTITION = 6;
   }
   message AddColumn {
     // The schema to add.
@@ -449,6 +451,16 @@ message AlterTableRequestPB {
     required string old_name = 1;
     required string new_name = 2;
   }
+  message AddRangePartition {
+    // A set of row operations containing the lower and upper range bound for
+    // the range partition to add or drop.
+    optional RowOperationsPB range_bounds = 1;
+  }
+  message DropRangePartition {
+    // A set of row operations containing the lower and upper range bound for
+    // the range partition to add or drop.
+    optional RowOperationsPB range_bounds = 1;
+  }
 
   message Step {
     optional StepType type = 1 [ default = UNKNOWN ];
@@ -457,11 +469,17 @@ message AlterTableRequestPB {
     optional AddColumn add_column = 2;
     optional DropColumn drop_column = 3;
     optional RenameColumn rename_column = 4;
+    optional AddRangePartition add_range_partition = 5;
+    optional DropRangePartition drop_range_partition = 6;
   }
 
   required TableIdentifierPB table = 1;
   repeated Step alter_schema_steps = 2;
   optional string new_table_name = 3;
+
+  // The table schema to use when decoding the range bound row operations. Only
+  // necessary when partitions are being added or dropped.
+  optional SchemaPB schema = 4;
 }
 
 message AlterTableResponsePB {
@@ -572,6 +590,8 @@ enum MasterFeatures {
   UNKNOWN_FEATURE = 0;
   // The master supports creating tables with non-covering range partitions.
   RANGE_PARTITION_BOUNDS = 1;
+  // The master supports adding and dropping range partitions.
+  ADD_DROP_RANGE_PARTITIONS = 2;
 }
 
 service MasterService {

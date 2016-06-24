@@ -338,7 +338,7 @@ TEST_F(KsckTest, TestOneSmallReplicatedTable) {
   ksck_->set_table_filters({"xyz"});
   ASSERT_OK(RunKsck());
   Status s = ksck_->ChecksumData(ChecksumOptions());
-  EXPECT_EQ("Not found: No tablet replicas found. Filter: table_filters=xyz", s.ToString());
+  EXPECT_EQ("Not found: No table found. Filter: table_filters=xyz", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "INFO: The cluster doesn't have any matching tables");
 
