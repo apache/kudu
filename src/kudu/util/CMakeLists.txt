@@ -140,6 +140,7 @@ set(UTIL_SRCS
   random_util.cc
   resettable_heartbeater.cc
   rolling_log.cc
+  rw_mutex.cc
   rwc_lock.cc
   ${SEMAPHORE_CC}
   slice.cc

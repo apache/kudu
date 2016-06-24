@@ -16,9 +16,9 @@
 // under the License.
 
 #include <boost/smart_ptr/detail/spinlock.hpp>
-#include <boost/thread/shared_mutex.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <iostream>
 #include <mutex>
 #include <stdio.h>
 #include <thread>
@@ -29,6 +29,7 @@
 #include "kudu/util/flags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/rw_mutex.h"
 
 DEFINE_int32(num_threads, 8, "Number of threads to test");
 
@@ -74,7 +75,7 @@ struct per_cpu_lock {
 
 struct shared_data {
   kudu::rw_spinlock rw_spinlock;
-  boost::shared_mutex rwlock;
+  kudu::RWMutex rwlock;
   std::mutex lock;
   kudu::percpu_rwlock per_cpu;
 };

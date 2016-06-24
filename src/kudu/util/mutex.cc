@@ -84,6 +84,12 @@ void Mutex::Acquire() {
   // worth gathering timing information about the mutex acquisition.
   MicrosecondsInt64 start_time = GetMonoTimeMicros();
   int rv = pthread_mutex_lock(&native_handle_);
+  DCHECK_EQ(0, rv) << ". " << strerror(rv)
+#ifndef NDEBUG
+      << ". Owner tid: " << owning_tid_ << "; Self tid: " << Env::Default()->gettid()
+      << "; Owner stack: " << std::endl << stack_trace_->Symbolize()
+#endif
+  ; // NOLINT(whitespace/semicolon)
   MicrosecondsInt64 end_time = GetMonoTimeMicros();
 
   int64_t wait_time = end_time - start_time;
@@ -92,9 +98,6 @@ void Mutex::Acquire() {
   }
 
 #ifndef NDEBUG
-  DCHECK_EQ(0, rv) << ". " << strerror(rv)
-      << ". Owner tid: " << owning_tid_ << "; Self tid: " << Env::Default()->gettid()
-      << "; Owner stack: " << std::endl << stack_trace_->Symbolize();;
   CheckUnheldAndMark();
 #endif
 }
