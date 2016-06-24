@@ -2651,6 +2651,10 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
   ASSERT_EQ(3, tservers.size());
+  vector<ExternalTabletServer*> ext_tservers;
+  for (auto* details : tservers) {
+    ext_tservers.push_back(cluster_->tablet_server_by_uuid(details->uuid()));
+  }
 
   // Test failed replicates.
 
@@ -2662,17 +2666,17 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
   // Then, cause server 0 to start and win a leader election.
   // This will cause servers 0 and 1 to crash.
   for (int i = 1; i <= 2; i++) {
-    ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(i),
+    ASSERT_OK(cluster_->SetFlag(ext_tservers[i],
               "log_inject_io_error_on_append_fraction", "1.0"));
   }
   ASSERT_OK(StartElection(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
   for (int i = 1; i <= 2; i++) {
-    ASSERT_OK(cluster_->tablet_server(i)->WaitForCrash(MonoDelta::FromSeconds(10)));
+    ASSERT_OK(ext_tservers[i]->WaitForCrash(MonoDelta::FromSeconds(10)));
   }
 
   // Now we know followers crash when they write to their log.
   // Let's verify the same for the leader (server 0).
-  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+  ASSERT_OK(cluster_->SetFlag(ext_tservers[0],
             "log_inject_io_error_on_append_fraction", "1.0"));
 
   // Attempt to write to the leader, but with a short timeout.
@@ -2686,7 +2690,7 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
   workload.Start();
 
   // Leader should crash as well.
-  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(10)));
+  ASSERT_OK(ext_tservers[0]->WaitForCrash(MonoDelta::FromSeconds(10)));
   workload.StopAndJoin();
 
   LOG(INFO) << "Everything crashed!";
@@ -2714,7 +2718,7 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
   // leader, set flags so that commits crash the server, then bring the
   // followers back up.
   for (int i = 1; i <= 2; i++) {
-    cluster_->tablet_server(i)->Shutdown();
+    ext_tservers[i]->Shutdown();
   }
 
   OpId prev_opid, cur_opid;
@@ -2729,13 +2733,13 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
     VLOG(1) << "Current OpId on server 0: " << OpIdToString(cur_opid);
   } while (consensus::OpIdEquals(prev_opid, cur_opid));
   workload.StopAndJoin();
-  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+  ASSERT_OK(cluster_->SetFlag(ext_tservers[0],
             "log_inject_io_error_on_append_fraction", "1.0"));
   for (int i = 1; i <= 2; i++) {
-    ASSERT_OK(cluster_->tablet_server(i)->Restart());
+    ASSERT_OK(ext_tservers[i]->Restart());
   }
   // Leader will crash.
-  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(10)));
+  ASSERT_OK(ext_tservers[0]->WaitForCrash(MonoDelta::FromSeconds(10)));
 }
 
 }  // namespace tserver
