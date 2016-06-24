@@ -6,6 +6,8 @@ author: Jean-Daniel Cryans
 Welcome to the fourteenth edition of the Kudu Weekly Update. This weekly blog post
 covers ongoing development and news in the Apache Kudu (incubating) project.
 
+<!--more-->
+
 ## Development discussions and code in progress
 
 * Dan Burkert posted a series of patches to [add support in the Java client](https://gerrit.cloudera.org/#/c/3388/)
@@ -25,8 +27,6 @@ covers ongoing development and news in the Apache Kudu (incubating) project.
 
 * Mike Percy [wrote](http://getkudu.io/2016/06/17/raft-consensus-single-node.html) about how Kudu
   uses Raft consensus on a single node, and some changes we're making as Kudu is getting more mature.
-
-<!--more-->
 
 Want to learn more about a specific topic from this blog post? Shoot an email to the
 [kudu-user mailing list](mailto:user@kudu.incubator.apache.org) or
