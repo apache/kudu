@@ -168,8 +168,8 @@ Status ParseAddressList(const std::string& addr_list,
                         std::vector<Sockaddr>* addresses) {
   vector<HostPort> host_ports;
   RETURN_NOT_OK(HostPort::ParseStrings(addr_list, default_port, &host_ports));
+  if (host_ports.empty()) return Status::InvalidArgument("No address specified");
   unordered_set<Sockaddr> uniqued;
-
   for (const HostPort& host_port : host_ports) {
     vector<Sockaddr> this_addresses;
     RETURN_NOT_OK(host_port.ResolveAddresses(&this_addresses));

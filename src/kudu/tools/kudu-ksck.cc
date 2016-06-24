@@ -80,6 +80,8 @@ static void RunKsck(vector<string>* error_messages) {
                                        master::Master::kDefaultPort,
                                        &master_addrs),
                       error_messages, "Unable to parse master address");
+  // return early if the addresses could not be resolved
+  if (!error_messages->empty()) return;
 
   shared_ptr<KsckMaster> master;
   PUSH_PREPEND_NOT_OK(RemoteKsckMaster::Build(master_addrs[0], &master),
