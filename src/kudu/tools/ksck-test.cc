@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/lexical_cast.hpp>
 #include <gtest/gtest.h>
 #include <memory>
 #include <unordered_map>
@@ -142,7 +141,7 @@ class KsckTest : public KuduTest {
 
     vector<shared_ptr<KsckTablet>> tablets;
     for (int i = 0; i < num_tablets; i++) {
-      shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), boost::lexical_cast<string>(i)));
+      shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), std::to_string(i)));
       CreateAndFillTablet(tablet, num_replicas, true);
       tablets.push_back(tablet);
     }

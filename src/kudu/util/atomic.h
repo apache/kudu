@@ -19,7 +19,7 @@
 #define KUDU_UTIL_ATOMIC_H
 
 #include <algorithm>
-#include <boost/type_traits/make_signed.hpp>
+#include <type_traits>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
@@ -132,7 +132,7 @@ class AtomicInt {
   // The gutil/atomicops.h functions only operate on signed types.
   // So, even if the user specializes on an unsigned type, we use a
   // signed type internally.
-  typedef typename boost::make_signed<T>::type SignedT;
+  typedef typename std::make_signed<T>::type SignedT;
   SignedT value_;
 
   DISALLOW_COPY_AND_ASSIGN(AtomicInt);

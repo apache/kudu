@@ -17,7 +17,6 @@
 #ifndef KUDU_TABLET_DELTAMEMSTORE_H
 #define KUDU_TABLET_DELTAMEMSTORE_H
 
-#include <boost/thread/mutex.hpp>
 #include <deque>
 #include <gtest/gtest_prod.h>
 #include <memory>

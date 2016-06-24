@@ -44,6 +44,7 @@ DEFINE_int32(deltafile_default_block_size, 32*1024,
 TAG_FLAG(deltafile_default_block_size, experimental);
 
 using std::shared_ptr;
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -421,7 +422,7 @@ Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
   DCHECK(initted_) << "Must call Init()";
   DCHECK(index_iter_) << "Must call SeekToOrdinal()";
 
-  gscoped_ptr<PreparedDeltaBlock> pdb(new PreparedDeltaBlock());
+  unique_ptr<PreparedDeltaBlock> pdb(new PreparedDeltaBlock());
   BlockPointer dblk_ptr = index_iter_->GetCurrentBlockPointer();
   RETURN_NOT_OK(dfr_->cfile_reader()->ReadBlock(
       dblk_ptr, cache_blocks_, &pdb->block_));
@@ -443,7 +444,7 @@ Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
     pdb->last_updated_idx_;
   #endif
 
-  delta_blocks_.push_back(pdb.release());
+  delta_blocks_.emplace_back(std::move(pdb));
   return Status::OK();
 }
 
@@ -485,7 +486,7 @@ Status DeltaFileIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   // Remove blocks from our list which are no longer relevant to the range
   // being prepared.
   while (!delta_blocks_.empty() &&
-         delta_blocks_.front().last_updated_idx_ < start_row) {
+         delta_blocks_.front()->last_updated_idx_ < start_row) {
     delta_blocks_.pop_front();
   }
 
@@ -509,7 +510,7 @@ Status DeltaFileIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   }
 
   if (!delta_blocks_.empty()) {
-    PreparedDeltaBlock &block = delta_blocks_.front();
+    PreparedDeltaBlock& block = *delta_blocks_.front();
     int i = 0;
     for (i = block.prepared_block_start_idx_;
          i < block.decoder_->Count();
@@ -538,12 +539,12 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
 
   rowid_t start_row = prepared_idx_;
 
-  for (PreparedDeltaBlock &block : delta_blocks_) {
-    BinaryPlainBlockDecoder &bpd = *block.decoder_;
-    DVLOG(2) << "Visiting delta block " << block.first_updated_idx_ << "-"
-      << block.last_updated_idx_ << " for row block starting at " << start_row;
+  for (auto& block : delta_blocks_) {
+    BinaryPlainBlockDecoder& bpd = *block->decoder_;
+    DVLOG(2) << "Visiting delta block " << block->first_updated_idx_ << "-"
+             << block->last_updated_idx_ << " for row block starting at " << start_row;
 
-    if (PREDICT_FALSE(start_row > block.last_updated_idx_)) {
+    if (PREDICT_FALSE(start_row > block->last_updated_idx_)) {
       // The block to be updated completely falls after this delta block:
       //  <-- delta block -->      <-- delta block -->
       //                      <-- block to update     -->
@@ -555,7 +556,7 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
 
     rowid_t previous_rowidx = MathLimits<rowid_t>::kMax;
     bool continue_visit = true;
-    for (int i = block.prepared_block_start_idx_; i < bpd.Count(); i++) {
+    for (int i = block->prepared_block_start_idx_; i < bpd.Count(); i++) {
       Slice slice = bpd.string_at_index(i);
 
       // Decode and check the ID of the row we're going to update.

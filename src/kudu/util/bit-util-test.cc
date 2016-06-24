@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include <boost/utility.hpp>
+#include <boost/utility/binary.hpp>
 #include <gtest/gtest.h>
 #include "kudu/util/bit-util.h"
 

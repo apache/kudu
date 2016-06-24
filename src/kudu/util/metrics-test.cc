@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 #include <string>

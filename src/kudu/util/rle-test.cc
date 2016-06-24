@@ -20,7 +20,7 @@
 // Must come before gtest.h.
 #include "kudu/gutil/mathlimits.h"
 
-#include <boost/utility.hpp>
+#include <boost/utility/binary.hpp>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>

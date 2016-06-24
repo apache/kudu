@@ -22,7 +22,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/assign.hpp>
 #include <google/protobuf/descriptor.pb.h>
 #include <gtest/gtest.h>
 

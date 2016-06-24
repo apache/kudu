@@ -17,8 +17,8 @@
 #ifndef KUDU_RPC_REACTOR_H
 #define KUDU_RPC_REACTOR_H
 
+#include <boost/function.hpp>
 #include <boost/intrusive/list.hpp>
-#include <boost/utility.hpp>
 #include <ev++.h>
 #include <list>
 #include <map>

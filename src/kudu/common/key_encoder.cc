@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/noncopyable.hpp>
 #include <functional>
 #include <string>
 #include <unordered_map>

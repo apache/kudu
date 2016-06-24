@@ -17,7 +17,7 @@
 #ifndef KUDU_TABLET_DELTAFILE_H
 #define KUDU_TABLET_DELTAFILE_H
 
-#include <boost/ptr_container/ptr_deque.hpp>
+#include <deque>
 #include <memory>
 #include <string>
 #include <vector>
@@ -297,7 +297,7 @@ class DeltaFileIterator : public DeltaIterator {
 
   // After PrepareBatch(), the set of delta blocks in the delta file
   // which correspond to prepared_block_.
-  boost::ptr_deque<PreparedDeltaBlock> delta_blocks_;
+  std::deque<std::unique_ptr<PreparedDeltaBlock>> delta_blocks_;
 
   // Temporary buffer used in seeking.
   faststring tmp_buf_;

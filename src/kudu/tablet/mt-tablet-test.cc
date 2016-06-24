@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/ptr_container/ptr_vector.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <memory>

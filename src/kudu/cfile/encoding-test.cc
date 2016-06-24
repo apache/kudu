@@ -15,12 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/ptr_container/ptr_vector.hpp>
-#include <boost/utility/binary.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <stdlib.h>
 #include <limits>
+#include <stdlib.h>
+#include <vector>
 
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/bshuf_block.h"
@@ -39,6 +38,8 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/stopwatch.h"
+
+using std::vector;
 
 namespace kudu { namespace cfile {
 
@@ -72,13 +73,12 @@ class TestEncoding : public ::testing::Test {
   static Slice CreateBinaryBlock(BuilderType *sbb,
                                  int num_items,
                                  const char *fmt_str) {
-    boost::ptr_vector<string> to_insert;
+    vector<string> to_insert;
     std::vector<Slice> slices;
 
     for (uint i = 0; i < num_items; i++) {
-      string *val = new string(StringPrintf(fmt_str, i));
-      to_insert.push_back(val);
-      slices.push_back(Slice(*val));
+      to_insert.emplace_back(StringPrintf(fmt_str, i));
+      slices.push_back(Slice(to_insert.back()));
     }
 
 

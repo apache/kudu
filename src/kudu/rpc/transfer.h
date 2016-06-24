@@ -18,9 +18,7 @@
 #ifndef KUDU_RPC_TRANSFER_H
 #define KUDU_RPC_TRANSFER_H
 
-#include <boost/function.hpp>
 #include <boost/intrusive/list.hpp>
-#include <boost/utility.hpp>
 #include <gflags/gflags.h>
 #include <set>
 #include <stdint.h>

@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/lexical_cast.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <algorithm>
@@ -114,7 +113,7 @@ int main(int argc, char **argv) {
     int entry = 0;
     for (int j = 0; j < FLAGS_num_rows; j++) {
       entry += rand() % 5;
-      list.push_back(boost::lexical_cast<MergeType>(entry));
+      list.emplace_back(std::to_string(entry));
     }
   }
 

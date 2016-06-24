@@ -18,10 +18,8 @@
 
 #include <algorithm>
 #include <boost/algorithm/string.hpp>
-#include <boost/bind.hpp>
-#include <boost/lexical_cast.hpp>
-#include <boost/mem_fn.hpp>
 #include <boost/thread/shared_mutex.hpp>
+#include <functional>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <map>
@@ -66,7 +64,7 @@ Webserver::Webserver(const WebserverOptions& opts)
   : opts_(opts),
     context_(nullptr) {
   string host = opts.bind_interface.empty() ? "0.0.0.0" : opts.bind_interface;
-  http_address_ = host + ":" + boost::lexical_cast<string>(opts.port);
+  http_address_ = host + ":" + std::to_string(opts.port);
 }
 
 Webserver::~Webserver() {
@@ -201,7 +199,8 @@ Status Webserver::Start() {
   }
 
   PathHandlerCallback default_callback =
-    boost::bind<void>(boost::mem_fn(&Webserver::RootHandler), this, _1, _2);
+    std::bind<void>(std::mem_fn(&Webserver::RootHandler),
+                    this, std::placeholders::_1, std::placeholders::_2);
 
   RegisterPathHandler("/", "Home", default_callback);
 

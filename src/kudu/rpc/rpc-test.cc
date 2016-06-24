@@ -20,8 +20,9 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
-#include <boost/ptr_container/ptr_vector.hpp>
+#include <boost/bind.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"
@@ -38,9 +39,11 @@ METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
 
-using std::string;
 using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
 using std::unordered_map;
+using std::vector;
 
 namespace kudu {
 namespace rpc {
@@ -386,7 +389,7 @@ TEST_F(TestRpc, TestServerShutsDown) {
   req.set_y(rand());
   AddResponsePB resp;
 
-  boost::ptr_vector<RpcController> controllers;
+  vector<unique_ptr<RpcController>> controllers;
 
   // We'll send several calls async, and ensure that they all
   // get the error status when the connection drops.
@@ -394,9 +397,8 @@ TEST_F(TestRpc, TestServerShutsDown) {
 
   CountDownLatch latch(n_calls);
   for (int i = 0; i < n_calls; i++) {
-    auto controller = new RpcController();
-    controllers.push_back(controller);
-    p.AsyncRequest(GenericCalculatorService::kAddMethodName, req, &resp, controller,
+    controllers.emplace_back(new RpcController());
+    p.AsyncRequest(GenericCalculatorService::kAddMethodName, req, &resp, controllers.back().get(),
                    boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));
   }
 
@@ -406,8 +408,8 @@ TEST_F(TestRpc, TestServerShutsDown) {
   ASSERT_OK(listen_sock.Accept(&server_sock, &remote, 0));
 
   // The call is still in progress at this point.
-  for (const RpcController &controller : controllers) {
-    ASSERT_FALSE(controller.finished());
+  for (const auto& controller : controllers) {
+    ASSERT_FALSE(controller->finished());
   }
 
   // Shut down the socket.
@@ -418,9 +420,9 @@ TEST_F(TestRpc, TestServerShutsDown) {
   latch.Wait();
 
   // Should get the appropriate error on the client for all calls;
-  for (const RpcController &controller : controllers) {
-    ASSERT_TRUE(controller.finished());
-    Status s = controller.status();
+  for (const auto& controller : controllers) {
+    ASSERT_TRUE(controller->finished());
+    Status s = controller->status();
     ASSERT_TRUE(s.IsNetworkError()) <<
       "Unexpected status: " << s.ToString();
 

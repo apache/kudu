@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <vector>
-#include <boost/lexical_cast.hpp>
 #include <glog/logging.h>
 extern "C" {
 #include <oauth.h>
@@ -57,7 +56,7 @@ void OAuthRequest::AddStandardOAuthFields(const string& consumer_key,
   AddPair("oauth_version", "1.0");
   AddPair("oauth_signature_method", "HMAC-SHA1");
   AddPair("oauth_nonce", GenerateNonce());
-  AddPair("oauth_timestamp", boost::lexical_cast<string>(time(NULL)));
+  AddPair("oauth_timestamp", std::to_string(time(nullptr)));
   AddPair("oauth_consumer_key", consumer_key);
   AddPair("oauth_token", token_key);
 }

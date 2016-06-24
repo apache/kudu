@@ -17,7 +17,6 @@
 //
 // Tests for the kudu-admin command-line tool.
 
-#include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"
@@ -30,7 +29,6 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/subprocess.h"
 
-using boost::assign::list_of;
 using kudu::itest::TabletServerMap;
 using kudu::itest::TServerDetails;
 using strings::Split;

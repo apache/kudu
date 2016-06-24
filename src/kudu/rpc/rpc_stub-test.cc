@@ -16,6 +16,7 @@
 // under the License.
 
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -23,7 +24,6 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 #include <boost/bind.hpp>
-#include <boost/ptr_container/ptr_vector.hpp>
 
 #include "kudu/gutil/stl_util.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
@@ -40,8 +40,8 @@
 DEFINE_bool(is_panic_test_child, false, "Used by TestRpcPanic");
 DECLARE_bool(socket_inject_short_recvs);
 
-using boost::ptr_vector;
 using std::shared_ptr;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -106,24 +106,22 @@ TEST_F(RpcStubTest, TestBigCallData) {
   EchoRequestPB req;
   req.set_data(data);
 
-  ptr_vector<EchoResponsePB> resps;
-  ptr_vector<RpcController> controllers;
+  vector<unique_ptr<EchoResponsePB>> resps;
+  vector<unique_ptr<RpcController>> controllers;
 
   CountDownLatch latch(kNumSentAtOnce);
   for (int i = 0; i < kNumSentAtOnce; i++) {
-    auto resp = new EchoResponsePB;
-    resps.push_back(resp);
-    auto controller = new RpcController;
-    controllers.push_back(controller);
+    resps.emplace_back(new EchoResponsePB);
+    controllers.emplace_back(new RpcController);
 
-    p.EchoAsync(req, resp, controller,
+    p.EchoAsync(req, resps.back().get(), controllers.back().get(),
                 boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));
   }
 
   latch.Wait();
 
-  for (RpcController &c : controllers) {
-    ASSERT_OK(c.status());
+  for (const auto& c : controllers) {
+    ASSERT_OK(c->status());
   }
 }
 

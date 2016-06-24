@@ -17,8 +17,7 @@
 
 #include "kudu/util/resettable_heartbeater.h"
 
-#include <boost/bind/bind.hpp>
-#include <boost/thread/locks.hpp>
+#include <boost/bind.hpp>
 #include <gtest/gtest.h>
 #include <string>
 

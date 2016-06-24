@@ -18,7 +18,6 @@
 #ifndef KUDU_CFILE_CFILE_WRITER_H
 #define KUDU_CFILE_CFILE_WRITER_H
 
-#include <boost/utility.hpp>
 #include <unordered_map>
 #include <stdint.h>
 #include <string>

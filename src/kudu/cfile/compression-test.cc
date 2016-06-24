@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include <boost/scoped_array.hpp>
+
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 #include <stdlib.h>

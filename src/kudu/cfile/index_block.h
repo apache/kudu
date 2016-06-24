@@ -18,8 +18,6 @@
 #ifndef KUDU_CFILE_INDEX_BLOCK_H
 #define KUDU_CFILE_INDEX_BLOCK_H
 
-#include <boost/lexical_cast.hpp>
-#include <boost/utility.hpp>
 #include <glog/logging.h>
 #include <string>
 #include <vector>
