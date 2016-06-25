@@ -238,8 +238,8 @@ class shared_lock {
     : m_(NULL) {
   }
 
-  explicit shared_lock(Mutex* m)
-    : m_(DCHECK_NOTNULL(m)) {
+  explicit shared_lock(Mutex& m)
+    : m_(&m) {
     m_->lock_shared();
   }
 

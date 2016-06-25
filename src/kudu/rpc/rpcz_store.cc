@@ -105,7 +105,7 @@ MethodSampler* RpczStore::SamplerForCall(InboundCall* call) {
 
   // Most likely, we already have a sampler created for the call.
   {
-    shared_lock<rw_spinlock> lock(&samplers_lock_.get_lock());
+    shared_lock<rw_spinlock> l(samplers_lock_.get_lock());
     auto it = method_samplers_.find(call->method_info());
     if (PREDICT_TRUE(it != method_samplers_.end())) {
       return it->second.get();
@@ -205,7 +205,7 @@ void RpczStore::DumpPB(const DumpRpczStoreRequestPB& req,
                        DumpRpczStoreResponsePB* resp) {
   vector<pair<RpcMethodInfo*, MethodSampler*>> samplers;
   {
-    shared_lock<rw_spinlock> lock(&samplers_lock_.get_lock());
+    shared_lock<rw_spinlock> l(samplers_lock_.get_lock());
     for (const auto& p : method_samplers_) {
       samplers.emplace_back(p.first, p.second.get());
     }

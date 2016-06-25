@@ -1776,7 +1776,7 @@ std::string LogBlockManager::ContainerPathForTests(internal::LogBlockContainer* 
 bool FullDiskCache::IsRootFull(const std::string& root_path, MonoTime* expires_out) const {
   const MonoTime* expires;
   {
-    shared_lock<rw_spinlock> l(&lock_.get_lock());
+    shared_lock<rw_spinlock> l(lock_.get_lock());
     expires = FindOrNull(cache_, root_path);
   }
   if (expires == nullptr) return false; // No entry exists.
