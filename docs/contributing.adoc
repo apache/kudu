@@ -146,33 +146,16 @@ In general, Kudu follows the
 link:https://google.github.io/styleguide/cppguide.html[Google {cpp} Style Guide],
 with the following exceptions:
 
-=== Limitations on `boost` Library Use
+=== Limitations on `boost` Use
 
-`boost` libraries can be used in cases where a suitable
-replacement does not exist in the Kudu code base. However, try to avoid introducing
-dependencies on new `boost` libraries, and use Kudu code in preference
-to `boost` where available. For example, do not use `boost`'s scoped pointer
-implementations.
-
-.Approved `boost` Libraries
-
-- `boost::assign` (container literals)
-- `boost::shared_mutex` (but prefer Kudu's spin lock implementation for short
-  critical sections)
-
-Check that any features from `boost` you use are present in *`boost` 1.46*
-or earlier, for compatibility with RHEL 6.
-
-.`boost` Libraries and the Kudu {cpp} Client
-Do not use `boost` in any public headers for the Kudu {cpp} client, because
-`boost` commonly breaks backward compatibility, and passing data between two `boost`
-versions (one by the user, one by Kudu) causes serious issues.
-
-In addition, do not create dependencies from the Kudu {cpp} client to any `boost`
-libraries. `libboost_system` is particularly troublesome, as any `boost` code
-that throws exceptions will grow a dependency on it. Among other things, you
-cannot use `boost::{lock_guard,unique_lock,shared_lock}` in any code consumed
-by the {cpp} client (such as _common/_ and _util/_).
+`boost` classes from header-only libraries can be used in cases where a suitable
+replacement does not exist in the Kudu code base. However:
+* Do not introduce dependencies on `boost` classes not already depended on. We
+  are actively trying to remove `boost` from the Kudu code base, and new
+  dependencies make that work more difficult.
+* Do not use `boost` in any public headers for the Kudu {cpp} client, because
+  `boost` commonly breaks backward compatibility, and passing data between two
+  `boost` versions (one by the user, one by Kudu) causes serious issues.
 
 === Line length
 

@@ -248,5 +248,16 @@ if [ -n "$OS_LINUX" -a ! -d $NVML_DIR ]; then
   fetch_and_expand nvml-${NVML_VERSION}.tar.gz
 fi
 
+BOOST_PATCHLEVEL=1
+delete_if_wrong_patchlevel $BOOST_DIR $BOOST_PATCHLEVEL
+if [ ! -d $BOOST_DIR ]; then
+  fetch_and_expand boost_${BOOST_VERSION}.tar.gz
+  pushd $BOOST_DIR
+  patch -p0 < $TP_DIR/patches/boost-issue-12179-fix-compilation-errors.patch
+  touch patchlevel-$BOOST_PATCHLEVEL
+  popd
+  echo
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

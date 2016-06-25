@@ -166,16 +166,6 @@ src/kudu/util/debug/trace_event_impl.h
 src/kudu/util/debug/trace_event_impl_constants.cc
 src/kudu/util/debug/trace_event_synthetic_delay.cc
 src/kudu/util/debug/trace_event_synthetic_delay.h
-thirdparty/boost_uuid/boost/uuid/name_generator.hpp
-thirdparty/boost_uuid/boost/uuid/nil_generator.hpp
-thirdparty/boost_uuid/boost/uuid/random_generator.hpp
-thirdparty/boost_uuid/boost/uuid/seed_rng.hpp
-thirdparty/boost_uuid/boost/uuid/sha1.hpp
-thirdparty/boost_uuid/boost/uuid/string_generator.hpp
-thirdparty/boost_uuid/boost/uuid/uuid.hpp
-thirdparty/boost_uuid/boost/uuid/uuid_generators.hpp
-thirdparty/boost_uuid/boost/uuid/uuid_io.hpp
-thirdparty/boost_uuid/boost/uuid/uuid_serialize.hpp
 thirdparty/patches/*.patch
 www/d3.v2.js
 www/epoch.0.5.2.min.css

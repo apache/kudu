@@ -875,55 +875,26 @@ if (NOT APPLE)
 endif()
 
 ## Boost
-# It's important that Boost come last in the list of packages, because it's the only
-# dependency that we don't currently bundle in thirdparty/. If we put this earlier
-# in list, then we might end up with /usr/local/include taking precedence over
-# thirdparty/installed/include and pulling in the wrong version of other dependencies
-# that might be installed in the system.
 
-### Workaround for http://stackoverflow.com/questions/9948375/cmake-find-package-succeeds-but-returns-wrong-path
+# The boost-cmake project hasn't been maintained for years. Let's make sure we
+# don't accidentally use it if it can be found.
 set(Boost_NO_BOOST_CMAKE ON)
 
-# Find Boost static libraries.
-set(Boost_USE_STATIC_LIBS ON)
-find_package(Boost COMPONENTS system thread REQUIRED)
-set(BOOST_STATIC_LIBS ${Boost_LIBRARIES})
-list(LENGTH BOOST_STATIC_LIBS BOOST_STATIC_LIBS_LEN)
-list(SORT BOOST_STATIC_LIBS)
+# Look for Boost in thirdparty only.
+set(BOOST_ROOT ${THIRDPARTY_PREFIX})
 
-# Find Boost shared libraries.
-set(Boost_USE_STATIC_LIBS OFF)
-find_package(Boost COMPONENTS system thread REQUIRED)
-set(BOOST_SHARED_LIBS ${Boost_LIBRARIES})
-list(LENGTH BOOST_SHARED_LIBS BOOST_SHARED_LIBS_LEN)
-list(SORT BOOST_SHARED_LIBS)
-
-# We should have found the same number of libraries both times.
-if(NOT ${BOOST_SHARED_LIBS_LEN} EQUAL ${BOOST_STATIC_LIBS_LEN})
-  set(ERROR_MSG "Boost static and shared libraries are inconsistent.")
-  set(ERROR_MSG "${ERROR_MSG} Static libraries: ${BOOST_STATIC_LIBS}.")
-  set(ERROR_MSG "${ERROR_MSG} Shared libraries: ${BOOST_SHARED_LIBS}.")
-  message(FATAL_ERROR "${ERROR_MSG}")
+# As of cmake 3.5, there's still no way to force FindBoost.cmake to omit system
+# paths from its search. No combination of Boost_NO_SYSTEM_PATHS, BOOST_ROOT, or
+# BOOST_INCLUDEDIR does the trick; the best they can do is ensure the system
+# paths are searched last.
+#
+# To prevent system boost installations from being picked up, we'll work around
+# this ourselves by checking the prefix of Boost_INCLUDE_DIR.
+find_package(Boost REQUIRED)
+if(NOT ${Boost_INCLUDE_DIR} MATCHES ${BOOST_ROOT})
+  message(FATAL_ERROR "Chose Boost headers outside ${BOOST_ROOT}: ${Boost_INCLUDE_DIR}")
 endif()
-
-# Add each pair of static/shared libraries.
-math(EXPR LAST_IDX "${BOOST_STATIC_LIBS_LEN} - 1")
-foreach(IDX RANGE ${LAST_IDX})
-  list(GET BOOST_STATIC_LIBS ${IDX} BOOST_STATIC_LIB)
-  list(GET BOOST_SHARED_LIBS ${IDX} BOOST_SHARED_LIB)
-
-  # Remove the prefix/suffix from the library name.
-  #
-  # e.g. libboost_system-mt --> boost_system
-  get_filename_component(LIB_NAME ${BOOST_STATIC_LIB} NAME_WE)
-  string(REGEX REPLACE "lib([^-]*)(-mt)?" "\\1" LIB_NAME_NO_PREFIX_SUFFIX ${LIB_NAME})
-  ADD_THIRDPARTY_LIB(${LIB_NAME_NO_PREFIX_SUFFIX}
-    STATIC_LIB "${BOOST_STATIC_LIB}"
-    SHARED_LIB "${BOOST_SHARED_LIB}")
-  list(APPEND KUDU_BASE_LIBS ${LIB_NAME_NO_PREFIX_SUFFIX})
-endforeach()
 include_directories(SYSTEM ${Boost_INCLUDE_DIR})
-
 
 ############################################################
 # Linker setup

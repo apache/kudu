@@ -214,8 +214,7 @@ on a version older than 7.0, the Red Hat Developer Toolset must be installed
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ sudo yum install gcc gcc-c++ autoconf automake libtool \
-  boost-static boost-devel cyrus-sasl-devel \
+$ sudo yum install gcc gcc-c++ autoconf automake libtool cyrus-sasl-devel \
   cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb unzip redhat-lsb-core git
 ----
 
@@ -294,8 +293,7 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 ----
 #!/bin/bash
 
-sudo yum -y install gcc gcc-c++ autoconf automake libtool \
-  boost-static boost-devel cyrus-sasl-devel \
+sudo yum -y install gcc gcc-c++ autoconf automake libtool cyrus-sasl-devel \
   cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb unzip redhat-lsb-core git
 DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64.noarch.rpm
 DTLS_RPM_URL=https://www.softwarecollections.org/en/scls/rhscl/devtoolset-3/epel-6-x86_64/download/${DTLS_RPM}
@@ -320,8 +318,8 @@ make -j4
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ sudo apt-get install git autoconf automake libboost-thread-dev \
-  libboost-system-dev curl gcc g++ libsasl2-dev libsasl2-modules \
+$ sudo apt-get install git autoconf automake \
+  curl gcc g++ libsasl2-dev libsasl2-modules \
   libtool ntp patch pkg-config make rsync unzip vim-common gdb python lsb-release
 ----
 
@@ -384,8 +382,8 @@ the steps marked *Optional* above.
 ----
 #!/bin/bash
 
-sudo apt-get -y install git autoconf automake libboost-thread-dev \
-  libboost-system-dev curl gcc g++ libsasl2-dev libsasl2-modules \
+sudo apt-get -y install git autoconf automake \
+  curl gcc g++ libsasl2-dev libsasl2-modules \
   libtool ntp patch pkg-config make rsync unzip vim-common gdb python lsb-release
 git clone https://github.com/apache/incubator-kudu kudu
 cd kudu
@@ -401,28 +399,12 @@ make -j4
 
 [[sles_from_source]]
 === SUSE Linux Enterprise Server
-Building Kudu on SLES requires building Boost from source, since SLES does not
-have system packages containing Boost static libraries. Boost may be built
-anywhere, provided that the `BOOST_ROOT` environment variable is set to the
-location while invoking CMake to build Kudu. In the instructions below, Boost is
-built alongside Kudu.
 
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
 $ sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
   gdb git libtool make ntp patch pkg-config python rsync unzip vim lsb-release
-----
-
-. Install Boost.
-+
-----
-wget https://downloads.sourceforge.net/project/boost/boost/1.59.0/boost_1_59_0.tar.gz
-tar xzf boost_1_59_0.tar.gz
-pushd boost_1_59_0
-./bootstrap.sh
-./b2 --with-system --with-thread
-popd
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -448,8 +430,7 @@ except for the `kudu` directory itself.
 ----
 mkdir -p build/release
 cd build/release
-BOOST_ROOT=../../../boost_1_59_0 \
-  ../../thirdparty/installed/bin/cmake \
+../../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ../..
 make -j4
@@ -476,19 +457,12 @@ the steps marked *Optional* above.
 
 sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
   gdb git libtool make ntp patch pkg-config python rsync unzip vim lsb-release
-wget https://downloads.sourceforge.net/project/boost/boost/1.59.0/boost_1_59_0.tar.gz
-tar xzf boost_1_59_0.tar.gz
-pushd boost_1_59_0
-./bootstrap.sh
-./b2 --with-system --with-thread
-popd
 git clone https://github.com/apache/incubator-kudu kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build/release
 cd build/release
-BOOST_ROOT=../../../boost_1_59_0 \
-  ../../thirdparty/installed/bin/cmake \
+../../thirdparty/installed/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ../..
 make -j4
@@ -513,7 +487,7 @@ for more information.
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ brew install autoconf automake cmake libtool pkg-config boost pstree
+$ brew install autoconf automake cmake libtool pkg-config pstree
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -570,7 +544,7 @@ are installed.
 ----
 #!/bin/bash
 
-brew install autoconf automake cmake libtool pkg-config boost pstree
+brew install autoconf automake cmake libtool pkg-config pstree
 git clone https://github.com/apache/incubator-kudu kudu
 cd kudu
 thirdparty/build-if-necessary.sh

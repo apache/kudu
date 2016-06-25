@@ -1,0 +1,11 @@
+--- boost/optional/optional_fwd.hpp	2016-05-05 14:13:30.000000000 -0700
++++ boost/optional/optional_fwd.hpp.new	2016-06-25 14:21:28.438835543 -0700
+@@ -16,7 +16,7 @@
+ #ifndef BOOST_OPTIONAL_OPTIONAL_FWD_FLC_19NOV2002_HPP
+ #define BOOST_OPTIONAL_OPTIONAL_FWD_FLC_19NOV2002_HPP
+ 
+-#include <boost/config/suffix.hpp>
++#include <boost/config.hpp>
+ 
+ namespace boost {
+ 

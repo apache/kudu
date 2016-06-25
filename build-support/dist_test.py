@@ -139,7 +139,7 @@ def get_test_commandlines():
 def is_lib_blacklisted(lib):
   # These particular system libraries, we should ship to the remote nodes.
   # No need to ship things like libc, libstdcxx, etc.
-  if "boost" in lib or "oauth" in lib:
+  if "oauth" in lib:
     return False
   if lib.startswith("/lib") or lib.startswith("/usr"):
     return True

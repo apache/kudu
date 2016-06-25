@@ -288,14 +288,6 @@ build_crcutil() {
   make -j$PARALLEL install
 }
 
-build_boost_uuid() {
-  # Copy boost_uuid into the include directory.
-  # This is a header-only library which isn't present in some older versions of
-  # boost (eg the one on el6). So, we check it in and put it in our own include
-  # directory.
-  rsync -a $TP_DIR/boost_uuid/boost/ $PREFIX/include/boost/
-}
-
 build_cpplint() {
   # Copy cpplint tool into bin directory
   cp $GSG_DIR/cpplint/cpplint.py $PREFIX/bin/cpplint.py
@@ -328,4 +320,9 @@ build_nvml() {
     cp -a $NVML_DIR/src/include/$LIB.h $PREFIX/include
     cp -a $NVML_DIR/src/nondebug/$LIB.{so*,a} $PREFIX/lib
   done
+}
+
+build_boost() {
+  # This is a header-only installation of Boost.
+  rsync -a $BOOST_DIR/boost $PREFIX/include
 }

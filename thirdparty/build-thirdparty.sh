@@ -130,6 +130,7 @@ else
       "libstdcxx")  F_LIBSTDCXX=1 ;;
       "trace-viewer") F_TRACE_VIEWER=1 ;;
       "nvml")       F_NVML=1 ;;
+      "boost")      F_BOOST=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -204,8 +205,6 @@ if [ -n "$F_ALL" -o -n "$F_CURL" ]; then
   build_curl
 fi
 
-build_boost_uuid
-
 if [ -n "$F_ALL" -o -n "$F_GSG" ]; then
   build_cpplint
 fi
@@ -220,6 +219,10 @@ fi
 
 if [ -n "$OS_LINUX" ] && [ -n "$F_ALL" -o -n "$F_NVML" ]; then
   build_nvml
+fi
+
+if [ -n "$F_ALL" -o -n "$F_BOOST" ]; then
+  build_boost
 fi
 
 restore_env

@@ -502,8 +502,6 @@ src/kudu/gutil/valgrind.h: Hybrid BSD (half BSD, half zlib)
   - See the file headers for full license text.
 
 src/kudu/server/url-coding.cc (some portions): Boost software license
-thirdparty/boost_uuid/: Boost software license
-  - See thirdparty/boost_uuid/LICENSE.txt
 
 www/bootstrap: Apache 2.0 license
 java/kudu-client/src/main/java/org/kududb/util/{Slice,Slices}.java: Apache 2.0 license
