@@ -34,6 +34,7 @@
 #include "kudu/rpc/sasl_client.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_server.h"
+#include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"

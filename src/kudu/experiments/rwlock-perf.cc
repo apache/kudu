@@ -24,12 +24,11 @@
 #include <thread>
 #include <unistd.h>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/util/errno.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 
 DEFINE_int32(num_threads, 8, "Number of threads to test");
 
@@ -53,9 +52,7 @@ struct per_cpu_lock {
   };
 
   per_cpu_lock() {
-    errno = 0;
     n_cpus_ = base::NumCPUs();
-    CHECK_EQ(errno, 0) << kudu::ErrnoToString(errno);
     CHECK_GT(n_cpus_, 0);
     locks_ = new padded_lock[n_cpus_];
   }
@@ -76,10 +73,6 @@ struct per_cpu_lock {
 };
 
 struct shared_data {
-  shared_data() {
-    errno = 0;
-  }
-
   kudu::rw_spinlock rw_spinlock;
   boost::shared_mutex rwlock;
   std::mutex lock;
@@ -220,10 +213,17 @@ void test_shared_lock(int num_threads, TestMethod method, const char *name) {
 }
 
 int main(int argc, char **argv) {
+  kudu::ParseCommandLineFlags(&argc, &argv, true);
+  if (argc != 1) {
+    std::cerr << "usage: " << argv[0] << std::endl;
+    return 1;
+  }
+  kudu::InitGoogleLoggingSafe(argv[0]);
+
   printf("        Test   Threads  Cycles\n");
   printf("------------------------------\n");
 
-  for (int num_threads = 1; num_threads < FLAGS_num_threads; num_threads++) {
+  for (int num_threads = 1; num_threads <= FLAGS_num_threads; num_threads++) {
     test_shared_lock(num_threads, SHARED_RWLOCK, "shared_rwlock");
     test_shared_lock(num_threads, SHARED_MUTEX, "shared_mutex");
     test_shared_lock(num_threads, OWN_MUTEX, "own_mutex");

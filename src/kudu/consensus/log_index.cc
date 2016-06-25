@@ -38,10 +38,11 @@
 #include <vector>
 
 #include "kudu/consensus/opid_util.h"
-#include "kudu/util/locks.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/errno.h"
+#include "kudu/util/locks.h"
 
 using std::string;
 using strings::Substitute;

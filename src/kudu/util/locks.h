@@ -26,7 +26,6 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/sysinfo.h"
-#include "kudu/util/errno.h"
 #include "kudu/util/rw_semaphore.h"
 
 namespace kudu {
@@ -158,9 +157,7 @@ class rw_spinlock {
 class percpu_rwlock {
  public:
   percpu_rwlock() {
-    errno = 0;
     n_cpus_ = base::MaxCPUIndex() + 1;
-    CHECK_EQ(errno, 0) << ErrnoToString(errno);
     CHECK_GT(n_cpus_, 0);
     locks_ = new padded_lock[n_cpus_];
   }
