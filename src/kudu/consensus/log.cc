@@ -407,7 +407,7 @@ Status Log::Reserve(LogEntryTypePB type,
   TRACE_EVENT0("log", "Log::Reserve");
   DCHECK(reserved_entry != nullptr);
   {
-    boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
+    shared_lock<rw_spinlock> l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
   }
 
@@ -440,7 +440,7 @@ Status Log::Reserve(LogEntryTypePB type,
 Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callback) {
   TRACE_EVENT0("log", "Log::AsyncAppend");
   {
-    boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
+    shared_lock<rw_spinlock> l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
   }
 
@@ -702,7 +702,7 @@ Status Log::WaitUntilAllFlushed() {
 }
 
 void Log::GetLatestEntryOpId(consensus::OpId* op_id) const {
-  boost::shared_lock<rw_spinlock> read_lock(last_entry_op_id_lock_);
+  shared_lock<rw_spinlock> l(last_entry_op_id_lock_);
   if (last_entry_op_id_.IsInitialized()) {
     DCHECK_NOTNULL(op_id)->CopyFrom(last_entry_op_id_);
   } else {
@@ -758,7 +758,7 @@ void Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
   SegmentSequence segments_to_delete;
   *total_size = 0;
   {
-    boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
+    shared_lock<rw_spinlock> l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
     Status s = GetSegmentsToGCUnlocked(min_op_idx, &segments_to_delete);
 
@@ -774,7 +774,7 @@ void Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
 void Log::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,
                                         std::map<int64_t, int64_t>* max_idx_to_segment_size)
                                         const {
-  boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
+  shared_lock<rw_spinlock> l(state_lock_.get_lock());
   CHECK_EQ(kLogWriting, log_state_);
   // We want to retain segments so we're only asking the extra ones.
   int segments_count = std::max(reader_->num_segments() - FLAGS_log_min_segments_to_retain, 0);
@@ -905,7 +905,7 @@ Status Log::SwitchToAllocatedSegment() {
 
   // Set the new segment's schema.
   {
-    boost::shared_lock<rw_spinlock> l(schema_lock_);
+    shared_lock<rw_spinlock> l(schema_lock_);
     RETURN_NOT_OK(SchemaToPB(schema_, header.mutable_schema()));
     header.set_schema_version(schema_version_);
   }

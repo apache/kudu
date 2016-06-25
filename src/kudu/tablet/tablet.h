@@ -17,7 +17,6 @@
 #ifndef KUDU_TABLET_TABLET_H
 #define KUDU_TABLET_TABLET_H
 
-#include <boost/thread/shared_mutex.hpp>
 #include <iosfwd>
 #include <map>
 #include <memory>
@@ -456,7 +455,7 @@ class Tablet {
                                  const RowSetVector &to_add);
 
   void GetComponents(scoped_refptr<TabletComponents>* comps) const {
-    boost::shared_lock<rw_spinlock> lock(component_lock_);
+    shared_lock<rw_spinlock> l(component_lock_);
     *comps = components_;
   }
 

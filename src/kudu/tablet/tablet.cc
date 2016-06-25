@@ -18,7 +18,6 @@
 #include "kudu/tablet/tablet.h"
 
 #include <algorithm>
-#include <boost/thread/shared_mutex.hpp>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -575,7 +574,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
 }
 
 void Tablet::StartApplying(WriteTransactionState* tx_state) {
-  boost::shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock<rw_spinlock> l(component_lock_);
   tx_state->StartApplying();
   tx_state->set_tablet_components(components_);
 }
@@ -889,7 +888,7 @@ void Tablet::SetFlushCompactCommonHooksForTests(
 }
 
 int32_t Tablet::CurrentMrsIdForTests() const {
-  boost::shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock<rw_spinlock> l(component_lock_);
   return components_->memrowset->mrs_id();
 }
 
@@ -1121,7 +1120,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   // in tablet.h for details on why that would be bad.
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_);
+    shared_lock<rw_spinlock> l(component_lock_);
     rowsets_copy = components_->rowsets;
   }
 
@@ -1144,7 +1143,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
     VLOG_WITH_PREFIX(2) << "Compaction quality: " << quality;
   }
 
-  boost::shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock<rw_spinlock> l(component_lock_);
   for (const shared_ptr<RowSet>& rs : components_->rowsets->all_rowsets()) {
     if (picked_set.erase(rs.get()) == 0) {
       // Not picked.
@@ -1181,7 +1180,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
 void Tablet::GetRowSetsForTests(RowSetVector* out) {
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_);
+    shared_lock<rw_spinlock> l(component_lock_);
     rowsets_copy = components_->rowsets;
   }
   for (const shared_ptr<RowSet>& rs : rowsets_copy->all_rowsets()) {
@@ -1471,7 +1470,7 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
 
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_);
+    shared_lock<rw_spinlock> l(component_lock_);
     rowsets_copy = components_->rowsets;
   }
 
@@ -1489,7 +1488,7 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
 
 
 Status Tablet::DebugDump(vector<string> *lines) {
-  boost::shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock<rw_spinlock> l(component_lock_);
 
   LOG_STRING(INFO, lines) << "Dumping tablet:";
   LOG_STRING(INFO, lines) << "---------------------------";
@@ -1510,7 +1509,7 @@ Status Tablet::CaptureConsistentIterators(
   const MvccSnapshot &snap,
   const ScanSpec *spec,
   vector<shared_ptr<RowwiseIterator> > *iters) const {
-  boost::shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock<rw_spinlock> l(component_lock_);
 
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
@@ -1781,14 +1780,14 @@ double Tablet::GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompac
 }
 
 size_t Tablet::num_rowsets() const {
-  boost::shared_lock<rw_spinlock> lock(component_lock_);
+  shared_lock<rw_spinlock> l(component_lock_);
   return components_->rowsets->all_rowsets().size();
 }
 
 void Tablet::PrintRSLayout(ostream* o) {
   shared_ptr<RowSetTree> rowsets_copy;
   {
-    boost::shared_lock<rw_spinlock> lock(component_lock_);
+    shared_lock<rw_spinlock> l(component_lock_);
     rowsets_copy = components_->rowsets;
   }
   std::lock_guard<std::mutex> compact_lock(compact_select_lock_);

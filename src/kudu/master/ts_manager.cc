@@ -17,7 +17,6 @@
 
 #include "kudu/master/ts_manager.h"
 
-#include <boost/thread/shared_mutex.hpp>
 #include <mutex>
 #include <vector>
 
@@ -47,7 +46,7 @@ TSManager::~TSManager() {
 
 Status TSManager::LookupTS(const NodeInstancePB& instance,
                            shared_ptr<TSDescriptor>* ts_desc) const {
-  boost::shared_lock<rw_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   const shared_ptr<TSDescriptor>* found_ptr =
     FindOrNull(servers_by_id_, instance.permanent_uuid());
   if (!found_ptr) {
@@ -65,7 +64,7 @@ Status TSManager::LookupTS(const NodeInstancePB& instance,
 
 bool TSManager::LookupTSByUUID(const string& uuid,
                                std::shared_ptr<TSDescriptor>* ts_desc) const {
-  boost::shared_lock<rw_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   return FindCopy(servers_by_id_, uuid, ts_desc);
 }
 
@@ -93,14 +92,14 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
 
 void TSManager::GetAllDescriptors(vector<shared_ptr<TSDescriptor> > *descs) const {
   descs->clear();
-  boost::shared_lock<rw_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   AppendValuesFromMap(servers_by_id_, descs);
 }
 
 void TSManager::GetAllLiveDescriptors(vector<shared_ptr<TSDescriptor> > *descs) const {
   descs->clear();
 
-  boost::shared_lock<rw_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   descs->reserve(servers_by_id_.size());
   for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
     const shared_ptr<TSDescriptor>& ts = entry.second;
@@ -111,7 +110,7 @@ void TSManager::GetAllLiveDescriptors(vector<shared_ptr<TSDescriptor> > *descs) 
 }
 
 int TSManager::GetCount() const {
-  boost::shared_lock<rw_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   return servers_by_id_.size();
 }
 

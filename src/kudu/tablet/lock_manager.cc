@@ -17,7 +17,6 @@
 
 #include "kudu/tablet/lock_manager.h"
 
-#include <boost/thread/shared_mutex.hpp>
 #include <glog/logging.h>
 #include <mutex>
 #include <semaphore.h>
@@ -167,7 +166,7 @@ LockEntry *LockTable::GetLockEntry(const Slice& key) {
   LockEntry *old_entry;
 
   {
-    boost::shared_lock<rw_spinlock> table_rdlock(lock_.get_lock());
+    shared_lock<rw_spinlock> l(lock_.get_lock());
     Bucket *bucket = FindBucket(new_entry->key_hash_);
     {
       std::lock_guard<simple_spinlock> bucket_lock(bucket->lock);

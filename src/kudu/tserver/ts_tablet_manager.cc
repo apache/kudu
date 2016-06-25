@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <boost/optional.hpp>
-#include <boost/thread/shared_mutex.hpp>
 #include <glog/logging.h>
 #include <memory>
 #include <mutex>
@@ -229,7 +228,7 @@ Status TSTabletManager::WaitForAllBootstrapsToFinish() {
 
   Status s = Status::OK();
 
-  boost::shared_lock<rw_spinlock> shared_lock(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   for (const TabletMap::value_type& entry : tablet_map_) {
     if (entry.second->state() == tablet::FAILED) {
       if (s.ok()) {
@@ -326,7 +325,7 @@ Status TSTabletManager::CheckLeaderTermNotLower(const string& tablet_id,
                     "remote bootstrap request",
                     tablet_id,
                     leader_term, last_logged_term));
-    LOG(WARNING) << LogPrefix(tablet_id) << "Remote boostrap: " << s.ToString();
+    LOG(WARNING) << LogPrefix(tablet_id) << "Remote bootstrap: " << s.ToString();
     return s;
   }
   return Status::OK();
@@ -391,7 +390,7 @@ Status TSTabletManager::StartRemoteBootstrap(
         // in flight and it may be possible for the same check in the remote
         // bootstrap client Start() method to fail. This will leave the replica in
         // a tombstoned state, and then the leader with the latest log entries
-        // will simply remote boostrap this replica again. We could try to
+        // will simply remote bootstrap this replica again. We could try to
         // check again after calling Shutdown(), and if the check fails, try to
         // reopen the tablet. For now, we live with the (unlikely) race.
         RETURN_NOT_OK_PREPEND(DeleteTabletData(meta, TABLET_DATA_TOMBSTONED, last_logged_opid),
@@ -762,7 +761,7 @@ void TSTabletManager::RegisterTablet(const std::string& tablet_id,
 
 bool TSTabletManager::LookupTablet(const string& tablet_id,
                                    scoped_refptr<TabletPeer>* tablet_peer) const {
-  boost::shared_lock<rw_spinlock> shared_lock(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   return LookupTabletUnlocked(tablet_id, tablet_peer);
 }
 
@@ -795,7 +794,7 @@ const NodeInstancePB& TSTabletManager::NodeInstance() const {
 }
 
 void TSTabletManager::GetTabletPeers(vector<scoped_refptr<TabletPeer> >* tablet_peers) const {
-  boost::shared_lock<rw_spinlock> shared_lock(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   AppendValuesFromMap(tablet_map_, tablet_peers);
 }
 
@@ -805,13 +804,13 @@ void TSTabletManager::MarkTabletDirty(const std::string& tablet_id, const std::s
 }
 
 int TSTabletManager::GetNumDirtyTabletsForTests() const {
-  boost::shared_lock<rw_spinlock> lock(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   return dirty_tablets_.size();
 }
 
 int TSTabletManager::GetNumLiveTablets() const {
   int count = 0;
-  boost::shared_lock<rw_spinlock> lock(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   for (const auto& entry : tablet_map_) {
     tablet::TabletStatePB state = entry.second->state();
     if (state == tablet::BOOTSTRAPPING ||
@@ -868,7 +867,7 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
 }
 
 void TSTabletManager::GenerateIncrementalTabletReport(TabletReportPB* report) {
-  boost::shared_lock<rw_spinlock> shared_lock(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   report->Clear();
   report->set_sequence_number(next_report_seq_++);
   report->set_is_incremental(true);
@@ -886,7 +885,7 @@ void TSTabletManager::GenerateIncrementalTabletReport(TabletReportPB* report) {
 }
 
 void TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
-  boost::shared_lock<rw_spinlock> shared_lock(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   report->Clear();
   report->set_is_incremental(false);
   report->set_sequence_number(next_report_seq_++);

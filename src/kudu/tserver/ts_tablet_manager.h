@@ -18,7 +18,6 @@
 #define KUDU_TSERVER_TS_TABLET_MANAGER_H
 
 #include <boost/optional/optional_fwd.hpp>
-#include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest_prod.h>
 #include <memory>
 #include <string>
@@ -297,7 +296,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                        const Status& s);
 
   TSTabletManagerStatePB state() const {
-    boost::shared_lock<rw_spinlock> lock(lock_);
+    shared_lock<rw_spinlock> l(lock_);
     return state_;
   }
 
@@ -353,7 +352,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 };
 
 // Helper to delete the transition-in-progress entry from the corresponding set
-// when tablet boostrap, create, and delete operations complete.
+// when tablet bootstrap, create, and delete operations complete.
 class TransitionInProgressDeleter : public RefCountedThreadSafe<TransitionInProgressDeleter> {
  public:
   TransitionInProgressDeleter(TransitionInProgressMap* map, rw_spinlock* lock,

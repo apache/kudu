@@ -43,7 +43,6 @@
 
 #include <algorithm>
 #include <boost/optional.hpp>
-#include <boost/thread/shared_mutex.hpp>
 #include <condition_variable>
 #include <glog/logging.h>
 #include <memory>
@@ -725,7 +724,7 @@ void CatalogManager::Shutdown() {
   // any new tasks for those entries.
   TableInfoMap copy;
   {
-    boost::shared_lock<LockType> l(lock_);
+    shared_lock<LockType> l(lock_);
     copy = table_ids_map_;
   }
   for (const TableInfoMap::value_type &e : copy) {
@@ -1018,7 +1017,7 @@ scoped_refptr<TabletInfo> CatalogManager::CreateTabletInfo(TableInfo* table,
 
 Status CatalogManager::FindTable(const TableIdentifierPB& table_identifier,
                                  scoped_refptr<TableInfo> *table_info) {
-  boost::shared_lock<LockType> l(lock_);
+  shared_lock<LockType> l(lock_);
 
   if (table_identifier.has_table_id()) {
     *table_info = FindPtrOrNull(table_ids_map_, table_identifier.table_id());
@@ -1394,7 +1393,7 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
                                   ListTablesResponsePB* resp) {
   RETURN_NOT_OK(CheckOnline());
 
-  boost::shared_lock<LockType> l(lock_);
+  shared_lock<LockType> l(lock_);
 
   for (const TableInfoMap::value_type& entry : table_names_map_) {
     TableMetadataLock ltm(entry.second.get(), TableMetadataLock::READ);
@@ -1416,21 +1415,21 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
 }
 
 bool CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table) {
-  boost::shared_lock<LockType> l(lock_);
+  shared_lock<LockType> l(lock_);
   *table = FindPtrOrNull(table_ids_map_, table_id);
   return *table != nullptr;
 }
 
 void CatalogManager::GetAllTables(std::vector<scoped_refptr<TableInfo> > *tables) {
   tables->clear();
-  boost::shared_lock<LockType> l(lock_);
+  shared_lock<LockType> l(lock_);
   for (const TableInfoMap::value_type& e : table_ids_map_) {
     tables->push_back(e.second);
   }
 }
 
 bool CatalogManager::TableNameExists(const string& table_name) {
-  boost::shared_lock<LockType> l(lock_);
+  shared_lock<LockType> l(lock_);
   return table_names_map_.find(table_name) != table_names_map_.end();
 }
 
@@ -1505,7 +1504,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                "tablet_id", report.tablet_id());
   scoped_refptr<TabletInfo> tablet;
   {
-    boost::shared_lock<LockType> l(lock_);
+    shared_lock<LockType> l(lock_);
     tablet = FindPtrOrNull(tablet_map_, report.tablet_id());
   }
   RETURN_NOT_OK_PREPEND(CheckIsLeaderAndReady(),
@@ -1763,7 +1762,7 @@ Status CatalogManager::GetTabletPeer(const string& tablet_id,
                                      scoped_refptr<TabletPeer>* tablet_peer) const {
   // Note: CatalogManager has only one table, 'sys_catalog', with only
   // one tablet.
-  boost::shared_lock<LockType> l(lock_);
+  shared_lock<LockType> l(lock_);
   CHECK(sys_catalog_.get() != nullptr) << "sys_catalog_ must be initialized!";
   if (sys_catalog_->tablet_id() == tablet_id) {
     *tablet_peer = sys_catalog_->tablet_peer();
@@ -2577,7 +2576,7 @@ void CatalogManager::SendAddServerRequest(const scoped_refptr<TabletInfo>& table
 void CatalogManager::ExtractTabletsToProcess(
     vector<scoped_refptr<TabletInfo>>* tablets_to_process) {
 
-  boost::shared_lock<LockType> l(lock_);
+  shared_lock<LockType> l(lock_);
 
   // TODO: At the moment we loop through all the tablets
   //       we can keep a set of tablets waiting for "assignment"
@@ -3028,7 +3027,7 @@ Status CatalogManager::GetTabletLocations(const std::string& tablet_id,
   locs_pb->mutable_replicas()->Clear();
   scoped_refptr<TabletInfo> tablet_info;
   {
-    boost::shared_lock<LockType> l(lock_);
+    shared_lock<LockType> l(lock_);
     if (!FindCopy(tablet_map_, tablet_id, &tablet_info)) {
       return Status::NotFound(Substitute("Unknown tablet $0", tablet_id));
     }
@@ -3095,7 +3094,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
   // Copy the internal state so that, if the output stream blocks,
   // we don't end up holding the lock for a long time.
   {
-    boost::shared_lock<LockType> l(lock_);
+    shared_lock<LockType> l(lock_);
     ids_copy = table_ids_map_;
     names_copy = table_names_map_;
     tablets_copy = tablet_map_;

@@ -15,12 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest.h>
 #include <mutex>
 #include <thread>
 #include <vector>
 
+#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/rw_semaphore.h"
 
@@ -52,7 +52,7 @@ void Writer(SharedState* state) {
 void Reader(SharedState* state) {
   int prev_val = 0;
   while (true) {
-    boost::shared_lock<rw_semaphore> l(state->sem);
+    shared_lock<rw_semaphore> l(state->sem);
     // The int var should only be seen to increase.
     CHECK_GE(state->int_var, prev_val);
     prev_val = state->int_var;
