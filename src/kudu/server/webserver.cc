@@ -18,7 +18,6 @@
 
 #include <algorithm>
 #include <boost/algorithm/string.hpp>
-#include <boost/thread/shared_mutex.hpp>
 #include <functional>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -39,6 +38,7 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
@@ -267,7 +267,7 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
                                     struct sq_request_info* request_info) {
   PathHandler* handler;
   {
-    boost::shared_lock<boost::shared_mutex> lock(lock_);
+    shared_lock<RWMutex> l(lock_);
     PathHandlerMap::const_iterator it = path_handlers_.find(request_info->uri);
     if (it == path_handlers_.end()) {
       // Let Mongoose deal with this request; returning NULL will fall through
@@ -366,7 +366,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
 
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
     const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
-  std::lock_guard<boost::shared_mutex> lock(lock_);
+  std::lock_guard<RWMutex> l(lock_);
   auto it = path_handlers_.find(path);
   if (it == path_handlers_.end()) {
     it = path_handlers_.insert(
@@ -424,12 +424,12 @@ bool Webserver::static_pages_available() const {
 }
 
 void Webserver::set_footer_html(const std::string& html) {
-  std::lock_guard<boost::shared_mutex> l(lock_);
+  std::lock_guard<RWMutex> l(lock_);
   footer_html_ = html;
 }
 
 void Webserver::BootstrapPageFooter(stringstream* output) {
-  boost::shared_lock<boost::shared_mutex> l(lock_);
+  shared_lock<RWMutex> l(lock_);
   *output << "</div>\n"; // end bootstrap 'container' div
   if (!footer_html_.empty()) {
     *output << "<footer class=\"footer\"><div class=\"container text-muted\">";

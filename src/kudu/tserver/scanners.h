@@ -17,7 +17,6 @@
 #ifndef KUDU_TSERVER_SCANNERS_H
 #define KUDU_TSERVER_SCANNERS_H
 
-#include <boost/thread/shared_mutex.hpp>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -36,6 +35,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/oid_generator.h"
+#include "kudu/util/rw_mutex.h"
 
 namespace kudu {
 
@@ -109,7 +109,7 @@ class ScannerManager {
 
   struct ScannerMapStripe {
     // Lock protecting the scanner map.
-    mutable boost::shared_mutex lock_;
+    mutable RWMutex lock_;
     // Map of the currently active scanners.
     ScannerMap scanners_by_id_;
   };

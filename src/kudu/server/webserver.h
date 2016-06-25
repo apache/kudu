@@ -17,13 +17,13 @@
 #ifndef KUDU_UTIL_WEBSERVER_H
 #define KUDU_UTIL_WEBSERVER_H
 
-#include <boost/thread/shared_mutex.hpp>
 #include <map>
 #include <string>
 #include <vector>
 
 #include "kudu/server/webserver_options.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 #include "kudu/util/web_callback_registry.h"
 
@@ -132,7 +132,7 @@ class Webserver : public WebCallbackRegistry {
   const WebserverOptions opts_;
 
   // Lock guarding the path_handlers_ map and footer_html.
-  boost::shared_mutex lock_;
+  RWMutex lock_;
 
   // Map of path to a PathHandler containing a list of handlers for that
   // path. More than one handler may register itself with a path so that many

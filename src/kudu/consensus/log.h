@@ -18,7 +18,6 @@
 #ifndef KUDU_CONSENSUS_LOG_H_
 #define KUDU_CONSENSUS_LOG_H_
 
-#include <boost/thread/shared_mutex.hpp>
 #include <map>
 #include <memory>
 #include <string>
@@ -33,6 +32,7 @@
 #include "kudu/util/async_util.h"
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/rw_mutex.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/status.h"
 
@@ -307,7 +307,7 @@ class Log : public RefCountedThreadSafe<Log> {
   }
 
   const SegmentAllocationState allocation_state() {
-    boost::shared_lock<boost::shared_mutex> shared_lock(allocation_lock_);
+    shared_lock<RWMutex> l(allocation_lock_);
     return allocation_state_;
   }
 
@@ -387,7 +387,7 @@ class Log : public RefCountedThreadSafe<Log> {
   Promise<Status> allocation_status_;
 
   // Read-write lock to protect 'allocation_state_'.
-  mutable boost::shared_mutex allocation_lock_;
+  mutable RWMutex allocation_lock_;
   SegmentAllocationState allocation_state_;
 
   scoped_refptr<MetricEntity> metric_entity_;

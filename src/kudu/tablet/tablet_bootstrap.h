@@ -17,7 +17,6 @@
 #ifndef KUDU_TABLET_TABLET_BOOTSTRAP_H_
 #define KUDU_TABLET_TABLET_BOOTSTRAP_H_
 
-#include <boost/thread/shared_mutex.hpp>
 #include <memory>
 #include <string>
 #include <vector>
@@ -26,6 +25,7 @@
 #include "kudu/consensus/log.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -70,12 +70,12 @@ class TabletStatusListener {
   const Schema& schema() const;
 
   std::string last_status() const {
-    boost::shared_lock<boost::shared_mutex> l(lock_);
+    shared_lock<RWMutex> l(lock_);
     return last_status_;
   }
 
  private:
-  mutable boost::shared_mutex lock_;
+  mutable RWMutex lock_;
 
   scoped_refptr<TabletMetadata> meta_;
   std::string last_status_;

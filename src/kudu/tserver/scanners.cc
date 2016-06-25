@@ -16,8 +16,6 @@
 // under the License.
 #include "kudu/tserver/scanners.h"
 
-#include <boost/bind.hpp>
-#include <boost/thread/shared_mutex.hpp>
 #include <gflags/gflags.h>
 #include <mutex>
 
@@ -117,27 +115,27 @@ void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
     scanner->reset(new Scanner(id, tablet_peer, requestor_string, metrics_.get()));
 
     ScannerMapStripe& stripe = GetStripeByScannerId(id);
-    std::lock_guard<boost::shared_mutex> l(stripe.lock_);
+    std::lock_guard<RWMutex> l(stripe.lock_);
     success = InsertIfNotPresent(&stripe.scanners_by_id_, id, *scanner);
   }
 }
 
 bool ScannerManager::LookupScanner(const string& scanner_id, SharedScanner* scanner) {
   ScannerMapStripe& stripe = GetStripeByScannerId(scanner_id);
-  boost::shared_lock<boost::shared_mutex> l(stripe.lock_);
+  shared_lock<RWMutex> l(stripe.lock_);
   return FindCopy(stripe.scanners_by_id_, scanner_id, scanner);
 }
 
 bool ScannerManager::UnregisterScanner(const string& scanner_id) {
   ScannerMapStripe& stripe = GetStripeByScannerId(scanner_id);
-  std::lock_guard<boost::shared_mutex> l(stripe.lock_);
+  std::lock_guard<RWMutex> l(stripe.lock_);
   return stripe.scanners_by_id_.erase(scanner_id) > 0;
 }
 
 size_t ScannerManager::CountActiveScanners() const {
   size_t total = 0;
   for (const ScannerMapStripe* e : scanner_maps_) {
-    boost::shared_lock<boost::shared_mutex> l(e->lock_);
+    shared_lock<RWMutex> l(e->lock_);
     total += e->scanners_by_id_.size();
   }
   return total;
@@ -145,7 +143,7 @@ size_t ScannerManager::CountActiveScanners() const {
 
 void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) {
   for (const ScannerMapStripe* stripe : scanner_maps_) {
-    boost::shared_lock<boost::shared_mutex> l(stripe->lock_);
+    shared_lock<RWMutex> l(stripe->lock_);
     for (const ScannerMapEntry& se : stripe->scanners_by_id_) {
       scanners->push_back(se.second);
     }
@@ -156,7 +154,7 @@ void ScannerManager::RemoveExpiredScanners() {
   MonoDelta scanner_ttl = MonoDelta::FromMilliseconds(FLAGS_scanner_ttl_ms);
 
   for (ScannerMapStripe* stripe : scanner_maps_) {
-    std::lock_guard<boost::shared_mutex> l(stripe->lock_);
+    std::lock_guard<RWMutex> l(stripe->lock_);
     for (auto it = stripe->scanners_by_id_.begin(); it != stripe->scanners_by_id_.end();) {
       SharedScanner& scanner = it->second;
       MonoDelta time_live =
