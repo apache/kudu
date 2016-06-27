@@ -166,6 +166,34 @@ There is a ServicePool which you can use to coordinate several worker threads
 handling callbacks.
 
 -------------------------------------------------------------------------------
+Exactly once semantics
+-------------------------------------------------------------------------------
+Exactly once semantics can be enabled for RPCs that require them by using
+the 'track_rpc_result' option when declaring a service interface method.
+
+Example:
+```
+service CalculatorService {
+  rpc AddExactlyOnce(ExactlyOnceRequestPB) returns (ExactlyOnceResponsePB) {
+    option (kudu.track_rpc_result) = true;
+  }
+}
+```
+
+This works in tandem with unique identifier for an RPC (RequestIdPB, see
+rpc_header.proto) that must be specified on the RPC header.
+
+When both the option was selected and the unique identifier is available
+the server will make sure that, independently of how many retries, an RPC
+with a certain id is executed exactly once and that all retries receive
+the same response.
+
+Note that enabling the option only guarantees exactly once semantics for
+the lifetime of the server, making sure that responses survive crashes
+and are also available in replicas (for replicated RPCs, like writes) needs
+that actions be taken outside of the RPC subsystem.
+
+-------------------------------------------------------------------------------
 RPC Sidecars
 -------------------------------------------------------------------------------
 RPC sidecars are used to avoid excess copies for large volumes of data.
