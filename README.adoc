@@ -218,8 +218,7 @@ $ gdb -ex 'set disable-randomization off' -ex 'b __tsan::PrintReport' ./some-tes
 === Generating code coverage reports
 
 
-In order to generate a code coverage report, you must build with gcc (not clang)
-and use the following flags:
+In order to generate a code coverage report, you must use the following flags:
 
 [source,bash]
 ----
@@ -238,11 +237,14 @@ gcovr:
 
 [source,bash]
 ----
-$ mkdir cov_html
 $ cd build/coverage
-$ ../../thirdparty/gcovr-3.0/scripts/gcovr -r ../../src/ \
-  --gcov-executable=../../build-support/llvm-gcov-wrapper
+$ mkdir cov_html
+$ ../../thirdparty/installed/bin/gcovr \
+      --gcov-executable=$(pwd)/../../build-support/llvm-gcov-wrapper \
+      --html --html-details -o cov_html/coverage.html
 ----
+
+Then open `cov_html/coverage.html` in your web browser.
 
 === Running lint checks
 
