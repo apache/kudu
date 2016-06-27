@@ -1217,6 +1217,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     VLOG_WITH_PREFIX_UNLOCKED(1) << "Marking committed up to " << apply_up_to.ShortDebugString();
     TRACE(Substitute("Marking committed up to $0", apply_up_to.ShortDebugString()));
     CHECK_OK(state_->AdvanceCommittedIndexUnlocked(apply_up_to, &committed_index_changed));
+    queue_->UpdateFollowerCommittedIndex(apply_up_to);
 
     // We can now update the last received watermark.
     //
@@ -1772,6 +1773,8 @@ void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
   out << "<h1>Raft Consensus State</h1>" << std::endl;
 
   out << "<h2>State</h2>" << std::endl;
+  out << "<pre>" << EscapeForHtmlToString(state_->ToString()) << "</pre>" << std::endl;
+  out << "<h2>Queue</h2>" << std::endl;
   out << "<pre>" << EscapeForHtmlToString(queue_->ToString()) << "</pre>" << std::endl;
 
   // Dump the queues on a leader.

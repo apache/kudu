@@ -815,5 +815,27 @@ TEST_F(ConsensusQueueTest, TestTriggerTabletCopyIfTabletNotFound) {
             tc_req.copy_peer_addr().ShortDebugString());
 }
 
+TEST_F(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics) {
+  queue_->Init(MinimumOpId());
+  queue_->SetNonLeaderMode();
+
+  AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 10);
+  WaitForLocalPeerToAckIndex(10);
+
+  // The committed_index should be MinimumOpId() since UpdateFollowerCommittedIndex
+  // has not been called.
+  queue_->observers_pool_->Wait();
+  ASSERT_OPID_EQ(queue_->GetCommittedIndexForTests(), MinimumOpId());
+
+  // Update the committed index. In real life, this would be done by the consensus
+  // implementation when it receives an updated committed index from the leader.
+  queue_->UpdateFollowerCommittedIndex(MakeOpId(1, 10));
+  ASSERT_OPID_EQ(queue_->GetCommittedIndexForTests(), MakeOpId(1, 10));
+
+  // Check the metrics have the right values based on the updated committed index.
+  ASSERT_EQ(queue_->metrics_.num_majority_done_ops->value(), 0);
+  ASSERT_EQ(queue_->metrics_.num_in_progress_ops->value(), 0);
+}
+
 }  // namespace consensus
 }  // namespace kudu

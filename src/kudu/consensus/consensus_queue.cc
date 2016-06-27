@@ -74,10 +74,10 @@ using strings::Substitute;
 METRIC_DEFINE_gauge_int64(tablet, majority_done_ops, "Leader Operations Acked by Majority",
                           MetricUnit::kOperations,
                           "Number of operations in the leader queue ack'd by a majority but "
-                          "not all peers.");
-METRIC_DEFINE_gauge_int64(tablet, in_progress_ops, "Leader Operations in Progress",
+                          "not all peers. This metric is always zero for followers.");
+METRIC_DEFINE_gauge_int64(tablet, in_progress_ops, "Operations in Progress",
                           MetricUnit::kOperations,
-                          "Number of operations in the leader queue ack'd by a minority of "
+                          "Number of operations in the peer's queue ack'd by a minority of "
                           "peers.");
 
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
@@ -466,6 +466,18 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   }
 }
 
+void PeerMessageQueue::UpdateFollowerCommittedIndex(const OpId& committed_index) {
+  if (queue_state_.mode == NON_LEADER) {
+    std::lock_guard<simple_spinlock> l(queue_lock_);
+    UpdateFollowerCommittedIndexUnlocked(committed_index);
+  }
+}
+
+void PeerMessageQueue::UpdateFollowerCommittedIndexUnlocked(const OpId& committed_index) {
+  queue_state_.committed_index.CopyFrom(committed_index);
+  UpdateMetrics();
+}
+
 void PeerMessageQueue::NotifyPeerIsResponsiveDespiteError(const std::string& peer_uuid) {
   std::lock_guard<simple_spinlock> l(queue_lock_);
   TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
@@ -676,12 +688,13 @@ OpId PeerMessageQueue::GetMajorityReplicatedOpIdForTests() const {
 void PeerMessageQueue::UpdateMetrics() {
   // Since operations have consecutive indices we can update the metrics based
   // on simple index math.
-  metrics_.num_majority_done_ops->set_value(
-      queue_state_.committed_index.index() -
-      queue_state_.all_replicated_opid.index());
+  // For non-leaders, majority_done_ops isn't meaningful because followers don't
+  // track when an op is replicated to all peers.
+  metrics_.num_majority_done_ops->set_value(queue_state_.mode == LEADER ?
+    queue_state_.committed_index.index() - queue_state_.all_replicated_opid.index()
+    : 0);
   metrics_.num_in_progress_ops->set_value(
-    queue_state_.last_appended.index() -
-    queue_state_.committed_index.index());
+    queue_state_.last_appended.index() - queue_state_.committed_index.index());
 }
 
 void PeerMessageQueue::DumpToStrings(vector<string>* lines) const {
@@ -739,7 +752,7 @@ string PeerMessageQueue::ToString() const {
 }
 
 string PeerMessageQueue::ToStringUnlocked() const {
-  return Substitute("Consensus queue metrics:"
+  return Substitute("Consensus queue metrics: "
                     "Only Majority Done Ops: $0, In Progress Ops: $1, Cache: $2",
                     metrics_.num_majority_done_ops->value(), metrics_.num_in_progress_ops->value(),
                     log_cache_.StatsString());

@@ -213,6 +213,10 @@ class PeerMessageQueue {
                                 const ConsensusResponsePB& response,
                                 bool* more_pending);
 
+  // Called by the consensus implementation to update the follower queue's
+  // committed index, which is mostly used for metrics.
+  void UpdateFollowerCommittedIndex(const OpId& committed_index);
+
   // Closes the queue, peers are still allowed to call UntrackPeer() and
   // ResponseFromPeer() but no additional peers can be tracked or messages
   // queued.
@@ -258,6 +262,7 @@ class PeerMessageQueue {
 
  private:
   FRIEND_TEST(ConsensusQueueTest, TestQueueAdvancesCommittedIndex);
+  FRIEND_TEST(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics);
 
   // Mode specifies how the queue currently behaves:
   // LEADER - Means the queue tracks remote peers and replicates whatever messages
@@ -369,6 +374,8 @@ class PeerMessageQueue {
                              const OpId& replicated_after,
                              int num_peers_required,
                              const TrackedPeer* who_caused);
+
+  void UpdateFollowerCommittedIndexUnlocked(const OpId& committed_index);
 
   std::vector<PeerMessageQueueObserver*> observers_;
 
