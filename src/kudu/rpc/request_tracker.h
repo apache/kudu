@@ -48,6 +48,7 @@ namespace rpc {
 class RequestTracker : public RefCountedThreadSafe<RequestTracker> {
  public:
   typedef int64_t SequenceNumber;
+  static const RequestTracker::SequenceNumber NO_SEQ_NO;
   explicit RequestTracker(const std::string& client_id);
 
   // Creates a new, unique, sequence number.
@@ -58,8 +59,8 @@ class RequestTracker : public RefCountedThreadSafe<RequestTracker> {
   Status NewSeqNo(SequenceNumber* seq_no);
 
   // Returns the sequence number of the first incomplete RPC.
-  // If there is no incomplete RPC returns Status::NotFound. 'seq_no' is not set.
-  Status FirstIncomplete(SequenceNumber* seq_no);
+  // If there is no incomplete RPC returns NO_SEQ_NO.
+  SequenceNumber FirstIncomplete();
 
   // Marks the rpc with 'seq_no' as completed.
   void RpcCompleted(const SequenceNumber& seq_no);

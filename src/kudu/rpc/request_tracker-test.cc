@@ -32,32 +32,28 @@ TEST(RequestTrackerTest, TestSequenceNumberGeneration) {
   scoped_refptr<RequestTracker> tracker_(new RequestTracker("test_client"));
 
   // A new tracker should have no incomplete RPCs
-  ASSERT_TRUE(tracker_->FirstIncomplete(nullptr).IsNotFound());
+  RequestTracker::SequenceNumber seq_no = tracker_->FirstIncomplete();
+  ASSERT_EQ(seq_no, RequestTracker::NO_SEQ_NO);
 
   vector<RequestTracker::SequenceNumber> generated_seq_nos;
 
   // Generate MAX in flight RPCs, making sure they are correctly returned.
   for (int i = 0; i < MAX; i++) {
-    RequestTracker::SequenceNumber seq_no;
     ASSERT_OK(tracker_->NewSeqNo(&seq_no));
     generated_seq_nos.push_back(seq_no);
   }
 
   // Now we should get a first incomplete.
-  RequestTracker::SequenceNumber first_incomplete;
-  ASSERT_OK(tracker_->FirstIncomplete(&first_incomplete));
-  ASSERT_EQ(generated_seq_nos[0], first_incomplete);
+  ASSERT_EQ(generated_seq_nos[0], tracker_->FirstIncomplete());
 
   // Marking 'first_incomplete' as done, should advance the first incomplete.
-  tracker_->RpcCompleted(first_incomplete);
+  tracker_->RpcCompleted(tracker_->FirstIncomplete());
 
-  ASSERT_OK(tracker_->FirstIncomplete(&first_incomplete));
-  ASSERT_EQ(generated_seq_nos[1], first_incomplete);
+  ASSERT_EQ(generated_seq_nos[1], tracker_->FirstIncomplete());
 
   // Marking a 'middle' rpc, should not advance 'first_incomplete'.
   tracker_->RpcCompleted(generated_seq_nos[5]);
-  ASSERT_OK(tracker_->FirstIncomplete(&first_incomplete));
-  ASSERT_EQ(generated_seq_nos[1], first_incomplete);
+  ASSERT_EQ(generated_seq_nos[1], tracker_->FirstIncomplete());
 
   // Marking half the rpc as complete should advance FirstIncomplete.
   // Note that this also tests that RequestTracker::RpcCompleted() is idempotent, i.e. that
@@ -66,11 +62,9 @@ TEST(RequestTrackerTest, TestSequenceNumberGeneration) {
     tracker_->RpcCompleted(generated_seq_nos[i]);
   }
 
-  ASSERT_OK(tracker_->FirstIncomplete(&first_incomplete));
-  ASSERT_EQ(generated_seq_nos[6], first_incomplete);
+  ASSERT_EQ(generated_seq_nos[6], tracker_->FirstIncomplete());
 
   for (int i = MAX / 2; i <= MAX; i++) {
-    RequestTracker::SequenceNumber seq_no;
     ASSERT_OK(tracker_->NewSeqNo(&seq_no));
     generated_seq_nos.push_back(seq_no);
   }
@@ -81,7 +75,7 @@ TEST(RequestTrackerTest, TestSequenceNumberGeneration) {
     tracker_->RpcCompleted(seq_no);
   }
 
-  ASSERT_TRUE(tracker_->FirstIncomplete(nullptr).IsNotFound());
+  ASSERT_EQ(tracker_->FirstIncomplete(), RequestTracker::NO_SEQ_NO);
 }
 
 } // namespace rpc
