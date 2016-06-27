@@ -133,7 +133,7 @@ TEST_F(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
   work.Start();
 
   // Wait for the process to crash due to the injected fault.
-  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(10)));
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(30)));
 
   // Stop the writers.
   work.StopAndJoin();
