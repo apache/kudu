@@ -97,6 +97,10 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     opts.num_tablet_servers = FLAGS_num_tablet_servers;
     opts.data_root = GetTestPath(data_root_path);
 
+    // Enable exactly once semantics for tests.
+    // TODO remove this once we have ResultTracker GC
+    opts.extra_tserver_flags.push_back("--enable_exactly_once");
+
     // If the caller passed no flags use the default ones, where we stress consensus by setting
     // low timeouts and frequent cache misses.
     if (non_default_ts_flags.empty()) {

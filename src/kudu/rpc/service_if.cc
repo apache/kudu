@@ -27,6 +27,12 @@
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/util/flag_tags.h"
+
+// TODO remove this once we have ResultTracker GC
+DEFINE_bool(enable_exactly_once, false, "Whether to enable exactly once semantics on the client "
+    "(experimental).");
+TAG_FLAG(enable_exactly_once, experimental);
 
 using google::protobuf::Message;
 using std::string;
@@ -92,7 +98,9 @@ void GeneratedServiceIf::Handle(InboundCall *call) {
   }
   Message* resp = method_info->resp_prototype->New();
 
-  bool track_result = call->header().has_request_id() && method_info->track_result;
+  bool track_result = call->header().has_request_id()
+                      && method_info->track_result
+                      && FLAGS_enable_exactly_once;
   RpcContext* ctx = new RpcContext(call,
                                    req.release(),
                                    resp,

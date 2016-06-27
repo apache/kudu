@@ -58,6 +58,7 @@
 DEFINE_int32(rpc_timeout, 1000, "Timeout for RPC calls, in seconds");
 DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DECLARE_bool(log_force_fsync_all);
+DECLARE_bool(enable_exactly_once);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_rpc_timeout_ms);
@@ -79,6 +80,10 @@ class TabletServerTestBase : public KuduTest {
     // Disable the maintenance ops manager since we want to trigger our own
     // maintenance operations at predetermined times.
     FLAGS_enable_maintenance_manager = false;
+
+    // Enable exactly once semantics, for tests.
+    // TODO remove this once we have ResultTracker GC
+    FLAGS_enable_exactly_once = true;
 
     // Decrease heartbeat timeout: we keep re-trying heartbeats when a
     // single master server fails due to a network error. Decreasing
