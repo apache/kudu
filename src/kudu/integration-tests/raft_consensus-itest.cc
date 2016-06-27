@@ -2003,7 +2003,7 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(tablet_servers_, tablet_id, timeout, &leader_ts));
-  ASSERT_OK(WaitForServersToAgree(timeout, active_tablet_servers, tablet_id, 1));
+  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id, timeout));
 
   // Change the config.
   TServerDetails* tserver_to_add = tablet_servers_[uuid_to_add];
