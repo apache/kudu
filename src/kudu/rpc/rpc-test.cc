@@ -27,6 +27,7 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/util/countdown_latch.h"
@@ -108,6 +109,9 @@ TEST_F(TestRpc, TestCall) {
   LOG(INFO) << "Connecting to " << server_addr.ToString();
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
   Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  ASSERT_STR_CONTAINS(p.ToString(), strings::Substitute("kudu.rpc.GenericCalculatorService@"
+                                                            "{remote=$0, user_credentials=",
+                                                        server_addr.ToString()));
 
   for (int i = 0; i < 10; i++) {
     ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
