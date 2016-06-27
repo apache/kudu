@@ -809,13 +809,14 @@ public class AsyncKuduClient implements AutoCloseable {
         // TODO: Handle the situation when multiple in-flight RPCs are queued waiting
         // for the leader master to be determine (either after a failure or at initialization
         // time). This could re-use some of the existing piping in place for non-master tablets.
+        Deferred<R> d = request.getDeferred();
         delayedSendRpcToTablet(request, (NoLeaderMasterFoundException) arg);
-      } else {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug(String.format("Notify RPC %s after lookup exception", request), arg);
-        }
-        request.errback(arg);
+        return d;
       }
+      if (LOG.isDebugEnabled()) {
+        LOG.debug(String.format("Notify RPC %s after lookup exception", request), arg);
+      }
+      request.errback(arg);
       return Deferred.fromError(arg);
     }
 
