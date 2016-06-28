@@ -77,4 +77,4 @@ a future post.
 ## On the Kudu blog
 
 * Dan Burkert wrote a post about [improvements to predicate handling in
-  Kudu 0.8](http://getkudu.io/2016/04/19/kudu-0-8-0-predicate-improvements.html).
+  Kudu 0.8](http://kudu.apache.org/2016/04/19/kudu-0-8-0-predicate-improvements.html).

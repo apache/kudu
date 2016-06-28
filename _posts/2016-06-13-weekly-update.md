@@ -17,7 +17,7 @@ a future post.
 ## Development discussions and code in progress
 
 * The IPMC vote for 0.9.0 RC1 passed and Kudu 0.9.0 is now
-  [officially released](http://getkudu.io/2016/06/10/apache-kudu-0-9-0-released.html). Per the
+  [officially released](http://kudu.apache.org/2016/06/10/apache-kudu-0-9-0-released.html). Per the
   lazily agreed-upon [plan](http://mail-archives.apache.org/mod_mbox/kudu-dev/201602.mbox/%3CCAGpTDNcMBWwX8p+yGKzHfL2xcmKTScU-rhLcQFSns1UVSbrXhw@mail.gmail.com%3E),
   the next release will be 1.0.0 in about two months.
 

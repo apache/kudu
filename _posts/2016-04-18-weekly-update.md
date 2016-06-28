@@ -76,5 +76,5 @@ a future post.
 ## On the Kudu blog
 
 * Pat Patterson wrote a post about [Ingesting JSON Data into Apache Kudu with StreamSets
-  Data Collector](http://getkudu.io/2016/04/14/ingesting-json-apache-kudu-streamsets-data-collector.html).
+  Data Collector](http://kudu.apache.org/2016/04/14/ingesting-json-apache-kudu-streamsets-data-collector.html).
 

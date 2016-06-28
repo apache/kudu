@@ -41,7 +41,7 @@ In most cases updating existing code to explicitly set a partitioning
 configuration should be simple. The examples below add hash partitioning, but
 you can also specify range partitioning or a combination of range and hash
 partitioning. See the [schema design
-guide](http://getkudu.io/docs/schema_design.html#data-distribution) for more
+guide](http://kudu.apache.org/docs/schema_design.html#data-distribution) for more
 advanced configurations.
 
 C++ Client

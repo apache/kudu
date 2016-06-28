@@ -91,7 +91,7 @@ release forum](https://community.cloudera.com/t5/Beta-Releases-Kudu-RecordServic
 #### Is there a quickstart VM?
 
 Yes. Instructions on getting up and running on Kudu via a VM are provided in Kudu's
-[quickstart guide](http://getkudu.io/docs/quickstart.html).
+[quickstart guide](http://kudu.apache.org/docs/quickstart.html).
 
 
 ### Storage Details
@@ -462,7 +462,7 @@ this is expected to be added to a subsequent Kudu release.
 Kudu tables must have a unique primary key. Kudu has not been tested with
 columns containing large values (10s of KB and higher) and performance problems
 when using large values are anticipated. See
-[Schema Design](http://getkudu.io/docs/schema_design.html).
+[Schema Design](http://kudu.apache.org/docs/schema_design.html).
 
 #### Can Kudu be used to replace Lambda Architectures?
 

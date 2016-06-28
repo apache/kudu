@@ -32,7 +32,7 @@ a future post.
 
 * Todd also [changed](http://gerrit.cloudera.org:8080/#/c/3186/) some flush-related defaults to
   encourage parallel IO and larger flushes. This is based on his previous work that he documented
-  in this [blog post](http://getkudu.io/2016/04/26/ycsb.html).
+  in this [blog post](http://kudu.apache.org/2016/04/26/ycsb.html).
 
 * Will Berkeley made a few improvements last week, but [one](http://gerrit.cloudera.org:8080/3199)
   we'd like to call out is that he removed the Java's kudu-mapreduce module dependency on Hadoop's

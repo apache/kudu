@@ -11,5 +11,5 @@ This latest version adds a sink for Apache Flume, partition pruning in the C++
 client and related improvements on the server-side, better error-handling in Java
 client, plus many other improvements and bug fixes.
 
-* Read the detailed [Kudu 0.8.0 release notes](http://getkudu.io/releases/0.8.0/docs/release_notes.html)
-* Download the [Kudu 0.8.0 source release](http://getkudu.io/releases/0.8.0/)
+* Read the detailed [Kudu 0.8.0 release notes](http://kudu.apache.org/releases/0.8.0/docs/release_notes.html)
+* Download the [Kudu 0.8.0 source release](http://kudu.apache.org/releases/0.8.0/)

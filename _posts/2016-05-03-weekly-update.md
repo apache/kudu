@@ -40,18 +40,18 @@ a future post.
 * Discussion continued on the design document for the upcoming
   [Replay Cache](http://gerrit.cloudera.org:8080/#/c/2642/) feature. This feature
   was previously introduced in an [earlier weekly update
-  post](http://getkudu.io/2016/04/11/weekly-update.html)
+  post](http://kudu.apache.org/2016/04/11/weekly-update.html)
   and development is now fully under way.
 
 ## On the Kudu blog
 
 * Todd Lipcon wrote a post about [benchmarking Kudu insert performance with
-  YCSB](http://getkudu.io/2016/04/26/ycsb.html). This post was quite popular,
+  YCSB](http://kudu.apache.org/2016/04/26/ycsb.html). This post was quite popular,
   so Todd is currently working on a follow-up which will include more experiments
   around Kudu configuration tuning.
 
 ## Upcoming talks and meetups
 
 * ApacheCon Big Data will be next week in Vancouver. As always, you can check
-  the [Kudu Community page](http://getkudu.io/community.html) for an up-to-date
+  the [Kudu Community page](http://kudu.apache.org/community.html) for an up-to-date
   list of conferenace sessions and meetups near you.

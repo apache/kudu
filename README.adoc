@@ -31,7 +31,7 @@ or HTML errors:
 = Updating the Kudu Website
 
 To update HTML or MarkDown pages in this directory, edit them and git commit, then
-push your changes to http://getkudu.io/docs/contributing.html#_contributing_patches_using_gerrit[Gerrit]
+push your changes to http://kudu.apache.org/docs/contributing.html#_contributing_patches_using_gerrit[Gerrit]
 by issuing a command like:
 
 [source,bash]

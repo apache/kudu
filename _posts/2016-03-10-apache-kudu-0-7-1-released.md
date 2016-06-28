@@ -17,5 +17,5 @@ bugs fixed in this release:
 
 Thanks again to Jean-Daniel Cryans for managing this release!
 
-* Read the detailed [Kudu 0.7.1 release notes](http://getkudu.io/releases/0.7.1/docs/release_notes.html)
-* Download the [Kudu 0.7.1 source release](http://getkudu.io/releases/0.7.1/)
+* Read the detailed [Kudu 0.7.1 release notes](http://kudu.apache.org/releases/0.7.1/docs/release_notes.html)
+* Download the [Kudu 0.7.1 source release](http://kudu.apache.org/releases/0.7.1/)

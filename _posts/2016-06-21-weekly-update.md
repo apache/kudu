@@ -25,7 +25,7 @@ covers ongoing development and news in the Apache Kudu (incubating) project.
 
 ## On the blog
 
-* Mike Percy [wrote](http://getkudu.io/2016/06/17/raft-consensus-single-node.html) about how Kudu
+* Mike Percy [wrote](http://kudu.apache.org/2016/06/17/raft-consensus-single-node.html) about how Kudu
   uses Raft consensus on a single node, and some changes we're making as Kudu is getting more mature.
 
 Want to learn more about a specific topic from this blog post? Shoot an email to the

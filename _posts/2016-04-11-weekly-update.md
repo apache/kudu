@@ -21,10 +21,10 @@ a future post.
   on the first try, so this release candidate will is now the official 0.8.0
   release.
 
-  The [release notes](http://getkudu.io/releases/0.8.0/docs/release_notes.html)
+  The [release notes](http://kudu.apache.org/releases/0.8.0/docs/release_notes.html)
   summarize the new features, improvements, and important bug fixes. The
   release itself and its documentation can be found at the
-  [Kudu 0.8.0 release](http://getkudu.io/releases/0.8.0/) page.
+  [Kudu 0.8.0 release](http://kudu.apache.org/releases/0.8.0/) page.
 
   Thank you to the 11 developers who contributed the 172 bug fixes and
   improvements for this release!

@@ -7,7 +7,7 @@ author: Dan Burkert
 The recently released Kudu version 0.8 ships with a host of new improvements to
 scan predicates. Performance and usability have been improved, especially for
 tables taking advantage of [advanced partitioning
-options](http://getkudu.io/docs/schema_design.html#data-distribution).
+options](http://kudu.apache.org/docs/schema_design.html#data-distribution).
 
 <!--more-->
 
@@ -45,10 +45,10 @@ know on the [JIRA issue](https://issues.apache.org/jira/browse/KUDU-1065).
 ## Redesigned Predicate API in the Java Client
 
 The Java client has a new way to express scan predicates: the
-[`KuduPredicate`](http://getkudu.io/apidocs/org/kududb/client/KuduPredicate.html).
+[`KuduPredicate`](http://kudu.apache.org/apidocs/org/kududb/client/KuduPredicate.html).
 The API matches the corresponding C++ API more closely, and adds support for
 specifying exclusive, as well as inclusive, range predicates. The existing
-[`ColumnRangePredicate`](http://getkudu.io/apidocs/org/kududb/client/ColumnRangePredicate.html)
+[`ColumnRangePredicate`](http://kudu.apache.org/apidocs/org/kududb/client/ColumnRangePredicate.html)
 API has been deprecated, and will be removed soon. Example of transitioning from
 the old to new API:
 
