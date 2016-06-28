@@ -76,7 +76,7 @@ DEFINE_int32(tablet_bloom_block_size, 4096,
              "Block size of the bloom filters used for tablet keys.");
 TAG_FLAG(tablet_bloom_block_size, advanced);
 
-DEFINE_double(tablet_bloom_target_fp_rate, 0.01f,
+DEFINE_double(tablet_bloom_target_fp_rate, 0.0001f,
               "Target false-positive rate (between 0 and 1) to size tablet key bloom filters. "
               "A lower false positive rate may reduce the number of disk seeks required "
               "in heavy insert workloads, at the expense of more space and RAM "

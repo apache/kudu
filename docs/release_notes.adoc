@@ -64,6 +64,15 @@ Hadoop storage technologies.
   of an inclusive key. Applications are encouraged to use the scan tokens API
   instead of these methods in the future.
 
+==== Other noteworthy changes
+
+- The default false positive rate for Bloom filters has been changed
+  from 1% to 0.01%. This will increase the space consumption of Bloom
+  filters by a factor of two (from approximately 10 bits per row to
+  approximately 20 bits per row). This is expected to substantially
+  improve the performance of random-write workloads at the cost of an
+  incremental increase in disk space usage.
+
 [[rn_0.9.1]]
 === Release notes specific to 0.9.1
 
