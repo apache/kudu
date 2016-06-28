@@ -326,10 +326,15 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
 
 void ExternalMiniCluster::AssertNoCrashes() {
   vector<ExternalDaemon*> daemons = this->daemons();
+  int num_crashes = 0;
   for (ExternalDaemon* d : daemons) {
     if (d->IsShutdown()) continue;
-    EXPECT_TRUE(d->IsProcessAlive()) << "At least one process crashed";
+    if (!d->IsProcessAlive()) {
+      LOG(ERROR) << "Process with UUID " << d->uuid() << " has crashed";
+      num_crashes++;
+    }
   }
+  ASSERT_EQ(0, num_crashes) << "At least one process crashed";
 }
 
 Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
