@@ -154,21 +154,31 @@ class MasterFailoverTest : public KuduTest {
 // registered with the follower master, and thus it's likely to deny
 // the CreateTable request thinking there are no TS available.
 TEST_F(MasterFailoverTest, DISABLED_TestCreateTableSync) {
+  const char* kTableName = "testCreateTableSync";
+
   if (!AllowSlowTests()) {
     LOG(INFO) << "This test can only be run in slow mode.";
     return;
   }
 
+  LOG(INFO) << "Pausing leader master";
   int leader_idx;
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-
-  LOG(INFO) << "Pausing leader master";
   cluster_->master(leader_idx)->Pause();
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
-  string table_name = "testCreateTableSync";
-  ASSERT_OK(CreateTable(table_name, kWaitForCreate));
-  ASSERT_OK(OpenTableAndScanner(table_name));
+  // As Pause() is asynchronous, the following sequence of events is possible:
+  //
+  // 1. Pause() is issued.
+  // 2. CreateTable() is issued.
+  // 3. Leader master receives CreateTable() and creates the table.
+  // 4. Leader master is paused before the CreateTable() response is sent.
+  // 5. Client times out, finds the new master, and retries CreateTable().
+  // 6. The retry fails because the table was already created in step 3.
+  Status s = CreateTable(kTableName, kWaitForCreate);
+  ASSERT_TRUE(s.ok() || s.IsAlreadyPresent());
+
+  ASSERT_OK(OpenTableAndScanner(kTableName));
 }
 
 // Test that we can issue a CreateTable call, pause the leader master
@@ -178,53 +188,54 @@ TEST_F(MasterFailoverTest, DISABLED_TestCreateTableSync) {
 // TODO enable this test once flakiness issues are worked out and
 // eliminated on test machines.
 TEST_F(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
+  const char* kTableName = "testPauseAfterCreateTableIssued";
+
   if (!AllowSlowTests()) {
     LOG(INFO) << "This test can only be run in slow mode.";
     return;
   }
 
-  int leader_idx;
-  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-
-  string table_id = "testPauseAfterCreateTableIssued";
-  LOG(INFO) << "Issuing CreateTable for " << table_id;
-  ASSERT_OK(CreateTable(table_id, kNoWaitForCreate));
+  ASSERT_OK(CreateTable(kTableName, kNoWaitForCreate));
 
   LOG(INFO) << "Pausing leader master";
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
   cluster_->master(leader_idx)->Pause();
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(MonoDelta::FromSeconds(90));
   ASSERT_OK(client_->data_->WaitForCreateTableToFinish(client_.get(),
-                                                       table_id, deadline));
+                                                       kTableName, deadline));
 
-  ASSERT_OK(OpenTableAndScanner(table_id));
+  ASSERT_OK(OpenTableAndScanner(kTableName));
 }
 
 // Test the scenario where we create a table, pause the leader master,
 // and then issue the DeleteTable call: DeleteTable should go to the newly
 // elected leader master and succeed.
 TEST_F(MasterFailoverTest, TestDeleteTableSync) {
+  const char* kTableName = "testDeleteTableSync";
   if (!AllowSlowTests()) {
     LOG(INFO) << "This test can only be run in slow mode.";
     return;
   }
 
-  int leader_idx;
-
-  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-
-  string table_name = "testDeleteTableSync";
-  ASSERT_OK(CreateTable(table_name, kWaitForCreate));
+  ASSERT_OK(CreateTable(kTableName, kWaitForCreate));
 
   LOG(INFO) << "Pausing leader master";
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
   cluster_->master(leader_idx)->Pause();
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
-  ASSERT_OK(client_->DeleteTable(table_name));
+  // It's possible for DeleteTable() to delete the table and still return
+  // NotFound. See TestCreateTableSync for details.
+  Status s = client_->DeleteTable(kTableName);
+  ASSERT_TRUE(s.ok() || s.IsNotFound());
+
   shared_ptr<KuduTable> table;
-  Status s = client_->OpenTable(table_name, &table);
+  s = client_->OpenTable(kTableName, &table);
   ASSERT_TRUE(s.IsNotFound());
 }
 
@@ -236,28 +247,30 @@ TEST_F(MasterFailoverTest, TestDeleteTableSync) {
 // TODO: Add an equivalent async test. Add a test for adding and/or
 // renaming a column in a table.
 TEST_F(MasterFailoverTest, TestRenameTableSync) {
+  const char* kTableNameOrig = "testAlterTableSync";
+  const char* kTableNameNew = "testAlterTableSyncRenamed";
+
   if (!AllowSlowTests()) {
     LOG(INFO) << "This test can only be run in slow mode.";
     return;
   }
 
-  int leader_idx;
-
-  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-
-  string table_name_orig = "testAlterTableSync";
-  ASSERT_OK(CreateTable(table_name_orig, kWaitForCreate));
+  ASSERT_OK(CreateTable(kTableNameOrig, kWaitForCreate));
 
   LOG(INFO) << "Pausing leader master";
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
   cluster_->master(leader_idx)->Pause();
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
-  string table_name_new = "testAlterTableSyncRenamed";
-  ASSERT_OK(RenameTable(table_name_orig, table_name_new));
-  shared_ptr<KuduTable> table;
-  ASSERT_OK(client_->OpenTable(table_name_new, &table));
+  // It's possible for AlterTable() to rename the table and still return
+  // NotFound. See TestCreateTableSync for details.
+  Status s = RenameTable(kTableNameOrig, kTableNameNew);
+  ASSERT_TRUE(s.ok() || s.IsNotFound());
 
-  Status s = client_->OpenTable(table_name_orig, &table);
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableNameNew, &table));
+  s = client_->OpenTable(kTableNameOrig, &table);
   ASSERT_TRUE(s.IsNotFound());
 }
 
