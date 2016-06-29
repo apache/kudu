@@ -36,6 +36,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/version_info.h"
 
 DECLARE_int32(heartbeat_interval_ms);
 
@@ -81,6 +82,10 @@ class RegistrationTest : public KuduTest {
     string expected_uuid =
       cluster_->mini_tablet_server(0)->server()->instance_pb().permanent_uuid();
     ASSERT_STR_CONTAINS(buf.ToString(), expected_uuid);
+
+    // Should check that the TS software version is included on the page.
+    // tserver version should be the same as returned by GetShortVersionString()
+    ASSERT_STR_CONTAINS(buf.ToString(), VersionInfo::GetShortVersionString());
   }
 
  protected:

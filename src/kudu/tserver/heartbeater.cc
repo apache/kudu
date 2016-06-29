@@ -37,6 +37,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/version_info.h"
 
 DEFINE_int32(heartbeat_rpc_timeout_ms, 15000,
              "Timeout used for the TS->Master heartbeat RPCs.");
@@ -273,6 +274,8 @@ Status Heartbeater::Thread::SetupRegistration(master::TSRegistrationPB* reg) {
                         "Unable to get bound HTTP addresses");
   RETURN_NOT_OK_PREPEND(AddHostPortPBs(addrs, reg->mutable_http_addresses()),
                         "Failed to add HTTP addresses to registration");
+  reg->set_software_version(VersionInfo::GetShortVersionString());
+
   return Status::OK();
 }
 

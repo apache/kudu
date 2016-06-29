@@ -181,8 +181,7 @@ message PingResponsePB {
 message TSRegistrationPB {
   repeated HostPortPB rpc_addresses = 1;
   repeated HostPortPB http_addresses = 2;
-
-  // TODO: add stuff like software version, etc.
+  optional string software_version = 3;
 }
 
 message ReportedTabletPB {
