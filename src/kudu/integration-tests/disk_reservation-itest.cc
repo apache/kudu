@@ -61,6 +61,7 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
   vector<string> ts_flags;
   ts_flags.push_back("--flush_threshold_mb=0");
   ts_flags.push_back("--maintenance_manager_polling_interval_ms=100");
+  ts_flags.push_back("--disable_core_dumps");
   ts_flags.push_back(Substitute("--fs_data_dirs=$0/a,$0/b",
                                 GetTestDataDirectory()));
   NO_FATALS(StartCluster(ts_flags, {}, 1));
@@ -120,6 +121,7 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
 TEST_F(DiskReservationITest, TestWalWriteToFullDiskAborts) {
   vector<string> ts_flags;
   ts_flags.push_back("--log_segment_size_mb=1"); // Encourage log rolling to speed up the test.
+  ts_flags.push_back("--disable_core_dumps");
   NO_FATALS(StartCluster(ts_flags, {}, 1));
 
   TestWorkload workload(cluster_.get());

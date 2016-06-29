@@ -54,6 +54,12 @@ Status ParseStat(const std::string&buffer, std::string* name, ThreadStats* stats
 // unrecognised format, or if the kernel version is not modern enough.
 Status GetThreadStats(int64_t tid, ThreadStats* stats);
 
+// Disable core dumps for this process.
+//
+// This is useful particularly in tests where we have injected failures and don't
+// want to generate a core dump from an "expected" crash.
+void DisableCoreDumps();
+
 } // namespace kudu
 
 #endif /* KUDU_UTIL_OS_UTIL_H */

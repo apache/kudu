@@ -17,13 +17,20 @@
 
 #include "kudu/util/init.h"
 
+#include <gflags/gflags.h>
 #include <string>
 
 #include "kudu/gutil/cpu.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/flag_tags.h"
+#include "kudu/util/os-util.h"
 #include "kudu/util/status.h"
 
 using std::string;
+
+DEFINE_bool(disable_core_dumps, false, "Disable core dumps when this process crashes.");
+TAG_FLAG(disable_core_dumps, advanced);
+TAG_FLAG(disable_core_dumps, evolving);
 
 namespace kudu {
 
@@ -50,6 +57,10 @@ Status CheckCPUFlags() {
 
 void InitKuduOrDie() {
   CHECK_OK(CheckCPUFlags());
+
+  if (FLAGS_disable_core_dumps) {
+    DisableCoreDumps();
+  }
 }
 
 } // namespace kudu

@@ -2644,7 +2644,10 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
   FLAGS_num_replicas = 3;
   FLAGS_num_tablet_servers = 3;
   vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
+  ts_flags = {"--enable_leader_failure_detection=false",
+              // Disable core dumps since we will inject FATAL errors, and dumping
+              // core can take a long time.
+              "--disable_core_dumps"};
   master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
