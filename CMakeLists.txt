@@ -891,8 +891,11 @@ set(BOOST_ROOT ${THIRDPARTY_PREFIX})
 # To prevent system boost installations from being picked up, we'll work around
 # this ourselves by checking the prefix of Boost_INCLUDE_DIR.
 find_package(Boost REQUIRED)
-if(NOT ${Boost_INCLUDE_DIR} MATCHES ${BOOST_ROOT})
-  message(FATAL_ERROR "Chose Boost headers outside ${BOOST_ROOT}: ${Boost_INCLUDE_DIR}")
+string(FIND ${Boost_INCLUDE_DIR} ${BOOST_ROOT} BOOST_ROOT_IDX_FOUND)
+if(${BOOST_ROOT_IDX_FOUND} EQUAL 0)
+  message(STATUS "Boost location: ${Boost_INCLUDE_DIR}")
+else()
+  message(FATAL_ERROR "Error: chose Boost outside ${BOOST_ROOT}: ${Boost_INCLUDE_DIR}")
 endif()
 include_directories(SYSTEM ${Boost_INCLUDE_DIR})
 
