@@ -54,12 +54,6 @@ Status ParseStat(const std::string&buffer, std::string* name, ThreadStats* stats
 // unrecognised format, or if the kernel version is not modern enough.
 Status GetThreadStats(int64_t tid, ThreadStats* stats);
 
-// Runs a shell command. Returns false if there was any error (either failure to launch or
-// non-0 exit code), and true otherwise. *msg is set to an error message including the OS
-// error string, if any, and the first 1k of output if there was any error, or just the
-// first 1k of output otherwise.
-bool RunShellProcess(const std::string& cmd, std::string* msg);
-
 } // namespace kudu
 
 #endif /* KUDU_UTIL_OS_UTIL_H */
