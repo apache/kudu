@@ -16,6 +16,7 @@
 // under the License.
 package org.kududb.client;
 
+import com.google.common.collect.ImmutableList;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -82,6 +83,7 @@ public class ITClient extends BaseKuduTest {
     localClient = new KuduClient(localAsyncClient);
 
     CreateTableOptions builder = new CreateTableOptions().setNumReplicas(3);
+    builder.setRangePartitionColumns(ImmutableList.of("key"));
     table = localClient.createTable(TABLE_NAME, basicSchema, builder);
   }
 

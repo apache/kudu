@@ -258,6 +258,10 @@
               <groupId>org.apache.maven.plugins</groupId>
               <artifactId>maven-surefire-plugin</artifactId>
             </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-failsafe-plugin</artifactId>
+            </plugin>
           </plugins>
 
         <!-- This big ol' block of nonsense tells the m2e Eclipse plugin what
