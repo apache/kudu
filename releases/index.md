@@ -11,10 +11,11 @@ Kudu is currently in a beta period. It is not yet considered to be production-re
 
 ### Latest beta release
 
-* **[Kudu 0.9.0-incubating (beta)](0.9.0/)** was released on June 9, 2016.
+* **[Kudu 0.9.1-incubating (beta)](0.9.1/)** was released on June 30, 2016.
 
 ### Previous beta releases
 
+* [Kudu 0.9.0-incubating (beta)](0.9.0/) was released on June 9, 2016.
 * [Kudu 0.8.0-incubating (beta)](0.8.0/) was released on April 10, 2016.
 * [Kudu 0.7.1-incubating (beta)](0.7.1/) was released on March 9, 2016. It is a bug fix release.
 * [Kudu 0.7.0-incubating (beta)](0.7.0/) was released on Feb 26, 2016.

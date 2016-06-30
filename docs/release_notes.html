@@ -2,7 +2,7 @@
 title: Apache Kudu (incubating) Release Notes
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2016-06-10 10:29:57 PDT'
+last_updated: 'Last updated 2016-06-30 15:12:19 PDT'
 ---
 <!--
 
@@ -82,6 +82,46 @@ applications that are difficult or impossible to implement on current-generation
 Hadoop storage technologies.</p>
 </div>
 <div class="sect2">
+<h3 id="rn_0.9.1"><a class="link" href="#rn_0.9.1">Release notes specific to 0.9.1</a></h3>
+<div class="paragraph">
+<p>Kudu 0.9.1 delivers incremental bug fixes over Kudu 0.9.0. It is fully compatible with
+Kudu 0.9.0.</p>
+</div>
+<div class="paragraph">
+<p>See also <a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20%3D%20Resolved
+%20AND%20fixVersion%20%3D%200.9.1">JIRAs resolved
+for Kudu 0.9.1</a> and <a href="https://github.com/apache/incubator-kudu/compare/0.9.0...0.9.1">Git
+changes between 0.9.0 and 0.9.1</a>.</p>
+</div>
+<div class="paragraph">
+<p>To upgrade to Kudu 0.9.1, see <a href="installation.html#upgrade">Upgrade from 0.8.0 to 0.9.x</a>.</p>
+</div>
+<div class="sect3">
+<h4 id="rn_0.9.1_fixed_issues"><a class="link" href="#rn_0.9.1_fixed_issues">Fixed Issues</a></h4>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1469">KUDU-1469</a> fixed a bug in
+our Raft consensus implementation that could cause a tablet to stop making progress after a leader
+election.</p>
+</li>
+<li>
+<p><a href="https://gerrit.cloudera.org/#/c/3456/">Gerrit #3456</a> fixed a bug in which
+servers under high load could store metric information in incorrect memory
+locations, causing crashes or data corruption.</p>
+</li>
+<li>
+<p><a href="https://gerrit.cloudera.org/#/c/3457/">Gerrit #3457</a> fixed a bug in which
+errors from the Java client would carry an incorrect error message.</p>
+</li>
+<li>
+<p>Several other small bug fixes were backported to improve stability.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect2">
 <h3 id="rn_0.9.0"><a class="link" href="#rn_0.9.0">Release notes specific to 0.9.0</a></h3>
 <div class="paragraph">
 <p>Kudu 0.9.0 delivers incremental features, improvements, and bug fixes over the previous versions.</p>
@@ -93,7 +133,7 @@ for Kudu 0.9.0</a> and <a href="https://github.com/apache/incubator-kudu/compare
 changes between 0.8.0 and 0.9.0</a>.</p>
 </div>
 <div class="paragraph">
-<p>To upgrade to Kudu 0.9.0, see <a href="installation.html#upgrade">Upgrade from 0.8.0 to 0.9.0</a>.</p>
+<p>To upgrade to Kudu 0.9.0, see <a href="installation.html#upgrade">Upgrade from 0.8.0 to 0.9.x</a>.</p>
 </div>
 <div class="sect3">
 <h4 id="rn_0.9.0_incompatible_changes"><a class="link" href="#rn_0.9.0_incompatible_changes">Incompatible changes</a></h4>
@@ -122,12 +162,6 @@ details.</p>
 <h4 id="rn_0.9.0_new_features"><a class="link" href="#rn_0.9.0_new_features">New features</a></h4>
 <div class="ulist">
 <ul>
-<li>
-<p><a href="https://issues.apache.org/jira/browse/KUDU-1002">KUDU-1002</a> Added support for
-<code>UPSERT</code> operations, whereby a row is inserted if it does not already exist, but
-updated if it does. Support for <code>UPSERT</code> is included in Java, C++, and Python APIs,
-but not in Impala.</p>
-</li>
 <li>
 <p><a href="https://issues.apache.org/jira/browse/KUDU-1306">KUDU-1306</a> Scan token API
 for creating partition-aware scan descriptors. This API simplifies executing
@@ -956,6 +990,11 @@ ASF.</p>
             <ul class="sectlevel1">
 <li><a href="#_introducing_kudu">Introducing Kudu</a>
 <ul class="sectlevel2">
+<li><a href="#rn_0.9.1">Release notes specific to 0.9.1</a>
+<ul class="sectlevel3">
+<li><a href="#rn_0.9.1_fixed_issues">Fixed Issues</a></li>
+</ul>
+</li>
 <li><a href="#rn_0.9.0">Release notes specific to 0.9.0</a>
 <ul class="sectlevel3">
 <li><a href="#rn_0.9.0_incompatible_changes">Incompatible changes</a></li>

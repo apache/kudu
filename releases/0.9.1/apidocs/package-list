@@ -1,0 +1,7 @@
+org.kududb
+org.kududb.annotations
+org.kududb.client
+org.kududb.flume.sink
+org.kududb.mapreduce
+org.kududb.mapreduce.tools
+org.kududb.util
