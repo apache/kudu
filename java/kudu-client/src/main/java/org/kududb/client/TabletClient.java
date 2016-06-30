@@ -155,6 +155,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (!rpc.deadlineTracker.hasDeadline()) {
       LOG.warn(getPeerUuidLoggingString() + " sending an rpc without a timeout " + rpc);
     }
+    Pair<ChannelBuffer, Integer> encodedRpcAndId = null;
     if (chan != null) {
       if (!rpc.getRequiredFeatures().isEmpty() &&
           !secureRpcHelper.getServerFeatures().contains(
@@ -163,14 +164,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
             "the server does not support the APPLICATION_FEATURE_FLAGS RPC feature"));
       }
 
-      final ChannelBuffer serialized = encode(rpc);
-      if (serialized == null) {  // Error during encoding.
+      encodedRpcAndId = encode(rpc);
+      if (encodedRpcAndId == null) {  // Error during encoding.
         return;  // Stop here.  RPC has been failed already.
       }
 
       final Channel chan = this.chan;  // Volatile read.
       if (chan != null) {  // Double check if we disconnected during encode().
-        Channels.write(chan, serialized);
+        Channels.write(chan, encodedRpcAndId.getFirst());
         return;
       }
     }
@@ -182,10 +183,11 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         tryAgain = true;
       // Check if we got disconnected.
       } else if (dead) {
-        if (rpcs_inflight.isEmpty()) {
-          LOG.debug("rpcs_inflight is empty and this TabletClient is dead, will assume that this " +
-              "RPC was taken care of already {}", rpc);
-        } else {
+        // We got disconnected during the process of encoding this rpc, but we need to check if
+        // cleanup() already took care of calling failOrRetryRpc() for us. If it did, the entry we
+        // added in rpcs_inflight will be missing. If not, we have to call failOrRetryRpc()
+        // ourselves after this synchronized block.
+        if (encodedRpcAndId != null && rpcs_inflight.containsKey(encodedRpcAndId.getSecond())) {
           failRpc = true;
         }
       } else {
@@ -209,7 +211,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
   }
 
-  private <R> ChannelBuffer encode(final KuduRpc<R> rpc) {
+  private <R> Pair<ChannelBuffer, Integer> encode(final KuduRpc<R> rpc) {
     final int rpcid = this.rpcid.incrementAndGet();
     ChannelBuffer payload;
     final String service = rpc.serviceName();
@@ -261,7 +263,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
     payload = secureRpcHelper.wrap(payload);
 
-    return payload;
+    return new Pair<>(payload, rpcid);
   }
 
   /**
@@ -674,8 +676,15 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       }
       dead = true;
       rpcs = pending_rpcs == null ? new ArrayList<KuduRpc<?>>(rpcs_inflight.size()) : pending_rpcs;
-      rpcs.addAll(rpcs_inflight.values());
-      rpcs_inflight.clear();
+
+      for (Iterator<KuduRpc<?>> iterator = rpcs_inflight.values().iterator(); iterator.hasNext();) {
+        KuduRpc<?> rpc = iterator.next();
+        rpcs.add(rpc);
+        iterator.remove();
+      }
+      // After this, rpcs_inflight might still have entries since they could have been added
+      // concurrently, and those RPCs will be handled by their caller in sendRpc.
+
       pending_rpcs = null;
     }
     final ConnectionResetException exception =
