@@ -367,14 +367,18 @@ TEST_F(TestDeltaFile, TestEmptyFileIsAborted) {
   gscoped_ptr<WritableBlock> block;
   ASSERT_OK(fs_manager_->CreateNewBlock(&block));
   test_block_ = block->id();
-  DeltaFileWriter dfw(std::move(block));
-  ASSERT_OK(dfw.Start());
-  Status s = dfw.Finish();
-  ASSERT_TRUE(s.IsAborted());
+  {
+    DeltaFileWriter dfw(std::move(block));
+    ASSERT_OK(dfw.Start());
+
+    // The block is only deleted when the DeltaFileWriter goes out of scope.
+    Status s = dfw.Finish();
+    ASSERT_TRUE(s.IsAborted());
+  }
 
   // The block should have been deleted as well.
   gscoped_ptr<ReadableBlock> rb;
-  s = fs_manager_->OpenBlock(test_block_, &rb);
+  Status s = fs_manager_->OpenBlock(test_block_, &rb);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 }
 
