@@ -1385,6 +1385,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   resp->set_table_id(table->id());
   resp->mutable_partition_schema()->CopyFrom(l.data().pb.partition_schema());
   resp->set_create_table_done(!table->IsCreateInProgress());
+  resp->set_table_name(l.data().pb.name());
 
   return Status::OK();
 }

@@ -654,6 +654,7 @@ static void LoopGetTableSchema(const char* kTableName,
       CHECK(kSchema->Equals(receivedSchema)) <<
           strings::Substitute("$0 not equal to $1",
                               kSchema->ToString(), receivedSchema.ToString());
+      CHECK_EQ(kTableName, resp.table_name());
     }
   }
 }
