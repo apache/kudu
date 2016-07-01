@@ -29,6 +29,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/os-util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
@@ -57,6 +58,10 @@ DEFINE_string(heap_profile_path, "", "Output path to store heap profiles. If not
     "profiles are stored in /tmp/<process-name>.<pid>.<n>.heap.");
 TAG_FLAG(heap_profile_path, stable);
 TAG_FLAG(heap_profile_path, advanced);
+
+DEFINE_bool(disable_core_dumps, false, "Disable core dumps when this process crashes.");
+TAG_FLAG(disable_core_dumps, advanced);
+TAG_FLAG(disable_core_dumps, evolving);
 
 // Tag a bunch of the flags that we inherit from glog/gflags.
 
@@ -273,6 +278,10 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
   if (FLAGS_heap_profile_path.empty()) {
     FLAGS_heap_profile_path = strings::Substitute(
         "/tmp/$0.$1", google::ProgramInvocationShortName(), getpid());
+  }
+
+  if (FLAGS_disable_core_dumps) {
+    DisableCoreDumps();
   }
 
 #ifdef TCMALLOC_ENABLED
