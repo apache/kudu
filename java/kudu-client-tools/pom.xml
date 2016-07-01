@@ -23,7 +23,7 @@
     <parent>
         <groupId>org.kududb</groupId>
         <artifactId>kudu-parent</artifactId>
-        <version>0.9.1</version>
+        <version>0.9.2-SNAPSHOT</version>
     </parent>
 
     <artifactId>kudu-client-tools</artifactId>
