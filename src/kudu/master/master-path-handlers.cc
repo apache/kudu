@@ -448,11 +448,12 @@ string MasterPathHandlers::TSDescriptorToHtml(const TSDescriptor& desc,
   desc.GetRegistration(&reg);
 
   if (reg.http_addresses().size() > 0) {
-    return Substitute("<a href=\"http://$0:$1/tablet?id=$2\">$3</a>",
+    return Substitute("<a href=\"http://$0:$1/tablet?id=$2\">$3:$4</a>",
                       reg.http_addresses(0).host(),
                       reg.http_addresses(0).port(),
                       EscapeForHtmlToString(tablet_id),
-                      EscapeForHtmlToString(reg.http_addresses(0).host()));
+                      EscapeForHtmlToString(reg.http_addresses(0).host()),
+                      reg.http_addresses(0).port());
   } else {
     return EscapeForHtmlToString(desc.permanent_uuid());
   }

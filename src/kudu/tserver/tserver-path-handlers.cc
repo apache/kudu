@@ -248,7 +248,10 @@ string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& 
   std::sort(sorted_peers.begin(), sorted_peers.end(), &CompareByMemberType);
   for (const RaftPeerPB& peer : sorted_peers) {
     string peer_addr_or_uuid =
-        peer.has_last_known_addr() ? peer.last_known_addr().host() : peer.permanent_uuid();
+        peer.has_last_known_addr() ? Substitute("$0:$1",
+                                                peer.last_known_addr().host(),
+                                                peer.last_known_addr().port())
+                                   : peer.permanent_uuid();
     peer_addr_or_uuid = EscapeForHtmlToString(peer_addr_or_uuid);
     string role_name = RaftPeerPB::Role_Name(GetConsensusRole(peer.permanent_uuid(), cstate));
     string formatted = Substitute("$0: $1", role_name, peer_addr_or_uuid);
@@ -314,8 +317,11 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
   if (!LoadTablet(tserver_, req, &tablet_id, &peer, output)) return;
 
   string table_name = peer->tablet_metadata()->table_name();
+  RaftPeerPB::Role role = peer->consensus()->role();
 
-  *output << "<h1>Tablet " << EscapeForHtmlToString(tablet_id) << "</h1>\n";
+  *output << "<h1>Tablet " << EscapeForHtmlToString(tablet_id)
+          << " (" << RaftPeerPB::Role_Name(role) << ")</h1>\n";
+  *output << "<h3>Table " << EscapeForHtmlToString(table_name) << "</h3>";
 
   // Output schema in tabular format.
   *output << "<h2>Schema</h2>\n";
