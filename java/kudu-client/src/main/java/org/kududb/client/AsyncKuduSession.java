@@ -400,7 +400,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @return the operation responses
    */
   private Deferred<List<OperationResponse>> doFlush(Buffer buffer) {
-    LOG.info("flushing buffer: {}", buffer);
+    LOG.debug("flushing buffer: {}", buffer);
     if (buffer.getOperations().isEmpty()) {
       // no-op.
       return Deferred.<List<OperationResponse>>fromResult(ImmutableList.<OperationResponse>of());
@@ -548,7 +548,6 @@ public class AsyncKuduSession implements SessionConfiguration {
 
           if (activeBufferSize + 1 >= mutationBufferSpace && inactiveBufferAvailable()) {
             // If the operation filled the buffer, then flush it.
-            LOG.debug("flushing full buffer: {}", activeBuffer);
             fullBuffer = activeBuffer;
             activeBuffer = null;
           } else if (activeBufferSize == 0) {
@@ -585,7 +584,6 @@ public class AsyncKuduSession implements SessionConfiguration {
     Preconditions.checkState(activeBuffer == null);
     activeBuffer = inactiveBuffers.remove();
     activeBuffer.reset();
-    LOG.trace("active buffer refreshed: {}", activeBuffer);
   }
 
   /**
@@ -734,7 +732,7 @@ public class AsyncKuduSession implements SessionConfiguration {
      * successfully flushed.
      */
     public void callbackFlushNotification() {
-      LOG.debug("callbackFlushNotification on {}", flushNotification);
+      LOG.trace("buffer flush notification fired: {}", this);
       flushNotification.callback(null);
     }
 
@@ -744,6 +742,7 @@ public class AsyncKuduSession implements SessionConfiguration {
      */
     @GuardedBy("monitor")
     public void reset() {
+      LOG.trace("buffer reset: {}", this);
       operations.clear();
       flushNotification = new Deferred<>();
       flusherTask = null;
