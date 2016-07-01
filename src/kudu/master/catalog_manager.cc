@@ -339,31 +339,32 @@ void CatalogManagerBgTasks::Shutdown() {
 
 void CatalogManagerBgTasks::Run() {
   while (!NoBarrier_Load(&closing_)) {
-    // Perform assignment processing.
-    if (!catalog_manager_->IsInitialized()) {
-      LOG(WARNING) << "Catalog manager is not initialized!";
-    } else if (catalog_manager_->CheckIsLeaderAndReady().ok()) {
-      std::vector<scoped_refptr<TabletInfo>> to_process;
+    {
+      CatalogManager::ScopedLeaderSharedLock l(catalog_manager_);
+      if (!l.catalog_status().ok()) {
+        LOG(WARNING) << "Catalog manager background task thread going to sleep: "
+                     << l.catalog_status().ToString();
+      } else if (l.leader_status().ok()) {
+        std::vector<scoped_refptr<TabletInfo>> to_process;
 
-      // Get list of tablets not yet running.
-      catalog_manager_->ExtractTabletsToProcess(&to_process);
+        // Get list of tablets not yet running.
+        catalog_manager_->ExtractTabletsToProcess(&to_process);
 
-      if (!to_process.empty()) {
-        // Transition tablet assignment state from preparing to creating, send
-        // and schedule creation / deletion RPC messages, etc.
-        Status s = catalog_manager_->ProcessPendingAssignments(to_process);
-        if (!s.ok()) {
-          // If there is an error (e.g., we are not the leader) abort this task
-          // and wait until we're woken up again.
-          //
-          // TODO Add tests for this in the revision that makes
-          // create/alter fault tolerant.
-          LOG(ERROR) << "Error processing pending assignments, aborting the current task: "
-                     << s.ToString();
+        if (!to_process.empty()) {
+          // Transition tablet assignment state from preparing to creating, send
+          // and schedule creation / deletion RPC messages, etc.
+          Status s = catalog_manager_->ProcessPendingAssignments(to_process);
+          if (!s.ok()) {
+            // If there is an error (e.g., we are not the leader) abort this task
+            // and wait until we're woken up again.
+            //
+            // TODO Add tests for this in the revision that makes
+            // create/alter fault tolerant.
+            LOG(ERROR) << "Error processing pending assignments, aborting the current task: "
+                       << s.ToString();
+          }
         }
       }
-    } else {
-      VLOG(1) << "We are no longer the leader, aborting the current task...";
     }
 
     // Wait for a notification or a timeout expiration.
@@ -530,7 +531,8 @@ CatalogManager::CatalogManager(Master *master)
   : master_(master),
     rng_(GetRandomSeed32()),
     state_(kConstructed),
-    leader_ready_term_(-1) {
+    leader_ready_term_(-1),
+    leader_lock_(RWMutex::Priority::PREFER_WRITING) {
   CHECK_OK(ThreadPoolBuilder("leader-initialization")
            // Presently, this thread pool must contain only a single thread
            // (to correctly serialize invocations of ElectedAsLeaderCb upon
@@ -640,7 +642,19 @@ void CatalogManager::VisitTablesAndTabletsTask() {
 }
 
 Status CatalogManager::VisitTablesAndTablets() {
+  // Block new catalog operations, and wait for existing operations to finish.
+  std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+
+  // This lock is held for the entirety of the function because the calls to
+  // VisitTables and VisitTablets mutate global maps.
   std::lock_guard<LockType> lock(lock_);
+
+  // Abort any outstanding tasks. All TableInfos are orphaned below, so
+  // it's important to end their tasks now; otherwise Shutdown() will
+  // destroy master state used by these tasks.
+  vector<scoped_refptr<TableInfo>> tables;
+  AppendValuesFromMap(table_ids_map_, &tables);
+  AbortAndWaitForAllTasks(tables);
 
   // Clear the existing state.
   table_names_map_.clear();
@@ -676,26 +690,6 @@ bool CatalogManager::IsInitialized() const {
   return state_ == kRunning;
 }
 
-Status CatalogManager::CheckIsLeaderAndReady() const {
-  std::lock_guard<simple_spinlock> l(state_lock_);
-  if (PREDICT_FALSE(state_ != kRunning)) {
-    return Status::ServiceUnavailable(
-        Substitute("Catalog manager is shutting down. State: $0", state_));
-  }
-  Consensus* consensus = sys_catalog_->tablet_peer_->consensus();
-  ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
-  string uuid = master_->fs_manager()->uuid();
-  if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
-    return Status::IllegalState(
-        Substitute("Not the leader. Local UUID: $0, Consensus state: $1",
-                   uuid, cstate.ShortDebugString()));
-  }
-  if (PREDICT_FALSE(leader_ready_term_ != cstate.current_term())) {
-    return Status::ServiceUnavailable("Leader not yet ready to serve requests");
-  }
-  return Status::OK();
-}
-
 RaftPeerPB::Role CatalogManager::Role() const {
   CHECK(IsInitialized());
   return sys_catalog_->tablet_peer_->consensus()->role();
@@ -720,17 +714,14 @@ void CatalogManager::Shutdown() {
   //
   // There may be an outstanding table visitor thread modifying the table map,
   // so we must make a copy of it before we iterate. It's OK if the visitor
-  // adds more entries to the map even after we finish, but it may not start
-  // any new tasks for those entries.
-  TableInfoMap copy;
+  // adds more entries to the map even after we finish; it won't start any new
+  // tasks for those entries.
+  vector<scoped_refptr<TableInfo>> copy;
   {
     shared_lock<LockType> l(lock_);
-    copy = table_ids_map_;
+    AppendValuesFromMap(table_ids_map_, &copy);
   }
-  for (const TableInfoMap::value_type &e : copy) {
-    e.second->AbortTasks();
-    e.second->WaitTasksCompletion();
-  }
+  AbortAndWaitForAllTasks(copy);
 
   // Wait for any outstanding table visitors to finish.
   //
@@ -1508,9 +1499,6 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     shared_lock<LockType> l(lock_);
     tablet = FindPtrOrNull(tablet_map_, report.tablet_id());
   }
-  RETURN_NOT_OK_PREPEND(CheckIsLeaderAndReady(),
-      Substitute("This master is no longer the leader, unable to handle report for tablet $0",
-                 report.tablet_id()));
   if (!tablet) {
     LOG(INFO) << "Got report from unknown tablet " << report.tablet_id()
               << ": Sending delete request for this orphan tablet";
@@ -2101,7 +2089,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
                      const string& permanent_uuid,
                      const scoped_refptr<TabletInfo>& tablet,
                      const TabletMetadataLock& tablet_lock)
-    : RetrySpecificTSRpcTask(master, permanent_uuid, tablet->table().get()),
+    : RetrySpecificTSRpcTask(master, permanent_uuid, tablet->table()),
       tablet_id_(tablet->tablet_id()) {
     deadline_ = start_ts_;
     deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_tablet_creation_timeout_ms));
@@ -2261,7 +2249,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
                   const scoped_refptr<TabletInfo>& tablet)
     : RetryingTSRpcTask(master,
                         gscoped_ptr<TSPicker>(new PickLeaderReplica(tablet)),
-                        tablet->table().get()),
+                        tablet->table()),
       tablet_(tablet) {
   }
 
@@ -3138,6 +3126,108 @@ std::string CatalogManager::LogPrefix() const {
                     sys_catalog_->tablet_peer()->permanent_uuid());
 }
 
+void CatalogManager::AbortAndWaitForAllTasks(
+    const vector<scoped_refptr<TableInfo>>& tables) {
+  for (const auto& t : tables) {
+    t->AbortTasks();
+  }
+  for (const auto& t : tables) {
+    t->WaitTasksCompletion();
+  }
+}
+
+////////////////////////////////////////////////////////////
+// CatalogManager::ScopedLeaderSharedLock
+////////////////////////////////////////////////////////////
+
+CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
+    CatalogManager* catalog)
+    : catalog_(DCHECK_NOTNULL(catalog)),
+      leader_shared_lock_(catalog->leader_lock_, std::try_to_lock) {
+
+  // Check if the catalog manager is running.
+  std::lock_guard<simple_spinlock> l(catalog_->state_lock_);
+  if (PREDICT_FALSE(catalog_->state_ != kRunning)) {
+    catalog_status_ = Status::ServiceUnavailable(
+        Substitute("Catalog manager is not initialized. State: $0",
+                   catalog_->state_));
+    return;
+  }
+
+  // Check if the catalog manager is the leader.
+  Consensus* consensus = catalog_->sys_catalog_->tablet_peer_->consensus();
+  ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
+  string uuid = catalog_->master_->fs_manager()->uuid();
+  if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
+    leader_status_ = Status::IllegalState(
+        Substitute("Not the leader. Local UUID: $0, Consensus state: $1",
+                   uuid, cstate.ShortDebugString()));
+    return;
+  }
+  if (PREDICT_FALSE(catalog_->leader_ready_term_ != cstate.current_term() ||
+                    !leader_shared_lock_.owns_lock())) {
+    leader_status_ = Status::ServiceUnavailable(
+        "Leader not yet ready to serve requests");
+    return;
+  }
+}
+
+template<typename RespClass>
+bool CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedOrRespond(
+    RespClass* resp, RpcContext* rpc) {
+  if (PREDICT_FALSE(!catalog_status_.ok())) {
+    StatusToPB(catalog_status_, resp->mutable_error()->mutable_status());
+    resp->mutable_error()->set_code(
+        MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED);
+    rpc->RespondSuccess();
+    return false;
+  }
+  return true;
+}
+
+template<typename RespClass>
+bool CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedAndIsLeaderOrRespond(
+    RespClass* resp, RpcContext* rpc) {
+  Status& s = catalog_status_;
+  if (PREDICT_TRUE(s.ok())) {
+    s = leader_status_;
+  }
+  if (PREDICT_TRUE(s.ok())) {
+    return true;
+  }
+
+  StatusToPB(s, resp->mutable_error()->mutable_status());
+  resp->mutable_error()->set_code(MasterErrorPB::NOT_THE_LEADER);
+  rpc->RespondSuccess();
+  return false;
+}
+
+// Explicit specialization for callers outside this compilation unit.
+#define INITTED_OR_RESPOND(RespClass) \
+  template bool \
+  CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedOrRespond( \
+      RespClass* resp, RpcContext* rpc)
+#define INITTED_AND_LEADER_OR_RESPOND(RespClass) \
+  template bool \
+  CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedAndIsLeaderOrRespond( \
+      RespClass* resp, RpcContext* rpc)
+
+INITTED_OR_RESPOND(GetMasterRegistrationResponsePB);
+INITTED_OR_RESPOND(TSHeartbeatResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(AlterTableResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(CreateTableResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(DeleteTableResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(IsAlterTableDoneResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(IsCreateTableDoneResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(ListTablesResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(ListTabletServersResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(GetTableLocationsResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(GetTableSchemaResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(GetTabletLocationsResponsePB);
+
+#undef INITTED_OR_RESPOND
+#undef INITTED_AND_LEADER_OR_RESPOND
+
 ////////////////////////////////////////////////////////////
 // TabletInfo
 ////////////////////////////////////////////////////////////
@@ -3282,14 +3372,21 @@ bool TableInfo::IsCreateInProgress() const {
 }
 
 void TableInfo::AddTask(MonitoredTask* task) {
-  std::lock_guard<simple_spinlock> l(lock_);
   task->AddRef();
-  pending_tasks_.insert(task);
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    pending_tasks_.insert(task);
+  }
 }
 
 void TableInfo::RemoveTask(MonitoredTask* task) {
-  std::lock_guard<simple_spinlock> l(lock_);
-  pending_tasks_.erase(task);
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    pending_tasks_.erase(task);
+  }
+
+  // Done outside the lock so that if Release() drops the last ref to this
+  // TableInfo, RemoveTask() won't unlock a freed lock.
   task->Release();
 }
 

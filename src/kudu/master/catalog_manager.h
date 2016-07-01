@@ -38,12 +38,14 @@
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/random.h"
+#include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class Schema;
 class ThreadPool;
+class CreateTableStressTest_TestConcurrentCreateTableAndReloadMetadata_Test;
 
 namespace rpc {
 class RpcContext;
@@ -268,6 +270,73 @@ typedef MetadataLock<TableInfo> TableMetadataLock;
 // Thread-safe.
 class CatalogManager : public tserver::TabletPeerLookupIf {
  public:
+
+  // Scoped "shared lock" to serialize master leader elections.
+  //
+  // While in scope, blocks the catalog manager in the event that it becomes
+  // the leader of its Raft configuration and needs to reload its persistent
+  // metadata. Once destroyed, the catalog manager is unblocked.
+  //
+  // Usage:
+  //
+  // void MasterServiceImpl::CreateTable(const CreateTableRequestPB* req,
+  //                                     CreateTableResponsePB* resp,
+  //                                     rpc::RpcContext* rpc) {
+  //   CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
+  //   if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
+  //     return;
+  //   }
+  //
+  //   Status s = server_->catalog_manager()->CreateTable(req, resp, rpc);
+  //   CheckRespErrorOrSetUnknown(s, resp);
+  //   rpc->RespondSuccess();
+  // }
+  //
+  class ScopedLeaderSharedLock {
+   public:
+    // Creates a new shared lock, acquiring the catalog manager's leader_lock_
+    // for reading in the process. The lock is released when this object is
+    // destroyed.
+    //
+    // 'catalog' must outlive this object.
+    explicit ScopedLeaderSharedLock(CatalogManager* catalog);
+
+    // General status of the catalog manager. If not OK (e.g. the catalog
+    // manager is still being initialized), all operations are illegal and
+    // leader_status() should not be trusted.
+    const Status& catalog_status() const { return catalog_status_; }
+
+    // Leadership status of the catalog manager. If not OK, the catalog
+    // manager is not the leader, but some operations may still be legal.
+    const Status& leader_status() const {
+      DCHECK(catalog_status_.ok());
+      return leader_status_;
+    }
+
+    // Check that the catalog manager is initialized. It may or may not be the
+    // leader of its Raft configuration.
+    //
+    // If not initialized, writes the corresponding error to 'resp',
+    // responds to 'rpc', and returns false.
+    template<typename RespClass>
+    bool CheckIsInitializedOrRespond(RespClass* resp, rpc::RpcContext* rpc);
+
+    // Check that the catalog manager is initialized and that it is the leader
+    // of its Raft configuration. Initialization status takes precedence over
+    // leadership status.
+    //
+    // If not initialized or if not the leader, writes the corresponding error
+    // to 'resp', responds to 'rpc', and returns false.
+    template<typename RespClass>
+    bool CheckIsInitializedAndIsLeaderOrRespond(RespClass* resp, rpc::RpcContext* rpc);
+
+   private:
+    CatalogManager* catalog_;
+    shared_lock<RWMutex> leader_shared_lock_;
+    Status catalog_status_;
+    Status leader_status_;
+  };
+
   explicit CatalogManager(Master *master);
   virtual ~CatalogManager();
 
@@ -381,12 +450,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
       const consensus::StartRemoteBootstrapRequestPB& req,
       boost::optional<kudu::tserver::TabletServerErrorPB::Code>* error_code) OVERRIDE;
 
-  // Return OK if this CatalogManager is a leader in a consensus configuration and if
-  // the required leader state (metadata for tables and tablets) has
-  // been successfully loaded into memory. CatalogManager must be
-  // initialized before calling this method.
-  Status CheckIsLeaderAndReady() const;
-
   // Returns this CatalogManager's role in a consensus configuration. CatalogManager
   // must be initialized before calling this method.
   consensus::RaftPeerPB::Role Role() const;
@@ -396,8 +459,14 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   FRIEND_TEST(MasterTest, TestShutdownDuringTableVisit);
   FRIEND_TEST(MasterTest, TestGetTableLocationsDuringRepeatedTableVisit);
 
+  // This test calls VisitTablesAndTablets() directly.
+  FRIEND_TEST(kudu::CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata);
+
   friend class TableLoader;
   friend class TabletLoader;
+
+  typedef std::unordered_map<std::string, scoped_refptr<TableInfo>> TableInfoMap;
+  typedef std::unordered_map<std::string, scoped_refptr<TabletInfo>> TabletInfoMap;
 
   // Called by SysCatalog::SysCatalogStateChanged when this node
   // becomes the leader of a consensus configuration. Executes VisitTablesAndTabletsTask
@@ -567,6 +636,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // Conventional "T xxx P yyy: " prefix for logging.
   std::string LogPrefix() const;
 
+  // Aborts all tasks belonging to 'tables' and waits for them to finish.
+  void AbortAndWaitForAllTasks(const std::vector<scoped_refptr<TableInfo>>& tables);
+
   // TODO: the maps are a little wasteful of RAM, since the TableInfo/TabletInfo
   // objects have a copy of the string key. But STL doesn't make it
   // easy to make a "gettable set".
@@ -576,12 +648,10 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   mutable LockType lock_;
 
   // Table maps: table-id -> TableInfo and table-name -> TableInfo
-  typedef std::unordered_map<std::string, scoped_refptr<TableInfo> > TableInfoMap;
   TableInfoMap table_ids_map_;
   TableInfoMap table_names_map_;
 
   // Tablet maps: tablet-id -> TabletInfo
-  typedef std::unordered_map<std::string, scoped_refptr<TabletInfo> > TabletInfoMap;
   TabletInfoMap tablet_map_;
 
   // Names of tables that are currently being created. Only used in
@@ -623,6 +693,17 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // that depend on the in-memory state until this master can respond
   // correctly.
   int64_t leader_ready_term_;
+
+  // Lock used to fence operations and leader elections. All logical operations
+  // (i.e. create table, alter table, etc.) should acquire this lock for
+  // reading. Following an election where this master is elected leader, it
+  // should acquire this lock for writing before reloading the metadata.
+  //
+  // Readers should not acquire this lock directly; use ScopedLeadershipLock
+  // instead.
+  //
+  // Always acquire this lock before state_lock_.
+  RWMutex leader_lock_;
 
   // Async operations are accessing some private methods
   // (TODO: this stuff should be deferred and done in the background thread)

@@ -40,6 +40,7 @@ namespace kudu {
 
 using client::KuduClient;
 using client::KuduClientBuilder;
+using master::CatalogManager;
 using master::MiniMaster;
 using master::TabletLocationsPB;
 using master::TSDescriptor;
@@ -187,8 +188,9 @@ MiniMaster* MiniCluster::leader_mini_master() {
       if (master->master()->IsShutdown()) {
         continue;
       }
-      if (master->master()->catalog_manager()->IsInitialized() &&
-          master->master()->catalog_manager()->CheckIsLeaderAndReady().ok()) {
+      CatalogManager::ScopedLeaderSharedLock l(
+          master->master()->catalog_manager());
+      if (l.catalog_status().ok() && l.leader_status().ok()) {
         return master;
       }
     }

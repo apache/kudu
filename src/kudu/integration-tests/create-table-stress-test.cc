@@ -18,11 +18,13 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <thread>
 
 #include "kudu/client/client.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/master.proxy.h"
@@ -49,8 +51,11 @@ using kudu::rpc::RpcController;
 
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(log_preallocate_segments);
-DECLARE_bool(enable_remote_bootstrap);
 DEFINE_int32(num_test_tablets, 60, "Number of tablets for stress test");
+
+using std::thread;
+using std::unique_ptr;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -77,10 +82,6 @@ class CreateTableStressTest : public KuduTest {
     // TODO: once we collapse multiple tablets into shared WAL files,
     // this won't be necessary.
     FLAGS_log_preallocate_segments = false;
-
-    // Workaround KUDU-941: without this, it's likely that while shutting
-    // down tablets, they'll get resuscitated by their existing leaders.
-    FLAGS_enable_remote_bootstrap = false;
 
     KuduTest::SetUp();
     MiniClusterOptions opts;
@@ -110,10 +111,10 @@ class CreateTableStressTest : public KuduTest {
 
  protected:
   client::sp::shared_ptr<KuduClient> client_;
-  gscoped_ptr<MiniCluster> cluster_;
+  unique_ptr<MiniCluster> cluster_;
   KuduSchema schema_;
   std::shared_ptr<Messenger> messenger_;
-  gscoped_ptr<MasterServiceProxy> master_proxy_;
+  unique_ptr<MasterServiceProxy> master_proxy_;
   TabletServerMap ts_map_;
 };
 
@@ -127,7 +128,7 @@ void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tab
     split_rows.push_back(row);
   }
 
-  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(table_name)
             .schema(&schema_)
             .set_range_partition_columns({ "key" })
@@ -296,7 +297,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
 
   // Get a single tablet in the middle, make sure we get that one back
 
-  gscoped_ptr<KuduPartialRow> row(schema_.NewRow());
+  unique_ptr<KuduPartialRow> row(schema_.NewRow());
   ASSERT_OK(row->SetInt32(0, half_tablets - 1));
   string start_key_middle;
   ASSERT_OK(row->EncodeRowKey(&start_key_middle));
@@ -313,6 +314,46 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     ASSERT_EQ(1, resp.tablet_locations_size()) << "Response: [" << resp.DebugString() << "]";
     ASSERT_EQ(start_key_middle, resp.tablet_locations(0).partition().partition_key_start());
   }
+}
+
+// Creates tables and reloads on-disk metadata concurrently to test for races
+// between the two operations.
+TEST_F(CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata) {
+  AtomicBool stop(false);
+
+  thread reload_metadata_thread([&]() {
+    while (!stop.Load()) {
+      CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->VisitTablesAndTablets());
+
+      // Give table creation a chance to run.
+      SleepFor(MonoDelta::FromMilliseconds(1));
+    }
+  });
+  for (int num_tables_created = 0; num_tables_created < 20;) {
+    string table_name = Substitute("test-$0", num_tables_created);
+    LOG(INFO) << "Creating table " << table_name;
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    Status s = table_creator->table_name(table_name)
+                  .schema(&schema_)
+                  .set_range_partition_columns({ "key" })
+                  .num_replicas(3)
+                  .wait(false)
+                  .Create();
+    if (s.IsServiceUnavailable()) {
+      // The master was busy reloading its metadata. Try again.
+      //
+      // This is a purely synthetic case. In real life, it only manifests at
+      // startup (single master) or during leader failover (multiple masters).
+      // In the latter case, the client will transparently retry to another
+      // master. That won't happen here as we've only got one master, so we
+      // must handle retrying ourselves.
+      continue;
+    }
+    ASSERT_OK(s);
+    num_tables_created++;
+  }
+  stop.Store(true);
+  reload_metadata_thread.join();
 }
 
 } // namespace kudu
