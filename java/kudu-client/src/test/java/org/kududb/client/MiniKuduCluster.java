@@ -64,6 +64,7 @@ public class MiniKuduCluster implements AutoCloseable {
 
   private final List<String> pathsToDelete = new ArrayList<>();
   private final List<HostAndPort> masterHostPorts = new ArrayList<>();
+  private List<Integer> tserverPorts = new ArrayList<>();
 
   // Client we can use for common operations.
   private final KuduClient syncClient;
@@ -118,6 +119,7 @@ public class MiniKuduCluster implements AutoCloseable {
     List<Integer> ports = TestUtils.findFreePorts(startPort, numTservers * 2);
     for (int i = 0; i < numTservers; i++) {
       int rpcPort = ports.get(i * 2);
+      tserverPorts.add(rpcPort);
       String dataDirPath = baseDirPath + "/ts-" + i + "-" + now;
       String flagsPath = TestUtils.getFlagsPath();
       String[] tsCmdLine = {
@@ -293,6 +295,28 @@ public class MiniKuduCluster implements AutoCloseable {
     LOG.info("Killing server at port " + port);
     ts.destroy();
     ts.waitFor();
+  }
+
+  /**
+   * Kills all tablet servers.
+   * @throws InterruptedException
+   */
+  public void killTabletServers() throws InterruptedException {
+    for (Process tserver : tserverProcesses.values()) {
+      tserver.destroy();
+      tserver.waitFor();
+    }
+    tserverProcesses.clear();
+  }
+
+  /**
+   * Restarts the dead tablet servers on the port.
+   * @throws Exception
+   */
+  public void restartDeadTabletServers() throws Exception {
+    for (int port : tserverPorts) {
+      restartDeadTabletServerOnPort(port);
+    }
   }
 
   /**

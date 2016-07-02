@@ -23,6 +23,7 @@ import org.kududb.tserver.Tserver.TabletServerErrorPB;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import com.stumbleupon.async.DeferredGroupException;
 import com.stumbleupon.async.TimeoutException;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -145,6 +146,28 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       }
     } finally {
       table = createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+    }
+  }
+
+  /** Regression test for a failure to correctly handle a timeout when flushing a batch. */
+  @Test
+  public void testInsertIntoUnavailableTablet() throws Exception {
+    killTabletServers();
+    try {
+      AsyncKuduSession session = client.newSession();
+      session.setTimeoutMillis(1);
+      session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+      Insert insert = createInsert(1);
+      session.apply(insert);
+      try {
+        session.flush().join();
+        fail("expected exception");
+      } catch (DeferredGroupException e) {
+        assertEquals(1, e.results().size());
+        assertTrue(e.results().get(0).toString().contains("timeout"));
+      }
+    } finally {
+      restartTabletServers();
     }
   }
 

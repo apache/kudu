@@ -639,14 +639,14 @@ public class AsyncKuduSession implements SessionConfiguration {
       }
     }
 
-    final class BatchErrCallback implements Callback<Void, Exception> {
+    final class BatchErrCallback implements Callback<Exception, Exception> {
       @Override
-      public Void call(Exception e) throws Exception {
+      public Exception call(Exception e) {
         // Send the same exception to all the operations.
         for (Operation operation : request.operations) {
           operation.errback(e);
         }
-        return null;
+        return e;
       }
       @Override
       public String toString() {

@@ -388,4 +388,20 @@ public class BaseKuduTest {
   protected static String getMasterAddresses() {
     return masterAddresses;
   }
+
+  /**
+   * Kills all tablet servers in the cluster.
+   * @throws InterruptedException
+   */
+  protected void killTabletServers() throws InterruptedException {
+    miniCluster.killTabletServers();
+  }
+
+  /**
+   * Restarts killed tablet servers in the cluster.
+   * @throws Exception
+   */
+  protected void restartTabletServers() throws Exception {
+    miniCluster.restartDeadTabletServers();
+  }
 }
