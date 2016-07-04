@@ -64,6 +64,7 @@ ADD_KUDU_TEST(tablet_replacement-itest)
 ADD_KUDU_TEST(create-table-itest)
 ADD_KUDU_TEST(fuzz-itest)
 ADD_KUDU_TEST(write_throttling-itest)
+ADD_KUDU_TEST(exactly_once_writes-itest)
 
 # Some tests have additional dependencies
 set(KUDU_TEST_LINK_LIBS kudu_client kudu_tools_util ${KUDU_TEST_LINK_LIBS})

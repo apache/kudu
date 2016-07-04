@@ -241,8 +241,11 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
         bool overflow;
         session->GetPendingErrors(&errors, &overflow);
         CHECK(!overflow);
-        for (const client::KuduError* e : errors) {
-          CHECK(e->status().IsAlreadyPresent()) << "Unexpected error: " << e->status().ToString();
+        if (!errors.empty()) {
+          for (const client::KuduError* e : errors) {
+            LOG(ERROR) << "Unexpected error: " << e->status().ToString();
+          }
+          FAIL() << "Found errors while inserting.";
         }
         inserted -= errors.size();
       }
@@ -341,14 +344,6 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // Writes 'num_writes' operations to the current leader. Each of the operations
   // has a payload of around 128KB. Causes a gtest failure on error.
   void Write128KOpsToLeader(int num_writes);
-
-  // Check for and restart any TS that have crashed.
-  // Returns the number of servers restarted.
-  int RestartAnyCrashedTabletServers();
-
-  // Assert that no tablet servers have crashed.
-  // Tablet servers that have been manually Shutdown() are allowed.
-  void AssertNoTabletServersCrashed();
 
   // Ensure that a majority of servers is required for elections and writes.
   // This is done by pausing a majority and asserting that writes and elections fail,
@@ -786,28 +781,6 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
                                     MonoDelta::FromSeconds(10), &op_id));
     ASSERT_EQ(orig_term, op_id.term())
       << "expected the leader to have not advanced terms but has op " << op_id;
-  }
-}
-
-int RaftConsensusITest::RestartAnyCrashedTabletServers() {
-  int restarted = 0;
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    if (!cluster_->tablet_server(i)->IsProcessAlive()) {
-      LOG(INFO) << "TS " << i << " appears to have crashed. Restarting.";
-      cluster_->tablet_server(i)->Shutdown();
-      CHECK_OK(cluster_->tablet_server(i)->Restart());
-      restarted++;
-    }
-  }
-  return restarted;
-}
-
-void RaftConsensusITest::AssertNoTabletServersCrashed() {
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    if (cluster_->tablet_server(i)->IsShutdown()) continue;
-
-    ASSERT_TRUE(cluster_->tablet_server(i)->IsProcessAlive())
-      << "Tablet server " << i << " crashed";
   }
 }
 

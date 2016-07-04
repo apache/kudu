@@ -473,6 +473,32 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     NO_FATALS(v.CheckRowCount(kTableId, ClusterVerifier::EXACTLY, expected_result_count));
   }
 
+  // Check for and restart any TS that have crashed.
+  // Returns the number of servers restarted.
+  int RestartAnyCrashedTabletServers() {
+    int restarted = 0;
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      if (!cluster_->tablet_server(i)->IsProcessAlive()) {
+        LOG(INFO) << "TS " << i << " appears to have crashed. Restarting.";
+        cluster_->tablet_server(i)->Shutdown();
+        CHECK_OK(cluster_->tablet_server(i)->Restart());
+        restarted++;
+      }
+    }
+    return restarted;
+  }
+
+  // Assert that no tablet servers have crashed.
+  // Tablet servers that have been manually Shutdown() are allowed.
+  void AssertNoTabletServersCrashed() {
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      if (cluster_->tablet_server(i)->IsShutdown()) continue;
+
+      ASSERT_TRUE(cluster_->tablet_server(i)->IsProcessAlive())
+                    << "Tablet server " << i << " crashed";
+    }
+  }
+
  protected:
   gscoped_ptr<ExternalMiniCluster> cluster_;
   gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;

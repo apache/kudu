@@ -53,6 +53,11 @@ DECLARE_int32(raft_heartbeat_interval_ms);
 DEFINE_double(fault_crash_on_leader_request_fraction, 0.0,
               "Fraction of the time when the leader will crash just before sending an "
               "UpdateConsensus RPC. (For testing only!)");
+
+DEFINE_double(fault_crash_after_leader_request_fraction, 0.0,
+              "Fraction of the time when the leader will crash on getting a response for an "
+              "UpdateConsensus RPC. (For testing only!)");
+
 TAG_FLAG(fault_crash_on_leader_request_fraction, unsafe);
 
 
@@ -228,6 +233,8 @@ void Peer::ProcessResponse() {
 
   DCHECK_EQ(0, sem_.GetValue())
     << "Got a response when nothing was pending";
+
+  MAYBE_FAULT(FLAGS_fault_crash_after_leader_request_fraction);
 
   if (!controller_.status().ok()) {
     if (controller_.status().IsRemoteError()) {

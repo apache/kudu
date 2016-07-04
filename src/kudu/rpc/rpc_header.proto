@@ -127,7 +127,7 @@ message RequestIdPB {
 
   // The number of times this RPC has been tried.
   // Set to 1 in the first attempt.
-  required int32 attempt_no = 4;
+  required int64 attempt_no = 4;
 }
 
 // The header for the RPC request frame.
