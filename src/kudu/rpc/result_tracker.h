@@ -220,6 +220,8 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
                       int error_ext_id, const std::string& message,
                       const google::protobuf::Message& app_error_pb);
 
+  string ToString();
+
  private:
   // Information about client originated ongoing RPCs.
   // The lifecycle of 'response' and 'context' is managed by the RPC layer.
@@ -227,6 +229,8 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
     google::protobuf::Message* response;
     RpcContext* context;
     int64_t handler_attempt_no;
+
+    std::string ToString() const;
   };
   // A completion record for an IN_PROGRESS or COMPLETED RPC.
   struct CompletionRecord {
@@ -238,11 +242,14 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
     std::unique_ptr<google::protobuf::Message> response;
     // The set of ongoing RPCs that correspond to this record.
     std::vector<OnGoingRpcInfo> ongoing_rpcs;
+
+    std::string ToString() const;
   };
   // The state corresponding to a single client.
   struct ClientState {
     MonoTime last_heard_from;
     std::map<SequenceNumber, std::unique_ptr<CompletionRecord>> completion_records;
+    std::string ToString() const;
   };
 
   RpcState TrackRpcUnlocked(const RequestIdPB& request_id,
@@ -281,7 +288,11 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
   void LogAndTraceFailure(RpcContext* context, ErrorStatusPB_RpcErrorCodePB err,
                           const Status& status);
 
-  // Lock that protects access to 'clients_' and to the state contained in each ClientState.
+  std::string ToStringUnlocked() const;
+
+
+  // Lock that protects access to 'clients_' and to the state contained in each
+  // ClientState.
   // TODO consider a per-ClientState lock if we find this too coarse grained.
   simple_spinlock lock_;
   std::map<std::string, std::unique_ptr<ClientState>> clients_;

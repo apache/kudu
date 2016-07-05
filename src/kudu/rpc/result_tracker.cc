@@ -18,6 +18,7 @@
 #include "kudu/rpc/result_tracker.h"
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/util/debug/trace_event.h"
@@ -33,6 +34,8 @@ using std::move;
 using std::lock_guard;
 using std::string;
 using std::unique_ptr;
+using strings::Substitute;
+using strings::SubstituteAndAppend;
 
 ResultTracker::RpcState ResultTracker::TrackRpc(const RequestIdPB& request_id,
                                                 Message* response,
@@ -186,16 +189,16 @@ ResultTracker::FindCompletionRecordOrNullUnlocked(const RequestIdPB& request_id)
   return FindClientStateAndCompletionRecordOrNullUnlocked(request_id).second;
 }
 
-void ResultTracker::RecordCompletionAndRespond(
-    const RequestIdPB& request_id,
-    const Message* response) {
+void ResultTracker::RecordCompletionAndRespond(const RequestIdPB& request_id,
+                                               const Message* response) {
   lock_guard<simple_spinlock> l(lock_);
 
   CompletionRecord* completion_record = FindCompletionRecordOrDieUnlocked(request_id);
 
   CHECK_EQ(completion_record->driver_attempt_no, request_id.attempt_no())
     << "Called RecordCompletionAndRespond() from an executor identified with an attempt number that"
-    << " was not marked as the driver for the RPC.";
+    << " was not marked as the driver for the RPC. RequestId: " << request_id.ShortDebugString()
+    << "\nTracker state:\n " << ToStringUnlocked();
   DCHECK_EQ(completion_record->state, RpcState::IN_PROGRESS);
   completion_record->response.reset(DCHECK_NOTNULL(response)->New());
   completion_record->response->CopyFrom(*response);
@@ -230,6 +233,12 @@ void ResultTracker::FailAndRespondInternal(const RequestIdPB& request_id,
                                            HandleOngoingRpcFunc func) {
   lock_guard<simple_spinlock> l(lock_);
   auto state_and_record = FindClientStateAndCompletionRecordOrNullUnlocked(request_id);
+
+  if (PREDICT_FALSE(state_and_record.first == nullptr)) {
+    LOG(FATAL) << "Couldn't find ClientState for request: " << request_id.ShortDebugString()
+        << ". \nTracker state:\n" << ToStringUnlocked();
+  }
+
   CompletionRecord* completion_record = state_and_record.second;
 
   if (completion_record == nullptr) {
@@ -298,6 +307,50 @@ void ResultTracker::FailAndRespond(const RequestIdPB& request_id,
     ongoing_rpc.context->call_->RespondApplicationError(error_ext_id, message, app_error_pb);
   };
   FailAndRespondInternal(request_id, func);
+}
+
+string ResultTracker::ToString() {
+  lock_guard<simple_spinlock> l(lock_);
+  return ToStringUnlocked();
+}
+
+string ResultTracker::ToStringUnlocked() const {
+  string result = Substitute("ResultTracker[this: $0, Num. Client States: $1, Client States:\n",
+                             this, clients_.size());
+  for (auto& cs : clients_) {
+    SubstituteAndAppend(&result, Substitute("\n\tClient: $0, $1", cs.first, cs.second->ToString()));
+  }
+  result.append("]");
+  return result;
+}
+
+string ResultTracker::ClientState::ToString() const {
+  string result = Substitute("Client State[Last heard from: $1, Num. Completion "
+                                 "Records: $2, CompletionRecords:\n", completion_records.size(),
+                             last_heard_from.ToString());
+  for (auto& completion_record : completion_records) {
+    SubstituteAndAppend(&result, Substitute("\n\tCompletion Record: $0, $1",
+                                            completion_record.first,
+                                            completion_record.second->ToString()));
+  }
+  result.append("\t]");
+  return result;
+}
+
+string ResultTracker::CompletionRecord::ToString() const {
+  string result = Substitute("Completion Record[State: $0, Driver: $1, Num. Ongoing RPCs: $2, "
+                                 "Cached response: $3, OngoingRpcs:", state, driver_attempt_no,
+                             ongoing_rpcs.size(), response ? response->ShortDebugString() : "None");
+  for (auto& orpc : ongoing_rpcs) {
+    SubstituteAndAppend(&result, Substitute("\n\t$0", orpc.ToString()));
+  }
+  result.append("\t\t]");
+  return result;
+}
+
+string ResultTracker::OnGoingRpcInfo::ToString() const {
+  return Substitute("OngoingRpc[Handler: $0, Context: $1, Response: $2]",
+                    handler_attempt_no, context, response ? response->ShortDebugString() : "NULL");
 }
 
 } // namespace rpc
