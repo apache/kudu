@@ -112,6 +112,10 @@ Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
     ->SetSchemaForNextLogSegment(*DCHECK_NOTNULL(state_->schema()),
                                                  state_->schema_version());
 
+  // Altered tablets should be included in the next tserver heartbeat so that
+  // clients waiting on IsAlterTableDone() are unblocked promptly.
+  state_->tablet_peer()->MarkTabletDirty("Alter schema finished");
+
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(ALTER_SCHEMA_OP);
   return Status::OK();

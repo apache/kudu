@@ -2313,9 +2313,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
       VLOG(1) << "TS " << permanent_uuid() << ": alter complete on tablet " << tablet_->ToString();
     }
 
-    if (state() == kStateComplete) {
-      master_->catalog_manager()->HandleTabletSchemaVersionReport(tablet_.get(), schema_version_);
-    } else {
+    if (state() != kStateComplete) {
       VLOG(1) << "Still waiting for other tablets to finish ALTER";
     }
   }
@@ -2329,7 +2327,6 @@ class AsyncAlterTable : public RetryingTSRpcTask {
     req.set_new_table_name(l.data().pb.name());
     req.set_schema_version(l.data().pb.version());
     req.mutable_schema()->CopyFrom(l.data().pb.schema());
-    schema_version_ = l.data().pb.version();
 
     l.Unlock();
 
@@ -2341,7 +2338,6 @@ class AsyncAlterTable : public RetryingTSRpcTask {
     return true;
   }
 
-  uint32_t schema_version_;
   scoped_refptr<TabletInfo> tablet_;
   tserver::AlterSchemaResponsePB resp_;
 };

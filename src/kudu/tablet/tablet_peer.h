@@ -252,6 +252,11 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
     return meta_;
   }
 
+  // Marks the tablet as dirty so that it's included in the next heartbeat.
+  void MarkTabletDirty(const std::string& reason) {
+    mark_dirty_clbk_.Run(reason);
+  }
+
  private:
   friend class RefCountedThreadSafe<TabletPeer>;
   friend class TabletPeerTest;
@@ -316,8 +321,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
 
   // Function to mark this TabletPeer's tablet as dirty in the TSTabletManager.
-  // This function must be called any time the cluster membership or cluster
-  // leadership changes.
+  //
+  // Must be called whenever cluster membership or leadership changes, or when
+  // the tablet's schema changes.
   Callback<void(const std::string& reason)> mark_dirty_clbk_;
 
   // List of maintenance operations for the tablet that need information that only the peer
