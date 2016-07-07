@@ -203,7 +203,7 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
 
   // Insert again, should fail!
   Status s = this->InsertTestRow(&writer, 12345, 0);
-  ASSERT_STR_CONTAINS(s.ToString(), "entry already present in memrowset");
+  ASSERT_STR_CONTAINS(s.ToString(), "key already present");
 
   ASSERT_EQ(1, this->TabletCount());
 

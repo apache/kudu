@@ -149,7 +149,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
       // row is deleted.
       MRSRow ms_row(this, mutation.current_mutable_value());
       if (!ms_row.IsGhost()) {
-        return Status::AlreadyPresent("entry already present in memrowset");
+        return Status::AlreadyPresent("key already present");
       }
 
       // Insert a "reinsert" mutation.
