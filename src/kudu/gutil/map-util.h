@@ -767,4 +767,54 @@ void AppendValuesFromMap(const MapContainer& map_container,
   }
 }
 
+// Compute and insert new value if it's absent from the map. Return a pair with a reference to the
+// value and a bool indicating whether it was absent at first.
+//
+// This inspired on a similar java construct (url split in two lines):
+// https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/ConcurrentHashMap.html
+// #computeIfAbsent-K-java.util.function.Function
+//
+// It takes a reference to the key and a lambda function. If the key exists in the map, returns
+// a pair with a pointer to the current value and 'false'. If the key does not exist in the map,
+// it uses the lambda function to create a value, inserts it into the map, and returns a pair with
+// a pointer to the new value and 'true'.
+//
+// Example usage:
+//
+// auto result = ComputeIfAbsentReturnAbsense(&my_collection,
+//                                            my_key,
+//                                            [] { return new_value; });
+// MyValue* const value = result.first;
+// if (result.second) ....
+//
+template <class MapContainer, typename Function>
+pair<typename MapContainer::mapped_type* const, bool>
+ComputeIfAbsentReturnAbsense(MapContainer* container,
+                             const typename MapContainer::key_type& key,
+                             Function compute_func) {
+  typename MapContainer::iterator iter = container->find(key);
+  bool new_value = iter == container->end();
+  if (new_value) {
+    pair<typename MapContainer::iterator, bool> result = container->emplace(key, compute_func());
+    DCHECK(result.second) << "duplicate key: " << key;
+    iter = result.first;
+  }
+  return make_pair(&iter->second, new_value);
+};
+
+// Like the above but doesn't return a pair, just returns a pointer to the value.
+// Example usage:
+//
+// MyValue* const value = ComputeIfAbsent(&my_collection,
+//                                        my_key,
+//                                        [] { return new_value; });
+//
+template <class MapContainer, typename Function>
+typename MapContainer::mapped_type* const
+ComputeIfAbsent(MapContainer* container,
+                const typename MapContainer::key_type& key,
+                Function compute_func) {
+  return ComputeIfAbsentReturnAbsense(container, key, compute_func).first;
+};
+
 #endif  // UTIL_GTL_MAP_UTIL_H_

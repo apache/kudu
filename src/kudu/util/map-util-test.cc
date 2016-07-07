@@ -21,8 +21,11 @@
 
 #include <gtest/gtest.h>
 #include <map>
+#include <memory>
 
 using std::map;
+using std::string;
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -42,7 +45,24 @@ TEST(FloorTest, TestMapUtil) {
   ASSERT_EQ(1, *FindFloorOrNull(my_map, 4));
   ASSERT_EQ(1, *FindFloorOrNull(my_map, 1));
   ASSERT_EQ(nullptr, FindFloorOrNull(my_map, 0));
+}
 
+TEST(ComputeIfAbsentTest, TestComputeIfAbsent) {
+  map<string, string> my_map;
+  auto result = ComputeIfAbsent(&my_map, "key", []{ return "hello_world"; });
+  ASSERT_EQ(*result, "hello_world");
+  auto result2 = ComputeIfAbsent(&my_map, "key", [] { return "hello_world2"; });
+  ASSERT_EQ(*result2, "hello_world");
+}
+
+TEST(ComputeIfAbsentTest, TestComputeIfAbsentAndReturnAbsense) {
+  map<string, string> my_map;
+  auto result = ComputeIfAbsentReturnAbsense(&my_map, "key", []{ return "hello_world"; });
+  ASSERT_TRUE(result.second);
+  ASSERT_EQ(*result.first, "hello_world");
+  auto result2 = ComputeIfAbsentReturnAbsense(&my_map, "key", [] { return "hello_world2"; });
+  ASSERT_FALSE(result2.second);
+  ASSERT_EQ(*result2.first, "hello_world");
 }
 
 } // namespace kudu
