@@ -187,7 +187,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         // cleanup() already took care of calling failOrRetryRpc() for us. If it did, the entry we
         // added in rpcs_inflight will be missing. If not, we have to call failOrRetryRpc()
         // ourselves after this synchronized block.
-        if (encodedRpcAndId != null && rpcs_inflight.containsKey(encodedRpcAndId.getSecond())) {
+        // `encodedRpcAndId` is null iff `chan` is null.
+        if (encodedRpcAndId == null || rpcs_inflight.containsKey(encodedRpcAndId.getSecond())) {
           failRpc = true;
         }
       } else {
