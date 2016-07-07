@@ -28,7 +28,6 @@
 #include "kudu/consensus/log_reader.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
-#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
@@ -105,8 +104,7 @@ void PrintIdOnly(const LogEntryPB& entry) {
 
 Status PrintDecodedWriteRequestPB(const string& indent,
                                   const Schema& tablet_schema,
-                                  const WriteRequestPB& write,
-                                  const rpc::RequestIdPB* request_id) {
+                                  const WriteRequestPB& write) {
   Schema request_schema;
   RETURN_NOT_OK(SchemaFromPB(write.schema(), &request_schema));
 
@@ -116,8 +114,6 @@ Status PrintDecodedWriteRequestPB(const string& indent,
   RETURN_NOT_OK(dec.DecodeOperations(&ops));
 
   cout << indent << "Tablet: " << write.tablet_id() << endl;
-  cout << indent << "RequestId: "
-      << (request_id ? request_id->ShortDebugString() : "None") << endl;
   cout << indent << "Consistency: "
        << ExternalConsistencyMode_Name(write.external_consistency_mode()) << endl;
   if (write.has_propagated_timestamp()) {
@@ -143,11 +139,7 @@ Status PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
 
     const ReplicateMsg& replicate = entry.replicate();
     if (replicate.op_type() == consensus::WRITE_OP) {
-      RETURN_NOT_OK(PrintDecodedWriteRequestPB(
-          indent,
-          tablet_schema,
-          replicate.write_request(),
-          replicate.has_request_id() ? &replicate.request_id() : nullptr));
+      RETURN_NOT_OK(PrintDecodedWriteRequestPB(indent, tablet_schema, replicate.write_request()));
     } else {
       cout << indent << replicate.ShortDebugString() << endl;
     }
