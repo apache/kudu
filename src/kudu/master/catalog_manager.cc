@@ -147,6 +147,12 @@ DEFINE_bool(catalog_manager_check_ts_count_for_create_table, true,
             "a table to be created.");
 TAG_FLAG(catalog_manager_check_ts_count_for_create_table, hidden);
 
+DEFINE_int32(table_locations_ttl_ms, 60 * 60 * 1000, // 1 hour
+             "Maximum time in milliseconds which clients may cache table locations. "
+             "New range partitions may not be visible to existing client instances "
+             "until after waiting for the ttl period.");
+TAG_FLAG(table_locations_ttl_ms, advanced);
+
 using std::pair;
 using std::shared_ptr;
 using std::string;
@@ -3091,6 +3097,7 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
       LOG(FATAL) << "Unexpected error while building tablet locations: " << s.ToString();
     }
   }
+  resp->set_ttl_millis(FLAGS_table_locations_ttl_ms);
   return Status::OK();
 }
 

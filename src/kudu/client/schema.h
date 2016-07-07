@@ -41,6 +41,7 @@ namespace client {
 namespace internal {
 class GetTableSchemaRpc;
 class LookupRpc;
+class MetaCacheEntry;
 class WriteRpc;
 } // namespace internal
 
@@ -332,6 +333,7 @@ class KUDU_EXPORT KuduSchema {
   friend class ScanConfiguration;
   friend class internal::GetTableSchemaRpc;
   friend class internal::LookupRpc;
+  friend class internal::MetaCacheEntry;
   friend class internal::WriteRpc;
   friend class kudu::tools::TsAdminClient;
 

@@ -128,16 +128,12 @@ Status KuduTable::Data::Open() {
           continue;
         }
       }
-      if (s.ok()) {
-        s = StatusFromPB(resp.error().status());
-      }
+      s = StatusFromPB(resp.error().status());
     }
-    if (!s.ok()) {
-      LOG(WARNING) << "Error getting table locations: " << s.ToString() << ", retrying.";
-      continue;
-    }
-    if (resp.tablet_locations_size() > 0) {
+    if (s.ok()) {
       break;
+    } else {
+      LOG(WARNING) << "Error getting table locations: " << s.ToString() << ", retrying.";
     }
 
     /* TODO: Use exponential backoff instead */

@@ -250,7 +250,7 @@ Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
   return Status::OK();
 }
 
-Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable> >* tables) {
+Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable>>* tables) {
   master::ListTablesRequestPB req;
   master::ListTablesResponsePB resp;
   RpcController rpc;
@@ -260,7 +260,7 @@ Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable> >* tabl
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
-  vector<shared_ptr<KsckTable> > tables_temp;
+  vector<shared_ptr<KsckTable>> tables_temp;
   for (const master::ListTablesResponsePB_TableInfo& info : resp.tables()) {
     Schema schema;
     int num_replicas;
@@ -273,11 +273,17 @@ Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable> >* tabl
 }
 
 Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {
-  vector<shared_ptr<KsckTablet> > tablets;
+  vector<shared_ptr<KsckTablet>> tablets;
   bool more_tablets = true;
   string last_key;
+  int retries = 0;
   while (more_tablets) {
-    GetTabletsBatch(table, &last_key, tablets, &more_tablets);
+    Status s = GetTabletsBatch(table, &last_key, tablets, &more_tablets);
+    if (s.IsServiceUnavailable() && retries++ < 25) {
+      SleepFor(MonoDelta::FromMilliseconds(100 * retries));
+    } else if (!s.ok()) {
+      return s;
+    }
   }
 
   table->set_tablets(tablets);
@@ -286,7 +292,7 @@ Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table)
 
 Status RemoteKsckMaster::GetTabletsBatch(const shared_ptr<KsckTable>& table,
                                          string* last_partition_key,
-                                         vector<shared_ptr<KsckTablet> >& tablets,
+                                         vector<shared_ptr<KsckTablet>>& tablets,
                                          bool* more_tablets) {
   master::GetTableLocationsRequestPB req;
   master::GetTableLocationsResponsePB resp;
@@ -299,8 +305,14 @@ Status RemoteKsckMaster::GetTabletsBatch(const shared_ptr<KsckTable>& table,
   rpc.set_timeout(GetDefaultTimeout());
   RETURN_NOT_OK(proxy_->GetTableLocations(req, &resp, &rpc));
   for (const master::TabletLocationsPB& locations : resp.tablet_locations()) {
+    if (locations.partition().partition_key_start() < *last_partition_key) {
+      // We've already seen this partition.
+      continue;
+    }
+    *last_partition_key = locations.partition().partition_key_start();
+
     shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), locations.tablet_id()));
-    vector<shared_ptr<KsckTabletReplica> > replicas;
+    vector<shared_ptr<KsckTabletReplica>> replicas;
     for (const master::TabletLocationsPB_ReplicaPB& replica : locations.replicas()) {
       bool is_leader = replica.role() == consensus::RaftPeerPB::LEADER;
       bool is_follower = replica.role() == consensus::RaftPeerPB::FOLLOWER;
@@ -310,16 +322,7 @@ Status RemoteKsckMaster::GetTabletsBatch(const shared_ptr<KsckTable>& table,
     tablet->set_replicas(replicas);
     tablets.push_back(tablet);
   }
-  if (resp.tablet_locations_size() != 0) {
-    *last_partition_key = (resp.tablet_locations().end() - 1)->partition().partition_key_end();
-  } else {
-    return Status::NotFound(Substitute(
-      "The Master returned 0 tablets for GetTableLocations of table $0 at start key $1",
-      table->name(), *(last_partition_key)));
-  }
-  if (last_partition_key->empty()) {
-    *more_tablets = false;
-  }
+  *more_tablets = resp.tablet_locations().size() == FLAGS_tablets_batch_size_max;
   return Status::OK();
 }
 

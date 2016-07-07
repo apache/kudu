@@ -204,6 +204,27 @@ FindFloorOrNull(Collection& collection,  // NOLINT
   return &(--it)->second;
 }
 
+// Returns a const-reference to the value associated with the greatest key
+// that's less than or equal to the given key, or crashes if it does not exist.
+template <class Collection>
+const typename Collection::value_type::second_type&
+FindFloorOrDie(const Collection& collection,
+               const typename Collection::value_type::first_type& key) {
+  auto it = collection.upper_bound(key);
+  CHECK(it != collection.begin());
+  return (--it)->second;
+}
+
+// Same as above, but returns a non-const reference.
+template <class Collection>
+typename Collection::value_type::second_type&
+FindFloorOrDie(Collection& collection,
+               const typename Collection::value_type::first_type& key) {
+  auto it = collection.upper_bound(key);
+  CHECK(it != collection.begin());
+  return (--it)->second;
+}
+
 // Returns the pointer value associated with the given key. If none is found,
 // NULL is returned. The function is designed to be used with a map of keys to
 // pointers.

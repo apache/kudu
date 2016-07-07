@@ -281,6 +281,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class internal::RemoteTablet;
   friend class internal::RemoteTabletServer;
   friend class internal::WriteRpc;
+  friend class ClientTest;
   friend class KuduClientBuilder;
   friend class KuduScanner;
   friend class KuduScanTokenBuilder;
@@ -292,8 +293,8 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   FRIEND_TEST(ClientTest, TestGetTabletServerBlacklist);
   FRIEND_TEST(ClientTest, TestMasterDown);
   FRIEND_TEST(ClientTest, TestMasterLookupPermits);
+  FRIEND_TEST(ClientTest, TestMetaCacheExpiry);
   FRIEND_TEST(ClientTest, TestNonCoveringRangePartitions);
-  FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
   FRIEND_TEST(ClientTest, TestReplicatedTabletWritesWithLeaderElection);
   FRIEND_TEST(ClientTest, TestScanFaultTolerance);
   FRIEND_TEST(ClientTest, TestScanTimeout);

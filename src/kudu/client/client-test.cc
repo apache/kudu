@@ -59,6 +59,7 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
@@ -76,6 +77,7 @@ DECLARE_int32(scanner_gc_check_interval_us);
 DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(scanner_max_batch_size_bytes);
 DECLARE_int32(scanner_ttl_ms);
+DECLARE_int32(table_locations_ttl_ms);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 METRIC_DECLARE_counter(rpcs_queue_overflow);
@@ -137,6 +139,17 @@ class ClientTest : public KuduTest {
 
     ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
     ASSERT_NO_FATAL_FAILURE(CreateTable(kTable2Name, 1, {}, {}, &client_table2_));
+  }
+
+  // Looks up the remote tablet entry for a given partition key in the meta cache.
+  scoped_refptr<internal::RemoteTablet> MetaCacheLookup(KuduTable* table,
+                                                        const string& partition_key) {
+    scoped_refptr<internal::RemoteTablet> rt;
+    Synchronizer sync;
+    client_->data_->meta_cache_->LookupTabletByKey(table, partition_key, MonoTime::Max(), &rt,
+                                                   sync.AsStatusCallback());
+    CHECK_OK(sync.Wait());
+    return rt;
   }
 
   // Generate a set of split rows for tablets used in this test.
@@ -1216,6 +1229,32 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
   }
 }
 
+TEST_F(ClientTest, TestMetaCacheExpiry) {
+  google::FlagSaver saver;
+  FLAGS_table_locations_ttl_ms = 25;
+  auto& meta_cache = client_->data_->meta_cache_;
+
+  // Clear the cache.
+  meta_cache->ClearCacheForTesting();
+  internal::MetaCacheEntry entry;
+  ASSERT_FALSE(meta_cache->LookupTabletByKeyFastPath(client_table_.get(), "", &entry));
+
+  // Prime the cache.
+  CHECK_NOTNULL(MetaCacheLookup(client_table_.get(), "").get());
+  ASSERT_TRUE(meta_cache->LookupTabletByKeyFastPath(client_table_.get(), "", &entry));
+  ASSERT_FALSE(entry.stale());
+
+  // Sleep in order to expire the cache.
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_table_locations_ttl_ms));
+  ASSERT_TRUE(entry.stale());
+  ASSERT_FALSE(meta_cache->LookupTabletByKeyFastPath(client_table_.get(), "", &entry));
+
+  // Force a lookup and ensure the entry is refreshed.
+  CHECK_NOTNULL(MetaCacheLookup(client_table_.get(), "").get());
+  ASSERT_TRUE(meta_cache->LookupTabletByKeyFastPath(client_table_.get(), "", &entry));
+  ASSERT_FALSE(entry.stale());
+}
+
 TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable("blacklist",
@@ -1229,10 +1268,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   // We have to loop since some replicas may have been created slowly.
   scoped_refptr<internal::RemoteTablet> rt;
   while (true) {
-    Synchronizer sync;
-    client_->data_->meta_cache_->LookupTabletByKey(table.get(), "", MonoTime::Max(), &rt,
-                                                  sync.AsStatusCallback());
-    ASSERT_OK(sync.Wait());
+    rt = MetaCacheLookup(table.get(), "");
     ASSERT_TRUE(rt.get() != nullptr);
     vector<internal::RemoteTabletServer*> tservers;
     rt->GetRemoteTabletServers(&tservers);
@@ -1709,8 +1745,8 @@ TEST_F(ClientTest, TestWriteTimeout) {
     gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
     ASSERT_TRUE(error->status().IsTimedOut()) << error->status().ToString();
     ASSERT_STR_CONTAINS(error->status().ToString(),
-                        "GetTableLocations(client-testtb, int32 key=1, 1) "
-                        "failed: timed out after deadline expired");
+                        "GetTableLocations { table: 'client-testtb', partition-key: (int32 key=1),"
+                        " attempt: 1 } failed: timed out after deadline expired");
   }
 
   // Next time out the actual write on the tablet server.
@@ -2390,12 +2426,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));
 
   // Find the leader of the first tablet.
-  Synchronizer sync;
-  scoped_refptr<internal::RemoteTablet> rt;
-  client_->data_->meta_cache_->LookupTabletByKey(table.get(), "",
-                                                 MonoTime::Max(),
-                                                 &rt, sync.AsStatusCallback());
-  ASSERT_OK(sync.Wait());
+  scoped_refptr<internal::RemoteTablet> rt = MetaCacheLookup(table.get(), "");
   internal::RemoteTabletServer *rts = rt->LeaderTServer();
 
   // Kill the leader of the first tablet.
@@ -2455,12 +2486,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   SleepFor(MonoDelta::FromMilliseconds(1500));
 
   // Find the leader replica
-  Synchronizer sync;
-  scoped_refptr<internal::RemoteTablet> rt;
-  client_->data_->meta_cache_->LookupTabletByKey(table.get(), "",
-                                                 MonoTime::Max(),
-                                                 &rt, sync.AsStatusCallback());
-  ASSERT_OK(sync.Wait());
+  scoped_refptr<internal::RemoteTablet> rt = MetaCacheLookup(table.get(), "");
   internal::RemoteTabletServer *rts;
   set<string> blacklist;
   vector<internal::RemoteTabletServer*> candidates;

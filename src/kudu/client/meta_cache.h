@@ -34,11 +34,11 @@
 #include "kudu/rpc/rpc.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/status.h"
-#include "kudu/util/memory/arena.h"
-#include "kudu/util/net/net_util.h"
 
 namespace kudu {
 
@@ -57,6 +57,7 @@ class TSInfoPB;
 namespace client {
 
 class ClientTest_TestMasterLookupPermits_Test;
+class ClientTest_TestMetaCacheExpiry_Test;
 class ClientTest_TestNonCoveringRangePartitions_Test;
 class KuduClient;
 class KuduTable;
@@ -248,6 +249,99 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   DISALLOW_COPY_AND_ASSIGN(RemoteTablet);
 };
 
+// MetaCacheEntry holds either a tablet and its associated `RemoteTablet`
+// instance, or a non-covered partition range.
+class MetaCacheEntry {
+ public:
+
+  MetaCacheEntry() { }
+
+  // Construct a MetaCacheEntry representing a tablet.
+  MetaCacheEntry(MonoTime expiration_time, scoped_refptr<RemoteTablet> tablet)
+      : expiration_time_(expiration_time),
+        tablet_(std::move(tablet)) {
+  }
+
+  // Construct a MetaCacheEntry representing a non-covered range with the
+  // provided range partition bounds.
+  MetaCacheEntry(MonoTime expiration_time,
+                 std::string lower_bound_partition_key,
+                 std::string upper_bound_partition_key)
+      : expiration_time_(std::move(expiration_time)),
+        lower_bound_partition_key_(std::move(lower_bound_partition_key)),
+        upper_bound_partition_key_(std::move(upper_bound_partition_key)) {
+  }
+
+  // Returns `true` if this is a non-covered partition range.
+  bool is_non_covered_range() const {
+    DCHECK(Initialized());
+    return tablet_.get() == nullptr;
+  }
+
+  // Returns the remote tablet, should only be called if this entry contains a
+  // tablet.
+  const scoped_refptr<RemoteTablet>& tablet() const {
+    DCHECK_NOTNULL(tablet_.get());
+    DCHECK(Initialized());
+    return tablet_;
+  }
+
+  // Returns the inclusive lower bound partition key for the entry.
+  const std::string& lower_bound_partition_key() const {
+    DCHECK(Initialized());
+    if (is_non_covered_range()) {
+      return lower_bound_partition_key_;
+    } else {
+      return tablet_->partition().partition_key_start();
+    }
+  }
+
+  // Returns the exclusive upper bound partition key for the entry.
+  const std::string& upper_bound_partition_key() const {
+    DCHECK(Initialized());
+    if (is_non_covered_range()) {
+      return upper_bound_partition_key_;
+    } else {
+      return tablet_->partition().partition_key_end();
+    }
+  }
+
+  void refresh_expiration_time(MonoTime expiration_time) {
+    DCHECK(Initialized());
+    DCHECK(expiration_time.Initialized());
+    // Do not check that the new expiration time comes after the existing expiration
+    // time, because that may not hold if the master changes it's configured ttl.
+    expiration_time_ = expiration_time;
+  }
+
+  // Returns true if the partition key is contained in this meta cache entry.
+  bool Contains(const std::string& partition_key) const;
+
+  // Returns true if this meta cache entry is stale.
+  bool stale() const;
+
+  std::string DebugString(const KuduTable* table) const;
+
+ private:
+
+  // Returns true if the entry is initialized.
+  bool Initialized() const {
+    return expiration_time_.Initialized();
+  }
+
+  // The expiration time of this cached entry.
+  MonoTime expiration_time_;
+
+  // The tablet. If this is a non-covered range then the tablet will be a nullptr.
+  scoped_refptr<RemoteTablet> tablet_;
+
+  // The lower bound partition key, if this is a non-covered range.
+  std::string lower_bound_partition_key_;
+
+  // The upper bound partition key, if this is a non-covered range.
+  std::string upper_bound_partition_key_;
+};
+
 // Manager of RemoteTablets and RemoteTabletServers. The client consults
 // this class to look up a given tablet or server.
 //
@@ -296,17 +390,18 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   friend class LookupRpc;
 
   FRIEND_TEST(client::ClientTest, TestMasterLookupPermits);
+  FRIEND_TEST(client::ClientTest, TestMetaCacheExpiry);
   FRIEND_TEST(client::ClientTest, TestNonCoveringRangePartitions);
 
   // Called on the slow LookupTablet path when the master responds. Populates
   // the tablet caches and returns a reference to the first one.
-  Status ProcessLookupResponse(const LookupRpc& rpc, scoped_refptr<RemoteTablet>* remote_tablet);
+  Status ProcessLookupResponse(const LookupRpc& rpc, MetaCacheEntry* entry);
 
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *remote_tablet if successful.
   bool LookupTabletByKeyFastPath(const KuduTable* table,
                                  const std::string& partition_key,
-                                 scoped_refptr<RemoteTablet>* remote_tablet);
+                                 MetaCacheEntry* entry);
 
   // Clears the meta cache for testing purposes.
   void ClearCacheForTesting();
@@ -332,16 +427,20 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Protected by lock_.
   TabletServerMap ts_cache_;
 
-  // Cache of tablets, keyed by table ID, then by start partition key.
+  // Cache of tablets, keyed by partition key.
   //
   // Protected by lock_.
-  typedef std::map<std::string, scoped_refptr<RemoteTablet> > TabletMap;
+  typedef std::map<std::string, MetaCacheEntry> TabletMap;
+
+  // Cache of tablets and non-covered ranges, keyed by table id.
+  //
+  // Protected by lock_.
   std::unordered_map<std::string, TabletMap> tablets_by_table_and_key_;
 
   // Cache of tablets, keyed by tablet ID.
   //
   // Protected by lock_
-  std::unordered_map<std::string, scoped_refptr<RemoteTablet> > tablets_by_id_;
+  std::unordered_map<std::string, scoped_refptr<RemoteTablet>> tablets_by_id_;
 
   // Prevents master lookup "storms" by delaying master lookups when all
   // permits have been acquired.
