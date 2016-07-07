@@ -856,7 +856,7 @@ TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(FLAGS_num_replicas);
   workload.set_timeout_allowed(true);
-  workload.set_write_timeout_millis(1000);
+  workload.set_write_timeout_millis(10000);
   workload.set_num_write_threads(10);
   workload.set_write_batch_size(1);
   workload.Setup();
