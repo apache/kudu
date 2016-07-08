@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <memory>
 #include <utility>
+#include <thread>
 #include <vector>
 
 #include "kudu/common/partial_row.h"
@@ -43,6 +44,7 @@ using kudu::rpc::RpcController;
 using std::pair;
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using strings::Substitute;
 
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
@@ -582,20 +584,6 @@ TEST_F(MasterTest, TestShutdownDuringTableVisit) {
   // CatalogManager::VisitTablesAndTabletsTask.
 }
 
-// Hammers the master with GetTableLocations() calls.
-static void LoopGetTableLocations(const char* kTableName,
-                                  MasterServiceProxy* proxy,
-                                  AtomicBool* done) {
-  GetTableLocationsRequestPB req;
-  GetTableLocationsResponsePB resp;
-  req.mutable_table()->set_table_name(kTableName);
-
-  while (!done->Load()) {
-    RpcController controller;
-    CHECK_OK(proxy->GetTableLocations(req, &resp, &controller));
-  }
-}
-
 // Tests that the catalog manager handles spurious calls to ElectedAsLeaderCb()
 // (i.e. those without a term change) correctly by ignoring them. If they
 // aren't ignored, a concurrent GetTableLocations() call may trigger a
@@ -606,10 +594,18 @@ TEST_F(MasterTest, TestGetTableLocationsDuringRepeatedTableVisit) {
   ASSERT_OK(CreateTable(kTableName, schema));
 
   AtomicBool done(false);
-  scoped_refptr<Thread> t;
-  ASSERT_OK(Thread::Create("test", "getTableLocationsThread",
-                           &LoopGetTableLocations, kTableName,
-                           proxy_.get(), &done, &t));
+
+  // Hammers the master with GetTableLocations() calls.
+  thread t([&]() {
+    GetTableLocationsRequestPB req;
+    GetTableLocationsResponsePB resp;
+    req.mutable_table()->set_table_name(kTableName);
+
+    while (!done.Load()) {
+      RpcController controller;
+      CHECK_OK(proxy_->GetTableLocations(req, &resp, &controller));
+    }
+  });
 
   // Call ElectedAsLeaderCb() repeatedly. If these spurious calls aren't
   // ignored, the concurrent GetTableLocations() calls may crash the master.
@@ -617,46 +613,7 @@ TEST_F(MasterTest, TestGetTableLocationsDuringRepeatedTableVisit) {
     master_->catalog_manager()->ElectedAsLeaderCb();
   }
   done.Store(true);
-  t->Join();
-}
-
-// Hammers the master with GetTableSchema() calls, checking that the results
-// make sense.
-static void LoopGetTableSchema(const char* kTableName,
-                               const Schema* kSchema,
-                               MasterServiceProxy* proxy,
-                               CountDownLatch* started,
-                               AtomicBool* done) {
-  GetTableSchemaRequestPB req;
-  GetTableSchemaResponsePB resp;
-  req.mutable_table()->set_table_name(kTableName);
-
-  started->CountDown();
-  while (!done->Load()) {
-    RpcController controller;
-
-    CHECK_OK(proxy->GetTableSchema(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-
-    // There are two possible outcomes:
-    //
-    // 1. GetTableSchema() happened before CreateTable(): we expect to see a
-    //    TABLE_NOT_FOUND error.
-    // 2. GetTableSchema() happened after CreateTable(): we expect to see the
-    //    full table schema.
-    //
-    // Any other outcome is an error.
-    if (resp.has_error()) {
-      CHECK_EQ(MasterErrorPB::TABLE_NOT_FOUND, resp.error().code());
-    } else {
-      Schema receivedSchema;
-      CHECK_OK(SchemaFromPB(resp.schema(), &receivedSchema));
-      CHECK(kSchema->Equals(receivedSchema)) <<
-          strings::Substitute("$0 not equal to $1",
-                              kSchema->ToString(), receivedSchema.ToString());
-      CHECK_EQ(kTableName, resp.table_name());
-    }
-  }
+  t.join();
 }
 
 // The catalog manager had a bug wherein GetTableSchema() interleaved with
@@ -672,18 +629,47 @@ TEST_F(MasterTest, TestGetTableSchemaIsAtomicWithCreateTable) {
   CountDownLatch started(1);
   AtomicBool done(false);
 
-  // Kick off a thread that calls GetTableSchema() in a loop.
-  scoped_refptr<Thread> t;
-  ASSERT_OK(Thread::Create("test", "test",
-                           &LoopGetTableSchema, kTableName, &kTableSchema,
-                           proxy_.get(), &started, &done, &t));
+  // Kick off a thread that hammers the master with GetTableSchema() calls,
+  // checking that the results make sense.
+  thread t([&]() {
+    GetTableSchemaRequestPB req;
+    GetTableSchemaResponsePB resp;
+    req.mutable_table()->set_table_name(kTableName);
+
+    started.CountDown();
+    while (!done.Load()) {
+      RpcController controller;
+
+      CHECK_OK(proxy_->GetTableSchema(req, &resp, &controller));
+      SCOPED_TRACE(resp.DebugString());
+
+      // There are two possible outcomes:
+      //
+      // 1. GetTableSchema() happened before CreateTable(): we expect to see a
+      //    TABLE_NOT_FOUND error.
+      // 2. GetTableSchema() happened after CreateTable(): we expect to see the
+      //    full table schema.
+      //
+      // Any other outcome is an error.
+      if (resp.has_error()) {
+        CHECK_EQ(MasterErrorPB::TABLE_NOT_FOUND, resp.error().code());
+      } else {
+        Schema receivedSchema;
+        CHECK_OK(SchemaFromPB(resp.schema(), &receivedSchema));
+        CHECK(kTableSchema.Equals(receivedSchema)) <<
+            strings::Substitute("$0 not equal to $1",
+                                kTableSchema.ToString(), receivedSchema.ToString());
+        CHECK_EQ(kTableName, resp.table_name());
+      }
+    }
+  });
 
   // Only create the table after the thread has started.
   started.Wait();
   EXPECT_OK(CreateTable(kTableName, kTableSchema));
 
   done.Store(true);
-  t->Join();
+  t.join();
 }
 
 // Verifies that on-disk master metadata is self-consistent and matches a set
@@ -991,42 +977,6 @@ TEST_F(MasterTest, TestMasterMetadataConsistentDespiteFailures) {
   ASSERT_OK(verifier.Verify());
 }
 
-static void CreateTableOrFail(const char* kTableName,
-                              const Schema* kSchema,
-                              MasterServiceProxy* proxy) {
-  CreateTableRequestPB req;
-  CreateTableResponsePB resp;
-  RpcController controller;
-
-  req.set_name(kTableName);
-  CHECK_OK(SchemaToPB(*kSchema, req.mutable_schema()));
-  CHECK_OK(proxy->CreateTable(req, &resp, &controller));
-  SCOPED_TRACE(resp.DebugString());
-
-  // There are three expected outcomes:
-  //
-  // 1. This thread won the CreateTable() race: no error.
-  // 2. This thread lost the CreateTable() race: TABLE_NOT_FOUND error
-  //    with ServiceUnavailable status.
-  // 3. This thread arrived after the CreateTable() race was already over:
-  //    TABLE_ALREADY_PRESENT error with AlreadyPresent status.
-  if (resp.has_error()) {
-    Status s = StatusFromPB(resp.error().status());
-    string failure_msg = Substitute("Unexpected response: $0",
-                                    resp.DebugString());
-    switch (resp.error().code()) {
-      case MasterErrorPB::TABLE_NOT_FOUND:
-        CHECK(s.IsServiceUnavailable()) << failure_msg;
-        break;
-      case MasterErrorPB::TABLE_ALREADY_PRESENT:
-        CHECK(s.IsAlreadyPresent()) << failure_msg;
-        break;
-      default:
-        FAIL() << failure_msg;
-    }
-  }
-}
-
 TEST_F(MasterTest, TestConcurrentCreateOfSameTable) {
   const char* kTableName = "testtb";
   const Schema kTableSchema({ ColumnSchema("key", INT32),
@@ -1035,17 +985,45 @@ TEST_F(MasterTest, TestConcurrentCreateOfSameTable) {
                             1);
 
   // Kick off a bunch of threads all trying to create the same table.
-  vector<scoped_refptr<Thread>> threads;
+  vector<thread> threads;
   for (int i = 0; i < 10; i++) {
-    scoped_refptr<Thread> t;
-    EXPECT_OK(Thread::Create("test", "test",
-                             &CreateTableOrFail, kTableName, &kTableSchema,
-                             proxy_.get(), &t));
-    threads.emplace_back(std::move(t));
+    threads.emplace_back([&]() {
+      CreateTableRequestPB req;
+      CreateTableResponsePB resp;
+      RpcController controller;
+
+      req.set_name(kTableName);
+      CHECK_OK(SchemaToPB(kTableSchema, req.mutable_schema()));
+      CHECK_OK(proxy_->CreateTable(req, &resp, &controller));
+      SCOPED_TRACE(resp.DebugString());
+
+      // There are three expected outcomes:
+      //
+      // 1. This thread won the CreateTable() race: no error.
+      // 2. This thread lost the CreateTable() race: TABLE_NOT_FOUND error
+      //    with ServiceUnavailable status.
+      // 3. This thread arrived after the CreateTable() race was already over:
+      //    TABLE_ALREADY_PRESENT error with AlreadyPresent status.
+      if (resp.has_error()) {
+        Status s = StatusFromPB(resp.error().status());
+        string failure_msg = Substitute("Unexpected response: $0",
+                                        resp.DebugString());
+        switch (resp.error().code()) {
+          case MasterErrorPB::TABLE_NOT_FOUND:
+            CHECK(s.IsServiceUnavailable()) << failure_msg;
+            break;
+          case MasterErrorPB::TABLE_ALREADY_PRESENT:
+            CHECK(s.IsAlreadyPresent()) << failure_msg;
+            break;
+          default:
+            FAIL() << failure_msg;
+        }
+      }
+    });
   }
 
-  for (const auto& t : threads) {
-    t->Join();
+  for (auto& t : threads) {
+    t.join();
   }
 }
 
