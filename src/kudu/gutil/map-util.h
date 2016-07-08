@@ -677,15 +677,17 @@ void ReverseMap(const Collection& collection,
 //     if (value_ptr.get())
 //       value_ptr->DoSomething();
 //
+// Note: if 'collection' is a multimap, this will only erase and return the
+// first value.
 template <class Collection>
 typename Collection::value_type::second_type EraseKeyReturnValuePtr(
     Collection* const collection,
     const typename Collection::value_type::first_type& key) {
   auto it = collection->find(key);
   if (it == collection->end()) {
-    return NULL;
+    return typename Collection::value_type::second_type();
   }
-  typename Collection::value_type::second_type v = it->second;
+  typename Collection::value_type::second_type v = std::move(it->second);
   collection->erase(it);
   return v;
 }

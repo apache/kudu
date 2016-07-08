@@ -25,6 +25,7 @@
 
 using std::map;
 using std::string;
+using std::shared_ptr;
 using std::unique_ptr;
 
 namespace kudu {
@@ -75,6 +76,28 @@ TEST(FindPointeeOrNullTest, TestFindPointeeOrNull) {
   my_map.erase(iter.first);
   value = FindPointeeOrNull(my_map, "key");
   ASSERT_TRUE(value == nullptr);
+}
+
+TEST(EraseKeyReturnValuePtrTest, TestRawAndSmartSmartPointers) {
+  map<string, unique_ptr<string>> my_map;
+  unique_ptr<string> value = EraseKeyReturnValuePtr(&my_map, "key");
+  ASSERT_TRUE(value.get() == nullptr);
+  my_map.emplace("key", unique_ptr<string>(new string("hello_world")));
+  value = EraseKeyReturnValuePtr(&my_map, "key");
+  ASSERT_EQ(*value, "hello_world");
+  value.reset();
+  value = EraseKeyReturnValuePtr(&my_map, "key");
+  ASSERT_TRUE(value.get() == nullptr);
+  map<string, shared_ptr<string>> my_map2;
+  shared_ptr<string> value2 = EraseKeyReturnValuePtr(&my_map2, "key");
+  ASSERT_TRUE(value2.get() == nullptr);
+  my_map2.emplace("key", shared_ptr<string>(new string("hello_world")));
+  value2 = EraseKeyReturnValuePtr(&my_map2, "key");
+  ASSERT_EQ(*value2, "hello_world");
+  map<string, string*> my_map_raw;
+  my_map_raw.emplace("key", new string("hello_world"));
+  value.reset(EraseKeyReturnValuePtr(&my_map_raw, "key"));
+  ASSERT_EQ(*value, "hello_world");
 }
 
 } // namespace kudu
