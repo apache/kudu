@@ -236,6 +236,21 @@ FindPtrOrNull(Collection& collection,  // NOLINT
   return it->second;
 }
 
+// FindPtrOrNull like function for maps whose value is a smart pointer like shared_ptr or
+// unique_ptr.
+// Returns the raw pointer contained in the smart pointer for the first found key, if it exists,
+// or null if it doesn't.
+template <class Collection>
+typename Collection::mapped_type::element_type*
+FindPointeeOrNull(const Collection& collection,  // NOLINT,
+                  const typename Collection::key_type& key) {
+  auto it = collection.find(key);
+  if (it == collection.end()) {
+    return nullptr;
+  }
+  return it->second.get();
+}
+
 // Finds the value associated with the given key and copies it to *value (if not
 // NULL). Returns false if the key was not found, true otherwise.
 template <class Collection, class Key, class Value>

@@ -65,4 +65,16 @@ TEST(ComputeIfAbsentTest, TestComputeIfAbsentAndReturnAbsense) {
   ASSERT_EQ(*result2.first, "hello_world");
 }
 
+TEST(FindPointeeOrNullTest, TestFindPointeeOrNull) {
+  map<string, unique_ptr<string>> my_map;
+  auto iter = my_map.emplace("key", unique_ptr<string>(new string("hello_world")));
+  ASSERT_TRUE(iter.second);
+  string* value = FindPointeeOrNull(my_map, "key");
+  ASSERT_TRUE(value != nullptr);
+  ASSERT_EQ(*value, "hello_world");
+  my_map.erase(iter.first);
+  value = FindPointeeOrNull(my_map, "key");
+  ASSERT_TRUE(value == nullptr);
+}
+
 } // namespace kudu
