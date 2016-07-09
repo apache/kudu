@@ -867,23 +867,25 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     // b. Verify that the table does not exist.
     table = FindPtrOrNull(table_names_map_, req.name());
     if (table != nullptr) {
-      s = Status::AlreadyPresent("Table already exists", table->id());
+      s = Status::AlreadyPresent(Substitute("Table $0 already exists with id $1",
+                                 req.name(), table->id()));
       SetupError(resp->mutable_error(), MasterErrorPB::TABLE_ALREADY_PRESENT, s);
       return s;
     }
 
-    // c. Mark the table as being created (if it isn't already).
-    if (!InsertIfNotPresent(&tables_being_created_, req.name())) {
-      s = Status::ServiceUnavailable("Table is currently being created", req.name());
+    // c. Reserve the table name if possible.
+    if (!InsertIfNotPresent(&reserved_table_names_, req.name())) {
+      s = Status::ServiceUnavailable(Substitute(
+          "New table name $0 is already reserved", req.name()));
       SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
       return s;
     }
   }
 
-  // Ensure that if we return, we mark this table as no longer being created.
+  // Ensure that we drop the name reservation upon return.
   auto cleanup = MakeScopedCleanup([&] () {
     std::lock_guard<LockType> l(lock_);
-    CHECK_EQ(1, tables_being_created_.erase(req.name()));
+    CHECK_EQ(1, reserved_table_names_.erase(req.name()));
   });
 
   // d. Create the in-memory representation of the new table and its tablets.
@@ -1204,7 +1206,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 
   RETURN_NOT_OK(CheckOnline());
 
-  // 1. Lookup the table and verify if it exists
+  // 1. Lookup the table and verify if it exists.
   TRACE("Looking up table");
   scoped_refptr<TableInfo> table;
   RETURN_NOT_OK(FindTable(req->table(), &table));
@@ -1222,10 +1224,22 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     return s;
   }
 
+  // 2. Having locked the table, look it up again, in case we raced with
+  //    another AlterTable() that renamed our table.
+  {
+    scoped_refptr<TableInfo> table_again;
+    CHECK_OK(FindTable(req->table(), &table_again));
+    if (table_again == nullptr) {
+      Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+      SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+      return s;
+    }
+  }
+
   bool has_changes = false;
   string table_name = l.data().name();
 
-  // 2. Calculate new schema for the on-disk state, not persisted yet
+  // 3. Calculate new schema for the on-disk state, not persisted yet.
   Schema new_schema;
   ColumnId next_col_id = ColumnId(l.data().pb.next_column_id());
   if (req->alter_schema_steps_size()) {
@@ -1241,33 +1255,46 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     has_changes = true;
   }
 
-  // 3. Try to acquire the new table name
+  // 4. Try to acquire the new table name.
   if (req->has_new_table_name()) {
     std::lock_guard<LockType> catalog_lock(lock_);
-
     TRACE("Acquired catalog manager lock");
 
-    // Verify that the table does not exist
+    // Verify that the table does not exist.
     scoped_refptr<TableInfo> other_table = FindPtrOrNull(table_names_map_, req->new_table_name());
     if (other_table != nullptr) {
-      Status s = Status::AlreadyPresent("Table already exists", other_table->id());
+      Status s = Status::AlreadyPresent(Substitute("Table $0 already exists with id $1",
+                                                   req->new_table_name(), table->id()));
       SetupError(resp->mutable_error(), MasterErrorPB::TABLE_ALREADY_PRESENT, s);
       return s;
     }
 
-    // Acquire the new table name (now we have 2 name for the same table)
-    table_names_map_[req->new_table_name()] = table;
-    l.mutable_data()->pb.set_name(req->new_table_name());
+    // Reserve the new table name if possible.
+    if (!InsertIfNotPresent(&reserved_table_names_, req->new_table_name())) {
+      Status s = Status::ServiceUnavailable(Substitute(
+          "Table name $0 is already reserved", req->new_table_name()));
+      SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+      return s;
+    }
 
+    l.mutable_data()->pb.set_name(req->new_table_name());
     has_changes = true;
   }
+
+  // Ensure that we drop our reservation upon return.
+  auto cleanup = MakeScopedCleanup([&] () {
+    if (req->has_new_table_name()) {
+      std::lock_guard<LockType> l(lock_);
+      CHECK_EQ(1, reserved_table_names_.erase(req->new_table_name()));
+    }
+  });
 
   // Skip empty requests...
   if (!has_changes) {
     return Status::OK();
   }
 
-  // 4. Serialize the schema Increment the version number
+  // 5. Serialize the schema Increment the version number.
   if (new_schema.initialized()) {
     if (!l.data().pb.has_fully_applied_schema()) {
       l.mutable_data()->pb.mutable_fully_applied_schema()->CopyFrom(l.data().pb.schema());
@@ -1281,7 +1308,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
                                          l.mutable_data()->pb.version(),
                                          LocalTimeAsString()));
 
-  // 5. Update sys-catalog with the new table schema.
+  // 6. Update sys-catalog with the new table schema.
   TRACE("Updating metadata on disk");
   SysCatalogTable::Actions actions;
   actions.table_to_update = table.get();
@@ -1291,24 +1318,23 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
         Substitute("An error occurred while updating sys-catalog tables entry: $0",
                    s.ToString()));
     LOG(WARNING) << s.ToString();
-    if (req->has_new_table_name()) {
-      std::lock_guard<LockType> catalog_lock(lock_);
-      CHECK_EQ(table_names_map_.erase(req->new_table_name()), 1);
-    }
     CheckIfNoLongerLeaderAndSetupError(s, resp);
     return s;
   }
 
-  // 6. Remove the old name
+  // 7. Remove the old name and add the new name.
   if (req->has_new_table_name()) {
-    TRACE("Removing old-name $0 from by-name map", table_name);
+    TRACE("Replacing name $0 with $1 in by-name table map",
+          table_name, req->new_table_name());
     std::lock_guard<LockType> l_map(lock_);
     if (table_names_map_.erase(table_name) != 1) {
-      PANIC_RPC(rpc, "Could not remove table from map, name=" + l.data().name());
+      PANIC_RPC(rpc, Substitute(
+          "Could not remove table (name $0) from map", table_name));
     }
+    InsertOrDie(&table_names_map_, req->new_table_name(), table);
   }
 
-  // 7. Update the in-memory state
+  // 8. Update the in-memory state.
   TRACE("Committing in-memory state");
   l.Commit();
 
@@ -2736,8 +2762,8 @@ Status CatalogManager::ProcessPendingAssignments(
     s = SelectReplicasForTablet(ts_descs, tablet);
     if (!s.ok()) {
       s = s.CloneAndPrepend(Substitute(
-          "An error occured while selecting replicas for tablet $0: $1",
-          tablet->tablet_id(), s.ToString()));
+          "An error occured while selecting replicas for tablet $0",
+          tablet->tablet_id()));
       break;
     }
   }

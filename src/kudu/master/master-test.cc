@@ -1027,5 +1027,170 @@ TEST_F(MasterTest, TestConcurrentCreateOfSameTable) {
   }
 }
 
+TEST_F(MasterTest, TestConcurrentRenameOfSameTable) {
+  const char* kOldName = "testtb";
+  const char* kNewName = "testtb-new";
+  const Schema kTableSchema({ ColumnSchema("key", INT32),
+                              ColumnSchema("v1", UINT64),
+                              ColumnSchema("v2", STRING) },
+                            1);
+  ASSERT_OK(CreateTable(kOldName, kTableSchema));
+
+  // Kick off a bunch of threads all trying to rename the same table.
+  vector<thread> threads;
+  for (int i = 0; i < 10; i++) {
+    threads.emplace_back([&]() {
+      AlterTableRequestPB req;
+      AlterTableResponsePB resp;
+      RpcController controller;
+
+      req.mutable_table()->set_table_name(kOldName);
+      req.set_new_table_name(kNewName);
+      CHECK_OK(proxy_->AlterTable(req, &resp, &controller));
+      SCOPED_TRACE(resp.DebugString());
+
+      // There are two expected outcomes:
+      //
+      // 1. This thread won the AlterTable() race: no error.
+      // 2. This thread lost the AlterTable() race: TABLE_NOT_FOUND error
+      //    with NotFound status.
+      if (resp.has_error()) {
+        Status s = StatusFromPB(resp.error().status());
+        string failure_msg = Substitute("Unexpected response: $0",
+                                        resp.DebugString());
+        CHECK_EQ(MasterErrorPB::TABLE_NOT_FOUND, resp.error().code()) << failure_msg;
+        CHECK(s.IsNotFound()) << failure_msg;
+      }
+    });
+  }
+
+  for (auto& t : threads) {
+    t.join();
+  }
+}
+
+TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
+  const char* kOldName = "testtb";
+  const char* kNewName = "testtb-new";
+  const Schema kTableSchema({ ColumnSchema("key", INT32),
+                              ColumnSchema("v1", UINT64),
+                              ColumnSchema("v2", STRING) },
+                            1);
+  ASSERT_OK(CreateTable(kOldName, kTableSchema));
+
+  AtomicBool create_success(false);
+  AtomicBool rename_success(false);
+  vector<thread> threads;
+  for (int i = 0; i < 10; i++) {
+    if (i % 2) {
+      threads.emplace_back([&]() {
+        CreateTableRequestPB req;
+        CreateTableResponsePB resp;
+        RpcController controller;
+
+        req.set_name(kNewName);
+        RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
+
+        KuduPartialRow split1(&kTableSchema);
+        CHECK_OK(split1.SetInt32("key", 10));
+        encoder.Add(RowOperationsPB::SPLIT_ROW, split1);
+
+        KuduPartialRow split2(&kTableSchema);
+        CHECK_OK(split2.SetInt32("key", 20));
+        encoder.Add(RowOperationsPB::SPLIT_ROW, split2);
+
+        CHECK_OK(SchemaToPB(kTableSchema, req.mutable_schema()));
+        CHECK_OK(proxy_->CreateTable(req, &resp, &controller));
+        SCOPED_TRACE(resp.DebugString());
+
+        // There are three expected outcomes:
+        //
+        // 1. This thread finished well before the others: no error.
+        // 2. This thread raced with another thread: TABLE_NOT_FOUND error with
+        //    ServiceUnavailable status.
+        // 3. This thread finished well after the others: TABLE_ALREADY_PRESENT
+        //    error with AlreadyPresent status.
+        if (resp.has_error()) {
+          Status s = StatusFromPB(resp.error().status());
+          string failure_msg = Substitute("Unexpected response: $0",
+                                          resp.DebugString());
+          switch (resp.error().code()) {
+            case MasterErrorPB::TABLE_NOT_FOUND:
+              CHECK(s.IsServiceUnavailable()) << failure_msg;
+              break;
+            case MasterErrorPB::TABLE_ALREADY_PRESENT:
+              CHECK(s.IsAlreadyPresent()) << failure_msg;
+              break;
+            default:
+              FAIL() << failure_msg;
+          }
+        } else {
+          // Creating the table should only succeed once.
+          CHECK(!create_success.Exchange(true));
+        }
+      });
+    } else {
+      threads.emplace_back([&]() {
+        AlterTableRequestPB req;
+        AlterTableResponsePB resp;
+        RpcController controller;
+
+        req.mutable_table()->set_table_name(kOldName);
+        req.set_new_table_name(kNewName);
+        CHECK_OK(proxy_->AlterTable(req, &resp, &controller));
+        SCOPED_TRACE(resp.DebugString());
+
+        // There are three expected outcomes:
+        //
+        // 1. This thread finished well before the others: no error.
+        // 2. This thread raced with CreateTable(): TABLE_NOT_FOUND error with
+        //    ServiceUnavailable status (if raced during reservation stage)
+        //    or TABLE_ALREADY_PRESENT error with AlreadyPresent status (if
+        //    raced after reservation stage).
+        // 3. This thread raced with AlterTable() or finished well after the
+        //    others: TABLE_NOT_FOUND error with NotFound status.
+        if (resp.has_error()) {
+          Status s = StatusFromPB(resp.error().status());
+          string failure_msg = Substitute("Unexpected response: $0",
+                                          resp.DebugString());
+          switch (resp.error().code()) {
+            case MasterErrorPB::TABLE_NOT_FOUND:
+              CHECK(s.IsServiceUnavailable() || s.IsNotFound()) << failure_msg;
+              break;
+            case MasterErrorPB::TABLE_ALREADY_PRESENT:
+              CHECK(s.IsAlreadyPresent()) << failure_msg;
+              break;
+            default:
+              FAIL() << failure_msg;
+          }
+        } else {
+          // Renaming the table should only succeed once.
+          CHECK(!rename_success.Exchange(true));
+        }
+      });
+    }
+  }
+
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  // At least one of rename or create should have failed; if both succeeded
+  // there must be some sort of race.
+  CHECK(!rename_success.Load() || !create_success.Load());
+
+  unordered_set<string> live_tables;
+  live_tables.insert(kNewName);
+  if (create_success.Load()) {
+    live_tables.insert(kOldName);
+  }
+  MasterMetadataVerifier verifier(live_tables, {});
+  SysCatalogTable* sys_catalog =
+      mini_master_->master()->catalog_manager()->sys_catalog();
+  ASSERT_OK(sys_catalog->VisitTables(&verifier));
+  ASSERT_OK(sys_catalog->VisitTablets(&verifier));
+  ASSERT_OK(verifier.Verify());
+}
+
 } // namespace master
 } // namespace kudu

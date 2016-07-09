@@ -654,9 +654,19 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // Tablet maps: tablet-id -> TabletInfo
   TabletInfoMap tablet_map_;
 
-  // Names of tables that are currently being created. Only used in
-  // table creation so that transient tables are not made visible.
-  std::unordered_set<std::string> tables_being_created_;
+  // Names of tables that are currently reserved by CreateTable() or
+  // AlterTable().
+  //
+  // As a rule, operations that add new table names should do so as follows:
+  // 1. Acquire lock_.
+  // 2. Ensure table_names_map_ does not contain the new name.
+  // 3. Ensure reserved_table_names_ does not contain the new name.
+  // 4. Add the new name to reserved_table_names_.
+  // 5. Release lock_.
+  // 6. Perform the operation.
+  // 7. If it succeeded, add the name to table_names_map_ with lock_ held.
+  // 8. Remove the new name from reserved_table_names_ with lock_ held.
+  std::unordered_set<std::string> reserved_table_names_;
 
   Master *master_;
   Atomic32 closing_;
