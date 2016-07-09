@@ -37,6 +37,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/thread_restrictions.h"
@@ -69,6 +70,7 @@ using master::ListTabletServersResponsePB;
 using master::MasterErrorPB;
 using master::MasterFeatures;
 using master::MasterServiceProxy;
+using rpc::ErrorStatusPB;
 using rpc::Rpc;
 using rpc::RpcController;
 using strings::Substitute;
@@ -132,7 +134,6 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     KuduClient* client,
     const ReqClass& req,
     RespClass* resp,
-    int* num_attempts,
     const char* func_name,
     const boost::function<Status(MasterServiceProxy*,
                                  const ReqClass&,
@@ -141,8 +142,13 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     vector<uint32_t> required_feature_flags) {
   DCHECK(deadline.Initialized());
 
-  while (true) {
+  for (int num_attempts = 0;; num_attempts++) {
     RpcController rpc;
+
+    // Sleep if necessary.
+    if (num_attempts > 0) {
+      SleepFor(ComputeExponentialBackoff(num_attempts));
+    }
 
     // Have we already exceeded our deadline?
     MonoTime now = MonoTime::Now(MonoTime::FINE);
@@ -160,15 +166,23 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     rpc_deadline.AddDelta(client->default_rpc_timeout());
     rpc.set_deadline(MonoTime::Earliest(rpc_deadline, deadline));
 
-    if (num_attempts != nullptr) {
-      ++*num_attempts;
-    }
-
     for (uint32_t required_feature_flag : required_feature_flags) {
       rpc.RequireServerFeature(required_feature_flag);
     }
 
-    Status s = func(master_proxy_.get(), req, resp, &rpc);
+    // Take a ref to the proxy in case it disappears from underneath us.
+    shared_ptr<MasterServiceProxy> proxy(master_proxy());
+
+    Status s = func(proxy.get(), req, resp, &rpc);
+    if (s.IsRemoteError()) {
+      const ErrorStatusPB* err = rpc.error_response();
+      if (err &&
+          err->has_code() &&
+          err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY) {
+        continue;
+      }
+    }
+
     if (s.IsNetworkError()) {
       LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
                    << ") to leader Master (" << leader_master_hostport().ToString()
@@ -221,7 +235,6 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     KuduClient* client,
     const ListTablesRequestPB& req,
     ListTablesResponsePB* resp,
-    int* num_attempts,
     const char* func_name,
     const boost::function<Status(MasterServiceProxy*,
                                  const ListTablesRequestPB&,
@@ -234,7 +247,6 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     KuduClient* client,
     const ListTabletServersRequestPB& req,
     ListTabletServersResponsePB* resp,
-    int* num_attempts,
     const char* func_name,
     const boost::function<Status(MasterServiceProxy*,
                                  const ListTabletServersRequestPB&,
@@ -349,52 +361,15 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
                                      bool has_range_partition_bounds) {
   CreateTableResponsePB resp;
 
-  int attempts = 0;
   vector<uint32_t> features;
   if (has_range_partition_bounds) {
     features.push_back(MasterFeatures::RANGE_PARTITION_BOUNDS);
   }
   Status s = SyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB>(
-      deadline, client, req, &resp, &attempts, "CreateTable", &MasterServiceProxy::CreateTable,
+      deadline, client, req, &resp, "CreateTable", &MasterServiceProxy::CreateTable,
       features);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
-    if (resp.error().code() == MasterErrorPB::TABLE_ALREADY_PRESENT && attempts > 1) {
-      // If the table already exists and the number of attempts is >
-      // 1, then it means we may have succeeded in creating the
-      // table, but client didn't receive the successful
-      // response (e.g., due to failure before the successful
-      // response could be sent back, or due to a I/O pause or a
-      // network blip leading to a timeout, etc...)
-      KuduSchema actual_schema;
-      string table_id;
-      PartitionSchema actual_partition_schema;
-      RETURN_NOT_OK_PREPEND(
-          GetTableSchema(client, req.name(), deadline, &actual_schema,
-                         &actual_partition_schema, &table_id),
-          Substitute("Unable to check the schema of table $0", req.name()));
-      if (!schema.Equals(actual_schema)) {
-        string msg = Substitute("Table $0 already exists with a different "
-            "schema. Requested schema was: $1, actual schema is: $2",
-            req.name(), schema.schema_->ToString(), actual_schema.schema_->ToString());
-        LOG(ERROR) << msg;
-        return Status::AlreadyPresent(msg);
-      } else {
-        PartitionSchema partition_schema;
-        RETURN_NOT_OK(PartitionSchema::FromPB(req.partition_schema(),
-                                              *schema.schema_, &partition_schema));
-        if (!partition_schema.Equals(actual_partition_schema)) {
-          string msg = Substitute("Table $0 already exists with a different partition schema. "
-              "Requested partition schema was: $1, actual partition schema is: $2",
-              req.name(), partition_schema.DebugString(*schema.schema_),
-              actual_partition_schema.DebugString(*actual_schema.schema_));
-          LOG(ERROR) << msg;
-          return Status::AlreadyPresent(msg);
-        } else {
-          return Status::OK();
-        }
-      }
-    }
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();
@@ -416,7 +391,6 @@ Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
           client,
           req,
           &resp,
-          nullptr,
           "IsCreateTableDone",
           &MasterServiceProxy::IsCreateTableDone,
           {});
@@ -447,20 +421,13 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
                                      const MonoTime& deadline) {
   DeleteTableRequestPB req;
   DeleteTableResponsePB resp;
-  int attempts = 0;
 
   req.mutable_table()->set_table_name(table_name);
   Status s = SyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB>(
       deadline, client, req, &resp,
-      &attempts, "DeleteTable", &MasterServiceProxy::DeleteTable, {});
+      "DeleteTable", &MasterServiceProxy::DeleteTable, {});
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
-    if (resp.error().code() == MasterErrorPB::TABLE_NOT_FOUND && attempts > 1) {
-      // A prior attempt to delete the table has succeeded, but
-      // appeared as a failure to the client due to, e.g., an I/O or
-      // network issue.
-      return Status::OK();
-    }
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();
@@ -476,7 +443,6 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
           client,
           req,
           &resp,
-          nullptr,
           "AlterTable",
           &MasterServiceProxy::AlterTable,
           {});
@@ -506,7 +472,6 @@ Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
           client,
           req,
           &resp,
-          nullptr,
           "IsAlterTableDone",
           &MasterServiceProxy::IsAlterTableDone,
           {});

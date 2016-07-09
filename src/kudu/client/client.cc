@@ -309,7 +309,6 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
           this,
           req,
           &resp,
-          nullptr,
           "ListTabletServers",
           &MasterServiceProxy::ListTabletServers,
           {});
@@ -343,7 +342,6 @@ Status KuduClient::ListTables(vector<string>* tables,
           this,
           req,
           &resp,
-          nullptr,
           "ListTables",
           &MasterServiceProxy::ListTables,
           {});

@@ -122,10 +122,8 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
   }
 
   if (backoff) {
-    // Exponential backoff with jitter anchored between 10ms and 20ms, and an
-    // upper bound between 2.5s and 5s.
-    MonoDelta sleep = MonoDelta::FromMilliseconds(
-        (10 + rand() % 10) * static_cast<int>(std::pow(2.0, std::min(8, scan_attempts_ - 1))));
+    MonoDelta sleep =
+        KuduClient::Data::ComputeExponentialBackoff(scan_attempts_);
     MonoTime now = MonoTime::Now(MonoTime::FINE);
     now.AddDelta(sleep);
     if (deadline.ComesBefore(now)) {
