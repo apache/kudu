@@ -33,14 +33,19 @@ class RWMutex {
 
   void ReadLock();
   void ReadUnlock();
+  bool TryReadLock();
+
   void WriteLock();
   void WriteUnlock();
+  bool TryWriteLock();
 
   // Aliases for use with std::lock_guard and kudu::shared_lock.
   void lock() { WriteLock(); }
   void unlock() { WriteUnlock(); }
+  bool try_lock() { return TryWriteLock(); }
   void lock_shared() { ReadLock(); }
   void unlock_shared() { ReadUnlock(); }
+  bool try_lock_shared() { return TryReadLock(); }
 
  private:
   pthread_rwlock_t native_handle_;

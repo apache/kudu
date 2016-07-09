@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <glog/logging.h>
+#include <mutex>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
@@ -229,18 +230,30 @@ class percpu_rwlock {
 };
 
 // Simple implementation of the std::shared_lock API, which is not available in
-// the standard library until C++17. Defers error checking to the underlying
+// the standard library until C++14. Defers error checking to the underlying
 // mutex.
+
 template <typename Mutex>
 class shared_lock {
  public:
   shared_lock()
-    : m_(NULL) {
+      : m_(nullptr) {
   }
 
   explicit shared_lock(Mutex& m)
-    : m_(&m) {
+      : m_(&m) {
     m_->lock_shared();
+  }
+
+  shared_lock(Mutex& m, std::try_to_lock_t t)
+      : m_(nullptr) {
+    if (m.try_lock_shared()) {
+      m_ = &m;
+    }
+  }
+
+  bool owns_lock() const {
+    return m_;
   }
 
   void swap(shared_lock& other) {
@@ -248,7 +261,7 @@ class shared_lock {
   }
 
   ~shared_lock() {
-    if (m_ != NULL) {
+    if (m_ != nullptr) {
       m_->unlock_shared();
     }
   }

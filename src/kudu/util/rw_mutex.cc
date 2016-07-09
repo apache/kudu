@@ -49,6 +49,15 @@ void RWMutex::ReadUnlock() {
   unlock_rwlock(&native_handle_);
 }
 
+bool RWMutex::TryReadLock() {
+  int rv = pthread_rwlock_tryrdlock(&native_handle_);
+  if (rv == EBUSY) {
+    return false;
+  }
+  DCHECK_EQ(0, rv) << strerror(rv);
+  return true;
+}
+
 void RWMutex::WriteLock() {
   int rv = pthread_rwlock_wrlock(&native_handle_);
   DCHECK_EQ(0, rv) << strerror(rv);
@@ -56,6 +65,15 @@ void RWMutex::WriteLock() {
 
 void RWMutex::WriteUnlock() {
   unlock_rwlock(&native_handle_);
+}
+
+bool RWMutex::TryWriteLock() {
+  int rv = pthread_rwlock_trywrlock(&native_handle_);
+  if (rv == EBUSY) {
+    return false;
+  }
+  DCHECK_EQ(0, rv) << strerror(rv);
+  return true;
 }
 
 } // namespace kudu
