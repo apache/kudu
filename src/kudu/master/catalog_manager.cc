@@ -1764,7 +1764,9 @@ Status CatalogManager::GetTabletPeer(const string& tablet_id,
   // Note: CatalogManager has only one table, 'sys_catalog', with only
   // one tablet.
   shared_lock<LockType> l(lock_);
-  CHECK(sys_catalog_.get() != nullptr) << "sys_catalog_ must be initialized!";
+  if (!sys_catalog_) {
+    return Status::ServiceUnavailable("Systable not yet initialized");
+  }
   if (sys_catalog_->tablet_id() == tablet_id) {
     *tablet_peer = sys_catalog_->tablet_peer();
   } else {
