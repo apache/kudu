@@ -133,6 +133,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
     ASSERT_OK(tablet_peer_->Init(tablet(),
                                  clock(),
                                  messenger,
+                                 scoped_refptr<rpc::ResultTracker>(),
                                  log,
                                  metric_entity));
     consensus::ConsensusBootstrapInfo boot_info;
@@ -163,7 +164,10 @@ class RemoteBootstrapTest : public KuduTabletTest {
       CountDownLatch latch(1);
 
       unique_ptr<tablet::WriteTransactionState> state(
-          new tablet::WriteTransactionState(tablet_peer_.get(), &req, &resp));
+          new tablet::WriteTransactionState(tablet_peer_.get(),
+                                            &req,
+                                            nullptr, // No RequestIdPB
+                                            &resp));
       state->set_completion_callback(gscoped_ptr<tablet::TransactionCompletionCallback>(
           new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)));
       ASSERT_OK(tablet_peer_->SubmitWrite(std::move(state)));

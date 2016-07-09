@@ -266,6 +266,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   RETURN_NOT_OK(BootstrapTablet(metadata,
                                 scoped_refptr<server::Clock>(master_->clock()),
                                 master_->mem_tracker(),
+                                scoped_refptr<rpc::ResultTracker>(),
                                 metric_registry_,
                                 tablet_peer_->status_listener(),
                                 &tablet,
@@ -279,6 +280,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   RETURN_NOT_OK_PREPEND(tablet_peer_->Init(tablet,
                                            scoped_refptr<server::Clock>(master_->clock()),
                                            master_->messenger(),
+                                           scoped_refptr<rpc::ResultTracker>(),
                                            log,
                                            tablet->GetMetricEntity()),
                         "Failed to Init() TabletPeer");
@@ -330,7 +332,10 @@ Status SysCatalogTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *re
   gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
     new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, resp));
   unique_ptr<tablet::WriteTransactionState> tx_state(
-      new tablet::WriteTransactionState(tablet_peer_.get(), req, resp));
+      new tablet::WriteTransactionState(tablet_peer_.get(),
+                                        req,
+                                        nullptr, // No RequestIdPB
+                                        resp));
   tx_state->set_completion_callback(std::move(txn_callback));
 
   RETURN_NOT_OK(tablet_peer_->SubmitWrite(std::move(tx_state)));

@@ -65,6 +65,9 @@ void WriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg)
   replicate_msg->reset(new ReplicateMsg);
   (*replicate_msg)->set_op_type(WRITE_OP);
   (*replicate_msg)->mutable_write_request()->CopyFrom(*state()->request());
+  if (state()->are_results_tracked()) {
+    (*replicate_msg)->mutable_request_id()->CopyFrom(state()->request_id());
+  }
 }
 
 Status WriteTransaction::Prepare() {
@@ -126,7 +129,7 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   // Add per-row errors to the result, update metrics.
   int i = 0;
   for (const RowOp* op : state()->row_ops()) {
-    if (state()->response() != nullptr && op->result->has_failed_status()) {
+    if (op->result->has_failed_status()) {
       // Replicas disregard the per row errors, for now
       // TODO check the per-row errors against the leader's, at least in debug mode
       WriteResponsePB::PerRowErrorPB* error = state()->response()->add_per_row_errors();
@@ -201,6 +204,7 @@ string WriteTransaction::ToString() const {
 
 WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
                                              const tserver::WriteRequestPB *request,
+                                             const rpc::RequestIdPB* request_id,
                                              tserver::WriteResponsePB *response)
   : TransactionState(tablet_peer),
     request_(DCHECK_NOTNULL(request)),
@@ -208,6 +212,12 @@ WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
     mvcc_tx_(nullptr),
     schema_at_decode_time_(nullptr) {
   external_consistency_mode_ = request_->external_consistency_mode();
+  if (!response_) {
+    response_ = &owned_response_;
+  }
+  if (request_id) {
+    request_id_ = *request_id;
+  }
 }
 
 void WriteTransactionState::SetMvccTxAndTimestamp(gscoped_ptr<ScopedTransaction> mvcc_tx) {

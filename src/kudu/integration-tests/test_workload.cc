@@ -58,6 +58,7 @@ TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
     write_timeout_millis_(20000),
     timeout_allowed_(false),
     not_found_allowed_(false),
+    already_present_allowed_(false),
     num_replicas_(3),
     num_tablets_(1),
     table_name_(kDefaultTableName),
@@ -148,11 +149,12 @@ void TestWorkload::WriteThread() {
         if (not_found_allowed_ && e->status().IsNotFound()) {
           continue;
         }
-        // We don't handle write idempotency yet. (i.e making sure that when a leader fails
-        // writes to it that were eventually committed by the new leader but un-ackd to the
-        // client are not retried), so some errors are expected.
-        // It's OK as long as the errors are Status::AlreadyPresent();
-        CHECK(e->status().IsAlreadyPresent()) << "Unexpected error: " << e->status().ToString();
+
+        if (already_present_allowed_ && e->status().IsAlreadyPresent()) {
+          continue;
+        }
+
+        CHECK(e->status().ok()) << "Unexpected status: " << e->status().ToString();
       }
       inserted -= errors.size();
     }

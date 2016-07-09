@@ -107,6 +107,7 @@ class BootstrapTest : public LogTestBase {
         meta,
         scoped_refptr<Clock>(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
         shared_ptr<MemTracker>(),
+        scoped_refptr<rpc::ResultTracker>(),
         NULL,
         listener.get(),
         tablet,

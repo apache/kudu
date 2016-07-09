@@ -68,6 +68,23 @@ void RpcContext::RespondSuccess() {
   }
 }
 
+void RpcContext::RespondNoCache() {
+  if (AreResultsTracked()) {
+    result_tracker_->FailAndRespond(call_->header().request_id(),
+                                    response_pb_.get());
+  } else {
+    VLOG(4) << call_->remote_method().service_name() << ": Sending RPC failure response for "
+        << call_->ToString() << ": " << response_pb_->DebugString();
+    TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
+                           "response", pb_util::PbTracer::TracePb(*response_pb_),
+                           "trace", trace()->DumpToString());
+    // This is a bit counter intuitive, but when we get the failure but set the error on the
+    // call's response we call RespondSuccess() instead of RespondFailure().
+    call_->RespondSuccess(*response_pb_);
+    delete this;
+  }
+}
+
 void RpcContext::RespondFailure(const Status &status) {
   if (AreResultsTracked()) {
     result_tracker_->FailAndRespond(call_->header().request_id(),

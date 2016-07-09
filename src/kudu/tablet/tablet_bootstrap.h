@@ -43,6 +43,10 @@ namespace consensus {
 struct ConsensusBootstrapInfo;
 } // namespace consensus
 
+namespace rpc {
+class ResultTracker;
+} // namespace rpc
+
 namespace server {
 class Clock;
 }
@@ -94,6 +98,7 @@ extern const char* kLogRecoveryDir;
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<server::Clock>& clock,
                        const std::shared_ptr<MemTracker>& mem_tracker,
+                       const scoped_refptr<rpc::ResultTracker>& result_tracker,
                        MetricRegistry* metric_registry,
                        TabletStatusListener* status_listener,
                        std::shared_ptr<Tablet>* rebuilt_tablet,

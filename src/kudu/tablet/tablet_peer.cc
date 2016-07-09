@@ -36,6 +36,10 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
+#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/remote_method.h"
+#include "kudu/rpc/rpc_service.h"
+#include "kudu/rpc/service_pool.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
@@ -91,6 +95,7 @@ using consensus::WRITE_OP;
 using log::Log;
 using log::LogAnchorRegistry;
 using rpc::Messenger;
+using rpc::ResultTracker;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
@@ -122,6 +127,7 @@ TabletPeer::~TabletPeer() {
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const scoped_refptr<server::Clock>& clock,
                         const shared_ptr<Messenger>& messenger,
+                        const scoped_refptr<ResultTracker>& result_tracker,
                         const scoped_refptr<Log>& log,
                         const scoped_refptr<MetricEntity>& metric_entity) {
 
@@ -143,6 +149,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     clock_ = clock;
     messenger_ = messenger;
     log_ = log;
+    result_tracker_ = result_tracker;
 
     ConsensusOptions options;
     options.tablet_id = meta_->tablet_id();
@@ -319,10 +326,12 @@ Status TabletPeer::WaitUntilConsensusRunning(const MonoDelta& timeout) {
 Status TabletPeer::SubmitWrite(unique_ptr<WriteTransactionState> state) {
   RETURN_NOT_OK(CheckRunning());
 
+  state->SetResultTracker(result_tracker_);
   gscoped_ptr<WriteTransaction> transaction(new WriteTransaction(std::move(state),
                                                                  consensus::LEADER));
   scoped_refptr<TransactionDriver> driver;
-  RETURN_NOT_OK(NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver));
+  RETURN_NOT_OK(NewLeaderTransactionDriver(transaction.PassAs<Transaction>(),
+                                           &driver));
   return driver->ExecuteAsync();
 }
 
@@ -483,7 +492,11 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
       DCHECK(replicate_msg->has_write_request()) << "WRITE_OP replica"
           " transaction must receive a WriteRequestPB";
       unique_ptr<WriteTransactionState> tx_state(
-          new WriteTransactionState(this, &replicate_msg->write_request()));
+          new WriteTransactionState(
+              this,
+              &replicate_msg->write_request(),
+              replicate_msg->has_request_id() ? &replicate_msg->request_id() : nullptr));
+      tx_state->SetResultTracker(result_tracker_);
 
       transaction.reset(new WriteTransaction(std::move(tx_state), consensus::REPLICA));
       break;

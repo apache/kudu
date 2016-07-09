@@ -83,6 +83,12 @@ class RpcContext {
   // and response protobufs are also destroyed.
   void RespondSuccess();
 
+  // Like the above, but doesn't store the results of the service call, if results
+  // are being tracked.
+  // Used in cases where a call specific error was set on the response protobuf,
+  // the call should be considered failed, thus results shouldn't be cached.
+  void RespondNoCache();
+
   // Respond with an error to the client. This sends back an error with the code
   // ERROR_APPLICATION. Because there is no more specific error code passed back
   // to the client, most applications should create a custom error PB extension

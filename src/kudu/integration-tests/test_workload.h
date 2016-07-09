@@ -78,6 +78,12 @@ class TestWorkload {
     not_found_allowed_ = allowed;
   }
 
+  // Whether per-row errors with Status::AlreadyPresent() are allowed.
+  // By default this triggers a check failure.
+  void set_already_present_allowed(bool allowed) {
+    already_present_allowed_ = allowed;
+  }
+
   void set_num_replicas(int r) {
     num_replicas_ = r;
   }
@@ -116,6 +122,9 @@ class TestWorkload {
 
   void set_write_pattern(WritePattern pattern) {
     write_pattern_ = pattern;
+    // Since we're writing with dup keys we will get AlreadyPresent() errors on the response
+    // so allow it.
+    set_already_present_allowed(true);
   }
 
   // Sets up the internal client and creates the table which will be used for
@@ -156,6 +165,7 @@ class TestWorkload {
   int write_timeout_millis_;
   bool timeout_allowed_;
   bool not_found_allowed_;
+  bool already_present_allowed_;
   WritePattern write_pattern_ = INSERT_RANDOM_ROWS;
 
   int num_replicas_;

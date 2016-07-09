@@ -22,6 +22,7 @@ import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/metadata.proto";
 import "kudu/consensus/opid.proto";
+import "kudu/rpc/rpc_header.proto";
 import "kudu/tablet/metadata.proto";
 import "kudu/tablet/tablet.proto";
 import "kudu/tserver/tserver_admin.proto";
@@ -176,6 +177,9 @@ message ReplicateMsg {
   optional tserver.WriteRequestPB write_request = 5;
   optional tserver.AlterSchemaRequestPB alter_schema_request = 6;
   optional ChangeConfigRecordPB change_config_record = 7;
+
+  // The client's request id for this message, if it is set.
+  optional rpc.RequestIdPB request_id = 8;
 
   optional NoOpRequestPB noop_request = 999;
 }

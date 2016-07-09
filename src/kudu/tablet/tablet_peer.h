@@ -42,6 +42,7 @@ class LogAnchorRegistry;
 
 namespace rpc {
 class Messenger;
+class ResultTracker;
 }
 
 namespace tserver {
@@ -78,6 +79,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   Status Init(const std::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
               const std::shared_ptr<rpc::Messenger>& messenger,
+              const scoped_refptr<rpc::ResultTracker>& result_tracker,
               const scoped_refptr<log::Log>& log,
               const scoped_refptr<MetricEntity>& metric_entity);
 
@@ -329,6 +331,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // List of maintenance operations for the tablet that need information that only the peer
   // can provide.
   std::vector<MaintenanceOp*> maintenance_ops_;
+
+  // The result tracker for writes.
+  scoped_refptr<rpc::ResultTracker> result_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletPeer);
 };

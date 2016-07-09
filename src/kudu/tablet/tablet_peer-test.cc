@@ -138,6 +138,7 @@ class TabletPeerTest : public KuduTabletTest {
     ASSERT_OK(tablet_peer_->Init(tablet(),
                                  clock(),
                                  messenger_,
+                                 scoped_refptr<rpc::ResultTracker>(),
                                  log,
                                  metric_entity_));
   }
@@ -193,6 +194,7 @@ class TabletPeerTest : public KuduTabletTest {
     gscoped_ptr<WriteResponsePB> resp(new WriteResponsePB());
     unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(tablet_peer,
                                                                          &req,
+                                                                         nullptr, // No RequestIdPB
                                                                          resp.get()));
 
     CountDownLatch rpc_latch(1);
@@ -464,6 +466,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
     ASSERT_OK(GenerateSequentialDeleteRequest(req.get()));
     unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(tablet_peer_.get(),
                                                                          req.get(),
+                                                                         nullptr, // No RequestIdPB
                                                                          resp.get()));
 
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(

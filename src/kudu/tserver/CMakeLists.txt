@@ -47,6 +47,7 @@ PROTOBUF_GENERATE_CPP(
   PROTO_FILES tserver.proto)
 set(TSERVER_PROTO_LIBS
   kudu_common_proto
+  krpc
   consensus_metadata_proto
   tablet_proto
   wire_protocol_proto)

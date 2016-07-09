@@ -36,6 +36,8 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -45,6 +47,7 @@
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/remote_bootstrap_client.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tablet_service.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -126,6 +129,7 @@ using consensus::StartRemoteBootstrapRequestPB;
 using log::Log;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
+using rpc::ResultTracker;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -640,6 +644,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
     s = BootstrapTablet(meta,
                         scoped_refptr<server::Clock>(server_->clock()),
                         server_->mem_tracker(),
+                        server_->result_tracker(),
                         metric_registry_,
                         tablet_peer->status_listener(),
                         &tablet,
@@ -660,6 +665,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
     s =  tablet_peer->Init(tablet,
                            scoped_refptr<server::Clock>(server_->clock()),
                            server_->messenger(),
+                           server_->result_tracker(),
                            log,
                            tablet->GetMetricEntity());
 

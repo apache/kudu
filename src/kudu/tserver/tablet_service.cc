@@ -259,10 +259,7 @@ static void SetupErrorAndRespond(TabletServerErrorPB* error,
 
   StatusToPB(s, error->mutable_status());
   error->set_code(code);
-  // TODO: rename RespondSuccess() to just "Respond" or
-  // "SendResponse" since we use it for application-level error
-  // responses, and this just looks confusing!
-  context->RespondSuccess();
+  context->RespondNoCache();
 }
 
 template <class ReqType, class RespType>
@@ -732,9 +729,11 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     return;
   }
 
-  unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(tablet_peer.get(),
-                                                                       req,
-                                                                       resp));
+  unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(
+      tablet_peer.get(),
+      req,
+      context->AreResultsTracked() ? context->request_id() : nullptr,
+      resp));
 
   // If the client sent us a timestamp, decode it and update the clock so that all future
   // timestamps are greater than the passed timestamp.

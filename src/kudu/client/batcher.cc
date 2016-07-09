@@ -299,8 +299,7 @@ string WriteRpc::ToString() const {
 }
 
 void WriteRpc::Try(RemoteTabletServer* replica, const ResponseCallback& callback) {
-  VLOG(2) << "Tablet " << tablet_id_ << ": Writing batch to replica "
-      << replica->ToString();
+  VLOG(2) << "Tablet " << tablet_id_ << ": Writing batch to replica " << replica->ToString();
   replica->proxy()->WriteAsync(req_, &resp_,
                                mutable_retrier()->mutable_controller(),
                                callback);

@@ -52,6 +52,10 @@ class ReportedTabletPB;
 class TabletReportPB;
 } // namespace master
 
+namespace rpc {
+class ResultTracker;
+} // namespace rpc
+
 namespace tablet {
 class TabletMetadata;
 class TabletPeer;

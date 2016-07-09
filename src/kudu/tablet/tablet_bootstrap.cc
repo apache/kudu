@@ -41,6 +41,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/rpc/result_tracker.h"
 #include "kudu/server/clock.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/lock_manager.h"
@@ -97,6 +98,7 @@ using log::LogEntryPB;
 using log::LogOptions;
 using log::LogReader;
 using log::ReadableLogSegment;
+using rpc::ResultTracker;
 using server::Clock;
 using std::map;
 using std::shared_ptr;
@@ -106,6 +108,8 @@ using std::unordered_map;
 using strings::Substitute;
 using tserver::AlterSchemaRequestPB;
 using tserver::WriteRequestPB;
+using tserver::WriteResponsePB;
+
 
 struct ReplayState;
 
@@ -160,6 +164,7 @@ class TabletBootstrap {
   TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
                   const scoped_refptr<Clock>& clock,
                   shared_ptr<MemTracker> mem_tracker,
+                  const scoped_refptr<ResultTracker> result_tracker,
                   MetricRegistry* metric_registry,
                   TabletStatusListener* listener,
                   const scoped_refptr<LogAnchorRegistry>& log_anchor_registry);
@@ -239,10 +244,11 @@ class TabletBootstrap {
                            const TxResultPB& result,
                            const vector<bool>& already_flushed);
 
-  // Determine which of the operations from 'result' correspond to already-flushed
-  // stores.
-  Status DetermineFlushedOps(const TxResultPB& result,
-                             vector<bool>* flushed_by_op);
+  // Determine which of the operations from 'result' correspond to already-flushed stores.
+  // At the same time this builds the WriteResponsePB that we'll store on the ResultTracker.
+  Status DetermineFlushedOpsAndBuildResponse(const TxResultPB& result,
+                                             vector<bool>* flushed_by_op,
+                                             WriteResponsePB* response);
 
   // Pass through all of the decoded operations in tx_state. For
   // each op:
@@ -305,6 +311,7 @@ class TabletBootstrap {
   scoped_refptr<TabletMetadata> meta_;
   scoped_refptr<Clock> clock_;
   shared_ptr<MemTracker> mem_tracker_;
+  scoped_refptr<rpc::ResultTracker> result_tracker_;
   MetricRegistry* metric_registry_;
   TabletStatusListener* listener_;
   gscoped_ptr<tablet::Tablet> tablet_;
@@ -399,6 +406,7 @@ void TabletStatusListener::StatusMessage(const string& status) {
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<Clock>& clock,
                        const shared_ptr<MemTracker>& mem_tracker,
+                       const scoped_refptr<ResultTracker>& result_tracker,
                        MetricRegistry* metric_registry,
                        TabletStatusListener* listener,
                        shared_ptr<tablet::Tablet>* rebuilt_tablet,
@@ -407,7 +415,7 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        ConsensusBootstrapInfo* consensus_info) {
   TRACE_EVENT1("tablet", "BootstrapTablet",
                "tablet_id", meta->tablet_id());
-  TabletBootstrap bootstrap(meta, clock, mem_tracker,
+  TabletBootstrap bootstrap(meta, clock, mem_tracker, result_tracker,
                             metric_registry, listener, log_anchor_registry);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.
@@ -436,11 +444,13 @@ static string DebugInfo(const string& tablet_id,
 TabletBootstrap::TabletBootstrap(
     const scoped_refptr<TabletMetadata>& meta,
     const scoped_refptr<Clock>& clock, shared_ptr<MemTracker> mem_tracker,
+    const scoped_refptr<ResultTracker> result_tracker,
     MetricRegistry* metric_registry, TabletStatusListener* listener,
     const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
     : meta_(meta),
       clock_(clock),
       mem_tracker_(std::move(mem_tracker)),
+      result_tracker_(result_tracker),
       metric_registry_(metric_registry),
       listener_(listener),
       log_anchor_registry_(log_anchor_registry) {}
@@ -1182,13 +1192,19 @@ Status TabletBootstrap::AppendCommitMsg(const CommitMsg& commit_msg) {
   return log_->Append(&commit_entry);
 }
 
-Status TabletBootstrap::DetermineFlushedOps(const TxResultPB& result,
-                                            vector<bool>* flushed_by_op) {
+Status TabletBootstrap::DetermineFlushedOpsAndBuildResponse(const TxResultPB& result,
+                                                            vector<bool>* flushed_by_op,
+                                                            WriteResponsePB* response) {
   int num_ops = result.ops_size();
   flushed_by_op->resize(num_ops);
 
   for (int i = 0; i < num_ops; i++) {
     const auto& orig_op_result = result.ops(i);
+    if (orig_op_result.has_failed_status() && response) {
+      WriteResponsePB::PerRowErrorPB* error = response->add_per_row_errors();
+      error->set_row_index(i);
+      error->mutable_error()->CopyFrom(orig_op_result.failed_status());
+    }
     bool f;
     RETURN_NOT_OK(FilterOperation(orig_op_result, &f));
     (*flushed_by_op)[i] = f;
@@ -1217,12 +1233,40 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
   tablet_->StartTransaction(&tx_state);
   tablet_->StartApplying(&tx_state);
 
+  unique_ptr<WriteResponsePB> response;
+
+  bool tracking_results = result_tracker_.get() != nullptr && replicate_msg->has_request_id();
+
+  // If the results are being tracked and this write has a request id, register
+  // it with the result tracker.
+  ResultTracker::RpcState state;
+  if (tracking_results) {
+    VLOG(1) << result_tracker_.get() << " Boostrapping request for tablet: "
+        << write->tablet_id() << ". State: " << 0 << " id: "
+        << replicate_msg->request_id().DebugString();
+    // We only replay committed requests so the result of tracking this request can be:
+    // NEW - This is a previously untracked request, or we changed the driver -> store the result
+    // COMPLETED - We've bootstrapped this tablet twice, and previously stored the result -> do
+    //             nothing.
+    state = result_tracker_->TrackRpcOrChangeDriver(replicate_msg->request_id());
+    CHECK(state == ResultTracker::RpcState::NEW || state == ResultTracker::RpcState::COMPLETED)
+        << "Wrong state: " << state;
+    response.reset(new WriteResponsePB());
+    response->set_timestamp(replicate_msg->timestamp());
+  }
+
   // Determine which of the operations are already flushed to persistent
   // storage and don't need to be re-applied. We can do this even before
   // we decode any row operations, so we can short-circuit that decoding
   // in the case that the entire op has been already flushed.
   vector<bool> already_flushed;
-  RETURN_NOT_OK(DetermineFlushedOps(commit_msg.result(), &already_flushed));
+  RETURN_NOT_OK(DetermineFlushedOpsAndBuildResponse(commit_msg.result(),
+                                                    &already_flushed,
+                                                    response.get()));
+
+  if (tracking_results && state == ResultTracker::NEW) {
+    result_tracker_->RecordCompletionAndRespond(replicate_msg->request_id(), response.get());
+  }
 
   bool all_already_flushed = std::all_of(already_flushed.begin(),
                                          already_flushed.end(),

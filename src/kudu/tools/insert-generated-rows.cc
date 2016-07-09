@@ -107,11 +107,7 @@ static int WriteRandomDataToTable(int argc, char** argv) {
       session->GetPendingErrors(&errors, &overflow);
       CHECK(!overflow);
       for (const client::KuduError* e : errors) {
-        if (e->status().IsAlreadyPresent()) {
-          LOG(WARNING) << "Ignoring insert error: " << e->status().ToString();
-        } else {
-          LOG(FATAL) << "Unexpected insert error: " << e->status().ToString();
-        }
+        LOG(FATAL) << "Unexpected insert error: " << e->status().ToString();
       }
       continue;
     }

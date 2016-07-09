@@ -74,6 +74,7 @@ class WriteTransactionState : public TransactionState {
  public:
   WriteTransactionState(TabletPeer* tablet_peer,
                         const tserver::WriteRequestPB *request,
+                        const rpc::RequestIdPB* request_id,
                         tserver::WriteResponsePB *response = NULL);
   virtual ~WriteTransactionState();
 
@@ -185,9 +186,13 @@ class WriteTransactionState : public TransactionState {
   // from the request).
   void ResetRpcFields();
 
-  // pointers to the rpc context, request and response, lifecyle
-  // is managed by the rpc subsystem. These pointers maybe NULL if the
-  // transaction was not initiated by an RPC call.
+  // An owned version of the response, for follower transactions.
+  tserver::WriteResponsePB owned_response_;
+
+  // The lifecycle of these pointers request and response, is not managed by this class.
+  // These pointers are never null: 'request_' is always set on construction and 'response_' is
+  // either set to the response passed on the ctor, if there is one, or to point to
+  // 'owned_response_' if there isn't.
   const tserver::WriteRequestPB* request_;
   tserver::WriteResponsePB* response_;
 
