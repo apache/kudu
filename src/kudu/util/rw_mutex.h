@@ -28,7 +28,27 @@ namespace kudu {
 // Implemented as a thin wrapper around pthread_rwlock_t.
 class RWMutex {
  public:
+
+  // Possible fairness policies for the RWMutex.
+  enum class Priority {
+    // The lock will prioritize readers at the expense of writers.
+    PREFER_READING,
+
+    // The lock will prioritize writers at the expense of readers.
+    //
+    // Care should be taken when using this fairness policy, as it can lead to
+    // unexpected deadlocks (e.g. a writer waiting on the lock will prevent
+    // additional readers from acquiring it).
+    PREFER_WRITING,
+  };
+
+  // Create an RWMutex that prioritizes readers.
   RWMutex();
+
+  // Create an RWMutex with customized priority. This is a best effort; the
+  // underlying platform may not support custom priorities.
+  explicit RWMutex(Priority prio);
+
   ~RWMutex();
 
   void ReadLock();
@@ -48,6 +68,8 @@ class RWMutex {
   bool try_lock_shared() { return TryReadLock(); }
 
  private:
+  void Init(Priority prio);
+
   pthread_rwlock_t native_handle_;
 
   DISALLOW_COPY_AND_ASSIGN(RWMutex);
