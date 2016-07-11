@@ -972,6 +972,38 @@ if (UNIX)
 endif (UNIX)
 
 ############################################################
+# "make doxygen" target
+# Needs the doxygen system package to work.
+############################################################
+if (UNIX)
+  find_package(Doxygen)
+  if (NOT DOXYGEN_FOUND)
+    message(WARNING "Doxygen not found: 'doxygen' target is not available")
+  else ()
+    set(DOXY_SUBDIR ${CMAKE_CURRENT_BINARY_DIR}/docs/doxygen)
+    set(DOXY_CLIENT_DESTDIR ${DOXY_SUBDIR}/tmp.client)
+    set(DOXY_CLIENT_API_CFG ${DOXY_SUBDIR}/client_api.doxy)
+    set(DOXY_CLIENT_API_OUTDIR ${DOXY_SUBDIR}/client_api)
+    # NOTE: DOXY_CLIENT_API_OUTDIR is used in client_api.doxy.in template file
+    configure_file(docs/support/doxygen/client_api.doxy.in ${DOXY_CLIENT_API_CFG} @ONLY)
+    add_custom_target(doxy_install_client_alt_destdir
+      COMMAND ${CMAKE_COMMAND} -E remove_directory ${DOXY_CLIENT_DESTDIR}
+      COMMAND ${CMAKE_MAKE_PROGRAM} install DESTDIR=${DOXY_CLIENT_DESTDIR}
+      COMMENT "Installing Kudu client files into temporary destroot"
+    )
+    add_custom_target(doxygen
+      COMMAND ${DOXYGEN_EXECUTABLE} ${DOXY_CLIENT_API_CFG}
+      WORKING_DIRECTORY ${DOXY_CLIENT_DESTDIR}/${CMAKE_INSTALL_PREFIX}
+      COMMENT "Generating Kudu C++ client API documentation"
+    )
+    add_dependencies(doxy_install_client_alt_destdir kudu_client_exported)
+    add_dependencies(doxygen doxy_install_client_alt_destdir)
+    # If doxygen is present, generate doxygen documentation along with 'docs'.
+    add_dependencies(docs doxygen)
+  endif ()
+endif (UNIX)
+
+############################################################
 # Subdirectories
 ############################################################
 

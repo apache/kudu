@@ -1,19 +1,27 @@
 // Licensed to the Apache Software Foundation (ASF) under one
-// or more contributor license agreements.  See the NOTICE file
+// or more contributor license agreements. See the NOTICE file
 // distributed with this work for additional information
-// regarding copyright ownership.  The ASF licenses this file
+// regarding copyright ownership. The ASF licenses this file
 // to you under the Apache License, Version 2.0 (the
 // "License"); you may not use this file except in compliance
-// with the License.  You may obtain a copy of the License at
+// with the License. You may obtain a copy of the License at
 //
 //   http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing,
 // software distributed under the License is distributed on an
 // "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.  See the License for the
+// KIND, either express or implied. See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
+/// @mainpage Kudu C++ client API documentation
+///
+/// Kudu provides C++ and Java client APIs, as well as reference examples
+/// to illustrate their use (check the source code for the examples).
+/// This is Kudu C++ client API. Use of any APIs other than the client APIs
+/// is unsupported.
+
 #ifndef KUDU_CLIENT_CLIENT_H
 #define KUDU_CLIENT_CLIENT_H
 
@@ -76,82 +84,126 @@ class RemoteTabletServer;
 class WriteRpc;
 } // namespace internal
 
-// Installs a callback for internal client logging. It is invoked for a
-// log event of any severity, across any KuduClient instance.
-//
-// Only the first invocation has any effect; subsequent invocations are
-// a no-op. The caller must ensure that 'cb' stays alive until
-// UninstallLoggingCallback() is called.
-//
-// Before a callback is registered, all internal client log events are
-// logged to stderr.
+/// Install a callback for internal client logging.
+///
+/// The callback can be installed for a log event of any severity,
+/// across any KuduClient object.
+///
+/// Only the first invocation has an effect; subsequent invocations are
+/// a no-op. Before a callback is registered, all internal client log events
+/// are logged to the stderr.
+///
+/// @param [in] cb
+///   Logging callback. The caller must ensure that @c cb stays alive until
+///   UninstallLoggingCallback() is called.
 void KUDU_EXPORT InstallLoggingCallback(KuduLoggingCallback* cb);
 
-// Removes a callback installed via InstallLoggingCallback().
-//
-// Only the first invocation has any effect; subsequent invocations are
-// a no-op.
-//
-// Should be called before unloading the client library.
+/// Remove callback installed via InstallLoggingCallback().
+///
+/// Only the first invocation has an effect; subsequent invocations are
+/// a no-op.
+///
+/// Should be called before unloading the client library.
 void KUDU_EXPORT UninstallLoggingCallback();
 
-// Set the logging verbosity of the client library. By default, this is 0. Logs become
-// progressively more verbose as the level is increased. Empirically, the highest
-// verbosity level used in Kudu is 6, which includes very fine-grained tracing
-// information. Most useful logging is enabled at level 1 or 2, with the higher levels
-// used only in rare circumstances.
-//
-// Logs are emitted to stderr, or to the configured log callback at SEVERITY_INFO.
-//
-// This may be called safely at any point during usage of the library.
+/// Set the logging verbosity of the client library.
+///
+/// By default, the logging level is 0. Logs become progressively more verbose
+/// as the level is increased. Empirically, the highest verbosity level
+/// used in Kudu is 6, which includes very fine-grained tracing information.
+/// Most useful logging is enabled at level 1 or 2, with the higher levels
+/// used only in rare circumstances.
+///
+/// Logs are emitted to stderr, or to the configured log callback
+/// at @c SEVERITY_INFO.
+///
+/// This function may be called safely at any point during usage of the library.
+///
+/// @param [in] level
+///   Logging level to set.
 void KUDU_EXPORT SetVerboseLogLevel(int level);
 
-// The Kudu client library uses signals internally in some cases. By default, it uses
-// SIGUSR2. If your application makes use of SIGUSR2, this advanced API can help
-// workaround conflicts.
+/// Set signal number to use internally.
+///
+/// The Kudu client library uses signals internally in some cases.
+/// By default, it uses SIGUSR2. If your application makes use of SIGUSR2,
+/// this advanced API can help workaround conflicts.
+///
+/// @param [in] signum
+///   Signal number to use for internal.
+/// @return Operation result status.
 Status KUDU_EXPORT SetInternalSignalNumber(int signum);
 
-// Return a single-version string identifying the Kudu client.
+/// @return Short version info, i.e. a single-line version string
+///   identifying the Kudu client.
 std::string KUDU_EXPORT GetShortVersionString();
 
-// Return a longer multi-line version string identifying the client, including
-// build time, etc.
+/// @return Detailed version info, i.e. a multi-line version string identifying
+///   the client, including build time, etc.
 std::string KUDU_EXPORT GetAllVersionInfo();
 
-// Creates a new KuduClient with the desired options.
-//
-// Note that KuduClients are shared amongst multiple threads and, as such,
-// are stored in shared pointers.
+/// @brief A "factory" for KuduClient objects.
+///
+/// This class is used to create instances of the KuduClient class
+/// with pre-set options/parameters.
 class KUDU_EXPORT KuduClientBuilder {
  public:
   KuduClientBuilder();
   ~KuduClientBuilder();
 
+  /// Clear the set of master addresses.
+  ///
+  /// @return Reference to the updated object.
   KuduClientBuilder& clear_master_server_addrs();
 
-  // Add RPC addresses of multiple masters.
+  /// Add RPC addresses of multiple masters.
+  ///
+  /// @param [in] addrs
+  ///   RPC addresses of masters to add.
+  /// @return Reference to the updated object.
   KuduClientBuilder& master_server_addrs(const std::vector<std::string>& addrs);
 
-  // Add an RPC address of a master. At least one master is required.
+  /// Add an RPC address of a master to work with.
+  ///
+  /// At least one master is required.
+  ///
+  /// @param [in] addr
+  ///   RPC address of master server to add.
+  /// @return Reference to the updated object.
   KuduClientBuilder& add_master_server_addr(const std::string& addr);
 
-  // The default timeout used for administrative operations (e.g. CreateTable,
-  // AlterTable, ...). Optional.
-  //
-  // If not provided, defaults to 30s.
+  /// Set the default timeout for administrative operations.
+  ///
+  /// Using this method it is possible to modify the default timeout
+  /// for operations like CreateTable, AlterTable, etc.
+  /// By default it is 30 seconds.
+  ///
+  /// @param [in] timeout
+  ///   Timeout value to set.
+  /// @return Reference to the updated object.
   KuduClientBuilder& default_admin_operation_timeout(const MonoDelta& timeout);
 
-  // The default timeout for individual RPCs. Optional.
-  //
-  // If not provided, defaults to 10s.
+  /// Set the default timeout for individual RPCs.
+  ///
+  /// If not provided, defaults to 10 seconds.
+  ///
+  /// @param [in] timeout
+  ///   Timeout value to set.
+  /// @return Reference to the updated object.
   KuduClientBuilder& default_rpc_timeout(const MonoDelta& timeout);
 
-  // Creates the client.
-  //
-  // The return value may indicate an error in the create operation, or a
-  // misuse of the builder; in the latter case, only the last error is
-  // returned.
+  /// Create a client object.
+  ///
+  /// @note KuduClients objects are shared amongst multiple threads and,
+  /// as such, are stored in shared pointers.
+  ///
+  /// @param [out] client
+  ///   The newly created object wrapped in a shared pointer.
+  /// @return Operation status. The return value may indicate
+  ///   an error in the create operation, or a misuse of the builder;
+  ///   in the latter case, only the last error is returned.
   Status Build(sp::shared_ptr<KuduClient>* client);
+
  private:
   class KUDU_NO_EXPORT Data;
 
@@ -161,114 +213,182 @@ class KUDU_EXPORT KuduClientBuilder {
   DISALLOW_COPY_AND_ASSIGN(KuduClientBuilder);
 };
 
-// The KuduClient represents a connection to a cluster. From the user
-// perspective, they should only need to create one of these in their
-// application, likely a singleton -- but it's not a singleton in Kudu in any
-// way. Different Client objects do not interact with each other -- no
-// connection pooling, etc. Each KuduClient instance is sandboxed with no
-// global cross-client state.
-//
-// In the implementation, the client holds various pieces of common
-// infrastructure which is not table-specific:
-//
-// - RPC messenger: reactor threads and RPC connections are pooled here
-// - Authentication: the client is initialized with some credentials, and
-//   all accesses through it share those credentials.
-// - Caches: caches of table schemas, tablet locations, tablet server IP
-//   addresses, etc are shared per-client.
-//
-// In order to actually access data on the cluster, callers must first
-// create a KuduSession object using NewSession(). A KuduClient may
-// have several associated sessions.
-//
-// TODO: Cluster administration functions are likely to be in this class
-// as well.
-//
-// This class is thread-safe.
+/// @brief A handle for a connection to a cluster.
+///
+/// The KuduClient class represents a connection to a cluster. From the user
+/// perspective, they should only need to create one of these in their
+/// application, likely a singleton -- but it is not a singleton in Kudu in any
+/// way. Different KuduClient objects do not interact with each other -- no
+/// connection pooling, etc. With the exception of common properties
+/// managed by free (non-member) functions in the kudu::client namespace,
+/// each KuduClient object is sandboxed with no global cross-client state.
+///
+/// In the implementation, the client holds various pieces of common
+/// infrastructure which is not table-specific:
+///   @li RPC messenger: reactor threads and RPC connections are pooled here
+///   @li Authentication: the client is initialized with some credentials,
+///     and all accesses through it share those credentials.
+///   @li Caches: caches of table schemas, tablet locations, tablet server IP
+///     addresses, etc are shared per-client.
+///
+/// In order to actually write data to the cluster, callers must first
+/// create a KuduSession object using NewSession(). A KuduClient may
+/// have several associated sessions.
+///
+/// @note This class is thread-safe.
+///
+/// @todo Cluster administration functions are likely to be in this class
+///   as well.
 class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
  public:
   ~KuduClient();
 
-  // Creates a KuduTableCreator; it is the caller's responsibility to free it.
+  /// Create a KuduTableCreator object.
+  ///
+  /// @return Pointer to newly created object; it is the caller's
+  ///   responsibility to free it.
   KuduTableCreator* NewTableCreator();
 
-  // set 'create_in_progress' to true if a CreateTable operation is in-progress
+  /// Check whether a create table operation is in-progress.
+  ///
+  /// @param [in] table_name
+  ///   Name of the table.
+  /// @param [out] create_in_progress
+  ///   The value is set only in case of success; it is @c true iff
+  ///   the operation is in progress.
+  /// @return Operation status.
   Status IsCreateTableInProgress(const std::string& table_name,
                                  bool *create_in_progress);
 
+  /// Delete/drop a table.
+  ///
+  /// @param [in] table_name
+  ///   Name of the table to drop.
+  /// @return Operation status.
   Status DeleteTable(const std::string& table_name);
 
-  // Creates a KuduTableAlterer; it is the caller's responsibility to free it.
+  /// Create a KuduTableAlterer object.
+  ///
+  /// @param [in] table_name
+  ///   Name of the table to alter.
+  /// @return Pointer to newly created object: it is the caller's
+  ///   responsibility to free it.
   KuduTableAlterer* NewTableAlterer(const std::string& table_name);
 
-  // set 'alter_in_progress' to true if an AlterTable operation is in-progress
+  /// Check if table alteration is in-progress.
+  ///
+  /// @param [in] table_name
+  ///   Name of the table.
+  /// @param [out] alter_in_progress
+  ///   The value is set only in case of success; it is @c true iff
+  ///   the operation is in progress.
+  /// @return Operation status.
   Status IsAlterTableInProgress(const std::string& table_name,
                                 bool *alter_in_progress);
-
+  /// Get table's schema.
+  ///
+  /// @param [in] table_name
+  ///   Name of the table.
+  /// @param [out] schema
+  ///   Raw pointer to the schema object; caller gets ownership.
+  /// @return Operation status.
   Status GetTableSchema(const std::string& table_name,
                         KuduSchema* schema);
 
+  /// Get information on current tablet servers.
+  ///
+  /// @param [out] tablet_servers
+  ///   The placeholder for the result. The caller takes ownership
+  ///   of the container's elements.
+  /// @return Operation status.
   Status ListTabletServers(std::vector<KuduTabletServer*>* tablet_servers);
 
-  // List only those tables whose names pass a substring match on 'filter'.
-  //
-  // 'tables' is appended to only on success.
+  /// List only those tables whose names pass a substring match on 'filter'.
+  ///
+  /// @param [out] tables
+  ///   Result tables 'tables' is appended to only on success.
+  /// @param [in] filter
+  ///   Substring filter to use; empty sub-string filter matches all tables.
+  /// @return Status object for the operation.
   Status ListTables(std::vector<std::string>* tables,
                     const std::string& filter = "");
 
-  // Check if the table given by 'table_name' exists.
-  //
-  // 'exists' is set only on success.
+  /// Check if the table given by 'table_name' exists.
+  ///
+  /// @param [in] table_name
+  ///   Name of the table.
+  /// @param [out] exists
+  ///   Set only on success; set to @c true iff table exists.
+  /// @return Status object for the operation.
   Status TableExists(const std::string& table_name, bool* exists);
 
-  // Open the table with the given name. If the table has not been opened before
-  // in this client, this will do an RPC to ensure that the table exists and
-  // look up its schema.
-  //
-  // TODO: should we offer an async version of this as well?
-  // TODO: probably should have a configurable timeout in KuduClientBuilder?
+  /// Open table with the given name.
+  ///
+  /// This method does an RPC to ensure that the table exists and
+  /// looks up its schema.
+  ///
+  /// @param [in] table_name
+  ///   Name of the table.
+  /// @param [out] table
+  ///   The result table.
+  /// @return Operation status.
+  ///
+  /// @todo Should we offer an async version of this as well?
+  /// @todo Probably should have a configurable timeout in KuduClientBuilder?
   Status OpenTable(const std::string& table_name,
                    sp::shared_ptr<KuduTable>* table);
 
-  // Create a new session for interacting with the cluster.
-  // User is responsible for destroying the session object.
-  // This is a fully local operation (no RPCs or blocking).
+  /// Create a new session for interacting with the cluster.
+  ///
+  /// This is a fully local operation (no RPCs or blocking).
+  ///
+  /// @return A new session object; caller is responsible for destroying it.
   sp::shared_ptr<KuduSession> NewSession();
 
-  // Policy with which to choose amongst multiple replicas.
+  /// Policy with which to choose amongst multiple replicas.
   enum ReplicaSelection {
-    // Select the LEADER replica.
-    LEADER_ONLY,
+    LEADER_ONLY,      ///< Select the LEADER replica.
 
-    // Select the closest replica to the client, or a random one if all
-    // replicas are equidistant.
-    CLOSEST_REPLICA,
+    CLOSEST_REPLICA,  ///< Select the closest replica to the client,
+                      ///< or a random one if all replicas are equidistant.
 
-    // Select the first replica in the list.
-    FIRST_REPLICA
+    FIRST_REPLICA     ///< Select the first replica in the list.
   };
 
+  /// @return @c true iff client is configured to talk to multiple
+  ///   Kudu master servers.
   bool IsMultiMaster() const;
 
+  /// @return Default timeout for admin operations.
   const MonoDelta& default_admin_operation_timeout() const;
+
+  /// @return Default timeout for RPCs.
   const MonoDelta& default_rpc_timeout() const;
 
-  // Value for the latest observed timestamp when none has been observed or set.
+  /// Value for the latest observed timestamp when none has been observed
+  /// or set.
   static const uint64_t kNoTimestamp;
 
-  // Returns highest HybridTime timestamp observed by the client.
-  // The latest observed timestamp can be used to start a snapshot scan on a
-  // table which is guaranteed to contain all data written or previously read by
-  // this client. See KuduScanner for more details on timestamps.
+  /// Get the highest HybridTime timestamp observed by the client.
+  ///
+  /// The latest observed timestamp can be used to start a snapshot scan on a
+  /// table which is guaranteed to contain all data written or previously read
+  /// by this client. See KuduScanner for more details on timestamps.
+  ///
+  /// @return Highest HybridTime timestamp observed by the client.
   uint64_t GetLatestObservedTimestamp() const;
 
-  // Sets the latest observed HybridTime timestamp, encoded in the HybridTime format.
-  // This is only useful when forwarding timestamps between clients to enforce
-  // external consistency when using KuduSession::CLIENT_PROPAGATED external consistency
-  // mode.
-  // To use this the user must obtain the HybridTime encoded timestamp from the first
-  // client with KuduClient::GetLatestObservedTimestamp() and the set it in the new
-  // client with this method.
+  /// Sets the latest observed HybridTime timestamp.
+  ///
+  /// This is only useful when forwarding timestamps between clients
+  /// to enforce external consistency when using KuduSession::CLIENT_PROPAGATED
+  /// external consistency mode.
+  ///
+  /// The HybridTime encoded timestamp should be obtained from another client's
+  /// KuduClient::GetLatestObservedTimestamp() method.
+  ///
+  /// @param [in] ht_timestamp
+  ///   Timestamp encoded in HybridTime format.
   void SetLatestObservedTimestamp(uint64_t ht_timestamp);
 
  private:
@@ -309,107 +429,174 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   DISALLOW_COPY_AND_ASSIGN(KuduClient);
 };
 
-// Creates a new table with the desired options.
+/// @brief A helper class to create a new table with the desired options.
 class KUDU_EXPORT KuduTableCreator {
  public:
   ~KuduTableCreator();
 
-  // Sets the name to give the table. It is copied. Required.
+  /// Set name for the table.
+  ///
+  /// @param [in] name
+  ///   Name of the target table.
+  /// @return Reference to the modified table creator.
+  ///
+  /// @remark Calling this method and setting the name for the table-to-be
+  ///   is one of the pre-conditions for calling KuduTableCreator::Create()
+  ///   method.
+  ///
+  /// @todo Should name of the table be a constructor's parameter instead?
   KuduTableCreator& table_name(const std::string& name);
 
-  // Sets the schema with which to create the table. Must remain valid for
-  // the lifetime of the builder. Required.
+  /// Set the schema with which to create the table.
+  ///
+  /// @param [in] schema
+  ///   Schema to use. Must remain valid for the lifetime of the builder.
+  ///   Must be non-NULL.
+  /// @return Reference to the modified table creator.
+  ///
+  /// @remark Calling this method and setting schema for the table-to-be
+  ///   is one of the pre-conditions for calling KuduTableCreator::Create()
+  ///   method.
   KuduTableCreator& schema(const KuduSchema* schema);
 
-  // Adds a set of hash partitions to the table.
-  //
-  // For each set of hash partitions added to the table, the total number of
-  // table partitions is multiplied by the number of buckets. For example, if a
-  // table is created with 3 split rows, and two hash partitions with 4 and 5
-  // buckets respectively, the total number of table partitions will be 80
-  // (4 range partitions * 4 hash buckets * 5 hash buckets).
-  //
-  // Tables must be created with either range, hash, or range and hash
-  // partitioning.
+  /// Add a set of hash partitions to the table.
+  ///
+  /// Tables must be created with either range, hash, or range and hash
+  /// partitioning.
+  ///
+  /// For each set of hash partitions added to the table, the total number of
+  /// tablets is multiplied by the number of buckets. For example,
+  /// if a table is created with 3 split rows, and 2 hash partitions
+  /// with 4 and 5 buckets respectively, the total number of tablets
+  /// will be 80 (4 range partitions * 4 hash buckets * 5 hash buckets).
+  ///
+  /// @param [in] columns
+  ///   Names of columns to use for partitioning.
+  /// @param [in] num_buckets
+  ///   Number of buckets for the hashing.
+  /// @return Reference to the modified table creator.
   KuduTableCreator& add_hash_partitions(const std::vector<std::string>& columns,
                                         int32_t num_buckets);
 
-  // Adds a set of hash partitions to the table.
-  //
-  // This constructor takes a seed value, which can be used to randomize the
-  // mapping of rows to hash buckets. Setting the seed may provide some
-  // amount of protection against denial of service attacks when the hashed
-  // columns contain user provided values.
+  /// Add a set of hash partitions to the table (with seed).
+  ///
+  /// This method is exactly the same as add_hash_partitions() above, with
+  /// the exception of additional seed value, which can be used to randomize
+  /// the mapping of rows to hash buckets. Setting the seed may provide some
+  /// amount of protection against denial of service attacks when the hashed
+  /// columns contain user provided values.
+  ///
+  /// @param [in] columns
+  ///   Names of columns to use for partitioning.
+  /// @param [in] num_buckets
+  ///   Number of buckets for the hashing.
+  /// @param [in] seed
+  ///   Hash: seed for mapping rows to hash buckets.
+  /// @return Reference to the modified table creator.
   KuduTableCreator& add_hash_partitions(const std::vector<std::string>& columns,
                                         int32_t num_buckets, int32_t seed);
 
-  // Sets the columns on which the table will be range-partitioned.
-  //
-  // Every column must be a part of the table's primary key. If not set, or if
-  // called with an empty vector, the table will be created without range
-  // partitioning.
-  //
-  // Tables must be created with either range, hash, or range and hash
-  // partitioning. To force the use of a single tablet (not recommended), call
-  // this method with an empty vector and set no split rows an no hash
-  // partitions.
+  /// Set the columns on which the table will be range-partitioned.
+  ///
+  /// Tables must be created with either range, hash, or range and hash
+  /// partitioning. To force the use of a single tablet (not recommended),
+  /// call this method with an empty vector and set no split rows and no hash
+  /// partitions.
+  ///
+  /// @param [in] columns
+  ///   Names of columns to use for partitioning. Every column must be
+  ///   a part of the table's primary key. If not set, or if called with
+  ///   an empty vector, the table will be created without range partitioning.
+  /// @return Reference to the modified table creator.
   KuduTableCreator& set_range_partition_columns(const std::vector<std::string>& columns);
 
-  // Adds a range partition split at the provided row.
-  //
-  // The table creator takes ownership of the row.
-  //
-  // If the row is missing a value for any of the range partition columns, the
-  // logical minimum value for that column type will be used by default.
-  //
-  // If no range split rows are added, no range pre-splitting is performed.
-  //
-  // Optional.
+  /// Add a range partition split at the provided row.
+  ///
+  /// @param [in] split_row
+  ///   The row to use for partitioning. If the row is missing a value
+  ///   for any of the range partition columns, the logical minimum value
+  ///   for that column type will be used by default.
+  ///   The KuduObjectCreator object takes ownership of the parameter.
+  /// @return Reference to the modified table creator.
   KuduTableCreator& add_range_split(KuduPartialRow* split_row);
 
-  // DEPRECATED: use add_range_split
+  /// @deprecated Use add_range_split() instead.
+  ///
+  /// @param [in] split_rows
+  ///   The row to use for partitioning.
+  /// @return Reference to the modified table creator.
   KuduTableCreator& split_rows(const std::vector<const KuduPartialRow*>& split_rows);
 
-  // Add a partition range bound to the table with an inclusive lower bound and
-  // exclusive upper bound.
-  //
-  // The table creator takes ownership of the rows. If either row is empty, then
-  // that end of the range will be unbounded. If a range column is missing a
-  // value, the logical minimum value for that column type will be used as the
-  // default.
-  //
-  // Multiple range bounds may be added, but they must not overlap. All split
-  // rows must fall in one of the range bounds. The lower bound must be less
-  // than the upper bound.
-  //
-  // If not provided, the table's range will be unbounded.
+  /// Add a partition range bound to the table with an inclusive lower bound
+  /// and exclusive upper bound.
+  ///
+  /// Multiple range bounds may be added, but they must not overlap. All split
+  /// rows must fall in one of the range bounds. The lower bound must be less
+  /// than the upper bound.
+  ///
+  /// If this method is not called, the table's range will be unbounded.
+  ///
+  /// @param [in] lower_bound
+  ///   Row to use as a lower bound. The KuduTableCreator instance takes
+  ///   ownership of this parameter. If row is empty, no lower bound is imposed
+  ///   on the table range. If a column of the @c lower_bound row is missing
+  ///   a value, the logical minimum value for that column type is used as the
+  ///   default.
+  /// @param [in] upper_bound
+  ///   Row to use as an upper bound. The KuduTableCreator instance takes
+  ///   ownership of this parameter. If row is empty, no upper bound is imposed
+  ///   on the table range. If a column of the @c lower_bound row is missing
+  ///   a value, the logical maximum value for that column type is used as the
+  ///   default.
+  /// @return Reference to the modified table creator.
   KuduTableCreator& add_range_bound(KuduPartialRow* lower_bound,
                                     KuduPartialRow* upper_bound);
 
-  // Sets the number of replicas for each tablet in the table.
-  // This should be an odd number. Optional.
-  //
-  // If not provided (or if <= 0), falls back to the server-side default.
+  /// Set the table replication factor.
+  ///
+  /// Replicated tables can continue to read and write data while a majority
+  /// of replicas are not failed.
+  ///
+  /// @param [in] n_replicas
+  ///   Number of replicas to set. This should be an odd number.
+  ///   If not provided (or if <= 0), falls back to the server-side default.
+  /// @return Reference to the modified table creator.
   KuduTableCreator& num_replicas(int n_replicas);
 
-  // Set the timeout for the operation. This includes any waiting
-  // after the create has been submitted (i.e if the create is slow
-  // to be performed for a large table, it may time out and then
-  // later be successful).
+  /// Set the timeout for the table creation operation.
+  ///
+  /// This includes any waiting after the create has been submitted
+  /// (i.e. if the create is slow to be performed for a large table,
+  ///  it may time out and then later be successful).
+  ///
+  /// @param [in] timeout
+  ///   Timeout to set.
+  /// @return Reference to the modified table creator.
   KuduTableCreator& timeout(const MonoDelta& timeout);
 
-  // Wait for the table to be fully created before returning.
-  // Optional.
-  //
-  // If not provided, defaults to true.
+  /// Wait for the table to be fully created before returning.
+  ///
+  /// If not called, defaults to @c true.
+  ///
+  /// @param [in] wait
+  ///   Whether to wait for completion of operations.
+  /// @return Reference to the modified table creator.
   KuduTableCreator& wait(bool wait);
 
-  // Creates the table.
-  //
-  // The return value may indicate an error in the create table operation,
-  // or a misuse of the builder; in the latter case, only the last error is
-  // returned.
+  /// Create a table in accordance with parameters currently set for the
+  /// KuduTableCreator instance.  Once created, the table handle
+  /// can be obtained using KuduClient::OpenTable() method.
+  ///
+  /// @pre The following methods of the KuduTableCreator must be called
+  ///   prior to invoking this method:
+  ///     @li table_name()
+  ///     @li schema()
+  ///
+  /// @return Result status of the @c{CREATE TABLE} operation. The return value
+  ///   may indicate an error in the create table operation, or a misuse
+  ///   of the builder. In the latter case, only the last error is returned.
   Status Create();
+
  private:
   class KUDU_NO_EXPORT Data;
 
@@ -423,61 +610,97 @@ class KUDU_EXPORT KuduTableCreator {
   DISALLOW_COPY_AND_ASSIGN(KuduTableCreator);
 };
 
-// A KuduTable represents a table on a particular cluster. It holds the current
-// schema of the table. Any given KuduTable instance belongs to a specific KuduClient
-// instance.
-//
-// Upon construction, the table is looked up in the catalog (or catalog cache),
-// and the schema fetched for introspection.
-//
-// This class is thread-safe.
+/// @brief A representation of a table on a particular cluster.
+///
+/// A KuduTable holds the current schema of the table. Any given KuduTable
+/// object belongs to a specific KuduClient object.
+///
+/// Upon construction, the table is looked up in the catalog (or catalog cache),
+/// and the schema fetched for introspection.
+///
+/// This class is also a factory for write operation on the table.
+/// The provided operations are:
+///   @li INSERT
+///     Adds a new row. Fails if the row already exists.
+///   @li UPSERT
+///     Adds a new row. If there's an existing row, updates it.
+///   @li UPDATE
+///     Updates an existing row. Fails if the row does not exist.
+///   @li DELETE
+///     Deletes an existing row. Fails if the row does not exist.
+///
+/// @note This class is thread-safe.
 class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
  public:
   ~KuduTable();
 
+  /// @return Name of the table.
   const std::string& name() const;
 
-  // Return the table's ID. This is an internal identifier which uniquely
-  // identifies a table. If the table is deleted and recreated with the same
-  // name, the ID will distinguish the old table from the new.
+  /// Get the table's ID.
+  ///
+  /// This is an internal identifier which uniquely identifies a table.
+  /// If the table is deleted and recreated with the same
+  /// name, the ID will distinguish the old table from the new.
+  ///
+  /// @return Identifier string for the table.
   const std::string& id() const;
 
+  /// @return Reference to the table's schema object.
   const KuduSchema& schema() const;
 
-  // Create a new write operation for this table. It is the caller's
-  // responsibility to free it, unless it is passed to KuduSession::Apply().
-  //
-  // The provided operations are:
-  //   INSERT: Adds a new row. Fails if the row already exists.
-  //   UPSERT: Adds a new row. If there's an existing row, updates it.
-  //   UPDATE: Updates an existing row. Fails if the row does not exist.
-  //   DELETE: Deletes an existing row. Fails if the row does not exist.
+  /// @return New @c INSERT operation for this table. It is the caller's
+  ///   responsibility to free the result, unless it is passed to
+  ///   KuduSession::Apply().
   KuduInsert* NewInsert();
+
+  /// @return New @c UPSERT operation for this table. It is the caller's
+  ///   responsibility to free the result, unless it is passed to
+  ///   KuduSession::Apply().
   KuduUpsert* NewUpsert();
+
+  /// @return New @c UPDATE operation for this table. It is the caller's
+  ///   responsibility to free the result, unless it is passed to
+  ///   KuduSession::Apply().
   KuduUpdate* NewUpdate();
+
+  /// @return New @c DELETE operation for this table. It is the caller's
+  ///   responsibility to free the result, unless it is passed to
+  ///   KuduSession::Apply().
   KuduDelete* NewDelete();
 
-  // Create a new comparison predicate which can be used for scanners
-  // on this table.
-  //
-  // The type of 'value' must correspond to the type of the column to which
-  // the predicate is to be applied. For example, if the given column is
-  // any type of integer, the KuduValue should also be an integer, with its
-  // value in the valid range for the column type. No attempt is made to cast
-  // between floating point and integer values, or numeric and string values.
-  //
-  // The caller owns the result until it is passed into KuduScanner::AddConjunctPredicate().
-  // The returned predicate takes ownership of 'value'.
-  //
-  // In the case of an error (e.g. an invalid column name), a non-NULL value
-  // is still returned. The error will be returned when attempting to add this
-  // predicate to a KuduScanner.
+  /// Create a new comparison predicate.
+  ///
+  /// This method creates new instance of a comparison predicate which
+  /// can be used for scanners on this table object.
+  ///
+  /// @param [in] col_name
+  ///   Name of column to use for comparison.
+  /// @param [in] op
+  ///   Comparision operation to use.
+  /// @param [in] value
+  ///   The type of the value must correspond to the type of the column
+  ///   to which the predicate is to be applied. For example,
+  ///   if the given column is any type of integer, the KuduValue should
+  ///   also be an integer, with its value in the valid range
+  ///   for the column type. No attempt is made to cast between floating point
+  ///   and integer values, or numeric and string values.
+  /// @return Raw pointer to instance of comparison predicate. The caller owns
+  ///   the result until it is passed into KuduScanner::AddConjunctPredicate().
+  ///   The returned predicate object takes ownership over the @c value
+  ///   Non-NULL is returned both in success and error cases.
+  ///   In the case of an error (e.g. invalid column name), a non-NULL value
+  ///   is still returned. The error will be returned when attempting
+  ///   to add this predicate to a KuduScanner.
   KuduPredicate* NewComparisonPredicate(const Slice& col_name,
                                         KuduPredicate::ComparisonOp op,
                                         KuduValue* value);
 
+  /// @return The KuduClient object associated with the table.  The caller
+  ///   should not free the returned pointer.
   KuduClient* client() const;
 
+  /// @return The partition schema for the table.
   const PartitionSchema& partition_schema() const;
 
  private:
@@ -497,49 +720,86 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   DISALLOW_COPY_AND_ASSIGN(KuduTable);
 };
 
-// Alters an existing table based on the provided steps.
-//
-// Sample usage:
-//   KuduTableAlterer* alterer = client->NewTableAlterer("table-name");
-//   alterer->AddColumn("foo")->Type(KuduColumnSchema::INT32)->NotNull();
-//   alterer->AlterColumn("bar")->Compression(KuduColumnStorageAttributes::LZ4);
-//   Status s = alterer->Alter();
-//   delete alterer;
+/// @brief Alters an existing table based on the provided steps.
+///
+/// Create a new instance of a table alterer using
+/// KuduClient::NewTableAlterer(). An example of usage:
+/// @code
+/// std::unique_ptr<KuduTableAlterer> alterer(
+///   client->NewTableAlterer("table-name"));
+/// alterer->AddColumn("foo")->Type(KuduColumnSchema::INT32)->NotNull();
+/// alterer->AlterColumn("bar")->Compression(KuduColumnStorageAttributes::LZ4);
+/// Status s = alterer->Alter();
+/// @endcode
 class KUDU_EXPORT KuduTableAlterer {
  public:
   ~KuduTableAlterer();
 
-  // Renames the table.
+  /// Rename the table.
+  ///
+  /// @param [in] new_name
+  ///   The new name for the table.
+  /// @return Raw pointer to this alterer object.
   KuduTableAlterer* RenameTo(const std::string& new_name);
 
-  // Adds a new column to the table.
-  //
-  // When adding a column, you must specify the default value of the new
-  // column using KuduColumnSpec::DefaultValue(...).
+  /// Add a new column to the table.
+  ///
+  /// When adding a column, you must specify the default value of the new
+  /// column using KuduColumnSpec::DefaultValue(...).
+  ///
+  /// @param name
+  ///   Name of the column do add.
+  /// @return Pointer to the result ColumnSpec object. The alterer keeps
+  ///   ownership of the newly created object.
   KuduColumnSpec* AddColumn(const std::string& name);
 
-  // Alter an existing column.
+  /// Alter an existing column.
+  ///
+  /// @note The column may not be in the primary key.
+  ///
+  /// @param [in] name
+  ///   Name of the column to alter.
+  /// @return Pointer to the result ColumnSpec object. The alterer keeps
+  ///   owhership of the newly created object.
   KuduColumnSpec* AlterColumn(const std::string& name);
 
-  // Drops an existing column from the table.
+  /// Drops an existing column from the table.
+  ///
+  /// @note The column may not be in the primary key.
+  ///
+  /// @param [in] name
+  ///   Name of the column to alter.
+  /// @return Raw pointer to this alterer object.
   KuduTableAlterer* DropColumn(const std::string& name);
 
-  // Set the timeout for the operation. This includes any waiting
-  // after the alter has been submitted (i.e if the alter is slow
-  // to be performed on a large table, it may time out and then
-  // later be successful).
+  /// Set a timeout for the alteration operation.
+  ///
+  /// This includes any waiting after the alter has been submitted
+  /// (i.e. if the alter is slow to be performed on a large table,
+  ///  it may time out and then later be successful).
+  ///
+  /// @param [in] timeout
+  ///   Timeout to set.
+  /// @return Raw pointer to this alterer object.
   KuduTableAlterer* timeout(const MonoDelta& timeout);
 
-  // Wait for the table to be fully altered before returning.
-  //
-  // If not provided, defaults to true.
+  /// Whether to wait for completion of alteration operations.
+  ///
+  /// If set to @c true, an alteration operation returns control only after
+  /// the operation is complete. Otherwise, every operation returns immediately.
+  /// By default (i.e. when an alteration object is created)
+  /// it is set to @c true.
+  ///
+  /// @param [in] wait
+  ///   Whether to wait for alteration operation to complete before
+  ///   returning control.
+  /// @return Raw pointer to this alterer object.
   KuduTableAlterer* wait(bool wait);
 
-  // Alters the table.
-  //
-  // The return value may indicate an error in the alter operation, or a
-  // misuse of the builder (e.g. add_column() with default_value=NULL); in
-  // the latter case, only the last error is returned.
+  /// @return Status of the ALTER TABLE operation. The return value
+  ///   may indicate an error in the alter operation,
+  ///   or a misuse of the builder (e.g. add_column() with default_value=NULL).
+  ///   In the latter case, only the last error is returned.
   Status Alter();
 
  private:
@@ -555,30 +815,40 @@ class KUDU_EXPORT KuduTableAlterer {
   DISALLOW_COPY_AND_ASSIGN(KuduTableAlterer);
 };
 
-// An error which occurred in a given operation. This tracks the operation
-// which caused the error, along with whatever the actual error was.
+/// @brief This class represents an error which occurred in a write operation.
+///
+/// Using an instance of this class, it is possible to track error details
+/// such as the operation which caused the error, along with whatever
+/// the actual error was.
 class KUDU_EXPORT KuduError {
  public:
   ~KuduError();
 
-  // Return the actual error which occurred.
+  /// @return The actual error which occurred.
   const Status& status() const;
 
-  // Return the operation which failed.
+  /// @return The operation which failed.
   const KuduWriteOperation& failed_op() const;
 
-  // Release the operation that failed. The caller takes ownership. Must only
-  // be called once.
+  /// Release the operation that failed.
+  ///
+  /// This method must be called only once on an instance
+  /// of the KuduError class.
+  ///
+  /// @return Raw pointer to write operation object. The caller
+  ///   takes ownership of the returned object.
   KuduWriteOperation* release_failed_op();
 
-  // In some cases, it's possible that the server did receive and successfully
-  // perform the requested operation, but the client can't tell whether or not
-  // it was successful. For example, if the call times out, the server may still
-  // succeed in processing at a later time.
-  //
-  // This function returns true if there is some chance that the server did
-  // process the operation, and false if it can guarantee that the operation
-  // did not succeed.
+  /// Check if there is a chance that the requested operation was successful.
+  ///
+  /// In some cases, it is possible that the server did receive and successfully
+  /// perform the requested operation, but the client can't tell whether or not
+  /// it was successful. For example, if the call times out, the server may
+  /// still succeed in processing at a later time.
+  ///
+  /// @return This function returns @c true if there is some chance that
+  ///   the server did process the operation, and @c false if it can guarantee
+  ///   that the operation did not succeed.
   bool was_possibly_successful() const;
 
  private:
@@ -596,258 +866,331 @@ class KUDU_EXPORT KuduError {
 };
 
 
-// A KuduSession belongs to a specific KuduClient, and represents a context in
-// which all read/write data access should take place. Within a session,
-// multiple operations may be accumulated and batched together for better
-// efficiency. Settings like timeouts, priorities, and trace IDs are also set
-// per session.
-//
-// A KuduSession's main purpose is for grouping together multiple data-access
-// operations together into batches or transactions. It is important to note
-// the distinction between these two:
-//
-// * A batch is a set of operations which are grouped together in order to
-//   amortize fixed costs such as RPC call overhead and round trip times.
-//   A batch DOES NOT imply any ACID-like guarantees. Within a batch, some
-//   operations may succeed while others fail, and concurrent readers may see
-//   partial results. If the client crashes mid-batch, it is possible that some
-//   of the operations will be made durable while others were lost.
-//
-// * In contrast, a transaction is a set of operations which are treated as an
-//   indivisible semantic unit, per the usual definitions of database transactions
-//   and isolation levels.
-//
-// NOTE: Kudu does not currently support transactions! They are only mentioned
-// in the above documentation to clarify that batches are not transactional and
-// should only be used for efficiency.
-//
-// KuduSession is separate from KuduTable because a given batch or transaction
-// may span multiple tables. This is particularly important in the future when
-// we add ACID support, but even in the context of batching, we may be able to
-// coalesce writes to different tables hosted on the same server into the same
-// RPC.
-//
-// KuduSession is separate from KuduClient because, in a multi-threaded
-// application, different threads may need to concurrently execute
-// transactions. Similar to a JDBC "session", transaction boundaries will be
-// delineated on a per-session basis -- in between a "BeginTransaction" and
-// "Commit" call on a given session, all operations will be part of the same
-// transaction. Meanwhile another concurrent Session object can safely run
-// non-transactional work or other transactions without interfering.
-//
-// Additionally, there is a guarantee that writes from different sessions do not
-// get batched together into the same RPCs -- this means that latency-sensitive
-// clients can run through the same KuduClient object as throughput-oriented
-// clients, perhaps by setting the latency-sensitive session's timeouts low and
-// priorities high. Without the separation of batches, a latency-sensitive
-// single-row insert might get batched along with 10MB worth of inserts from the
-// batch writer, thus delaying the response significantly.
-//
-// Though we currently do not have transactional support, users will be forced
-// to use a KuduSession to instantiate reads as well as writes.  This will make
-// it more straight-forward to add RW transactions in the future without
-// significant modifications to the API.
-//
-// Users who are familiar with the Hibernate ORM framework should find this
-// concept of a Session familiar.
-//
-// This class is not thread-safe except where otherwise specified.
+/// @brief Representation of a Kudu client session.
+///
+/// A KuduSession belongs to a specific KuduClient, and represents a context in
+/// which all read/write data access should take place. Within a session,
+/// multiple operations may be accumulated and batched together for better
+/// efficiency. Settings like timeouts, priorities, and trace IDs are also set
+/// per session.
+///
+/// A KuduSession's main purpose is for grouping together multiple data-access
+/// operations together into batches or transactions. It is important to note
+/// the distinction between these two:
+///
+/// @li A batch is a set of operations which are grouped together in order to
+///   amortize fixed costs such as RPC call overhead and round trip times.
+///   A batch DOES NOT imply any ACID-like guarantees. Within a batch, some
+///   operations may succeed while others fail, and concurrent readers may see
+///   partial results. If the client crashes mid-batch, it is possible that
+///   some of the operations will be made durable while others were lost.
+/// @li In contrast, a transaction is a set of operations which are treated
+///   as an indivisible semantic unit, per the usual definitions of database
+///   transactions and isolation levels.
+///
+/// @note Kudu does not currently support transactions!  They are only mentioned
+///   in the above documentation to clarify that batches are not transactional
+///   and should only be used for efficiency.
+///
+/// KuduSession is separate from KuduTable because a given batch or transaction
+/// may span multiple tables. This is particularly important in the future when
+/// we add ACID support, but even in the context of batching, we may be able to
+/// coalesce writes to different tables hosted on the same server into the same
+/// RPC.
+///
+/// KuduSession is separate from KuduClient because, in a multi-threaded
+/// application, different threads may need to concurrently execute
+/// transactions. Similar to a JDBC "session", transaction boundaries will be
+/// delineated on a per-session basis -- in between a "BeginTransaction" and
+/// "Commit" call on a given session, all operations will be part of the same
+/// transaction. Meanwhile another concurrent Session object can safely run
+/// non-transactional work or other transactions without interfering.
+///
+/// Additionally, there is a guarantee that writes from different sessions
+/// do not get batched together into the same RPCs -- this means that
+/// latency-sensitive clients can run through the same KuduClient object
+/// as throughput-oriented clients, perhaps by setting the latency-sensitive
+/// session's timeouts low and priorities high. Without the separation
+/// of batches, a latency-sensitive single-row insert might get batched along
+/// with 10MB worth of inserts from the batch writer, thus delaying
+/// the response significantly.
+///
+/// Though we currently do not have transactional support, users will be forced
+/// to use a KuduSession to instantiate reads as well as writes. This will make
+/// it more straight-forward to add RW transactions in the future without
+/// significant modifications to the API.
+///
+/// Users who are familiar with the Hibernate ORM framework should find this
+/// concept of a Session familiar.
+///
+/// @note This class is not thread-safe except where otherwise specified.
 class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> {
  public:
   ~KuduSession();
 
+  /// Modes of flush operations.
   enum FlushMode {
-    // Every write will be sent to the server in-band with the Apply()
-    // call. No batching will occur. This is the default flush mode. In this
-    // mode, the Flush() call never has any effect, since each Apply() call
-    // has already flushed the buffer. This is the default flush mode.
+    /// Every write will be sent to the server in-band with the Apply()
+    /// call. No batching will occur. In this mode, the Flush() call never
+    /// has any effect, since each Apply() call has already flushed the buffer.
+    /// This is the default flush mode.
     AUTO_FLUSH_SYNC,
 
-    // Apply() calls will return immediately, but the writes will be sent in
-    // the background, potentially batched together with other writes from
-    // the same session. If there is not sufficient buffer space, then Apply()
-    // may block for buffer space to be available.
-    //
-    // Because writes are applied in the background, any errors will be stored
-    // in a session-local buffer. Call CountPendingErrors() or GetPendingErrors()
-    // to retrieve them.
-    // TODO: provide an API for the user to specify a callback to do their own
-    // error reporting.
-    // TODO: specify which threads the background activity runs on (probably the
-    // messenger IO threads?)
-    //
-    // NOTE: This is not implemented yet, see KUDU-456.
-    //
-    // The Flush() call can be used to block until the buffer is empty.
+    /// Apply() calls will return immediately, but the writes will be sent
+    /// in the background, potentially batched together with other writes
+    /// from the same session. If there is not sufficient buffer space,
+    /// then Apply() will block for buffer space to be available.
+    ///
+    /// Because writes are applied in the background, any errors will be stored
+    /// in a session-local buffer. Call CountPendingErrors() or
+    /// GetPendingErrors() to retrieve them.
+    ///
+    /// The Flush() call can be used to block until the buffer is empty.
+    ///
+    /// @warning This is not implemented yet, see KUDU-456
+    ///
+    /// @todo Provide an API for the user to specify a callback to do their own
+    ///   error reporting.
+    ///
+    /// @todo Specify which threads the background activity runs on
+    ///   (probably the messenger IO threads?).
     AUTO_FLUSH_BACKGROUND,
 
-    // Apply() calls will return immediately, and the writes will not be
-    // sent until the user calls Flush(). If the buffer runs past the
-    // configured space limit, then Apply() will return an error.
+    /// Apply() calls will return immediately, and the writes will not be
+    /// sent until the user calls Flush(). If the buffer runs past the
+    /// configured space limit, then Apply() will return an error.
     MANUAL_FLUSH
   };
 
-  // Set the flush mode.
-  // REQUIRES: there should be no pending writes -- call Flush() first to ensure.
+  /// Set the flush mode.
+  ///
+  /// @pre There should be no pending writes -- call Flush() first
+  ///   to ensure nothing is pending.
+  ///
+  /// @param [in] m
+  ///   Flush mode to set.
+  /// @return Operation status.
   Status SetFlushMode(FlushMode m) WARN_UNUSED_RESULT;
 
-  // The possible external consistency modes on which Kudu operates.
+  /// The possible external consistency modes on which Kudu operates.
   enum ExternalConsistencyMode {
-    // The response to any write will contain a timestamp. Any further calls from the same
-    // client to other servers will update those servers with that timestamp. Following
-    // write operations from the same client will be assigned timestamps that are strictly
-    // higher, enforcing external consistency without having to wait or incur any latency
-    // penalties.
-    //
-    // In order to maintain external consistency for writes between two different clients
-    // in this mode, the user must forward the timestamp from the first client to the
-    // second by using KuduClient::GetLatestObservedTimestamp() and
-    // KuduClient::SetLatestObservedTimestamp().
-    //
-    // WARNING: Failure to propagate timestamp information through back-channels between
-    // two different clients will negate any external consistency guarantee under this
-    // mode.
-    //
-    // This is the default mode.
+    /// The response to any write will contain a timestamp. Any further calls
+    /// from the same client to other servers will update those servers
+    /// with that timestamp. Following write operations from the same client
+    /// will be assigned timestamps that are strictly higher, enforcing external
+    /// consistency without having to wait or incur any latency penalties.
+    ///
+    /// In order to maintain external consistency for writes between
+    /// two different clients in this mode, the user must forward the timestamp
+    /// from the first client to the second by using
+    /// KuduClient::GetLatestObservedTimestamp() and
+    /// KuduClient::SetLatestObservedTimestamp().
+    ///
+    /// This is the default external consistency mode.
+    ///
+    /// @warning
+    ///   Failure to propagate timestamp information through back-channels
+    ///   between two different clients will negate any external consistency
+    ///   guarantee under this mode.
     CLIENT_PROPAGATED,
 
-    // The server will guarantee that write operations from the same or from other client
-    // are externally consistent, without the need to propagate timestamps across clients.
-    // This is done by making write operations wait until there is certainty that all
-    // follow up write operations (operations that start after the previous one finishes)
-    // will be assigned a timestamp that is strictly higher, enforcing external consistency.
-    //
-    // WARNING: Depending on the clock synchronization state of TabletServers this may
-    // imply considerable latency. Moreover operations in COMMIT_WAIT external consistency
-    // mode will outright fail if TabletServer clocks are either unsynchronized or
-    // synchronized but with a maximum error which surpasses a pre-configured threshold.
+    /// The server will guarantee that write operations from the same or from
+    /// other client are externally consistent, without the need to propagate
+    /// timestamps across clients. This is done by making write operations
+    /// wait until there is certainty that all follow up write operations
+    /// (operations that start after the previous one finishes)
+    /// will be assigned a timestamp that is strictly higher, enforcing external
+    /// consistency.
+    ///
+    /// @warning
+    ///   Depending on the clock synchronization state of TabletServers this may
+    ///   imply considerable latency. Moreover operations in @c COMMIT_WAIT
+    ///   external consistency mode will outright fail if TabletServer clocks
+    ///   are either unsynchronized or synchronized but with a maximum error
+    ///   which surpasses a pre-configured threshold.
     COMMIT_WAIT
   };
 
-  // Set the new external consistency mode for this session.
-  Status SetExternalConsistencyMode(ExternalConsistencyMode m) WARN_UNUSED_RESULT;
+  /// Set external consistency mode for the session.
+  ///
+  /// @param [in] m
+  ///   External consistency mode to set.
+  /// @return Operation result status.
+  Status SetExternalConsistencyMode(ExternalConsistencyMode m)
+    WARN_UNUSED_RESULT;
 
-  // Set the amount of buffer space used by this session for outbound writes.
-  // The effect of the buffer size varies based on the flush mode of the
-  // session:
-  //
-  // AUTO_FLUSH_SYNC:
-  //   since no buffering is done, this has no effect
-  // AUTO_FLUSH_BACKGROUND:
-  //   if the buffer space is exhausted, then write calls will block until there
-  //   is space available in the buffer.
-  // MANUAL_FLUSH:
-  //   if the buffer space is exhausted, then write calls will return an error.
-  Status SetMutationBufferSpace(size_t size) WARN_UNUSED_RESULT;
+  /// Set the amount of buffer space used by this session for outbound writes.
+  ///
+  /// The effect of the buffer size varies based on the flush mode of
+  /// the session:
+  /// @li AUTO_FLUSH_SYNC
+  ///   since no buffering is done, this has no effect.
+  /// @li AUTO_FLUSH_BACKGROUND
+  ///   if the buffer space is exhausted, then write calls will block until
+  ///   there is space available in the buffer.
+  /// @li MANUAL_FLUSH
+  ///   if the buffer space is exhausted, then write calls will return an error
+  ///
+  /// @param [in] size_bytes
+  ///   Size of the buffer space to set (number of bytes).
+  /// @return Operation result status.
+  Status SetMutationBufferSpace(size_t size_bytes) WARN_UNUSED_RESULT;
 
-  // Set the timeout for writes made in this session.
+  /// Set the timeout for writes made in this session.
+  ///
+  /// @param [in] millis
+  ///   Timeout to set in milliseconds; should be greater than 0.
   void SetTimeoutMillis(int millis);
 
-  // TODO: add "doAs" ability here for proxy servers to be able to act on behalf of
-  // other users, assuming access rights.
+  /// @todo
+  ///   Add "doAs" ability here for proxy servers to be able to act on behalf of
+  ///   other users, assuming access rights.
 
-  // Apply the write operation. Transfers the write_op's ownership to the KuduSession.
-  //
-  // The behavior of this function depends on the current flush mode. Regardless
-  // of flush mode, however, Apply may begin to perform processing in the background
-  // for the call (e.g looking up the tablet, etc). Given that, an error may be
-  // queued into the PendingErrors structure prior to flushing, even in MANUAL_FLUSH
-  // mode.
-  //
-  // In case of any error, which may occur during flushing or because the write_op
-  // is malformed, the write_op is stored in the session's error collector which
-  // may be retrieved at any time.
-  //
-  // This is thread safe.
+  /// Apply the write operation.
+  ///
+  /// The behavior of this function depends on the current flush mode.
+  /// Regardless of flush mode, however, Apply() may begin to perform processing
+  /// in the background for the call (e.g. looking up the tablet, etc).
+  /// Given that, an error may be queued into the PendingErrors structure prior
+  /// to flushing, even in @c MANUAL_FLUSH mode.
+  ///
+  /// In case of any error, which may occur during flushing or because
+  /// the write_op is malformed, the write_op is stored in the session's error
+  /// collector which may be retrieved at any time.
+  ///
+  /// @note This method is thread safe.
+  ///
+  /// @param [in] write_op
+  ///   Operation to apply. This method transfers the write_op's ownership
+  ///   to the KuduSession.
+  /// @return Operation result status.
   Status Apply(KuduWriteOperation* write_op) WARN_UNUSED_RESULT;
 
-  // Similar to the above, except never blocks. Even in the flush modes that
-  // return immediately, 'cb' is triggered with the result. The callback may be
-  // called by a reactor thread, or in some cases may be called inline by the
-  // same thread which calls ApplyAsync(). 'cb' must remain valid until it called.
-  //
-  // TODO: not yet implemented.
+  /// Apply the write operation asynchronously.
+  ///
+  /// This method is similar to Apply(), except it never blocks. Even in the
+  /// flush modes that return immediately, @c cb is triggered with the result.
+  /// The callback may be called by a reactor thread, or in some cases
+  /// may be called inline by the same thread which calls ApplyAsync().
+  ///
+  /// @param [in] write_op
+  ///   Operation to apply. This method transfers the write_op's ownership
+  ///   to the KuduSession.
+  /// @param [in] cb
+  ///   Callback to report the status of the operation. The @c cb object
+  ///   must remain valid until it is called.
+  ///
+  /// @warning Not yet implemented.
   void ApplyAsync(KuduWriteOperation* write_op, KuduStatusCallback* cb);
 
-  // Flush any pending writes.
-  //
-  // Returns a bad status if there are any pending errors after the rows have
-  // been flushed. Callers should then use GetPendingErrors to determine which
-  // specific operations failed.
-  //
-  // In AUTO_FLUSH_SYNC mode, this has no effect, since every Apply() call flushes
-  // itself inline.
-  //
-  // In the case that the async version of this method is used, then the callback
-  // will be called upon completion of the operations which were buffered since the
-  // last flush. In other words, in the following sequence:
-  //
-  //    session->Insert(a);
-  //    session->FlushAsync(callback_1);
-  //    session->Insert(b);
-  //    session->FlushAsync(callback_2);
-  //
-  // ... 'callback_2' will be triggered once 'b' has been inserted, regardless of whether
-  // 'a' has completed or not.
-  //
-  // Note that this also means that, if FlushAsync is called twice in succession, with
-  // no intervening operations, the second flush will return immediately. For example:
-  //
-  //    session->Insert(a);
-  //    session->FlushAsync(callback_1); // called when 'a' is inserted
-  //    session->FlushAsync(callback_2); // called immediately!
-  //
-  // Note that, as in all other async functions in Kudu, the callback may be called
-  // either from an IO thread or the same thread which calls FlushAsync. The callback
-  // should not block.
-  //
-  // For FlushAsync, 'cb' must remain valid until it is invoked.
-  //
-  // This function is thread-safe.
+  /// Flush any pending writes.
+  ///
+  /// In @c AUTO_FLUSH_SYNC mode, this has no effect, since every Apply() call
+  /// flushes itself inline.
+  ///
+  /// @note This function is thread-safe.
+  ///
+  /// @return Operation result status. In particular, returns a non-OK status
+  ///   if there are any pending errors after the rows have been flushed.
+  ///   Callers should then use GetPendingErrors to determine which specific
+  ///   operations failed.
   Status Flush() WARN_UNUSED_RESULT;
+
+  /// Flush any pending writes asynchronously.
+  ///
+  /// This method schedules a background flush of pending operations.
+  /// Provided callback is invoked upon completion of the flush.
+  /// If there were errors while flushing the operations, corresponding
+  /// 'not OK' status is passed as a parameter for the callback invocation.
+  /// Callers should then use GetPendingErrors() to determine which specific
+  /// operations failed.
+  ///
+  /// @param [in] cb
+  ///   Callback to call upon flush completion. The @c cb must remain valid
+  ///   until it is invoked.
+  ///
+  /// In the case that the async version of this method is used, then
+  /// the callback will be called upon completion of the operations which
+  /// were buffered since the last flush. In other words, in the following
+  /// sequence:
+  /// @code
+  ///   session->Insert(a);
+  ///   session->FlushAsync(callback_1);
+  ///   session->Insert(b);
+  ///   session->FlushAsync(callback_2);
+  /// @endcode
+  /// ... @c callback_2 will be triggered once @c b has been inserted,
+  /// regardless of whether @c a has completed or not.
+  ///
+  /// @note This also means that, if FlushAsync is called twice in succession,
+  /// with no intervening operations, the second flush will return immediately.
+  /// For example:
+  /// @code
+  ///   session->Insert(a);
+  ///   session->FlushAsync(callback_1); // called when 'a' is inserted
+  ///   session->FlushAsync(callback_2); // called immediately!
+  /// @endcode
+  /// Note that, as in all other async functions in Kudu, the callback
+  /// may be called either from an IO thread or the same thread which calls
+  /// FlushAsync. The callback should not block.
   void FlushAsync(KuduStatusCallback* cb);
 
-  // Close the session.
-  // Returns an error if there are unflushed or in-flight operations.
+  /// @return Status of the session closure. In particular, an error is returned
+  ///   if there are unflushed or in-flight operations.
   Status Close() WARN_UNUSED_RESULT;
 
-  // Return true if there are operations which have not yet been delivered to the
-  // cluster. This may include buffered operations (i.e those that have not yet been
-  // flushed) as well as in-flight operations (i.e those that are in the process of
-  // being sent to the servers).
-  // TODO: maybe "incomplete" or "undelivered" is clearer?
-  //
-  // This function is thread-safe.
+  /// Check if there are any pending operations in this session.
+  ///
+  /// @note This function is thread-safe.
+  ///
+  /// @return @c true if there are operations which have not yet been delivered
+  ///   to the cluster. This may include buffered operations (i.e. those
+  ///   that have not yet been flushed) as well as in-flight operations
+  ///   (i.e. those that are in the process of being sent to the servers).
+  ///
+  /// @todo Maybe "incomplete" or "undelivered" is clearer?
   bool HasPendingOperations() const;
 
-  // Return the number of buffered operations. These are operations that have
-  // not yet been flushed - i.e they are not en-route yet.
-  //
-  // Note that this is different than HasPendingOperations() above, which includes
-  // operations which have been sent and not yet responded to.
-  //
-  // This is only relevant in MANUAL_FLUSH mode, where the result will not
-  // decrease except for after a manual Flush, after which point it will be 0.
-  // In the other flush modes, data is immediately put en-route to the destination,
-  // so this will return 0.
-  //
-  // This function is thread-safe.
+  /// Get number of buffered operations (not the same as 'pending').
+  ///
+  /// Note that this is different than HasPendingOperations() above,
+  /// which includes operations which have been sent and not yet responded to.
+  /// This is only relevant in @c MANUAL_FLUSH mode, where the result will not
+  /// decrease except for after a manual flush, after which point it will be 0.
+  /// In the other flush modes, data is immediately put en-route
+  /// to the destination, so this will return 0.
+  ///
+  /// @note This function is thread-safe.
+  ///
+  /// @return The number of buffered operations. These are operations that have
+  ///   not yet been flushed -- i.e. they are not en-route yet.
   int CountBufferedOperations() const;
 
-  // Return the number of errors which are pending. Errors may accumulate when
-  // using the AUTO_FLUSH_BACKGROUND mode.
-  //
-  // This function is thread-safe.
+  /// Get error count for pending operations.
+  ///
+  /// Errors may accumulate in session's lifetime; use this method to
+  /// see how many errors happened since last call of GetPendingErrors() method.
+  ///
+  /// @note This function is thread-safe.
+  ///
+  /// @return Total count of errors accumulated during the session.
   int CountPendingErrors() const;
 
-  // Return any errors from previous calls. If there were more errors
-  // than could be held in the session's error storage, then sets *overflowed to true.
-  //
-  // Caller takes ownership of the returned errors.
-  //
-  // This function is thread-safe.
+  /// Get information on errors from previous session activity.
+  ///
+  /// The information on errors are reset upon calling this method.
+  ///
+  /// @param [out] errors
+  ///   Pointer to the container to fill with error info objects. Caller takes
+  ///   ownership of the returned errors in the container.
+  /// @param [out] overflowed
+  ///   If there were more errors than could be held in the session's error
+  ///   storage, then @c overflowed is set to @c true.
+  ///
+  /// @note This function is thread-safe.
   void GetPendingErrors(std::vector<KuduError*>* errors, bool* overflowed);
 
+  /// @return Client for the session: pointer to the associated client object.
   KuduClient* client() const;
 
  private:
@@ -864,232 +1207,333 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
 };
 
 
-// A single scanner. This class is not thread-safe, though different
-// scanners on different threads may share a single KuduTable object.
+/// @brief This class is a representation of a single scan.
+///
+/// @note This class is not thread-safe, though different scanners on different
+///   threads may share a single KuduTable object.
 class KUDU_EXPORT KuduScanner {
  public:
-  // The possible read modes for scanners.
+  /// The read modes for scanners.
   enum ReadMode {
-    // When READ_LATEST is specified the server will always return committed writes at
-    // the time the request was received. This type of read does not return a snapshot
-    // timestamp and is not repeatable.
-    //
-    // In ACID terms this corresponds to Isolation mode: "Read Committed"
-    //
-    // This is the default mode.
+    /// When @c READ_LATEST is specified the server will always return committed
+    /// writes at the time the request was received. This type of read does not
+    /// return a snapshot timestamp and is not repeatable.
+    ///
+    /// In ACID terms this corresponds to Isolation mode: "Read Committed"
+    ///
+    /// This is the default mode.
     READ_LATEST,
 
-    // When READ_AT_SNAPSHOT is specified the server will attempt to perform a read
-    // at the provided timestamp. If no timestamp is provided the server will take the
-    // current time as the snapshot timestamp. In this mode reads are repeatable, i.e.
-    // all future reads at the same timestamp will yield the same data. This is
-    // performed at the expense of waiting for in-flight transactions whose timestamp
-    // is lower than the snapshot's timestamp to complete, so it might incur a latency
-    // penalty.
-    //
-    // In ACID terms this, by itself, corresponds to Isolation mode "Repeatable
-    // Read". If all writes to the scanned tablet are made externally consistent,
-    // then this corresponds to Isolation mode "Strict-Serializable".
-    //
-    // Note: there currently "holes", which happen in rare edge conditions, by which writes
-    // are sometimes not externally consistent even when action was taken to make them so.
-    // In these cases Isolation may degenerate to mode "Read Committed". See KUDU-430.
+    /// When @c READ_AT_SNAPSHOT is specified the server will attempt to perform
+    /// a read at the provided timestamp. If no timestamp is provided
+    /// the server will take the current time as the snapshot timestamp.
+    /// In this mode reads are repeatable, i.e. all future reads at the same
+    /// timestamp will yield the same data. This is performed at the expense
+    /// of waiting for in-flight transactions whose timestamp is lower than
+    /// the snapshot's timestamp to complete, so it might incur
+    /// a latency penalty.
+    ///
+    /// In ACID terms this, by itself, corresponds to Isolation mode "Repeatable
+    /// Read". If all writes to the scanned tablet are made externally
+    /// consistent, then this corresponds to Isolation mode
+    /// "Strict-Serializable".
+    ///
+    /// @note There are currently "holes", which happen in rare edge conditions,
+    ///   by which writes are sometimes not externally consistent even when
+    ///   action was taken to make them so. In these cases Isolation may
+    ///   degenerate to mode "Read Committed". See KUDU-430.
     READ_AT_SNAPSHOT
   };
 
-  // Whether the rows should be returned in order. This affects the fault-tolerance properties
-  // of a scanner.
+  /// Whether the rows should be returned in order.
+  ///
+  /// This affects the fault-tolerance properties of a scanner.
   enum OrderMode {
-    // Rows will be returned in an arbitrary order determined by the tablet server.
-    // This is efficient, but unordered scans are not fault-tolerant and cannot be resumed
-    // in the case of tablet server failure.
-    //
-    // This is the default mode.
+    /// Rows will be returned in an arbitrary order determined by the tablet
+    /// server. This is efficient, but unordered scans are not fault-tolerant
+    /// and cannot be resumed in the case of tablet server failure.
+    ///
+    /// This is the default mode.
     UNORDERED,
-    // Rows will be returned ordered by primary key. Sorting the rows imposes additional overhead
-    // on the tablet server, but means that scans are fault-tolerant and will be resumed at
-    // another tablet server in the case of failure.
+
+    /// Rows will be returned ordered by primary key. Sorting the rows imposes
+    /// additional overhead on the tablet server, but means that scans are
+    /// fault-tolerant and will be resumed at another tablet server
+    /// in the case of a failure.
     ORDERED
   };
 
-  // Default scanner timeout.
-  // This is set to 3x the default RPC timeout (see KuduClientBuilder::default_rpc_timeout()).
+  /// Default scanner timeout.
+  /// This is set to 3x the default RPC timeout returned by
+  /// KuduClientBuilder::default_rpc_timeout().
   enum { kScanTimeoutMillis = 30000 };
 
-  // Initialize the scanner. The given 'table' object must remain valid
-  // for the lifetime of this scanner object.
-  // TODO: should table be a const pointer?
+  /// Constructor for KuduScanner.
+  ///
+  /// @param [in] table
+  ///   The table to perfrom scan. The given object must remain valid
+  ///   for the lifetime of this scanner object.
   explicit KuduScanner(KuduTable* table);
   ~KuduScanner();
 
-  // Set the projection used for this scanner by passing the column names to read.
-  //
-  // This overrides any previous call to SetProjectedColumnNames or
-  // SetProjectedColumnIndexes.
+  /// Set the projection for the scanner using column names.
+  ///
+  /// Set the projection used for the scanner by passing column names to read.
+  /// This overrides any previous call to SetProjectedColumnNames() or
+  /// SetProjectedColumnIndexes().
+  ///
+  /// @param [in] col_names
+  ///   Column names to use for the projection.
+  /// @return Operation result status.
   Status SetProjectedColumnNames(const std::vector<std::string>& col_names)
     WARN_UNUSED_RESULT;
 
-  // Set the projection used for this scanner by passing the column indexes to read.
-  //
-  // This overrides any previous call to SetProjectedColumnNames or
-  // SetProjectedColumnIndexes.
+  /// Set the column projection by passing the column indexes to read.
+  ///
+  /// Set the column projection used for this scanner by passing the column
+  /// indices to read. A call to this method overrides any previous call to
+  /// SetProjectedColumnNames() or SetProjectedColumnIndexes().
+  ///
+  /// @param [in] col_indexes
+  ///   Column indices for the projection.
+  /// @return Operation result status.
   Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes)
     WARN_UNUSED_RESULT;
 
-  // DEPRECATED: See SetProjectedColumnNames
-  Status SetProjectedColumns(const std::vector<std::string>& col_names) WARN_UNUSED_RESULT;
+  /// @deprecated Use SetProjectedColumnNames() instead.
+  ///
+  /// @param [in] col_names
+  ///   Column names to use for the projection.
+  /// @return Operation result status.
+  Status SetProjectedColumns(const std::vector<std::string>& col_names)
+    WARN_UNUSED_RESULT;
 
-  // Add a predicate to this scanner.
-  //
-  // The predicates act as conjunctions -- i.e, they all must pass for
-  // a row to be returned.
-  //
-  // The Scanner takes ownership of 'pred', even if a bad Status is returned.
+  /// Add a predicate for the scan.
+  ///
+  /// @param [in] pred
+  ///   Predicate to set. The KuduScanTokenBuilder instance takes ownership
+  ///   of the parameter even if a bad Status is returned. Multiple calls
+  ///   of this method make the specified set of predicates work in conjunction,
+  ///   i.e. all predicates must be true for a row to be returned.
+  /// @return Operation result status.
   Status AddConjunctPredicate(KuduPredicate* pred) WARN_UNUSED_RESULT;
 
-  // Add a lower bound (inclusive) primary key for the scan.
-  // If any bound is already added, this bound is intersected with that one.
-  //
-  // The scanner does not take ownership of 'key'; the caller may free it afterward.
+  /// Add a lower bound (inclusive) primary key for the scan.
+  ///
+  /// If any bound is already added, this bound is intersected with that one.
+  ///
+  /// @param [in] key
+  ///   Lower bound primary key to add. The KuduScanTokenBuilder instance
+  ///   does not take ownership of the parameter.
+  /// @return Operation result status.
   Status AddLowerBound(const KuduPartialRow& key);
 
-  // Like AddLowerBound(), but the encoded primary key is an opaque slice of data
-  // obtained elsewhere.
-  //
-  // DEPRECATED: use AddLowerBound
+  /// Add lower bound for the scan.
+  ///
+  /// @deprecated Use AddLowerBound() instead.
+  ///
+  /// @param [in] key
+  ///   The primary key to use as an opaque slice of data.
+  /// @return Operation result status.
   Status AddLowerBoundRaw(const Slice& key);
 
-  // Add an upper bound (exclusive) primary key for the scan.
-  // If any bound is already added, this bound is intersected with that one.
-  //
-  // The scanner makes a copy of 'key'; the caller may free it afterward.
+  /// Add an upper bound (exclusive) primary key for the scan.
+  ///
+  /// If any bound is already added, this bound is intersected with that one.
+  ///
+  /// @param [in] key
+  ///   The key to setup the upper bound. The scanner makes a copy of the
+  ///   parameter, the caller may free it afterward.
+  /// @return Operation result status.
   Status AddExclusiveUpperBound(const KuduPartialRow& key);
 
-  // Like AddExclusiveUpperBound(), but the encoded primary key is an opaque slice of data
-  // obtained elsewhere.
-  //
-  // DEPRECATED: use AddExclusiveUpperBound
+  /// Add an upper bound (exclusive) primary key for the scan.
+  ///
+  /// @deprecated Use AddExclusiveUpperBound() instead.
+  ///
+  /// @param [in] key
+  ///   The encoded primary key is an opaque slice of data.
+  /// @return Operation result status.
   Status AddExclusiveUpperBoundRaw(const Slice& key);
 
-  // Add a lower bound (inclusive) partition key for the scan.
-  //
-  // The scanner makes a copy of 'partition_key'; the caller may free it afterward.
-  //
-  // This method is unstable, and for internal use only.
+  /// Add a lower bound (inclusive) partition key for the scan.
+  ///
+  /// @note This method is unstable, and for internal use only.
+  ///
+  /// @param [in] partition_key
+  ///   The scanner makes a copy of the parameter: the caller may invalidate
+  ///   it afterward.
+  /// @return Operation result status.
   Status AddLowerBoundPartitionKeyRaw(const Slice& partition_key);
 
-  // Add an upper bound (exclusive) partition key for the scan.
-  //
-  // The scanner makes a copy of 'partition_key'; the caller may free it afterward.
-  //
-  // This method is unstable, and for internal use only.
+  /// Add an upper bound (exclusive) partition key for the scan.
+  ///
+  /// @note This method is unstable, and for internal use only.
+  ///
+  /// @param [in] partition_key
+  ///   The scanner makes a copy of the parameter, the caller may invalidate
+  ///   it afterward.
+  /// @return Operation result status.
   Status AddExclusiveUpperBoundPartitionKeyRaw(const Slice& partition_key);
 
-  // Set the block caching policy for this scanner. If true, scanned data blocks will be cached
-  // in memory and made available for future scans. Default is true.
+  /// Set the block caching policy.
+  ///
+  /// @param [in] cache_blocks
+  ///   If @c true, scanned data blocks will be cached in memory and
+  ///   made available for future scans. Default is @c true.
+  /// @return Operation result status.
   Status SetCacheBlocks(bool cache_blocks);
 
-  // Begin scanning.
+  /// @return Result status of the operation (begin scanning).
   Status Open();
 
-  // Keeps the current remote scanner alive on the Tablet server for an additional
-  // time-to-live (set by a configuration flag on the tablet server).
-  // This is useful if the interval in between NextBatch() calls is big enough that the
-  // remote scanner might be garbage collected (default ttl is set to 60 secs.).
-  // This does not invalidate any previously fetched results.
-  // This returns a non-OK status if the scanner was already garbage collected or if
-  // the TabletServer was unreachable, for any reason.
-  //
-  // NOTE: A non-OK status returned by this method should not be taken as indication that
-  // the scan has failed. Subsequent calls to NextBatch() might still be successful,
-  // particularly if SetFaultTolerant() was called.
+  /// Keep the current remote scanner alive.
+  ///
+  /// Keep the current remote scanner alive on the Tablet server
+  /// for an additional time-to-live (set by a configuration flag on
+  /// the tablet server). This is useful if the interval in between
+  /// NextBatch() calls is big enough that the remote scanner might be garbage
+  /// collected (default ttl is set to 60 secs.).
+  /// This does not invalidate any previously fetched results.
+  ///
+  /// @return Operation result status. In particular, this method returns
+  ///   a non-OK status if the scanner was already garbage collected or if the
+  ///   TabletServer was unreachable, for any reason. Note that a non-OK
+  ///   status returned by this method should not be taken as indication
+  ///   that the scan has failed. Subsequent calls to NextBatch() might
+  ///   still be successful, particularly if SetFaultTolerant() has been called.
   Status KeepAlive();
 
-  // Close the scanner.
-  // This releases resources on the server.
-  //
-  // This call does not block, and will not ever fail, even if the server
-  // cannot be contacted.
-  //
-  // NOTE: the scanner is reset to its initial state by this function.
-  // You'll have to re-add any projection, predicates, etc if you want
-  // to reuse this Scanner object.
+  /// Close the scanner.
+  ///
+  /// Closing the scanner releases resources on the server. This call does not
+  /// block, and will not ever fail, even if the server cannot be contacted.
+  ///
+  /// @note The scanner is reset to its initial state by this function.
+  ///   You'll have to re-add any projection, predicates, etc if you want
+  ///   to reuse this object.
   void Close();
 
-  // Return true if there may be rows to be fetched from this scanner.
-  //
-  // Note: will be true provided there's at least one more tablet left to
-  // scan, even if that tablet has no data (we'll only know once we scan it).
-  // It will also be true after the initially opening the scanner before
-  // NextBatch is called for the first time.
+  /// Check if there may be rows to be fetched from this scanner.
+  ///
+  /// @return @c true if there may be rows to be fetched from this scanner.
+  ///   The method returns @c true provided there's at least one more tablet
+  ///   left to scan, even if that tablet has no data
+  ///   (we'll only know once we scan it).
+  ///   It will also be @c true after the initially opening the scanner before
+  ///   NextBatch is called for the first time.
   bool HasMoreRows() const;
 
-  // Clears 'rows' and populates it with the next batch of rows from the tablet server.
-  // A call to NextBatch() invalidates all previously fetched results which might
-  // now be pointing to garbage memory.
-  //
-  // DEPRECATED: Use NextBatch(KuduScanBatch*) instead.
+  /// Get next batch of rows.
+  ///
+  /// Clears 'rows' and populates it with the next batch of rows
+  /// from the tablet server. A call to NextBatch() invalidates all previously
+  /// fetched results which might now be pointing to garbage memory.
+  ///
+  /// @deprecated Use NextBatch(KuduScanBatch*) instead.
+  ///
+  /// @param [out] rows
+  ///   Placeholder for the result.
+  /// @return Operation result status.
   Status NextBatch(std::vector<KuduRowResult>* rows);
 
-  // Fetches the next batch of results for this scanner.
-  //
-  // A single KuduScanBatch instance may be reused. Each subsequent call replaces the data
-  // from the previous call, and invalidates any KuduScanBatch::RowPtr objects previously
-  // obtained from the batch.
+  /// Fetch the next batch of results for this scanner.
+  ///
+  /// A single KuduScanBatch object may be reused. Each subsequent call
+  /// replaces the data from the previous call, and invalidates any
+  /// KuduScanBatch::RowPtr objects previously obtained from the batch.
+  /// @param [out] batch
+  ///   Placeholder for the result.
+  /// @return Operation result status.
   Status NextBatch(KuduScanBatch* batch);
 
-  // Get the KuduTabletServer that is currently handling the scan.
-  // More concretely, this is the server that handled the most recent Open or NextBatch
-  // RPC made by the server.
+  /// Get the KuduTabletServer that is currently handling the scan.
+  ///
+  /// More concretely, this is the server that handled the most recent
+  /// Open() or NextBatch() RPC made by the server.
+  ///
+  /// @param [out] server
+  ///   Placeholder for the result.
+  /// @return Operation result status.
   Status GetCurrentServer(KuduTabletServer** server);
 
-  // Returns the cumulative resource metrics since the scan was started.
+  /// @return Cumulative resource metrics since the scan was started.
   const ResourceMetrics& GetResourceMetrics() const;
 
-  // Set the hint for the size of the next batch in bytes.
-  // If setting to 0 before calling Open(), it means that the first call
-  // to the tablet server won't return data.
+  /// Set the hint for the size of the next batch in bytes.
+  ///
+  /// @param [in] batch_size
+  ///   The hint of batch size to set. If setting to 0 before calling Open(),
+  ///   it means that the first call to the tablet server won't return data.
+  /// @return Operation result status.
   Status SetBatchSizeBytes(uint32_t batch_size);
 
-  // Sets the replica selection policy while scanning.
-  //
-  // TODO: kill this in favor of a consistency-level-based API
-  Status SetSelection(KuduClient::ReplicaSelection selection) WARN_UNUSED_RESULT;
+  /// Set the replica selection policy while scanning.
+  ///
+  /// @param [in] selection
+  ///   The policy to set.
+  /// @return Operation result status.
+  ///
+  /// @todo Kill this method in favor of a consistency-level-based API.
+  Status SetSelection(KuduClient::ReplicaSelection selection)
+    WARN_UNUSED_RESULT;
 
-  // Sets the ReadMode. Default is READ_LATEST.
+  /// Set the ReadMode. Default is @c READ_LATEST.
+  ///
+  /// @param [in] read_mode
+  ///   Read mode to set.
+  /// @return Operation result status.
   Status SetReadMode(ReadMode read_mode) WARN_UNUSED_RESULT;
 
-  // DEPRECATED: use SetFaultTolerant.
+  /// @deprecated Use SetFaultTolerant() instead.
+  ///
+  /// @param [in] order_mode
+  ///   Result record orderind mode to set.
+  /// @return Operation result status.
   Status SetOrderMode(OrderMode order_mode) WARN_UNUSED_RESULT;
 
-  // Scans are by default non fault-tolerant, and scans will fail if scanning an
-  // individual tablet fails (for example, if a tablet server crashes in the
-  // middle of a tablet scan).
-  //
-  // If this method is called, the scan will be resumed at another tablet server
-  // in the case of failure.
-  //
-  // Fault tolerant scans typically have lower throughput than non
-  // fault-tolerant scans. Fault tolerant scans use READ_AT_SNAPSHOT mode,
-  // if no snapshot timestamp is provided, the server will pick one.
+  /// Make scans resumable at another tablet server if current server fails.
+  ///
+  /// Scans are by default non fault-tolerant, and scans will fail
+  /// if scanning an individual tablet fails (for example, if a tablet server
+  /// crashes in the middle of a tablet scan). If this method is called,
+  /// scans will be resumed at another tablet server in the case of failure.
+  ///
+  /// Fault-tolerant scans typically have lower throughput than non
+  /// fault-tolerant scans. Fault tolerant scans use @c READ_AT_SNAPSHOT mode:
+  /// if no snapshot timestamp is provided, the server will pick one.
+  ///
+  /// @return Operation result status.
   Status SetFaultTolerant() WARN_UNUSED_RESULT;
 
-  // Sets the snapshot timestamp, in microseconds since the epoch, for scans in
-  // READ_AT_SNAPSHOT mode.
+  /// Set snapshot timestamp for scans in @c READ_AT_SNAPSHOT mode.
+  ///
+  /// @param [in] snapshot_timestamp_micros
+  ///   Timestamp to set in in microseconds since the Epoch.
+  /// @return Operation result status.
   Status SetSnapshotMicros(uint64_t snapshot_timestamp_micros) WARN_UNUSED_RESULT;
 
-  // Sets the snapshot timestamp in raw encoded form (i.e. as returned by a
-  // previous call to a server), for scans in READ_AT_SNAPSHOT mode.
+  /// Set snapshot timestamp for scans in @c READ_AT_SNAPSHOT mode (raw).
+  ///
+  /// @param [in] snapshot_timestamp
+  ///   Timestamp to set in raw encoded form
+  ///   (i.e. as returned by a previous call to a server).
+  /// @return Operation result status.
   Status SetSnapshotRaw(uint64_t snapshot_timestamp) WARN_UNUSED_RESULT;
 
-  // Sets the maximum time that Open() and NextBatch() are allowed to take.
+  /// Set the maximum time that Open() and NextBatch() are allowed to take.
+  ///
+  /// @param [in] millis
+  ///   Timeout to set (in milliseconds). Must be greater than 0.
+  /// @return Operation result status.
   Status SetTimeoutMillis(int millis);
 
-  // Returns the schema of the projection being scanned.
+  /// @return Schema of the projection being scanned.
   KuduSchema GetProjectionSchema() const;
 
-  // Returns a string representation of this scan.
+  /// @return String representation of this scan.
   std::string ToString() const;
+
  private:
   class KUDU_NO_EXPORT Data;
 
@@ -1105,48 +1549,73 @@ class KUDU_EXPORT KuduScanner {
   DISALLOW_COPY_AND_ASSIGN(KuduScanner);
 };
 
-// A KuduScanToken describes a partial scan of a Kudu table limited to a single
-// contiguous physical location. Using the KuduScanTokenBuilder, clients can
-// describe the desired scan, including predicates, bounds, timestamps, and
-// caching, and receive back a collection of scan tokens.
-//
-// Each scan token may be separately turned into a scanner using
-// KuduScanToken::IntoKuduScanner, with each scanner responsible for a disjoint
-// section of the table.
-//
-// Scan tokens may be serialized using the KuduScanToken::Serialize method and
-// deserialized back into a scanner using the
-// KuduScanToken::DeserializeIntoScanner method. This allows use cases such as
-// generating scan tokens in the planner component of a query engine, then
-// sending the tokens to execution nodes based on locality, and then
-// instantiating the scanners on those nodes.
-//
-// Scan token locality information can be inspected using the
-// KuduScanToken::TabletServers method.
+/// @brief A scan descriptor limited to a single physical contiguous location.
+///
+/// A KuduScanToken describes a partial scan of a Kudu table limited to a single
+/// contiguous physical location. Using the KuduScanTokenBuilder, clients can
+/// describe the desired scan, including predicates, bounds, timestamps, and
+/// caching, and receive back a collection of scan tokens.
+///
+/// Each scan token may be separately turned into a scanner using
+/// KuduScanToken::IntoKuduScanner, with each scanner responsible for a disjoint
+/// section of the table.
+///
+/// Scan tokens may be serialized using the KuduScanToken::Serialize method and
+/// deserialized back into a scanner using the
+/// KuduScanToken::DeserializeIntoScanner method. This allows use cases such as
+/// generating scan tokens in the planner component of a query engine, then
+/// sending the tokens to execution nodes based on locality, and then
+/// instantiating the scanners on those nodes.
+///
+/// Scan token locality information can be inspected using the
+/// KuduScanToken::TabletServers() method.
 class KUDU_EXPORT KuduScanToken {
  public:
 
   ~KuduScanToken();
 
-  // Creates a new scanner and sets the scanner options according to the scan
-  // token. The caller owns the new scanner. The scanner must be opened before
-  // use. The scanner will not be set if the returned status is an error.
+  /// Create a new scanner.
+  ///
+  /// This method creates a new scanner, setting the result scanner's options
+  /// according to the scan token.
+  ///
+  /// @param [out] scanner
+  ///   The result scanner. The caller owns the new scanner. The scanner
+  ///   must be opened before use. The output parameter will not be set
+  ///   if the returned status is an error.
+  /// @return Operation result status.
   Status IntoKuduScanner(KuduScanner** scanner) const WARN_UNUSED_RESULT;
 
-  // Returns a vector of tablet servers who may be hosting the tablet which
-  // this scan is retrieving rows from. This method should be considered a
-  // hint, since tablet to tablet server assignments may change in response to
-  // external events such as failover or load balancing.
+  /// Get hint on candidate servers which may be hosting the source tablet.
+  ///
+  /// This method should be considered a hint, not a definitive answer,
+  /// since tablet to tablet server assignments may change in response to
+  /// external events such as failover or load balancing.
+  ///
+  /// @return Tablet servers who may be hosting the tablet which
+  ///   this scan is retrieving rows from.
   const std::vector<KuduTabletServer*>& TabletServers() const;
 
-  // Serialize the token to a string buffer. Deserialize with
-  // KuduScanToken::DeserializeIntoScanner.
+  /// Serialize the token into a string.
+  ///
+  /// Deserialize with KuduScanToken::DeserializeIntoScanner().
+  ///
+  /// @param [out] buf
+  ///   Result string to output the serialized token.
+  /// @return Operation result status.
   Status Serialize(std::string* buf) const WARN_UNUSED_RESULT;
 
-  // Creates a new scanner and sets the scanner options according to the
-  // serialized scan token. The caller owns the new scanner. The scanner must be
-  // opened before use. The scanner will not be set if the returned status is an
-  // error.
+  /// Create a new scanner and set the scanner options.
+  ///
+  /// @param [in] client
+  ///   Client to bound to the scanner.
+  /// @param [in] serialized_token
+  ///   Token containing serialized scanner parameters.
+  /// @param [out] scanner
+  ///   The result scanner. The caller owns the new scanner. The scanner
+  ///   must be opened before use. The scanner will not be set if
+  ///   the returned status is an error.
+  /// @return Operation result status.
   static Status DeserializeIntoScanner(KuduClient* client,
                                        const std::string& serialized_token,
                                        KuduScanner** scanner) WARN_UNUSED_RESULT;
@@ -1164,95 +1633,102 @@ class KUDU_EXPORT KuduScanToken {
   DISALLOW_COPY_AND_ASSIGN(KuduScanToken);
 };
 
-// A scan token builder. This class is not thread-safe.
+/// @brief Builds scan tokens for a table.
+///
+/// @note This class is not thread-safe.
 class KUDU_EXPORT KuduScanTokenBuilder {
  public:
 
-  // Constructs a KuduScanTokenBuilder. The given 'table' object must remain valid
-  // for the lifetime of the builder, and the tokens which it builds.
+  /// Construct an instance of the class.
+  ///
+  /// @param [in] table
+  ///   The table the tokens should scan. The given object must remain valid
+  ///   for the lifetime of the builder, and the tokens which it builds.
   explicit KuduScanTokenBuilder(KuduTable* table);
   ~KuduScanTokenBuilder();
 
-  // Set the column projection by passing the column names to read.
-  //
-  // This overrides any previous call to SetProjectedColumnNames or
-  // SetProjectedColumnIndexes.
-  Status SetProjectedColumnNames(const std::vector<std::string>& col_names) WARN_UNUSED_RESULT;
+  /// Set the column projection by passing the column names to read.
+  ///
+  /// Set the column projection used for this scanner by passing the column
+  /// names to read. A call of this method overrides any previous call to
+  /// SetProjectedColumnNames() or SetProjectedColumnIndexes().
+  ///
+  /// @param [in] col_names
+  ///   Column names for the projection.
+  /// @return Operation result status.
+  Status SetProjectedColumnNames(const std::vector<std::string>& col_names)
+    WARN_UNUSED_RESULT;
 
-  // Set the column projection used for this scanner by passing the column indexes to read.
-  //
-  // This overrides any previous call to SetProjectedColumnNames or
-  // SetProjectedColumnIndexes.
-  Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes) WARN_UNUSED_RESULT;
+  /// @copydoc KuduScanner::SetProjectedColumnIndexes()
+  Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes)
+    WARN_UNUSED_RESULT;
 
-  // Add a predicate.
-  //
-  // The predicates act as conjunctions -- i.e, they all must pass for
-  // a row to be returned.
-  //
-  // The KuduScanTokenBuilder takes ownership of 'pred', even if a bad Status is
-  // returned.
+  /// @copydoc KuduScanner::AddConjunctPredicate()
   Status AddConjunctPredicate(KuduPredicate* pred) WARN_UNUSED_RESULT;
 
-  // Add a lower bound (inclusive) primary key for the scan.
-  // If any bound is already added, this bound is intersected with that one.
-  //
-  // The KuduScanTokenBuilder does not take ownership of 'key'; the caller may
-  // free it afterward.
+  /// @copydoc KuduScanner::AddLowerBound()
   Status AddLowerBound(const KuduPartialRow& key) WARN_UNUSED_RESULT;
 
-  // Add an upper bound (exclusive) primary key.
-  // If any bound is already added, this bound is intersected with that one.
-  //
-  // The KuduScanTokenBuilder does not take ownerhip of 'key'; the caller may
-  // free it afterward.
+  /// Add an upper bound (exclusive) primary key.
+  ///
+  /// If any bound is already added, this bound is intersected with that one.
+  ///
+  /// @param [in] key
+  ///   Upper bound primary key to add. The KuduScanTokenBuilder instance
+  ///   does not take ownership of the parameter.
+  /// @return Operation result status.
   Status AddUpperBound(const KuduPartialRow& key) WARN_UNUSED_RESULT;
 
-  // Set the block caching policy. If true, scanned data blocks will be cached
-  // in memory and made available for future scans. Default is true.
+  /// @copydoc KuduScanner::SetCacheBlocks
   Status SetCacheBlocks(bool cache_blocks) WARN_UNUSED_RESULT;
 
-  // Set the hint for the size of the next batch in bytes.
-  // If set to 0, the first call to the tablet server won't return data.
+  /// Set the hint for the size of the next batch in bytes.
+  ///
+  /// @param [in] batch_size
+  ///   Batch size to set (in bytes). If set to 0, the first call
+  ///   to the tablet server won't return data.
+  /// @return Operation result status.
   Status SetBatchSizeBytes(uint32_t batch_size) WARN_UNUSED_RESULT;
 
-  // Sets the replica selection policy while scanning.
-  //
-  // TODO: kill this in favor of a consistency-level-based API
-  Status SetSelection(KuduClient::ReplicaSelection selection) WARN_UNUSED_RESULT;
+  /// Set the replica selection policy while scanning.
+  ///
+  /// @param [in] selection
+  ///   Selection policy to set.
+  /// @return Operation result status.
+  ///
+  /// @todo Kill this in favor of a consistency-level-based API.
+  Status SetSelection(KuduClient::ReplicaSelection selection)
+    WARN_UNUSED_RESULT;
 
-  // Sets the ReadMode. Default is READ_LATEST.
+  /// @copydoc KuduScanner::SetReadMode()
   Status SetReadMode(KuduScanner::ReadMode read_mode) WARN_UNUSED_RESULT;
 
-  // Scans are by default non fault-tolerant, and scans will fail if scanning an
-  // individual tablet fails (for example, if a tablet server crashes in the
-  // middle of a tablet scan).
-  //
-  // If this method is called, scans will be resumed at another tablet server in
-  // the case of failure.
-  //
-  // Fault tolerant scans typically have lower throughput than non
-  // fault-tolerant scans. Fault tolerant scans use READ_AT_SNAPSHOT mode,
-  // if no snapshot timestamp is provided, the server will pick one.
+  /// @copydoc KuduScanner::SetFaultTolerant
   Status SetFaultTolerant() WARN_UNUSED_RESULT;
 
-  // Sets the snapshot timestamp, in microseconds since the epoch, for scans in
-  // READ_AT_SNAPSHOT mode.
-  Status SetSnapshotMicros(uint64_t snapshot_timestamp_micros) WARN_UNUSED_RESULT;
+  /// @copydoc KuduScanner::SetSnapshotMicros
+  Status SetSnapshotMicros(uint64_t snapshot_timestamp_micros)
+    WARN_UNUSED_RESULT;
 
-  // Sets the snapshot timestamp in raw encoded form (i.e. as returned by a
-  // previous call to a server), for scans in READ_AT_SNAPSHOT mode.
+  /// @copydoc KuduScanner::SetSnapshotRaw
   Status SetSnapshotRaw(uint64_t snapshot_timestamp) WARN_UNUSED_RESULT;
 
-  // Sets the maximum time that Open() and NextBatch() are allowed to take.
+  /// @copydoc KuduScanner::SetTimeoutMillis
   Status SetTimeoutMillis(int millis) WARN_UNUSED_RESULT;
 
-  // Build the set of scan tokens. The caller takes ownership of the tokens.
-  // The builder may be reused after this call.
+  /// Build the set of scan tokens.
+  ///
+  /// The builder may be reused after this call.
+  ///
+  /// @param [out] tokens
+  ///   Result set of tokens. The caller takes ownership of the container
+  ///   elements.
+  /// @return Operation result status.
   Status Build(std::vector<KuduScanToken*>* tokens) WARN_UNUSED_RESULT;
 
-  // Returns a string representation of this scan.
+  /// @return String representation of this scan.
   std::string ToString() const;
+
  private:
   class KUDU_NO_EXPORT Data;
 
@@ -1262,17 +1738,17 @@ class KUDU_EXPORT KuduScanTokenBuilder {
   DISALLOW_COPY_AND_ASSIGN(KuduScanTokenBuilder);
 };
 
-// In-memory representation of a remote tablet server.
+/// @brief In-memory representation of a remote tablet server.
 class KUDU_EXPORT KuduTabletServer {
  public:
   ~KuduTabletServer();
 
-  // Returns the UUID of this tablet server. Is globally unique and
-  // guaranteed not to change for the lifetime of the tablet server.
+  /// @return The UUID which is globally unique and guaranteed not to change
+  ///   for the lifetime of the tablet server.
   const std::string& uuid() const;
 
-  // Returns the hostname of the first RPC address that this tablet server
-  // is listening on.
+  /// @return Hostname of the first RPC address that this tablet server
+  ///   is listening on.
   const std::string& hostname() const;
 
  private:

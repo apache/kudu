@@ -218,9 +218,8 @@ endif()
 ADD_EXPORTABLE_LIBRARY(kudu_util
   SRCS ${UTIL_SRCS}
   DEPS ${UTIL_LIBS}
+  NONLINK_DEPS gen_version_info
   EXPORTED_DEPS ${EXPORTED_UTIL_LIBS})
-
-add_dependencies(kudu_util gen_version_info)
 
 #######################################
 # kudu_test_util

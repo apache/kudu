@@ -60,13 +60,13 @@ fetch_and_expand() {
     fi
 
     echo "Unpacking $FILENAME"
-    if echo "$FILENAME" | egrep -q '\.zip$'; then
+    if [[ "$FILENAME" =~ \.zip$ ]]; then
       if ! unzip -q "$FILENAME"; then
         echo "Error unzipping $FILENAME, removing file"
         rm "$FILENAME"
         continue
       fi
-    elif echo "$FILENAME" | egrep -q '(\.tar\.gz|\.tgz)$'; then
+    elif [[ "$FILENAME" =~ \.(tar\.gz|tgz)$ ]]; then
       if ! tar xf "$FILENAME"; then
         echo "Error untarring $FILENAME, removing file"
         rm "$FILENAME"
