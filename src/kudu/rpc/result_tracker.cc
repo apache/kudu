@@ -17,14 +17,33 @@
 
 #include "kudu/rpc/result_tracker.h"
 
+#include <algorithm>
+#include <limits>
+
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/pb_util.h"
+
+DEFINE_int64(remember_clients_ttl_ms, 3600 * 1000 /* 1 hour */,
+    "Maximum amount of time, in milliseconds, the server \"remembers\" a client for the "
+    "purpose of caching its responses. After this period without hearing from it, the "
+    "client is no longer remembered and the memory occupied by its responses is reclaimed. "
+    "Retries of requests older than 'remember_clients_ttl_ms' are treated as new "
+    "ones.");
+TAG_FLAG(remember_clients_ttl_ms, advanced);
+
+DEFINE_int64(remember_responses_ttl_ms, 600 * 1000 /* 10 mins */,
+    "Maximum amount of time, in milliseconds, the server \"remembers\" a response to a "
+    "specific request for a client. After this period has elapsed, the response may have "
+    "been garbage collected and the client might get a response indicating the request is "
+    "STALE.");
+TAG_FLAG(remember_responses_ttl_ms, advanced);
 
 namespace kudu {
 namespace rpc {
@@ -76,9 +95,8 @@ ResultTracker::~ResultTracker() {
   lock_guard<simple_spinlock> l(lock_);
   // Release all the memory for the stuff we'll delete on destruction.
   for (auto& client_state : clients_) {
-    for (auto& completion_record : client_state.second->completion_records) {
-      mem_tracker_->Release(completion_record.second->memory_footprint());
-    }
+    client_state.second->GCCompletionRecords(
+        mem_tracker_, [] (SequenceNumber, CompletionRecord*){ return true; });
     mem_tracker_->Release(client_state.second->memory_footprint());
   }
 }
@@ -99,16 +117,39 @@ ResultTracker::RpcState ResultTracker::TrackRpcUnlocked(const RequestIdPB& reque
       [&]{
         unique_ptr<ClientState> client_state(new ClientState(mem_tracker_));
         mem_tracker_->Consume(client_state->memory_footprint());
+        client_state->stale_before_seq_no = request_id.first_incomplete_seq_no();
         return client_state;
       })->get();
 
   client_state->last_heard_from = MonoTime::Now();
 
+  // If the arriving request is older than our per-client GC watermark, report its
+  // staleness to the client.
+  if (PREDICT_FALSE(request_id.seq_no() < client_state->stale_before_seq_no)) {
+    if (context) {
+      context->call_->RespondFailure(
+          ErrorStatusPB::ERROR_REQUEST_STALE,
+          Status::Incomplete(Substitute("Request with id { $0 } is stale.",
+                                        request_id.ShortDebugString())));
+      delete context;
+    }
+    return RpcState::STALE;
+  }
+
+  // GC records according to the client's first incomplete watermark.
+  client_state->GCCompletionRecords(
+      mem_tracker_,
+      [&] (SequenceNumber seq_no, CompletionRecord* completion_record) {
+        return completion_record->state != RpcState::IN_PROGRESS &&
+            seq_no < request_id.first_incomplete_seq_no();
+      });
+
   auto result = ComputeIfAbsentReturnAbsense(
       &client_state->completion_records,
       request_id.seq_no(),
       [&]{
-        unique_ptr<CompletionRecord> completion_record(new CompletionRecord());
+        unique_ptr<CompletionRecord> completion_record(new CompletionRecord(
+            RpcState::IN_PROGRESS, request_id.attempt_no()));
         mem_tracker_->Consume(completion_record->memory_footprint());
         return completion_record;
       });
@@ -117,8 +158,6 @@ ResultTracker::RpcState ResultTracker::TrackRpcUnlocked(const RequestIdPB& reque
   ScopedMemTrackerUpdater<CompletionRecord> cr_updater(mem_tracker_.get(), completion_record);
 
   if (PREDICT_TRUE(result.second)) {
-    completion_record->state = RpcState::IN_PROGRESS;
-    completion_record->driver_attempt_no = request_id.attempt_no();
     // When a follower is applying an operation it doesn't have a response yet, and it won't
     // have a context, so only set them if they exist.
     if (response != nullptr) {
@@ -129,6 +168,7 @@ ResultTracker::RpcState ResultTracker::TrackRpcUnlocked(const RequestIdPB& reque
     return RpcState::NEW;
   }
 
+  completion_record->last_updated = MonoTime::Now();
   switch (completion_record->state) {
     case RpcState::COMPLETED: {
       // If the RPC is COMPLETED and the request originates from a client (context, response are
@@ -172,6 +212,7 @@ ResultTracker::RpcState ResultTracker::TrackRpcOrChangeDriver(const RequestIdPB&
   completion_record->ongoing_rpcs.push_back({nullptr,
                                              nullptr,
                                              request_id.attempt_no()});
+
   // Since we changed the driver of the RPC, return NEW, so that the caller knows
   // to store the result.
   return RpcState::NEW;
@@ -259,6 +300,7 @@ void ResultTracker::RecordCompletionAndRespond(const RequestIdPB& request_id,
   completion_record->response.reset(DCHECK_NOTNULL(response)->New());
   completion_record->response->CopyFrom(*response);
   completion_record->state = RpcState::COMPLETED;
+  completion_record->last_updated = MonoTime::Now();
 
   CHECK_EQ(completion_record->driver_attempt_no, request_id.attempt_no());
 
@@ -300,6 +342,8 @@ void ResultTracker::FailAndRespondInternal(const RequestIdPB& request_id,
   if (completion_record == nullptr) {
     return;
   }
+
+  completion_record->last_updated = MonoTime::Now();
 
   int64_t seq_no = request_id.seq_no();
   int64_t handler_attempt_no = request_id.attempt_no();
@@ -367,6 +411,54 @@ void ResultTracker::FailAndRespond(const RequestIdPB& request_id,
   FailAndRespondInternal(request_id, func);
 }
 
+void ResultTracker::GCResults() {
+  lock_guard<simple_spinlock> l(lock_);
+  MonoTime now = MonoTime::Now();
+  // Calculate the instants before which we'll start GCing ClientStates and CompletionRecords.
+  MonoTime time_to_gc_clients_from = now;
+  time_to_gc_clients_from.AddDelta(
+      MonoDelta::FromMilliseconds(-FLAGS_remember_clients_ttl_ms));
+  MonoTime time_to_gc_responses_from = now;
+  time_to_gc_responses_from.AddDelta(
+      MonoDelta::FromMilliseconds(-FLAGS_remember_responses_ttl_ms));
+
+  // Now go through the ClientStates. If we haven't heard from a client in a while
+  // GC it and all its completion records (making sure there isn't actually one in progress first).
+  // If we've heard from a client recently, but some of its responses are old, GC those responses.
+  for (auto iter = clients_.begin(); iter != clients_.end();) {
+    auto& client_state = iter->second;
+    if (client_state->last_heard_from.ComesBefore(time_to_gc_clients_from)) {
+      // Client should be GCed.
+      bool ongoing_request = false;
+      client_state->GCCompletionRecords(
+          mem_tracker_,
+          [&] (SequenceNumber, CompletionRecord* completion_record) {
+            if (PREDICT_FALSE(completion_record->state == RpcState::IN_PROGRESS)) {
+              ongoing_request = true;
+              return false;
+            }
+            return true;
+          });
+      // Don't delete the client state if there is still a request in execution.
+      if (PREDICT_FALSE(ongoing_request)) {
+        ++iter;
+        continue;
+      }
+      mem_tracker_->Release(client_state->memory_footprint());
+      iter = clients_.erase(iter);
+    } else {
+      // Client can't be GCed, but its calls might be GCable.
+      iter->second->GCCompletionRecords(
+          mem_tracker_,
+          [&] (SequenceNumber, CompletionRecord* completion_record) {
+            return completion_record->state != RpcState::IN_PROGRESS &&
+                completion_record->last_updated.ComesBefore(time_to_gc_responses_from);
+          });
+      ++iter;
+    }
+  }
+}
+
 string ResultTracker::ToString() {
   lock_guard<simple_spinlock> l(lock_);
   return ToStringUnlocked();
@@ -382,10 +474,35 @@ string ResultTracker::ToStringUnlocked() const {
   return result;
 }
 
+template<class MustGcRecordFunc>
+void ResultTracker::ClientState::GCCompletionRecords(
+    const shared_ptr<kudu::MemTracker>& mem_tracker,
+    MustGcRecordFunc must_gc_record_func) {
+  ScopedMemTrackerUpdater<ClientState> updater(mem_tracker.get(), this);
+  for (auto iter = completion_records.begin(); iter != completion_records.end();) {
+    if (must_gc_record_func(iter->first, iter->second.get())) {
+      mem_tracker->Release(iter->second->memory_footprint());
+      SequenceNumber deleted_seq_no = iter->first;
+      iter = completion_records.erase(iter);
+      // Each time we GC a response, update 'stale_before_seq_no'.
+      // This will allow to answer clients that their responses are stale if we get
+      // a request with a sequence number lower than or equal to this one.
+      stale_before_seq_no = std::max(deleted_seq_no + 1, stale_before_seq_no);
+      continue;
+    }
+    // Since we store completion records in order, if we found one that shouldn't be GCed,
+    // don't GC anything after it.
+    return;
+  }
+}
+
 string ResultTracker::ClientState::ToString() const {
-  string result = Substitute("Client State[Last heard from: $1, Num. Completion "
-                                 "Records: $2, CompletionRecords:\n", completion_records.size(),
-                             last_heard_from.ToString());
+  auto since_last_heard =
+      MonoTime::Now().GetDeltaSince(last_heard_from);
+  string result = Substitute("Client State[Last heard from: $0s ago, "
+                             "$1 CompletionRecords:",
+                             since_last_heard.ToString(),
+                             completion_records.size());
   for (auto& completion_record : completion_records) {
     SubstituteAndAppend(&result, Substitute("\n\tCompletion Record: $0, $1",
                                             completion_record.first,
@@ -396,9 +513,12 @@ string ResultTracker::ClientState::ToString() const {
 }
 
 string ResultTracker::CompletionRecord::ToString() const {
-  string result = Substitute("Completion Record[State: $0, Driver: $1, Num. Ongoing RPCs: $2, "
-                                 "Cached response: $3, OngoingRpcs:", state, driver_attempt_no,
-                             ongoing_rpcs.size(), response ? response->ShortDebugString() : "None");
+  string result = Substitute("Completion Record[State: $0, Driver: $1, "
+                             "Cached response: $2, $3 OngoingRpcs:",
+                             state,
+                             driver_attempt_no,
+                             response ? response->ShortDebugString() : "None",
+                             ongoing_rpcs.size());
   for (auto& orpc : ongoing_rpcs) {
     SubstituteAndAppend(&result, Substitute("\n\t$0", orpc.ToString()));
   }

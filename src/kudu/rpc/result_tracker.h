@@ -222,6 +222,16 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
                       int error_ext_id, const std::string& message,
                       const google::protobuf::Message& app_error_pb);
 
+  // Runs time-based garbage collection on the results this result tracker is caching.
+  // When garbage collection runs, it goes through all ClientStates and:
+  // - If a ClientState is older than the 'remember_clients_ttl_ms' flag and no
+  //   requests are in progress, GCs the ClientState and all its CompletionRecords.
+  // - If a ClientState is newer than the 'remember_clients_ttl_ms' flag, goes
+  //   through all CompletionRecords and:
+  //   - If the CompletionRecord is older than the 'remember_responses_ttl_secs' flag,
+  //     GCs the CompletionRecord and advances the 'stale_before_seq_no' watermark.
+  void GCResults();
+
   string ToString();
 
  private:
@@ -236,12 +246,24 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
   };
   // A completion record for an IN_PROGRESS or COMPLETED RPC.
   struct CompletionRecord {
+    CompletionRecord(RpcState state, int64_t driver_attempt_no)
+        : state(state),
+          driver_attempt_no(driver_attempt_no),
+          last_updated(MonoTime::Now()) {
+    }
+
     // The current state of the RPC.
     RpcState state;
+
     // The attempt number that is/was "driving" this RPC.
     int64_t driver_attempt_no;
+
+    // The timestamp of the last CompletionRecord update.
+    MonoTime last_updated;
+
     // The cached response, if this RPC is in COMPLETED state.
     std::unique_ptr<google::protobuf::Message> response;
+
     // The set of ongoing RPCs that correspond to this record.
     std::vector<OnGoingRpcInfo> ongoing_rpcs;
 
@@ -254,6 +276,7 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
           + (response.get() != nullptr ? response->SpaceUsed() : 0);
     }
   };
+
   // The state corresponding to a single client.
   struct ClientState {
     typedef MemTrackerAllocator<
@@ -265,11 +288,30 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
                      CompletionRecordMapAllocator> CompletionRecordMap;
 
     explicit ClientState(std::shared_ptr<MemTracker> mem_tracker)
-     : completion_records(CompletionRecordMap::key_compare(),
-                          CompletionRecordMapAllocator(std::move(mem_tracker))) {}
+        : stale_before_seq_no(0),
+          completion_records(CompletionRecordMap::key_compare(),
+                             CompletionRecordMapAllocator(std::move(mem_tracker))) {}
 
+    // The last time we've heard from this client.
     MonoTime last_heard_from;
+
+    // The sequence number of the first response we remember for this client.
+    // All sequence numbers before this one are considered STALE.
+    SequenceNumber stale_before_seq_no;
+
+    // The (un gc'd) CompletionRecords for this client.
     CompletionRecordMap completion_records;
+
+    // Garbage collects this client's CompletionRecords for which MustGcRecordFunc returns
+    // true. We use a lambda here so that we can have a single method that GCs and releases
+    // the memory for CompletionRecords based on different policies.
+    //
+    // 'func' should have the following signature:
+    //   bool MyFunction(SequenceNumber seq_no, CompletionRecord* record);
+    //
+    template<class MustGcRecordFunc>
+    void GCCompletionRecords(const std::shared_ptr<kudu::MemTracker>& mem_tracker,
+                             MustGcRecordFunc func);
 
     std::string ToString() const;
 

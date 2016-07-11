@@ -78,12 +78,21 @@ void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(int thread_idx,
   std::unique_ptr<TabletServerServiceProxy> proxy(new TabletServerServiceProxy(client_messenger,
                                                                                address));
   for (int i = 0; i < num_batches; i++) {
+    // Wait for all of the other writer threads to finish their attempts of the prior
+    // batch before continuing on to the next one. This has two important effects:
+    //   1) we are more likely to trigger races where multiple attempts of the same sequence
+    //      number arrive concurrently.
+    //   2) we set 'first_incomplete_seq_no' to our current sequence number, which means
+    //      that each time we start a new batch, we allow garbage collection of the result
+    //      tracker entries for the prior batches. So, if we let other threads continue to
+    //      retry the prior batch while we moved on to the next batch, they might get a
+    //      'STALE' error response.
     barrier->Wait();
     WriteRequestPB request;
     request.set_tablet_id(tablet_id_);
     SchemaToPB(schema, request.mutable_schema());
 
-    // For 1/3 of the batches peform an empty write. This will make sure that we also stress
+    // For 1/3 of the batches, perform an empty write. This will make sure that we also stress
     // the path where writes aren't serialized by row locks.
     if (i % 3 != 0) {
       for (int j = 0; j < batch_size; j++) {
@@ -95,6 +104,7 @@ void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(int thread_idx,
 
     int64_t num_attempts = 0;
     int64_t base_attempt_idx = thread_idx * num_batches + i;
+
     while (true) {
       controller.Reset();
       WriteResponsePB response;
@@ -103,7 +113,7 @@ void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(int thread_idx,
       request_id->set_client_id("test_client");
       request_id->set_seq_no(i);
       request_id->set_attempt_no(base_attempt_idx * kMaxAttempts + num_attempts);
-      request_id->set_first_incomplete_seq_no(rpc::RequestTracker::NO_SEQ_NO);
+      request_id->set_first_incomplete_seq_no(i);
 
       controller.SetRequestIdPB(std::move(request_id));
 

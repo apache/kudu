@@ -89,6 +89,7 @@ class RetriableRpc : public Rpc {
   ResponsePB resp_;
 
  private:
+  friend class CalculatorServiceRpc;
   // Decides whether to retry the RPC, based on the result of AnalyzeResponse() and retries
   // if that is the case.
   // Returns true if the RPC was retried or false otherwise.

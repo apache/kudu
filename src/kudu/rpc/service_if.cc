@@ -117,6 +117,9 @@ void GeneratedServiceIf::Handle(InboundCall *call) {
         break;
       case ResultTracker::COMPLETED:
       case ResultTracker::IN_PROGRESS:
+      case ResultTracker::STALE:
+        // ResultTracker has already responded to the RPC and deleted
+        // 'ctx'.
         return;
       default:
         LOG(FATAL) << "Unknown state: " << state;

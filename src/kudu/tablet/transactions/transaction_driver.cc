@@ -217,13 +217,14 @@ void TransactionDriver::RegisterFollowerTransactionOnResultTracker() {
     case ResultTracker::RpcState::NEW:
       // We're the only ones trying to execute the transaction (normal case). Proceed.
       return;
-      // If this RPC was previously completed (like if the same tablet was bootstrapped twice)
-      // stop tracking the result. Only follower transactions can observe this state so we
-      // simply reset the callback and the result will not be tracked anymore.
+      // If this RPC was previously completed or is already stale (like if the same tablet was
+      // bootstrapped twice) stop tracking the result. Only follower transactions can observe these
+      // states so we simply reset the callback and the result will not be tracked anymore.
+    case ResultTracker::RpcState::STALE:
     case ResultTracker::RpcState::COMPLETED: {
       mutable_state()->set_completion_callback(
           gscoped_ptr<TransactionCompletionCallback>(new TransactionCompletionCallback()));
-      VLOG(1) << state()->result_tracker() << " Follower Rpc was not NEW or IN_PROGRESS: "
+      VLOG(2) << state()->result_tracker() << " Follower Rpc was already COMPLETED or STALE: "
           << rpc_state << " OpId: " << state()->op_id().ShortDebugString()
           << " RequestId: " << state()->request_id().ShortDebugString();
       return;

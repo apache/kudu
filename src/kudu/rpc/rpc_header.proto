@@ -123,7 +123,7 @@ message RequestIdPB {
 
   // The sequence number of the first RPC that has not been marked as completed by the client.
   // Unset if there isn't an incomplete RPC.
-  optional int64 first_incomplete_seq_no = 3;
+  required int64 first_incomplete_seq_no = 3;
 
   // The number of times this RPC has been tried.
   // Set to 1 in the first attempt.
@@ -215,6 +215,10 @@ message ErrorStatusPB {
     // The request parameter was not parseable, was missing required fields,
     // or the server does not support the required feature flags.
     ERROR_INVALID_REQUEST = 5;
+
+    // The server might have previously received this request but its response is no
+    // longer cached. It's unknown whether the request was executed or not.
+    ERROR_REQUEST_STALE = 6;
 
     // FATAL_* errors indicate that the client should shut down the connection.
     //------------------------------------------------------------

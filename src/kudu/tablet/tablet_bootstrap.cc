@@ -1245,11 +1245,15 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
         << write->tablet_id() << ". State: " << 0 << " id: "
         << replicate_msg->request_id().DebugString();
     // We only replay committed requests so the result of tracking this request can be:
-    // NEW - This is a previously untracked request, or we changed the driver -> store the result
-    // COMPLETED - We've bootstrapped this tablet twice, and previously stored the result -> do
-    //             nothing.
+    // NEW:
+    //   This is a previously untracked request, or we changed the driver -> store the result
+    // COMPLETED or STALE:
+    //   We've bootstrapped this tablet twice, and previously stored the result -> do
+    //   nothing.
     state = result_tracker_->TrackRpcOrChangeDriver(replicate_msg->request_id());
-    CHECK(state == ResultTracker::RpcState::NEW || state == ResultTracker::RpcState::COMPLETED)
+    CHECK(state == ResultTracker::RpcState::NEW ||
+          state == ResultTracker::RpcState::COMPLETED ||
+          state == ResultTracker::RpcState::STALE)
         << "Wrong state: " << state;
     response.reset(new WriteResponsePB());
     response->set_timestamp(replicate_msg->timestamp());
