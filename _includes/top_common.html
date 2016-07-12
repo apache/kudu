@@ -14,8 +14,6 @@
           crossorigin="anonymous">
 
     <!-- Custom styles for this template -->
-    <link href="{{site.github.url}}/css/justified-nav.css" rel="stylesheet" />
-
     <link href="{{site.github.url}}/css/kudu.css" rel="stylesheet"/>
     <link href="{{site.github.url}}/css/asciidoc.css" rel="stylesheet"/>
     <link rel="shortcut icon" href="{{site.github.url}}/img/logo-favicon.ico" />
@@ -34,46 +32,65 @@
         <![endif]-->
   </head>
   <body>
-    <!-- Fork me on GitHub -->
-    <a class="fork-me-on-github" href="https://github.com/apache/incubator-kudu"><img src="//aral.github.io/fork-me-on-github-retina-ribbons/right-cerulean@2x.png" alt="Fork me on GitHub" /></a>
-
     <div class="kudu-site container-fluid">
       <!-- Static navbar -->
-        <nav class="container-fluid navbar-default">
-          <div class="navbar-header">
-            <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
-              <span class="sr-only">Toggle navigation</span>
-              <span class="icon-bar"></span>
-              <span class="icon-bar"></span>
-              <span class="icon-bar"></span>
-            </button>
-            {% if page.active_nav != 'home' %}
-            <a class="logo" href="{{site.github.url}}/"><img src="{{site.github.url}}/img/logo_small.png" width="80" /></a>
-            {% endif %}
-          </div>
-          <div id="navbar" class="navbar-collapse collapse navbar-right">
-            <ul class="nav navbar-nav">
-              <li {% if page.active_nav == 'home' %}class="active"{% endif %}>
-                <a href="{{site.github.url}}/">Home</a>
-              </li>
-              <li {% if page.active_nav == 'overview' %}class="active"{% endif %}>
-                <a href="{{site.github.url}}/overview.html">Overview</a>
-              </li>
-              <li {% if page.active_nav == 'docs' %}class="active"{% endif %}>
-                <a href="{{site.github.url}}/docs/">Documentation</a>
-              </li>
-              <li {% if page.active_nav == 'download' %}class="active"{% endif %}>
-                <a href="{{site.github.url}}/releases/">Download</a>
-              </li>
-              <li {% if page.active_nav == 'blog' %}class="active"{% endif %}>
-                <a href="{{site.github.url}}/blog/">Blog</a>
-              </li>
-              <li {% if page.active_nav == 'community' %}class="active"{% endif %}>
-                <a href="{{site.github.url}}/community.html">Community</a>
-              </li>
-              <li {% if page.active_nav == 'faq' %}class="active"{% endif %}>
-                <a href="{{site.github.url}}/faq.html">FAQ</a>
-              </li>
-            </ul>
-          </div><!--/.nav-collapse -->
+        <nav class="navbar navbar-default">
+          <div class="container-fluid">
+            <div class="navbar-header">
+              <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+              </button>
+              {% if page.active_nav != 'home' %}
+              <a class="logo" href="{{site.github.url}}/"><img src="{{site.github.url}}/img/logo_small.png" width="80" /></a>
+              {% endif %}
+            </div>
+            <div id="navbar" class="collapse navbar-collapse">
+              <ul class="nav navbar-nav navbar-right">
+                <li {% if page.active_nav == 'home' %}class="active"{% endif %}>
+                  <a href="{{site.github.url}}/">Home</a>
+                </li>
+                <li {% if page.active_nav == 'overview' %}class="active"{% endif %}>
+                  <a href="{{site.github.url}}/overview.html">Overview</a>
+                </li>
+                <li {% if page.active_nav == 'docs' %}class="active"{% endif %}>
+                  <a href="{{site.github.url}}/docs/">Documentation</a>
+                </li>
+                <li {% if page.active_nav == 'download' %}class="active"{% endif %}>
+                  <a href="{{site.github.url}}/releases/">Download</a>
+                </li>
+                <li {% if page.active_nav == 'blog' %}class="active"{% endif %}>
+                  <a href="{{site.github.url}}/blog/">Blog</a>
+                </li>
+                <!-- NOTE: this dropdown menu does not appear on Mobile, so don't add anything here
+                     that doesn't also appear elsewhere on the site. -->
+                <li class="dropdown{% if page.active_nav == 'community' %} active{% endif %}">
+                  <a href="{{site.github.url}}/community.html" role="button" aria-haspopup="true" aria-expanded="false">Community <span class="caret"></span></a>
+                  <ul class="dropdown-menu">
+                    <li class="dropdown-header">GET IN TOUCH</li>
+                    <li><a class="icon email" href="{{site.github.url}}/community.html">Mailing Lists</a></li>
+                    <li><a class="icon slack" href="https://getkudu-slack.herokuapp.com/">Slack Channel</a></li>
+                    <li role="separator" class="divider"></li>
+                    <li><a href="{{site.github.url}}/community.html#meetups-user-groups-and-conference-presentations">Events and Meetups</a></li>
+                    <!--<li><a href="{{site.github.url}}/committers.html">Project Committers</a></li>-->
+                    <!--<li><a href="{{site.github.url}}/roadmap.html">Roadmap</a></li>-->
+                    <li><a href="{{site.github.url}}/community.html#contributions">How to Contribute</a></li>
+                    <li role="separator" class="divider"></li>
+                    <li class="dropdown-header">DEVELOPER RESOURCES</li>
+                    <li><a class="icon github" href="https://github.com/apache/incubator-kudu">GitHub</a></li>
+                    <li><a class="icon gerrit" href="http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu">Gerrit Code Review</a></li>
+                    <li><a class="icon jira" href="https://issues.apache.org/jira/browse/KUDU">JIRA Issue Tracker</a></li>
+                    <li role="separator" class="divider"></li>
+                    <li class="dropdown-header">SOCIAL MEDIA</li>
+                    <li><a class="icon twitter" href="https://twitter.com/ApacheKudu">Twitter</a></li>
+                  </ul>
+                </li>
+                <li {% if page.active_nav == 'faq' %}class="active"{% endif %}>
+                  <a href="{{site.github.url}}/faq.html">FAQ</a>
+                </li>
+              </ul><!-- /.nav -->
+            </div><!-- /#navbar -->
+          </div><!-- /.container-fluid -->
         </nav>

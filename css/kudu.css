@@ -1,3 +1,14 @@
+body {
+  padding-top: 20px;
+}
+
+.footer {
+  padding-top: 40px;
+  padding-bottom: 40px;
+  margin-top: 40px;
+  border-top: 1px solid #eee;
+}
+
 /* Override <code> to match <pre> instead of being red. */
 code {
     color: #333;
@@ -12,19 +23,17 @@ footer {
     clear: both;
 }
 
-.fork-me-on-github img {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 149px;
-    height: 149px;
-    border: 0;
+/* Main marketing message and sign up button */
+.kudu-site .jumbotron {
+  text-align: center;
+  background-color: transparent;
+  padding-left: 0;
+  padding-right: 0;
 }
 
-@media (max-width: 1400px) {
-  .fork-me-on-github {
-    display: none;
-  }
+.kudu-site .jumbotron .btn {
+  padding: 14px 24px;
+  font-size: 21px;
 }
 
 .btn-info {
@@ -95,36 +104,96 @@ footer {
     margin-top: 0;
 }
 
-.kudu-site .navbar-default {
+.kudu-site .navbar {
     background-color: #fff;
-    padding-right:20px;
     border: none;
+    margin: 0;
 }
 
-.kudu-site .navbar-default .navbar-nav a {
+.kudu-site .navbar .nav a {
     font-size: 110%;
-    background: none;
+    background-color: transparent;
 }
 
-.kudu-site .navbar-default .navbar-nav a:hover {
+.kudu-site .navbar .nav a:hover,
+.kudu-site .navbar .nav > :hover > a {
     color: #fdfdfd;
-    background: #1f99d5;
+    background-color: #1f99d5;
 }
 
-.kudu-site .navbar-default .navbar-nav .active a {
+/* Don't display dropdown menu on small screens w/ hamburger menu */
+@media (max-width:767px) {
+  .kudu-site .navbar .nav .dropdown .caret {
+    display: none;
+  }
+  .kudu-site .navbar .nav .dropdown-menu {
+    display: none !important;
+  }
+}
+
+/* Also don't display dropdown menu on smallish screens with touch capability (e.g. iPad) */
+@media (max-width:1024px) {
+  html.touch .kudu-site .navbar .nav .dropdown .caret {
+    display: none;
+  }
+  html.touch .kudu-site .navbar .nav .dropdown-menu {
+    display: none !important;
+  }
+}
+
+.kudu-site .navbar .nav .active:not(.dropdown) > a {
     color: #555;
     font-weight: bold;
-    background: none;
+    background-color: transparent;
 }
 
-.kudu-site .navbar-default .navbar-nav .active a:hover {
+.kudu-site .navbar .nav .active:not(.dropdown) > a:hover {
     cursor: default;
     color: #555;
 }
 
-.kudu-site .navbar-default:after {
-    display: block;
-    clear: both;
+.kudu-site .navbar .nav .active.dropdown > a {
+  font-weight: bold;
+}
+
+/* Show the dropdown menu on hover. */
+.kudu-site .navbar .nav .dropdown:hover .dropdown-menu {
+  display: block;
+}
+
+.kudu-site .icon {
+  background-repeat: no-repeat;
+  /* assumes 16px width icon */
+  background-position: 0 center;
+  padding-left:21px;
+}
+
+.kudu-site .navbar .nav .dropdown .icon {
+  /* assumes 16px width icon */
+  background-position: 20px center;
+  padding-left:43px;
+}
+
+.kudu-site .icon.github { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/github_mark_16px.png); }
+.kudu-site .navbar .nav .dropdown .icon.github:hover { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/github_mark_light_16px.png); }
+
+.kudu-site .icon.slack { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/slack_mark_16px.png); }
+.kudu-site .navbar .nav .dropdown .icon.slack:hover { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/slack_mark_white_16px.png); }
+
+.kudu-site .icon.twitter { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/twitter_mark_16px.png); }
+.kudu-site .navbar .nav .dropdown .icon.twitter:hover { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/twitter_mark_white_16px.png); }
+
+.kudu-site .icon.jira { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/jira_mark_16px.png); }
+.kudu-site .navbar .nav .dropdown .icon.jira:hover { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/jira_mark_white_16px.png); }
+
+.kudu-site .icon.gerrit { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/gerrit_mark_16px.png); }
+
+/* From http://www.softicons.com/toolbar-icons/sizicons-icons-by-randomjabber/envelope-icon */
+.kudu-site .navbar .nav .dropdown .icon.email { background-image:url(//d3dr9sfxru4sde.cloudfront.net/i/k/envelope_12px.png); background-position-x:21px; }
+
+.kudu-site .navbar:after {
+  display: block;
+  clear: both;
 }
 
 .faq ol {
@@ -173,13 +242,13 @@ footer {
 @media (min-width: 768px) and (max-width:820px) {
   /* The navigation layout breaks in this page width range, hide the FAQ link
      until we can get a replacement for the navigation bar. */
-  nav.navbar-default ul.navbar-nav li:last-child {
+  nav.navbar ul.navbar-nav li:last-child {
     display: none;
   }
 }
 @media (min-width: 768px) and (max-width:870px) {
   .navbar-right { padding-left:0; padding-right:0; }
-  .kudu-site .navbar-default .navbar-nav a {
+  .kudu-site .navbar .navbar-nav a {
       /* The padding looks better at 15px but doesn't fit on the page due to so many links. */
       padding: 13px;
   }
