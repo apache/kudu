@@ -19,6 +19,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/thread_restrictions.h"
 
 namespace kudu {
 
