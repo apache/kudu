@@ -17,6 +17,7 @@
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <memory>
 #include <limits>
 #include <stdlib.h>
 #include <vector>
@@ -39,6 +40,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/stopwatch.h"
 
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu { namespace cfile {
@@ -73,14 +75,12 @@ class TestEncoding : public ::testing::Test {
   static Slice CreateBinaryBlock(BuilderType *sbb,
                                  int num_items,
                                  const char *fmt_str) {
-    vector<string> to_insert;
+    vector<unique_ptr<string>> to_insert;
     std::vector<Slice> slices;
-
     for (uint i = 0; i < num_items; i++) {
-      to_insert.emplace_back(StringPrintf(fmt_str, i));
-      slices.push_back(Slice(to_insert.back()));
+      to_insert.emplace_back(new string(StringPrintf(fmt_str, i)));
+      slices.push_back(Slice(to_insert.back()->data()));
     }
-
 
     int rem = slices.size();
     Slice *ptr = &slices[0];
