@@ -33,6 +33,7 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/subprocess.h"
 
 using kudu::client::KuduClient;
@@ -55,9 +56,13 @@ using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerErrorPB;
 using std::numeric_limits;
 using std::string;
+using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
+
+METRIC_DECLARE_entity(server);
+METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet);
 
 namespace kudu {
 
@@ -853,8 +858,7 @@ int PrintOpenTabletFiles(pid_t pid, const string& tablet_id) {
 TEST_F(DeleteTableTest, TestFDsNotLeakedOnTabletTombstone) {
   const MonoDelta timeout = MonoDelta::FromSeconds(30);
 
-  vector<string> ts_flags, master_flags;
-  NO_FATALS(StartCluster(ts_flags, master_flags, 1));
+  NO_FATALS(StartCluster({}, {}, 1));
 
   // Create the table.
   TestWorkload workload(cluster_.get());
@@ -882,6 +886,49 @@ TEST_F(DeleteTableTest, TestFDsNotLeakedOnTabletTombstone) {
   ets->Shutdown();
   ASSERT_OK(ets->Restart());
   ASSERT_EQ(0, PrintOpenTabletFiles(ets->pid(), tablet_id));
+}
+
+TEST_F(DeleteTableTest, TestUnknownTabletsAreNotDeleted) {
+  // Speed up heartbeating so that the unknown tablet is detected faster.
+  vector<string> extra_ts_flags = { "--heartbeat_interval_ms=10" };
+
+  NO_FATALS(StartCluster(extra_ts_flags, {}, 1));
+
+  Schema schema(GetSimpleTestSchema());
+  client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));
+  unique_ptr<KuduTableCreator> creator(client_->NewTableCreator());
+  ASSERT_OK(creator->table_name("test")
+      .schema(&client_schema)
+      .set_range_partition_columns({"key"})
+      .num_replicas(1)
+      .Create());
+
+  // Delete the master's metadata and start it back up. The tablet created
+  // above is now unknown, but should not be deleted!
+  cluster_->master()->Shutdown();
+  ASSERT_OK(env_->DeleteRecursively(cluster_->master()->data_dir()));
+  ASSERT_OK(cluster_->master()->Restart());
+  SleepFor(MonoDelta::FromSeconds(2));
+  int64_t num_delete_attempts;
+  ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
+      &METRIC_ENTITY_server, "kudu.tabletserver",
+      &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
+      "total_count", &num_delete_attempts));
+  ASSERT_EQ(0, num_delete_attempts);
+
+  // Now restart the master with orphan deletion enabled. The tablet should get
+  // deleted.
+  cluster_->master()->Shutdown();
+  cluster_->master()->mutable_flags()->push_back(
+      "--catalog_manager_delete_orphaned_tablets");
+  ASSERT_OK(cluster_->master()->Restart());
+  SleepFor(MonoDelta::FromSeconds(2));
+  ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
+      &METRIC_ENTITY_server, "kudu.tabletserver",
+      &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
+      "total_count", &num_delete_attempts));
+  ASSERT_EQ(1, num_delete_attempts);
+
 }
 
 // Parameterized test case for TABLET_DATA_DELETED deletions.

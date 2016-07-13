@@ -91,7 +91,7 @@
 #include "kudu/util/trace.h"
 
 DEFINE_int32(master_ts_rpc_timeout_ms, 30 * 1000, // 30 sec
-             "Timeout used for the Master->TS async rpc calls.");
+             "Timeout used for the master->TS async rpc calls.");
 TAG_FLAG(master_ts_rpc_timeout_ms, advanced);
 
 DEFINE_int32(tablet_creation_timeout_ms, 30 * 1000, // 30 sec
@@ -132,7 +132,7 @@ TAG_FLAG(master_failover_catchup_timeout_ms, advanced);
 TAG_FLAG(master_failover_catchup_timeout_ms, experimental);
 
 DEFINE_bool(master_tombstone_evicted_tablet_replicas, true,
-            "Whether the Master should tombstone (delete) tablet replicas that "
+            "Whether the master should tombstone (delete) tablet replicas that "
             "are no longer part of the latest reported raft config.");
 TAG_FLAG(master_tombstone_evicted_tablet_replicas, hidden);
 
@@ -157,6 +157,14 @@ DEFINE_bool(catalog_manager_fail_ts_rpcs, false,
             "Whether all master->TS async calls should fail. Only for testing!");
 TAG_FLAG(catalog_manager_fail_ts_rpcs, hidden);
 TAG_FLAG(catalog_manager_fail_ts_rpcs, runtime);
+
+DEFINE_bool(catalog_manager_delete_orphaned_tablets, false,
+            "Whether the master should delete tablets reported by tablet "
+            "servers for which there are no corresponding records in the "
+            "master's metadata. Use this option with care; it may cause "
+            "permanent tablet data loss under specific (and rare) cases of "
+            "master failures!");
+TAG_FLAG(catalog_manager_delete_orphaned_tablets, advanced);
 
 using std::pair;
 using std::shared_ptr;
@@ -1793,20 +1801,27 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     tablet = FindPtrOrNull(tablet_map_, report.tablet_id());
   }
   if (!tablet) {
-    LOG(INFO) << "Got report from unknown tablet " << report.tablet_id()
-              << ": Sending delete request for this orphan tablet";
-    SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_DELETED,
-                             boost::none, nullptr, ts_desc->permanent_uuid(),
-                             "Report from unknown tablet");
+    // It'd be unsafe to ask the tserver to delete this tablet without first
+    // replicating something to our followers (i.e. to guarantee that we're the
+    // leader). For example, if we were a rogue master, we might be deleting a
+    // tablet created by a new master accidentally. But masters retain metadata
+    // for deleted tablets forever, so a tablet can only be truly unknown in
+    // the event of a serious misconfiguration, such as a tserver heartbeating
+    // to the wrong cluster. Therefore, it should be reasonable to ignore it
+    // and wait for an operator fix the situation.
+    if (FLAGS_catalog_manager_delete_orphaned_tablets) {
+      LOG(INFO) << "Deleting unknown tablet " << report.tablet_id();
+      SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_DELETED,
+                               boost::none, nullptr, ts_desc->permanent_uuid(),
+                               "Report from unknown tablet");
+    } else {
+      LOG(WARNING) << "Ignoring report from unknown tablet: "
+                   << report.tablet_id();
+    }
     return Status::OK();
   }
-  if (!tablet->table()) {
-    LOG(INFO) << "Got report from an orphaned tablet " << report.tablet_id();
-    SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_DELETED,
-                             boost::none, nullptr, ts_desc->permanent_uuid(),
-                             "Report from an orphaned tablet");
-    return Status::OK();
-  }
+  DCHECK(tablet->table()); // guaranteed by TabletLoader
+
   VLOG(3) << "tablet report: " << report.ShortDebugString();
 
   // TODO: we don't actually need to do the COW here until we see we're going
