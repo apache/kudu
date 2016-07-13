@@ -46,7 +46,12 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
     resp->Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(expected_count);
-    RETURN_NOT_OK(mini_master->master()->catalog_manager()->GetTableLocations(&req, resp));
+    CatalogManager* catalog = mini_master->master()->catalog_manager();
+    {
+      CatalogManager::ScopedLeaderSharedLock l(catalog);
+      RETURN_NOT_OK(l.first_failed_status());
+      RETURN_NOT_OK(catalog->GetTableLocations(&req, resp));
+    }
     if (resp->tablet_locations_size() >= expected_count) {
       return Status::OK();
     }
@@ -74,7 +79,10 @@ void CreateTabletForTesting(MiniMaster* mini_master,
     req.set_name(table_name);
     req.set_num_replicas(1);
     ASSERT_OK(SchemaToPB(schema, req.mutable_schema()));
-    ASSERT_OK(mini_master->master()->catalog_manager()->CreateTable(&req, &resp, NULL));
+    CatalogManager* catalog = mini_master->master()->catalog_manager();
+    CatalogManager::ScopedLeaderSharedLock l(catalog);
+    ASSERT_OK(l.first_failed_status());
+    ASSERT_OK(catalog->CreateTable(&req, &resp, NULL));
   }
 
   int wait_time = 1000;
@@ -84,7 +92,12 @@ void CreateTabletForTesting(MiniMaster* mini_master,
     IsCreateTableDoneResponsePB resp;
 
     req.mutable_table()->set_table_name(table_name);
-    ASSERT_OK(mini_master->master()->catalog_manager()->IsCreateTableDone(&req, &resp));
+    CatalogManager* catalog = mini_master->master()->catalog_manager();
+    {
+      CatalogManager::ScopedLeaderSharedLock l(catalog);
+      ASSERT_OK(l.first_failed_status());
+      ASSERT_OK(catalog->IsCreateTableDone(&req, &resp));
+    }
     if (resp.done()) {
       is_table_created = true;
       break;
@@ -101,7 +114,10 @@ void CreateTabletForTesting(MiniMaster* mini_master,
     GetTableSchemaRequestPB req;
     GetTableSchemaResponsePB resp;
     req.mutable_table()->set_table_name(table_name);
-    ASSERT_OK(mini_master->master()->catalog_manager()->GetTableSchema(&req, &resp));
+    CatalogManager* catalog = mini_master->master()->catalog_manager();
+    CatalogManager::ScopedLeaderSharedLock l(catalog);
+    ASSERT_OK(l.first_failed_status());
+    ASSERT_OK(catalog->GetTableSchema(&req, &resp));
     ASSERT_TRUE(resp.create_table_done());
   }
 

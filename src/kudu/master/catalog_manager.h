@@ -313,6 +313,15 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
       return leader_status_;
     }
 
+    // First non-OK status of the catalog manager, adhering to the checking
+    // order specified above.
+    const Status& first_failed_status() const {
+      if (!catalog_status_.ok()) {
+        return catalog_status_;
+      }
+      return leader_status_;
+    }
+
     // Check that the catalog manager is initialized. It may or may not be the
     // leader of its Raft configuration.
     //

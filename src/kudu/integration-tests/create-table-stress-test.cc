@@ -222,6 +222,11 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
                                        FLAGS_num_test_tablets, &resp));
   }
 
+  master::CatalogManager* catalog =
+      cluster_->mini_master()->master()->catalog_manager();
+  master::CatalogManager::ScopedLeaderSharedLock l(catalog);
+  ASSERT_OK(l.first_failed_status());
+
   // Test asking for 0 tablets, should fail
   LOG(INFO) << CURRENT_TEST_NAME() << ": Step 3. Asking for zero tablets...";
   LOG_TIMING(INFO, "asking for zero tablets") {
@@ -229,7 +234,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(0);
-    Status s = cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp);
+    Status s = catalog->GetTableLocations(&req, &resp);
     ASSERT_STR_CONTAINS(s.ToString(), "must be greater than 0");
   }
 
@@ -240,7 +245,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(1);
-    ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
+    ASSERT_OK(catalog->GetTableLocations(&req, &resp));
     ASSERT_EQ(resp.tablet_locations_size(), 1);
     // empty since it's the first
     ASSERT_EQ(resp.tablet_locations(0).partition().partition_key_start(), "");
@@ -255,7 +260,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(half_tablets);
-    ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
+    ASSERT_OK(catalog->GetTableLocations(&req, &resp));
     ASSERT_EQ(half_tablets, resp.tablet_locations_size());
   }
 
@@ -266,7 +271,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(FLAGS_num_test_tablets);
-    ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
+    ASSERT_OK(catalog->GetTableLocations(&req, &resp));
     ASSERT_EQ(FLAGS_num_test_tablets, resp.tablet_locations_size());
   }
 
@@ -274,7 +279,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
   LOG(INFO) << "Tables and tablets:";
   LOG(INFO) << "========================================================";
   std::vector<scoped_refptr<master::TableInfo> > tables;
-  cluster_->mini_master()->master()->catalog_manager()->GetAllTables(&tables);
+  catalog->GetAllTables(&tables);
   for (const scoped_refptr<master::TableInfo>& table_info : tables) {
     LOG(INFO) << "Table: " << table_info->ToString();
     std::vector<scoped_refptr<master::TabletInfo> > tablets;
@@ -310,7 +315,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(1);
     req.set_partition_key_start(start_key_middle);
-    ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
+    ASSERT_OK(catalog->GetTableLocations(&req, &resp));
     ASSERT_EQ(1, resp.tablet_locations_size()) << "Response: [" << resp.DebugString() << "]";
     ASSERT_EQ(start_key_middle, resp.tablet_locations(0).partition().partition_key_start());
   }

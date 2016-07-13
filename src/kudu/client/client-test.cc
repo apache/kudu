@@ -173,8 +173,11 @@ class ClientTest : public KuduTest {
     GetTableLocationsRequestPB req;
     GetTableLocationsResponsePB resp;
     req.mutable_table()->set_table_name(table->name());
-    CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(
-        &req, &resp));
+    CatalogManager* catalog =
+        cluster_->mini_master()->master()->catalog_manager();
+    CatalogManager::ScopedLeaderSharedLock l(catalog);
+    CHECK_OK(l.first_failed_status());
+    CHECK_OK(catalog->GetTableLocations(&req, &resp));
     CHECK(resp.tablet_locations_size() > 0);
     return resp.tablet_locations(0).tablet_id();
   }

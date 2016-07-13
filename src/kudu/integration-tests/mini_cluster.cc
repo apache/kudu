@@ -190,7 +190,7 @@ MiniMaster* MiniCluster::leader_mini_master() {
       }
       CatalogManager::ScopedLeaderSharedLock l(
           master->master()->catalog_manager());
-      if (l.catalog_status().ok() && l.leader_status().ok()) {
+      if (l.first_failed_status().ok()) {
         return master;
       }
     }
@@ -241,19 +241,18 @@ string MiniCluster::GetTabletServerFsRoot(int idx) {
 }
 
 Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
-                                        int expected_count) {
-  TabletLocationsPB locations;
-  return WaitForReplicaCount(tablet_id, expected_count, &locations);
-}
-
-Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
                                         int expected_count,
                                         TabletLocationsPB* locations) {
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall_seconds() < kTabletReportWaitTimeSeconds) {
-    Status s =
-        leader_mini_master()->master()->catalog_manager()->GetTabletLocations(tablet_id, locations);
+    CatalogManager* catalog = leader_mini_master()->master()->catalog_manager();
+    Status s;
+    {
+      CatalogManager::ScopedLeaderSharedLock l(catalog);
+      RETURN_NOT_OK(l.first_failed_status());
+      s = catalog->GetTabletLocations(tablet_id, locations);
+    }
     if (s.ok() && locations->replicas_size() == expected_count) {
       return Status::OK();
     }

@@ -754,6 +754,7 @@ Status CatalogManager::CheckOnline() const {
 Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
                                    CreateTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
+  leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
   Status s;
 
@@ -954,6 +955,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
 Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
                                          IsCreateTableDoneResponsePB* resp) {
+  leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
   scoped_refptr<TableInfo> table;
@@ -1025,10 +1027,11 @@ Status CatalogManager::FindTable(const TableIdentifierPB& table_identifier,
 Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
                                    DeleteTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
+  leader_lock_.AssertAcquiredForReading();
+  RETURN_NOT_OK(CheckOnline());
+
   LOG(INFO) << "Servicing DeleteTable request from " << RequestorString(rpc)
             << ": " << req->ShortDebugString();
-
-  RETURN_NOT_OK(CheckOnline());
 
   // 1. Look up the table, lock it, and mark it as removed.
   TRACE("Looking up table");
@@ -1201,10 +1204,11 @@ static Status ApplyAlterSteps(const SysTablesEntryPB& current_pb,
 Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
                                   AlterTableResponsePB* resp,
                                   rpc::RpcContext* rpc) {
+  leader_lock_.AssertAcquiredForReading();
+  RETURN_NOT_OK(CheckOnline());
+
   LOG(INFO) << "Servicing AlterTable request from " << RequestorString(rpc)
             << ": " << req->ShortDebugString();
-
-  RETURN_NOT_OK(CheckOnline());
 
   // 1. Lookup the table and verify if it exists.
   TRACE("Looking up table");
@@ -1345,6 +1349,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
                                         IsAlterTableDoneResponsePB* resp,
                                         rpc::RpcContext* rpc) {
+  leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
   scoped_refptr<TableInfo> table;
@@ -1372,6 +1377,7 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
 
 Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
                                       GetTableSchemaResponsePB* resp) {
+  leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
   scoped_refptr<TableInfo> table;
@@ -1409,6 +1415,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
 
 Status CatalogManager::ListTables(const ListTablesRequestPB* req,
                                   ListTablesResponsePB* resp) {
+  leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
   shared_lock<LockType> l(lock_);
@@ -1465,6 +1472,8 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
   TRACE_EVENT2("master", "ProcessTabletReport",
                "requestor", rpc->requestor_string(),
                "num_tablets", report.updated_tablets_size());
+
+  leader_lock_.AssertAcquiredForReading();
 
   if (VLOG_IS_ON(2)) {
     VLOG(2) << "Received tablet report from " <<
@@ -3018,6 +3027,7 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
 
 Status CatalogManager::GetTabletLocations(const std::string& tablet_id,
                                           TabletLocationsPB* locs_pb) {
+  leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
   locs_pb->mutable_replicas()->Clear();
@@ -3034,6 +3044,7 @@ Status CatalogManager::GetTabletLocations(const std::string& tablet_id,
 
 Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
                                          GetTableLocationsResponsePB* resp) {
+  leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
   // If start-key is > end-key report an error instead of swap the two
@@ -3214,10 +3225,7 @@ bool CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedOrRespond(
 template<typename RespClass>
 bool CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedAndIsLeaderOrRespond(
     RespClass* resp, RpcContext* rpc) {
-  Status& s = catalog_status_;
-  if (PREDICT_TRUE(s.ok())) {
-    s = leader_status_;
-  }
+  const Status& s = first_failed_status();
   if (PREDICT_TRUE(s.ok())) {
     return true;
   }

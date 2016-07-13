@@ -294,15 +294,19 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
 
   {
     AlterTableRequestPB req;
-    req.mutable_table()->set_table_name(kTableName);
+    AlterTableResponsePB resp;
 
+    req.mutable_table()->set_table_name(kTableName);
     AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
     step->set_type(AlterTableRequestPB::ADD_COLUMN);
     ColumnSchemaToPB(ColumnSchema("c2", INT32),
                      step->mutable_add_column()->mutable_schema());
-    AlterTableResponsePB resp;
-    Status s = cluster_->mini_master()->master()->catalog_manager()->AlterTable(
-      &req, &resp, nullptr);
+
+    master::CatalogManager* catalog =
+        cluster_->mini_master()->master()->catalog_manager();
+    master::CatalogManager::ScopedLeaderSharedLock l(catalog);
+    ASSERT_OK(l.first_failed_status());
+    Status s = catalog->AlterTable(&req, &resp, nullptr);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "column `c2`: NOT NULL columns must have a default");
   }
