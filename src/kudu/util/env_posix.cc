@@ -898,6 +898,17 @@ class PosixEnv : public Env {
     return s;
   }
 
+  virtual Status GetFileSizeOnDiskRecursively(const string& root,
+                                              uint64_t* bytes_used) OVERRIDE {
+    TRACE_EVENT1("io", "PosixEnv::GetFileSizeOnDiskRecursively", "path", root);
+    uint64_t total = 0;
+    RETURN_NOT_OK(Walk(root, Env::PRE_ORDER,
+                       Bind(&PosixEnv::GetFileSizeOnDiskRecursivelyCb,
+                            Unretained(this), &total)));
+    *bytes_used = total;
+    return Status::OK();
+  }
+
   virtual Status GetBlockSize(const string& fname, uint64_t* block_size) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::GetBlockSize", "path", fname);
     ThreadRestrictions::AssertIOAllowed();
@@ -1206,6 +1217,27 @@ class PosixEnv : public Env {
         LOG(FATAL) << "Unknown file type: " << type;
         return Status::OK();
     }
+  }
+
+  Status GetFileSizeOnDiskRecursivelyCb(uint64_t* bytes_used,
+                                        Env::FileType type,
+                                        const string& dirname,
+                                        const string& basename) {
+    uint64_t file_bytes_used = 0;
+    switch (type) {
+      case Env::FILE_TYPE:
+        RETURN_NOT_OK(GetFileSizeOnDisk(
+            JoinPathSegments(dirname, basename), &file_bytes_used));
+        *bytes_used += file_bytes_used;
+        break;
+      case Env::DIRECTORY_TYPE:
+        // Ignore directory space consumption as it varies from filesystem to
+        // filesystem.
+        break;
+      default:
+        LOG(FATAL) << "Unknown file type: " << type;
+    }
+    return Status::OK();
   }
 };
 

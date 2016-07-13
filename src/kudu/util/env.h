@@ -165,6 +165,10 @@ class Env {
   // of space consumed by the file, not the user-facing file size.
   virtual Status GetFileSizeOnDisk(const std::string& fname, uint64_t* file_size) = 0;
 
+  // Walk 'root' recursively, looking up the amount of space used by each file
+  // as reported by GetFileSizeOnDisk(), storing the grand total in 'bytes_used'.
+  virtual Status GetFileSizeOnDiskRecursively(const std::string& root, uint64_t* bytes_used) = 0;
+
   // Store the block size of the filesystem where fname resides in
   // *block_size. fname must exist but it may be a file or a directory.
   virtual Status GetBlockSize(const std::string& fname, uint64_t* block_size) = 0;
@@ -264,6 +268,7 @@ class Env {
 
   // Get the total amount of RAM installed on this machine.
   virtual Status GetTotalRAMBytes(int64_t* ram) = 0;
+
  private:
   // No copying allowed
   Env(const Env&);
@@ -584,6 +589,9 @@ class EnvWrapper : public Env {
   }
   Status GetFileSizeOnDisk(const std::string& f, uint64_t* s) OVERRIDE {
     return target_->GetFileSizeOnDisk(f, s);
+  }
+  Status GetFileSizeOnDiskRecursively(const std::string& root, uint64_t* bytes_used) OVERRIDE {
+    return target_->GetFileSizeOnDiskRecursively(root, bytes_used);
   }
   Status GetBlockSize(const std::string& f, uint64_t* s) OVERRIDE {
     return target_->GetBlockSize(f, s);

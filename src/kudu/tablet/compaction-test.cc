@@ -383,13 +383,6 @@ class TestCompaction : public KuduRowSetTest {
     }
   }
 
-  Status GetDataDiskSpace(uint64_t* bytes_used) {
-    *bytes_used = 0;
-    return env_->Walk(fs_manager()->GetDataRootDirs().at(0),
-                      Env::PRE_ORDER, Bind(&TestCompaction::GetDataDiskSpaceCb,
-                                           Unretained(this), bytes_used));
-  }
-
  protected:
   OpId op_id_;
 
@@ -398,28 +391,6 @@ class TestCompaction : public KuduRowSetTest {
   MvccManager mvcc_;
 
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
-
- private:
-
-  Status GetDataDiskSpaceCb(uint64_t* bytes_used,
-                            Env::FileType type,
-                            const string& dirname, const string& basename) {
-    uint64_t file_bytes_used = 0;
-    switch (type) {
-      case Env::FILE_TYPE:
-        RETURN_NOT_OK(env_->GetFileSizeOnDisk(
-            JoinPathSegments(dirname, basename), &file_bytes_used));
-        *bytes_used += file_bytes_used;
-        break;
-      case Env::DIRECTORY_TYPE:
-        // Ignore directory space consumption; it varies from filesystem to
-        // filesystem and isn't interesting for this test.
-        break;
-      default:
-        LOG(FATAL) << "Unknown file type: " << type;
-    }
-    return Status::OK();
-  }
 };
 
 TEST_F(TestCompaction, TestMemRowSetInput) {
@@ -771,7 +742,8 @@ TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
   }
 
   uint64_t bytes_before;
-  ASSERT_NO_FATAL_FAILURE(GetDataDiskSpace(&bytes_before));
+  ASSERT_OK(env_->GetFileSizeOnDiskRecursively(
+      fs_manager()->GetDataRootDirs().at(0), &bytes_before));
 
   ASSERT_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
 
@@ -781,7 +753,8 @@ TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
   deadline.AddDelta(MonoDelta::FromSeconds(30));
   while (true) {
     uint64_t bytes_after;
-    ASSERT_NO_FATAL_FAILURE(GetDataDiskSpace(&bytes_after));
+    ASSERT_OK(env_->GetFileSizeOnDiskRecursively(
+        fs_manager()->GetDataRootDirs().at(0), &bytes_after));
     LOG(INFO) << Substitute("Data disk space: $0 (before), $1 (after) ",
                             bytes_before, bytes_after);
     if (bytes_after < bytes_before) {
