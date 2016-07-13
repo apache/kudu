@@ -153,6 +153,11 @@ DEFINE_int32(table_locations_ttl_ms, 60 * 60 * 1000, // 1 hour
              "until after waiting for the ttl period.");
 TAG_FLAG(table_locations_ttl_ms, advanced);
 
+DEFINE_bool(catalog_manager_fail_ts_rpcs, false,
+            "Whether all master->TS async calls should fail. Only for testing!");
+TAG_FLAG(catalog_manager_fail_ts_rpcs, hidden);
+TAG_FLAG(catalog_manager_fail_ts_rpcs, runtime);
+
 using std::pair;
 using std::shared_ptr;
 using std::string;
@@ -2147,6 +2152,12 @@ class RetryingTSRpcTask : public MonitoredTask {
 
   // Send the subclass RPC request.
   Status Run() {
+    if (PREDICT_FALSE(FLAGS_catalog_manager_fail_ts_rpcs)) {
+      MarkFailed();
+      UnregisterAsyncTask(); // May delete this.
+      return Status::RuntimeError("Async RPCs configured to fail");
+    }
+
     Status s = ResetTSProxy();
     if (!s.ok()) {
       LOG(WARNING) << "Unable to reset TS proxy: " << s.ToString();

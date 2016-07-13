@@ -17,6 +17,7 @@
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -41,6 +42,7 @@ const int kNumTabletServerReplicas = 3;
 using sp::shared_ptr;
 using std::string;
 using std::vector;
+using std::unique_ptr;
 
 class MasterFailoverTest : public KuduTest {
  public:
@@ -105,7 +107,7 @@ class MasterFailoverTest : public KuduTest {
     b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
     b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->NotNull();
     CHECK_OK(b.Build(&schema));
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     return table_creator->table_name(table_name)
         .schema(&schema)
         .set_range_partition_columns({ "key" })
@@ -114,7 +116,7 @@ class MasterFailoverTest : public KuduTest {
   }
 
   Status RenameTable(const std::string& table_name_orig, const std::string& table_name_new) {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name_orig));
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name_orig));
     return table_alterer
       ->RenameTo(table_name_new)
       ->wait(true)
@@ -141,7 +143,7 @@ class MasterFailoverTest : public KuduTest {
  protected:
   int num_masters_;
   ExternalMiniClusterOptions opts_;
-  gscoped_ptr<ExternalMiniCluster> cluster_;
+  unique_ptr<ExternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
 };
 
@@ -264,6 +266,60 @@ TEST_F(MasterFailoverTest, TestRenameTableSync) {
   ASSERT_OK(client_->OpenTable(kTableNameNew, &table));
   s = client_->OpenTable(kTableNameOrig, &table);
   ASSERT_TRUE(s.IsNotFound());
+}
+
+
+TEST_F(MasterFailoverTest, TestKUDU1374) {
+  const char* kTableName = "testKUDU1374";
+
+  // Wait at least one additional heartbeat interval after creating the table.
+  // The idea is to guarantee that all tservers sent a tablet report with the
+  // new (dirty) tablet, and should now be sending empty incremental tablet
+  // reports.
+  ASSERT_OK(CreateTable(kTableName, kWaitForCreate));
+  SleepFor(MonoDelta::FromMilliseconds(1000));
+
+  // Force all asynchronous RPCs sent by the leader master to fail. This
+  // means the subsequent AlterTable() will be hidden from the tservers,
+  // at least while this master is leader.
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  ExternalDaemon* leader_master = cluster_->master(leader_idx);
+  ASSERT_OK(cluster_->SetFlag(leader_master,
+                              "catalog_manager_fail_ts_rpcs", "true"));
+
+  unique_ptr<KuduTableAlterer> alter(client_->NewTableAlterer(kTableName));
+  alter->AddColumn("new_col")->Type(KuduColumnSchema::INT32);
+  ASSERT_OK(alter
+    ->wait(false)
+    ->Alter());
+
+  leader_master->Shutdown();
+
+  // Wait for the AlterTable() to finish. Progress is as follows:
+  // 1. TS notices the change in leadership and sends a full tablet report.
+  // 2. Leader master notices that the reported tablet isn't fully altered
+  //    and sends the TS an AlterSchema() RPC.
+  // 3. TS updates the tablet's schema. This also dirties the tablet.
+  // 4. TS send an incremental tablet report containing the dirty tablet.
+  // 5. Leader master sees that all tablets in the table now have the new
+  //    schema and ends the AlterTable() operation.
+  // 6. The next IsAlterTableInProgress() call returns false.
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromSeconds(90));
+  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  while (now.ComesBefore(deadline)) {
+    bool in_progress;
+    ASSERT_OK(client_->IsAlterTableInProgress(kTableName, &in_progress));
+    if (!in_progress) {
+      break;
+    }
+
+    SleepFor(MonoDelta::FromMilliseconds(100));
+    now = MonoTime::Now(MonoTime::FINE);
+  }
+  ASSERT_TRUE(now.ComesBefore(deadline))
+    << "Deadline elapsed before alter table completed";
 }
 
 } // namespace client

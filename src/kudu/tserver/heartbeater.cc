@@ -172,6 +172,10 @@ class Heartbeater::Thread {
   bool should_run_;
   bool heartbeat_asap_;
 
+  // Indicates that the thread should send a full tablet report. Set when
+  // the thread detects that the master has been elected leader.
+  bool send_full_tablet_report_;
+
   DISALLOW_COPY_AND_ASSIGN(Thread);
 };
 
@@ -270,7 +274,8 @@ Heartbeater::Thread::Thread(const HostPort& master_address, TabletServer* server
     next_report_seq_(0),
     cond_(&mutex_),
     should_run_(false),
-    heartbeat_asap_(true) {
+    heartbeat_asap_(true),
+    send_full_tablet_report_(false) {
 }
 
 Status Heartbeater::Thread::ConnectToMaster() {
@@ -358,9 +363,18 @@ Status Heartbeater::Thread::DoHeartbeat() {
                           "Unable to set up registration");
   }
 
-  if (last_hb_response_.needs_full_tablet_report()) {
-    LOG(INFO) << Substitute("Sending a full tablet report to master $0...",
-                            master_address_.ToString());
+  if (send_full_tablet_report_) {
+    LOG(INFO) << Substitute(
+        "Master $0 was elected leader, sending a full tablet report...",
+        master_address_.ToString());
+    GenerateFullTabletReport(req.mutable_tablet_report());
+    // Should the heartbeat fail, we'd want the next heartbeat to resend this
+    // full tablet report. As such, send_full_tablet_report_ is only reset
+    // after all error checking is complete.
+  } else if (last_hb_response_.needs_full_tablet_report()) {
+    LOG(INFO) << Substitute(
+        "Master $0 requested a full tablet report, sending...",
+        master_address_.ToString());
     GenerateFullTabletReport(req.mutable_tablet_report());
   } else {
     VLOG(2) << Substitute("Sending an incremental tablet report to master $0...",
@@ -382,6 +396,15 @@ Status Heartbeater::Thread::DoHeartbeat() {
 
   VLOG(2) << Substitute("Received heartbeat response from $0:\n$1",
                         master_address_.ToString(), resp.DebugString());
+
+  // If we've detected that our master was elected leader, send a full tablet
+  // report in the next heartbeat.
+  if (!last_hb_response_.leader_master() && resp.leader_master()) {
+    send_full_tablet_report_ = true;
+  } else {
+    send_full_tablet_report_ = false;
+  }
+
   last_hb_response_.Swap(&resp);
 
   MarkTabletReportAcknowledged(req.tablet_report());
