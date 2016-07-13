@@ -32,6 +32,10 @@ SITE_ROOT = os.path.abspath(os.path.dirname(__file__))
 GEM_PATH = os.path.join(SITE_ROOT, ".gem")
 BUNDLE_PATH = os.path.join(GEM_PATH, "bin", "bundle")
 
+# Import helpers to support Python 2.6 (CentOS 6).
+sys.path.append(os.path.join(SITE_ROOT, "_tools"))
+from kudu_util import check_output
+
 # The repository and branch where we version the actual site source (jekyll
 # code, posts, etc)
 SITE_REPO = "https://git-wip-us.apache.org/repos/asf/incubator-kudu.git"
@@ -131,11 +135,11 @@ def publish(args):
 
   # Check that the site source repo has a commit which has been
   # pushed (don't let people publish uncommitted work)
-  source_sha = subprocess.check_output(
+  source_sha = check_output(
       ["git", "rev-parse", "HEAD"]).strip()
   subprocess.check_call(
       ["git", "fetch", SITE_REPO, SITE_BRANCH])
-  upstream_sha = subprocess.check_output(
+  upstream_sha = check_output(
       ["git", "rev-parse", "FETCH_HEAD"]).strip()
   if "--no-verify-source" not in args:
     if source_sha != upstream_sha:
@@ -150,7 +154,7 @@ def publish(args):
                  site_branch=SITE_BRANCH,
                  upstream_sha=upstream_sha[:8])))
       return 1
-    status = subprocess.check_output(["git", "status", "--porcelain"] )
+    status = check_output(["git", "status", "--porcelain"] )
     if status.strip() != "":
       print >>sys.stderr, "Source dir has untracked or modified files"
       print >>sys.stderr, status
@@ -168,7 +172,7 @@ def publish(args):
   os.chdir(PUBLISH_DIR)
 
   # Check that the directory to publish is not dirty and has no untracked files.
-  status = subprocess.check_output(["git", "status", "--porcelain"] )
+  status = check_output(["git", "status", "--porcelain"] )
   if status.strip() != "":
     print >>sys.stderr, "Build dir %s has untracked or modified files:" % PUBLISH_DIR
     print >>sys.stderr, status
@@ -186,7 +190,7 @@ def publish(args):
   #
   # Each commit in the destination repo is tagged with the source repo's hash,
   # so that we can easily figure out which commits have been published.
-  last_publish_log = subprocess.check_output(
+  last_publish_log = check_output(
     ["git", "log", "--grep=^%s: " % SITE_COMMIT_TAG, "-n1"])
   if last_publish_log == "":
     commit_msg = "Initial import from site repo"
@@ -199,7 +203,7 @@ def publish(args):
       print >>sys.stderr, "The site has already been published as of %s" % source_sha
       return 1
 
-    commit_msg = subprocess.check_output(
+    commit_msg = check_output(
       ["git", "log", "--pretty=oneline", "--abbrev-commit",
        "%s..HEAD" % last_publish_sha],
       cwd=SITE_ROOT)

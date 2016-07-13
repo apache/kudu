@@ -1,4 +1,5 @@
 *.swp
+*.pyc
 _site
 _publish
 

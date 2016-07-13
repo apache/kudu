@@ -4,8 +4,13 @@ This repository contains a handy wrapper tool called 'site_tool'
 which takes care of installing and running the correct version of
 jekyll.
 
-NOTE:  this tool requires that libxslt and libxml2 development headers are
-installed. On Ubuntu, these are `libxslt-dev` and `libxml2-dev` packages.
+NOTE: this tool has the following minimum dependencies:
+
+* Python 2.6.6
+* Ruby 1.9.3 and the Ruby development headers. On Ubuntu, these are the `ruby`
+  and `ruby-dev` packages.
+* libxslt and libxml2 development headers. On Ubuntu, these are the
+  `libxslt-dev` and `libxml2-dev` packages.
 
 [source,bash]
 ----
@@ -17,6 +22,11 @@ the site just like it renders on the site.
 
 In addition to serving static content, jekyll will render Markdown (the kramdown
 flavor) and also supports templating using Liquid templates.
+
+NOTE: to use `site_tool` on CentOS 6.x, Ruby 1.9.3 and a compatible version of
+the V8 Javascript engine must be installed by enabling the `ruby193` and
+`v8314` SCL repos, installing the `ruby193` and `ruby193-ruby-devel` packages,
+and running `scl enable ruby193 bash` before running `site_tool`.
 
 = Checking for broken links or syntax errors
 
