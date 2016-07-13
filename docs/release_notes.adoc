@@ -28,30 +28,9 @@
 :sectlinks:
 :experimental:
 
-== Introducing Kudu
+=== Introduction
 
-Kudu is a columnar storage manager developed for the Hadoop platform. Kudu shares
-the common technical properties of Hadoop ecosystem applications: it runs on
-commodity hardware, is horizontally scalable, and supports highly available operation.
-
-Kudu’s design sets it apart. Some of Kudu’s benefits include:
-
-* Fast processing of OLAP workloads.
-* Integration with MapReduce, Spark, and other Hadoop ecosystem components.
-* Tight integration with Apache Impala (incubating), making it a good, mutable alternative to
-using HDFS with Parquet. See link:kudu_impala_integration.html[Kudu Impala Integration].
-* Strong but flexible consistency model.
-* Strong performance for running sequential and random workloads simultaneously.
-* Efficient utilization of hardware resources.
-* High availability. Tablet Servers and Masters use the Raft Consensus Algorithm.
-Given a replication factor of `2f+1`, if `f` tablet servers serving a given tablet
-fail, the tablet is still available.
-+
-NOTE: High availability for masters is not supported during the public beta.
-
-By combining all of these properties, Kudu targets support for families of
-applications that are difficult or impossible to implement on current-generation
-Hadoop storage technologies.
+If you are new to Kudu, check out its list of link:index.html[features and benefits].
 
 [[rn_0.10.0]]
 === Release notes specific to 0.10.0
@@ -628,33 +607,6 @@ they will be announced to the user group when they occur.
 While multiple drops of beta code are planned, we can't guarantee their schedules
 or contents.
 
-==== Kudu-Impala Integration Features
-`CREATE TABLE`::
-  Impala supports creating and dropping tables using Kudu as the persistence layer.
-  The tables follow the same internal / external approach as other tables in Impala,
-  allowing for flexible data ingestion and querying.
-`INSERT`::
-  Data can be inserted into Kudu tables in Impala using the same mechanisms as
-  any other table with HDFS or HBase persistence.
-`UPDATE` / `DELETE`::
-  Impala supports the `UPDATE` and `DELETE` SQL commands to modify existing data in
-  a Kudu table row-by-row or as a batch. The syntax of the SQL commands is chosen
-  to be as compatible as possible to existing solutions. In addition to simple `DELETE`
-  or `UPDATE` commands, you can specify complex joins in the `FROM` clause of the query
-  using the same syntax as a regular `SELECT` statement.
-Flexible Partitioning::
-  Similar to partitioning of tables in Hive, Kudu allows you to dynamically
-  pre-split tables by hash or range into a predefined number of tablets, in order
-  to distribute writes and queries evenly across your cluster. You can partition by
-  any number of primary key columns, by any number of hashes and an optional list of
-  split rows. See link:schema_design.html[Schema Design].
-Parallel Scan::
-  To achieve the highest possible performance on modern hardware, the Kudu client
-  within Impala parallelizes scans to multiple tablets.
-High-efficiency queries::
-  Where possible, Impala pushes down predicate evaluation to Kudu, so that predicates
-  are evaluated as close as possible to the data. Query performance is comparable
-  to Parquet in many workloads.
 
 [[beta_limitations]]
 ==== Limitations of the Kudu Public Beta
