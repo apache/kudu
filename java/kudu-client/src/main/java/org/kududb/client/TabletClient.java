@@ -143,12 +143,15 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   private SecureRpcHelper secureRpcHelper;
 
+  private final RequestTracker requestTracker;
+
   public TabletClient(AsyncKuduClient client, String uuid, String host, int port) {
     this.kuduClient = client;
     this.uuid = uuid;
     this.socketReadTimeoutMs = client.getDefaultSocketReadTimeoutMs();
     this.host = host;
     this.port = port;
+    this.requestTracker = client.getRequestTracker();
   }
 
   <R> void sendRpc(KuduRpc<R> rpc) {
@@ -240,6 +243,18 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         }
 
         headerBuilder.setTimeoutMillis((int) Math.min(millisBeforeDeadline, localRpcTimeoutMs));
+      }
+
+      if (rpc.isRequestTracked()) {
+        RpcHeader.RequestIdPB.Builder requestIdBuilder = RpcHeader.RequestIdPB.newBuilder();
+        if (rpc.getSequenceId() == RequestTracker.NO_SEQ_NO) {
+          rpc.setSequenceId(requestTracker.newSeqNo());
+        }
+        requestIdBuilder.setClientId(requestTracker.getClientId());
+        requestIdBuilder.setSeqNo(rpc.getSequenceId());
+        requestIdBuilder.setAttemptNo(rpc.attempt);
+        requestIdBuilder.setFirstIncompleteSeqNo(requestTracker.firstIncomplete());
+        headerBuilder.setRequestId(requestIdBuilder);
       }
 
       payload = rpc.serialize(headerBuilder.build());

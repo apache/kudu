@@ -236,7 +236,6 @@ public class ITClient extends BaseKuduTest {
 
     @Override
     public void run() {
-      session.setIgnoreAllDuplicateRows(true);
       while (KEEP_RUNNING_LATCH.getCount() > 0) {
         try {
           OperationResponse resp = session.apply(createBasicSchemaInsert(table, currentRowKey));

@@ -148,6 +148,11 @@ class Batch extends KuduRpc<BatchResponse> {
   }
 
   @Override
+  boolean isRequestTracked() {
+    return true;
+  }
+
+  @Override
   void updateStatistics(Statistics statistics, BatchResponse response) {
     Slice tabletId = this.getTablet().getTabletId();
     String tableName = this.getTable().getName();

@@ -797,7 +797,7 @@ public final class AsyncKuduScanner {
         case NEXT:
           setTablet(AsyncKuduScanner.this.tablet);
           builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
-                 .setCallSeqId(sequenceId)
+                 .setCallSeqId(AsyncKuduScanner.this.sequenceId)
                  .setBatchSizeBytes(batchSizeBytes);
           break;
         case CLOSING:

@@ -46,7 +46,6 @@ public class TestLeaderFailover extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testFailover() throws Exception {
     KuduSession session = syncClient.newSession();
-    session.setIgnoreAllDuplicateRows(true);
     for (int i = 0; i < 3; i++) {
       session.apply(createBasicSchemaInsert(table, i));
     }

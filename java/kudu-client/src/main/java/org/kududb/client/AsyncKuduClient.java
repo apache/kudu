@@ -81,6 +81,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -253,6 +254,8 @@ public class AsyncKuduClient implements AutoCloseable {
 
   private final boolean statisticsDisabled;
 
+  private final RequestTracker requestTracker;
+
   private volatile boolean closed;
 
   private AsyncKuduClient(AsyncKuduClientBuilder b) {
@@ -266,6 +269,8 @@ public class AsyncKuduClient implements AutoCloseable {
     this.statisticsDisabled = b.statisticsDisabled;
     statistics = statisticsDisabled ? null : new Statistics();
     this.timer = b.timer;
+    String clientId = UUID.randomUUID().toString().replace("-", "");
+    this.requestTracker = new RequestTracker(clientId);
   }
 
   /**
@@ -563,6 +568,10 @@ public class AsyncKuduClient implements AutoCloseable {
       throw new IllegalStateException("This client's statistics is disabled");
     }
     return this.statistics;
+  }
+
+  RequestTracker getRequestTracker() {
+    return requestTracker;
   }
 
   /**

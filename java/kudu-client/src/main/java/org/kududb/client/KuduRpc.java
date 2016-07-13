@@ -104,6 +104,12 @@ public abstract class KuduRpc<R> {
    */
   byte attempt;  // package-private for TabletClient and AsyncKuduClient only.
 
+  /**
+   * Set by TabletClient when isRequestTracked returns true to identify this RPC in the sequence of
+   * RPCs sent by this client. Once it is set it should never change unless the RPC is reused.
+   */
+  long sequenceId = RequestTracker.NO_SEQ_NO;
+
   KuduRpc(KuduTable table) {
     this.table = table;
     this.deadlineTracker = new DeadlineTracker();
@@ -191,6 +197,10 @@ public abstract class KuduRpc<R> {
     }
     deferred = null;
     attempt = 0;
+    if (isRequestTracked()) {
+      table.getAsyncClient().getRequestTracker().rpcCompleted(sequenceId);
+      sequenceId = RequestTracker.NO_SEQ_NO;
+    }
     deadlineTracker.reset();
     d.callback(result);
   }
@@ -237,6 +247,24 @@ public abstract class KuduRpc<R> {
 
   void setTimeoutMillis(long timeout) {
     deadlineTracker.setDeadline(timeout);
+  }
+
+  /**
+   * If this RPC needs to be tracked on the client and server-side. Some RPCs require exactly-once
+   * semantics which is enabled by tracking them.
+   * @return true if the request has to be tracked, else false
+   */
+  boolean isRequestTracked() {
+    return false;
+  }
+
+  long getSequenceId() {
+    return sequenceId;
+  }
+
+  void setSequenceId(long sequenceId) {
+    assert (this.sequenceId == RequestTracker.NO_SEQ_NO);
+    this.sequenceId = sequenceId;
   }
 
   public String toString() {
