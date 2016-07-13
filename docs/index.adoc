@@ -64,6 +64,34 @@ refreshes of the predictive model based on all historic data
 
 For more information about these and other scenarios, see <<kudu_use_cases>>.
 
+=== Kudu-Impala Integration Features
+`CREATE TABLE`::
+  Impala supports creating and dropping tables using Kudu as the persistence layer.
+  The tables follow the same internal / external approach as other tables in Impala,
+  allowing for flexible data ingestion and querying.
+`INSERT`::
+  Data can be inserted into Kudu tables in Impala using the same syntax as
+  any other Impala table like those using HDFS or HBase for persistence.
+`UPDATE` / `DELETE`::
+  Impala supports the `UPDATE` and `DELETE` SQL commands to modify existing data in
+  a Kudu table row-by-row or as a batch. The syntax of the SQL commands is chosen
+  to be as compatible as possible with existing standards. In addition to simple `DELETE`
+  or `UPDATE` commands, you can specify complex joins with a `FROM` clause in a subquery.
+  Not all types of joins have been tested.
+Flexible Partitioning::
+  Similar to partitioning of tables in Hive, Kudu allows you to dynamically
+  pre-split tables by hash or range into a predefined number of tablets, in order
+  to distribute writes and queries evenly across your cluster. You can partition by
+  any number of primary key columns, by any number of hashes, and an optional list of
+  split rows. See link:schema_design.html[Schema Design].
+Parallel Scan::
+  To achieve the highest possible performance on modern hardware, the Kudu client
+  used by Impala parallelizes scans across multiple tablets.
+High-efficiency queries::
+  Where possible, Impala pushes down predicate evaluation to Kudu, so that predicates
+  are evaluated as close as possible to the data. Query performance is comparable
+  to Parquet in many workloads.
+
 == Concepts and Terms
 [[kudu_columnar_data_store]]
 .Columnar Data Store
@@ -77,10 +105,11 @@ of that column, while ignoring other columns. This means you can fulfill your qu
 while reading a minimal number of blocks on disk. With a row-based store, you need
 to read the entire row, even if you only return values from a few columns.
 
-Data Compression:: Because a given column contains only one type of data, pattern-based
-compression can be orders of magnitude more efficient than compressing mixed data
-types. Combined with the efficiencies of reading data from columns,  compression allows
-you to fulfill your query while reading even fewer blocks from disk. See
+Data Compression:: Because a given column contains only one type of data,
+pattern-based compression can be orders of magnitude more efficient than
+compressing mixed data types, which are used in row-based solutions. Combined
+with the efficiencies of reading data from columns, compression allows you to
+fulfill your query while reading even fewer blocks from disk. See
 link:schema_design.html#encoding[Data Compression]
 
 .Table
@@ -146,10 +175,22 @@ each tablet, the tablet's current state, and start and end keys.
 
 .Logical Replication
 
-Kudu replicates operations, not on-disk data. This is referred to as _logical
-replication_, as opposed to _physical replication_. Physical operations, such as
-compaction, do not need to transmit the data over the network. This results in a
-substantial reduction in network traffic for heavy write scenarios.
+Kudu replicates operations, not on-disk data. This is referred to as _logical replication_,
+as opposed to _physical replication_. This has several advantages:
+
+* Although inserts and updates do transmit data over the network, deletes do not need
+  to move any data. The delete operation is sent to each tablet server, which performs
+  the delete locally.
+
+* Physical operations, such as compaction, do not need to transmit the data over the
+  network in Kudu. This is different from storage systems that use HDFS, where
+  the blocks need to be transmitted over the network to fulfill the required number of
+  replicas.
+
+* Tablets do not need to perform compactions at the same time or on the same schedule,
+  or otherwise remain in sync on the physical storage layer. This decreases the chances
+  of all tablet servers experiencing high latency at the same time, due to compactions
+  or heavy write loads.
 
 == Architectural Overview
 
@@ -192,13 +233,14 @@ is also beneficial in this context, because many time-series workloads read only
 as opposed to the whole row.
 
 In the past, you might have needed to use multiple data stores to handle different
-data access patterns. This practice adds complexity to your application and operations, and
-duplicates storage. Kudu can handle all of these access patterns natively and efficiently,
+data access patterns. This practice adds complexity to your application and operations,
+and duplicates your data, doubling (or worse) the amount of storage
+required. Kudu can handle all of these access patterns natively and efficiently,
 without the need to off-load work to other data stores.
 
 .Predictive Modeling
 
-Data analysts often develop predictive learning models from large sets of data. The
+Data scientists often develop predictive learning models from large sets of data. The
 model and the data may need to be updated or modified often as the learning takes
 place or as the situation being modeled changes. In addition, the scientist may want
 to change one or more factors in the model to see what happens over time. Updating
