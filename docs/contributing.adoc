@@ -146,6 +146,14 @@ In general, Kudu follows the
 link:https://google.github.io/styleguide/cppguide.html[Google {cpp} Style Guide],
 with the following exceptions:
 
+=== Notes on {cpp} 11
+
+Kudu uses {cpp} 11. Check out this handy guide to {cpp} 11 move semantics and rvalue
+references: https://www.chromium.org/rvalue-references
+
+We aim to follow most of the same guidelines, such as, where possible, migrating
+away from `foo.Pass()` in favor of `std::move(foo)`.
+
 === Limitations on `boost` Use
 
 `boost` classes from header-only libraries can be used in cases where a suitable
