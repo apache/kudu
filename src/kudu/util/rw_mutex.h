@@ -18,14 +18,17 @@
 #pragma once
 
 #include <pthread.h>
+#include <unordered_set>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/util/locks.h"
 
 namespace kudu {
 
-// Read/write mutex.
+// Read/write mutex. Implemented as a thin wrapper around pthread_rwlock_t.
 //
-// Implemented as a thin wrapper around pthread_rwlock_t.
+// Although pthread_rwlock_t allows recursive acquisition, this wrapper does
+// not, and will crash in debug mode if recursive acquisition is detected.
 class RWMutex {
  public:
 
@@ -59,6 +62,14 @@ class RWMutex {
   void WriteUnlock();
   bool TryWriteLock();
 
+#ifndef NDEBUG
+  void AssertAcquiredForReading() const;
+  void AssertAcquiredForWriting() const;
+#else
+  void AssertAcquiredForReading() const {}
+  void AssertAcquiredForWriting() const {}
+#endif
+
   // Aliases for use with std::lock_guard and kudu::shared_lock.
   void lock() { WriteLock(); }
   void unlock() { WriteUnlock(); }
@@ -70,7 +81,37 @@ class RWMutex {
  private:
   void Init(Priority prio);
 
+  enum class LockState {
+    NEITHER,
+    READER,
+    WRITER,
+  };
+#ifndef NDEBUG
+  void CheckLockState(LockState state) const;
+  void MarkForReading();
+  void MarkForWriting();
+  void UnmarkForReading();
+  void UnmarkForWriting();
+#else
+  void CheckLockState(LockState state) const {}
+  void MarkForReading() {}
+  void MarkForWriting() {}
+  void UnmarkForReading() {}
+  void UnmarkForWriting() {}
+#endif
+
   pthread_rwlock_t native_handle_;
+
+#ifndef NDEBUG
+  // Protects reader_tids_ and writer_tid_.
+  mutable simple_spinlock tid_lock_;
+
+  // Tracks all current readers by tid.
+  std::unordered_set<pid_t> reader_tids_;
+
+  // Tracks the current writer (if one exists) by tid.
+  pid_t writer_tid_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(RWMutex);
 };

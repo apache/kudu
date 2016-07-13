@@ -18,6 +18,12 @@
 #include "kudu/util/rw_mutex.h"
 
 #include <glog/logging.h>
+#include <mutex>
+
+#include "kudu/gutil/map-util.h"
+#include "kudu/util/env.h"
+
+using std::lock_guard;
 
 namespace {
 
@@ -30,11 +36,19 @@ void unlock_rwlock(pthread_rwlock_t* rwlock) {
 
 namespace kudu {
 
-RWMutex::RWMutex() {
+RWMutex::RWMutex()
+#ifndef NDEBUG
+    : writer_tid_(0)
+#endif
+{
   Init(Priority::PREFER_READING);
 }
 
-RWMutex::RWMutex(Priority prio) {
+RWMutex::RWMutex(Priority prio)
+#ifndef NDEBUG
+    : writer_tid_(0)
+#endif
+{
   Init(prio);
 }
 
@@ -73,39 +87,111 @@ RWMutex::~RWMutex() {
 }
 
 void RWMutex::ReadLock() {
+  CheckLockState(LockState::NEITHER);
   int rv = pthread_rwlock_rdlock(&native_handle_);
   DCHECK_EQ(0, rv) << strerror(rv);
+  MarkForReading();
 }
 
 void RWMutex::ReadUnlock() {
+  CheckLockState(LockState::READER);
+  UnmarkForReading();
   unlock_rwlock(&native_handle_);
 }
 
 bool RWMutex::TryReadLock() {
+  CheckLockState(LockState::NEITHER);
   int rv = pthread_rwlock_tryrdlock(&native_handle_);
   if (rv == EBUSY) {
     return false;
   }
   DCHECK_EQ(0, rv) << strerror(rv);
+  MarkForReading();
   return true;
 }
 
 void RWMutex::WriteLock() {
+  CheckLockState(LockState::NEITHER);
   int rv = pthread_rwlock_wrlock(&native_handle_);
   DCHECK_EQ(0, rv) << strerror(rv);
+  MarkForWriting();
 }
 
 void RWMutex::WriteUnlock() {
+  CheckLockState(LockState::WRITER);
+  UnmarkForWriting();
   unlock_rwlock(&native_handle_);
 }
 
 bool RWMutex::TryWriteLock() {
+  CheckLockState(LockState::NEITHER);
   int rv = pthread_rwlock_trywrlock(&native_handle_);
   if (rv == EBUSY) {
     return false;
   }
   DCHECK_EQ(0, rv) << strerror(rv);
+  MarkForWriting();
   return true;
 }
+
+#ifndef NDEBUG
+
+void RWMutex::AssertAcquiredForReading() const {
+  lock_guard<simple_spinlock> l(tid_lock_);
+  CHECK(ContainsKey(reader_tids_, Env::Default()->gettid()));
+}
+
+void RWMutex::AssertAcquiredForWriting() const {
+  lock_guard<simple_spinlock> l(tid_lock_);
+  CHECK_EQ(Env::Default()->gettid(), writer_tid_);
+}
+
+void RWMutex::CheckLockState(LockState state) const {
+  pid_t my_tid = Env::Default()->gettid();
+  bool is_reader;
+  bool is_writer;
+  {
+    lock_guard<simple_spinlock> l(tid_lock_);
+    is_reader = ContainsKey(reader_tids_, my_tid);
+    is_writer = writer_tid_ == my_tid;
+  }
+
+  switch (state) {
+    case LockState::NEITHER:
+      CHECK(!is_reader) << "Invalid state, already holding lock for reading";
+      CHECK(!is_writer) << "Invalid state, already holding lock for writing";
+      break;
+    case LockState::READER:
+      CHECK(!is_writer) << "Invalid state, already holding lock for writing";
+      CHECK(is_reader) << "Invalid state, wasn't holding lock for reading";
+      break;
+    case LockState::WRITER:
+      CHECK(!is_reader) << "Invalid state, already holding lock for reading";
+      CHECK(is_writer) << "Invalid state, wasn't holding lock for writing";
+      break;
+  }
+}
+
+void RWMutex::MarkForReading() {
+  lock_guard<simple_spinlock> l(tid_lock_);
+  reader_tids_.insert(Env::Default()->gettid());
+}
+
+void RWMutex::MarkForWriting() {
+  lock_guard<simple_spinlock> l(tid_lock_);
+  writer_tid_ = Env::Default()->gettid();
+}
+
+void RWMutex::UnmarkForReading() {
+  lock_guard<simple_spinlock> l(tid_lock_);
+  reader_tids_.erase(Env::Default()->gettid());
+}
+
+void RWMutex::UnmarkForWriting() {
+  lock_guard<simple_spinlock> l(tid_lock_);
+  writer_tid_ = 0;
+}
+
+#endif
 
 } // namespace kudu
