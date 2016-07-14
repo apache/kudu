@@ -35,12 +35,12 @@ namespace internal {
 
 class ErrorCollector : public RefCountedThreadSafe<ErrorCollector> {
  public:
-  ErrorCollector();
+  ErrorCollector() = default;
 
   void AddError(gscoped_ptr<KuduError> error);
 
   // See KuduSession for details.
-  int CountErrors() const;
+  size_t CountErrors() const;
 
   // See KuduSession for details.
   void GetErrors(std::vector<KuduError*>* errors, bool* overflowed);

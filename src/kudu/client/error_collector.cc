@@ -27,9 +27,6 @@ namespace kudu {
 namespace client {
 namespace internal {
 
-ErrorCollector::ErrorCollector() {
-}
-
 ErrorCollector::~ErrorCollector() {
   STLDeleteElements(&errors_);
 }
@@ -39,7 +36,7 @@ void ErrorCollector::AddError(gscoped_ptr<KuduError> error) {
   errors_.push_back(error.release());
 }
 
-int ErrorCollector::CountErrors() const {
+size_t ErrorCollector::CountErrors() const {
   std::lock_guard<simple_spinlock> l(lock_);
   return errors_.size();
 }
@@ -54,7 +51,6 @@ void ErrorCollector::GetErrors(std::vector<KuduError*>* errors, bool* overflowed
     *overflowed = false;
   }
 }
-
 
 } // namespace internal
 } // namespace client

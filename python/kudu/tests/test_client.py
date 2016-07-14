@@ -183,15 +183,11 @@ class TestClient(KuduTestBase, unittest.TestCase):
     def test_session_flush_modes(self):
         self.client.new_session(flush_mode=kudu.FLUSH_MANUAL)
         self.client.new_session(flush_mode=kudu.FLUSH_AUTO_SYNC)
+        self.client.new_session(flush_mode=kudu.FLUSH_AUTO_BACKGROUND)
 
         self.client.new_session(flush_mode='manual')
         self.client.new_session(flush_mode='sync')
-
-        with self.assertRaises(kudu.KuduNotSupported):
-            self.client.new_session(flush_mode=kudu.FLUSH_AUTO_BACKGROUND)
-
-        with self.assertRaises(kudu.KuduNotSupported):
-            self.client.new_session(flush_mode='background')
+        self.client.new_session(flush_mode='background')
 
         with self.assertRaises(ValueError):
             self.client.new_session(flush_mode='foo')

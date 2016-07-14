@@ -405,6 +405,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class KuduClientBuilder;
   friend class KuduScanner;
   friend class KuduScanTokenBuilder;
+  friend class KuduSession;
   friend class KuduTable;
   friend class KuduTableAlterer;
   friend class KuduTableCreator;
@@ -606,7 +607,7 @@ class KUDU_EXPORT KuduTableCreator {
 
   /// Add a range partition to the table.
   ///
-  /// Multiple range partitions may be added, but they must not overlap.  All
+  /// Multiple range partitions may be added, but they must not overlap. All
   /// range splits specified by @c add_range_partition_split must fall in a
   /// range partition. The lower bound must be less than or equal to the upper
   /// bound.
@@ -1113,24 +1114,24 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
     /// This is the default flush mode.
     AUTO_FLUSH_SYNC,
 
-    /// Apply() calls will return immediately, but the writes will be sent
-    /// in the background, potentially batched together with other writes
-    /// from the same session. If there is not sufficient buffer space,
-    /// then Apply() will block for buffer space to be available.
+    /// Apply() calls will return immediately (unless there is not enough
+    /// buffer space to accommodate the newly added operations), but
+    /// the writes will be sent in the background, potentially batched together
+    /// with other writes from the same session. If there is not sufficient
+    /// buffer space, Apply() blocks for buffer space to become available.
     ///
     /// Because writes are applied in the background, any errors will be stored
     /// in a session-local buffer. Call CountPendingErrors() or
     /// GetPendingErrors() to retrieve them.
     ///
-    /// The Flush() call can be used to block until the buffer is empty.
-    ///
-    /// @warning This is not implemented yet, see KUDU-456
+    /// In this mode, calling the FlushAsync() or Flush() methods causes a flush
+    /// that normally would have happened at some point in the near future
+    /// to happen right now. The Flush() call can be used to block until
+    /// the current batch is sent and the reclaimed space is available
+    /// for new operations.
     ///
     /// @todo Provide an API for the user to specify a callback to do their own
     ///   error reporting.
-    ///
-    /// @todo Specify which threads the background activity runs on
-    ///   (probably the messenger IO threads?).
     AUTO_FLUSH_BACKGROUND,
 
     /// Apply() calls will return immediately, and the writes will not be
@@ -1208,15 +1209,93 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// @li MANUAL_FLUSH
   ///   if the buffer space is exhausted, then write calls will return an error
   ///
+  /// By default, the buffer space is set to 7 MiB (i.e. 7 * 1024 * 1024 bytes).
+  ///
   /// @param [in] size_bytes
   ///   Size of the buffer space to set (number of bytes).
   /// @return Operation result status.
   Status SetMutationBufferSpace(size_t size_bytes) WARN_UNUSED_RESULT;
 
+  /// Set the buffer watermark to trigger flush in AUTO_FLUSH_BACKGROUND mode.
+  ///
+  /// This method sets the watermark for fresh operations in the buffer
+  /// when running in AUTO_FLUSH_BACKGROUND mode: once the specified threshold
+  /// is reached, the session starts sending the accumulated write operations
+  /// to the appropriate tablet servers. By default, the buffer flush watermark
+  /// is to to 80%.
+  ///
+  /// @note This setting is applicable only for AUTO_FLUSH_BACKGROUND sessions.
+  ///   I.e., calling this method in other flush modes is safe, but
+  ///   the parameter has no effect until the session is switched into
+  ///   AUTO_FLUSH_BACKGROUND mode.
+  ///
+  /// @note The buffer contains data for fresh (i.e. newly submitted)
+  ///   operations and also operations which are scheduled for flush or being
+  ///   flushed. The flush watermark determines how much of the buffer space
+  ///   is taken by newly submitted operations. Setting this level to 1.0
+  ///   (i.e. 100%) results in flushing the buffer only when the newly applied
+  ///   operation would overflow the buffer.
+  ///
+  /// @param [in] watermark_pct
+  ///   Watermark level as percentage of the mutation buffer size.
+  /// @return Operation result status.
+  Status SetMutationBufferFlushWatermark(double watermark_pct)
+      WARN_UNUSED_RESULT;
+
+  /// Set the interval for time-based flushing of the mutation buffer.
+  ///
+  /// In some cases, while running in AUTO_FLUSH_BACKGROUND mode, the size
+  /// of the mutation buffer for pending operations and the flush watermark
+  /// for fresh operations may be too high for the rate of incoming data:
+  /// it would take too long to accumulate enough data in the buffer to trigger
+  /// flushing. I.e., it makes sense to flush the accumulated operations
+  /// if the prior flush happened long time ago. This method sets the wait
+  /// interval for the time-based flushing which takes place along with
+  /// the flushing triggered by the over-the-watermark criterion.
+  /// By default, the interval is set to 1000 ms (i.e. 1 second).
+  ///
+  /// @note This setting is applicable only for AUTO_FLUSH_BACKGROUND sessions.
+  ///   I.e., calling this method in other flush modes is safe, but
+  ///   the parameter has no effect until the session is switched into
+  ///   AUTO_FLUSH_BACKGROUND mode.
+  ///
+  /// @param [in] millis
+  ///   The duration of the interval for the time-based flushing,
+  ///   in milliseconds.
+  /// @return Operation result status.
+  Status SetMutationBufferFlushInterval(unsigned int millis) WARN_UNUSED_RESULT;
+
+  /// Set the maximum number of mutation buffers per KuduSession object.
+  ///
+  /// A KuduSession accumulates write operations submitted via the Apply()
+  /// method in mutation buffers. A KuduSession always has at least one
+  /// mutation buffer. The mutation buffer which accumulates new incoming
+  /// operations is called the <em>current mutation buffer</em>.
+  /// The current mutation buffer is flushed either explicitly using
+  /// the KuduSession::Flush() and/or KuduSession::FlushAsync() methods
+  /// or it's done by the KuduSession automatically if running in
+  /// AUTO_FLUSH_BACKGROUND mode. After flushing the current mutation buffer,
+  /// a new buffer is created upon calling KuduSession::Apply(),
+  /// provided the limit is not exceeded. A call to KuduSession::Apply() blocks
+  /// if it's at the maximum number of buffers allowed; the call unblocks
+  /// as soon as one of the pending batchers finished flushing and a new batcher
+  /// can be created.
+  ///
+  /// The minimum setting for this parameter is 1 (one).
+  /// The default setting for this parameter is 2 (two).
+  ///
+  /// @param [in] max_num
+  ///   The maximum number of mutation buffers per KuduSession object
+  ///   to hold the applied operations. Use @c 0 to set the maximum number
+  ///   of concurrent mutation buffers to unlimited.
+  /// @return Operation result status.
+  Status SetMutationBufferMaxNum(unsigned int max_num) WARN_UNUSED_RESULT;
+
   /// Set the timeout for writes made in this session.
   ///
   /// @param [in] millis
-  ///   Timeout to set in milliseconds; should be greater than 0.
+  ///   Timeout to set in milliseconds; should be greater or equal to 0.
+  ///   If the parameter value is less than 0, it's implicitly set to 0.
   void SetTimeoutMillis(int millis);
 
   /// @todo
@@ -1234,6 +1313,13 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// In case of any error, which may occur during flushing or because
   /// the write_op is malformed, the write_op is stored in the session's error
   /// collector which may be retrieved at any time.
+  ///
+  /// A KuduSession accumulates write operations submitted via the Apply()
+  /// method in mutation buffers. A KuduSession always has at least one
+  /// mutation buffer. In any flush mode, this call may block if the maximum
+  /// number of mutation buffers per session is reached
+  /// (use KuduSession::SetMutationBufferMaxNum() to set the limit
+  /// on maximum number of batchers).
   ///
   /// @param [in] write_op
   ///   Operation to apply. This method transfers the write_op's ownership
@@ -1260,8 +1346,13 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
 
   /// Flush any pending writes.
   ///
-  /// In @c AUTO_FLUSH_SYNC mode, this has no effect, since every Apply() call
-  /// flushes itself inline.
+  /// This method initiates flushing of the current batch of buffered
+  /// write operations, if any, and then awaits for completion of all
+  /// pending operations of the session. I.e., after successful return
+  /// from this method no pending operations should be left in the session.
+  ///
+  /// In @c AUTO_FLUSH_SYNC mode, calling this method has no effect,
+  /// since every Apply() call flushes itself inline.
   ///
   /// @return Operation result status. In particular, returns a non-OK status
   ///   if there are any pending errors after the rows have been flushed.
@@ -1271,16 +1362,13 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
 
   /// Flush any pending writes asynchronously.
   ///
-  /// This method schedules a background flush of pending operations.
-  /// Provided callback is invoked upon completion of the flush.
+  /// This method schedules a background flush of the latest batch of buffered
+  /// write operations. Provided callback is invoked upon the flush completion
+  /// of the latest batch of buffered write operations.
   /// If there were errors while flushing the operations, corresponding
   /// 'not OK' status is passed as a parameter for the callback invocation.
   /// Callers should then use GetPendingErrors() to determine which specific
   /// operations failed.
-  ///
-  /// @param [in] cb
-  ///   Callback to call upon flush completion. The @c cb must remain valid
-  ///   until it is invoked.
   ///
   /// In the case that the async version of this method is used, then
   /// the callback will be called upon completion of the operations which
@@ -1293,7 +1381,9 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   ///   session->FlushAsync(callback_2);
   /// @endcode
   /// ... @c callback_2 will be triggered once @c b has been inserted,
-  /// regardless of whether @c a has completed or not.
+  /// regardless of whether @c a has completed or not. That means there might be
+  /// pending operations left in prior batches even after the the callback
+  /// has been invoked to report on the flush status of the latest batch.
   ///
   /// @note This also means that, if FlushAsync is called twice in succession,
   /// with no intervening operations, the second flush will return immediately.
@@ -1306,6 +1396,10 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// Note that, as in all other async functions in Kudu, the callback
   /// may be called either from an IO thread or the same thread which calls
   /// FlushAsync. The callback should not block.
+  ///
+  /// @param [in] cb
+  ///   Callback to call upon flush completion. The @c cb must remain valid
+  ///   until it is invoked.
   void FlushAsync(KuduStatusCallback* cb);
 
   /// @return Status of the session closure. In particular, an error is returned
@@ -1363,6 +1457,9 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
 
   friend class KuduClient;
   friend class internal::Batcher;
+  friend class ClientTest;
+  FRIEND_TEST(ClientTest, TestAutoFlushBackgroundApplyBlocks);
+
   explicit KuduSession(const sp::shared_ptr<KuduClient>& client);
 
   // Owned.

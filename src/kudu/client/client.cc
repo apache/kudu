@@ -18,14 +18,14 @@
 #include "kudu/client/client.h"
 
 #include <algorithm>
-#include <boost/bind.hpp>
 #include <memory>
-#include <mutex>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <boost/bind.hpp>
 
 #include "kudu/client/batcher.h"
 #include "kudu/client/callbacks.h"
@@ -53,10 +53,10 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/master.h" // TODO: remove this include - just needed for default port
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/request_tracker.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
@@ -318,8 +318,7 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
     HostPort hp;
     RETURN_NOT_OK(HostPortFromPB(e.registration().rpc_addresses(0), &hp));
     unique_ptr<KuduTabletServer> ts(new KuduTabletServer);
-    ts->data_ = new KuduTabletServer::Data(e.instance_id().permanent_uuid(),
-                                           hp);
+    ts->data_ = new KuduTabletServer::Data(e.instance_id().permanent_uuid(), hp);
     tablet_servers->push_back(ts.release());
   }
   return Status::OK();
@@ -700,7 +699,7 @@ KuduError::~KuduError() {
 ////////////////////////////////////////////////////////////
 
 KuduSession::KuduSession(const shared_ptr<KuduClient>& client)
-  : data_(new KuduSession::Data(client)) {
+  : data_(new KuduSession::Data(client, client->data_->messenger_)) {
 }
 
 KuduSession::~KuduSession() {
@@ -713,110 +712,67 @@ Status KuduSession::Close() {
 }
 
 Status KuduSession::SetFlushMode(FlushMode m) {
-  if (m == AUTO_FLUSH_BACKGROUND) {
-    return Status::NotSupported("AUTO_FLUSH_BACKGROUND has not been implemented in the"
-        " c++ client (see KUDU-456).");
-  }
-  if (data_->batcher_->HasPendingOperations()) {
-    // TODO: there may be a more reasonable behavior here.
-    return Status::IllegalState("Cannot change flush mode when writes are buffered");
-  }
   if (!tight_enum_test<FlushMode>(m)) {
     // Be paranoid in client code.
     return Status::InvalidArgument("Bad flush mode");
   }
-
-  data_->flush_mode_ = m;
-  return Status::OK();
+  return data_->SetFlushMode(m, shared_from_this());
 }
 
 Status KuduSession::SetExternalConsistencyMode(ExternalConsistencyMode m) {
-  if (data_->batcher_->HasPendingOperations()) {
-    // TODO: there may be a more reasonable behavior here.
-    return Status::IllegalState("Cannot change external consistency mode when writes are "
-        "buffered");
-  }
   if (!tight_enum_test<ExternalConsistencyMode>(m)) {
     // Be paranoid in client code.
     return Status::InvalidArgument("Bad external consistency mode");
   }
-
-  data_->external_consistency_mode_ = m;
-  return Status::OK();
+  return data_->SetExternalConsistencyMode(m);
 }
 
-void KuduSession::SetTimeoutMillis(int millis) {
-  CHECK_GE(millis, 0);
-  data_->timeout_ms_ = millis;
-  data_->batcher_->SetTimeoutMillis(millis);
+Status KuduSession::SetMutationBufferSpace(size_t size) {
+  return data_->SetBufferBytesLimit(size);
+}
+
+Status KuduSession::SetMutationBufferFlushWatermark(double watermark_pct) {
+  return data_->SetBufferFlushWatermark(
+      static_cast<int32_t>(100.0 * watermark_pct));
+}
+
+Status KuduSession::SetMutationBufferFlushInterval(unsigned int millis) {
+  return data_->SetBufferFlushInterval(millis);
+}
+
+Status KuduSession::SetMutationBufferMaxNum(unsigned int max_num) {
+  return data_->SetMaxBatchersNum(max_num);
+}
+
+void KuduSession::SetTimeoutMillis(int timeout_ms) {
+  data_->SetTimeoutMillis(timeout_ms);
 }
 
 Status KuduSession::Flush() {
-  Synchronizer s;
-  KuduStatusMemberCallback<Synchronizer> ksmcb(&s, &Synchronizer::StatusCB);
-  FlushAsync(&ksmcb);
-  return s.Wait();
+  return data_->Flush();
 }
 
 void KuduSession::FlushAsync(KuduStatusCallback* user_callback) {
-  CHECK_NE(data_->flush_mode_, AUTO_FLUSH_BACKGROUND) <<
-      "AUTO_FLUSH_BACKGROUND has not been implemented";
-
-  // Swap in a new batcher to start building the next batch.
-  // Save off the old batcher.
-  scoped_refptr<Batcher> old_batcher;
-  {
-    std::lock_guard<simple_spinlock> l(data_->lock_);
-    data_->NewBatcher(shared_from_this(), &old_batcher);
-    InsertOrDie(&data_->flushed_batchers_, old_batcher.get());
-  }
-
-  // Send off any buffered data. Important to do this outside of the lock
-  // since the callback may itself try to take the lock, in the case that
-  // the batch fails "inline" on the same thread.
-  old_batcher->FlushAsync(user_callback);
+  data_->FlushAsync(user_callback);
 }
 
 bool KuduSession::HasPendingOperations() const {
-  std::lock_guard<simple_spinlock> l(data_->lock_);
-  if (data_->batcher_->HasPendingOperations()) {
-    return true;
-  }
-  for (Batcher* b : data_->flushed_batchers_) {
-    if (b->HasPendingOperations()) {
-      return true;
-    }
-  }
-  return false;
+  return data_->HasPendingOperations();
 }
 
 Status KuduSession::Apply(KuduWriteOperation* write_op) {
-  if (!write_op->row().IsKeySet()) {
-    Status status = Status::IllegalState("Key not specified", write_op->ToString());
-    data_->error_collector_->AddError(gscoped_ptr<KuduError>(
-        new KuduError(write_op, status)));
-    return status;
-  }
-
-  Status s = data_->batcher_->Add(write_op);
-  if (!PREDICT_FALSE(s.ok())) {
-    data_->error_collector_->AddError(gscoped_ptr<KuduError>(
-        new KuduError(write_op, s)));
-    return s;
-  }
-
+  RETURN_NOT_OK(data_->ApplyWriteOp(shared_from_this(), write_op));
+  // Thread-safety note: this method should not be called concurrently
+  // with other methods which modify the KuduSession::Data members, so it
+  // should be safe to read KuduSession::Data members without protection.
   if (data_->flush_mode_ == AUTO_FLUSH_SYNC) {
-    return Flush();
+    RETURN_NOT_OK(data_->Flush());
   }
-
   return Status::OK();
 }
 
 int KuduSession::CountBufferedOperations() const {
-  std::lock_guard<simple_spinlock> l(data_->lock_);
-  CHECK_EQ(data_->flush_mode_, MANUAL_FLUSH);
-
-  return data_->batcher_->CountBufferedOperations();
+  return data_->CountBufferedOperations();
 }
 
 int KuduSession::CountPendingErrors() const {

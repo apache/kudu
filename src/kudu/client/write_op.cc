@@ -41,8 +41,8 @@ RowOperationsPB_Type ToInternalWriteType(KuduWriteOperation::Type type) {
 
 KuduWriteOperation::KuduWriteOperation(const shared_ptr<KuduTable>& table)
   : table_(table),
-    row_(table->schema().schema_) {
-}
+    row_(table->schema().schema_),
+    size_in_buffer_(0) {}
 
 KuduWriteOperation::~KuduWriteOperation() {}
 
@@ -59,6 +59,11 @@ EncodedKey* KuduWriteOperation::CreateKey() const {
 }
 
 int64_t KuduWriteOperation::SizeInBuffer() const {
+  if (size_in_buffer_ > 0) {
+    // Once computed, the raw size of the operation is cached and returned
+    // for all subsequent calls.
+    return size_in_buffer_;
+  }
   const Schema* schema = row_.schema();
   int size = 1; // for the operation type
 
@@ -78,6 +83,7 @@ int64_t KuduWriteOperation::SizeInBuffer() const {
       }
     }
   }
+  size_in_buffer_ = size;
   return size;
 }
 
