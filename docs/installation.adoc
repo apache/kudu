@@ -471,10 +471,9 @@ make -j4
 
 [[osx_from_source]]
 === OS X
-The Xcode toolchain is necessary for compiling Kudu. Use `xcode-select --install`
-to install the Xcode Command Line Tools if Xcode is not already installed. These
-instructions use link:http://brew.sh/[Homebrew] to install dependencies, but
-manual dependency installation is possible.
+The link:https://developer.apple.com/xcode/[Xcode] package is necessary for
+compiling Kudu. Some of the instructions below use link:http://brew.sh/[Homebrew]
+to install dependencies, but manual dependency installation is possible.
 
 [WARNING]
 .OS X Known Issues
