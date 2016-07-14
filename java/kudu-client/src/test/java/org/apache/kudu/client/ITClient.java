@@ -146,15 +146,14 @@ public class ITClient extends BaseKuduTest {
       while (KEEP_RUNNING_LATCH.getCount() > 0) {
         try {
           boolean shouldContinue;
-          if (System.currentTimeMillis() % 2 == 0) {
+          int randomInt = random.nextInt(3);
+          if (randomInt == 0) {
             shouldContinue = restartTS();
-          } else {
-
+          } else if (randomInt == 1) {
             shouldContinue = disconnectNode();
+          } else {
+            shouldContinue = restartMaster();
           }
-          // TODO restarting the master currently finds more bugs. Also, adding it to the list makes
-          // it necessary to find a new weighing mechanism betweent he different chaos options.
-          // shouldContinue = restartMaster();
 
           if (!shouldContinue) {
             return;

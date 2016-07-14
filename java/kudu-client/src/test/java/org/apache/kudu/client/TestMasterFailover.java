@@ -39,11 +39,7 @@ public class TestMasterFailover extends BaseKuduTest {
     createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
   }
 
-  /**
-   * This test is disabled as we're not supporting multi-master just yet.
-   */
   @Test(timeout = 30000)
-  @Ignore
   public void testKillLeader() throws Exception {
     int countMasters = masterHostPorts.size();
     if (countMasters < 3) {
@@ -59,7 +55,7 @@ public class TestMasterFailover extends BaseKuduTest {
 
     // Test that we can create a new table when one of the masters is down.
     String newTableName = TABLE_NAME + "-afterLeaderIsDead";
-    createTable(newTableName, basicSchema, new CreateTableOptions());
+    createTable(newTableName, basicSchema, getBasicCreateTableOptions());
     table = openTable(newTableName);
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
 

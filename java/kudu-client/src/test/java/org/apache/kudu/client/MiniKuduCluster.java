@@ -195,7 +195,8 @@ public class MiniKuduCluster implements AutoCloseable {
           "--webserver_interface=" + localhost,
           "--local_ip_for_outbound_sockets=" + localhost,
           "--rpc_bind_addresses=" + localhost + ":" + port,
-          "--webserver_port=" + masterWebPorts.get(i));
+          "--webserver_port=" + masterWebPorts.get(i),
+          "--raft_heartbeat_interval_ms=200"); // make leader elections faster for faster tests
       if (numMasters > 1) {
         masterCmdLine.add("--master_addresses=" + masterAddresses);
       }

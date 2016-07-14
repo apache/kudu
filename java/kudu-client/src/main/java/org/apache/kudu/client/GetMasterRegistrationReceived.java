@@ -108,38 +108,53 @@ final class GetMasterRegistrationReceived {
   private void incrementCountAndCheckExhausted() {
     if (countResponsesReceived.incrementAndGet() == numMasters) {
       if (responseDCalled.compareAndSet(false, true)) {
+
+        // We want `allUnrecoverable` to only be true if all the masters came back with
+        // NonRecoverableException so that we know for sure we can't retry anymore. Just one master
+        // that replies with RecoverableException or with an ok response but is a FOLLOWER is
+        // enough to keep us retrying.
         boolean allUnrecoverable = true;
-        for (Exception ex : exceptionsReceived) {
-          if (!(ex instanceof NonRecoverableException)) {
-            allUnrecoverable = false;
-            break;
+        if (exceptionsReceived.size() == countResponsesReceived.get()) {
+          for (Exception ex : exceptionsReceived) {
+            if (!(ex instanceof NonRecoverableException)) {
+              allUnrecoverable = false;
+              break;
+            }
           }
+        } else {
+          allUnrecoverable = false;
         }
+
         String allHosts = NetUtil.hostsAndPortsToString(masterAddrs);
-        // Doing a negative check because allUnrecoverable stays true if there are no exceptions.
-        if (!allUnrecoverable) {
-          String message = "Master config (" + allHosts + ") has no leader.";
+        if (allUnrecoverable) {
+          // This will stop retries.
+          String msg = String.format("Couldn't find a valid master in (%s). " +
+              "Exceptions received: %s", allHosts,
+              Joiner.on(",").join(Lists.transform(
+                  exceptionsReceived, Functions.toStringFunction())));
+          Status s = Status.ServiceUnavailable(msg);
+          responseD.callback(new NonRecoverableException(s));
+        } else {
+          String message = String.format("Master config (%s) has no leader.",
+              allHosts);
           Exception ex;
           if (exceptionsReceived.isEmpty()) {
-            LOG.warn("None of the provided masters (" + allHosts + ") is a leader, will retry.");
+            LOG.warn(String.format(
+                "None of the provided masters (%s) is a leader, will retry.",
+                allHosts));
             ex = new NoLeaderMasterFoundException(Status.ServiceUnavailable(message));
           } else {
-            LOG.warn("Unable to find the leader master (" + allHosts + "), will retry");
-            String joinedMsg = message + ". Exceptions received: " +
-                Joiner.on(",").join(
-                    Lists.transform(exceptionsReceived, Functions.toStringFunction()));
-            Status statusServiceUnavailable = Status.ServiceUnavailable(joinedMsg);
-            ex = new NoLeaderMasterFoundException(
-                statusServiceUnavailable,
+            LOG.warn(String.format(
+                "Unable to find the leader master (%s), will retry",
+                allHosts));
+            String joinedMsg = message + " Exceptions received: " +
+                Joiner.on(",").join(Lists.transform(
+                    exceptionsReceived, Functions.toStringFunction()));
+            Status s = Status.ServiceUnavailable(joinedMsg);
+            ex = new NoLeaderMasterFoundException(s,
                 exceptionsReceived.get(exceptionsReceived.size() - 1));
           }
           responseD.callback(ex);
-        } else {
-          Status statusConfigurationError = Status.ConfigurationError(
-              "Couldn't find a valid master in (" + allHosts +
-                  "), exceptions: " + exceptionsReceived);
-          // This will stop retries.
-          responseD.callback(new NonRecoverableException(statusConfigurationError));
         }
       }
     }
