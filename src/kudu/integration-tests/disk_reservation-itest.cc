@@ -64,6 +64,11 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
   ts_flags.push_back("--disable_core_dumps");
   ts_flags.push_back(Substitute("--fs_data_dirs=$0/a,$0/b",
                                 GetTestDataDirectory()));
+  ts_flags.push_back(Substitute("--disk_reserved_override_prefix_1_path_for_testing=$0/a",
+                                GetTestDataDirectory()));
+  ts_flags.push_back(Substitute("--disk_reserved_override_prefix_2_path_for_testing=$0/b",
+                                GetTestDataDirectory()));
+
   NO_FATALS(StartCluster(ts_flags, {}, 1));
 
   TestWorkload workload(cluster_.get());
@@ -86,12 +91,13 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
 
   LOG(INFO) << "Two log block containers are active";
 
-  // Simulate that /a has 0 bytes free but /b has 1GB free.
+  // Simulate that /a has 0 bytes free.
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
-                              "disk_reserved_prefixes_with_bytes_free_for_testing",
-                              Substitute("$0/a:0,$0/b:$1",
-                                         GetTestDataDirectory(),
-                                         1L * 1024 * 1024 * 1024)));
+                              "disk_reserved_override_prefix_1_bytes_free_for_testing", "0"));
+  // Simulate that /b has 1GB free.
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+                              "disk_reserved_override_prefix_2_bytes_free_for_testing",
+                              Substitute("$0", 1L * 1024 * 1024 * 1024)));
 
   // Wait until we have 1 unusable container.
   while (true) {
@@ -107,9 +113,7 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
 
   // Now simulate that all disks are full.
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
-                              "disk_reserved_prefixes_with_bytes_free_for_testing",
-                              Substitute("$0/a:0,$0/b:0",
-                                         GetTestDataDirectory())));
+                              "disk_reserved_override_prefix_2_bytes_free_for_testing", "0"));
 
   // Wait for crash due to inability to flush or compact.
   ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(10)));
@@ -127,13 +131,19 @@ TEST_F(DiskReservationITest, TestWalWriteToFullDiskAborts) {
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
   workload.set_timeout_allowed(true); // Allow timeouts because we expect the server to crash.
-  workload.set_write_timeout_millis(100); // Keep test time low after crash.
+  workload.set_write_timeout_millis(200); // Keep test time low after crash.
   // Write lots of data to quickly fill up our 1mb log segment size.
-  workload.set_num_write_threads(8);
-  workload.set_write_batch_size(1024);
-  workload.set_payload_bytes(128);
+  workload.set_num_write_threads(4);
+  workload.set_write_batch_size(10);
+  workload.set_payload_bytes(1000);
   workload.Setup();
   workload.Start();
+
+  // Ensure the cluster is running, the client was able to look up the tablet
+  // locations, etc.
+  while (workload.rows_inserted() < 10) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
 
   // Set the disk to "nearly full" which should eventually cause a crash at WAL
   // preallocation time.

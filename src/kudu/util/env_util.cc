@@ -39,11 +39,31 @@ DEFINE_int64(disk_reserved_bytes_free_for_testing, -1,
 TAG_FLAG(disk_reserved_bytes_free_for_testing, runtime);
 TAG_FLAG(disk_reserved_bytes_free_for_testing, unsafe);
 
-DEFINE_string(disk_reserved_prefixes_with_bytes_free_for_testing, "",
-             "For testing only! Syntax: '/path/a:5,/path/b:7' means a has 5 bytes free, "
-             "b has 7 bytes free. Set to empty string to disable this test-specific override.");
-TAG_FLAG(disk_reserved_prefixes_with_bytes_free_for_testing, runtime);
-TAG_FLAG(disk_reserved_prefixes_with_bytes_free_for_testing, unsafe);
+// We define some flags for testing purposes: Two prefixes and their associated
+// "bytes free" overrides.
+DEFINE_string(disk_reserved_override_prefix_1_path_for_testing, "",
+              "For testing only! Specifies a prefix to override the visible 'bytes free' on. "
+              "Use --disk_reserved_override_prefix_1_bytes_free_for_testing to set the number of "
+              "bytes free for this path prefix. Set to empty string to disable.");
+DEFINE_int64(disk_reserved_override_prefix_1_bytes_free_for_testing, -1,
+             "For testing only! Set number of bytes free on the path prefix specified by "
+             "--disk_reserved_override_prefix_1_path_for_testing. Set to -1 to disable.");
+DEFINE_string(disk_reserved_override_prefix_2_path_for_testing, "",
+              "For testing only! Specifies a prefix to override the visible 'bytes free' on. "
+              "Use --disk_reserved_override_prefix_2_bytes_free_for_testing to set the number of "
+              "bytes free for this path prefix. Set to empty string to disable.");
+DEFINE_int64(disk_reserved_override_prefix_2_bytes_free_for_testing, -1,
+             "For testing only! Set number of bytes free on the path prefix specified by "
+             "--disk_reserved_override_prefix_2_path_for_testing. Set to -1 to disable.");
+//DEFINE_string(disk_reserved_prefixes_with_bytes_free_for_testing, "",
+//             "For testing only! Syntax: '/path/a:5,/path/b:7' means a has 5 bytes free, "
+//             "b has 7 bytes free. Set to empty string to disable this test-specific override.");
+TAG_FLAG(disk_reserved_override_prefix_1_path_for_testing, unsafe);
+TAG_FLAG(disk_reserved_override_prefix_2_path_for_testing, unsafe);
+TAG_FLAG(disk_reserved_override_prefix_1_bytes_free_for_testing, unsafe);
+TAG_FLAG(disk_reserved_override_prefix_2_bytes_free_for_testing, unsafe);
+TAG_FLAG(disk_reserved_override_prefix_1_bytes_free_for_testing, runtime);
+TAG_FLAG(disk_reserved_override_prefix_2_bytes_free_for_testing, runtime);
 
 using std::shared_ptr;
 using strings::Substitute;
@@ -81,16 +101,17 @@ Status OpenFileForSequential(Env *env, const string &path,
   return Status::OK();
 }
 
-// If we can parse the flag value, and the flag specifies an override for the
-// given path, then override the free bytes to match what is specified in the
-// flag. See definition of disk_reserved_prefixes_with_bytes_free_for_testing.
-static void OverrideBytesFree(const string& path, const string& flag, int64_t* bytes_free) {
-  for (const auto& str : strings::Split(flag, ",")) {
-    pair<string, string> p = strings::Split(str, ":");
-    if (HasPrefixString(path, p.first)) {
-      int64_t free_override;
-      if (!safe_strto64(p.second.c_str(), p.second.size(), &free_override)) return;
-      *bytes_free = free_override;
+// If any of the override gflags specifies an override for the given path, then
+// override the free bytes to match what is specified in the flag. See the
+// definitions of these test-only flags for more information.
+static void OverrideBytesFreeWithTestingFlags(const string& path, int64_t* bytes_free) {
+  const string* prefixes[] = { &FLAGS_disk_reserved_override_prefix_1_path_for_testing,
+                               &FLAGS_disk_reserved_override_prefix_2_path_for_testing };
+  const int64_t* overrides[] = { &FLAGS_disk_reserved_override_prefix_1_bytes_free_for_testing,
+                                 &FLAGS_disk_reserved_override_prefix_2_bytes_free_for_testing };
+  for (int i = 0; i < arraysize(prefixes); i++) {
+    if (*overrides[i] != -1 && !prefixes[i]->empty() && HasPrefixString(path, *prefixes[i])) {
+      *bytes_free = *overrides[i];
       return;
     }
   }
@@ -107,8 +128,9 @@ Status VerifySufficientDiskSpace(Env *env, const std::string& path,
   if (PREDICT_FALSE(FLAGS_disk_reserved_bytes_free_for_testing > -1)) {
     bytes_free = FLAGS_disk_reserved_bytes_free_for_testing;
   }
-  if (PREDICT_FALSE(!FLAGS_disk_reserved_prefixes_with_bytes_free_for_testing.empty())) {
-    OverrideBytesFree(path, FLAGS_disk_reserved_prefixes_with_bytes_free_for_testing, &bytes_free);
+  if (PREDICT_FALSE(FLAGS_disk_reserved_override_prefix_1_bytes_free_for_testing != -1 ||
+                    FLAGS_disk_reserved_override_prefix_2_bytes_free_for_testing != -1)) {
+    OverrideBytesFreeWithTestingFlags(path, &bytes_free);
   }
 
   if (bytes_free - requested_bytes < reserved_bytes) {
