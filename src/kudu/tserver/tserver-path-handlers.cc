@@ -32,13 +32,13 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/webui_util.h"
-#include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/maintenance_manager.h"
 #include "kudu/util/url-coding.h"
 
 using kudu::consensus::GetConsensusRole;
@@ -46,9 +46,9 @@ using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::TransactionStatusPB;
-using kudu::tablet::MaintenanceManagerStatusPB;
-using kudu::tablet::MaintenanceManagerStatusPB_CompletedOpPB;
-using kudu::tablet::MaintenanceManagerStatusPB_MaintenanceOpPB;
+using kudu::MaintenanceManagerStatusPB;
+using kudu::MaintenanceManagerStatusPB_CompletedOpPB;
+using kudu::MaintenanceManagerStatusPB_MaintenanceOpPB;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::TabletStatusPB;

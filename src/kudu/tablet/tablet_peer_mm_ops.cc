@@ -24,9 +24,9 @@
 #include <string>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 
 DEFINE_int32(flush_threshold_mb, 1024,

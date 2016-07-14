@@ -22,15 +22,14 @@
 #include <vector>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/util/maintenance_manager.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
-using kudu::tablet::MaintenanceManagerStatusPB;
 using std::shared_ptr;
 using std::vector;
 using strings::Substitute;

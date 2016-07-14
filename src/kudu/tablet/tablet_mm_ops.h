@@ -18,7 +18,7 @@
 #ifndef KUDU_TABLET_TABLET_MM_OPS_H_
 #define KUDU_TABLET_TABLET_MM_OPS_H_
 
-#include "kudu/tablet/maintenance_manager.h"
+#include "kudu/util/maintenance_manager.h"
 
 namespace kudu {
 

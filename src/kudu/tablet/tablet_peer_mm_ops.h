@@ -18,8 +18,8 @@
 #ifndef KUDU_TABLET_TABLET_PEER_MM_OPS_H_
 #define KUDU_TABLET_TABLET_PEER_MM_OPS_H_
 
-#include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet_peer.h"
+#include "kudu/util/maintenance_manager.h"
 #include "kudu/util/stopwatch.h"
 
 namespace kudu {

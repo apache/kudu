@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tablet/maintenance_manager.h"
+#include "kudu/util/maintenance_manager.h"
 
 #include <gflags/gflags.h>
 #include <memory>
@@ -57,10 +57,6 @@ DEFINE_bool(enable_maintenance_manager, true,
 TAG_FLAG(enable_maintenance_manager, unsafe);
 
 namespace kudu {
-
-using kudu::tablet::MaintenanceManagerStatusPB;
-using kudu::tablet::MaintenanceManagerStatusPB_CompletedOpPB;
-using kudu::tablet::MaintenanceManagerStatusPB_MaintenanceOpPB;
 
 MaintenanceOpStats::MaintenanceOpStats() {
   Clear();

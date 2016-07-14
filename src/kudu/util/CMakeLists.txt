@@ -30,6 +30,20 @@ ADD_EXPORTABLE_LIBRARY(histogram_proto
   NONLINK_DEPS ${HISTOGRAM_PROTO_TGTS})
 
 #######################################
+# maintenance_manager_proto
+#######################################
+
+PROTOBUF_GENERATE_CPP(
+    MAINTENANCE_MANAGER_PROTO_SRCS MAINTENANCE_MANAGER_PROTO_HDRS MAINTENANCE_MANAGER_PROTO_TGTS
+    SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+    BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+    PROTO_FILES maintenance_manager.proto)
+ADD_EXPORTABLE_LIBRARY(maintenance_manager_proto
+    SRCS ${MAINTENANCE_MANAGER_PROTO_SRCS}
+    DEPS protobuf
+    NONLINK_DEPS ${MAINTENANCE_MANAGER_PROTO_TGTS})
+
+#######################################
 # pb_util_proto
 #######################################
 
@@ -118,6 +132,7 @@ set(UTIL_SRCS
   kernel_stack_watchdog.cc
   locks.cc
   logging.cc
+  maintenance_manager.cc
   malloc.cc
   memcmpable_varint.cc
   memory/arena.cc
@@ -181,6 +196,7 @@ set(UTIL_LIBS
   glog
   gutil
   histogram_proto
+  maintenance_manager_proto
   pb_util_proto
   protobuf
   version_info_proto
@@ -279,6 +295,7 @@ ADD_KUDU_TEST(interval_tree-test)
 ADD_KUDU_TEST(jsonreader-test)
 ADD_KUDU_TEST(knapsack_solver-test)
 ADD_KUDU_TEST(logging-test)
+ADD_KUDU_TEST(maintenance_manager-test)
 ADD_KUDU_TEST(map-util-test)
 ADD_KUDU_TEST(mem_tracker-test)
 ADD_KUDU_TEST(memcmpable_varint-test LABELS no_tsan)

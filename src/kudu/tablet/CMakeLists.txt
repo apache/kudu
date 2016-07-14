@@ -33,7 +33,6 @@ set(TABLET_SRCS
   delta_key.cc
   diskrowset.cc
   lock_manager.cc
-  maintenance_manager.cc
   memrowset.cc
   multi_column_writer.cc
   mutation.cc
@@ -98,7 +97,6 @@ ADD_KUDU_TEST(cfile_set-test)
 ADD_KUDU_TEST(tablet-pushdown-test)
 ADD_KUDU_TEST(tablet-schema-test)
 ADD_KUDU_TEST(tablet_bootstrap-test)
-ADD_KUDU_TEST(maintenance_manager-test)
 ADD_KUDU_TEST(metadata-test)
 ADD_KUDU_TEST(mvcc-test)
 ADD_KUDU_TEST(compaction-test)

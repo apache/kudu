@@ -31,12 +31,12 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver.h"
-#include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/maintenance_manager.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 

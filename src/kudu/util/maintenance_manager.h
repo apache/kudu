@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_MAINTENANCE_MANAGER_H
-#define KUDU_TABLET_MAINTENANCE_MANAGER_H
+
+#pragma once
 
 #include <stdint.h>
 
@@ -26,9 +26,8 @@
 #include <vector>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/tablet/mvcc.h"
-#include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/condition_variable.h"
+#include "kudu/util/maintenance_manager.pb.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/countdown_latch.h"
@@ -241,7 +240,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   // function will block until the Op is finished.
   void UnregisterOp(MaintenanceOp* op);
 
-  void GetMaintenanceManagerStatusDump(tablet::MaintenanceManagerStatusPB* out_pb);
+  void GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb);
 
   static const Options DEFAULT_OPTIONS;
 
@@ -276,5 +275,3 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
 };
 
 } // namespace kudu
-
-#endif
