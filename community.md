@@ -9,29 +9,44 @@ single_col_extra_classes: community
 
 Get help using Kudu or contribute to the project on our mailing lists or our chat room:
 
-* [user@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-user/)
-  is for usage questions, help, and announcements.
+* **[user@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-user/)**
   ([subscribe](mailto:user-subscribe@kudu.incubator.apache.org))
   ([unsubscribe](mailto:user-unsubscribe@kudu.incubator.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-user/))
-* [dev@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/)
-  is for people who want to contribute code to Kudu.
+  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-user/)) -
+  for usage questions, help, and announcements.
+* **<a class="icon slack" href="https://getkudu-slack.herokuapp.com/">Kudu Slack channel</a>** -
+  where many Kudu developers and users hang out to answer questions and chat.
+
+**Developer mailing lists**
+
+* **[dev@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/)**
   ([subscribe](mailto:dev-subscribe@kudu.incubator.apache.org))
   ([unsubscribe](mailto:dev-unsubscribe@kudu.incubator.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/))
-* [issues@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-issues/)
-  receives an email copy of all changes made in the [Kudu issue tracking system](https://issues.apache.org/jira/browse/KUDU).
+  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/)) -
+  for people who want to contribute code to Kudu.
+* **[issues@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-issues/)**
   ([subscribe](mailto:issues-subscribe@kudu.incubator.apache.org))
   ([unsubscribe](mailto:issues-unsubscribe@kudu.incubator.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-issues/))
-* [reviews@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-reviews/)
-  receives an email copy of all code review requests and responses on the
-  [Kudu Gerrit](http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu).
+  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-issues/)) -
+  receives an email notification for all ticket updates made in the [Kudu JIRA issue tracker](https://issues.apache.org/jira/browse/KUDU).
+* **[reviews@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-reviews/)**
   ([subscribe](mailto:reviews-subscribe@kudu.incubator.apache.org))
   ([unsubscribe](mailto:reviews-unsubscribe@kudu.incubator.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-reviews/))
-* The [Kudu slack chat room](https://getkudu-slack.herokuapp.com/) is where
-  many Kudu developers and users hang out to answer questions and chat.
+  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-reviews/)) -
+  receives an email notification for all code review requests and responses on the
+  [Kudu Gerrit](http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu).
+* **[commits@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-commits/)**
+  ([subscribe](mailto:commits-subscribe@kudu.incubator.apache.org))
+  ([unsubscribe](mailto:commits-unsubscribe@kudu.incubator.apache.org))
+  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-commits/)) -
+  receives an email notification of all code changes to the
+  [Kudu Git repository](https://github.com/apache/incubator-kudu/).
+
+**Other developer resources**
+
+* **<a class="icon github" href="https://github.com/apache/incubator-kudu">GitHub</a>**
+* **<a class="icon gerrit" href="http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu">Gerrit Code Review</a>**
+* **<a class="icon jira" href="https://issues.apache.org/jira/browse/KUDU">JIRA Issue Tracker</a>**
 
 ### Contributions
 
