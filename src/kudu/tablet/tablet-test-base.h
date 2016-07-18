@@ -18,6 +18,7 @@
 #define KUDU_TABLET_TABLET_TEST_BASE_H
 
 #include <algorithm>
+#include <boost/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <limits>
@@ -304,8 +305,11 @@ typedef ::testing::Types<
 template<class TESTSETUP>
 class TabletTestBase : public KuduTabletTest {
  public:
-  TabletTestBase() :
-    KuduTabletTest(TESTSETUP::CreateSchema()),
+  typedef std::function<bool(int32_t, int32_t)> TestRowVerifier;
+
+  TabletTestBase(TabletHarness::Options::ClockType clock_type =
+                 TabletHarness::Options::ClockType::LOGICAL_CLOCK) :
+    KuduTabletTest(TESTSETUP::CreateSchema(), clock_type),
     setup_(),
     max_rows_(setup_.GetMaxRows()),
     arena_(1024, 4*1024*1024)
@@ -398,59 +402,90 @@ class TabletTestBase : public KuduTabletTest {
   }
 
   template <class RowType>
-  void VerifyRow(const RowType& row, int64_t key_idx, int32_t val) {
+  void VerifyRow(const RowType& row, int32_t key_idx, int32_t val) {
     ASSERT_EQ(setup_.FormatDebugRow(key_idx, val, false), schema_.DebugRow(row));
   }
 
-  void VerifyTestRows(int64_t first_row, uint64_t expected_count) {
+  void VerifyTestRows(int32_t first_row, uint64_t expected_count) {
+    VerifyTestRowsWithVerifier(first_row, expected_count, boost::none);
+  }
+
+  void VerifyTestRowsWithVerifier(int32_t first_row, uint64_t expected_count,
+                                  boost::optional<TestRowVerifier> verifier) {
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
+    VerifyTestRowsWithRowIteratorAndVerifier(first_row, expected_count, std::move(iter), verifier);
+  }
+
+  void VerifyTestRowsWithTimestampAndVerifier(int32_t first_row, uint64_t expected_count,
+                                              Timestamp timestamp,
+                                              boost::optional<TestRowVerifier> verifier) {
+    gscoped_ptr<RowwiseIterator> iter;
+    ASSERT_OK(tablet()->NewRowIterator(client_schema_, MvccSnapshot(timestamp), Tablet::UNORDERED,
+                                       &iter));
+    VerifyTestRowsWithRowIteratorAndVerifier(first_row, expected_count, std::move(iter), verifier);
+  }
+
+  void VerifyTestRowsWithRowIteratorAndVerifier(int32_t first_row, uint64_t expected_row_count,
+                                                gscoped_ptr<RowwiseIterator> iter,
+                                                boost::optional<TestRowVerifier> verifier) {
     ASSERT_OK(iter->Init(NULL));
-    int batch_size = std::max(
-      (size_t)1, std::min((size_t)(expected_count / 10),
-                          4*1024*1024 / schema_.byte_size()));
+    int batch_size = std::max<size_t>(1, std::min<size_t>(expected_row_count / 10,
+                                                          4L * 1024 * 1024 / schema_.byte_size()));
     Arena arena(32*1024, 256*1024);
     RowBlock block(schema_, batch_size, &arena);
 
-    if (expected_count > INT_MAX) {
-      LOG(INFO) << "Not checking rows for duplicates -- duplicates expected since "
-                << "there were more than " << INT_MAX << " rows inserted.";
-      return;
+    bool check_for_dups = true;
+    if (expected_row_count > INT_MAX) {
+      check_for_dups = false;
+      LOG(WARNING) << "Not checking rows for duplicates -- duplicates expected since "
+                   << "there were more than " << INT_MAX << " rows inserted.";
     }
 
     // Keep a bitmap of which rows have been seen from the requested
     // range.
     std::vector<bool> seen_rows;
-    seen_rows.resize(expected_count);
+    seen_rows.resize(expected_row_count);
 
+    uint64_t actual_row_count = 0;
     while (iter->HasNext()) {
       ASSERT_OK_FAST(iter->NextBlock(&block));
 
       RowBlockRow rb_row = block.row(0);
       if (VLOG_IS_ON(2)) {
         VLOG(2) << "Fetched batch of " << block.nrows() << "\n"
-            << "First row: " << schema_.DebugRow(rb_row);
+                << "First row: " << schema_.DebugRow(rb_row);
       }
 
       for (int i = 0; i < block.nrows(); i++) {
         rb_row.Reset(&block, i);
         int32_t key_idx = *schema_.ExtractColumnFromRow<INT32>(rb_row, 1);
-        if (key_idx >= first_row && key_idx < first_row + expected_count) {
-          size_t rel_idx = key_idx - first_row;
-          if (seen_rows[rel_idx]) {
-            FAIL() << "Saw row " << key_idx << " twice!\n"
-                   << "Row: " << schema_.DebugRow(rb_row);
+        if (key_idx >= first_row && block.selection_vector()->IsRowSelected(i)) {
+          actual_row_count++;
+          if (key_idx < first_row + expected_row_count) {
+            size_t rel_idx = key_idx - first_row;
+            if (check_for_dups && seen_rows[rel_idx]) {
+              FAIL() << "Saw row " << key_idx << " twice!\n"
+                    << "Row: " << schema_.DebugRow(rb_row);
+            }
+            seen_rows[rel_idx] = true;
+            if (verifier) {
+              int32_t val = *schema_.ExtractColumnFromRow<INT32>(rb_row, 2);
+              ASSERT_TRUE((*verifier)(key_idx, val))
+                  << "Key index: " << key_idx << ", value: " << val;
+            }
           }
-          seen_rows[rel_idx] = true;
         }
       }
     }
 
     // Verify that all the rows were seen.
-    for (int i = 0; i < expected_count; i++) {
-      ASSERT_EQ(true, seen_rows[i]) << "Never saw row: " << (i + first_row);
+    for (int i = 0; i < expected_row_count; i++) {
+      ASSERT_EQ(true, seen_rows[i]) << "Never saw row " << (i + first_row);
     }
-    LOG(INFO) << "Successfully verified " << expected_count << "rows";
+    ASSERT_EQ(expected_row_count, actual_row_count)
+        << "Expected row count didn't match actual row count";
+    LOG(INFO) << "Successfully verified " << expected_row_count << "rows";
   }
 
   // Iterate through the full table, stringifying the resulting rows

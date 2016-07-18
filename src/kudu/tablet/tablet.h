@@ -64,6 +64,7 @@ namespace tablet {
 
 class AlterSchemaTransactionState;
 class CompactionPolicy;
+class HistoryGcOpts;
 class MemRowSet;
 class MvccSnapshot;
 struct RowOp;
@@ -346,6 +347,14 @@ class Tablet {
   Status DoMajorDeltaCompaction(const std::vector<ColumnId>& column_ids,
                                 std::shared_ptr<RowSet> input_rowset);
 
+  // Calculates the ancient history mark and returns true iff tablet history GC
+  // is enabled, which requires the use of a HybridClock.
+  // Otherwise, returns false.
+  bool GetTabletAncientHistoryMark(Timestamp* ancient_history_mark) const WARN_UNUSED_RESULT;
+
+  // Calculates history GC options based on properties of the Clock implementation.
+  HistoryGcOpts GetHistoryGcOpts() const;
+
   // Method used by tests to retrieve all rowsets of this table. This
   // will be removed once code for selecting the appropriate RowSet is
   // finished and delta files is finished is part of Tablet class.
@@ -373,6 +382,8 @@ class Tablet {
   // Throttle a RPC with 'bytes' request size.
   // Return true if this RPC is allowed.
   bool ShouldThrottleAllow(int64_t bytes);
+
+  scoped_refptr<server::Clock> clock() const { return clock_; }
 
   static const char* kDMSMemTrackerId;
  private:

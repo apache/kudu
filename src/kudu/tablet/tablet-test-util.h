@@ -45,9 +45,12 @@ using std::vector;
 
 class KuduTabletTest : public KuduTest {
  public:
-  explicit KuduTabletTest(const Schema& schema)
+  explicit KuduTabletTest(const Schema& schema,
+                          TabletHarness::Options::ClockType clock_type =
+                          TabletHarness::Options::ClockType::LOGICAL_CLOCK)
     : schema_(schema.CopyWithColumnIds()),
-      client_schema_(schema) {
+      client_schema_(schema),
+      clock_type_(clock_type) {
     // Keep unit tests fast, but only if no one has set the flag explicitly.
     if (google::GetCommandLineFlagInfoOrDie("enable_data_block_fsync").is_default) {
       FLAGS_enable_data_block_fsync = false;
@@ -64,6 +67,7 @@ class KuduTabletTest : public KuduTest {
     string dir = root_dir.empty() ? GetTestPath("fs_root") : root_dir;
     TabletHarness::Options opts(dir);
     opts.enable_metrics = true;
+    opts.clock_type = clock_type_;
     bool first_time = harness_ == NULL;
     harness_.reset(new TabletHarness(schema_, opts));
     CHECK_OK(harness_->Create(first_time));
@@ -115,6 +119,7 @@ class KuduTabletTest : public KuduTest {
  protected:
   const Schema schema_;
   const Schema client_schema_;
+  const TabletHarness::Options::ClockType clock_type_;
 
   gscoped_ptr<TabletHarness> harness_;
 };

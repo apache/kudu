@@ -65,6 +65,12 @@ class Clock : public RefCountedThreadSafe<Clock> {
   // Indicates whether this clock supports the required external consistency mode.
   virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) = 0;
 
+  // Indicates whether the clock has a physical component to its timestamps
+  // (wallclock time).
+  virtual bool HasPhysicalComponent() {
+    return false;
+  }
+
   // Update the clock with a transaction timestamp originating from
   // another server. For instance replicas can call this so that,
   // if elected leader, they are guaranteed to generate timestamps

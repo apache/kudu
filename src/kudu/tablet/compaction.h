@@ -32,6 +32,49 @@ namespace tablet {
 struct CompactionInputRow;
 class WriteTransactionState;
 
+// Options related to tablet history garbage collection.
+class HistoryGcOpts {
+ public:
+  static HistoryGcOpts Enabled(Timestamp ahm) {
+    return HistoryGcOpts(true, ahm);
+  }
+
+  static HistoryGcOpts Disabled() {
+    return HistoryGcOpts(false, Timestamp(0));
+  }
+
+  // Returns true if Timestamp 't' is considered "ancient history" and is
+  // eligible for garbage collection. If GC is disabled, will return false for
+  // any Timestamp with a value >= 0 (that is, all valid Timestamps).
+  bool IsAncientHistory(Timestamp t) const {
+    return t.ComesBefore(ancient_history_mark_);
+  }
+
+  // Returns true if history GC is enabled.
+  bool gc_enabled() const {
+    return gc_enabled_;
+  }
+
+  // Returns the ancient history mark.
+  Timestamp ancient_history_mark() const {
+    return ancient_history_mark_;
+  }
+
+ private:
+  HistoryGcOpts(bool gc_enabled, Timestamp ahm)
+      : gc_enabled_(gc_enabled),
+        ancient_history_mark_(ahm) {
+  }
+
+  // Whether historical records prior to the ancient history mark should be
+  // garbage-collected (deleted).
+  const bool gc_enabled_;
+
+  // A timestamp prior to which no history will be preserved.
+  // Ignored if 'enabled' != GC_ENABLED.
+  const Timestamp ancient_history_mark_;
+};
+
 // Interface for an input feeding into a compaction or flush.
 class CompactionInput {
  public:
@@ -110,6 +153,8 @@ class RowSetsInCompaction {
 };
 
 // One row yielded by CompactionInput::PrepareBlock.
+// Looks like this (assuming n UNDO records and m REDO records):
+// UNDO_n <- ... <- UNDO_1 <- UNDO_head <- row -> REDO_head -> REDO_1 -> ... -> REDO_m
 struct CompactionInputRow {
   // The compaction input base row.
   RowBlockRow row;
@@ -118,6 +163,11 @@ struct CompactionInputRow {
   // The current undo head for this row, may be null if all undos were garbage collected.
   Mutation* undo_head;
 };
+
+// Function shared by flushes and compactions. Removes UNDO Mutations
+// considered "ancient" from the given CompactionInputRow, modifying the undo
+// mutation list in-place.
+void RemoveAncientUndos(const HistoryGcOpts& history_gc_opts, CompactionInputRow* row);
 
 // Function shared by flushes, compactions and major delta compactions. Applies all the REDO
 // mutations from 'src_row' to the 'dst_row', and generates the related UNDO mutations. Some
@@ -128,9 +178,20 @@ struct CompactionInputRow {
 //                            belonging to 'dst_row'. Those that don't belong to that schema are
 //                            ignored.
 //
-// Currently, 'is_garbage_collected' is always false (KUDU-236).
+// 'history_gc_opts': Options indicating whether row history should be
+// garbage-collected.
+//
+// 'is_garbage_collected': Set to true if the row was marked as deleted prior
+// to the ancient history mark, with no reinsertions after that. In such a
+// case, all traces of the row should be removed from disk by the caller.
+//
+// 'num_rows_history_truncated': Set to the number of rows that had a "reinsert
+// after delete" that was compacted, resulting in the loss of history prior to
+// the reinsert. This is related to a known issue that will eventually be
+// fixed. See KUDU-237.
 Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       const CompactionInputRow& src_row,
+                                      const HistoryGcOpts& history_gc_opts,
                                       const Schema* base_schema,
                                       Mutation** new_undo_head,
                                       Mutation** new_redo_head,
@@ -139,7 +200,6 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       bool* is_garbage_collected,
                                       uint64_t* num_rows_history_truncated);
 
-
 // Iterate through this compaction input, flushing all rows to the given RollingDiskRowSetWriter.
 // The 'snap' argument should match the MvccSnapshot used to create the compaction input.
 //
@@ -147,6 +207,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 // no longer be useful.
 Status FlushCompactionInput(CompactionInput *input,
                             const MvccSnapshot &snap,
+                            const HistoryGcOpts& history_gc_opts,
                             RollingDiskRowSetWriter *out);
 
 // Iterate through this compaction input, finding any mutations which came between
@@ -161,6 +222,7 @@ Status FlushCompactionInput(CompactionInput *input,
 // yield no further rows.
 Status ReupdateMissedDeltas(const string &tablet_name,
                             CompactionInput *input,
+                            const HistoryGcOpts& history_gc_opts,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
                             const RowSetVector &output_rowsets);

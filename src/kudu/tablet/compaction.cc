@@ -30,6 +30,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/delta_tracker.h"
@@ -38,6 +39,7 @@
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/debug/trace_event.h"
 
+using kudu::server::HybridClock;
 using std::shared_ptr;
 using std::unique_ptr;
 using std::unordered_set;
@@ -593,9 +595,34 @@ void RowSetsInCompaction::DumpToLog() const {
   }
 }
 
+void RemoveAncientUndos(const HistoryGcOpts& history_gc_opts, CompactionInputRow* row) {
+  if (!history_gc_opts.gc_enabled()) {
+    return;
+  }
+
+  DVLOG(5) << "Ancient history mark: " << history_gc_opts.ancient_history_mark().ToString()
+            << ": " << HybridClock::StringifyTimestamp(history_gc_opts.ancient_history_mark());
+
+  Mutation *prev_undo = nullptr;
+  Mutation *undo_mut = row->undo_head;
+  while (undo_mut != nullptr) {
+    if (history_gc_opts.IsAncientHistory(undo_mut->timestamp())) {
+      // Drop all undos following this one in the list; Their timestamps will be lower.
+      if (prev_undo != nullptr) {
+        prev_undo->set_next(nullptr);
+      } else {
+        row->undo_head = nullptr;
+      }
+      break;
+    }
+    prev_undo = undo_mut;
+    undo_mut = undo_mut->next();
+  }
+}
 
 Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       const CompactionInputRow& src_row,
+                                      const HistoryGcOpts& history_gc_opts,
                                       const Schema* base_schema,
                                       Mutation** new_undo_head,
                                       Mutation** new_redo_head,
@@ -603,12 +630,14 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       RowBlockRow* dst_row,
                                       bool* is_garbage_collected,
                                       uint64_t* num_rows_history_truncated) {
-  // TODO actually perform garbage collection (KUDU-236).
-  // Right now we persist all mutations.
+  // In most cases, we don't want to remove all traces of this row after
+  // compaction.
   *is_garbage_collected = false;
 
   const Schema* dst_schema = dst_row->schema();
 
+  // At the time of writing, REINSERT is never encoded as an UNDO and the base
+  // data can never be in a deleted state (see KUDU-237).
   bool is_deleted = false;
 
   #define ERROR_LOG_CONTEXT \
@@ -628,6 +657,8 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   Mutation* undo_head = const_cast<Mutation*>(src_row.undo_head);
   Mutation* redo_head = nullptr;
 
+  // Convert the redos into undos. Any redos that are eligible for history GC
+  // are applied and then thrown away (they don't generate undos).
   for (const Mutation *redo_mut = src_row.redo_head;
        redo_mut != nullptr;
        redo_mut = redo_mut->acquire_next()) {
@@ -667,6 +698,11 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
         continue;
       }
 
+      if (history_gc_opts.IsAncientHistory(redo_mut->timestamp())) {
+        // Don't generate an undo for this.
+        continue;
+      }
+
       // create the UNDO mutation in the provided arena.
       current_undo = Mutation::CreateInArena(arena, redo_mut->timestamp(),
                                              undo_encoder.as_changelist());
@@ -685,6 +721,8 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
       redo_decoder.TwiddleDeleteStatus(&is_deleted);
 
       if (redo_decoder.is_reinsert()) {
+        *is_garbage_collected = false;
+
         // Right now when a REINSERT mutation is found it is treated as a new insert and it
         // clears the whole row history before it.
 
@@ -708,22 +746,30 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
         redo_head = nullptr;
 
         if ((*num_rows_history_truncated)++ == 0) {
-          LOG(WARNING) << "Found REINSERT REDO truncating row history for "
-              << ERROR_LOG_CONTEXT << " Note: this warning will appear "
-              "only for the first truncated row";
+          LOG(WARNING) << "Found REINSERT REDO truncating row history for " << ERROR_LOG_CONTEXT
+                       << " Note: this warning will appear only for the first truncated row";
         }
 
         if (PREDICT_FALSE(VLOG_IS_ON(2))) {
           VLOG(2) << "Found REINSERT REDO, cannot create UNDO for it, resetting row history "
-              " under snap: " << snap.ToString() << ERROR_LOG_CONTEXT;
+                     "under snapshot: " << snap.ToString() << ERROR_LOG_CONTEXT;
         }
+
+      // Is a delete.
       } else {
-        // Delete mutations are left as redos
+        // Delete mutations are left as redos. Encode the DELETE as a redo.
         undo_encoder.SetToDelete();
-        // Encode the DELETE as a redo
         redo_head = Mutation::CreateInArena(arena,
                                             redo_mut->timestamp(),
                                             undo_encoder.as_changelist());
+
+        if (history_gc_opts.IsAncientHistory(redo_mut->timestamp())) {
+          // This row was deleted prior to the ancient history mark. Remove all
+          // traces of this row. This flag is set to false once again if there
+          // is a subsequent reinsert (see above).
+          *is_garbage_collected = true;
+        }
+
       }
     } else {
       LOG(FATAL) << "Unknown mutation type!" << ERROR_LOG_CONTEXT;
@@ -740,6 +786,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 
 Status FlushCompactionInput(CompactionInput* input,
                             const MvccSnapshot& snap,
+                            const HistoryGcOpts& history_gc_opts,
                             RollingDiskRowSetWriter* out) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
@@ -754,28 +801,32 @@ Status FlushCompactionInput(CompactionInput* input,
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     int n = 0;
-    for (const CompactionInputRow &input_row : rows) {
+    for (int i = 0; i < rows.size(); i++) {
+      CompactionInputRow* input_row = &rows[i];
       RETURN_NOT_OK(out->RollIfNecessary());
 
-      const Schema* schema = input_row.row.schema();
+      const Schema* schema = input_row->row.schema();
       DCHECK_SCHEMA_EQ(*schema, out->schema());
       DCHECK(schema->has_column_ids());
 
       RowBlockRow dst_row = block.row(n);
-      RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, static_cast<Arena*>(nullptr)));
+      RETURN_NOT_OK(CopyRow(input_row->row, &dst_row, static_cast<Arena*>(nullptr)));
 
-      DVLOG(2) << "Input Row: " << dst_row.schema()->DebugRow(dst_row) <<
-        " RowId: " << input_row.row.row_index() <<
-        " Undo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.undo_head) <<
-        " Redo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.redo_head);
+      DVLOG(3) << "Input Row: " << dst_row.schema()->DebugRow(dst_row) <<
+        " RowIndex: " << input_row->row.row_index() <<
+        " Undo Mutations: " << Mutation::StringifyMutationList(*schema, input_row->undo_head) <<
+        " Redo Mutations: " << Mutation::StringifyMutationList(*schema, input_row->redo_head);
 
       // Collect the new UNDO/REDO mutations.
       Mutation* new_undos_head = nullptr;
       Mutation* new_redos_head = nullptr;
 
       bool is_garbage_collected;
+      uint64_t prev_num_rows_history_truncated = num_rows_history_truncated;
+      RemoveAncientUndos(history_gc_opts, input_row);
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
-                                                   input_row,
+                                                   *input_row,
+                                                   history_gc_opts,
                                                    schema,
                                                    &new_undos_head,
                                                    &new_redos_head,
@@ -784,33 +835,32 @@ Status FlushCompactionInput(CompactionInput* input,
                                                    &is_garbage_collected,
                                                    &num_rows_history_truncated));
 
+      DVLOG(4) << "Output Row: " << dst_row.schema()->DebugRow(dst_row) <<
+          "; RowIndex: " << dst_row.row_index() <<
+          "; Undo Mutations: " << Mutation::StringifyMutationList(*schema, new_undos_head) <<
+          "; Redo Mutations: " << Mutation::StringifyMutationList(*schema, new_redos_head) <<
+          "; Was garbage collected? " << is_garbage_collected <<
+          "; Was history truncated? " <<
+              (num_rows_history_truncated > prev_num_rows_history_truncated);
+
       // Whether this row was garbage collected
       if (is_garbage_collected) {
-        DVLOG(2) << "Garbage Collected!";
         // Don't flush the row.
         continue;
       }
 
-      rowid_t index_in_current_drs_;
+      rowid_t index_in_current_drs;
 
-      // We should always have UNDO deltas, until we implement delta GC. For now,
-      // this is a convenient assertion to catch bugs like KUDU-632.
-      CHECK(new_undos_head != nullptr) <<
-        "Writing an output row with no UNDOs: "
-        "Input Row: " << dst_row.schema()->DebugRow(dst_row) <<
-        " RowId: " << input_row.row.row_index() <<
-        " Undo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.undo_head) <<
-        " Redo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.redo_head);
-      out->AppendUndoDeltas(dst_row.row_index(), new_undos_head, &index_in_current_drs_);
-
-      if (new_redos_head != nullptr) {
-        out->AppendRedoDeltas(dst_row.row_index(), new_redos_head, &index_in_current_drs_);
+      if (new_undos_head != nullptr) {
+        out->AppendUndoDeltas(dst_row.row_index(), new_undos_head, &index_in_current_drs);
       }
 
-      DVLOG(2) << "Output Row: " << dst_row.schema()->DebugRow(dst_row) <<
-          " RowId: " << index_in_current_drs_
-          << " Undo Mutations: " << Mutation::StringifyMutationList(*schema, new_undos_head)
-          << " Redo Mutations: " << Mutation::StringifyMutationList(*schema, new_redos_head);
+      if (new_redos_head != nullptr) {
+        out->AppendRedoDeltas(dst_row.row_index(), new_redos_head, &index_in_current_drs);
+      }
+
+      DVLOG(5) << "Output Row: " << dst_row.schema()->DebugRow(dst_row)
+               << "; RowId: " << index_in_current_drs;
 
       n++;
       if (n == block.nrows()) {
@@ -829,20 +879,21 @@ Status FlushCompactionInput(CompactionInput* input,
 
   if (num_rows_history_truncated > 0) {
     LOG(WARNING) << "Total " << num_rows_history_truncated
-        << " rows lost some history due to REINSERT after DELETE";
+                 << " rows lost some history due to REINSERT after DELETE";
   }
   return Status::OK();
 }
 
 Status ReupdateMissedDeltas(const string &tablet_name,
                             CompactionInput *input,
+                            const HistoryGcOpts& history_gc_opts,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
                             const RowSetVector &output_rowsets) {
   TRACE_EVENT0("tablet", "ReupdateMissedDeltas");
   RETURN_NOT_OK(input->Init());
 
-  VLOG(1) << "Re-updating missed deltas between snapshot " <<
+  VLOG(1) << "Reupdating missed deltas between snapshot " <<
     snap_to_exclude.ToString() << " and " << snap_to_include.ToString();
 
   // Collect the delta trackers that we'll push the updates into.
@@ -851,7 +902,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
     delta_trackers.push_back(down_cast<DiskRowSet *>(rs.get())->delta_tracker());
   }
 
-  // The map of updated delta trackers, indexed by id.
+  // The set of updated delta trackers.
   unordered_set<DeltaTracker*> updated_trackers;
 
   // When we apply the updates to the new DMS, there is no need to anchor them
@@ -873,26 +924,38 @@ Status ReupdateMissedDeltas(const string &tablet_name,
   RETURN_NOT_OK(key_projector.Init());
   faststring buf;
 
-  rowid_t row_idx = 0;
+  rowid_t output_row_offset = 0;
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     for (const CompactionInputRow &row : rows) {
-      DVLOG(2) << "Revisiting row: " << schema->DebugRow(row.row) <<
+      DVLOG(4) << "Revisiting row: " << schema->DebugRow(row.row) <<
           " Redo Mutations: " << Mutation::StringifyMutationList(*schema, row.redo_head) <<
           " Undo Mutations: " << Mutation::StringifyMutationList(*schema, row.undo_head);
 
+      bool is_garbage_collected = false;
       for (const Mutation *mut = row.redo_head;
            mut != nullptr;
            mut = mut->acquire_next()) {
+        is_garbage_collected = false;
         RowChangeListDecoder decoder(mut->changelist());
         RETURN_NOT_OK(decoder.Init());
 
         if (snap_to_exclude.IsCommitted(mut->timestamp())) {
           // This update was already taken into account in the first phase of the
-          // compaction.
+          // compaction. We don't need to reapply it.
+
+          // But was this row GCed at flush time?
+          if (decoder.is_delete() &&
+              history_gc_opts.IsAncientHistory(mut->timestamp())) {
+            is_garbage_collected = true;
+          }
           continue;
         }
+
+        // We should never be able to get to this point if a row has been
+        // garbage collected.
+        DCHECK(!is_garbage_collected);
 
         // We should never see a REINSERT in an input RowSet which was not
         // caught in the original flush. REINSERT only occurs when an INSERT is
@@ -920,7 +983,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
           // Therefore, it's already present in the output rowset, and we don't need
           // to copy it in.
 
-          DVLOG(2) << "Skipping already-duplicated delta for row " << row_idx
+          DVLOG(3) << "Skipping already-duplicated delta for row " << output_row_offset
                    << " @" << mut->timestamp() << ": " << mut->changelist().ToString(*schema);
           continue;
         }
@@ -928,15 +991,15 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         // Otherwise, this is an update that arrived after the snapshot for the first
         // pass, but before the DuplicatingRowSet was swapped in. We need to transfer
         // this over to the output rowset.
-        DVLOG(1) << "Flushing missed delta for row " << row_idx
-                  << " @" << mut->timestamp() << ": " << mut->changelist().ToString(*schema);
+        DVLOG(3) << "Flushing missed delta for row " << output_row_offset
+                 << " @" << mut->timestamp() << ": " << mut->changelist().ToString(*schema);
 
         DeltaTracker *cur_tracker = delta_trackers.front();
 
         // The index on the input side isn't necessarily the index on the output side:
         // we may have output several small DiskRowSets, so we need to find the index
         // relative to the current one.
-        int64_t idx_in_delta_tracker = row_idx - delta_tracker_base_row;
+        int64_t idx_in_delta_tracker = output_row_offset - delta_tracker_base_row;
         while (idx_in_delta_tracker >= cur_tracker->num_rows()) {
           // If the current index is higher than the total number of rows in the current
           // DeltaTracker, that means we're now processing the next one in the list.
@@ -955,7 +1018,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
                                        mut->changelist(),
                                        max_op_id,
                                        result.get());
-        DCHECK(s.ok()) << "Failed update on compaction for row " << row_idx
+        DCHECK(s.ok()) << "Failed update on compaction for row " << output_row_offset
             << " @" << mut->timestamp() << ": " << mut->changelist().ToString(*schema);
         if (s.ok()) {
           // Update the set of delta trackers with the one we've just updated.
@@ -963,14 +1026,18 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         }
       }
 
-      // TODO when garbage collection kicks in we need to take care that
-      // CGed rows do not increment this.
-      row_idx++;
+      if (is_garbage_collected) {
+        DVLOG(4) << "Skipping GCed input row: " << schema->DebugRow(row.row)
+                 << " while reupdating missed deltas";
+      } else {
+        // Important: We must ensure that GCed rows do not increment the output
+        // row offset.
+        output_row_offset++;
+      }
     }
 
     RETURN_NOT_OK(input->FinishBlock());
   }
-
 
   // Flush the trackers that got updated, this will make sure that all missed deltas
   // get flushed before we update the tablet's metadata at the end of compaction/flush.

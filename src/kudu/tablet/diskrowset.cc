@@ -507,7 +507,7 @@ Status DiskRowSet::MinorCompactDeltaStores() {
   return delta_tracker_->Compact();
 }
 
-Status DiskRowSet::MajorCompactDeltaStores() {
+Status DiskRowSet::MajorCompactDeltaStores(HistoryGcOpts history_gc_opts) {
   vector<ColumnId> col_ids;
   delta_tracker_->GetColumnIdsWithUpdates(&col_ids);
 
@@ -515,16 +515,17 @@ Status DiskRowSet::MajorCompactDeltaStores() {
     return Status::OK();
   }
 
-  return MajorCompactDeltaStoresWithColumnIds(col_ids);
+  return MajorCompactDeltaStoresWithColumnIds(col_ids, std::move(history_gc_opts));
 }
 
-Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& col_ids) {
+Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& col_ids,
+                                                        HistoryGcOpts history_gc_opts) {
   TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStores");
   std::lock_guard<Mutex> l(*delta_tracker()->compact_flush_lock());
 
   // TODO: do we need to lock schema or anything here?
   gscoped_ptr<MajorDeltaCompaction> compaction;
-  RETURN_NOT_OK(NewMajorDeltaCompaction(col_ids, &compaction));
+  RETURN_NOT_OK(NewMajorDeltaCompaction(col_ids, std::move(history_gc_opts), &compaction));
 
   RETURN_NOT_OK(compaction->Compact());
 
@@ -547,6 +548,7 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
 }
 
 Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
+                                           HistoryGcOpts history_gc_opts,
                                            gscoped_ptr<MajorDeltaCompaction>* out) const {
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_.get_lock());
@@ -566,8 +568,9 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
                                       *schema,
                                       base_data_.get(),
                                       std::move(delta_iter),
-                                      included_stores,
-                                      col_ids));
+                                      std::move(included_stores),
+                                      col_ids,
+                                      std::move(history_gc_opts)));
   return Status::OK();
 }
 

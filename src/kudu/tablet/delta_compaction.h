@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/tablet/compaction.h"
 #include "kudu/tablet/deltafile.h"
 
 namespace kudu {
@@ -56,7 +57,8 @@ class MajorDeltaCompaction {
       FsManager* fs_manager, const Schema& base_schema, CFileSet* base_data,
       std::unique_ptr<DeltaIterator> delta_iter,
       std::vector<std::shared_ptr<DeltaStore> > included_stores,
-      const std::vector<ColumnId>& col_ids);
+      std::vector<ColumnId> col_ids,
+      HistoryGcOpts history_gc_opts);
   ~MajorDeltaCompaction();
 
   // Executes the compaction.
@@ -102,6 +104,8 @@ class MajorDeltaCompaction {
 
   // The column ids to compact.
   const std::vector<ColumnId> column_ids_;
+
+  const HistoryGcOpts history_gc_opts_;
 
   // Inputs:
   //-----------------

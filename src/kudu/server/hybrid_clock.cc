@@ -299,6 +299,10 @@ bool HybridClock::SupportsExternalConsistencyMode(ExternalConsistencyMode mode) 
   return true;
 }
 
+bool HybridClock::HasPhysicalComponent() {
+  return true;
+}
+
 Status HybridClock::WaitUntilAfter(const Timestamp& then_latest,
                                    const MonoTime& deadline) {
   TRACE_EVENT0("clock", "HybridClock::WaitUntilAfter");
@@ -343,8 +347,8 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest,
   return Status::OK();
 }
 
-  Status HybridClock::WaitUntilAfterLocally(const Timestamp& then,
-                                            const MonoTime& deadline) {
+Status HybridClock::WaitUntilAfterLocally(const Timestamp& then,
+                                          const MonoTime& deadline) {
   while (true) {
     Timestamp now;
     uint64_t error;

@@ -36,6 +36,7 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/server/hybrid_clock.h"
+#include "kudu/tablet/compaction.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metrics.h"
@@ -82,6 +83,41 @@ DEFINE_int32(scanner_inject_latency_on_each_batch_ms, 0,
 TAG_FLAG(scanner_inject_latency_on_each_batch_ms, unsafe);
 
 DECLARE_int32(memory_limit_warn_threshold_percentage);
+DECLARE_int32(tablet_history_max_age_sec);
+
+using google::protobuf::RepeatedPtrField;
+using kudu::consensus::ChangeConfigRequestPB;
+using kudu::consensus::ChangeConfigResponsePB;
+using kudu::consensus::CONSENSUS_CONFIG_ACTIVE;
+using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
+using kudu::consensus::Consensus;
+using kudu::consensus::ConsensusConfigType;
+using kudu::consensus::ConsensusRequestPB;
+using kudu::consensus::ConsensusResponsePB;
+using kudu::consensus::GetLastOpIdRequestPB;
+using kudu::consensus::GetNodeInstanceRequestPB;
+using kudu::consensus::GetNodeInstanceResponsePB;
+using kudu::consensus::LeaderStepDownRequestPB;
+using kudu::consensus::LeaderStepDownResponsePB;
+using kudu::consensus::RunLeaderElectionRequestPB;
+using kudu::consensus::RunLeaderElectionResponsePB;
+using kudu::consensus::StartTabletCopyRequestPB;
+using kudu::consensus::StartTabletCopyResponsePB;
+using kudu::consensus::VoteRequestPB;
+using kudu::consensus::VoteResponsePB;
+using kudu::rpc::ResultTracker;
+using kudu::rpc::RpcContext;
+using kudu::server::HybridClock;
+using kudu::tablet::AlterSchemaTransactionState;
+using kudu::tablet::Tablet;
+using kudu::tablet::TabletPeer;
+using kudu::tablet::TabletStatusPB;
+using kudu::tablet::TransactionCompletionCallback;
+using kudu::tablet::WriteTransactionState;
+using std::shared_ptr;
+using std::unique_ptr;
+using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace cfile {
@@ -92,40 +128,6 @@ extern const char* CFILE_CACHE_HIT_BYTES_METRIC_NAME;
 
 namespace kudu {
 namespace tserver {
-
-using consensus::ChangeConfigRequestPB;
-using consensus::ChangeConfigResponsePB;
-using consensus::CONSENSUS_CONFIG_ACTIVE;
-using consensus::CONSENSUS_CONFIG_COMMITTED;
-using consensus::Consensus;
-using consensus::ConsensusConfigType;
-using consensus::ConsensusRequestPB;
-using consensus::ConsensusResponsePB;
-using consensus::GetLastOpIdRequestPB;
-using consensus::GetNodeInstanceRequestPB;
-using consensus::GetNodeInstanceResponsePB;
-using consensus::LeaderStepDownRequestPB;
-using consensus::LeaderStepDownResponsePB;
-using consensus::RunLeaderElectionRequestPB;
-using consensus::RunLeaderElectionResponsePB;
-using consensus::StartTabletCopyRequestPB;
-using consensus::StartTabletCopyResponsePB;
-using consensus::VoteRequestPB;
-using consensus::VoteResponsePB;
-
-using google::protobuf::RepeatedPtrField;
-using rpc::ResultTracker;
-using rpc::RpcContext;
-using std::shared_ptr;
-using std::unique_ptr;
-using std::vector;
-using strings::Substitute;
-using tablet::AlterSchemaTransactionState;
-using tablet::Tablet;
-using tablet::TabletPeer;
-using tablet::TabletStatusPB;
-using tablet::TransactionCompletionCallback;
-using tablet::WriteTransactionState;
 
 namespace {
 
@@ -1041,7 +1043,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   ScanResultCopier collector(&data, rows_data.get(), indirect_data.get());
 
   bool has_more_results = false;
-  TabletServerErrorPB::Code error_code;
+  TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
   if (req->has_new_scan_request()) {
     const NewScanRequestPB& scan_pb = req->new_scan_request();
     scoped_refptr<TabletPeer> tablet_peer;
@@ -1507,6 +1509,37 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     LOG(WARNING) << "Error setting up scanner with request " << req->ShortDebugString();
     *error_code = TabletServerErrorPB::UNKNOWN_ERROR;
     return s;
+  }
+
+  // If this is a snapshot scan and the user specified a specific timestamp to
+  // scan at, then check that we are not attempting to scan at a time earlier
+  // than the ancient history mark. Only perform this check if tablet history
+  // GC is enabled.
+  //
+  // TODO: This validation essentially prohibits scans with READ_AT_SNAPSHOT
+  // when history_max_age is set to zero. There is a tablet history GC related
+  // race when the history max age is set to very low, or zero. Imagine a case
+  // where a scan was started and READ_AT_SNAPSHOT was specified without
+  // specifying a snapshot timestamp, and --tablet_history_max_age_sec=0. The
+  // above code path will select the latest timestamp (under a lock) prior to
+  // calling RowIterator::Init(), which actually opens the blocks. That means
+  // that there is an opportunity in between those two calls for tablet history
+  // GC to kick in and delete some history. In fact, we may easily not actually
+  // end up with a valid snapshot in that case. It would be more correct to
+  // initialize the row iterator and then select the latest timestamp
+  // represented by those open files in that case.
+  Timestamp ancient_history_mark;
+  tablet::HistoryGcOpts history_gc_opts = tablet->GetHistoryGcOpts();
+  if (scan_pb.read_mode() == READ_AT_SNAPSHOT &&
+      history_gc_opts.IsAncientHistory(*snap_timestamp)) {
+    // Now that we have initialized our row iterator at a snapshot, return an
+    // error if the snapshot timestamp was prior to the ancient history mark.
+    // We have to check after we open the iterator in order to avoid a TOCTOU
+    // error.
+    *error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
+    return Status::InvalidArgument("Snapshot timestamp is earlier than the ancient history mark",
+                                   "consider increasing the value of the configuration parameter "
+                                   "--tablet_history_max_age_sec");
   }
 
   *has_more_results = iter->HasNext();

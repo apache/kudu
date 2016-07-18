@@ -60,6 +60,8 @@ class HybridClock : public Clock {
   // HybridClock supports all external consistency modes.
   virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) OVERRIDE;
 
+  virtual bool HasPhysicalComponent() OVERRIDE;
+
   // Blocks the caller thread until the true time is after 'then'.
   // In other words, waits until the HybridClock::Now() on _all_ nodes
   // will return a value greater than 'then'.
@@ -136,7 +138,7 @@ class HybridClock : public Clock {
                                                             uint64_t logical_value);
 
   // Creates a new timestamp whose physical time is GetPhysicalValue(original) +
-  // 'micros_to_add' and which retains the same logical value.
+  // 'to_add' and which retains the same logical value.
   static Timestamp AddPhysicalTimeToTimestamp(const Timestamp& original,
                                               const MonoDelta& to_add);
 

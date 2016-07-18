@@ -43,7 +43,7 @@ namespace tablet {
 class RowSetMetadataUpdate;
 class TabletMetadata;
 
-// Keeps tracks of the RowSet data blocks.
+// Keeps track of the RowSet data blocks.
 //
 // On each tablet MemRowSet flush, a new RowSetMetadata is created,
 // and the DiskRowSetWriter will create and write the "immutable" blocks for

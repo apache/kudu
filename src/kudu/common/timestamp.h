@@ -50,7 +50,13 @@ class Timestamp {
   // Encode the timestamp to the given buffer.
   void EncodeTo(faststring *dst) const;
 
+  // Returns -1 if this < other.
+  // Returns 1 if this > other.
+  // Returns 0 if this == other.
   int CompareTo(const Timestamp &other) const;
+
+  // Returns true if this comes before other.
+  bool ComesBefore(const Timestamp &other) const;
 
   std::string ToString() const;
 
@@ -90,6 +96,10 @@ inline int Timestamp::CompareTo(const Timestamp &other) const {
     return 1;
   }
   return 0;
+}
+
+inline bool Timestamp::ComesBefore(const Timestamp &other) const {
+  return v < other.v;
 }
 
 } // namespace kudu

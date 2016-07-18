@@ -41,6 +41,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/compaction_policy.h"
 #include "kudu/tablet/delta_compaction.h"
@@ -91,7 +92,6 @@ DEFINE_double(fault_crash_before_flush_tablet_meta_after_flush_mrs, 0.0,
               "Fraction of the time, while flushing an MRS, to crash before flushing metadata");
 TAG_FLAG(fault_crash_before_flush_tablet_meta_after_flush_mrs, unsafe);
 
-
 DEFINE_int64(tablet_throttler_rpc_per_sec, 0,
              "Maximum write RPC rate (op/s) allowed for a tablet, write RPC exceeding this "
              "limit will be throttled. 0 means no limit.");
@@ -108,6 +108,12 @@ DEFINE_double(tablet_throttler_burst_factor, 1.0f,
              "base rate.");
 TAG_FLAG(tablet_throttler_burst_factor, experimental);
 
+DEFINE_int32(tablet_history_max_age_sec, -1,
+             "Number of seconds to retain tablet history. Reads initiated at a "
+             "snapshot that is older than this age will be rejected. "
+             "To disable history removal, set to -1.");
+TAG_FLAG(tablet_history_max_age_sec, advanced);
+
 METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
                          kudu::MetricUnit::kBytes,
@@ -116,20 +122,21 @@ METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
                          kudu::MetricUnit::kBytes,
                          "Size of this tablet on disk.");
 
+using base::subtle::Barrier_AtomicIncrement;
+using kudu::MaintenanceManager;
+using kudu::consensus::OpId;
+using kudu::consensus::MaximumOpId;
+using kudu::log::LogAnchorRegistry;
+using kudu::server::HybridClock;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
-
-using kudu::MaintenanceManager;
-using consensus::OpId;
-using consensus::MaximumOpId;
-using log::LogAnchorRegistry;
-using strings::Substitute;
-using base::subtle::Barrier_AtomicIncrement;
 
 static CompactionPolicy *CreateCompactionPolicy() {
   return new BudgetedCompactionPolicy(FLAGS_tablet_compaction_budget_mb);
@@ -683,8 +690,38 @@ Status Tablet::DoMajorDeltaCompaction(const vector<ColumnId>& col_ids,
                                       shared_ptr<RowSet> input_rs) {
   CHECK_EQ(state_, kOpen);
   Status s = down_cast<DiskRowSet*>(input_rs.get())
-      ->MajorCompactDeltaStoresWithColumnIds(col_ids);
+      ->MajorCompactDeltaStoresWithColumnIds(col_ids, GetHistoryGcOpts());
   return s;
+}
+
+bool Tablet::GetTabletAncientHistoryMark(Timestamp* ancient_history_mark) const {
+  // We currently only support history GC through a fully-instantiated tablet
+  // when using the HybridClock, since we can calculate the age of a mutation.
+  if (!clock_->HasPhysicalComponent() || FLAGS_tablet_history_max_age_sec < 0) {
+    return false;
+  }
+  Timestamp now = clock_->Now();
+  uint64_t now_micros = HybridClock::GetPhysicalValueMicros(now);
+  uint64_t max_age_micros = FLAGS_tablet_history_max_age_sec * 1000000ULL;
+  // Ensure that the AHM calculation doesn't underflow when
+  // '--tablet_history_max_age_sec' is set to a very high value.
+  if (max_age_micros <= now_micros) {
+    *ancient_history_mark =
+        HybridClock::TimestampFromMicrosecondsAndLogicalValue(
+            now_micros - max_age_micros,
+            HybridClock::GetLogicalValue(now));
+  } else {
+    *ancient_history_mark = Timestamp(0);
+  }
+  return true;
+}
+
+HistoryGcOpts Tablet::GetHistoryGcOpts() const {
+  Timestamp ancient_history_mark;
+  if (GetTabletAncientHistoryMark(&ancient_history_mark)) {
+    return HistoryGcOpts::Enabled(ancient_history_mark);
+  }
+  return HistoryGcOpts::Disabled();
 }
 
 Status Tablet::Flush() {
@@ -1255,7 +1292,9 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   RollingDiskRowSetWriter drsw(metadata_.get(), merge->schema(), bloom_sizing(),
                                compaction_policy_->target_rowset_size());
   RETURN_NOT_OK_PREPEND(drsw.Open(), "Failed to open DiskRowSet for flush");
-  RETURN_NOT_OK_PREPEND(FlushCompactionInput(merge.get(), flush_snap, &drsw),
+
+  HistoryGcOpts history_gc_opts = GetHistoryGcOpts();
+  RETURN_NOT_OK_PREPEND(FlushCompactionInput(merge.get(), flush_snap, history_gc_opts, &drsw),
                         "Flush to disk failed");
   RETURN_NOT_OK_PREPEND(drsw.Finish(), "Failed to finish DRS writer");
 
@@ -1389,6 +1428,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   // rowsets is flushed.
   RETURN_NOT_OK_PREPEND(ReupdateMissedDeltas(metadata_->tablet_id(),
                                              merge.get(),
+                                             history_gc_opts,
                                              flush_snap,
                                              non_duplicated_txns_snap,
                                              new_disk_rowsets),
@@ -1449,10 +1489,6 @@ Status Tablet::Compact(CompactFlags flags) {
   // Step 1. Capture the rowsets to be merged
   RETURN_NOT_OK_PREPEND(PickRowSetsToCompact(&input, flags),
                         "Failed to pick rowsets to compact");
-  if (input.num_rowsets() < 2) {
-    VLOG_WITH_PREFIX(1) << "Not enough rowsets to run compaction! Aborting...";
-    return Status::OK();
-  }
   LOG_WITH_PREFIX(INFO) << "Compaction: stage 1 complete, picked "
                         << input.num_rowsets() << " rowsets to compact";
   if (compaction_hooks_) {
@@ -1725,6 +1761,7 @@ Status Tablet::FlushBiggestDMS() {
 Status Tablet::CompactWorstDeltas(RowSet::DeltaCompactionType type) {
   CHECK_EQ(state_, kOpen);
   shared_ptr<RowSet> rs;
+
   // We're required to grab the rowset's compact_flush_lock under the compact_select_lock_.
   std::unique_lock<std::mutex> lock;
   double perf_improv;
@@ -1734,12 +1771,11 @@ Status Tablet::CompactWorstDeltas(RowSet::DeltaCompactionType type) {
     // under this lock.
     std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
     perf_improv = GetPerfImprovementForBestDeltaCompactUnlocked(type, &rs);
-    if (rs) {
-      lock = std::unique_lock<std::mutex>(*rs->compact_flush_lock(), std::try_to_lock);
-      CHECK(lock.owns_lock());
-    } else {
+    if (!rs) {
       return Status::OK();
     }
+    lock = std::unique_lock<std::mutex>(*rs->compact_flush_lock(), std::try_to_lock);
+    CHECK(lock.owns_lock());
   }
 
   // We just released compact_select_lock_ so other compactions can select and run, but the
@@ -1749,14 +1785,14 @@ Status Tablet::CompactWorstDeltas(RowSet::DeltaCompactionType type) {
     RETURN_NOT_OK_PREPEND(rs->MinorCompactDeltaStores(),
                           "Failed minor delta compaction on " + rs->ToString());
   } else if (type == RowSet::MAJOR_DELTA_COMPACTION) {
-    RETURN_NOT_OK_PREPEND(down_cast<DiskRowSet*>(rs.get())->MajorCompactDeltaStores(),
-                          "Failed major delta compaction on " + rs->ToString());
+    RETURN_NOT_OK_PREPEND(down_cast<DiskRowSet*>(rs.get())->MajorCompactDeltaStores(
+        GetHistoryGcOpts()), "Failed major delta compaction on " + rs->ToString());
   }
   return Status::OK();
 }
 
 double Tablet::GetPerfImprovementForBestDeltaCompact(RowSet::DeltaCompactionType type,
-                                                             shared_ptr<RowSet>* rs) const {
+                                                     shared_ptr<RowSet>* rs) const {
   std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
   return GetPerfImprovementForBestDeltaCompactUnlocked(type, rs);
 }

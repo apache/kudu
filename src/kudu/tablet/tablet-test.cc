@@ -553,17 +553,22 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
   this->InsertTestRows(0, max_rows, 0);
   ASSERT_EQ(max_rows, this->TabletCount());
 
+  // Get current timestamp.
+  Timestamp t = this->tablet()->clock()->Now();
+
   // Flush it.
   ASSERT_OK(this->tablet()->Flush());
 
   ASSERT_EQ(max_rows, this->TabletCount());
 
-  // Close and re-open tablet
+  // Close and re-open tablet.
+  // TODO: Should we be reopening the tablet in a different way to persist the
+  // clock / timestamps?
   this->TabletReOpen();
 
   // Ensure that rows exist
   ASSERT_EQ(max_rows, this->TabletCount());
-  this->VerifyTestRows(0, max_rows);
+  this->VerifyTestRowsWithTimestampAndVerifier(0, max_rows, t, boost::none);
 
   // TODO: add some more data, re-flush
 }
@@ -644,8 +649,6 @@ TYPED_TEST(TestTablet, TestMultipleUpdates) {
   ASSERT_EQ(this->setup_.FormatDebugRow(0, 6, false), out_rows[0]);
   ASSERT_EQ(this->setup_.FormatDebugRow(1, 0, false), out_rows[1]);
 }
-
-
 
 TYPED_TEST(TestTablet, TestCompaction) {
   uint64_t max_rows = this->ClampRowCount(FLAGS_testcompaction_num_rows);

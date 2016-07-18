@@ -25,6 +25,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/env.h"
@@ -60,16 +61,22 @@ static std::pair<PartitionSchema, Partition> CreateDefaultPartition(const Schema
 class TabletHarness {
  public:
   struct Options {
+    enum ClockType {
+      HYBRID_CLOCK,
+      LOGICAL_CLOCK
+    };
     explicit Options(string root_dir)
         : env(Env::Default()),
           tablet_id("test_tablet_id"),
           root_dir(std::move(root_dir)),
-          enable_metrics(true) {}
+          enable_metrics(true),
+          clock_type(LOGICAL_CLOCK) {}
 
     Env* env;
     string tablet_id;
     string root_dir;
     bool enable_metrics;
+    ClockType clock_type;
   };
 
   TabletHarness(const Schema& schema, Options options)
@@ -99,7 +106,12 @@ class TabletHarness {
       metrics_registry_.reset(new MetricRegistry());
     }
 
-    clock_ = server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
+    if (options_.clock_type == Options::LOGICAL_CLOCK) {
+      clock_.reset(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
+    } else {
+      clock_.reset(new server::HybridClock());
+      RETURN_NOT_OK(clock_->Init());
+    }
     tablet_.reset(new Tablet(metadata,
                              clock_,
                              std::shared_ptr<MemTracker>(),

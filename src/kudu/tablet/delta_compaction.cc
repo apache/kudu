@@ -61,17 +61,19 @@ MajorDeltaCompaction::MajorDeltaCompaction(
     FsManager* fs_manager, const Schema& base_schema, CFileSet* base_data,
     unique_ptr<DeltaIterator> delta_iter,
     vector<shared_ptr<DeltaStore> > included_stores,
-    const vector<ColumnId>& col_ids)
+    vector<ColumnId> col_ids,
+    HistoryGcOpts history_gc_opts)
     : fs_manager_(fs_manager),
       base_schema_(base_schema),
-      column_ids_(col_ids),
+      column_ids_(std::move(col_ids)),
+      history_gc_opts_(std::move(history_gc_opts)),
       base_data_(base_data),
       included_stores_(std::move(included_stores)),
       delta_iter_(std::move(delta_iter)),
       redo_delta_mutations_written_(0),
       undo_delta_mutations_written_(0),
       state_(kInitialized) {
-  CHECK(!col_ids.empty());
+  CHECK(!column_ids_.empty());
 }
 
 MajorDeltaCompaction::~MajorDeltaCompaction() {
@@ -132,24 +134,32 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     vector<CompactionInputRow> input_rows;
     input_rows.resize(block.nrows());
     for (int i = 0; i < block.nrows(); i++) {
-      CompactionInputRow &input_row = input_rows.at(i);
-      input_row.row.Reset(&block, i);
-      input_row.redo_head = redo_mutation_block[i];
-      Mutation::ReverseMutationList(&input_row.redo_head);
-      input_row.undo_head = nullptr;
+      CompactionInputRow* input_row = &input_rows[i];
+      input_row->row.Reset(&block, i);
+      input_row->redo_head = redo_mutation_block[i];
+      Mutation::ReverseMutationList(&input_row->redo_head);
+      input_row->undo_head = nullptr;
 
       RowBlockRow dst_row = block.row(i);
-      RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, static_cast<Arena*>(nullptr)));
+      RETURN_NOT_OK(CopyRow(input_row->row, &dst_row, static_cast<Arena*>(nullptr)));
 
       Mutation* new_undos_head = nullptr;
       // We're ignoring the result from new_redos_head because we'll find them
       // later at step 5.
       Mutation* new_redos_head = nullptr;
 
+      DVLOG(3) << "MDC: Input Row: " << dst_row.schema()->DebugRow(dst_row)
+               << " RowIndex: " << input_row->row.row_index()
+               << " Undo Mutations: (not shown)"
+               << " Redo Mutations: "
+               << Mutation::StringifyMutationList(base_schema_, input_row->redo_head);
+
       bool is_garbage_collected;
 
+      RemoveAncientUndos(history_gc_opts_, input_row);
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
-                                                   input_row,
+                                                   *input_row,
+                                                   history_gc_opts_,
                                                    &base_schema_,
                                                    &new_undos_head,
                                                    &new_redos_head,
@@ -158,9 +168,12 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
                                                    &is_garbage_collected,
                                                    &num_rows_history_truncated));
 
-      VLOG(2) << "Output Row: " << dst_row.schema()->DebugRow(dst_row)
-        << " Undo Mutations: " << Mutation::StringifyMutationList(partial_schema_, new_undos_head)
-        << " Redo Mutations: " << Mutation::StringifyMutationList(partial_schema_, new_redos_head);
+      DVLOG(3) << "MDC: Output Row: " << dst_row.schema()->DebugRow(dst_row)
+               << " RowIndex: " << input_row->row.row_index()
+               << " Generated Undo Mutations: "
+               << Mutation::StringifyMutationList(partial_schema_, new_undos_head)
+               << " Updated Redo Mutations: "
+               << Mutation::StringifyMutationList(partial_schema_, new_redos_head);
 
       // We only create a new undo delta file if we need to.
       if (new_undos_head != nullptr && !new_undo_delta_writer_) {
