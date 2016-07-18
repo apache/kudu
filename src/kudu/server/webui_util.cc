@@ -36,6 +36,7 @@ void HtmlOutputSchemaTable(const Schema& schema,
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr>"
           << "<th>Column</th><th>ID</th><th>Type</th>"
+          << "<th>Encoding</th><th>Compression</th>"
           << "<th>Read default</th><th>Write default</th>"
           << "</tr>\n";
 
@@ -49,10 +50,16 @@ void HtmlOutputSchemaTable(const Schema& schema,
     if (col.has_write_default()) {
       write_default = col.Stringify(col.write_default_value());
     }
-    *output << Substitute("<tr><th>$0</th><td>$1</td><td>$2</td><td>$3</td><td>$4</td></tr>\n",
+    const ColumnStorageAttributes& attrs = col.attributes();
+    const string& encoding = EncodingType_Name(attrs.encoding);
+    const string& compression = CompressionType_Name(attrs.compression);
+    *output << Substitute("<tr><th>$0</th><td>$1</td><td>$2</td><td>$3</td>"
+                          "<td>$4</td><td>$5</td><td>$6</td></tr>\n",
                           EscapeForHtmlToString(col.name()),
                           schema.column_id(i),
                           col.TypeToString(),
+                          EscapeForHtmlToString(encoding),
+                          EscapeForHtmlToString(compression),
                           EscapeForHtmlToString(read_default),
                           EscapeForHtmlToString(write_default));
   }
