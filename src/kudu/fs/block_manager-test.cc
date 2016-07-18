@@ -132,6 +132,13 @@ class BlockManagerTest : public KuduTest {
 };
 
 template <>
+void BlockManagerTest<LogBlockManager>::SetUp() {
+  RETURN_NOT_LOG_BLOCK_MANAGER();
+  CHECK_OK(bm_->Create());
+  CHECK_OK(bm_->Open());
+}
+
+template <>
 void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& paths) {
   // Ensure that each path has an instance file and that it's well-formed.
   for (const string& path : paths) {
