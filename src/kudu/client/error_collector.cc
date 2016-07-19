@@ -46,8 +46,13 @@ int ErrorCollector::CountErrors() const {
 
 void ErrorCollector::GetErrors(std::vector<KuduError*>* errors, bool* overflowed) {
   std::lock_guard<simple_spinlock> l(lock_);
-  errors->swap(errors_);
-  *overflowed = false;
+  if (errors != nullptr) {
+    errors->clear();
+    errors->swap(errors_);
+  }
+  if (overflowed != nullptr) {
+    *overflowed = false;
+  }
 }
 
 
