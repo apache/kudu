@@ -30,10 +30,9 @@ covers ongoing development and news in the Apache Kudu (incubating) project.
 
 * As mentioned last week, David Alves has been making a lot of progress on the implementation
   of the replay cache. Many patches landed in master this week, including:
-
-** [RPC system integration](https://gerrit.cloudera.org/#/c/3192/)
-** [Integration with replicated writes](https://gerrit.cloudera.org/#/c/3449/)
-** [Correctness/stress tests](https://gerrit.cloudera.org/#/c/3519/)
+  * [RPC system integration](https://gerrit.cloudera.org/#/c/3192/)
+  * [Integration with replicated writes](https://gerrit.cloudera.org/#/c/3449/)
+  * [Correctness/stress tests](https://gerrit.cloudera.org/#/c/3519/)
 
   Currently, this new feature is disabled by default, as the support for evicting elements
   from the cache is not yet complete. This last missing feature is now
