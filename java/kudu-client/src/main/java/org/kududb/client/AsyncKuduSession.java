@@ -542,6 +542,7 @@ public class AsyncKuduSession implements SessionConfiguration {
             // synchronized block.
             fullBuffer = activeBuffer;
             activeBuffer = null;
+            activeBufferSize = 0;
             if (inactiveBufferAvailable()) {
               refreshActiveBuffer();
             } else {
@@ -571,8 +572,10 @@ public class AsyncKuduSession implements SessionConfiguration {
 
           if (activeBufferSize + 1 >= mutationBufferSpace && inactiveBufferAvailable()) {
             // If the operation filled the buffer, then flush it.
+            Preconditions.checkState(fullBuffer == null);
             fullBuffer = activeBuffer;
             activeBuffer = null;
+            activeBufferSize = 0;
           } else if (activeBufferSize == 0) {
             // If this is the first operation in the buffer, start a background flush timer.
             client.newTimeout(activeBuffer.getFlusherTask(), interval);
