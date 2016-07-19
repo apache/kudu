@@ -86,6 +86,18 @@ Status ComparisonPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
       spec->AddPredicate(ColumnPredicate::Equality(col_, val_void));
       break;
     };
+    case KuduPredicate::LESS: {
+      spec->AddPredicate(ColumnPredicate::Range(col_, nullptr, val_void));
+      break;
+    };
+    case KuduPredicate::GREATER: {
+      optional<ColumnPredicate> pred =
+        ColumnPredicate::ExclusiveRange(col_, val_void, nullptr, arena);
+      if (pred) {
+        spec->AddPredicate(*pred);
+      }
+      break;
+    };
     default:
       return Status::InvalidArgument(Substitute("invalid comparison op: $0", op_));
   }

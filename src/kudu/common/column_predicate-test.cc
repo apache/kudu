@@ -328,6 +328,43 @@ TEST_F(TestColumnPredicate, TestInclusiveRange) {
   }
 }
 
+// Test that the exclusive range constructor handles transforming to inclusive
+// lower bound correctly.
+TEST_F(TestColumnPredicate, TestExclusive) {
+  Arena arena(1024, 1024 * 1024);
+  {
+    ColumnSchema column("c", INT32);
+    int32_t zero = 0;
+    int32_t one = 1;
+    int32_t three = 3;
+    int32_t max = INT32_MAX;
+
+    ASSERT_EQ(ColumnPredicate::Range(column, &one, &three),
+              ColumnPredicate::ExclusiveRange(column, &zero, &three, &arena));
+
+    ASSERT_EQ(ColumnPredicate::Range(column, &one, &max),
+              ColumnPredicate::ExclusiveRange(column, &zero, &max, &arena));
+
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::ExclusiveRange(column, &max, nullptr, &arena).predicate_type());
+
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::ExclusiveRange(column, &zero, &one, &arena).predicate_type());
+
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::ExclusiveRange(column, &zero, &zero, &arena).predicate_type());
+  }
+  {
+    ColumnSchema column("c", STRING);
+    Slice zero("", 0);
+    Slice one("\0", 1);
+    Slice two("\0\0", 2);
+
+    ASSERT_EQ(ColumnPredicate::Range(column, &one, &two),
+              ColumnPredicate::ExclusiveRange(column, &zero, &two, &arena));
+  }
+}
+
 // Test that column predicate comparison works correctly: ordered by predicate
 // type first, then size of the column type.
 TEST_F(TestColumnPredicate, TestSelectivity) {

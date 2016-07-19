@@ -35,7 +35,9 @@ class KUDU_EXPORT KuduPredicate {
   enum ComparisonOp {
     LESS_EQUAL,
     GREATER_EQUAL,
-    EQUAL
+    EQUAL,
+    LESS,
+    GREATER,
   };
 
   ~KuduPredicate();

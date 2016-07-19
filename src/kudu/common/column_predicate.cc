@@ -85,6 +85,28 @@ boost::optional<ColumnPredicate> ColumnPredicate::InclusiveRange(ColumnSchema co
   return ColumnPredicate::Range(move(column), lower, upper);
 }
 
+ColumnPredicate ColumnPredicate::ExclusiveRange(ColumnSchema column,
+                                                const void* lower,
+                                                const void* upper,
+                                                Arena* arena) {
+  CHECK(lower != nullptr || upper != nullptr);
+
+  if (lower != nullptr) {
+    // Transform the lower bound to inclusive by incrementing it.
+    // Make a copy of the value before incrementing in case it's aliased.
+    size_t size = column.type_info()->size();
+    void* buf = CHECK_NOTNULL(arena->AllocateBytes(size));
+    memcpy(buf, lower, size);
+    if (!key_util::IncrementCell(column, buf, arena)) {
+      // If incrementing the lower bound fails then the predicate can match no values.
+      return ColumnPredicate::None(move(column));
+    } else {
+      lower = buf;
+    }
+  }
+  return ColumnPredicate::Range(move(column), lower, upper);
+}
+
 ColumnPredicate ColumnPredicate::IsNotNull(ColumnSchema column) {
   CHECK(column.is_nullable());
   return ColumnPredicate(PredicateType::IsNotNull, move(column), nullptr, nullptr);

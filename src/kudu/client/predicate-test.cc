@@ -248,6 +248,26 @@ class PredicateTest : public KuduTest {
         }));
       }
 
+      { // value > v
+        int count = count_if(values.begin(), values.end(),
+                             [&] (T value) { return value > v; });
+        ASSERT_EQ(count, CountRows(table, {
+              table->NewComparisonPredicate("value",
+                                            KuduPredicate::GREATER,
+                                            KuduValue::FromInt(v)),
+        }));
+      }
+
+      { // value < v
+        int count = count_if(values.begin(), values.end(),
+                             [&] (T value) { return value < v; });
+        ASSERT_EQ(count, CountRows(table, {
+              table->NewComparisonPredicate("value",
+                                            KuduPredicate::LESS,
+                                            KuduValue::FromInt(v)),
+        }));
+      }
+
       { // value >= 0
         // value <= v
         int count = count_if(values.begin(), values.end(),
@@ -319,6 +339,26 @@ class PredicateTest : public KuduTest {
         ASSERT_EQ(count, CountRows(table, {
               table->NewComparisonPredicate("value",
                                             KuduPredicate::LESS_EQUAL,
+                                            KuduValue::CopyString(v)),
+        }));
+      }
+
+      { // value > v
+        int count = count_if(values.begin(), values.end(),
+                             [&] (const string& value) { return value > v; });
+        ASSERT_EQ(count, CountRows(table, {
+              table->NewComparisonPredicate("value",
+                                            KuduPredicate::GREATER,
+                                            KuduValue::CopyString(v)),
+        }));
+      }
+
+      { // value < v
+        int count = count_if(values.begin(), values.end(),
+                             [&] (const string& value) { return value < v; });
+        ASSERT_EQ(count, CountRows(table, {
+              table->NewComparisonPredicate("value",
+                                            KuduPredicate::LESS,
                                             KuduValue::CopyString(v)),
         }));
       }
@@ -417,6 +457,34 @@ TEST_F(PredicateTest, TestBoolPredicates) {
                                                         KuduPredicate::LESS_EQUAL,
                                                         KuduValue::FromBool(true));
     ASSERT_EQ(2, CountRows(table, { pred }));
+  }
+
+  { // value > true
+    KuduPredicate* pred = table->NewComparisonPredicate("value",
+                                                        KuduPredicate::GREATER,
+                                                        KuduValue::FromBool(true));
+    ASSERT_EQ(0, CountRows(table, { pred }));
+  }
+
+  { // value > false
+    KuduPredicate* pred = table->NewComparisonPredicate("value",
+                                                        KuduPredicate::GREATER,
+                                                        KuduValue::FromBool(false));
+    ASSERT_EQ(1, CountRows(table, { pred }));
+  }
+
+  { // value < false
+    KuduPredicate* pred = table->NewComparisonPredicate("value",
+                                                        KuduPredicate::LESS,
+                                                        KuduValue::FromBool(false));
+    ASSERT_EQ(0, CountRows(table, { pred }));
+  }
+
+  { // value < true
+    KuduPredicate* pred = table->NewComparisonPredicate("value",
+                                                        KuduPredicate::LESS,
+                                                        KuduValue::FromBool(true));
+    ASSERT_EQ(1, CountRows(table, { pred }));
   }
 }
 
@@ -573,6 +641,26 @@ TEST_F(PredicateTest, TestFloatPredicates) {
       }));
     }
 
+    { // value > v
+      int count = count_if(values.begin(), values.end(),
+                           [&] (float value) { return value > v; });
+      ASSERT_EQ(count, CountRows(table, {
+            table->NewComparisonPredicate("value",
+                                          KuduPredicate::GREATER,
+                                          KuduValue::FromFloat(v)),
+      }));
+    }
+
+    { // value < v
+      int count = count_if(values.begin(), values.end(),
+                           [&] (float value) { return value < v; });
+      ASSERT_EQ(count, CountRows(table, {
+            table->NewComparisonPredicate("value",
+                                          KuduPredicate::LESS,
+                                          KuduValue::FromFloat(v)),
+      }));
+    }
+
     { // value >= 0
       // value <= v
       int count = count_if(values.begin(), values.end(),
@@ -652,6 +740,26 @@ TEST_F(PredicateTest, TestDoublePredicates) {
       ASSERT_EQ(count, CountRows(table, {
             table->NewComparisonPredicate("value",
                                           KuduPredicate::LESS_EQUAL,
+                                          KuduValue::FromDouble(v)),
+      }));
+    }
+
+    { // value > v
+      int count = count_if(values.begin(), values.end(),
+                           [&] (double value) { return value > v; });
+      ASSERT_EQ(count, CountRows(table, {
+            table->NewComparisonPredicate("value",
+                                          KuduPredicate::GREATER,
+                                          KuduValue::FromDouble(v)),
+      }));
+    }
+
+    { // value < v
+      int count = count_if(values.begin(), values.end(),
+                           [&] (double value) { return value < v; });
+      ASSERT_EQ(count, CountRows(table, {
+            table->NewComparisonPredicate("value",
+                                          KuduPredicate::LESS,
                                           KuduValue::FromDouble(v)),
       }));
     }
