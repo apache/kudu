@@ -73,10 +73,8 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
 
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
-  // Use a short timeout so that at the end of the test, when we expect a
-  // crash, stopping the workload and joining the client threads is quick.
   workload.set_timeout_allowed(true);
-  workload.set_write_timeout_millis(100);
+  workload.set_write_timeout_millis(500);
   workload.Setup();
   workload.Start();
 
@@ -131,7 +129,7 @@ TEST_F(DiskReservationITest, TestWalWriteToFullDiskAborts) {
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
   workload.set_timeout_allowed(true); // Allow timeouts because we expect the server to crash.
-  workload.set_write_timeout_millis(200); // Keep test time low after crash.
+  workload.set_write_timeout_millis(500); // Keep test time low after crash.
   // Write lots of data to quickly fill up our 1mb log segment size.
   workload.set_num_write_threads(4);
   workload.set_write_batch_size(10);
