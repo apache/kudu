@@ -57,10 +57,12 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
     return;
   }
 
-  // Set up the tablet so that flushes are constantly occurring.
   vector<string> ts_flags;
+  // Don't preallocate very many bytes so we run the "full disk" check often.
+  ts_flags.push_back("--log_container_preallocate_bytes=100000");
+  // Set up the tablet so that flushes are constantly occurring.
   ts_flags.push_back("--flush_threshold_mb=0");
-  ts_flags.push_back("--maintenance_manager_polling_interval_ms=100");
+  ts_flags.push_back("--maintenance_manager_polling_interval_ms=50");
   ts_flags.push_back("--disable_core_dumps");
   ts_flags.push_back(Substitute("--fs_data_dirs=$0/a,$0/b",
                                 GetTestDataDirectory()));
@@ -73,6 +75,9 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
 
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
+  workload.set_num_write_threads(4);
+  workload.set_write_batch_size(10);
+  workload.set_payload_bytes(1024);
   workload.set_timeout_allowed(true);
   workload.set_write_timeout_millis(500);
   workload.Setup();
@@ -114,7 +119,13 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
                               "disk_reserved_override_prefix_2_bytes_free_for_testing", "0"));
 
   // Wait for crash due to inability to flush or compact.
-  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(10)));
+  Status s;
+  for (int i = 0; i < 10; i++) {
+    s = cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(1));
+    if (s.ok()) break;
+    LOG(INFO) << "Rows inserted: " << workload.rows_inserted();
+  }
+  ASSERT_OK(s);
   workload.StopAndJoin();
 }
 
