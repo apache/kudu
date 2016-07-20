@@ -94,11 +94,14 @@ class GetLeaderMasterRpc : public rpc::Rpc,
   // 'leader_master', which must remain valid for the lifetime of this
   // object.
   //
-  // Calls 'user_cb' when the leader is found, or if no leader can be
-  // found until 'deadline' passes.
-  GetLeaderMasterRpc(LeaderCallback user_cb, std::vector<Sockaddr> addrs,
-                     const MonoTime& deadline,
-                     const std::shared_ptr<rpc::Messenger>& messenger);
+  // Calls 'user_cb' when the leader is found, or if no leader can be found
+  // until 'deadline' passes. Each RPC has 'rpc_timeout' time to complete
+  // before it times out and may be retried if 'deadline' has not yet passed.
+  GetLeaderMasterRpc(LeaderCallback user_cb,
+                     std::vector<Sockaddr> addrs,
+                     MonoTime deadline,
+                     MonoDelta rpc_timeout,
+                     std::shared_ptr<rpc::Messenger> messenger);
 
   virtual void SendRpc() OVERRIDE;
 
@@ -123,6 +126,9 @@ class GetLeaderMasterRpc : public rpc::Rpc,
   std::vector<Sockaddr> addrs_;
 
   HostPort leader_master_;
+
+  // The amount of time alloted to each GetMasterRegistration RPC.
+  MonoDelta rpc_timeout_;
 
   // The received responses.
   //

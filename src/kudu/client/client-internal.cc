@@ -791,13 +791,6 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
     master_sockaddrs.push_back(addrs[0]);
   }
 
-  // Finding a new master involves a fan-out RPC to each master. A single
-  // RPC timeout's worth of time should be sufficient, though we'll use
-  // the provided deadline if it's sooner.
-  MonoTime leader_master_deadline = MonoTime::Now(MonoTime::FINE);
-  leader_master_deadline.AddDelta(client->default_rpc_timeout());
-  MonoTime actual_deadline = MonoTime::Earliest(deadline, leader_master_deadline);
-
   // This ensures that no more than one GetLeaderMasterRpc is in
   // flight at a time -- there isn't much sense in requesting this information
   // in parallel, since the requests should end up with the same result.
@@ -810,8 +803,9 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
     leader_master_rpc_.reset(new GetLeaderMasterRpc(
                                Bind(&KuduClient::Data::LeaderMasterDetermined,
                                     Unretained(this)),
-                               master_sockaddrs,
-                               actual_deadline,
+                               std::move(master_sockaddrs),
+                               deadline,
+                               client->default_rpc_timeout(),
                                messenger_));
     l.unlock();
     leader_master_rpc_->SendRpc();

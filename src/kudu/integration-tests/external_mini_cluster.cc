@@ -400,8 +400,9 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   rpc.reset(new GetLeaderMasterRpc(Bind(&LeaderMasterCallback,
                                         &leader_master_hp,
                                         &sync),
-                                   addrs,
+                                   std::move(addrs),
                                    deadline,
+                                   MonoDelta::FromSeconds(5),
                                    messenger_));
   rpc->SendRpc();
   RETURN_NOT_OK(sync.Wait());

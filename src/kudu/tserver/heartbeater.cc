@@ -222,13 +222,14 @@ Status Heartbeater::Thread::FindLeaderMaster(const MonoTime& deadline,
     return Status::NotFound("unable to resolve any of the master addresses!");
   }
   Synchronizer sync;
-  scoped_refptr<GetLeaderMasterRpc> rpc(new GetLeaderMasterRpc(
-                                          Bind(&LeaderMasterCallback,
-                                               leader_hostport,
-                                               &sync),
-                                          master_sock_addrs,
-                                          deadline,
-                                          server_->messenger()));
+  scoped_refptr<GetLeaderMasterRpc> rpc(
+      new GetLeaderMasterRpc(Bind(&LeaderMasterCallback,
+                                  leader_hostport,
+                                  &sync),
+                             std::move(master_sock_addrs),
+                             deadline,
+                             MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms),
+                             server_->messenger()));
   rpc->SendRpc();
   return sync.Wait();
 }
