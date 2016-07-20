@@ -168,13 +168,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
     state_ = BOOTSTRAPPING;
   }
 
-  // sets the tablet state to FAILED additionally setting the error to the provided
+  // Sets the tablet state to FAILED additionally setting the error to the provided
   // one.
-  void SetFailed(const Status& error) {
-    std::lock_guard<simple_spinlock> lock(lock_);
-    state_ = FAILED;
-    error_ = error;
-  }
+  void SetFailed(const Status& error);
 
   // Returns the error that occurred, when state is FAILED.
   Status error() const {

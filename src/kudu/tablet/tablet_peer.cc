@@ -375,6 +375,13 @@ Status TabletPeer::RunLogGC() {
   return Status::OK();
 }
 
+void TabletPeer::SetFailed(const Status& error) {
+  std::lock_guard<simple_spinlock> lock(lock_);
+  state_ = FAILED;
+  error_ = error;
+  status_listener_->StatusMessage(error.ToString());
+}
+
 string TabletPeer::HumanReadableState() const {
   std::lock_guard<simple_spinlock> lock(lock_);
   TabletDataState data_state = meta_->tablet_data_state();

@@ -357,11 +357,17 @@ class TabletServerTestBase : public KuduTest {
     mini_server_->options()->master_addresses.push_back(HostPort("255.255.255.255", 1));
     // this should open the tablet created on StartTabletServer()
     RETURN_NOT_OK(mini_server_->Start());
-    RETURN_NOT_OK(mini_server_->WaitStarted());
 
-    if (!mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_)) {
+    // Don't RETURN_NOT_OK immediately -- even if we fail, we may still get a TabletPeer object
+    // which has information about the failure.
+    Status wait_status = mini_server_->WaitStarted();
+    bool found_peer = mini_server_->server()->tablet_manager()->LookupTablet(
+        kTabletId, &tablet_peer_);
+    RETURN_NOT_OK(wait_status);
+    if (!found_peer) {
       return Status::NotFound("Tablet was not found");
     }
+
     // Connect to it.
     ResetClientProxies();
 

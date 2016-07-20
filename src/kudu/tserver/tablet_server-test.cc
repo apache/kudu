@@ -23,6 +23,7 @@
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
+#include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/url-coding.h"
@@ -973,6 +974,10 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   ASSERT_OK(DCHECK_NOTNULL(proxy_.get())->Write(req, &resp, &controller));
   ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_RUNNING, resp.error().code());
   ASSERT_STR_CONTAINS(resp.error().status().message(), "Tablet not RUNNING: FAILED");
+
+  // Check that the tablet peer's status message is updated with the failure.
+  ASSERT_STR_CONTAINS(tablet_peer_->status_listener()->last_status(),
+                      "Log file corruption detected");
 }
 
 TEST_F(TabletServerTest, TestScan) {
