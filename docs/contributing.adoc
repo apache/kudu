@@ -16,7 +16,7 @@
 // under the License.
 
 [[contributing]]
-= Contributing to Apache Kudu (incubating)
+= Contributing to Apache Kudu
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font

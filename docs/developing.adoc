@@ -16,7 +16,7 @@
 // under the License.
 
 [[developing]]
-= Developing Applications With Apache Kudu (incubating)
+= Developing Applications With Apache Kudu
 
 :author: Kudu Team
 :imagesdir: ./images

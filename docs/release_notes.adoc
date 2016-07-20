@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu (incubating) Release Notes
+= Apache Kudu Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -53,10 +53,10 @@ By combining all of these properties, Kudu targets support for families of
 applications that are difficult or impossible to implement on current-generation
 Hadoop storage technologies.
 
-[[rn_1.0.0]]
+[[rn_0.10.0]]
 === Release notes specific to 1.0.0
 
-[[rn_1.0.0_incompatible_changes]]
+[[rn_0.10.0_incompatible_changes]]
 ==== Incompatible changes
 
 - The Java client's `KuduTable.getTabletsLocations` set of methods is now
@@ -65,6 +65,9 @@ Hadoop storage technologies.
   instead of these methods in the future.
 
 ==== Other noteworthy changes
+
+- This is the first release of Apache Kudu as a top-level (non-incubating)
+  project!
 
 - The default false positive rate for Bloom filters has been changed
   from 1% to 0.01%. This will increase the space consumption of Bloom
@@ -580,19 +583,6 @@ and clients will experience frequent timeouts, and the cluster may become unusab
 to start up. It is recommended to limit the number of tablets per server to 100 or fewer.
 Consider this limitation when pre-splitting your tables. If you notice slow start-up times,
 you can monitor the number of tablets per server in the web UI.
-
-
-=== Disclaimer on Apache Incubation
-
-Apache Kudu (incubating) is an effort undergoing incubation at The
-Apache Software Foundation (ASF), sponsored by the Apache Incubator
-PMC. Incubation is required of all newly accepted projects until a
-further review indicates that the infrastructure, communications, and
-decision making process have stabilized in a manner consistent with
-other successful ASF projects. While incubation status is not
-necessarily a reflection of the completeness or stability of the code,
-it does indicate that the project has yet to be fully endorsed by the
-ASF.
 
 === Resources
 

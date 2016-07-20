@@ -16,7 +16,7 @@
 // under the License.
 
 [[troubleshooting]]
-= Apache Kudu (incubating) Troubleshooting
+= Apache Kudu Troubleshooting
 
 :author: Kudu Team
 :imagesdir: ./images

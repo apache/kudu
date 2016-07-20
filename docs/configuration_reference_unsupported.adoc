@@ -16,7 +16,7 @@
 // under the License.
 
 [[configuration_reference_unsupported]]
-= Apache Kudu (incubating) Unsupported Configuration Flags
+= Apache Kudu Unsupported Configuration Flags
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font

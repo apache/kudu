@@ -16,7 +16,7 @@
 // under the License.
 
 [[schema_design]]
-= Apache Kudu (incubating) Schema Design
+= Apache Kudu Schema Design
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font

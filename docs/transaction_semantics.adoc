@@ -16,7 +16,7 @@
 // under the License.
 
 [[installation]]
-= Transaction Semantics in Apache Kudu (incubating)
+= Transaction Semantics in Apache Kudu
 
 :author: Kudu Team
 :imagesdir: ./images

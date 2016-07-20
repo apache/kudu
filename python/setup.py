@@ -127,7 +127,7 @@ extensions = cythonize(extensions)
 write_version_py()
 
 LONG_DESCRIPTION = open(os.path.join(setup_dir, "README.md")).read()
-DESCRIPTION = "Python interface to the Apache Kudu (incubating) C++ Client API"
+DESCRIPTION = "Python interface to the Apache Kudu C++ Client API"
 
 CLASSIFIERS = [
     'Development Status :: 3 - Alpha',
@@ -160,8 +160,8 @@ setup(
     long_description=LONG_DESCRIPTION,
     license='Apache License, Version 2.0',
     classifiers=CLASSIFIERS,
-    maintainer="Apache Kudu (incubating) team",
-    maintainer_email="dev@kudu.incubator.apache.org",
+    maintainer="Apache Kudu team",
+    maintainer_email="dev@kudu.apache.org",
     url=URL,
     test_suite="kudu.tests"
 )

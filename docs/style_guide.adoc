@@ -16,7 +16,7 @@
 // under the License.
 
 [[documentation_style_guide]]
-= Apache Kudu (incubating) Documentation Style Guide
+= Apache Kudu Documentation Style Guide
 
 :author: Kudu Team
 :imagesdir: ./images

@@ -16,7 +16,7 @@
 // under the License.
 
 [[installation]]
-= Installing Apache Kudu (incubating)
+= Installing Apache Kudu
 
 :author: Kudu Team
 :imagesdir: ./images

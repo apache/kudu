@@ -70,7 +70,7 @@ def get_version_number():
 
 
 def create_tarball():
-  artifact_name = "apache-kudu-incubating-%s" % get_version_number()
+  artifact_name = "apache-kudu-%s" % get_version_number()
   build_dir = os.path.join(ROOT, "build")
   if not os.path.exists(build_dir):
     os.path.makedirs(build_dir)

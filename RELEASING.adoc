@@ -25,11 +25,11 @@ in `master`.
 
 == Stating Intent to Release
 
-. *A week before branching*: send an email to dev@kudu.incubator.apache.org to
+. *A week before branching*: send an email to dev@kudu.apache.org to
   announce that the branch will be happening, including a deadline for when new
   commits will need gatekeeper approval.
 
-. *A day before branching*: send another email to dev@kudu.incubator.apache.org
+. *A day before branching*: send another email to dev@kudu.apache.org
   to warn about it.
 
 == Creating the Branch
@@ -86,7 +86,7 @@ branch with the same name and the previously-noted SHA1.
 
 . After all the versions are updated, commit and push that change to Gerrit.
 
-. Notify dev@kudu.incubator.apache.org that the new branch is available.
+. Notify dev@kudu.apache.org that the new branch is available.
 
 
 == Preparing A Release Candidate
@@ -111,60 +111,50 @@ branch with the same name and the previously-noted SHA1.
 
 . Build a source tarball against the RC branch.
 
-. Create a new folder in https://dist.apache.org/repos/dist/dev/incubator/kudu/.
+. Create a new folder in https://dist.apache.org/repos/dist/dev/kudu/.
   Copy the artifacts to this folder and commit (it is Subversion).
 ----
-  svn co --depth=immediates https://dist.apache.org/repos/dist/dev/incubator/kudu/
+  svn co --depth=immediates https://dist.apache.org/repos/dist/dev/kudu/
   svn commit -m "Adding Kudu 1.x.0 RC1"
 ----
 
 Initiating a Vote for an RC
 ----------------------------
 
-. Send an email to dev@kudu.incubator.apache.org to start the RC process, using
+. Send an email to dev@kudu.apache.org to start the RC process, using
   this
   link:http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/201606.mbox/%3CCAGpTDNduoQM0ktuZc1eW1XeXCcXhvPGftJ%3DLRB8Er5c2dZptvw%40mail.gmail.com%3E[example]
   as a template.
 
-. Reminder that voting on a release requires a Majority Approval by the PPMC.
+. Reminder that voting on a release requires a Majority Approval by the PMC.
 
 . Cycle through as many RCs as required.
 
 . Always send an email with a different subject to indicate the result. For
   link:http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/201606.mbox/%3CCAGpTDNeJdU%2BoUF4ZJneZt%3DCfFHY-HoqKgORwVuWWUMHq5jBNzA%40mail.gmail.com%3E[example].
 
-. After the vote passes, write an email to general@incubator.apache.org to start the IPMC vote.
-  Here’s an
-  link:http://mail-archives.apache.org/mod_mbox/incubator-general/201606.mbox/%3CCAGpTDNerJcLd1gNPHWsV0foZU0syrxGprzSDA13FYybsCPF4VQ@mail.gmail.com%3E[example].
-
-. The same voting rule applies here, but only IPMC members have binding votes.
-  IPMC members that voted +1 on dev@ can be counted on general@incubator.apache.org too.
-
-. If the vote doesn’t pass, you must hold another PPMC vote on the new RC before
-  doing a new IPMC vote.
-
-. After the vote passes, send an email to dev@kudu.incubator.apache.org and general@incubator.apache.org.
+. After the vote passes, send an email to dev@kudu.apache.org
   indicating the result.
 
 == Release
 
-. Create a new folder in https://dist.apache.org/repos/dist/release/incubator/kudu/,
-  copy the files from the release candidate’s folder in dist/dev/incubator/kudu/, then commit.
+. Create a new folder in https://dist.apache.org/repos/dist/release/kudu/,
+  copy the files from the release candidate’s folder in dist/dev/kudu/, then commit.
 +
 ----
   cd kudu
-  mkdir 0.9.1
-  cp <path_to_rc_artifacts>/* 0.9.1
-  svn add 0.9.1
-  svn commit -m "Adding files for Kudu 0.9.1 RC"
+  mkdir 0.9.2
+  cp <path_to_rc_artifacts>/* 0.9.2
+  svn add 0.9.2
+  svn commit -m "Adding files for Kudu 0.9.2 RC"
 ----
 
 . In the Kudu git repo, create a signed tag from the RC’s tag, and push it to the
 Apache Git repository:
 +
 ----
-  git tag -s 0.9.1 -m 'Release Apache Kudu (incubating) 0.9.1' 0.9.1-RC1
-  git push apache 0.9.1-RC1
+  git tag -s 0.9.2 -m 'Release Apache Kudu 0.9.2' 0.9.2-RC1
+  git push apache 0.9.2-RC1
 ----
 
 . Generate the version-specific documentation from that branch following these
@@ -183,13 +173,12 @@ Apache Git repository:
 . Once the review is finished and the commit is pushed, update the website.
 
 . About 24 hours after the first step was completed, send an email to
-  user@kudu.incubator.apache.org, dev@kudu.incubator.apache.org,
-  general@incubator.apache.org, announce@apache.org to announce the release. The
-  email should be similar to
+  user@kudu.apache.org, dev@kudu.apache.org, and announce@apache.org
+  to announce the release. The email should be similar to
   link:http://mail-archives.us.apache.org/mod_mbox/www-announce/201606.mbox/%3CCAGpTDNeHW53US=qdpQPCQk0WaFBxx_KNx1E9b6NBBnbWpkSpmQ@mail.gmail.com%3E[this].
 
 . About another 24 hours later, delete the previous minor version in the branch
   you released from, from SVN. For example, if you released 1.2.1, delete `1.2.0`.
 
 . Update the version number on the branch you released from back to a SNAPSHOT
-  for the next patch release, such as `0.9.1-SNAPSHOT` after the `0.9.0` release.
+  for the next patch release, such as `0.9.2-SNAPSHOT` after the `0.9.1` release.

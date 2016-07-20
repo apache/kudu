@@ -16,7 +16,7 @@
 // under the License.
 
 [[configuration_reference]]
-= Apache Kudu (incubating) Configuration Reference
+= Apache Kudu Configuration Reference
 
 :author: Kudu Team
 :imagesdir: ./images

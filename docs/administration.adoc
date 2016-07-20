@@ -16,7 +16,7 @@
 // under the License.
 
 [[administration]]
-= Apache Kudu (incubating) Administration
+= Apache Kudu Administration
 
 :author: Kudu Team
 :imagesdir: ./images

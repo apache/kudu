@@ -16,7 +16,7 @@
 // under the License.
 
 [[kudu_impala]]
-= Using Apache Kudu (incubating) with Apache Impala (incubating)
+= Using Apache Kudu with Apache Impala (incubating)
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font
