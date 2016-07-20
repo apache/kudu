@@ -201,7 +201,7 @@ void DeleteTableTest::WaitForAllTSToCrash() {
 
 void DeleteTableTest::WaitUntilTabletRunning(int index, const std::string& tablet_id) {
   ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(index)->uuid()],
-                                          tablet_id, MonoDelta::FromSeconds(30)));
+                                          tablet_id, MonoDelta::FromSeconds(60)));
 }
 
 void DeleteTableTest::DeleteTable(const string& table_name) {
