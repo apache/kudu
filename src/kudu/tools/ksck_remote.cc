@@ -21,12 +21,13 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 
 DEFINE_bool(checksum_cache_blocks, false, "Should the checksum scanners cache the read blocks");
 DEFINE_int64(timeout_ms, 1000 * 60, "RPC timeout in milliseconds");
-DEFINE_int64(tablets_batch_size_max, 100, "How many tablets to get from the Master per RPC");
+DEFINE_int32(tablets_batch_size_max, 100, "How many tablets to get from the Master per RPC");
 
 namespace kudu {
 namespace tools {
@@ -307,10 +308,10 @@ Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable>>* table
 Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {
   vector<shared_ptr<KsckTablet>> tablets;
   bool more_tablets = true;
-  string last_key;
+  string next_key;
   int retries = 0;
   while (more_tablets) {
-    Status s = GetTabletsBatch(table, &last_key, tablets, &more_tablets);
+    Status s = GetTabletsBatch(table, &next_key, tablets, &more_tablets);
     if (s.IsServiceUnavailable() && retries++ < 25) {
       SleepFor(MonoDelta::FromMilliseconds(100 * retries));
     } else if (!s.ok()) {
@@ -323,7 +324,7 @@ Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table)
 }
 
 Status RemoteKsckMaster::GetTabletsBatch(const shared_ptr<KsckTable>& table,
-                                         string* last_partition_key,
+                                         string* next_partition_key,
                                          vector<shared_ptr<KsckTablet>>& tablets,
                                          bool* more_tablets) {
   master::GetTableLocationsRequestPB req;
@@ -332,16 +333,17 @@ Status RemoteKsckMaster::GetTabletsBatch(const shared_ptr<KsckTable>& table,
 
   req.mutable_table()->set_table_name(table->name());
   req.set_max_returned_locations(FLAGS_tablets_batch_size_max);
-  req.set_partition_key_start(*last_partition_key);
+  req.set_partition_key_start(*next_partition_key);
 
   rpc.set_timeout(GetDefaultTimeout());
   RETURN_NOT_OK(proxy_->GetTableLocations(req, &resp, &rpc));
   for (const master::TabletLocationsPB& locations : resp.tablet_locations()) {
-    if (locations.partition().partition_key_start() < *last_partition_key) {
+    if (locations.partition().partition_key_start() < *next_partition_key) {
       // We've already seen this partition.
       continue;
     }
-    *last_partition_key = locations.partition().partition_key_start();
+
+    *next_partition_key = ImmediateSuccessor(locations.partition().partition_key_start());
 
     shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), locations.tablet_id()));
     vector<shared_ptr<KsckTabletReplica>> replicas;

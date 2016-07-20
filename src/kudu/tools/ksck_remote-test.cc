@@ -28,6 +28,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(heartbeat_interval_ms);
+DECLARE_int32(tablets_batch_size_max);
 
 namespace kudu {
 namespace tools {
@@ -61,6 +62,10 @@ class RemoteKsckTest : public KuduTest {
 
     // Speed up testing, saves about 700ms per TEST_F.
     FLAGS_heartbeat_interval_ms = 10;
+
+    // Fetch the tablets in smaller batches to regression test a bug
+    // previously seen in the batching code.
+    FLAGS_tablets_batch_size_max = 5;
 
     MiniClusterOptions opts;
     opts.num_tablet_servers = 3;
@@ -137,10 +142,10 @@ class RemoteKsckTest : public KuduTest {
   // Generate a set of split rows for tablets used in this test.
   vector<const KuduPartialRow*> GenerateSplitRows() {
     vector<const KuduPartialRow*> split_rows;
-    vector<int> split_nums = { 33, 66 };
-    for (int i : split_nums) {
+    int num_tablets = AllowSlowTests() ? 10 : 3;
+    for (int i = 1; i < num_tablets; i++) {
       KuduPartialRow* row = schema_.NewRow();
-      CHECK_OK(row->SetInt32(0, i));
+      CHECK_OK(row->SetInt32(0, i * 10));
       split_rows.push_back(row);
     }
     return split_rows;
