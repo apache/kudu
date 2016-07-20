@@ -500,7 +500,7 @@ bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_repl
   string tablet_str = Substitute("Tablet $0 of table '$1'",
                                  tablet->id(), tablet->table()->name());
   vector<shared_ptr<KsckTabletReplica> > replicas = tablet->replicas();
-  vector<string> warnings, errors;
+  vector<string> warnings, errors, infos;
   if (check_replica_count_ && replicas.size() != table_num_replicas) {
     warnings.push_back(Substitute("$0 has $1 instead of $2 replicas",
                                   tablet_str, replicas.size(), table_num_replicas));
@@ -528,6 +528,8 @@ bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_repl
           VLOG(1) << Substitute("Tablet replica for $0 on TS $1 is RUNNING",
                                 tablet_str, ts->ToString());
           running_count++;
+          infos.push_back(Substitute("OK state on TS $0: $1",
+                                     ts->ToString(), tablet::TabletStatePB_Name(state)));
           break;
 
         case tablet::UNKNOWN:
@@ -583,6 +585,11 @@ bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_repl
     }
     for (const auto& s : errors) {
       Error() << s << endl;
+    }
+    // We only print the 'INFO' messages on tablets that have some issues.
+    // Otherwise, it's a bit verbose.
+    for (const auto& s : infos) {
+      Info() << s << endl;
     }
     Out() << endl;
   }

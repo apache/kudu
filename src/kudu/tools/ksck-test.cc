@@ -290,17 +290,23 @@ TEST_F(KsckTest, TestBadTabletServer) {
       err_stream_.str(),
       "WARNING: Detected problems with Tablet tablet-id-0 of table 'test'\n"
       "------------------------------------------------------------\n"
-      "WARNING: Should have a replica on TS ts-id-1 (<mock>), but TS is unavailable\n\n");
+      "WARNING: Should have a replica on TS ts-id-1 (<mock>), but TS is unavailable\n"
+      "INFO: OK state on TS ts-id-0 (<mock>): RUNNING\n"
+      "INFO: OK state on TS ts-id-2 (<mock>): RUNNING\n");
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
       "WARNING: Detected problems with Tablet tablet-id-1 of table 'test'\n"
       "------------------------------------------------------------\n"
-      "WARNING: Should have a replica on TS ts-id-1 (<mock>), but TS is unavailable\n\n");
+      "WARNING: Should have a replica on TS ts-id-1 (<mock>), but TS is unavailable\n"
+      "INFO: OK state on TS ts-id-0 (<mock>): RUNNING\n"
+      "INFO: OK state on TS ts-id-2 (<mock>): RUNNING\n");
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
       "WARNING: Detected problems with Tablet tablet-id-2 of table 'test'\n"
       "------------------------------------------------------------\n"
-      "WARNING: Should have a replica on TS ts-id-1 (<mock>), but TS is unavailable\n\n");
+      "WARNING: Should have a replica on TS ts-id-1 (<mock>), but TS is unavailable\n"
+      "INFO: OK state on TS ts-id-0 (<mock>): RUNNING\n"
+      "INFO: OK state on TS ts-id-2 (<mock>): RUNNING\n");
 }
 
 TEST_F(KsckTest, TestZeroTabletReplicasCheck) {
