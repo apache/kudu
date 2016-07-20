@@ -27,9 +27,11 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/threadpool.h"
 
 namespace kudu {
 namespace tools {
@@ -52,6 +54,9 @@ DEFINE_bool(checksum_snapshot, true, "Should the checksum scanner use a snapshot
 DEFINE_uint64(checksum_snapshot_timestamp, ChecksumOptions::kCurrentTimestamp,
               "timestamp to use for snapshot checksum scans, defaults to 0, which "
               "uses the current timestamp of a tablet server involved in the scan");
+
+DEFINE_int32(fetch_replica_info_concurrency, 20,
+             "Number of concurrent tablet servers to fetch replica info from.");
 
 // The stream to write output to. If this is NULL, defaults to cerr.
 // This is used by tests to capture output.
@@ -148,20 +153,30 @@ Status Ksck::FetchInfoFromTabletServers() {
     return Status::NotFound("No tablet servers found");
   }
 
-  int bad_servers = 0;
+
+  gscoped_ptr<ThreadPool> pool;
+  RETURN_NOT_OK(ThreadPoolBuilder("ksck-fetch")
+                .set_max_threads(FLAGS_fetch_replica_info_concurrency)
+                .Build(&pool));
+
+  AtomicInt<int32_t> bad_servers(0);
   VLOG(1) << "Fetching info from all the Tablet Servers";
   for (const KsckMaster::TSMap::value_type& entry : cluster_->tablet_servers()) {
-    Status s = ConnectToTabletServer(entry.second);
-    if (!s.ok()) {
-      bad_servers++;
-    }
+    CHECK_OK(pool->SubmitFunc([&]() {
+          Status s = ConnectToTabletServer(entry.second);
+          if (!s.ok()) {
+            bad_servers.Increment();
+          }
+        }));
   }
-  if (bad_servers == 0) {
+  pool->Wait();
+
+  if (bad_servers.Load() == 0) {
     Info() << Substitute("Fetched info from all $0 Tablet Servers", servers_count) << endl;
     return Status::OK();
   } else {
     Warn() << Substitute("Fetched info from $0 Tablet Servers, $1 weren't reachable",
-                         servers_count - bad_servers, bad_servers) << endl;
+                         servers_count - bad_servers.Load(), bad_servers.Load()) << endl;
     return Status::NetworkError("Not all Tablet Servers are reachable");
   }
 }
