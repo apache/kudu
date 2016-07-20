@@ -154,11 +154,13 @@ static Status InsertRows(const shared_ptr<KuduTable>& table, int num_rows) {
   vector<KuduError*> errors;
   bool overflow;
   session->GetPendingErrors(&errors, &overflow);
-  s = overflow ? Status::IOError("Overflowed pending errors in session") :
-      errors.front()->status();
-  while (!errors.empty()) {
-    delete errors.back();
-    errors.pop_back();
+  if (!errors.empty()) {
+    s = overflow ? Status::IOError("Overflowed pending errors in session") :
+        errors.front()->status();
+    while (!errors.empty()) {
+      delete errors.back();
+      errors.pop_back();
+    }
   }
   KUDU_RETURN_NOT_OK(s);
 
@@ -216,23 +218,39 @@ static Status ScanRows(const shared_ptr<KuduTable>& table) {
   return Status::OK();
 }
 
-static void LogCb(void* unused,
-                  kudu::client::KuduLogSeverity severity,
-                  const char* filename,
-                  int line_number,
-                  const struct ::tm* time,
-                  const char* message,
-                  size_t message_len) {
-  KUDU_LOG(INFO) << "Received log message from Kudu client library";
-  KUDU_LOG(INFO) << " Severity: " << severity;
-  KUDU_LOG(INFO) << " Filename: " << filename;
-  KUDU_LOG(INFO) << " Line number: " << line_number;
-  char time_buf[32];
-  // Example: Tue Mar 24 11:46:43 2015.
-  KUDU_CHECK(strftime(time_buf, sizeof(time_buf), "%a %b %d %T %Y", time));
-  KUDU_LOG(INFO) << " Time: " << time_buf;
-  KUDU_LOG(INFO) << " Message: " << string(message, message_len);
-}
+// A helper class providing custom logging callback. It also manages
+// automatic callback installation and removal.
+class LogCallbackHelper {
+ public:
+  LogCallbackHelper() : log_cb_(&LogCallbackHelper::LogCb, NULL) {
+    kudu::client::InstallLoggingCallback(&log_cb_);
+  }
+
+  ~LogCallbackHelper() {
+    kudu::client::UninstallLoggingCallback();
+  }
+
+  static void LogCb(void* unused,
+                    kudu::client::KuduLogSeverity severity,
+                    const char* filename,
+                    int line_number,
+                    const struct ::tm* time,
+                    const char* message,
+                    size_t message_len) {
+    KUDU_LOG(INFO) << "Received log message from Kudu client library";
+    KUDU_LOG(INFO) << " Severity: " << severity;
+    KUDU_LOG(INFO) << " Filename: " << filename;
+    KUDU_LOG(INFO) << " Line number: " << line_number;
+    char time_buf[32];
+    // Example: Tue Mar 24 11:46:43 2015.
+    KUDU_CHECK(strftime(time_buf, sizeof(time_buf), "%a %b %d %T %Y", time));
+    KUDU_LOG(INFO) << " Time: " << time_buf;
+    KUDU_LOG(INFO) << " Message: " << string(message, message_len);
+  }
+
+ private:
+  kudu::client::KuduLoggingFunctionCallback<void*> log_cb_;
+};
 
 int main(int argc, char* argv[]) {
   KUDU_LOG(INFO) << "Running with Kudu client version: " <<
@@ -240,8 +258,8 @@ int main(int argc, char* argv[]) {
   KUDU_LOG(INFO) << "Long version info: " <<
       kudu::client::GetAllVersionInfo();
 
-  kudu::client::KuduLoggingFunctionCallback<void*> log_cb(&LogCb, NULL);
-  kudu::client::InstallLoggingCallback(&log_cb);
+  // This is to install and automatically un-install custom logging callback.
+  LogCallbackHelper log_cb_helper;
 
   if (argc != 2) {
     KUDU_LOG(FATAL) << "usage: " << argv[0] << " <master host>";
@@ -295,5 +313,6 @@ int main(int argc, char* argv[]) {
 
   // Done!
   KUDU_LOG(INFO) << "Done";
+
   return 0;
 }
