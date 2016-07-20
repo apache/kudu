@@ -42,14 +42,16 @@ namespace tools {
 class RemoteKsckTabletServer : public KsckTabletServer {
  public:
   explicit RemoteKsckTabletServer(const std::string& id,
-                                  const Sockaddr& address,
-                                  const std::shared_ptr<rpc::Messenger>& messenger)
+                                  const HostPort host_port,
+                                  std::shared_ptr<rpc::Messenger> messenger)
       : KsckTabletServer(id),
-        address_(address.ToString()),
-        messenger_(messenger),
-        generic_proxy_(new server::GenericServiceProxy(messenger, address)),
-        ts_proxy_(new tserver::TabletServerServiceProxy(messenger, address)) {
+        host_port_(host_port),
+        messenger_(std::move(messenger)) {
   }
+
+  // Resolves the host/port and sets up proxies.
+  // Must be called after constructing.
+  Status Init();
 
   virtual Status FetchInfo() OVERRIDE;
 
@@ -60,16 +62,15 @@ class RemoteKsckTabletServer : public KsckTabletServer {
       const ReportResultCallback& callback) OVERRIDE;
 
 
-  virtual const std::string& address() const OVERRIDE {
-    return address_;
+  virtual std::string address() const OVERRIDE {
+    return host_port_.ToString();
   }
 
  private:
-  const std::string address_;
+  const HostPort host_port_;
   const std::shared_ptr<rpc::Messenger> messenger_;
-  const std::shared_ptr<server::GenericServiceProxy> generic_proxy_;
-  const std::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
-
+  std::shared_ptr<server::GenericServiceProxy> generic_proxy_;
+  std::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
 };
 
 // This implementation connects to a Master via RPC.

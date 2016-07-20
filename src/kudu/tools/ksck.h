@@ -197,7 +197,7 @@ class KsckTabletServer {
     return strings::Substitute("$0 ($1)", uuid(), address());
   }
 
-  virtual const std::string& address() const = 0;
+  virtual std::string address() const = 0;
 
   bool is_healthy() const {
     CHECK_NE(state_, kUninitialized);

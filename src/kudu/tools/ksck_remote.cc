@@ -45,6 +45,16 @@ MonoDelta GetDefaultTimeout() {
   return MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
 }
 
+Status RemoteKsckTabletServer::Init() {
+  vector<Sockaddr> addresses;
+  RETURN_NOT_OK(ParseAddressList(
+      host_port_.ToString(),
+      tserver::TabletServer::kDefaultPort, &addresses));
+  generic_proxy_.reset(new server::GenericServiceProxy(messenger_, addresses[0]));
+  ts_proxy_.reset(new tserver::TabletServerServiceProxy(messenger_, addresses[0]));
+  return Status::OK();
+}
+
 Status RemoteKsckTabletServer::FetchInfo() {
   state_ = kFetchFailed;
 
@@ -262,11 +272,11 @@ Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
   tablet_servers->clear();
   for (const master::ListTabletServersResponsePB_Entry& e : resp.servers()) {
     HostPortPB addr = e.registration().rpc_addresses(0);
-    vector<Sockaddr> addresses;
-    RETURN_NOT_OK(ParseAddressList(HostPort(addr.host(), addr.port()).ToString(),
-                                   tserver::TabletServer::kDefaultPort, &addresses));
-    shared_ptr<KsckTabletServer> ts(
-        new RemoteKsckTabletServer(e.instance_id().permanent_uuid(), addresses[0], messenger_));
+    shared_ptr<RemoteKsckTabletServer> ts(
+        new RemoteKsckTabletServer(e.instance_id().permanent_uuid(),
+                                   HostPort(addr.host(), addr.port()),
+                                   messenger_));
+    RETURN_NOT_OK(ts->Init());
     InsertOrDie(tablet_servers, ts->uuid(), ts);
   }
   return Status::OK();

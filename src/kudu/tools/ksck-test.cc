@@ -64,7 +64,7 @@ class MockKsckTabletServer : public KsckTabletServer {
     callback.Run(Status::OK(), 0);
   }
 
-  virtual const std::string& address() const OVERRIDE {
+  virtual std::string address() const OVERRIDE {
     return address_;
   }
 
