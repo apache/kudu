@@ -141,7 +141,7 @@ sudo apt-get install libkuduclient-dev        # Kudu C++ client SDK
     link:troubleshooting.html#ntp[problem with ntp].
   - If it's something else that doesn't seem obvious or if you've tried the above solutions without
     luck, you can ask for help on the
-    link:https://groups.google.com/forum/#!forum/kudu-user[user mailing list].
+    link:http://kudu.apache.org/community.html[user mailing list].
 
 // end::verify_install[]
 
