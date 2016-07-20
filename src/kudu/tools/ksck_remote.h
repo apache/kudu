@@ -53,14 +53,13 @@ class RemoteKsckTabletServer : public KsckTabletServer {
   // Must be called after constructing.
   Status Init();
 
-  virtual Status FetchInfo() OVERRIDE;
+  Status FetchInfo() override;
 
-  virtual void RunTabletChecksumScanAsync(
+  void RunTabletChecksumScanAsync(
       const std::string& tablet_id,
       const Schema& schema,
       const ChecksumOptions& options,
-      const ReportResultCallback& callback) OVERRIDE;
-
+      ChecksumProgressCallbacks* callbacks) override;
 
   virtual std::string address() const OVERRIDE {
     return host_port_.ToString();

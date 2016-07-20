@@ -70,4 +70,12 @@ message ChecksumResponsePB {
   optional bytes scanner_id = 3;
   optional bool has_more_results = 4;
   optional fixed64 snap_timestamp = 5;
+
+  // Number of rows checksummed by this RPC.
+  // NOTE: this is not an aggregate since the scanner was opened, but
+  // rather just a count for _this_ round trip.
+  optional int64 rows_checksummed = 6;
+
+  // Resource consumption of the underlying scanner.
+  optional ResourceMetricsPB resource_metrics = 7;
 }

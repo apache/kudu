@@ -402,7 +402,8 @@ class ScanResultChecksummer : public ScanResultCollector {
   ScanResultChecksummer()
       : crc_(crc::GetCrc32cInstance()),
         agg_checksum_(0),
-        blocks_processed_(0) {
+        blocks_processed_(0),
+        rows_checksummed_(0) {
   }
 
   virtual void HandleRowBlock(const Schema* client_projection_schema,
@@ -417,6 +418,7 @@ class ScanResultChecksummer : public ScanResultCollector {
       if (!row_block.selection_vector()->IsRowSelected(i)) continue;
       uint32_t row_crc = CalcRowCrc32(*client_projection_schema, row_block.row(i));
       agg_checksum_ += row_crc;
+      rows_checksummed_++;
     }
     // Find the last selected row and save its encoded key.
     SetLastRow(row_block, &encoded_last_row_);
@@ -431,6 +433,10 @@ class ScanResultChecksummer : public ScanResultCollector {
 
   virtual int64_t NumRowsReturned() const OVERRIDE {
     return 0;
+  }
+
+  int64_t rows_checksummed() const {
+    return rows_checksummed_;
   }
 
   // Accessors for initializing / setting the checksum.
@@ -469,6 +475,7 @@ class ScanResultChecksummer : public ScanResultCollector {
   crc::Crc* const crc_;
   uint64_t agg_checksum_;
   int blocks_processed_;
+  int64_t rows_checksummed_;
   faststring encoded_last_row_;
 
   DISALLOW_COPY_AND_ASSIGN(ScanResultChecksummer);
@@ -1005,6 +1012,14 @@ void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
   context->RespondSuccess();
 }
 
+namespace {
+void SetResourceMetrics(ResourceMetricsPB* metrics, rpc::RpcContext* context) {
+  metrics->set_cfile_cache_miss_bytes(
+    context->trace()->metrics()->GetMetric(cfile::CFILE_CACHE_MISS_BYTES_METRIC_NAME));
+  metrics->set_cfile_cache_hit_bytes(
+    context->trace()->metrics()->GetMetric(cfile::CFILE_CACHE_HIT_BYTES_METRIC_NAME));
+}
+} // anonymous namespace
 
 void TabletServiceImpl::Scan(const ScanRequestPB* req,
                              ScanResponsePB* resp,
@@ -1090,10 +1105,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
       resp->set_last_primary_key(last.ToString());
     }
   }
-  resp->mutable_resource_metrics()->set_cfile_cache_miss_bytes(
-    context->trace()->metrics()->GetMetric(cfile::CFILE_CACHE_MISS_BYTES_METRIC_NAME));
-  resp->mutable_resource_metrics()->set_cfile_cache_hit_bytes(
-    context->trace()->metrics()->GetMetric(cfile::CFILE_CACHE_HIT_BYTES_METRIC_NAME));
+  SetResourceMetrics(resp->mutable_resource_metrics(), context);
   context->RespondSuccess();
 }
 
@@ -1178,7 +1190,8 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
 
   resp->set_checksum(collector.agg_checksum());
   resp->set_has_more_results(has_more);
-
+  SetResourceMetrics(resp->mutable_resource_metrics(), context);
+  resp->set_rows_checksummed(collector.rows_checksummed());
   context->RespondSuccess();
 }
 

@@ -47,7 +47,7 @@ class MockKsckTabletServer : public KsckTabletServer {
   }
 
   Status FetchInfo() override {
-    timestamp_ = 0;
+    timestamp_ = 12345;
     if (fetch_info_status_.ok()) {
       state_ = kFetched;
     } else {
@@ -60,8 +60,9 @@ class MockKsckTabletServer : public KsckTabletServer {
       const std::string& tablet_id,
       const Schema& schema,
       const ChecksumOptions& options,
-      const ReportResultCallback& callback) OVERRIDE {
-    callback.Run(Status::OK(), 0);
+      ChecksumProgressCallbacks* callbacks) OVERRIDE {
+    callbacks->Progress(10, 20);
+    callbacks->Finished(Status::OK(), 0);
   }
 
   virtual std::string address() const OVERRIDE {
@@ -320,11 +321,17 @@ TEST_F(KsckTest, TestZeroTableCheck) {
 TEST_F(KsckTest, TestOneTableCheck) {
   CreateOneTableOneTablet();
   ASSERT_OK(RunKsck());
+  ASSERT_OK(ksck_->ChecksumData({}, {}, ChecksumOptions()));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "0/1 replicas remaining (20B from disk, 10 rows summed)");
 }
 
 TEST_F(KsckTest, TestOneSmallReplicatedTable) {
   CreateOneSmallReplicatedTable();
   ASSERT_OK(RunKsck());
+  ASSERT_OK(ksck_->ChecksumData({}, {}, ChecksumOptions()));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "0/9 replicas remaining (180B from disk, 90 rows summed)");
 }
 
 TEST_F(KsckTest, TestOneOneTabletBrokenTable) {

@@ -2170,6 +2170,8 @@ TEST_F(TabletServerTest, TestChecksumScan) {
   ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
   ASSERT_EQ(total_crc, resp.checksum());
   ASSERT_FALSE(resp.has_more_results());
+  EXPECT_TRUE(resp.has_resource_metrics());
+  EXPECT_EQ(1, resp.rows_checksummed());
 
   // Second row (null string field).
   key = 2;

@@ -122,13 +122,13 @@ class ChecksumCallbackHandler {
 class ChecksumStepper {
  public:
   ChecksumStepper(string tablet_id, const Schema& schema, string server_uuid,
-                  ChecksumOptions options, ReportResultCallback callback,
+                  ChecksumOptions options, ChecksumProgressCallbacks* callbacks,
                   shared_ptr<tserver::TabletServerServiceProxy> proxy)
       : schema_(schema),
         tablet_id_(std::move(tablet_id)),
         server_uuid_(std::move(server_uuid)),
         options_(std::move(options)),
-        reporter_callback_(std::move(callback)),
+        callbacks_(callbacks),
         proxy_(std::move(proxy)),
         call_seq_id_(0),
         checksum_(0) {
@@ -139,7 +139,7 @@ class ChecksumStepper {
     Status s = SchemaToColumnPBs(schema_, &cols_,
                                  SCHEMA_PB_WITHOUT_IDS | SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES);
     if (!s.ok()) {
-      reporter_callback_.Run(s, 0);
+      callbacks_->Finished(s, 0);
     } else {
       SendRequest(kNewRequest);
     }
@@ -152,16 +152,20 @@ class ChecksumStepper {
       s = StatusFromPB(resp_.error().status());
     }
     if (!s.ok()) {
-      reporter_callback_.Run(s, 0);
+      callbacks_->Finished(s, 0);
       return; // Deletes 'this'.
     }
-
+    if (resp_.has_resource_metrics() || resp_.has_rows_checksummed()) {
+      auto bytes = resp_.resource_metrics().cfile_cache_miss_bytes() +
+          resp_.resource_metrics().cfile_cache_hit_bytes();
+      callbacks_->Progress(resp_.rows_checksummed(), bytes);;
+    }
     DCHECK(resp_.has_checksum());
     checksum_ = resp_.checksum();
 
     // Report back with results.
     if (!resp_.has_more_results()) {
-      reporter_callback_.Run(s, checksum_);
+      callbacks_->Finished(s, checksum_);
       return; // Deletes 'this'.
     }
 
@@ -220,7 +224,7 @@ class ChecksumStepper {
   const string tablet_id_;
   const string server_uuid_;
   const ChecksumOptions options_;
-  const ReportResultCallback reporter_callback_;
+  ChecksumProgressCallbacks* const callbacks_;
   const shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   uint32_t call_seq_id_;
@@ -240,9 +244,9 @@ void RemoteKsckTabletServer::RunTabletChecksumScanAsync(
         const string& tablet_id,
         const Schema& schema,
         const ChecksumOptions& options,
-        const ReportResultCallback& callback) {
+        ChecksumProgressCallbacks* callbacks) {
   gscoped_ptr<ChecksumStepper> stepper(
-      new ChecksumStepper(tablet_id, schema, uuid(), options, callback, ts_proxy_));
+      new ChecksumStepper(tablet_id, schema, uuid(), options, callbacks, ts_proxy_));
   stepper->Start();
   ignore_result(stepper.release()); // Deletes self on callback.
 }

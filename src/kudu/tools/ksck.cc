@@ -17,6 +17,7 @@
 
 #include "kudu/tools/ksck.h"
 
+#include <algorithm>
 #include <glog/logging.h>
 #include <iostream>
 #include <mutex>
@@ -26,6 +27,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
@@ -45,7 +47,7 @@ using std::string;
 using std::unordered_map;
 using strings::Substitute;
 
-DEFINE_int32(checksum_timeout_sec, 120,
+DEFINE_int32(checksum_timeout_sec, 3600,
              "Maximum total seconds to wait for a checksum scan to complete "
              "before timing out.");
 DEFINE_int32(checksum_scan_concurrency, 4,
@@ -230,7 +232,15 @@ class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporte
 
   // Initialize reporter with the number of replicas being queried.
   explicit ChecksumResultReporter(int num_tablet_replicas)
-      : responses_(num_tablet_replicas) {
+      : expected_count_(num_tablet_replicas),
+        responses_(num_tablet_replicas),
+        rows_summed_(0),
+        disk_bytes_summed_(0) {
+  }
+
+  void ReportProgress(int64_t delta_rows, int64_t delta_bytes) {
+    rows_summed_.IncrementBy(delta_rows);
+    disk_bytes_summed_.IncrementBy(delta_bytes);
   }
 
   // Write an entry to the result map indicating a response from the remote.
@@ -250,7 +260,29 @@ class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporte
   // whichever comes first.
   // Returns false if the timeout expired before all responses came in.
   // Otherwise, returns true.
-  bool WaitFor(const MonoDelta& timeout) const { return responses_.WaitFor(timeout); }
+  bool WaitFor(const MonoDelta& timeout) const {
+    MonoTime start = MonoTime::Now(MonoTime::FINE);
+
+    MonoTime deadline = start;
+    deadline.AddDelta(timeout);
+
+    bool done = false;
+    while (!done) {
+      MonoTime now = MonoTime::Now(MonoTime::FINE);
+      int rem_ms = deadline.GetDeltaSince(now).ToMilliseconds();
+      if (rem_ms <= 0) return false;
+
+      done = responses_.WaitFor(MonoDelta::FromMilliseconds(std::min(rem_ms, 5000)));
+      string status = done ? "finished in " : "running for ";
+      int run_time_sec = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToSeconds();
+      Info() << "Checksum " << status << run_time_sec << "s: "
+             << responses_.count() << "/" << expected_count_ << " replicas remaining ("
+             << HumanReadableNumBytes::ToString(disk_bytes_summed_.Load()) << " from disk, "
+             << HumanReadableInt::ToString(rows_summed_.Load()) << " rows summed)"
+             << endl;
+    }
+    return true;
+  }
 
   // Returns true iff all replicas have reported in.
   bool AllReported() const { return responses_.count() == 0; }
@@ -269,41 +301,63 @@ class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporte
   void HandleResponse(const std::string& tablet_id, const std::string& replica_uuid,
                       const Status& status, uint64_t checksum);
 
+  const int expected_count_;
   CountDownLatch responses_;
+
   mutable simple_spinlock lock_; // Protects 'checksums_'.
   // checksums_ is an unordered_map of { tablet_id : { replica_uuid : checksum } }.
   TabletResultMap checksums_;
+
+  AtomicInt<int64_t> rows_summed_;
+  AtomicInt<int64_t> disk_bytes_summed_;
 };
 
 // Queue of tablet replicas for an individual tablet server.
-typedef shared_ptr<BlockingQueue<std::pair<Schema, std::string> > > TabletQueue;
+typedef shared_ptr<BlockingQueue<std::pair<Schema, std::string> > > SharedTabletQueue;
 
-// A callback function which records the result of a tablet replica's checksum,
+// A set of callbacks which records the result of a tablet replica's checksum,
 // and then checks if the tablet server has any more tablets to checksum. If so,
 // a new async checksum scan is started.
-void TabletServerChecksumCallback(
-    const scoped_refptr<ChecksumResultReporter>& reporter,
-    const shared_ptr<KsckTabletServer>& tablet_server,
-    const TabletQueue& queue,
-    const std::string& tablet_id,
-    const ChecksumOptions& options,
-    const Status& status,
-    uint64_t checksum) {
-  reporter->ReportResult(tablet_id, tablet_server->uuid(), status, checksum);
-
-  std::pair<Schema, std::string> table_tablet;
-  if (queue->BlockingGet(&table_tablet)) {
-    const Schema& table_schema = table_tablet.first;
-    const std::string& tablet_id = table_tablet.second;
-    ReportResultCallback callback = Bind(&TabletServerChecksumCallback,
-                                         reporter,
-                                         tablet_server,
-                                         queue,
-                                         tablet_id,
-                                         options);
-    tablet_server->RunTabletChecksumScanAsync(tablet_id, table_schema, options, callback);
+class TabletServerChecksumCallbacks : public ChecksumProgressCallbacks {
+ public:
+  TabletServerChecksumCallbacks(
+    scoped_refptr<ChecksumResultReporter> reporter,
+    shared_ptr<KsckTabletServer> tablet_server,
+    SharedTabletQueue queue,
+    std::string tablet_id,
+    ChecksumOptions options) :
+      reporter_(std::move(reporter)),
+      tablet_server_(std::move(tablet_server)),
+      queue_(std::move(queue)),
+      options_(std::move(options)),
+      tablet_id_(std::move(tablet_id)) {
   }
-}
+
+  void Progress(int64_t rows_summed, int64_t disk_bytes_summed) override {
+    reporter_->ReportProgress(rows_summed, disk_bytes_summed);
+  }
+
+  void Finished(const Status& status, uint64_t checksum) override {
+    reporter_->ReportResult(tablet_id_, tablet_server_->uuid(), status, checksum);
+
+    std::pair<Schema, std::string> table_tablet;
+    if (queue_->BlockingGet(&table_tablet)) {
+      const Schema& table_schema = table_tablet.first;
+      tablet_id_ = table_tablet.second;
+      tablet_server_->RunTabletChecksumScanAsync(tablet_id_, table_schema, options_, this);
+    } else {
+      delete this;
+    }
+  }
+
+ private:
+  const scoped_refptr<ChecksumResultReporter> reporter_;
+  const shared_ptr<KsckTabletServer> tablet_server_;
+  const SharedTabletQueue queue_;
+  const ChecksumOptions options_;
+
+  std::string tablet_id_;
+};
 
 Status Ksck::ChecksumData(const vector<string>& tables,
                           const vector<string>& tablets,
@@ -343,7 +397,7 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   }
 
   // Map of tablet servers to tablet queue.
-  typedef unordered_map<shared_ptr<KsckTabletServer>, TabletQueue> TabletServerQueueMap;
+  typedef unordered_map<shared_ptr<KsckTabletServer>, SharedTabletQueue> TabletServerQueueMap;
 
   TabletServerQueueMap tablet_server_queues;
   scoped_refptr<ChecksumResultReporter> reporter(new ChecksumResultReporter(num_tablet_replicas));
@@ -356,7 +410,7 @@ Status Ksck::ChecksumData(const vector<string>& tables,
       const shared_ptr<KsckTabletServer>& ts =
           FindOrDie(cluster_->tablet_servers(), replica->ts_uuid());
 
-      const TabletQueue& queue =
+      const SharedTabletQueue& queue =
           LookupOrInsertNewSharedPtr(&tablet_server_queues, ts, num_tablet_replicas);
       CHECK_EQ(QUEUE_SUCCESS, queue->Put(make_pair(table->schema(), tablet->id())));
     }
@@ -383,20 +437,17 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   // scan when it returns if the queue for that TS is not empty.
   for (const TabletServerQueueMap::value_type& entry : tablet_server_queues) {
     const shared_ptr<KsckTabletServer>& tablet_server = entry.first;
-    const TabletQueue& queue = entry.second;
+    const SharedTabletQueue& queue = entry.second;
     queue->Shutdown(); // Ensures that BlockingGet() will not block.
     for (int i = 0; i < options.scan_concurrency; i++) {
       std::pair<Schema, std::string> table_tablet;
       if (queue->BlockingGet(&table_tablet)) {
         const Schema& table_schema = table_tablet.first;
         const std::string& tablet_id = table_tablet.second;
-        ReportResultCallback callback = Bind(&TabletServerChecksumCallback,
-                                             reporter,
-                                             tablet_server,
-                                             queue,
-                                             tablet_id,
-                                             options);
-        tablet_server->RunTabletChecksumScanAsync(tablet_id, table_schema, options, callback);
+        auto* cbs = new TabletServerChecksumCallbacks(
+            reporter, tablet_server, queue, tablet_id, options);
+        // 'cbs' deletes itself when complete.
+        tablet_server->RunTabletChecksumScanAsync(tablet_id, table_schema, options, cbs);
       }
     }
   }

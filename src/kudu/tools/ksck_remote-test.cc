@@ -45,6 +45,10 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
+// Import this symbol from ksck.cc so we can introspect the
+// errors being written to stderr.
+extern std::ostream* g_err_stream;
+
 static const char *kTableName = "ksck-test-table";
 
 class RemoteKsckTest : public KuduTest {
@@ -55,6 +59,11 @@ class RemoteKsckTest : public KuduTest {
     b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
     b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
     CHECK_OK(b.Build(&schema_));
+    g_err_stream = &err_stream_;
+  }
+
+  ~RemoteKsckTest() {
+    g_err_stream = NULL;
   }
 
   virtual void SetUp() OVERRIDE {
@@ -174,6 +183,9 @@ class RemoteKsckTest : public KuduTest {
   std::shared_ptr<Ksck> ksck_;
   shared_ptr<client::KuduClient> client_;
 
+  // Captures logged messages from ksck.
+  std::stringstream err_stream_;
+
  private:
   Sockaddr master_rpc_addr_;
   std::shared_ptr<MiniCluster> mini_cluster_;
@@ -221,10 +233,19 @@ TEST_F(RemoteKsckTest, TestChecksum) {
   Status s;
   while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+
+    err_stream_.str("");
     s = ksck_->ChecksumData(vector<string>(),
                             vector<string>(),
                             ChecksumOptions(MonoDelta::FromSeconds(1), 16, false, 0));
     if (s.ok()) {
+      // Check the status message at the end of the checksum.
+      // We expect '0B from disk' because we didn't write enough data to trigger a flush
+      // in this short-running test.
+      ASSERT_STR_CONTAINS(err_stream_.str(),
+                          AllowSlowTests() ?
+                          "0/30 replicas remaining (0B from disk, 300 rows summed)" :
+                          "0/9 replicas remaining (0B from disk, 300 rows summed)");
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));

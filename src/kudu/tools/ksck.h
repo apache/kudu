@@ -162,7 +162,20 @@ class KsckTable {
   DISALLOW_COPY_AND_ASSIGN(KsckTable);
 };
 
-typedef Callback<void(const Status& status, uint64_t checksum)> ReportResultCallback;
+// Interface for reporting progress on checksumming a single
+// replica.
+class ChecksumProgressCallbacks {
+ public:
+  virtual ~ChecksumProgressCallbacks() {}
+
+  // Report incremental progress from the server side.
+  // 'disk_bytes_summed' only counts data read from DiskRowSets on the server side
+  // and does not count MRS bytes, etc.
+  virtual void Progress(int64_t delta_rows_summed, int64_t delta_disk_bytes_summed) = 0;
+
+  // The scan of the current tablet is complete.
+  virtual void Finished(const Status& status, uint64_t checksum) = 0;
+};
 
 // The following two classes must be extended in order to communicate with their respective
 // components. The two main use cases envisioned for this are:
@@ -187,7 +200,7 @@ class KsckTabletServer {
                   const std::string& tablet_id,
                   const Schema& schema,
                   const ChecksumOptions& options,
-                  const ReportResultCallback& callback) = 0;
+                  ChecksumProgressCallbacks* callbacks) = 0;
 
   virtual const std::string& uuid() const {
     return uuid_;
