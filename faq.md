@@ -84,7 +84,7 @@ forward to working with a larger community during its next phase of development.
 
 Currently, commercial training for Kudu is not available. You can get help with using
 Kudu through [documentation](docs/index.html),
-the [kudu-user mailing list](https://groups.google.com/forum/#!forum/kudu-user),
+the [mailing lists](community.html),
 the [Kudu chat room](https://getkudu-slack.herokuapp.com/), and the [Cloudera beta
 release forum](https://community.cloudera.com/t5/Beta-Releases-Kudu-RecordService/bd-p/Beta).
 

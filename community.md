@@ -66,7 +66,7 @@ reports.
 #### Talk about how you use Kudu.
 
 Let us know what you think of Kudu and how you are using it. Send links to
-blogs or presentations you've given to the [kudu-user mailing
+blogs or presentations you've given to the [kudu user mailing
 list](mailto:user@kudu.apache.org) so that we can feature them.
 
 #### File bugs and enhancement requests.
@@ -117,8 +117,9 @@ will need review and clean-up. This is another way you can get involved.
 ### Meetups, User Groups, and Conference Presentations
 
 If you're interested in hosting or presenting a Kudu-related talk or meetup in
-your city, get in touch by emailing the
-[kudu-user](https://groups.google.com/forum/#!forum/kudu-user) mailing list.
+your city, get in touch by sending email to the user mailing list at
+[user@kudu.apache.org](mailto:user@kudu.apache.org)
+so that we can feature them.
 
 **Presentations about Kudu are planned or have taken place at the following events:**
 
@@ -199,8 +200,9 @@ your city, get in touch by emailing the
 The Kudu community does not yet have a dedicated blog, but if you are
 interested in promoting a Kudu-related use case, we can help spread the word.
 <br/>
-Email the [kudu-user](https://groups.google.com/forum/#!forum/kudu-user)
-mailing list with your content and we'll help drive traffic.
+Send email to the user mailing list at
+[user@kudu.apache.org](mailto:user@kudu.apache.org)
+with your content and we'll help drive traffic.
 
 * Curt Monash from DBMS2 has written a three-part series about Kudu:
   [an introduction to Kudu](http://www.dbms2.com/2015/09/28/introduction-to-cloudera-kudu/),
