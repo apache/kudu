@@ -51,9 +51,7 @@ class RemoteKsckTabletServer : public KsckTabletServer {
         ts_proxy_(new tserver::TabletServerServiceProxy(messenger, address)) {
   }
 
-  virtual Status Connect() const OVERRIDE;
-
-  virtual Status CurrentTimestamp(uint64_t* timestamp) const OVERRIDE;
+  virtual Status FetchInfo() OVERRIDE;
 
   virtual void RunTabletChecksumScanAsync(
       const std::string& tablet_id,
@@ -71,6 +69,7 @@ class RemoteKsckTabletServer : public KsckTabletServer {
   const std::shared_ptr<rpc::Messenger> messenger_;
   const std::shared_ptr<server::GenericServiceProxy> generic_proxy_;
   const std::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+
 };
 
 // This implementation connects to a Master via RPC.

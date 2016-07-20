@@ -74,6 +74,7 @@ add_library(ksck
     ksck_remote.cc
 )
 target_link_libraries(ksck
+  consensus
   master_proto
   server_base_proto
   tserver_proto

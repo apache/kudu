@@ -45,22 +45,44 @@ MonoDelta GetDefaultTimeout() {
   return MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
 }
 
-Status RemoteKsckTabletServer::Connect() const {
-  tserver::PingRequestPB req;
-  tserver::PingResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(GetDefaultTimeout());
-  return ts_proxy_->Ping(req, &resp, &rpc);
-}
+Status RemoteKsckTabletServer::FetchInfo() {
+  state_ = kFetchFailed;
 
-Status RemoteKsckTabletServer::CurrentTimestamp(uint64_t* timestamp) const {
-  server::ServerClockRequestPB req;
-  server::ServerClockResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(GetDefaultTimeout());
-  RETURN_NOT_OK(generic_proxy_->ServerClock(req, &resp, &rpc));
-  CHECK(resp.has_timestamp());
-  *timestamp = resp.timestamp();
+  {
+    tserver::PingRequestPB req;
+    tserver::PingResponsePB resp;
+    RpcController rpc;
+    rpc.set_timeout(GetDefaultTimeout());
+    RETURN_NOT_OK_PREPEND(ts_proxy_->Ping(req, &resp, &rpc),
+                          "could not send Ping RPC to server");
+  }
+
+  {
+    tserver::ListTabletsRequestPB req;
+    tserver::ListTabletsResponsePB resp;
+    RpcController rpc;
+    rpc.set_timeout(GetDefaultTimeout());
+    req.set_need_schema_info(false);
+    RETURN_NOT_OK_PREPEND(ts_proxy_->ListTablets(req, &resp, &rpc),
+                          "could not list tablets");
+    tablet_status_map_.clear();
+    for (auto& status : *resp.mutable_status_and_schema()) {
+      tablet_status_map_[status.tablet_status().tablet_id()].Swap(status.mutable_tablet_status());
+    }
+  }
+
+  {
+    server::ServerClockRequestPB req;
+    server::ServerClockResponsePB resp;
+    RpcController rpc;
+    rpc.set_timeout(GetDefaultTimeout());
+    RETURN_NOT_OK_PREPEND(generic_proxy_->ServerClock(req, &resp, &rpc),
+                          "could not fetch timestamp");
+    CHECK(resp.has_timestamp());
+    timestamp_ = resp.timestamp();
+  }
+
+  state_ = kFetched;
   return Status::OK();
 }
 

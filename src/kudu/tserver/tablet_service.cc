@@ -1106,9 +1106,12 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
   for (const scoped_refptr<TabletPeer>& peer : peers) {
     StatusAndSchemaPB* status = peer_status->Add();
     peer->GetTabletStatusPB(status->mutable_tablet_status());
-    CHECK_OK(SchemaToPB(peer->status_listener()->schema(),
-                        status->mutable_schema()));
-    peer->tablet_metadata()->partition_schema().ToPB(status->mutable_partition_schema());
+
+    if (req->need_schema_info()) {
+      CHECK_OK(SchemaToPB(peer->status_listener()->schema(),
+                          status->mutable_schema()));
+      peer->tablet_metadata()->partition_schema().ToPB(status->mutable_partition_schema());
+    }
   }
   context->RespondSuccess();
 }

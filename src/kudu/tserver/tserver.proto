@@ -156,6 +156,10 @@ message WriteResponsePB {
 
 // A list tablets request
 message ListTabletsRequestPB {
+  // Whether the server should include schema information in the response.
+  // These fields can be relatively large, so not including it can make this call
+  // less heavy-weight.
+  optional bool need_schema_info = 1 [default = true];
 }
 
 // A list tablets response
@@ -164,7 +168,10 @@ message ListTabletsResponsePB {
 
   message StatusAndSchemaPB {
     required tablet.TabletStatusPB tablet_status = 1;
-    required SchemaPB schema = 2;
+
+    // 'schema' and 'partition_schema' will only be included if the original request
+    // set 'need_schema_info'.
+    optional SchemaPB schema = 2;
     optional PartitionSchemaPB partition_schema = 3;
   }
 

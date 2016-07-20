@@ -85,10 +85,14 @@ Status ClusterVerifier::DoKsck() {
   std::shared_ptr<KsckCluster> cluster(new KsckCluster(master));
   std::shared_ptr<Ksck> ksck(new Ksck(cluster));
 
+  // Some unit tests create or remove replicas of tablets, which
+  // we shouldn't consider fatal.
+  ksck->set_check_replica_count(false);
+
   // This is required for everything below.
   RETURN_NOT_OK(ksck->CheckMasterRunning());
   RETURN_NOT_OK(ksck->FetchTableAndTabletInfo());
-  RETURN_NOT_OK(ksck->CheckTabletServersRunning());
+  RETURN_NOT_OK(ksck->FetchInfoFromTabletServers());
   RETURN_NOT_OK(ksck->CheckTablesConsistency());
 
   vector<string> tables;

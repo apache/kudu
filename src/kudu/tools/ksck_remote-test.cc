@@ -184,10 +184,9 @@ TEST_F(RemoteKsckTest, TestMasterOk) {
 }
 
 TEST_F(RemoteKsckTest, TestTabletServersOk) {
-  LOG(INFO) << "Fetching table and tablet info...";
+  ASSERT_OK(ksck_->CheckMasterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
-  LOG(INFO) << "Checking tablet servers are running...";
-  ASSERT_OK(ksck_->CheckTabletServersRunning());
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
 }
 
 TEST_F(RemoteKsckTest, TestTableConsistency) {
@@ -195,7 +194,9 @@ TEST_F(RemoteKsckTest, TestTableConsistency) {
   deadline.AddDelta(MonoDelta::FromSeconds(30));
   Status s;
   while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+    ASSERT_OK(ksck_->CheckMasterRunning());
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+    ASSERT_OK(ksck_->FetchInfoFromTabletServers());
     s = ksck_->CheckTablesConsistency();
     if (s.ok()) {
       break;

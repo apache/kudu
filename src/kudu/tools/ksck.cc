@@ -22,6 +22,7 @@
 #include <mutex>
 #include <unordered_set>
 
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
@@ -52,22 +53,26 @@ DEFINE_uint64(checksum_snapshot_timestamp, ChecksumOptions::kCurrentTimestamp,
               "timestamp to use for snapshot checksum scans, defaults to 0, which "
               "uses the current timestamp of a tablet server involved in the scan");
 
+// The stream to write output to. If this is NULL, defaults to cerr.
+// This is used by tests to capture output.
+ostream* g_err_stream = NULL;
+
 // Print an informational message to cerr.
+static ostream& Out() {
+  return (g_err_stream ? *g_err_stream : cerr);
+}
 static ostream& Info() {
-  cerr << "INFO: ";
-  return cerr;
+  return Out() << "INFO: ";
 }
 
 // Print a warning message to cerr.
 static ostream& Warn() {
-  cerr << "WARNING: ";
-  return cerr;
+  return Out() << "WARNING: ";
 }
 
 // Print an error message to cerr.
 static ostream& Error() {
-  cerr << "ERROR: ";
-  return cerr;
+  return Out() << "ERROR: ";
 }
 
 ChecksumOptions::ChecksumOptions()
@@ -85,6 +90,14 @@ ChecksumOptions::ChecksumOptions(MonoDelta timeout, int scan_concurrency,
       snapshot_timestamp(snapshot_timestamp) {}
 
 const uint64_t ChecksumOptions::kCurrentTimestamp = 0;
+
+tablet::TabletStatePB KsckTabletServer::ReplicaState(const std::string& tablet_id) const {
+  CHECK_EQ(state_, kFetched);
+  if (!ContainsKey(tablet_status_map_, tablet_id)) {
+    return tablet::UNKNOWN;
+  }
+  return tablet_status_map_.at(tablet_id).state();
+}
 
 KsckCluster::~KsckCluster() {
 }
@@ -126,7 +139,7 @@ Status Ksck::FetchTableAndTabletInfo() {
   return cluster_->FetchTableAndTabletInfo();
 }
 
-Status Ksck::CheckTabletServersRunning() {
+Status Ksck::FetchInfoFromTabletServers() {
   VLOG(1) << "Getting the Tablet Servers list";
   int servers_count = cluster_->tablet_servers().size();
   VLOG(1) << Substitute("List of $0 Tablet Servers retrieved", servers_count);
@@ -136,7 +149,7 @@ Status Ksck::CheckTabletServersRunning() {
   }
 
   int bad_servers = 0;
-  VLOG(1) << "Connecting to all the Tablet Servers";
+  VLOG(1) << "Fetching info from all the Tablet Servers";
   for (const KsckMaster::TSMap::value_type& entry : cluster_->tablet_servers()) {
     Status s = ConnectToTabletServer(entry.second);
     if (!s.ok()) {
@@ -144,10 +157,10 @@ Status Ksck::CheckTabletServersRunning() {
     }
   }
   if (bad_servers == 0) {
-    Info() << Substitute("Connected to all $0 Tablet Servers", servers_count) << endl;
+    Info() << Substitute("Fetched info from all $0 Tablet Servers", servers_count) << endl;
     return Status::OK();
   } else {
-    Warn() << Substitute("Connected to $0 Tablet Servers, $1 weren't reachable",
+    Warn() << Substitute("Fetched info from $0 Tablet Servers, $1 weren't reachable",
                          servers_count - bad_servers, bad_servers) << endl;
     return Status::NetworkError("Not all Tablet Servers are reachable");
   }
@@ -155,12 +168,12 @@ Status Ksck::CheckTabletServersRunning() {
 
 Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
   VLOG(1) << "Going to connect to Tablet Server: " << ts->uuid();
-  Status s = ts->Connect();
+  Status s = ts->FetchInfo();
   if (s.ok()) {
     VLOG(1) << "Connected to Tablet Server: " << ts->uuid();
   } else {
-    Warn() << Substitute("Unable to connect to Tablet Server $0 ($1) because $2",
-                         ts->uuid(), ts->address(), s.ToString()) << endl;
+    Warn() << Substitute("Unable to connect to Tablet Server $0: $1",
+                         ts->ToString(), s.ToString()) << endl;
   }
   return s;
 }
@@ -168,7 +181,7 @@ Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
 Status Ksck::CheckTablesConsistency() {
   VLOG(1) << "Getting the tables list";
   int tables_count = cluster_->tables().size();
-  VLOG(1) << Substitute("List of $0 tables retrieved", tables_count);
+  VLOG(1) << Substitute("List of $0 table(s) retrieved", tables_count);
 
   if (tables_count == 0) {
     Info() << "The cluster doesn't have any tables" << endl;
@@ -183,12 +196,12 @@ Status Ksck::CheckTablesConsistency() {
     }
   }
   if (bad_tables_count == 0) {
-    Info() << Substitute("The metadata for $0 tables is HEALTHY", tables_count) << endl;
+    Info() << Substitute("The metadata for $0 table(s) is HEALTHY", tables_count) << endl;
     return Status::OK();
   } else {
-    Warn() << Substitute("$0 out of $1 tables are not in a healthy state",
+    Warn() << Substitute("$0 out of $1 table(s) are not in a healthy state",
                          bad_tables_count, tables_count) << endl;
-    return Status::Corruption(Substitute("$0 tables are bad", bad_tables_count));
+    return Status::Corruption(Substitute("$0 table(s) are bad", bad_tables_count));
   }
 }
 
@@ -335,8 +348,18 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   }
 
   if (options.use_snapshot && options.snapshot_timestamp == ChecksumOptions::kCurrentTimestamp) {
-    // Set the snapshot timestamp to the current timestamp of an arbitrary tablet server.
-    tablet_server_queues.begin()->first->CurrentTimestamp(&options.snapshot_timestamp);
+    // Set the snapshot timestamp to the current timestamp of the first healthy tablet server
+    // we can find.
+    for (const auto& ts : tablet_server_queues) {
+      if (ts.first->is_healthy()) {
+        options.snapshot_timestamp = ts.first->current_timestamp();
+        break;
+      }
+    }
+    if (options.snapshot_timestamp == ChecksumOptions::kCurrentTimestamp) {
+      return Status::ServiceUnavailable(
+          "No tablet servers were available to fetch the current timestamp");
+    }
     Info() << "Using snapshot timestamp: " << options.snapshot_timestamp << endl;
   }
 
@@ -462,18 +485,58 @@ bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_repl
   string tablet_str = Substitute("Tablet $0 of table '$1'",
                                  tablet->id(), tablet->table()->name());
   vector<shared_ptr<KsckTabletReplica> > replicas = tablet->replicas();
-  bool good_tablet = true;
-  if (replicas.size() != table_num_replicas) {
-    Warn() << Substitute("$0 has $1 instead of $2 replicas",
-                         tablet_str, replicas.size(), table_num_replicas) << endl;
-    // We only fail the "goodness" check if the tablet is under-replicated.
-    if (replicas.size() < table_num_replicas) {
-      good_tablet = false;
-    }
+  vector<string> warnings, errors;
+  if (check_replica_count_ && replicas.size() != table_num_replicas) {
+    warnings.push_back(Substitute("$0 has $1 instead of $2 replicas",
+                                  tablet_str, replicas.size(), table_num_replicas));
   }
   int leaders_count = 0;
   int followers_count = 0;
+  int alive_count = 0;
+  int running_count = 0;
   for (const shared_ptr<KsckTabletReplica> replica : replicas) {
+    VLOG(1) << Substitute("A replica of tablet $0 is on live tablet server $1",
+                          tablet->id(), replica->ts_uuid());
+    // Check for agreement on tablet assignment and state between the master
+    // and the tablet server.
+    auto ts = FindPtrOrNull(cluster_->tablet_servers(), replica->ts_uuid());
+    if (ts && ts->is_healthy()) {
+      alive_count++;
+      auto state = ts->ReplicaState(tablet->id());
+      if (state != tablet::UNKNOWN) {
+        VLOG(1) << Substitute("Tablet server $0 agrees that it hosts a replica of $1",
+                              ts->ToString(), tablet_str);
+      }
+
+      switch (state) {
+        case tablet::RUNNING:
+          VLOG(1) << Substitute("Tablet replica for $0 on TS $1 is RUNNING",
+                                tablet_str, ts->ToString());
+          running_count++;
+          break;
+
+        case tablet::UNKNOWN:
+          warnings.push_back(Substitute("Missing a tablet replica on tablet server $0",
+                                        ts->ToString()));
+          break;
+
+        default: {
+          const auto& status_pb = ts->tablet_status_map().at(tablet->id());
+          warnings.push_back(
+              Substitute("Bad state on TS $0: $1\n"
+                         "  Last status: $2\n"
+                         "  Data state:  $3",
+                         ts->ToString(), tablet::TabletStatePB_Name(state),
+                         status_pb.last_status(),
+                         tablet::TabletDataState_Name(status_pb.tablet_data_state())));
+          break;
+        }
+      }
+    } else {
+      // no TS or unhealthy TS
+      warnings.push_back(Substitute("Should have a replica on TS $0, but TS is unavailable",
+                                    ts ? ts->ToString() : replica->ts_uuid()));
+    }
     if (replica->is_leader()) {
       VLOG(1) << Substitute("Replica at $0 is a LEADER", replica->ts_uuid());
       leaders_count++;
@@ -483,17 +546,33 @@ bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_repl
     }
   }
   if (leaders_count == 0) {
-    Warn() << Substitute("$0 doesn't have a leader", tablet_str) << endl;
-    good_tablet = false;
+    errors.push_back("No leader detected");
   }
   VLOG(1) << Substitute("$0 has $1 leader and $2 followers",
                         tablet_str, leaders_count, followers_count);
-  return good_tablet;
-}
+  int majority_size = consensus::MajoritySize(table_num_replicas);
+  if (alive_count < majority_size) {
+    errors.push_back(Substitute("$0 does not have a majority of replicas on live tablet servers",
+                                tablet_str));
+  } else if (running_count < majority_size) {
+    errors.push_back(Substitute("$0 does not have a majority of replicas in RUNNING state",
+                                tablet_str));
+  }
 
-Status Ksck::CheckAssignments() {
-  // TODO
-  return Status::NotSupported("CheckAssignments hasn't been implemented");
+  bool has_issues = !warnings.empty() || !errors.empty();
+  if (has_issues) {
+    Warn() << "Detected problems with " << tablet_str << endl
+           << "------------------------------------------------------------" << endl;
+    for (const auto& s : warnings) {
+      Warn() << s << endl;
+    }
+    for (const auto& s : errors) {
+      Error() << s << endl;
+    }
+    Out() << endl;
+  }
+
+  return !has_issues;
 }
 
 } // namespace tools

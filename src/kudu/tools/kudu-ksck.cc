@@ -100,8 +100,8 @@ static void RunKsck(vector<string>* error_messages) {
                       "Error fetching the cluster metadata from the Master server");
   if (!error_messages->empty()) return;
 
-  PUSH_PREPEND_NOT_OK(ksck->CheckTabletServersRunning(), error_messages,
-                      "Tablet server aliveness check error");
+  PUSH_PREPEND_NOT_OK(ksck->FetchInfoFromTabletServers(), error_messages,
+                      "Error fetching info from tablet servers");
 
   // TODO: Add support for tables / tablets filter in the consistency check.
   PUSH_PREPEND_NOT_OK(ksck->CheckTablesConsistency(), error_messages,
