@@ -88,6 +88,25 @@ class RegistrationTest : public KuduTest {
     ASSERT_STR_CONTAINS(buf.ToString(), VersionInfo::GetShortVersionString());
   }
 
+
+  Status WaitForReplicaCount(const string& tablet_id, int expected_count,
+                             TabletLocationsPB* locations) {
+    while (true) {
+      master::CatalogManager* catalog = cluster_->mini_master()->master()->catalog_manager();
+      Status s;
+      {
+        master::CatalogManager::ScopedLeaderSharedLock l(catalog);
+        RETURN_NOT_OK(l.first_failed_status());
+        s = catalog->GetTabletLocations(tablet_id, locations);
+      }
+      if (s.ok() && locations->replicas_size() == expected_count) {
+        return Status::OK();
+      }
+
+      SleepFor(MonoDelta::FromMilliseconds(1));
+    }
+  }
+
  protected:
   gscoped_ptr<MiniCluster> cluster_;
   Schema schema_;
@@ -142,13 +161,13 @@ TEST_F(RegistrationTest, TestTabletReports) {
   CreateTabletForTesting(cluster_->mini_master(), "fake-table", schema_, &tablet_id_1);
 
   TabletLocationsPB locs;
-  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
+  ASSERT_OK(WaitForReplicaCount(tablet_id_1, 1, &locs));
   ASSERT_EQ(1, locs.replicas_size());
   LOG(INFO) << "Tablet successfully reported on " << locs.replicas(0).ts_info().permanent_uuid();
 
   // Add another tablet, make sure it is reported via incremental.
   CreateTabletForTesting(cluster_->mini_master(), "fake-table2", schema_, &tablet_id_2);
-  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
+  ASSERT_OK(WaitForReplicaCount(tablet_id_2, 1, &locs));
 
   // Shut down the whole system, bring it back up, and make sure the tablets
   // are reported.
@@ -156,8 +175,8 @@ TEST_F(RegistrationTest, TestTabletReports) {
   ASSERT_OK(cluster_->mini_master()->Restart());
   ASSERT_OK(ts->Start());
 
-  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
-  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
+  ASSERT_OK(WaitForReplicaCount(tablet_id_1, 1, &locs));
+  ASSERT_OK(WaitForReplicaCount(tablet_id_2, 1, &locs));
 
   // TODO: KUDU-870: once the master supports detecting failed/lost replicas,
   // we should add a test case here which removes or corrupts metadata, restarts

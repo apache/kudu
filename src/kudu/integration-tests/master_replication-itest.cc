@@ -124,12 +124,6 @@ class MasterReplicationTest : public KuduTest {
         .Create();
   }
 
-  void VerifyTableExists(const std::string& table_id) {
-    LOG(INFO) << "Verifying that " << table_id << " exists on leader..";
-    ASSERT_TRUE(cluster_->leader_mini_master()->master()
-                ->catalog_manager()->TableNameExists(table_id));
-  }
-
  protected:
   int num_masters_;
   MiniClusterOptions opts_;
@@ -154,7 +148,25 @@ TEST_F(MasterReplicationTest, TestSysTablesReplication) {
 
   // Repeat the same for the second table.
   ASSERT_OK(CreateTable(client, kTableId2));
-  ASSERT_NO_FATAL_FAILURE(VerifyTableExists(kTableId2));
+
+  // Verify that both tables exist. There can be a leader election at any time
+  // so we need to loop and try all masters.
+  while (true) {
+    for (int i = 0; i < cluster_->num_masters(); i++) {
+      CatalogManager* catalog =
+          cluster_->mini_master(i)->master()->catalog_manager();
+      CatalogManager::ScopedLeaderSharedLock l(catalog);
+      if (l.first_failed_status().ok()) {
+        bool exists;
+        ASSERT_OK(catalog->TableNameExists(kTableId1, &exists));
+        ASSERT_TRUE(exists);
+        ASSERT_OK(catalog->TableNameExists(kTableId2, &exists));
+        ASSERT_TRUE(exists);
+        return;
+      }
+    }
+    SleepFor(MonoDelta::FromMilliseconds(1));
+  }
 }
 
 // When all masters are down, test that we can timeout the connection

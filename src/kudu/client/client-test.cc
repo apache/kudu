@@ -2318,8 +2318,13 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_EQ(kRenamedTableName, tablet_peer->tablet()->metadata()->table_name());
 
     CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
-    ASSERT_TRUE(catalog_manager->TableNameExists(kRenamedTableName));
-    ASSERT_FALSE(catalog_manager->TableNameExists(kTableName));
+    CatalogManager::ScopedLeaderSharedLock l(catalog_manager);
+    ASSERT_OK(l.first_failed_status());
+    bool exists;
+    ASSERT_OK(catalog_manager->TableNameExists(kRenamedTableName, &exists));
+    ASSERT_TRUE(exists);
+    ASSERT_OK(catalog_manager->TableNameExists(kTableName, &exists));
+    ASSERT_FALSE(exists);
   }
 }
 
@@ -2338,7 +2343,13 @@ TEST_F(ClientTest, TestDeleteTable) {
   string tablet_id = GetFirstTabletId(client_table_.get());
   ASSERT_OK(client_->DeleteTable(kTableName));
   CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
-  ASSERT_FALSE(catalog_manager->TableNameExists(kTableName));
+  {
+    CatalogManager::ScopedLeaderSharedLock l(catalog_manager);
+    ASSERT_OK(l.first_failed_status());
+    bool exists;
+    ASSERT_OK(catalog_manager->TableNameExists(kTableName, &exists));
+    ASSERT_FALSE(exists);
+  }
 
   // Wait until the table is removed from the TS
   int wait_time = 1000;

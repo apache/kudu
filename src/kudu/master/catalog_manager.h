@@ -467,18 +467,23 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // given output stream. This is verbose, meant for debugging.
   void DumpState(std::ostream* out) const;
 
-  // Return true if the table with the specified ID exists,
-  // and set the table pointer to the TableInfo object
+  // Retrieve a table by ID, or null if no such table exists. May fail if the
+  // catalog manager is not yet running. Caller must hold leader_lock_.
+  //
   // NOTE: This should only be used by tests or web-ui
-  bool GetTableInfo(const std::string& table_id, scoped_refptr<TableInfo> *table);
+  Status GetTableInfo(const std::string& table_id, scoped_refptr<TableInfo> *table);
 
-  // Return all the available TableInfo, which also may include not running tables
+  // Retrieve all known tables, even those that are not running. May fail if
+  // the catalog manager is not yet running. Caller must hold leader_lock_.
+  //
   // NOTE: This should only be used by tests or web-ui
-  void GetAllTables(std::vector<scoped_refptr<TableInfo> > *tables);
+  Status GetAllTables(std::vector<scoped_refptr<TableInfo>>* tables);
 
-  // Return true if the specified table name exists
+  // Check if a table exists by name, setting 'exist' appropriately. May fail
+  // if the catalog manager is not yet running. Caller must hold leader_lock_.
+  //
   // NOTE: This should only be used by tests
-  bool TableNameExists(const std::string& table_name);
+  Status TableNameExists(const std::string& table_name, bool* exists);
 
   // Let the catalog manager know that the the given tablet server successfully
   // deleted the specified tablet.

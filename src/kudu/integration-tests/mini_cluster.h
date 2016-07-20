@@ -109,10 +109,6 @@ class MiniCluster {
     return mini_master(0);
   }
 
-  // Returns the leader Master for this MiniCluster or NULL if none can be
-  // found. May block until a leader Master is ready.
-  master::MiniMaster* leader_mini_master();
-
   // Returns the Master at index 'idx' for this MiniCluster.
   master::MiniMaster* mini_master(int idx);
 
@@ -129,18 +125,9 @@ class MiniCluster {
 
   std::string GetTabletServerFsRoot(int idx);
 
-  // Wait for the given tablet to have 'expected_count' replicas
-  // reported on the master. Returns the locations in '*locations'.
-  // Requires that the master has started;
-  // Returns a bad Status if the tablet does not reach the required count
-  // within kTabletReportWaitTimeSeconds.
-  Status WaitForReplicaCount(const std::string& tablet_id,
-                             int expected_count,
-                             master::TabletLocationsPB* locations);
-
   // Wait until the number of registered tablet servers reaches the given
-  // count. Returns Status::TimedOut if the desired count is not achieved
-  // within kRegistrationWaitTimeSeconds.
+  // count on all masters. Returns Status::TimedOut if the desired count is not
+  // achieved within kRegistrationWaitTimeSeconds.
   enum class MatchMode {
     // Ensure that the tservers retrieved from each master match up against the
     // tservers defined in this cluster. The matching is done via
@@ -168,9 +155,7 @@ class MiniCluster {
 
  private:
   enum {
-    kTabletReportWaitTimeSeconds = 5,
     kRegistrationWaitTimeSeconds = 15,
-    kMasterLeaderElectionWaitTimeSeconds = 10
   };
 
   bool running_;

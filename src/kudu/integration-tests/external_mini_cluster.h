@@ -222,10 +222,9 @@ class ExternalMiniCluster {
   // master at 'idx' is running.
   std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx);
 
-  // Wait until the number of registered tablet servers reaches the
-  // given count on at least one of the running masters.  Returns
-  // Status::TimedOut if the desired count is not achieved with the
-  // given timeout.
+  // Wait until the number of registered tablet servers reaches the given count
+  // on all of the running masters. Returns Status::TimedOut if the desired
+  // count is not achieved with the given timeout.
   Status WaitForTabletServerCount(int count, const MonoDelta& timeout);
 
   // Runs gtest assertions that no servers have crashed.

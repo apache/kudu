@@ -179,28 +179,6 @@ Status MiniCluster::AddTabletServer() {
   return Status::OK();
 }
 
-MiniMaster* MiniCluster::leader_mini_master() {
-  Stopwatch sw;
-  sw.start();
-  while (sw.elapsed().wall_seconds() < kMasterLeaderElectionWaitTimeSeconds) {
-    for (int i = 0; i < mini_masters_.size(); i++) {
-      MiniMaster* master = mini_master(i);
-      if (master->master()->IsShutdown()) {
-        continue;
-      }
-      CatalogManager::ScopedLeaderSharedLock l(
-          master->master()->catalog_manager());
-      if (l.first_failed_status().ok()) {
-        return master;
-      }
-    }
-    SleepFor(MonoDelta::FromMilliseconds(1));
-  }
-  LOG(ERROR) << "No leader master elected after " << kMasterLeaderElectionWaitTimeSeconds
-             << " seconds.";
-  return nullptr;
-}
-
 void MiniCluster::Shutdown() {
   for (const shared_ptr<MiniTabletServer>& tablet_server : mini_tablet_servers_) {
     tablet_server->Shutdown();
@@ -240,29 +218,6 @@ string MiniCluster::GetTabletServerFsRoot(int idx) {
   return JoinPathSegments(fs_root_, Substitute("ts-$0-root", idx));
 }
 
-Status MiniCluster::WaitForReplicaCount(const string& tablet_id,
-                                        int expected_count,
-                                        TabletLocationsPB* locations) {
-  Stopwatch sw;
-  sw.start();
-  while (sw.elapsed().wall_seconds() < kTabletReportWaitTimeSeconds) {
-    CatalogManager* catalog = leader_mini_master()->master()->catalog_manager();
-    Status s;
-    {
-      CatalogManager::ScopedLeaderSharedLock l(catalog);
-      RETURN_NOT_OK(l.first_failed_status());
-      s = catalog->GetTabletLocations(tablet_id, locations);
-    }
-    if (s.ok() && locations->replicas_size() == expected_count) {
-      return Status::OK();
-    }
-
-    SleepFor(MonoDelta::FromMilliseconds(1));
-  }
-  return Status::TimedOut(Substitute("Tablet $0 never reached expected replica count $1",
-                                     tablet_id, expected_count));
-}
-
 Status MiniCluster::WaitForTabletServerCount(int count) {
   vector<shared_ptr<master::TSDescriptor>> descs;
   return WaitForTabletServerCount(count, MatchMode::MATCH_TSERVERS, &descs);
@@ -271,14 +226,18 @@ Status MiniCluster::WaitForTabletServerCount(int count) {
 Status MiniCluster::WaitForTabletServerCount(int count,
                                              MatchMode mode,
                                              vector<shared_ptr<TSDescriptor>>* descs) {
+  unordered_set<int> masters_to_search;
+  for (int i = 0; i < num_masters(); i++) {
+    if (!mini_master(i)->master()->IsShutdown()) {
+      masters_to_search.insert(i);
+    }
+  }
+
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall_seconds() < kRegistrationWaitTimeSeconds) {
-    leader_mini_master()->master()->ts_manager()->GetAllDescriptors(descs);
-    if (descs->size() == count) {
-      // GetAllDescriptors() may return servers that are no longer online.
-      // Do a second step of verification to verify that the descs that we got
-      // are aligned (same uuid/seqno) with the TSs that we have in the cluster.
+    for (auto iter = masters_to_search.begin(); iter != masters_to_search.end();) {
+      mini_master(*iter)->master()->ts_manager()->GetAllDescriptors(descs);
       int match_count = 0;
       switch (mode) {
         case MatchMode::MATCH_TSERVERS:
@@ -304,14 +263,22 @@ Status MiniCluster::WaitForTabletServerCount(int count,
       }
 
       if (match_count == count) {
-        LOG(INFO) << count << " TS(s) registered with Master after "
-                  << sw.elapsed().wall_seconds() << "s";
-        return Status::OK();
+        // This master has returned the correct set of tservers.
+        iter = masters_to_search.erase(iter);
+      } else {
+        iter++;
       }
+    }
+    if (masters_to_search.empty()) {
+      // All masters have returned the correct set of tservers.
+      LOG(INFO) << Substitute("$0 TS(s) registered with all masters after $1s",
+                              count, sw.elapsed().wall_seconds());
+      return Status::OK();
     }
     SleepFor(MonoDelta::FromMilliseconds(1));
   }
-  return Status::TimedOut(Substitute("$0 TS(s) never registered with master", count));
+  return Status::TimedOut(Substitute(
+      "Timed out waiting for $0 TS(s) to register with all masters", count));
 }
 
 Status MiniCluster::CreateClient(KuduClientBuilder* builder,

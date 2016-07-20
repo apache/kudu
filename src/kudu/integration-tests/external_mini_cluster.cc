@@ -22,6 +22,7 @@
 #include <memory>
 #include <rapidjson/document.h>
 #include <string>
+#include <unordered_set>
 
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.h"
@@ -59,6 +60,7 @@ using kudu::tserver::TabletServerServiceProxy;
 using rapidjson::Value;
 using std::string;
 using std::unique_ptr;
+using std::unordered_set;
 using strings::Substitute;
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
@@ -290,18 +292,26 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(timeout);
 
+  unordered_set<int> masters_to_search;
+  for (int i = 0; i < masters_.size(); i++) {
+    if (!masters_[i]->IsShutdown()) {
+      masters_to_search.insert(i);
+    }
+  }
+
   while (true) {
     MonoDelta remaining = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
     if (remaining.ToSeconds() < 0) {
-      return Status::TimedOut(Substitute("$0 TS(s) never registered with master", count));
+      return Status::TimedOut(Substitute(
+          "Timed out waiting for $0 TS(s) to register with all masters", count));
     }
 
-    for (int i = 0; i < masters_.size(); i++) {
+    for (auto iter = masters_to_search.begin(); iter != masters_to_search.end();) {
       master::ListTabletServersRequestPB req;
       master::ListTabletServersResponsePB resp;
       rpc::RpcController rpc;
       rpc.set_timeout(remaining);
-      RETURN_NOT_OK_PREPEND(master_proxy(i)->ListTabletServers(req, &resp, &rpc),
+      RETURN_NOT_OK_PREPEND(master_proxy(*iter)->ListTabletServers(req, &resp, &rpc),
                             "ListTabletServers RPC failed");
       // ListTabletServers() may return servers that are no longer online.
       // Do a second step of verification to verify that the descs that we got
@@ -317,9 +327,17 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
         }
       }
       if (match_count == count) {
-        LOG(INFO) << count << " TS(s) registered with Master";
-        return Status::OK();
+        // This master has returned the correct set of tservers.
+        iter = masters_to_search.erase(iter);
+      } else {
+        iter++;
       }
+    }
+
+    if (masters_to_search.empty()) {
+      // All masters have returned the correct set of tservers.
+      LOG(INFO) << count << " TS(s) registered with all masters";
+      return Status::OK();
     }
     SleepFor(MonoDelta::FromMilliseconds(1));
   }

@@ -83,9 +83,15 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
 
 void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
                                               stringstream* output) {
+  CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+  if (!l.first_failed_status().ok()) {
+    *output << "Master is not ready: " << l.first_failed_status().ToString();
+    return;
+  }
+
   *output << "<h1>Tables</h1>\n";
 
-  std::vector<scoped_refptr<TableInfo> > tables;
+  std::vector<scoped_refptr<TableInfo>> tables;
   master_->catalog_manager()->GetAllTables(&tables);
 
   *output << "<table class='table table-striped'>\n";
@@ -132,8 +138,20 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     return;
   }
 
+  CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+  if (!l.first_failed_status().ok()) {
+    *output << "Master is not ready: " << l.first_failed_status().ToString();
+    return;
+  }
+
   scoped_refptr<TableInfo> table;
-  if (!master_->catalog_manager()->GetTableInfo(table_id, &table)) {
+  Status s = master_->catalog_manager()->GetTableInfo(table_id, &table);
+  if (!s.ok()) {
+    *output << "Master is not ready: " << s.ToString();
+    return;
+  }
+
+  if (!table) {
     *output << "Table not found";
     return;
   }
@@ -160,7 +178,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     *output << "</table>\n";
 
     SchemaFromPB(l.data().pb.schema(), &schema);
-    Status s = PartitionSchema::FromPB(l.data().pb.partition_schema(), schema, &partition_schema);
+    s = PartitionSchema::FromPB(l.data().pb.partition_schema(), schema, &partition_schema);
     if (!s.ok()) {
       *output << "Unable to decode partition schema: " << s.ToString();
       return;

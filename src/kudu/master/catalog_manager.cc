@@ -1713,23 +1713,35 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
   return Status::OK();
 }
 
-bool CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table) {
+Status CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table) {
+  leader_lock_.AssertAcquiredForReading();
+  RETURN_NOT_OK(CheckOnline());
+
   shared_lock<LockType> l(lock_);
   *table = FindPtrOrNull(table_ids_map_, table_id);
-  return *table != nullptr;
+  return Status::OK();
 }
 
-void CatalogManager::GetAllTables(std::vector<scoped_refptr<TableInfo> > *tables) {
+Status CatalogManager::GetAllTables(std::vector<scoped_refptr<TableInfo>>* tables) {
+  leader_lock_.AssertAcquiredForReading();
+  RETURN_NOT_OK(CheckOnline());
+
   tables->clear();
   shared_lock<LockType> l(lock_);
   for (const TableInfoMap::value_type& e : table_ids_map_) {
     tables->push_back(e.second);
   }
+
+  return Status::OK();
 }
 
-bool CatalogManager::TableNameExists(const string& table_name) {
+Status CatalogManager::TableNameExists(const string& table_name, bool* exists) {
+  leader_lock_.AssertAcquiredForReading();
+  RETURN_NOT_OK(CheckOnline());
+
   shared_lock<LockType> l(lock_);
-  return table_names_map_.find(table_name) != table_names_map_.end();
+  *exists = ContainsKey(table_names_map_, table_name);
+  return Status::OK();
 }
 
 void CatalogManager::NotifyTabletDeleteSuccess(const string& permanent_uuid,
