@@ -5,40 +5,40 @@ active_nav: community
 single_col_extra_classes: community
 ---
 
-### Apache Kudu (incubating) Mailing Lists and Chat Rooms
+### Apache Kudu Mailing Lists and Chat Rooms
 
 Get help using Kudu or contribute to the project on our mailing lists or our chat room:
 
-* **[user@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-user/)**
-  ([subscribe](mailto:user-subscribe@kudu.incubator.apache.org))
-  ([unsubscribe](mailto:user-unsubscribe@kudu.incubator.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-user/)) -
+* **[user@kudu.apache.org](http://mail-archives.apache.org/mod_mbox/kudu-user/)**
+  ([subscribe](mailto:user-subscribe@kudu.apache.org))
+  ([unsubscribe](mailto:user-unsubscribe@kudu.apache.org))
+  ([archives](http://mail-archives.apache.org/mod_mbox/kudu-user/)) -
   for usage questions, help, and announcements.
 * **<a class="icon slack" href="https://getkudu-slack.herokuapp.com/">Kudu Slack channel</a>** -
   where many Kudu developers and users hang out to answer questions and chat.
 
 **Developer mailing lists**
 
-* **[dev@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/)**
-  ([subscribe](mailto:dev-subscribe@kudu.incubator.apache.org))
-  ([unsubscribe](mailto:dev-unsubscribe@kudu.incubator.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/)) -
+* **[dev@kudu.apache.org](http://mail-archives.apache.org/mod_mbox/kudu-dev/)**
+  ([subscribe](mailto:dev-subscribe@kudu.apache.org))
+  ([unsubscribe](mailto:dev-unsubscribe@kudu.apache.org))
+  ([archives](http://mail-archives.apache.org/mod_mbox/kudu-dev/)) -
   for people who want to contribute code to Kudu.
-* **[issues@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-issues/)**
-  ([subscribe](mailto:issues-subscribe@kudu.incubator.apache.org))
-  ([unsubscribe](mailto:issues-unsubscribe@kudu.incubator.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-issues/)) -
+* **[issues@kudu.apache.org](http://mail-archives.apache.org/mod_mbox/kudu-issues/)**
+  ([subscribe](mailto:issues-subscribe@kudu.apache.org))
+  ([unsubscribe](mailto:issues-unsubscribe@kudu.apache.org))
+  ([archives](http://mail-archives.apache.org/mod_mbox/kudu-issues/)) -
   receives an email notification for all ticket updates made in the [Kudu JIRA issue tracker](https://issues.apache.org/jira/browse/KUDU).
-* **[reviews@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-reviews/)**
-  ([subscribe](mailto:reviews-subscribe@kudu.incubator.apache.org))
-  ([unsubscribe](mailto:reviews-unsubscribe@kudu.incubator.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-reviews/)) -
+* **[reviews@kudu.apache.org](http://mail-archives.apache.org/mod_mbox/kudu-reviews/)**
+  ([subscribe](mailto:reviews-subscribe@kudu.apache.org))
+  ([unsubscribe](mailto:reviews-unsubscribe@kudu.apache.org))
+  ([archives](http://mail-archives.apache.org/mod_mbox/kudu-reviews/)) -
   receives an email notification for all code review requests and responses on the
   [Kudu Gerrit](http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu).
-* **[commits@kudu.incubator.apache.org](http://mail-archives.apache.org/mod_mbox/incubator-kudu-commits/)**
-  ([subscribe](mailto:commits-subscribe@kudu.incubator.apache.org))
-  ([unsubscribe](mailto:commits-unsubscribe@kudu.incubator.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/incubator-kudu-commits/)) -
+* **[commits@kudu.apache.org](http://mail-archives.apache.org/mod_mbox/kudu-commits/)**
+  ([subscribe](mailto:commits-subscribe@kudu.apache.org))
+  ([unsubscribe](mailto:commits-unsubscribe@kudu.apache.org))
+  ([archives](http://mail-archives.apache.org/mod_mbox/kudu-commits/)) -
   receives an email notification of all code changes to the
   [Kudu Git repository](https://github.com/apache/incubator-kudu/).
 
@@ -55,7 +55,7 @@ listed below. You don't have to be a developer; there are lots of valuable and
 important ways to get involved that suit any skill set and level.
 
 If you want to do something not listed here, or you see a gap that needs to be
-filled, [let us know](mailto:dev@kudu.incubator.apache.org).
+filled, [let us know](mailto:dev@kudu.apache.org).
 
 #### Participate in the community.
 
@@ -67,7 +67,7 @@ reports.
 
 Let us know what you think of Kudu and how you are using it. Send links to
 blogs or presentations you've given to the [kudu-user mailing
-list](mailto:user@kudu.incubator.apache.org) so that we can feature them.
+list](mailto:user@kudu.apache.org) so that we can feature them.
 
 #### File bugs and enhancement requests.
 
@@ -104,7 +104,7 @@ mailing list or submit documentation patches through Gerrit. You can also
 correct or improve error messages, log messages, or API docs.
 
 If you'd like to translate the Kudu documentation into a different language or
-you'd like to help in some other way, please [let us know](mailto:dev@kudu.incubator.apache.org).
+you'd like to help in some other way, please [let us know](mailto:dev@kudu.apache.org).
 It's best to review the [documentation guidelines](docs/style_guide.html)
 before you get started.
 

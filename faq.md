@@ -43,7 +43,7 @@ workloads.
 
 ### Project Status
 
-#### Is Apache Kudu (incubating) ready to be deployed into production yet?
+#### Is Apache Kudu ready to be deployed into production yet?
 
 We don't yet recommend this -- Kudu is currently in Beta. During the next few months we
 might have to break backwards compatibility with our current on-the-wire or on-disk
@@ -63,8 +63,8 @@ critical missing features such as security and fill in other gaps before releasi
 
 #### Is Kudu open source?
 
-Yes, Kudu is open source and licensed under the Apache Software License, version 2.0. The
-project is under incubation with the Apache Software Foundation.
+Yes, Kudu is open source and licensed under the Apache Software License, version 2.0.
+Apache Kudu is a top level project (TLP) under the umbrella of the Apache Software Foundation.
 
 #### Why was Kudu developed internally at Cloudera before its release?
 

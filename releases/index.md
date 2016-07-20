@@ -5,7 +5,7 @@ active_nav: download
 single_col_extra_classes: releases
 ---
 
-## Apache Kudu (incubating) releases
+## Apache Kudu releases
 
 Kudu is currently in a beta period. It is not yet considered to be production-ready.
 
