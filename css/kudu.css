@@ -31,6 +31,10 @@ footer {
   padding-right: 0;
 }
 
+.kudu-site .jumbotron .logo {
+  margin-bottom:10px;
+}
+
 .kudu-site .jumbotron .btn {
   padding: 14px 24px;
   font-size: 21px;
