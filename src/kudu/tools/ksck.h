@@ -332,6 +332,24 @@ class Ksck {
     check_replica_count_ = check;
   }
 
+  // Setters for filtering the tables/tablets to be checked.
+  //
+  // Filter strings are glob-style patterns. For example, 'Foo*' matches
+  // all tables whose name begins with 'Foo'.
+  //
+  // If tables is not empty, checks only the named tables.
+  // If tablets is not empty, checks only the specified tablet IDs.
+  // If both are specified, takes the intersection.
+  // If both are empty (unset), all tables and tablets are checked.
+  void set_table_filters(vector<string> table_names) {
+    table_filters_ = std::move(table_names);
+  }
+
+  // See above.
+  void set_tablet_id_filters(vector<string> tablet_ids) {
+    tablet_id_filters_ = std::move(tablet_ids);
+  }
+
   // Verifies that it can connect to the master.
   Status CheckMasterRunning();
 
@@ -353,14 +371,8 @@ class Ksck {
   Status CheckTablesConsistency();
 
   // Verifies data checksums on all tablets by doing a scan of the database on each replica.
-  // If tables is not empty, checks only the named tables.
-  // If tablets is not empty, checks only the specified tablets.
-  // If both are specified, takes the intersection.
-  // If both are empty, all tables and tablets are checked.
   // Must first call FetchTableAndTabletInfo().
-  Status ChecksumData(const std::vector<std::string>& tables,
-                      const std::vector<std::string>& tablets,
-                      const ChecksumOptions& options);
+  Status ChecksumData(const ChecksumOptions& options);
 
  private:
   bool VerifyTable(const std::shared_ptr<KsckTable>& table);
@@ -372,6 +384,9 @@ class Ksck {
   const std::shared_ptr<KsckCluster> cluster_;
 
   bool check_replica_count_ = true;
+  vector<string> table_filters_;
+  vector<string> tablet_id_filters_;
+
   DISALLOW_COPY_AND_ASSIGN(Ksck);
 };
 } // namespace tools

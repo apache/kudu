@@ -94,10 +94,7 @@ Status ClusterVerifier::DoKsck() {
   RETURN_NOT_OK(ksck->FetchTableAndTabletInfo());
   RETURN_NOT_OK(ksck->FetchInfoFromTabletServers());
   RETURN_NOT_OK(ksck->CheckTablesConsistency());
-
-  vector<string> tables;
-  vector<string> tablets;
-  RETURN_NOT_OK(ksck->ChecksumData(tables, tablets, checksum_options_));
+  RETURN_NOT_OK(ksck->ChecksumData(checksum_options_));
   return Status::OK();
 }
 

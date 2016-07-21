@@ -321,7 +321,7 @@ TEST_F(KsckTest, TestZeroTableCheck) {
 TEST_F(KsckTest, TestOneTableCheck) {
   CreateOneTableOneTablet();
   ASSERT_OK(RunKsck());
-  ASSERT_OK(ksck_->ChecksumData({}, {}, ChecksumOptions()));
+  ASSERT_OK(ksck_->ChecksumData(ChecksumOptions()));
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "0/1 replicas remaining (20B from disk, 10 rows summed)");
 }
@@ -329,9 +329,35 @@ TEST_F(KsckTest, TestOneTableCheck) {
 TEST_F(KsckTest, TestOneSmallReplicatedTable) {
   CreateOneSmallReplicatedTable();
   ASSERT_OK(RunKsck());
-  ASSERT_OK(ksck_->ChecksumData({}, {}, ChecksumOptions()));
+  ASSERT_OK(ksck_->ChecksumData(ChecksumOptions()));
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "0/9 replicas remaining (180B from disk, 90 rows summed)");
+
+  // Test filtering (a non-matching pattern)
+  err_stream_.str("");
+  ksck_->set_table_filters({"xyz"});
+  ASSERT_OK(RunKsck());
+  Status s = ksck_->ChecksumData(ChecksumOptions());
+  EXPECT_EQ("Not found: No tablet replicas found. Filter: table_filters=xyz", s.ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "INFO: The cluster doesn't have any matching tables");
+
+  // Test filtering with a matching table pattern.
+  err_stream_.str("");
+  ksck_->set_table_filters({"te*"});
+  ASSERT_OK(RunKsck());
+  ASSERT_OK(ksck_->ChecksumData(ChecksumOptions()));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "0/9 replicas remaining (180B from disk, 90 rows summed)");
+
+  // Test filtering with a matching tablet ID pattern.
+  err_stream_.str("");
+  ksck_->set_table_filters({});
+  ksck_->set_tablet_id_filters({"*-id-2"});
+  ASSERT_OK(RunKsck());
+  ASSERT_OK(ksck_->ChecksumData(ChecksumOptions()));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "0/3 replicas remaining (60B from disk, 30 rows summed)");
 }
 
 TEST_F(KsckTest, TestOneOneTabletBrokenTable) {

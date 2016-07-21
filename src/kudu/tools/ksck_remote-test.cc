@@ -235,9 +235,7 @@ TEST_F(RemoteKsckTest, TestChecksum) {
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
 
     err_stream_.str("");
-    s = ksck_->ChecksumData(vector<string>(),
-                            vector<string>(),
-                            ChecksumOptions(MonoDelta::FromSeconds(1), 16, false, 0));
+    s = ksck_->ChecksumData(ChecksumOptions(MonoDelta::FromSeconds(1), 16, false, 0));
     if (s.ok()) {
       // Check the status message at the end of the checksum.
       // We expect '0B from disk' because we didn't write enough data to trigger a flush
@@ -259,9 +257,7 @@ TEST_F(RemoteKsckTest, TestChecksumTimeout) {
   ASSERT_OK(GenerateRowWrites(num_writes));
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   // Use an impossibly low timeout value of zero!
-  Status s = ksck_->ChecksumData(vector<string>(),
-                                 vector<string>(),
-                                 ChecksumOptions(MonoDelta::FromNanoseconds(0), 16, false, 0));
+  Status s = ksck_->ChecksumData(ChecksumOptions(MonoDelta::FromNanoseconds(0), 16, false, 0));
   ASSERT_TRUE(s.IsTimedOut()) << "Expected TimedOut Status, got: " << s.ToString();
 }
 
@@ -286,8 +282,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
   // Remove this loop when that is done. See KUDU-1056.
   while (true) {
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
-    Status s = ksck_->ChecksumData(vector<string>(), vector<string>(),
-                                   ChecksumOptions(MonoDelta::FromSeconds(10), 16, true, ts));
+    Status s = ksck_->ChecksumData(ChecksumOptions(MonoDelta::FromSeconds(10), 16, true, ts));
     if (s.ok()) break;
     if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) break;
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -319,8 +314,7 @@ TEST_F(RemoteKsckTest, DISABLED_TestChecksumSnapshotCurrentTimestamp) {
   CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
 
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
-  ASSERT_OK(ksck_->ChecksumData(vector<string>(), vector<string>(),
-                                ChecksumOptions(MonoDelta::FromSeconds(10), 16, true,
+  ASSERT_OK(ksck_->ChecksumData(ChecksumOptions(MonoDelta::FromSeconds(10), 16, true,
                                                 ChecksumOptions::kCurrentTimestamp)));
   continue_writing.Store(false);
   ASSERT_OK(promise.Get());

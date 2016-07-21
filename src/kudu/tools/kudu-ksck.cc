@@ -90,6 +90,9 @@ static void RunKsck(vector<string>* error_messages) {
   shared_ptr<KsckCluster> cluster(new KsckCluster(master));
   shared_ptr<Ksck> ksck(new Ksck(cluster));
 
+  ksck->set_table_filters(strings::Split(FLAGS_tables, ",", strings::SkipEmpty()));
+  ksck->set_tablet_id_filters(strings::Split(FLAGS_tablets, ",", strings::SkipEmpty()));
+
   // This is required for everything below.
   PUSH_PREPEND_NOT_OK(ksck->CheckMasterRunning(), error_messages,
                       "Master aliveness check error");
@@ -108,9 +111,7 @@ static void RunKsck(vector<string>* error_messages) {
                       "Table consistency check error");
 
   if (FLAGS_checksum_scan) {
-    vector<string> tables = strings::Split(FLAGS_tables, ",", strings::SkipEmpty());
-    vector<string> tablets = strings::Split(FLAGS_tablets, ",", strings::SkipEmpty());
-    PUSH_PREPEND_NOT_OK(ksck->ChecksumData(tables, tablets, ChecksumOptions()),
+    PUSH_PREPEND_NOT_OK(ksck->ChecksumData(ChecksumOptions()),
                         error_messages, "Checksum scan error");
   }
 }

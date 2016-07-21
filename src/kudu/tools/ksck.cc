@@ -21,7 +21,6 @@
 #include <glog/logging.h>
 #include <iostream>
 #include <mutex>
-#include <unordered_set>
 
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
@@ -29,6 +28,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/locks.h"
@@ -81,6 +81,20 @@ static ostream& Warn() {
 static ostream& Error() {
   return Out() << "ERROR: ";
 }
+
+namespace {
+// Return true if 'str' matches any of the patterns in 'patterns', or if
+// 'patterns' is empty.
+bool MatchesAnyPattern(const vector<string>& patterns, const string& str) {
+  // Consider no filter a wildcard.
+  if (patterns.empty()) return true;
+
+  for (const auto& p : patterns) {
+    if (MatchPattern(str, p)) return true;
+  }
+  return false;
+}
+} // anonymous namespace
 
 ChecksumOptions::ChecksumOptions()
     : timeout(MonoDelta::FromSeconds(FLAGS_checksum_timeout_sec)),
@@ -196,28 +210,30 @@ Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
 }
 
 Status Ksck::CheckTablesConsistency() {
-  VLOG(1) << "Getting the tables list";
-  int tables_count = cluster_->tables().size();
-  VLOG(1) << Substitute("List of $0 table(s) retrieved", tables_count);
-
-  if (tables_count == 0) {
-    Info() << "The cluster doesn't have any tables" << endl;
-    return Status::OK();
-  }
-
-  VLOG(1) << "Verifying each table";
+  int tables_checked = 0;
   int bad_tables_count = 0;
   for (const shared_ptr<KsckTable> &table : cluster_->tables()) {
+    if (!MatchesAnyPattern(table_filters_, table->name())) {
+      VLOG(1) << "Skipping table " << table->name();
+      continue;
+    }
+    tables_checked++;
     if (!VerifyTable(table)) {
       bad_tables_count++;
     }
   }
+
+  if (tables_checked == 0) {
+    Info() << "The cluster doesn't have any matching tables" << endl;
+    return Status::OK();
+  }
+
   if (bad_tables_count == 0) {
-    Info() << Substitute("The metadata for $0 table(s) is HEALTHY", tables_count) << endl;
+    Info() << Substitute("The metadata for $0 table(s) is HEALTHY", tables_checked) << endl;
     return Status::OK();
   } else {
     Warn() << Substitute("$0 out of $1 table(s) are not in a healthy state",
-                         bad_tables_count, tables_count) << endl;
+                         bad_tables_count, tables_checked) << endl;
     return Status::Corruption(Substitute("$0 table(s) are bad", bad_tables_count));
   }
 }
@@ -359,12 +375,7 @@ class TabletServerChecksumCallbacks : public ChecksumProgressCallbacks {
   std::string tablet_id_;
 };
 
-Status Ksck::ChecksumData(const vector<string>& tables,
-                          const vector<string>& tablets,
-                          const ChecksumOptions& opts) {
-  const unordered_set<string> tables_filter(tables.begin(), tables.end());
-  const unordered_set<string> tablets_filter(tablets.begin(), tablets.end());
-
+Status Ksck::ChecksumData(const ChecksumOptions& opts) {
   // Copy options so that local modifications can be made and passed on.
   ChecksumOptions options = opts;
 
@@ -374,23 +385,23 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   int num_tablet_replicas = 0;
   for (const shared_ptr<KsckTable>& table : cluster_->tables()) {
     VLOG(1) << "Table: " << table->name();
-    if (!tables_filter.empty() && !ContainsKey(tables_filter, table->name())) continue;
+    if (!MatchesAnyPattern(table_filters_, table->name())) continue;
     for (const shared_ptr<KsckTablet>& tablet : table->tablets()) {
       VLOG(1) << "Tablet: " << tablet->id();
-      if (!tablets_filter.empty() && !ContainsKey(tablets_filter, tablet->id())) continue;
+      if (!MatchesAnyPattern(tablet_id_filters_, tablet->id())) continue;
       InsertOrDie(&tablet_table_map, tablet, table);
       num_tablet_replicas += tablet->replicas().size();
     }
   }
   if (num_tablet_replicas == 0) {
     string msg = "No tablet replicas found.";
-    if (!tables.empty() || !tablets.empty()) {
+    if (!table_filters_.empty() || !tablet_id_filters_.empty()) {
       msg += " Filter: ";
-      if (!tables.empty()) {
-        msg += "tables=" + JoinStrings(tables, ",") + ".";
+      if (!table_filters_.empty()) {
+        msg += "table_filters=" + JoinStrings(table_filters_, ",");
       }
-      if (!tablets.empty()) {
-        msg += "tablets=" + JoinStrings(tablets, ",") + ".";
+      if (!tablet_id_filters_.empty()) {
+        msg += "tablet_id_filters=" + JoinStrings(tablet_id_filters_, ",");
       }
     }
     return Status::NotFound(msg);
@@ -522,24 +533,30 @@ Status Ksck::ChecksumData(const vector<string>& tables,
 
 bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
   bool good_table = true;
-  vector<shared_ptr<KsckTablet> > tablets = table->tablets();
-  int tablets_count = tablets.size();
-  if (tablets_count == 0) {
-    Warn() << Substitute("Table $0 has 0 tablets", table->name()) << endl;
-    return false;
+  const auto all_tablets = table->tablets();
+  vector<shared_ptr<KsckTablet>> tablets;
+  std::copy_if(all_tablets.begin(), all_tablets.end(), std::back_inserter(tablets),
+                 [&](const shared_ptr<KsckTablet>& t) {
+                   return MatchesAnyPattern(tablet_id_filters_, t->id());
+                 });
+
+  if (tablets.empty()) {
+    Info() << Substitute("Table $0 has 0 matching tablets", table->name()) << endl;
+    return true;
   }
   int table_num_replicas = table->num_replicas();
   VLOG(1) << Substitute("Verifying $0 tablets for table $1 configured with num_replicas = $2",
-                        tablets_count, table->name(), table_num_replicas);
+                        tablets.size(), table->name(), table_num_replicas);
+
   int bad_tablets_count = 0;
-  // TODO check if the tablets are contiguous and in order.
   for (const shared_ptr<KsckTablet> &tablet : tablets) {
     if (!VerifyTablet(tablet, table_num_replicas)) {
       bad_tablets_count++;
     }
   }
   if (bad_tablets_count == 0) {
-    Info() << Substitute("Table $0 is HEALTHY", table->name()) << endl;
+    Info() << Substitute("Table $0 is HEALTHY ($1 tablets checked)",
+                         table->name(), tablets.size()) << endl;
   } else {
     Warn() << Substitute("Table $0 has $1 bad tablets", table->name(), bad_tablets_count) << endl;
     good_table = false;
