@@ -43,6 +43,13 @@ static const char* const kSlowTestsEnvVariable = "KUDU_ALLOW_SLOW_TESTS";
 
 static const uint64 kTestBeganAtMicros = Env::Default()->NowMicros();
 
+// Global which production code can check to see if it is running
+// in a GTest environment (assuming the test binary links in this module,
+// which is typically a good assumption). This can be imported
+// as a weak symbol such that, if it's not linked in, the reader sees
+// 'false'.
+bool g_is_gtest = true;
+
 ///////////////////////////////////////////////////
 // KuduTest
 ///////////////////////////////////////////////////

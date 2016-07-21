@@ -373,7 +373,7 @@ class LogBlockManager : public BlockManager {
   ObjectIdGenerator oid_generator_;
 
   // For generating block IDs.
-  ThreadSafeRandom rand_;
+  AtomicInt<int64_t> next_block_id_;
 
   // Metrics for the block manager.
   //

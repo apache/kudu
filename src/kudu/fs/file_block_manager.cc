@@ -510,6 +510,7 @@ FileBlockManager::FileBlockManager(Env* env, const BlockManagerOptions& opts)
     read_only_(opts.read_only),
     root_paths_(opts.root_paths),
     rand_(GetRandomSeed32()),
+    next_block_id_(rand_.Next64()),
     mem_tracker_(MemTracker::CreateTracker(-1,
                                            "file_block_manager",
                                            opts.parent_mem_tracker)) {
@@ -664,15 +665,22 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
   internal::FileBlockLocation location;
   shared_ptr<WritableFile> writer;
 
+  int attempt_num = 0;
   // Repeat in case of block id collisions (unlikely).
   do {
     created_dirs.clear();
+
+    // If we failed to generate a unique ID, start trying again from a random
+    // part of the key space.
+    if (attempt_num++ > 0) {
+      next_block_id_.Store(rand_.Next64());
+    }
 
     // Make sure we don't accidentally create a location using the magic
     // invalid ID value.
     BlockId id;
     do {
-      id.SetId(rand_.Next64());
+      id.SetId(next_block_id_.Increment());
     } while (id.IsNull());
 
     location = internal::FileBlockLocation::FromParts(

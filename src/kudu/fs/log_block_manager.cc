@@ -17,6 +17,7 @@
 
 #include "kudu/fs/log_block_manager.h"
 
+#include <algorithm>
 #include <mutex>
 
 #include "kudu/fs/block_manager_metrics.h"
@@ -110,6 +111,9 @@ using std::unordered_set;
 using strings::Substitute;
 
 namespace kudu {
+
+ATTRIBUTE_WEAK bool g_is_gtest;
+
 namespace fs {
 namespace internal {
 
@@ -1089,7 +1093,20 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
     read_only_(opts.read_only),
     root_paths_(opts.root_paths),
     root_paths_idx_(0),
-    rand_(GetRandomSeed32()) {
+    next_block_id_(1) {
+
+  // HACK: when running in a test environment, we often instantiate many
+  // LogBlockManagers in the same process, eg corresponding to different
+  // tablet servers in a minicluster, or due to running many separate test
+  // cases of some CFile-related code. In that case, we need to make it more
+  // likely that the block IDs are not reused. So, instead of starting with
+  // block ID 1, we'll start with a random block ID. A collision is still
+  // possible, but exceedingly unlikely.
+  if (g_is_gtest) {
+    Random r(GetRandomSeed32());
+    next_block_id_.Store(r.Next64());
+  }
+
   DCHECK_GT(root_paths_.size(), 0);
   if (opts.metric_entity) {
     metrics_.reset(new internal::LogBlockManagerMetrics(opts.metric_entity));
@@ -1322,9 +1339,11 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
   }
 
   // Generate a free block ID.
+  // We have to loop here because earlier versions used non-sequential block IDs,
+  // and thus we may have to "skip over" some block IDs that are claimed.
   BlockId new_block_id;
   do {
-    new_block_id.SetId(rand_.Next64());
+    new_block_id.SetId(next_block_id_.Increment());
   } while (!TryUseBlockId(new_block_id));
 
   block->reset(new internal::LogWritableBlock(container,
@@ -1637,10 +1656,17 @@ void LogBlockManager::OpenRootPath(const string& root_path,
     // the second container, we'd think there was a duplicate block. Building
     // the container-local map first ensures that we discount deleted blocks
     // before checking for duplicate IDs.
+    //
+    // NOTE: Since KUDU-1538, we allocate sequential block IDs, which makes reuse
+    // exceedingly unlikely. However, we might have old data which still exhibits
+    // the above issue.
     UntrackedBlockMap blocks_in_container;
+    uint64_t max_block_id = 0;
     for (const BlockRecordPB& r : records) {
       ProcessBlockRecord(r, container.get(), &blocks_in_container);
+      max_block_id = std::max(max_block_id, r.block_id().id());
     }
+    next_block_id_.StoreMax(max_block_id + 1);
 
     // Under the lock, merge this map into the main block map and add
     // the container.

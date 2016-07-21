@@ -26,6 +26,7 @@
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/random.h"
 
@@ -125,6 +126,7 @@ class FileBlockManager : public BlockManager {
 
   // For generating block IDs.
   ThreadSafeRandom rand_;
+  AtomicInt<int64_t> next_block_id_;
 
   // Protects 'dirty_dirs_' and 'next_root_path_'.
   mutable simple_spinlock lock_;
