@@ -9,6 +9,8 @@ body {
   border-top: 1px solid #eee;
 }
 
+h1, .h1, h2, .h2 { font-size:30px; }
+
 /* Override <code> to match <pre> instead of being red. */
 code {
     color: #333;
@@ -238,6 +240,10 @@ footer {
 .community ol li:last-child {
     padding-bottom: 0;
 }
+
+.committers table { width:100%; border:1px solid #bbb; border-collapse:collapse; }
+.committers td, .committers th { padding:.3em; border:1px solid #bbb; }
+.committers tbody tr:nth-child(odd) { background-color:#f6f6f6; }
 
 @media (min-width: 1200px) { .container-fluid {
   width: 1170px
