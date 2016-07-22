@@ -49,9 +49,9 @@ TODO: attributions for CC-A
     <h3>Low-latency random access</h3>
     <p>
       Unlike other storage for big data analytics, Kudu isn't just a file format. It's a live storage
-      system which supports low-latency millisecond-scale access to individual rows. You can choose
-      between Java or C++ APIs, with Python support under development. And of course these random access
-      APIs can be used in conjunction with batch access for machine learning or analytics.
+      system which supports low-latency millisecond-scale access to individual rows. For
+      "NoSQL"-style access, you can choose between Java, C++, or Python APIs. And of course these
+      random access APIs can be used in conjunction with batch access for machine learning or analytics.
     </p>
     <p>
       Kudu's APIs are designed to be easy to use. The data model is fully typed, so you don't
@@ -77,7 +77,7 @@ TODO: attributions for CC-A
 
 <div class="row overview">
   <div class="col-md-6">
-    <h3>Integration with the Hadoop Ecosystem</h3>
+    <h3>Apache Hadoop Ecosystem Integration</h3>
     <p>
       Kudu was designed to fit in with the Hadoop ecosystem, and integrating it with other
       data processing frameworks is simple. You can stream data in from live real-time data sources
@@ -115,7 +115,7 @@ TODO: attributions for CC-A
       without good metrics, tracing, or administrative tools.
     </p>
     <p>
-      Even in its first beta release, Kudu includes advanced in-process tracing capabilities,
+      Ever since its first beta release, Kudu has included advanced in-process tracing capabilities,
       extensive metrics support, and even watchdog threads which check for latency
       outliers and dump "smoking gun" stack traces to get to the root of the problem
       quickly.
@@ -131,18 +131,10 @@ TODO: attributions for CC-A
   <div class="col-md-6">
     <h3><a name="opensource">Open Source</a></h3>
     <p>
-      Kudu is Open Source software, licensed under the Apache 2.0 license. Although
-      most of the contributions have been from developers from a single company
-      up to this point, we believe that Kudu's long-term success depends on
-      building a vibrant community of developers and users from diverse organizations and backgrounds.
-    </p>
-    <p>
-      Our first order of business is to migrate all of our code reviews and
-      daily development discussions into the open. We're also working on proposing
-      Kudu for inclusion in the Apache Software Foundation's Incubator. With
-      several Apache Members and Committers on the development team, we are
-      familiar with the Apache Way and looking forward to contributing this
-      project to the ASF.
+      Kudu is Open Source software, licensed under the Apache 2.0 license and
+      governed under the aegis of the Apache Software Foundation. We believe
+      that Kudu's long-term success depends on building a vibrant community of
+      developers and users from diverse organizations and backgrounds.
     </p>
     <ul>
       <li><a href="{{site.github.url}}/community.html">Learn more about how to contribute</a></li>
@@ -150,7 +142,7 @@ TODO: attributions for CC-A
     </ul>
   </div>
   <div class="col-md-6">
-    <img class="img-responsive" src="{{site.github.url}}/img/github.png" size="75%"/>
+    <img class="img-responsive" src="{{site.github.url}}/img/asf_logo.png" size="75%"/>
   </div>
 </div>
 
@@ -212,8 +204,8 @@ TODO: attributions for CC-A
     <p>
       The use of majority consensus provides very low tail latencies
       even when some nodes may be stressed by concurrent workloads such as
-      MapReduce jobs or heavy Impala queries. But unlike eventual
-      consistency systems, Raft consensus ensures that all replicas will
+      Spark jobs or heavy Impala queries. But unlike eventually
+      consistent systems, Raft consensus ensures that all replicas will
       come to agreement around the state of the data, and by using a
       combination of logical and physical clocks, Kudu can offer strict
       snapshot consistency to clients that demand it.
