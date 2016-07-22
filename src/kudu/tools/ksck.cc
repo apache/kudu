@@ -463,10 +463,9 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
     }
   }
 
-  bool timed_out = false;
-  if (!reporter->WaitFor(options.timeout)) {
-    timed_out = true;
-  }
+  bool timed_out = !reporter->WaitFor(options.timeout);
+
+  // Even if we timed out, print the checksum results that we did get.
   ChecksumResultReporter::TabletResultMap checksums = reporter->checksums();
 
   int num_errors = 0;
@@ -513,14 +512,16 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
     }
     if (printed_table_name) cout << endl;
   }
-  if (num_results != num_tablet_replicas) {
-    CHECK(timed_out) << Substitute("Unexpected error: only got $0 out of $1 replica results",
-                                   num_results, num_tablet_replicas);
+  if (timed_out) {
     return Status::TimedOut(Substitute("Checksum scan did not complete within the timeout of $0: "
                                        "Received results for $1 out of $2 expected replicas",
                                        options.timeout.ToString(), num_results,
                                        num_tablet_replicas));
   }
+  CHECK_EQ(num_results, num_tablet_replicas)
+      << Substitute("Unexpected error: only got $0 out of $1 replica results",
+                    num_results, num_tablet_replicas);
+
   if (num_mismatches != 0) {
     return Status::Corruption(Substitute("$0 checksum mismatches were detected", num_mismatches));
   }
