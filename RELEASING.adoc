@@ -123,7 +123,7 @@ Initiating a Vote for an RC
 
 . Send an email to dev@kudu.apache.org to start the RC process, using
   this
-  link:http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/201606.mbox/%3CCAGpTDNduoQM0ktuZc1eW1XeXCcXhvPGftJ%3DLRB8Er5c2dZptvw%40mail.gmail.com%3E[example]
+  link:http://mail-archives.apache.org/mod_mbox/kudu-dev/201606.mbox/%3CCAGpTDNduoQM0ktuZc1eW1XeXCcXhvPGftJ%3DLRB8Er5c2dZptvw%40mail.gmail.com%3E[example]
   as a template.
 
 . Reminder that voting on a release requires a Majority Approval by the PMC.
@@ -131,7 +131,7 @@ Initiating a Vote for an RC
 . Cycle through as many RCs as required.
 
 . Always send an email with a different subject to indicate the result. For
-  link:http://mail-archives.apache.org/mod_mbox/incubator-kudu-dev/201606.mbox/%3CCAGpTDNeJdU%2BoUF4ZJneZt%3DCfFHY-HoqKgORwVuWWUMHq5jBNzA%40mail.gmail.com%3E[example].
+  link:http://mail-archives.apache.org/mod_mbox/kudu-dev/201606.mbox/%3CCAGpTDNeJdU%2BoUF4ZJneZt%3DCfFHY-HoqKgORwVuWWUMHq5jBNzA%40mail.gmail.com%3E[example].
 
 . After the vote passes, send an email to dev@kudu.apache.org
   indicating the result.

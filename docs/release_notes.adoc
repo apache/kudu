@@ -451,7 +451,7 @@ Trusty, and SLES 12. Other operating systems may work but have not been tested.
 This release of Kudu is a public beta. Do not run this beta release on production clusters.
 During the public beta period, Kudu will be supported via a
 link:https://issues.cloudera.org/projects/KUDU[public JIRA] and a public
-link:http://mail-archives.apache.org/mod_mbox/incubator-kudu-user/[mailing list], which will be
+link:http://mail-archives.apache.org/mod_mbox/kudu-user/[mailing list], which will be
 monitored by the Kudu development team and community members. Commercial support
 is not available at this time.
 
