@@ -45,7 +45,7 @@ $SOURCE_ROOT/build-support/enable_devtoolset.sh \
     -DNO_TESTS=1 \
     -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
     $SOURCE_ROOT
-make -j$(getconf _NPROCESSORS_ONLN)
+make -j$(getconf _NPROCESSORS_ONLN) all doxygen
 
 # Check out the gh-pages repo into $SITE_OUTPUT_DIR
 git clone -q $(git config --get remote.origin.url) --reference $SOURCE_ROOT -b gh-pages --depth 1 "$SITE_OUTPUT_DIR"
@@ -77,9 +77,13 @@ fi
 rm -Rf "$SITE_OUTPUT_DIR/apidocs"
 cp -au "$SOURCE_ROOT/java/target/site/apidocs" "$SITE_OUTPUT_DIR/"
 
+CPP_CLIENT_API_SUBDIR="cpp-client-api"
+rm -Rf "$SITE_OUTPUT_DIR/$CPP_CLIENT_API_SUBDIR"
+cp -a "$SOURCE_ROOT/docs/doxygen/client_api/html" "$SITE_OUTPUT_DIR/$CPP_CLIENT_API_SUBDIR"
+
 cd "$SITE_OUTPUT_DIR"
 SITE_ARCHIVE="$SITE_OUTPUT_DIR/website_archive.zip"
-zip -rq "$SITE_ARCHIVE" docs apidocs
+zip -rq "$SITE_ARCHIVE" docs apidocs "$CPP_CLIENT_API_SUBDIR"
 
 echo "Generated web site at $SITE_OUTPUT_DIR"
 echo "Docs zip generated at $SITE_ARCHIVE"
