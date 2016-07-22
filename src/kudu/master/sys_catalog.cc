@@ -420,8 +420,8 @@ Status SysCatalogTable::ReqAddTable(WriteRequestPB* req, const TableInfo* table)
 
   KuduPartialRow row(&schema_);
   CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLES_ENTRY));
-  CHECK_OK(row.SetString(kSysCatalogTableColId, table->id()));
-  CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, table->id()));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT, row);
   return Status::OK();
@@ -436,8 +436,8 @@ Status SysCatalogTable::ReqUpdateTable(WriteRequestPB* req, const TableInfo* tab
 
   KuduPartialRow row(&schema_);
   CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLES_ENTRY));
-  CHECK_OK(row.SetString(kSysCatalogTableColId, table->id()));
-  CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, table->id()));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   enc.Add(RowOperationsPB::UPDATE, row);
   return Status::OK();
@@ -446,7 +446,7 @@ Status SysCatalogTable::ReqUpdateTable(WriteRequestPB* req, const TableInfo* tab
 Status SysCatalogTable::ReqDeleteTable(WriteRequestPB* req, const TableInfo* table) {
   KuduPartialRow row(&schema_);
   CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLES_ENTRY));
-  CHECK_OK(row.SetString(kSysCatalogTableColId, table->id()));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, table->id()));
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   enc.Add(RowOperationsPB::DELETE, row);
   return Status::OK();
@@ -513,8 +513,8 @@ Status SysCatalogTable::ReqAddTablets(WriteRequestPB* req,
     }
 
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
-    CHECK_OK(row.SetString(kSysCatalogTableColId, tablet->tablet_id()));
-    CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
+    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
+    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
     enc.Add(RowOperationsPB::INSERT, row);
   }
 
@@ -533,8 +533,8 @@ Status SysCatalogTable::ReqUpdateTablets(WriteRequestPB* req,
     }
 
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
-    CHECK_OK(row.SetString(kSysCatalogTableColId, tablet->tablet_id()));
-    CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
+    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
+    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
     enc.Add(RowOperationsPB::UPDATE, row);
   }
 
@@ -547,7 +547,7 @@ Status SysCatalogTable::ReqDeleteTablets(WriteRequestPB* req,
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   for (auto tablet : tablets) {
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
-    CHECK_OK(row.SetString(kSysCatalogTableColId, tablet->tablet_id()));
+    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
     enc.Add(RowOperationsPB::DELETE, row);
   }
 

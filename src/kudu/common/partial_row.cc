@@ -248,12 +248,6 @@ Status KuduPartialRow::SetFloat(const Slice& col_name, float val) {
 Status KuduPartialRow::SetDouble(const Slice& col_name, double val) {
   return Set<TypeTraits<DOUBLE> >(col_name, val);
 }
-Status KuduPartialRow::SetString(const Slice& col_name, const Slice& val) {
-  return Set<TypeTraits<STRING> >(col_name, val, false);
-}
-Status KuduPartialRow::SetBinary(const Slice& col_name, const Slice& val) {
-  return Set<TypeTraits<BINARY> >(col_name, val, false);
-}
 Status KuduPartialRow::SetBool(int col_idx, bool val) {
   return Set<TypeTraits<BOOL> >(col_idx, val);
 }
@@ -272,12 +266,6 @@ Status KuduPartialRow::SetInt64(int col_idx, int64_t val) {
 Status KuduPartialRow::SetTimestamp(int col_idx, int64_t val) {
   return Set<TypeTraits<TIMESTAMP> >(col_idx, val);
 }
-Status KuduPartialRow::SetString(int col_idx, const Slice& val) {
-  return Set<TypeTraits<STRING> >(col_idx, val, false);
-}
-Status KuduPartialRow::SetBinary(int col_idx, const Slice& val) {
-  return Set<TypeTraits<BINARY> >(col_idx, val, false);
-}
 Status KuduPartialRow::SetFloat(int col_idx, float val) {
   return Set<TypeTraits<FLOAT> >(col_idx, val);
 }
@@ -285,17 +273,43 @@ Status KuduPartialRow::SetDouble(int col_idx, double val) {
   return Set<TypeTraits<DOUBLE> >(col_idx, val);
 }
 
+Status KuduPartialRow::SetBinary(const Slice& col_name, const Slice& val) {
+  return SetBinaryCopy(col_name, val);
+}
+Status KuduPartialRow::SetString(const Slice& col_name, const Slice& val) {
+  return SetStringCopy(col_name, val);
+}
+Status KuduPartialRow::SetBinary(int col_idx, const Slice& val) {
+  return SetBinaryCopy(col_idx, val);
+}
+Status KuduPartialRow::SetString(int col_idx, const Slice& val) {
+  return SetStringCopy(col_idx, val);
+}
+
 Status KuduPartialRow::SetBinaryCopy(const Slice& col_name, const Slice& val) {
   return SetSliceCopy<TypeTraits<BINARY> >(col_name, val);
-}
-Status KuduPartialRow::SetBinaryCopy(int col_idx, const Slice& val) {
-  return SetSliceCopy<TypeTraits<BINARY> >(col_idx, val);
 }
 Status KuduPartialRow::SetStringCopy(const Slice& col_name, const Slice& val) {
   return SetSliceCopy<TypeTraits<STRING> >(col_name, val);
 }
+Status KuduPartialRow::SetBinaryCopy(int col_idx, const Slice& val) {
+  return SetSliceCopy<TypeTraits<BINARY> >(col_idx, val);
+}
 Status KuduPartialRow::SetStringCopy(int col_idx, const Slice& val) {
   return SetSliceCopy<TypeTraits<STRING> >(col_idx, val);
+}
+
+Status KuduPartialRow::SetBinaryNoCopy(const Slice& col_name, const Slice& val) {
+  return Set<TypeTraits<BINARY> >(col_name, val, false);
+}
+Status KuduPartialRow::SetStringNoCopy(const Slice& col_name, const Slice& val) {
+  return Set<TypeTraits<STRING> >(col_name, val, false);
+}
+Status KuduPartialRow::SetBinaryNoCopy(int col_idx, const Slice& val) {
+  return Set<TypeTraits<BINARY> >(col_idx, val, false);
+}
+Status KuduPartialRow::SetStringNoCopy(int col_idx, const Slice& val) {
+  return Set<TypeTraits<STRING> >(col_idx, val, false);
 }
 
 template<typename T>

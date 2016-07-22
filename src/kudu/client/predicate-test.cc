@@ -803,7 +803,7 @@ TEST_F(PredicateTest, TestStringPredicates) {
   for (const string& value : values) {
       unique_ptr<KuduInsert> insert(table->NewInsert());
       ASSERT_OK(insert->mutable_row()->SetInt64("key", i++));
-      ASSERT_OK(insert->mutable_row()->SetString("value", value));
+      ASSERT_OK(insert->mutable_row()->SetStringNoCopy("value", value));
       ASSERT_OK(session->Apply(insert.release()));
   }
   unique_ptr<KuduInsert> null_insert(table->NewInsert());
@@ -824,7 +824,7 @@ TEST_F(PredicateTest, TestBinaryPredicates) {
   for (const string& value : values) {
       unique_ptr<KuduInsert> insert(table->NewInsert());
       ASSERT_OK(insert->mutable_row()->SetInt64("key", i++));
-      ASSERT_OK(insert->mutable_row()->SetBinary("value", value));
+      ASSERT_OK(insert->mutable_row()->SetBinaryNoCopy("value", value));
       ASSERT_OK(session->Apply(insert.release()));
   }
   unique_ptr<KuduInsert> null_insert(table->NewInsert());

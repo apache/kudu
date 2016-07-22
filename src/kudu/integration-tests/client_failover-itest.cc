@@ -115,7 +115,7 @@ TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
   KuduInsert* insert = table->NewInsert();
   ASSERT_OK(insert->mutable_row()->SetInt32(0, 0));
   ASSERT_OK(insert->mutable_row()->SetInt32(1, 1));
-  ASSERT_OK(insert->mutable_row()->SetString(2, "a"));
+  ASSERT_OK(insert->mutable_row()->SetStringNoCopy(2, "a"));
   ASSERT_OK(session->Apply(insert));
   ASSERT_OK(session->Flush());
   ASSERT_EQ(1, CountTableRows(table.get()));
@@ -190,7 +190,7 @@ TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
     KuduUpdate* update = table->NewUpdate();
     ASSERT_OK(update->mutable_row()->SetInt32(0, 0));
     ASSERT_OK(update->mutable_row()->SetInt32(1, 2));
-    ASSERT_OK(update->mutable_row()->SetString(2, "b"));
+    ASSERT_OK(update->mutable_row()->SetStringNoCopy(2, "b"));
     ASSERT_OK(session->Apply(update));
     ASSERT_OK(session->Flush());
   }

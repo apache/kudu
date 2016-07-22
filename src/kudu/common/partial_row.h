@@ -123,12 +123,15 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetDouble(int col_idx, double val) WARN_UNUSED_RESULT;
   ///@}
 
-  /// @name Setters for string/binary columns by name.
+  /// @name Setters for binary/string columns by name (copying).
   ///
-  /// Set the string/binary value for a column by name.
+  /// Set the binary/string value for a column by name, copying the specified
+  /// data immediately.
   ///
-  /// @note These methods do not copy the value, so the slice must remain valid
-  ///   until corresponding data is sent to the server.
+  /// @note The copying behavior is new for these methods starting Kudu 0.10.
+  ///   Prior to Kudu 0.10, these methods behaved like
+  ///   KuduPartialRow::SetStringNoCopy() and KuduPartialRow::SetBinaryNoCopy()
+  ///   correspondingly.
   ///
   /// @param [in] col_name
   ///   Name of the target column.
@@ -137,21 +140,24 @@ class KUDU_EXPORT KuduPartialRow {
   /// @return Operation result status.
   ///
   ///@{
-  Status SetString(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   Status SetBinary(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
+  Status SetString(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
-  /// @name Setters for string/binary columns by index.
+  /// @name Setters for binary/string columns by index (copying).
   ///
-  /// Set the string/binary value for a column by index.
+  /// Set the binary/string value for a column by index, copying the specified
+  /// data immediately.
   ///
-  /// These setters are same as the corresponding column-name-based setters,
+  /// These setters are the same as the corresponding column-name-based setters,
   /// but with numeric column indexes. These are faster since they avoid
   /// hashmap lookups, so should be preferred in performance-sensitive code
   /// (e.g. bulk loaders).
   ///
-  /// @note These methods do not copy the value, so the slice must remain valid
-  ///   until corresponding data is sent to the server.
+  /// @note The copying behavior is new for these methods starting Kudu 0.10.
+  ///   Prior to Kudu 0.10, these methods behaved like
+  ///   KuduPartialRow::SetStringNoCopy() and KuduPartialRow::SetBinaryNoCopy()
+  ///   correspondingly.
   ///
   /// @param [in] col_idx
   ///   The index of the target column.
@@ -164,9 +170,10 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetString(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
-  /// @name Setters for string/binary columns by name (copying).
+  /// @name Setters for binary/string columns by name (copying).
   ///
-  /// Set the string/binary value for a column by name.
+  /// Set the binary/string value for a column by name, copying the specified
+  /// data immediately.
   ///
   /// @param [in] col_name
   ///   Name of the target column.
@@ -175,13 +182,19 @@ class KUDU_EXPORT KuduPartialRow {
   /// @return Operation result status.
   ///
   ///@{
-  Status SetStringCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   Status SetBinaryCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
+  Status SetStringCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
-  /// @name Setters for string/binary columns by index (copying).
+  /// @name Setters for binary/string columns by index (copying).
   ///
-  /// Set the string/binary value for a column by index.
+  /// Set the binary/string value for a column by index, copying the specified
+  /// data immediately.
+  ///
+  /// These setters are the same as the corresponding column-name-based setters,
+  /// but with numeric column indexes. These are faster since they avoid
+  /// hashmap lookups, so should be preferred in performance-sensitive code
+  /// (e.g. bulk loaders).
   ///
   /// @param [in] col_idx
   ///   The index of the target column.
@@ -192,6 +205,53 @@ class KUDU_EXPORT KuduPartialRow {
   ///@{
   Status SetStringCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   Status SetBinaryCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
+  ///@}
+
+  /// @name Setters for binary/string columns by name (non-copying).
+  ///
+  /// Set the binary/string value for a column by name, not copying the
+  /// specified data.
+  ///
+  /// @note The specified data must remain valid until the corresponding
+  ///   RPC calls are completed to be able to access error buffers,
+  ///   if any errors happened (the errors can be fetched using the
+  ///   KuduSession::GetPendingErrors() method).
+  ///
+  /// @param [in] col_name
+  ///   Name of the target column.
+  /// @param [in] val
+  ///   The value to set.
+  /// @return Operation result status.
+  ///
+  ///@{
+  Status SetBinaryNoCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
+  Status SetStringNoCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
+  ///@}
+
+  /// @name Setters for binary/string columns by index (non-copying).
+  ///
+  /// Set the binary/string value for a column by index, not copying the
+  /// specified data.
+  ///
+  /// These setters are the same as the corresponding column-name-based setters,
+  /// but with numeric column indexes. These are faster since they avoid
+  /// hashmap lookups, so should be preferred in performance-sensitive code
+  /// (e.g. bulk loaders).
+  ///
+  /// @note The specified data must remain valid until the corresponding
+  ///   RPC calls are completed to be able to access error buffers,
+  ///   if any errors happened (the errors can be fetched using the
+  ///   KuduSession::GetPendingErrors() method).
+  ///
+  /// @param [in] col_idx
+  ///   The index of the target column.
+  /// @param [in] val
+  ///   The value to set.
+  /// @return Operation result status.
+  ///
+  ///@{
+  Status SetBinaryNoCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
+  Status SetStringNoCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
   /// Set column value to @c NULL; the column is identified by its name.

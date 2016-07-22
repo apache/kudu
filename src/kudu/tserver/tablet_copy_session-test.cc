@@ -156,7 +156,7 @@ class TabletCopyTest : public KuduTabletTest {
       KuduPartialRow row(&client_schema_);
 
       string key = Substitute("key$0", i);
-      ASSERT_OK(row.SetString(0, key));
+      ASSERT_OK(row.SetStringNoCopy(0, key));
       ASSERT_OK(row.SetInt32(1, i));
       enc.Add(RowOperationsPB::INSERT, row);
 

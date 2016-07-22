@@ -98,7 +98,7 @@ TEST_F(KeyUtilTest, TestIncrementCompositeIntStringPrimaryKey) {
 
   // Normal increment.
   EXPECT_OK(p_row.SetInt32(0, 1000));
-  EXPECT_OK(p_row.SetString(1, "hello"));
+  EXPECT_OK(p_row.SetStringNoCopy(1, "hello"));
   EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("int32 k1=1000, string k2=hello\\000", p_row.ToString());
 
@@ -118,7 +118,7 @@ TEST_F(KeyUtilTest, TestIncrementCompositeStringIntPrimaryKey) {
   ContiguousRow row(&schema, row_data(&p_row));
 
   // Normal increment.
-  EXPECT_OK(p_row.SetString(0, "hello"));
+  EXPECT_OK(p_row.SetStringNoCopy(0, "hello"));
   EXPECT_OK(p_row.SetInt32(1, 1000));
   EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
   EXPECT_EQ("string k1=hello, int32 k2=1001", p_row.ToString());

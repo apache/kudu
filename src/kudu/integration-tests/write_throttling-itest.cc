@@ -89,7 +89,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteRpcPerSec) {
       gscoped_ptr<KuduInsert> insert(table_->NewInsert());
       KuduPartialRow* row = insert->mutable_row();
       CHECK_OK(row->SetInt64("key", t * TARGET_QPS + i));
-      CHECK_OK(row->SetString("string_val", string_val));
+      CHECK_OK(row->SetStringNoCopy("string_val", string_val));
       CHECK_OK(session->Apply(insert.release()));
     }
     MonoTime end = MonoTime::Now(MonoTime::FINE);
@@ -121,7 +121,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteBytesPerSec) {
       gscoped_ptr<KuduInsert> insert(table_->NewInsert());
       KuduPartialRow* row = insert->mutable_row();
       CHECK_OK(row->SetInt64("key", t * TARGET_QPS + i));
-      CHECK_OK(row->SetString("string_val", string_val));
+      CHECK_OK(row->SetStringNoCopy("string_val", string_val));
       CHECK_OK(session->Apply(insert.release()));
     }
     MonoTime end = MonoTime::Now(MonoTime::FINE);
