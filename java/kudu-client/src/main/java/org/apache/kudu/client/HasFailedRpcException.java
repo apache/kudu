@@ -23,10 +23,10 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-package org.kududb.client;
+package org.apache.kudu.client;
 
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * Interface implemented by {@link KuduException}s that can tell you which

@@ -14,13 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.collect.Lists;
 import org.junit.Test;
-import org.kududb.ColumnSchema;
-import org.kududb.Type;
-import org.kududb.tserver.Tserver;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Type;
+import org.apache.kudu.tserver.Tserver;
 
 import java.io.IOException;
 import java.util.List;

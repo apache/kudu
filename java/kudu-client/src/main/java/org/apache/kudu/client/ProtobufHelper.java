@@ -14,18 +14,18 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import org.kududb.ColumnSchema;
-import org.kududb.Common;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.annotations.InterfaceAudience;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.annotations.InterfaceAudience;
 
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -229,7 +229,7 @@ public class ProtobufHelper {
   }
 
   /**
-   * Convert a {@link com.google.common.net.HostAndPort} to {@link org.kududb.Common.HostPortPB}
+   * Convert a {@link com.google.common.net.HostAndPort} to {@link org.apache.kudu.Common.HostPortPB}
    * protobuf message for serialization.
    * @param hostAndPort The host and port object. Both host and port must be specified.
    * @return An initialized HostPortPB object.
@@ -242,7 +242,7 @@ public class ProtobufHelper {
   }
 
   /**
-   * Convert a {@link org.kududb.Common.HostPortPB} to {@link com.google.common.net.HostAndPort}.
+   * Convert a {@link org.apache.kudu.Common.HostPortPB} to {@link com.google.common.net.HostAndPort}.
    * @param hostPortPB The fully initialized HostPortPB object. Must have both host and port
    *                   specified.
    * @return An initialized initialized HostAndPort object.

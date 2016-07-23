@@ -14,17 +14,17 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import static org.kududb.client.KuduPredicate.ComparisonOp.GREATER;
-import static org.kududb.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
-import static org.kududb.client.KuduPredicate.ComparisonOp.LESS;
-import static org.kududb.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
-import static org.kududb.client.RowResult.timestampToString;
+import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER;
+import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
+import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS;
+import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
+import static org.apache.kudu.client.RowResult.timestampToString;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
@@ -38,9 +38,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Before;
 import org.junit.Test;
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
-import org.kududb.Type;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

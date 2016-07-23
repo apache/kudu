@@ -14,14 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import java.util.Iterator;
-import org.kududb.Schema;
-import org.kududb.WireProtocol;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.util.Slice;
+import org.apache.kudu.Schema;
+import org.apache.kudu.WireProtocol;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.util.Slice;
 
 /**
  * Class that contains the rows sent by a tablet server, exhausting this iterator only means

@@ -16,14 +16,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kududb.annotations.tools;
+package org.apache.kudu.annotations.tools;
 
 import com.sun.javadoc.DocErrorReporter;
 import com.sun.javadoc.LanguageVersion;
 import com.sun.javadoc.RootDoc;
 
 import jdiff.JDiff;
-import org.kududb.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
  * A <a href="http://java.sun.com/javase/6/docs/jdk/api/javadoc/doclet/">Doclet</a>

@@ -14,13 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb;
+package org.apache.kudu;
 
 import com.google.common.collect.ImmutableList;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.client.Bytes;
-import org.kududb.client.PartialRow;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.Bytes;
+import org.apache.kudu.client.PartialRow;
 
 import java.util.ArrayList;
 import java.util.HashMap;

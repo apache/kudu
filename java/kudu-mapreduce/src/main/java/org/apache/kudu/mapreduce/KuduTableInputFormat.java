@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
-package org.kududb.mapreduce;
+package org.apache.kudu.mapreduce;
 
 import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
@@ -44,20 +44,20 @@ import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.net.DNS;
-import org.kududb.Common;
-import org.kududb.Schema;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.client.AsyncKuduClient;
-import org.kududb.client.Bytes;
-import org.kududb.client.KuduClient;
-import org.kududb.client.KuduPredicate;
-import org.kududb.client.KuduScanner;
-import org.kududb.client.KuduTable;
-import org.kududb.client.LocatedTablet;
-import org.kududb.client.RowResult;
-import org.kududb.client.RowResultIterator;
-import org.kududb.client.KuduScanToken;
+import org.apache.kudu.Common;
+import org.apache.kudu.Schema;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.AsyncKuduClient;
+import org.apache.kudu.client.Bytes;
+import org.apache.kudu.client.KuduClient;
+import org.apache.kudu.client.KuduPredicate;
+import org.apache.kudu.client.KuduScanner;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.LocatedTablet;
+import org.apache.kudu.client.RowResult;
+import org.apache.kudu.client.RowResultIterator;
+import org.apache.kudu.client.KuduScanToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

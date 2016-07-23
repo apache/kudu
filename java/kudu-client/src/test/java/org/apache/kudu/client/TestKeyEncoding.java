@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -22,13 +22,13 @@ import static org.junit.Assert.assertTrue;
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import org.junit.Test;
-import org.kududb.ColumnSchema;
-import org.kududb.ColumnSchema.ColumnSchemaBuilder;
-import org.kududb.Common;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.client.PartitionSchema.HashBucketSchema;
-import org.kududb.client.PartitionSchema.RangeSchema;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder;
+import org.apache.kudu.Common;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
+import org.apache.kudu.client.PartitionSchema.RangeSchema;
 
 import java.util.ArrayList;
 import java.util.List;

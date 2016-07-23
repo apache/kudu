@@ -14,14 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import org.kududb.ColumnSchema;
-import org.kududb.Type;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.tserver.Tserver;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Type;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.tserver.Tserver;
 
 import java.util.ArrayList;
 import java.util.Arrays;

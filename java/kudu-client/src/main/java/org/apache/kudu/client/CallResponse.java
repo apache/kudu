@@ -14,13 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import java.util.List;
 
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.rpc.RpcHeader;
-import org.kududb.util.Slice;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.rpc.RpcHeader;
+import org.apache.kudu.util.Slice;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 

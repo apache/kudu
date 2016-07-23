@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.collect.ImmutableList;
 
@@ -22,8 +22,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.tserver.Tserver;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.tserver.Tserver;
 
 /**
  * Response type for Batch (which is used internally by AsyncKuduSession).

@@ -14,14 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.collect.Sets;
 
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.util.Slice;
-import org.kududb.util.Slices;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.util.Slice;
+import org.apache.kudu.util.Slices;
 
 import java.nio.charset.Charset;
 import java.util.Collections;

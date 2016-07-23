@@ -23,7 +23,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Message;
@@ -31,13 +31,13 @@ import com.google.protobuf.ZeroCopyLiteralByteString;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.jboss.netty.buffer.ChannelBuffer;
-import org.kududb.ColumnSchema;
-import org.kududb.Common;
-import org.kududb.Schema;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.tserver.Tserver;
-import org.kududb.util.Pair;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common;
+import org.apache.kudu.Schema;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.tserver.Tserver;
+import org.apache.kudu.util.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,10 +48,10 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static org.kududb.tserver.Tserver.NewScanRequestPB;
-import static org.kududb.tserver.Tserver.ScanRequestPB;
-import static org.kududb.tserver.Tserver.ScanResponsePB;
-import static org.kududb.tserver.Tserver.TabletServerErrorPB;
+import static org.apache.kudu.tserver.Tserver.NewScanRequestPB;
+import static org.apache.kudu.tserver.Tserver.ScanRequestPB;
+import static org.apache.kudu.tserver.Tserver.ScanResponsePB;
+import static org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
 
 /**
  * Creates a scanner to read data from Kudu.

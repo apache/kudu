@@ -14,14 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.util.Pair;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
-import static org.kududb.master.Master.*;
+import static org.apache.kudu.master.Master.*;
 
 /**
  * RPC used to alter a table. When it returns it doesn't mean that the table is altered,

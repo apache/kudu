@@ -16,15 +16,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kududb.annotations;
+package org.apache.kudu.annotations;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
-import org.kududb.annotations.InterfaceAudience.LimitedPrivate;
-import org.kududb.annotations.InterfaceAudience.Private;
-import org.kududb.annotations.InterfaceAudience.Public;
+import org.apache.kudu.annotations.InterfaceAudience.LimitedPrivate;
+import org.apache.kudu.annotations.InterfaceAudience.Private;
+import org.apache.kudu.annotations.InterfaceAudience.Public;
 
 /**
  * Annotation to inform users of how much to rely on a particular package,

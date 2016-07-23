@@ -19,7 +19,7 @@
 
 package kudu.client;
 
-option java_package = "org.kududb.client";
+option java_package = "org.apache.kudu.client";
 
 import "kudu/common/common.proto";
 

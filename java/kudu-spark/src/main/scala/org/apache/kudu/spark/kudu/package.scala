@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kududb.spark
+package org.apache.kudu.spark
 
 import org.apache.spark.sql.{DataFrame, DataFrameReader, DataFrameWriter}
 
@@ -25,7 +25,7 @@ package object kudu {
    * the DataFrameReader.
    */
   implicit class KuduDataFrameReader(reader: DataFrameReader) {
-    def kudu: DataFrame = reader.format("org.kududb.spark.kudu").load
+    def kudu: DataFrame = reader.format("org.apache.kudu.spark.kudu").load
   }
 
   /**
@@ -33,6 +33,6 @@ package object kudu {
     * the DataFileWriter
     */
     implicit class KuduDataFrameWriter(writer: DataFrameWriter) {
-      def kudu = writer.format("org.kududb.spark.kudu").save
+      def kudu = writer.format("org.apache.kudu.spark.kudu").save
     }
 }

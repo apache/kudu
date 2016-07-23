@@ -14,12 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.stumbleupon.async.Deferred;
-import org.kududb.Schema;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
+import org.apache.kudu.Schema;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,7 +33,7 @@ import java.util.concurrent.Executor;
  * <p>
  * This class acts as a wrapper around {@link AsyncKuduClient}. The {@link Deferred} objects are
  * joined against using the default admin operation timeout
- * (see {@link org.kududb.client.KuduClient.KuduClientBuilder#defaultAdminOperationTimeoutMs(long)} (long)}).
+ * (see {@link org.apache.kudu.client.KuduClient.KuduClientBuilder#defaultAdminOperationTimeoutMs(long)} (long)}).
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving

@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Stopwatch;
@@ -27,9 +27,9 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.kududb.Common;
-import org.kududb.consensus.Metadata;
-import org.kududb.master.Master;
+import org.apache.kudu.Common;
+import org.apache.kudu.consensus.Metadata;
+import org.apache.kudu.master.Master;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

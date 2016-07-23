@@ -15,20 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.base.Preconditions;
 import org.junit.Assert;
 import org.junit.Test;
-import org.kududb.ColumnSchema;
-import org.kududb.Type;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Type;
 
-import static org.kududb.client.KuduPredicate.ComparisonOp.EQUAL;
-import static org.kududb.client.KuduPredicate.ComparisonOp.GREATER;
-import static org.kududb.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
-import static org.kududb.client.KuduPredicate.ComparisonOp.LESS;
-import static org.kududb.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
-import static org.kududb.client.KuduPredicate.PredicateType.RANGE;
+import static org.apache.kudu.client.KuduPredicate.ComparisonOp.EQUAL;
+import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER;
+import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
+import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS;
+import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
+import static org.apache.kudu.client.KuduPredicate.PredicateType.RANGE;
 
 public class TestKuduPredicate {
 

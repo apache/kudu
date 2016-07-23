@@ -16,7 +16,7 @@
 // under the License.
 package kudu.log;
 
-option java_package = "org.kududb.log";
+option java_package = "org.apache.kudu.log";
 
 import "kudu/common/common.proto";
 import "kudu/consensus/consensus.proto";

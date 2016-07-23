@@ -25,7 +25,7 @@
 // etc, as appropriate.
 package kudu;
 
-option java_package = "org.kududb";
+option java_package = "org.apache.kudu";
 
 // If you add a new type keep in mind to add it to the end
 // or update AddMapping() functions like the one in key_encoder.cc

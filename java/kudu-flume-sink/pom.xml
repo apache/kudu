@@ -14,7 +14,7 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <artifactId>kudu-parent</artifactId>
-    <groupId>org.kududb</groupId>
+    <groupId>org.apache.kudu</groupId>
     <version>0.10.0-SNAPSHOT</version>
   </parent>
   <artifactId>kudu-flume-sink</artifactId>
@@ -49,7 +49,7 @@
 
   <dependencies>
     <dependency>
-      <groupId>org.kududb</groupId>
+      <groupId>org.apache.kudu</groupId>
       <artifactId>kudu-client</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -76,7 +76,7 @@
     </dependency>
 
     <dependency>
-      <groupId>org.kududb</groupId>
+      <groupId>org.apache.kudu</groupId>
       <artifactId>kudu-client</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>

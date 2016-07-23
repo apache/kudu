@@ -15,19 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.UnsignedBytes;
 import com.google.protobuf.ByteString;
-import org.kududb.ColumnSchema;
-import org.kududb.Common;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 
 import java.util.Arrays;
 

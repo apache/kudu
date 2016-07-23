@@ -14,12 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb;
+package org.apache.kudu;
 
-import org.kududb.Common.CompressionType;
-import org.kududb.Common.EncodingType;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
+import org.apache.kudu.Common.CompressionType;
+import org.apache.kudu.Common.EncodingType;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * Represents a Kudu Table column. Use {@link ColumnSchema.ColumnSchemaBuilder} in order to

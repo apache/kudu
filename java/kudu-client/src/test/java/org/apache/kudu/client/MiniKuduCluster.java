@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
@@ -22,7 +22,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import org.apache.commons.io.FileUtils;
-import org.kududb.util.NetUtil;
+import org.apache.kudu.util.NetUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

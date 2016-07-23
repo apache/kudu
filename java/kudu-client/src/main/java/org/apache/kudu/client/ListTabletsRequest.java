@@ -14,14 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.tablet.Tablet;
-import org.kududb.tserver.Tserver;
-import org.kududb.tserver.TserverService;
-import org.kududb.util.Pair;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.tablet.Tablet;
+import org.apache.kudu.tserver.Tserver;
+import org.apache.kudu.tserver.TserverService;
+import org.apache.kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.util.ArrayList;

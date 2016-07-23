@@ -17,10 +17,10 @@
  * under the License.
  */
 
-package org.kududb.flume.sink;
+package org.apache.kudu.flume.sink;
 
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * Constants used for configuration of KuduSink

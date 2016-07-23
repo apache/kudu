@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kududb.spark.kudu
+package org.apache.kudu.spark.kudu
 
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite

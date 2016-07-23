@@ -14,12 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
-import org.kududb.WireProtocol;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.consensus.Metadata;
-import org.kududb.master.Master;
+import org.apache.kudu.WireProtocol;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.consensus.Metadata;
+import org.apache.kudu.master.Master;
 
 /**
  * Response for {@link GetMasterRegistrationRequest}.

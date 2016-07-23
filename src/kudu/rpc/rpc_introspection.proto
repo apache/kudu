@@ -20,7 +20,7 @@
 
 package kudu.rpc;
 
-option java_package = "org.kududb";
+option java_package = "org.apache.kudu";
 
 import "kudu/rpc/rpc_header.proto";
 

@@ -14,18 +14,18 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
 import java.util.List;
 
-import org.kududb.Common;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.master.Master;
-import org.kududb.util.Pair;
+import org.apache.kudu.Common;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.master.Master;
+import org.apache.kudu.util.Pair;
 
 /**
  * This is a builder class for all the options that can be provided while creating a table.

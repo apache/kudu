@@ -17,6 +17,6 @@
  * limitations under the License.
  */
 @InterfaceAudience.Private
-package org.kududb.annotations.tools;
+package org.apache.kudu.annotations.tools;
 
-import org.kududb.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceAudience;

@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kududb.spark.kudu
+package org.apache.kudu.spark.kudu
 
 import java.sql.Timestamp
 import java.text.SimpleDateFormat
@@ -24,7 +24,7 @@ import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions._
 import org.junit.Assert._
 import org.junit.runner.RunWith
-import org.kududb.client.CreateTableOptions
+import org.apache.kudu.client.CreateTableOptions
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfter, FunSuite}
 

@@ -17,16 +17,16 @@
  * under the License.
  */
 
-package org.kududb.flume.sink;
+package org.apache.kudu.flume.sink;
 
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.FlumeException;
 import org.apache.flume.conf.ComponentConfiguration;
-import org.kududb.client.Insert;
-import org.kududb.client.KuduTable;
-import org.kududb.client.Operation;
-import org.kududb.client.PartialRow;
+import org.apache.kudu.client.Insert;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.Operation;
+import org.apache.kudu.client.PartialRow;
 
 import java.util.Collections;
 import java.util.List;

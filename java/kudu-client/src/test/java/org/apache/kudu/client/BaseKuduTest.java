@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableList;
@@ -24,10 +24,10 @@ import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.master.Master;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.master.Master;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

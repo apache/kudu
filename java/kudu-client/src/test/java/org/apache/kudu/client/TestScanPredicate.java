@@ -15,16 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
 import org.junit.Assert;
 import org.junit.Test;
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.client.KuduPredicate.ComparisonOp;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.client.KuduPredicate.ComparisonOp;
 
 import java.util.ArrayList;
 import java.util.List;

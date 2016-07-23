@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.mapreduce;
+package org.apache.kudu.mapreduce;
 
 import com.google.common.collect.Lists;
 import org.apache.hadoop.conf.Configuration;
@@ -25,9 +25,9 @@ import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.kududb.client.BaseKuduTest;
-import org.kududb.client.KuduPredicate;
-import org.kududb.client.RowResult;
+import org.apache.kudu.client.BaseKuduTest;
+import org.apache.kudu.client.KuduPredicate;
+import org.apache.kudu.client.RowResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

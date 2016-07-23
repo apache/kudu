@@ -16,7 +16,7 @@
 // under the License.
 package kudu.tablet;
 
-option java_package = "org.kududb.tablet";
+option java_package = "org.apache.kudu.tablet";
 
 import "kudu/common/common.proto";
 import "kudu/consensus/opid.proto";

@@ -14,15 +14,15 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.mapreduce.tools;
+package org.apache.kudu.mapreduce.tools;
 
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.mapreduce.CommandLineParser;
-import org.kududb.mapreduce.HadoopTestingUtility;
-import org.kududb.client.BaseKuduTest;
-import org.kududb.client.CreateTableOptions;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.mapreduce.CommandLineParser;
+import org.apache.kudu.mapreduce.HadoopTestingUtility;
+import org.apache.kudu.client.BaseKuduTest;
+import org.apache.kudu.client.CreateTableOptions;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;

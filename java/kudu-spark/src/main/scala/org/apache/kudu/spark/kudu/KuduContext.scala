@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.kududb.spark.kudu
+package org.apache.kudu.spark.kudu
 
 import java.util
 import org.apache.hadoop.util.ShutdownHookManager
@@ -23,10 +23,10 @@ import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.sql.types.{StructType, DataType, DataTypes}
-import org.kududb.{ColumnSchema, Schema, Type}
-import org.kududb.annotations.InterfaceStability
-import org.kududb.client.SessionConfiguration.FlushMode
-import org.kududb.client._
+import org.apache.kudu.{ColumnSchema, Schema, Type}
+import org.apache.kudu.annotations.InterfaceStability
+import org.apache.kudu.client.SessionConfiguration.FlushMode
+import org.apache.kudu.client._
 
 
 import scala.collection.mutable

@@ -22,7 +22,7 @@
 // place such as common/common.proto or within cfile/, server/, etc.
 package kudu;
 
-option java_package = "org.kududb";
+option java_package = "org.apache.kudu";
 
 import "kudu/common/common.proto";
 import "kudu/consensus/metadata.proto";
@@ -32,7 +32,7 @@ import "kudu/consensus/metadata.proto";
 // should have this (or a more complex error result) as an optional field
 // in its response.
 //
-// This maps to kudu::Status in C++ and org.kududb.Status in Java.
+// This maps to kudu::Status in C++ and org.apache.kudu.Status in Java.
 message AppStatusPB {
   enum ErrorCode {
     UNKNOWN_ERROR = 999;

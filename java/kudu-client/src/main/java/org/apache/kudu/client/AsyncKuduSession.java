@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
@@ -23,10 +23,10 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Range;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.util.AsyncUtil;
-import org.kududb.util.Slice;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.util.AsyncUtil;
+import org.apache.kudu.util.Slice;
 import org.jboss.netty.util.Timeout;
 import org.jboss.netty.util.TimerTask;
 import org.slf4j.Logger;
@@ -44,7 +44,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
+import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
 /**
  * A AsyncKuduSession belongs to a specific AsyncKuduClient, and represents a context in

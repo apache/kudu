@@ -14,17 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kududb.spark.kudu
+package org.apache.kudu.spark.kudu
 
 import java.util.Date
 
 import com.google.common.collect.ImmutableList
 import org.apache.spark.{SparkConf, SparkContext}
-import org.kududb.ColumnSchema.ColumnSchemaBuilder
-import org.kududb.client.KuduClient.KuduClientBuilder
-import org.kududb.client.MiniKuduCluster.MiniKuduClusterBuilder
-import org.kududb.client.{CreateTableOptions, KuduClient, KuduTable, MiniKuduCluster}
-import org.kududb.{Schema, Type}
+import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
+import org.apache.kudu.client.KuduClient.KuduClientBuilder
+import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder
+import org.apache.kudu.client.{CreateTableOptions, KuduClient, KuduTable, MiniKuduCluster}
+import org.apache.kudu.{Schema, Type}
 import org.scalatest.{BeforeAndAfterAll, Suite}
 
 import scala.collection.JavaConverters._

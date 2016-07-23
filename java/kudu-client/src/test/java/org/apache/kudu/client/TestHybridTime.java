@@ -14,12 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Deferred;
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -30,9 +30,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static org.kududb.Type.STRING;
-import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
-import static org.kududb.util.HybridTimeUtil.*;
+import static org.apache.kudu.Type.STRING;
+import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
+import static org.apache.kudu.util.HybridTimeUtil.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 

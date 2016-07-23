@@ -14,25 +14,25 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.WireProtocol;
-import org.kududb.WireProtocol.RowOperationsPB;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.client.Statistics.Statistic;
-import org.kududb.client.Statistics.TabletStatistics;
-import org.kududb.tserver.Tserver;
-import org.kududb.util.Pair;
-import org.kududb.util.Slice;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.WireProtocol;
+import org.apache.kudu.WireProtocol.RowOperationsPB;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.Statistics.Statistic;
+import org.apache.kudu.client.Statistics.TabletStatistics;
+import org.apache.kudu.tserver.Tserver;
+import org.apache.kudu.util.Pair;
+import org.apache.kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.nio.ByteBuffer;

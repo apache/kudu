@@ -16,13 +16,13 @@
  * Copyright 2011 Dain Sundstrom <dain@iq80.com>
  * Copyright 2011 FuseSource Corp. http://fusesource.com
  */
-package org.kududb.util;
+package org.apache.kudu.util;
 
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.common.primitives.Shorts;
-import org.kududb.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceAudience;
 
 import java.io.IOException;
 import java.io.InputStream;

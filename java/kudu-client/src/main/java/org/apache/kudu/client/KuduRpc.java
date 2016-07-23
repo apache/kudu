@@ -23,7 +23,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedOutputStream;
@@ -32,16 +32,16 @@ import com.google.protobuf.Message;
 import com.stumbleupon.async.Deferred;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.util.Pair;
-import org.kududb.util.Slice;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.util.Pair;
+import org.apache.kudu.util.Slice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Collection;
 
-import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
+import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
 /**
  * Abstract base class for all RPC requests going out to Kudu.

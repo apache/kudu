@@ -16,7 +16,7 @@
 // under the License.
 package kudu;
 
-option java_package = "org.kududb";
+option java_package = "org.apache.kudu";
 
 // Captures the state of an Histogram.
 message HistogramSnapshotPB {

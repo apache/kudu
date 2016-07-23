@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.kududb.flume.sink;
+package org.apache.kudu.flume.sink;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Throwables;
@@ -34,12 +34,12 @@ import org.apache.flume.conf.Configurables;
 import org.apache.flume.event.EventBuilder;
 import org.junit.Assert;
 import org.junit.Test;
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.client.BaseKuduTest;
-import org.kududb.client.CreateTableOptions;
-import org.kududb.client.KuduTable;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.client.BaseKuduTest;
+import org.apache.kudu.client.CreateTableOptions;
+import org.apache.kudu.client.KuduTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

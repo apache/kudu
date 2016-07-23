@@ -24,18 +24,18 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.stumbleupon.async.Deferred;
 
 import org.jboss.netty.handler.timeout.ReadTimeoutException;
-import org.kududb.WireProtocol;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.master.Master;
-import org.kududb.rpc.RpcHeader;
-import org.kududb.tserver.Tserver;
-import org.kududb.util.Pair;
+import org.apache.kudu.WireProtocol;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.master.Master;
+import org.apache.kudu.rpc.RpcHeader;
+import org.apache.kudu.tserver.Tserver;
+import org.apache.kudu.util.Pair;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;

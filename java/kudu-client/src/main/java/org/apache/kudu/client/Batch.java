@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
@@ -26,14 +26,14 @@ import java.util.Collections;
 import java.util.List;
 
 import org.jboss.netty.buffer.ChannelBuffer;
-import org.kududb.WireProtocol;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.client.Statistics.Statistic;
-import org.kududb.client.Statistics.TabletStatistics;
-import org.kududb.tserver.Tserver;
-import org.kududb.tserver.Tserver.TabletServerErrorPB;
-import org.kududb.util.Pair;
-import org.kududb.util.Slice;
+import org.apache.kudu.WireProtocol;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.client.Statistics.Statistic;
+import org.apache.kudu.client.Statistics.TabletStatistics;
+import org.apache.kudu.tserver.Tserver;
+import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
+import org.apache.kudu.util.Pair;
+import org.apache.kudu.util.Slice;
 
 /**
  * Used internally to group Operations for a single tablet together before sending to the tablet

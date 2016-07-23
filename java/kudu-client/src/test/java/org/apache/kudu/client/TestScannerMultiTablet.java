@@ -14,20 +14,20 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.stumbleupon.async.Deferred;
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.util.ArrayList;
 
 import static org.junit.Assert.assertNull;
-import static org.kududb.Type.STRING;
+import static org.apache.kudu.Type.STRING;
 import static org.junit.Assert.assertEquals;
 
 public class TestScannerMultiTablet extends BaseKuduTest {

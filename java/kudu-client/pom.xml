@@ -21,7 +21,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>org.kududb</groupId>
+        <groupId>org.apache.kudu</groupId>
         <artifactId>kudu-parent</artifactId>
         <version>0.10.0-SNAPSHOT</version>
     </parent>
@@ -31,7 +31,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.kududb</groupId>
+            <groupId>org.apache.kudu</groupId>
             <artifactId>interface-annotations</artifactId>
             <version>${project.version}</version>
         </dependency>
@@ -183,19 +183,19 @@
                 <relocations>
                   <relocation>
                     <pattern>com.google.common</pattern>
-                    <shadedPattern>org.kududb.client.shaded.com.google.common</shadedPattern>
+                    <shadedPattern>org.apache.kudu.client.shaded.com.google.common</shadedPattern>
                   </relocation>
                   <relocation>
                     <pattern>com.google.protobuf</pattern>
-                    <shadedPattern>org.kududb.client.shaded.com.google.protobuf</shadedPattern>
+                    <shadedPattern>org.apache.kudu.client.shaded.com.google.protobuf</shadedPattern>
                   </relocation>
                   <relocation>
                     <pattern>com.sangupta</pattern>
-                    <shadedPattern>org.kududb.client.shaded.com.sangupta</shadedPattern>
+                    <shadedPattern>org.apache.kudu.client.shaded.com.sangupta</shadedPattern>
                   </relocation>
                   <relocation>
                     <pattern>org.jboss.netty</pattern>
-                    <shadedPattern>org.kududb.client.shaded.org.jboss.netty</shadedPattern>
+                    <shadedPattern>org.apache.kudu.client.shaded.org.jboss.netty</shadedPattern>
                   </relocation>
                 </relocations>
                 <shadeTestJar>true</shadeTestJar>

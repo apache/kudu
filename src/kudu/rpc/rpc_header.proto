@@ -19,7 +19,7 @@ option optimize_for = SPEED;
 
 package kudu.rpc;
 
-option java_package = "org.kududb.rpc";
+option java_package = "org.apache.kudu.rpc";
 
 import "google/protobuf/descriptor.proto";
 

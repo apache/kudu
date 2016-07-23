@@ -23,7 +23,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
@@ -33,8 +33,8 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.Channels;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.rpc.RpcHeader;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.rpc.RpcHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

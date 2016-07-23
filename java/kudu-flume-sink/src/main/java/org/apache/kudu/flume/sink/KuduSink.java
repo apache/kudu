@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.kududb.flume.sink;
+package org.apache.kudu.flume.sink;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -30,15 +30,15 @@ import org.apache.flume.Transaction;
 import org.apache.flume.conf.Configurable;
 import org.apache.flume.instrumentation.SinkCounter;
 import org.apache.flume.sink.AbstractSink;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.client.AsyncKuduClient;
-import org.kududb.client.KuduClient;
-import org.kududb.client.KuduSession;
-import org.kududb.client.KuduTable;
-import org.kududb.client.Operation;
-import org.kududb.client.OperationResponse;
-import org.kududb.client.SessionConfiguration;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.AsyncKuduClient;
+import org.apache.kudu.client.KuduClient;
+import org.apache.kudu.client.KuduSession;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.Operation;
+import org.apache.kudu.client.OperationResponse;
+import org.apache.kudu.client.SessionConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,13 +52,13 @@ import java.util.List;
  * <table cellpadding=3 cellspacing=0 border=1>
  * <tr><th>Property Name</th><th>Default</th><th>Required?</th><th>Description</th></tr>
  * <tr><td>channel</td><td></td><td>Yes</td><td>The name of the Flume channel to read from.</td></tr>
- * <tr><td>type</td><td></td><td>Yes</td><td>Component name. Must be {@code org.kududb.flume.sink.KuduSink}</td></tr>
+ * <tr><td>type</td><td></td><td>Yes</td><td>Component name. Must be {@code org.apache.kudu.flume.sink.KuduSink}</td></tr>
  * <tr><td>masterAddresses</td><td></td><td>Yes</td><td>Comma-separated list of "host:port" pairs of the Kudu master servers. The port is optional.</td></tr>
  * <tr><td>tableName</td><td></td><td>Yes</td><td>The name of the Kudu table to write to.</td></tr>
  * <tr><td>batchSize</td><td>100</td><td>No</td><td>The maximum number of events the sink will attempt to take from the channel per transaction.</td></tr>
  * <tr><td>ignoreDuplicateRows</td><td>true</td><td>No</td><td>Whether to ignore errors indicating that we attempted to insert duplicate rows into Kudu.</td></tr>
  * <tr><td>timeoutMillis</td><td>10000</td><td>No</td><td>Timeout period for Kudu write operations, in milliseconds.</td></tr>
- * <tr><td>producer</td><td>{@link org.kududb.flume.sink.SimpleKuduEventProducer}</td><td>No</td><td>The fully qualified class name of the {@link KuduEventProducer} the sink should use.</td></tr>
+ * <tr><td>producer</td><td>{@link org.apache.kudu.flume.sink.SimpleKuduEventProducer}</td><td>No</td><td>The fully qualified class name of the {@link KuduEventProducer} the sink should use.</td></tr>
  * <tr><td>producer.*</td><td></td><td>(Varies by event producer)</td><td>Configuration properties to pass to the event producer implementation.</td></tr>
  * </table>
  *
@@ -79,7 +79,7 @@ public class KuduSink extends AbstractSink implements Configurable {
   private static final Long DEFAULT_TIMEOUT_MILLIS =
           AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
   private static final String DEFAULT_KUDU_EVENT_PRODUCER =
-          "org.kududb.flume.sink.SimpleKuduEventProducer";
+          "org.apache.kudu.flume.sink.SimpleKuduEventProducer";
   private static final boolean DEFAULT_IGNORE_DUPLICATE_ROWS = true;
 
   private String masterAddresses;

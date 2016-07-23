@@ -16,7 +16,7 @@
 // under the License.
 package kudu.master;
 
-option java_package = "org.kududb.master";
+option java_package = "org.apache.kudu.master";
 
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";

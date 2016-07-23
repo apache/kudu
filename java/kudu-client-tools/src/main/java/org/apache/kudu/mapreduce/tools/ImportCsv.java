@@ -12,12 +12,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
-package org.kududb.mapreduce.tools;
+package org.apache.kudu.mapreduce.tools;
 
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.mapreduce.CommandLineParser;
-import org.kududb.mapreduce.KuduTableMapReduceUtil;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.mapreduce.CommandLineParser;
+import org.apache.kudu.mapreduce.KuduTableMapReduceUtil;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;

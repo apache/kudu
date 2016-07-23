@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
@@ -22,12 +22,12 @@ import static org.junit.Assert.fail;
 import java.util.ArrayList;
 
 import org.junit.Test;
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.WireProtocol.RowOperationsPB;
-import org.kududb.client.Operation.ChangeType;
-import org.kududb.tserver.Tserver.WriteRequestPBOrBuilder;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.WireProtocol.RowOperationsPB;
+import org.apache.kudu.client.Operation.ChangeType;
+import org.apache.kudu.tserver.Tserver.WriteRequestPBOrBuilder;
 import org.mockito.Mockito;
 
 import com.google.common.collect.ImmutableList;

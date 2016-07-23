@@ -15,16 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.kududb.mapreduce.tools;
+package org.apache.kudu.mapreduce.tools;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.util.ToolRunner;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Test;
-import org.kududb.client.BaseKuduTest;
-import org.kududb.mapreduce.CommandLineParser;
-import org.kududb.mapreduce.HadoopTestingUtility;
+import org.apache.kudu.client.BaseKuduTest;
+import org.apache.kudu.mapreduce.CommandLineParser;
+import org.apache.kudu.mapreduce.HadoopTestingUtility;
 
 public class ITIntegrationTestBigLinkedList extends BaseKuduTest {
 

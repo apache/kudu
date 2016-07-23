@@ -16,7 +16,7 @@
 // under the License.
 package kudu;
 
-option java_package = "org.kududb";
+option java_package = "org.apache.kudu";
 
 // Information about the build environment, configuration, etc.
 message VersionInfoPB {

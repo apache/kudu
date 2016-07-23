@@ -14,15 +14,15 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.primitives.UnsignedLongs;
 import com.sangupta.murmur.Murmur2;
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.client.PartitionSchema.HashBucketSchema;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;

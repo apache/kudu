@@ -16,15 +16,15 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.kududb.flume.sink;
+package org.apache.kudu.flume.sink;
 
 import org.apache.flume.Event;
 import org.apache.flume.conf.Configurable;
 import org.apache.flume.conf.ConfigurableComponent;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.client.KuduTable;
-import org.kududb.client.Operation;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.Operation;
 
 import java.util.List;
 
@@ -47,7 +47,7 @@ public interface KuduEventProducer extends Configurable, ConfigurableComponent {
   /**
    * Get the operations that should be written out to Kudu as a result of this
    * event. This list is written to Kudu using the Kudu client API.
-   * @return List of {@link org.kududb.client.Operation} which
+   * @return List of {@link org.apache.kudu.client.Operation} which
    * are written as such to Kudu
    */
   List<Operation> getOperations();

@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
-package org.kududb.mapreduce;
+package org.apache.kudu.mapreduce;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -38,13 +38,13 @@ import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.TaskInputOutputContext;
 import org.apache.hadoop.util.StringUtils;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.client.AsyncKuduClient;
-import org.kududb.client.ColumnRangePredicate;
-import org.kududb.client.KuduPredicate;
-import org.kududb.client.KuduTable;
-import org.kududb.client.Operation;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.AsyncKuduClient;
+import org.apache.kudu.client.ColumnRangePredicate;
+import org.apache.kudu.client.KuduPredicate;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.Operation;
 
 /**
  * Utility class to setup MR jobs that use Kudu as an input and/or output.

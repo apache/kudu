@@ -16,7 +16,7 @@
 // under the License.
 package kudu.tserver;
 
-option java_package = "org.kududb.tserver";
+option java_package = "org.apache.kudu.tserver";
 
 import "kudu/common/common.proto";
 import "kudu/consensus/metadata.proto";

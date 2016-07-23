@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.kududb.spark.kudu
+package org.apache.kudu.spark.kudu
 
 import java.sql.Timestamp
 
@@ -23,11 +23,11 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SQLContext, SaveMode}
-import org.kududb.Type
-import org.kududb.annotations.InterfaceStability
-import org.kududb.client._
-import org.kududb.client.KuduPredicate.ComparisonOp
-import org.kududb.client.SessionConfiguration.FlushMode
+import org.apache.kudu.Type
+import org.apache.kudu.annotations.InterfaceStability
+import org.apache.kudu.client._
+import org.apache.kudu.client.KuduPredicate.ComparisonOp
+import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.spark.sql.SaveMode._
 
 import scala.collection.JavaConverters._

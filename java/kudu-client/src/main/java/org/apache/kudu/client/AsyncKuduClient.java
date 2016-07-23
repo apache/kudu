@@ -24,7 +24,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
@@ -40,17 +40,17 @@ import com.stumbleupon.async.Deferred;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.socket.nio.NioWorkerPool;
-import org.kududb.Common;
-import org.kududb.Schema;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.consensus.Metadata;
-import org.kududb.master.Master;
-import org.kududb.master.Master.GetTableLocationsResponsePB;
-import org.kududb.util.AsyncUtil;
-import org.kududb.util.NetUtil;
-import org.kududb.util.Pair;
-import org.kududb.util.Slice;
+import org.apache.kudu.Common;
+import org.apache.kudu.Schema;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.consensus.Metadata;
+import org.apache.kudu.master.Master;
+import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
+import org.apache.kudu.util.AsyncUtil;
+import org.apache.kudu.util.NetUtil;
+import org.apache.kudu.util.Pair;
+import org.apache.kudu.util.Slice;
 import org.jboss.netty.channel.ChannelEvent;
 import org.jboss.netty.channel.ChannelStateEvent;
 import org.jboss.netty.channel.DefaultChannelPipeline;
@@ -92,7 +92,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
+import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
 /**
  * A fully asynchronous and thread-safe client for Kudu.

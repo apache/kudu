@@ -14,11 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.kududb.client.Statistics.Statistic;
+import org.apache.kudu.client.Statistics.Statistic;
 
 import static org.junit.Assert.assertEquals;
 

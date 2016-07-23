@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import org.junit.After;
 import org.junit.Before;

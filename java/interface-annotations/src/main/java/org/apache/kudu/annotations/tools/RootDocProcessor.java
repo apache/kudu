@@ -16,7 +16,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kududb.annotations.tools;
+package org.apache.kudu.annotations.tools;
 
 import com.sun.javadoc.AnnotationDesc;
 import com.sun.javadoc.AnnotationTypeDoc;
@@ -39,8 +39,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * Process the {@link RootDoc} by substituting with (nested) proxy objects that

@@ -15,18 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import org.kududb.ColumnSchema;
-import org.kududb.Common;
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.client.Client.ScanTokenPB;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.Client.ScanTokenPB;
 
 import java.io.IOException;
 import java.util.ArrayList;

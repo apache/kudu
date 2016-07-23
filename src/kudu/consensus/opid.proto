@@ -16,7 +16,7 @@
 // under the License.
 package kudu.consensus;
 
-option java_package = "org.kududb.consensus";
+option java_package = "org.apache.kudu.consensus";
 
 // An id for a generic state machine operation. Composed of the leaders' term
 // plus the index of the operation in that term, e.g., the <index>th operation

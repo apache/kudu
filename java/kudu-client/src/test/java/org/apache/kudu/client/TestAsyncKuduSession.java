@@ -14,12 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
-import org.kududb.Schema;
-import org.kududb.WireProtocol.AppStatusPB;
-import org.kududb.client.AsyncKuduClient.RemoteTablet;
-import org.kududb.tserver.Tserver.TabletServerErrorPB;
+import org.apache.kudu.Schema;
+import org.apache.kudu.WireProtocol.AppStatusPB;
+import org.apache.kudu.client.AsyncKuduClient.RemoteTablet;
+import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;

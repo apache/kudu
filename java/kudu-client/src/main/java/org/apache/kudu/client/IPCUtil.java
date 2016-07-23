@@ -16,11 +16,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.Message;
-import org.kududb.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceAudience;
 
 import java.io.IOException;
 import java.io.OutputStream;

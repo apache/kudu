@@ -17,14 +17,14 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.kududb.client;
+package org.apache.kudu.client;
 
 import java.util.List;
 
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.consensus.Metadata.RaftPeerPB.Role;
-import org.kududb.master.Master.TabletLocationsPB.ReplicaPB;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.consensus.Metadata.RaftPeerPB.Role;
+import org.apache.kudu.master.Master.TabletLocationsPB.ReplicaPB;
 
 /**
  * Information about the locations of tablets in a Kudu table.

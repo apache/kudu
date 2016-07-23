@@ -14,10 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.client;
+package org.apache.kudu.client;
 
-import org.kududb.Schema;
-import org.kududb.annotations.InterfaceAudience;
+import org.apache.kudu.Schema;
+import org.apache.kudu.annotations.InterfaceAudience;
 
 @InterfaceAudience.Private
 public class GetTableSchemaResponse extends KuduRpcResponse {

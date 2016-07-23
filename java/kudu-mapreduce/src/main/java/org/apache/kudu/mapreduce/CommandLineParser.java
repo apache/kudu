@@ -14,13 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.kududb.mapreduce;
+package org.apache.kudu.mapreduce;
 
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.client.AsyncKuduClient;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.AsyncKuduClient;
 import org.apache.hadoop.conf.Configuration;
-import org.kududb.client.KuduClient;
+import org.apache.kudu.client.KuduClient;
 
 /**
  * Utility class that manages common configurations to all MR jobs. For example,
