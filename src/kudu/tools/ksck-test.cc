@@ -372,7 +372,7 @@ TEST_F(KsckTest, TestMismatchedAssignments) {
   CreateOneSmallReplicatedTable();
   shared_ptr<MockKsckTabletServer> ts = static_pointer_cast<MockKsckTabletServer>(
       master_->tablet_servers_.at(Substitute("ts-id-$0", 0)));
-  ts->tablet_status_map_.erase(ts->tablet_status_map_.begin()->first);
+  ASSERT_EQ(1, ts->tablet_status_map_.erase("tablet-id-2"));
 
   Status s = RunKsck();
   EXPECT_EQ("Corruption: 1 table(s) are bad", s.ToString());
