@@ -875,6 +875,13 @@ if (NOT APPLE)
   endif()
   ADD_THIRDPARTY_LIB(rt
     SHARED_LIB "${RT_LIB_PATH}")
+
+  find_library(DL_LIB_PATH dl)
+  if(NOT DL_LIB_PATH)
+    message(FATAL_ERROR "Could not find libdl on the system path")
+  endif()
+  ADD_THIRDPARTY_LIB(dl
+    SHARED_LIB "${DL_LIB_PATH}")
 endif()
 
 ## Boost

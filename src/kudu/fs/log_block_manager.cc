@@ -41,6 +41,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_util_prod.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
@@ -111,8 +112,6 @@ using std::unordered_set;
 using strings::Substitute;
 
 namespace kudu {
-
-ATTRIBUTE_WEAK bool g_is_gtest;
 
 namespace fs {
 namespace internal {
@@ -1102,7 +1101,7 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
   // likely that the block IDs are not reused. So, instead of starting with
   // block ID 1, we'll start with a random block ID. A collision is still
   // possible, but exceedingly unlikely.
-  if (g_is_gtest) {
+  if (IsGTest()) {
     Random r(GetRandomSeed32());
     next_block_id_.Store(r.Next64());
   }

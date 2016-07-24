@@ -167,6 +167,7 @@ set(UTIL_SRCS
   subprocess.cc
   sync_point.cc
   test_graph.cc
+  test_util_prod.cc
   thread.cc
   threadlocal.cc
   threadpool.cc
@@ -192,6 +193,7 @@ endif()
 
 set(UTIL_LIBS
   crcutil
+  dl
   gflags
   glog
   gutil

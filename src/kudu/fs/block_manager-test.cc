@@ -720,9 +720,14 @@ class LogBlockManagerTest : public BlockManagerTest<LogBlockManager> {
 // reused.
 TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
   RETURN_NOT_LOG_BLOCK_MANAGER();
+
+  // Typically, the LBM starts with a random block ID when running as a
+  // gtest. In this test, we want to control the block IDs.
+  bm_->next_block_id_.Store(1);
+
   vector<BlockId> block_ids;
 
-  // Create 4 containers, with the first four block IDs in the random sequence.
+  // Create 4 containers, with the first four block IDs in the sequence.
   {
     ScopedWritableBlockCloser closer;
     for (int i = 0; i < 4; i++) {
@@ -748,7 +753,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
     ASSERT_OK(bm_->DeleteBlock(b));
   }
 
-  // Reset the random seed and re-create new blocks which should reuse the same
+  // Reset the block ID sequence and re-create new blocks which should reuse the same
   // block IDs. This isn't allowed in current versions of Kudu, but older versions
   // could produce this situation, and we still need to handle it on startup.
   bm_->next_block_id_.Store(1);
