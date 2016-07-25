@@ -964,14 +964,6 @@ if (UNIX)
 endif (UNIX)
 
 ############################################################
-# "make site" target
-############################################################
-if (UNIX)
-  add_custom_target(site
-    ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_site.sh)
-endif (UNIX)
-
-############################################################
 # "make doxygen" target
 # Needs the doxygen system package to work.
 ############################################################
@@ -1000,6 +992,22 @@ if (UNIX)
     add_dependencies(doxygen doxy_install_client_alt_destdir)
     # If doxygen is present, generate doxygen documentation along with 'docs'.
     add_dependencies(docs doxygen)
+  endif ()
+endif (UNIX)
+
+############################################################
+# "make site" target
+#
+# NOTE: It's supposed find_package(Doxygen) has already
+# been run at this point.
+############################################################
+if (UNIX)
+  if (NOT DOXYGEN_FOUND)
+    add_custom_target(site
+      ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_site.sh)
+  else ()
+    add_custom_target(site
+      ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_site.sh doxygen)
   endif ()
 endif (UNIX)
 

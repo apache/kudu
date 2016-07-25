@@ -28,6 +28,16 @@ BUILD_TYPE=release
 SOURCE_ROOT=$(cd $(dirname $0)/../../..; pwd)
 BUILD_ROOT="$SOURCE_ROOT/build/$BUILD_TYPE"
 SITE_OUTPUT_DIR="$BUILD_ROOT/site"
+
+if [ $# -gt 0 ]; then
+  for arg in $*; do
+    case $arg in
+      "doxygen")  OPT_DOXYGEN=1 ;;
+      *)          echo "unknown option: $arg"; exit 1 ;;
+    esac
+  done
+fi
+
 set -x
 
 cd "$SOURCE_ROOT"
@@ -45,7 +55,11 @@ $SOURCE_ROOT/build-support/enable_devtoolset.sh \
     -DNO_TESTS=1 \
     -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
     $SOURCE_ROOT
-make -j$(getconf _NPROCESSORS_ONLN) all doxygen
+if [ -n "$OPT_DOXYGEN" ]; then
+  make -j$(getconf _NPROCESSORS_ONLN) all doxygen
+else
+  make -j$(getconf _NPROCESSORS_ONLN)
+fi
 
 # Check out the gh-pages repo into $SITE_OUTPUT_DIR
 git clone -q $(git config --get remote.origin.url) --reference $SOURCE_ROOT -b gh-pages --depth 1 "$SITE_OUTPUT_DIR"
@@ -77,13 +91,20 @@ fi
 rm -Rf "$SITE_OUTPUT_DIR/apidocs"
 cp -au "$SOURCE_ROOT/java/target/site/apidocs" "$SITE_OUTPUT_DIR/"
 
-CPP_CLIENT_API_SUBDIR="cpp-client-api"
-rm -Rf "$SITE_OUTPUT_DIR/$CPP_CLIENT_API_SUBDIR"
-cp -a "$SOURCE_ROOT/docs/doxygen/client_api/html" "$SITE_OUTPUT_DIR/$CPP_CLIENT_API_SUBDIR"
+if [ -n "$OPT_DOXYGEN" ]; then
+  CPP_CLIENT_API_SUBDIR="cpp-client-api"
+  rm -Rf "$SITE_OUTPUT_DIR/$CPP_CLIENT_API_SUBDIR"
+  cp -a "$SOURCE_ROOT/docs/doxygen/client_api/html" "$SITE_OUTPUT_DIR/$CPP_CLIENT_API_SUBDIR"
+fi
+
+SITE_SUBDIRS="docs apidocs"
+if [ -n "$OPT_DOXYGEN" ]; then
+  SITE_SUBDIRS="$SITE_SUBDIRS $CPP_CLIENT_API_SUBDIR"
+fi
 
 cd "$SITE_OUTPUT_DIR"
 SITE_ARCHIVE="$SITE_OUTPUT_DIR/website_archive.zip"
-zip -rq "$SITE_ARCHIVE" docs apidocs "$CPP_CLIENT_API_SUBDIR"
+zip -rq "$SITE_ARCHIVE" "$SITE_SUBDIRS"
 
 echo "Generated web site at $SITE_OUTPUT_DIR"
 echo "Docs zip generated at $SITE_ARCHIVE"
