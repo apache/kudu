@@ -27,9 +27,13 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
+
+METRIC_DECLARE_entity(server);
+METRIC_DECLARE_histogram(handler_latency_kudu_consensus_ConsensusService_GetNodeInstance);
 
 namespace kudu {
 
@@ -43,6 +47,7 @@ using sp::shared_ptr;
 using std::string;
 using std::vector;
 using std::unique_ptr;
+using strings::Substitute;
 
 class MasterFailoverTest : public KuduTest {
  public:
@@ -320,6 +325,43 @@ TEST_F(MasterFailoverTest, TestKUDU1374) {
   }
   ASSERT_TRUE(now.ComesBefore(deadline))
     << "Deadline elapsed before alter table completed";
+}
+
+TEST_F(MasterFailoverTest, TestMasterUUIDResolution) {
+  // After a fresh start, the masters should have received RPCs asking for
+  // their UUIDs.
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    int64_t num_get_node_instances;
+    ASSERT_OK(cluster_->master(i)->GetInt64Metric(
+        &METRIC_ENTITY_server, "kudu.master",
+        &METRIC_handler_latency_kudu_consensus_ConsensusService_GetNodeInstance,
+        "total_count", &num_get_node_instances));
+
+    // Client-side timeouts may increase the number of calls beyond the raw
+    // number of masters.
+    ASSERT_GE(num_get_node_instances, cluster_->num_masters());
+  }
+
+  // Restart the masters. They should reuse one another's UUIDs from the cached
+  // consensus metadata instead of sending RPCs to discover them. See KUDU-526.
+  cluster_->Shutdown();
+  ASSERT_OK(cluster_->Restart());
+
+  // To determine whether the cached UUIDs were used, let's look at the number
+  // of GetNodeInstance() calls each master serviced. It should be zero.
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    ExternalMaster* master = cluster_->master(i);
+    int64_t num_get_node_instances;
+    ASSERT_OK(master->GetInt64Metric(
+        &METRIC_ENTITY_server, "kudu.master",
+        &METRIC_handler_latency_kudu_consensus_ConsensusService_GetNodeInstance,
+        "total_count", &num_get_node_instances));
+    EXPECT_EQ(0, num_get_node_instances) <<
+        Substitute(
+            "Following restart, master $0 has serviced $1 GetNodeInstance() calls",
+            master->bound_rpc_hostport().ToString(),
+            num_get_node_instances);
+  }
 }
 
 } // namespace client

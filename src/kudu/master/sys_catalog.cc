@@ -17,9 +17,12 @@
 
 #include "kudu/master/sys_catalog.h"
 
+#include <algorithm>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <iterator>
 #include <memory>
+#include <set>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
@@ -32,6 +35,7 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
@@ -54,6 +58,7 @@ TAG_FLAG(sys_catalog_fail_during_write, unsafe);
 
 using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::ConsensusMetadata;
+using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
 using kudu::log::Log;
@@ -107,27 +112,41 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     return(Status::Corruption("Unexpected schema", metadata->schema().ToString()));
   }
 
-  // Allow for statically and explicitly assigning the consensus configuration and roles through
-  // the master configuration on startup.
-  //
-  // TODO: The following assumptions need revisiting:
-  // 1. We always believe the local config options for who is in the consensus configuration.
-  // 2. We always want to look up all node's UUIDs on start (via RPC).
-  //    - TODO: Cache UUIDs. See KUDU-526.
   if (master_->opts().IsDistributed()) {
-    LOG(INFO) << "Configuring consensus for distributed operation...";
-
+    LOG(INFO) << "Verifying existing consensus state";
     string tablet_id = metadata->tablet_id();
     unique_ptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(fs_manager, tablet_id,
                                                   fs_manager->uuid(), &cmeta),
                           "Unable to load consensus metadata for tablet " + tablet_id);
+    ConsensusStatePB cstate = cmeta->ToConsensusStatePB(CONSENSUS_CONFIG_COMMITTED);
+    RETURN_NOT_OK(consensus::VerifyConsensusState(
+        cstate, consensus::COMMITTED_QUORUM));
 
-    RaftConfigPB config;
-    RETURN_NOT_OK(SetupDistributedConfig(master_->opts(), &config));
-    cmeta->set_committed_config(config);
-    RETURN_NOT_OK_PREPEND(cmeta->Flush(),
-                          "Unable to persist consensus metadata for tablet " + tablet_id);
+    // Make sure the set of masters passed in at start time matches the set in
+    // the on-disk cmeta.
+    set<string> peer_addrs_from_opts;
+    for (const auto& hp : master_->opts().master_addresses) {
+      peer_addrs_from_opts.insert(hp.ToString());
+    }
+    set<string> peer_addrs_from_disk;
+    for (const auto& p : cstate.config().peers()) {
+      HostPort hp;
+      RETURN_NOT_OK(HostPortFromPB(p.last_known_addr(), &hp));
+      peer_addrs_from_disk.insert(hp.ToString());
+    }
+    vector<string> symm_diff;
+    std::set_symmetric_difference(peer_addrs_from_opts.begin(),
+                                  peer_addrs_from_opts.end(),
+                                  peer_addrs_from_disk.begin(),
+                                  peer_addrs_from_disk.end(),
+                                  std::back_inserter(symm_diff));
+    if (!symm_diff.empty()) {
+      string msg = Substitute(
+          "on-disk and provided master lists are different: $0",
+          JoinStrings(symm_diff, " "));
+      return Status::InvalidArgument(msg);
+    }
   }
 
   RETURN_NOT_OK(SetupTablet(metadata));
@@ -157,8 +176,8 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
 
   RaftConfigPB config;
   if (master_->opts().IsDistributed()) {
-    RETURN_NOT_OK_PREPEND(SetupDistributedConfig(master_->opts(), &config),
-                          "Failed to initialize distributed config");
+    RETURN_NOT_OK_PREPEND(CreateDistributedConfig(master_->opts(), &config),
+                          "Failed to create new distributed Raft config");
   } else {
     config.set_opid_index(consensus::kInvalidOpIdIndex);
     RaftPeerPB* peer = config.add_peers();
@@ -175,8 +194,8 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
   return SetupTablet(metadata);
 }
 
-Status SysCatalogTable::SetupDistributedConfig(const MasterOptions& options,
-                                               RaftConfigPB* committed_config) {
+Status SysCatalogTable::CreateDistributedConfig(const MasterOptions& options,
+                                                RaftConfigPB* committed_config) {
   DCHECK(options.IsDistributed());
 
   RaftConfigPB new_config;
@@ -206,9 +225,6 @@ Status SysCatalogTable::SetupDistributedConfig(const MasterOptions& options,
       LOG(INFO) << peer.ShortDebugString()
                 << " has no permanent_uuid. Determining permanent_uuid...";
       RaftPeerPB new_peer = peer;
-      // TODO: Use ConsensusMetadata to cache the results of these lookups so
-      // we only require RPC access to the full consensus configuration on first startup.
-      // See KUDU-526.
       RETURN_NOT_OK_PREPEND(consensus::SetPermanentUuidForRemotePeer(master_->messenger(),
                                                                      &new_peer),
                             Substitute("Unable to resolve UUID for peer $0",

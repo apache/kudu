@@ -134,15 +134,8 @@ class SysCatalogTable {
 
   // Use the master options to generate a new consensus configuration.
   // In addition, resolve all UUIDs of this consensus configuration.
-  //
-  // Note: The current node adds itself to the peers whether leader or
-  // follower, depending on whether the Master options leader flag is
-  // set. Even if the local node should be a follower, it should not be listed
-  // in the Master options followers list, as it will add itself automatically.
-  //
-  // TODO: Revisit this whole thing when integrating leader election.
-  Status SetupDistributedConfig(const MasterOptions& options,
-                                consensus::RaftConfigPB* committed_config);
+  Status CreateDistributedConfig(const MasterOptions& options,
+                                 consensus::RaftConfigPB* committed_config);
 
   const scoped_refptr<tablet::TabletPeer>& tablet_peer() const {
     return tablet_peer_;
