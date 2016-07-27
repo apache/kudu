@@ -795,6 +795,61 @@ The example creates 16 buckets. You could also use `HASH (id, sku) INTO 16 BUCKE
 However, a scan for `sku` values would almost always impact all 16 buckets, rather
 than possibly being limited to 4.
 
+// Not ready for 0.10 but don't want to lose the work
+////
+
+.Non-Covering Range Partitions
+Kudu TODO:VERSION and higher supports the use of non-covering range partitions,
+which address scenarios like the following:
+
+- Without non-covering range partitions, in the case of time-series data or other
+  schemas which need to account for constantly-increasing primary keys, tablets
+  serving old data will be relatively fixed in size, while tablets receiving new
+  data will grow without bounds.
+
+- In cases where you want to partition data based on its category, such as sales
+  region or product type, without non-covering range partitions you must know all
+  of the partitions ahead of time or manually recreate your table if partitions
+  need to be added or removed, such as the introduction or elimination of a product
+  type.
+
+Non-covering range partitions have some caveats. Be sure to read the
+link:/docs/schema_design.html [Schema Design guide].
+
+This example creates a tablet per year (5 tablets total), for storing log data. It uses `RANGE BOUND`
+to ensure that the table only accepts data from 2011 to 2017. Keys outside of these
+ranges will be rejected.
+
+[source,sql]
+----
+CREATE TABLE sales_by_year (year INT32, sale_id INT32, amount INT32)
+PRIMARY KEY (sale_id, year)
+DISTRIBUTE BY RANGE (year)
+              RANGE BOUND ((2011), (2016))
+              SPLIT ROWS ((2012), (2013), (2014), (2015), (2016));
+----
+
+When records start coming in for 2017, they will be rejected. At that point, the `2017`
+range should be added. An `alter table add range partition` or `alter table drop range
+partition` operation allows you to add or drop a range partition.
+
+The next example creates a table per sales region. Data for regions other than `North
+America`, `Europe`, or `Asia` will be rejected. This example does not use explicit
+split rows, but the range bounds provide implicit split rows, so three tablets would
+be  created. If a new range is added, a new tablet is created.
+
+[source,sql]
+----
+CREATE TABLE sales_by_region (region STRING, sale_id INT32, amount INT32)
+PRIMARY KEY (sale_id, region)
+DISTRIBUTE BY RANGE (region)
+              RANGE BOUND (("North America"), ("North America\0")),
+              RANGE BOUND (("Europe"), ("Europe\0")),
+              RANGE BOUND (("Asia"), ("Asia\0"));
+----
+
+////
+
 [[partitioning_rules_of_thumb]]
 ==== Partitioning Rules of Thumb
 

@@ -41,89 +41,21 @@ be a new concept for those familiar with traditional relational databases. The
 next sections discuss <<alter-schema,altering the schema>> of an existing table,
 and <<known-limitations,known limitations>> with regard to schema design.
 
-[[column-design]]
-== Column Design
+== The Perfect Schema
 
-A Kudu Table consists of one or more columns, each with a predefined type.
-Columns that are not part of the primary key may optionally be nullable.
-Supported column types include:
+The perfect schema would accomplish the following:
 
-* boolean
-* 8-bit signed integer
-* 16-bit signed integer
-* 32-bit signed integer
-* 64-bit signed integer
-* timestamp
-* single-precision (32-bit) IEEE-754 floating-point number
-* double-precision (64-bit) IEEE-754 floating-point number
-* UTF-8 encoded string
-* binary
+- Data would be distributed in such a way that reads and writes are spread evenly
+  across tablet servers. This is impacted by the partition schema.
+- Tablets would grow at an even, predictable rate and load across tablets would remain
+  steady over time. This is most impacted by the partition schema.
+- Scans would read the minimum amount of data necessary to fulfill a query. This
+  is impacted mostly by primary key design, but partition design also plays a
+  role via partition pruning.
 
-Kudu takes advantage of strongly-typed columns and a columnar on-disk storage
-format to provide efficient encoding and serialization. To make the most of these
-features, columns must be specified as the appropriate type, rather than
-simulating a 'schemaless' table using string or binary columns for data which
-may otherwise be structured. In addition to encoding, Kudu optionally allows
-compression to be specified on a per-column basis.
-
-[[encoding]]
-=== Column Encoding
-
-Each column in a Kudu table can be created with an encoding, based on the type
-of the column. Columns use plain encoding by default.
-
-.Encoding Types
-[options="header"]
-|===
-| Column Type        | Encoding
-| integer, timestamp | plain, bitshuffle, run length
-| float              | plain, bitshuffle
-| bool               | plain, dictionary, run length
-| string, binary     | plain, prefix, dictionary
-|===
-
-[[plain]]
-Plain Encoding:: Data is stored in its natural format. For example, `int32` values
-are stored as fixed-size 32-bit little-endian integers.
-
-[[bitshuffle]]
-Bitshuffle Encoding:: Data is rearranged to store the most significant bit of
-every value, followed by the second most significant bit of every value, and so
-on. Finally, the result is LZ4 compressed. Bitshuffle encoding is a good choice for
-columns that have many repeated values, or values that change by small amounts
-when sorted by primary key. The
-https://github.com/kiyo-masui/bitshuffle[bitshuffle] project has a good
-overview of performance and use cases.
-
-[[run-length]]
-Run Length Encoding:: _Runs_ (consecutive repeated values) are compressed in a
-column by storing only the value and the count. Run length encoding is effective
-for columns with many consecutive repeated values when sorted by primary key.
-
-[[dictionary]]
-Dictionary Encoding:: A dictionary of unique values is built, and each column value
-is encoded as its corresponding index in the dictionary. Dictionary encoding
-is effective for columns with low cardinality. If the column values of a given row set
-are unable to be compressed because the number of unique values is too high, Kudu will
-transparently fall back to plain encoding for that row set. This is evaluated during
-flush.
-
-[[prefix]]
-Prefix Encoding:: Common prefixes are compressed in consecutive column values. Prefix
-encoding can be effective for values that share common prefixes, or the first
-column of the primary key, since rows are sorted by primary key within tablets.
-
-[[compression]]
-=== Column Compression
-
-Kudu allows per-column compression using LZ4, `snappy`, or `zlib` compression
-codecs. By default, columns are stored uncompressed. Consider using compression
-if reducing storage space is more important than raw scan performance.
-
-Every data set will compress differently, but in general LZ4 has the least effect on
-performance, while `zlib` will compress to the smallest data sizes.
-Bitshuffle-encoded columns are inherently compressed using LZ4, so it is not
-typically beneficial to apply additional compression on top of this encoding.
+The perfect schema depends on the characteristics of your data, what you need to do
+with it, and the topology of your cluster. Schema design is the single most important
+thing within your control to maximize the performance of your Kudu cluster.
 
 [[primary-keys]]
 == Primary Keys
@@ -209,6 +141,23 @@ should only include the `last_name` column. In that case, Kudu would guarantee t
 customers with the same last name would fall into the same tablet, regardless of
 the provided split rows.
 
+[[range-partition-management]]
+==== Range Partition Management
+
+Kudu 0.10 introduces the ability to specify bounded range partitions during
+table creation, and the ability add and drop range partitions on the fly. This is
+a good strategy for data which is always increasing, such as timestamps, or for
+categorical data, such as geographic regions.
+
+For example, during table creation, bounded range partitions can be
+added for the regions 'US-EAST', 'US-WEST', and 'EUROPE'. If you attempt to insert a
+row with a region that does not match an existing range partition, the insertion will
+fail. Later, when a new region is needed it can be efficiently added as part of an
+`ALTER TABLE` operation. This feature is particularly useful for timeseries data,
+since it allows new range partitions for the current period to be added as
+needed, and old partitions covering historical periods to be dropped if
+necessary.
+
 [[hash-bucketing]]
 === Hash Bucketing
 
@@ -271,6 +220,90 @@ You can alter a table's schema in the following ways:
 - Rename (but not drop) primary key columns
 
 You cannot modify the partition schema after table creation.
+
+[[column-design]]
+== Column Design
+
+A Kudu Table consists of one or more columns, each with a predefined type.
+Columns that are not part of the primary key may optionally be nullable.
+Supported column types include:
+
+* boolean
+* 8-bit signed integer
+* 16-bit signed integer
+* 32-bit signed integer
+* 64-bit signed integer
+* timestamp
+* single-precision (32-bit) IEEE-754 floating-point number
+* double-precision (64-bit) IEEE-754 floating-point number
+* UTF-8 encoded string
+* binary
+
+Kudu takes advantage of strongly-typed columns and a columnar on-disk storage
+format to provide efficient encoding and serialization. To make the most of these
+features, columns must be specified as the appropriate type, rather than
+simulating a 'schemaless' table using string or binary columns for data which
+may otherwise be structured. In addition to encoding, Kudu optionally allows
+compression to be specified on a per-column basis.
+
+[[encoding]]
+=== Column Encoding
+
+Each column in a Kudu table can be created with an encoding, based on the type
+of the column. Columns use plain encoding by default.
+
+.Encoding Types
+[options="header"]
+|===
+| Column Type        | Encoding
+| integer, timestamp | plain, bitshuffle, run length
+| float              | plain, bitshuffle
+| bool               | plain, dictionary, run length
+| string, binary     | plain, prefix, dictionary
+|===
+
+[[plain]]
+Plain Encoding:: Data is stored in its natural format. For example, `int32` values
+are stored as fixed-size 32-bit little-endian integers.
+
+[[bitshuffle]]
+Bitshuffle Encoding:: Data is rearranged to store the most significant bit of
+every value, followed by the second most significant bit of every value, and so
+on. Finally, the result is LZ4 compressed. Bitshuffle encoding is a good choice for
+columns that have many repeated values, or values that change by small amounts
+when sorted by primary key. The
+https://github.com/kiyo-masui/bitshuffle[bitshuffle] project has a good
+overview of performance and use cases.
+
+[[run-length]]
+Run Length Encoding:: _Runs_ (consecutive repeated values) are compressed in a
+column by storing only the value and the count. Run length encoding is effective
+for columns with many consecutive repeated values when sorted by primary key.
+
+[[dictionary]]
+Dictionary Encoding:: A dictionary of unique values is built, and each column value
+is encoded as its corresponding index in the dictionary. Dictionary encoding
+is effective for columns with low cardinality. If the column values of a given row set
+are unable to be compressed because the number of unique values is too high, Kudu will
+transparently fall back to plain encoding for that row set. This is evaluated during
+flush.
+
+[[prefix]]
+Prefix Encoding:: Common prefixes are compressed in consecutive column values. Prefix
+encoding can be effective for values that share common prefixes, or the first
+column of the primary key, since rows are sorted by primary key within tablets.
+
+[[compression]]
+=== Column Compression
+
+Kudu allows per-column compression using LZ4, `snappy`, or `zlib` compression
+codecs. By default, columns are stored uncompressed. Consider using compression
+if reducing storage space is more important than raw scan performance.
+
+Every data set will compress differently, but in general LZ4 has the least effect on
+performance, while `zlib` will compress to the smallest data sizes.
+Bitshuffle-encoded columns are inherently compressed using LZ4, so it is not
+typically beneficial to apply additional compression on top of this encoding.
 
 [[known-limitations]]
 == Known Limitations
