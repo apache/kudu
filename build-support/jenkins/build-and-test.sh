@@ -118,8 +118,7 @@ rm -rf $BUILD_ROOT
 mkdir -p $BUILD_ROOT
 
 # Same for the Java tests, which aren't inside BUILD_ROOT
-rm -rf $SOURCE_ROOT/java/*/target/surefire-reports
-rm -rf $SOURCE_ROOT/java/*/target/testdata
+rm -rf $SOURCE_ROOT/java/*/target
 
 list_flaky_tests() {
   local url="http://$TEST_RESULT_SERVER/list_failed_tests?num_days=3&build_pattern=%25kudu-test%25"
