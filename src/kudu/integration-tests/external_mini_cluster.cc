@@ -214,7 +214,7 @@ vector<string> SubstituteInFlags(const vector<string>& orig_flags,
 Status ExternalMiniCluster::StartSingleMaster() {
   string exe = GetBinaryPath(kMasterBinaryName);
   scoped_refptr<ExternalMaster> master =
-    new ExternalMaster(messenger_, exe, GetDataPath("master"),
+    new ExternalMaster(messenger_, exe, GetDataPath("master-0"),
                        SubstituteInFlags(opts_.extra_master_flags, 0));
   RETURN_NOT_OK(master->Start());
   masters_.push_back(master);
@@ -234,10 +234,8 @@ Status ExternalMiniCluster::StartDistributedMasters() {
     string addr = Substitute("127.0.0.1:$0", opts_.master_rpc_ports[i]);
     peer_addrs.push_back(addr);
   }
-  string peer_addrs_str = JoinStrings(peer_addrs, ",");
   vector<string> flags = opts_.extra_master_flags;
-  flags.push_back("--master_addresses=" + peer_addrs_str);
-  flags.push_back("--enable_leader_failure_detection=true");
+  flags.push_back("--master_addresses=" + JoinStrings(peer_addrs, ","));
   string exe = GetBinaryPath(kMasterBinaryName);
 
   // Start the masters.
