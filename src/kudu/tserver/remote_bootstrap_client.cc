@@ -93,12 +93,10 @@ using tablet::TabletSuperBlockPB;
 
 RemoteBootstrapClient::RemoteBootstrapClient(std::string tablet_id,
                                              FsManager* fs_manager,
-                                             shared_ptr<Messenger> messenger,
-                                             string client_permanent_uuid)
+                                             shared_ptr<Messenger> messenger)
     : tablet_id_(std::move(tablet_id)),
       fs_manager_(fs_manager),
       messenger_(std::move(messenger)),
-      permanent_uuid_(std::move(client_permanent_uuid)),
       started_(false),
       downloaded_wal_(false),
       downloaded_blocks_(false),
@@ -148,27 +146,26 @@ Status RemoteBootstrapClient::SetTabletToReplace(const scoped_refptr<TabletMetad
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
-                                    const HostPort& bootstrap_peer_addr,
+Status RemoteBootstrapClient::Start(const HostPort& bootstrap_source_addr,
                                     scoped_refptr<TabletMetadata>* meta) {
   CHECK(!started_);
   start_time_micros_ = GetCurrentTimeMicros();
 
   Sockaddr addr;
-  RETURN_NOT_OK(SockaddrFromHostPort(bootstrap_peer_addr, &addr));
+  RETURN_NOT_OK(SockaddrFromHostPort(bootstrap_source_addr, &addr));
   if (addr.IsWildcard()) {
     return Status::InvalidArgument("Invalid wildcard address to remote bootstrap from",
                                    Substitute("$0 (resolved to $1)",
-                                              bootstrap_peer_addr.host(), addr.host()));
+                                              bootstrap_source_addr.host(), addr.host()));
   }
   LOG_WITH_PREFIX(INFO) << "Beginning remote bootstrap session"
-                        << " from remote peer at address " << bootstrap_peer_addr.ToString();
+                        << " from remote peer at address " << bootstrap_source_addr.ToString();
 
   // Set up an RPC proxy for the RemoteBootstrapService.
   proxy_.reset(new RemoteBootstrapServiceProxy(messenger_, addr));
 
   BeginRemoteBootstrapSessionRequestPB req;
-  req.set_requestor_uuid(permanent_uuid_);
+  req.set_requestor_uuid(fs_manager_->uuid());
   req.set_tablet_id(tablet_id_);
 
   rpc::RpcController controller;
@@ -180,7 +177,8 @@ Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
   RETURN_NOT_OK_UNWIND_PREPEND(proxy_->BeginRemoteBootstrapSession(req, &resp, &controller),
                                controller,
                                "Unable to begin remote bootstrap session");
-
+  string bootstrap_peer_uuid = resp.has_responder_uuid()
+      ? resp.responder_uuid() : "(unknown uuid)";
   if (resp.superblock().tablet_data_state() != tablet::TABLET_DATA_READY) {
     Status s = Status::IllegalState("Remote peer (" + bootstrap_peer_uuid + ")" +
                                     " is currently remotely bootstrapping itself!",
@@ -250,7 +248,7 @@ Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
 
 Status RemoteBootstrapClient::FetchAll(TabletStatusListener* status_listener) {
   CHECK(started_);
-  status_listener_ = CHECK_NOTNULL(status_listener);
+  status_listener_ = status_listener;
 
   // Download all the files (serially, for now, but in parallel in the future).
   RETURN_NOT_OK(DownloadBlocks());
@@ -557,7 +555,8 @@ Status RemoteBootstrapClient::VerifyData(uint64_t offset, const DataChunkPB& chu
 }
 
 string RemoteBootstrapClient::LogPrefix() {
-  return Substitute("T $0 P $1: Remote bootstrap client: ", tablet_id_, permanent_uuid_);
+  return Substitute("T $0 P $1: Remote bootstrap client: ",
+                    tablet_id_, fs_manager_->uuid());
 }
 
 } // namespace tserver

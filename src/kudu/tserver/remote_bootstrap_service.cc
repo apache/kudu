@@ -141,6 +141,7 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
     ResetSessionExpirationUnlocked(session_id);
   }
 
+  resp->set_responder_uuid(fs_manager_->uuid());
   resp->set_session_id(session_id);
   resp->set_session_idle_timeout_millis(FLAGS_remote_bootstrap_idle_timeout_ms);
   resp->mutable_superblock()->CopyFrom(session->tablet_superblock());

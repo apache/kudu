@@ -113,6 +113,9 @@ message BeginRemoteBootstrapSessionResponsePB {
   // A snapshot of the committed Consensus state at the time that the
   // remote bootstrap session was started.
   required consensus.ConsensusStatePB initial_committed_cstate = 5;
+
+  // permanent_uuid of the responding peer.
+  optional bytes responder_uuid = 6;
 }
 
 message CheckRemoteBootstrapSessionActiveRequestPB {

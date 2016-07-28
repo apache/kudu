@@ -290,25 +290,26 @@ TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrap) {
   ASSERT_OK(fs_manager->CreateInitialFileSystemLayout());
   ASSERT_OK(fs_manager->Open());
 
-  // Start up a RemoteBootstrapClient and open a remote bootstrap session.
-  gscoped_ptr<RemoteBootstrapClient> rb_client(
-      new RemoteBootstrapClient(tablet_id, fs_manager.get(),
-                                cluster_->messenger(), fs_manager->uuid()));
-  scoped_refptr<tablet::TabletMetadata> meta;
-  ASSERT_OK(rb_client->Start(cluster_->tablet_server(kTsIndex)->uuid(),
-                             cluster_->tablet_server(kTsIndex)->bound_rpc_hostport(),
-                             &meta));
+  {
+    // Start up a RemoteBootstrapClient and open a remote bootstrap session.
+    RemoteBootstrapClient rb_client(tablet_id, fs_manager.get(),
+                                    cluster_->messenger());
+    scoped_refptr<tablet::TabletMetadata> meta;
+    ASSERT_OK(rb_client.Start(cluster_->tablet_server(kTsIndex)->bound_rpc_hostport(),
+                              &meta));
 
-  // Tombstone the tablet on the remote!
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+    // Tombstone the tablet on the remote!
+    ASSERT_OK(itest::DeleteTablet(ts, tablet_id,
+                                  TABLET_DATA_TOMBSTONED, boost::none, timeout));
 
-  // Now finish bootstrapping!
-  tablet::TabletStatusListener listener(meta);
-  ASSERT_OK(rb_client->FetchAll(&listener));
-  ASSERT_OK(rb_client->Finish());
+    // Now finish bootstrapping!
+    tablet::TabletStatusListener listener(meta);
+    ASSERT_OK(rb_client.FetchAll(&listener));
+    ASSERT_OK(rb_client.Finish());
 
-  // Run destructor, which closes the remote session.
-  rb_client.reset();
+    // Run destructor, which closes the remote session.
+  }
+
   SleepFor(MonoDelta::FromMilliseconds(50));  // Give a little time for a crash (KUDU-1009).
   ASSERT_TRUE(cluster_->tablet_server(kTsIndex)->IsProcessAlive());
 }

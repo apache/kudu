@@ -338,9 +338,9 @@ Status TSTabletManager::StartRemoteBootstrap(
     const StartRemoteBootstrapRequestPB& req,
     boost::optional<TabletServerErrorPB::Code>* error_code) {
   const string& tablet_id = req.tablet_id();
-  const string& bootstrap_peer_uuid = req.bootstrap_peer_uuid();
-  HostPort bootstrap_peer_addr;
-  RETURN_NOT_OK(HostPortFromPB(req.bootstrap_peer_addr(), &bootstrap_peer_addr));
+  const string& bootstrap_source_uuid = req.bootstrap_peer_uuid();
+  HostPort bootstrap_source_addr;
+  RETURN_NOT_OK(HostPortFromPB(req.bootstrap_peer_addr(), &bootstrap_source_addr));
   int64_t leader_term = req.caller_term();
 
   const string kLogPrefix = LogPrefix(tablet_id);
@@ -410,19 +410,18 @@ Status TSTabletManager::StartRemoteBootstrap(
   }
 
   string init_msg = kLogPrefix + Substitute("Initiating remote bootstrap from Peer $0 ($1)",
-                                            bootstrap_peer_uuid, bootstrap_peer_addr.ToString());
+                                            bootstrap_source_uuid,
+                                            bootstrap_source_addr.ToString());
   LOG(INFO) << init_msg;
   TRACE(init_msg);
 
-  gscoped_ptr<RemoteBootstrapClient> rb_client(
-      new RemoteBootstrapClient(tablet_id, fs_manager_, server_->messenger(),
-                                fs_manager_->uuid()));
+  RemoteBootstrapClient rb_client(tablet_id, fs_manager_, server_->messenger());
 
   // Download and persist the remote superblock in TABLET_DATA_COPYING state.
   if (replacing_tablet) {
-    RETURN_NOT_OK(rb_client->SetTabletToReplace(meta, leader_term));
+    RETURN_NOT_OK(rb_client.SetTabletToReplace(meta, leader_term));
   }
-  RETURN_NOT_OK(rb_client->Start(bootstrap_peer_uuid, bootstrap_peer_addr, &meta));
+  RETURN_NOT_OK(rb_client.Start(bootstrap_source_addr, &meta));
 
   // From this point onward, the superblock is persisted in TABLET_DATA_COPYING
   // state, and we need to tombtone the tablet if additional steps prior to
@@ -431,18 +430,18 @@ Status TSTabletManager::StartRemoteBootstrap(
   // Registering a non-initialized TabletPeer offers visibility through the Web UI.
   RegisterTabletPeerMode mode = replacing_tablet ? REPLACEMENT_PEER : NEW_PEER;
   scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta, mode);
-  string peer_str = bootstrap_peer_uuid + " (" + bootstrap_peer_addr.ToString() + ")";
+  string peer_str = bootstrap_source_uuid + " (" + bootstrap_source_addr.ToString() + ")";
 
   // Download all of the remote files.
-  TOMBSTONE_NOT_OK(rb_client->FetchAll(tablet_peer->status_listener()), meta,
+  TOMBSTONE_NOT_OK(rb_client.FetchAll(tablet_peer->status_listener()), meta,
                    "Remote bootstrap: Unable to fetch data from remote peer " +
-                   bootstrap_peer_uuid + " (" + bootstrap_peer_addr.ToString() + ")");
+                   bootstrap_source_uuid + " (" + bootstrap_source_addr.ToString() + ")");
 
   MAYBE_FAULT(FLAGS_fault_crash_after_rb_files_fetched);
 
   // Write out the last files to make the new replica visible and update the
   // TabletDataState in the superblock to TABLET_DATA_READY.
-  TOMBSTONE_NOT_OK(rb_client->Finish(), meta, "Remote bootstrap: Failure calling Finish()");
+  TOMBSTONE_NOT_OK(rb_client.Finish(), meta, "Remote bootstrap: Failure calling Finish()");
 
   // We run this asynchronously. We don't tombstone the tablet if this fails,
   // because if we were to fail to open the tablet, on next startup, it's in a
