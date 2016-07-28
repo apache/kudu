@@ -384,13 +384,10 @@ Status KuduClient::OpenTable(const string& table_name,
                                       &partition_schema,
                                       &table_id));
 
-  // In the future, probably will look up the table in some map to reuse KuduTable
-  // instances.
-  shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, table_id,
-                                          schema, partition_schema));
-  RETURN_NOT_OK(ret->data_->Open());
-  table->swap(ret);
-
+  // TODO: in the future, probably will look up the table in some map to reuse
+  // KuduTable instances.
+  table->reset(new KuduTable(shared_from_this(), table_name, table_id,
+                             schema, partition_schema));
   return Status::OK();
 }
 

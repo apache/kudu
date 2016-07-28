@@ -35,8 +35,6 @@ class KuduTable::Data {
        PartitionSchema partition_schema);
   ~Data();
 
-  Status Open();
-
   sp::shared_ptr<KuduClient> client_;
 
   std::string name_;
