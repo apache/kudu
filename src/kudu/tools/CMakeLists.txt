@@ -92,6 +92,23 @@ target_link_libraries(kudu-pbc-dump
   ${LINK_LIBS}
 )
 
+add_executable(kudu
+  tool_action.cc
+  tool_action_fs.cc
+  tool_action_tablet.cc
+  tool_main.cc
+)
+target_link_libraries(kudu
+  consensus
+  gutil
+  kudu_common
+  kudu_fs
+  kudu_util
+  master
+  tserver
+  ${KUDU_BASE_LIBS}
+)
+
 set(KUDU_TEST_LINK_LIBS
   ksck
   kudu_tools_util

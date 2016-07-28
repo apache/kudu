@@ -36,6 +36,7 @@
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/maintenance_manager.h"
@@ -55,6 +56,7 @@ using std::vector;
 using kudu::consensus::RaftPeerPB;
 using kudu::rpc::ServiceIf;
 using kudu::tserver::ConsensusServiceImpl;
+using kudu::tserver::TabletCopyServiceImpl;
 using strings::Substitute;
 
 namespace kudu {
@@ -110,12 +112,14 @@ Status Master::StartAsync() {
   RETURN_NOT_OK(maintenance_manager_->Init());
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
-  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_entity(),
-                                                                    result_tracker(),
-                                                                    catalog_manager_.get()));
+  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(
+      metric_entity(), result_tracker(), catalog_manager_.get()));
+  gscoped_ptr<ServiceIf> tablet_copy_service(new TabletCopyServiceImpl(
+      fs_manager_.get(), catalog_manager_.get(), metric_entity(), result_tracker()));
 
   RETURN_NOT_OK(ServerBase::RegisterService(std::move(impl)));
   RETURN_NOT_OK(ServerBase::RegisterService(std::move(consensus_service)));
+  RETURN_NOT_OK(ServerBase::RegisterService(std::move(tablet_copy_service)));
   RETURN_NOT_OK(ServerBase::Start());
 
   // Now that we've bound, construct our ServerRegistrationPB.

@@ -75,13 +75,14 @@ using strings::Substitute;
 namespace kudu {
 namespace master {
 
-static const char* const kSysCatalogTabletId = "00000000000000000000000000000000";
-
 static const char* const kSysCatalogTableColType = "entry_type";
 static const char* const kSysCatalogTableColId = "entry_id";
 static const char* const kSysCatalogTableColMetadata = "metadata";
 
-const char* SysCatalogTable::kInjectedFailureStatusMsg = "INJECTED FAILURE";
+const char* const SysCatalogTable::kSysCatalogTabletId =
+    "00000000000000000000000000000000";
+const char* const SysCatalogTable::kInjectedFailureStatusMsg =
+    "INJECTED FAILURE";
 
 SysCatalogTable::SysCatalogTable(Master* master, MetricRegistry* metrics,
                                  ElectedLeaderCallback leader_cb)

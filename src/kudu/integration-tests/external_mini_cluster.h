@@ -256,15 +256,22 @@ class ExternalMiniCluster {
                  const std::string& flag,
                  const std::string& value);
 
+  // Returns the path where 'binary' is expected to live, based on
+  // ExternalMiniClusterOptions.daemon_bin_path if it was provided, or on the
+  // path of the currently running executable otherwise.
+  std::string GetBinaryPath(const std::string& binary) const;
+
+  // Returns the path where 'daemon_id' is expected to store its data, based on
+  // ExternalMiniClusterOptions.data_root if it was provided, or on the
+  // standard Kudu test directory otherwise.
+  std::string GetDataPath(const std::string& daemon_id) const;
+
  private:
   FRIEND_TEST(MasterFailoverTest, TestKillAnyMaster);
 
   Status StartSingleMaster();
 
   Status StartDistributedMasters();
-
-  std::string GetBinaryPath(const std::string& binary) const;
-  std::string GetDataPath(const std::string& daemon_id) const;
 
   Status DeduceBinRoot(std::string* ret);
   Status HandleOptions();

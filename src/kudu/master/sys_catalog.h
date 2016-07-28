@@ -63,6 +63,9 @@ class TabletVisitor {
 //   as a "normal table", instead we have Master APIs to query the table.
 class SysCatalogTable {
  public:
+  // Magic ID of the system tablet.
+  static const char* const kSysCatalogTabletId;
+
   typedef Callback<Status()> ElectedLeaderCallback;
 
   enum CatalogEntryType {
@@ -186,7 +189,7 @@ class SysCatalogTable {
   // Special string injected into SyncWrite() random failures (if enabled).
   //
   // Only useful for tests.
-  static const char* kInjectedFailureStatusMsg;
+  static const char* const kInjectedFailureStatusMsg;
 
   // Table schema, without IDs, used to send messages to the TabletPeer
   Schema schema_;

@@ -200,6 +200,24 @@ inline string JoinStrings(const CONTAINER& components,
   return result;
 }
 
+// Join the strings produced by calling 'functor' on each element of
+// 'components'.
+template<class CONTAINER, typename FUNC>
+string JoinMapped(const CONTAINER& components,
+                  const FUNC& functor,
+                  const StringPiece& delim) {
+  string result;
+  for (typename CONTAINER::const_iterator iter = components.begin();
+      iter != components.end();
+      iter++) {
+    if (iter != components.begin()) {
+      result.append(delim.data(), delim.size());
+    }
+    result.append(functor(*iter));
+  }
+  return result;
+}
+
 template <class ITERATOR>
 void JoinStringsIterator(const ITERATOR& start,
                          const ITERATOR& end,

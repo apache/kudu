@@ -78,6 +78,7 @@ DEPS_FOR_ALL = \
      #".../example-tweets.txt",
 
      # Tests that require tooling require these.
+     "build/latest/bin/kudu",
      "build/latest/bin/kudu-admin",
      ]
 

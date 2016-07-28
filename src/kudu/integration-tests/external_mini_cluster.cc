@@ -434,7 +434,7 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
     }
   }
   if (!found) {
-    // There is never a situation where shis should happen, so it's
+    // There is never a situation where this should happen, so it's
     // better to exit with a FATAL log message right away vs. return a
     // Status::IllegalState().
     LOG(FATAL) << "Leader master is not in masters_";
