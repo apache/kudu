@@ -137,10 +137,8 @@ Status GetLastOpIdForReplica(const std::string& tablet_id,
                              consensus::OpIdType opid_type,
                              const MonoDelta& timeout,
                              consensus::OpId* op_id) {
-  vector<TServerDetails*> replicas;
-  replicas.push_back(replica);
   vector<OpId> op_ids;
-  RETURN_NOT_OK(GetLastOpIdForEachReplica(tablet_id, replicas, opid_type, timeout, &op_ids));
+  RETURN_NOT_OK(GetLastOpIdForEachReplica(tablet_id, { replica }, opid_type, timeout, &op_ids));
   CHECK_EQ(1, op_ids.size());
   *op_id = op_ids[0];
   return Status::OK();
