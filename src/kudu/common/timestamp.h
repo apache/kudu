@@ -58,7 +58,7 @@ class Timestamp {
   uint64_t ToUint64() const;
 
   // Sets this Timestamp from 'value'
-  Status FromUint64(uint64_t value);
+  void FromUint64(uint64_t value);
 
   val_type value() const { return v; }
 

@@ -105,8 +105,8 @@ Status DeltaStats::InitFromPB(const DeltaStatsPB& pb) {
   for (const DeltaStatsPB::ColumnStats stats : pb.column_stats()) {
     IncrUpdateCount(ColumnId(stats.col_id()), stats.update_count());
   }
-  RETURN_NOT_OK(max_timestamp_.FromUint64(pb.max_timestamp()));
-  RETURN_NOT_OK(min_timestamp_.FromUint64(pb.min_timestamp()));
+  max_timestamp_.FromUint64(pb.max_timestamp());
+  min_timestamp_.FromUint64(pb.min_timestamp());
   return Status::OK();
 }
 

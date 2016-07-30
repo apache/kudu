@@ -47,9 +47,8 @@ uint64_t Timestamp::ToUint64() const {
   return v;
 }
 
-Status Timestamp::FromUint64(uint64_t value) {
+void Timestamp::FromUint64(uint64_t value) {
   v = value;
-  return Status::OK();
 }
 
 }  // namespace kudu
