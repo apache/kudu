@@ -980,7 +980,7 @@ if (UNIX)
     configure_file(docs/support/doxygen/client_api.doxy.in ${DOXY_CLIENT_API_CFG} @ONLY)
     add_custom_target(doxy_install_client_alt_destdir
       COMMAND ${CMAKE_COMMAND} -E remove_directory ${DOXY_CLIENT_DESTDIR}
-      COMMAND ${CMAKE_MAKE_PROGRAM} install DESTDIR=${DOXY_CLIENT_DESTDIR}
+      COMMAND DESTDIR=${DOXY_CLIENT_DESTDIR} ${CMAKE_MAKE_PROGRAM} install
       COMMENT "Installing Kudu client files into temporary destroot"
     )
     add_custom_target(doxygen
