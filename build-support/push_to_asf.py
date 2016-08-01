@@ -40,7 +40,7 @@ import sys
 
 from kudu_util import check_output, confirm_prompt, Colors, get_my_email
 
-APACHE_REPO = "https://git-wip-us.apache.org/repos/asf/incubator-kudu.git"
+APACHE_REPO = "https://git-wip-us.apache.org/repos/asf/kudu.git"
 GERRIT_URL_RE = re.compile(r"ssh://.+@gerrit.cloudera.org:29418/kudu")
 
 # ANSI color codes.
