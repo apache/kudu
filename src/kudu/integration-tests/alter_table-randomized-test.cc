@@ -522,7 +522,7 @@ struct MirrorTable {
     shared_ptr<KuduSession> session = client_->NewSession();
     shared_ptr<KuduTable> table;
     RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    session->SetTimeoutMillis(15 * 1000);
+    session->SetTimeoutMillis(60 * 1000);
     RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
     unique_ptr<KuduWriteOperation> op;
     switch (op_type) {
