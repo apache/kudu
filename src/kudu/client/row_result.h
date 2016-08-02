@@ -22,9 +22,9 @@
 namespace kudu {
 namespace client {
 
-// DEPRECATED: Kudu 0.7.0 renamed KuduRowResult to KuduScanBatch::RowPtr.
-// The newer name is clearer that the row result's lifetime is tied to the
-// lifetime of a batch.
+/// @deprecated Kudu 0.7.0 renamed KuduRowResult to KuduScanBatch::RowPtr.
+///   The newer name is clearer that the row result's lifetime is tied to the
+///   lifetime of a batch.
 typedef KuduScanBatch::RowPtr KuduRowResult;
 
 } // namespace client

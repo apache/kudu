@@ -26,20 +26,31 @@
 namespace kudu {
 namespace client {
 
+/// @brief A generic catalog of simple metrics.
 class KUDU_EXPORT ResourceMetrics {
  public:
   ResourceMetrics();
 
   ~ResourceMetrics();
 
-  // Return a map that contains all metrics, its key is the metric name
-  // and its value is corresponding metric count.
+  /// @return A map that contains all metrics, its key is the metric name
+  ///   and its value is corresponding metric count.
   std::map<std::string, int64_t> Get() const;
 
-  // Increment the given metric.
+  /// Increment/decrement the given metric.
+  ///
+  /// @param [in] name
+  ///   The name of the metric.
+  /// @param [in] amount
+  ///   The amount to increment the metric
+  ///   (negative @c amount corresponds to decrementing the metric).
   void Increment(const std::string& name, int64_t amount);
 
-  // Return the metric's current count.
+  /// Get current count for the specified metric.
+  ///
+  /// @param [in] name
+  ///   Name of the metric in question.
+  /// @return The metric's current count.
   int64_t GetMetric(const std::string& name) const;
 
  private:

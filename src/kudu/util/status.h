@@ -26,28 +26,28 @@
 #include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
 
-// Return the given status if it is not OK.
+/// @brief Return the given status if it is not @c OK.
 #define KUDU_RETURN_NOT_OK(s) do { \
     ::kudu::Status _s = (s); \
     if (PREDICT_FALSE(!_s.ok())) return _s;     \
   } while (0);
 
-// Return the given status if it is not OK, but first clone it and
-// prepend the given message.
+/// @brief Return the given status if it is not OK, but first clone it and
+///   prepend the given message.
 #define KUDU_RETURN_NOT_OK_PREPEND(s, msg) do { \
     ::kudu::Status _s = (s); \
     if (PREDICT_FALSE(!_s.ok())) return _s.CloneAndPrepend(msg); \
   } while (0);
 
-// Return 'to_return' if 'to_call' returns a bad status.
-// The substitution for 'to_return' may reference the variable
-// 's' for the bad status.
+/// @brief Return @c to_return if @c to_call returns a bad status.
+///   The substitution for 'to_return' may reference the variable
+///   @c s for the bad status.
 #define KUDU_RETURN_NOT_OK_RET(to_call, to_return) do { \
     ::kudu::Status s = (to_call); \
     if (PREDICT_FALSE(!s.ok())) return (to_return);  \
   } while (0);
 
-// Emit a warning if 'to_call' returns a bad status.
+/// @brief Emit a warning if @c to_call returns a bad status.
 #define KUDU_WARN_NOT_OK(to_call, warning_prefix) do { \
     ::kudu::Status _s = (to_call); \
     if (PREDICT_FALSE(!_s.ok())) { \
@@ -55,35 +55,37 @@
     } \
   } while (0);
 
-// Log the given status and return immediately.
+/// @brief Log the given status and return immediately.
 #define KUDU_LOG_AND_RETURN(level, status) do { \
     ::kudu::Status _s = (status); \
     KUDU_LOG(level) << _s.ToString(); \
     return _s; \
   } while (0);
 
-// If 'to_call' returns a bad status, CHECK immediately with a logged message
-// of 'msg' followed by the status.
+/// @brief If @c to_call returns a bad status, CHECK immediately with
+///   a logged message of @c msg followed by the status.
 #define KUDU_CHECK_OK_PREPEND(to_call, msg) do { \
   ::kudu::Status _s = (to_call); \
   KUDU_CHECK(_s.ok()) << (msg) << ": " << _s.ToString(); \
   } while (0);
 
-// If the status is bad, CHECK immediately, appending the status to the
-// logged message.
+/// @brief If the status is bad, CHECK immediately, appending the status to the
+///   logged message.
 #define KUDU_CHECK_OK(s) KUDU_CHECK_OK_PREPEND(s, "Bad status")
 
-// This header is used in both the Kudu build as well as in builds of
-// applications that use the Kudu C++ client. In the latter we need to be
-// careful to "namespace" our macros, to avoid colliding or overriding with
-// similarly named macros belonging to the application.
-//
-// KUDU_HEADERS_USE_SHORT_STATUS_MACROS handles this behavioral change. When
-// defined, we're building Kudu and:
-// 1. Non-namespaced macros are allowed and mapped to the namespaced versions
-//    defined above.
-// 2. Namespaced versions of glog macros are mapped to the real glog macros
-//    (otherwise the macros are defined in the C++ client stubs).
+/// @file status.h
+///
+/// This header is used in both the Kudu build as well as in builds of
+/// applications that use the Kudu C++ client. In the latter we need to be
+/// careful to "namespace" our macros, to avoid colliding or overriding with
+/// similarly named macros belonging to the application.
+///
+/// KUDU_HEADERS_USE_SHORT_STATUS_MACROS handles this behavioral change. When
+/// defined, we're building Kudu and:
+/// @li Non-namespaced macros are allowed and mapped to the namespaced versions
+///   defined above.
+/// @li Namespaced versions of glog macros are mapped to the real glog macros
+///   (otherwise the macros are defined in the C++ client stubs).
 #ifdef KUDU_HEADERS_USE_SHORT_STATUS_MACROS
 #define RETURN_NOT_OK         KUDU_RETURN_NOT_OK
 #define RETURN_NOT_OK_PREPEND KUDU_RETURN_NOT_OK_PREPEND
@@ -100,26 +102,55 @@
 
 namespace kudu {
 
+/// @brief A representation of an operation's outcome.
 class KUDU_EXPORT Status {
  public:
-  // Create a success status.
+  /// Create an object representing success status.
   Status() : state_(NULL) { }
+
   ~Status() { delete[] state_; }
 
-  // Copy the specified status.
+  /// Copy the specified status.
+  ///
+  /// @param [in] s
+  ///   The status object to copy from.
   Status(const Status& s);
+
+  /// Assign the specified status.
+  ///
+  /// @param [in] s
+  ///   The status object to assign from.
   void operator=(const Status& s);
 
 #if __cplusplus >= 201103L
-  // Move the specified status.
+  /// Move the specified status (C++11).
+  ///
+  /// @param [in] s
+  ///   rvalue reference to a Status object.
   Status(Status&& s);
+
+  /// Assign the specified status using move semantics (C++11).
+  ///
+  /// @param [in] s
+  ///   rvalue reference to a Status object.
   void operator=(Status&& s);
 #endif
 
-  // Return a success status.
+  /// @return A success status.
   static Status OK() { return Status(); }
 
-  // Return error status of an appropriate type.
+
+  /// @name Methods to build status objects for various types of errors.
+  ///
+  /// @param [in] msg
+  ///   The informational message on the error.
+  /// @param [in] msg2
+  ///   Additional information on the error (optional).
+  /// @param [in] posix_code
+  ///   POSIX error code, if applicable (optional).
+  /// @return The error status of an appropriate type.
+  ///
+  ///@{
   static Status NotFound(const Slice& msg, const Slice& msg2 = Slice(),
                          int16_t posix_code = -1) {
     return Status(kNotFound, msg, msg2, posix_code);
@@ -192,96 +223,109 @@ class KUDU_EXPORT Status {
                           int64_t posix_code = -1) {
     return Status(kEndOfFile, msg, msg2, posix_code);
   }
+  ///@}
 
-  // Returns true iff the status indicates success.
+  /// @return @c true iff the status indicates success.
   bool ok() const { return (state_ == NULL); }
 
-  // Returns true iff the status indicates a NotFound error.
+  /// @return @c true iff the status indicates a NotFound error.
   bool IsNotFound() const { return code() == kNotFound; }
 
-  // Returns true iff the status indicates a Corruption error.
+  /// @return @c true iff the status indicates a Corruption error.
   bool IsCorruption() const { return code() == kCorruption; }
 
-  // Returns true iff the status indicates a NotSupported error.
+  /// @return @c true iff the status indicates a NotSupported error.
   bool IsNotSupported() const { return code() == kNotSupported; }
 
-  // Returns true iff the status indicates an IOError.
+  /// @return @c true iff the status indicates an IOError.
   bool IsIOError() const { return code() == kIOError; }
 
-  // Returns true iff the status indicates an InvalidArgument error
+  /// @return @c true iff the status indicates an InvalidArgument error.
   bool IsInvalidArgument() const { return code() == kInvalidArgument; }
 
-  // Returns true iff the status indicates an AlreadyPresent error
+  /// @return @c true iff the status indicates an AlreadyPresent error.
   bool IsAlreadyPresent() const { return code() == kAlreadyPresent; }
 
-  // Returns true iff the status indicates a RuntimeError.
+  /// @return @c true iff the status indicates a RuntimeError.
   bool IsRuntimeError() const { return code() == kRuntimeError; }
 
-  // Returns true iff the status indicates a NetworkError.
+  /// @return @c true iff the status indicates a NetworkError.
   bool IsNetworkError() const { return code() == kNetworkError; }
 
-  // Returns true iff the status indicates a IllegalState.
+  /// @return @c true iff the status indicates an IllegalState error.
   bool IsIllegalState() const { return code() == kIllegalState; }
 
-  // Returns true iff the status indicates a NotAuthorized.
+  /// @return @c true iff the status indicates a NotAuthorized error.
   bool IsNotAuthorized() const { return code() == kNotAuthorized; }
 
-  // Returns true iff the status indicates Aborted.
+  /// @return @c true iff the status indicates an Aborted error.
   bool IsAborted() const { return code() == kAborted; }
 
-  // Returns true iff the status indicates RemoteError.
+  /// @return @c true iff the status indicates a RemoteError.
   bool IsRemoteError() const { return code() == kRemoteError; }
 
-  // Returns true iff the status indicates ServiceUnavailable.
+  /// @return @c true iff the status indicates ServiceUnavailable.
   bool IsServiceUnavailable() const { return code() == kServiceUnavailable; }
 
-  // Returns true iff the status indicates TimedOut.
+  /// @return @c true iff the status indicates TimedOut.
   bool IsTimedOut() const { return code() == kTimedOut; }
 
-  // Returns true iff the status indicates Uninitialized.
+  /// @return @c true iff the status indicates Uninitialized.
   bool IsUninitialized() const { return code() == kUninitialized; }
 
-  // Returns true iff the status indicates Configuration error.
+  /// @return @c true iff the status indicates ConfigurationError.
   bool IsConfigurationError() const { return code() == kConfigurationError; }
 
-  // Returns true iff the status indicates Incomplete.
+  /// @return @c true iff the status indicates Incomplete.
   bool IsIncomplete() const { return code() == kIncomplete; }
 
-  // Returns true iff the status indicates end of file.
+  /// @return @c true iff the status indicates end of file.
   bool IsEndOfFile() const { return code() == kEndOfFile; }
 
-  // Return a string representation of this status suitable for printing.
-  // Returns the string "OK" for success.
+  /// @return A string representation of this status suitable for printing.
+  ///   Returns the string "OK" for success.
   std::string ToString() const;
 
-  // Return a string representation of the status code, without the message
-  // text or posix code information.
+  /// @return A string representation of the status code, without the message
+  ///   text or posix code information.
   std::string CodeAsString() const;
 
-  // Return the message portion of the Status. This is similar to ToString,
-  // except that it does not include the stringified error code or posix code.
-  //
-  // For OK statuses, this returns an empty string.
-  //
-  // The returned Slice is only valid as long as this Status object remains
-  // live and unchanged.
+  /// This is similar to ToString, except that it does not include
+  /// the stringified error code or posix code.
+  ///
+  /// @note The returned Slice is only valid as long as this Status object
+  ///   remains live and unchanged.
+  ///
+  /// @return The message portion of the Status. For @c OK statuses,
+  ///   this returns an empty string.
   Slice message() const;
 
-  // Get the POSIX code associated with this Status, or -1 if there is none.
+  /// @return The POSIX code associated with this Status object,
+  ///   or @c -1 if there is none.
   int16_t posix_code() const;
 
-  // Return a new Status object with the same state plus an additional leading message.
+  /// Clone the object and add the specified prefix to the clone's message.
+  ///
+  /// @param [in] msg
+  ///   The message to prepend.
+  /// @return A new Status object with the same state plus an additional
+  ///   leading message.
   Status CloneAndPrepend(const Slice& msg) const;
 
-  // Same as CloneAndPrepend, but appends to the message instead.
+  /// Clone the object and add the specified suffix to the clone's message.
+  ///
+  /// @param [in] msg
+  ///   The message to append.
+  /// @return A new Status object with the same state plus an additional
+  ///   trailing message.
   Status CloneAndAppend(const Slice& msg) const;
 
-  // Returns the memory usage of this object without the object itself. Should
-  // be used when embedded inside another object.
+  /// @return The memory usage of this object without the object itself.
+  ///   Should be used when embedded inside another object.
   size_t memory_footprint_excluding_this() const;
 
-  // Returns the memory usage of this object including the object itself.
-  // Should be used when allocated on the heap.
+  /// @return The memory usage of this object including the object itself.
+  ///   Should be used when allocated on the heap.
   size_t memory_footprint_including_this() const;
 
  private:

@@ -29,25 +29,32 @@
 namespace kudu {
 namespace client {
 
-// A constant cell value with a specific type.
+/// @brief A constant cell value with a specific type.
 class KUDU_EXPORT KuduValue {
  public:
-  // Return a new identical KuduValue object.
+  /// @return A new identical KuduValue object.
   KuduValue* Clone() const;
 
-  // Construct a KuduValue from the given integer.
-  static KuduValue* FromInt(int64_t v);
-
-  // Construct a KuduValue from the given float.
+  /// @name Builders from integral types.
+  ///
+  /// Construct a KuduValue object from the given value of integral type.
+  ///
+  /// @param [in] val
+  ///   The value to build the KuduValue from.
+  /// @return A new KuduValue object.
+  ///
+  ///@{
+  static KuduValue* FromInt(int64_t val);
   static KuduValue* FromFloat(float f);
-
-  // Construct a KuduValue from the given double.
   static KuduValue* FromDouble(double d);
-
-  // Construct a KuduValue from the given bool.
   static KuduValue* FromBool(bool b);
+  ///@}
 
-  // Construct a KuduValue by copying the value of the given Slice.
+  /// Construct a KuduValue by copying the value of the given Slice.
+  ///
+  /// @param [in] s
+  ///   The slice to copy value from.
+  /// @return A new KuduValue object.
   static KuduValue* CopyString(Slice s);
 
   ~KuduValue();

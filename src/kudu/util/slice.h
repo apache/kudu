@@ -1,23 +1,8 @@
+//
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 //
-// Slice is a simple structure containing a pointer into some external
-// storage and a size.  The user of a Slice must ensure that the slice
-// is not used after the corresponding external storage has been
-// deallocated.
-//
-// Multiple threads can invoke const methods on a Slice without
-// external synchronization, but if any of the threads may call a
-// non-const method, all threads accessing the same Slice must use
-// external synchronization.
-//
-// Slices can be built around faststrings and StringPieces using constructors
-// with implicit casts. Both StringPieces and faststrings depend on a great
-// deal of gutil code, so these constructors are conditionalized on
-// KUDU_HEADERS_USE_RICH_SLICE. Likewise, KUDU_HEADERS_USE_RICH_SLICE controls
-// whether to use gutil-based memeq/memcmp substitutes; if it is unset, Slice
-// will fall back to standard memcmp.
 
 #ifndef KUDU_UTIL_SLICE_H_
 #define KUDU_UTIL_SLICE_H_
@@ -40,112 +25,196 @@ namespace kudu {
 
 class Status;
 
+/// @brief A wrapper around externally allocated data.
+///
+/// Slice is a simple structure containing a pointer into some external
+/// storage and a size. The user of a Slice must ensure that the slice
+/// is not used after the corresponding external storage has been
+/// deallocated.
+///
+/// Multiple threads can invoke const methods on a Slice without
+/// external synchronization, but if any of the threads may call a
+/// non-const method, all threads accessing the same Slice must use
+/// external synchronization.
+///
+/// Slices can be built around faststrings and StringPieces using constructors
+/// with implicit casts. Both StringPieces and faststrings depend on a great
+/// deal of gutil code.
 class KUDU_EXPORT Slice {
  public:
-  // Create an empty slice.
+  /// Create an empty slice.
   Slice() : data_(reinterpret_cast<const uint8_t *>("")),
             size_(0) { }
 
-  // Create a slice that refers to d[0,n-1].
+  /// Create a slice that refers to a @c uint8_t byte array.
+  ///
+  /// @param [in] d
+  ///   The input array.
+  /// @param [in] n
+  ///   Number of bytes in the array.
   Slice(const uint8_t* d, size_t n) : data_(d), size_(n) { }
 
-  // Create a slice that refers to d[0,n-1].
+  /// Create a slice that refers to a @c char byte array.
+  ///
+  /// @param [in] d
+  ///   The input array.
+  /// @param [in] n
+  ///   Number of bytes in the array.
   Slice(const char* d, size_t n) :
     data_(reinterpret_cast<const uint8_t *>(d)),
     size_(n) { }
 
-  // Create a slice that refers to the contents of "s"
+  /// Create a slice that refers to the contents of the given string.
+  ///
+  /// @param [in] s
+  ///   The input string.
   Slice(const std::string& s) : // NOLINT(runtime/explicit)
     data_(reinterpret_cast<const uint8_t *>(s.data())),
     size_(s.size()) { }
 
-  // Create a slice that refers to s[0,strlen(s)-1]
+  /// Create a slice that refers to a C-string s[0,strlen(s)-1].
+  ///
+  /// @param [in] s
+  ///   The input C-string.
   Slice(const char* s) : // NOLINT(runtime/explicit)
     data_(reinterpret_cast<const uint8_t *>(s)),
     size_(strlen(s)) { }
 
 #ifdef KUDU_HEADERS_USE_RICH_SLICE
-  // Create a slice that refers to the contents of the faststring.
-  // Note that further appends to the faststring may invalidate this slice.
+  /// Create a slice that refers to the contents of a faststring.
+  ///
+  /// @note Further appends to the faststring may invalidate this slice.
+  ///
+  /// @param [in] s
+  ///   The input faststring.
   Slice(const faststring &s) // NOLINT(runtime/explicit)
     : data_(s.data()),
       size_(s.size()) {
   }
 
+  /// Create a slice that refers to the contents of a string piece.
+  ///
+  /// @param [in] s
+  ///   The input StringPiece.
   Slice(const StringPiece& s) // NOLINT(runtime/explicit)
     : data_(reinterpret_cast<const uint8_t*>(s.data())),
       size_(s.size()) {
   }
 #endif
 
-  // Return a pointer to the beginning of the referenced data
+  /// @return A pointer to the beginning of the referenced data.
   const uint8_t* data() const { return data_; }
 
-  // Return a mutable pointer to the beginning of the referenced data.
+  /// @return A mutable pointer to the beginning of the referenced data.
   uint8_t *mutable_data() { return const_cast<uint8_t *>(data_); }
 
-  // Return the length (in bytes) of the referenced data
+  /// @return The length (in bytes) of the referenced data.
   size_t size() const { return size_; }
 
-  // Return true iff the length of the referenced data is zero
+  /// @return @c true iff the length of the referenced data is zero.
   bool empty() const { return size_ == 0; }
 
-  // Return the ith byte in the referenced data.
-  // REQUIRES: n < size()
+  /// @pre n < size()
+  ///
+  /// @param [in] n
+  ///   The index of the byte.
+  /// @return the n-th byte in the referenced data.
   const uint8_t &operator[](size_t n) const {
     assert(n < size());
     return data_[n];
   }
 
-  // Change this slice to refer to an empty array
+  /// Change this slice to refer to an empty array.
   void clear() {
     data_ = reinterpret_cast<const uint8_t *>("");
     size_ = 0;
   }
 
-  // Drop the first "n" bytes from this slice.
+  /// Drop the first "n" bytes from this slice.
+  ///
+  /// @pre n <= size()
+  ///
+  /// @note Only the base and bounds of the slice are changed;
+  ///   the data is not modified.
+  ///
+  /// @param [in] n
+  ///   Number of bytes that should be dropped from the beginning.
   void remove_prefix(size_t n) {
     assert(n <= size());
     data_ += n;
     size_ -= n;
   }
 
-  // Truncate the slice to "n" bytes
+  /// Truncate the slice to the given number of bytes.
+  ///
+  /// @pre n <= size()
+  ///
+  /// @note Only the base and bounds of the slice are changed;
+  ///   the data is not modified.
+  ///
+  /// @param [in] n
+  ///   The new size of the slice.
   void truncate(size_t n) {
     assert(n <= size());
     size_ = n;
   }
 
-  // Checks that this slice has size() = 'expected_size' and returns
-  // Status::Corruption() otherwise.
+  /// Check that the slice has the expected size.
+  ///
+  /// @param [in] expected_size
+  /// @return Status::Corruption() iff size() != @c expected_size
   Status check_size(size_t expected_size) const;
 
-  // Return a string that contains the copy of the referenced data.
+  /// @return A string that contains a copy of the referenced data.
   std::string ToString() const;
 
+  /// Get printable representation of the data in the slice.
+  ///
+  /// @param [in] max_len
+  ///   The maximum number of bytes to output in the printable format;
+  ///   @c 0 means no limit.
+  /// @return A string with printable representation of the data.
   std::string ToDebugString(size_t max_len = 0) const;
 
-  // Three-way comparison.  Returns value:
-  //   <  0 iff "*this" <  "b",
-  //   == 0 iff "*this" == "b",
-  //   >  0 iff "*this" >  "b"
+  /// Do a three-way comparison of the slice's data.
+  ///
+  /// @param [in] b
+  ///   The other slice to compare with.
+  /// @return Values are
+  ///   @li <  0 iff "*this" <  "b"
+  ///   @li == 0 iff "*this" == "b"
+  ///   @li >  0 iff "*this" >  "b"
   int compare(const Slice& b) const;
 
-  // Return true iff "x" is a prefix of "*this"
+  /// Check whether the slice starts with the given prefix.
+  /// @param [in] x
+  ///   The slice in question.
+  /// @return @c true iff "x" is a prefix of "*this"
   bool starts_with(const Slice& x) const {
     return ((size_ >= x.size_) &&
             (MemEqual(data_, x.data_, x.size_)));
   }
 
-  // Comparator struct, useful for ordered collections (like STL maps).
+  /// @brief Comparator struct, useful for ordered collections (like STL maps).
   struct Comparator {
+    /// Compare two slices using Slice::compare()
+    ///
+    /// @param [in] a
+    ///   The slice to call Slice::compare() at.
+    /// @param [in] b
+    ///   The slice to use as a parameter for Slice::compare().
+    /// @return @c true iff @c a is less than @c b by Slice::compare().
     bool operator()(const Slice& a, const Slice& b) const {
       return a.compare(b) < 0;
     }
   };
 
-  // Relocates this slice's data into 'd' provided this isn't already the
-  // case. It is assumed that 'd' is large enough to fit the data.
+  /// Relocate/copy the slice's data into a new location.
+  ///
+  /// @param [in] d
+  ///   The new location for the data. If it's the same location, then no
+  ///   relocation is done. It is assumed that the new location is
+  ///   large enough to fit the data.
   void relocate(uint8_t* d) {
     if (data_ != d) {
       memcpy(d, data_, size_);
@@ -178,15 +247,36 @@ class KUDU_EXPORT Slice {
   // Intentionally copyable
 };
 
+/// Check whether two slices are identical.
+///
+/// @param [in] x
+///   One slice.
+/// @param [in] y
+///   Another slice.
+/// @return @c true iff two slices contain byte-for-byte identical data.
 inline bool operator==(const Slice& x, const Slice& y) {
   return ((x.size() == y.size()) &&
           (Slice::MemEqual(x.data(), y.data(), x.size())));
 }
 
+/// Check whether two slices are not identical.
+///
+/// @param [in] x
+///   One slice.
+/// @param [in] y
+///   Another slice.
+/// @return @c true iff slices contain different data.
 inline bool operator!=(const Slice& x, const Slice& y) {
   return !(x == y);
 }
 
+/// Output printable representation of the slice into the given output stream.
+///
+/// @param [out] o
+///   The output stream to print the info.
+/// @param [in] s
+///   The slice to print.
+/// @return Reference to the updated output stream.
 inline std::ostream& operator<<(std::ostream& o, const Slice& s) {
   return o << s.ToDebugString(16); // should be enough for anyone...
 }
@@ -201,11 +291,24 @@ inline int Slice::compare(const Slice& b) const {
   return r;
 }
 
-// STL map whose keys are Slices.
-//
-// See sample usage in slice-test.cc.
+/// @brief STL map whose keys are Slices.
+///
+/// An example of usage:
+/// @code
+///   typedef SliceMap<int>::type MySliceMap;
+///
+///   MySliceMap my_map;
+///   my_map.insert(MySliceMap::value_type(a, 1));
+///   my_map.insert(MySliceMap::value_type(b, 2));
+///   my_map.insert(MySliceMap::value_type(c, 3));
+///
+///   for (const MySliceMap::value_type& pair : my_map) {
+///     ...
+///   }
+/// @endcode
 template <typename T>
 struct SliceMap {
+  /// A handy typedef for the slice map with appropriate comparison operator.
   typedef std::map<Slice, T, Slice::Comparator> type;
 };
 

@@ -303,10 +303,10 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// @return Operation status.
   Status ListTabletServers(std::vector<KuduTabletServer*>* tablet_servers);
 
-  /// List only those tables whose names pass a substring match on 'filter'.
+  /// List only those tables whose names pass a substring match on @c filter.
   ///
   /// @param [out] tables
-  ///   Result tables 'tables' is appended to only on success.
+  ///   The placeholder for the result. Appended only on success.
   /// @param [in] filter
   ///   Substring filter to use; empty sub-string filter matches all tables.
   /// @return Status object for the operation.
@@ -584,7 +584,7 @@ class KUDU_EXPORT KuduTableCreator {
   KuduTableCreator& wait(bool wait);
 
   /// Create a table in accordance with parameters currently set for the
-  /// KuduTableCreator instance.  Once created, the table handle
+  /// KuduTableCreator instance. Once created, the table handle
   /// can be obtained using KuduClient::OpenTable() method.
   ///
   /// @pre The following methods of the KuduTableCreator must be called
@@ -592,9 +592,10 @@ class KUDU_EXPORT KuduTableCreator {
   ///     @li table_name()
   ///     @li schema()
   ///
-  /// @return Result status of the @c{CREATE TABLE} operation. The return value
-  ///   may indicate an error in the create table operation, or a misuse
-  ///   of the builder. In the latter case, only the last error is returned.
+  /// @return Result status of the <tt>CREATE TABLE</tt> operation.
+  ///   The return value may indicate an error in the create table operation,
+  ///   or a misuse of the builder. In the latter case, only the last error
+  ///   is returned.
   Status Create();
 
  private:
@@ -677,7 +678,7 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   /// @param [in] col_name
   ///   Name of column to use for comparison.
   /// @param [in] op
-  ///   Comparision operation to use.
+  ///   Comparison operator to use.
   /// @param [in] value
   ///   The type of the value must correspond to the type of the column
   ///   to which the predicate is to be applied. For example,
@@ -696,7 +697,7 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
                                         KuduPredicate::ComparisonOp op,
                                         KuduValue* value);
 
-  /// @return The KuduClient object associated with the table.  The caller
+  /// @return The KuduClient object associated with the table. The caller
   ///   should not free the returned pointer.
   KuduClient* client() const;
 

@@ -39,56 +39,81 @@ class TsAdminClient;
 namespace client {
 class KuduSchema;
 
-// A batch of zero or more rows returned from a KuduScanner.
-//
-// With C++11, you can iterate over the rows in the batch using a
-// range-foreach loop:
-//
-//   for (KuduScanBatch::RowPtr row : batch) {
-//     ... row.GetInt(1, ...)
-//     ...
-//   }
-//
-// In C++03, you'll need to use a regular for loop:
-//
-//   for (KuduScanBatch::const_iterator it = batch.begin(), it != batch.end();
-//        ++i) {
-//     KuduScanBatch::RowPtr row(*it);
-//     ...
-//   }
-//
-//   or
-//
-//   for (int i = 0, num_rows = batch.NumRows();
-//        i < num_rows;
-//        i++) {
-//     KuduScanBatch::RowPtr row = batch.Row(i);
-//     ...
-//   }
-//
-// Note that, in the above example, NumRows() is only called once at the
-// beginning of the loop to avoid extra calls to the non-inlined method.
+/// @brief A batch of zero or more rows returned by a scan operation.
+///
+/// Every call to KuduScanner::NextBatch() returns a batch of zero or more rows.
+/// You can iterate over the rows in the batch using:
+///
+/// range-foreach loop (C++11):
+/// @code
+///   for (KuduScanBatch::RowPtr row : batch) {
+///     ... row.GetInt(1, ...)
+///     ...
+///   }
+/// @endcode
+///
+/// regular for loop (C++03):
+/// @code
+///   for (KuduScanBatch::const_iterator it = batch.begin(), it != batch.end();
+///        ++i) {
+///     KuduScanBatch::RowPtr row(*it);
+///     ...
+///   }
+/// @endcode
+/// or
+/// @code
+///   for (int i = 0, num_rows = batch.NumRows();
+///        i < num_rows;
+///        i++) {
+///     KuduScanBatch::RowPtr row = batch.Row(i);
+///     ...
+///   }
+/// @endcode
+///
+/// @note In the above example, NumRows() is only called once at the
+///   beginning of the loop to avoid extra calls to the non-inlined method.
 class KUDU_EXPORT KuduScanBatch {
  public:
+  /// @brief A single row result from a scan.
+  ///
+  /// @note This object acts as a pointer into a KuduScanBatch, and therefore
+  ///   is valid only as long as the batch it was constructed from.
   class RowPtr;
+
+  /// @brief C++ forward iterator over the rows in a KuduScanBatch.
+  ///
+  /// This iterator yields KuduScanBatch::RowPtr objects which point inside
+  /// the row batch itself. Thus, the iterator and any objects obtained from it
+  /// are invalidated if the KuduScanBatch is destroyed or used
+  /// for a new NextBatch() call.
   class const_iterator;
+
+  /// A handy typedef for the RowPtr.
   typedef RowPtr value_type;
 
   KuduScanBatch();
   ~KuduScanBatch();
 
-  // Return the number of rows in this batch.
+  /// @return The number of rows in this batch.
   int NumRows() const;
 
-  // Return a reference to one of the rows in this batch.
-  // The returned object is only valid for as long as this KuduScanBatch.
+  /// Get a row at the specified index.
+  ///
+  /// @param [in] idx
+  ///   The index of the row to return.
+  /// @return A reference to one of the rows in this batch.
+  ///   The returned object is only valid for as long as this KuduScanBatch
+  ///   object is valid.
   KuduScanBatch::RowPtr Row(int idx) const;
 
+  /// @return Forward iterator to the start of the rows in the batch.
   const_iterator begin() const;
+  /// @return Forward iterator to the end of the rows in the batch.
   const_iterator end() const;
 
-  // Returns the projection schema for this batch.
-  // All KuduScanBatch::RowPtr returned by this batch are guaranteed to have this schema.
+  /// @return The projection schema for this batch.
+  ///   All KuduScanBatch::RowPtr returned by this batch are guaranteed
+  ///   to have this schema.
   const KuduSchema* projection_schema() const;
 
  private:
@@ -100,21 +125,35 @@ class KUDU_EXPORT KuduScanBatch {
   DISALLOW_COPY_AND_ASSIGN(KuduScanBatch);
 };
 
-// A single row result from a scan. Note that this object acts as a pointer into
-// a KuduScanBatch, and therefore is valid only as long as the batch it was constructed
-// from.
 class KUDU_EXPORT KuduScanBatch::RowPtr {
  public:
-  // Construct an invalid RowPtr. Before use, you must assign
-  // a properly-initialized value.
+  /// Construct an invalid RowPtr. Before use, you must assign
+  /// a properly-initialized value.
   RowPtr() : schema_(NULL), row_data_(NULL) {}
 
+  /// @param [in] col_name
+  ///   Name of the column.
+  /// @return @c true iff the specified column of the row has @c NULL value.
   bool IsNull(const Slice& col_name) const;
+
+  /// @param [in] col_idx
+  ///   Index of the column.
+  /// @return @c true iff the specified column of the row has @c NULL value.
   bool IsNull(int col_idx) const;
 
-  // These getters return a bad Status if the type does not match,
-  // the value is unset, or the value is NULL. Otherwise they return
-  // the current set value in *val.
+  /// @name Getters for integral type columns by column name.
+  ///
+  /// @param [in] col_name
+  ///   The name of the target column.
+  /// @param [out] val
+  ///   Placeholder for the result value.
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
+  ///
+  ///@{
   Status GetBool(const Slice& col_name, bool* val) const WARN_UNUSED_RESULT;
 
   Status GetInt8(const Slice& col_name, int8_t* val) const WARN_UNUSED_RESULT;
@@ -126,10 +165,26 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
 
   Status GetFloat(const Slice& col_name, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(const Slice& col_name, double* val) const WARN_UNUSED_RESULT;
+  ///@}
 
-  // Same as above getters, but with numeric column indexes.
-  // These are faster since they avoid a hashmap lookup, so should
-  // be preferred in performance-sensitive code.
+  /// @name Getters for integral type columns by column index.
+  ///
+  /// These methods are faster than their name-based counterparts
+  /// since using indices avoids a hashmap lookup, so index-based getters
+  /// should be preferred in performance-sensitive code.
+  ///
+  /// @param [in] col_index
+  ///   The index of the column.
+  /// @param [out] val
+  ///   Pointer to the placeholder to put the resulting value.
+  ///
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
+  ///
+  ///@{
   Status GetBool(int col_idx, bool* val) const WARN_UNUSED_RESULT;
 
   Status GetInt8(int col_idx, int8_t* val) const WARN_UNUSED_RESULT;
@@ -140,17 +195,63 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
 
   Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;
+  ///@}
 
-  // Gets the string/binary value but does not copy the value. Callers should
-  // copy the resulting Slice if necessary.
+  /// @name Getters for string/binary column by column name.
+  ///
+  /// Get the string/binary value for a column by its name.
+  ///
+  /// @param [in] col_name
+  ///   Name of the column.
+  /// @param [out] val
+  ///   Pointer to the placeholder to put the resulting value.
+  ///   Note that the method does not copy the value. Callers should copy
+  ///   the resulting Slice if necessary.
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
+  ///
+  ///@{
   Status GetString(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
-  Status GetString(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
   Status GetBinary(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
-  Status GetBinary(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
+  ///@}
 
-  // Raw cell access. Should be avoided unless absolutely necessary.
+  /// @name Getters for string/binary column by column index.
+  ///
+  /// Get the string/binary value for a column by its index.
+  ///
+  /// These methods are faster than their name-based counterparts
+  /// since using indices avoids a hashmap lookup, so index-based getters
+  /// should be preferred in performance-sensitive code.
+  ///
+  /// @param [in] col_index
+  ///   The index of the column.
+  /// @param [out] val
+  ///   Pointer to the placeholder to put the resulting value.
+  ///   Note that the method does not copy the value. Callers should copy
+  ///   the resulting Slice if necessary.
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
+  ///
+  ///@{
+  Status GetString(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
+  Status GetBinary(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
+  ///@}
+
+  /// Get the column's row data.
+  ///
+  /// @note Should be avoided unless absolutely necessary.
+  /// @param [in] col_idx
+  ///   The index of the column.
+  /// @return Raw cell data for the specified index.
   const void* cell(int col_idx) const;
 
+  /// @return String representation for this row.
   std::string ToString() const;
 
  private:
@@ -175,38 +276,50 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   const uint8_t* row_data_;
 };
 
-// C++ forward iterator over the rows in a KuduScanBatch.
-//
-// This iterator yields KuduScanBatch::RowPtr objects which point inside the row batch
-// itself. Thus, the iterator and any objects obtained from it are invalidated if the
-// KuduScanBatch is destroyed or used for a new NextBatch() call.
 class KUDU_EXPORT KuduScanBatch::const_iterator
     : public std::iterator<std::forward_iterator_tag, KuduScanBatch::RowPtr> {
  public:
   ~const_iterator() {}
 
+  /// @return The row in the batch the iterator is pointing at.
   KuduScanBatch::RowPtr operator*() const {
     return batch_->Row(idx_);
   }
 
-  // Prefix increment operator: advances the iterator to the next position.
-  // Returns the reference to the incremented/advanced iterator.
+  /// Prefix increment operator: advances the iterator to the next position.
+  ///
+  /// @return The reference to the iterator, pointing to the next position.
   const_iterator& operator++() {
     ++idx_;
     return *this;
   }
 
-  // Postfix increment operator: advances the iterator to the next position.
-  // Returns a copy of the iterator pointing to the pre-incremented position.
+  /// Postfix increment operator: advances the iterator to the next position.
+  ///
+  /// @return A copy of the iterator pointing to the pre-increment position.
   const_iterator operator++(int) {
     const_iterator tmp(batch_, idx_);
     ++idx_;
     return tmp;
   }
 
+  /// An operator to check whether two iterators are 'equal'.
+  ///
+  /// @param [in] other
+  ///   The iterator to compare with.
+  /// @return @c true iff the other iterator points to the same row
+  ///   of the same batch.
   bool operator==(const const_iterator& other) const {
     return (idx_ == other.idx_) && (batch_ == other.batch_);
   }
+
+  /// An operator to check whether two iterators are 'not equal'.
+  ///
+  /// @param [in] other
+  ///   The iterator to compare with.
+  /// @return @c true iff the other iterator points to a different row
+  ///   in the same batch, or to a row belonging to a different batch
+  ///   altogether.
   bool operator!=(const const_iterator& other) const {
     return !(*this == other);
   }

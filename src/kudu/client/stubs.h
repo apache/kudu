@@ -170,16 +170,30 @@ namespace kudu {
 
 namespace internal_logging {
 
+/// @brief A helper for the nil log sink.
+///
+/// Using this helper is analogous to sending log messages to /dev/null:
+/// nothing gets logged.
 class NullLog {
  public:
+  /// The no-op output operator.
+  ///
+  /// @param [in] t
+  ///   The object to send into the nil sink.
+  /// @return Reference to the updated object.
   template<class T>
   NullLog& operator<<(const T& t) {
     return *this;
   }
 };
 
+/// @brief A helper for stderr log sink.
 class CerrLog {
  public:
+  /// Create a CerrLog sink helper object.
+  ///
+  /// @param [in] severity
+  ///   The severity for log messages output to the sink (stderr).
   CerrLog(int severity) // NOLINT(runtime/explicit)
     : severity_(severity),
       has_logged_(false) {
@@ -194,6 +208,11 @@ class CerrLog {
     }
   }
 
+  /// The output operator.
+  ///
+  /// @param [in] t
+  ///   The object to print into stderr.
+  /// @return Reference to the updated object.
   template<class T>
   CerrLog& operator<<(const T& t) {
     has_logged_ = true;
