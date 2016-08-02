@@ -378,6 +378,7 @@ void Webserver::RegisterPathHandler(const string& path, const string& alias,
 const char* const PAGE_HEADER = "<!DOCTYPE html>"
 " <html>"
 "   <head><title>Kudu</title>"
+" <meta charset='utf-8'/>"
 " <link href='/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />"
 " <link href='/kudu.css' rel='stylesheet' />"
 " </head>"
