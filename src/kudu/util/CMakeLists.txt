@@ -193,7 +193,6 @@ endif()
 
 set(UTIL_LIBS
   crcutil
-  dl
   gflags
   glog
   gutil
@@ -207,6 +206,7 @@ set(UTIL_LIBS
 if(NOT APPLE)
   set(UTIL_LIBS
     ${UTIL_LIBS}
+    dl
     rt
     vmem)
 endif()
@@ -253,11 +253,11 @@ target_link_libraries(kudu_test_main
   glog
   gmock
   kudu_util
-  kudu_test_util
-  dl)
+  kudu_test_util)
 
 if(NOT APPLE)
   target_link_libraries(kudu_test_main
+    dl
     rt)
 endif()
 
