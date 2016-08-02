@@ -51,6 +51,14 @@ class KuduSchema;
 //
 // In C++03, you'll need to use a regular for loop:
 //
+//   for (KuduScanBatch::const_iterator it = batch.begin(), it != batch.end();
+//        ++i) {
+//     KuduScanBatch::RowPtr row(*it);
+//     ...
+//   }
+//
+//   or
+//
 //   for (int i = 0, num_rows = batch.NumRows();
 //        i < num_rows;
 //        i++) {
@@ -181,15 +189,26 @@ class KUDU_EXPORT KuduScanBatch::const_iterator
     return batch_->Row(idx_);
   }
 
-  void operator++() {
-    idx_++;
+  // Prefix increment operator: advances the iterator to the next position.
+  // Returns the reference to the incremented/advanced iterator.
+  const_iterator& operator++() {
+    ++idx_;
+    return *this;
   }
 
-  bool operator==(const const_iterator& other) {
-    return idx_ == other.idx_;
+  // Postfix increment operator: advances the iterator to the next position.
+  // Returns a copy of the iterator pointing to the pre-incremented position.
+  const_iterator operator++(int) {
+    const_iterator tmp(batch_, idx_);
+    ++idx_;
+    return tmp;
   }
-  bool operator!=(const const_iterator& other) {
-    return idx_ != other.idx_;
+
+  bool operator==(const const_iterator& other) const {
+    return (idx_ == other.idx_) && (batch_ == other.batch_);
+  }
+  bool operator!=(const const_iterator& other) const {
+    return !(*this == other);
   }
 
  private:
@@ -199,7 +218,7 @@ class KUDU_EXPORT KuduScanBatch::const_iterator
         idx_(idx) {
   }
 
-  const KuduScanBatch* batch_;
+  const KuduScanBatch* const batch_;
   int idx_;
 };
 

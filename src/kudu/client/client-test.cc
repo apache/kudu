@@ -3067,5 +3067,102 @@ TEST_F(ClientTest, TestNoDefaultPartitioning) {
     ASSERT_STR_CONTAINS(s.ToString(), "Table partitioning must be specified");
 }
 
+TEST_F(ClientTest, TestBatchScanConstIterator) {
+  // Check for iterator behavior for an empty batch.
+  {
+    KuduScanBatch empty_batch;
+    ASSERT_EQ(0, empty_batch.NumRows());
+    ASSERT_TRUE(empty_batch.begin() == empty_batch.end());
+  }
+
+  {
+    // Insert a few rows
+    const int ROW_NUM = 2;
+    ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), ROW_NUM));
+
+    KuduScanner scanner(client_table_.get());
+    ASSERT_OK(scanner.Open());
+
+    // Do a scan
+    KuduScanBatch batch;
+    ASSERT_TRUE(scanner.HasMoreRows());
+    ASSERT_OK(scanner.NextBatch(&batch));
+    const int ref_count(batch.NumRows());
+    ASSERT_EQ(ROW_NUM, ref_count);
+
+    {
+      KuduScanBatch::const_iterator it_next = batch.begin();
+      std::advance(it_next, 1);
+
+      KuduScanBatch::const_iterator it = batch.begin();
+      ASSERT_TRUE(++it == it_next);
+      ASSERT_TRUE(it == it_next);
+    }
+
+    {
+      KuduScanBatch::const_iterator it_end = batch.begin();
+      std::advance(it_end, ROW_NUM);
+      ASSERT_TRUE(batch.end() == it_end);
+    }
+
+    {
+      KuduScanBatch::const_iterator it(batch.begin());
+      ASSERT_TRUE(it++ == batch.begin());
+
+      KuduScanBatch::const_iterator it_next(batch.begin());
+      ASSERT_TRUE(++it_next == it);
+    }
+
+    // Check the prefix increment iterator.
+    {
+      int count = 0;
+      for (KuduScanBatch::const_iterator it = batch.begin();
+           it != batch.end(); ++it) {
+          ++count;
+      }
+      CHECK_EQ(ref_count, count);
+    }
+
+    // Check the postfix increment iterator.
+    {
+      int count = 0;
+      for (KuduScanBatch::const_iterator it = batch.begin();
+           it != batch.end(); it++) {
+          ++count;
+      }
+      CHECK_EQ(ref_count, count);
+    }
+
+    {
+      KuduScanBatch::const_iterator it_pre(batch.begin());
+      KuduScanBatch::const_iterator it_post(batch.begin());
+      for (; it_pre != batch.end(); ++it_pre, it_post++) {
+          ASSERT_TRUE(it_pre == it_post);
+          ASSERT_FALSE(it_pre != it_post);
+      }
+    }
+
+    // Check that iterators which are going over different batches
+    // are different, even if they iterate over the same raw data.
+    {
+      KuduScanner other_scanner(client_table_.get());
+      ASSERT_OK(other_scanner.Open());
+
+      KuduScanBatch other_batch;
+      ASSERT_TRUE(other_scanner.HasMoreRows());
+      ASSERT_OK(other_scanner.NextBatch(&other_batch));
+      const int other_ref_count(other_batch.NumRows());
+      ASSERT_EQ(ROW_NUM, other_ref_count);
+
+      KuduScanBatch::const_iterator it(batch.begin());
+      KuduScanBatch::const_iterator other_it(other_batch.begin());
+      for (; it != batch.end(); ++it, ++other_it) {
+          ASSERT_FALSE(it == other_it);
+          ASSERT_TRUE(it != other_it);
+      }
+    }
+  }
+}
+
 } // namespace client
 } // namespace kudu
