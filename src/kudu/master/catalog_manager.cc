@@ -1277,15 +1277,15 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           if (existing_iter != existing_tablets.end()) {
             TabletMetadataLock metadata(existing_iter->second, TabletMetadataLock::READ);
             if (metadata.data().pb.partition().partition_key_start() < upper_bound) {
-              return Status::NotFound("New partition conflicts with existing partition",
-                                      step.ShortDebugString());
+              return Status::InvalidArgument("New partition conflicts with existing partition",
+                                             step.ShortDebugString());
             }
           }
           if (existing_iter != existing_tablets.begin()) {
             TabletMetadataLock metadata(std::prev(existing_iter)->second, TabletMetadataLock::READ);
             if (metadata.data().pb.partition().partition_key_end() > lower_bound) {
-              return Status::NotFound("New partition conflicts with existing partition",
-                                      step.ShortDebugString());
+              return Status::InvalidArgument("New partition conflicts with existing partition",
+                                             step.ShortDebugString());
             }
           }
 
@@ -1294,15 +1294,15 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           if (new_iter != new_tablets.end()) {
             const auto& metadata = new_iter->second->mutable_metadata()->dirty();
             if (metadata.pb.partition().partition_key_start() < upper_bound) {
-              return Status::NotFound("New partition conflicts with another new partition",
-                                      step.ShortDebugString());
+              return Status::InvalidArgument("New partition conflicts with another new partition",
+                                             step.ShortDebugString());
             }
           }
           if (new_iter != new_tablets.begin()) {
             const auto& metadata = std::prev(new_iter)->second->mutable_metadata()->dirty();
             if (metadata.pb.partition().partition_key_end() > lower_bound) {
-              return Status::NotFound("New partition conflicts with another new partition",
-                                      step.ShortDebugString());
+              return Status::InvalidArgument("New partition conflicts with another new partition",
+                                             step.ShortDebugString());
             }
           }
 
@@ -1344,8 +1344,8 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           } else if (found_new) {
             new_tablets.erase(new_iter);
           } else {
-            return Status::NotFound("No tablet found for drop partition step",
-                                    step.ShortDebugString());
+            return Status::InvalidArgument("No tablet found for drop partition step",
+                                           step.ShortDebugString());
           }
         }
         break;

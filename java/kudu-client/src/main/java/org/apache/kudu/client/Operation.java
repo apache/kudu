@@ -341,5 +341,12 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
 
       return toPB();
     }
+
+    public RowOperationsPB encodeLowerAndUpperBounds(PartialRow lowerBound, PartialRow upperBound) {
+      init(lowerBound.getSchema(), 2);
+      encodeRow(lowerBound, ChangeType.RANGE_LOWER_BOUND);
+      encodeRow(upperBound, ChangeType.RANGE_UPPER_BOUND);
+      return toPB();
+    }
   }
 }

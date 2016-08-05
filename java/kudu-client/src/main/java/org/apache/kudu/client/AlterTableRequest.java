@@ -16,12 +16,16 @@
 // under the License.
 package org.apache.kudu.client;
 
+import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Message;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import static org.apache.kudu.master.Master.*;
+
+import java.util.Collection;
+import java.util.List;
 
 /**
  * RPC used to alter a table. When it returns it doesn't mean that the table is altered,
@@ -33,18 +37,21 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
   static final String ALTER_TABLE = "AlterTable";
   private final String name;
   private final AlterTableRequestPB.Builder builder;
+  private final List<Integer> requiredFeatures;
 
   AlterTableRequest(KuduTable masterTable, String name, AlterTableOptions ato) {
     super(masterTable);
     this.name = name;
-    this.builder = ato.pb;
+    this.builder = ato.getProtobuf();
+    this.requiredFeatures = ato.hasAddDropRangePartitions() ?
+        ImmutableList.of(MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE) :
+        ImmutableList.<Integer>of();
   }
 
   @Override
   ChannelBuffer serialize(Message header) {
     assert header.isInitialized();
-    TableIdentifierPB tableID =
-        TableIdentifierPB.newBuilder().setTableName(name).build();
+    TableIdentifierPB tableID = TableIdentifierPB.newBuilder().setTableName(name).build();
     this.builder.setTable(tableID);
     return toChannelBuffer(header, this.builder.build());
   }
@@ -66,5 +73,10 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
         tsUUID);
     return new Pair<AlterTableResponse, Object>(
         response, respBuilder.hasError() ? respBuilder.getError() : null);
+  }
+
+  @Override
+  Collection<Integer> getRequiredFeatures() {
+    return requiredFeatures;
   }
 }

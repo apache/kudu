@@ -147,7 +147,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     try {
       KuduTable badTable = new KuduTable(client, "Invalid table name",
           "Invalid table ID", null, null);
-      client.discoverTablets(badTable, tabletLocations);
+      client.discoverTablets(badTable, null, tabletLocations, 1000);
       fail("This should have failed quickly");
     } catch (Exception ex) {
       assertTrue(ex instanceof NonRecoverableException);

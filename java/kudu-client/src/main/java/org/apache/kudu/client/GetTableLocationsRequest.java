@@ -79,6 +79,7 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
     if (endKey != null) {
       builder.setPartitionKeyEnd(ZeroCopyLiteralByteString.wrap(endKey));
     }
+    builder.setMaxReturnedLocations(AsyncKuduClient.MAX_RETURNED_TABLE_LOCATIONS);
     return toChannelBuffer(header, builder.build());
   }
 }

@@ -113,7 +113,7 @@ public class BaseKuduTest {
   }
 
   protected static KuduTable createTable(String tableName, Schema schema,
-                                         CreateTableOptions builder) throws Exception {
+                                         CreateTableOptions builder) throws KuduException {
     LOG.info("Creating table: {}", tableName);
     return client.syncClient().createTable(tableName, schema, builder);
   }
@@ -145,6 +145,27 @@ public class BaseKuduTest {
     closer.addCallbacks(cb, defaultErrorCB);
     closer.join(DEFAULT_SLEEP);
     return counter.get();
+  }
+
+  /**
+   * Scans the table and returns the number of rows.
+   * @param table the table
+   * @param predicates optional predicates to apply to the scan
+   * @return the number of rows in the table matching the predicates
+   */
+  protected long countRowsInTable(KuduTable table, KuduPredicate... predicates)
+      throws KuduException {
+    long count = 0;
+    KuduScanner.KuduScannerBuilder scanBuilder = syncClient.newScannerBuilder(table);
+    for (KuduPredicate predicate : predicates) {
+      scanBuilder.addPredicate(predicate);
+    }
+    scanBuilder.setProjectedColumnIndexes(ImmutableList.<Integer>of());
+    KuduScanner scanner = scanBuilder.build();
+    while (scanner.hasMoreRows()) {
+      count += scanner.nextRows().getNumRows();
+    }
+    return count;
   }
 
   protected List<String> scanTableToStrings(KuduTable table,

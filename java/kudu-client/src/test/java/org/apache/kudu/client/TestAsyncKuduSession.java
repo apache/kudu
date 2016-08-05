@@ -120,7 +120,8 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     // Make sure tablet locations is cached.
     Insert insert = createInsert(1);
     session.apply(insert).join(DEFAULT_SLEEP);
-    RemoteTablet rt = client.getTablet(table.getTableId(), insert.partitionKey());
+    RemoteTablet rt =
+        client.getTableLocationEntry(table.getTableId(), insert.partitionKey()).getTablet();
     String tabletId = rt.getTabletIdAsString();
     TabletClient tc = client.clientFor(rt);
     try {
