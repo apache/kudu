@@ -68,14 +68,14 @@ in [2].
 This process is executed by a driver, which may be a client program or the
 Master. We’ll say the node to be added to the cluster is named `new_node`.
 
-1. Driver initiates execution of remote bootstrap procedure of `new_node` from
+1. Driver initiates execution of tablet copy procedure of `new_node` from
    the current leader `bootstrap_source` using an RPC call to the `new_node`.
-   Remote bootstrap runs to completion, which means all data and logs at the
-   time remote bootstrap was initiated were replicated to `new_node`. Driver
-   polls `new_node` for indication that the remote bootstrap process is
+   Tablet Copy runs to completion, which means all data and logs at the
+   time tablet copy was initiated were replicated to `new_node`. Driver
+   polls `new_node` for indication that the tablet copy process is
    complete.
    <br>
-   If the `bootstrap_source` node crashes before remote bootstrap is complete,
+   If the `bootstrap_source` node crashes before tablet copy is complete,
    the bootstrap fails and the driver must start the entire process over from
    the beginning. If the driver or `new_node` crashes and the tablet never
    joins the configuration, the Master should eventually delete the abandoned
@@ -95,7 +95,7 @@ Master. We’ll say the node to be added to the cluster is named `new_node`.
 3. As soon as a replica receives the ConfigChangeRequest it applies the
    configuration change in-memory. It does not wait for commitment to apply the
    change. See rationale in [2] section 4.1.
-4. The remote bootstrap session between `new_node` and `bootstrap_source` is
+4. The tablet copy session between `new_node` and `bootstrap_source` is
    closed once the config change to transition the node to `PRE_FOLLOWER` has
    been committed. This implies releasing an anchor on the log. Since
    `new_node` is already a member of the configuration receiving log updates,
@@ -167,12 +167,12 @@ another doc.
 ### Steps:
 
 1. Run a tool to determine the most up-to-date remaining replica.
-2. Remote bootstrap additional nodes from the most up-to-date remaining node.
-   Wait for remote bootstrap to complete on all the nodes.
+2. Tablet Copy additional nodes from the most up-to-date remaining node.
+   Wait for tablet copy to complete on all the nodes.
 3. Bring all tablet servers hosting the affected tablet offline (TODO: This is
    possible to implement per-tablet but not currently supported)
 4. Run tool to rewrite the ConsensusMetadata file per-tablet server to
-   forcefully update the configuration membership to add remotely bootstrapped
+   forcefully update the configuration membership to add copied
    nodes as followers. TODO: Violates Raft not to append to the log, do we also
    need to do that?
 5. Bring the affected tablets / tablet servers back online.

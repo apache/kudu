@@ -24,29 +24,29 @@ import "kudu/fs/fs.proto";
 import "kudu/rpc/rpc_header.proto";
 import "kudu/tablet/metadata.proto";
 
-// RaftConfig remote bootstrap RPC calls.
-service RemoteBootstrapService {
-  // Establish a remote bootstrap session.
-  rpc BeginRemoteBootstrapSession(BeginRemoteBootstrapSessionRequestPB)
-      returns (BeginRemoteBootstrapSessionResponsePB);
+// RaftConfig tablet copy RPC calls.
+service TabletCopyService {
+  // Establish a tablet copy session.
+  rpc BeginTabletCopySession(BeginTabletCopySessionRequestPB)
+      returns (BeginTabletCopySessionResponsePB);
 
   // Check whether the specified session is active.
-  rpc CheckSessionActive(CheckRemoteBootstrapSessionActiveRequestPB)
-      returns (CheckRemoteBootstrapSessionActiveResponsePB);
+  rpc CheckSessionActive(CheckTabletCopySessionActiveRequestPB)
+      returns (CheckTabletCopySessionActiveResponsePB);
 
   // Fetch data (blocks, logs) from the server.
   rpc FetchData(FetchDataRequestPB)
       returns (FetchDataResponsePB);
 
-  // End a remote bootstrap session, allow server to release resources.
-  rpc EndRemoteBootstrapSession(EndRemoteBootstrapSessionRequestPB)
-      returns (EndRemoteBootstrapSessionResponsePB);
+  // End a tablet copy session, allow server to release resources.
+  rpc EndTabletCopySession(EndTabletCopySessionRequestPB)
+      returns (EndTabletCopySessionResponsePB);
 }
 
-// Remote bootstrap-specific errors use this protobuf.
-message RemoteBootstrapErrorPB {
+// Tablet Copy-specific errors use this protobuf.
+message TabletCopyErrorPB {
   extend kudu.rpc.ErrorStatusPB {
-    optional RemoteBootstrapErrorPB remote_bootstrap_error_ext = 102;
+    optional TabletCopyErrorPB tablet_copy_error_ext = 102;
   }
 
   enum Code {
@@ -57,7 +57,7 @@ message RemoteBootstrapErrorPB {
     // able to easily parse the error.
     UNKNOWN_ERROR = 1;
 
-    // The specified remote bootstrap session either never existed or has expired.
+    // The specified tablet copy session either never existed or has expired.
     NO_SESSION = 2;
 
     // Unknown tablet.
@@ -70,7 +70,7 @@ message RemoteBootstrapErrorPB {
     WAL_SEGMENT_NOT_FOUND = 5;
 
     // Invalid request. Possibly missing parameters.
-    INVALID_REMOTE_BOOTSTRAP_REQUEST = 6;
+    INVALID_TABLET_COPY_REQUEST = 6;
 
     // Error reading or transferring data.
     IO_ERROR = 7;
@@ -85,7 +85,7 @@ message RemoteBootstrapErrorPB {
   required AppStatusPB status = 2;
 }
 
-message BeginRemoteBootstrapSessionRequestPB {
+message BeginTabletCopySessionRequestPB {
   // permanent_uuid of the requesting peer.
   required bytes requestor_uuid = 1;
 
@@ -93,7 +93,7 @@ message BeginRemoteBootstrapSessionRequestPB {
   required bytes tablet_id = 2;
 }
 
-message BeginRemoteBootstrapSessionResponsePB {
+message BeginTabletCopySessionResponsePB {
   // Opaque session id assigned by the server.
   // No guarantees are made as to the format of the session id.
   required bytes session_id = 1;
@@ -111,23 +111,23 @@ message BeginRemoteBootstrapSessionResponsePB {
   repeated uint64 wal_segment_seqnos = 4;
 
   // A snapshot of the committed Consensus state at the time that the
-  // remote bootstrap session was started.
+  // tablet copy session was started.
   required consensus.ConsensusStatePB initial_committed_cstate = 5;
 
   // permanent_uuid of the responding peer.
   optional bytes responder_uuid = 6;
 }
 
-message CheckRemoteBootstrapSessionActiveRequestPB {
-  // Valid Session ID returned by a BeginRemoteBootstrapSession() RPC call.
+message CheckTabletCopySessionActiveRequestPB {
+  // Valid Session ID returned by a BeginTabletCopySession() RPC call.
   required bytes session_id = 1;
 
   // Set keepalive to true to reset the session timeout timer.
   optional bool keepalive = 2 [default = false];
 }
 
-message CheckRemoteBootstrapSessionActiveResponsePB {
-  // Whether the given session id represents an active remote bootstrap session.
+message CheckTabletCopySessionActiveResponsePB {
+  // Whether the given session id represents an active tablet copy session.
   required bool session_is_active = 1;
 }
 
@@ -149,7 +149,7 @@ message DataIdPB {
 }
 
 message FetchDataRequestPB {
-  // Valid Session ID returned by a BeginRemoteBootstrapSession() RPC call.
+  // Valid Session ID returned by a BeginTabletCopySession() RPC call.
   required bytes session_id = 1;
 
   // The server will use this ID to determine the key and type of data
@@ -189,16 +189,16 @@ message FetchDataResponsePB {
   required DataChunkPB chunk = 1;
 }
 
-message EndRemoteBootstrapSessionRequestPB {
+message EndTabletCopySessionRequestPB {
   required bytes session_id = 1;
 
   // Set to true if bootstrap is successful.
   required bool is_success = 2;
 
   // Client-provided error message. The server will log this error so that an
-  // admin can identify when bad things are happening with remote bootstrap.
+  // admin can identify when bad things are happening with tablet copy.
   optional AppStatusPB error = 3;
 }
 
-message EndRemoteBootstrapSessionResponsePB {
+message EndTabletCopySessionResponsePB {
 }

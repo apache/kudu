@@ -144,12 +144,12 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   virtual const NodeInstancePB& NodeInstance() const OVERRIDE;
 
-  // Initiate remote bootstrap of the specified tablet.
-  // See the StartRemoteBootstrap() RPC declaration in consensus.proto for details.
+  // Initiate tablet copy of the specified tablet.
+  // See the StartTabletCopy() RPC declaration in consensus.proto for details.
   // Currently this runs the entire procedure synchronously.
   // TODO: KUDU-921: Run this procedure on a background thread.
-  virtual Status StartRemoteBootstrap(
-      const consensus::StartRemoteBootstrapRequestPB& req,
+  virtual Status StartTabletCopy(
+      const consensus::StartTabletCopyRequestPB& req,
       boost::optional<TabletServerErrorPB::Code>* error_code) OVERRIDE;
 
   // Adds updated tablet information to 'report'.
@@ -259,7 +259,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                           const boost::optional<consensus::OpId>& last_logged_opid);
 
   // Return Status::IllegalState if leader_term < last_logged_term.
-  // Helper function for use with remote bootstrap.
+  // Helper function for use with tablet copy.
   Status CheckLeaderTermNotLower(const std::string& tablet_id,
                                  int64_t leader_term,
                                  int64_t last_logged_term);

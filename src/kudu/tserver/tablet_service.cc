@@ -108,8 +108,8 @@ using consensus::LeaderStepDownRequestPB;
 using consensus::LeaderStepDownResponsePB;
 using consensus::RunLeaderElectionRequestPB;
 using consensus::RunLeaderElectionResponsePB;
-using consensus::StartRemoteBootstrapRequestPB;
-using consensus::StartRemoteBootstrapResponsePB;
+using consensus::StartTabletCopyRequestPB;
+using consensus::StartTabletCopyResponsePB;
 using consensus::VoteRequestPB;
 using consensus::VoteResponsePB;
 
@@ -980,14 +980,14 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
   context->RespondSuccess();
 }
 
-void ConsensusServiceImpl::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB* req,
-                                                StartRemoteBootstrapResponsePB* resp,
+void ConsensusServiceImpl::StartTabletCopy(const StartTabletCopyRequestPB* req,
+                                                StartTabletCopyResponsePB* resp,
                                                 rpc::RpcContext* context) {
-  if (!CheckUuidMatchOrRespond(tablet_manager_, "StartRemoteBootstrap", req, resp, context)) {
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "StartTabletCopy", req, resp, context)) {
     return;
   }
   boost::optional<TabletServerErrorPB::Code> error_code;
-  Status s = tablet_manager_->StartRemoteBootstrap(*req, &error_code);
+  Status s = tablet_manager_->StartTabletCopy(*req, &error_code);
   if (!s.ok()) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          error_code.get_value_or(TabletServerErrorPB::UNKNOWN_ERROR),

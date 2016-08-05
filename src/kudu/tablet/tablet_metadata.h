@@ -132,7 +132,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     return partition_schema_;
   }
 
-  // Set / get the remote bootstrap / tablet data state.
+  // Set / get the tablet copy / tablet data state.
   void set_tablet_data_state(TabletDataState state);
   TabletDataState tablet_data_state() const;
 
@@ -323,7 +323,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Protected by 'data_lock_'.
   std::unordered_set<BlockId, BlockIdHash, BlockIdEqual> orphaned_blocks_;
 
-  // The current state of remote bootstrap for the tablet.
+  // The current state of tablet copy for the tablet.
   TabletDataState tablet_data_state_;
 
   // Record of the last opid logged by the tablet before it was last

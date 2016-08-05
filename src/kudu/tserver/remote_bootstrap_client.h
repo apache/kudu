@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_REMOTE_BOOTSTRAP_CLIENT_H
-#define KUDU_TSERVER_REMOTE_BOOTSTRAP_CLIENT_H
+#ifndef KUDU_TSERVER_TABLET_COPY_CLIENT_H
+#define KUDU_TSERVER_TABLET_COPY_CLIENT_H
 
 #include <string>
 #include <memory>
@@ -58,25 +58,25 @@ class TabletSuperBlockPB;
 namespace tserver {
 class DataIdPB;
 class DataChunkPB;
-class RemoteBootstrapServiceProxy;
+class TabletCopyServiceProxy;
 
-// Client class for using remote bootstrap to copy a tablet from another host.
+// Client class for using tablet copy to copy a tablet from another host.
 // This class is not thread-safe.
 //
 // TODO:
 // * Parallelize download of blocks and WAL segments.
 //
-class RemoteBootstrapClient {
+class TabletCopyClient {
  public:
 
-  // Construct the remote bootstrap client.
+  // Construct the tablet copy client.
   // 'fs_manager' and 'messenger' must remain valid until this object is destroyed.
-  RemoteBootstrapClient(std::string tablet_id, FsManager* fs_manager,
+  TabletCopyClient(std::string tablet_id, FsManager* fs_manager,
                         std::shared_ptr<rpc::Messenger> messenger);
 
   // Attempt to clean up resources on the remote end by sending an
-  // EndRemoteBootstrapSession() RPC
-  ~RemoteBootstrapClient();
+  // EndTabletCopySession() RPC
+  ~TabletCopyClient();
 
   // Pass in the existing metadata for a tombstoned tablet, which will be
   // replaced if validation checks pass in Start().
@@ -89,15 +89,15 @@ class RemoteBootstrapClient {
   Status SetTabletToReplace(const scoped_refptr<tablet::TabletMetadata>& meta,
                             int64_t caller_term);
 
-  // Start up a remote bootstrap session to bootstrap from the specified
-  // bootstrap peer. Place a new superblock indicating that remote bootstrap is
+  // Start up a tablet copy session to bootstrap from the specified
+  // bootstrap peer. Place a new superblock indicating that tablet copy is
   // in progress. If the 'metadata' pointer is passed as NULL, it is ignored,
   // otherwise the TabletMetadata object resulting from the initial remote
   // bootstrap response is returned.
   Status Start(const HostPort& bootstrap_source_addr,
                scoped_refptr<tablet::TabletMetadata>* metadata);
 
-  // Runs a "full" remote bootstrap, copying the physical layout of a tablet
+  // Runs a "full" tablet copy, copying the physical layout of a tablet
   // from the leader of the specified consensus configuration.
   Status FetchAll(tablet::TabletStatusListener* status_listener);
 
@@ -106,23 +106,23 @@ class RemoteBootstrapClient {
   Status Finish();
 
  private:
-  FRIEND_TEST(RemoteBootstrapClientTest, TestBeginEndSession);
-  FRIEND_TEST(RemoteBootstrapClientTest, TestDownloadBlock);
-  FRIEND_TEST(RemoteBootstrapClientTest, TestVerifyData);
-  FRIEND_TEST(RemoteBootstrapClientTest, TestDownloadWalSegment);
-  FRIEND_TEST(RemoteBootstrapClientTest, TestDownloadAllBlocks);
+  FRIEND_TEST(TabletCopyClientTest, TestBeginEndSession);
+  FRIEND_TEST(TabletCopyClientTest, TestDownloadBlock);
+  FRIEND_TEST(TabletCopyClientTest, TestVerifyData);
+  FRIEND_TEST(TabletCopyClientTest, TestDownloadWalSegment);
+  FRIEND_TEST(TabletCopyClientTest, TestDownloadAllBlocks);
 
   // Extract the embedded Status message from the given ErrorStatusPB.
-  // The given ErrorStatusPB must extend RemoteBootstrapErrorPB.
+  // The given ErrorStatusPB must extend TabletCopyErrorPB.
   static Status ExtractRemoteError(const rpc::ErrorStatusPB& remote_error);
 
   static Status UnwindRemoteError(const Status& status, const rpc::RpcController& controller);
 
   // Update the bootstrap StatusListener with a message.
-  // The string "RemoteBootstrap: " will be prepended to each message.
+  // The string "TabletCopy: " will be prepended to each message.
   void UpdateStatusMessage(const std::string& message);
 
-  // End the remote bootstrap session.
+  // End the tablet copy session.
   Status EndRemoteSession();
 
   // Download all WAL files sequentially.
@@ -134,7 +134,7 @@ class RemoteBootstrapClient {
   Status DownloadWAL(uint64_t wal_segment_seqno);
 
   // Write out the Consensus Metadata file based on the ConsensusStatePB
-  // downloaded as part of initiating the remote bootstrap session.
+  // downloaded as part of initiating the tablet copy session.
   Status WriteConsensusMetadata();
 
   // Download all blocks belonging to a tablet sequentially.
@@ -177,7 +177,7 @@ class RemoteBootstrapClient {
   FsManager* const fs_manager_;
   const std::shared_ptr<rpc::Messenger> messenger_;
 
-  // State flags that enforce the progress of remote bootstrap.
+  // State flags that enforce the progress of tablet copy.
   bool started_;            // Session started.
   bool downloaded_wal_;     // WAL segments downloaded.
   bool downloaded_blocks_;  // Data blocks downloaded.
@@ -193,7 +193,7 @@ class RemoteBootstrapClient {
   gscoped_ptr<consensus::ConsensusMetadata> cmeta_;
 
   tablet::TabletStatusListener* status_listener_;
-  std::shared_ptr<RemoteBootstrapServiceProxy> proxy_;
+  std::shared_ptr<TabletCopyServiceProxy> proxy_;
   std::string session_id_;
   uint64_t session_idle_timeout_millis_;
   gscoped_ptr<tablet::TabletSuperBlockPB> superblock_;
@@ -202,9 +202,9 @@ class RemoteBootstrapClient {
   std::vector<uint64_t> wal_seqnos_;
   int64_t start_time_micros_;
 
-  DISALLOW_COPY_AND_ASSIGN(RemoteBootstrapClient);
+  DISALLOW_COPY_AND_ASSIGN(TabletCopyClient);
 };
 
 } // namespace tserver
 } // namespace kudu
-#endif /* KUDU_TSERVER_REMOTE_BOOTSTRAP_CLIENT_H */
+#endif /* KUDU_TSERVER_TABLET_COPY_CLIENT_H */

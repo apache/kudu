@@ -363,11 +363,11 @@ by at most one in each configuration change. In order to grow a 3-replica config
 replicas, two separate configuration changes (3$\rightarrow$4, 4$\rightarrow$5) must be proposed
 and committed.
 
-Kudu implements the addition of new servers through a process called {\em remote bootstrap}.
+Kudu implements the addition of new servers through a process called {\em tablet copy}.
 In our design, in order to add a new replica, we first add it as a new member in the
 Raft configuration, even before notifying the destination server that a new replica will
 be copied to it. When this configuration change has been committed, the current Raft leader
-replica triggers a {\tt StartRemoteBootstrap} RPC, which causes the destination server to pull a
+replica triggers a {\tt StartTabletCopy} RPC, which causes the destination server to pull a
 snapshot of the tablet data and log from the current leader. When the transfer
 is complete, the new server opens the tablet following the same process as after
 a server restart. When the tablet has opened the tablet data and replayed any necessary
@@ -378,11 +378,11 @@ In our current implementation, new servers are added immediately as {\tt VOTER} 
 the disadvantage that, after moving from a 3-server configuration to a 4-server configuration, three
 out of the four servers must acknowledge each operation. Because the new server is in the process of
 copying, it is unable to acknowledge operations. If another server were to crash during the
-snapshot-transfer process, the tablet would become unavailable for writes until the remote bootstrap
+snapshot-transfer process, the tablet would become unavailable for writes until the tablet copy
 finished.
 
 To address this issue, we plan to implement a {\tt PRE\_VOTER} replica state. In this
-state, the leader will send Raft updates and trigger remote bootstrap on the
+state, the leader will send Raft updates and trigger tablet copy on the
 target replica, but not count it as a voter when calculating the size of the configuration's
 majority. Upon detecting that the {\tt PRE\_VOTER} replica has fully caught up to
 the current logs, the leader will automatically propose and commit another configuration change to

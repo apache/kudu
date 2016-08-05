@@ -288,9 +288,9 @@ Status DeleteTablet(const TServerDetails* ts,
                     const MonoDelta& timeout,
                     tserver::TabletServerErrorPB::Code* error_code = NULL);
 
-// Cause the remote to initiate remote bootstrap using the specified host as a
+// Cause the remote to initiate tablet copy using the specified host as a
 // source.
-Status StartRemoteBootstrap(const TServerDetails* ts,
+Status StartTabletCopy(const TServerDetails* ts,
                             const std::string& tablet_id,
                             const std::string& bootstrap_source_uuid,
                             const HostPort& bootstrap_source_addr,

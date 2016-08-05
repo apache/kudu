@@ -413,13 +413,13 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
 }
 
 // Test that a tablet replica is automatically tombstoned on startup if a local
-// crash occurs in the middle of remote bootstrap.
-TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
+// crash occurs in the middle of tablet copy.
+TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
   NO_FATALS(StartCluster());
   const MonoDelta timeout = MonoDelta::FromSeconds(10);
   const int kTsIndex = 0; // We'll test with the first TS.
 
-  // We'll do a config change to remote bootstrap a replica here later. For
+  // We'll do a config change to tablet copy a replica here later. For
   // now, shut it down.
   LOG(INFO) << "Shutting down TS " << cluster_->tablet_server(kTsIndex)->uuid();
   cluster_->tablet_server(kTsIndex)->Shutdown();
@@ -442,12 +442,12 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
   }
   workload.StopAndJoin();
 
-  // Enable a fault crash when remote bootstrap occurs on TS 0.
+  // Enable a fault crash when tablet copy occurs on TS 0.
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
   const string& kFaultFlag = "fault_crash_after_rb_files_fetched";
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex), kFaultFlag, "1.0"));
 
-  // Figure out the tablet id to remote bootstrap.
+  // Figure out the tablet id to tablet copy.
   vector<string> tablets = inspect_->ListTabletsOnTS(1);
   ASSERT_EQ(1, tablets.size());
   const string& tablet_id = tablets[0];
@@ -467,7 +467,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();
 
-  // Now we restart the TS. It will clean up the failed remote bootstrap and
+  // Now we restart the TS. It will clean up the failed tablet copy and
   // convert it to TABLET_DATA_TOMBSTONED. It crashed, so we have to call
   // Shutdown() then Restart() to bring it back up.
   cluster_->tablet_server(kTsIndex)->Shutdown();
@@ -476,9 +476,9 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
 }
 
 // Test that a tablet replica automatically tombstones itself if the remote
-// bootstrap source server fails in the middle of the remote bootstrap process.
+// bootstrap source server fails in the middle of the tablet copy process.
 // Also test that we can remotely bootstrap a tombstoned tablet.
-TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
+TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   vector<string> ts_flags = {
       "--enable_leader_failure_detection=false",  // Make test deterministic.
       "--log_segment_size_mb=1"                   // Faster log rolls.
@@ -490,7 +490,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(20);
   const int kTsIndex = 0; // We'll test with the first TS.
 
-  // We'll do a config change to remote bootstrap a replica here later. For
+  // We'll do a config change to tablet copy a replica here later. For
   // now, shut down TS-0.
   LOG(INFO) << "Shutting down TS " << cluster_->tablet_server(kTsIndex)->uuid();
   cluster_->tablet_server(kTsIndex)->Shutdown();
@@ -525,7 +525,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
 
-  // Remote bootstrap doesn't see the active WAL segment, and we need to
+  // Tablet Copy doesn't see the active WAL segment, and we need to
   // download a file to trigger the fault in this test. Due to the log index
   // chunks, that means 3 files minimum: One in-flight WAL segment, one index
   // chunk file (these files grow much more slowly than the WAL segments), and
@@ -552,7 +552,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
 
   // Now bring the other replicas back, re-elect the previous leader (TS-1),
-  // and wait for the leader to remote bootstrap the tombstoned replica. This
+  // and wait for the leader to tablet copy the tombstoned replica. This
   // will have replaced a tablet with no consensus metadata.
   ASSERT_OK(cluster_->tablet_server(1)->Restart());
   ASSERT_OK(cluster_->tablet_server(2)->Restart());
@@ -584,7 +584,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
                             workload.rows_inserted()));
 }
 
-// Test for correct remote bootstrap merge of consensus metadata.
+// Test for correct tablet copy merge of consensus metadata.
 TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   // Enable manual leader selection.
   vector<string> ts_flags, master_flags;
@@ -598,7 +598,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   workload.Setup();
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
 
-  // Figure out the tablet id to remote bootstrap.
+  // Figure out the tablet id to tablet copy.
   vector<string> tablets = inspect_->ListTabletsOnTS(1);
   ASSERT_EQ(1, tablets.size());
   const string& tablet_id = tablets[0];
@@ -658,7 +658,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   ASSERT_OK(itest::WaitUntilLeader(leader, tablet_id, timeout));
 
   // Bring our special little guy back up.
-  // Wait until he gets remote bootstrapped.
+  // Wait until he gets tablet copyped.
   LOG(INFO) << "Bringing TS " << cluster_->tablet_server(kTsIndex)->uuid()
             << " back up...";
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
@@ -670,9 +670,9 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   ASSERT_EQ(ts->uuid(), cmeta_pb.voted_for());
 
   // Now do the same thing as above, where we tombstone TS 0 then trigger a new
-  // term (term 3) on the other machines. TS 0 will get remotely bootstrapped
+  // term (term 3) on the other machines. TS 0 will get copied
   // again, but this time the vote record on TS 0 for term 2 should not be
-  // retained after remote bootstrap occurs.
+  // retained after tablet copy occurs.
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();
 
@@ -1047,7 +1047,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   workload.StopAndJoin();
 
   // Shut down the master and the other tablet servers so they don't interfere
-  // by attempting to create tablets or remote bootstrap while we delete tablets.
+  // by attempting to create tablets or tablet copy while we delete tablets.
   cluster_->master()->Shutdown();
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();

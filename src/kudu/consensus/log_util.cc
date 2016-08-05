@@ -215,7 +215,7 @@ Status LogEntryReader::HandleReadError(const Status& s) const {
   LOG(INFO) << "Ignoring log segment corruption in " << seg_->path_ << " because "
             << "there are no log entries following the corrupted one. "
             << "The server probably crashed in the middle of writing an entry "
-            << "to the write-ahead log or downloaded an active log via remote bootstrap. "
+            << "to the write-ahead log or downloaded an active log via tablet copy. "
             << "Error detail: " << corruption_status.ToString();
   return Status::EndOfFile("");
 }

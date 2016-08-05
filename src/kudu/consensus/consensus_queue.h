@@ -75,7 +75,7 @@ class PeerMessageQueue {
           last_known_committed_idx(MinimumOpId().index()),
           is_last_exchange_successful(false),
           last_successful_communication_time(MonoTime::Now(MonoTime::FINE)),
-          needs_remote_bootstrap(false),
+          needs_tablet_copy(false),
           last_seen_term_(0) {}
 
     // Check that the terms seen from a given peer only increase
@@ -112,8 +112,8 @@ class PeerMessageQueue {
     // successful communication ever took place.
     MonoTime last_successful_communication_time;
 
-    // Whether the follower was detected to need remote bootstrap.
-    bool needs_remote_bootstrap;
+    // Whether the follower was detected to need tablet copy.
+    bool needs_tablet_copy;
 
    private:
     // The last term we saw from a given peer.
@@ -193,13 +193,13 @@ class PeerMessageQueue {
   virtual Status RequestForPeer(const std::string& uuid,
                                 ConsensusRequestPB* request,
                                 std::vector<ReplicateRefPtr>* msg_refs,
-                                bool* needs_remote_bootstrap);
+                                bool* needs_tablet_copy);
 
-  // Fill in a StartRemoteBootstrapRequest for the specified peer.
+  // Fill in a StartTabletCopyRequest for the specified peer.
   // If that peer should not remotely bootstrap, returns a non-OK status.
-  // On success, also internally resets peer->needs_remote_bootstrap to false.
-  virtual Status GetRemoteBootstrapRequestForPeer(const std::string& uuid,
-                                                  StartRemoteBootstrapRequestPB* req);
+  // On success, also internally resets peer->needs_tablet_copy to false.
+  virtual Status GetTabletCopyRequestForPeer(const std::string& uuid,
+                                                  StartTabletCopyRequestPB* req);
 
   // Update the last successful communication timestamp for the given peer
   // to the current time. This should be called when a non-network related

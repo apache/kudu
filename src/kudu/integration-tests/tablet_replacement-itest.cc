@@ -219,7 +219,7 @@ TEST_F(TabletReplacementITest, TestEvictAndReplaceDeadFollower) {
 // bootstrap will attempt to replay committed (and applied) config change
 // operations. This is achieved by delaying application of a write at the
 // tablet level that precedes the config change operations in the WAL, then
-// initiating a remote bootstrap to a follower. The follower will not have the
+// initiating a tablet copy to a follower. The follower will not have the
 // COMMIT for the write operation, so will ignore COMMIT messages for the
 // applied config change operations. At startup time, the newly
 // remotely-bootstrapped tablet should detect that these config change

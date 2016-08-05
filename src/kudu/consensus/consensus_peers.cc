@@ -61,13 +61,13 @@ DEFINE_double(fault_crash_after_leader_request_fraction, 0.0,
 TAG_FLAG(fault_crash_on_leader_request_fraction, unsafe);
 
 
-// Allow for disabling remote bootstrap in unit tests where we want to test
+// Allow for disabling tablet copy in unit tests where we want to test
 // certain scenarios without triggering bootstrap of a remote peer.
-DEFINE_bool(enable_remote_bootstrap, true,
-            "Whether remote bootstrap will be initiated by the leader when it "
+DEFINE_bool(enable_tablet_copy, true,
+            "Whether tablet copy will be initiated by the leader when it "
             "detects that a follower is out of date or does not have a tablet "
             "replica. For testing purposes only.");
-TAG_FLAG(enable_remote_bootstrap, unsafe);
+TAG_FLAG(enable_tablet_copy, unsafe);
 
 namespace kudu {
 namespace consensus {
@@ -174,11 +174,11 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
 
 void Peer::SendNextRequest(bool even_if_queue_empty) {
   // The peer has no pending request nor is sending: send the request.
-  bool needs_remote_bootstrap = false;
+  bool needs_tablet_copy = false;
   int64_t commit_index_before = request_.has_committed_index() ?
       request_.committed_index().index() : kMinimumOpIdIndex;
   Status s = queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_,
-                                    &replicate_msg_refs_, &needs_remote_bootstrap);
+                                    &replicate_msg_refs_, &needs_tablet_copy);
   int64_t commit_index_after = request_.has_committed_index() ?
       request_.committed_index().index() : kMinimumOpIdIndex;
 
@@ -189,10 +189,10 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
     return;
   }
 
-  if (PREDICT_FALSE(needs_remote_bootstrap)) {
-    Status s = SendRemoteBootstrapRequest();
+  if (PREDICT_FALSE(needs_tablet_copy)) {
+    Status s = SendTabletCopyRequest();
     if (!s.ok()) {
-      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to generate remote bootstrap request for peer: "
+      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to generate tablet copy request for peer: "
                                         << s.ToString();
       sem_.Release();
     }
@@ -294,28 +294,28 @@ void Peer::DoProcessResponse() {
   }
 }
 
-Status Peer::SendRemoteBootstrapRequest() {
-  if (!FLAGS_enable_remote_bootstrap) {
+Status Peer::SendTabletCopyRequest() {
+  if (!FLAGS_enable_tablet_copy) {
     failed_attempts_++;
-    return Status::NotSupported("remote bootstrap is disabled");
+    return Status::NotSupported("tablet copy is disabled");
   }
 
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Sending request to remotely bootstrap";
-  RETURN_NOT_OK(queue_->GetRemoteBootstrapRequestForPeer(peer_pb_.permanent_uuid(), &rb_request_));
+  RETURN_NOT_OK(queue_->GetTabletCopyRequestForPeer(peer_pb_.permanent_uuid(), &rb_request_));
   controller_.Reset();
-  proxy_->StartRemoteBootstrap(&rb_request_, &rb_response_, &controller_,
-                               boost::bind(&Peer::ProcessRemoteBootstrapResponse, this));
+  proxy_->StartTabletCopy(&rb_request_, &rb_response_, &controller_,
+                               boost::bind(&Peer::ProcessTabletCopyResponse, this));
   return Status::OK();
 }
 
-void Peer::ProcessRemoteBootstrapResponse() {
+void Peer::ProcessTabletCopyResponse() {
   if (controller_.status().ok() && rb_response_.has_error()) {
     // ALREADY_INPROGRESS is expected, so we do not log this error.
     if (rb_response_.error().code() ==
         TabletServerErrorPB::TabletServerErrorPB::ALREADY_INPROGRESS) {
       queue_->NotifyPeerIsResponsiveDespiteError(peer_pb_.permanent_uuid());
     } else {
-      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin remote bootstrap on peer: "
+      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin tablet copy on peer: "
                                         << rb_response_.ShortDebugString();
     }
   }
@@ -392,11 +392,11 @@ void RpcPeerProxy::RequestConsensusVoteAsync(const VoteRequestPB* request,
   consensus_proxy_->RequestConsensusVoteAsync(*request, response, controller, callback);
 }
 
-void RpcPeerProxy::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB* request,
-                                        StartRemoteBootstrapResponsePB* response,
+void RpcPeerProxy::StartTabletCopy(const StartTabletCopyRequestPB* request,
+                                        StartTabletCopyResponsePB* response,
                                         rpc::RpcController* controller,
                                         const rpc::ResponseCallback& callback) {
-  consensus_proxy_->StartRemoteBootstrapAsync(*request, response, controller, callback);
+  consensus_proxy_->StartTabletCopyAsync(*request, response, controller, callback);
 }
 
 RpcPeerProxy::~RpcPeerProxy() {}

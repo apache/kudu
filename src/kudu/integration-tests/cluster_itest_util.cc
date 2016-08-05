@@ -774,14 +774,14 @@ Status DeleteTablet(const TServerDetails* ts,
   return Status::OK();
 }
 
-Status StartRemoteBootstrap(const TServerDetails* ts,
+Status StartTabletCopy(const TServerDetails* ts,
                             const string& tablet_id,
                             const string& bootstrap_source_uuid,
                             const HostPort& bootstrap_source_addr,
                             int64_t caller_term,
                             const MonoDelta& timeout) {
-  consensus::StartRemoteBootstrapRequestPB req;
-  consensus::StartRemoteBootstrapResponsePB resp;
+  consensus::StartTabletCopyRequestPB req;
+  consensus::StartTabletCopyResponsePB resp;
   RpcController rpc;
   rpc.set_timeout(timeout);
 
@@ -791,7 +791,7 @@ Status StartRemoteBootstrap(const TServerDetails* ts,
   RETURN_NOT_OK(HostPortToPB(bootstrap_source_addr, req.mutable_bootstrap_peer_addr()));
   req.set_caller_term(caller_term);
 
-  RETURN_NOT_OK(ts->consensus_proxy->StartRemoteBootstrap(req, &resp, &rpc));
+  RETURN_NOT_OK(ts->consensus_proxy->StartTabletCopy(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }

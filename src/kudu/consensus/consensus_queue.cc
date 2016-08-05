@@ -83,11 +83,11 @@ METRIC_DEFINE_gauge_int64(tablet, in_progress_ops, "Leader Operations in Progres
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
   return Substitute("Peer: $0, Is new: $1, Last received: $2, Next index: $3, "
                     "Last known committed idx: $4, Last exchange result: $5, "
-                    "Needs remote bootstrap: $6",
+                    "Needs tablet copy: $6",
                     uuid, is_new, OpIdToString(last_received), next_index,
                     last_known_committed_idx,
                     is_last_exchange_successful ? "SUCCESS" : "ERROR",
-                    needs_remote_bootstrap);
+                    needs_tablet_copy);
 }
 
 #define INSTANTIATE_METRIC(x) \
@@ -275,7 +275,7 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request,
                                         vector<ReplicateRefPtr>* msg_refs,
-                                        bool* needs_remote_bootstrap) {
+                                        bool* needs_tablet_copy) {
   TrackedPeer* peer = nullptr;
   OpId preceding_id;
   {
@@ -313,12 +313,12 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     }
   }
 
-  if (PREDICT_FALSE(peer->needs_remote_bootstrap)) {
-    VLOG_WITH_PREFIX_UNLOCKED(1) << "Peer needs remote bootstrap: " << peer->ToString();
-    *needs_remote_bootstrap = true;
+  if (PREDICT_FALSE(peer->needs_tablet_copy)) {
+    VLOG_WITH_PREFIX_UNLOCKED(1) << "Peer needs tablet copy: " << peer->ToString();
+    *needs_tablet_copy = true;
     return Status::OK();
   }
-  *needs_remote_bootstrap = false;
+  *needs_tablet_copy = false;
 
   // If we've never communicated with the peer, we don't know what messages to
   // send, so we'll send a status-only request. Otherwise, we grab requests
@@ -387,8 +387,8 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   return Status::OK();
 }
 
-Status PeerMessageQueue::GetRemoteBootstrapRequestForPeer(const string& uuid,
-                                                          StartRemoteBootstrapRequestPB* req) {
+Status PeerMessageQueue::GetTabletCopyRequestForPeer(const string& uuid,
+                                                          StartTabletCopyRequestPB* req) {
   TrackedPeer* peer = nullptr;
   {
     std::lock_guard<simple_spinlock> lock(queue_lock_);
@@ -400,7 +400,7 @@ Status PeerMessageQueue::GetRemoteBootstrapRequestForPeer(const string& uuid,
     }
   }
 
-  if (PREDICT_FALSE(!peer->needs_remote_bootstrap)) {
+  if (PREDICT_FALSE(!peer->needs_tablet_copy)) {
     return Status::IllegalState("Peer does not need to remotely bootstrap", uuid);
   }
   req->Clear();
@@ -409,7 +409,7 @@ Status PeerMessageQueue::GetRemoteBootstrapRequestForPeer(const string& uuid,
   req->set_bootstrap_peer_uuid(local_peer_pb_.permanent_uuid());
   *req->mutable_bootstrap_peer_addr() = local_peer_pb_.last_known_addr();
   req->set_caller_term(queue_state_.current_term);
-  peer->needs_remote_bootstrap = false; // Now reset the flag.
+  peer->needs_tablet_copy = false; // Now reset the flag.
   return Status::OK();
 }
 
@@ -499,8 +499,8 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       CHECK_EQ(tserver::TabletServerErrorPB::TABLET_NOT_FOUND, response.error().code())
           << response.ShortDebugString();
 
-      peer->needs_remote_bootstrap = true;
-      VLOG_WITH_PREFIX_UNLOCKED(1) << "Marked peer as needing remote bootstrap: "
+      peer->needs_tablet_copy = true;
+      VLOG_WITH_PREFIX_UNLOCKED(1) << "Marked peer as needing tablet copy: "
                                      << peer->ToString();
       *more_pending = true;
       return;

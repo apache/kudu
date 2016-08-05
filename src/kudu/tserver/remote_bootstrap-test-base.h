@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_REMOTE_BOOTSTRAP_TEST_BASE_H_
-#define KUDU_TSERVER_REMOTE_BOOTSTRAP_TEST_BASE_H_
+#ifndef KUDU_TSERVER_TABLET_COPY_TEST_BASE_H_
+#define KUDU_TSERVER_TABLET_COPY_TEST_BASE_H_
 
 #include "kudu/tserver/tablet_server-test-base.h"
 
@@ -39,7 +39,7 @@ using consensus::MinimumOpId;
 // Number of times to roll the log.
 static const int kNumLogRolls = 2;
 
-class RemoteBootstrapTest : public TabletServerTestBase {
+class TabletCopyTest : public TabletServerTestBase {
  public:
   virtual void SetUp() OVERRIDE {
     NO_FATALS(TabletServerTestBase::SetUp());
@@ -47,7 +47,7 @@ class RemoteBootstrapTest : public TabletServerTestBase {
     // Prevent logs from being deleted out from under us until / unless we want
     // to test that we are anchoring correctly. Since GenerateTestData() does a
     // Flush(), Log GC is allowed to eat the logs before we get around to
-    // starting a remote bootstrap session.
+    // starting a tablet copy session.
     tablet_peer_->log_anchor_registry()->Register(
       MinimumOpId().index(), CURRENT_TEST_NAME(), &anchor_);
     NO_FATALS(GenerateTestData());
@@ -76,7 +76,7 @@ class RemoteBootstrapTest : public TabletServerTestBase {
   }
 
   // Generate the test data for the tablet and do the flushing we assume will be
-  // done in the unit tests for remote bootstrap.
+  // done in the unit tests for tablet copy.
   void GenerateTestData() {
     const int kIncr = 50;
     LOG_TIMING(INFO, "Loading test data") {
@@ -123,4 +123,4 @@ class RemoteBootstrapTest : public TabletServerTestBase {
 } // namespace tserver
 } // namespace kudu
 
-#endif // KUDU_TSERVER_REMOTE_BOOTSTRAP_TEST_BASE_H_
+#endif // KUDU_TSERVER_TABLET_COPY_TEST_BASE_H_

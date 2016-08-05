@@ -500,8 +500,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   bool IsInitialized() const;
 
-  virtual Status StartRemoteBootstrap(
-      const consensus::StartRemoteBootstrapRequestPB& req,
+  virtual Status StartTabletCopy(
+      const consensus::StartTabletCopyRequestPB& req,
       boost::optional<kudu::tserver::TabletServerErrorPB::Code>* error_code) OVERRIDE;
 
   // Returns this CatalogManager's role in a consensus configuration. CatalogManager

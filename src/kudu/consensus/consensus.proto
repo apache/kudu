@@ -451,7 +451,7 @@ message GetConsensusStateResponsePB {
   optional tserver.TabletServerErrorPB error = 2;
 }
 
-message StartRemoteBootstrapRequestPB {
+message StartTabletCopyRequestPB {
   // UUID of server this request is addressed to.
   optional bytes dest_uuid = 5;
 
@@ -467,7 +467,7 @@ message StartRemoteBootstrapRequestPB {
   optional int64 caller_term = 4 [ default = -1 ];
 }
 
-message StartRemoteBootstrapResponsePB {
+message StartTabletCopyResponsePB {
   optional tserver.TabletServerErrorPB error = 1;
 }
 
@@ -499,5 +499,5 @@ service ConsensusService {
   rpc GetConsensusState(GetConsensusStateRequestPB) returns (GetConsensusStateResponsePB);
 
   // Instruct this server to remotely bootstrap a tablet from another host.
-  rpc StartRemoteBootstrap(StartRemoteBootstrapRequestPB) returns (StartRemoteBootstrapResponsePB);
+  rpc StartTabletCopy(StartTabletCopyRequestPB) returns (StartTabletCopyResponsePB);
 }

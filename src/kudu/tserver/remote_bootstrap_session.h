@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_REMOTE_BOOTSTRAP_SESSION_H_
-#define KUDU_TSERVER_REMOTE_BOOTSTRAP_SESSION_H_
+#ifndef KUDU_TSERVER_TABLET_COPY_SESSION_H_
+#define KUDU_TSERVER_TABLET_COPY_SESSION_H_
 
 #include <memory>
 #include <string>
@@ -80,13 +80,13 @@ struct ImmutableReadableBlockInfo {
   }
 };
 
-// A potential Learner must establish a RemoteBootstrapSession with the leader in order
+// A potential Learner must establish a TabletCopySession with the leader in order
 // to fetch the needed superblock, blocks, and log segments.
 // This class is refcounted to make it easy to remove it from the session map
 // on expiration while it is in use by another thread.
-class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSession> {
+class TabletCopySession : public RefCountedThreadSafe<TabletCopySession> {
  public:
-  RemoteBootstrapSession(const scoped_refptr<tablet::TabletPeer>& tablet_peer,
+  TabletCopySession(const scoped_refptr<tablet::TabletPeer>& tablet_peer,
                          std::string session_id, std::string requestor_uuid,
                          FsManager* fs_manager);
 
@@ -113,7 +113,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   Status GetBlockPiece(const BlockId& block_id,
                        uint64_t offset, int64_t client_maxlen,
                        std::string* data, int64_t* block_file_size,
-                       RemoteBootstrapErrorPB::Code* error_code);
+                       TabletCopyErrorPB::Code* error_code);
 
   // Get a piece of a log segment.
   // The behavior and params are very similar to GetBlockPiece(), but this one
@@ -121,7 +121,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   Status GetLogSegmentPiece(uint64_t segment_seqno,
                             uint64_t offset, int64_t client_maxlen,
                             std::string* data, int64_t* log_file_size,
-                            RemoteBootstrapErrorPB::Code* error_code);
+                            TabletCopyErrorPB::Code* error_code);
 
   const tablet::TabletSuperBlockPB& tablet_superblock() const {
     DCHECK(initted_);
@@ -142,12 +142,12 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   bool IsBlockOpenForTests(const BlockId& block_id) const;
 
  private:
-  friend class RefCountedThreadSafe<RemoteBootstrapSession>;
+  friend class RefCountedThreadSafe<TabletCopySession>;
 
   typedef std::unordered_map<BlockId, ImmutableReadableBlockInfo*, BlockIdHash> BlockMap;
   typedef std::unordered_map<uint64_t, ImmutableRandomAccessFileInfo*> LogMap;
 
-  ~RemoteBootstrapSession();
+  ~TabletCopySession();
 
   // Open the block and add it to the block map.
   Status OpenBlockUnlocked(const BlockId& block_id);
@@ -155,7 +155,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   // Look up cached block information.
   Status FindBlock(const BlockId& block_id,
                    ImmutableReadableBlockInfo** block_info,
-                   RemoteBootstrapErrorPB::Code* error_code);
+                   TabletCopyErrorPB::Code* error_code);
 
   // Snapshot the log segment's length and put it into segment map.
   Status OpenLogSegmentUnlocked(uint64_t segment_seqno);
@@ -163,7 +163,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   // Look up log segment in cache or log segment map.
   Status FindLogSegment(uint64_t segment_seqno,
                         ImmutableRandomAccessFileInfo** file_info,
-                        RemoteBootstrapErrorPB::Code* error_code);
+                        TabletCopyErrorPB::Code* error_code);
 
   // Unregister log anchor, if it's registered.
   Status UnregisterAnchorIfNeededUnlocked();
@@ -190,10 +190,10 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
 
   log::LogAnchor log_anchor_;
 
-  DISALLOW_COPY_AND_ASSIGN(RemoteBootstrapSession);
+  DISALLOW_COPY_AND_ASSIGN(TabletCopySession);
 };
 
 } // namespace tserver
 } // namespace kudu
 
-#endif // KUDU_TSERVER_REMOTE_BOOTSTRAP_SESSION_H_
+#endif // KUDU_TSERVER_TABLET_COPY_SESSION_H_

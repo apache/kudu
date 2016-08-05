@@ -44,24 +44,24 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 
-DEFINE_int32(remote_bootstrap_begin_session_timeout_ms, 3000,
-             "Tablet server RPC client timeout for BeginRemoteBootstrapSession calls. "
-             "Also used for EndRemoteBootstrapSession calls.");
-TAG_FLAG(remote_bootstrap_begin_session_timeout_ms, hidden);
+DEFINE_int32(tablet_copy_begin_session_timeout_ms, 3000,
+             "Tablet server RPC client timeout for BeginTabletCopySession calls. "
+             "Also used for EndTabletCopySession calls.");
+TAG_FLAG(tablet_copy_begin_session_timeout_ms, hidden);
 
-DEFINE_bool(remote_bootstrap_save_downloaded_metadata, false,
-            "Save copies of the downloaded remote bootstrap files for debugging purposes. "
+DEFINE_bool(tablet_copy_save_downloaded_metadata, false,
+            "Save copies of the downloaded tablet copy files for debugging purposes. "
             "Note: This is only intended for debugging and should not be normally used!");
-TAG_FLAG(remote_bootstrap_save_downloaded_metadata, advanced);
-TAG_FLAG(remote_bootstrap_save_downloaded_metadata, hidden);
-TAG_FLAG(remote_bootstrap_save_downloaded_metadata, runtime);
+TAG_FLAG(tablet_copy_save_downloaded_metadata, advanced);
+TAG_FLAG(tablet_copy_save_downloaded_metadata, hidden);
+TAG_FLAG(tablet_copy_save_downloaded_metadata, runtime);
 
-DEFINE_int32(remote_bootstrap_dowload_file_inject_latency_ms, 0,
-             "Injects latency into the loop that downloads files, causing remote bootstrap "
+DEFINE_int32(tablet_copy_dowload_file_inject_latency_ms, 0,
+             "Injects latency into the loop that downloads files, causing tablet copy "
              "to take much longer. For use in tests only.");
-TAG_FLAG(remote_bootstrap_dowload_file_inject_latency_ms, hidden);
+TAG_FLAG(tablet_copy_dowload_file_inject_latency_ms, hidden);
 
-DECLARE_int32(remote_bootstrap_transfer_chunk_size_bytes);
+DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
 
 // RETURN_NOT_OK_PREPEND() with a remote-error unwinding step.
 #define RETURN_NOT_OK_UNWIND_PREPEND(status, controller, msg) \
@@ -91,7 +91,7 @@ using tablet::TabletMetadata;
 using tablet::TabletStatusListener;
 using tablet::TabletSuperBlockPB;
 
-RemoteBootstrapClient::RemoteBootstrapClient(std::string tablet_id,
+TabletCopyClient::TabletCopyClient(std::string tablet_id,
                                              FsManager* fs_manager,
                                              shared_ptr<Messenger> messenger)
     : tablet_id_(std::move(tablet_id)),
@@ -105,12 +105,12 @@ RemoteBootstrapClient::RemoteBootstrapClient(std::string tablet_id,
       session_idle_timeout_millis_(0),
       start_time_micros_(0) {}
 
-RemoteBootstrapClient::~RemoteBootstrapClient() {
-  // Note: Ending the remote bootstrap session releases anchors on the remote.
-  WARN_NOT_OK(EndRemoteSession(), "Unable to close remote bootstrap session");
+TabletCopyClient::~TabletCopyClient() {
+  // Note: Ending the tablet copy session releases anchors on the remote.
+  WARN_NOT_OK(EndRemoteSession(), "Unable to close tablet copy session");
 }
 
-Status RemoteBootstrapClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>& meta,
+Status TabletCopyClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>& meta,
                                                  int64_t caller_term) {
   CHECK_EQ(tablet_id_, meta->tablet_id());
   TabletDataState data_state = meta->tablet_data_state();
@@ -128,7 +128,7 @@ Status RemoteBootstrapClient::SetTabletToReplace(const scoped_refptr<TabletMetad
   if (last_logged_term > caller_term) {
     return Status::InvalidArgument(
         Substitute("Leader has term $0 but the last log entry written by the tombstoned replica "
-                   "for tablet $1 has higher term $2. Refusing remote bootstrap from leader",
+                   "for tablet $1 has higher term $2. Refusing tablet copy from leader",
                    caller_term, tablet_id_, last_logged_term));
   }
 
@@ -138,7 +138,7 @@ Status RemoteBootstrapClient::SetTabletToReplace(const scoped_refptr<TabletMetad
                                      fs_manager_->uuid(), &cmeta);
   if (s.IsNotFound()) {
     // The consensus metadata was not written to disk, possibly due to a failed
-    // remote bootstrap.
+    // tablet copy.
     return Status::OK();
   }
   RETURN_NOT_OK(s);
@@ -146,7 +146,7 @@ Status RemoteBootstrapClient::SetTabletToReplace(const scoped_refptr<TabletMetad
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::Start(const HostPort& bootstrap_source_addr,
+Status TabletCopyClient::Start(const HostPort& bootstrap_source_addr,
                                     scoped_refptr<TabletMetadata>* meta) {
   CHECK(!started_);
   start_time_micros_ = GetCurrentTimeMicros();
@@ -154,34 +154,34 @@ Status RemoteBootstrapClient::Start(const HostPort& bootstrap_source_addr,
   Sockaddr addr;
   RETURN_NOT_OK(SockaddrFromHostPort(bootstrap_source_addr, &addr));
   if (addr.IsWildcard()) {
-    return Status::InvalidArgument("Invalid wildcard address to remote bootstrap from",
+    return Status::InvalidArgument("Invalid wildcard address to tablet copy from",
                                    Substitute("$0 (resolved to $1)",
                                               bootstrap_source_addr.host(), addr.host()));
   }
-  LOG_WITH_PREFIX(INFO) << "Beginning remote bootstrap session"
+  LOG_WITH_PREFIX(INFO) << "Beginning tablet copy session"
                         << " from remote peer at address " << bootstrap_source_addr.ToString();
 
-  // Set up an RPC proxy for the RemoteBootstrapService.
-  proxy_.reset(new RemoteBootstrapServiceProxy(messenger_, addr));
+  // Set up an RPC proxy for the TabletCopyService.
+  proxy_.reset(new TabletCopyServiceProxy(messenger_, addr));
 
-  BeginRemoteBootstrapSessionRequestPB req;
+  BeginTabletCopySessionRequestPB req;
   req.set_requestor_uuid(fs_manager_->uuid());
   req.set_tablet_id(tablet_id_);
 
   rpc::RpcController controller;
   controller.set_timeout(MonoDelta::FromMilliseconds(
-      FLAGS_remote_bootstrap_begin_session_timeout_ms));
+      FLAGS_tablet_copy_begin_session_timeout_ms));
 
-  // Begin the remote bootstrap session with the remote peer.
-  BeginRemoteBootstrapSessionResponsePB resp;
-  RETURN_NOT_OK_UNWIND_PREPEND(proxy_->BeginRemoteBootstrapSession(req, &resp, &controller),
+  // Begin the tablet copy session with the remote peer.
+  BeginTabletCopySessionResponsePB resp;
+  RETURN_NOT_OK_UNWIND_PREPEND(proxy_->BeginTabletCopySession(req, &resp, &controller),
                                controller,
-                               "Unable to begin remote bootstrap session");
+                               "Unable to begin tablet copy session");
   string bootstrap_peer_uuid = resp.has_responder_uuid()
       ? resp.responder_uuid() : "(unknown uuid)";
   if (resp.superblock().tablet_data_state() != tablet::TABLET_DATA_READY) {
     Status s = Status::IllegalState("Remote peer (" + bootstrap_peer_uuid + ")" +
-                                    " is currently remotely bootstrapping itself!",
+                                    " is currently copying itself!",
                                     resp.superblock().ShortDebugString());
     LOG_WITH_PREFIX(WARNING) << s.ToString();
     return s;
@@ -209,7 +209,7 @@ Status RemoteBootstrapClient::Start(const HostPort& bootstrap_source_addr,
       return Status::InvalidArgument(
           Substitute("Tablet $0: Bootstrap source has term $1 but "
                      "tombstoned replica has last-logged opid with higher term $2. "
-                      "Refusing remote bootstrap from source peer $3",
+                      "Refusing tablet copy from source peer $3",
                       tablet_id_,
                       remote_committed_cstate_->current_term(),
                       last_logged_term,
@@ -218,7 +218,7 @@ Status RemoteBootstrapClient::Start(const HostPort& bootstrap_source_addr,
 
     // This will flush to disk, but we set the data state to COPYING above.
     RETURN_NOT_OK_PREPEND(meta_->ReplaceSuperBlock(*superblock_),
-                          "Remote bootstrap unable to replace superblock on tablet " +
+                          "Tablet Copy unable to replace superblock on tablet " +
                           tablet_id_);
   } else {
 
@@ -246,7 +246,7 @@ Status RemoteBootstrapClient::Start(const HostPort& bootstrap_source_addr,
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::FetchAll(TabletStatusListener* status_listener) {
+Status TabletCopyClient::FetchAll(TabletStatusListener* status_listener) {
   CHECK(started_);
   status_listener_ = status_listener;
 
@@ -257,7 +257,7 @@ Status RemoteBootstrapClient::FetchAll(TabletStatusListener* status_listener) {
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::Finish() {
+Status TabletCopyClient::Finish() {
   CHECK(meta_);
   CHECK(started_);
   CHECK(downloaded_wal_);
@@ -268,12 +268,12 @@ Status RemoteBootstrapClient::Finish() {
   // Replace tablet metadata superblock. This will set the tablet metadata state
   // to TABLET_DATA_READY, since we checked above that the response
   // superblock is in a valid state to bootstrap from.
-  LOG_WITH_PREFIX(INFO) << "Remote bootstrap complete. Replacing tablet superblock.";
+  LOG_WITH_PREFIX(INFO) << "Tablet Copy complete. Replacing tablet superblock.";
   UpdateStatusMessage("Replacing tablet superblock");
   new_superblock_->set_tablet_data_state(tablet::TABLET_DATA_READY);
   RETURN_NOT_OK(meta_->ReplaceSuperBlock(*new_superblock_));
 
-  if (FLAGS_remote_bootstrap_save_downloaded_metadata) {
+  if (FLAGS_tablet_copy_save_downloaded_metadata) {
     string meta_path = fs_manager_->GetTabletMetadataPath(tablet_id_);
     string meta_copy_path = Substitute("$0.copy.$1.tmp", meta_path, start_time_micros_);
     RETURN_NOT_OK_PREPEND(CopyFile(Env::Default(), meta_path, meta_copy_path,
@@ -285,20 +285,20 @@ Status RemoteBootstrapClient::Finish() {
 }
 
 // Decode the remote error into a human-readable Status object.
-Status RemoteBootstrapClient::ExtractRemoteError(const rpc::ErrorStatusPB& remote_error) {
-  if (PREDICT_TRUE(remote_error.HasExtension(RemoteBootstrapErrorPB::remote_bootstrap_error_ext))) {
-    const RemoteBootstrapErrorPB& error =
-        remote_error.GetExtension(RemoteBootstrapErrorPB::remote_bootstrap_error_ext);
+Status TabletCopyClient::ExtractRemoteError(const rpc::ErrorStatusPB& remote_error) {
+  if (PREDICT_TRUE(remote_error.HasExtension(TabletCopyErrorPB::tablet_copy_error_ext))) {
+    const TabletCopyErrorPB& error =
+        remote_error.GetExtension(TabletCopyErrorPB::tablet_copy_error_ext);
     return StatusFromPB(error.status()).CloneAndPrepend("Received error code " +
-              RemoteBootstrapErrorPB::Code_Name(error.code()) + " from remote service");
+              TabletCopyErrorPB::Code_Name(error.code()) + " from remote service");
   } else {
-    return Status::InvalidArgument("Unable to decode remote bootstrap RPC error message",
+    return Status::InvalidArgument("Unable to decode tablet copy RPC error message",
                                    remote_error.ShortDebugString());
   }
 }
 
 // Enhance a RemoteError Status message with additional details from the remote.
-Status RemoteBootstrapClient::UnwindRemoteError(const Status& status,
+Status TabletCopyClient::UnwindRemoteError(const Status& status,
                                                 const rpc::RpcController& controller) {
   if (!status.IsRemoteError()) {
     return status;
@@ -307,33 +307,33 @@ Status RemoteBootstrapClient::UnwindRemoteError(const Status& status,
   return status.CloneAndAppend(extension_status.ToString());
 }
 
-void RemoteBootstrapClient::UpdateStatusMessage(const string& message) {
+void TabletCopyClient::UpdateStatusMessage(const string& message) {
   if (status_listener_ != nullptr) {
-    status_listener_->StatusMessage("RemoteBootstrap: " + message);
+    status_listener_->StatusMessage("TabletCopy: " + message);
   }
 }
 
-Status RemoteBootstrapClient::EndRemoteSession() {
+Status TabletCopyClient::EndRemoteSession() {
   if (!started_) {
     return Status::OK();
   }
 
   rpc::RpcController controller;
   controller.set_timeout(MonoDelta::FromMilliseconds(
-        FLAGS_remote_bootstrap_begin_session_timeout_ms));
+        FLAGS_tablet_copy_begin_session_timeout_ms));
 
-  EndRemoteBootstrapSessionRequestPB req;
+  EndTabletCopySessionRequestPB req;
   req.set_session_id(session_id_);
   req.set_is_success(true);
-  EndRemoteBootstrapSessionResponsePB resp;
-  RETURN_NOT_OK_UNWIND_PREPEND(proxy_->EndRemoteBootstrapSession(req, &resp, &controller),
+  EndTabletCopySessionResponsePB resp;
+  RETURN_NOT_OK_UNWIND_PREPEND(proxy_->EndTabletCopySession(req, &resp, &controller),
                                controller,
-                               "Failure ending remote bootstrap session");
+                               "Failure ending tablet copy session");
 
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::DownloadWALs() {
+Status TabletCopyClient::DownloadWALs() {
   CHECK(started_);
 
   // Delete and recreate WAL dir if it already exists, to ensure stray files are
@@ -360,7 +360,7 @@ Status RemoteBootstrapClient::DownloadWALs() {
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::DownloadBlocks() {
+Status TabletCopyClient::DownloadBlocks() {
   CHECK(started_);
 
   // Count up the total number of blocks to download.
@@ -415,7 +415,7 @@ Status RemoteBootstrapClient::DownloadBlocks() {
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::DownloadWAL(uint64_t wal_segment_seqno) {
+Status TabletCopyClient::DownloadWAL(uint64_t wal_segment_seqno) {
   VLOG_WITH_PREFIX(1) << "Downloading WAL segment with seqno " << wal_segment_seqno;
   DataIdPB data_id;
   data_id.set_type(DataIdPB::LOG_SEGMENT);
@@ -433,7 +433,7 @@ Status RemoteBootstrapClient::DownloadWAL(uint64_t wal_segment_seqno) {
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::WriteConsensusMetadata() {
+Status TabletCopyClient::WriteConsensusMetadata() {
   // If we didn't find a previous consensus meta file, create one.
   if (!cmeta_) {
     gscoped_ptr<ConsensusMetadata> cmeta;
@@ -444,11 +444,11 @@ Status RemoteBootstrapClient::WriteConsensusMetadata() {
   }
 
   // Otherwise, update the consensus metadata to reflect the config and term
-  // sent by the remote bootstrap source.
+  // sent by the tablet copy source.
   cmeta_->MergeCommittedConsensusStatePB(*remote_committed_cstate_);
   RETURN_NOT_OK(cmeta_->Flush());
 
-  if (FLAGS_remote_bootstrap_save_downloaded_metadata) {
+  if (FLAGS_tablet_copy_save_downloaded_metadata) {
     string cmeta_path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
     string cmeta_copy_path = Substitute("$0.copy.$1.tmp", cmeta_path, start_time_micros_);
     RETURN_NOT_OK_PREPEND(CopyFile(Env::Default(), cmeta_path, cmeta_copy_path,
@@ -459,7 +459,7 @@ Status RemoteBootstrapClient::WriteConsensusMetadata() {
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::DownloadAndRewriteBlock(BlockIdPB* block_id,
+Status TabletCopyClient::DownloadAndRewriteBlock(BlockIdPB* block_id,
                                                       int* block_count, int num_blocks) {
   BlockId old_block_id(BlockId::FromPB(*block_id));
   UpdateStatusMessage(Substitute("Downloading block $0 ($1/$2)",
@@ -474,7 +474,7 @@ Status RemoteBootstrapClient::DownloadAndRewriteBlock(BlockIdPB* block_id,
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::DownloadBlock(const BlockId& old_block_id,
+Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
                                             BlockId* new_block_id) {
   VLOG_WITH_PREFIX(1) << "Downloading block with block_id " << old_block_id.ToString();
 
@@ -495,7 +495,7 @@ Status RemoteBootstrapClient::DownloadBlock(const BlockId& old_block_id,
 }
 
 template<class Appendable>
-Status RemoteBootstrapClient::DownloadFile(const DataIdPB& data_id,
+Status TabletCopyClient::DownloadFile(const DataIdPB& data_id,
                                            Appendable* appendable) {
   uint64_t offset = 0;
   rpc::RpcController controller;
@@ -508,7 +508,7 @@ Status RemoteBootstrapClient::DownloadFile(const DataIdPB& data_id,
     req.set_session_id(session_id_);
     req.mutable_data_id()->CopyFrom(data_id);
     req.set_offset(offset);
-    req.set_max_length(FLAGS_remote_bootstrap_transfer_chunk_size_bytes);
+    req.set_max_length(FLAGS_tablet_copy_transfer_chunk_size_bytes);
 
     FetchDataResponsePB resp;
     RETURN_NOT_OK_UNWIND_PREPEND(proxy_->FetchData(req, &resp, &controller),
@@ -522,10 +522,10 @@ Status RemoteBootstrapClient::DownloadFile(const DataIdPB& data_id,
     // Write the data.
     RETURN_NOT_OK(appendable->Append(resp.chunk().data()));
 
-    if (PREDICT_FALSE(FLAGS_remote_bootstrap_dowload_file_inject_latency_ms > 0)) {
+    if (PREDICT_FALSE(FLAGS_tablet_copy_dowload_file_inject_latency_ms > 0)) {
       LOG_WITH_PREFIX(INFO) << "Injecting latency into file download: " <<
-          FLAGS_remote_bootstrap_dowload_file_inject_latency_ms;
-      SleepFor(MonoDelta::FromMilliseconds(FLAGS_remote_bootstrap_dowload_file_inject_latency_ms));
+          FLAGS_tablet_copy_dowload_file_inject_latency_ms;
+      SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_copy_dowload_file_inject_latency_ms));
     }
 
     if (offset + resp.chunk().data().size() == resp.chunk().total_data_length()) {
@@ -537,7 +537,7 @@ Status RemoteBootstrapClient::DownloadFile(const DataIdPB& data_id,
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::VerifyData(uint64_t offset, const DataChunkPB& chunk) {
+Status TabletCopyClient::VerifyData(uint64_t offset, const DataChunkPB& chunk) {
   // Verify the offset is what we expected.
   if (offset != chunk.offset()) {
     return Status::InvalidArgument("Offset did not match what was asked for",
@@ -554,8 +554,8 @@ Status RemoteBootstrapClient::VerifyData(uint64_t offset, const DataChunkPB& chu
   return Status::OK();
 }
 
-string RemoteBootstrapClient::LogPrefix() {
-  return Substitute("T $0 P $1: Remote bootstrap client: ",
+string TabletCopyClient::LogPrefix() {
+  return Substitute("T $0 P $1: Tablet Copy client: ",
                     tablet_id_, fs_manager_->uuid());
 }
 

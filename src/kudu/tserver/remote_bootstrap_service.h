@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_REMOTE_BOOTSTRAP_SERVICE_H_
-#define KUDU_TSERVER_REMOTE_BOOTSTRAP_SERVICE_H_
+#ifndef KUDU_TSERVER_TABLET_COPY_SERVICE_H_
+#define KUDU_TSERVER_TABLET_COPY_SERVICE_H_
 
 #include <string>
 #include <unordered_map>
@@ -39,54 +39,54 @@ class ReadableLogSegment;
 
 namespace tserver {
 
-class RemoteBootstrapSession;
+class TabletCopySession;
 class TabletPeerLookupIf;
 
-class RemoteBootstrapServiceImpl : public RemoteBootstrapServiceIf {
+class TabletCopyServiceImpl : public TabletCopyServiceIf {
  public:
-  RemoteBootstrapServiceImpl(FsManager* fs_manager,
+  TabletCopyServiceImpl(FsManager* fs_manager,
                              TabletPeerLookupIf* tablet_peer_lookup,
                              const scoped_refptr<MetricEntity>& metric_entity,
                              const scoped_refptr<rpc::ResultTracker>& result_tracker);
 
-  virtual void BeginRemoteBootstrapSession(const BeginRemoteBootstrapSessionRequestPB* req,
-                                           BeginRemoteBootstrapSessionResponsePB* resp,
+  virtual void BeginTabletCopySession(const BeginTabletCopySessionRequestPB* req,
+                                           BeginTabletCopySessionResponsePB* resp,
                                            rpc::RpcContext* context) OVERRIDE;
 
-  virtual void CheckSessionActive(const CheckRemoteBootstrapSessionActiveRequestPB* req,
-                                  CheckRemoteBootstrapSessionActiveResponsePB* resp,
+  virtual void CheckSessionActive(const CheckTabletCopySessionActiveRequestPB* req,
+                                  CheckTabletCopySessionActiveResponsePB* resp,
                                   rpc::RpcContext* context) OVERRIDE;
 
   virtual void FetchData(const FetchDataRequestPB* req,
                          FetchDataResponsePB* resp,
                          rpc::RpcContext* context) OVERRIDE;
 
-  virtual void EndRemoteBootstrapSession(const EndRemoteBootstrapSessionRequestPB* req,
-                                         EndRemoteBootstrapSessionResponsePB* resp,
+  virtual void EndTabletCopySession(const EndTabletCopySessionRequestPB* req,
+                                         EndTabletCopySessionResponsePB* resp,
                                          rpc::RpcContext* context) OVERRIDE;
 
   virtual void Shutdown() OVERRIDE;
 
  private:
-  typedef std::unordered_map<std::string, scoped_refptr<RemoteBootstrapSession> > SessionMap;
+  typedef std::unordered_map<std::string, scoped_refptr<TabletCopySession> > SessionMap;
   typedef std::unordered_map<std::string, MonoTime> MonoTimeMap;
 
   // Look up session in session map.
   Status FindSessionUnlocked(const std::string& session_id,
-                             RemoteBootstrapErrorPB::Code* app_error,
-                             scoped_refptr<RemoteBootstrapSession>* session) const;
+                             TabletCopyErrorPB::Code* app_error,
+                             scoped_refptr<TabletCopySession>* session) const;
 
   // Validate the data identifier in a FetchData request.
   Status ValidateFetchRequestDataId(const DataIdPB& data_id,
-                                    RemoteBootstrapErrorPB::Code* app_error,
-                                    const scoped_refptr<RemoteBootstrapSession>& session) const;
+                                    TabletCopyErrorPB::Code* app_error,
+                                    const scoped_refptr<TabletCopySession>& session) const;
 
   // Take note of session activity; Re-update the session timeout deadline.
   void ResetSessionExpirationUnlocked(const std::string& session_id);
 
-  // Destroy the specified remote bootstrap session.
-  Status DoEndRemoteBootstrapSessionUnlocked(const std::string& session_id,
-                                             RemoteBootstrapErrorPB::Code* app_error);
+  // Destroy the specified tablet copy session.
+  Status DoEndTabletCopySessionUnlocked(const std::string& session_id,
+                                             TabletCopyErrorPB::Code* app_error);
 
   // The timeout thread periodically checks whether sessions are expired and
   // removes them from the map.
@@ -109,4 +109,4 @@ class RemoteBootstrapServiceImpl : public RemoteBootstrapServiceIf {
 } // namespace tserver
 } // namespace kudu
 
-#endif // KUDU_TSERVER_REMOTE_BOOTSTRAP_SERVICE_H_
+#endif // KUDU_TSERVER_TABLET_COPY_SERVICE_H_

@@ -186,7 +186,7 @@ using consensus::ConsensusStatePB;
 using consensus::GetConsensusRole;
 using consensus::OpId;
 using consensus::RaftPeerPB;
-using consensus::StartRemoteBootstrapRequestPB;
+using consensus::StartTabletCopyRequestPB;
 using rpc::RpcContext;
 using strings::Substitute;
 using tablet::TABLET_DATA_DELETED;
@@ -2088,10 +2088,10 @@ const NodeInstancePB& CatalogManager::NodeInstance() const {
   return master_->instance_pb();
 }
 
-Status CatalogManager::StartRemoteBootstrap(
-    const StartRemoteBootstrapRequestPB& req,
+Status CatalogManager::StartTabletCopy(
+    const StartTabletCopyRequestPB& req,
     boost::optional<kudu::tserver::TabletServerErrorPB::Code>* error_code) {
-  return Status::NotSupported("Remote bootstrap not yet implemented for the master tablet");
+  return Status::NotSupported("Tablet Copy not yet implemented for the master tablet");
 }
 
 // Interface used by RetryingTSRpcTask to pick the tablet server to

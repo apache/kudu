@@ -68,9 +68,9 @@ using tablet::TabletPeer;
 using tablet::TabletSuperBlockPB;
 using tablet::WriteTransactionState;
 
-class RemoteBootstrapTest : public KuduTabletTest {
+class TabletCopyTest : public KuduTabletTest {
  public:
-  RemoteBootstrapTest()
+  TabletCopyTest()
     : KuduTabletTest(Schema({ ColumnSchema("key", STRING),
                               ColumnSchema("val", INT32) }, 1)) {
     CHECK_OK(ThreadPoolBuilder("test-exec").Build(&apply_pool_));
@@ -110,7 +110,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
         new TabletPeer(tablet()->metadata(),
                        config_peer,
                        apply_pool_.get(),
-                       Bind(&RemoteBootstrapTest::TabletPeerStateChangedCallback,
+                       Bind(&TabletCopyTest::TabletPeerStateChangedCallback,
                             Unretained(this),
                             tablet()->tablet_id())));
 
@@ -179,12 +179,12 @@ class RemoteBootstrapTest : public KuduTabletTest {
   }
 
   void InitSession() {
-    session_.reset(new RemoteBootstrapSession(tablet_peer_.get(), "TestSession", "FakeUUID",
+    session_.reset(new TabletCopySession(tablet_peer_.get(), "TestSession", "FakeUUID",
                    fs_manager()));
     ASSERT_OK(session_->Init());
   }
 
-  // Read the specified BlockId, via the RemoteBootstrapSession, into a file.
+  // Read the specified BlockId, via the TabletCopySession, into a file.
   // 'path' will be populated with the name of the file used.
   // 'file' will be set to point to the SequentialFile containing the data.
   void FetchBlockToFile(const BlockId& block_id,
@@ -192,7 +192,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
                         gscoped_ptr<SequentialFile>* file) {
     string data;
     int64_t block_file_size = 0;
-    RemoteBootstrapErrorPB::Code error_code;
+    TabletCopyErrorPB::Code error_code;
     CHECK_OK(session_->GetBlockPiece(block_id, 0, 0, &data, &block_file_size, &error_code));
     if (block_file_size > 0) {
       CHECK_GT(data.size(), 0);
@@ -213,12 +213,12 @@ class RemoteBootstrapTest : public KuduTabletTest {
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
   gscoped_ptr<ThreadPool> apply_pool_;
   scoped_refptr<TabletPeer> tablet_peer_;
-  scoped_refptr<RemoteBootstrapSession> session_;
+  scoped_refptr<TabletCopySession> session_;
 };
 
-// Ensure that the serialized SuperBlock included in the RemoteBootstrapSession is
+// Ensure that the serialized SuperBlock included in the TabletCopySession is
 // equal to the serialized live superblock (on a quiesced tablet).
-TEST_F(RemoteBootstrapTest, TestSuperBlocksEqual) {
+TEST_F(TabletCopyTest, TestSuperBlocksEqual) {
   // Compare content of superblocks.
   faststring session_buf;
   faststring tablet_buf;
@@ -247,7 +247,7 @@ TEST_F(RemoteBootstrapTest, TestSuperBlocksEqual) {
 
 // Test fetching all files from tablet server, ensure the checksums for each
 // chunk and the total file sizes match.
-TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
+TEST_F(TabletCopyTest, TestBlocksEqual) {
   TabletSuperBlockPB tablet_superblock;
   ASSERT_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
   for (int i = 0; i < tablet_superblock.rowsets_size(); i++) {
@@ -290,7 +290,7 @@ TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
 
 // Ensure that blocks are still readable through the open session even
 // after they've been deleted.
-TEST_F(RemoteBootstrapTest, TestBlocksAreFetchableAfterBeingDeleted) {
+TEST_F(TabletCopyTest, TestBlocksAreFetchableAfterBeingDeleted) {
   TabletSuperBlockPB tablet_superblock;
   ASSERT_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
 
@@ -323,7 +323,7 @@ TEST_F(RemoteBootstrapTest, TestBlocksAreFetchableAfterBeingDeleted) {
   for (const BlockId& block_id : data_blocks) {
     ASSERT_TRUE(session_->IsBlockOpenForTests(block_id));
     string data;
-    RemoteBootstrapErrorPB::Code error_code;
+    TabletCopyErrorPB::Code error_code;
     int64_t piece_size;
     ASSERT_OK(session_->GetBlockPiece(block_id, 0, 0,
                                       &data, &piece_size, &error_code));

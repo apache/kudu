@@ -304,7 +304,7 @@ Reference].
   used to group similar gflags together. If the gflag affects the entire
   process, it should not be prefixed.
 - If the gflag is for a quantity, the name should be suffixed with the units.
-  For example, `remote_bootstrap_idle_timeout_ms`.
+  For example, `tablet_copy_idle_timeout_ms`.
 - Where possible, use short names. This will save time for those entering
   command line options by hand.
 - The name is part of Kudu's compatibility contract, and should not change

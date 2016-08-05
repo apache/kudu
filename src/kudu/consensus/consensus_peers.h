@@ -160,15 +160,15 @@ class Peer {
   // Run on 'thread_pool'. Does response handling that requires IO or may block.
   void DoProcessResponse();
 
-  // Fetch the desired remote bootstrap request from the queue and send it
-  // to the peer. The callback goes to ProcessRemoteBootstrapResponse().
+  // Fetch the desired tablet copy request from the queue and send it
+  // to the peer. The callback goes to ProcessTabletCopyResponse().
   //
-  // Returns a bad Status if remote bootstrap is disabled, or if the
+  // Returns a bad Status if tablet copy is disabled, or if the
   // request cannot be generated for some reason.
-  Status SendRemoteBootstrapRequest();
+  Status SendTabletCopyRequest();
 
-  // Handle RPC callback from initiating remote bootstrap.
-  void ProcessRemoteBootstrapResponse();
+  // Handle RPC callback from initiating tablet copy.
+  void ProcessTabletCopyResponse();
 
   // Signals there was an error sending the request to the peer.
   void ProcessResponseError(const Status& status);
@@ -191,9 +191,9 @@ class Peer {
   ConsensusRequestPB request_;
   ConsensusResponsePB response_;
 
-  // The latest remote bootstrap request and response.
-  StartRemoteBootstrapRequestPB rb_request_;
-  StartRemoteBootstrapResponsePB rb_response_;
+  // The latest tablet copy request and response.
+  StartTabletCopyRequestPB rb_request_;
+  StartTabletCopyResponsePB rb_response_;
 
   // Reference-counted pointers to any ReplicateMsgs which are in-flight to the peer. We
   // may have loaded these messages from the LogCache, in which case we are potentially
@@ -249,9 +249,9 @@ class PeerProxy {
                                          rpc::RpcController* controller,
                                          const rpc::ResponseCallback& callback) = 0;
 
-  // Instructs a peer to begin a remote bootstrap session.
-  virtual void StartRemoteBootstrap(const StartRemoteBootstrapRequestPB* request,
-                                    StartRemoteBootstrapResponsePB* response,
+  // Instructs a peer to begin a tablet copy session.
+  virtual void StartTabletCopy(const StartTabletCopyRequestPB* request,
+                                    StartTabletCopyResponsePB* response,
                                     rpc::RpcController* controller,
                                     const rpc::ResponseCallback& callback) {
     LOG(DFATAL) << "Not implemented";
@@ -287,8 +287,8 @@ class RpcPeerProxy : public PeerProxy {
                                          rpc::RpcController* controller,
                                          const rpc::ResponseCallback& callback) OVERRIDE;
 
-  virtual void StartRemoteBootstrap(const StartRemoteBootstrapRequestPB* request,
-                                    StartRemoteBootstrapResponsePB* response,
+  virtual void StartTabletCopy(const StartTabletCopyRequestPB* request,
+                                    StartTabletCopyResponsePB* response,
                                     rpc::RpcController* controller,
                                     const rpc::ResponseCallback& callback) OVERRIDE;
 

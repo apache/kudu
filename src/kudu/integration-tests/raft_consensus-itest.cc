@@ -2090,7 +2090,7 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   WaitForRowCount(replica_ts->tserver_proxy.get(), kNumOps, &rows);
 }
 
-// Test that we can create (vivify) a new tablet via remote bootstrap.
+// Test that we can create (vivify) a new tablet via tablet copy.
 TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 2;
@@ -2481,7 +2481,7 @@ TEST_F(RaftConsensusITest, TestMasterReplacesEvictedFollowers) {
   NO_FATALS(CauseFollowerToFallBehindLogGC(&leader_uuid, &orig_term, &follower_uuid));
 
   // The follower will be evicted. Now wait for the master to cause it to be
-  // remotely bootstrapped.
+  // copied.
   ASSERT_OK(WaitForServersToAgree(timeout, tablet_servers_, tablet_id_, 2));
 
   ClusterVerifier v(cluster_.get());

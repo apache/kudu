@@ -40,8 +40,8 @@
 #define ASSERT_REMOTE_ERROR(status, err, code, str) \
     ASSERT_NO_FATAL_FAILURE(AssertRemoteError(status, err, code, str))
 
-DECLARE_uint64(remote_bootstrap_idle_timeout_ms);
-DECLARE_uint64(remote_bootstrap_timeout_poll_period_ms);
+DECLARE_uint64(tablet_copy_idle_timeout_ms);
+DECLARE_uint64(tablet_copy_timeout_poll_period_ms);
 
 namespace kudu {
 namespace tserver {
@@ -56,39 +56,39 @@ using rpc::RpcController;
 using std::thread;
 using std::vector;
 
-class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
+class TabletCopyServiceTest : public TabletCopyTest {
  public:
-  RemoteBootstrapServiceTest() {
+  TabletCopyServiceTest() {
     // Poll for session expiration every 10 ms for the session timeout test.
-    FLAGS_remote_bootstrap_timeout_poll_period_ms = 10;
+    FLAGS_tablet_copy_timeout_poll_period_ms = 10;
   }
 
  protected:
   void SetUp() OVERRIDE {
-    RemoteBootstrapTest::SetUp();
-    remote_bootstrap_proxy_.reset(
-        new RemoteBootstrapServiceProxy(client_messenger_, mini_server_->bound_rpc_addr()));
+    TabletCopyTest::SetUp();
+    tablet_copy_proxy_.reset(
+        new TabletCopyServiceProxy(client_messenger_, mini_server_->bound_rpc_addr()));
   }
 
-  Status DoBeginRemoteBootstrapSession(const string& tablet_id,
+  Status DoBeginTabletCopySession(const string& tablet_id,
                                        const string& requestor_uuid,
-                                       BeginRemoteBootstrapSessionResponsePB* resp,
+                                       BeginTabletCopySessionResponsePB* resp,
                                        RpcController* controller) {
     controller->set_timeout(MonoDelta::FromSeconds(1.0));
-    BeginRemoteBootstrapSessionRequestPB req;
+    BeginTabletCopySessionRequestPB req;
     req.set_tablet_id(tablet_id);
     req.set_requestor_uuid(requestor_uuid);
     return UnwindRemoteError(
-        remote_bootstrap_proxy_->BeginRemoteBootstrapSession(req, resp, controller), controller);
+        tablet_copy_proxy_->BeginTabletCopySession(req, resp, controller), controller);
   }
 
-  Status DoBeginValidRemoteBootstrapSession(string* session_id,
+  Status DoBeginValidTabletCopySession(string* session_id,
                                             tablet::TabletSuperBlockPB* superblock = nullptr,
                                             uint64_t* idle_timeout_millis = nullptr,
                                             vector<uint64_t>* sequence_numbers = nullptr) {
-    BeginRemoteBootstrapSessionResponsePB resp;
+    BeginTabletCopySessionResponsePB resp;
     RpcController controller;
-    RETURN_NOT_OK(DoBeginRemoteBootstrapSession(GetTabletId(), GetLocalUUID(), &resp, &controller));
+    RETURN_NOT_OK(DoBeginTabletCopySession(GetTabletId(), GetLocalUUID(), &resp, &controller));
     *session_id = resp.session_id();
     if (superblock) {
       *superblock = resp.superblock();
@@ -103,13 +103,13 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
   }
 
   Status DoCheckSessionActive(const string& session_id,
-                              CheckRemoteBootstrapSessionActiveResponsePB* resp,
+                              CheckTabletCopySessionActiveResponsePB* resp,
                               RpcController* controller) {
     controller->set_timeout(MonoDelta::FromSeconds(1.0));
-    CheckRemoteBootstrapSessionActiveRequestPB req;
+    CheckTabletCopySessionActiveRequestPB req;
     req.set_session_id(session_id);
     return UnwindRemoteError(
-        remote_bootstrap_proxy_->CheckSessionActive(req, resp, controller), controller);
+        tablet_copy_proxy_->CheckSessionActive(req, resp, controller), controller);
   }
 
   Status DoFetchData(const string& session_id, const DataIdPB& data_id,
@@ -127,28 +127,28 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
       req.set_max_length(*max_length);
     }
     return UnwindRemoteError(
-        remote_bootstrap_proxy_->FetchData(req, resp, controller), controller);
+        tablet_copy_proxy_->FetchData(req, resp, controller), controller);
   }
 
-  Status DoEndRemoteBootstrapSession(const string& session_id, bool is_success,
+  Status DoEndTabletCopySession(const string& session_id, bool is_success,
                                      const Status* error_msg,
-                                     EndRemoteBootstrapSessionResponsePB* resp,
+                                     EndTabletCopySessionResponsePB* resp,
                                      RpcController* controller) {
     controller->set_timeout(MonoDelta::FromSeconds(1.0));
-    EndRemoteBootstrapSessionRequestPB req;
+    EndTabletCopySessionRequestPB req;
     req.set_session_id(session_id);
     req.set_is_success(is_success);
     if (error_msg) {
       StatusToPB(*error_msg, req.mutable_error());
     }
     return UnwindRemoteError(
-        remote_bootstrap_proxy_->EndRemoteBootstrapSession(req, resp, controller), controller);
+        tablet_copy_proxy_->EndTabletCopySession(req, resp, controller), controller);
   }
 
   // Decode the remote error into a Status object.
   Status ExtractRemoteError(const ErrorStatusPB* remote_error) {
-    const RemoteBootstrapErrorPB& error =
-        remote_error->GetExtension(RemoteBootstrapErrorPB::remote_bootstrap_error_ext);
+    const TabletCopyErrorPB& error =
+        remote_error->GetExtension(TabletCopyErrorPB::tablet_copy_error_ext);
     return StatusFromPB(error.status());
   }
 
@@ -163,15 +163,15 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
   }
 
   void AssertRemoteError(Status status, const ErrorStatusPB* remote_error,
-                         const RemoteBootstrapErrorPB::Code app_code,
+                         const TabletCopyErrorPB::Code app_code,
                          const string& status_code_string) {
     ASSERT_TRUE(status.IsRemoteError()) << "Unexpected status code: " << status.ToString()
                                         << ", app code: "
-                                        << RemoteBootstrapErrorPB::Code_Name(app_code)
+                                        << TabletCopyErrorPB::Code_Name(app_code)
                                         << ", status code string: " << status_code_string;
     const Status app_status = ExtractRemoteError(remote_error);
-    const RemoteBootstrapErrorPB& error =
-        remote_error->GetExtension(RemoteBootstrapErrorPB::remote_bootstrap_error_ext);
+    const TabletCopyErrorPB& error =
+        remote_error->GetExtension(TabletCopyErrorPB::tablet_copy_error_ext);
     ASSERT_EQ(app_code, error.code()) << error.ShortDebugString();
     ASSERT_EQ(status_code_string, app_status.CodeAsString()) << app_status.ToString();
     LOG(INFO) << app_status.ToString();
@@ -185,52 +185,52 @@ class RemoteBootstrapServiceTest : public RemoteBootstrapTest {
     return data_id;
   }
 
-  gscoped_ptr<RemoteBootstrapServiceProxy> remote_bootstrap_proxy_;
+  gscoped_ptr<TabletCopyServiceProxy> tablet_copy_proxy_;
 };
 
-// Test beginning and ending a remote bootstrap session.
-TEST_F(RemoteBootstrapServiceTest, TestSimpleBeginEndSession) {
+// Test beginning and ending a tablet copy session.
+TEST_F(TabletCopyServiceTest, TestSimpleBeginEndSession) {
   string session_id;
   tablet::TabletSuperBlockPB superblock;
   uint64_t idle_timeout_millis;
   vector<uint64_t> segment_seqnos;
-  ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id,
+  ASSERT_OK(DoBeginValidTabletCopySession(&session_id,
                                                &superblock,
                                                &idle_timeout_millis,
                                                &segment_seqnos));
   // Basic validation of returned params.
   ASSERT_FALSE(session_id.empty());
-  ASSERT_EQ(FLAGS_remote_bootstrap_idle_timeout_ms, idle_timeout_millis);
+  ASSERT_EQ(FLAGS_tablet_copy_idle_timeout_ms, idle_timeout_millis);
   ASSERT_TRUE(superblock.IsInitialized());
   // We should have number of segments = number of rolls + 1 (due to the active segment).
   ASSERT_EQ(kNumLogRolls + 1, segment_seqnos.size());
 
-  EndRemoteBootstrapSessionResponsePB resp;
+  EndTabletCopySessionResponsePB resp;
   RpcController controller;
-  ASSERT_OK(DoEndRemoteBootstrapSession(session_id, true, nullptr, &resp, &controller));
+  ASSERT_OK(DoEndTabletCopySession(session_id, true, nullptr, &resp, &controller));
 }
 
 // Test starting two sessions. The current implementation will silently only create one.
-TEST_F(RemoteBootstrapServiceTest, TestBeginTwice) {
+TEST_F(TabletCopyServiceTest, TestBeginTwice) {
   // Second time through should silently succeed.
   for (int i = 0; i < 2; i++) {
     string session_id;
-    ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id));
+    ASSERT_OK(DoBeginValidTabletCopySession(&session_id));
     ASSERT_FALSE(session_id.empty());
   }
 }
 
 // Regression test for KUDU-1436: race conditions if multiple requests
-// to begin the same remote bootstrap session arrive at more or less the
+// to begin the same tablet copy session arrive at more or less the
 // same time.
-TEST_F(RemoteBootstrapServiceTest, TestBeginConcurrently) {
+TEST_F(TabletCopyServiceTest, TestBeginConcurrently) {
   const int kNumThreads = 5;
   vector<thread> threads;
   vector<tablet::TabletSuperBlockPB> sblocks(kNumThreads);
   for (int i = 0 ; i < kNumThreads; i++) {
     threads.emplace_back([this, &sblocks, i]{
         string session_id;
-        CHECK_OK(DoBeginValidRemoteBootstrapSession(&session_id, &sblocks[i]));
+        CHECK_OK(DoBeginValidTabletCopySession(&session_id, &sblocks[i]));
         CHECK(!session_id.empty());
       });
   }
@@ -244,7 +244,7 @@ TEST_F(RemoteBootstrapServiceTest, TestBeginConcurrently) {
 }
 
 // Test bad session id error condition.
-TEST_F(RemoteBootstrapServiceTest, TestInvalidSessionId) {
+TEST_F(TabletCopyServiceTest, TestInvalidSessionId) {
   vector<string> bad_session_ids;
   bad_session_ids.push_back("hodor");
   bad_session_ids.push_back(GetLocalUUID());
@@ -257,34 +257,34 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidSessionId) {
     data_id.set_type(DataIdPB::BLOCK);
     data_id.mutable_block_id()->set_id(1);
     Status status = DoFetchData(session_id, data_id, nullptr, nullptr, &resp, &controller);
-    ASSERT_REMOTE_ERROR(status, controller.error_response(), RemoteBootstrapErrorPB::NO_SESSION,
+    ASSERT_REMOTE_ERROR(status, controller.error_response(), TabletCopyErrorPB::NO_SESSION,
                         Status::NotFound("").CodeAsString());
   }
 
   // End a non-existent session.
   for (const string& session_id : bad_session_ids) {
-    EndRemoteBootstrapSessionResponsePB resp;
+    EndTabletCopySessionResponsePB resp;
     RpcController controller;
-    Status status = DoEndRemoteBootstrapSession(session_id, true, nullptr, &resp, &controller);
-    ASSERT_REMOTE_ERROR(status, controller.error_response(), RemoteBootstrapErrorPB::NO_SESSION,
+    Status status = DoEndTabletCopySession(session_id, true, nullptr, &resp, &controller);
+    ASSERT_REMOTE_ERROR(status, controller.error_response(), TabletCopyErrorPB::NO_SESSION,
                         Status::NotFound("").CodeAsString());
   }
 }
 
 // Test bad tablet id error condition.
-TEST_F(RemoteBootstrapServiceTest, TestInvalidTabletId) {
-  BeginRemoteBootstrapSessionResponsePB resp;
+TEST_F(TabletCopyServiceTest, TestInvalidTabletId) {
+  BeginTabletCopySessionResponsePB resp;
   RpcController controller;
   Status status =
-      DoBeginRemoteBootstrapSession("some-unknown-tablet", GetLocalUUID(), &resp, &controller);
-  ASSERT_REMOTE_ERROR(status, controller.error_response(), RemoteBootstrapErrorPB::TABLET_NOT_FOUND,
+      DoBeginTabletCopySession("some-unknown-tablet", GetLocalUUID(), &resp, &controller);
+  ASSERT_REMOTE_ERROR(status, controller.error_response(), TabletCopyErrorPB::TABLET_NOT_FOUND,
                       Status::NotFound("").CodeAsString());
 }
 
 // Test DataIdPB validation.
-TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
+TEST_F(TabletCopyServiceTest, TestInvalidBlockOrOpId) {
   string session_id;
-  ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id));
+  ASSERT_OK(DoBeginValidTabletCopySession(&session_id));
 
   // Invalid BlockId.
   {
@@ -295,7 +295,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
     data_id.mutable_block_id()->set_id(1);
     Status status = DoFetchData(session_id, data_id, nullptr, nullptr, &resp, &controller);
     ASSERT_REMOTE_ERROR(status, controller.error_response(),
-                        RemoteBootstrapErrorPB::BLOCK_NOT_FOUND,
+                        TabletCopyErrorPB::BLOCK_NOT_FOUND,
                         Status::NotFound("").CodeAsString());
   }
 
@@ -308,7 +308,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
     data_id.set_wal_segment_seqno(31337);
     Status status = DoFetchData(session_id, data_id, nullptr, nullptr, &resp, &controller);
     ASSERT_REMOTE_ERROR(status, controller.error_response(),
-                        RemoteBootstrapErrorPB::WAL_SEGMENT_NOT_FOUND,
+                        TabletCopyErrorPB::WAL_SEGMENT_NOT_FOUND,
                         Status::NotFound("").CodeAsString());
   }
 
@@ -323,7 +323,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
     ASSERT_TRUE(status.IsRemoteError()) << status.ToString();
     ASSERT_STR_CONTAINS(status.ToString(),
                         "Invalid argument: invalid parameter for call "
-                        "kudu.tserver.RemoteBootstrapService.FetchData: "
+                        "kudu.tserver.TabletCopyService.FetchData: "
                         "missing fields: data_id.type");
   }
 
@@ -335,7 +335,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
     data_id.set_type(DataIdPB::LOG_SEGMENT);
     Status status = DoFetchData(session_id, data_id, nullptr, nullptr, &resp, &controller);
     ASSERT_REMOTE_ERROR(status, controller.error_response(),
-                        RemoteBootstrapErrorPB::INVALID_REMOTE_BOOTSTRAP_REQUEST,
+                        TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST,
                         Status::InvalidArgument("").CodeAsString());
   }
 
@@ -349,16 +349,16 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
     data_id.set_wal_segment_seqno(0);
     Status status = DoFetchData(session_id, data_id, nullptr, nullptr, &resp, &controller);
     ASSERT_REMOTE_ERROR(status, controller.error_response(),
-                        RemoteBootstrapErrorPB::INVALID_REMOTE_BOOTSTRAP_REQUEST,
+                        TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST,
                         Status::InvalidArgument("").CodeAsString());
   }
 }
 
 // Test invalid file offset error condition.
-TEST_F(RemoteBootstrapServiceTest, TestFetchInvalidBlockOffset) {
+TEST_F(TabletCopyServiceTest, TestFetchInvalidBlockOffset) {
   string session_id;
   tablet::TabletSuperBlockPB superblock;
-  ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id, &superblock));
+  ASSERT_OK(DoBeginValidTabletCopySession(&session_id, &superblock));
 
   FetchDataResponsePB resp;
   RpcController controller;
@@ -367,15 +367,15 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchInvalidBlockOffset) {
   Status status = DoFetchData(session_id, AsDataTypeId(FirstColumnBlockId(superblock)),
                               &offset, nullptr, &resp, &controller);
   ASSERT_REMOTE_ERROR(status, controller.error_response(),
-                      RemoteBootstrapErrorPB::INVALID_REMOTE_BOOTSTRAP_REQUEST,
+                      TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST,
                       Status::InvalidArgument("").CodeAsString());
 }
 
 // Test that we are able to fetch an entire block.
-TEST_F(RemoteBootstrapServiceTest, TestFetchBlockAtOnce) {
+TEST_F(TabletCopyServiceTest, TestFetchBlockAtOnce) {
   string session_id;
   tablet::TabletSuperBlockPB superblock;
-  ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id, &superblock));
+  ASSERT_OK(DoBeginValidTabletCopySession(&session_id, &superblock));
 
   // Local.
   BlockId block_id = FirstColumnBlockId(superblock);
@@ -393,10 +393,10 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchBlockAtOnce) {
 }
 
 // Test that we are able to incrementally fetch blocks.
-TEST_F(RemoteBootstrapServiceTest, TestFetchBlockIncrementally) {
+TEST_F(TabletCopyServiceTest, TestFetchBlockIncrementally) {
   string session_id;
   tablet::TabletSuperBlockPB superblock;
-  ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id, &superblock));
+  ASSERT_OK(DoBeginValidTabletCopySession(&session_id, &superblock));
 
   BlockId block_id = FirstColumnBlockId(superblock);
   Slice local_data;
@@ -421,12 +421,12 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchBlockIncrementally) {
 }
 
 // Test that we are able to fetch log segments.
-TEST_F(RemoteBootstrapServiceTest, TestFetchLog) {
+TEST_F(TabletCopyServiceTest, TestFetchLog) {
   string session_id;
   tablet::TabletSuperBlockPB superblock;
   uint64_t idle_timeout_millis;
   vector<uint64_t> segment_seqnos;
-  ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id,
+  ASSERT_OK(DoBeginValidTabletCopySession(&session_id,
                                                &superblock,
                                                &idle_timeout_millis,
                                                &segment_seqnos));
@@ -462,18 +462,18 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchLog) {
   AssertDataEqual(slice.data(), slice.size(), resp.chunk());
 }
 
-// Test that the remote bootstrap session timeout works properly.
-TEST_F(RemoteBootstrapServiceTest, TestSessionTimeout) {
+// Test that the tablet copy session timeout works properly.
+TEST_F(TabletCopyServiceTest, TestSessionTimeout) {
   // This flag should be seen by the service due to TSO.
   // We have also reduced the timeout polling frequency in SetUp().
-  FLAGS_remote_bootstrap_idle_timeout_ms = 1; // Expire the session almost immediately.
+  FLAGS_tablet_copy_idle_timeout_ms = 1; // Expire the session almost immediately.
 
   // Start session.
   string session_id;
-  ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id));
+  ASSERT_OK(DoBeginValidTabletCopySession(&session_id));
 
   MonoTime start_time = MonoTime::Now(MonoTime::FINE);
-  CheckRemoteBootstrapSessionActiveResponsePB resp;
+  CheckTabletCopySessionActiveResponsePB resp;
 
   do {
     RpcController controller;
@@ -484,7 +484,7 @@ TEST_F(RemoteBootstrapServiceTest, TestSessionTimeout) {
     SleepFor(MonoDelta::FromMilliseconds(1)); // 1 ms
   } while (MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time).ToSeconds() < 10);
 
-  ASSERT_FALSE(resp.session_is_active()) << "Remote bootstrap session did not time out!";
+  ASSERT_FALSE(resp.session_is_active()) << "Tablet Copy session did not time out!";
 }
 
 } // namespace tserver

@@ -31,7 +31,7 @@ class HostPort;
 class NodeInstancePB;
 
 namespace consensus {
-class StartRemoteBootstrapRequestPB;
+class StartTabletCopyRequestPB;
 } // namespace consensus
 
 namespace tablet {
@@ -51,7 +51,7 @@ class TabletPeerLookupIf {
 
   virtual const NodeInstancePB& NodeInstance() const = 0;
 
-  virtual Status StartRemoteBootstrap(const consensus::StartRemoteBootstrapRequestPB& req,
+  virtual Status StartTabletCopy(const consensus::StartTabletCopyRequestPB& req,
                                       boost::optional<TabletServerErrorPB::Code>* error_code) = 0;
 };
 

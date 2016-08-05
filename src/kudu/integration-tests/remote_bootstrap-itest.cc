@@ -40,13 +40,13 @@
 #include "kudu/util/test_util.h"
 
 DEFINE_int32(test_delete_leader_num_iters, 3,
-             "Number of iterations to run in TestDeleteLeaderDuringRemoteBootstrapStressTest.");
+             "Number of iterations to run in TestDeleteLeaderDuringTabletCopyStressTest.");
 DEFINE_int32(test_delete_leader_min_rows_per_iter, 20,
-             "Number of writer threads in TestDeleteLeaderDuringRemoteBootstrapStressTest.");
+             "Number of writer threads in TestDeleteLeaderDuringTabletCopyStressTest.");
 DEFINE_int32(test_delete_leader_payload_bytes, 16 * 1024,
-             "Payload byte size in TestDeleteLeaderDuringRemoteBootstrapStressTest.");
+             "Payload byte size in TestDeleteLeaderDuringTabletCopyStressTest.");
 DEFINE_int32(test_delete_leader_num_writer_threads, 1,
-             "Number of writer threads in TestDeleteLeaderDuringRemoteBootstrapStressTest.");
+             "Number of writer threads in TestDeleteLeaderDuringTabletCopyStressTest.");
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
@@ -59,7 +59,7 @@ using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tserver::ListTabletsResponsePB;
-using kudu::tserver::RemoteBootstrapClient;
+using kudu::tserver::TabletCopyClient;
 using std::string;
 using std::unordered_map;
 using std::vector;
@@ -73,7 +73,7 @@ METRIC_DECLARE_counter(glog_error_messages);
 
 namespace kudu {
 
-class RemoteBootstrapITest : public KuduTest {
+class TabletCopyITest : public KuduTest {
  public:
   virtual void TearDown() OVERRIDE {
     if (HasFatalFailure()) {
@@ -106,7 +106,7 @@ class RemoteBootstrapITest : public KuduTest {
   unordered_map<string, TServerDetails*> ts_map_;
 };
 
-void RemoteBootstrapITest::StartCluster(const vector<string>& extra_tserver_flags,
+void TabletCopyITest::StartCluster(const vector<string>& extra_tserver_flags,
                                         const vector<string>& extra_master_flags,
                                         int num_tablet_servers) {
   ExternalMiniClusterOptions opts;
@@ -127,7 +127,7 @@ void RemoteBootstrapITest::StartCluster(const vector<string>& extra_tserver_flag
   ASSERT_OK(cluster_->CreateClient(builder, &client_));
 }
 
-// If a rogue (a.k.a. zombie) leader tries to remote bootstrap a tombstoned
+// If a rogue (a.k.a. zombie) leader tries to tablet copy a tombstoned
 // tablet, make sure its term isn't older than the latest term we observed.
 // If it is older, make sure we reject the request, to avoid allowing old
 // leaders to create a parallel universe. This is possible because config
@@ -135,7 +135,7 @@ void RemoteBootstrapITest::StartCluster(const vector<string>& extra_tserver_flag
 // because only one node can be elected leader for a given term.
 //
 // A leader can "go rogue" due to a VM pause, CTRL-z, partition, etc.
-TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
+TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   // This test pauses for at least 10 seconds. Only run in slow-test mode.
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping test in fast-test mode.";
@@ -180,7 +180,7 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
   // Come out of the blue and try to remotely bootstrap a running server while
   // specifying an old term. That running server should reject the request.
   // We are essentially masquerading as a rogue leader here.
-  Status s = itest::StartRemoteBootstrap(ts, tablet_id, zombie_leader_uuid,
+  Status s = itest::StartTabletCopy(ts, tablet_id, zombie_leader_uuid,
                                          HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
                                          0, // Say I'm from term 0.
                                          timeout);
@@ -201,7 +201,7 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
 
   // Wait for the NO_OP entry from the term 2 election to propagate to the
   // remaining nodes' logs so that we are guaranteed to reject the rogue
-  // leader's remote bootstrap request when we bring it back online.
+  // leader's tablet copy request when we bring it back online.
   int log_index = workload.batches_completed() + 2; // 2 terms == 2 additional NO_OP entries.
   ASSERT_OK(WaitForServersToAgree(timeout, active_ts_map, tablet_id, log_index));
   // TODO: Write more rows to the new leader once KUDU-1034 is fixed.
@@ -211,7 +211,7 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
   ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
 
   // Zombies!!! Resume the rogue zombie leader.
-  // He should attempt to remote bootstrap TS 0 but fail.
+  // He should attempt to tablet copy TS 0 but fail.
   ASSERT_OK(cluster_->tablet_server(zombie_leader_index)->Resume());
 
   // Loop for a few seconds to ensure that the tablet doesn't transition to READY.
@@ -225,7 +225,7 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
   }
 
   // Force the rogue leader to step down.
-  // Then, send a remote bootstrap start request from a "fake" leader that
+  // Then, send a tablet copy start request from a "fake" leader that
   // sends an up-to-date term in the RB request but the actual term stored
   // in the bootstrap source's consensus metadata would still be old.
   LOG(INFO) << "Forcing rogue leader T " << tablet_id << " P " << zombie_leader_uuid
@@ -235,12 +235,12 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
   // It's not necessarily part of the API but this could return faliure due to
   // rejecting the remote. We intend to make that part async though, so ignoring
   // this return value in this test.
-  ignore_result(itest::StartRemoteBootstrap(ts, tablet_id, zombie_leader_uuid,
+  ignore_result(itest::StartTabletCopy(ts, tablet_id, zombie_leader_uuid,
                                             HostPort(zombie_ets->bound_rpc_addr()),
                                             2, // Say I'm from term 2.
                                             timeout));
 
-  // Wait another few seconds to be sure the remote bootstrap is rejected.
+  // Wait another few seconds to be sure the tablet copy is rejected.
   deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(MonoDelta::FromSeconds(5));
   while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
@@ -251,13 +251,13 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
   }
 }
 
-// Start remote bootstrap session and delete the tablet in the middle.
+// Start tablet copy session and delete the tablet in the middle.
 // It should actually be possible to complete bootstrap in such a case, because
-// when a remote bootstrap session is started on the "source" server, all of
+// when a tablet copy session is started on the "source" server, all of
 // the relevant files are either read or opened, meaning that an in-progress
-// remote bootstrap can complete even after a tablet is officially "deleted" on
+// tablet copy can complete even after a tablet is officially "deleted" on
 // the source server. This is also a regression test for KUDU-1009.
-TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrap) {
+TEST_F(TabletCopyITest, TestDeleteTabletDuringTabletCopy) {
   MonoDelta timeout = MonoDelta::FromSeconds(10);
   const int kTsIndex = 0; // We'll test with the first TS.
   NO_FATALS(StartCluster());
@@ -280,7 +280,7 @@ TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrap) {
   workload.StopAndJoin();
   ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
 
-  // Set up an FsManager to use with the RemoteBootstrapClient.
+  // Set up an FsManager to use with the TabletCopyClient.
   FsManagerOpts opts;
   string testbase = GetTestPath("fake-ts");
   ASSERT_OK(env_->CreateDir(testbase));
@@ -291,8 +291,8 @@ TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrap) {
   ASSERT_OK(fs_manager->Open());
 
   {
-    // Start up a RemoteBootstrapClient and open a remote bootstrap session.
-    RemoteBootstrapClient rb_client(tablet_id, fs_manager.get(),
+    // Start up a TabletCopyClient and open a tablet copy session.
+    TabletCopyClient rb_client(tablet_id, fs_manager.get(),
                                     cluster_->messenger());
     scoped_refptr<tablet::TabletMetadata> meta;
     ASSERT_OK(rb_client.Start(cluster_->tablet_server(kTsIndex)->bound_rpc_hostport(),
@@ -317,9 +317,9 @@ TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrap) {
 // This test ensures that a leader can remote-bootstrap a tombstoned replica
 // that has a higher term recorded in the replica's consensus metadata if the
 // replica's last-logged opid has the same term (or less) as the leader serving
-// as the remote bootstrap source. When a tablet is tombstoned, its last-logged
+// as the tablet copy source. When a tablet is tombstoned, its last-logged
 // opid is stored in a field its on-disk superblock.
-TEST_F(RemoteBootstrapITest, TestRemoteBootstrapFollowerWithHigherTerm) {
+TEST_F(TabletCopyITest, TestTabletCopyFollowerWithHigherTerm) {
   vector<string> ts_flags, master_flags;
   ts_flags.push_back("--enable_leader_failure_detection=false");
   master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
@@ -383,18 +383,18 @@ TEST_F(RemoteBootstrapITest, TestRemoteBootstrapFollowerWithHigherTerm) {
   ASSERT_OK(cluster_->tablet_server(kFollowerIndex)->Restart());
 
   // Now wake the leader. It should detect that the follower needs to be
-  // remotely bootstrapped and proceed to bring it back up to date.
+  // copied and proceed to bring it back up to date.
   ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Resume());
 
   // Wait for the follower to come back up.
   ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
 }
 
-// Test that multiple concurrent remote bootstraps do not cause problems.
+// Test that multiple concurrent tablet copys do not cause problems.
 // This is a regression test for KUDU-951, in which concurrent sessions on
-// multiple tablets between the same remote bootstrap client host and remote
+// multiple tablets between the same tablet copy client host and remote
 // bootstrap source host could corrupt each other.
-TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
+TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping test in fast-test mode.";
     return;
@@ -414,7 +414,7 @@ TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
   const MonoDelta timeout = MonoDelta::FromSeconds(60);
 
   // Create a table with several tablets. These will all be simultaneously
-  // remotely bootstrapped to a single target node from the same leader host.
+  // copied to a single target node from the same leader host.
   const int kNumTablets = 10;
   KuduSchema client_schema(KuduSchemaFromSchema(GetSimpleTestSchema()));
   vector<const KuduPartialRow*> splits;
@@ -497,9 +497,9 @@ TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
 }
 
 // Test that repeatedly runs a load, tombstones a follower, then tombstones the
-// leader while the follower is remotely bootstrapping. Regression test for
+// leader while the follower is copying. Regression test for
 // KUDU-1047.
-TEST_F(RemoteBootstrapITest, TestDeleteLeaderDuringRemoteBootstrapStressTest) {
+TEST_F(TabletCopyITest, TestDeleteLeaderDuringTabletCopyStressTest) {
   // This test takes a while due to failure detection.
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping test in fast-test mode.";
@@ -561,7 +561,7 @@ TEST_F(RemoteBootstrapITest, TestDeleteLeaderDuringRemoteBootstrapStressTest) {
     ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
                                   timeout));
 
-    // Wait for remote bootstrap to start.
+    // Wait for tablet copy to start.
     ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
         follower_index, tablet_id,
         { tablet::TABLET_DATA_COPYING, tablet::TABLET_DATA_READY },
@@ -574,7 +574,7 @@ TEST_F(RemoteBootstrapITest, TestDeleteLeaderDuringRemoteBootstrapStressTest) {
 
     // Quiesce and rebuild to full strength. This involves electing a new
     // leader from the remaining three, which requires a unanimous vote, and
-    // that leader then remotely bootstrapping the old leader.
+    // that leader then copying the old leader.
     workload.StopAndJoin();
     ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 1));
   }
@@ -628,15 +628,15 @@ int64_t CountLogMessages(ExternalTabletServer* ets) {
 }
 } // anonymous namespace
 
-// Test that if remote bootstrap is disabled by a flag, we don't get into
+// Test that if tablet copy is disabled by a flag, we don't get into
 // tight loops after a tablet is deleted. This is a regression test for situation
 // similar to the bug described in KUDU-821: we were previously handling a missing
 // tablet within consensus in such a way that we'd immediately send another RPC.
-TEST_F(RemoteBootstrapITest, TestDisableRemoteBootstrap_NoTightLoopWhenTabletDeleted) {
+TEST_F(TabletCopyITest, TestDisableTabletCopy_NoTightLoopWhenTabletDeleted) {
   MonoDelta timeout = MonoDelta::FromSeconds(10);
   vector<string> ts_flags, master_flags;
   ts_flags.push_back("--enable_leader_failure_detection=false");
-  ts_flags.push_back("--enable_remote_bootstrap=false");
+  ts_flags.push_back("--enable_tablet_copy=false");
   master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
@@ -688,13 +688,13 @@ TEST_F(RemoteBootstrapITest, TestDisableRemoteBootstrap_NoTightLoopWhenTabletDel
   EXPECT_LT(num_logs_per_second, 20);
 }
 
-// Test that if a remote bootstrap is taking a long time but the client peer is still responsive,
+// Test that if a tablet copy is taking a long time but the client peer is still responsive,
 // the leader won't mark it as failed.
-TEST_F(RemoteBootstrapITest, TestSlowBootstrapDoesntFail) {
+TEST_F(TabletCopyITest, TestSlowBootstrapDoesntFail) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags, master_flags;
   ts_flags.push_back("--enable_leader_failure_detection=false");
-  ts_flags.push_back("--remote_bootstrap_dowload_file_inject_latency_ms=5000");
+  ts_flags.push_back("--tablet_copy_dowload_file_inject_latency_ms=5000");
   ts_flags.push_back("--follower_unavailable_considered_failed_sec=2");
   master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
@@ -732,7 +732,7 @@ TEST_F(RemoteBootstrapITest, TestSlowBootstrapDoesntFail) {
   ASSERT_OK(itest::DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
                                 timeout));
 
-  // Wait for remote bootstrap to start.
+  // Wait for tablet copy to start.
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(1, tablet_id,
                                                  { tablet::TABLET_DATA_COPYING }, timeout));
 
@@ -745,11 +745,11 @@ TEST_F(RemoteBootstrapITest, TestSlowBootstrapDoesntFail) {
                             workload.rows_inserted()));
 }
 
-// Attempting to start remote bootstrap on a tablet that was deleted with
+// Attempting to start tablet copy on a tablet that was deleted with
 // TABLET_DATA_DELETED should fail. This behavior helps avoid thrashing when
 // a follower tablet is deleted and the leader notices before it has processed
 // its own DeleteTablet RPC, thinking that it needs to bring its follower back.
-TEST_F(RemoteBootstrapITest, TestRemoteBootstrappingDeletedTabletFails) {
+TEST_F(TabletCopyITest, TestTabletCopypingDeletedTabletFails) {
   // Delete the leader with TABLET_DATA_DELETED
   // Attempt to manually bootstrap the leader from a follower
   // Should get an error saying it's illegal
@@ -783,7 +783,7 @@ TEST_F(RemoteBootstrapITest, TestRemoteBootstrappingDeletedTabletFails) {
   // bring back the leader after that until restarting the process.
   ASSERT_OK(itest::DeleteTablet(leader, tablet_id, TABLET_DATA_DELETED, boost::none, kTimeout));
 
-  Status s = itest::StartRemoteBootstrap(leader, tablet_id,
+  Status s = itest::StartTabletCopy(leader, tablet_id,
                                          cluster_->tablet_server(1)->uuid(),
                                          HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
                                          1, // We are in term 1.
@@ -792,11 +792,11 @@ TEST_F(RemoteBootstrapITest, TestRemoteBootstrappingDeletedTabletFails) {
   ASSERT_STR_CONTAINS(s.ToString(), "Cannot transition from state TABLET_DATA_DELETED");
 
   // Restart the server so that it won't remember the tablet was permanently
-  // deleted and we can remote bootstrap the server again.
+  // deleted and we can tablet copy the server again.
   cluster_->tablet_server(0)->Shutdown();
   ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
-  ASSERT_OK(itest::StartRemoteBootstrap(leader, tablet_id,
+  ASSERT_OK(itest::StartTabletCopy(leader, tablet_id,
                                         cluster_->tablet_server(1)->uuid(),
                                         HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
                                         1, // We are in term 1.

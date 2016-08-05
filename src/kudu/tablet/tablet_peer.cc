@@ -390,7 +390,7 @@ string TabletPeer::HumanReadableState() const {
     return Substitute("$0 ($1): $2", TabletStatePB_Name(state_),
                       TabletDataState_Name(data_state),
                       error_.ToString());
-  // If it's remotely bootstrapping, or tombstoned, that is the important thing
+  // If it's copying, or tombstoned, that is the important thing
   // to show.
   } else if (data_state != TABLET_DATA_READY) {
     return TabletDataState_Name(data_state);

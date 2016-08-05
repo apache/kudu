@@ -12,19 +12,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# Kudu remote bootstrap design
+# Kudu tablet copy design
 
-Master & remote bootstrap integration with configuration change
+Master & tablet copy integration with configuration change
 
 ## Summary
 
-This document contains information on implementing remote bootstrap in the
+This document contains information on implementing tablet copy in the
 context of Kudu's Raft implementation. Details on Raft config change in Kudu
 can be found in the [Raft config change design doc](raft-config-change.md).
 
 ## Goals
 
-1. Integrate remote bootstrap to allow for copying over "snapshotted" data and
+1. Integrate tablet copy to allow for copying over "snapshotted" data and
    logs to a tablet replica when logs from the "beginning of time" are no
    longer available for replay.
 2. The Master needs to tolerate and facilitate dynamic consensus config change.
@@ -38,29 +38,29 @@ The Master will expose the following operations to admin users:
 1. `AddReplica(tablet_id, TS to_add, Role role)`
 2. `RemoveReplica(tablet_id, TS to_remove)`
 
-### New tablet server remote bootstrap RPC
+### New tablet server tablet copy RPC
 
-Remote bootstrap allows a tablet snapshot to be moved to a new server. A
-`StartRemoteBootstrap()` RPC call will be available on each tablet server. When a
+Tablet Copy allows a tablet snapshot to be moved to a new server. A
+`StartTabletCopy()` RPC call will be available on each tablet server. When a
 leader determines that a follower needs log entries prior to what is available
 on the leader side, or when it detects that a follower does not host a given
 tablet, it sends the follower an RPC to instruct the follower to initiate
-remote bootstrap. Optionally, this callback is made idempotent by passing the
+tablet copy. Optionally, this callback is made idempotent by passing the
 latest OpId in the follower's log as an argument.
 
-### Management of remote bootstrap jobs
+### Management of tablet copy jobs
 
-Since remotely bootstrapping a tablet may involve copying many GB of data, we
-likely need to support operational visibility into ongoing remote bootstrap
+Since copying a tablet may involve copying many GB of data, we
+likely need to support operational visibility into ongoing tablet copy
 jobs, run them on their own thread pool, support cancellation, etc. TBD to
 enumerate all of this in detail.
 
-## Design & implementation of tablet remote bootstrap
+## Design & implementation of tablet tablet copy
 
 ### Tablet auto-vivification
 
 A leader could cause a tablet to auto-create / auto-vivify itself if it doesn't
-already exist by sending a StartRemoteBootstrap RPC to the tablet server. Not
+already exist by sending a StartTabletCopy RPC to the tablet server. Not
 requiring the Master to explicitly invoke a CreateTablet() RPC before adding a
 replica to a consensus config makes adding a new peer much simpler to implement
 on the Master side.
@@ -77,7 +77,7 @@ given node:
 1. Master -> Leader: `AddServer(peer=Follower_new, role=PRE_VOTER)`
 
 The leader will then take care of detecting whether the tablet is out of date
-or does not exist, in which cases it must be remotely bootstrapped, or whether
+or does not exist, in which cases it must be copied, or whether
 it can be caught-up normally.
 
 ### Note on deleted tablets
@@ -89,17 +89,17 @@ losing data that was guaranteed to be persisted according to the consensus
 protocol. That situation is described in detail in this [raft-dev mailing list
 thread](https://groups.google.com/d/msg/raft-dev/CL1qWP7a_1w/OfHqmbcbIlAJ).
 
-To safely support deletion and remote bootstrap, a tablet will have 4 states
+To safely support deletion and tablet copy, a tablet will have 4 states
 its data can be in: `DOES_NOT_EXIST` (implicit; just the non-existence of state),
 `DELETED`, `COPYING`, and `READY`. `DOES_NOT_EXIST` just means a tablet with that name
 has never been hosted on the server, `DELETED` means it's tombstoned, `COPYING`
-means it's in the process of remote bootstrapping, and `READY` means it's in a
+means it's in the process of tablet copyping, and `READY` means it's in a
 normal, consistent state. More details about Tablet Deletion is in a later
 section.
 
-### Auto-vivifying remote bootstrap protocol
+### Auto-vivifying tablet copy protocol
 
-The remote bootstrap protocol between the leader and follower is as follows.
+The tablet copy protocol between the leader and follower is as follows.
 The leader always starts attempting to heartbeat to the follower:
 
 Leader -> Follower: `AppendEntries(from, to, term, prev_idx, ops[])`
@@ -118,14 +118,14 @@ AppendEntries(from, to, term, prev_idx, ops[]):
 
 If the leader gets back a `DOES_NOT_EXIST` or `DELETED` tablet status, it will
 repeatedly attempt to "auto-vivify" the tablet on the follower by sending a
-StartRemoteBootstrap RPC to the follower.
+StartTabletCopy RPC to the follower.
 
-On the follower, the `StartRemoteBootstrap` RPC is idempotent w.r.t. repeated RPC
+On the follower, the `StartTabletCopy` RPC is idempotent w.r.t. repeated RPC
 requests from the leader and has logic to create a tablet if it doesn't yet
 exist. Roughly:
 
 ```
-StartRemoteBootstrap(from, to, tablet, current_state, last_opid_in_log = NULL):
+StartTabletCopy(from, to, tablet, current_state, last_opid_in_log = NULL):
   if (to != self.uuid): ERR_INVALID_NAME
   if (this.tablet.state == COPYING): ERR_ALREADY_BOOTSTRAPPING
   if (this.tablet.state != current_state): ERR_ILLEGAL_STATE
@@ -135,11 +135,11 @@ StartRemoteBootstrap(from, to, tablet, current_state, last_opid_in_log = NULL):
     CreateTablet(COPYING) # Create tablet in "COPYING" mode.
   if (caller.term < self.term): ERR_BAD_TERM
   if (last_opid_in_log != NULL && != this.log.last_op.id): ERR_ILLEGAL_STATE
-  RunRemoteBootstrap() # Download the tablet data.
+  RunTabletCopy() # Download the tablet data.
 ```
 
 The detailed process, on the follower side, of downloading and replacing the
-data is detailed below under "Follower Remote Bootstrap".
+data is detailed below under "Follower Tablet Copy".
 
 ### Tablet directory structure
 
@@ -199,9 +199,9 @@ We can safely implement tablet deletion using the following steps:
    not stripe the WAL. If we were to stripe or multiplex the WAL in the future,
    we could add some kind of tablet-level sequence number, like a generation
    number, that gets incremented at the SuperBlock level when we initiate
-   remote bootstrap. That should keep us pointed at the relevant entries.
+   tablet copy. That should keep us pointed at the relevant entries.
 
-### Follower remote bootstrap
+### Follower tablet copy
 
 Remotely bootstrapping a tablet copies the data from the remote; merges the new
 and old consensus metadata files (if a local one already existed; otherwise the
@@ -315,8 +315,8 @@ possible to do as long as we retain consensus metadata indefinitely, which is
 required for correctness anyway. However this is not a top priority.
 
 One scenario where a `DELETED` tablet may need to vote to make forward progress
-is if a `VOTER` replica falls behind and so starts to remote bootstrap, crashes
-in the middle of remote bootstrap, and deletes itself at startup. Once we
+is if a `VOTER` replica falls behind and so starts to tablet copy, crashes
+in the middle of tablet copy, and deletes itself at startup. Once we
 implement `PRE_VOTER`, and always catch up as a `PRE_VOTER` before becoming a
 `VOTER`, the opportunity for potential problems with `VOTER`s is reduced a lot,
 especially around the initial step of adding a server to the cluster, but still

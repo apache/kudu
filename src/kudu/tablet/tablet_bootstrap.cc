@@ -153,7 +153,7 @@ class FlushedStoresSnapshot {
 // has been appointed LEADER of that particular consensus configuration.
 //
 // NOTE: this does not handle pulling data from other replicas in the cluster. That
-// is handled by the 'RemoteBootstrap' classes, which copy blocks and metadata locally
+// is handled by the 'TabletCopy' classes, which copy blocks and metadata locally
 // before invoking this local bootstrap functionality.
 //
 // TODO Because the table that is being rebuilt is never flushed/compacted, consensus
@@ -468,7 +468,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                         "Unable to load Consensus metadata");
 
   // Make sure we don't try to locally bootstrap a tablet that was in the middle
-  // of a remote bootstrap. It's likely that not all files were copied over
+  // of a tablet copy. It's likely that not all files were copied over
   // successfully.
   TabletDataState tablet_data_state = meta_->tablet_data_state();
   if (tablet_data_state != TABLET_DATA_READY) {

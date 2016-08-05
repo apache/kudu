@@ -32,10 +32,10 @@ using consensus::RaftPeerPB;
 using tablet::TabletMetadata;
 using tablet::TabletStatusListener;
 
-class RemoteBootstrapClientTest : public RemoteBootstrapTest {
+class TabletCopyClientTest : public TabletCopyTest {
  public:
   virtual void SetUp() OVERRIDE {
-    NO_FATALS(RemoteBootstrapTest::SetUp());
+    NO_FATALS(TabletCopyTest::SetUp());
 
     fs_manager_.reset(new FsManager(Env::Default(), GetTestPath("client_tablet")));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
@@ -43,7 +43,7 @@ class RemoteBootstrapClientTest : public RemoteBootstrapTest {
 
     tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0));
     rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
-    client_.reset(new RemoteBootstrapClient(GetTabletId(),
+    client_.reset(new TabletCopyClient(GetTabletId(),
                                             fs_manager_.get(),
                                             messenger_));
     ASSERT_OK(GetRaftConfigLeader(tablet_peer_->consensus()
@@ -59,12 +59,12 @@ class RemoteBootstrapClientTest : public RemoteBootstrapTest {
 
   gscoped_ptr<FsManager> fs_manager_;
   shared_ptr<rpc::Messenger> messenger_;
-  gscoped_ptr<RemoteBootstrapClient> client_;
+  gscoped_ptr<TabletCopyClient> client_;
   scoped_refptr<TabletMetadata> meta_;
   RaftPeerPB leader_;
 };
 
-Status RemoteBootstrapClientTest::CompareFileContents(const string& path1, const string& path2) {
+Status TabletCopyClientTest::CompareFileContents(const string& path1, const string& path2) {
   shared_ptr<RandomAccessFile> file1, file2;
   RETURN_NOT_OK(env_util::OpenFileForRandom(fs_manager_->env(), path1, &file1));
   RETURN_NOT_OK(env_util::OpenFileForRandom(fs_manager_->env(), path2, &file2));
@@ -90,15 +90,15 @@ Status RemoteBootstrapClientTest::CompareFileContents(const string& path1, const
   return Status::OK();
 }
 
-// Basic begin / end remote bootstrap session.
-TEST_F(RemoteBootstrapClientTest, TestBeginEndSession) {
+// Basic begin / end tablet copy session.
+TEST_F(TabletCopyClientTest, TestBeginEndSession) {
   TabletStatusListener listener(meta_);
   ASSERT_OK(client_->FetchAll(&listener));
   ASSERT_OK(client_->Finish());
 }
 
 // Basic data block download unit test.
-TEST_F(RemoteBootstrapClientTest, TestDownloadBlock) {
+TEST_F(TabletCopyClientTest, TestDownloadBlock) {
   TabletStatusListener listener(meta_);
   BlockId block_id = FirstColumnBlockId(*client_->superblock_);
   Slice slice;
@@ -120,7 +120,7 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadBlock) {
 }
 
 // Basic WAL segment download unit test.
-TEST_F(RemoteBootstrapClientTest, TestDownloadWalSegment) {
+TEST_F(TabletCopyClientTest, TestDownloadWalSegment) {
   ASSERT_OK(fs_manager_->CreateDirIfMissing(fs_manager_->GetTabletWalDir(GetTabletId())));
 
   uint64_t seqno = client_->wal_seqnos_[0];
@@ -140,7 +140,7 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadWalSegment) {
 }
 
 // Ensure that we detect data corruption at the per-transfer level.
-TEST_F(RemoteBootstrapClientTest, TestVerifyData) {
+TEST_F(TabletCopyClientTest, TestVerifyData) {
   string good = "This is a known good string";
   string bad = "This is a known bad! string";
   const int kGoodOffset = 0;
@@ -204,7 +204,7 @@ vector<BlockId> GetAllSortedBlocks(const tablet::TabletSuperBlockPB& sb) {
 
 } // anonymous namespace
 
-TEST_F(RemoteBootstrapClientTest, TestDownloadAllBlocks) {
+TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
   // Download all the blocks.
   ASSERT_OK(client_->DownloadBlocks());
 
@@ -224,7 +224,7 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadAllBlocks) {
 
   // Verify that the old blocks aren't found. We're using a different
   // FsManager than 'tablet_peer', so the only way an old block could end
-  // up in ours is due to a remote bootstrap client bug.
+  // up in ours is due to a tablet copy client bug.
   for (const BlockId& block_id : old_data_blocks) {
     gscoped_ptr<fs::ReadableBlock> block;
     Status s = fs_manager_->OpenBlock(block_id, &block);

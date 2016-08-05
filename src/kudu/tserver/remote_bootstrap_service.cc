@@ -50,19 +50,19 @@
     } \
   } while (false)
 
-DEFINE_uint64(remote_bootstrap_idle_timeout_ms, 180000,
-              "Amount of time without activity before a remote bootstrap "
+DEFINE_uint64(tablet_copy_idle_timeout_ms, 180000,
+              "Amount of time without activity before a tablet copy "
               "session will expire, in millis");
-TAG_FLAG(remote_bootstrap_idle_timeout_ms, hidden);
+TAG_FLAG(tablet_copy_idle_timeout_ms, hidden);
 
-DEFINE_uint64(remote_bootstrap_timeout_poll_period_ms, 10000,
-              "How often the remote_bootstrap service polls for expired "
-              "remote bootstrap sessions, in millis");
-TAG_FLAG(remote_bootstrap_timeout_poll_period_ms, hidden);
+DEFINE_uint64(tablet_copy_timeout_poll_period_ms, 10000,
+              "How often the tablet_copy service polls for expired "
+              "tablet copy sessions, in millis");
+TAG_FLAG(tablet_copy_timeout_poll_period_ms, hidden);
 
 DEFINE_double(fault_crash_on_handle_rb_fetch_data, 0.0,
               "Fraction of the time when the tablet will crash while "
-              "servicing a RemoteBootstrapService FetchData() RPC call. "
+              "servicing a TabletCopyService FetchData() RPC call. "
               "(For testing only!)");
 TAG_FLAG(fault_crash_on_handle_rb_fetch_data, unsafe);
 
@@ -74,36 +74,36 @@ using strings::Substitute;
 using tablet::TabletPeer;
 
 static void SetupErrorAndRespond(rpc::RpcContext* context,
-                                 RemoteBootstrapErrorPB::Code code,
+                                 TabletCopyErrorPB::Code code,
                                  const string& message,
                                  const Status& s) {
-  LOG(WARNING) << "Error handling RemoteBootstrapService RPC request from "
+  LOG(WARNING) << "Error handling TabletCopyService RPC request from "
                << context->requestor_string() << ": "
                << s.ToString();
-  RemoteBootstrapErrorPB error;
+  TabletCopyErrorPB error;
   StatusToPB(s, error.mutable_status());
   error.set_code(code);
-  context->RespondApplicationError(RemoteBootstrapErrorPB::remote_bootstrap_error_ext.number(),
+  context->RespondApplicationError(TabletCopyErrorPB::tablet_copy_error_ext.number(),
                                    message, error);
 }
 
-RemoteBootstrapServiceImpl::RemoteBootstrapServiceImpl(
+TabletCopyServiceImpl::TabletCopyServiceImpl(
     FsManager* fs_manager,
     TabletPeerLookupIf* tablet_peer_lookup,
     const scoped_refptr<MetricEntity>& metric_entity,
     const scoped_refptr<rpc::ResultTracker>& result_tracker)
-    : RemoteBootstrapServiceIf(metric_entity, result_tracker),
+    : TabletCopyServiceIf(metric_entity, result_tracker),
       fs_manager_(CHECK_NOTNULL(fs_manager)),
       tablet_peer_lookup_(CHECK_NOTNULL(tablet_peer_lookup)),
       shutdown_latch_(1) {
   CHECK_OK(Thread::Create("remote-bootstrap", "rb-session-exp",
-                          &RemoteBootstrapServiceImpl::EndExpiredSessions, this,
+                          &TabletCopyServiceImpl::EndExpiredSessions, this,
                           &session_expiration_thread_));
 }
 
-void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
-        const BeginRemoteBootstrapSessionRequestPB* req,
-        BeginRemoteBootstrapSessionResponsePB* resp,
+void TabletCopyServiceImpl::BeginTabletCopySession(
+        const BeginTabletCopySessionRequestPB* req,
+        BeginTabletCopySessionResponsePB* resp,
         rpc::RpcContext* context) {
   const string& requestor_uuid = req->requestor_uuid();
   const string& tablet_id = req->tablet_id();
@@ -114,27 +114,27 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
 
   scoped_refptr<TabletPeer> tablet_peer;
   RPC_RETURN_NOT_OK(tablet_peer_lookup_->GetTabletPeer(tablet_id, &tablet_peer),
-                    RemoteBootstrapErrorPB::TABLET_NOT_FOUND,
+                    TabletCopyErrorPB::TABLET_NOT_FOUND,
                     Substitute("Unable to find specified tablet: $0", tablet_id));
 
-  scoped_refptr<RemoteBootstrapSession> session;
+  scoped_refptr<TabletCopySession> session;
   {
     MutexLock l(sessions_lock_);
     if (!FindCopy(sessions_, session_id, &session)) {
       LOG(INFO) << Substitute(
-          "Beginning new remote bootstrap session on tablet $0 from peer $1"
+          "Beginning new tablet copy session on tablet $0 from peer $1"
           " at $2: session id = $3",
           tablet_id, requestor_uuid, context->requestor_string(), session_id);
-      session.reset(new RemoteBootstrapSession(tablet_peer, session_id,
+      session.reset(new TabletCopySession(tablet_peer, session_id,
                                                requestor_uuid, fs_manager_));
       RPC_RETURN_NOT_OK(session->Init(),
-                        RemoteBootstrapErrorPB::UNKNOWN_ERROR,
-                        Substitute("Error initializing remote bootstrap session for tablet $0",
+                        TabletCopyErrorPB::UNKNOWN_ERROR,
+                        Substitute("Error initializing tablet copy session for tablet $0",
                                    tablet_id));
       InsertOrDie(&sessions_, session_id, session);
     } else {
       LOG(INFO) << Substitute(
-          "Re-sending initialization info for existing remote bootstrap session on tablet $0"
+          "Re-sending initialization info for existing tablet copy session on tablet $0"
           " from peer $1 at $2: session_id = $3",
           tablet_id, requestor_uuid, context->requestor_string(), session_id);
     }
@@ -143,7 +143,7 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
 
   resp->set_responder_uuid(fs_manager_->uuid());
   resp->set_session_id(session_id);
-  resp->set_session_idle_timeout_millis(FLAGS_remote_bootstrap_idle_timeout_ms);
+  resp->set_session_idle_timeout_millis(FLAGS_tablet_copy_idle_timeout_ms);
   resp->mutable_superblock()->CopyFrom(session->tablet_superblock());
   resp->mutable_initial_committed_cstate()->CopyFrom(session->initial_committed_cstate());
 
@@ -154,16 +154,16 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
   context->RespondSuccess();
 }
 
-void RemoteBootstrapServiceImpl::CheckSessionActive(
-        const CheckRemoteBootstrapSessionActiveRequestPB* req,
-        CheckRemoteBootstrapSessionActiveResponsePB* resp,
+void TabletCopyServiceImpl::CheckSessionActive(
+        const CheckTabletCopySessionActiveRequestPB* req,
+        CheckTabletCopySessionActiveResponsePB* resp,
         rpc::RpcContext* context) {
   const string& session_id = req->session_id();
 
-  // Look up and validate remote bootstrap session.
-  scoped_refptr<RemoteBootstrapSession> session;
+  // Look up and validate tablet copy session.
+  scoped_refptr<TabletCopySession> session;
   MutexLock l(sessions_lock_);
-  RemoteBootstrapErrorPB::Code app_error;
+  TabletCopyErrorPB::Code app_error;
   Status status = FindSessionUnlocked(session_id, &app_error, &session);
   if (status.ok()) {
     if (req->keepalive()) {
@@ -172,7 +172,7 @@ void RemoteBootstrapServiceImpl::CheckSessionActive(
     resp->set_session_is_active(true);
     context->RespondSuccess();
     return;
-  } else if (app_error == RemoteBootstrapErrorPB::NO_SESSION) {
+  } else if (app_error == TabletCopyErrorPB::NO_SESSION) {
     resp->set_session_is_active(false);
     context->RespondSuccess();
     return;
@@ -182,16 +182,16 @@ void RemoteBootstrapServiceImpl::CheckSessionActive(
   }
 }
 
-void RemoteBootstrapServiceImpl::FetchData(const FetchDataRequestPB* req,
+void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
                                            FetchDataResponsePB* resp,
                                            rpc::RpcContext* context) {
   const string& session_id = req->session_id();
 
-  // Look up and validate remote bootstrap session.
-  scoped_refptr<RemoteBootstrapSession> session;
+  // Look up and validate tablet copy session.
+  scoped_refptr<TabletCopySession> session;
   {
     MutexLock l(sessions_lock_);
-    RemoteBootstrapErrorPB::Code app_error;
+    TabletCopyErrorPB::Code app_error;
     RPC_RETURN_NOT_OK(FindSessionUnlocked(session_id, &app_error, &session),
                       app_error, "No such session");
     ResetSessionExpirationUnlocked(session_id);
@@ -203,7 +203,7 @@ void RemoteBootstrapServiceImpl::FetchData(const FetchDataRequestPB* req,
   int64_t client_maxlen = req->max_length();
 
   const DataIdPB& data_id = req->data_id();
-  RemoteBootstrapErrorPB::Code error_code = RemoteBootstrapErrorPB::UNKNOWN_ERROR;
+  TabletCopyErrorPB::Code error_code = TabletCopyErrorPB::UNKNOWN_ERROR;
   RPC_RETURN_NOT_OK(ValidateFetchRequestDataId(data_id, &error_code, session),
                     error_code, "Invalid DataId");
 
@@ -234,60 +234,60 @@ void RemoteBootstrapServiceImpl::FetchData(const FetchDataRequestPB* req,
   context->RespondSuccess();
 }
 
-void RemoteBootstrapServiceImpl::EndRemoteBootstrapSession(
-        const EndRemoteBootstrapSessionRequestPB* req,
-        EndRemoteBootstrapSessionResponsePB* resp,
+void TabletCopyServiceImpl::EndTabletCopySession(
+        const EndTabletCopySessionRequestPB* req,
+        EndTabletCopySessionResponsePB* resp,
         rpc::RpcContext* context) {
   {
     MutexLock l(sessions_lock_);
-    RemoteBootstrapErrorPB::Code app_error;
-    LOG(INFO) << "Request end of remote bootstrap session " << req->session_id()
+    TabletCopyErrorPB::Code app_error;
+    LOG(INFO) << "Request end of tablet copy session " << req->session_id()
       << " received from " << context->requestor_string();
-    RPC_RETURN_NOT_OK(DoEndRemoteBootstrapSessionUnlocked(req->session_id(), &app_error),
+    RPC_RETURN_NOT_OK(DoEndTabletCopySessionUnlocked(req->session_id(), &app_error),
                       app_error, "No such session");
   }
   context->RespondSuccess();
 }
 
-void RemoteBootstrapServiceImpl::Shutdown() {
+void TabletCopyServiceImpl::Shutdown() {
   shutdown_latch_.CountDown();
   session_expiration_thread_->Join();
 
-  // Destroy all remote bootstrap sessions.
+  // Destroy all tablet copy sessions.
   vector<string> session_ids;
   for (const MonoTimeMap::value_type& entry : session_expirations_) {
     session_ids.push_back(entry.first);
   }
   for (const string& session_id : session_ids) {
-    LOG(INFO) << "Destroying remote bootstrap session " << session_id << " due to service shutdown";
-    RemoteBootstrapErrorPB::Code app_error;
-    CHECK_OK(DoEndRemoteBootstrapSessionUnlocked(session_id, &app_error));
+    LOG(INFO) << "Destroying tablet copy session " << session_id << " due to service shutdown";
+    TabletCopyErrorPB::Code app_error;
+    CHECK_OK(DoEndTabletCopySessionUnlocked(session_id, &app_error));
   }
 }
 
-Status RemoteBootstrapServiceImpl::FindSessionUnlocked(
+Status TabletCopyServiceImpl::FindSessionUnlocked(
         const string& session_id,
-        RemoteBootstrapErrorPB::Code* app_error,
-        scoped_refptr<RemoteBootstrapSession>* session) const {
+        TabletCopyErrorPB::Code* app_error,
+        scoped_refptr<TabletCopySession>* session) const {
   if (!FindCopy(sessions_, session_id, session)) {
-    *app_error = RemoteBootstrapErrorPB::NO_SESSION;
+    *app_error = TabletCopyErrorPB::NO_SESSION;
     return Status::NotFound(
-        Substitute("Remote bootstrap session with Session ID \"$0\" not found", session_id));
+        Substitute("Tablet Copy session with Session ID \"$0\" not found", session_id));
   }
   return Status::OK();
 }
 
-Status RemoteBootstrapServiceImpl::ValidateFetchRequestDataId(
+Status TabletCopyServiceImpl::ValidateFetchRequestDataId(
         const DataIdPB& data_id,
-        RemoteBootstrapErrorPB::Code* app_error,
-        const scoped_refptr<RemoteBootstrapSession>& session) const {
+        TabletCopyErrorPB::Code* app_error,
+        const scoped_refptr<TabletCopySession>& session) const {
   if (PREDICT_FALSE(data_id.has_block_id() && data_id.has_wal_segment_seqno())) {
-    *app_error = RemoteBootstrapErrorPB::INVALID_REMOTE_BOOTSTRAP_REQUEST;
+    *app_error = TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST;
     return Status::InvalidArgument(
         Substitute("Only one of BlockId or segment sequence number are required, "
             "but both were specified. DataTypeID: $0", data_id.ShortDebugString()));
   } else if (PREDICT_FALSE(!data_id.has_block_id() && !data_id.has_wal_segment_seqno())) {
-    *app_error = RemoteBootstrapErrorPB::INVALID_REMOTE_BOOTSTRAP_REQUEST;
+    *app_error = TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST;
     return Status::InvalidArgument(
         Substitute("Only one of BlockId or segment sequence number are required, "
             "but neither were specified. DataTypeID: $0", data_id.ShortDebugString()));
@@ -309,20 +309,20 @@ Status RemoteBootstrapServiceImpl::ValidateFetchRequestDataId(
   return Status::OK();
 }
 
-void RemoteBootstrapServiceImpl::ResetSessionExpirationUnlocked(const std::string& session_id) {
+void TabletCopyServiceImpl::ResetSessionExpirationUnlocked(const std::string& session_id) {
   MonoTime expiration(MonoTime::Now(MonoTime::FINE));
-  expiration.AddDelta(MonoDelta::FromMilliseconds(FLAGS_remote_bootstrap_idle_timeout_ms));
+  expiration.AddDelta(MonoDelta::FromMilliseconds(FLAGS_tablet_copy_idle_timeout_ms));
   InsertOrUpdate(&session_expirations_, session_id, expiration);
 }
 
-Status RemoteBootstrapServiceImpl::DoEndRemoteBootstrapSessionUnlocked(
+Status TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(
         const std::string& session_id,
-        RemoteBootstrapErrorPB::Code* app_error) {
-  scoped_refptr<RemoteBootstrapSession> session;
+        TabletCopyErrorPB::Code* app_error) {
+  scoped_refptr<TabletCopySession> session;
   RETURN_NOT_OK(FindSessionUnlocked(session_id, app_error, &session));
   // Remove the session from the map.
   // It will get destroyed once there are no outstanding refs.
-  LOG(INFO) << "Ending remote bootstrap session " << session_id << " on tablet "
+  LOG(INFO) << "Ending tablet copy session " << session_id << " on tablet "
     << session->tablet_id() << " with peer " << session->requestor_uuid();
   CHECK_EQ(1, sessions_.erase(session_id));
   CHECK_EQ(1, session_expirations_.erase(session_id));
@@ -330,7 +330,7 @@ Status RemoteBootstrapServiceImpl::DoEndRemoteBootstrapSessionUnlocked(
   return Status::OK();
 }
 
-void RemoteBootstrapServiceImpl::EndExpiredSessions() {
+void TabletCopyServiceImpl::EndExpiredSessions() {
   do {
     MutexLock l(sessions_lock_);
     MonoTime now = MonoTime::Now(MonoTime::FINE);
@@ -344,13 +344,13 @@ void RemoteBootstrapServiceImpl::EndExpiredSessions() {
       }
     }
     for (const string& session_id : expired_session_ids) {
-      LOG(INFO) << "Remote bootstrap session " << session_id
+      LOG(INFO) << "Tablet Copy session " << session_id
                 << " has expired. Terminating session.";
-      RemoteBootstrapErrorPB::Code app_error;
-      CHECK_OK(DoEndRemoteBootstrapSessionUnlocked(session_id, &app_error));
+      TabletCopyErrorPB::Code app_error;
+      CHECK_OK(DoEndTabletCopySessionUnlocked(session_id, &app_error));
     }
   } while (!shutdown_latch_.WaitFor(MonoDelta::FromMilliseconds(
-                                    FLAGS_remote_bootstrap_timeout_poll_period_ms)));
+                                    FLAGS_tablet_copy_timeout_poll_period_ms)));
 }
 
 } // namespace tserver
