@@ -774,7 +774,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
   request.mutable_ops()->ExtractSubrange(0, request.ops().size(), nullptr);
 }
 
-// Test that tablet copy is triggered when a "tablet not found" error occurs.
+// Test that Tablet Copy is triggered when a "tablet not found" error occurs.
 TEST_F(ConsensusQueueTest, TestTriggerTabletCopyIfTabletNotFound) {
   queue_->Init(MinimumOpId());
   queue_->SetLeaderMode(MinimumOpId(), MinimumOpId().term(), BuildRaftConfigPBForTests(3));
@@ -797,22 +797,22 @@ TEST_F(ConsensusQueueTest, TestTriggerTabletCopyIfTabletNotFound) {
   bool more_pending = false;
   queue_->ResponseFromPeer(kPeerUuid, response, &more_pending);
 
-  // If the peer needs tablet copy, more_pending should be set to true.
+  // If the peer needs Tablet Copy, more_pending should be set to true.
   ASSERT_TRUE(more_pending);
 
-  // On the next request, we should find out that the queue wants us to remotely bootstrap.
+  // On the next request, we should find out that the queue wants us to initiate Tablet Copy.
   request.Clear();
   ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs, &needs_tablet_copy));
   ASSERT_TRUE(needs_tablet_copy);
 
-  StartTabletCopyRequestPB rb_req;
-  ASSERT_OK(queue_->GetTabletCopyRequestForPeer(kPeerUuid, &rb_req));
+  StartTabletCopyRequestPB tc_req;
+  ASSERT_OK(queue_->GetTabletCopyRequestForPeer(kPeerUuid, &tc_req));
 
-  ASSERT_TRUE(rb_req.IsInitialized()) << rb_req.ShortDebugString();
-  ASSERT_EQ(kTestTablet, rb_req.tablet_id());
-  ASSERT_EQ(kLeaderUuid, rb_req.bootstrap_peer_uuid());
+  ASSERT_TRUE(tc_req.IsInitialized()) << tc_req.ShortDebugString();
+  ASSERT_EQ(kTestTablet, tc_req.tablet_id());
+  ASSERT_EQ(kLeaderUuid, tc_req.copy_peer_uuid());
   ASSERT_EQ(FakeRaftPeerPB(kLeaderUuid).last_known_addr().ShortDebugString(),
-            rb_req.bootstrap_peer_addr().ShortDebugString());
+            tc_req.copy_peer_addr().ShortDebugString());
 }
 
 }  // namespace consensus

@@ -53,9 +53,9 @@ enum TabletDataState {
   TABLET_DATA_UNKNOWN = 999;
 
   // The tablet is set to TABLET_DATA_COPYING state when in the middle of
-  // tablet copy while copying data files from a remote peer. If a tablet
-  // server crashes with a tablet in this state, the tablet must be deleted and
-  // the tablet copy process must be restarted for that tablet.
+  // copying data files from a remote peer. If a tablet server crashes with
+  // a tablet in this state, the tablet must be deleted and
+  // the Tablet Copy process must be restarted for that tablet.
   TABLET_DATA_COPYING = 0;
 
   // Fresh empty tablets and successfully copied tablets are set to the

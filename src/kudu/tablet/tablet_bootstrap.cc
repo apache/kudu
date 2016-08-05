@@ -154,7 +154,7 @@ class FlushedStoresSnapshot {
 //
 // NOTE: this does not handle pulling data from other replicas in the cluster. That
 // is handled by the 'TabletCopy' classes, which copy blocks and metadata locally
-// before invoking this local bootstrap functionality.
+// before invoking this local bootstrap functionality to start the tablet.
 //
 // TODO Because the table that is being rebuilt is never flushed/compacted, consensus
 // is only set on the tablet after bootstrap, when we get to flushes/compactions though

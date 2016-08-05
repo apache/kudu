@@ -12,19 +12,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# Kudu tablet copy design
+# Kudu Tablet Copy design
 
-Master & tablet copy integration with configuration change
+Master & Tablet Copy integration with configuration change
 
 ## Summary
 
-This document contains information on implementing tablet copy in the
+This document contains information on implementing Tablet Copy in the
 context of Kudu's Raft implementation. Details on Raft config change in Kudu
 can be found in the [Raft config change design doc](raft-config-change.md).
 
 ## Goals
 
-1. Integrate tablet copy to allow for copying over "snapshotted" data and
+1. Integrate Tablet Copy to allow for copying over "snapshotted" data and
    logs to a tablet replica when logs from the "beginning of time" are no
    longer available for replay.
 2. The Master needs to tolerate and facilitate dynamic consensus config change.
@@ -38,24 +38,24 @@ The Master will expose the following operations to admin users:
 1. `AddReplica(tablet_id, TS to_add, Role role)`
 2. `RemoveReplica(tablet_id, TS to_remove)`
 
-### New tablet server tablet copy RPC
+### New tablet server Tablet Copy RPC
 
 Tablet Copy allows a tablet snapshot to be moved to a new server. A
 `StartTabletCopy()` RPC call will be available on each tablet server. When a
 leader determines that a follower needs log entries prior to what is available
 on the leader side, or when it detects that a follower does not host a given
 tablet, it sends the follower an RPC to instruct the follower to initiate
-tablet copy. Optionally, this callback is made idempotent by passing the
+Tablet Copy. Optionally, this callback is made idempotent by passing the
 latest OpId in the follower's log as an argument.
 
-### Management of tablet copy jobs
+### Management of Tablet Copy jobs
 
-Since copying a tablet may involve copying many GB of data, we
-likely need to support operational visibility into ongoing tablet copy
+Since copying a tablet may involve transferring many GB of data, we
+likely need to support operational visibility into ongoing Tablet Copy
 jobs, run them on their own thread pool, support cancellation, etc. TBD to
 enumerate all of this in detail.
 
-## Design & implementation of tablet tablet copy
+## Design & implementation of Tablet Copy
 
 ### Tablet auto-vivification
 
@@ -89,17 +89,17 @@ losing data that was guaranteed to be persisted according to the consensus
 protocol. That situation is described in detail in this [raft-dev mailing list
 thread](https://groups.google.com/d/msg/raft-dev/CL1qWP7a_1w/OfHqmbcbIlAJ).
 
-To safely support deletion and tablet copy, a tablet will have 4 states
+To safely support deletion and Tablet Copy, a tablet will have 4 states
 its data can be in: `DOES_NOT_EXIST` (implicit; just the non-existence of state),
 `DELETED`, `COPYING`, and `READY`. `DOES_NOT_EXIST` just means a tablet with that name
 has never been hosted on the server, `DELETED` means it's tombstoned, `COPYING`
-means it's in the process of tablet copyping, and `READY` means it's in a
+means it's in the process of Tablet Copying, and `READY` means it's in a
 normal, consistent state. More details about Tablet Deletion is in a later
 section.
 
-### Auto-vivifying tablet copy protocol
+### Auto-vivifying Tablet Copy protocol
 
-The tablet copy protocol between the leader and follower is as follows.
+The Tablet Copy protocol between the leader and follower is as follows.
 The leader always starts attempting to heartbeat to the follower:
 
 Leader -> Follower: `AppendEntries(from, to, term, prev_idx, ops[])`
@@ -127,7 +127,7 @@ exist. Roughly:
 ```
 StartTabletCopy(from, to, tablet, current_state, last_opid_in_log = NULL):
   if (to != self.uuid): ERR_INVALID_NAME
-  if (this.tablet.state == COPYING): ERR_ALREADY_BOOTSTRAPPING
+  if (this.tablet.state == COPYING): ERR_ALREADY_INPROGRESS
   if (this.tablet.state != current_state): ERR_ILLEGAL_STATE
   if (this.tablet.state == RUNNING):
     DeleteTablet() # Quarantine the tablet data.
@@ -199,11 +199,11 @@ We can safely implement tablet deletion using the following steps:
    not stripe the WAL. If we were to stripe or multiplex the WAL in the future,
    we could add some kind of tablet-level sequence number, like a generation
    number, that gets incremented at the SuperBlock level when we initiate
-   tablet copy. That should keep us pointed at the relevant entries.
+   Tablet Copy. That should keep us pointed at the relevant entries.
 
-### Follower tablet copy
+### Follower Tablet Copy
 
-Remotely bootstrapping a tablet copies the data from the remote; merges the new
+Tablet Copy copies the data from the remote; merges the new
 and old consensus metadata files (if a local one already existed; otherwise the
 remote metadata is adopted); and writes a replacement SuperBlock.
 
@@ -217,7 +217,7 @@ remote metadata is adopted); and writes a replacement SuperBlock.
 3. Download remote WALs.
 4. Download remote blocks.
 5. Write replacement SuperBlock in `READY` state and fsync it.
-6. Start up the newly bootstrapped tablet.
+6. Start up the new tablet replica.
 
 ### Consensus metadata merge
 
@@ -279,8 +279,8 @@ also rejected (that behavior is already implemented).
 
 ### Failure of a disk with consensus metadata is a catastrophic failure
 
-If we lose a disk with consensus metadata or WALs, and would need to remotely
-bootstrap to recover, it may be impossible to do so safely due to unavoidable
+If we lose a disk with consensus metadata or WALs, and would need to copy a
+new replica to recover, it may be impossible to do so safely due to unavoidable
 consensus amnesia. In such a case, the tablet server must adopt a new UUID and
 fully clear all of its data and state:
 
@@ -315,8 +315,8 @@ possible to do as long as we retain consensus metadata indefinitely, which is
 required for correctness anyway. However this is not a top priority.
 
 One scenario where a `DELETED` tablet may need to vote to make forward progress
-is if a `VOTER` replica falls behind and so starts to tablet copy, crashes
-in the middle of tablet copy, and deletes itself at startup. Once we
+is if a `VOTER` replica falls behind and so starts to Tablet Copy, crashes
+in the middle of Tablet Copy, and deletes itself at startup. Once we
 implement `PRE_VOTER`, and always catch up as a `PRE_VOTER` before becoming a
 `VOTER`, the opportunity for potential problems with `VOTER`s is reduced a lot,
 especially around the initial step of adding a server to the cluster, but still

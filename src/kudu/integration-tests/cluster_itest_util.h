@@ -292,8 +292,8 @@ Status DeleteTablet(const TServerDetails* ts,
 // source.
 Status StartTabletCopy(const TServerDetails* ts,
                             const std::string& tablet_id,
-                            const std::string& bootstrap_source_uuid,
-                            const HostPort& bootstrap_source_addr,
+                            const std::string& copy_source_uuid,
+                            const HostPort& copy_source_addr,
                             int64_t caller_term,
                             const MonoDelta& timeout);
 

@@ -68,15 +68,15 @@ in [2].
 This process is executed by a driver, which may be a client program or the
 Master. We’ll say the node to be added to the cluster is named `new_node`.
 
-1. Driver initiates execution of tablet copy procedure of `new_node` from
-   the current leader `bootstrap_source` using an RPC call to the `new_node`.
+1. Driver initiates execution of Tablet Copy procedure of `new_node` from
+   the current leader `copy_source` using an RPC call to the `new_node`.
    Tablet Copy runs to completion, which means all data and logs at the
-   time tablet copy was initiated were replicated to `new_node`. Driver
-   polls `new_node` for indication that the tablet copy process is
+   time the Tablet Copy was initiated were replicated to `new_node`. Driver
+   polls `new_node` for indication that the Tablet Copy process is
    complete.
    <br>
-   If the `bootstrap_source` node crashes before tablet copy is complete,
-   the bootstrap fails and the driver must start the entire process over from
+   If the `copy_source` node crashes before Tablet Copy is complete,
+   the copy fails and the driver must start the entire process over from
    the beginning. If the driver or `new_node` crashes and the tablet never
    joins the configuration, the Master should eventually delete the abandoned
    tablet replica from `new_node`.
@@ -95,7 +95,7 @@ Master. We’ll say the node to be added to the cluster is named `new_node`.
 3. As soon as a replica receives the ConfigChangeRequest it applies the
    configuration change in-memory. It does not wait for commitment to apply the
    change. See rationale in [2] section 4.1.
-4. The tablet copy session between `new_node` and `bootstrap_source` is
+4. The Tablet Copy session between `new_node` and `copy_source` is
    closed once the config change to transition the node to `PRE_FOLLOWER` has
    been committed. This implies releasing an anchor on the log. Since
    `new_node` is already a member of the configuration receiving log updates,
@@ -167,8 +167,8 @@ another doc.
 ### Steps:
 
 1. Run a tool to determine the most up-to-date remaining replica.
-2. Tablet Copy additional nodes from the most up-to-date remaining node.
-   Wait for tablet copy to complete on all the nodes.
+2. Use Tablet Copy to create additional replicas from the most up-to-date remaining
+   replica. Wait for Tablet Copy to complete on all the nodes.
 3. Bring all tablet servers hosting the affected tablet offline (TODO: This is
    possible to implement per-tablet but not currently supported)
 4. Run tool to rewrite the ConsensusMetadata file per-tablet server to
@@ -178,7 +178,7 @@ another doc.
 5. Bring the affected tablets / tablet servers back online.
 6. Pray?
 
-## Appendix: Idea to add a new member before it has bootstrapped all data
+## Appendix: Idea to add a new member before it has copied all data
 
 The idea here is to take advantage of the fact that nodes can participate in
 Raft consensus without actually applying operations to their "state machine"
@@ -213,8 +213,8 @@ Next, we demote the dead replica from LVE to L, so it no longer participates in
 voting. For a server that has just failed, it’s preferable to demote to "L" and
 not completely remove from the configuration, because it’s possible (even
 likely!) it would actually restart before the new replica has finished
-bootstrapping. If it does, we have the option of adding it back to the
-configuration and cancelling the bootstrap.
+copying. If it does, we have the option of adding it back to the
+configuration and cancelling the Tablet Copy.
 
 Because we now have three voting replicas, the majority is 2, so we can handle
 a fault of any of the remaining three nodes. After reaching this state, we can

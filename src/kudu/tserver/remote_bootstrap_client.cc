@@ -146,20 +146,20 @@ Status TabletCopyClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>&
   return Status::OK();
 }
 
-Status TabletCopyClient::Start(const HostPort& bootstrap_source_addr,
+Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                                     scoped_refptr<TabletMetadata>* meta) {
   CHECK(!started_);
   start_time_micros_ = GetCurrentTimeMicros();
 
   Sockaddr addr;
-  RETURN_NOT_OK(SockaddrFromHostPort(bootstrap_source_addr, &addr));
+  RETURN_NOT_OK(SockaddrFromHostPort(copy_source_addr, &addr));
   if (addr.IsWildcard()) {
     return Status::InvalidArgument("Invalid wildcard address to tablet copy from",
                                    Substitute("$0 (resolved to $1)",
-                                              bootstrap_source_addr.host(), addr.host()));
+                                              copy_source_addr.host(), addr.host()));
   }
   LOG_WITH_PREFIX(INFO) << "Beginning tablet copy session"
-                        << " from remote peer at address " << bootstrap_source_addr.ToString();
+                        << " from remote peer at address " << copy_source_addr.ToString();
 
   // Set up an RPC proxy for the TabletCopyService.
   proxy_.reset(new TabletCopyServiceProxy(messenger_, addr));
@@ -177,10 +177,10 @@ Status TabletCopyClient::Start(const HostPort& bootstrap_source_addr,
   RETURN_NOT_OK_UNWIND_PREPEND(proxy_->BeginTabletCopySession(req, &resp, &controller),
                                controller,
                                "Unable to begin tablet copy session");
-  string bootstrap_peer_uuid = resp.has_responder_uuid()
+  string copy_peer_uuid = resp.has_responder_uuid()
       ? resp.responder_uuid() : "(unknown uuid)";
   if (resp.superblock().tablet_data_state() != tablet::TABLET_DATA_READY) {
-    Status s = Status::IllegalState("Remote peer (" + bootstrap_peer_uuid + ")" +
+    Status s = Status::IllegalState("Remote peer (" + copy_peer_uuid + ")" +
                                     " is currently copying itself!",
                                     resp.superblock().ShortDebugString());
     LOG_WITH_PREFIX(WARNING) << s.ToString();
@@ -199,21 +199,21 @@ Status TabletCopyClient::Start(const HostPort& bootstrap_source_addr,
                         "Cannot deserialize schema from remote superblock");
 
   if (replace_tombstoned_tablet_) {
-    // Also validate the term of the bootstrap source peer, in case they are
+    // Also validate the term of the source peer, in case they are
     // different. This is a sanity check that protects us in case a bug or
-    // misconfiguration causes us to attempt to bootstrap from an out-of-date
+    // misconfiguration causes us to attempt to copy from an out-of-date
     // source peer, even after passing the term check from the caller in
     // SetTabletToReplace().
     int64_t last_logged_term = meta_->tombstone_last_logged_opid().term();
     if (last_logged_term > remote_committed_cstate_->current_term()) {
       return Status::InvalidArgument(
-          Substitute("Tablet $0: Bootstrap source has term $1 but "
+          Substitute("Tablet $0: source peer has term $1 but "
                      "tombstoned replica has last-logged opid with higher term $2. "
                       "Refusing tablet copy from source peer $3",
                       tablet_id_,
                       remote_committed_cstate_->current_term(),
                       last_logged_term,
-                      bootstrap_peer_uuid));
+                      copy_peer_uuid));
     }
 
     // This will flush to disk, but we set the data state to COPYING above.
@@ -337,7 +337,7 @@ Status TabletCopyClient::DownloadWALs() {
   CHECK(started_);
 
   // Delete and recreate WAL dir if it already exists, to ensure stray files are
-  // not kept from previous bootstraps and runs.
+  // not kept from previous copies and runs.
   string path = fs_manager_->GetTabletWalDir(tablet_id_);
   if (fs_manager_->env()->FileExists(path)) {
     RETURN_NOT_OK(fs_manager_->env()->DeleteRecursively(path));

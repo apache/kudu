@@ -94,7 +94,7 @@ class TabletCopyClient {
   // in progress. If the 'metadata' pointer is passed as NULL, it is ignored,
   // otherwise the TabletMetadata object resulting from the initial remote
   // bootstrap response is returned.
-  Status Start(const HostPort& bootstrap_source_addr,
+  Status Start(const HostPort& copy_source_addr,
                scoped_refptr<tablet::TabletMetadata>* metadata);
 
   // Runs a "full" tablet copy, copying the physical layout of a tablet

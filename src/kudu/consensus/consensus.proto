@@ -457,10 +457,10 @@ message StartTabletCopyRequestPB {
 
   required bytes tablet_id = 1;
 
-  // Identification for the host we are bootstrapping from.
-  // TODO: Consider renaming these to bootstrap_source_*.
-  required bytes bootstrap_peer_uuid = 2;
-  required HostPortPB bootstrap_peer_addr = 3;
+  // Identification for the host we are copying from.
+  // TODO: Consider renaming these to copy_source_*.
+  required bytes copy_peer_uuid = 2;
+  required HostPortPB copy_peer_addr = 3;
 
   // The caller's term. In the case that the target of this request has a
   // TOMBSTONED replica with a term higher than this one, the request will fail.
@@ -498,6 +498,6 @@ service ConsensusService {
   // Returns the committed Consensus state.
   rpc GetConsensusState(GetConsensusStateRequestPB) returns (GetConsensusStateResponsePB);
 
-  // Instruct this server to remotely bootstrap a tablet from another host.
+  // Instruct this server to copy a tablet from another host.
   rpc StartTabletCopy(StartTabletCopyRequestPB) returns (StartTabletCopyResponsePB);
 }

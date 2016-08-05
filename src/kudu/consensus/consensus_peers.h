@@ -192,8 +192,8 @@ class Peer {
   ConsensusResponsePB response_;
 
   // The latest tablet copy request and response.
-  StartTabletCopyRequestPB rb_request_;
-  StartTabletCopyResponsePB rb_response_;
+  StartTabletCopyRequestPB tc_request_;
+  StartTabletCopyResponsePB tc_response_;
 
   // Reference-counted pointers to any ReplicateMsgs which are in-flight to the peer. We
   // may have loaded these messages from the LogCache, in which case we are potentially

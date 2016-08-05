@@ -127,9 +127,9 @@ void TabletCopyITest::StartCluster(const vector<string>& extra_tserver_flags,
   ASSERT_OK(cluster_->CreateClient(builder, &client_));
 }
 
-// If a rogue (a.k.a. zombie) leader tries to tablet copy a tombstoned
-// tablet, make sure its term isn't older than the latest term we observed.
-// If it is older, make sure we reject the request, to avoid allowing old
+// If a rogue (a.k.a. zombie) leader tries to replace a tombstoned
+// tablet via Tablet Copy, make sure its term isn't older than the latest term
+// we observed. If it is older, make sure we reject the request, to avoid allowing old
 // leaders to create a parallel universe. This is possible because config
 // change could cause nodes to move around. The term check is reasonable
 // because only one node can be elected leader for a given term.
@@ -177,7 +177,7 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
 
   ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
 
-  // Come out of the blue and try to remotely bootstrap a running server while
+  // Come out of the blue and try to initiate Tablet Copy from a running server while
   // specifying an old term. That running server should reject the request.
   // We are essentially masquerading as a rogue leader here.
   Status s = itest::StartTabletCopy(ts, tablet_id, zombie_leader_uuid,
@@ -227,7 +227,7 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   // Force the rogue leader to step down.
   // Then, send a tablet copy start request from a "fake" leader that
   // sends an up-to-date term in the RB request but the actual term stored
-  // in the bootstrap source's consensus metadata would still be old.
+  // in the copy source's consensus metadata would still be old.
   LOG(INFO) << "Forcing rogue leader T " << tablet_id << " P " << zombie_leader_uuid
             << " to step down...";
   ASSERT_OK(itest::LeaderStepDown(ts_map_[zombie_leader_uuid], tablet_id, timeout));
@@ -252,10 +252,10 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
 }
 
 // Start tablet copy session and delete the tablet in the middle.
-// It should actually be possible to complete bootstrap in such a case, because
-// when a tablet copy session is started on the "source" server, all of
+// It should actually be possible to complete copying in such a case, because
+// when a Tablet Copy session is started on the "source" server, all of
 // the relevant files are either read or opened, meaning that an in-progress
-// tablet copy can complete even after a tablet is officially "deleted" on
+// Tablet Copy can complete even after a tablet is officially "deleted" on
 // the source server. This is also a regression test for KUDU-1009.
 TEST_F(TabletCopyITest, TestDeleteTabletDuringTabletCopy) {
   MonoDelta timeout = MonoDelta::FromSeconds(10);
@@ -292,20 +292,20 @@ TEST_F(TabletCopyITest, TestDeleteTabletDuringTabletCopy) {
 
   {
     // Start up a TabletCopyClient and open a tablet copy session.
-    TabletCopyClient rb_client(tablet_id, fs_manager.get(),
+    TabletCopyClient tc_client(tablet_id, fs_manager.get(),
                                     cluster_->messenger());
     scoped_refptr<tablet::TabletMetadata> meta;
-    ASSERT_OK(rb_client.Start(cluster_->tablet_server(kTsIndex)->bound_rpc_hostport(),
+    ASSERT_OK(tc_client.Start(cluster_->tablet_server(kTsIndex)->bound_rpc_hostport(),
                               &meta));
 
     // Tombstone the tablet on the remote!
     ASSERT_OK(itest::DeleteTablet(ts, tablet_id,
                                   TABLET_DATA_TOMBSTONED, boost::none, timeout));
 
-    // Now finish bootstrapping!
+    // Now finish copying!
     tablet::TabletStatusListener listener(meta);
-    ASSERT_OK(rb_client.FetchAll(&listener));
-    ASSERT_OK(rb_client.Finish());
+    ASSERT_OK(tc_client.FetchAll(&listener));
+    ASSERT_OK(tc_client.Finish());
 
     // Run destructor, which closes the remote session.
   }
@@ -314,7 +314,7 @@ TEST_F(TabletCopyITest, TestDeleteTabletDuringTabletCopy) {
   ASSERT_TRUE(cluster_->tablet_server(kTsIndex)->IsProcessAlive());
 }
 
-// This test ensures that a leader can remote-bootstrap a tombstoned replica
+// This test ensures that a leader can Tablet Copy on top of a tombstoned replica
 // that has a higher term recorded in the replica's consensus metadata if the
 // replica's last-logged opid has the same term (or less) as the leader serving
 // as the tablet copy source. When a tablet is tombstoned, its last-logged
@@ -392,8 +392,8 @@ TEST_F(TabletCopyITest, TestTabletCopyFollowerWithHigherTerm) {
 
 // Test that multiple concurrent tablet copys do not cause problems.
 // This is a regression test for KUDU-951, in which concurrent sessions on
-// multiple tablets between the same tablet copy client host and remote
-// bootstrap source host could corrupt each other.
+// multiple tablets between the same tablet copy client host and source host
+// could corrupt each other.
 TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping test in fast-test mode.";
@@ -483,7 +483,7 @@ TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
                                   MonoDelta::FromSeconds(10)));
   }
 
-  // Unpause the leader TS and wait for it to remotely bootstrap the tombstoned
+  // Unpause the leader TS and wait for it to initiate Tablet Copy and replace the tombstoned
   // tablets, in parallel.
   ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Resume());
   for (const string& tablet_id : tablet_ids) {
@@ -688,9 +688,9 @@ TEST_F(TabletCopyITest, TestDisableTabletCopy_NoTightLoopWhenTabletDeleted) {
   EXPECT_LT(num_logs_per_second, 20);
 }
 
-// Test that if a tablet copy is taking a long time but the client peer is still responsive,
+// Test that if a Tablet Copy is taking a long time but the client peer is still responsive,
 // the leader won't mark it as failed.
-TEST_F(TabletCopyITest, TestSlowBootstrapDoesntFail) {
+TEST_F(TabletCopyITest, TestSlowCopyDoesntFail) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags, master_flags;
   ts_flags.push_back("--enable_leader_failure_detection=false");
@@ -745,14 +745,14 @@ TEST_F(TabletCopyITest, TestSlowBootstrapDoesntFail) {
                             workload.rows_inserted()));
 }
 
-// Attempting to start tablet copy on a tablet that was deleted with
+// Attempting to start Tablet Copy on a tablet that was deleted with
 // TABLET_DATA_DELETED should fail. This behavior helps avoid thrashing when
 // a follower tablet is deleted and the leader notices before it has processed
 // its own DeleteTablet RPC, thinking that it needs to bring its follower back.
-TEST_F(TabletCopyITest, TestTabletCopypingDeletedTabletFails) {
-  // Delete the leader with TABLET_DATA_DELETED
-  // Attempt to manually bootstrap the leader from a follower
-  // Should get an error saying it's illegal
+TEST_F(TabletCopyITest, TestTabletCopyingDeletedTabletFails) {
+  // Delete the leader with TABLET_DATA_DELETED.
+  // Attempt to manually copy a replica to the leader from a follower.
+  // Should get an error saying it's illegal.
 
   MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   NO_FATALS(StartCluster({"--enable_leader_failure_detection=false"},

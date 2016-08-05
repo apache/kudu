@@ -115,7 +115,7 @@ class DeleteTableTest : public ExternalMiniClusterITestBase {
 
   // Repeatedly try to delete the tablet, retrying on failure up to the
   // specified timeout. Deletion can fail when other operations, such as
-  // bootstrap, are running.
+  // bootstrap or tablet copy, are running.
   void DeleteTabletWithRetries(const TServerDetails* ts, const string& tablet_id,
                                TabletDataState delete_type, const MonoDelta& timeout);
 };
@@ -413,13 +413,13 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
 }
 
 // Test that a tablet replica is automatically tombstoned on startup if a local
-// crash occurs in the middle of tablet copy.
+// crash occurs in the middle of Tablet Copy.
 TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
   NO_FATALS(StartCluster());
   const MonoDelta timeout = MonoDelta::FromSeconds(10);
   const int kTsIndex = 0; // We'll test with the first TS.
 
-  // We'll do a config change to tablet copy a replica here later. For
+  // We'll do a config change to Tablet Copy a replica here later. For
   // now, shut it down.
   LOG(INFO) << "Shutting down TS " << cluster_->tablet_server(kTsIndex)->uuid();
   cluster_->tablet_server(kTsIndex)->Shutdown();
@@ -442,12 +442,12 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
   }
   workload.StopAndJoin();
 
-  // Enable a fault crash when tablet copy occurs on TS 0.
+  // Enable a fault crash when Tablet Copy occurs on TS 0.
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
-  const string& kFaultFlag = "fault_crash_after_rb_files_fetched";
+  const string& kFaultFlag = "fault_crash_after_tc_files_fetched";
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex), kFaultFlag, "1.0"));
 
-  // Figure out the tablet id to tablet copy.
+  // Figure out the tablet id to Tablet Copy.
   vector<string> tablets = inspect_->ListTabletsOnTS(1);
   ASSERT_EQ(1, tablets.size());
   const string& tablet_id = tablets[0];
@@ -462,12 +462,12 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
   // The superblock should be in TABLET_DATA_COPYING state on disk.
   NO_FATALS(inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, { TABLET_DATA_COPYING }));
 
-  // Kill the other tablet servers so the leader doesn't try to remote
-  // bootstrap it again during our verification here.
+  // Kill the other tablet servers so the leader doesn't try to Tablet Copy
+  // it again during our verification here.
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();
 
-  // Now we restart the TS. It will clean up the failed tablet copy and
+  // Now we restart the TS. It will clean up the failed Tablet Copy and
   // convert it to TABLET_DATA_TOMBSTONED. It crashed, so we have to call
   // Shutdown() then Restart() to bring it back up.
   cluster_->tablet_server(kTsIndex)->Shutdown();
@@ -476,8 +476,8 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
 }
 
 // Test that a tablet replica automatically tombstones itself if the remote
-// bootstrap source server fails in the middle of the tablet copy process.
-// Also test that we can remotely bootstrap a tombstoned tablet.
+// server fails in the middle of the Tablet Copy process.
+// Also test that we can Copy Tablet over a tombstoned tablet.
 TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   vector<string> ts_flags = {
       "--enable_leader_failure_detection=false",  // Make test deterministic.
@@ -490,7 +490,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(20);
   const int kTsIndex = 0; // We'll test with the first TS.
 
-  // We'll do a config change to tablet copy a replica here later. For
+  // We'll do a config change to Tablet Copy a replica here later. For
   // now, shut down TS-0.
   LOG(INFO) << "Shutting down TS " << cluster_->tablet_server(kTsIndex)->uuid();
   cluster_->tablet_server(kTsIndex)->Shutdown();
@@ -533,8 +533,8 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   ASSERT_OK(inspect_->WaitForMinFilesInTabletWalDirOnTS(kLeaderIndex, tablet_id, 3));
   workload.StopAndJoin();
 
-  // Cause the leader to crash when a follower tries to remotely bootstrap from it.
-  const string& fault_flag = "fault_crash_on_handle_rb_fetch_data";
+  // Cause the leader to crash when a follower tries to initiate Tablet Copy from it.
+  const string& fault_flag = "fault_crash_on_handle_tc_fetch_data";
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kLeaderIndex), fault_flag, "1.0"));
 
   // Add TS-0 as a new member to the config and wait for the leader to crash.
@@ -552,7 +552,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
 
   // Now bring the other replicas back, re-elect the previous leader (TS-1),
-  // and wait for the leader to tablet copy the tombstoned replica. This
+  // and wait for the leader to Tablet Copy the tombstoned replica. This
   // will have replaced a tablet with no consensus metadata.
   ASSERT_OK(cluster_->tablet_server(1)->Restart());
   ASSERT_OK(cluster_->tablet_server(2)->Restart());
@@ -573,7 +573,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, kTimeout));
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
 
-  // Bring them back again, let them yet again bootstrap our tombstoned replica.
+  // Bring them back again, let them yet again Copy a new replica on top of our tombstoned replica.
   // This time, the leader will have replaced a tablet with consensus metadata.
   ASSERT_OK(cluster_->tablet_server(1)->Resume());
   ASSERT_OK(cluster_->tablet_server(2)->Resume());
@@ -584,7 +584,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
                             workload.rows_inserted()));
 }
 
-// Test for correct tablet copy merge of consensus metadata.
+// Test for correct Tablet Copy merge of consensus metadata.
 TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   // Enable manual leader selection.
   vector<string> ts_flags, master_flags;
@@ -598,7 +598,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   workload.Setup();
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
 
-  // Figure out the tablet id to tablet copy.
+  // Figure out the tablet id to Tablet Copy.
   vector<string> tablets = inspect_->ListTabletsOnTS(1);
   ASSERT_EQ(1, tablets.size());
   const string& tablet_id = tablets[0];
@@ -658,7 +658,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   ASSERT_OK(itest::WaitUntilLeader(leader, tablet_id, timeout));
 
   // Bring our special little guy back up.
-  // Wait until he gets tablet copyped.
+  // Wait until he gets Tablet Copied.
   LOG(INFO) << "Bringing TS " << cluster_->tablet_server(kTsIndex)->uuid()
             << " back up...";
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
@@ -672,7 +672,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   // Now do the same thing as above, where we tombstone TS 0 then trigger a new
   // term (term 3) on the other machines. TS 0 will get copied
   // again, but this time the vote record on TS 0 for term 2 should not be
-  // retained after tablet copy occurs.
+  // retained after Tablet Copy occurs.
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();
 
@@ -811,7 +811,7 @@ TEST_F(DeleteTableTest, TestOrphanedBlocksClearedOnDelete) {
       << "Timed out waiting for rowset flush on TS " << follower_ts->uuid() << ": "
       << "Superblock:\n" << superblock_pb.DebugString();
 
-  // Shut down the leader so it doesn't try to bootstrap our follower later.
+  // Shut down the leader so it doesn't try to copy a new replica to our follower later.
   workload.StopAndJoin();
   cluster_->tablet_server(kLeaderIndex)->Shutdown();
 
@@ -1047,7 +1047,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   workload.StopAndJoin();
 
   // Shut down the master and the other tablet servers so they don't interfere
-  // by attempting to create tablets or tablet copy while we delete tablets.
+  // by attempting to create or copy tablets while we delete tablets.
   cluster_->master()->Shutdown();
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();

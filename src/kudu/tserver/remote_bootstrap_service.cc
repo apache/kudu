@@ -60,11 +60,11 @@ DEFINE_uint64(tablet_copy_timeout_poll_period_ms, 10000,
               "tablet copy sessions, in millis");
 TAG_FLAG(tablet_copy_timeout_poll_period_ms, hidden);
 
-DEFINE_double(fault_crash_on_handle_rb_fetch_data, 0.0,
+DEFINE_double(fault_crash_on_handle_tc_fetch_data, 0.0,
               "Fraction of the time when the tablet will crash while "
               "servicing a TabletCopyService FetchData() RPC call. "
               "(For testing only!)");
-TAG_FLAG(fault_crash_on_handle_rb_fetch_data, unsafe);
+TAG_FLAG(fault_crash_on_handle_tc_fetch_data, unsafe);
 
 namespace kudu {
 namespace tserver {
@@ -96,7 +96,7 @@ TabletCopyServiceImpl::TabletCopyServiceImpl(
       fs_manager_(CHECK_NOTNULL(fs_manager)),
       tablet_peer_lookup_(CHECK_NOTNULL(tablet_peer_lookup)),
       shutdown_latch_(1) {
-  CHECK_OK(Thread::Create("remote-bootstrap", "rb-session-exp",
+  CHECK_OK(Thread::Create("tablet-copy", "tc-session-exp",
                           &TabletCopyServiceImpl::EndExpiredSessions, this,
                           &session_expiration_thread_));
 }
@@ -197,7 +197,7 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
     ResetSessionExpirationUnlocked(session_id);
   }
 
-  MAYBE_FAULT(FLAGS_fault_crash_on_handle_rb_fetch_data);
+  MAYBE_FAULT(FLAGS_fault_crash_on_handle_tc_fetch_data);
 
   uint64_t offset = req->offset();
   int64_t client_maxlen = req->max_length();

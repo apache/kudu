@@ -401,13 +401,13 @@ Status PeerMessageQueue::GetTabletCopyRequestForPeer(const string& uuid,
   }
 
   if (PREDICT_FALSE(!peer->needs_tablet_copy)) {
-    return Status::IllegalState("Peer does not need to remotely bootstrap", uuid);
+    return Status::IllegalState("Peer does not need to initiate Tablet Copy", uuid);
   }
   req->Clear();
   req->set_dest_uuid(uuid);
   req->set_tablet_id(tablet_id_);
-  req->set_bootstrap_peer_uuid(local_peer_pb_.permanent_uuid());
-  *req->mutable_bootstrap_peer_addr() = local_peer_pb_.last_known_addr();
+  req->set_copy_peer_uuid(local_peer_pb_.permanent_uuid());
+  *req->mutable_copy_peer_addr() = local_peer_pb_.last_known_addr();
   req->set_caller_term(queue_state_.current_term);
   peer->needs_tablet_copy = false; // Now reset the flag.
   return Status::OK();
@@ -493,7 +493,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       return;
     }
 
-    // Remotely bootstrap the peer if the tablet is not found or deleted.
+    // Initiate Tablet Copy on the peer if the tablet is not found or deleted.
     if (response.has_error()) {
       // We only let special types of errors through to this point from the peer.
       CHECK_EQ(tserver::TabletServerErrorPB::TABLET_NOT_FOUND, response.error().code())

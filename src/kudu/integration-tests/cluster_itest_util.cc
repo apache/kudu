@@ -775,11 +775,11 @@ Status DeleteTablet(const TServerDetails* ts,
 }
 
 Status StartTabletCopy(const TServerDetails* ts,
-                            const string& tablet_id,
-                            const string& bootstrap_source_uuid,
-                            const HostPort& bootstrap_source_addr,
-                            int64_t caller_term,
-                            const MonoDelta& timeout) {
+                       const string& tablet_id,
+                       const string& copy_source_uuid,
+                       const HostPort& copy_source_addr,
+                       int64_t caller_term,
+                       const MonoDelta& timeout) {
   consensus::StartTabletCopyRequestPB req;
   consensus::StartTabletCopyResponsePB resp;
   RpcController rpc;
@@ -787,8 +787,8 @@ Status StartTabletCopy(const TServerDetails* ts,
 
   req.set_dest_uuid(ts->uuid());
   req.set_tablet_id(tablet_id);
-  req.set_bootstrap_peer_uuid(bootstrap_source_uuid);
-  RETURN_NOT_OK(HostPortToPB(bootstrap_source_addr, req.mutable_bootstrap_peer_addr()));
+  req.set_copy_peer_uuid(copy_source_uuid);
+  RETURN_NOT_OK(HostPortToPB(copy_source_addr, req.mutable_copy_peer_addr()));
   req.set_caller_term(caller_term);
 
   RETURN_NOT_OK(ts->consensus_proxy->StartTabletCopy(req, &resp, &rpc));

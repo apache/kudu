@@ -196,7 +196,7 @@ class PeerMessageQueue {
                                 bool* needs_tablet_copy);
 
   // Fill in a StartTabletCopyRequest for the specified peer.
-  // If that peer should not remotely bootstrap, returns a non-OK status.
+  // If that peer should not initiate Tablet Copy, returns a non-OK status.
   // On success, also internally resets peer->needs_tablet_copy to false.
   virtual Status GetTabletCopyRequestForPeer(const std::string& uuid,
                                                   StartTabletCopyRequestPB* req);

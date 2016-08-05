@@ -61,10 +61,10 @@ DEFINE_double(fault_crash_after_leader_request_fraction, 0.0,
 TAG_FLAG(fault_crash_on_leader_request_fraction, unsafe);
 
 
-// Allow for disabling tablet copy in unit tests where we want to test
+// Allow for disabling Tablet Copy in unit tests where we want to test
 // certain scenarios without triggering bootstrap of a remote peer.
 DEFINE_bool(enable_tablet_copy, true,
-            "Whether tablet copy will be initiated by the leader when it "
+            "Whether Tablet Copy will be initiated by the leader when it "
             "detects that a follower is out of date or does not have a tablet "
             "replica. For testing purposes only.");
 TAG_FLAG(enable_tablet_copy, unsafe);
@@ -192,7 +192,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   if (PREDICT_FALSE(needs_tablet_copy)) {
     Status s = SendTabletCopyRequest();
     if (!s.ok()) {
-      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to generate tablet copy request for peer: "
+      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to generate Tablet Copy request for peer: "
                                         << s.ToString();
       sem_.Release();
     }
@@ -251,7 +251,7 @@ void Peer::ProcessResponse() {
   }
 
   // Pass through errors we can respond to, like not found, since in that case
-  // we will need to remotely bootstrap. TODO: Handle DELETED response once implemented.
+  // we will need to start a Tablet Copy. TODO: Handle DELETED response once implemented.
   if ((response_.has_error() &&
       response_.error().code() != TabletServerErrorPB::TABLET_NOT_FOUND) ||
       (response_.status().has_error() &&
@@ -297,26 +297,26 @@ void Peer::DoProcessResponse() {
 Status Peer::SendTabletCopyRequest() {
   if (!FLAGS_enable_tablet_copy) {
     failed_attempts_++;
-    return Status::NotSupported("tablet copy is disabled");
+    return Status::NotSupported("Tablet Copy is disabled");
   }
 
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Sending request to remotely bootstrap";
-  RETURN_NOT_OK(queue_->GetTabletCopyRequestForPeer(peer_pb_.permanent_uuid(), &rb_request_));
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Sending request to start Tablet Copy";
+  RETURN_NOT_OK(queue_->GetTabletCopyRequestForPeer(peer_pb_.permanent_uuid(), &tc_request_));
   controller_.Reset();
-  proxy_->StartTabletCopy(&rb_request_, &rb_response_, &controller_,
-                               boost::bind(&Peer::ProcessTabletCopyResponse, this));
+  proxy_->StartTabletCopy(&tc_request_, &tc_response_, &controller_,
+                          boost::bind(&Peer::ProcessTabletCopyResponse, this));
   return Status::OK();
 }
 
 void Peer::ProcessTabletCopyResponse() {
-  if (controller_.status().ok() && rb_response_.has_error()) {
+  if (controller_.status().ok() && tc_response_.has_error()) {
     // ALREADY_INPROGRESS is expected, so we do not log this error.
-    if (rb_response_.error().code() ==
+    if (tc_response_.error().code() ==
         TabletServerErrorPB::TabletServerErrorPB::ALREADY_INPROGRESS) {
       queue_->NotifyPeerIsResponsiveDespiteError(peer_pb_.permanent_uuid());
     } else {
-      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin tablet copy on peer: "
-                                        << rb_response_.ShortDebugString();
+      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin Tablet Copy on peer: "
+                                        << tc_response_.ShortDebugString();
     }
   }
   sem_.Release();

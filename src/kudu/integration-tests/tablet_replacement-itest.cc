@@ -222,7 +222,7 @@ TEST_F(TabletReplacementITest, TestEvictAndReplaceDeadFollower) {
 // initiating a tablet copy to a follower. The follower will not have the
 // COMMIT for the write operation, so will ignore COMMIT messages for the
 // applied config change operations. At startup time, the newly
-// remotely-bootstrapped tablet should detect that these config change
+// copied tablet should detect that these config change
 // operations have already been applied and skip them.
 TEST_F(TabletReplacementITest, TestRemoteBoostrapWithPendingConfigChangeCommits) {
   if (!AllowSlowTests()) {
@@ -274,7 +274,7 @@ TEST_F(TabletReplacementITest, TestRemoteBoostrapWithPendingConfigChangeCommits)
 
   // Kick off an async insert, which will be delayed for 5 seconds. This is
   // normally enough time to evict a replica, tombstone it, add it back, and
-  // remotely bootstrap it when the log is only a few entries.
+  // Tablet Copy a new replica to it when the log is only a few entries.
   tserver::WriteRequestPB req;
   tserver::WriteResponsePB resp;
   CountDownLatch latch(1);

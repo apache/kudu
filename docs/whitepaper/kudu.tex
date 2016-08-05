@@ -363,7 +363,7 @@ by at most one in each configuration change. In order to grow a 3-replica config
 replicas, two separate configuration changes (3$\rightarrow$4, 4$\rightarrow$5) must be proposed
 and committed.
 
-Kudu implements the addition of new servers through a process called {\em tablet copy}.
+Kudu implements the addition of new servers through a process called {\em Tablet Copy}.
 In our design, in order to add a new replica, we first add it as a new member in the
 Raft configuration, even before notifying the destination server that a new replica will
 be copied to it. When this configuration change has been committed, the current Raft leader
@@ -378,7 +378,7 @@ In our current implementation, new servers are added immediately as {\tt VOTER} 
 the disadvantage that, after moving from a 3-server configuration to a 4-server configuration, three
 out of the four servers must acknowledge each operation. Because the new server is in the process of
 copying, it is unable to acknowledge operations. If another server were to crash during the
-snapshot-transfer process, the tablet would become unavailable for writes until the tablet copy
+snapshot-transfer process, the tablet would become unavailable for writes until the Tablet Copy
 finished.
 
 To address this issue, we plan to implement a {\tt PRE\_VOTER} replica state. In this

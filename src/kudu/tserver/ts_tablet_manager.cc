@@ -89,12 +89,12 @@ DEFINE_double(fault_crash_after_cmeta_deleted, 0.0,
               "(For testing only!)");
 TAG_FLAG(fault_crash_after_cmeta_deleted, unsafe);
 
-DEFINE_double(fault_crash_after_rb_files_fetched, 0.0,
+DEFINE_double(fault_crash_after_tc_files_fetched, 0.0,
               "Fraction of the time when the tablet will crash immediately "
               "after fetching the files during a tablet copy but before "
               "marking the superblock as TABLET_DATA_READY. "
               "(For testing only!)");
-TAG_FLAG(fault_crash_after_rb_files_fetched, unsafe);
+TAG_FLAG(fault_crash_after_tc_files_fetched, unsafe);
 
 namespace kudu {
 namespace tserver {
@@ -338,9 +338,9 @@ Status TSTabletManager::StartTabletCopy(
     const StartTabletCopyRequestPB& req,
     boost::optional<TabletServerErrorPB::Code>* error_code) {
   const string& tablet_id = req.tablet_id();
-  const string& bootstrap_source_uuid = req.bootstrap_peer_uuid();
-  HostPort bootstrap_source_addr;
-  RETURN_NOT_OK(HostPortFromPB(req.bootstrap_peer_addr(), &bootstrap_source_addr));
+  const string& copy_source_uuid = req.copy_peer_uuid();
+  HostPort copy_source_addr;
+  RETURN_NOT_OK(HostPortFromPB(req.copy_peer_addr(), &copy_source_addr));
   int64_t leader_term = req.caller_term();
 
   const string kLogPrefix = LogPrefix(tablet_id);
@@ -355,7 +355,7 @@ Status TSTabletManager::StartTabletCopy(
       meta = old_tablet_peer->tablet_metadata();
       replacing_tablet = true;
     }
-    Status ret = StartTabletStateTransitionUnlocked(tablet_id, "tablet copyping tablet",
+    Status ret = StartTabletStateTransitionUnlocked(tablet_id, "copying tablet",
                                                     &deleter);
     if (!ret.ok()) {
       *error_code = TabletServerErrorPB::ALREADY_INPROGRESS;
@@ -410,18 +410,18 @@ Status TSTabletManager::StartTabletCopy(
   }
 
   string init_msg = kLogPrefix + Substitute("Initiating tablet copy from Peer $0 ($1)",
-                                            bootstrap_source_uuid,
-                                            bootstrap_source_addr.ToString());
+                                            copy_source_uuid,
+                                            copy_source_addr.ToString());
   LOG(INFO) << init_msg;
   TRACE(init_msg);
 
-  TabletCopyClient rb_client(tablet_id, fs_manager_, server_->messenger());
+  TabletCopyClient tc_client(tablet_id, fs_manager_, server_->messenger());
 
   // Download and persist the remote superblock in TABLET_DATA_COPYING state.
   if (replacing_tablet) {
-    RETURN_NOT_OK(rb_client.SetTabletToReplace(meta, leader_term));
+    RETURN_NOT_OK(tc_client.SetTabletToReplace(meta, leader_term));
   }
-  RETURN_NOT_OK(rb_client.Start(bootstrap_source_addr, &meta));
+  RETURN_NOT_OK(tc_client.Start(copy_source_addr, &meta));
 
   // From this point onward, the superblock is persisted in TABLET_DATA_COPYING
   // state, and we need to tombtone the tablet if additional steps prior to
@@ -430,18 +430,18 @@ Status TSTabletManager::StartTabletCopy(
   // Registering a non-initialized TabletPeer offers visibility through the Web UI.
   RegisterTabletPeerMode mode = replacing_tablet ? REPLACEMENT_PEER : NEW_PEER;
   scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta, mode);
-  string peer_str = bootstrap_source_uuid + " (" + bootstrap_source_addr.ToString() + ")";
+  string peer_str = copy_source_uuid + " (" + copy_source_addr.ToString() + ")";
 
   // Download all of the remote files.
-  TOMBSTONE_NOT_OK(rb_client.FetchAll(tablet_peer->status_listener()), meta,
+  TOMBSTONE_NOT_OK(tc_client.FetchAll(tablet_peer->status_listener()), meta,
                    "Tablet Copy: Unable to fetch data from remote peer " +
-                   bootstrap_source_uuid + " (" + bootstrap_source_addr.ToString() + ")");
+                   copy_source_uuid + " (" + copy_source_addr.ToString() + ")");
 
-  MAYBE_FAULT(FLAGS_fault_crash_after_rb_files_fetched);
+  MAYBE_FAULT(FLAGS_fault_crash_after_tc_files_fetched);
 
   // Write out the last files to make the new replica visible and update the
   // TabletDataState in the superblock to TABLET_DATA_READY.
-  TOMBSTONE_NOT_OK(rb_client.Finish(), meta, "Tablet Copy: Failure calling Finish()");
+  TOMBSTONE_NOT_OK(tc_client.Finish(), meta, "Tablet Copy: Failure calling Finish()");
 
   // We run this asynchronously. We don't tombstone the tablet if this fails,
   // because if we were to fail to open the tablet, on next startup, it's in a
@@ -585,7 +585,7 @@ Status TSTabletManager::StartTabletStateTransitionUnlocked(
     //
     // If the tablet was permanently deleted, we should not allow it to
     // transition back to "liveness" because that can result in flapping back
-    // and forth between deletion and tablet copyping.
+    // and forth between deletion and tablet copying.
     return Status::IllegalState(
         Substitute("Tablet $0 was permanently deleted. Cannot transition from state $1.",
                    tablet_id, TabletDataState_Name(TABLET_DATA_DELETED)));
@@ -885,7 +885,7 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
       << TabletDataState_Name(data_state) << " (" << data_state << ")";
 
   if (data_state == TABLET_DATA_COPYING) {
-    // We tombstone tablets that failed to remotely bootstrap.
+    // We tombstone tablets that failed to copy.
     data_state = TABLET_DATA_TOMBSTONED;
   }
 
