@@ -326,7 +326,7 @@ int Heartbeater::Thread::GetMinimumHeartbeatMillis() const {
                  << "in a row: no longer allowing fast heartbeat attempts.";
   }
 
-  return consecutive_failed_heartbeats_ > FLAGS_heartbeat_max_failures_before_backoff ?
+  return consecutive_failed_heartbeats_ >= FLAGS_heartbeat_max_failures_before_backoff ?
     FLAGS_heartbeat_interval_ms : 0;
 }
 
@@ -458,7 +458,7 @@ void Heartbeater::Thread::RunThread() {
       // If we encountered a network error (e.g., connection
       // refused), try reconnecting.
       if (s.IsNetworkError() ||
-          consecutive_failed_heartbeats_ == FLAGS_heartbeat_max_failures_before_backoff) {
+          consecutive_failed_heartbeats_ >= FLAGS_heartbeat_max_failures_before_backoff) {
         proxy_.reset();
       }
       continue;
