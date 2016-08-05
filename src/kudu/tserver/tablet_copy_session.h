@@ -31,7 +31,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/tserver/remote_bootstrap.pb.h"
+#include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"

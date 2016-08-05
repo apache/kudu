@@ -26,7 +26,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/tablet/metadata.pb.h"
-#include "kudu/tserver/remote_bootstrap.pb.h"
+#include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"

@@ -45,7 +45,7 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/heartbeater.h"
-#include "kudu/tserver/remote_bootstrap_client.h"
+#include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/util/debug/trace_event.h"

@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/tserver/remote_bootstrap_service.h"
+#include "kudu/tserver/tablet_copy_service.h"
 
 #include <algorithm>
 #include <gflags/gflags.h>
@@ -28,7 +28,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/rpc/rpc_context.h"
-#include "kudu/tserver/remote_bootstrap_session.h"
+#include "kudu/tserver/tablet_copy_session.h"
 #include "kudu/tserver/tablet_peer_lookup.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/crc.h"

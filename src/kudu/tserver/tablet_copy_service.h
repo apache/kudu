@@ -22,7 +22,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/tserver/remote_bootstrap.service.h"
+#include "kudu/tserver/tablet_copy.service.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"

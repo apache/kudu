@@ -34,7 +34,7 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
-#include "kudu/tserver/remote_bootstrap_client.h"
+#include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_util.h"

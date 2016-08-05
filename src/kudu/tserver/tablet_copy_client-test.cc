@@ -14,12 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/tserver/remote_bootstrap-test-base.h"
+#include "kudu/tserver/tablet_copy-test-base.h"
 
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/tablet/tablet_bootstrap.h"
-#include "kudu/tserver/remote_bootstrap_client.h"
+#include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/util/env_util.h"
 
 using std::shared_ptr;

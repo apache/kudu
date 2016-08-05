@@ -43,7 +43,7 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/mini_tablet_server.h"
-#include "kudu/tserver/remote_bootstrap.proxy.h"
+#include "kudu/tserver/tablet_copy.proxy.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_test_util.h"

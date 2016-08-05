@@ -16,14 +16,14 @@
 # under the License.
 
 #########################################
-# remote_bootstrap_proto
+# tablet_copy_proto
 #########################################
 
 KRPC_GENERATE(
   TABLET_COPY_KRPC_SRCS TABLET_COPY_KRPC_HDRS TABLET_COPY_KRPC_TGTS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
-  PROTO_FILES remote_bootstrap.proto)
+  PROTO_FILES tablet_copy.proto)
 set(TABLET_COPY_KRPC_LIBS
   consensus_proto
   krpc
@@ -31,7 +31,7 @@ set(TABLET_COPY_KRPC_LIBS
   rpc_header_proto
   tablet_proto
   wire_protocol_proto)
-ADD_EXPORTABLE_LIBRARY(remote_bootstrap_proto
+ADD_EXPORTABLE_LIBRARY(tablet_copy_proto
   SRCS ${TABLET_COPY_KRPC_SRCS}
   DEPS ${TABLET_COPY_KRPC_LIBS}
   NONLINK_DEPS ${TABLET_COPY_KRPC_TGTS})
@@ -89,8 +89,8 @@ set(TSERVER_KRPC_LIBS
   krpc
   kudu_common_proto
   protobuf
-  remote_bootstrap_proto
   rpc_header_proto
+  tablet_copy_proto
   tserver_proto
   wire_protocol_proto)
 ADD_EXPORTABLE_LIBRARY(tserver_service_proto
@@ -105,11 +105,11 @@ ADD_EXPORTABLE_LIBRARY(tserver_service_proto
 set(TSERVER_SRCS
   heartbeater.cc
   mini_tablet_server.cc
-  remote_bootstrap_client.cc
-  remote_bootstrap_service.cc
-  remote_bootstrap_session.cc
   scanner_metrics.cc
   scanners.cc
+  tablet_copy_client.cc
+  tablet_copy_service.cc
+  tablet_copy_session.cc
   tablet_server.cc
   tablet_server_options.cc
   tablet_service.cc
@@ -120,10 +120,10 @@ set(TSERVER_SRCS
 add_library(tserver ${TSERVER_SRCS})
 target_link_libraries(tserver
   protobuf
+  tablet_copy_proto
   tserver_proto
   tserver_admin_proto
   tserver_service_proto
-  remote_bootstrap_proto
   master_rpc
   master_proto
   consensus_proto
@@ -164,9 +164,9 @@ set(KUDU_TEST_LINK_LIBS
   tserver
   tserver_test_util
   ${KUDU_MIN_TEST_LIBS})
-ADD_KUDU_TEST(remote_bootstrap_client-test)
-ADD_KUDU_TEST(remote_bootstrap_session-test)
-ADD_KUDU_TEST(remote_bootstrap_service-test)
+ADD_KUDU_TEST(tablet_copy_client-test)
+ADD_KUDU_TEST(tablet_copy_session-test)
+ADD_KUDU_TEST(tablet_copy_service-test)
 ADD_KUDU_TEST(tablet_server-test)
 ADD_KUDU_TEST(tablet_server-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(scanners-test)

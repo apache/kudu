@@ -42,7 +42,7 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
-#include "kudu/tserver/remote_bootstrap_service.h"
+#include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"

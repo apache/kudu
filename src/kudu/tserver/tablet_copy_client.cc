@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tserver/remote_bootstrap_client.h"
+#include "kudu/tserver/tablet_copy_client.h"
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -34,8 +34,8 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_peer.h"
-#include "kudu/tserver/remote_bootstrap.pb.h"
-#include "kudu/tserver/remote_bootstrap.proxy.h"
+#include "kudu/tserver/tablet_copy.pb.h"
+#include "kudu/tserver/tablet_copy.proxy.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"

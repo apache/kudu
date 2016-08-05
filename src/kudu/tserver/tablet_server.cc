@@ -32,7 +32,7 @@
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver-path-handlers.h"
-#include "kudu/tserver/remote_bootstrap_service.h"
+#include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
