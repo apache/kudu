@@ -67,7 +67,7 @@ The following Maven `<dependency>` element is valid for the Kudu public beta:
 [source,xml]
 ----
 <dependency>
-  <groupId>org.kududb</groupId>
+  <groupId>org.apache.kudu</groupId>
   <artifactId>kudu-client</artifactId>
   <version>0.5.0</version>
 </dependency>
@@ -108,7 +108,7 @@ Then import kudu-spark and create a dataframe:
 [source]
 ----
 // Import kudu datasource
-import org.kududb.spark.kudu._
+import org.apache.kudu.spark.kudu._
 val kuduDataFrame =  sqlContext.read.options(Map("kudu.master"-> "your.kudu.master.here","kudu.table"-> "your.kudu.table.here")).kudu
 // Then query using spark api or register a temporary table and use spark sql
 kuduDataFrame.select("id").filter("id">=5).show()
@@ -137,8 +137,9 @@ kuduContext.deleteTable("your.kudu.table.here")
 == Integration with MapReduce, YARN, and Other Frameworks
 
 Kudu was designed to integrate with MapReduce, YARN, Spark, and other frameworks in
-the Hadoop ecosystem. See link:https://github.com/apache/incubator-kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/RowCounter.java[RowCounter.java]
+the Hadoop ecosystem. See
+link:https://github.com/apache/incubator-kudu/blob/master/java/kudu-client-tools/src/main/java/org/apache/kudu/mapreduce/tools/RowCounter.java[RowCounter.java]
 and
-link:https://github.com/apache/incubator-kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/ImportCsv.java[ImportCsv.java]
+link:https://github.com/apache/incubator-kudu/blob/master/java/kudu-client-tools/src/main/java/org/apache/kudu/mapreduce/tools/ImportCsv.java[ImportCsv.java]
 for examples which you can model your own integrations on. Stay tuned for more examples
 using YARN and Spark in the future.

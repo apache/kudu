@@ -56,7 +56,7 @@ KuduScanner scanner = ScanToken.deserializeIntoScanner(serializedToken, client);
 
 Along with the serializable scan token, the API will provide a location hint
 containing the replicas hosting the data. This will be done via the existing
-replica location APIs (`org.kududb.client.LocatedTablet` in the Java client, and
+replica location APIs (`org.apache.kudu.client.LocatedTablet` in the Java client, and
 `std::vector<KuduTabletServer*>` in the C++ client).
 
 Initially, the scan token API should support creating a single token per tablet
