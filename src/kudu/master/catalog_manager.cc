@@ -983,7 +983,7 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+    Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
@@ -1057,7 +1057,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   scoped_refptr<TableInfo> table;
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+    Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
@@ -1210,7 +1210,7 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
       // TODO: EDIT_COLUMN
 
       default: {
-        return Status::InvalidArgument("Invalid alter schema step type", step.DebugString());
+        return Status::InvalidArgument("Invalid alter schema step type", step.ShortDebugString());
       }
     }
   }
@@ -1402,7 +1402,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   scoped_refptr<TableInfo> table;
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+    Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
@@ -1421,7 +1421,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     scoped_refptr<TableInfo> table_again;
     CHECK_OK(FindTable(req->table(), &table_again));
     if (table_again == nullptr) {
-      Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+      Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
       SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
       return s;
     }
@@ -1632,7 +1632,7 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+    Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
@@ -1660,7 +1660,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist", req->table().DebugString());
+    Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
