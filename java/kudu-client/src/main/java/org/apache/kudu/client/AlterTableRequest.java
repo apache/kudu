@@ -69,8 +69,10 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
                                                 String tsUUID) throws Exception {
     final AlterTableResponsePB.Builder respBuilder = AlterTableResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
-    AlterTableResponse response = new AlterTableResponse(deadlineTracker.getElapsedMillis(),
-        tsUUID);
+    AlterTableResponse response = new AlterTableResponse(
+        deadlineTracker.getElapsedMillis(), tsUUID,
+        respBuilder.hasTableId() ? respBuilder.getTableId().toStringUtf8() : null);
+
     return new Pair<AlterTableResponse, Object>(
         response, respBuilder.hasError() ? respBuilder.getError() : null);
   }

@@ -354,18 +354,36 @@ public class AsyncKuduClient implements AutoCloseable {
 
     if (ato.hasAddDropRangePartitions()) {
       // Clear the table locations cache so the new partition is immediately visible.
-      Callback clearCacheCB = new Callback() {
+      return response.addCallback(new Callback<AlterTableResponse, AlterTableResponse>() {
         @Override
-        public Object call(Object resp) throws Exception {
-          tableLocations.clear();
+        public AlterTableResponse call(AlterTableResponse resp) {
+          // If the master is of a recent enough version to return the table ID,
+          // we can selectively clear the cache only for the altered table.
+          // Otherwise, we clear the caches for all tables.
+          if (resp.getTableId() != null) {
+            tableLocations.remove(resp.getTableId());
+          } else {
+            tableLocations.clear();
+          }
           return resp;
         }
         @Override
         public String toString() {
-          return "ClearCacheCB";
+          return "ClearTableLocationsCacheCB";
         }
-      };
-      return response.addCallback(clearCacheCB).addErrback(clearCacheCB);
+      }).addErrback(new Callback<Exception, Exception>() {
+        @Override
+        public Exception call(Exception e) {
+          // We clear the cache even on failure, just in
+          // case the alter table operation actually succeeded.
+          tableLocations.clear();
+          return e;
+        }
+        @Override
+        public String toString() {
+          return "ClearTableLocationsCacheEB";
+        }
+      });
     }
     return response;
   }

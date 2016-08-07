@@ -1428,6 +1428,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   }
 
   string table_name = l.data().name();
+  *resp->mutable_table_id() = table->id();
 
   // 4. Calculate new schema for the on-disk state, not persisted yet.
   Schema new_schema;

@@ -486,7 +486,11 @@ message AlterTableResponsePB {
   // The error, if an error occurred with this request.
   optional MasterErrorPB error = 1;
 
+  // The schema version of the altered table.
   optional uint32 schema_version = 2;
+
+  // The table ID of the altered table.
+  optional bytes table_id = 3;
 }
 
 message IsAlterTableDoneRequestPB {

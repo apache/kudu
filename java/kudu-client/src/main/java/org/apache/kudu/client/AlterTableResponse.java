@@ -23,10 +23,20 @@ import org.apache.kudu.annotations.InterfaceStability;
 @InterfaceStability.Evolving
 public class AlterTableResponse extends KuduRpcResponse {
 
+  private String tableId;
+
   /**
    * @param ellapsedMillis Time in milliseconds since RPC creation to now.
    */
-  AlterTableResponse(long ellapsedMillis, String tsUUID) {
+  AlterTableResponse(long ellapsedMillis, String tsUUID, String tableId) {
     super(ellapsedMillis, tsUUID);
+    this.tableId = tableId;
+  }
+
+  /**
+   * @return the ID of the altered table, or null if the master version is too old
+   */
+  public String getTableId() {
+    return tableId;
   }
 }
