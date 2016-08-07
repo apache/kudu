@@ -48,6 +48,11 @@ fetch_and_expand() {
     exit 1
   fi
 
+  TAR_CMD=tar
+  if [[ "$OSTYPE" == "darwin"* ]] && which gtar &>/dev/null; then
+    TAR_CMD=gtar
+  fi
+
   FULL_URL="${CLOUDFRONT_URL_PREFIX}/${FILENAME}"
   SUCCESS=0
   # Loop in case we encounter a corrupted archive and we need to re-download it.
@@ -67,7 +72,7 @@ fetch_and_expand() {
         continue
       fi
     elif [[ "$FILENAME" =~ \.(tar\.gz|tgz)$ ]]; then
-      if ! tar xf "$FILENAME"; then
+      if ! $TAR_CMD xf "$FILENAME"; then
         echo "Error untarring $FILENAME, removing file"
         rm "$FILENAME"
         continue
@@ -83,6 +88,7 @@ fetch_and_expand() {
 
   if [ $SUCCESS -ne 1 ]; then
     echo "Error: failed to fetch and unpack $FILENAME"
+    exit 1
   fi
 
   # Allow for not removing previously-downloaded artifacts.
