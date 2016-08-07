@@ -21,7 +21,9 @@
   <name>Kudu Flume NG Sink</name>
 
   <properties>
+    <avro.version>1.8.1</avro.version>
     <flume.version>1.6.0</flume.version>
+    <hadoop.version>2.7.0</hadoop.version>
   </properties>
 
   <build>
@@ -41,6 +43,41 @@
             <goals>
               <goal>single</goal>
             </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>2.3</version>
+        <configuration>
+          <relocations>
+            <relocation>
+              <pattern>org.apache.hadoop</pattern>
+              <shadedPattern>org.apache.kudu.flume.sink.shaded.org.apache.hadoop</shadedPattern>
+            </relocation>
+          </relocations>
+          <shadeTestJar>true</shadeTestJar>
+        </configuration>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.avro</groupId>
+        <artifactId>avro-maven-plugin</artifactId>
+        <version>${avro.version}</version>
+        <executions>
+          <execution>
+            <phase>generate-test-sources</phase>
+              <goals>
+                <goal>schema</goal>
+              </goals>
           </execution>
         </executions>
       </plugin>
@@ -66,6 +103,19 @@
       <artifactId>flume-ng-configuration</artifactId>
       <version>${flume.version}</version>
       <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.avro</groupId>
+      <artifactId>avro</artifactId>
+      <version>${avro.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client</artifactId>
+      <version>${hadoop.version}</version>
     </dependency>
 
     <dependency>
