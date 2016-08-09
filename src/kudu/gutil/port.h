@@ -374,6 +374,17 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 #define ATTRIBUTE_WEAK __attribute__ ((weak))
 #define HAVE_ATTRIBUTE_WEAK 1
 
+// For deprecated functions or variables, generate a warning at usage sites.
+// Verified to work as early as GCC 3.1.1 and clang 3.2 (so we'll assume any
+// clang is new enough).
+#if defined(__clang__) || \
+  (defined(COMPILER_GCC) && \
+   (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 30200)
+#define ATTRIBUTE_DEPRECATED(msg) __attribute__ ((deprecated (msg) ))
+#else
+#define ATTRIBUTE_DEPRECATED(msg)
+#endif
+
 // Tell the compiler to use "initial-exec" mode for a thread-local variable.
 // See http://people.redhat.com/drepper/tls.pdf for the gory details.
 #define ATTRIBUTE_INITIAL_EXEC __attribute__ ((tls_model ("initial-exec")))
