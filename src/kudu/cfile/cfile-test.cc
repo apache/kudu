@@ -169,7 +169,6 @@ class TestCFile : public CFileTestBase {
       // Read and verify several ColumnBlocks from this point in the file.
       int read_offset = target;
       for (int block = 0; block < 3 && iter->HasNext(); block++) {
-        SCOPED_TRACE(block);
         size_t n = cb.nrows();
         ASSERT_OK_FAST(iter->CopyNextValues(&n, &cb));
         ASSERT_EQ(n, std::min(num_entries - read_offset, cb.nrows()));
@@ -177,7 +176,6 @@ class TestCFile : public CFileTestBase {
         // Verify that the block data is correct.
         generator->Build(read_offset, n);
         for (size_t j = 0; j < n; ++j) {
-          SCOPED_TRACE(j);
           bool expected_null = generator->TestValueShouldBeNull(read_offset + j);
           ASSERT_EQ(expected_null, cb.is_null(j));
           if (!expected_null) {
@@ -255,7 +253,14 @@ class TestCFile : public CFileTestBase {
     ASSERT_EQ(num_entries, count);
   }
 
-  void TestReadWriteStrings(EncodingType encoding, const char* format);
+  void TestReadWriteStrings(EncodingType encoding) {
+    TestReadWriteStrings(encoding, [](size_t val) {
+        return StringPrintf("hello %04zd", val);
+      });
+  }
+
+  void TestReadWriteStrings(EncodingType encoding,
+                            std::function<string(size_t)> formatter);
 
 #ifdef NDEBUG
   void TestWrite100MFileStrings(EncodingType encoding) {
@@ -474,12 +479,12 @@ void EncodeStringKey(const Schema &schema, const Slice& key,
 }
 
 void TestCFile::TestReadWriteStrings(EncodingType encoding,
-                                     const char* str_format = "hello %04d") {
+                                     std::function<string(size_t)> formatter) {
   Schema schema({ ColumnSchema("key", STRING) }, 1);
 
   const int nrows = 10000;
   BlockId block_id;
-  StringDataGenerator<false> generator(str_format);
+  StringDataGenerator<false> generator(formatter);
   WriteTestFile(&generator, encoding, NO_COMPRESSION, nrows,
                 SMALL_BLOCKSIZE | WRITE_VALIDX, &block_id);
 
@@ -504,7 +509,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
   Slice s;
 
   CopyOne<STRING>(iter.get(), &s, &arena);
-  ASSERT_EQ(StringPrintf(str_format, 5000), s.ToString());
+  ASSERT_EQ(formatter(5000), s.ToString());
 
   // Seek to last key exactly, should succeed
   ASSERT_OK(iter->SeekToOrdinal(9999));
@@ -526,8 +531,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
   string buf;
   for (int i = 1; i < 10000; i++) {
     arena.Reset();
-    SCOPED_TRACE(i);
-    SStringPrintf(&buf, str_format, i - 1);
+    buf = formatter(i - 1);
     buf.append(".5");
     s = Slice(buf);
     EncodeStringKey(schema, s, &encoded_key);
@@ -535,15 +539,14 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
     ASSERT_FALSE(exact);
     ASSERT_EQ(i, iter->GetCurrentOrdinal());
     CopyOne<STRING>(iter.get(), &s, &arena);
-    ASSERT_EQ(StringPrintf(str_format, i), s.ToString());
+    ASSERT_EQ(formatter(i), s.ToString());
   }
 
   // Seek exactly to each key
   // (seek to "hello 0000" through "hello 9999")
   for (int i = 0; i < 9999; i++) {
     arena.Reset();
-    SCOPED_TRACE(i);
-    SStringPrintf(&buf, str_format, i);
+    buf = formatter(i);
     s = Slice(buf);
     EncodeStringKey(schema, s, &encoded_key);
     ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
@@ -556,14 +559,14 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
 
   // after last entry
   // (seek to "hello 9999.x")
-  buf = StringPrintf(str_format, 9999) + "x";
+  buf = formatter(9999) + ".x";
   s = Slice(buf);
   EncodeStringKey(schema, s, &encoded_key);
   EXPECT_TRUE(iter->SeekAtOrAfter(*encoded_key, &exact).IsNotFound());
 
   // before first entry
   // (seek to "hello 000", which falls before "hello 0000")
-  buf = StringPrintf(str_format, 0);
+  buf = formatter(0);
   buf.resize(buf.size() - 1);
   s = Slice(buf);
   EncodeStringKey(schema, s, &encoded_key);
@@ -571,13 +574,13 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
   EXPECT_FALSE(exact);
   EXPECT_EQ(0u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
-  EXPECT_EQ(StringPrintf(str_format, 0), s.ToString());
+  EXPECT_EQ(formatter(0), s.ToString());
 
   // Seek to start of file by ordinal
   ASSERT_OK(iter->SeekToFirst());
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
-  ASSERT_EQ(StringPrintf(str_format, 0), s.ToString());
+  ASSERT_EQ(formatter(0), s.ToString());
 
   // Reseek to start and fetch all data.
   // We fetch in 10 smaller chunks to avoid using too much RAM for the
@@ -609,11 +612,17 @@ TEST_P(TestCFileBothCacheTypes, TestReadWriteStringsDictEncoding) {
 #ifndef THREAD_SANITIZER
 TEST_P(TestCFileBothCacheTypes, TestReadWriteLargeStrings) {
   // Pad the values out to a length of ~65KB.
-  const char* kFormat = "%066000d";
-  TestReadWriteStrings(PLAIN_ENCODING, kFormat);
+  // We use this method instead of just a longer sprintf format since
+  // this is much more CPU-efficient (speeds up the test).
+  auto formatter = [](size_t val) {
+    string ret(66000, '0');
+    StringAppendF(&ret, "%010zd", val);
+    return ret;
+  };
+  TestReadWriteStrings(PLAIN_ENCODING, formatter);
   if (AllowSlowTests()) {
-    TestReadWriteStrings(DICT_ENCODING, kFormat);
-    TestReadWriteStrings(PREFIX_ENCODING, kFormat);
+    TestReadWriteStrings(DICT_ENCODING, formatter);
+    TestReadWriteStrings(PREFIX_ENCODING, formatter);
   }
 }
 #endif
