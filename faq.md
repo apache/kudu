@@ -167,7 +167,7 @@ Hotspotting in HBase is an attribute inherited from the distribution strategy us
 
 By default, HBase uses range based distribution. Range based partitioning stores
 ordered values that fit within a specified range of a provided key contiguously
-on disk. Range based partitioning is efficient when there are arge numbers of
+on disk. Range based partitioning is efficient when there are large numbers of
 concurrent small queries, as only servers in the cluster that have values within
 the range specified by the query will be recruited to process that query. Range
 partitioning is susceptible to hotspots, either because the key(s) used to
