@@ -103,6 +103,11 @@ To upgrade to Kudu 0.10.0, see link:installation.html#upgrade[Upgrade from 0.9.x
   several RPC metrics. Any users previously explicitly fetching or monitoring metrics
   related to Remote Bootstrap should update their scripts to reflect the new names.
 
+- The SparkSQL datasource for Kudu no longer supports mode `Overwrite`. Users should
+  use the new `KuduContext.upsertRows` method instead. Additionally, inserts using the
+  datasource are now upserts by default. The older behavior can be restored by setting
+  the `operation` parameter to `insert`.
+
 [[rn_0.10.0_new_features]]
 ==== New features
 
@@ -112,7 +117,9 @@ To upgrade to Kudu 0.10.0, see link:installation.html#upgrade[Upgrade from 0.9.x
 
 - TODO(mpercy): add something about reserved space configuration
 
-
+- The Spark integration's `KuduContext` now supports four new methods for writing to
+  Kudu tables: `insertRows`, `upsertRows`, `updateRows`, and `deleteRows`. These are
+  now the preferred way to write to Kudu tables from Spark.
 
 [[rn_0.10.0_improvements]]
 ==== Improvements and optimizations

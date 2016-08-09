@@ -72,42 +72,36 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
   }
 
   test("table creation") {
-    if(kuduContext.tableExists("testcreatetable")) {
-      kuduContext.deleteTable("testcreatetable")
+    val tableName = "testcreatetable"
+    if (kuduContext.tableExists(tableName)) {
+      kuduContext.deleteTable(tableName)
     }
-
     val df = sqlContext.read.options(kuduOptions).kudu
-
-    kuduContext.createTable("testcreatetable", df.schema, Seq("key"),
+    kuduContext.createTable(tableName, df.schema, Seq("key"),
                             new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
                                                     .setNumReplicas(1))
+    kuduContext.insertRows(df, tableName)
 
     // now use new options to refer to the new table name
     val newOptions: Map[String, String] = Map(
-      "kudu.table" -> "testcreatetable",
+      "kudu.table" -> tableName,
       "kudu.master" -> miniCluster.getMasterAddresses)
-
-    df.write.options(newOptions).mode("append").kudu
-
     val checkDf = sqlContext.read.options(newOptions).kudu
 
     assert(checkDf.schema === df.schema)
-
-    assertTrue(kuduContext.tableExists("testcreatetable"))
+    assertTrue(kuduContext.tableExists(tableName))
     assert(checkDf.count == 10)
-    kuduContext.deleteTable("testcreatetable")
 
-    assertFalse(kuduContext.tableExists("testcreatetable"))
+    kuduContext.deleteTable(tableName)
+    assertFalse(kuduContext.tableExists(tableName))
   }
 
   test("insertion") {
-    val df = sqlContext.read.options(      kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).kudu
     val changedDF = df.limit(1).withColumn("key", df("key").plus(100)).withColumn("c2_s", lit("abc"))
-    changedDF.show
-    changedDF.write.options(kuduOptions).mode("append").kudu
+    kuduContext.insertRows(changedDF, tableName)
 
     val newDF = sqlContext.read.options(kuduOptions).kudu
-    newDF.show
     val collected = newDF.filter("key = 100").collect()
     assertEquals("abc", collected(0).getAs[String]("c2_s"))
 
@@ -117,11 +111,9 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
   test("insertion multiple") {
     val df = sqlContext.read.options(kuduOptions).kudu
     val changedDF = df.limit(2).withColumn("key", df("key").plus(100)).withColumn("c2_s", lit("abc"))
-    changedDF.show
-    changedDF.write.options(kuduOptions).mode("append").kudu
+    kuduContext.insertRows(changedDF, tableName)
 
     val newDF = sqlContext.read.options(kuduOptions).kudu
-    newDF.show
     val collected = newDF.filter("key = 100").collect()
     assertEquals("abc", collected(0).getAs[String]("c2_s"))
 
@@ -132,24 +124,43 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
     deleteRow(101)
   }
 
-  test("update row") {
+  test("upsert rows") {
     val df = sqlContext.read.options(kuduOptions).kudu
     val baseDF = df.limit(1) // filter down to just the first row
-    baseDF.show
+
     // change the c2 string to abc and update
-    val changedDF = baseDF.withColumn("c2_s", lit("abc"))
-    changedDF.show
-    changedDF.write.options(kuduOptions).mode("overwrite").kudu
+    val updateDF = baseDF.withColumn("c2_s", lit("abc"))
+    kuduContext.upsertRows(updateDF, tableName)
 
-    //read the data back
+    // change the key and insert
+    val insertDF = df.limit(1).withColumn("key", df("key").plus(100)).withColumn("c2_s", lit("def"))
+    kuduContext.upsertRows(insertDF, tableName)
+
+    // read the data back
     val newDF = sqlContext.read.options(kuduOptions).kudu
-    newDF.show
-    val collected = newDF.filter("key = 0").collect()
-    assertEquals("abc", collected(0).getAs[String]("c2_s"))
+    val collectedUpdate = newDF.filter("key = 0").collect()
+    assertEquals("abc", collectedUpdate(0).getAs[String]("c2_s"))
+    val collectedInsert = newDF.filter("key = 100").collect()
+    assertEquals("def", collectedInsert(0).getAs[String]("c2_s"))
 
-    //rewrite the original value
-    baseDF.withColumn("c2_s", lit("0")).write.options(kuduOptions)
-      .mode("overwrite").kudu
+    // restore the original state of the table
+    kuduContext.updateRows(baseDF.filter("key = 0").withColumn("c2_s", lit("0")), tableName)
+    deleteRow(100)
+  }
+
+  test("delete rows") {
+    val df = sqlContext.read.options(kuduOptions).kudu
+    val deleteDF = df.filter("key = 0").select("key")
+    kuduContext.deleteRows(deleteDF, tableName)
+
+    // read the data back
+    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val collectedDelete = newDF.filter("key = 0").collect()
+    assertEquals(0, collectedDelete.length)
+
+    // restore the original state of the table
+    val insertDF = df.limit(1).filter("key = 0")
+    kuduContext.insertRows(insertDF, tableName)
   }
 
   test("out of order selection") {
@@ -262,5 +273,66 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
     assert(results.get(0).size.equals(2))
     assert(results.get(0).getInt(0).equals(2))
     assert(results.get(0).getString(1).equals("2"))
+  }
+
+  test("Test SQL: insert into") {
+    val insertTable = "insertintotest"
+
+    // read 0 rows just to get the schema
+    val df = sqlContext.sql(s"SELECT * FROM $tableName LIMIT 0")
+    kuduContext.createTable(insertTable, df.schema, Seq("key"),
+      new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
+        .setNumReplicas(1))
+
+    val newOptions: Map[String, String] = Map(
+      "kudu.table" -> insertTable,
+      "kudu.master" -> miniCluster.getMasterAddresses)
+    sqlContext.read.options(newOptions).kudu.registerTempTable(insertTable)
+
+    sqlContext.sql(s"INSERT INTO TABLE $insertTable SELECT * FROM $tableName")
+    val results = sqlContext.sql(s"SELECT key FROM $insertTable").collectAsList()
+    assertEquals(10, results.size())
+  }
+
+  test("Test SQL: insert overwrite unsupported") {
+    val insertTable = "insertoverwritetest"
+
+    // read 0 rows just to get the schema
+    val df = sqlContext.sql(s"SELECT * FROM $tableName LIMIT 0")
+    kuduContext.createTable(insertTable, df.schema, Seq("key"),
+      new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
+        .setNumReplicas(1))
+
+    val newOptions: Map[String, String] = Map(
+      "kudu.table" -> insertTable,
+      "kudu.master" -> miniCluster.getMasterAddresses)
+    sqlContext.read.options(newOptions).kudu.registerTempTable(insertTable)
+
+    try {
+      sqlContext.sql(s"INSERT OVERWRITE TABLE $insertTable SELECT * FROM $tableName")
+      fail()
+    } catch {
+      case _: UnsupportedOperationException => // good
+      case _ => fail()
+    }
+  }
+
+  test("Test write using DefaultSource") {
+    val df = sqlContext.read.options(kuduOptions).kudu
+
+    val newTable = "testwritedatasourcetable"
+    kuduContext.createTable(newTable, df.schema, Seq("key"),
+        new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
+          .setNumReplicas(1))
+
+    val newOptions: Map[String, String] = Map(
+      "kudu.table" -> newTable,
+      "kudu.master" -> miniCluster.getMasterAddresses)
+    df.write.options(newOptions).mode("append").kudu
+
+    val checkDf = sqlContext.read.options(newOptions).kudu
+    assert(checkDf.schema === df.schema)
+    assertTrue(kuduContext.tableExists(newTable))
+    assert(checkDf.count == 10)
   }
 }

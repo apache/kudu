@@ -32,7 +32,7 @@ package object kudu {
     * Adds a method, `kudu`, to DataFrameWriter that allows writes to Kudu using
     * the DataFileWriter
     */
-    implicit class KuduDataFrameWriter(writer: DataFrameWriter) {
-      def kudu = writer.format("org.apache.kudu.spark.kudu").save
-    }
+  implicit class KuduDataFrameWriter(writer: DataFrameWriter) {
+    def kudu = writer.format("org.apache.kudu.spark.kudu").save
+  }
 }

@@ -67,20 +67,23 @@ class KuduContext(kuduMaster: String) extends Serializable {
 
   /**
     * Check if kudu table already exists
-    * @param tableName tablename to check
+    *
+    * @param tableName name of table to check
     * @return true if table exists, false if table does not exist
     */
   def tableExists(tableName: String): Boolean = syncClient.tableExists(tableName)
 
   /**
     * Delete kudu table
-    * @param tableName tablename to delete
+    *
+    * @param tableName name of table to delete
     * @return DeleteTableResponse
     */
   def deleteTable(tableName: String): DeleteTableResponse = syncClient.deleteTable(tableName)
 
   /**
     * Creates a kudu table for the given schema. Partitioning can be specified through options.
+    *
     * @param tableName table to create
     * @param schema struct schema of table
     * @param keys primary keys of the table
@@ -120,15 +123,50 @@ class KuduContext(kuduMaster: String) extends Serializable {
   }
 
   /**
-    * Inserts or updates rows in kudu from a [[DataFrame]].
-    * @param data `DataFrame` to insert/update
-    * @param tableName table to perform insertion on
-    * @param overwrite true=update, false=insert
+    * Inserts the rows of a [[DataFrame]] into a Kudu table.
+    *
+    * @param data the data to insert
+    * @param tableName the Kudu table to insert into
     */
-  def writeRows(data: DataFrame, tableName: String, overwrite: Boolean) {
+  def insertRows(data: DataFrame, tableName: String): Unit = {
+    writeRows(data, tableName, table => table.newInsert())
+  }
+
+  /**
+    * Updates a Kudu table with the rows of a [[DataFrame]].
+    *
+    * @param data the data to update into Kudu
+    * @param tableName the Kudu table to update
+    */
+  def updateRows(data: DataFrame, tableName: String): Unit = {
+    writeRows(data, tableName, table => table.newUpdate())
+  }
+
+  /**
+    * Upserts the rows of a [[DataFrame]] into a Kudu table.
+    *
+    * @param data the data to upsert into Kudu
+    * @param tableName the Kudu table to upsert into
+    */
+  def upsertRows(data: DataFrame, tableName: String): Unit = {
+    writeRows(data, tableName, table => table.newUpsert())
+  }
+
+  /**
+    * Deletes the rows of a [[DataFrame]] from a Kudu table.
+    *
+    * @param data the data to delete from Kudu
+    *             note that only the key columns should be specified for deletes
+    * @param tableName
+    */
+  def deleteRows(data: DataFrame, tableName: String): Unit = {
+    writeRows(data, tableName, table => table.newDelete())
+  }
+
+  private def writeRows(data: DataFrame, tableName: String, newOp: KuduTable => Operation) {
     val schema = data.schema
     data.foreachPartition(iterator => {
-      val pendingErrors = writeRows(iterator, schema, tableName, overwrite)
+      val pendingErrors = writePartitionRows(iterator, schema, tableName, newOp)
       val errorCount = pendingErrors.getRowErrors.length
       if (errorCount > 0) {
         val errors = pendingErrors.getRowErrors.take(5).map(_.getErrorStatus).mkString
@@ -138,15 +176,10 @@ class KuduContext(kuduMaster: String) extends Serializable {
     })
   }
 
-  /**
-    * Saves partitions of a [[DataFrame]] into Kudu.
-    * @param rows rows to insert or update
-    * @param tableName table to insert or update on
-    */
-  def writeRows(rows: Iterator[Row],
-                schema: StructType,
-                tableName: String,
-                performAsUpdate : Boolean = false): RowErrorsAndOverflowStatus = {
+  private def writePartitionRows(rows: Iterator[Row],
+                                 schema: StructType,
+                                 tableName: String,
+                                 newOp: KuduTable => Operation): RowErrorsAndOverflowStatus = {
     val table: KuduTable = syncClient.openTable(tableName)
     val kuduSchema = table.getSchema
     val indices: Array[(Int, Int)] = schema.fields.zipWithIndex.map({ case (field, sparkIdx) =>
@@ -154,10 +187,9 @@ class KuduContext(kuduMaster: String) extends Serializable {
     })
     val session: KuduSession = syncClient.newSession
     session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
-    session.setIgnoreAllDuplicateRows(true)
     try {
       for (row <- rows) {
-        val operation = if (performAsUpdate) { table.newUpdate() } else { table.newInsert() }
+        val operation = newOp(table)
         for ((sparkIdx, kuduIdx) <- indices) {
           if (row.isNullAt(sparkIdx)) {
             operation.getRow.setNull(kuduIdx)
