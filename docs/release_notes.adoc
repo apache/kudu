@@ -54,16 +54,119 @@ applications that are difficult or impossible to implement on current-generation
 Hadoop storage technologies.
 
 [[rn_0.10.0]]
-=== Release notes specific to 1.0.0
+=== Release notes specific to 0.10.0
+
+Kudu 0.10.0 delivers TODO what it delivers and how compatible it is.
+
+See also +++<a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20%3D%20Resolved
+%20AND%20fixVersion%20%3D%200.10.0">JIRAs resolved
+for Kudu 0.10.0</a>+++ and +++<a href="https://github.com/apache/kudu/compare/0.9.1...0.10.0">Git
+changes between 0.10.0 and 0.10.0</a>+++.
+
+To upgrade to Kudu 0.10.0, see link:installation.html#upgrade[Upgrade from 0.9.x to 0.10.0].
 
 [[rn_0.10.0_incompatible_changes]]
-==== Incompatible changes
+==== Incompatible changes and deprecated APIs
+
+- link:http://gerrit.cloudera.org:8080/3737[Gerrit #3737] The Java client has been repackaged
+  under `org.apache.kudu` instead of `org.kududb`. Import statements for Kudu classes must
+  be modified in order to compile against 0.10.0. Wire compatibility is maintained.
+
+- link:https://gerrit.cloudera.org/#/c/3055/[Gerrit #3055] The Java client's
+  synchronous API methods now throw `KuduException` instead of `Exception`.
+  Existing code that catches `Exception` should still compile, but introspection of an
+  exception's message may be impacted. This change was made to allow thrown exceptions to be
+  queried more easily using `KuduException.getStatus` and calling one of `Status`'s methods.
+  For example, an operation that tries to delete a table that doesn't exist would return a
+  `Status` that returns true when queried on `isNotFound()`.
 
 - The Java client's `KuduTable.getTabletsLocations` set of methods is now
   deprecated. Additionally, they now take an exclusive end partition key instead
   of an inclusive key. Applications are encouraged to use the scan tokens API
   instead of these methods in the future.
 
+- The C++ API for specifying split points on range-partitioned tables has been improved
+  to make it easier for callers to properly manage the ownership of the provided rows.
+
+  The `TableCreator::split_rows` API took a `vector<const KuduPartialRow*>`, which
+  made it very difficult for the calling application to do proper error handling with
+  cleanup when setting the fields of the `KuduPartialRow`. This API has been now been
+  deprecated and replaced by a new method `TableCreator::add_range_split` which allows
+  easier use of smart pointers for safe memory management.
+
+- TODO(dan): should we list the change in buffer size performance due to
+  aa3d4473d229807fa8ee27c6ffb5b4b6fb2893a4 here? users may need to tweak something
+  to keep their existing performance
+
+- The "remote bootstrap" process used to copy a tablet replica from one host to
+  another has been renamed to "Tablet Copy". This resulted in the renaming of
+  several RPC metrics. Any users previously explicitly fetching or monitoring metrics
+  related to Remote Bootstrap should update their scripts to reflect the new names.
+
+[[rn_0.10.0_new_features]]
+==== New features
+
+- TODO(dan): add a release note for non-covering range partitions
+
+- TODO(adar): add something about multi-master support
+
+- TODO(mpercy): add something about reserved space configuration
+
+
+
+[[rn_0.10.0_improvements]]
+==== Improvements and optimizations
+
+- link:https://issues.apache.org/jira/browse/KUDU-1516[KUDU-1516] The `kudu-ksck` tool
+  has been improved and now detects problems such as when a tablet does not have
+  a majority of replicas on live tablet servers, or if those replicas aren’t in a
+  good state. Users who currently depend on the tool to detect inconsistencies may now see
+  failures when before they wouldn't see any.
+
+- link:https://gerrit.cloudera.org:8080/3477[Gerrit #3477] The way operations are buffered in
+  the Java client has been reworked. Previously, the session's buffer size was set per tablet, meaning that a buffer
+  size of 1,000 for 10 tablets being written to allowed for 10,000 operations to be buffered at the
+  same time. With this change, all the tablets share one buffer, so users might need to set a
+  bigger buffer size in order to reach the same level of performance as before.
+
+- link:https://gerrit.cloudera.org/#/c/3674/[Gerrit #3674] Added LESS and GREATER options for
+  column predicates.
+
+- link:https://issues.apache.org/jira/browse/KUDU-1516[KUDU-1516] added support for passing
+  back basic per-scan metrics (e.g cache hit rate) from the server to the C++ client. See the
+  `KuduScanner::GetResourceMetrics()` API for detailed usage. This feature will be supported
+  in the Java client API in a future release.
+
+- link:https://issues.apache.org/jira/browse/KUDU-1446[KUDU-1446] improved the order in
+  which the tablet server evaluates predicates, so that predicates on smaller columns
+  are evaluated first. This may improve performance on queries which apply predicates
+  on multiple columns of different sizes.
+
+- link:https://issues.apache.org/jira/browse/KUDU-1398[KUDU-1398] improved the storage
+  efficiency of Kudu's internal primary key indexes. This optimization should decrease space
+  usage and improve random access performance, particularly for workloads with lengthy
+  primary keys.
+
+[[rn_0.10.0_fixed_issues]]
+==== Fixed Issues
+
+- link:https://gerrit.cloudera.org/#/c/3541/[Gerrit #3541] Fixed a problem in the Java client
+  whereby an RPC could be dropped when a connection to a tablet server or master was forcefully
+  closed on the server-side while RPCs to that server were in the process of being encoded.
+  The effect was that the RPC would not be sent, and users of the synchronous API would receive
+  a `TimeoutException`. Several other Java client bugs which could cause similar spurious timeouts
+  were also fixed in this release.
+
+- link:https://gerrit.cloudera.org/#/c/3724/[Gerrit #3724] Fixed a problem in the Java client
+  whereby an RPC could be dropped when a socket timeout was fired while that RPC was being sent to
+  a tablet server or master. This would manifest itself in the same way
+  link:https://gerrit.cloudera.org/#/c/3541/[Gerrit #3541].
+
+- link:https://issues.apache.org/jira/browse/KUDU-1538[KUDU-1538] fixed a bug in which recycled
+  block identifiers could cause the tablet server to lose data. Following this bug fix, block
+  identifiers will no longer be reused.
+
+[[rn_0.10.0_changes]]
 ==== Other noteworthy changes
 
 - This is the first release of Apache Kudu as a top-level (non-incubating)
@@ -75,6 +178,17 @@ Hadoop storage technologies.
   approximately 20 bits per row). This is expected to substantially
   improve the performance of random-write workloads at the cost of an
   incremental increase in disk space usage.
+
+- The C++ API now has a published Doxygen-based online documentation, which can be found at
+  TODO ADD LINK TO DOXYGEN DOC.
+
+- Kudu now
+  link:http://kudu.apache.org/2016/06/17/raft-consensus-single-node.html[
+  uses the Raft consensus algorithm even for unreplicated tables].
+  This change simplifies code and will also allow administrators to enable
+  replication on a previously-unreplicated table. This change is internal and
+  should not be visible to users.
+  TODO(mpercy): does this prevent downgrade? does everything upgrade OK on its own?
 
 [[rn_0.9.1]]
 === Release notes specific to 0.9.1
