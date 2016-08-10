@@ -279,9 +279,11 @@ Status PartitionSchema::EncodeRangeBounds(const vector<pair<KuduPartialRow,
     if (first_upper.empty() || second_lower.empty() || first_upper > second_lower) {
       return Status::InvalidArgument(
           "overlapping range bounds",
-          strings::Substitute("first upper bound: ($0), second lower bound: ($1)",
-                              RangeKeyDebugString(first_upper, schema),
-                              RangeKeyDebugString(second_lower, schema)));
+          strings::Substitute("first bound: [($0), ($1)), second bound: [($2), ($3))",
+                              RangeKeyDebugString(range_partitions->at(i).first, schema),
+                              RangeKeyDebugString(range_partitions->at(i).second, schema),
+                              RangeKeyDebugString(range_partitions->at(i + 1).first, schema),
+                              RangeKeyDebugString(range_partitions->at(i + 1).second, schema)));
     }
   }
 
@@ -549,24 +551,32 @@ string PartitionSchema::PartitionDebugString(const Partition& partition,
 
     s.append("range: [(");
 
-    vector<string> start_components;
     Slice encoded_range_key_start = partition.range_key_start();
     Status status;
     status = DecodeRangeKey(&encoded_range_key_start, &start_row, &arena);
     if (status.ok()) {
-      AppendRangeDebugStringComponentsOrString(start_row, "<start>", &start_components);
-      s.append(JoinStrings(start_components, ", "));
+      if (IsRangePartitionKeyEmpty(start_row)) {
+        s.append("<start>");
+      } else {
+        vector<string> start_components;
+        AppendRangeDebugStringComponentsOrMin(start_row, &start_components);
+        s.append(JoinStrings(start_components, ", "));
+      }
     } else {
       s.append(Substitute("<decode-error: $0>", status.ToString()));
     }
     s.append("), (");
 
-    vector<string> end_components;
     Slice encoded_range_key_end = partition.range_key_end();
     status = DecodeRangeKey(&encoded_range_key_end, &end_row, &arena);
     if (status.ok()) {
-      AppendRangeDebugStringComponentsOrString(end_row, "<end>", &end_components);
-      s.append(JoinStrings(end_components, ", "));
+      if (IsRangePartitionKeyEmpty(end_row)) {
+        s.append("<end>");
+      } else {
+        vector<string> end_components;
+        AppendRangeDebugStringComponentsOrMin(end_row, &end_components);
+        s.append(JoinStrings(end_components, ", "));
+      }
     } else {
       s.append(Substitute("<decode-error: $0>", status.ToString()));
     }
@@ -576,29 +586,12 @@ string PartitionSchema::PartitionDebugString(const Partition& partition,
   return s;
 }
 
-void PartitionSchema::AppendRangeDebugStringComponentsOrString(const KuduPartialRow& row,
-                                                               const StringPiece default_string,
-                                                               vector<string>* components) const {
+bool PartitionSchema::IsRangePartitionKeyEmpty(const KuduPartialRow& row) const {
   ConstContiguousRow const_row(row.schema(), row.row_data_);
-
   for (ColumnId column_id : range_schema_.column_ids) {
-    string column;
-    int32_t column_idx = row.schema()->find_column_by_id(column_id);
-    if (column_idx == Schema::kColumnNotFound) {
-      components->push_back("<unknown-column>");
-      continue;
-    }
-    const ColumnSchema& column_schema = row.schema()->column(column_idx);
-
-    if (!row.IsColumnSet(column_idx)) {
-      components->push_back(default_string.as_string());
-      break;
-    } else {
-      column_schema.DebugCellAppend(const_row.cell(column_idx), &column);
-    }
-
-    components->push_back(column);
+    if (row.IsColumnSet(row.schema()->find_column_by_id(column_id))) return false;
   }
+  return true;
 }
 
 void PartitionSchema::AppendRangeDebugStringComponentsOrMin(const KuduPartialRow& row,

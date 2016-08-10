@@ -237,14 +237,9 @@ class PartitionSchema {
   template<typename Row>
   Status EncodeKeyImpl(const Row& row, string* buf) const;
 
-  // Appends the stringified range partition components of a partial row to a
-  // vector.
-  //
-  // If any columns of the range partition do not exist in the partial row,
-  // processing stops and the provided default string piece is appended to the vector.
-  void AppendRangeDebugStringComponentsOrString(const KuduPartialRow& row,
-                                                StringPiece default_string,
-                                                std::vector<std::string>* components) const;
+  // Returns true if all of the columns in the range partition key are unset in
+  // the row.
+  bool IsRangePartitionKeyEmpty(const KuduPartialRow& row) const;
 
   // Appends the stringified range partition components of a partial row to a
   // vector.
