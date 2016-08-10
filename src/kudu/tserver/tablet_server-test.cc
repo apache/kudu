@@ -165,7 +165,7 @@ TEST_F(TabletServerTest, TestWebPages) {
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablets", addr),
                               &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), kTabletId);
-  ASSERT_STR_CONTAINS(buf.ToString(), "<td>range: [(&lt;start&gt;), (&lt;end&gt;))</td>");
+  ASSERT_STR_CONTAINS(buf.ToString(), "<td>range: [&lt;start&gt;, &lt;end&gt;)</td>");
 
   // Tablet page should include the schema.
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablet?id=$1", addr, kTabletId),
@@ -188,7 +188,7 @@ TEST_F(TabletServerTest, TestWebPages) {
     // Check that the tablet entry shows up.
     ASSERT_STR_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
     ASSERT_STR_CONTAINS(buf.ToString(), "\"id\": \"TestTablet\"");
-    ASSERT_STR_CONTAINS(buf.ToString(), "\"partition\": \"range: [(<start>), (<end>))\"");
+    ASSERT_STR_CONTAINS(buf.ToString(), "\"partition\": \"range: [<start>, <end>)\"");
 
 
     // Check entity attributes.

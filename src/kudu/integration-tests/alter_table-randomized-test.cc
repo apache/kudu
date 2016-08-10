@@ -323,7 +323,7 @@ struct MirrorTable {
       unique_ptr<KuduPartialRow> upper(schema.NewRow());
       RETURN_NOT_OK(lower->SetInt32("key", partition.first));
       RETURN_NOT_OK(upper->SetInt32("key", partition.second));
-      table_creator->add_range_bound(lower.release(), upper.release());
+      table_creator->add_range_partition(lower.release(), upper.release());
     }
 
     return table_creator->Create();
@@ -453,12 +453,28 @@ struct MirrorTable {
                                            ts_.range_partitions_.end(),
                                            ", ", "], (") << ")";
 
-    unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
-    CHECK_OK(lower_bound->SetInt32("key", bounds.first));
-    unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
-    CHECK_OK(upper_bound->SetInt32("key", bounds.second));
+    KuduTableCreator::RangePartitionBound lower_bound_type = KuduTableCreator::INCLUSIVE_BOUND;
+    KuduTableCreator::RangePartitionBound upper_bound_type = KuduTableCreator::EXCLUSIVE_BOUND;
+    int32_t lower_bound_value = bounds.first;
+    int32_t upper_bound_value = bounds.second;
 
-    table_alterer->AddRangePartition(lower_bound.release(), upper_bound.release());
+    if (ts_.rand_.OneIn(2) && lower_bound_value > INT32_MIN) {
+      lower_bound_type = KuduTableCreator::EXCLUSIVE_BOUND;
+      lower_bound_value -= 1;
+    }
+
+    if (ts_.rand_.OneIn(2)) {
+      upper_bound_type = KuduTableCreator::INCLUSIVE_BOUND;
+      upper_bound_value -= 1;
+    }
+
+    unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+    CHECK_OK(lower_bound->SetInt32("key", lower_bound_value));
+    unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+    CHECK_OK(upper_bound->SetInt32("key", upper_bound_value));
+
+    table_alterer->AddRangePartition(lower_bound.release(), upper_bound.release(),
+                                     lower_bound_type, upper_bound_type);
   }
 
   void DropARangePartition(KuduSchema& schema, KuduTableAlterer* table_alterer) {

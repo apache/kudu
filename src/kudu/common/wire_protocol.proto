@@ -160,6 +160,14 @@ message RowOperationsPB {
     // Should be preceded by the associated lower bound. If all values are
     // missing, then signifies unbounded.
     RANGE_UPPER_BOUND = 7;
+    // Used when specifying an exclusive lower bound range on table creation.
+    // Should be followed by the associated upper bound. If all values are
+    // missing, then signifies unbounded.
+    EXCLUSIVE_RANGE_LOWER_BOUND = 8;
+    // Used when specifying an inclusive upper bound range on table creation.
+    // Should be preceded by the associated lower bound. If all values are
+    // missing, then signifies unbounded.
+    INCLUSIVE_RANGE_UPPER_BOUND = 9;
   }
 
   // The row data for each operation is stored in the following format:

@@ -111,16 +111,36 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
       {
         RowOperationsPBEncoder encoder(pb_step->mutable_add_range_partition()
                                               ->mutable_range_bounds());
-        encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, *s.lower_bound);
-        encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, *s.upper_bound);
+        RowOperationsPB_Type lower_bound_type =
+          s.lower_bound_type == KuduTableCreator::INCLUSIVE_BOUND ?
+          RowOperationsPB::RANGE_LOWER_BOUND :
+          RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND;
+
+        RowOperationsPB_Type upper_bound_type =
+          s.upper_bound_type == KuduTableCreator::EXCLUSIVE_BOUND ?
+          RowOperationsPB::RANGE_UPPER_BOUND :
+          RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND;
+
+        encoder.Add(lower_bound_type, *s.lower_bound);
+        encoder.Add(upper_bound_type, *s.upper_bound);
         break;
       }
       case AlterTableRequestPB::DROP_RANGE_PARTITION:
       {
         RowOperationsPBEncoder encoder(pb_step->mutable_drop_range_partition()
                                               ->mutable_range_bounds());
-        encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, *s.lower_bound);
-        encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, *s.upper_bound);
+        RowOperationsPB_Type lower_bound_type =
+          s.lower_bound_type == KuduTableCreator::INCLUSIVE_BOUND ?
+          RowOperationsPB::RANGE_LOWER_BOUND :
+          RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND;
+
+        RowOperationsPB_Type upper_bound_type =
+          s.upper_bound_type == KuduTableCreator::EXCLUSIVE_BOUND ?
+          RowOperationsPB::RANGE_UPPER_BOUND :
+          RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND;
+
+        encoder.Add(lower_bound_type, *s.lower_bound);
+        encoder.Add(upper_bound_type, *s.upper_bound);
         break;
       }
       default:

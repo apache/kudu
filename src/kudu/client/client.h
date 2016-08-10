@@ -510,29 +510,18 @@ class KUDU_EXPORT KuduTableCreator {
   /// @return Reference to the modified table creator.
   KuduTableCreator& set_range_partition_columns(const std::vector<std::string>& columns);
 
-  /// Add a range partition split at the provided row.
-  ///
-  /// @param [in] split_row
-  ///   The row to use for partitioning. If the row is missing a value
-  ///   for any of the range partition columns, the logical minimum value
-  ///   for that column type will be used by default.
-  ///   The KuduObjectCreator object takes ownership of the parameter.
-  /// @return Reference to the modified table creator.
-  KuduTableCreator& add_range_split(KuduPartialRow* split_row);
+  /// Range partition bound type.
+  enum RangePartitionBound {
+    EXCLUSIVE_BOUND, ///< An exclusive bound.
+    INCLUSIVE_BOUND, ///< An inclusive bound.
+  };
 
-  /// @deprecated Use add_range_split() instead.
+  /// Add a range partition to the table.
   ///
-  /// @param [in] split_rows
-  ///   The row to use for partitioning.
-  /// @return Reference to the modified table creator.
-  KuduTableCreator& split_rows(const std::vector<const KuduPartialRow*>& split_rows);
-
-  /// Add a partition range bound to the table with an inclusive lower bound
-  /// and exclusive upper bound.
-  ///
-  /// Multiple range bounds may be added, but they must not overlap. All split
-  /// rows must fall in one of the range bounds. The lower bound must be less
-  /// than the upper bound.
+  /// Multiple range partitions may be added, but they must not overlap.  All
+  /// range splits specified by @c add_range_partition_split must fall in a
+  /// range partition. The lower bound must be less than or equal to the upper
+  /// bound.
   ///
   /// If this method is not called, the table's range will be unbounded.
   ///
@@ -545,12 +534,37 @@ class KUDU_EXPORT KuduTableCreator {
   /// @param [in] upper_bound
   ///   Row to use as an upper bound. The KuduTableCreator instance takes
   ///   ownership of this parameter. If row is empty, no upper bound is imposed
-  ///   on the table range. If a column of the @c lower_bound row is missing
+  ///   on the table range. If a column of the @c upper_bound row is missing
   ///   a value, the logical maximum value for that column type is used as the
   ///   default.
+  /// @param [in] lower_bound_type
+  ///   The type of the lower bound, either inclusive or exclusive. Defaults to
+  ///   inclusive.
+  /// @param [in] upper_bound_type
+  ///   The type of the lower bound, either inclusive or exclusive. Defaults to
+  ///   exclusive.
   /// @return Reference to the modified table creator.
-  KuduTableCreator& add_range_bound(KuduPartialRow* lower_bound,
-                                    KuduPartialRow* upper_bound);
+  KuduTableCreator& add_range_partition(KuduPartialRow* lower_bound,
+                                        KuduPartialRow* upper_bound,
+                                        RangePartitionBound lower_bound_type = INCLUSIVE_BOUND,
+                                        RangePartitionBound upper_bound_type = EXCLUSIVE_BOUND);
+
+  /// Add a range partition split at the provided row.
+  ///
+  /// @param [in] split_row
+  ///   The row to use for partitioning. If the row is missing a value
+  ///   for any of the range partition columns, the logical minimum value
+  ///   for that column type will be used by default.
+  ///   The KuduTableCreator object takes ownership of the parameter.
+  /// @return Reference to the modified table creator.
+  KuduTableCreator& add_range_partition_split(KuduPartialRow* split_row);
+
+  /// @deprecated Use @c add_range_partition_split() instead.
+  ///
+  /// @param [in] split_rows
+  ///   The row to use for partitioning.
+  /// @return Reference to the modified table creator.
+  KuduTableCreator& split_rows(const std::vector<const KuduPartialRow*>& split_rows);
 
   /// Set the table replication factor.
   ///
@@ -773,8 +787,8 @@ class KUDU_EXPORT KuduTableAlterer {
   /// @return Raw pointer to this alterer object.
   KuduTableAlterer* DropColumn(const std::string& name);
 
-  /// Add a range partition to the table with an inclusive lower bound and
-  /// exclusive upper bound.
+  /// Add a range partition to the table with the specified lower bound and
+  /// upper bound.
   ///
   /// @note The table alterer takes ownership of the rows.
   ///
@@ -789,22 +803,30 @@ class KUDU_EXPORT KuduTableAlterer {
   ///   defaults to one hour.
   ///
   /// @param [in] lower_bound
-  ///   The inclusive lower bound of the range partition to add. If the row is
-  ///   empty, then the lower bound is unbounded. If any of the columns are
-  ///   unset, the logical minimum value for the column's type will be used by
-  ///   default.
+  ///   The lower bound of the range partition to add. If the row is empty, then
+  ///   the lower bound is unbounded. If any of the columns are unset, the
+  ///   logical minimum value for the column's type will be used by default.
   /// @param [in] upper_bound
-  ///   The exclusive upper bound of the range partition to add. If the row is
-  ///   empty, then the upper bound is unbounded. If any of the individual
-  ///   columns are unset, the logical minimum value for the column' type will
-  ///   be used by default.
+  ///   The upper bound of the range partition to add. If the row is empty, then
+  ///   the upper bound is unbounded. If any of the individual columns are
+  ///   unset, the logical minimum value for the column' type will be used by
+  ///   default.
+  /// @param [in] lower_bound_type
+  ///   The type of the lower bound, either inclusive or exclusive. Defaults to
+  ///   inclusive.
+  /// @param [in] upper_bound_type
+  ///   The type of the lower bound, either inclusive or exclusive. Defaults to
+  ///   exclusive.
   /// @return Raw pointer to this alterer object.
-  KuduTableAlterer* AddRangePartition(KuduPartialRow* lower_bound,
-                                      KuduPartialRow* upper_bound);
+  KuduTableAlterer* AddRangePartition(
+      KuduPartialRow* lower_bound,
+      KuduPartialRow* upper_bound,
+      KuduTableCreator::RangePartitionBound lower_bound_type = KuduTableCreator::INCLUSIVE_BOUND,
+      KuduTableCreator::RangePartitionBound upper_bound_type = KuduTableCreator::EXCLUSIVE_BOUND);
 
-  /// Drop the range partition from the table with the specified inclusive lower
-  /// bound and exclusive upper bound. The bounds must match an existing range
-  /// partition exactly, and may not span multiple range partitions.
+  /// Drop the range partition from the table with the specified lower bound and
+  /// upper bound. The bounds must match an existing range partition exactly,
+  /// and may not span multiple range partitions.
   ///
   /// @note The table alterer takes ownership of the rows.
   ///
@@ -822,9 +844,18 @@ class KUDU_EXPORT KuduTableAlterer {
   ///   empty, then the upper bound is unbounded. If any of the individual
   ///   columns are unset, the logical minimum value for the column' type will
   ///   be used by default.
+  /// @param [in] lower_bound_type
+  ///   The type of the lower bound, either inclusive or exclusive. Defaults to
+  ///   inclusive.
+  /// @param [in] upper_bound_type
+  ///   The type of the lower bound, either inclusive or exclusive. Defaults to
+  ///   exclusive.
   /// @return Raw pointer to this alterer object.
-  KuduTableAlterer* DropRangePartition(KuduPartialRow* lower_bound,
-                                       KuduPartialRow* upper_bound);
+  KuduTableAlterer* DropRangePartition(
+      KuduPartialRow* lower_bound,
+      KuduPartialRow* upper_bound,
+      KuduTableCreator::RangePartitionBound lower_bound_type = KuduTableCreator::INCLUSIVE_BOUND,
+      KuduTableCreator::RangePartitionBound upper_bound_type = KuduTableCreator::EXCLUSIVE_BOUND);
 
   /// Set a timeout for the alteration operation.
   ///

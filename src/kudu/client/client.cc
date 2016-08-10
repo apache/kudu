@@ -470,22 +470,28 @@ KuduTableCreator& KuduTableCreator::set_range_partition_columns(
   return *this;
 }
 
-KuduTableCreator& KuduTableCreator::add_range_split(KuduPartialRow* split_row) {
-  data_->range_splits_.emplace_back(split_row);
+KuduTableCreator& KuduTableCreator::add_range_partition_split(KuduPartialRow* split_row) {
+  data_->range_partition_splits_.emplace_back(split_row);
   return *this;
 }
 
 KuduTableCreator& KuduTableCreator::split_rows(const vector<const KuduPartialRow*>& rows) {
   for (const KuduPartialRow* row : rows) {
-    data_->range_splits_.emplace_back(const_cast<KuduPartialRow*>(row));
+    data_->range_partition_splits_.emplace_back(const_cast<KuduPartialRow*>(row));
   }
   return *this;
 }
 
-KuduTableCreator& KuduTableCreator::add_range_bound(KuduPartialRow* lower_bound,
-                                                    KuduPartialRow* upper_bound) {
-  data_->range_bounds_.emplace_back(unique_ptr<KuduPartialRow>(lower_bound),
-                                    unique_ptr<KuduPartialRow>(upper_bound));
+KuduTableCreator& KuduTableCreator::add_range_partition(KuduPartialRow* lower_bound,
+                                                        KuduPartialRow* upper_bound,
+                                                        RangePartitionBound lower_bound_type,
+                                                        RangePartitionBound upper_bound_type) {
+  data_->range_partition_bounds_.push_back({
+      unique_ptr<KuduPartialRow>(lower_bound),
+      unique_ptr<KuduPartialRow>(upper_bound),
+      lower_bound_type,
+      upper_bound_type,
+  });
   return *this;
 }
 
@@ -529,19 +535,30 @@ Status KuduTableCreator::Create() {
 
   RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
 
-  for (const auto& row : data_->range_splits_) {
+  for (const auto& row : data_->range_partition_splits_) {
     if (!row) {
       return Status::InvalidArgument("range split row must not be null");
     }
     encoder.Add(RowOperationsPB::SPLIT_ROW, *row);
   }
 
-  for (const auto& bound : data_->range_bounds_) {
-    if (!bound.first || !bound.second) {
+  for (const auto& bound : data_->range_partition_bounds_) {
+    if (!bound.lower_bound || !bound.upper_bound) {
       return Status::InvalidArgument("range bounds must not be null");
     }
-    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, *bound.first);
-    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, *bound.second);
+
+    RowOperationsPB_Type lower_bound_type =
+      bound.lower_bound_type == KuduTableCreator::INCLUSIVE_BOUND ?
+      RowOperationsPB::RANGE_LOWER_BOUND :
+      RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND;
+
+    RowOperationsPB_Type upper_bound_type =
+      bound.upper_bound_type == KuduTableCreator::EXCLUSIVE_BOUND ?
+      RowOperationsPB::RANGE_UPPER_BOUND :
+      RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND;
+
+    encoder.Add(lower_bound_type, *bound.lower_bound);
+    encoder.Add(upper_bound_type, *bound.upper_bound);
   }
 
   req.mutable_partition_schema()->CopyFrom(data_->partition_schema_);
@@ -557,7 +574,7 @@ Status KuduTableCreator::Create() {
                                                            req,
                                                            *data_->schema_,
                                                            deadline,
-                                                           !data_->range_bounds_.empty()),
+                                                           !data_->range_partition_bounds_.empty()),
                         strings::Substitute("Error creating table $0 on the master",
                                             data_->table_name_));
 
@@ -847,8 +864,12 @@ KuduTableAlterer* KuduTableAlterer::DropColumn(const string& name) {
   return this;
 }
 
-KuduTableAlterer* KuduTableAlterer::AddRangePartition(KuduPartialRow* lower_bound,
-                                                      KuduPartialRow* upper_bound) {
+KuduTableAlterer* KuduTableAlterer::AddRangePartition(
+    KuduPartialRow* lower_bound,
+    KuduPartialRow* upper_bound,
+    KuduTableCreator::RangePartitionBound lower_bound_type,
+    KuduTableCreator::RangePartitionBound upper_bound_type) {
+
   if (lower_bound == nullptr || upper_bound == nullptr) {
     data_->status_ = Status::InvalidArgument("range partition bounds may not be null");
   }
@@ -864,14 +885,19 @@ KuduTableAlterer* KuduTableAlterer::AddRangePartition(KuduPartialRow* lower_boun
   Data::Step s { AlterTableRequestPB::ADD_RANGE_PARTITION,
                  nullptr,
                  unique_ptr<KuduPartialRow>(lower_bound),
-                 unique_ptr<KuduPartialRow>(upper_bound) };
+                 unique_ptr<KuduPartialRow>(upper_bound),
+                 lower_bound_type,
+                 upper_bound_type };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
   return this;
 }
 
-KuduTableAlterer* KuduTableAlterer::DropRangePartition(KuduPartialRow* lower_bound,
-                                                       KuduPartialRow* upper_bound) {
+KuduTableAlterer* KuduTableAlterer::DropRangePartition(
+    KuduPartialRow* lower_bound,
+    KuduPartialRow* upper_bound,
+    KuduTableCreator::RangePartitionBound lower_bound_type,
+    KuduTableCreator::RangePartitionBound upper_bound_type) {
   if (lower_bound == nullptr || upper_bound == nullptr) {
     data_->status_ = Status::InvalidArgument("range partition bounds may not be null");
   }
@@ -887,7 +913,9 @@ KuduTableAlterer* KuduTableAlterer::DropRangePartition(KuduPartialRow* lower_bou
   Data::Step s { AlterTableRequestPB::DROP_RANGE_PARTITION,
                  nullptr,
                  unique_ptr<KuduPartialRow>(lower_bound),
-                 unique_ptr<KuduPartialRow>(upper_bound) };
+                 unique_ptr<KuduPartialRow>(upper_bound),
+                 lower_bound_type,
+                 upper_bound_type };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
   return this;

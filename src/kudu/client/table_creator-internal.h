@@ -40,10 +40,16 @@ class KuduTableCreator::Data {
 
   const KuduSchema* schema_;
 
-  std::vector<std::unique_ptr<KuduPartialRow>> range_splits_;
+  std::vector<std::unique_ptr<KuduPartialRow>> range_partition_splits_;
 
-  std::vector<std::pair<std::unique_ptr<KuduPartialRow>,
-                         std::unique_ptr<KuduPartialRow>>> range_bounds_;
+  struct RangePartition {
+    std::unique_ptr<KuduPartialRow> lower_bound;
+    std::unique_ptr<KuduPartialRow> upper_bound;
+    RangePartitionBound lower_bound_type;
+    RangePartitionBound upper_bound_type;
+  };
+
+  std::vector<RangePartition> range_partition_bounds_;
 
   PartitionSchemaPB partition_schema_;
 

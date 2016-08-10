@@ -53,6 +53,7 @@
 #include <vector>
 
 #include "kudu/cfile/type_encodings.h"
+#include "kudu/common/key_util.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
@@ -831,13 +832,26 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
         split_rows.push_back(*op.split_row);
         break;
       }
-      case RowOperationsPB::RANGE_LOWER_BOUND: {
+      case RowOperationsPB::RANGE_LOWER_BOUND:
+      case RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND: {
         i += 1;
-        if (i >= ops.size() || ops[i].type != RowOperationsPB::RANGE_UPPER_BOUND) {
+        if (i >= ops.size() ||
+            (ops[i].type != RowOperationsPB::RANGE_UPPER_BOUND &&
+             ops[i].type != RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND)) {
           Status s = Status::InvalidArgument("Missing upper range bound in create table request");
           SetupError(resp->mutable_error(), MasterErrorPB::UNKNOWN_ERROR, s);
           return s;
         }
+
+        if (op.type == RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND) {
+          RETURN_NOT_OK(partition_schema.MakeLowerBoundRangePartitionKeyInclusive(
+                op.split_row.get()));
+        }
+        if (ops[i].type == RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND) {
+          RETURN_NOT_OK(partition_schema.MakeUpperBoundRangePartitionKeyExclusive(
+                ops[i].split_row.get()));
+        }
+
         range_bounds.emplace_back(*op.split_row, *ops[i].split_row);
         break;
       }
@@ -1253,11 +1267,22 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
                                      step.ShortDebugString());
     }
 
-    if (ops[0].type != RowOperationsPB::RANGE_LOWER_BOUND ||
-        ops[1].type != RowOperationsPB::RANGE_UPPER_BOUND) {
+    if ((ops[0].type != RowOperationsPB::RANGE_LOWER_BOUND &&
+         ops[0].type != RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND) ||
+        (ops[1].type != RowOperationsPB::RANGE_UPPER_BOUND &&
+         ops[1].type != RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND)) {
       return Status::InvalidArgument(
           "expected a lower bound and upper bound row op for alter range partition step",
           strings::Substitute("$0, $1", ops[0].ToString(schema), ops[1].ToString(schema)));
+    }
+
+    if (ops[0].type == RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND) {
+      RETURN_NOT_OK(partition_schema.MakeLowerBoundRangePartitionKeyInclusive(
+            ops[0].split_row.get()));
+    }
+    if (ops[1].type == RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND) {
+      RETURN_NOT_OK(partition_schema.MakeUpperBoundRangePartitionKeyExclusive(
+            ops[1].split_row.get()));
     }
 
     vector<Partition> partitions;
@@ -1277,15 +1302,17 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           if (existing_iter != existing_tablets.end()) {
             TabletMetadataLock metadata(existing_iter->second, TabletMetadataLock::READ);
             if (metadata.data().pb.partition().partition_key_start() < upper_bound) {
-              return Status::InvalidArgument("New partition conflicts with existing partition",
-                                             step.ShortDebugString());
+              return Status::InvalidArgument(
+                  "New range partition conflicts with existing range partition",
+                  partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
             }
           }
           if (existing_iter != existing_tablets.begin()) {
             TabletMetadataLock metadata(std::prev(existing_iter)->second, TabletMetadataLock::READ);
             if (metadata.data().pb.partition().partition_key_end() > lower_bound) {
-              return Status::InvalidArgument("New partition conflicts with existing partition",
-                                             step.ShortDebugString());
+              return Status::InvalidArgument(
+                  "New range partition conflicts with existing range partition",
+                  partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
             }
           }
 
@@ -1294,15 +1321,17 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           if (new_iter != new_tablets.end()) {
             const auto& metadata = new_iter->second->mutable_metadata()->dirty();
             if (metadata.pb.partition().partition_key_start() < upper_bound) {
-              return Status::InvalidArgument("New partition conflicts with another new partition",
-                                             step.ShortDebugString());
+              return Status::InvalidArgument(
+                  "New range partition conflicts with another new range partition",
+                  partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
             }
           }
           if (new_iter != new_tablets.begin()) {
             const auto& metadata = std::prev(new_iter)->second->mutable_metadata()->dirty();
             if (metadata.pb.partition().partition_key_end() > lower_bound) {
-              return Status::InvalidArgument("New partition conflicts with another new partition",
-                                             step.ShortDebugString());
+              return Status::InvalidArgument(
+                  "New range partition conflicts with another new range partition",
+                  partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
             }
           }
 
@@ -1344,14 +1373,15 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           } else if (found_new) {
             new_tablets.erase(new_iter);
           } else {
-            return Status::InvalidArgument("No tablet found for drop partition step",
-                                           step.ShortDebugString());
+            return Status::InvalidArgument(
+                "No range partition found for drop range partition step",
+                partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
           }
         }
         break;
       }
       default: {
-        return Status::InvalidArgument("Unknown alter table partitioning step",
+        return Status::InvalidArgument("Unknown alter table range partitioning step",
                                        step.ShortDebugString());
       }
     }

@@ -262,10 +262,8 @@ Status PartitionSchema::EncodeRangeBounds(const vector<pair<KuduPartialRow,
 
     if (!lower.empty() && !upper.empty() && lower >= upper) {
       return Status::InvalidArgument(
-          "range bound has lower bound equal to or above the upper bound",
-          strings::Substitute("lower bound: ($0), upper bound: ($1)",
-                              bound.first.ToString(),
-                              bound.second.ToString()));
+          "range partition lower bound must be less than or equal to the upper bound",
+          RangePartitionDebugString(bound.first, bound.second));
     }
     range_partitions->emplace_back(std::move(lower), std::move(upper));
   }
@@ -278,12 +276,14 @@ Status PartitionSchema::EncodeRangeBounds(const vector<pair<KuduPartialRow,
 
     if (first_upper.empty() || second_lower.empty() || first_upper > second_lower) {
       return Status::InvalidArgument(
-          "overlapping range bounds",
-          strings::Substitute("first bound: [($0), ($1)), second bound: [($2), ($3))",
-                              RangeKeyDebugString(range_partitions->at(i).first, schema),
-                              RangeKeyDebugString(range_partitions->at(i).second, schema),
-                              RangeKeyDebugString(range_partitions->at(i + 1).first, schema),
-                              RangeKeyDebugString(range_partitions->at(i + 1).second, schema)));
+          "overlapping range partitions",
+          strings::Substitute("first range partition: $0, second range partition: $1",
+                              RangePartitionDebugString(range_partitions->at(i).first,
+                                                        range_partitions->at(i).second,
+                                                        schema),
+                              RangePartitionDebugString(range_partitions->at(i + 1).first,
+                                                        range_partitions->at(i + 1).second,
+                                                        schema)));
     }
   }
 
@@ -545,44 +545,11 @@ string PartitionSchema::PartitionDebugString(const Partition& partition,
   }
 
   if (!range_schema_.column_ids.empty()) {
-    Arena arena(1024, 128 * 1024);
-    KuduPartialRow start_row(&schema);
-    KuduPartialRow end_row(&schema);
-
-    s.append("range: [(");
-
-    Slice encoded_range_key_start = partition.range_key_start();
-    Status status;
-    status = DecodeRangeKey(&encoded_range_key_start, &start_row, &arena);
-    if (status.ok()) {
-      if (IsRangePartitionKeyEmpty(start_row)) {
-        s.append("<start>");
-      } else {
-        vector<string> start_components;
-        AppendRangeDebugStringComponentsOrMin(start_row, &start_components);
-        s.append(JoinStrings(start_components, ", "));
-      }
-    } else {
-      s.append(Substitute("<decode-error: $0>", status.ToString()));
-    }
-    s.append("), (");
-
-    Slice encoded_range_key_end = partition.range_key_end();
-    status = DecodeRangeKey(&encoded_range_key_end, &end_row, &arena);
-    if (status.ok()) {
-      if (IsRangePartitionKeyEmpty(end_row)) {
-        s.append("<end>");
-      } else {
-        vector<string> end_components;
-        AppendRangeDebugStringComponentsOrMin(end_row, &end_components);
-        s.append(JoinStrings(end_components, ", "));
-      }
-    } else {
-      s.append(Substitute("<decode-error: $0>", status.ToString()));
-    }
-    s.append("))");
+    s.append("range: ");
+    s.append(RangePartitionDebugString(partition.range_key_start().ToString(),
+                                       partition.range_key_end().ToString(),
+                                       schema));
   }
-
   return s;
 }
 
@@ -694,6 +661,55 @@ string PartitionSchema::PartitionKeyDebugString(const string& key, const Schema&
   }
 
   return JoinStrings(components, ", ");
+}
+
+string PartitionSchema::RangePartitionDebugString(const KuduPartialRow& lower_bound,
+                                                  const KuduPartialRow& upper_bound) const {
+  string out("[");
+  if (IsRangePartitionKeyEmpty(lower_bound)) {
+    out.append("<start>");
+  } else {
+    vector<string> components;
+    AppendRangeDebugStringComponentsOrMin(lower_bound, &components);
+    out.push_back('(');
+    out.append(JoinStrings(components, ", "));
+    out.push_back(')');
+  }
+  out.append(", ");
+  if (IsRangePartitionKeyEmpty(upper_bound)) {
+    out.append("<end>");
+  } else {
+    vector<string> components;
+    AppendRangeDebugStringComponentsOrMin(upper_bound, &components);
+    out.push_back('(');
+    out.append(JoinStrings(components, ", "));
+    out.push_back(')');
+  }
+  out.push_back(')');
+  return out;
+}
+
+string PartitionSchema::RangePartitionDebugString(const string& lower_bound,
+                                                  const string& upper_bound,
+                                                  const Schema& schema) const {
+  string out("[");
+  if (lower_bound.empty()) {
+    out.append("<start>");
+  } else {
+    out.push_back('(');
+    out.append(RangeKeyDebugString(lower_bound, schema));
+    out.push_back(')');
+  }
+  out.append(", ");
+  if (upper_bound.empty()) {
+    out.append("<end>");
+  } else {
+    out.push_back('(');
+    out.append(RangeKeyDebugString(upper_bound, schema));
+    out.push_back(')');
+  }
+  out.push_back(')');
+  return out;
 }
 
 string PartitionSchema::RangeKeyDebugString(const string& range_key, const Schema& schema) const {
@@ -907,6 +923,219 @@ Status PartitionSchema::Validate(const Schema& schema) const {
     } else if (column_idx >= schema.num_key_columns()) {
       return Status::InvalidArgument("must specify only primary key columns for "
                                      "range partition component");
+    }
+  }
+
+  return Status::OK();
+}
+
+namespace {
+
+  // Increments an unset column in the row.
+  Status IncrementUnsetColumn(KuduPartialRow* row, int32_t idx) {
+    DCHECK(!row->IsColumnSet(idx));
+    switch (row->schema()->column(idx).type_info()->type()) {
+      case INT8:
+        RETURN_NOT_OK(row->SetInt8(idx, INT8_MIN + 1));
+        break;
+      case INT16:
+        RETURN_NOT_OK(row->SetInt16(idx, INT16_MIN + 1));
+        break;
+      case INT32:
+        RETURN_NOT_OK(row->SetInt32(idx, INT32_MIN + 1));
+        break;
+      case INT64:
+      case TIMESTAMP:
+        RETURN_NOT_OK(row->SetInt64(idx, INT64_MIN + 1));
+        break;
+      case STRING:
+        RETURN_NOT_OK(row->SetStringCopy(idx, Slice("\0", 1)));
+        break;
+      case BINARY:
+        RETURN_NOT_OK(row->SetBinaryCopy(idx, Slice("\0", 1)));
+        break;
+      default:
+        return Status::InvalidArgument("Invalid column type in range partition",
+                                       row->schema()->column(idx).ToString());
+    }
+    return Status::OK();
+  }
+
+  // Increments a column in the row, setting 'success' to true if the increment
+  // succeeds, or false if the column is already the maximum value.
+  Status IncrementColumn(KuduPartialRow* row, int32_t idx, bool* success) {
+    DCHECK(row->IsColumnSet(idx));
+    *success = true;
+    switch (row->schema()->column(idx).type_info()->type()) {
+      case INT8: {
+        int8_t value;
+        RETURN_NOT_OK(row->GetInt8(idx, &value));
+        if (value < INT8_MAX) {
+          RETURN_NOT_OK(row->SetInt8(idx, value + 1));
+        } else {
+          *success = false;
+        }
+        break;
+      }
+      case INT16: {
+        int16_t value;
+        RETURN_NOT_OK(row->GetInt16(idx, &value));
+        if (value < INT16_MAX) {
+          RETURN_NOT_OK(row->SetInt16(idx, value + 1));
+        } else {
+          *success = false;
+        }
+        break;
+      }
+      case INT32: {
+        int32_t value;
+        RETURN_NOT_OK(row->GetInt32(idx, &value));
+        if (value < INT32_MAX) {
+          RETURN_NOT_OK(row->SetInt32(idx, value + 1));
+        } else {
+          *success = false;
+        }
+        break;
+      }
+      case INT64:
+      case TIMESTAMP: {
+        int64_t value;
+        RETURN_NOT_OK(row->GetInt64(idx, &value));
+        if (value < INT64_MAX) {
+          RETURN_NOT_OK(row->SetInt64(idx, value + 1));
+        } else {
+          *success = false;
+        }
+        break;
+      }
+      case BINARY: {
+        Slice value;
+        RETURN_NOT_OK(row->GetBinary(idx, &value));
+        string incremented = value.ToString();
+        incremented.push_back('\0');
+        RETURN_NOT_OK(row->SetBinaryCopy(idx, incremented));
+        break;
+      }
+      case STRING: {
+        Slice value;
+        RETURN_NOT_OK(row->GetString(idx, &value));
+        string incremented = value.ToString();
+        incremented.push_back('\0');
+        RETURN_NOT_OK(row->SetStringCopy(idx, incremented));
+        break;
+      }
+      default:
+        return Status::InvalidArgument("Invalid column type in range partition",
+                                       row->schema()->column(idx).ToString());
+    }
+    return Status::OK();
+  }
+} // anonymous namespace
+
+Status PartitionSchema::IncrementRangePartitionKey(KuduPartialRow* row, bool* increment) const {
+  vector<int32_t> unset_idxs;
+  *increment = false;
+  for (auto itr = range_schema_.column_ids.rbegin();
+       itr != range_schema_.column_ids.rend(); ++itr) {
+    int32_t idx = row->schema()->find_column_by_id(*itr);
+    if (idx == Schema::kColumnNotFound) {
+      return Status::InvalidArgument(Substitute("range partition column ID $0 "
+                                                "not found in range partition key schema.",
+                                                *itr));
+    }
+
+    if (row->IsColumnSet(idx)) {
+      RETURN_NOT_OK(IncrementColumn(row, idx, increment));
+      if (*increment) break;
+    } else {
+      RETURN_NOT_OK(IncrementUnsetColumn(row, idx));
+      *increment = true;
+      break;
+    }
+    unset_idxs.push_back(idx);
+  }
+
+  if (*increment) {
+    for (int32_t idx : unset_idxs) {
+      RETURN_NOT_OK(row->Unset(idx));
+    }
+  }
+
+  return Status::OK();
+}
+
+Status PartitionSchema::MakeLowerBoundRangePartitionKeyInclusive(KuduPartialRow* row) const {
+  // To transform a lower bound range partition key from exclusive to inclusive,
+  // the key mut be incremented. To increment the key, start with the least
+  // significant column in the key (furthest right), and increment it.  If the
+  // increment fails because the value is already the maximum, move on to the
+  // next least significant column and attempt to increment it (and so on). When
+  // incrementing, an unset cell is equivalent to a cell set to the minimum
+  // value for its column (e.g. an unset Int8 column is incremented to -127
+  // (-2^7 + 1)). Finally, all columns less significant than the incremented
+  // column are unset (which means they are treated as the minimum value for
+  // that column). If all columns in the key are the maximum and can not be
+  // incremented, then the operation fails.
+  //
+  // A few examples, given a range partition of three Int8 columns. Underscore
+  // signifies unset:
+  //
+  // (1, 2, 3)       -> (1, 2, 4)
+  // (1, 2, 127)     -> (1, 3, _)
+  // (1, 127, 3)     -> (1, 127, 4)
+  // (1, _, 3)       -> (1, _, 4)
+  // (_, _, _)       -> (_, _, 1)
+  // (1, 127, 127)   -> (2, _, _)
+  // (127, 127, 127) -> fail!
+
+  bool increment;
+  RETURN_NOT_OK(IncrementRangePartitionKey(row, &increment));
+
+  if (!increment) {
+    vector<string> components;
+    AppendRangeDebugStringComponentsOrMin(*row, &components);
+    return Status::InvalidArgument("Exclusive lower bound range partition key must not "
+                                   "have maximum values for all components",
+                                   JoinStrings(components, ", "));
+  }
+
+  return Status::OK();
+}
+
+Status PartitionSchema::MakeUpperBoundRangePartitionKeyExclusive(KuduPartialRow* row) const {
+  // To transform an upper bound range partition key from inclusive to exclusive,
+  // the key must be incremented. Incrementing the key follows the same steps as
+  // turning an exclusive lower bound key into exclusive. Upper bound keys have
+  // two additional special cases:
+  //
+  // * For upper bound range partition keys with all columns unset, no
+  //   transformation is needed (all unset columns signifies unbounded,
+  //   so there is no difference between inclusive and exclusive).
+  //
+  // * For an upper bound key that can't be incremented because all components
+  //   are the maximum value, all columns are unset in order to transform it to
+  //   an unbounded upper bound (this is a special case increment).
+
+  bool all_unset = true;
+  for (ColumnId column_id : range_schema_.column_ids) {
+    int32_t idx = row->schema()->find_column_by_id(column_id);
+    if (idx == Schema::kColumnNotFound) {
+      return Status::InvalidArgument(Substitute("range partition column ID $0 "
+                                                "not found in range partition key schema.",
+                                                column_id));
+    }
+    all_unset = !row->IsColumnSet(idx);
+    if (!all_unset) break;
+  }
+
+  if (all_unset) return Status::OK();
+
+  bool increment;
+  RETURN_NOT_OK(IncrementRangePartitionKey(row, &increment));
+  if (!increment) {
+    for (ColumnId column_id : range_schema_.column_ids) {
+      int32_t idx = row->schema()->find_column_by_id(column_id);
+      RETURN_NOT_OK(row->Unset(idx));
     }
   }
 

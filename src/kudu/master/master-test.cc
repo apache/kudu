@@ -481,7 +481,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     Status s = CreateTable(kTableName, kTableSchema, { }, { { a_lower, a_upper },
                                                             { b_lower, b_upper } });
     ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: overlapping range bounds");
+    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: overlapping range partition");
   }
   { // Split row out of bounds (above).
     KuduPartialRow bound_lower(&kTableSchema);
@@ -520,7 +520,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     Status s = CreateTable(kTableName, kTableSchema, { }, { { bound_lower, bound_upper } });
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
-        "Invalid argument: range bound has lower bound equal to or above the upper bound");
+                        "Invalid argument: range partition lower bound must be "
+                        "less than or equal to the upper bound");
   }
   { // Lower bound equals upper bound.
     KuduPartialRow bound_lower(&kTableSchema);
@@ -531,8 +532,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     Status s = CreateTable(kTableName, kTableSchema, { }, { { bound_lower, bound_upper } });
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Invalid argument: range bound has lower bound equal to or above the "
-                        "upper bound");
+                        "Invalid argument: range partition lower bound must be "
+                        "less than or equal to the upper bound");
   }
   { // Split equals lower bound
     KuduPartialRow bound_lower(&kTableSchema);

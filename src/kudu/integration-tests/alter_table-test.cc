@@ -567,11 +567,11 @@ Status AlterTableTest::CreateTable(const string& table_name,
                 .num_replicas(1);
 
   for (auto& split_row : split_rows) {
-    table_creator->add_range_split(split_row.release());
+    table_creator->add_range_partition_split(split_row.release());
   }
 
   for (auto& bound : bounds) {
-    table_creator->add_range_bound(bound.first.release(), bound.second.release());
+    table_creator->add_range_partition(bound.first.release(), bound.second.release());
   }
 
   return table_creator->Create();
@@ -1094,12 +1094,14 @@ TEST_F(AlterTableTest, TestAlterRangePartitioning) {
   table_alterer->DropRangePartition(lower.release(), upper.release());
   lower.reset(schema_.NewRow());
   upper.reset(schema_.NewRow());
-  ASSERT_OK(lower->SetInt32("c0", 50));
-  ASSERT_OK(upper->SetInt32("c0", 150));
-  table_alterer->AddRangePartition(lower.release(), upper.release());
+  ASSERT_OK(lower->SetInt32("c0", 49));
+  ASSERT_OK(upper->SetInt32("c0", 149));
+  table_alterer->AddRangePartition(lower.release(), upper.release(),
+                                   KuduTableCreator::EXCLUSIVE_BOUND,
+                                   KuduTableCreator::INCLUSIVE_BOUND);
   ASSERT_OK(table_alterer->wait(false)->Alter());
-  ASSERT_OK(InsertRowsSequential(table_name, 50, 75));
-  ASSERT_EQ(75, CountTableRows(table.get()));
+  ASSERT_OK(InsertRowsSequential(table_name, 50, 100));
+  ASSERT_EQ(100, CountTableRows(table.get()));
 
   // Replace the range partition with the same one.
   table_alterer.reset(client_->NewTableAlterer(table_name));
@@ -1167,7 +1169,7 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(table_creator->table_name(table_name)
                           .schema(&schema_)
                           .set_range_partition_columns({ "c0" })
-                          .add_range_bound(lower.release(), upper.release())
+                          .add_range_partition(lower.release(), upper.release())
                           .num_replicas(1)
                           .Create());
   shared_ptr<KuduTable> table;
@@ -1184,7 +1186,7 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   table_alterer->AddRangePartition(lower.release(), upper.release());
   s = table_alterer->wait(false)->Alter();
   ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "New partition conflicts with existing partition");
+  ASSERT_STR_CONTAINS(s.ToString(), "New range partition conflicts with existing range partition");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD [50, 150) <- illegal (overlap)
@@ -1196,19 +1198,21 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   table_alterer->AddRangePartition(lower.release(), upper.release());
   s = table_alterer->wait(false)->Alter();
   ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "New partition conflicts with existing partition");
+  ASSERT_STR_CONTAINS(s.ToString(), "New range partition conflicts with existing range partition");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
-  // ADD [-50, 50) <- illegal (overlap)
+  // ADD (-50, 50] <- illegal (overlap)
   table_alterer.reset(client_->NewTableAlterer(table_name));
   lower.reset(schema_.NewRow());
   upper.reset(schema_.NewRow());
   ASSERT_OK(lower->SetInt32("c0", -50));
   ASSERT_OK(upper->SetInt32("c0", 50));
-  table_alterer->AddRangePartition(lower.release(), upper.release());
+  table_alterer->AddRangePartition(lower.release(), upper.release(),
+                                   KuduTableCreator::EXCLUSIVE_BOUND,
+                                   KuduTableCreator::INCLUSIVE_BOUND);
   s = table_alterer->wait(false)->Alter();
   ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "New partition conflicts with existing partition");
+  ASSERT_STR_CONTAINS(s.ToString(), "New range partition conflicts with existing range partition");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD [200, 300)
@@ -1226,7 +1230,7 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   table_alterer->AddRangePartition(lower.release(), upper.release());
   s = table_alterer->wait(false)->Alter();
   ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "New partition conflicts with existing partition");
+  ASSERT_STR_CONTAINS(s.ToString(), "New range partition conflicts with existing range partition");
   ASSERT_FALSE(InsertRowsSequential(table_name, 200, 100).ok());
   ASSERT_EQ(100, CountTableRows(table.get()));
 
@@ -1235,7 +1239,7 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   table_alterer->DropRangePartition(schema_.NewRow(), schema_.NewRow());
   s = table_alterer->Alter();
   ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No tablet found for drop partition step");
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [50, 150)
@@ -1249,7 +1253,7 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   table_alterer->RenameTo("foo");
   s = table_alterer->Alter();
   ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No tablet found for drop partition step");
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [-50, 50)
@@ -1261,7 +1265,7 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
   ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No tablet found for drop partition step");
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [0, 100)
@@ -1297,7 +1301,7 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->wait(false)->Alter();
   ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No tablet found for drop partition step");
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
   ASSERT_EQ(100, CountTableRows(table.get()));
 }
 

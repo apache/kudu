@@ -33,6 +33,8 @@ namespace kudu {
 
 string DecodedRowOperation::ToString(const Schema& schema) const {
   switch (type) {
+    case RowOperationsPB::UNKNOWN:
+      return "UNKNOWN";
     case RowOperationsPB::INSERT:
       return "INSERT " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
     case RowOperationsPB::UPSERT:
@@ -48,9 +50,10 @@ string DecodedRowOperation::ToString(const Schema& schema) const {
       return Substitute("RANGE_LOWER_BOUND $0", split_row->ToString());
     case RowOperationsPB::RANGE_UPPER_BOUND:
       return Substitute("RANGE_UPPER_BOUND $0", split_row->ToString());
-    default:
-      LOG(DFATAL) << "Bad type: " << type;
-      return "<bad row operation>";
+    case RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND:
+      return Substitute("EXCLUSIVE_RANGE_LOWER_BOUND $0", split_row->ToString());
+    case RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND:
+      return Substitute("INCLUSIVE_RANGE_UPPER_BOUND $0", split_row->ToString());
   }
 }
 
@@ -578,6 +581,8 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
       case RowOperationsPB::SPLIT_ROW:
       case RowOperationsPB::RANGE_LOWER_BOUND:
       case RowOperationsPB::RANGE_UPPER_BOUND:
+      case RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND:
+      case RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND:
         RETURN_NOT_OK(DecodeSplitRow(mapping, &op));
         break;
     }

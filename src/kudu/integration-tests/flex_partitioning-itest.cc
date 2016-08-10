@@ -217,7 +217,7 @@ class FlexPartitioningITest : public KuduTest {
       for (int i = 0; i < bound.second.size(); i++) {
         ASSERT_OK(upper->SetInt32(range_partition.columns[i], bound.second[i]));
       }
-      table_creator->add_range_bound(lower, upper);
+      table_creator->add_range_partition(lower, upper);
     }
 
     ASSERT_OK(table_creator->Create());

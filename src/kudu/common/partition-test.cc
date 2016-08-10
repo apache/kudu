@@ -28,6 +28,7 @@
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/escaping.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hash_util.h"
 #include "kudu/util/test_util.h"
@@ -111,11 +112,12 @@ void CheckCreateRangePartitions(const vector<pair<optional<string>, optional<str
     EXPECT_EQ(lower, partitions[i].partition_key_start());
     EXPECT_EQ(upper, partitions[i].partition_key_end());
 
-    EXPECT_EQ(strings::Substitute("range: [($0$1), ($2$3))",
-                                  lower.empty() ? "" : "string col=",
-                                  lower.empty() ? "<start>" : strings::Utf8SafeCEscape(lower),
-                                  upper.empty() ? "" : "string col=",
-                                  upper.empty() ? "<end>" : strings::Utf8SafeCEscape(upper)),
+    string lower_debug = lower.empty() ? "<start>" :
+      strings::Substitute("(string col=$0)", strings::Utf8SafeCEscape(lower));
+    string upper_debug = upper.empty() ? "<end>" :
+      strings::Substitute("(string col=$0)", strings::Utf8SafeCEscape(upper));
+
+    EXPECT_EQ(strings::Substitute("range: [$0, $1)", lower_debug, upper_debug),
               partition_schema.PartitionDebugString(partitions[i], schema));
   }
 }
@@ -180,7 +182,7 @@ TEST(PartitionTest, TestCompoundRangeKeyEncoding) {
 
   EXPECT_TRUE(partitions[0].hash_buckets().empty());
 
-  EXPECT_EQ("range: [(<start>), (string c1=, string c2=, string c3=a))",
+  EXPECT_EQ("range: [<start>, (string c1=, string c2=, string c3=a))",
             partition_schema.PartitionDebugString(partitions[0], schema));
   EXPECT_EQ("range: [(string c1=, string c2=, string c3=a), "
                     "(string c1=, string c2=, string c3=b))",
@@ -188,7 +190,7 @@ TEST(PartitionTest, TestCompoundRangeKeyEncoding) {
   EXPECT_EQ("range: [(string c1=, string c2=b, string c3=c), "
             "(string c1=d, string c2=, string c3=f))",
             partition_schema.PartitionDebugString(partitions[2], schema));
-  EXPECT_EQ("range: [(string c1=e, string c2=, string c3=), (<end>))",
+  EXPECT_EQ("range: [(string c1=e, string c2=, string c3=), <end>)",
             partition_schema.PartitionDebugString(partitions[3], schema));
 }
 
@@ -510,7 +512,7 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[0].range_key_end());
   EXPECT_EQ(string("", 0), partitions[0].partition_key_start());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a1\0\0b1\0\0c1", 18), partitions[0].partition_key_end());
-  EXPECT_EQ("hash buckets: (0, 0), range: [(<start>), (string a=a1, string b=b1, string c=c1))",
+  EXPECT_EQ("hash buckets: (0, 0), range: [<start>, (string a=a1, string b=b1, string c=c1))",
             partition_schema.PartitionDebugString(partitions[0], schema));
 
   EXPECT_EQ(0, partitions[1].hash_buckets()[0]);
@@ -531,7 +533,7 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[2].partition_key_start());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[2].partition_key_end());
   EXPECT_EQ("hash buckets: (0, 0), "
-            "range: [(string a=a2, string b=b2, string c=), (<end>))",
+            "range: [(string a=a2, string b=b2, string c=), <end>)",
             partition_schema.PartitionDebugString(partitions[2], schema));
 
   EXPECT_EQ(0, partitions[3].hash_buckets()[0]);
@@ -541,7 +543,7 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[3].partition_key_start());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a1\0\0b1\0\0c1", 18), partitions[3].partition_key_end());
   EXPECT_EQ("hash buckets: (0, 1), "
-            "range: [(<start>), (string a=a1, string b=b1, string c=c1))",
+            "range: [<start>, (string a=a1, string b=b1, string c=c1))",
             partition_schema.PartitionDebugString(partitions[3], schema));
 
   EXPECT_EQ(0, partitions[4].hash_buckets()[0]);
@@ -561,7 +563,7 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("", 0), partitions[5].range_key_end());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[5].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1", 4), partitions[5].partition_key_end());
-  EXPECT_EQ("hash buckets: (0, 1), range: [(string a=a2, string b=b2, string c=), (<end>))",
+  EXPECT_EQ("hash buckets: (0, 1), range: [(string a=a2, string b=b2, string c=), <end>)",
             partition_schema.PartitionDebugString(partitions[5], schema));
 
   EXPECT_EQ(1, partitions[6].hash_buckets()[0]);
@@ -570,7 +572,7 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[6].range_key_end());
   EXPECT_EQ(string("\0\0\0\1", 4), partitions[6].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a1\0\0b1\0\0c1", 18), partitions[6].partition_key_end());
-  EXPECT_EQ("hash buckets: (1, 0), range: [(<start>), (string a=a1, string b=b1, string c=c1))",
+  EXPECT_EQ("hash buckets: (1, 0), range: [<start>, (string a=a1, string b=b1, string c=c1))",
             partition_schema.PartitionDebugString(partitions[6], schema));
 
   EXPECT_EQ(1, partitions[7].hash_buckets()[0]);
@@ -590,7 +592,7 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("", 0), partitions[8].range_key_end());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[8].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[8].partition_key_end());
-  EXPECT_EQ("hash buckets: (1, 0), range: [(string a=a2, string b=b2, string c=), (<end>))",
+  EXPECT_EQ("hash buckets: (1, 0), range: [(string a=a2, string b=b2, string c=), <end>)",
             partition_schema.PartitionDebugString(partitions[8], schema));
 
   EXPECT_EQ(1, partitions[9].hash_buckets()[0]);
@@ -599,7 +601,7 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[9].range_key_end());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[9].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a1\0\0b1\0\0c1", 18), partitions[9].partition_key_end());
-  EXPECT_EQ("hash buckets: (1, 1), range: [(<start>), (string a=a1, string b=b1, string c=c1))",
+  EXPECT_EQ("hash buckets: (1, 1), range: [<start>, (string a=a1, string b=b1, string c=c1))",
             partition_schema.PartitionDebugString(partitions[9], schema));
 
   EXPECT_EQ(1, partitions[10].hash_buckets()[0]);
@@ -619,8 +621,155 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("", 0), partitions[11].range_key_end());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[11].partition_key_start());
   EXPECT_EQ(string("", 0), partitions[11].partition_key_end());
-  EXPECT_EQ("hash buckets: (1, 1), range: [(string a=a2, string b=b2, string c=), (<end>))",
+  EXPECT_EQ("hash buckets: (1, 1), range: [(string a=a2, string b=b2, string c=), <end>)",
             partition_schema.PartitionDebugString(partitions[11], schema));
+}
+
+TEST(PartitionTest, TestIncrementRangePartitionBounds) {
+  // CREATE TABLE t (a INT8, b INT8, c INT8, PRIMARY KEY (a, b, c))
+  // PARITITION BY RANGE (a, b, c);
+  Schema schema({ ColumnSchema("c1", INT8),
+                  ColumnSchema("c2", INT8),
+                  ColumnSchema("c3", INT8) },
+                { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
+
+  PartitionSchemaPB schema_builder;
+  PartitionSchema partition_schema;
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+
+  vector<vector<boost::optional<int8_t>>> tests {
+    // Big list of test cases. First three columns are the input columns, final
+    // three columns are the expected output columns. For example,
+    { 1, 2, 3, 1, 2, 4 },
+    // corresponds to the test case:
+    // (1, 2, 3) -> (1, 2, 4)
+
+    { 1, 2, boost::none, 1, 2, -127 },
+    { 1, boost::none, 3, 1, boost::none, 4 },
+    { boost::none, 2, 3, boost::none, 2, 4 },
+    { 1, boost::none, boost::none, 1, boost::none, -127 },
+    { boost::none, boost::none, 3, boost::none, boost::none, 4 },
+    { boost::none, 2, boost::none, boost::none, 2, -127 },
+    { 1, 2, 127, 1, 3, boost::none },
+    { 1, 127, 3, 1, 127, 4},
+    { 1, 127, 127, 2, boost::none, boost::none },
+  };
+
+  auto check = [&] (const vector<boost::optional<int8_t>>& test, bool lower_bound) {
+    CHECK_EQ(6, test.size());
+    KuduPartialRow bound(&schema);
+    if (test[0]) ASSERT_OK(bound.SetInt8("c1", *test[0]));
+    if (test[1]) ASSERT_OK(bound.SetInt8("c2", *test[1]));
+    if (test[2]) ASSERT_OK(bound.SetInt8("c3", *test[2]));
+
+    vector<string> components;
+    partition_schema.AppendRangeDebugStringComponentsOrMin(bound, &components);
+    SCOPED_TRACE(JoinStrings(components, ", "));
+    SCOPED_TRACE(lower_bound ? "lower bound" : "upper bound");
+
+    if (lower_bound) {
+      ASSERT_OK(partition_schema.MakeLowerBoundRangePartitionKeyInclusive(&bound));
+    } else {
+      ASSERT_OK(partition_schema.MakeUpperBoundRangePartitionKeyExclusive(&bound));
+    }
+
+    int8_t val;
+    if (test[3]) {
+      ASSERT_OK(bound.GetInt8("c1", &val));
+      ASSERT_EQ(*test[3], val);
+    } else {
+      ASSERT_FALSE(bound.IsColumnSet("c1"));
+    }
+    if (test[4]) {
+      ASSERT_OK(bound.GetInt8("c2", &val));
+      ASSERT_EQ(*test[4], val);
+    } else {
+      ASSERT_FALSE(bound.IsColumnSet("c2"));
+    }
+    if (test[5]) {
+      ASSERT_OK(bound.GetInt8("c3", &val));
+      ASSERT_EQ(*test[5], val);
+    } else {
+      ASSERT_FALSE(bound.IsColumnSet("c3"));
+    }
+  };
+
+  for (const auto& test : tests) {
+    check(test, true);
+    check(test, false);
+  }
+
+  // Special cases:
+  // lower bound: (_, _, _) -> (_, _, -127)
+  check({ boost::none, boost::none, boost::none, boost::none, boost::none, -127 }, true);
+  // upper bound: (_, _, _) -> (_, _, _)
+  check({ boost::none, boost::none, boost::none, boost::none, boost::none, boost::none }, false);
+  // upper bound: (127, 127, 127) -> (_, _, _)
+  check({ 127, 127, 127, boost::none, boost::none, boost::none }, false);
+
+  // lower bound: (127, 127, 127) -> fail!
+    KuduPartialRow lower_bound(&schema);
+    ASSERT_OK(lower_bound.SetInt8("c1", 127));
+    ASSERT_OK(lower_bound.SetInt8("c2", 127));
+    ASSERT_OK(lower_bound.SetInt8("c3", 127));
+    Status s = partition_schema.MakeLowerBoundRangePartitionKeyInclusive(&lower_bound);
+    ASSERT_EQ("Invalid argument: Exclusive lower bound range partition key must not have "
+              "maximum values for all components: int8 c1=127, int8 c2=127, int8 c3=127",
+              s.ToString());
+}
+
+TEST(PartitionTest, TestIncrementRangePartitionStringBounds) {
+  // CREATE TABLE t (a STRING, b STRING, PRIMARY KEY (a, b))
+  // PARITITION BY RANGE (a, b, c);
+  Schema schema({ ColumnSchema("c1", STRING),
+                  ColumnSchema("c2", STRING) },
+                { ColumnId(0), ColumnId(1) }, 2);
+
+  PartitionSchemaPB schema_builder;
+  PartitionSchema partition_schema;
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+
+  vector<vector<boost::optional<string>>> tests {
+    { string("a"), string("b"), string("a"), string("b\0", 2) },
+    { string("a"), boost::none, string("a"), string("\0", 1) },
+  };
+
+  auto check = [&] (const vector<boost::optional<string>>& test, bool lower_bound) {
+    CHECK_EQ(4, test.size());
+    KuduPartialRow bound(&schema);
+    if (test[0]) ASSERT_OK(bound.SetString("c1", *test[0]));
+    if (test[1]) ASSERT_OK(bound.SetString("c2", *test[1]));
+
+    vector<string> components;
+    partition_schema.AppendRangeDebugStringComponentsOrMin(bound, &components);
+    SCOPED_TRACE(JoinStrings(components, ", "));
+    SCOPED_TRACE(lower_bound ? "lower bound" : "upper bound");
+
+    if (lower_bound) {
+      ASSERT_OK(partition_schema.MakeLowerBoundRangePartitionKeyInclusive(&bound));
+    } else {
+      ASSERT_OK(partition_schema.MakeUpperBoundRangePartitionKeyExclusive(&bound));
+    }
+
+    Slice val;
+    if (test[2]) {
+      ASSERT_OK(bound.GetString("c1", &val));
+      ASSERT_EQ(*test[2], val);
+    } else {
+      ASSERT_FALSE(bound.IsColumnSet("c1"));
+    }
+    if (test[3]) {
+      ASSERT_OK(bound.GetString("c2", &val));
+      ASSERT_EQ(*test[3], val);
+    } else {
+      ASSERT_FALSE(bound.IsColumnSet("c2"));
+    }
+  };
+
+  for (const auto& test : tests) {
+    check(test, true);
+    check(test, false);
+  }
 }
 
 } // namespace kudu

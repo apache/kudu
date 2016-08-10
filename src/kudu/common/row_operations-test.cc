@@ -96,7 +96,7 @@ void RowOperationsTest::CheckDecodeDoesntCrash(const Schema& client_schema,
 void RowOperationsTest::DoFuzzTest(const Schema& server_schema,
                                    const KuduPartialRow& row,
                                    int n_random_changes) {
-  for (int operation = 0; operation <= 4; operation++) {
+  for (int operation = 0; operation <= 8; operation++) {
     RowOperationsPB pb;
     RowOperationsPBEncoder enc(&pb);
 
@@ -115,6 +115,18 @@ void RowOperationsTest::DoFuzzTest(const Schema& server_schema,
         break;
       case 4:
         enc.Add(RowOperationsPB::SPLIT_ROW, row);
+        break;
+      case 5:
+        enc.Add(RowOperationsPB::RANGE_LOWER_BOUND, row);
+        break;
+      case 6:
+        enc.Add(RowOperationsPB::RANGE_UPPER_BOUND, row);
+        break;
+      case 7:
+        enc.Add(RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND, row);
+        break;
+      case 8:
+        enc.Add(RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND, row);
         break;
     }
 

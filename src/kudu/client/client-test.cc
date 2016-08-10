@@ -452,10 +452,10 @@ class ClientTest : public KuduTest {
 
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     for (auto& split_row : split_rows) {
-      table_creator->add_range_split(split_row.release());
+      table_creator->add_range_partition_split(split_row.release());
     }
     for (auto& bound : range_bounds) {
-      table_creator->add_range_bound(bound.first.release(), bound.second.release());
+      table_creator->add_range_partition(bound.first.release(), bound.second.release());
     }
     ASSERT_OK(table_creator->table_name(table_name)
                             .schema(&schema_)
@@ -1139,14 +1139,13 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
     Status result = session->Apply(insert.release());
     EXPECT_TRUE(result.IsIOError());
     vector<KuduError*> errors;
+    ElementDeleter drop(&errors);
     bool overflowed;
     session->GetPendingErrors(&errors, &overflowed);
     EXPECT_FALSE(overflowed);
     EXPECT_EQ(1, errors.size());
     EXPECT_TRUE(errors[0]->status().IsNotFound());
-    STLDeleteElements(&errors);
   }
-
 
   // Scans
 
@@ -1227,6 +1226,86 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
 
     ASSERT_EQ(0, rows.size());
   }
+}
+
+TEST_F(ClientTest, TestExclusiveInclusiveRangeBounds) {
+  // Create test table and insert test rows.
+  const string table_name = "TestExclusiveInclusiveRangeBounds";
+  shared_ptr<KuduTable> table;
+
+  unique_ptr<KuduPartialRow> lower_bound(schema_.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", -1));
+  unique_ptr<KuduPartialRow> upper_bound(schema_.NewRow());
+  ASSERT_OK(upper_bound->SetInt32("key", 99));
+
+  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->add_range_partition(lower_bound.release(), upper_bound.release(),
+                                      KuduTableCreator::EXCLUSIVE_BOUND,
+                                      KuduTableCreator::INCLUSIVE_BOUND);
+  ASSERT_OK(table_creator->table_name(table_name)
+                          .schema(&schema_)
+                          .num_replicas(1)
+                          .set_range_partition_columns({ "key" })
+                          .Create());
+
+  lower_bound.reset(schema_.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", 199));
+  upper_bound.reset(schema_.NewRow());
+  ASSERT_OK(upper_bound->SetInt32("key", 299));
+  unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+  alterer->AddRangePartition(lower_bound.release(), upper_bound.release(),
+                             KuduTableCreator::EXCLUSIVE_BOUND,
+                             KuduTableCreator::INCLUSIVE_BOUND);
+  ASSERT_OK(alterer->Alter());
+  ASSERT_OK(client_->OpenTable(table_name, &table));
+
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100, 0));
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100, 200));
+
+  // Insert out-of-range rows.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+  session->SetTimeoutMillis(60000);
+  vector<gscoped_ptr<KuduInsert>> out_of_range_inserts;
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), -50));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), -1));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 100));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 150));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 199));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 300));
+  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 350));
+
+  for (auto& insert : out_of_range_inserts) {
+    Status result = session->Apply(insert.release());
+    EXPECT_TRUE(result.IsIOError());
+    vector<KuduError*> errors;
+    ElementDeleter drop(&errors);
+    bool overflowed;
+    session->GetPendingErrors(&errors, &overflowed);
+    EXPECT_FALSE(overflowed);
+    EXPECT_EQ(1, errors.size());
+    EXPECT_TRUE(errors[0]->status().IsNotFound());
+  }
+
+  ASSERT_EQ(200, CountTableRows(table.get()));
+
+  // Drop the range partitions by normal inclusive/exclusive bounds, and by
+  // exclusive/inclusive bounds.
+  alterer.reset(client_->NewTableAlterer(table_name));
+  lower_bound.reset(schema_.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", 0));
+  upper_bound.reset(schema_.NewRow());
+  ASSERT_OK(upper_bound->SetInt32("key", 100));
+  alterer->DropRangePartition(lower_bound.release(), upper_bound.release());
+  lower_bound.reset(schema_.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", 199));
+  upper_bound.reset(schema_.NewRow());
+  ASSERT_OK(upper_bound->SetInt32("key", 299));
+  alterer->DropRangePartition(lower_bound.release(), upper_bound.release(),
+                             KuduTableCreator::EXCLUSIVE_BOUND,
+                             KuduTableCreator::INCLUSIVE_BOUND);
+  ASSERT_OK(alterer->Alter());
+  ASSERT_EQ(0, CountTableRows(table.get()));
 }
 
 TEST_F(ClientTest, TestMetaCacheExpiry) {

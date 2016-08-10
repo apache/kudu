@@ -58,6 +58,8 @@ class KuduTableAlterer::Data {
     // [ADD|DROP]_RANGE_PARTITION.
     std::unique_ptr<KuduPartialRow> lower_bound;
     std::unique_ptr<KuduPartialRow> upper_bound;
+    KuduTableCreator::RangePartitionBound lower_bound_type;
+    KuduTableCreator::RangePartitionBound upper_bound_type;
   };
   std::vector<Step> steps_;
 
