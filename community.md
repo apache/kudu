@@ -129,8 +129,14 @@ so that we can feature them.
 
 [comment]: # (Note: we are using an ordered list here to allow for special styling of it)
 
-1. Wed, May 25, 2016. [Dallas/Fort Worth Cloudera User Group](http://www.meetup.com/DFW-Cloudera-User-Group/events/230547045/).
-  _Apache Kudu: New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Ryan Bosshart.
+1. Thu, Aug 18, 2016. [Boulder/Denver Big Data Meetup](http://www.meetup.com/Boulder-Denver-Big-Data/events/232056701/). Broomfield, CO, USA.<br/>
+   _Apache Kudu: New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Mike Percy.
+1. Wed, Aug 17, 2016. [Denver Cloudera User Group](http://www.meetup.com/Denver-Cloudera-User-Group/events/232782782/). Greenwood Village, CO, USA.<br/>
+   _Apache Kudu: New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Mike Percy.
+1. Thu, July 21, 2016. [Silicon Valley Big Data Meetup](http://www.meetup.com/SVBigData/events/230427069/). Palo Alto, CA, USA.<br/>
+   _Apache Kudu (incubating): New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Mike Percy.
+1. Wed, May 25, 2016. [Dallas/Fort Worth Cloudera User Group](http://www.meetup.com/DFW-Cloudera-User-Group/events/230547045/). Dallas, TX, USA.<br/>
+   _Apache Kudu: New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Ryan Bosshart.
 1. Thu, May 12, 2016. [Vancouver Spark Meetup](http://www.meetup.com/Vancouver-Spark/events/229692936/). Vancouver, BC, Canada.<br/>
    _Kudu and Spark for fast analytics on streaming data_. Presented by Mike Percy and Dan Burkert.
 1. Tue, May 10, 2016. [Apache: Big Data 2016](http://apachebigdata2016.sched.org/event/6M1k/using-kafka-and-kudu-for-fast-low-latency-sql-analytics-on-streaming-data-mike-percy-ashish-singh-cloudera). Vancouver, BC, Canada.<br/>
@@ -140,7 +146,7 @@ so that we can feature them.
 1. Wed, May 4, 2016. [Cloudera Tech Meetup](http://www.meetup.com/Cloudera-Tech-Meetup/events/230169394). Budapest, Hungary.<br/>
    _Apache Kudu (incubating): New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Adar Dembo.
 1. Fri, Apr 8, 2016. [DataEngConf](http://www.dataengconf.com/hadoop-vs-kudu). San Francisco, CA, USA.<br/>
-  _Resolving Transactional Access/Analytic Performance Trade-offs in Apache Hadoop with Apache Kudu_.
+   _Resolving Transactional Access/Analytic Performance Trade-offs in Apache Hadoop with Apache Kudu_.
 1. Thu, Mar 31, 2016. [Strata Hadoop World](http://conferences.oreilly.com/strata/hadoop-big-data-ca/public/schedule/detail/47055). San Jose, CA, USA.<br/>
    _Fast data made easy with Apache Kafka and Apache Kudu (incubating)_. Presented by Ted Malaska and Jeff Holoman.
 1. Sat, Mar 19, 2016. [China Hadoop Summit 2016](http://chinahadoop.com/archives/1313). Beijing, China.<br/>
