@@ -62,7 +62,7 @@ int MajoritySize(int num_voters);
 // If the peer uuid is not a voter in the configuration, this function will return
 // NON_PARTICIPANT, regardless of whether it is listed as leader in cstate.
 RaftPeerPB::Role GetConsensusRole(const std::string& uuid,
-                                    const ConsensusStatePB& cstate);
+                                  const ConsensusStatePB& cstate);
 
 // Verifies that the provided configuration is well formed.
 // If type == COMMITTED_QUORUM, we enforce that opid_index is set.
@@ -72,6 +72,15 @@ Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type);
 // Superset of checks performed by VerifyRaftConfig. Also ensures that the
 // leader is a configuration voter, if it is set, and that a valid term is set.
 Status VerifyConsensusState(const ConsensusStatePB& cstate, RaftConfigState type);
+
+// Provide a textual description of the difference between two consensus states,
+// suitable for logging.
+std::string DiffConsensusStates(const ConsensusStatePB& old_state,
+                                const ConsensusStatePB& new_state);
+
+// Same as the above, but just the RaftConfigPB portion of the configuration.
+std::string DiffRaftConfigs(const RaftConfigPB& old_config,
+                            const RaftConfigPB& new_config);
 
 }  // namespace consensus
 }  // namespace kudu

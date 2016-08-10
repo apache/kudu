@@ -16,10 +16,14 @@
 // under the License.
 #include "kudu/consensus/quorum_util.h"
 
+#include <map>
 #include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
@@ -27,6 +31,8 @@ namespace kudu {
 namespace consensus {
 
 using google::protobuf::RepeatedPtrField;
+using std::map;
+using std::pair;
 using std::string;
 using strings::Substitute;
 
@@ -196,5 +202,114 @@ Status VerifyConsensusState(const ConsensusStatePB& cstate, RaftConfigState type
   return Status::OK();
 }
 
-} // namespace consensus
+std::string DiffRaftConfigs(const RaftConfigPB& old_config,
+                            const RaftConfigPB& new_config) {
+  // Create dummy ConsensusState objects so we can reuse the code
+  // from the below function.
+  ConsensusStatePB old_state;
+  old_state.mutable_config()->CopyFrom(old_config);
+  ConsensusStatePB new_state;
+  new_state.mutable_config()->CopyFrom(new_config);
+
+  return DiffConsensusStates(old_state, new_state);
+}
+
+string DiffConsensusStates(const ConsensusStatePB& old_state,
+                           const ConsensusStatePB& new_state) {
+  bool leader_changed = old_state.leader_uuid() != new_state.leader_uuid();
+  bool term_changed = old_state.current_term() != new_state.current_term();
+  bool config_changed = old_state.config().opid_index() != new_state.config().opid_index();
+
+  // Construct a map from Peer UUID to '<old peer, new peer>' pairs.
+  // Due to the default construction nature of std::map and std::pair, if a peer
+  // is present in one configuration but not the other, we'll end up with an empty
+  // protobuf in that element of the pair.
+  map<string, pair<RaftPeerPB, RaftPeerPB>> peer_infos;
+  for (const auto& p : old_state.config().peers()) {
+    peer_infos[p.permanent_uuid()].first = p;
+  }
+  for (const auto& p : new_state.config().peers()) {
+    peer_infos[p.permanent_uuid()].second = p;
+  }
+
+  // Now collect strings representing the changes.
+  vector<string> change_strs;
+  if (config_changed) {
+    change_strs.push_back(
+        Substitute("config changed from index $0 to $1",
+                   old_state.config().opid_index(),
+                   new_state.config().opid_index()));
+  }
+
+  if (term_changed) {
+    change_strs.push_back(
+        Substitute("term changed from $0 to $1",
+                   old_state.current_term(),
+                   new_state.current_term()));
+  }
+
+  if (leader_changed) {
+    string old_leader = "<none>";
+    string new_leader = "<none>";
+    if (old_state.has_leader_uuid()) {
+      old_leader = Substitute("$0 ($1)",
+                              old_state.leader_uuid(),
+                              peer_infos[old_state.leader_uuid()].first.last_known_addr().host());
+    }
+    if (new_state.has_leader_uuid()) {
+      new_leader = Substitute("$0 ($1)",
+                              new_state.leader_uuid(),
+                              peer_infos[new_state.leader_uuid()].second.last_known_addr().host());
+    }
+
+    change_strs.push_back(Substitute("leader changed from $0 to $1",
+                                     old_leader, new_leader));
+  }
+
+  for (const auto& e : peer_infos) {
+    const auto& old_peer = e.second.first;
+    const auto& new_peer = e.second.second;
+    if (old_peer.has_permanent_uuid() && !new_peer.has_permanent_uuid()) {
+      change_strs.push_back(
+          Substitute("$0 $1 ($2) evicted",
+                     RaftPeerPB_MemberType_Name(old_peer.member_type()),
+                     old_peer.permanent_uuid(),
+                     old_peer.last_known_addr().host()));
+    } else if (!old_peer.has_permanent_uuid() && new_peer.has_permanent_uuid()) {
+      change_strs.push_back(
+          Substitute("$0 $1 ($2) added",
+                     RaftPeerPB_MemberType_Name(new_peer.member_type()),
+                     new_peer.permanent_uuid(),
+                     new_peer.last_known_addr().host()));
+    } else if (old_peer.has_permanent_uuid() && new_peer.has_permanent_uuid()) {
+      if (old_peer.member_type() != new_peer.member_type()) {
+        change_strs.push_back(
+            Substitute("$0 ($1) changed from $2 to $3",
+                       old_peer.permanent_uuid(),
+                       old_peer.last_known_addr().host(),
+                       RaftPeerPB_MemberType_Name(old_peer.member_type()),
+                       RaftPeerPB_MemberType_Name(new_peer.member_type())));
+      }
+    }
+  }
+
+  // We expect to have detected some differences above, but in case
+  // someone forgets to update this function when adding a new field,
+  // it's still useful to report some change unless the protobufs are identical.
+  // So, we fall back to just dumping the before/after debug strings.
+  if (change_strs.empty()) {
+    if (old_state.ShortDebugString() == new_state.ShortDebugString()) {
+      return "no change";
+    }
+    return Substitute("change from {$0} to {$1}",
+                      old_state.ShortDebugString(),
+                      new_state.ShortDebugString());
+  }
+
+
+  return JoinStrings(change_strs, ", ");
+
+}
+
+}  // namespace consensus
 }  // namespace kudu

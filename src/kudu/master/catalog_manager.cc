@@ -1979,8 +1979,9 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 
       // If a replica is reporting a new consensus configuration, update the
       // master's copy of that configuration.
-      LOG(INFO) << "Tablet: " << tablet->tablet_id() << " reported consensus state change."
-                << " New consensus state: " << cstate.ShortDebugString();
+      LOG(INFO) << "T " << tablet->tablet_id() << " reported consensus state change: "
+                << DiffConsensusStates(prev_cstate, cstate)
+                << ". New consensus state: " << cstate.ShortDebugString();
 
       // If we need to change the report, copy the whole thing on the stack
       // rather than const-casting.
