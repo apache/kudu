@@ -24,6 +24,7 @@
 #
 # MySQL config:
 #   MYSQLHOST - host running mysql
+#   MYSQLPORT - port of mysql [optional]
 #   MYSQLUSER - username
 #   MYSQLPWD  - password
 #   MYSQLDB   - mysql database
@@ -59,6 +60,12 @@ from StringIO import StringIO
 import threading
 import uuid
 
+def percent_rate(num, denom):
+  if denom == 0:
+    return 0
+  return num/denom * 100
+
+
 class TRServer(object):
   def __init__(self):
     self.thread_local = threading.local()
@@ -91,10 +98,11 @@ class TRServer(object):
       return self.thread_local.db
 
     host = os.environ["MYSQLHOST"]
+    port = int(os.environ.get("MYSQLPORT", "3306"))
     user = os.environ["MYSQLUSER"]
     pwd = os.environ["MYSQLPWD"]
     db = os.environ["MYSQLDB"]
-    self.thread_local.db = MySQLdb.connect(host, user, pwd, db)
+    self.thread_local.db = MySQLdb.connect(host, user, pwd, db, port=port)
     self.thread_local.db.autocommit(True)
     logging.info("Connected to MySQL at %s" % host)
     return self.thread_local.db
@@ -135,8 +143,7 @@ class TRServer(object):
         test_name varchar(100),
         status int,
         log_key char(40),
-        INDEX (revision),
-        INDEX (test_name),
+        INDEX (test_name, timestamp),
         INDEX (timestamp)
       );""")
 
@@ -286,30 +293,36 @@ class TRServer(object):
       results.append(dict(test_name=test_name,
                           runs_7day=runs_7day,
                           failures_7day=failures_7day,
+                          rate_7day=percent_rate(failures_7day, runs_7day),
                           runs_2day=runs_2day,
                           failures_2day=failures_2day,
+                          rate_2day=percent_rate(failures_2day, runs_2day),
                           sparkline=",".join("%.2f" % p for p in sparkline)))
 
     return Template("""
     <h1>Flaky rate over last week</h1>
     <table class="table" id="flaky-rate">
-      <tr>
-       <th>test</th>
-       <th>failure rate (7-day)</th>
-       <th>failure rate (2-day)</th>
-       <th>trend</th>
-      </tr>
+      <thead>
+        <tr>
+         <th data-order-sequence='["asc"]'>test</th>
+         <th data-order-sequence='["desc"]'>failure rate (7-day)</th>
+         <th data-order-sequence='["desc"]'>failure rate (2-day)</th>
+         <th data-orderable="false">trend</th>
+        </tr>
+      </thead>
       {% for r in results %}
       <tr>
         <td><a href="/test_drilldown?test_name={{ r.test_name |urlencode }}">
               {{ r.test_name |e }}
             </a></td>
-        <td>{{ r.failures_7day |e }} / {{ r.runs_7day }}
-            ({{ "%.2f"|format(r.failures_7day / r.runs_7day * 100) }}%)
+        <td data-order="{{ r.rate_7day }}">
+            {{ r.failures_7day |e }} / {{ r.runs_7day }}
+            ({{ "%.2f"|format(r.rate_7day) }}%)
         </td>
-        <td>{{ r.failures_2day |e }} / {{ r.runs_2day }}
+        <td data-order="{{ r.rate_2day }}">
+            {{ r.failures_2day |e }} / {{ r.runs_2day }}
             {% if r.runs_2day > 0 %}
-            ({{ "%.2f"|format(r.failures_2day / r.runs_2day * 100) }}%)
+            ({{ "%.2f"|format(r.rate_2day) }}%)
             {% endif %}
         </td>
         <td><span class="inlinesparkline">{{ r.sparkline |e }}</span></td>
@@ -325,6 +338,7 @@ class TRServer(object):
             'tooltipFormatter': function(sparkline, options, fields) {
               return String(7 - fields.x) + "d ago: " + fields.y + "%"; }
         });
+        $('#flaky-rate').DataTable({ paging: false, searching: false, info: false });
       });
     </script>
     """).render(results=results)
@@ -428,6 +442,7 @@ class TRServer(object):
     <html>
       <head><title>Kudu test results</title>
       <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css" />
+      <link rel="stylesheet" type="text/css" href="//cdn.datatables.net/1.10.12/css/jquery.dataTables.css" />
       <style>
         .new-date { border-bottom: 2px solid #666; }
         #flaky-rate tr :nth-child(1) { width: 70%; }
@@ -446,6 +461,7 @@ class TRServer(object):
       <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
       <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
       <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-sparklines/2.1.2/jquery.sparkline.min.js"></script>
+      <script src="//cdn.datatables.net/1.10.12/js/jquery.dataTables.js"></script>
       <div class="container-fluid">
       {{ body }}
       </div>
