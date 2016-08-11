@@ -199,8 +199,8 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
     };
 
     case PredicateType::Equality: {
-      if (column_.type_info()->Compare(lower_, other.lower_) > 0 ||
-          column_.type_info()->Compare(upper_, other.lower_) <= 0) {
+      if ((lower_ != nullptr && column_.type_info()->Compare(lower_, other.lower_) > 0) ||
+          (upper_ != nullptr && column_.type_info()->Compare(upper_, other.lower_) <= 0)) {
         // The equality value does not fall in this range.
         SetToNone();
       } else {
@@ -224,8 +224,8 @@ void ColumnPredicate::MergeIntoEquality(const ColumnPredicate& other) {
       return;
     }
     case PredicateType::Range: {
-      if (column_.type_info()->Compare(lower_, other.lower_) < 0 ||
-          column_.type_info()->Compare(lower_, other.upper_) >= 0) {
+      if ((other.lower_ != nullptr && column_.type_info()->Compare(lower_, other.lower_) < 0) ||
+          (other.upper_ != nullptr && column_.type_info()->Compare(lower_, other.upper_) >= 0)) {
         // This equality value does not fall in the other range.
         SetToNone();
       }
