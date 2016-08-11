@@ -412,13 +412,14 @@ keep their own "inserted_on" timestamp column, as they would in a traditional RD
 Types of Delta Compaction
 ============================================================
 
-A delta compaction may be classified as either 'minor' or 'major':
+A REDO delta compaction may be classified as either 'minor' or 'major':
 
-Minor delta compaction:
-------------------------
+Minor REDO delta compaction
+---------------------------
 
 A 'minor' compaction is one that does not include the base data. In this
 type of compaction, the resulting file is itself a delta file.
+
 ```
 +------------+      +---------+     +---------+     +---------+     +---------+
 | base data  | <--- | delta 0 + <-- | delta 1 + <-- | delta 2 + <-- | delta 3 +
@@ -435,14 +436,15 @@ type of compaction, the resulting file is itself a delta file.
                   compaction result
 ```
 
-Minor delta compactions serve only goals 1 and 3: because they do not read or re-write
-base data, they cannot transform REDO records into UNDO.
+Minor REDO delta compactions serve only goal 1: because they do not read or
+re-write base data, they cannot transform REDO records into UNDO.
 
-Major delta compaction:
-------------------------
+Major REDO delta compaction
+---------------------------
 
-A 'major' compaction is one that includes the base data along with any number
-of delta files.
+A 'major' REDO compaction is one that includes the base data along with any
+number of REDO delta files.
+
 ```
 +------------+      +---------+     +---------+     +---------+     +---------+
 | base data  | <--- | delta 0 + <-- | delta 1 + <-- | delta 2 + <-- | delta 3 +
@@ -458,11 +460,12 @@ of delta files.
 \____________________________________/
            compaction result
 ```
-Major delta compactions can satisfy all three goals of delta compactions, but cost
-more than than minor delta compactions since they must read and re-write the base data,
-which is typically larger than the delta data.
 
-A major delta compaction may be performed against any subset of the columns
+Major delta compactions satisfy delta compaction goals 1 and 2, but cost more
+than than minor delta compactions since they must read and re-write the base
+data, which is typically larger than the delta data.
+
+A major REDO delta compaction may be performed against any subset of the columns
 in a DiskRowSet -- if only a single column has received a significant number of updates,
 then a compaction can be performed which only reads and rewrites that column. It is
 assumed that this is a common workload in many EDW-like applications (e.g updating

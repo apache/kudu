@@ -283,7 +283,7 @@ class Tablet {
   Status FlushBiggestDMS();
 
   // Finds the RowSet which has the most separate delta files and
-  // issues a minor delta compaction.
+  // issues a delta compaction.
   Status CompactWorstDeltas(RowSet::DeltaCompactionType type);
 
   // Get the highest performance improvement that would come from compacting the delta stores

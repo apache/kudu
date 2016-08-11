@@ -271,7 +271,7 @@ Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
         TRACE_COUNTER_INCREMENT("delta_iterators_lazy_initted", 1);
 
         VLOG(2) << (delta_type_ == REDO ? "REDO" : "UNDO") << " delta " << ToString()
-                << "has no delta stats"
+                << " has no delta stats"
                 << ": can't cull for " << snap.ToString();
       } else if (delta_type_ == REDO) {
         VLOG(2) << "REDO delta " << ToString()

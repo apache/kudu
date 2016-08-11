@@ -199,6 +199,9 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   //
   // TODO(perf): this could be more fine grained
   std::lock_guard<Mutex> l(compact_flush_lock_);
+
+  // At the time of writing, minor delta compaction only compacts REDO delta
+  // files, so we need at least 2 REDO delta stores to proceed.
   if (CountRedoDeltaStores() <= 1) {
     return Status::OK();
   }

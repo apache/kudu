@@ -140,16 +140,16 @@ class DeltaTracker {
   // Sets *deleted to true if so; otherwise sets it to false.
   Status CheckRowDeleted(rowid_t row_idx, bool *deleted, ProbeStats* stats) const;
 
-  // Compacts all deltafiles
+  // Compacts all REDO delta files.
   //
   // TODO keep metadata in the delta stores to indicate whether or not
   // a minor (or -- when implemented -- major) compaction is warranted
   // and if so, compact the stores.
   Status Compact();
 
-  // Performs minor compaction on all delta files between index
+  // Performs minor compaction on all REDO delta files between index
   // "start_idx" and "end_idx" (inclusive) and writes this to a
-  // new delta block. If "end_idx" is set to -1, then delta files at
+  // new REDO delta block. If "end_idx" is set to -1, then delta files at
   // all indexes starting with "start_idx" will be compacted.
   Status CompactStores(int start_idx, int end_idx);
 
