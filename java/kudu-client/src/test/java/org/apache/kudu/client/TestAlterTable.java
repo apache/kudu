@@ -71,7 +71,7 @@ public class TestAlterTable extends BaseKuduTest {
       PartialRow upper = schema.newPartialRow();
       lower.addInt("c0", bound.getFirst());
       upper.addInt("c0", bound.getSecond());
-      createOptions.addRangeBound(lower, upper);
+      createOptions.addRangePartition(lower, upper);
     }
 
     return BaseKuduTest.createTable(tableName, schema, createOptions);
@@ -160,6 +160,63 @@ public class TestAlterTable extends BaseKuduTest {
     syncClient.alterTable(tableName, options);
     assertEquals(0, countRowsInTable(table));
     assertEquals(2, openTable(tableName).getSchema().getColumnCount());
+  }
+
+  /**
+   * Test creating and altering a table with range partitions with exclusive
+   * lower bounds and inclusive upper bounds.
+   */
+  @Test
+  public void testAlterRangePartitioningExclusiveInclusive() throws Exception {
+    // Create initial table with single range partition covering (-1, 99].
+    ArrayList<ColumnSchema> columns = new ArrayList<>(1);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT32)
+                    .nullable(false)
+                    .key(true)
+                    .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32)
+                    .nullable(false)
+                    .build());
+    Schema schema = new Schema(columns);
+
+    CreateTableOptions createOptions =
+        new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("c0"))
+                                .setNumReplicas(1);
+
+    PartialRow lower = schema.newPartialRow();
+    PartialRow upper = schema.newPartialRow();
+    lower.addInt("c0", -1);
+    upper.addInt("c0", 99);
+    createOptions.addRangePartition(lower, upper,
+                                    RangePartitionBound.EXCLUSIVE_BOUND,
+                                    RangePartitionBound.INCLUSIVE_BOUND);
+
+    KuduTable table = BaseKuduTest.createTable(tableName, schema, createOptions);
+
+    lower.addInt("c0", 199);
+    upper.addInt("c0", 299);
+    syncClient.alterTable(tableName, new AlterTableOptions().addRangePartition(
+        lower, upper, RangePartitionBound.EXCLUSIVE_BOUND, RangePartitionBound.INCLUSIVE_BOUND));
+
+    // Insert some rows, and then drop the partition and ensure that the table is empty.
+    insertRows(table, 0, 100);
+    insertRows(table, 200, 300);
+    assertEquals(200, countRowsInTable(table));
+
+    AlterTableOptions alter = new AlterTableOptions();
+    lower.addInt("c0", 0);
+    upper.addInt("c0", 100);
+    alter.dropRangePartition(lower, upper,
+                             RangePartitionBound.INCLUSIVE_BOUND,
+                             RangePartitionBound.EXCLUSIVE_BOUND);
+    lower.addInt("c0", 199);
+    upper.addInt("c0", 299);
+    alter.dropRangePartition(lower, upper,
+                             RangePartitionBound.EXCLUSIVE_BOUND,
+                             RangePartitionBound.INCLUSIVE_BOUND);
+    syncClient.alterTable(tableName, alter);
+
+    assertEquals(0, countRowsInTable(table));
   }
 
   @Test

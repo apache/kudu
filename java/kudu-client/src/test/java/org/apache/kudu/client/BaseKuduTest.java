@@ -274,13 +274,13 @@ public class BaseKuduTest {
     aLowerBound.addInt("key", 0);
     PartialRow aUpperBound = schema.newPartialRow();
     aUpperBound.addInt("key", 100);
-    option.addRangeBound(aLowerBound, aUpperBound);
+    option.addRangePartition(aLowerBound, aUpperBound);
 
     PartialRow bLowerBound = schema.newPartialRow();
     bLowerBound.addInt("key", 200);
     PartialRow bUpperBound = schema.newPartialRow();
     bUpperBound.addInt("key", 300);
-    option.addRangeBound(bLowerBound, bUpperBound);
+    option.addRangePartition(bLowerBound, bUpperBound);
 
     PartialRow split = schema.newPartialRow();
     split.addInt("key", 50);

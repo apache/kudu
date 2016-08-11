@@ -60,7 +60,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     SPLIT_ROWS((byte)RowOperationsPB.Type.SPLIT_ROW.getNumber()),
     UPSERT((byte)RowOperationsPB.Type.UPSERT.getNumber()),
     RANGE_LOWER_BOUND((byte) RowOperationsPB.Type.RANGE_LOWER_BOUND.getNumber()),
-    RANGE_UPPER_BOUND((byte) RowOperationsPB.Type.RANGE_UPPER_BOUND.getNumber());
+    RANGE_UPPER_BOUND((byte) RowOperationsPB.Type.RANGE_UPPER_BOUND.getNumber()),
+    EXCLUSIVE_RANGE_LOWER_BOUND((byte) RowOperationsPB.Type.EXCLUSIVE_RANGE_LOWER_BOUND.getNumber()),
+    INCLUSIVE_RANGE_UPPER_BOUND((byte) RowOperationsPB.Type.INCLUSIVE_RANGE_UPPER_BOUND.getNumber());
 
     ChangeType(byte encodedByte) {
       this.encodedByte = encodedByte;
@@ -320,32 +322,49 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
       return toPB();
     }
 
-    public RowOperationsPB encodeSplitRowsRangeBounds(List<PartialRow> splitRows,
-                                                      List<Pair<PartialRow, PartialRow>> rangeBounds) {
-      if (splitRows.isEmpty() && rangeBounds.isEmpty()) {
+    public RowOperationsPB encodeRangePartitions(
+        List<CreateTableOptions.RangePartition> rangePartitions,
+        List<PartialRow> splitRows) {
+
+      if (splitRows.isEmpty() && rangePartitions.isEmpty()) {
         return null;
       }
 
-      Schema schema = splitRows.isEmpty() ? rangeBounds.get(0).getFirst().getSchema()
+      Schema schema = splitRows.isEmpty() ? rangePartitions.get(0).getLowerBound().getSchema()
                                           : splitRows.get(0).getSchema();
-      init(schema, splitRows.size() + 2 * rangeBounds.size());
+      init(schema, splitRows.size() + 2 * rangePartitions.size());
 
       for (PartialRow row : splitRows) {
         encodeRow(row, ChangeType.SPLIT_ROWS);
       }
 
-      for (Pair<PartialRow, PartialRow> bound : rangeBounds) {
-        encodeRow(bound.getFirst(), ChangeType.RANGE_LOWER_BOUND);
-        encodeRow(bound.getSecond(), ChangeType.RANGE_UPPER_BOUND);
+      for (CreateTableOptions.RangePartition partition : rangePartitions) {
+        encodeRow(partition.getLowerBound(),
+                  partition.getLowerBoundType() == RangePartitionBound.INCLUSIVE_BOUND ?
+                      ChangeType.RANGE_LOWER_BOUND :
+                      ChangeType.EXCLUSIVE_RANGE_LOWER_BOUND);
+        encodeRow(partition.getUpperBound(),
+                  partition.getUpperBoundType() == RangePartitionBound.EXCLUSIVE_BOUND ?
+                      ChangeType.RANGE_UPPER_BOUND :
+                      ChangeType.INCLUSIVE_RANGE_UPPER_BOUND);
       }
 
       return toPB();
     }
 
-    public RowOperationsPB encodeLowerAndUpperBounds(PartialRow lowerBound, PartialRow upperBound) {
+    public RowOperationsPB encodeLowerAndUpperBounds(PartialRow lowerBound,
+                                                     PartialRow upperBound,
+                                                     RangePartitionBound lowerBoundType,
+                                                     RangePartitionBound upperBoundType) {
       init(lowerBound.getSchema(), 2);
-      encodeRow(lowerBound, ChangeType.RANGE_LOWER_BOUND);
-      encodeRow(upperBound, ChangeType.RANGE_UPPER_BOUND);
+      encodeRow(lowerBound,
+                lowerBoundType == RangePartitionBound.INCLUSIVE_BOUND ?
+                    ChangeType.RANGE_LOWER_BOUND :
+                    ChangeType.EXCLUSIVE_RANGE_LOWER_BOUND);
+      encodeRow(upperBound,
+                upperBoundType == RangePartitionBound.EXCLUSIVE_BOUND ?
+                    ChangeType.RANGE_UPPER_BOUND :
+                    ChangeType.INCLUSIVE_RANGE_UPPER_BOUND);
       return toPB();
     }
   }

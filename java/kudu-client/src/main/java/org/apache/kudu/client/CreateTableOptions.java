@@ -25,7 +25,6 @@ import org.apache.kudu.Common;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.master.Master;
-import org.apache.kudu.util.Pair;
 
 /**
  * This is a builder class for all the options that can be provided while creating a table.
@@ -36,42 +35,7 @@ public class CreateTableOptions {
 
   private Master.CreateTableRequestPB.Builder pb = Master.CreateTableRequestPB.newBuilder();
   private final List<PartialRow> splitRows = Lists.newArrayList();
-  private final List<Pair<PartialRow, PartialRow>> rangeBounds = Lists.newArrayList();
-
-  /**
-   * Add a split point for the table. The table in the end will have splits + 1 tablets.
-   * The row may be reused or modified safely after this call without changing the split point.
-   *
-   * @param row a key row for the split point
-   * @return this instance
-   */
-  public CreateTableOptions addSplitRow(PartialRow row) {
-    splitRows.add(new PartialRow(row));
-    return this;
-  }
-
-  /**
-   * Add a partition range bound to the table with an inclusive lower bound and
-   * exclusive upper bound.
-   *
-   * If either row is empty, then that end of the range will be unbounded. If a
-   * range column is missing a value, the logical minimum value for that column
-   * type will be used as the default.
-   *
-   * Multiple range bounds may be added, but they must not overlap. All split
-   * rows must fall in one of the range bounds. The lower bound must be less
-   * than the upper bound.
-   *
-   * If not provided, the table's range will be unbounded.
-   *
-   * @param lower the inclusive lower bound
-   * @param upper the exclusive upper bound
-   * @return this instance
-   */
-  public CreateTableOptions addRangeBound(PartialRow lower, PartialRow upper) {
-    rangeBounds.add(new Pair<>(new PartialRow(lower), new PartialRow(upper)));
-    return this;
-  }
+  private final List<RangePartition> rangePartitions = Lists.newArrayList();
 
   /**
    * Add a set of hash partitions to the table.
@@ -143,6 +107,73 @@ public class CreateTableOptions {
   }
 
   /**
+   * Add a range partition partition to the table with an inclusive lower bound
+   * and an exclusive upper bound.
+   *
+   * If either row is empty, then that end of the range will be unbounded. If a
+   * range column is missing a value, the logical minimum value for that column
+   * type will be used as the default.
+   *
+   * Multiple range bounds may be added, but they must not overlap. All split
+   * rows must fall in one of the range bounds. The lower bound must be less
+   * than the upper bound.
+   *
+   * If not provided, the table's range will be unbounded.
+   *
+   * @param lower the inclusive lower bound
+   * @param upper the exclusive upper bound
+   * @return this instance
+   */
+  public CreateTableOptions addRangePartition(PartialRow lower,
+                                              PartialRow upper) {
+    return addRangePartition(lower, upper,
+                             RangePartitionBound.INCLUSIVE_BOUND,
+                             RangePartitionBound.EXCLUSIVE_BOUND);
+  }
+
+  /**
+   * Add a range partition partition to the table with a lower bound and upper
+   * bound.
+   *
+   * If either row is empty, then that end of the range will be unbounded. If a
+   * range column is missing a value, the logical minimum value for that column
+   * type will be used as the default.
+   *
+   * Multiple range bounds may be added, but they must not overlap. All split
+   * rows must fall in one of the range bounds. The lower bound must be less
+   * than the upper bound.
+   *
+   * If not provided, the table's range will be unbounded.
+   *
+   * @param lower the lower bound
+   * @param upper the upper bound
+   * @param lowerBoundType the type of the lower bound, either inclusive or exclusive
+   * @param upperBoundType the type of the upper bound, either inclusive or exclusive
+   * @return this instance
+   */
+  public CreateTableOptions addRangePartition(PartialRow lower,
+                                              PartialRow upper,
+                                              RangePartitionBound lowerBoundType,
+                                              RangePartitionBound upperBoundType) {
+    rangePartitions.add(new RangePartition(lower, upper, lowerBoundType, upperBoundType));
+    return this;
+  }
+
+  /**
+   * Add a range partition split. The split row must fall in a range partition,
+   * and causes the range partition to split into two contiguous range partitions.
+   * The row may be reused or modified safely after this call without changing
+   * the split point.
+   *
+   * @param row a key row for the split point
+   * @return this instance
+   */
+  public CreateTableOptions addSplitRow(PartialRow row) {
+    splitRows.add(new PartialRow(row));
+    return this;
+  }
+
+  /**
    * Sets the number of replicas that each tablet will have. If not specified, it uses the
    * server-side default which is usually 3 unless changed by an administrator.
    *
@@ -155,18 +186,51 @@ public class CreateTableOptions {
   }
 
   Master.CreateTableRequestPB.Builder getBuilder() {
-    if (!splitRows.isEmpty() || !rangeBounds.isEmpty()) {
+    if (!splitRows.isEmpty() || !rangePartitions.isEmpty()) {
       pb.setSplitRowsRangeBounds(new Operation.OperationsEncoder()
-                                     .encodeSplitRowsRangeBounds(splitRows, rangeBounds));
+                                              .encodeRangePartitions(rangePartitions, splitRows));
     }
     return pb;
   }
 
   List<Integer> getRequiredFeatureFlags() {
-    if (rangeBounds.isEmpty()) {
+    if (rangePartitions.isEmpty()) {
       return ImmutableList.of();
     } else {
       return ImmutableList.of(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE);
+    }
+  }
+
+  final class RangePartition {
+    private final PartialRow lowerBound;
+    private final PartialRow upperBound;
+    private final RangePartitionBound lowerBoundType;
+    private final RangePartitionBound upperBoundType;
+
+    public RangePartition(PartialRow lowerBound,
+                          PartialRow upperBound,
+                          RangePartitionBound lowerBoundType,
+                          RangePartitionBound upperBoundType) {
+      this.lowerBound = lowerBound;
+      this.upperBound = upperBound;
+      this.lowerBoundType = lowerBoundType;
+      this.upperBoundType = upperBoundType;
+    }
+
+    public PartialRow getLowerBound() {
+      return lowerBound;
+    }
+
+    public PartialRow getUpperBound() {
+      return upperBound;
+    }
+
+    public RangePartitionBound getLowerBoundType() {
+      return lowerBoundType;
+    }
+
+    public RangePartitionBound getUpperBoundType() {
+      return upperBoundType;
     }
   }
 }

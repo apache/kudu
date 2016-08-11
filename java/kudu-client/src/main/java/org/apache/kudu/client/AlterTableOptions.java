@@ -128,6 +128,37 @@ public class AlterTableOptions {
    * @return this instance
    */
   public AlterTableOptions addRangePartition(PartialRow lowerBound, PartialRow upperBound) {
+    return addRangePartition(lowerBound, upperBound,
+                             RangePartitionBound.INCLUSIVE_BOUND,
+                             RangePartitionBound.EXCLUSIVE_BOUND);
+  }
+
+  /**
+   * Add a range partition to the table with a lower bound and upper bound.
+   *
+   * If either row is empty, then that end of the range will be unbounded. If a range column is
+   * missing a value, the logical minimum value for that column type will be used as the default.
+   *
+   * Multiple range partitions may be added as part of a single alter table transaction by calling
+   * this method multiple times. Added range partitions must not overlap with each
+   * other or any existing range partitions (unless the existing range partitions are dropped as
+   * part of the alter transaction first). The lower bound must be less than the upper bound.
+   *
+   * This client will immediately be able to write and scan the new tablets when the alter table
+   * operation returns success, however other existing clients may have to wait for a timeout period
+   * to elapse before the tablets become visible. This period is configured by the master's
+   * 'table_locations_ttl_ms' flag, and defaults to one hour.
+   *
+   * @param lowerBound lower bound, may be empty but not null
+   * @param upperBound upper bound, may be empty but not null
+   * @param lowerBoundType the type of the lower bound, either inclusive or exclusive
+   * @param upperBoundType the type of the upper bound, either inclusive or exclusive
+   * @return this instance
+   */
+  public AlterTableOptions addRangePartition(PartialRow lowerBound,
+                                             PartialRow upperBound,
+                                             RangePartitionBound lowerBoundType,
+                                             RangePartitionBound upperBoundType) {
     Preconditions.checkNotNull(lowerBound);
     Preconditions.checkNotNull(upperBound);
     Preconditions.checkArgument(lowerBound.getSchema().equals(upperBound.getSchema()));
@@ -137,7 +168,8 @@ public class AlterTableOptions {
     AlterTableRequestPB.AddRangePartition.Builder builder =
         AlterTableRequestPB.AddRangePartition.newBuilder();
     builder.setRangeBounds(
-        new Operation.OperationsEncoder().encodeLowerAndUpperBounds(lowerBound, upperBound));
+        new Operation.OperationsEncoder().encodeLowerAndUpperBounds(lowerBound, upperBound,
+                                                                    lowerBoundType, upperBoundType));
     step.setAddRangePartition(builder);
     if (!pb.hasSchema()) {
       pb.setSchema(ProtobufHelper.schemaToPb(lowerBound.getSchema()));
@@ -160,6 +192,31 @@ public class AlterTableOptions {
    * @return this instance
    */
   public AlterTableOptions dropRangePartition(PartialRow lowerBound, PartialRow upperBound) {
+    return dropRangePartition(lowerBound, upperBound,
+                              RangePartitionBound.INCLUSIVE_BOUND,
+                              RangePartitionBound.EXCLUSIVE_BOUND);
+  }
+
+  /**
+   * Drop the range partition from the table with the specified lower bound and upper bound.
+   * The bounds must match exactly, and may not span multiple range partitions.
+   *
+   * If either row is empty, then that end of the range will be unbounded. If a range column is
+   * missing a value, the logical minimum value for that column type will be used as the default.
+   *
+   * Multiple range partitions may be dropped as part of a single alter table transaction by calling
+   * this method multiple times.
+   *
+   * @param lowerBound inclusive lower bound, can be empty but not null
+   * @param upperBound exclusive upper bound, can be empty but not null
+   * @param lowerBoundType the type of the lower bound, either inclusive or exclusive
+   * @param upperBoundType the type of the upper bound, either inclusive or exclusive
+   * @return this instance
+   */
+  public AlterTableOptions dropRangePartition(PartialRow lowerBound,
+                                              PartialRow upperBound,
+                                              RangePartitionBound lowerBoundType,
+                                              RangePartitionBound upperBoundType) {
     Preconditions.checkNotNull(lowerBound);
     Preconditions.checkNotNull(upperBound);
     Preconditions.checkArgument(lowerBound.getSchema().equals(upperBound.getSchema()));
@@ -169,7 +226,9 @@ public class AlterTableOptions {
     AlterTableRequestPB.DropRangePartition.Builder builder =
         AlterTableRequestPB.DropRangePartition.newBuilder();
     builder.setRangeBounds(
-        new Operation.OperationsEncoder().encodeLowerAndUpperBounds(lowerBound, upperBound));
+        new Operation.OperationsEncoder().encodeLowerAndUpperBounds(lowerBound, upperBound,
+                                                                    lowerBoundType,
+                                                                    upperBoundType));
     step.setDropRangePartition(builder);
     if (!pb.hasSchema()) {
       pb.setSchema(ProtobufHelper.schemaToPb(lowerBound.getSchema()));

@@ -260,7 +260,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     upperBoundA.addString("a", "3");
     upperBoundA.addString("b", "5");
     upperBoundA.addString("b", "6");
-    tableBuilder.addRangeBound(lowerBoundA, upperBoundA);
+    tableBuilder.addRangePartition(lowerBoundA, upperBoundA);
 
     PartialRow lowerBoundB = schema.newPartialRow();
     lowerBoundB.addString("a", "4");
@@ -270,7 +270,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     upperBoundB.addString("a", "5");
     upperBoundB.addString("b", "5");
     upperBoundB.addString("b", "6");
-    tableBuilder.addRangeBound(lowerBoundB, upperBoundB);
+    tableBuilder.addRangePartition(lowerBoundB, upperBoundB);
 
     testPartitionSchema(tableBuilder);
   }
@@ -291,7 +291,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     upperBoundA.addString("a", "3");
     upperBoundA.addString("b", "5");
     upperBoundA.addString("c", "6");
-    tableBuilder.addRangeBound(lowerBoundA, upperBoundA);
+    tableBuilder.addRangePartition(lowerBoundA, upperBoundA);
 
     PartialRow lowerBoundB = schema.newPartialRow();
     lowerBoundB.addString("a", "4");
@@ -301,7 +301,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     upperBoundB.addString("a", "5");
     upperBoundB.addString("b", "5");
     upperBoundB.addString("c", "6");
-    tableBuilder.addRangeBound(lowerBoundB, upperBoundB);
+    tableBuilder.addRangePartition(lowerBoundB, upperBoundB);
 
     tableBuilder.addHashPartitions(ImmutableList.of("a", "b", "c"), 4);
 
