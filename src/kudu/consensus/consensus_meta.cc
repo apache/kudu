@@ -16,6 +16,8 @@
 // under the License.
 #include "kudu/consensus/consensus_meta.h"
 
+#include <memory>
+
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
@@ -30,6 +32,7 @@ namespace kudu {
 namespace consensus {
 
 using std::string;
+using std::unique_ptr;
 using strings::Substitute;
 
 Status ConsensusMetadata::Create(FsManager* fs_manager,
@@ -37,8 +40,8 @@ Status ConsensusMetadata::Create(FsManager* fs_manager,
                                  const std::string& peer_uuid,
                                  const RaftConfigPB& config,
                                  int64_t current_term,
-                                 gscoped_ptr<ConsensusMetadata>* cmeta_out) {
-  gscoped_ptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
+                                 unique_ptr<ConsensusMetadata>* cmeta_out) {
+  unique_ptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
   cmeta->set_committed_config(config);
   cmeta->set_current_term(current_term);
   RETURN_NOT_OK(cmeta->Flush());
@@ -49,8 +52,8 @@ Status ConsensusMetadata::Create(FsManager* fs_manager,
 Status ConsensusMetadata::Load(FsManager* fs_manager,
                                const std::string& tablet_id,
                                const std::string& peer_uuid,
-                               gscoped_ptr<ConsensusMetadata>* cmeta_out) {
-  gscoped_ptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
+                               unique_ptr<ConsensusMetadata>* cmeta_out) {
+  unique_ptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
   RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(fs_manager->env(),
                                                  fs_manager->GetConsensusMetadataPath(tablet_id),
                                                  &cmeta->pb_));

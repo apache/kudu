@@ -122,7 +122,7 @@ class TabletPeerTest : public KuduTabletTest {
     config.add_peers()->CopyFrom(config_peer);
     config.set_opid_index(consensus::kInvalidOpIdIndex);
 
-    gscoped_ptr<ConsensusMetadata> cmeta;
+    unique_ptr<ConsensusMetadata> cmeta;
     ASSERT_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),
                                         tablet()->tablet_id(),
                                         tablet()->metadata()->fs_manager()->uuid(),

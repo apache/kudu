@@ -17,6 +17,7 @@
 
 #include "kudu/consensus/log-test-base.h"
 
+#include <memory>
 #include <vector>
 
 #include "kudu/common/iterator.h"
@@ -33,6 +34,7 @@
 
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -132,7 +134,7 @@ class BootstrapTest : public LogTestBase {
     peer->set_permanent_uuid(meta->fs_manager()->uuid());
     peer->set_member_type(consensus::RaftPeerPB::VOTER);
 
-    gscoped_ptr<ConsensusMetadata> cmeta;
+    unique_ptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->tablet_id(),
                                                     meta->fs_manager()->uuid(),
                                                     config, kMinimumTerm, &cmeta),

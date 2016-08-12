@@ -16,6 +16,7 @@
 // under the License.
 
 #include <gtest/gtest.h>
+#include <memory>
 
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -53,6 +54,7 @@ METRIC_DECLARE_entity(tablet);
   ASSERT_NO_FATAL_FAILURE(ReplicateSequenceOfMessages(a, b, c, d, e, f, g))
 
 using std::shared_ptr;
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -145,7 +147,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       string peer_uuid = Substitute("peer-$0", i);
 
-      gscoped_ptr<ConsensusMetadata> cmeta;
+      unique_ptr<ConsensusMetadata> cmeta;
       CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, peer_uuid, config_,
                                          kMinimumTerm, &cmeta));
 
@@ -527,23 +529,23 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   // Read the ConsensusMetadata for the given peer from disk.
-  gscoped_ptr<ConsensusMetadata> ReadConsensusMetadataFromDisk(int peer_index) {
+  unique_ptr<ConsensusMetadata> ReadConsensusMetadataFromDisk(int peer_index) {
     string peer_uuid = Substitute("peer-$0", peer_index);
-    gscoped_ptr<ConsensusMetadata> cmeta;
+    unique_ptr<ConsensusMetadata> cmeta;
     CHECK_OK(ConsensusMetadata::Load(fs_managers_[peer_index], kTestTablet, peer_uuid, &cmeta));
     return std::move(cmeta);
   }
 
   // Assert that the durable term == term and that the peer that got the vote == voted_for.
   void AssertDurableTermAndVote(int peer_index, int64_t term, const std::string& voted_for) {
-    gscoped_ptr<ConsensusMetadata> cmeta = ReadConsensusMetadataFromDisk(peer_index);
+    unique_ptr<ConsensusMetadata> cmeta = ReadConsensusMetadataFromDisk(peer_index);
     ASSERT_EQ(term, cmeta->current_term());
     ASSERT_EQ(voted_for, cmeta->voted_for());
   }
 
   // Assert that the durable term == term and that the peer has not yet voted.
   void AssertDurableTermWithoutVote(int peer_index, int64_t term) {
-    gscoped_ptr<ConsensusMetadata> cmeta = ReadConsensusMetadataFromDisk(peer_index);
+    unique_ptr<ConsensusMetadata> cmeta = ReadConsensusMetadataFromDisk(peer_index);
     ASSERT_EQ(term, cmeta->current_term());
     ASSERT_FALSE(cmeta->has_voted_for());
   }

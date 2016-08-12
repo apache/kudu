@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <gflags/gflags.h>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -156,20 +157,20 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 
     TRACE("Creating consensus instance");
 
-    gscoped_ptr<ConsensusMetadata> cmeta;
+    unique_ptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id_,
                                           meta_->fs_manager()->uuid(), &cmeta));
 
     consensus_ = RaftConsensus::Create(options,
-                                        std::move(cmeta),
-                                        local_peer_pb_,
-                                        metric_entity,
-                                        clock_,
-                                        this,
-                                        messenger_,
-                                        log_.get(),
-                                        tablet_->mem_tracker(),
-                                        mark_dirty_clbk_);
+                                       std::move(cmeta),
+                                       local_peer_pb_,
+                                       metric_entity,
+                                       clock_,
+                                       this,
+                                       messenger_,
+                                       log_.get(),
+                                       tablet_->mem_tracker(),
+                                       mark_dirty_clbk_);
   }
 
   if (tablet_->metrics() != nullptr) {

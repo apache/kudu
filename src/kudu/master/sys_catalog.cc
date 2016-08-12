@@ -19,6 +19,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <memory>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
@@ -117,7 +118,7 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     LOG(INFO) << "Configuring consensus for distributed operation...";
 
     string tablet_id = metadata->tablet_id();
-    gscoped_ptr<ConsensusMetadata> cmeta;
+    unique_ptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(fs_manager, tablet_id,
                                                   fs_manager->uuid(), &cmeta),
                           "Unable to load consensus metadata for tablet " + tablet_id);
@@ -166,7 +167,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
   }
 
   string tablet_id = metadata->tablet_id();
-  gscoped_ptr<ConsensusMetadata> cmeta;
+  unique_ptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager, tablet_id, fs_manager->uuid(),
                                                   config, consensus::kMinimumTerm, &cmeta),
                         "Unable to persist consensus metadata for tablet " + tablet_id);

@@ -17,6 +17,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <memory>
 
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -39,6 +40,7 @@ METRIC_DECLARE_entity(tablet);
 
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 
 namespace kudu {
 namespace consensus {
@@ -101,7 +103,7 @@ class RaftConsensusSpy : public RaftConsensus {
   typedef Callback<Status(const scoped_refptr<ConsensusRound>& round)> AppendCallback;
 
   RaftConsensusSpy(const ConsensusOptions& options,
-                   gscoped_ptr<ConsensusMetadata> cmeta,
+                   unique_ptr<ConsensusMetadata> cmeta,
                    gscoped_ptr<PeerProxyFactory> proxy_factory,
                    gscoped_ptr<PeerMessageQueue> queue,
                    gscoped_ptr<PeerManager> peer_manager,
@@ -205,7 +207,7 @@ class RaftConsensusTest : public KuduTest {
 
     string peer_uuid = config_.peers(num_peers - 1).permanent_uuid();
 
-    gscoped_ptr<ConsensusMetadata> cmeta;
+    unique_ptr<ConsensusMetadata> cmeta;
     CHECK_OK(ConsensusMetadata::Create(fs_manager_.get(), kTestTablet, peer_uuid,
                                        config_, initial_term, &cmeta));
 

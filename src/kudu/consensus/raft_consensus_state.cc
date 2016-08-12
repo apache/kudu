@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <memory>
 
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/quorum_util.h"
@@ -33,6 +34,7 @@ namespace kudu {
 namespace consensus {
 
 using std::string;
+using std::unique_ptr;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 
@@ -41,7 +43,7 @@ using strings::SubstituteAndAppend;
 //////////////////////////////////////////////////
 
 ReplicaState::ReplicaState(ConsensusOptions options, string peer_uuid,
-                           gscoped_ptr<ConsensusMetadata> cmeta,
+                           unique_ptr<ConsensusMetadata> cmeta,
                            ReplicaTransactionFactory* txn_factory)
     : options_(std::move(options)),
       peer_uuid_(std::move(peer_uuid)),

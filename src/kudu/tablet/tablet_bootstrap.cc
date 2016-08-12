@@ -319,7 +319,7 @@ class TabletBootstrap {
   scoped_refptr<log::Log> log_;
   std::shared_ptr<log::LogReader> log_reader_;
 
-  gscoped_ptr<ConsensusMetadata> cmeta_;
+  unique_ptr<ConsensusMetadata> cmeta_;
 
   // Statistics on the replay of entries in the log.
   struct Stats {

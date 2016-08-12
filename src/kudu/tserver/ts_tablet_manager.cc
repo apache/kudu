@@ -132,6 +132,7 @@ using master::TabletReportPB;
 using rpc::ResultTracker;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::Tablet;
@@ -291,7 +292,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   // We must persist the consensus metadata to disk before starting a new
   // tablet's TabletPeer and Consensus implementation.
-  gscoped_ptr<ConsensusMetadata> cmeta;
+  unique_ptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
                                                   config, consensus::kMinimumTerm, &cmeta),
                         "Unable to create new ConsensusMeta for tablet " + tablet_id);

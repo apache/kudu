@@ -18,6 +18,7 @@
 #define KUDU_CONSENSUS_RAFT_CONSENSUS_UTIL_H_
 
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
@@ -96,7 +97,7 @@ class ReplicaState {
   typedef IndexToRoundMap::value_type IndexToRoundEntry;
 
   ReplicaState(ConsensusOptions options, std::string peer_uuid,
-               gscoped_ptr<ConsensusMetadata> cmeta,
+               std::unique_ptr<ConsensusMetadata> cmeta,
                ReplicaTransactionFactory* txn_factory);
 
   Status StartUnlocked(const OpId& last_in_wal);
@@ -346,7 +347,7 @@ class ReplicaState {
   mutable simple_spinlock update_lock_;
 
   // Consensus metadata persistence object.
-  gscoped_ptr<ConsensusMetadata> cmeta_;
+  std::unique_ptr<ConsensusMetadata> cmeta_;
 
   // Used by the LEADER. This is the index of the next operation generated
   // by this LEADER.

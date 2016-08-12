@@ -19,6 +19,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <memory>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
@@ -80,6 +81,7 @@ using fs::WritableBlock;
 using rpc::Messenger;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::ColumnDataPB;
@@ -133,7 +135,7 @@ Status TabletCopyClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>&
   }
 
   // Load the old consensus metadata, if it exists.
-  gscoped_ptr<ConsensusMetadata> cmeta;
+  unique_ptr<ConsensusMetadata> cmeta;
   Status s = ConsensusMetadata::Load(fs_manager_, tablet_id_,
                                      fs_manager_->uuid(), &cmeta);
   if (s.IsNotFound()) {
@@ -436,7 +438,7 @@ Status TabletCopyClient::DownloadWAL(uint64_t wal_segment_seqno) {
 Status TabletCopyClient::WriteConsensusMetadata() {
   // If we didn't find a previous consensus meta file, create one.
   if (!cmeta_) {
-    gscoped_ptr<ConsensusMetadata> cmeta;
+    unique_ptr<ConsensusMetadata> cmeta;
     return ConsensusMetadata::Create(fs_manager_, tablet_id_, fs_manager_->uuid(),
                                      remote_committed_cstate_->config(),
                                      remote_committed_cstate_->current_term(),

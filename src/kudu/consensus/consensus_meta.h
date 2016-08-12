@@ -17,11 +17,11 @@
 #ifndef KUDU_CONSENSUS_CONSENSUS_META_H_
 #define KUDU_CONSENSUS_CONSENSUS_META_H_
 
+#include <memory>
 #include <stdint.h>
 #include <string>
 
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
@@ -63,7 +63,7 @@ class ConsensusMetadata {
                        const std::string& peer_uuid,
                        const RaftConfigPB& config,
                        int64_t current_term,
-                       gscoped_ptr<ConsensusMetadata>* cmeta);
+                       std::unique_ptr<ConsensusMetadata>* cmeta);
 
   // Load a ConsensusMetadata object from disk.
   // Returns Status::NotFound if the file could not be found. May return other
@@ -71,7 +71,7 @@ class ConsensusMetadata {
   static Status Load(FsManager* fs_manager,
                      const std::string& tablet_id,
                      const std::string& peer_uuid,
-                     gscoped_ptr<ConsensusMetadata>* cmeta);
+                     std::unique_ptr<ConsensusMetadata>* cmeta);
 
   // Delete the ConsensusMetadata file associated with the given tablet from
   // disk.

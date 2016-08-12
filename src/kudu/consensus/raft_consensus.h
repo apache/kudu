@@ -65,7 +65,7 @@ class RaftConsensus : public Consensus,
 
   static scoped_refptr<RaftConsensus> Create(
     const ConsensusOptions& options,
-    gscoped_ptr<ConsensusMetadata> cmeta,
+    std::unique_ptr<ConsensusMetadata> cmeta,
     const RaftPeerPB& local_peer_pb,
     const scoped_refptr<MetricEntity>& metric_entity,
     const scoped_refptr<server::Clock>& clock,
@@ -76,7 +76,7 @@ class RaftConsensus : public Consensus,
     const Callback<void(const std::string& reason)>& mark_dirty_clbk);
 
   RaftConsensus(const ConsensusOptions& options,
-                gscoped_ptr<ConsensusMetadata> cmeta,
+                std::unique_ptr<ConsensusMetadata> cmeta,
                 gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
                 gscoped_ptr<PeerMessageQueue> queue,
                 gscoped_ptr<PeerManager> peer_manager,

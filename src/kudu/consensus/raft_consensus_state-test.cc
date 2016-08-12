@@ -17,6 +17,7 @@
 #include "kudu/consensus/raft_consensus_state.h"
 
 #include <gtest/gtest.h>
+#include <memory>
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
@@ -29,6 +30,7 @@
 namespace kudu {
 namespace consensus {
 
+using std::unique_ptr;
 using std::vector;
 
 // TODO: Share a test harness with ConsensusMetadataTest?
@@ -52,7 +54,7 @@ class RaftConsensusStateTest : public KuduTest {
     peer->set_permanent_uuid(fs_manager_.uuid());
     peer->set_member_type(RaftPeerPB::VOTER);
 
-    gscoped_ptr<ConsensusMetadata> cmeta;
+    unique_ptr<ConsensusMetadata> cmeta;
     ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
                                         config_, kMinimumTerm, &cmeta));
     state_.reset(new ReplicaState(ConsensusOptions(), fs_manager_.uuid(), std::move(cmeta),

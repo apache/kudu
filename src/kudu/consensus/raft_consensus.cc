@@ -21,6 +21,7 @@
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <iostream>
+#include <memory>
 #include <mutex>
 
 #include "kudu/common/wire_protocol.h"
@@ -142,6 +143,7 @@ namespace kudu {
 namespace consensus {
 
 using std::shared_ptr;
+using std::unique_ptr;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
@@ -150,7 +152,7 @@ static const char* const kTimerId = "election-timer";
 
 scoped_refptr<RaftConsensus> RaftConsensus::Create(
     const ConsensusOptions& options,
-    gscoped_ptr<ConsensusMetadata> cmeta,
+    unique_ptr<ConsensusMetadata> cmeta,
     const RaftPeerPB& local_peer_pb,
     const scoped_refptr<MetricEntity>& metric_entity,
     const scoped_refptr<server::Clock>& clock,
@@ -203,13 +205,17 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
 }
 
 RaftConsensus::RaftConsensus(
-    const ConsensusOptions& options, gscoped_ptr<ConsensusMetadata> cmeta,
+    const ConsensusOptions& options,
+    unique_ptr<ConsensusMetadata> cmeta,
     gscoped_ptr<PeerProxyFactory> proxy_factory,
-    gscoped_ptr<PeerMessageQueue> queue, gscoped_ptr<PeerManager> peer_manager,
+    gscoped_ptr<PeerMessageQueue> queue,
+    gscoped_ptr<PeerManager> peer_manager,
     gscoped_ptr<ThreadPool> thread_pool,
     const scoped_refptr<MetricEntity>& metric_entity,
-    const std::string& peer_uuid, const scoped_refptr<server::Clock>& clock,
-    ReplicaTransactionFactory* txn_factory, const scoped_refptr<log::Log>& log,
+    const std::string& peer_uuid,
+    const scoped_refptr<server::Clock>& clock,
+    ReplicaTransactionFactory* txn_factory,
+    const scoped_refptr<log::Log>& log,
     shared_ptr<MemTracker> parent_mem_tracker,
     Callback<void(const std::string& reason)> mark_dirty_clbk)
     : thread_pool_(std::move(thread_pool)),
