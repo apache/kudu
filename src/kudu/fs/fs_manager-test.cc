@@ -21,12 +21,15 @@
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/oid_generator.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::shared_ptr;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -155,7 +158,7 @@ TEST_F(FsManagerTestBase, TestCannotUseNonEmptyFsRoot) {
 }
 
 TEST_F(FsManagerTestBase, TestEmptyWALPath) {
-  ReinitFsManager("", vector<string>());
+  ReinitFsManager("", {});
   Status s = fs_manager()->CreateInitialFileSystemLayout();
   ASSERT_TRUE(s.IsIOError());
   ASSERT_STR_CONTAINS(s.ToString(), "directory (fs_wal_dir) not provided");
@@ -165,7 +168,7 @@ TEST_F(FsManagerTestBase, TestOnlyWALPath) {
   string path = GetTestPath("new_fs_root");
   ASSERT_OK(env_->CreateDir(path));
 
-  ReinitFsManager(path, vector<string>());
+  ReinitFsManager(path, {});
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
   ASSERT_TRUE(HasPrefixString(fs_manager()->GetWalsRootDir(), path));
   ASSERT_TRUE(HasPrefixString(fs_manager()->GetConsensusMetadataDir(), path));
@@ -173,6 +176,24 @@ TEST_F(FsManagerTestBase, TestOnlyWALPath) {
   vector<string> data_dirs = fs_manager()->GetDataRootDirs();
   ASSERT_EQ(1, data_dirs.size());
   ASSERT_TRUE(HasPrefixString(data_dirs[0], path));
+}
+
+TEST_F(FsManagerTestBase, TestFormatWithSpecificUUID) {
+  string path = GetTestPath("new_fs_root");
+  ReinitFsManager(path, {});
+
+  // Use an invalid uuid at first.
+  string uuid = "not_a_valid_uuid";
+  Status s = fs_manager()->CreateInitialFileSystemLayout(uuid);
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(), Substitute("invalid uuid $0", uuid));
+
+  // Now use a valid one.
+  ObjectIdGenerator oid_generator;
+  uuid = oid_generator.Next();
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout(uuid));
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(uuid, fs_manager()->uuid());
 }
 
 } // namespace kudu

@@ -22,6 +22,7 @@
 #include <map>
 #include <unordered_set>
 
+#include <boost/optional.hpp>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <google/protobuf/message.h>
@@ -244,7 +245,7 @@ Status FsManager::Open() {
   return Status::OK();
 }
 
-Status FsManager::CreateInitialFileSystemLayout() {
+Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
   CHECK(!read_only_);
 
   RETURN_NOT_OK(Init());
@@ -271,7 +272,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
   ElementDeleter d(&delete_on_failure);
 
   InstanceMetadataPB metadata;
-  CreateInstanceMetadata(&metadata);
+  RETURN_NOT_OK(CreateInstanceMetadata(std::move(uuid), &metadata));
   unordered_set<string> to_sync;
   for (const string& root : canonicalized_all_fs_roots_) {
     bool created;
@@ -319,9 +320,16 @@ Status FsManager::CreateInitialFileSystemLayout() {
   return Status::OK();
 }
 
-void FsManager::CreateInstanceMetadata(InstanceMetadataPB* metadata) {
+Status FsManager::CreateInstanceMetadata(boost::optional<string> uuid,
+                                         InstanceMetadataPB* metadata) {
   ObjectIdGenerator oid_generator;
-  metadata->set_uuid(oid_generator.Next());
+  if (uuid) {
+    string canonicalized_uuid;
+    RETURN_NOT_OK(oid_generator.Canonicalize(uuid.get(), &canonicalized_uuid));
+    metadata->set_uuid(canonicalized_uuid);
+  } else {
+    metadata->set_uuid(oid_generator.Next());
+  }
 
   string time_str;
   StringAppendStrftime(&time_str, "%Y-%m-%d %H:%M:%S", time(nullptr), false);
@@ -330,6 +338,7 @@ void FsManager::CreateInstanceMetadata(InstanceMetadataPB* metadata) {
     hostname = "<unknown host>";
   }
   metadata->set_format_stamp(Substitute("Formatted at $0 on $1", time_str, hostname));
+  return Status::OK();
 }
 
 Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
