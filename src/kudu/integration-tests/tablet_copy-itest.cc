@@ -15,10 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <atomic>
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 #include "kudu/client/client-test-util.h"
@@ -35,10 +37,13 @@
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tserver/tablet_copy_client.h"
+#include "kudu/util/barrier.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_util.h"
 
+DEFINE_int32(test_num_threads, 16,
+             "Number of test threads to launch");
 DEFINE_int32(test_delete_leader_num_iters, 3,
              "Number of iterations to run in TestDeleteLeaderDuringTabletCopyStressTest.");
 DEFINE_int32(test_delete_leader_min_rows_per_iter, 20,
@@ -245,6 +250,95 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
     ASSERT_EQ(TABLET_DATA_TOMBSTONED, tablets[0].tablet_status().tablet_data_state());
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
+}
+
+// Perform ListTablets on a peer while peer is going through tablet copy.
+// This serves as a unit test for a tsan data race fix (KUDU-1500).
+// This test is only optimistic in that, we hope to catch the
+// state transition on the follower during the tablet-copy and thereby
+// exercising the data races observed by tsan earlier.
+//
+// Step 1: Start the cluster and pump some workload.
+// Step 2: Tombstone the tablet on a selected follower.
+// Step 3: Create some threads which issue ListTablets to that follower
+//         in a loop until the follower finishes tablet copy.
+TEST_F(TabletCopyITest, TestListTabletsDuringTabletCopy) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kTsIndex = 1; // Pick a random TS.
+  NO_FATALS(StartCluster());
+
+  // Populate a tablet with some data.
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < 1000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, kTimeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Ensure all the servers agree before we proceed.
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id,
+                                  workload.batches_completed()));
+
+  int leader_index;
+  int follower_index;
+  TServerDetails* leader_ts;
+  TServerDetails* follower_ts;
+
+  // Find out who is leader so that we can tombstone a follower
+  // and let the tablet copy be kicked off by the leader.
+  // We could have tombstoned the leader too and let the election ensue
+  // followed by tablet copy of the tombstoned replica. But, we can keep
+  // the test more focused this way by not triggering any election thereby
+  // reducing overall test time as well.
+  ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_ts));
+  leader_index = cluster_->tablet_server_index_by_uuid(leader_ts->uuid());
+  follower_index = (leader_index + 1) % cluster_->num_tablet_servers();
+  follower_ts = ts_map_[cluster_->tablet_server(follower_index)->uuid()];
+
+  vector<std::thread> threads;
+  std::atomic<bool> finish(false);
+  Barrier barrier(FLAGS_test_num_threads + 1); // include main thread
+
+  // Threads to issue ListTablets RPCs to follower.
+  for (int i = 0; i < FLAGS_test_num_threads; i++) {
+    threads.emplace_back([&]() {
+      barrier.Wait();
+      do {
+        vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+        CHECK_OK(ListTablets(ts, MonoDelta::FromSeconds(30), &tablets));
+      } while (!finish.load(std::memory_order_relaxed));
+    });
+  }
+
+  // Wait until all ListTablets RPC threads are fired up.
+  barrier.Wait();
+
+  // Tombstone the tablet on the follower.
+  LOG(INFO) << "Tombstoning follower tablet " << tablet_id
+            << " on TS " << follower_ts->uuid();
+  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id,
+                                TABLET_DATA_TOMBSTONED,
+                                boost::none, kTimeout));
+
+  // A new good copy should automatically get created via tablet copy.
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
+      follower_index, tablet_id,
+      { tablet::TABLET_DATA_READY },
+      kTimeout));
+
+  // Wait for all threads to finish.
+  finish.store(true, std::memory_order_relaxed);
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  NO_FATALS(cluster_->AssertNoCrashes());
 }
 
 // Start tablet copy session and delete the tablet in the middle.

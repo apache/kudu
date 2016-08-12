@@ -66,6 +66,9 @@ class Partition {
     return partition_key_end_;
   }
 
+  // Returns true if the other partition is equivalent to this one.
+  bool Equals(const Partition& other) const;
+
   // Serializes a partition into a protobuf message.
   void ToPB(PartitionPB* pb) const;
 
