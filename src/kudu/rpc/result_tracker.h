@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <functional>
 #include <map>
 #include <string>
 #include <utility>
@@ -26,6 +27,8 @@
 #include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/malloc.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
 
 namespace google {
@@ -139,7 +142,6 @@ class RpcContext;
 //
 // This class is thread safe.
 //
-// TODO Memory bookkeeping.
 // TODO Garbage collection.
 class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
  public:
@@ -160,8 +162,8 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
     STALE
   };
 
-  ResultTracker() {}
-  ~ResultTracker() {}
+  explicit ResultTracker(std::shared_ptr<kudu::MemTracker> mem_tracker);
+  ~ResultTracker();
 
   // Tracks the RPC and returns its current state.
   //
@@ -244,12 +246,39 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
     std::vector<OnGoingRpcInfo> ongoing_rpcs;
 
     std::string ToString() const;
+
+    // Calculates the memory footprint of this struct.
+    int64_t memory_footprint() const {
+      return kudu_malloc_usable_size(this)
+          + (ongoing_rpcs.capacity() > 0 ? kudu_malloc_usable_size(ongoing_rpcs.data()) : 0)
+          + (response.get() != nullptr ? response->SpaceUsed() : 0);
+    }
   };
   // The state corresponding to a single client.
   struct ClientState {
+    typedef MemTrackerAllocator<
+        std::pair<const SequenceNumber,
+                  std::unique_ptr<CompletionRecord>>> CompletionRecordMapAllocator;
+    typedef std::map<SequenceNumber,
+                     std::unique_ptr<CompletionRecord>,
+                     std::less<SequenceNumber>,
+                     CompletionRecordMapAllocator> CompletionRecordMap;
+
+    explicit ClientState(std::shared_ptr<MemTracker> mem_tracker)
+     : completion_records(CompletionRecordMap::key_compare(),
+                          CompletionRecordMapAllocator(std::move(mem_tracker))) {}
+
     MonoTime last_heard_from;
-    std::map<SequenceNumber, std::unique_ptr<CompletionRecord>> completion_records;
+    CompletionRecordMap completion_records;
+
     std::string ToString() const;
+
+    // Calculates the memory footprint of this struct.
+    // This calculation is shallow and doesn't account for the memory the nested data
+    // structures occupy.
+    int64_t memory_footprint() const {
+      return kudu_malloc_usable_size(this);
+    }
   };
 
   RpcState TrackRpcUnlocked(const RequestIdPB& request_id,
@@ -290,12 +319,22 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
 
   std::string ToStringUnlocked() const;
 
+  // The memory tracker that tracks this ResultTracker's memory consumption.
+  std::shared_ptr<kudu::MemTracker> mem_tracker_;
 
   // Lock that protects access to 'clients_' and to the state contained in each
   // ClientState.
   // TODO consider a per-ClientState lock if we find this too coarse grained.
   simple_spinlock lock_;
-  std::map<std::string, std::unique_ptr<ClientState>> clients_;
+
+  typedef MemTrackerAllocator<std::pair<const std::string,
+                                        std::unique_ptr<ClientState>>> ClientStateMapAllocator;
+  typedef std::map<std::string,
+                   std::unique_ptr<ClientState>,
+                   std::less<std::string>,
+                   ClientStateMapAllocator> ClientStateMap;
+
+  ClientStateMap clients_;
 
   DISALLOW_COPY_AND_ASSIGN(ResultTracker);
 };

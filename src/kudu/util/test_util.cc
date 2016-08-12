@@ -18,6 +18,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <gtest/gtest-spi.h>
 
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -178,6 +179,46 @@ string GetTestDataDirectory() {
                                Substitute("$0/test_metadata", dir)));
   }
   return dir;
+}
+
+void AssertEventually(const std::function<void(void)>& f,
+                      const MonoDelta& timeout) {
+  MonoTime deadline = MonoTime::Now();
+  deadline.AddDelta(timeout);
+  int attempts = 0;
+
+  while (MonoTime::Now().ComesBefore(deadline)) {
+    // Capture any assertion failures within this scope (i.e. from their function)
+    // into 'results'
+    testing::TestPartResultArray results;
+    testing::ScopedFakeTestPartResultReporter reporter(
+        testing::ScopedFakeTestPartResultReporter::INTERCEPT_ONLY_CURRENT_THREAD,
+        &results);
+    f();
+
+    // Determine whether their function produced any new test failure results.
+    bool has_failures = false;
+    for (int i = 0; i < results.size(); i++) {
+      has_failures |= results.GetTestPartResult(i).failed();
+    }
+    if (!has_failures) {
+      return;
+    }
+
+    // If they had failures, sleep and try again.
+    int sleep_ms = (attempts < 10) ? (1 << attempts) : 1000;
+    SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
+  }
+
+  // If we ran out of time looping, run their function one more time
+  // without capturing its assertions. This way the assertions will
+  // propagate back out to the normal test reporter. Of course it's
+  // possible that it will pass on this last attempt, but that's OK
+  // too, since we aren't trying to be that strict about the deadline.
+  f();
+  if (testing::Test::HasFatalFailure()) {
+    ADD_FAILURE() << "Timed out waiting for assertion to pass.";
+  }
 }
 
 } // namespace kudu

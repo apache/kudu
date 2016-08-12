@@ -38,6 +38,7 @@
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
@@ -458,7 +459,8 @@ class RpcTestBase : public KuduTest {
     ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), &pool));
     ASSERT_OK(pool->Start(2));
     *server_addr = pool->bind_address();
-    result_tracker_.reset(new ResultTracker());
+    mem_tracker_ = MemTracker::CreateTracker(-1, "result_tracker");
+    result_tracker_.reset(new ResultTracker(mem_tracker_));
 
     gscoped_ptr<ServiceIf> service(new ServiceClass(metric_entity_, result_tracker_));
     service_name_ = service->service_name();
@@ -472,6 +474,7 @@ class RpcTestBase : public KuduTest {
   string service_name_;
   std::shared_ptr<Messenger> server_messenger_;
   scoped_refptr<ServicePool> service_pool_;
+  std::shared_ptr<kudu::MemTracker> mem_tracker_;
   scoped_refptr<ResultTracker> result_tracker_;
   int n_worker_threads_;
   int service_queue_length_;

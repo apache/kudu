@@ -22,6 +22,7 @@
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/pb_util.h"
 
@@ -29,13 +30,58 @@ namespace kudu {
 namespace rpc {
 
 using google::protobuf::Message;
+using kudu::MemTracker;
 using rpc::InboundCall;
 using std::move;
 using std::lock_guard;
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
+
+// This tracks the size changes of anything that has a memory_footprint() method.
+// It must be instantiated before the updates, and it makes sure that the MemTracker
+// is updated on scope exit.
+template <class T>
+struct ScopedMemTrackerUpdater {
+  ScopedMemTrackerUpdater(MemTracker* tracker_, const T* tracked_)
+      : tracker(tracker_),
+        tracked(tracked_),
+        memory_before(tracked->memory_footprint()),
+        cancelled(false) {
+  }
+
+  ~ScopedMemTrackerUpdater() {
+    if (cancelled) return;
+    tracker->Release(memory_before - tracked->memory_footprint());
+  }
+
+  void Cancel() {
+    cancelled = true;
+  }
+
+  MemTracker* tracker;
+  const T* tracked;
+  int64_t memory_before;
+  bool cancelled;
+};
+
+ResultTracker::ResultTracker(shared_ptr<MemTracker> mem_tracker)
+    : mem_tracker_(std::move(mem_tracker)),
+      clients_(ClientStateMap::key_compare(),
+               ClientStateMapAllocator(mem_tracker_)) {}
+
+ResultTracker::~ResultTracker() {
+  lock_guard<simple_spinlock> l(lock_);
+  // Release all the memory for the stuff we'll delete on destruction.
+  for (auto& client_state : clients_) {
+    for (auto& completion_record : client_state.second->completion_records) {
+      mem_tracker_->Release(completion_record.second->memory_footprint());
+    }
+    mem_tracker_->Release(client_state.second->memory_footprint());
+  }
+}
 
 ResultTracker::RpcState ResultTracker::TrackRpc(const RequestIdPB& request_id,
                                                 Message* response,
@@ -47,20 +93,28 @@ ResultTracker::RpcState ResultTracker::TrackRpc(const RequestIdPB& request_id,
 ResultTracker::RpcState ResultTracker::TrackRpcUnlocked(const RequestIdPB& request_id,
                                                         Message* response,
                                                         RpcContext* context) {
-
   ClientState* client_state = ComputeIfAbsent(
       &clients_,
       request_id.client_id(),
-      []{ return unique_ptr<ClientState>(new ClientState()); })->get();
+      [&]{
+        unique_ptr<ClientState> client_state(new ClientState(mem_tracker_));
+        mem_tracker_->Consume(client_state->memory_footprint());
+        return client_state;
+      })->get();
 
   client_state->last_heard_from = MonoTime::Now();
 
   auto result = ComputeIfAbsentReturnAbsense(
       &client_state->completion_records,
       request_id.seq_no(),
-      []{ return unique_ptr<CompletionRecord>(new CompletionRecord()); });
+      [&]{
+        unique_ptr<CompletionRecord> completion_record(new CompletionRecord());
+        mem_tracker_->Consume(completion_record->memory_footprint());
+        return completion_record;
+      });
 
   CompletionRecord* completion_record = result.first->get();
+  ScopedMemTrackerUpdater<CompletionRecord> cr_updater(mem_tracker_.get(), completion_record);
 
   if (PREDICT_TRUE(result.second)) {
     completion_record->state = RpcState::IN_PROGRESS;
@@ -111,6 +165,7 @@ ResultTracker::RpcState ResultTracker::TrackRpcOrChangeDriver(const RequestIdPB&
   if (state != RpcState::IN_PROGRESS) return state;
 
   CompletionRecord* completion_record = FindCompletionRecordOrDieUnlocked(request_id);
+  ScopedMemTrackerUpdater<CompletionRecord> updater(mem_tracker_.get(), completion_record);
 
   // ... if we did find a CompletionRecord change the driver and return true.
   completion_record->driver_attempt_no = request_id.attempt_no();
@@ -194,6 +249,7 @@ void ResultTracker::RecordCompletionAndRespond(const RequestIdPB& request_id,
   lock_guard<simple_spinlock> l(lock_);
 
   CompletionRecord* completion_record = FindCompletionRecordOrDieUnlocked(request_id);
+  ScopedMemTrackerUpdater<CompletionRecord> updater(mem_tracker_.get(), completion_record);
 
   CHECK_EQ(completion_record->driver_attempt_no, request_id.attempt_no())
     << "Called RecordCompletionAndRespond() from an executor identified with an attempt number that"
@@ -233,13 +289,13 @@ void ResultTracker::FailAndRespondInternal(const RequestIdPB& request_id,
                                            HandleOngoingRpcFunc func) {
   lock_guard<simple_spinlock> l(lock_);
   auto state_and_record = FindClientStateAndCompletionRecordOrNullUnlocked(request_id);
-
   if (PREDICT_FALSE(state_and_record.first == nullptr)) {
     LOG(FATAL) << "Couldn't find ClientState for request: " << request_id.ShortDebugString()
         << ". \nTracker state:\n" << ToStringUnlocked();
   }
 
   CompletionRecord* completion_record = state_and_record.second;
+  ScopedMemTrackerUpdater<CompletionRecord> cr_updater(mem_tracker_.get(), completion_record);
 
   if (completion_record == nullptr) {
     return;
@@ -272,8 +328,10 @@ void ResultTracker::FailAndRespondInternal(const RequestIdPB& request_id,
   // delete the completion record.
   if (completion_record->ongoing_rpcs.size() == 0
       && completion_record->state != RpcState::COMPLETED) {
+    cr_updater.Cancel();
     unique_ptr<CompletionRecord> completion_record =
         EraseKeyReturnValuePtr(&state_and_record.first->completion_records, seq_no);
+    mem_tracker_->Release(completion_record->memory_footprint());
   }
 }
 

@@ -31,10 +31,11 @@ namespace {
 const char* kClientId = "test-client";
 
 void AddRequestId(RpcController* controller,
+                  const std::string& client_id,
                   ResultTracker::SequenceNumber sequence_number,
                   int64_t attempt_no) {
   unique_ptr<RequestIdPB> request_id(new RequestIdPB());
-  request_id->set_client_id(kClientId);
+  request_id->set_client_id(client_id);
   request_id->set_seq_no(sequence_number);
   request_id->set_attempt_no(attempt_no);
   request_id->set_first_incomplete_seq_no(sequence_number);
@@ -191,7 +192,7 @@ class RpcStressTest : public RpcTestBase {
        client_sleep_for_ms(client_sleep) {
       req.set_value_to_add(value);
       req.set_sleep_for_ms(server_sleep);
-      AddRequestId(&controller, sequence_number, attempt_no);
+      AddRequestId(&controller, kClientId, sequence_number, attempt_no);
     }
 
     void Start() {
@@ -224,7 +225,7 @@ class RpcStressTest : public RpcTestBase {
     ExactlyOnceResponsePB resp;
     RequestTracker::SequenceNumber seq_no;
     CHECK_OK(request_tracker_->NewSeqNo(&seq_no));
-    AddRequestId(&controller, seq_no, 0);
+    AddRequestId(&controller, kClientId, seq_no, 0);
     ASSERT_OK(proxy_->AddExactlyOnce(req, &resp, &controller));
     ASSERT_EQ(resp.current_val(), expected_value);
     request_tracker_->RpcCompleted(seq_no);
@@ -244,16 +245,30 @@ class RpcStressTest : public RpcTestBase {
 // same sequence number as previous request.
 TEST_F(RpcStressTest, TestExactlyOnceSemanticsAfterRpcCompleted) {
   ExactlyOnceResponsePB original_resp;
+  int mem_consumption = mem_tracker_->consumption();
   {
     RpcController controller;
     ExactlyOnceRequestPB req;
     req.set_value_to_add(1);
 
     // Assign id 0.
-    AddRequestId(&controller, 0, 0);
+    AddRequestId(&controller, kClientId, 0, 0);
 
     // Send the request the first time.
     ASSERT_OK(proxy_->AddExactlyOnce(req, &original_resp, &controller));
+
+    // The incremental usage of a new client is the size of the response itself
+    // plus some fixed overhead for the client-tracking structure.
+    int expected_incremental_usage = original_resp.SpaceUsed() + 200;
+
+    // The consumption isn't immediately updated, since the MemTracker update
+    // happens after we call 'Respond' on the RPC.
+    int mem_consumption_after;
+    AssertEventually([&]() {
+        mem_consumption_after = mem_tracker_->consumption();
+        ASSERT_GT(mem_consumption_after - mem_consumption, expected_incremental_usage);
+      });
+    mem_consumption = mem_consumption_after;
   }
 
   // Now repeat the rpc 10 times, using the same sequence number, none of these should be executed
@@ -264,10 +279,32 @@ TEST_F(RpcStressTest, TestExactlyOnceSemanticsAfterRpcCompleted) {
     ExactlyOnceRequestPB req;
     req.set_value_to_add(1);
     ExactlyOnceResponsePB resp;
-    AddRequestId(&controller, 0, i + 1);
+    AddRequestId(&controller, kClientId, 0, i + 1);
     ASSERT_OK(proxy_->AddExactlyOnce(req, &resp, &controller));
     ASSERT_EQ(resp.current_val(), 1);
     ASSERT_EQ(resp.current_time_micros(), original_resp.current_time_micros());
+    // Sleep to give the MemTracker time to update -- we don't expect any update,
+    // but if we had a bug here, we'd only see it with this sleep.
+    SleepFor(MonoDelta::FromMilliseconds(100));
+    // We shouldn't have consumed any more memory since the responses were cached.
+    ASSERT_EQ(mem_consumption, mem_tracker_->consumption());
+  }
+
+  // Making a new request, from a new client, should double the memory consumption.
+  {
+    RpcController controller;
+    ExactlyOnceRequestPB req;
+    ExactlyOnceResponsePB resp;
+    req.set_value_to_add(1);
+
+    // Assign id 0.
+    AddRequestId(&controller, "test-client2", 0, 0);
+
+    // Send the first request for this new client.
+    ASSERT_OK(proxy_->AddExactlyOnce(req, &resp, &controller));
+    AssertEventually([&]() {
+        ASSERT_EQ(mem_tracker_->consumption(), mem_consumption * 2);
+      });
   }
 }
 
@@ -313,7 +350,22 @@ TEST_F(RpcStressTest, TestExactlyOnceSemanticsWithConcurrentUpdaters) {
     kNumThreads = 100;
   }
 
-  for (int i = 0; i < kNumIterations; i ++) {
+  ResultTracker::SequenceNumber sequence_number = 0;
+  int memory_consumption_initial = mem_tracker_->consumption();
+  int single_response_size = 0;
+
+  // Measure memory consumption for a single response from the same client.
+  {
+    RpcController controller;
+    ExactlyOnceRequestPB req;
+    ExactlyOnceResponsePB resp;
+    req.set_value_to_add(1);
+    AddRequestId(&controller, kClientId, sequence_number, 0);
+    ASSERT_OK(proxy_->AddExactlyOnce(req, &resp, &controller));
+    single_response_size = resp.SpaceUsed();
+  }
+
+  for (int i = 1; i <= kNumIterations; i ++) {
     vector<unique_ptr<SimultaneousExactlyOnceAdder>> adders;
     for (int j = 0; j < kNumThreads; j++) {
       unique_ptr<SimultaneousExactlyOnceAdder> adder(
@@ -334,6 +386,15 @@ TEST_F(RpcStressTest, TestExactlyOnceSemanticsWithConcurrentUpdaters) {
         ASSERT_EQ(adders[j]->resp.current_time_micros(), time_micros);
       }
     }
+
+    // Wait for the MemTracker to be updated.
+    // After all adders finished we should at least the size of one more response.
+    // The actual size depends of multiple factors, for instance, how many calls were "attached"
+    // (which is timing dependent) so we can't be more precise than this.
+    AssertEventually([&]() {
+        ASSERT_GT(mem_tracker_->consumption(),
+                  memory_consumption_initial + single_response_size * i);
+      });
   }
 }
 

@@ -93,7 +93,8 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
                                                       metric_namespace)),
       rpc_server_(new RpcServer(options.rpc_opts)),
       web_server_(new Webserver(options.webserver_opts)),
-      result_tracker_(new rpc::ResultTracker()),
+      result_tracker_(new rpc::ResultTracker(shared_ptr<MemTracker>(
+          MemTracker::CreateTracker(-1, "result-tracker", mem_tracker_)))),
       is_first_run_(false),
       options_(options),
       stop_metrics_logging_latch_(1) {

@@ -19,11 +19,13 @@
 #ifndef KUDU_UTIL_TEST_UTIL_H
 #define KUDU_UTIL_TEST_UTIL_H
 
+#include <functional>
 #include <gtest/gtest.h>
 #include <string>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/env.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/test_macros.h"
 
 namespace kudu {
@@ -78,6 +80,18 @@ int SeedRandom();
 //
 // May only be called from within a gtest unit test.
 std::string GetTestDataDirectory();
+
+// Wait until 'f()' succeeds without adding any GTest 'fatal failures'.
+// For example:
+//
+//   AssertEventually([]() {
+//     ASSERT_GT(ReadValueOfMetric(), 10);
+//   });
+//
+// The function is run in a loop with exponential backoff, capped at once
+// a second.
+void AssertEventually(const std::function<void(void)>& f,
+                      const MonoDelta& timeout = MonoDelta::FromSeconds(30));
 
 } // namespace kudu
 #endif
