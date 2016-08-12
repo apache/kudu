@@ -18,6 +18,8 @@
 #include "kudu/tools/tool_action.h"
 
 #include <deque>
+#include <iostream>
+#include <list>
 #include <memory>
 #include <string>
 #include <utility>
@@ -25,6 +27,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/rpc/messenger.h"
@@ -40,7 +43,10 @@ using kudu::consensus::RaftPeerPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::tserver::TabletCopyClient;
+using std::cout;
 using std::deque;
+using std::endl;
+using std::list;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -86,6 +92,27 @@ Status ParsePeerString(const string& peer_str,
   string hostport_str = peer_str.substr(first_colon_idx + 1);
   RETURN_NOT_OK(ParseHostPortString(hostport_str, hostport));
   *uuid = peer_str.substr(0, first_colon_idx);
+  return Status::OK();
+}
+
+Status PrintReplicaUuids(const vector<Action>& chain, deque<string> args) {
+  // Parse tablet ID argument.
+  string tablet_id;
+  RETURN_NOT_OK(ParseAndRemoveArg("tablet ID", &args, &tablet_id));
+  RETURN_NOT_OK(CheckNoMoreArgs(chain, args));
+
+  FsManagerOpts opts;
+  opts.read_only = true;
+  FsManager fs_manager(Env::Default(), opts);
+  RETURN_NOT_OK(fs_manager.Open());
+
+  // Load the cmeta file and print all peer uuids.
+  unique_ptr<ConsensusMetadata> cmeta;
+  RETURN_NOT_OK(ConsensusMetadata::Load(&fs_manager, tablet_id,
+                                        fs_manager.uuid(), &cmeta));
+  cout << JoinMapped(cmeta->committed_config().peers(),
+                     [](const RaftPeerPB& p){ return p.permanent_uuid(); },
+                     " ") << endl;
   return Status::OK();
 }
 
@@ -171,25 +198,48 @@ Status Copy(const vector<Action>& chain, deque<string> args) {
 } // anonymous namespace
 
 Action BuildTabletAction() {
+  // TODO: Need to include required arguments in the help for these actions.
+
+  Action tablet_print_replica_uuids;
+  tablet_print_replica_uuids.name = "print_replica_uuids";
+  tablet_print_replica_uuids.description =
+      "Print all replica UUIDs found in a tablet's Raft configuration";
+  tablet_print_replica_uuids.help = &BuildLeafActionHelpString;
+  tablet_print_replica_uuids.run = &PrintReplicaUuids;
+  tablet_print_replica_uuids.gflags = { "fs_wal_dir", "fs_data_dirs" };
+
+
   Action tablet_rewrite_raft_config;
   tablet_rewrite_raft_config.name = "rewrite_raft_config";
-  tablet_rewrite_raft_config.description = "Rewrite a replica's Raft configuration";
+  tablet_rewrite_raft_config.description =
+      "Rewrite a replica's Raft configuration";
   tablet_rewrite_raft_config.help = &BuildLeafActionHelpString;
   tablet_rewrite_raft_config.run = &RewriteRaftConfig;
+  tablet_rewrite_raft_config.gflags = { "fs_wal_dir", "fs_data_dirs" };
 
-  // TODO: Need to include required arguments in the help for these actions.
+  Action tablet_cmeta;
+  tablet_cmeta.name = "cmeta";
+  tablet_cmeta.description =
+      "Operate on a local Kudu tablet's consensus metadata file";
+  tablet_cmeta.help = &BuildNonLeafActionHelpString;
+  tablet_cmeta.sub_actions = {
+      std::move(tablet_print_replica_uuids),
+      std::move(tablet_rewrite_raft_config),
+  };
+
   Action tablet_copy;
   tablet_copy.name = "copy";
   tablet_copy.description = "Copy a replica from a remote server";
   tablet_copy.help = &BuildLeafActionHelpString;
   tablet_copy.run = &Copy;
+  tablet_copy.gflags = { "fs_wal_dir", "fs_data_dirs" };
 
   Action tablet;
   tablet.name = "tablet";
   tablet.description = "Operate on a local Kudu replica";
   tablet.help = &BuildNonLeafActionHelpString;
   tablet.sub_actions = {
-      tablet_rewrite_raft_config,
+      tablet_cmeta,
       tablet_copy
   };
   return tablet;

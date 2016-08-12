@@ -64,6 +64,9 @@ struct Action {
 
   // This action's children.
   std::vector<Action> sub_actions;
+
+  // This action's gflags (if any).
+  std::vector<std::string> gflags;
 };
 
 // Constructs a string with the names of all actions in the chain

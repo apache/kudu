@@ -52,8 +52,25 @@ string BuildHelpString(const vector<Action>& sub_actions, string usage_str) {
 string BuildLeafActionHelpString(const vector<Action>& chain) {
   DCHECK(!chain.empty());
   Action action = chain.back();
-  string msg = Substitute("$0\n", BuildUsageString(chain));
+  string msg = Substitute("$0", BuildUsageString(chain));
+  string gflags_msg;
+  for (const auto& gflag : action.gflags) {
+    google::CommandLineFlagInfo gflag_info =
+        google::GetCommandLineFlagInfoOrDie(gflag.c_str());
+    string noun;
+    int last_underscore_idx = gflag.rfind('_');
+    if (last_underscore_idx != string::npos &&
+        last_underscore_idx != gflag.size() - 1) {
+      noun = gflag.substr(last_underscore_idx + 1);
+    } else {
+      noun = gflag;
+    }
+    msg += Substitute(" [-$0=<$1>]", gflag, noun);
+    gflags_msg += google::DescribeOneFlag(gflag_info);
+  }
+  msg += "\n";
   msg += Substitute("$0\n", action.description);
+  msg += gflags_msg;
   return msg;
 }
 

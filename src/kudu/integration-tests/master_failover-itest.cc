@@ -18,18 +18,21 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
-#include "kudu/common/schema.h"
+#include "kudu/client/client-test-util.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/net/net_util.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/random.h"
+#include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
 METRIC_DECLARE_entity(server);
@@ -44,9 +47,11 @@ namespace client {
 const int kNumTabletServerReplicas = 3;
 
 using sp::shared_ptr;
+using std::set;
 using std::string;
-using std::vector;
 using std::unique_ptr;
+using std::vector;
+using strings::Split;
 using strings::Substitute;
 
 class MasterFailoverTest : public KuduTest {
@@ -128,23 +133,6 @@ class MasterFailoverTest : public KuduTest {
       ->Alter();
   }
 
-  // Test that we can get the table location information from the
-  // master and then open scanners on the tablet server. This involves
-  // sending RPCs to both the master and the tablet servers and
-  // requires that the table and tablet exist both on the masters and
-  // the tablet servers.
-  Status OpenTableAndScanner(const std::string& table_name) {
-    shared_ptr<KuduTable> table;
-    RETURN_NOT_OK_PREPEND(client_->OpenTable(table_name, &table),
-                          "Unable to open table " + table_name);
-    KuduScanner scanner(table.get());
-    RETURN_NOT_OK_PREPEND(scanner.SetProjectedColumns(vector<string>()),
-                          "Unable to open an empty projection on " + table_name);
-    RETURN_NOT_OK_PREPEND(scanner.Open(),
-                          "Unable to open scanner on " + table_name);
-    return Status::OK();
-  }
-
  protected:
   int num_masters_;
   ExternalMiniClusterOptions opts_;
@@ -180,7 +168,9 @@ TEST_F(MasterFailoverTest, TestCreateTableSync) {
   Status s = CreateTable(kTableName, kWaitForCreate);
   ASSERT_TRUE(s.ok() || s.IsAlreadyPresent());
 
-  ASSERT_OK(OpenTableAndScanner(kTableName));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  ASSERT_EQ(0, CountTableRows(table.get()));
 }
 
 // Test that we can issue a CreateTable call, pause the leader master
@@ -206,8 +196,9 @@ TEST_F(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
   deadline.AddDelta(MonoDelta::FromSeconds(90));
   ASSERT_OK(client_->data_->WaitForCreateTableToFinish(client_.get(),
                                                        kTableName, deadline));
-
-  ASSERT_OK(OpenTableAndScanner(kTableName));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  ASSERT_EQ(0, CountTableRows(table.get()));
 }
 
 // Test the scenario where we create a table, pause the leader master,
@@ -361,6 +352,119 @@ TEST_F(MasterFailoverTest, TestMasterUUIDResolution) {
             "Following restart, master $0 has serviced $1 GetNodeInstance() calls",
             master->bound_rpc_hostport().ToString(),
             num_get_node_instances);
+  }
+}
+
+TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
+  const string kBinPath = cluster_->GetBinaryPath("kudu");
+  Random r(SeedRandom());
+
+  // Repeat the test for each master.
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    ExternalMaster* failed_master = cluster_->master(i);
+
+    // "Fail" a master and blow away its state completely.
+    failed_master->Shutdown();
+    string data_root = failed_master->data_dir();
+    env_->DeleteRecursively(data_root);
+
+    // Pick another master at random to serve as a basis for recovery.
+    //
+    // This isn't completely safe; see KUDU-1556 for details.
+    ExternalMaster* other_master;
+    do {
+      other_master = cluster_->master(r.Uniform(cluster_->num_masters()));
+    } while (other_master->uuid() == failed_master->uuid());
+
+    // Find the UUID of the failed master using the other master's cmeta file.
+    string uuid;
+    {
+      vector<string> args = {
+          kBinPath,
+          "tablet",
+          "cmeta",
+          "print_replica_uuids",
+          "--fs_wal_dir=" + other_master->data_dir(),
+          "--fs_data_dirs=" + other_master->data_dir(),
+          master::SysCatalogTable::kSysCatalogTabletId
+      };
+      string output;
+      ASSERT_OK(Subprocess::Call(args, &output));
+      StripWhiteSpace(&output);
+      LOG(INFO) << "UUIDS: " << output;
+      set<string> uuids = Split(output, " ");
+
+      // Isolate the failed master's UUID by eliminating the UUIDs of the
+      // healthy masters from the set.
+      for (int j = 0; j < cluster_->num_masters(); j++) {
+        if (j == i) continue;
+        uuids.erase(cluster_->master(j)->uuid());
+      }
+      ASSERT_EQ(1, uuids.size());
+      uuid = *uuids.begin();
+    }
+
+    // Format a new filesystem with the same UUID as the failed master.
+    {
+      vector<string> args = {
+          kBinPath,
+          "fs",
+          "format",
+          "--fs_wal_dir=" + data_root,
+          "--fs_data_dirs=" + data_root,
+          "--uuid=" + uuid
+      };
+      ASSERT_OK(Subprocess::Call(args));
+    }
+
+    // Copy the master tablet from the other master.
+    {
+      vector<string> args = {
+          kBinPath,
+          "tablet",
+          "copy",
+          "--fs_wal_dir=" + data_root,
+          "--fs_data_dirs=" + data_root,
+          master::SysCatalogTable::kSysCatalogTabletId,
+          other_master->bound_rpc_hostport().ToString()
+      };
+      ASSERT_OK(Subprocess::Call(args));
+    }
+
+    // Bring up the new master.
+    //
+    // Technically this reuses the failed master's data directory, but that
+    // directory was emptied when we "failed" the master, so this still
+    // qualifies as a "new" master for all intents and purposes.
+    ASSERT_OK(failed_master->Start());
+
+    // Do some operations.
+
+    string table_name = Substitute("table-$0", i);
+    ASSERT_OK(CreateTable(table_name, kWaitForCreate));
+
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    ASSERT_EQ(0, CountTableRows(table.get()));
+
+    // Repeat these operations with each of the masters paused.
+    //
+    // Only in slow mode.
+    if (AllowSlowTests()) {
+      for (int j = 0; j < cluster_->num_masters(); j++) {
+        cluster_->master(j)->Pause();
+        ScopedResumeExternalDaemon resume_daemon(cluster_->master(j));
+        string table_name = Substitute("table-$0-$1", i, j);
+
+        // See TestCreateTableSync to understand why we must check for
+        // IsAlreadyPresent as well.
+        Status s = CreateTable(table_name, kWaitForCreate);
+        ASSERT_TRUE(s.ok() || s.IsAlreadyPresent());
+
+        ASSERT_OK(client_->OpenTable(table_name, &table));
+        ASSERT_EQ(0, CountTableRows(table.get()));
+      }
+    }
   }
 }
 

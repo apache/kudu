@@ -153,7 +153,8 @@ int main(int argc, char** argv) {
       {
           kudu::tools::BuildFsAction(),
           kudu::tools::BuildTabletAction()
-      }
+      },
+      {} // no gflags
   };
   string usage = root.help({ root });
   google::SetUsageMessage(usage);
