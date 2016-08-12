@@ -257,8 +257,8 @@ class Stopwatch {
     CHECK_EQ(0, clock_gettime(CLOCK_MONOTONIC, &wall));
 #endif  // defined(__APPLE__)
     times->wall   = wall.tv_sec * 1000000000L + wall.tv_nsec;
-    times->user   = usage.ru_utime.tv_sec * 1000000000L + usage.ru_utime.tv_usec * 1000;
-    times->system = usage.ru_stime.tv_sec * 1000000000L + usage.ru_stime.tv_usec * 1000;
+    times->user   = usage.ru_utime.tv_sec * 1000000000L + usage.ru_utime.tv_usec * 1000L;
+    times->system = usage.ru_stime.tv_sec * 1000000000L + usage.ru_stime.tv_usec * 1000L;
     times->context_switches = usage.ru_nvcsw + usage.ru_nivcsw;
   }
 
