@@ -38,9 +38,9 @@ using std::shared_ptr;
 using strings::Substitute;
 
 DEFINE_int32(maintenance_manager_num_threads, 1,
-       "Size of the maintenance manager thread pool. Beyond a value of '1', one thread is "
-       "reserved for emergency flushes. For spinning disks, the number of threads should "
-       "not be above the number of devices.");
+             "Size of the maintenance manager thread pool. "
+             "For spinning disks, the number of threads should "
+             "not be above the number of devices.");
 TAG_FLAG(maintenance_manager_num_threads, stable);
 
 DEFINE_int32(maintenance_manager_polling_interval_ms, 250,
