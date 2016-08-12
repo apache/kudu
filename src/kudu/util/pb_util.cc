@@ -622,7 +622,7 @@ Status WritablePBContainerFile::Flush() {
   DCHECK_EQ(FileState::OPEN, state_);
 
   // TODO: Flush just the dirty bytes.
-  RETURN_NOT_OK_PREPEND(writer_->Flush(RWFile::FLUSH_SYNC, 0, 0), "Failed to Flush() file");
+  RETURN_NOT_OK_PREPEND(writer_->Flush(RWFile::FLUSH_ASYNC, 0, 0), "Failed to Flush() file");
 
   return Status::OK();
 }
