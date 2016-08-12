@@ -471,7 +471,8 @@ class PosixWritableFile : public WritableFile {
 
     if (PREDICT_FALSE(written != nbytes)) {
       return Status::IOError(
-          Substitute("pwritev error: expected to write $0 bytes, wrote $1 bytes instead",
+          Substitute("pwritev error: expected to write $0 bytes, wrote $1 bytes instead"
+                     " (perhaps the disk is out of space)",
                      nbytes, written));
     }
 #else
@@ -488,7 +489,8 @@ class PosixWritableFile : public WritableFile {
 
       if (PREDICT_FALSE(written != data.size())) {
         return Status::IOError(
-            Substitute("pwrite error: expected to write $0 bytes, wrote $1 bytes instead",
+            Substitute("pwrite error: expected to write $0 bytes, wrote $1 bytes instead"
+                       " (perhaps the disk is out of space)",,
                        data.size(), written));
       }
     }
@@ -560,7 +562,8 @@ class PosixRWFile : public RWFile {
 
     if (PREDICT_FALSE(written != data.size())) {
       return Status::IOError(
-          Substitute("pwrite error: expected to write $0 bytes, wrote $1 bytes instead",
+          Substitute("pwrite error: expected to write $0 bytes, wrote $1 bytes instead"
+                     " (perhaps the disk is out of space)",
                      data.size(), written));
     }
 
