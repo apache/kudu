@@ -185,6 +185,8 @@ Status ServerBase::Init() {
 
   RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
 
+  result_tracker_->StartGCThread();
+
   return Status::OK();
 }
 

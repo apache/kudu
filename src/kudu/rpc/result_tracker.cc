@@ -45,6 +45,10 @@ DEFINE_int64(remember_responses_ttl_ms, 600 * 1000 /* 10 mins */,
     "STALE.");
 TAG_FLAG(remember_responses_ttl_ms, advanced);
 
+DEFINE_int64(result_tracker_gc_interval_ms, 1000,
+    "Interval at which the result tracker will look for entries to GC.");
+TAG_FLAG(result_tracker_gc_interval_ms, hidden);
+
 namespace kudu {
 namespace rpc {
 
@@ -89,9 +93,15 @@ struct ScopedMemTrackerUpdater {
 ResultTracker::ResultTracker(shared_ptr<MemTracker> mem_tracker)
     : mem_tracker_(std::move(mem_tracker)),
       clients_(ClientStateMap::key_compare(),
-               ClientStateMapAllocator(mem_tracker_)) {}
+               ClientStateMapAllocator(mem_tracker_)),
+      gc_thread_stop_latch_(1) {}
 
 ResultTracker::~ResultTracker() {
+  if (gc_thread_) {
+    gc_thread_stop_latch_.CountDown();
+    gc_thread_->Join();
+  }
+
   lock_guard<simple_spinlock> l(lock_);
   // Release all the memory for the stuff we'll delete on destruction.
   for (auto& client_state : clients_) {
@@ -409,6 +419,19 @@ void ResultTracker::FailAndRespond(const RequestIdPB& request_id,
     ongoing_rpc.context->call_->RespondApplicationError(error_ext_id, message, app_error_pb);
   };
   FailAndRespondInternal(request_id, func);
+}
+
+void ResultTracker::StartGCThread() {
+  CHECK(!gc_thread_);
+  CHECK_OK(Thread::Create("server", "result-tracker", &ResultTracker::RunGCThread,
+                          this, &gc_thread_));
+}
+
+void ResultTracker::RunGCThread() {
+  while (!gc_thread_stop_latch_.WaitFor(MonoDelta::FromMilliseconds(
+             FLAGS_result_tracker_gc_interval_ms))) {
+    GCResults();
+  }
 }
 
 void ResultTracker::GCResults() {

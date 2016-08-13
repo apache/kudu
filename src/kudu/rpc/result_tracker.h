@@ -26,10 +26,12 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/thread.h"
 
 namespace google {
 namespace protobuf {
@@ -141,8 +143,6 @@ class RpcContext;
 // }
 //
 // This class is thread safe.
-//
-// TODO Garbage collection.
 class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
  public:
   typedef rpc::RequestTracker::SequenceNumber SequenceNumber;
@@ -222,6 +222,12 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
                       int error_ext_id, const std::string& message,
                       const google::protobuf::Message& app_error_pb);
 
+  // Start a background thread which periodically runs GCResults().
+  // This thread is automatically stopped in the destructor.
+  //
+  // Must be called at most once.
+  void StartGCThread();
+
   // Runs time-based garbage collection on the results this result tracker is caching.
   // When garbage collection runs, it goes through all ClientStates and:
   // - If a ClientState is older than the 'remember_clients_ttl_ms' flag and no
@@ -230,6 +236,8 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
   //   through all CompletionRecords and:
   //   - If the CompletionRecord is older than the 'remember_responses_ttl_secs' flag,
   //     GCs the CompletionRecord and advances the 'stale_before_seq_no' watermark.
+  //
+  // Typically this is invoked from an internal thread started by 'StartGCThread()'.
   void GCResults();
 
   string ToString();
@@ -361,6 +369,8 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
 
   std::string ToStringUnlocked() const;
 
+  void RunGCThread();
+
   // The memory tracker that tracks this ResultTracker's memory consumption.
   std::shared_ptr<kudu::MemTracker> mem_tracker_;
 
@@ -377,6 +387,10 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
                    ClientStateMapAllocator> ClientStateMap;
 
   ClientStateMap clients_;
+
+  // The thread which runs GC, and a latch to stop it.
+  scoped_refptr<Thread> gc_thread_;
+  CountDownLatch gc_thread_stop_latch_;
 
   DISALLOW_COPY_AND_ASSIGN(ResultTracker);
 };

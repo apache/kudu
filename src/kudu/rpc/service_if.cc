@@ -29,7 +29,7 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/flag_tags.h"
 
-// TODO remove this once we have ResultTracker GC
+// TODO remove this once we have fully cluster-tested this.
 DEFINE_bool(enable_exactly_once, false, "Whether to enable exactly once semantics on the client "
     "(experimental).");
 TAG_FLAG(enable_exactly_once, experimental);

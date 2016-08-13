@@ -21,6 +21,7 @@
 
 DECLARE_int64(remember_clients_ttl_ms);
 DECLARE_int64(remember_responses_ttl_ms);
+DECLARE_int64(result_tracker_gc_interval_ms);
 
 using std::atomic_int;
 using std::shared_ptr;
@@ -245,16 +246,6 @@ class ExactlyOnceRpcTest : public RpcTestBase {
     ASSERT_OK(proxy_->AddExactlyOnce(req, &resp, &controller));
     ASSERT_EQ(resp.current_val(), expected_value);
     request_tracker_->RpcCompleted(seq_no);
-  }
-
-  // Continuously runs GC on the ResultTracker.
-  void RunGcThread(MonoDelta run_for) {
-    MonoTime run_until = MonoTime::Now();
-    run_until.AddDelta(run_for);
-    while (MonoTime::Now().ComesBefore(run_until)) {
-      result_tracker_->GCResults();
-      SleepFor(MonoDelta::FromMilliseconds(rand() % 10));
-    }
   }
 
 
@@ -546,27 +537,22 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsGarbageCollection) {
 TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsGarbageCollectionStressTest) {
   FLAGS_remember_clients_ttl_ms = 100;
   FLAGS_remember_responses_ttl_ms = 10;
+  FLAGS_result_tracker_gc_interval_ms = 10;
 
   StartServer();
 
-  // The write thread runs for the shortest period to make sure client GC has a
+  // The write thread runs for a shorter period to make sure client GC has a
   // chance to run.
   MonoDelta writes_run_for = MonoDelta::FromSeconds(2);
   MonoDelta stubborn_run_for = MonoDelta::FromSeconds(3);
-  // GC runs for the longest period because the stubborn thread may wait beyond its deadline
-  // to wait on client GC.
-  MonoDelta gc_run_for = MonoDelta::FromSeconds(4);
   if (AllowSlowTests()) {
     writes_run_for = MonoDelta::FromSeconds(10);
     stubborn_run_for = MonoDelta::FromSeconds(11);
-    gc_run_for = MonoDelta::FromSeconds(12);
   }
 
-  scoped_refptr<kudu::Thread> gc_thread;
   scoped_refptr<kudu::Thread> write_thread;
   scoped_refptr<kudu::Thread> stubborn_thread;
-  CHECK_OK(kudu::Thread::Create(
-      "gc", "gc", &ExactlyOnceRpcTest::RunGcThread, this, gc_run_for, &gc_thread));
+  result_tracker_->StartGCThread();
   CHECK_OK(kudu::Thread::Create(
       "write", "write", &ExactlyOnceRpcTest::DoLongWritesThread,
       this, writes_run_for, &write_thread));
@@ -574,13 +560,17 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsGarbageCollectionStressTest) 
       "stubborn", "stubborn", &ExactlyOnceRpcTest::StubbornlyWriteTheSameRequestThread,
       this, stubborn_run_for, &stubborn_thread));
 
-  gc_thread->Join();
   write_thread->Join();
   stubborn_thread->Join();
 
-  result_tracker_->GCResults();
-  ASSERT_EQ(0, mem_tracker_->consumption());
+  // Within a few seconds, the consumption should be back to zero.
+  // Really, this should be within 100ms, but we'll give it a bit of
+  // time to avoid test flakiness.
+  AssertEventually([&]() {
+      ASSERT_EQ(0, mem_tracker_->consumption());
+    }, MonoDelta::FromSeconds(5));
 }
+
 
 } // namespace rpc
 } // namespace kudu
