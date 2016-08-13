@@ -525,7 +525,32 @@ TYPED_TEST(BlockManagerTest, WritableBlockStateTest) {
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
 }
 
+static void CheckMetrics(const scoped_refptr<MetricEntity>& metrics,
+                         int blocks_open_reading, int blocks_open_writing,
+                         int total_readable_blocks, int total_writable_blocks,
+                         int total_bytes_read, int total_bytes_written) {
+  ASSERT_EQ(blocks_open_reading, down_cast<AtomicGauge<uint64_t>*>(
+                metrics->FindOrNull(METRIC_block_manager_blocks_open_reading).get())->value());
+  ASSERT_EQ(blocks_open_writing, down_cast<AtomicGauge<uint64_t>*>(
+                metrics->FindOrNull(METRIC_block_manager_blocks_open_writing).get())->value());
+  ASSERT_EQ(total_readable_blocks, down_cast<Counter*>(
+                metrics->FindOrNull(METRIC_block_manager_total_readable_blocks).get())->value());
+  ASSERT_EQ(total_writable_blocks, down_cast<Counter*>(
+                metrics->FindOrNull(METRIC_block_manager_total_writable_blocks).get())->value());
+  ASSERT_EQ(total_bytes_read, down_cast<Counter*>(
+                metrics->FindOrNull(METRIC_block_manager_total_bytes_read).get())->value());
+  ASSERT_EQ(total_bytes_written, down_cast<Counter*>(
+                metrics->FindOrNull(METRIC_block_manager_total_bytes_written).get())->value());
+}
+
 TYPED_TEST(BlockManagerTest, AbortTest) {
+  MetricRegistry registry;
+  scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
+  ASSERT_OK(this->ReopenBlockManager(entity,
+                                     shared_ptr<MemTracker>(),
+                                     { GetTestDataDirectory() },
+                                     false));
+
   gscoped_ptr<WritableBlock> written_block;
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
   string test_data = "test data";
@@ -542,6 +567,8 @@ TYPED_TEST(BlockManagerTest, AbortTest) {
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)
               .IsNotFound());
+
+  ASSERT_NO_FATAL_FAILURE(CheckMetrics(entity, 0, 0, 0, 2, 0, test_data.size() * 2));
 }
 
 TYPED_TEST(BlockManagerTest, PersistenceTest) {
@@ -630,24 +657,6 @@ TYPED_TEST(BlockManagerTest, ConcurrentCloseReadableBlockTest) {
   for (const scoped_refptr<Thread>& t : threads) {
     t->Join();
   }
-}
-
-static void CheckMetrics(const scoped_refptr<MetricEntity>& metrics,
-                         int blocks_open_reading, int blocks_open_writing,
-                         int total_readable_blocks, int total_writable_blocks,
-                         int total_bytes_read, int total_bytes_written) {
-  ASSERT_EQ(blocks_open_reading, down_cast<AtomicGauge<uint64_t>*>(
-                metrics->FindOrNull(METRIC_block_manager_blocks_open_reading).get())->value());
-  ASSERT_EQ(blocks_open_writing, down_cast<AtomicGauge<uint64_t>*>(
-                metrics->FindOrNull(METRIC_block_manager_blocks_open_writing).get())->value());
-  ASSERT_EQ(total_readable_blocks, down_cast<Counter*>(
-                metrics->FindOrNull(METRIC_block_manager_total_readable_blocks).get())->value());
-  ASSERT_EQ(total_writable_blocks, down_cast<Counter*>(
-                metrics->FindOrNull(METRIC_block_manager_total_writable_blocks).get())->value());
-  ASSERT_EQ(total_bytes_read, down_cast<Counter*>(
-                metrics->FindOrNull(METRIC_block_manager_total_bytes_read).get())->value());
-  ASSERT_EQ(total_bytes_written, down_cast<Counter*>(
-                metrics->FindOrNull(METRIC_block_manager_total_bytes_written).get())->value());
 }
 
 TYPED_TEST(BlockManagerTest, MetricsTest) {

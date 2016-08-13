@@ -40,6 +40,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util_prod.h"
 #include "kudu/util/threadpool.h"
@@ -773,24 +774,6 @@ class LogWritableBlock : public WritableBlock {
   Status AppendMetadata();
 
  private:
-
-  // RAII-style class for finishing writable blocks in DoClose().
-  class ScopedFinisher {
-   public:
-    // Both 'block' and 's' must outlive the finisher.
-    ScopedFinisher(LogWritableBlock* block, Status* s) :
-      block_(block),
-      status_(s) {
-    }
-    ~ScopedFinisher() {
-      block_->state_ = CLOSED;
-      *status_ = block_->container_->FinishBlock(*status_, block_);
-    }
-   private:
-    LogWritableBlock* block_;
-    Status* status_;
-  };
-
   // The owning container. Must outlive the block.
   LogBlockContainer* container_;
 
@@ -901,14 +884,22 @@ Status LogWritableBlock::DoClose(SyncMode mode) {
   // Tracks the first failure (if any).
   //
   // It's important that any subsequent failures mutate 's' before
-  // returning. Otherwise 'finisher' won't properly provide the first
+  // returning. Otherwise 'cleanup' won't properly provide the first
   // failure to LogBlockContainer::FinishBlock().
   //
-  // Note also that when 'finisher' goes out of scope it may mutate 's'.
+  // Note also that when 'cleanup' goes out of scope it may mutate 's'.
   Status s;
   {
-    ScopedFinisher finisher(this, &s);
+    auto cleanup = MakeScopedCleanup([&]() {
+        if (container_->metrics()) {
+          container_->metrics()->generic_metrics.blocks_open_writing->Decrement();
+          container_->metrics()->generic_metrics.total_bytes_written->IncrementBy(
+              BytesAppended());
+        }
 
+        state_ = CLOSED;
+        s = container_->FinishBlock(s, this);
+      });
     // FlushDataAsync() was not called; append the metadata now.
     if (state_ == CLEAN || state_ == DIRTY) {
       s = AppendMetadata();
@@ -926,12 +917,6 @@ Status LogWritableBlock::DoClose(SyncMode mode) {
       // TODO: Sync just this block's dirty metadata.
       s = container_->SyncMetadata();
       RETURN_NOT_OK(s);
-
-      if (container_->metrics()) {
-        container_->metrics()->generic_metrics.blocks_open_writing->Decrement();
-        container_->metrics()->generic_metrics.total_bytes_written->IncrementBy(
-            BytesAppended());
-      }
     }
   }
 
