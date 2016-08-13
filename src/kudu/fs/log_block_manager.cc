@@ -280,20 +280,6 @@ class LogBlockContainer {
   const std::string& root_path() const { return root_path_; }
 
  private:
-  // RAII-style class for finishing containers in FinishBlock().
-  class ScopedFinisher {
-   public:
-    // 'container' must outlive the finisher.
-    explicit ScopedFinisher(LogBlockContainer* container) :
-      container_(container) {
-    }
-    ~ScopedFinisher() {
-      container_->block_manager()->MakeContainerAvailable(container_);
-    }
-   private:
-    LogBlockContainer* container_;
-  };
-
   LogBlockContainer(LogBlockManager* block_manager, PathInstanceMetadataPB* instance,
                     std::string root_path, std::string path,
                     gscoped_ptr<WritablePBContainerFile> metadata_writer,
@@ -516,9 +502,11 @@ void LogBlockContainer::CheckBlockRecord(const BlockRecordPB& record,
 }
 
 Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
-  ScopedFinisher finisher(this);
+  auto cleanup = MakeScopedCleanup([&]() {
+      block_manager_->MakeContainerAvailable(this);
+    });
   if (!s.ok()) {
-    // Early return; 'finisher' makes the container available again.
+    // Early return; 'cleanup' makes the container available again.
     return s;
   }
 
