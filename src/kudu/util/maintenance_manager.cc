@@ -348,7 +348,7 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 }
 
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
-  MonoTime start_time(MonoTime::Now(MonoTime::FINE));
+  MonoTime start_time(MonoTime::Now());
   op->RunningGauge()->Increment();
   LOG_TIMING(INFO, Substitute("running $0", op->name())) {
     TRACE_EVENT1("maintenance", "MaintenanceManager::LaunchOp",
@@ -356,7 +356,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
     op->Perform();
   }
   op->RunningGauge()->Decrement();
-  MonoTime end_time(MonoTime::Now(MonoTime::FINE));
+  MonoTime end_time(MonoTime::Now());
   MonoDelta delta(end_time.GetDeltaSince(start_time));
   std::lock_guard<Mutex> guard(lock_);
 
@@ -406,7 +406,7 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
       completed_pb->set_name(completed_op.name);
       completed_pb->set_duration_millis(completed_op.duration.ToMilliseconds());
 
-      MonoDelta delta(MonoTime::Now(MonoTime::FINE).GetDeltaSince(completed_op.start_mono_time));
+      MonoDelta delta(MonoTime::Now().GetDeltaSince(completed_op.start_mono_time));
       completed_pb->set_secs_since_start(delta.ToSeconds());
     }
   }

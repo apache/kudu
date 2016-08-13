@@ -283,9 +283,9 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
   }
 
   // Give the lookup threads some time to crash the master.
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(MonoDelta::FromSeconds(15));
-  while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+  while (MonoTime::Now().ComesBefore(deadline)) {
     ASSERT_TRUE(cluster_->master()->IsProcessAlive()) << "Master crashed!";
     SleepFor(MonoDelta::FromMilliseconds(100));
   }

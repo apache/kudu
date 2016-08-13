@@ -197,7 +197,7 @@ TEST_F(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
   cluster_->master(leader_idx)->Pause();
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(MonoDelta::FromSeconds(90));
   ASSERT_OK(client_->data_->WaitForCreateTableToFinish(client_.get(),
                                                        kTableName, deadline));
@@ -305,9 +305,9 @@ TEST_F(MasterFailoverTest, TestKUDU1374) {
   // 5. Leader master sees that all tablets in the table now have the new
   //    schema and ends the AlterTable() operation.
   // 6. The next IsAlterTableInProgress() call returns false.
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(MonoDelta::FromSeconds(90));
-  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  MonoTime now = MonoTime::Now();
   while (now.ComesBefore(deadline)) {
     bool in_progress;
     ASSERT_OK(client_->IsAlterTableInProgress(kTableName, &in_progress));
@@ -316,7 +316,7 @@ TEST_F(MasterFailoverTest, TestKUDU1374) {
     }
 
     SleepFor(MonoDelta::FromMilliseconds(100));
-    now = MonoTime::Now(MonoTime::FINE);
+    now = MonoTime::Now();
   }
   ASSERT_TRUE(now.ComesBefore(deadline))
     << "Deadline elapsed before alter table completed";

@@ -42,7 +42,7 @@ ScannerMetrics::ScannerMetrics(const scoped_refptr<MetricEntity>& metric_entity)
 
 void ScannerMetrics::SubmitScannerDuration(const MonoTime& time_started) {
   scanner_duration->Increment(
-      MonoTime::Now(MonoTime::COARSE).GetDeltaSince(time_started).ToMicroseconds());
+      MonoTime::Now().GetDeltaSince(time_started).ToMicroseconds());
 }
 
 } // namespace tserver

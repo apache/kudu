@@ -229,7 +229,7 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
 
   // Let's allow for plenty of time for discovering the master the first
   // time around.
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(c->default_admin_operation_timeout());
   RETURN_NOT_OK_PREPEND(c->data_->SetMasterServerProxy(c.get(), deadline),
                         "Could not locate the leader master");
@@ -263,13 +263,13 @@ KuduTableCreator* KuduClient::NewTableCreator() {
 
 Status KuduClient::IsCreateTableInProgress(const string& table_name,
                                            bool *create_in_progress) {
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(default_admin_operation_timeout());
   return data_->IsCreateTableInProgress(this, table_name, deadline, create_in_progress);
 }
 
 Status KuduClient::DeleteTable(const string& table_name) {
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(default_admin_operation_timeout());
   return data_->DeleteTable(this, table_name, deadline);
 }
@@ -280,14 +280,14 @@ KuduTableAlterer* KuduClient::NewTableAlterer(const string& name) {
 
 Status KuduClient::IsAlterTableInProgress(const string& table_name,
                                           bool *alter_in_progress) {
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(default_admin_operation_timeout());
   return data_->IsAlterTableInProgress(this, table_name, deadline, alter_in_progress);
 }
 
 Status KuduClient::GetTableSchema(const string& table_name,
                                   KuduSchema* schema) {
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(default_admin_operation_timeout());
   string table_id_ignored;
   PartitionSchema partition_schema;
@@ -303,7 +303,7 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
   ListTabletServersRequestPB req;
   ListTabletServersResponsePB resp;
 
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(default_admin_operation_timeout());
   Status s =
       data_->SyncLeaderMasterRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
@@ -336,7 +336,7 @@ Status KuduClient::ListTables(vector<string>* tables,
   if (!filter.empty()) {
     req.set_name_filter(filter);
   }
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(default_admin_operation_timeout());
   Status s =
       data_->SyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB>(
@@ -375,7 +375,7 @@ Status KuduClient::OpenTable(const string& table_name,
   KuduSchema schema;
   string table_id;
   PartitionSchema partition_schema;
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(default_admin_operation_timeout());
   RETURN_NOT_OK(data_->GetTableSchema(this,
                                       table_name,
@@ -546,7 +546,7 @@ Status KuduTableCreator::Create() {
 
   req.mutable_partition_schema()->CopyFrom(data_->partition_schema_);
 
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   if (data_->timeout_.Initialized()) {
     deadline.AddDelta(data_->timeout_);
   } else {
@@ -910,7 +910,7 @@ Status KuduTableAlterer::Alter() {
   MonoDelta timeout = data_->timeout_.Initialized() ?
     data_->timeout_ :
     data_->client_->default_admin_operation_timeout();
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(timeout);
   RETURN_NOT_OK(data_->client_->data_->AlterTable(data_->client_, req, deadline,
                                                   data_->has_alter_partitioning_steps));
@@ -1130,7 +1130,7 @@ Status KuduScanner::Open() {
 
   VLOG(1) << "Beginning scan " << ToString();
 
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(data_->configuration().timeout());
   set<string> blacklist;
 
@@ -1210,7 +1210,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
     // More data is available in this tablet.
     VLOG(1) << "Continuing scan " << ToString();
 
-    MonoTime batch_deadline = MonoTime::Now(MonoTime::FINE);
+    MonoTime batch_deadline = MonoTime::Now();
     batch_deadline.AddDelta(data_->configuration().timeout());
     data_->PrepareRequest(KuduScanner::Data::CONTINUE);
 
@@ -1258,7 +1258,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
     // server closed it for us.
     VLOG(1) << "Scanning next tablet " << ToString();
     data_->last_primary_key_.clear();
-    MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+    MonoTime deadline = MonoTime::Now();
     deadline.AddDelta(data_->configuration().timeout());
     set<string> blacklist;
 

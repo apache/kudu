@@ -188,7 +188,7 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
   }
 
   if (FLAGS_tablet_throttler_rpc_per_sec > 0 || FLAGS_tablet_throttler_bytes_per_sec > 0) {
-    throttler_.reset(new Throttler(MonoTime::Now(MonoTime::FINE),
+    throttler_.reset(new Throttler(MonoTime::Now(),
                                    FLAGS_tablet_throttler_rpc_per_sec,
                                    FLAGS_tablet_throttler_bytes_per_sec,
                                    FLAGS_tablet_throttler_burst_factor));
@@ -896,7 +896,7 @@ bool Tablet::ShouldThrottleAllow(int64_t bytes) {
   if (!throttler_) {
     return true;
   }
-  return throttler_->Take(MonoTime::Now(MonoTime::FINE), 1, bytes);
+  return throttler_->Take(MonoTime::Now(), 1, bytes);
 }
 
 ////////////////////////////////////////////////////////////

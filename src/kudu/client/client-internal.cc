@@ -90,7 +90,7 @@ Status RetryFunc(const MonoTime& deadline,
                  const boost::function<Status(const MonoTime&, bool*)>& func) {
   DCHECK(deadline.Initialized());
 
-  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  MonoTime now = MonoTime::Now();
   if (deadline.ComesBefore(now)) {
     return Status::TimedOut(timeout_msg);
   }
@@ -104,7 +104,7 @@ Status RetryFunc(const MonoTime& deadline,
     if (!retry) {
       return s;
     }
-    now = MonoTime::Now(MonoTime::FINE);
+    now = MonoTime::Now();
     MonoDelta func_time = now.GetDeltaSince(func_stime);
 
     VLOG(1) << retry_msg << " status=" << s.ToString();
@@ -124,7 +124,7 @@ Status RetryFunc(const MonoTime& deadline,
     VLOG(1) << "Waiting for " << HumanReadableElapsedTime::ToShortString(wait_secs)
             << " before retrying...";
     SleepFor(MonoDelta::FromSeconds(wait_secs));
-    now = MonoTime::Now(MonoTime::FINE);
+    now = MonoTime::Now();
 
   }
 
@@ -154,7 +154,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     }
 
     // Have we already exceeded our deadline?
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    MonoTime now = MonoTime::Now();
     if (deadline.ComesBefore(now)) {
       return Status::TimedOut(Substitute("$0 timed out after deadline expired",
                                          func_name));
@@ -199,7 +199,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     }
 
     if (s.IsTimedOut()) {
-      if (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+      if (MonoTime::Now().ComesBefore(deadline)) {
         LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
                      << ") to leader Master (" << leader_master_hostport().ToString()
                      << "): " << s.ToString();

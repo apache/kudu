@@ -148,7 +148,7 @@ void PeerMessageQueue::SetLeaderMode(const OpId& committed_index,
 
   // Reset last communication time with all peers to reset the clock on the
   // failure timeout.
-  MonoTime now(MonoTime::Now(MonoTime::FINE));
+  MonoTime now(MonoTime::Now());
   for (const PeersMap::value_type& entry : peers_map_) {
     entry.second->last_successful_communication_time = now;
   }
@@ -299,7 +299,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   }
 
   MonoDelta unreachable_time =
-      MonoTime::Now(MonoTime::FINE).GetDeltaSince(peer->last_successful_communication_time);
+      MonoTime::Now().GetDeltaSince(peer->last_successful_communication_time);
   if (unreachable_time.ToSeconds() > FLAGS_follower_unavailable_considered_failed_sec) {
     if (CountVoters(*queue_state_.active_config) > 2) {
       // We never drop from 2 to 1 automatically, at least for now. We may want
@@ -470,7 +470,7 @@ void PeerMessageQueue::NotifyPeerIsResponsiveDespiteError(const std::string& pee
   std::lock_guard<simple_spinlock> l(queue_lock_);
   TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
   if (!peer) return;
-  peer->last_successful_communication_time = MonoTime::Now(MonoTime::FINE);
+  peer->last_successful_communication_time = MonoTime::Now();
 }
 
 void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
@@ -531,7 +531,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     // Update the peer status based on the response.
     peer->is_new = false;
     peer->last_known_committed_idx = status.last_committed_idx();
-    peer->last_successful_communication_time = MonoTime::Now(MonoTime::FINE);
+    peer->last_successful_communication_time = MonoTime::Now();
 
     // If the reported last-received op for the replica is in our local log,
     // then resume sending entries from that point onward. Otherwise, resume

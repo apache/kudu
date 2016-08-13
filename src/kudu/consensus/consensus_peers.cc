@@ -448,7 +448,7 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
   // TODO generalize this exponential backoff algorithm, as we do the
   // same thing in catalog_manager.cc
   // (AsyncTabletRequestTask::RpcCallBack).
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_raft_get_node_instance_timeout_ms));
   int attempt = 1;
   while (true) {
@@ -465,7 +465,7 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
 
     LOG(WARNING) << "Error getting permanent uuid from config peer " << hostport.ToString() << ": "
                  << s.ToString();
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    MonoTime now = MonoTime::Now();
     if (now.ComesBefore(deadline)) {
       int64_t remaining_ms = deadline.GetDeltaSince(now).ToMilliseconds();
       int64_t base_delay_ms = 1 << (attempt + 3); // 1st retry delayed 2^4 ms, 2nd 2^5, etc..

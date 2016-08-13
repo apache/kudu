@@ -2172,7 +2172,7 @@ class RetryingTSRpcTask : public MonitoredTask {
     : master_(master),
       replica_picker_(std::move(replica_picker)),
       table_(table),
-      start_ts_(MonoTime::Now(MonoTime::FINE)),
+      start_ts_(MonoTime::Now()),
       attempt_(0),
       state_(kStateRunning) {
     deadline_ = start_ts_;
@@ -2196,7 +2196,7 @@ class RetryingTSRpcTask : public MonitoredTask {
     }
 
     // Calculate and set the timeout deadline.
-    MonoTime timeout = MonoTime::Now(MonoTime::FINE);
+    MonoTime timeout = MonoTime::Now();
     timeout.AddDelta(MonoDelta::FromMilliseconds(FLAGS_master_ts_rpc_timeout_ms));
     const MonoTime& deadline = MonoTime::Earliest(timeout, deadline_);
     rpc_.set_deadline(deadline);
@@ -2299,7 +2299,7 @@ class RetryingTSRpcTask : public MonitoredTask {
   // Returns true if rescheduling the task was successful.
   bool RescheduleWithBackoffDelay() {
     if (state() != kStateRunning) return false;
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    MonoTime now = MonoTime::Now();
     // We assume it might take 10ms to process the request in the best case,
     // fail if we have less than that amount of time remaining.
     int64_t millis_remaining = deadline_.GetDeltaSince(now).ToMilliseconds() - 10;
@@ -2349,7 +2349,7 @@ class RetryingTSRpcTask : public MonitoredTask {
 
   // Clean up request and release resources. May call 'delete this'.
   void UnregisterAsyncTask() {
-    end_ts_ = MonoTime::Now(MonoTime::FINE);
+    end_ts_ = MonoTime::Now();
     if (table_ != nullptr) {
       table_->RemoveTask(this);
     } else {
@@ -2924,7 +2924,7 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
                                                 DeferredAssignmentActions* deferred,
                                                 vector<scoped_refptr<TabletInfo> >* new_tablets) {
   MonoDelta time_since_updated =
-      MonoTime::Now(MonoTime::FINE).GetDeltaSince(tablet->last_create_tablet_time());
+      MonoTime::Now().GetDeltaSince(tablet->last_create_tablet_time());
   int64_t remaining_timeout_ms =
       FLAGS_tablet_creation_timeout_ms - time_since_updated.ToMilliseconds();
 
@@ -3150,7 +3150,7 @@ void CatalogManager::SendCreateTabletRequest(const scoped_refptr<TabletInfo>& ta
                                              const TabletMetadataLock& tablet_lock) {
   const consensus::RaftConfigPB& config =
       tablet_lock.data().pb.committed_consensus_state().config();
-  tablet->set_last_create_tablet_time(MonoTime::Now(MonoTime::FINE));
+  tablet->set_last_create_tablet_time(MonoTime::Now());
   for (const RaftPeerPB& peer : config.peers()) {
     AsyncCreateReplica* task = new AsyncCreateReplica(master_,
                                                       peer.permanent_uuid(),
@@ -3568,7 +3568,7 @@ TabletInfo::TabletInfo(const scoped_refptr<TableInfo>& table,
                        std::string tablet_id)
     : tablet_id_(std::move(tablet_id)),
       table_(table),
-      last_create_tablet_time_(MonoTime::Now(MonoTime::FINE)),
+      last_create_tablet_time_(MonoTime::Now()),
       reported_schema_version_(0) {}
 
 TabletInfo::~TabletInfo() {

@@ -29,11 +29,11 @@ namespace kudu {
 
 TEST(TestMonoTime, TestMonotonicity) {
   alarm(360);
-  MonoTime prev(MonoTime::Now(MonoTime::FINE));
+  MonoTime prev(MonoTime::Now());
   MonoTime next;
 
   do {
-    next = MonoTime::Now(MonoTime::FINE);
+    next = MonoTime::Now();
     //LOG(INFO) << " next = " << next.ToString();
   } while (!prev.ComesBefore(next));
   ASSERT_FALSE(next.ComesBefore(prev));
@@ -41,7 +41,7 @@ TEST(TestMonoTime, TestMonotonicity) {
 }
 
 TEST(TestMonoTime, TestComparison) {
-  MonoTime now(MonoTime::Now(MonoTime::COARSE));
+  MonoTime now(MonoTime::Now());
   MonoTime future(now);
   future.AddDelta(MonoDelta::FromNanoseconds(1L));
 
@@ -121,11 +121,11 @@ TEST(TestMonoTime, TestTimeSpec) {
 TEST(TestMonoTime, TestDeltas) {
   alarm(360);
   const MonoDelta max_delta(MonoDelta::FromSeconds(0.1));
-  MonoTime prev(MonoTime::Now(MonoTime::FINE));
+  MonoTime prev(MonoTime::Now());
   MonoTime next;
   MonoDelta cur_delta;
   do {
-    next = MonoTime::Now(MonoTime::FINE);
+    next = MonoTime::Now();
     cur_delta = next.GetDeltaSince(prev);
   } while (cur_delta.LessThan(max_delta));
   alarm(0);
@@ -144,28 +144,27 @@ TEST(TestMonoTime, TestDeltaConversions) {
   ASSERT_EQ(500, nano.nano_delta_);
 }
 
-static void DoTestMonoTimePerf(MonoTime::Granularity granularity) {
+static void DoTestMonoTimePerf() {
   const MonoDelta max_delta(MonoDelta::FromMilliseconds(500));
   uint64_t num_calls = 0;
-  MonoTime prev(MonoTime::Now(granularity));
+  MonoTime prev(MonoTime::Now());
   MonoTime next;
   MonoDelta cur_delta;
   do {
-    next = MonoTime::Now(granularity);
+    next = MonoTime::Now();
     cur_delta = next.GetDeltaSince(prev);
     num_calls++;
   } while (cur_delta.LessThan(max_delta));
-  LOG(INFO) << "DoTestMonoTimePerf(granularity="
-        << ((granularity == MonoTime::FINE) ? "FINE" : "COARSE")
-        << "): " << num_calls << " in "
+  LOG(INFO) << "DoTestMonoTimePerf():"
+        << num_calls << " in "
         << max_delta.ToString() << " seconds.";
 }
 
 TEST(TestMonoTime, TestSleepFor) {
-  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoTime start = MonoTime::Now();
   MonoDelta sleep = MonoDelta::FromMilliseconds(100);
   SleepFor(sleep);
-  MonoTime end = MonoTime::Now(MonoTime::FINE);
+  MonoTime end = MonoTime::Now();
   MonoDelta actualSleep = end.GetDeltaSince(start);
   ASSERT_GE(actualSleep.ToNanoseconds(), sleep.ToNanoseconds());
 }
@@ -178,23 +177,17 @@ TEST(TestMonoTime, TestSleepForOverflow) {
 
   // This quantity (~4s sleep) overflows a 32-bit integer such that
   // the value becomes 0.
-  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoTime start = MonoTime::Now();
   MonoDelta sleep = MonoDelta::FromNanoseconds(1L << 32);
   SleepFor(sleep);
-  MonoTime end = MonoTime::Now(MonoTime::FINE);
+  MonoTime end = MonoTime::Now();
   MonoDelta actualSleep = end.GetDeltaSince(start);
   ASSERT_GE(actualSleep.ToNanoseconds(), sleep.ToNanoseconds());
 }
 
-TEST(TestMonoTimePerf, TestMonoTimePerfCoarse) {
+TEST(TestMonoTimePerf, TestMonoTimePerf) {
   alarm(360);
-  DoTestMonoTimePerf(MonoTime::COARSE);
-  alarm(0);
-}
-
-TEST(TestMonoTimePerf, TestMonoTimePerfFine) {
-  alarm(360);
-  DoTestMonoTimePerf(MonoTime::FINE);
+  DoTestMonoTimePerf();
   alarm(0);
 }
 

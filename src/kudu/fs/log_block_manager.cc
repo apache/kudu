@@ -1414,7 +1414,7 @@ LogBlockContainer* LogBlockManager::GetAvailableContainer(
     const unordered_set<string>& full_root_paths) {
   LogBlockContainer* container = nullptr;
   int64_t disk_full_containers_delta = 0;
-  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  MonoTime now = MonoTime::Now();
   {
     std::lock_guard<simple_spinlock> l(lock_);
     // Move containers from disk_full -> available.
@@ -1778,7 +1778,7 @@ bool FullDiskCache::IsRootFull(const std::string& root_path, MonoTime* expires_o
     expires = FindOrNull(cache_, root_path);
   }
   if (expires == nullptr) return false; // No entry exists.
-  if (expires->ComesBefore(MonoTime::Now(MonoTime::FINE))) return false; // Expired.
+  if (expires->ComesBefore(MonoTime::Now())) return false; // Expired.
   if (expires_out != nullptr) {
     *expires_out = *expires;
   }
@@ -1786,7 +1786,7 @@ bool FullDiskCache::IsRootFull(const std::string& root_path, MonoTime* expires_o
 }
 
 void FullDiskCache::MarkRootFull(const string& root_path) {
-  MonoTime expires = MonoTime::Now(MonoTime::FINE);
+  MonoTime expires = MonoTime::Now();
   expires.AddDelta(MonoDelta::FromSeconds(FLAGS_log_block_manager_full_disk_cache_seconds));
   std::lock_guard<percpu_rwlock> l(lock_);
   InsertOrUpdate(&cache_, root_path, expires); // Last one wins.

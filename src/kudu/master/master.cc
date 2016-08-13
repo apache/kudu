@@ -155,7 +155,7 @@ Status Master::WaitForCatalogManagerInit() {
 
 Status Master::WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& timeout) {
   Status s;
-  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoTime start = MonoTime::Now();
   int backoff_ms = 1;
   const int kMaxBackoffMs = 256;
   do {
@@ -167,7 +167,7 @@ Status Master::WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& 
     }
     SleepFor(MonoDelta::FromMilliseconds(backoff_ms));
     backoff_ms = min(backoff_ms << 1, kMaxBackoffMs);
-  } while (MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).LessThan(timeout));
+  } while (MonoTime::Now().GetDeltaSince(start).LessThan(timeout));
   return Status::TimedOut("Maximum time exceeded waiting for master leadership",
                           s.ToString());
 }

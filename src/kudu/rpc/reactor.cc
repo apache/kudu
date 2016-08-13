@@ -81,7 +81,7 @@ Status ShutdownError(bool aborted) {
 
 ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder &bld)
   : loop_(kDefaultLibEvFlags),
-    cur_time_(MonoTime::Now(MonoTime::COARSE)),
+    cur_time_(MonoTime::Now()),
     last_unused_tcp_scan_(cur_time_),
     reactor_(reactor),
     connection_keepalive_time_(bld.connection_keepalive_time_),
@@ -238,7 +238,7 @@ void ReactorThread::TimerHandler(ev::timer &watcher, int revents) {
       "the timer handler.";
     return;
   }
-  MonoTime now(MonoTime::Now(MonoTime::COARSE));
+  MonoTime now(MonoTime::Now());
   VLOG(4) << name() << ": timer tick at " << now.ToString();
   cur_time_ = now;
 
@@ -353,7 +353,7 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
   DCHECK(IsCurrentThread());
 
   // Set a limit on how long the server will negotiate with a new client.
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_rpc_negotiation_timeout_ms));
 
   scoped_refptr<Trace> trace(new Trace());

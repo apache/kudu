@@ -101,7 +101,7 @@ class MaintenanceOpStats {
  private:
   void UpdateLastModified() {
     valid_ = true;
-    last_modified_ = MonoTime::Now(MonoTime::FINE);
+    last_modified_ = MonoTime::Now();
   }
 
   // True if these stats are valid.

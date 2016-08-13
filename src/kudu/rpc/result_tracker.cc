@@ -53,7 +53,7 @@ ResultTracker::RpcState ResultTracker::TrackRpcUnlocked(const RequestIdPB& reque
       request_id.client_id(),
       []{ return unique_ptr<ClientState>(new ClientState()); })->get();
 
-  client_state->last_heard_from = MonoTime::Now(MonoTime::FINE);
+  client_state->last_heard_from = MonoTime::Now();
 
   auto result = ComputeIfAbsentReturnAbsense(
       &client_state->completion_records,

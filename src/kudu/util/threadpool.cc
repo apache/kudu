@@ -183,7 +183,7 @@ Status ThreadPool::SubmitFunc(const boost::function<void()>& func) {
 }
 
 Status ThreadPool::Submit(const std::shared_ptr<Runnable>& task) {
-  MonoTime submit_time = MonoTime::Now(MonoTime::FINE);
+  MonoTime submit_time = MonoTime::Now();
 
   MutexLock guard(lock_);
   if (PREDICT_FALSE(!pool_status_.ok())) {
@@ -254,7 +254,7 @@ void ThreadPool::Wait() {
 }
 
 bool ThreadPool::WaitUntil(const MonoTime& until) {
-  MonoDelta relative = until.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+  MonoDelta relative = until.GetDeltaSince(MonoTime::Now());
   return WaitFor(relative);
 }
 
@@ -328,7 +328,7 @@ void ThreadPool::DispatchThread(bool permanent) {
     }
 
     // Update metrics
-    MonoTime now(MonoTime::Now(MonoTime::FINE));
+    MonoTime now(MonoTime::Now());
     int64_t queue_time_us = now.GetDeltaSince(entry.submit_time).ToMicroseconds();
     TRACE_COUNTER_INCREMENT(queue_time_trace_metric_name_, queue_time_us);
     if (queue_time_us_histogram_) {

@@ -310,7 +310,7 @@ Status TabletCopyServiceImpl::ValidateFetchRequestDataId(
 }
 
 void TabletCopyServiceImpl::ResetSessionExpirationUnlocked(const std::string& session_id) {
-  MonoTime expiration(MonoTime::Now(MonoTime::FINE));
+  MonoTime expiration(MonoTime::Now());
   expiration.AddDelta(MonoDelta::FromMilliseconds(FLAGS_tablet_copy_idle_timeout_ms));
   InsertOrUpdate(&session_expirations_, session_id, expiration);
 }
@@ -333,7 +333,7 @@ Status TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(
 void TabletCopyServiceImpl::EndExpiredSessions() {
   do {
     MutexLock l(sessions_lock_);
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    MonoTime now = MonoTime::Now();
 
     vector<string> expired_session_ids;
     for (const MonoTimeMap::value_type& entry : session_expirations_) {

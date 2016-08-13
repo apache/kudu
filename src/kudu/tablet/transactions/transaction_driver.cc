@@ -94,7 +94,7 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
       apply_pool_(apply_pool),
       order_verifier_(order_verifier),
       trace_(new Trace()),
-      start_time_(MonoTime::Now(MonoTime::FINE)),
+      start_time_(MonoTime::Now()),
       replication_state_(NOT_REPLICATING),
       prepare_state_(NOT_PREPARED) {
   if (Trace::CurrentTrace()) {
@@ -111,7 +111,7 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
     op_id_copy_ = transaction_->state()->op_id();
     DCHECK(op_id_copy_.IsInitialized());
     replication_state_ = REPLICATING;
-    replication_start_time_ = MonoTime::Now(MonoTime::FINE);
+    replication_start_time_ = MonoTime::Now();
     if (state()->are_results_tracked()) {
       // If this is a follower transaction, make sure to set the transaction completion callback
       // before the transaction has a chance to fail.
@@ -286,7 +286,7 @@ Status TransactionDriver::PrepareAndStart() {
       {
         std::lock_guard<simple_spinlock> lock(lock_);
         replication_state_ = REPLICATING;
-        replication_start_time_ = MonoTime::Now(MonoTime::FINE);
+        replication_start_time_ = MonoTime::Now();
       }
 
       Status s = consensus_->Replicate(mutable_state()->consensus_round());
@@ -356,7 +356,7 @@ void TransactionDriver::HandleFailure(const Status& s) {
 }
 
 void TransactionDriver::ReplicationFinished(const Status& status) {
-  MonoTime replication_finished_time = MonoTime::Now(MonoTime::FINE);
+  MonoTime replication_finished_time = MonoTime::Now();
 
   ADOPT_TRACE(trace());
   {
@@ -502,7 +502,7 @@ void TransactionDriver::SetResponseTimestamp(TransactionState* transaction_state
 }
 
 Status TransactionDriver::CommitWait() {
-  MonoTime before = MonoTime::Now(MonoTime::FINE);
+  MonoTime before = MonoTime::Now();
   DCHECK(mutable_state()->external_consistency_mode() == COMMIT_WAIT);
   // TODO: we could plumb the RPC deadline in here, and not bother commit-waiting
   // if the deadline is already expired.
@@ -510,7 +510,7 @@ Status TransactionDriver::CommitWait() {
       mutable_state()->tablet_peer()->clock()->WaitUntilAfter(mutable_state()->timestamp(),
                                                               MonoTime::Max()));
   mutable_state()->mutable_metrics()->commit_wait_duration_usec =
-      MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
+      MonoTime::Now().GetDeltaSince(before).ToMicroseconds();
   return Status::OK();
 }
 

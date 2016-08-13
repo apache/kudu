@@ -29,7 +29,7 @@ class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
 
   KuduTabletMmOpsTest()
   : Superclass(),
-    next_time_(MonoTime::Now(MonoTime::FINE)) {
+    next_time_(MonoTime::Now()) {
   }
 
   virtual void SetUp() OVERRIDE {

@@ -137,7 +137,7 @@ string GetLeaderMasterRpc::ToString() const {
 
 void GetLeaderMasterRpc::SendRpc() {
   // Compute the actual deadline to use for each RPC.
-  MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime rpc_deadline = MonoTime::Now();
   rpc_deadline.AddDelta(rpc_timeout_);
   MonoTime actual_deadline = MonoTime::Earliest(retrier().deadline(),
                                                 rpc_deadline);
@@ -179,7 +179,7 @@ void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
 
   // If our replies timed out but the deadline hasn't passed, retry.
   if (status.IsTimedOut() &&
-      MonoTime::Now(MonoTime::FINE).ComesBefore(retrier().deadline())) {
+      MonoTime::Now().ComesBefore(retrier().deadline())) {
     mutable_retrier()->DelayedRetry(this, status);
     return;
   }

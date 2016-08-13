@@ -124,7 +124,7 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
   if (backoff) {
     MonoDelta sleep =
         KuduClient::Data::ComputeExponentialBackoff(scan_attempts_);
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    MonoTime now = MonoTime::Now();
     now.AddDelta(sleep);
     if (deadline.ComesBefore(now)) {
       Status ret = Status::TimedOut("unable to retry before timeout",
@@ -231,7 +231,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
   // if the first server we try happens to be hung.
   MonoTime rpc_deadline;
   if (allow_time_for_failover) {
-    rpc_deadline = MonoTime::Now(MonoTime::FINE);
+    rpc_deadline = MonoTime::Now();
     rpc_deadline.AddDelta(table_->client()->default_rpc_timeout());
     rpc_deadline = MonoTime::Earliest(overall_deadline, rpc_deadline);
   } else {
@@ -354,7 +354,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     // it's likely that the tablet is undergoing a leader election and will
     // soon have one.
     if (lookup_status.IsServiceUnavailable() &&
-        MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+        MonoTime::Now().ComesBefore(deadline)) {
 
       // ServiceUnavailable means that we have already blacklisted all of the candidate
       // tablet servers. So, we clear the list so that we will cycle through them all

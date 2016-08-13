@@ -472,7 +472,7 @@ TEST_F(TabletCopyServiceTest, TestSessionTimeout) {
   string session_id;
   ASSERT_OK(DoBeginValidTabletCopySession(&session_id));
 
-  MonoTime start_time = MonoTime::Now(MonoTime::FINE);
+  MonoTime start_time = MonoTime::Now();
   CheckTabletCopySessionActiveResponsePB resp;
 
   do {
@@ -482,7 +482,7 @@ TEST_F(TabletCopyServiceTest, TestSessionTimeout) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(1)); // 1 ms
-  } while (MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time).ToSeconds() < 10);
+  } while (MonoTime::Now().GetDeltaSince(start_time).ToSeconds() < 10);
 
   ASSERT_FALSE(resp.session_is_active()) << "Tablet Copy session did not time out!";
 }

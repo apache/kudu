@@ -285,10 +285,10 @@ class MasterStressTest : public KuduTest {
     MessengerBuilder bld("RestartMasterMessenger");
     CHECK_OK(bld.Build(&messenger));
 
-    MonoTime deadline(MonoTime::Now(MonoTime::FINE));
+    MonoTime deadline(MonoTime::Now());
     deadline.AddDelta(MonoDelta::FromSeconds(FLAGS_num_seconds_to_run));
 
-    MonoTime now(MonoTime::Now(MonoTime::FINE));
+    MonoTime now(MonoTime::Now());
     while (now.ComesBefore(deadline)) {
       ExternalMaster* master = cluster_->master(
           rand_.Uniform(cluster_->num_masters()));
@@ -309,7 +309,7 @@ class MasterStressTest : public KuduTest {
       num_masters_restarted_.Increment();
 
       SleepFor(MonoDelta::FromMilliseconds(rand_.Uniform(200)));
-      now = MonoTime::Now(MonoTime::FINE);
+      now = MonoTime::Now();
     }
   }
 

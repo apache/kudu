@@ -420,10 +420,10 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
 }
 
 Status RaftConsensus::WaitUntilLeaderForTests(const MonoDelta& timeout) {
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(timeout);
   while (role() != consensus::RaftPeerPB::LEADER) {
-    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    MonoTime now = MonoTime::Now();
     if (!now.ComesBefore(deadline)) {
       return Status::TimedOut(Substitute("Peer $0 is not leader of tablet $1 after $2. Role: $3",
                                          peer_uuid(), tablet_id(), timeout.ToString(), role()));
@@ -1087,7 +1087,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
 
     // Also prohibit voting for anyone for the minimum election timeout.
-    withhold_votes_until_ = MonoTime::Now(MonoTime::FINE);
+    withhold_votes_until_ = MonoTime::Now();
     withhold_votes_until_.AddDelta(MinimumElectionTimeout());
 
 
@@ -1341,7 +1341,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
   //
   // See also https://ramcloud.stanford.edu/~ongaro/thesis.pdf
   // section 4.2.3.
-  MonoTime now = MonoTime::Now(MonoTime::COARSE);
+  MonoTime now = MonoTime::Now();
   if (!request->ignore_live_leader() &&
       now.ComesBefore(withhold_votes_until_)) {
     return RequestVoteRespondLeaderIsAlive(request, response);
@@ -1929,7 +1929,7 @@ Status RaftConsensus::EnsureFailureDetectorEnabledUnlocked() {
     return Status::OK();
   }
   return failure_detector_->Track(kTimerId,
-                                  MonoTime::Now(MonoTime::FINE),
+                                  MonoTime::Now(),
                                   // Unretained to avoid a circular ref.
                                   Bind(&RaftConsensus::ReportFailureDetected, Unretained(this)));
 }
@@ -1963,7 +1963,7 @@ Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_
     return Status::OK();
   }
 
-  MonoTime time = MonoTime::Now(MonoTime::FINE);
+  MonoTime time = MonoTime::Now();
   time.AddDelta(additional_delta);
 
   if (allow_logging == ALLOW_LOGGING) {

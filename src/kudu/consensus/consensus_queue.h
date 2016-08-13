@@ -74,7 +74,7 @@ class PeerMessageQueue {
           last_received(MinimumOpId()),
           last_known_committed_idx(MinimumOpId().index()),
           is_last_exchange_successful(false),
-          last_successful_communication_time(MonoTime::Now(MonoTime::FINE)),
+          last_successful_communication_time(MonoTime::Now()),
           needs_tablet_copy(false),
           last_seen_term_(0) {}
 

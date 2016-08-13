@@ -127,7 +127,7 @@ static Status WaitForClientConnect(Connection* conn, const MonoTime& deadline) {
   MonoTime now;
   MonoDelta remaining;
   while (true) {
-    now = MonoTime::Now(MonoTime::FINE);
+    now = MonoTime::Now();
     remaining = deadline.GetDeltaSince(now);
     DVLOG(4) << "Client waiting to connect for negotiation, time remaining until timeout deadline: "
              << remaining.ToString();

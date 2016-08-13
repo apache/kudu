@@ -337,13 +337,13 @@ class PeriodicWebUIChecker {
     for (int count = 0; is_running_.Load(); count++) {
       const std::string &url = urls_[count % urls_.size()];
       LOG(INFO) << "Curling URL " << url;
-      const MonoTime start = MonoTime::Now(MonoTime::FINE);
+      const MonoTime start = MonoTime::Now();
       Status status = curl.FetchURL(url, &dst);
       if (status.ok()) {
         CHECK_GT(dst.length(), 0);
       }
       // Sleep until the next period
-      const MonoTime end = MonoTime::Now(MonoTime::FINE);
+      const MonoTime end = MonoTime::Now();
       const MonoDelta elapsed = end.GetDeltaSince(start);
       const int64_t sleep_ns = period_.ToNanoseconds() - elapsed.ToNanoseconds();
       if (sleep_ns > 0) {
@@ -445,7 +445,7 @@ Status LinkedListTester::LoadLinkedList(
   scoped_refptr<server::Clock> ht_clock(new server::HybridClock());
   RETURN_NOT_OK(ht_clock->Init());
 
-  MonoTime start = MonoTime::Now(MonoTime::COARSE);
+  MonoTime start = MonoTime::Now();
   MonoTime deadline = start;
   deadline.AddDelta(run_for);
 
@@ -475,7 +475,7 @@ Status LinkedListTester::LoadLinkedList(
       DumpInsertHistogram(false);
     }
 
-    MonoTime now = MonoTime::Now(MonoTime::COARSE);
+    MonoTime now = MonoTime::Now();
     if (next_sample.ComesBefore(now)) {
       Timestamp now = ht_clock->Now();
       sampled_timestamps_and_counts_.push_back(
@@ -497,9 +497,9 @@ Status LinkedListTester::LoadLinkedList(
                             "Unable to generate next insert into linked list chain");
     }
 
-    MonoTime flush_start(MonoTime::Now(MonoTime::FINE));
+    MonoTime flush_start(MonoTime::Now());
     FlushSessionOrDie(session);
-    MonoDelta elapsed = MonoTime::Now(MonoTime::FINE).GetDeltaSince(flush_start);
+    MonoDelta elapsed = MonoTime::Now().GetDeltaSince(flush_start);
     latency_histogram_.Increment(elapsed.ToMicroseconds());
 
     (*written_count) += chains.size();

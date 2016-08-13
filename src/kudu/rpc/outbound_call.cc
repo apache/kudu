@@ -74,7 +74,7 @@ OutboundCall::OutboundCall(const ConnectionId& conn_id,
            << (controller->timeout().Initialized() ? controller->timeout().ToString() : "none");
   header_.set_call_id(kInvalidCallId);
   remote_method.ToPB(header_.mutable_remote_method());
-  start_time_ = MonoTime::Now(MonoTime::FINE);
+  start_time_ = MonoTime::Now();
 
   if (!controller_->required_server_features().empty()) {
     required_rpc_features_.insert(RpcFeatureFlag::APPLICATION_FEATURE_FLAGS);
@@ -314,7 +314,7 @@ void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
   std::lock_guard<simple_spinlock> l(lock_);
   resp->mutable_header()->CopyFrom(header_);
   resp->set_micros_elapsed(
-    MonoTime::Now(MonoTime::FINE) .GetDeltaSince(start_time_).ToMicroseconds());
+    MonoTime::Now() .GetDeltaSince(start_time_).ToMicroseconds());
 }
 
 ///

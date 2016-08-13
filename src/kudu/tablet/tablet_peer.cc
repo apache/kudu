@@ -289,7 +289,7 @@ Status TabletPeer::CheckRunning() const {
 }
 
 Status TabletPeer::WaitUntilConsensusRunning(const MonoDelta& timeout) {
-  MonoTime start(MonoTime::Now(MonoTime::FINE));
+  MonoTime start(MonoTime::Now());
 
   int backoff_exp = 0;
   const int kMaxBackoffExp = 8;
@@ -311,7 +311,7 @@ Status TabletPeer::WaitUntilConsensusRunning(const MonoDelta& timeout) {
     if (cached_state == RUNNING && has_consensus && consensus_->IsRunning()) {
       break;
     }
-    MonoTime now(MonoTime::Now(MonoTime::FINE));
+    MonoTime now(MonoTime::Now());
     MonoDelta elapsed(now.GetDeltaSince(start));
     if (elapsed.MoreThan(timeout)) {
       return Status::TimedOut(Substitute("Consensus is not running after waiting for $0. State; $1",
@@ -418,7 +418,7 @@ void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
       }
       status_pb.set_description(driver->ToString());
       int64_t running_for_micros =
-          MonoTime::Now(MonoTime::FINE).GetDeltaSince(driver->start_time()).ToMicroseconds();
+          MonoTime::Now().GetDeltaSince(driver->start_time()).ToMicroseconds();
       status_pb.set_running_for_micros(running_for_micros);
       if (trace_type == Transaction::TRACE_TXNS) {
         status_pb.set_trace_buffer(driver->trace()->DumpToString());

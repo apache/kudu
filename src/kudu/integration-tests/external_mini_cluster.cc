@@ -289,7 +289,7 @@ Status ExternalMiniCluster::AddTabletServer() {
 }
 
 Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta& timeout) {
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(timeout);
 
   unordered_set<int> masters_to_search;
@@ -300,7 +300,7 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
   }
 
   while (true) {
-    MonoDelta remaining = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    MonoDelta remaining = deadline.GetDeltaSince(MonoTime::Now());
     if (remaining.ToSeconds() < 0) {
       return Status::TimedOut(Substitute(
           "Timed out waiting for $0 TS(s) to register with all masters", count));
@@ -363,9 +363,9 @@ Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
   ListTabletsRequestPB req;
   ListTabletsResponsePB resp;
 
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(timeout);
-  while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+  while (MonoTime::Now().ComesBefore(deadline)) {
     rpc::RpcController rpc;
     rpc.set_timeout(MonoDelta::FromSeconds(10));
     RETURN_NOT_OK(proxy.ListTablets(req, &resp, &rpc));
@@ -410,7 +410,7 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   Synchronizer sync;
   vector<Sockaddr> addrs;
   HostPort leader_master_hp;
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(MonoDelta::FromSeconds(5));
 
   for (const scoped_refptr<ExternalMaster>& master : masters_) {
@@ -645,11 +645,11 @@ bool ExternalDaemon::IsProcessAlive() const {
 }
 
 Status ExternalDaemon::WaitForCrash(const MonoDelta& timeout) const {
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = MonoTime::Now();
   deadline.AddDelta(timeout);
 
   int i = 1;
-  while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+  while (MonoTime::Now().ComesBefore(deadline)) {
     if (!IsProcessAlive()) return Status::OK();
     int sleep_ms = std::min(i++ * 10, 200);
     SleepFor(MonoDelta::FromMilliseconds(sleep_ms));

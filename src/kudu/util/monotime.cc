@@ -163,20 +163,12 @@ void MonoDelta::ToTimeSpec(struct timespec *ts) const {
 /// MonoTime
 ///
 
-MonoTime MonoTime::Now(enum Granularity granularity) {
+MonoTime MonoTime::Now() {
 #if defined(__APPLE__)
   return MonoTime(walltime_internal::GetMonoTimeNanos());
 # else
   struct timespec ts;
-  clockid_t clock;
-
-// Older systems do not support CLOCK_MONOTONIC_COARSE
-#ifdef CLOCK_MONOTONIC_COARSE
-  clock = (granularity == COARSE) ? CLOCK_MONOTONIC_COARSE : CLOCK_MONOTONIC;
-#else
-  clock = CLOCK_MONOTONIC;
-#endif
-  PCHECK(clock_gettime(clock, &ts) == 0);
+  PCHECK(clock_gettime(CLOCK_MONOTONIC, &ts) == 0);
   return MonoTime(ts);
 #endif // defined(__APPLE__)
 }

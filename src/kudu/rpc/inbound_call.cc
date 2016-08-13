@@ -209,7 +209,7 @@ void InboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
   if (req.include_traces() && trace_) {
     resp->set_trace_buffer(trace_->DumpToString());
   }
-  resp->set_micros_elapsed(MonoTime::Now(MonoTime::FINE).GetDeltaSince(timing_.time_received)
+  resp->set_micros_elapsed(MonoTime::Now().GetDeltaSince(timing_.time_received)
                            .ToMicroseconds());
 }
 
@@ -232,20 +232,20 @@ Trace* InboundCall::trace() {
 void InboundCall::RecordCallReceived() {
   TRACE_EVENT_ASYNC_BEGIN0("rpc", "InboundCall", this);
   DCHECK(!timing_.time_received.Initialized());  // Protect against multiple calls.
-  timing_.time_received = MonoTime::Now(MonoTime::FINE);
+  timing_.time_received = MonoTime::Now();
 }
 
 void InboundCall::RecordHandlingStarted(scoped_refptr<Histogram> incoming_queue_time) {
   DCHECK(incoming_queue_time != nullptr);
   DCHECK(!timing_.time_handled.Initialized());  // Protect against multiple calls.
-  timing_.time_handled = MonoTime::Now(MonoTime::FINE);
+  timing_.time_handled = MonoTime::Now();
   incoming_queue_time->Increment(
       timing_.time_handled.GetDeltaSince(timing_.time_received).ToMicroseconds());
 }
 
 void InboundCall::RecordHandlingCompleted() {
   DCHECK(!timing_.time_completed.Initialized());  // Protect against multiple calls.
-  timing_.time_completed = MonoTime::Now(MonoTime::FINE);
+  timing_.time_completed = MonoTime::Now();
 
   if (!timing_.time_handled.Initialized()) {
     // Sometimes we respond to a call before we begin handling it (e.g. due to queue
@@ -264,7 +264,7 @@ bool InboundCall::ClientTimedOut() const {
     return false;
   }
 
-  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  MonoTime now = MonoTime::Now();
   int total_time = now.GetDeltaSince(timing_.time_received).ToMilliseconds();
   return total_time > header_.timeout_millis();
 }

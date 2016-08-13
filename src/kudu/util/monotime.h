@@ -144,16 +144,6 @@ class KUDU_EXPORT MonoDelta {
 /// clock, the monotime does not change.
 class KUDU_EXPORT MonoTime {
  public:
-  /// @brief The granularity of the time specification
-  ///
-  /// The coarse monotonic time is faster to retrieve, but "only"
-  /// accurate to within a millisecond or two. The speed difference will
-  /// depend on your timer hardware.
-  enum Granularity {
-    COARSE,
-    FINE
-  };
-
   /// @name Conversion constants for ubiquitous time units.
   ///
   ///@{
@@ -166,10 +156,8 @@ class KUDU_EXPORT MonoTime {
 
   /// Get current time in MonoTime representation.
   ///
-  /// @param [in] granularity
-  ///   Granularity for the resulting time specification.
   /// @return Time specification for the moment of the method's invocation.
-  static MonoTime Now(enum Granularity granularity);
+  static MonoTime Now();
 
   /// @return MonoTime equal to farthest possible time into the future.
   static MonoTime Max();

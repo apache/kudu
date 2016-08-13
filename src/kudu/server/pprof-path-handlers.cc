@@ -149,10 +149,10 @@ static void PprofContentionHandler(const Webserver::WebRequest& req, stringstrea
   *output << "sampling period = 1" << endl;
   *output << "cycles/second = " << base::CyclesPerSecond() << endl;
 
-  MonoTime end = MonoTime::Now(MonoTime::FINE);
+  MonoTime end = MonoTime::Now();
   end.AddDelta(MonoDelta::FromSeconds(seconds));
   StartSynchronizationProfiling();
-  while (MonoTime::Now(MonoTime::FINE).ComesBefore(end)) {
+  while (MonoTime::Now().ComesBefore(end)) {
     SleepFor(MonoDelta::FromMilliseconds(500));
     FlushSynchronizationProfile(output, &discarded_samples);
   }

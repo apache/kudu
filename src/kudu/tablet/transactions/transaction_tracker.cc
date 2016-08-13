@@ -204,7 +204,7 @@ Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
   const int complain_ms = 1000;
   int wait_time = 250;
   int num_complaints = 0;
-  MonoTime start_time = MonoTime::Now(MonoTime::FINE);
+  MonoTime start_time = MonoTime::Now();
   while (1) {
     vector<scoped_refptr<TransactionDriver> > txns;
     GetPendingTransactions(&txns);
@@ -213,7 +213,7 @@ Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
       break;
     }
 
-    MonoDelta diff = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time);
+    MonoDelta diff = MonoTime::Now().GetDeltaSince(start_time);
     if (diff.MoreThan(timeout)) {
       return Status::TimedOut(Substitute("Timed out waiting for all transactions to finish. "
                                          "$0 transactions pending. Waited for $1",

@@ -296,7 +296,7 @@ bool MetaCacheEntry::Contains(const string& partition_key) const {
 
 bool MetaCacheEntry::stale() const {
   DCHECK(Initialized());
-  return expiration_time_.ComesBefore(MonoTime::Now(MonoTime::FINE)) ||
+  return expiration_time_.ComesBefore(MonoTime::Now()) ||
          (!is_non_covered_range() && tablet_->stale());
 }
 
@@ -311,7 +311,7 @@ string MetaCacheEntry::DebugString(const KuduTable* table) const {
   string upper_bound_string = upper_bound.empty() ? "<end>" :
     table->partition_schema().PartitionKeyDebugString(upper_bound, *table->schema().schema_);
 
-  MonoDelta ttl = expiration_time_.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+  MonoDelta ttl = expiration_time_.GetDeltaSince(MonoTime::Now());
 
   if (is_non_covered_range()) {
     return strings::Substitute(
@@ -645,7 +645,7 @@ void LookupRpc::SendRpc() {
   // some additional tablets.
 
   // See KuduClient::Data::SyncLeaderMasterRpc().
-  MonoTime now = MonoTime::Now(MonoTime::FINE);
+  MonoTime now = MonoTime::Now();
   if (retrier().deadline().ComesBefore(now)) {
     SendRpcCb(Status::TimedOut("timed out after deadline expired"));
     return;
@@ -718,7 +718,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
 
   // Check for more generic errors (TimedOut can come from multiple places).
   if (new_status.IsTimedOut()) {
-    if (MonoTime::Now(MonoTime::FINE).ComesBefore(retrier().deadline())) {
+    if (MonoTime::Now().ComesBefore(retrier().deadline())) {
       if (meta_cache_->client_->IsMultiMaster()) {
         LOG(WARNING) << "Leader Master timed out, re-trying...";
         ResetMasterLeaderAndRetry();
@@ -770,7 +770,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
   VLOG(2) << "Processing master response for " << rpc.ToString()
           << ". Response: " << rpc.resp().ShortDebugString();
 
-  MonoTime expiration_time = MonoTime::Now(MonoTime::FINE);
+  MonoTime expiration_time = MonoTime::Now();
   expiration_time.AddDelta(MonoDelta::FromMilliseconds(rpc.resp().ttl_millis()));
 
   std::lock_guard<rw_spinlock> l(lock_);

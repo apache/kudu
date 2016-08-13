@@ -84,7 +84,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteRpcPerSec) {
   session->SetTimeoutMillis(5000);
   ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
   for (int t = 0; t < FLAGS_throttling_test_time; t++) {
-    MonoTime begin = MonoTime::Now(MonoTime::FINE);
+    MonoTime begin = MonoTime::Now();
     for (int i = 0; i < TARGET_QPS; i++) {
       gscoped_ptr<KuduInsert> insert(table_->NewInsert());
       KuduPartialRow* row = insert->mutable_row();
@@ -92,7 +92,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteRpcPerSec) {
       CHECK_OK(row->SetStringNoCopy("string_val", string_val));
       CHECK_OK(session->Apply(insert.release()));
     }
-    MonoTime end = MonoTime::Now(MonoTime::FINE);
+    MonoTime end = MonoTime::Now();
     MonoDelta delta = end.GetDeltaSince(begin);
     double qps = TARGET_QPS / delta.ToSeconds();
     LOG(INFO) << "Iteration " << t << " qps: " << qps;
@@ -116,7 +116,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteBytesPerSec) {
   session->SetTimeoutMillis(5000);
   ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
   for (int t = 0; t < FLAGS_throttling_test_time; t++) {
-    MonoTime begin = MonoTime::Now(MonoTime::FINE);
+    MonoTime begin = MonoTime::Now();
     for (int i = 0; i < TARGET_QPS; i++) {
       gscoped_ptr<KuduInsert> insert(table_->NewInsert());
       KuduPartialRow* row = insert->mutable_row();
@@ -124,7 +124,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteBytesPerSec) {
       CHECK_OK(row->SetStringNoCopy("string_val", string_val));
       CHECK_OK(session->Apply(insert.release()));
     }
-    MonoTime end = MonoTime::Now(MonoTime::FINE);
+    MonoTime end = MonoTime::Now();
     MonoDelta delta = end.GetDeltaSince(begin);
     double qps = TARGET_QPS / delta.ToSeconds();
     double bps = TARGET_QPS * BYTES_PER_RPC / delta.ToSeconds();

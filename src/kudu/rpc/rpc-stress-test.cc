@@ -151,7 +151,7 @@ class RpcStressTest : public RpcTestBase {
                      const scoped_refptr<RequestTracker>& request_tracker,
                      const shared_ptr<Messenger>& messenger,
                      int value) : latch_(1) {
-      MonoTime now = MonoTime::Now(MonoTime::FINE);
+      MonoTime now = MonoTime::Now();
       now.AddDelta(MonoDelta::FromMilliseconds(10000));
       rpc_ = new CalculatorServiceRpc(server_picker,
                                       request_tracker,
