@@ -60,7 +60,7 @@ class MemRowSetCompactionInput : public CompactionInput {
   }
 
   virtual Status Init() OVERRIDE {
-    RETURN_NOT_OK(iter_->Init(NULL));
+    RETURN_NOT_OK(iter_->Init(nullptr));
     has_more_blocks_ = iter_->HasNext();
     return Status::OK();
   }
@@ -87,7 +87,7 @@ class MemRowSetCompactionInput : public CompactionInput {
       input_row.row.Reset(row_block_.get(), i);
       Timestamp insertion_timestamp;
       RETURN_NOT_OK(iter_->GetCurrentRow(&input_row.row,
-                                         reinterpret_cast<Arena*>(NULL),
+                                         static_cast<Arena*>(nullptr),
                                          &input_row.redo_head,
                                          &arena_,
                                          &insertion_timestamp));
@@ -142,8 +142,8 @@ class DiskRowSetCompactionInput : public CompactionInput {
         undo_delta_iter_(std::move(undo_delta_iter)),
         arena_(32 * 1024, 128 * 1024),
         block_(base_iter_->schema(), kRowsPerBlock, &arena_),
-        redo_mutation_block_(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL)),
-        undo_mutation_block_(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL)),
+        redo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)),
+        undo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)),
         first_rowid_in_block_(0) {}
 
   virtual Status Init() OVERRIDE {
@@ -164,9 +164,9 @@ class DiskRowSetCompactionInput : public CompactionInput {
   virtual Status PrepareBlock(vector<CompactionInputRow> *block) OVERRIDE {
     RETURN_NOT_OK(base_iter_->NextBlock(&block_));
     std::fill(redo_mutation_block_.begin(), redo_mutation_block_.end(),
-              reinterpret_cast<Mutation *>(NULL));
+              static_cast<Mutation *>(nullptr));
     std::fill(undo_mutation_block_.begin(), undo_mutation_block_.end(),
-                  reinterpret_cast<Mutation *>(NULL));
+                  static_cast<Mutation *>(nullptr));
     RETURN_NOT_OK(redo_delta_iter_->PrepareBatch(
                       block_.nrows(), DeltaIterator::PREPARE_FOR_COLLECT));
     RETURN_NOT_OK(redo_delta_iter_->CollectMutations(&redo_mutation_block_, block_.arena()));
@@ -654,7 +654,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
       DCHECK(!is_deleted) << "Got UPDATE for deleted row. " << ERROR_LOG_CONTEXT;
 
       s = redo_decoder.ApplyRowUpdate(dst_row,
-                                      reinterpret_cast<Arena *>(NULL), &undo_encoder);
+                                      static_cast<Arena *>(nullptr), &undo_encoder);
       if (PREDICT_FALSE(!s.ok())) {
         LOG(ERROR) << "Unable to apply update/create undo: " << s.ToString()
                    << "\n" << ERROR_LOG_CONTEXT;
@@ -671,7 +671,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
       current_undo = Mutation::CreateInArena(arena, redo_mut->timestamp(),
                                              undo_encoder.as_changelist());
 
-      // In the case where the previous undo was NULL just make this one
+      // In the case where the previous undo was a nullptr just make this one
       // the head.
       if (undo_head == nullptr) {
         undo_head = current_undo;
@@ -762,7 +762,7 @@ Status FlushCompactionInput(CompactionInput* input,
       DCHECK(schema->has_column_ids());
 
       RowBlockRow dst_row = block.row(n);
-      RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, reinterpret_cast<Arena*>(NULL)));
+      RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, static_cast<Arena*>(nullptr)));
 
       DVLOG(2) << "Input Row: " << dst_row.schema()->DebugRow(dst_row) <<
         " RowId: " << input_row.row.row_index() <<

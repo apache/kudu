@@ -123,7 +123,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     size_t n = block.nrows();
 
     // 2) Fetch all the REDO mutations.
-    vector<Mutation *> redo_mutation_block(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL));
+    vector<Mutation *> redo_mutation_block(kRowsPerBlock, static_cast<Mutation *>(nullptr));
     RETURN_NOT_OK(delta_iter_->PrepareBatch(n, DeltaIterator::PREPARE_FOR_COLLECT));
     RETURN_NOT_OK(delta_iter_->CollectMutations(&redo_mutation_block, block.arena()));
 
@@ -139,7 +139,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
       input_row.undo_head = nullptr;
 
       RowBlockRow dst_row = block.row(i);
-      RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, reinterpret_cast<Arena*>(NULL)));
+      RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, static_cast<Arena*>(nullptr)));
 
       Mutation* new_undos_head = nullptr;
       // We're ignoring the result from new_redos_head because we'll find them later at step 5).
