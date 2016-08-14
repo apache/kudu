@@ -51,7 +51,7 @@ cd $ROOT
 
 $ROOT/thirdparty/installed/bin/cpplint.py \
   --verbose=4 \
-  --filter=-whitespace/comments,-readability/todo,-build/header_guard,-build/include_order,-legal/copyright,-build/c++11 \
+  --filter=-whitespace/comments,-readability/todo,-readability/inheritance,-build/header_guard,-build/include_order,-legal/copyright,-build/c++11 \
   $FILES 2>&1 | grep -v 'Done processing' | tee $TMP
 
 NUM_ERRORS=$(grep "Total errors found" $TMP | awk '{print $4}')

@@ -50,15 +50,7 @@ class PredicateTest : public KuduTest {
     // Set up the mini cluster
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
-    KuduClientBuilder client_builder;
-    ASSERT_OK(cluster_->CreateClient(&client_builder, &client_));
-  }
-
-  void TearDown() override {
-    if (cluster_) {
-      cluster_->Shutdown();
-      cluster_.reset();
-    }
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
   }
 
   // Creates a key/value table schema with an int64 key and value of the

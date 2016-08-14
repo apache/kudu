@@ -127,9 +127,8 @@ TEST_F(ClientStressTest, TestStartScans) {
   // is empty.
   for (int run = 1; run <= (AllowSlowTests() ? 10 : 2); run++) {
     LOG(INFO) << "Starting run " << run;
-    KuduClientBuilder builder;
     client::sp::shared_ptr<KuduClient> client;
-    CHECK_OK(cluster_->CreateClient(builder, &client));
+    CHECK_OK(cluster_->CreateClient(nullptr, &client));
 
     CountDownLatch go_latch(1);
     vector<scoped_refptr<Thread> > threads;
@@ -285,9 +284,8 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
 TEST_F(ClientStressTest, TestUniqueClientIds) {
   set<string> client_ids;
   for (int i = 0; i < 1000; i++) {
-    KuduClientBuilder builder;
     client::sp::shared_ptr<KuduClient> client;
-    CHECK_OK(cluster_->CreateClient(builder, &client));
+    CHECK_OK(cluster_->CreateClient(nullptr, &client));
     string client_id = client->data_->client_id_;
     auto result = client_ids.insert(client_id);
     EXPECT_TRUE(result.second) << "Unique id generation failed. New client id: " << client_id

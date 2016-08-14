@@ -154,17 +154,19 @@ Status ExternalMiniCluster::Start() {
   return Status::OK();
 }
 
-void ExternalMiniCluster::Shutdown(NodeSelectionMode mode) {
-  if (mode == ALL) {
+
+void ExternalMiniCluster::ShutdownNodes(ClusterNodes nodes) {
+  if (nodes == ClusterNodes::ALL || nodes == ClusterNodes::TS_ONLY) {
+    for (const scoped_refptr<ExternalTabletServer>& ts : tablet_servers_) {
+      ts->Shutdown();
+    }
+  }
+  if (nodes == ClusterNodes::ALL || nodes == ClusterNodes::MASTERS_ONLY) {
     for (const scoped_refptr<ExternalMaster>& master : masters_) {
       if (master) {
         master->Shutdown();
       }
     }
-  }
-
-  for (const scoped_refptr<ExternalTabletServer>& ts : tablet_servers_) {
-    ts->Shutdown();
   }
 }
 
@@ -483,14 +485,19 @@ std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) {
       new MasterServiceProxy(messenger_, CHECK_NOTNULL(master(idx))->bound_rpc_addr()));
 }
 
-Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder& builder,
-                                         client::sp::shared_ptr<client::KuduClient>* client) {
-  CHECK(!masters_.empty());
-  builder.clear_master_server_addrs();
-  for (const scoped_refptr<ExternalMaster>& master : masters_) {
-    builder.add_master_server_addr(master->bound_rpc_hostport().ToString());
+Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder* builder,
+                                         client::sp::shared_ptr<client::KuduClient>* client) const {
+  client::KuduClientBuilder defaults;
+  if (builder == nullptr) {
+    builder = &defaults;
   }
-  return builder.Build(client);
+
+  CHECK(!masters_.empty());
+  builder->clear_master_server_addrs();
+  for (const scoped_refptr<ExternalMaster>& master : masters_) {
+    builder->add_master_server_addr(master->bound_rpc_hostport().ToString());
+  }
+  return builder->Build(client);
 }
 
 Status ExternalMiniCluster::SetFlag(ExternalDaemon* daemon,

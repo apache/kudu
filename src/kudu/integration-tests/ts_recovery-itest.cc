@@ -312,9 +312,8 @@ TEST_P(Kudu969Test, Test) {
   work.Setup();
 
   // Open the client and table.
-  KuduClientBuilder builder;
   shared_ptr<KuduClient> client;
-  ASSERT_OK(cluster_->CreateClient(builder, &client));
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
   shared_ptr<KuduTable> table;
   CHECK_OK(client->OpenTable(work.table_name(), &table));
 

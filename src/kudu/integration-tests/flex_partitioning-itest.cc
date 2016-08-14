@@ -160,13 +160,7 @@ class FlexPartitioningITest : public KuduTest {
     cluster_.reset(new ExternalMiniCluster(opts));
     ASSERT_OK(cluster_->Start());
 
-    KuduClientBuilder builder;
-    ASSERT_OK(cluster_->CreateClient(builder, &client_));
-  }
-
-  void TearDown() override {
-    cluster_->Shutdown();
-    KuduTest::TearDown();
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
   }
 
  protected:

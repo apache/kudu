@@ -79,8 +79,7 @@ class MasterMigrationTest : public KuduTest {
 static Status CreateTable(ExternalMiniCluster* cluster,
                           const std::string& table_name) {
   shared_ptr<KuduClient> client;
-  KuduClientBuilder builder;
-  RETURN_NOT_OK(cluster->CreateClient(builder, &client));
+  RETURN_NOT_OK(cluster->CreateClient(nullptr, &client));
   KuduSchema schema;
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
@@ -190,8 +189,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
 
   // Perform an operation that requires an elected leader.
   shared_ptr<KuduClient> client;
-  KuduClientBuilder builder;
-  ASSERT_OK(migrated_cluster.CreateClient(builder, &client));
+  ASSERT_OK(migrated_cluster.CreateClient(nullptr, &client));
 
   shared_ptr<KuduTable> table;
   ASSERT_OK(client->OpenTable(kTableName, &table));

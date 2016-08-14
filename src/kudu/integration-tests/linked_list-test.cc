@@ -113,8 +113,7 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
   }
 
   void ResetClientAndTester() {
-    KuduClientBuilder builder;
-    ASSERT_OK(cluster_->CreateClient(builder, &client_));
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
     tester_.reset(new LinkedListTester(client_, kTableId,
                                        FLAGS_num_chains,
                                        FLAGS_num_tablets,
@@ -124,7 +123,7 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
 
   void RestartCluster() {
     CHECK(cluster_);
-    cluster_->Shutdown(ExternalMiniCluster::TS_ONLY);
+    cluster_->ShutdownNodes(ClusterNodes::TS_ONLY);
     cluster_->Restart();
     ResetClientAndTester();
   }

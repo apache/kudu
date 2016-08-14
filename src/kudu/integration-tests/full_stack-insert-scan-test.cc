@@ -140,13 +140,6 @@ class FullStackInsertScanTest : public KuduTest {
     ASSERT_OK(client_->OpenTable(kTableName, &reader_table_));
   }
 
-  virtual void TearDown() OVERRIDE {
-    if (cluster_) {
-      cluster_->Shutdown();
-    }
-    KuduTest::TearDown();
-  }
-
   void DoConcurrentClientInserts();
   void DoTestScans();
   void FlushToDisk();

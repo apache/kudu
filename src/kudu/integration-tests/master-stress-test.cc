@@ -132,7 +132,7 @@ class MasterStressTest : public KuduTest {
     // Encourage the client to switch masters quickly in the event of failover.
     builder.default_rpc_timeout(MonoDelta::FromSeconds(1));
 
-    ASSERT_OK(cluster_->CreateClient(builder, &client_));
+    ASSERT_OK(cluster_->CreateClient(&builder, &client_));
   }
 
   void TearDown() override {

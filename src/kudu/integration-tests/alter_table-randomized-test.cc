@@ -79,8 +79,7 @@ class AlterTableRandomized : public KuduTest {
     cluster_.reset(new ExternalMiniCluster(opts));
     ASSERT_OK(cluster_->Start());
 
-    KuduClientBuilder builder;
-    ASSERT_OK(cluster_->CreateClient(builder, &client_));
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
   }
 
   void TearDown() override {

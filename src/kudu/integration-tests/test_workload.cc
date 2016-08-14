@@ -50,7 +50,7 @@ using client::sp::shared_ptr;
 
 const char* const TestWorkload::kDefaultTableName = "test-workload";
 
-TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
+TestWorkload::TestWorkload(MiniClusterBase* cluster)
   : cluster_(cluster),
     payload_bytes_(11),
     num_write_threads_(4),
@@ -167,7 +167,7 @@ void TestWorkload::WriteThread() {
 }
 
 void TestWorkload::Setup() {
-  CHECK_OK(cluster_->CreateClient(client_builder_, &client_));
+  CHECK_OK(cluster_->CreateClient(&client_builder_, &client_));
 
   bool table_exists;
 

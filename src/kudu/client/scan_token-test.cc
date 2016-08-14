@@ -49,15 +49,7 @@ class ScanTokenTest : public KuduTest {
     // Set up the mini cluster
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
-    KuduClientBuilder client_builder;
-    ASSERT_OK(cluster_->CreateClient(&client_builder, &client_));
-  }
-
-  void TearDown() override {
-    if (cluster_) {
-      cluster_->Shutdown();
-      cluster_.reset();
-    }
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
   }
 
   // Creates a new session in manual flush mode.
@@ -79,9 +71,8 @@ class ScanTokenTest : public KuduTest {
       CHECK_OK(token->Serialize(&buf));
 
       threads.emplace_back(thread([this, &rows] (string serialized_token) {
-        KuduClientBuilder client_builder;
         shared_ptr<KuduClient> client;
-        ASSERT_OK(cluster_->CreateClient(&client_builder, &client));
+        ASSERT_OK(cluster_->CreateClient(nullptr, &client));
         KuduScanner* scanner_ptr;
         ASSERT_OK(KuduScanToken::DeserializeIntoScanner(client.get(),
                                                         serialized_token,

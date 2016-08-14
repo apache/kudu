@@ -77,7 +77,6 @@ class TsTabletManagerITest : public KuduTest {
       : schema_(SimpleIntKeyKuduSchema()) {
   }
   virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
 
  protected:
   const KuduSchema schema_;
@@ -98,11 +97,6 @@ void TsTabletManagerITest::SetUp() {
   cluster_.reset(new MiniCluster(env_.get(), opts));
   ASSERT_OK(cluster_->Start());
   ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
-}
-
-void TsTabletManagerITest::TearDown() {
-  cluster_->Shutdown();
-  KuduTest::TearDown();
 }
 
 // Test that when the leader changes, the tablet manager gets notified and

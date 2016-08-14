@@ -227,8 +227,7 @@ class AllTypesItest : public KuduTest {
 
     cluster_.reset(new ExternalMiniCluster(opts));
     RETURN_NOT_OK(cluster_->Start());
-    KuduClientBuilder builder;
-    return cluster_->CreateClient(builder, &client_);
+    return cluster_->CreateClient(nullptr, &client_);
   }
 
   Status CreateTable() {

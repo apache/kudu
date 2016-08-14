@@ -120,8 +120,7 @@ void TabletCopyITest::StartCluster(const vector<string>& extra_tserver_flags,
   ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
                                           cluster_->messenger(),
                                           &ts_map_));
-  KuduClientBuilder builder;
-  ASSERT_OK(cluster_->CreateClient(builder, &client_));
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
 }
 
 // If a rogue (a.k.a. zombie) leader tries to replace a tombstoned

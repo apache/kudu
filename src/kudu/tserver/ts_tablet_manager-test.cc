@@ -71,6 +71,10 @@ class TsTabletManagerTest : public KuduTest {
     heartbeater_ = mini_server_->server()->heartbeater();
   }
 
+  virtual void TearDown() OVERRIDE {
+    KuduTest::TearDown();
+  }
+
   Status CreateNewTablet(const std::string& tablet_id,
                          const Schema& schema,
                          scoped_refptr<tablet::TabletPeer>* out_tablet_peer) {

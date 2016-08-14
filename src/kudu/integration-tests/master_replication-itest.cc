@@ -70,14 +70,6 @@ class MasterReplicationTest : public KuduTest {
     ASSERT_OK(cluster_->Start());
   }
 
-  virtual void TearDown() OVERRIDE {
-    if (cluster_) {
-      cluster_->Shutdown();
-      cluster_.reset();
-    }
-    KuduTest::TearDown();
-  }
-
   Status RestartCluster() {
     cluster_->Shutdown();
     RETURN_NOT_OK(cluster_->Start());

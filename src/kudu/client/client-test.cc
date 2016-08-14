@@ -148,10 +148,6 @@ class ClientTest : public KuduTest {
   }
 
   void TearDown() override {
-    if (cluster_) {
-      cluster_->Shutdown();
-      cluster_.reset();
-    }
     KuduTest::TearDown();
   }
 

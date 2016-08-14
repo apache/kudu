@@ -65,7 +65,7 @@ MiniCluster::MiniCluster(Env* env, const MiniClusterOptions& options)
 }
 
 MiniCluster::~MiniCluster() {
-  CHECK(!running_);
+  Shutdown();
 }
 
 Status MiniCluster::Start() {
@@ -177,21 +177,20 @@ Status MiniCluster::AddTabletServer() {
   return Status::OK();
 }
 
-void MiniCluster::Shutdown() {
-  for (const shared_ptr<MiniTabletServer>& tablet_server : mini_tablet_servers_) {
-    tablet_server->Shutdown();
+void MiniCluster::ShutdownNodes(ClusterNodes nodes) {
+  if (nodes == ClusterNodes::ALL || nodes == ClusterNodes::TS_ONLY) {
+    for (const shared_ptr<MiniTabletServer>& tablet_server : mini_tablet_servers_) {
+      tablet_server->Shutdown();
+    }
+    mini_tablet_servers_.clear();
   }
-  mini_tablet_servers_.clear();
-  ShutdownMasters();
+  if (nodes == ClusterNodes::ALL || nodes == ClusterNodes::MASTERS_ONLY) {
+    for (const shared_ptr<MiniMaster>& master_server : mini_masters_) {
+      master_server->Shutdown();
+    }
+    mini_masters_.clear();
+  }
   running_ = false;
-}
-
-void MiniCluster::ShutdownMasters() {
-  for (shared_ptr<MiniMaster>& master_server : mini_masters_) {
-    master_server->Shutdown();
-    master_server.reset();
-  }
-  mini_masters_.clear();
 }
 
 MiniMaster* MiniCluster::mini_master(int idx) const {
@@ -279,10 +278,11 @@ Status MiniCluster::WaitForTabletServerCount(int count,
 
 Status MiniCluster::CreateClient(KuduClientBuilder* builder,
                                  client::sp::shared_ptr<KuduClient>* client) const {
-  KuduClientBuilder default_builder;
+  client::KuduClientBuilder defaults;
   if (builder == nullptr) {
-    builder = &default_builder;
+    builder = &defaults;
   }
+
   builder->clear_master_server_addrs();
   for (const shared_ptr<MiniMaster>& master : mini_masters_) {
     CHECK(master);

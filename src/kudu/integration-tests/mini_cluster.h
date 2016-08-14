@@ -24,6 +24,7 @@
 
 #include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/integration-tests/mini_cluster_base.h"
 #include "kudu/util/env.h"
 
 namespace kudu {
@@ -70,24 +71,21 @@ struct MiniClusterOptions {
 
 // An in-process cluster with a MiniMaster and a configurable
 // number of MiniTabletServers for use in tests.
-class MiniCluster {
+class MiniCluster : public MiniClusterBase {
  public:
   MiniCluster(Env* env, const MiniClusterOptions& options);
-  ~MiniCluster();
+  virtual ~MiniCluster();
 
   // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
   // All servers run on the loopback interface with ephemeral ports.
-  Status Start();
+  Status Start() override;
 
   // Like the previous method but performs initialization synchronously, i.e.
   // this will wait for all TS's to be started and initialized. Tests should
   // use this if they interact with tablets immediately after Start();
   Status StartSync();
 
-  void Shutdown();
-
-  // Shuts down masters only.
-  void ShutdownMasters();
+  void ShutdownNodes(ClusterNodes nodes) override;
 
   // Setup a consensus configuration of distributed masters, with count specified in
   // 'options'. Requires that a reserve RPC port is specified in
@@ -113,13 +111,17 @@ class MiniCluster {
   master::MiniMaster* mini_master(int idx) const;
 
   // Return number of mini masters.
-  int num_masters() const { return mini_masters_.size(); }
+  int num_masters() const override {
+    return mini_masters_.size();
+  }
 
   // Returns the TabletServer at index 'idx' of this MiniCluster.
   // 'idx' must be between 0 and 'num_tablet_servers' -1.
   tserver::MiniTabletServer* mini_tablet_server(int idx) const;
 
-  int num_tablet_servers() const { return mini_tablet_servers_.size(); }
+  int num_tablet_servers() const override {
+    return mini_tablet_servers_.size();
+  }
 
   std::string GetMasterFsRoot(int indx) const;
 
@@ -144,14 +146,8 @@ class MiniCluster {
   Status WaitForTabletServerCount(int count, MatchMode mode,
                                   std::vector<std::shared_ptr<master::TSDescriptor>>* descs) const;
 
-  // Create a client configured to talk to this cluster. Builder may contain
-  // override options for the client. The master address will be overridden to
-  // talk to the running master. If 'builder' is NULL, default options will be
-  // used.
-  //
-  // REQUIRES: the cluster must have already been Start()ed.
   Status CreateClient(client::KuduClientBuilder* builder,
-                      client::sp::shared_ptr<client::KuduClient>* client) const;
+                      client::sp::shared_ptr<client::KuduClient>* client) const override;
 
   // Determine the leader master of the cluster. Sets 'idx' to the leader
   // master's index (for calls to to mini_master()).
@@ -177,6 +173,8 @@ class MiniCluster {
 
   std::vector<std::shared_ptr<master::MiniMaster> > mini_masters_;
   std::vector<std::shared_ptr<tserver::MiniTabletServer> > mini_tablet_servers_;
+
+  DISALLOW_COPY_AND_ASSIGN(MiniCluster);
 };
 
 } // namespace kudu

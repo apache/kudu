@@ -107,7 +107,7 @@ class MasterFailoverTest : public KuduTest {
     // builders, but there's no such option for DeleteTable, so we extend
     // the global operation timeout.
     builder.default_admin_operation_timeout(MonoDelta::FromSeconds(90));
-    ASSERT_OK(cluster_->CreateClient(builder, &client_));
+    ASSERT_OK(cluster_->CreateClient(&builder, &client_));
   }
 
   Status CreateTable(const std::string& table_name, CreateTableMode mode) {

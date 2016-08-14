@@ -421,9 +421,6 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   }
 
   virtual void TearDown() OVERRIDE {
-    if (cluster_) {
-      cluster_->Shutdown();
-    }
     STLDeleteValues(&tablet_servers_);
   }
 

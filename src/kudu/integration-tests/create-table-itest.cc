@@ -257,7 +257,7 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
           // master considers the tservers unresponsive (and recreates the
           // outstanding table's tablets) during the test.
           "--tserver_unresponsive_timeout_ms=5000" }));
-  cluster_->Shutdown(ExternalMiniCluster::TS_ONLY);
+  cluster_->ShutdownNodes(ClusterNodes::TS_ONLY);
 
   Schema schema(GetSimpleTestSchema());
   client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));

@@ -26,6 +26,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/integration-tests/mini_cluster_base.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -118,19 +119,13 @@ struct ExternalMiniClusterOptions {
 // cluster participants, which isn't feasible in the normal MiniCluster.
 // On the other hand, there is little access to inspect the internal state
 // of the daemons.
-class ExternalMiniCluster {
+class ExternalMiniCluster : public MiniClusterBase {
  public:
-  // Mode to which node types a certain action (like Shutdown()) should apply.
-  enum NodeSelectionMode {
-    TS_ONLY,
-    ALL
-  };
-
   explicit ExternalMiniCluster(const ExternalMiniClusterOptions& opts);
-  ~ExternalMiniCluster();
+  virtual ~ExternalMiniCluster();
 
   // Start the cluster.
-  Status Start();
+  Status Start() override;
 
   // Restarts the cluster. Requires that it has been Shutdown() first.
   Status Restart();
@@ -144,10 +139,8 @@ class ExternalMiniCluster {
   // Requires that the master is already running.
   Status AddTabletServer();
 
-  // Shuts down the whole cluster or part of it, depending on the selected
-  // 'mode'.
   // Currently, this uses SIGKILL on each daemon for a non-graceful shutdown.
-  void Shutdown(NodeSelectionMode mode = ALL);
+  void ShutdownNodes(ClusterNodes nodes) override;
 
   // Return the IP address that the tablet server with the given index will bind to.
   // If options.bind_to_unique_loopback_addresses is false, this will be 127.0.0.1
@@ -202,11 +195,11 @@ class ExternalMiniCluster {
   // Return all tablet servers and masters.
   std::vector<ExternalDaemon*> daemons() const;
 
-  int num_tablet_servers() const {
+  int num_tablet_servers() const override {
     return tablet_servers_.size();
   }
 
-  int num_masters() const {
+  int num_masters() const override {
     return masters_.size();
   }
 
@@ -245,8 +238,8 @@ class ExternalMiniCluster {
   // be overridden to talk to the running master.
   //
   // REQUIRES: the cluster must have already been Start()ed.
-  Status CreateClient(client::KuduClientBuilder& builder,
-                      client::sp::shared_ptr<client::KuduClient>* client);
+  Status CreateClient(client::KuduClientBuilder* builder,
+                      client::sp::shared_ptr<client::KuduClient>* client) const override;
 
   // Sets the given flag on the given daemon, which must be running.
   //
