@@ -72,10 +72,12 @@ public class TestKuduTable extends BaseKuduTest {
       ato = new AlterTableOptions().renameTable(tableName);
       submitAlterAndCheck(ato, newTableName, tableName);
 
-      // Try adding two columns, where one is nullable.
+      // Add 3 columns, where one has default value, nullable and Timestamp with default value
       ato = new AlterTableOptions()
           .addColumn("testaddmulticolnotnull", Type.INT32, 4)
-          .addNullableColumn("testaddmulticolnull", Type.STRING);
+          .addNullableColumn("testaddmulticolnull", Type.STRING)
+          .addColumn("testaddmulticolTimestampcol", Type.TIMESTAMP,
+              (System.currentTimeMillis() * 1000));
       submitAlterAndCheck(ato, tableName);
 
 
