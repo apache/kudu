@@ -363,6 +363,18 @@ bool DMSIterator::HasNext() {
   return false;
 }
 
+bool DMSIterator::MayHaveDeltas() {
+  if (!deletes_and_reinserts_.empty()) {
+    return true;
+  }
+  for (auto& col: updates_by_col_) {
+    if (!col.empty()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 string DMSIterator::ToString() const {
   return "DMSIterator";
 }

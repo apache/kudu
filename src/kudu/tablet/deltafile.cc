@@ -817,6 +817,22 @@ bool DeltaFileIterator::HasNext() {
   return !exhausted_ || !delta_blocks_.empty();
 }
 
+bool DeltaFileIterator::MayHaveDeltas() {
+  // TODO: change the API to take in the col_to_apply and check for deltas on
+  // that column only.
+  DCHECK(prepared_) << "must Prepare";
+  for (auto& block : delta_blocks_) {
+    BinaryPlainBlockDecoder& bpd = *block->decoder_;
+    if (PREDICT_FALSE(prepared_idx_ > block->last_updated_idx_)) {
+      continue;
+    }
+    if (block->prepared_block_start_idx_ < bpd.Count()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 string DeltaFileIterator::ToString() const {
   return "DeltaFileIterator(" + dfr_->ToString() + ")";
 }

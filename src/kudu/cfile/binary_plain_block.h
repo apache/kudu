@@ -97,6 +97,10 @@ class BinaryPlainBlockDecoder : public BlockDecoder {
   virtual Status SeekAtOrAfterValue(const void *value,
                                     bool *exact_match) OVERRIDE;
   Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE;
+  Status CopyNextAndEval(size_t* n,
+                         ColumnMaterializationContext* ctx,
+                         SelectionVectorView* sel,
+                         ColumnDataView* dst) override;
 
   virtual bool HasNext() const OVERRIDE {
     DCHECK(parsed_);
@@ -127,6 +131,14 @@ class BinaryPlainBlockDecoder : public BlockDecoder {
   static const size_t kMinHeaderSize = sizeof(uint32_t) * 3;
 
  private:
+  // Helper template for handling batches of rows. CellHandler is a lambda that
+  // gets called on every cell. When decoder evaluation is enabled, it
+  // evaluates whether or not the string should be copied and sets a
+  // SelectionVectorView bit at the appropriate location. When decoder
+  // evaluation is disabled, it copies the cell's string to dst.
+  template <typename CellHandler>
+  Status HandleBatch(size_t* n, ColumnDataView* dst, CellHandler c);
+
   Slice data_;
   bool parsed_;
 

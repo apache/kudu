@@ -23,6 +23,7 @@
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/common/column_materialization_context.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -30,6 +31,7 @@
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 
 DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on row presence checks");
 TAG_FLAG(consult_bloom_filters, hidden);
@@ -400,14 +402,13 @@ Status CFileSet::Iterator::PrepareBatch(size_t *n) {
   return Status::OK();
 }
 
-
-Status CFileSet::Iterator::PrepareColumn(size_t idx) {
-  if (cols_prepared_[idx]) {
+Status CFileSet::Iterator::PrepareColumn(ColumnMaterializationContext *ctx) {
+  if (cols_prepared_[ctx->col_idx()]) {
     // Already prepared in this batch.
     return Status::OK();
   }
 
-  ColumnIterator* col_iter = col_iters_[idx];
+  ColumnIterator* col_iter = col_iters_[ctx->col_idx()];
   size_t n = prepared_count_;
 
   if (!col_iter->seeked() || col_iter->GetCurrentOrdinal() != cur_idx_) {
@@ -421,18 +422,19 @@ Status CFileSet::Iterator::PrepareColumn(size_t idx) {
 
   Status s = col_iter->PrepareBatch(&n);
   if (!s.ok()) {
-    LOG(WARNING) << "Unable to prepare column " << idx << ": " << s.ToString();
+    LOG(WARNING) << "Unable to prepare column " << ctx->col_idx() << ": " << s.ToString();
     return s;
   }
 
   if (n != prepared_count_) {
     return Status::Corruption(
-      StringPrintf("Column %zd (%s) didn't yield enough rows at offset %zd: expected "
-                   "%zd but only got %zd", idx, projection_->column(idx).ToString().c_str(),
-                   cur_idx_, prepared_count_, n));
+            StringPrintf("Column %zd (%s) didn't yield enough rows at offset %zd: expected "
+                                 "%zd but only got %zd", ctx->col_idx(),
+                         projection_->column(ctx->col_idx()).ToString().c_str(),
+                         cur_idx_, prepared_count_, n));
   }
 
-  cols_prepared_[idx] = true;
+  cols_prepared_[ctx->col_idx()] = true;
 
   return Status::OK();
 }
@@ -442,13 +444,16 @@ Status CFileSet::Iterator::InitializeSelectionVector(SelectionVector *sel_vec) {
   return Status::OK();
 }
 
-Status CFileSet::Iterator::MaterializeColumn(size_t col_idx, ColumnBlock *dst) {
-  CHECK_EQ(prepared_count_, dst->nrows());
-  DCHECK_LT(col_idx, col_iters_.size());
+Status CFileSet::Iterator::MaterializeColumn(ColumnMaterializationContext *ctx) {
+  CHECK_EQ(prepared_count_, ctx->block()->nrows());
+  DCHECK_LT(ctx->col_idx(), col_iters_.size());
 
-  RETURN_NOT_OK(PrepareColumn(col_idx));
-  ColumnIterator* iter = col_iters_[col_idx];
-  return iter->Scan(dst);
+  RETURN_NOT_OK(PrepareColumn(ctx));
+  ColumnIterator* iter = col_iters_[ctx->col_idx()];
+
+  RETURN_NOT_OK(iter->Scan(ctx));
+
+  return Status::OK();
 }
 
 Status CFileSet::Iterator::FinishBatch() {

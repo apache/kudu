@@ -88,6 +88,12 @@ struct ColumnStorageAttributes {
       cfile_block_size(0) {
   }
 
+  ColumnStorageAttributes(EncodingType enc, CompressionType cmp)
+    : encoding(enc),
+      compression(cmp),
+      cfile_block_size(0) {
+  }
+
   string ToString() const;
 
   EncodingType encoding;

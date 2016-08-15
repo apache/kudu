@@ -70,14 +70,13 @@ class TestCFile : public CFileTestBase {
     ASSERT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
     BlockPointer ptr;
-
     gscoped_ptr<CFileIterator> iter;
     ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
 
     ASSERT_OK(iter->SeekToOrdinal(5000));
     ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
 
-    // Seek to last key exactly, should succeed
+    // Seek to last key exactly, should succeed.
     ASSERT_OK(iter->SeekToOrdinal(9999));
     ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
 
@@ -91,7 +90,9 @@ class TestCFile : public CFileTestBase {
     // Fetch all data.
     ScopedColumnBlock<DataGeneratorType::kDataType> out(10000);
     size_t n = 10000;
-    ASSERT_OK(iter->CopyNextValues(&n, &out));
+    SelectionVector sel(10000);
+    ColumnMaterializationContext out_ctx = CreateNonDecoderEvalContext(&out, &sel);
+    ASSERT_OK(iter->CopyNextValues(&n, &out_ctx));
     ASSERT_EQ(10000, n);
 
     DataGeneratorType data_generator_pre;
@@ -117,10 +118,11 @@ class TestCFile : public CFileTestBase {
       ColumnBlock advancing_block(out.type_info(), nullptr,
                                   out.data() + (fetched * out.stride()),
                                   out.nrows() - fetched, out.arena());
+      ColumnMaterializationContext adv_ctx = CreateNonDecoderEvalContext(&advancing_block, &sel);
       ASSERT_TRUE(iter->HasNext());
       size_t batch_size = random() % 5 + 1;
       size_t n = batch_size;
-      ASSERT_OK(iter->CopyNextValues(&n, &advancing_block));
+      ASSERT_OK(iter->CopyNextValues(&n, &adv_ctx));
       ASSERT_LE(n, batch_size);
       fetched += n;
     }
@@ -157,6 +159,8 @@ class TestCFile : public CFileTestBase {
     Arena arena(8192, 8*1024*1024);
     ScopedColumnBlock<DataGeneratorType::kDataType> cb(10);
 
+    SelectionVector sel(10);
+    ColumnMaterializationContext ctx = CreateNonDecoderEvalContext(&cb, &sel);
     const int kNumLoops = AllowSlowTests() ? num_entries : 10;
     for (int loop = 0; loop < kNumLoops; loop++) {
       // Seek to a random point in the file,
@@ -170,7 +174,7 @@ class TestCFile : public CFileTestBase {
       int read_offset = target;
       for (int block = 0; block < 3 && iter->HasNext(); block++) {
         size_t n = cb.nrows();
-        ASSERT_OK_FAST(iter->CopyNextValues(&n, &cb));
+        ASSERT_OK_FAST(iter->CopyNextValues(&n, &ctx));
         ASSERT_EQ(n, std::min(num_entries - read_offset, cb.nrows()));
 
         // Verify that the block data is correct.
@@ -332,8 +336,11 @@ void CopyOne(CFileIterator *it,
              typename TypeTraits<type>::cpp_type *ret,
              Arena *arena) {
   ColumnBlock cb(GetTypeInfo(type), nullptr, ret, 1, arena);
+  SelectionVector sel(1);
+  ColumnMaterializationContext ctx(0, nullptr, &cb, &sel);
+  ctx.SetDecoderEvalNotSupported();
   size_t n = 1;
-  ASSERT_OK(it->CopyNextValues(&n, &cb));
+  ASSERT_OK(it->CopyNextValues(&n, &ctx));
   ASSERT_EQ(1, n);
 }
 
@@ -585,11 +592,13 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
   // Reseek to start and fetch all data.
   // We fetch in 10 smaller chunks to avoid using too much RAM for the
   // case where the values are large.
+  SelectionVector sel(10000);
   ASSERT_OK(iter->SeekToFirst());
   for (int i = 0; i < 10; i++) {
     ScopedColumnBlock<STRING> cb(10000);
+    ColumnMaterializationContext cb_ctx = CreateNonDecoderEvalContext(&cb, &sel);
     size_t n = 1000;
-    ASSERT_OK(iter->CopyNextValues(&n, &cb));
+    ASSERT_OK(iter->CopyNextValues(&n, &cb_ctx));
     ASSERT_EQ(1000, n);
   }
 }
@@ -678,7 +687,9 @@ TEST_P(TestCFileBothCacheTypes, TestDefaultColumnIter) {
   uint32_t int_value = 15;
   DefaultColumnValueIterator iter(GetTypeInfo(UINT32), &int_value);
   ColumnBlock int_col(GetTypeInfo(UINT32), nullptr, data, kNumItems, nullptr);
-  ASSERT_OK(iter.Scan(&int_col));
+  SelectionVector sel(kNumItems);
+  ColumnMaterializationContext int_ctx = CreateNonDecoderEvalContext(&int_col, &sel);
+  ASSERT_OK(iter.Scan(&int_ctx));
   for (size_t i = 0; i < int_col.nrows(); ++i) {
     ASSERT_EQ(int_value, *reinterpret_cast<const uint32_t *>(int_col.cell_ptr(i)));
   }
@@ -687,7 +698,8 @@ TEST_P(TestCFileBothCacheTypes, TestDefaultColumnIter) {
   int_value = 321;
   DefaultColumnValueIterator nullable_iter(GetTypeInfo(UINT32), &int_value);
   ColumnBlock nullable_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, nullptr);
-  ASSERT_OK(nullable_iter.Scan(&nullable_col));
+  ColumnMaterializationContext nullable_ctx = CreateNonDecoderEvalContext(&nullable_col, &sel);
+  ASSERT_OK(nullable_iter.Scan(&nullable_ctx));
   for (size_t i = 0; i < nullable_col.nrows(); ++i) {
     ASSERT_FALSE(nullable_col.is_null(i));
     ASSERT_EQ(int_value, *reinterpret_cast<const uint32_t *>(nullable_col.cell_ptr(i)));
@@ -696,7 +708,8 @@ TEST_P(TestCFileBothCacheTypes, TestDefaultColumnIter) {
   // Test NULL Default Value
   DefaultColumnValueIterator null_iter(GetTypeInfo(UINT32),  nullptr);
   ColumnBlock null_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, nullptr);
-  ASSERT_OK(null_iter.Scan(&null_col));
+  ColumnMaterializationContext null_ctx = CreateNonDecoderEvalContext(&null_col, &sel);
+  ASSERT_OK(null_iter.Scan(&null_ctx));
   for (size_t i = 0; i < null_col.nrows(); ++i) {
     ASSERT_TRUE(null_col.is_null(i));
   }
@@ -707,7 +720,8 @@ TEST_P(TestCFileBothCacheTypes, TestDefaultColumnIter) {
   Arena arena(32*1024, 256*1024);
   DefaultColumnValueIterator str_iter(GetTypeInfo(STRING), &str_value);
   ColumnBlock str_col(GetTypeInfo(STRING), nullptr, str_data, kNumItems, &arena);
-  ASSERT_OK(str_iter.Scan(&str_col));
+  ColumnMaterializationContext str_ctx = CreateNonDecoderEvalContext(&str_col, &sel);
+  ASSERT_OK(str_iter.Scan(&str_ctx));
   for (size_t i = 0; i < str_col.nrows(); ++i) {
     ASSERT_EQ(str_value, *reinterpret_cast<const Slice *>(str_col.cell_ptr(i)));
   }

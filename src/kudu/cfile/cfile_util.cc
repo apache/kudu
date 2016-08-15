@@ -22,6 +22,7 @@
 #include <string>
 
 #include "kudu/cfile/cfile_reader.h"
+#include "kudu/common/column_materialization_context.h"
 #include "kudu/util/env.h"
 #include "kudu/util/mem_tracker.h"
 
@@ -44,14 +45,15 @@ Status DumpIterator(const CFileReader& reader,
   size_t max_rows = kBufSize/type->size();
   uint8_t nulls[BitmapSize(max_rows)];
   ColumnBlock cb(type, reader.is_nullable() ? nulls : nullptr, buf, max_rows, &arena);
-
+  SelectionVector sel(max_rows);
+  ColumnMaterializationContext ctx(0, nullptr, &cb, &sel);
   string strbuf;
   size_t count = 0;
   while (it->HasNext()) {
     size_t n = num_rows == 0 ? max_rows : std::min(max_rows, num_rows - count);
     if (n == 0) break;
 
-    RETURN_NOT_OK(it->CopyNextValues(&n, &cb));
+    RETURN_NOT_OK(it->CopyNextValues(&n, &ctx));
 
     if (reader.is_nullable()) {
       for (size_t i = 0; i < n; i++) {

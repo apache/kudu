@@ -302,6 +302,11 @@ class CFileTestBase : public KuduTest {
     ASSERT_OK(fs_manager_->Open());
   }
 
+  // Place a ColumnBlock and SelectionVector into a context. This context will
+  // not support decoder evaluation.
+  ColumnMaterializationContext CreateNonDecoderEvalContext(ColumnBlock* cb, SelectionVector* sel) {
+    return ColumnMaterializationContext(0, nullptr, cb, sel);
+  }
  protected:
   enum Flags {
     NO_FLAGS = 0,
@@ -390,11 +395,13 @@ SumType FastSum(const Indexable &data, size_t n) {
 template<DataType Type, typename SumType>
 void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count) {
   ScopedColumnBlock<Type> cb(8192);
-
+  SelectionVector sel(cb.nrows());
+  ColumnMaterializationContext ctx(0, nullptr, &cb, &sel);
+  ctx.SetDecoderEvalNotSupported();
   SumType sum = 0;
   while (iter->HasNext()) {
     size_t n = cb.nrows();
-    ASSERT_OK_FAST(iter->CopyNextValues(&n, &cb));
+    ASSERT_OK_FAST(iter->CopyNextValues(&n, &ctx));
     sum += FastSum<ScopedColumnBlock<Type>, SumType>(cb, n);
     count += n;
     cb.arena()->Reset();
@@ -406,10 +413,13 @@ void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count) {
 template<DataType Type>
 void ReadBinaryFile(CFileIterator* iter, int* count) {
   ScopedColumnBlock<Type> cb(100);
+  SelectionVector sel(cb.nrows());
+  ColumnMaterializationContext ctx(0, nullptr, &cb, &sel);
+  ctx.SetDecoderEvalNotSupported();
   uint64_t sum_lens = 0;
   while (iter->HasNext()) {
     size_t n = cb.nrows();
-    ASSERT_OK_FAST(iter->CopyNextValues(&n, &cb));
+    ASSERT_OK_FAST(iter->CopyNextValues(&n, &ctx));
     for (int i = 0; i < n; i++) {
       sum_lens += cb[i].size();
     }

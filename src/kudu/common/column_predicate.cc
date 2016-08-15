@@ -265,9 +265,8 @@ void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
 }
 } // anonymous namespace
 
-void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector *sel) const {
+void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector* sel) const {
   CHECK_NOTNULL(sel);
-
   // The type-specific predicate is provided as a function template to
   // ApplyPredicate in the hope that they are inlined.
   //
@@ -280,34 +279,28 @@ void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector *sel) c
   // TODO: equality predicates should use the bloomfilter if it's available.
 
   switch (predicate_type()) {
-    case PredicateType::None: {
-      ApplyPredicate(block, sel, [] (const void*) {
-          return false;
-      });
-      return;
-    };
     case PredicateType::Range: {
       if (lower_ == nullptr) {
         ApplyPredicate(block, sel, [this] (const void* cell) {
-            return column_.type_info()->Compare(cell, this->upper_) < 0;
+          return column_.type_info()->Compare(cell, this->upper_) < 0;
         });
       } else if (upper_ == nullptr) {
         ApplyPredicate(block, sel, [this] (const void* cell) {
-            return column_.type_info()->Compare(cell, this->lower_) >= 0;
+          return column_.type_info()->Compare(cell, this->lower_) >= 0;
         });
       } else {
         ApplyPredicate(block, sel, [this] (const void* cell) {
-            return column_.type_info()->Compare(cell, this->upper_) < 0 &&
-                   column_.type_info()->Compare(cell, this->lower_) >= 0;
+          return column_.type_info()->Compare(cell, this->upper_) < 0 &&
+                 column_.type_info()->Compare(cell, this->lower_) >= 0;
         });
       }
       return;
     };
     case PredicateType::Equality: {
-        ApplyPredicate(block, sel, [this] (const void* cell) {
-            return column_.type_info()->Compare(cell, this->lower_) == 0;
-        });
-        return;
+      ApplyPredicate(block, sel, [this] (const void* cell) {
+        return column_.type_info()->Compare(cell, this->lower_) == 0;
+      });
+      return;
     };
     case PredicateType::IsNotNull: {
       if (!block.is_nullable()) return;
@@ -320,8 +313,32 @@ void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector *sel) c
       }
       return;
     }
+    default:
+      LOG(FATAL) << "unknown predicate type";
   }
-  LOG(FATAL) << "unknown predicate type";
+}
+
+bool ColumnPredicate::EvaluateCell(const void* cell) const {
+  switch (predicate_type()) {
+    case PredicateType::Range: {
+      if (lower_ == nullptr) {
+        return column_.type_info()->Compare(cell, this->upper_) < 0;
+      } else if (upper_ == nullptr) {
+        return column_.type_info()->Compare(cell, this->lower_) >= 0;
+      } else {
+        return column_.type_info()->Compare(cell, this->upper_) < 0 &&
+               column_.type_info()->Compare(cell, this->lower_) >= 0;
+      }
+    };
+    case PredicateType::Equality: {
+      return column_.type_info()->Compare(cell, this->lower_) == 0;
+    };
+    case PredicateType::IsNotNull: {
+      return true;
+    };
+    default:
+      LOG(FATAL) << "unknown predicate type";
+  }
 }
 
 string ColumnPredicate::ToString() const {

@@ -57,6 +57,7 @@ class DeltaIteratorMerger : public DeltaIterator {
                                                  vector<DeltaKeyAndUpdate>* out,
                                                  Arena* arena) OVERRIDE;
   virtual bool HasNext() OVERRIDE;
+  bool MayHaveDeltas() override;
   virtual std::string ToString() const OVERRIDE;
 
  private:

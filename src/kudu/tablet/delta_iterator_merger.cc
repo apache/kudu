@@ -111,6 +111,15 @@ bool DeltaIteratorMerger::HasNext() {
   return false;
 }
 
+bool DeltaIteratorMerger::MayHaveDeltas() {
+  for (const unique_ptr<DeltaIterator>& iter : iters_) {
+    if (iter->MayHaveDeltas()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 string DeltaIteratorMerger::ToString() const {
   string ret;
   ret.append("DeltaIteratorMerger(");

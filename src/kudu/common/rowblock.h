@@ -118,6 +118,40 @@ class SelectionVector {
   gscoped_array<uint8_t> bitmap_;
 };
 
+// A SelectionVectorView keeps track of where in the selection vector a given
+// batch will start from. After processing a batch, Advance() should be called
+// and the view will move forward by the appropriate amount. In this way, the
+// underlying selection vector can easily be updated batch-by-batch.
+class SelectionVectorView {
+ public:
+  explicit SelectionVectorView(SelectionVector *sel_vec)
+    : sel_vec_(sel_vec), row_offset_(0) {
+  }
+  void Advance(size_t skip) {
+    DCHECK_LE(skip, sel_vec_->nrows() - row_offset_);
+    row_offset_ += skip;
+  }
+  void SetBit(size_t row_idx) {
+    DCHECK_LE(row_idx, sel_vec_->nrows() - row_offset_);
+    BitmapSet(sel_vec_->mutable_bitmap(), row_offset_ + row_idx);
+  }
+  void ClearBit(size_t row_idx) {
+    DCHECK_LE(row_idx, sel_vec_->nrows() - row_offset_);
+    BitmapClear(sel_vec_->mutable_bitmap(), row_offset_ + row_idx);
+  }
+  bool TestBit(size_t row_idx) {
+    DCHECK_LE(row_idx, sel_vec_->nrows() - row_offset_);
+    return BitmapTest(sel_vec_->bitmap(), row_offset_ + row_idx);
+  }
+  void ClearBits(size_t nrows) {
+    DCHECK_LE(nrows, sel_vec_->nrows() - row_offset_);
+    BitmapChangeBits(sel_vec_->mutable_bitmap(), row_offset_, nrows, false);
+  }
+ private:
+  SelectionVector* sel_vec_;
+  size_t row_offset_;
+};
+
 // A block of decoded rows.
 // Wrapper around a buffer, which keeps the buffer's size, associated arena,
 // and schema. Provides convenience accessors for indexing by row, column, etc.

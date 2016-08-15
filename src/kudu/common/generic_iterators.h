@@ -175,6 +175,7 @@ class MaterializingIterator : public RowwiseIterator {
 
   // Set only by test code to disallow pushdown.
   bool disallow_pushdown_for_tests_;
+  bool disallow_decoder_eval_;
 };
 
 // An iterator which wraps another iterator and evaluates any predicates that the

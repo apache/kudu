@@ -173,6 +173,12 @@ class DeltaIterator {
   // Returns true if there are any more rows left in this iterator.
   virtual bool HasNext() = 0;
 
+  // Returns true if there might exist deltas to be applied. It is safe to
+  // conservatively return true, but this would force a skip over decoder-level
+  // evaluation.
+  // Must have called PrepareBatch() with flag = PREPARE_FOR_APPLY.
+  virtual bool MayHaveDeltas() = 0;
+
   // Return a string representation suitable for debug printouts.
   virtual std::string ToString() const = 0;
 

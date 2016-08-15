@@ -30,6 +30,7 @@
 namespace kudu {
 
 class Arena;
+class ColumnMaterializationContext;
 class RowBlock;
 class ScanSpec;
 
@@ -92,12 +93,12 @@ class ColumnwiseIterator : public virtual IteratorBase {
   // is at the end of the available data.
   virtual Status PrepareBatch(size_t *nrows) = 0;
 
-  // Materialize the given column into the given column block.
+  // Materialize the given column into the given ctx's column block.
   // col_idx is within the projection schema, not the underlying schema.
   //
   // Any indirect data (eg strings) are copied into the destination block's
   // arena, if non-null.
-  virtual Status MaterializeColumn(size_t col_idx, ColumnBlock *dst) = 0;
+  virtual Status MaterializeColumn(ColumnMaterializationContext* ctx) = 0;
 
   // Finish the current batch.
   virtual Status FinishBatch() = 0;

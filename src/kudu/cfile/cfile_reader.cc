@@ -469,6 +469,7 @@ size_t CFileReader::memory_footprint() const {
 ////////////////////////////////////////////////////////////
 // Default Column Value Iterator
 ////////////////////////////////////////////////////////////
+
 Status DefaultColumnValueIterator::SeekToOrdinal(rowid_t ord_idx) {
   ordinal_ = ord_idx;
   return Status::OK();
@@ -479,7 +480,8 @@ Status DefaultColumnValueIterator::PrepareBatch(size_t *n) {
   return Status::OK();
 }
 
-Status DefaultColumnValueIterator::Scan(ColumnBlock *dst)  {
+Status DefaultColumnValueIterator::Scan(ColumnMaterializationContext* ctx) {
+  ColumnBlock* dst = ctx->block();
   if (dst->is_nullable()) {
     ColumnDataView dst_view(dst);
     dst_view.SetNullBits(dst->nrows(), value_ != nullptr);
@@ -615,8 +617,6 @@ Status CFileIterator::SeekToFirst() {
   seeked_ = idx_iter;
   return Status::OK();
 }
-
-
 
 Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
                                     bool *exact_match) {
@@ -893,16 +893,28 @@ Status CFileIterator::FinishBatch() {
   return Status::OK();
 }
 
-
-Status CFileIterator::Scan(ColumnBlock *dst) {
+Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
   CHECK(seeked_) << "not seeked";
 
-  // Use a column data view to been able to advance it as we read into it.
-  ColumnDataView remaining_dst(dst);
-
+  // Use views to advance the block and selection vector as we read into them.
+  ColumnDataView remaining_dst(ctx->block());
+  SelectionVectorView remaining_sel(ctx->sel());
   uint32_t rem = last_prepare_count_;
-  DCHECK_LE(rem, dst->nrows());
+  DCHECK_LE(rem, ctx->block()->nrows());
 
+  // Determine the matching codewords for dictionary encoding if they haven't
+  // yet been determined for this CFile.
+  if (dict_decoder_ && ctx->DecoderEvalNotDisabled() && !codewords_matching_pred_) {
+    size_t nwords = dict_decoder_->Count();
+    codewords_matching_pred_.reset(new SelectionVector(nwords));
+    codewords_matching_pred_->SetAllFalse();
+    for (size_t i = 0; i < nwords; i++) {
+      Slice cur_string = dict_decoder_->string_at_index(i);
+      if (ctx->pred()->EvaluateCell(static_cast<const void *>(&cur_string))) {
+        BitmapSet(codewords_matching_pred_->mutable_bitmap(), i);
+      }
+    }
+  }
   for (PreparedBlock *pb : prepared_blocks_) {
     if (pb->needs_rewind_) {
       // Seek back to the saved position.
@@ -911,12 +923,10 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
       // that might be more efficient (allowing the decoder to save internal state
       // instead of having to reconstruct it)
     }
-
     if (reader_->is_nullable()) {
-      DCHECK(dst->is_nullable());
+      DCHECK(ctx->block()->is_nullable());
 
       size_t nrows = std::min(rem, pb->num_rows_in_block_ - pb->idx_in_block_);
-
       // Fill column bitmap
       size_t count = nrows;
       while (count > 0) {
@@ -928,11 +938,17 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
             Substitute("Unexpected EOF on NULL bitmap read. Expected at least $0 more rows",
                        count));
         }
-
         size_t this_batch = nblock;
         if (not_null) {
           // TODO: Maybe copy all and shift later?
-          RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_dst));
+          if (ctx->DecoderEvalNotDisabled()) {
+            RETURN_NOT_OK(pb->dblk_->CopyNextAndEval(&this_batch,
+                                                     ctx,
+                                                     &remaining_sel,
+                                                     &remaining_dst));
+          } else {
+            RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_dst));
+          }
           DCHECK_EQ(nblock, this_batch);
           pb->needs_rewind_ = true;
         } else {
@@ -941,6 +957,9 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
                                      remaining_dst.stride() * nblock,
                                      "NULLNULLNULLNULLNULL");
 #endif
+          if (ctx->DecoderEvalNotDisabled()) {
+            remaining_sel.ClearBits(this_batch);
+          }
         }
 
         // Set the ColumnBlock bitmap
@@ -950,22 +969,29 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
         count -= this_batch;
         pb->idx_in_block_ += this_batch;
         remaining_dst.Advance(this_batch);
+        remaining_sel.Advance(this_batch);
       }
     } else {
       // Fetch as many as we can from the current datablock.
       size_t this_batch = rem;
-      RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_dst));
+
+      if (ctx->DecoderEvalNotDisabled()) {
+        RETURN_NOT_OK(pb->dblk_->CopyNextAndEval(&this_batch, ctx, &remaining_sel, &remaining_dst));
+      } else {
+        RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_dst));
+      }
       pb->needs_rewind_ = true;
       DCHECK_LE(this_batch, rem);
 
       // If the column is nullable, set all bits to true
-      if (dst->is_nullable()) {
+      if (ctx->block()->is_nullable()) {
         remaining_dst.SetNullBits(this_batch, true);
       }
 
       rem -= this_batch;
       pb->idx_in_block_ += this_batch;
       remaining_dst.Advance(this_batch);
+      remaining_sel.Advance(this_batch);
     }
 
     // If we didn't fetch as many as requested, then it should
@@ -982,13 +1008,12 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
   return Status::OK();
 }
 
-Status CFileIterator::CopyNextValues(size_t *n, ColumnBlock *cb) {
+Status CFileIterator::CopyNextValues(size_t* n, ColumnMaterializationContext* ctx) {
   RETURN_NOT_OK(PrepareBatch(n));
-  RETURN_NOT_OK(Scan(cb));
+  RETURN_NOT_OK(Scan(ctx));
   RETURN_NOT_OK(FinishBatch());
   return Status::OK();
 }
-
 
 } // namespace cfile
 } // namespace kudu

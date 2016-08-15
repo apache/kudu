@@ -104,6 +104,14 @@ class TestCFileSet : public KuduRowSetTest {
     }
   }
 
+  Status MaterializeColumn(CFileSet::Iterator *iter,
+                           size_t col_idx,
+                           ColumnBlock *cb) {
+    SelectionVector sel(cb->nrows());
+    ColumnMaterializationContext ctx(col_idx, nullptr, cb, &sel);
+    return iter->MaterializeColumn(&ctx);
+  }
+
  private:
   ColumnStorageAttributes GetRLEStorage() const {
     ColumnStorageAttributes attr;
@@ -148,7 +156,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
     int cycle = (row_idx / kCycleInterval) % 3;
     if (cycle == 0 || cycle == 2) {
       ColumnBlock col(block.column_block(0));
-      ASSERT_OK_FAST(iter->MaterializeColumn(0, &col));
+      ASSERT_OK_FAST(MaterializeColumn(iter.get(), 0, &col));
 
       // Verify
       for (int i = 0; i < n; i++) {
@@ -162,7 +170,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
     }
     if (cycle == 1 || cycle == 2) {
       ColumnBlock col(block.column_block(1));
-      ASSERT_OK_FAST(iter->MaterializeColumn(1, &col));
+      ASSERT_OK_FAST(MaterializeColumn(iter.get(), 1, &col));
 
       // Verify
       for (int i = 0; i < n; i++) {

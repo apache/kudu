@@ -127,6 +127,10 @@ class BinaryDictBlockDecoder : public BlockDecoder {
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
   virtual Status SeekAtOrAfterValue(const void* value, bool* exact_match) OVERRIDE;
   Status CopyNextValues(size_t* n, ColumnDataView* dst) OVERRIDE;
+  Status CopyNextAndEval(size_t* n,
+                         ColumnMaterializationContext* ctx,
+                         SelectionVectorView* sel,
+                         ColumnDataView* dst) override;
 
   virtual bool HasNext() const OVERRIDE {
     return data_decoder_->HasNext();
@@ -156,6 +160,10 @@ class BinaryDictBlockDecoder : public BlockDecoder {
   BinaryPlainBlockDecoder* dict_decoder_;
 
   gscoped_ptr<BlockDecoder> data_decoder_;
+
+  // Parent CFileIterator, each dictionary decoder in the same CFile will share
+  // the same vocabulary, and thus, the same set of matching codewords.
+  CFileIterator* parent_cfile_iter_;
 
   DictEncodingMode mode_;
 

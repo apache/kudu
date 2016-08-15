@@ -17,12 +17,13 @@
 
 #include "kudu/cfile/binary_plain_block.h"
 
-#include <glog/logging.h>
 #include <algorithm>
+#include <glog/logging.h>
 
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
@@ -270,36 +271,49 @@ Status BinaryPlainBlockDecoder::SeekAtOrAfterValue(const void *value_void, bool 
   return Status::OK();
 }
 
-Status BinaryPlainBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
+template <typename CellHandler>
+Status BinaryPlainBlockDecoder::HandleBatch(size_t* n, ColumnDataView* dst, CellHandler c) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info()->physical_type(), BINARY);
   DCHECK_LE(*n, dst->nrows());
   DCHECK_EQ(dst->stride(), sizeof(Slice));
-
   Arena *out_arena = dst->arena();
   if (PREDICT_FALSE(*n == 0 || cur_idx_ >= num_elems_)) {
     *n = 0;
     return Status::OK();
   }
-
   size_t max_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
 
-  Slice *out = reinterpret_cast<Slice *>(dst->data());
-  size_t i;
-  for (i = 0; i < max_fetch; i++) {
+  Slice *out = reinterpret_cast<Slice*>(dst->data());
+  for (size_t i = 0; i < max_fetch; i++, out++, cur_idx_++) {
     Slice elem(string_at_index(cur_idx_));
-
-    // TODO: in a lot of cases, we might be able to get away with the decoder
-    // owning it and not truly copying. But, we should extend the CopyNextValues
-    // API so that the caller can specify if they truly _need_ copies or not.
-    CHECK(out_arena->RelocateSlice(elem, out));
-    out++;
-    cur_idx_++;
+    c(i, elem, out, out_arena);
   }
-
-  *n = i;
+  *n = max_fetch;
   return Status::OK();
 }
+
+Status BinaryPlainBlockDecoder::CopyNextValues(size_t* n, ColumnDataView* dst) {
+  return HandleBatch(n, dst, [&](size_t i, Slice elem, Slice* out, Arena* out_arena) {
+    CHECK(out_arena->RelocateSlice(elem, out));
+  });
+}
+Status BinaryPlainBlockDecoder::CopyNextAndEval(size_t* n,
+                                                ColumnMaterializationContext* ctx,
+                                                SelectionVectorView* sel,
+                                                ColumnDataView* dst) {
+  ctx->SetDecoderEvalSupported();
+  return HandleBatch(n, dst, [&](size_t i, Slice elem, Slice* out, Arena* out_arena) {
+    if (!sel->TestBit(i)) {
+      return;
+    } else if (ctx->pred()->EvaluateCell(static_cast<const void*>(&elem))) {
+      CHECK(out_arena->RelocateSlice(elem, out));
+    } else {
+      sel->ClearBit(i);
+    }
+  });
+}
+
 
 } // namespace cfile
 } // namespace kudu

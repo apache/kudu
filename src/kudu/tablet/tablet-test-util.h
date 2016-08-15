@@ -139,8 +139,27 @@ class KuduRowSetTest : public KuduTabletTest {
   std::shared_ptr<RowSetMetadata> rowset_meta_;
 };
 
-static inline Status IterateToStringList(RowwiseIterator *iter,
-                                         vector<string> *out,
+// Iterate through the values without outputting them at the end
+// This is strictly a measure of decoding and evaluating predicates
+static inline Status SilentIterateToStringList(RowwiseIterator* iter,
+                                               int* fetched) {
+  const Schema& schema = iter->schema();
+  Arena arena(1024, 1024);
+  RowBlock block(schema, 100, &arena);
+  *fetched = 0;
+  while (iter->HasNext()) {
+    RETURN_NOT_OK(iter->NextBlock(&block));
+    for (size_t i = 0; i < block.nrows(); i++) {
+      if (block.selection_vector()->IsRowSelected(i)) {
+        (*fetched)++;
+      }
+    }
+  }
+  return Status::OK();
+}
+
+static inline Status IterateToStringList(RowwiseIterator* iter,
+                                         vector<string>* out,
                                          int limit = INT_MAX) {
   out->clear();
   Schema schema = iter->schema();

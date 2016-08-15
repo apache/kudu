@@ -18,11 +18,13 @@
 #ifndef KUDU_CFILE_BLOCK_ENCODINGS_H
 #define KUDU_CFILE_BLOCK_ENCODINGS_H
 
+#include <algorithm>
 #include <stdint.h>
-
 #include <glog/logging.h>
 
+#include "kudu/common/column_materialization_context.h"
 #include "kudu/common/rowid.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/faststring.h"
@@ -128,6 +130,18 @@ class BlockDecoder {
   virtual Status SeekAtOrAfterValue(const void *value,
                                     bool *exact_match) = 0;
 
+  // Seek the decoder forward by a given number of rows, or to the end
+  // of the block. This is primarily used to skip over data.
+  //
+  // If *n would move the index past the end of the block, set *n to the
+  // number of rows to get to the end.
+  virtual void SeekForward(int* n) {
+    DCHECK(HasNext());
+    *n = std::min(*n, static_cast<int>(Count() - GetCurrentIndex()));
+    DCHECK_GE(*n, 0);
+    SeekToPositionInBlock(GetCurrentIndex() + *n);
+  }
+
   // Fetch the next set of values from the block into 'dst'.
   // The output block must have space for up to n cells.
   //
@@ -137,6 +151,23 @@ class BlockDecoder {
   // to other memory (eg Slices), the referred-to memory is
   // allocated in the dst block's arena.
   virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) = 0;
+
+  // Fetch the next values from the block and evaluate whether they satisfy
+  // the predicate. Mark the row in the view into the selection vector. This
+  // view denotes the current location in the CFile.
+  //
+  // Modifies *n to contain the number of values fetched.
+  //
+  // POSTCONDITION: ctx->decoder_eval_supported_ is not kNotSet. State must
+  // be consistent throughout the entire column.
+  virtual Status CopyNextAndEval(size_t* n,
+                                 ColumnMaterializationContext* ctx,
+                                 SelectionVectorView* sel,
+                                 ColumnDataView* dst) {
+    RETURN_NOT_OK(CopyNextValues(n, dst));
+    ctx->SetDecoderEvalNotSupported();
+    return Status::OK();
+  }
 
   // Return true if there are more values remaining to be iterated.
   // (i.e that the next call to CopyNextValues will return at least 1

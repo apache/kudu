@@ -524,6 +524,21 @@ class TestEncoding : public ::testing::Test {
       CopyOne<IntType>(&ibd, &ret);
       EXPECT_EQ(decoded[seek_off], ret);
     }
+
+    // Test Seek forward within block.
+    ibd.SeekToPositionInBlock(0);
+    int skip_step = 7;
+    EXPECT_EQ((uint32_t) 0, ibd.GetCurrentIndex());
+    for (uint32_t i = 0; i < decoded.size()/skip_step; i++) {
+      // Skip just before the end of the step.
+      int skip = skip_step-1;
+      ibd.SeekForward(&skip);
+      EXPECT_EQ((uint32_t) i*skip_step+skip, ibd.GetCurrentIndex());
+      CppType ret;
+      // CopyOne will move the decoder forward by one.
+      CopyOne<IntType>(&ibd, &ret);
+      EXPECT_EQ(decoded[i*skip_step + skip], ret);
+    }
   }
 
 

@@ -202,6 +202,7 @@ class DeltaFileIterator : public DeltaIterator {
                                          Arena* arena) OVERRIDE;
   string ToString() const OVERRIDE;
   virtual bool HasNext() OVERRIDE;
+  bool MayHaveDeltas() override;
 
  private:
   friend class DeltaFileReader;

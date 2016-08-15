@@ -138,6 +138,9 @@ class ColumnPredicate {
   // same vector as block->selection_vector().
   void Evaluate(const ColumnBlock& block, SelectionVector* sel) const;
 
+  // Evaluate the predicate on a single cell.
+  bool EvaluateCell(const void *cell) const;
+
   // Print the predicate for debugging.
   std::string ToString() const;
 

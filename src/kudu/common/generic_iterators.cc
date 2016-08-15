@@ -21,6 +21,8 @@
 #include <tuple>
 #include <utility>
 
+#include "kudu/common/column_materialization_context.h"
+#include "kudu/common/column_predicate.h"
 #include "kudu/common/generic_iterators.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
@@ -43,6 +45,10 @@ using std::tuple;
 DEFINE_bool(materializing_iterator_do_pushdown, true,
             "Should MaterializingIterator do predicate pushdown");
 TAG_FLAG(materializing_iterator_do_pushdown, hidden);
+DEFINE_bool(materializing_iterator_decoder_eval, true,
+            "Should MaterializingIterator do decoder-level evaluation");
+TAG_FLAG(materializing_iterator_decoder_eval, hidden);
+TAG_FLAG(materializing_iterator_decoder_eval, runtime);
 
 namespace kudu {
 
@@ -436,7 +442,8 @@ void UnionIterator::GetIteratorStats(std::vector<IteratorStats>* stats) const {
 
 MaterializingIterator::MaterializingIterator(shared_ptr<ColumnwiseIterator> iter)
     : iter_(move(iter)),
-      disallow_pushdown_for_tests_(!FLAGS_materializing_iterator_do_pushdown) {
+      disallow_pushdown_for_tests_(!FLAGS_materializing_iterator_do_pushdown),
+      disallow_decoder_eval_(!FLAGS_materializing_iterator_decoder_eval) {
 }
 
 Status MaterializingIterator::Init(ScanSpec *spec) {
@@ -512,10 +519,19 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
   for (const auto& col_pred : col_idx_predicates_) {
     // Materialize the column itself into the row block.
     ColumnBlock dst_col(dst->column_block(get<0>(col_pred)));
-    RETURN_NOT_OK(iter_->MaterializeColumn(get<0>(col_pred), &dst_col));
-
-    // Evaluate the column predicate.
-    get<1>(col_pred).Evaluate(dst_col, dst->selection_vector());
+    ColumnMaterializationContext ctx(get<0>(col_pred),
+                                     &get<1>(col_pred),
+                                     &dst_col,
+                                     dst->selection_vector());
+    // None predicates should be short-circuited in scan spec.
+    DCHECK(ctx.pred()->predicate_type() != PredicateType::None);
+    if (disallow_decoder_eval_) {
+      ctx.SetDecoderEvalNotSupported();
+    }
+    RETURN_NOT_OK(iter_->MaterializeColumn(&ctx));
+    if (ctx.DecoderEvalNotSupported()) {
+      get<1>(col_pred).Evaluate(dst_col, dst->selection_vector());
+    }
 
     // If after evaluating this predicate the entire row block has been filtered
     // out, we don't need to materialize other columns at all.
@@ -528,7 +544,11 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
   for (size_t col_idx : non_predicate_column_indexes_) {
     // Materialize the column itself into the row block.
     ColumnBlock dst_col(dst->column_block(col_idx));
-    RETURN_NOT_OK(iter_->MaterializeColumn(col_idx, &dst_col));
+    ColumnMaterializationContext ctx(col_idx,
+                                     nullptr,
+                                     &dst_col,
+                                     dst->selection_vector());
+    RETURN_NOT_OK(iter_->MaterializeColumn(&ctx));
   }
 
   DVLOG(1) << dst->selection_vector()->CountSelected() << "/"

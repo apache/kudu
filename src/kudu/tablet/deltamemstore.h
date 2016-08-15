@@ -203,6 +203,8 @@ class DMSIterator : public DeltaIterator {
 
   virtual bool HasNext() OVERRIDE;
 
+  bool MayHaveDeltas() override;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(DMSIterator);
   FRIEND_TEST(TestDeltaMemStore, TestIteratorDoesUpdates);

@@ -23,6 +23,7 @@
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/generic_iterators.h"
+#include "kudu/common/column_materialization_context.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
@@ -62,7 +63,7 @@ class VectorIterator : public ColumnwiseIterator {
     return Status::OK();
   }
 
-  virtual Status PrepareBatch(size_t *nrows) OVERRIDE {
+  virtual Status PrepareBatch(size_t* nrows) OVERRIDE {
     prepared_ = std::min<int64_t>({
         static_cast<int64_t>(ints_.size()) - cur_idx_,
         block_size_,
@@ -76,12 +77,13 @@ class VectorIterator : public ColumnwiseIterator {
     return Status::OK();
   }
 
-  virtual Status MaterializeColumn(size_t col, ColumnBlock *dst) OVERRIDE {
-    CHECK_EQ(UINT32, dst->type_info()->physical_type());
-    DCHECK_LE(prepared_, dst->nrows());
+  Status MaterializeColumn(ColumnMaterializationContext* ctx) override {
+    ctx->SetDecoderEvalNotSupported();
+    CHECK_EQ(UINT32, ctx->block()->type_info()->physical_type());
+    DCHECK_LE(prepared_, ctx->block()->nrows());
 
     for (size_t i = 0; i < prepared_; i++) {
-      dst->SetCellValue(i, &(ints_[cur_idx_++]));
+      ctx->block()->SetCellValue(i, &(ints_[cur_idx_++]));
     }
 
     return Status::OK();
