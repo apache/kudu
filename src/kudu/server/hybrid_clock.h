@@ -145,7 +145,7 @@ class HybridClock : public Clock {
   static std::string StringifyTimestamp(const Timestamp& timestamp);
 
   // Sets the time to be returned by a mock call to the system clock, for tests.
-  // Requires that 'FLAGS_use_mock_wall_clock' is set to true and that 'now_usec' is less
+  // Requires that 'FLAGS_use_mock_wall_clock' is set to true and that 'now_usec' is higher
   // than the previously set time.
   // NOTE: This refers to the time returned by the system clock, not the time returned
   // by HybridClock, i.e. 'now_usec' is not a HybridTime timestmap and shouldn't have

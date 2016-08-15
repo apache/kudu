@@ -56,7 +56,7 @@ class Schema;
 //   If type == kDelete, then no further data follows. The row is deleted.
 //
 //   If type == kReinsert, then a "tuple-format" row follows. TODO: this will
-//     be changed by http://gerrit.sjc.cloudera.com:8080/#/c/6318/ in the near future.
+//   eventually be changed by something like https://gerrit.cloudera.org/975
 //
 //   If type == kUpdate, then a sequence of column updates follow. Each update
 //   has the format:

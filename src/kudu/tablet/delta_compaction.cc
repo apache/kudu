@@ -127,8 +127,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     RETURN_NOT_OK(delta_iter_->PrepareBatch(n, DeltaIterator::PREPARE_FOR_COLLECT));
     RETURN_NOT_OK(delta_iter_->CollectMutations(&redo_mutation_block, block.arena()));
 
-    // 3) Apply new UNDO mutations for the current block. The REDO mutations are picked up
-    //    at step 6).
+    // 3) Write new UNDO mutations for the current block. The REDO mutations
+    //    are written out in step 6.
     vector<CompactionInputRow> input_rows;
     input_rows.resize(block.nrows());
     for (int i = 0; i < block.nrows(); i++) {
@@ -142,7 +142,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
       RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, static_cast<Arena*>(nullptr)));
 
       Mutation* new_undos_head = nullptr;
-      // We're ignoring the result from new_redos_head because we'll find them later at step 5).
+      // We're ignoring the result from new_redos_head because we'll find them
+      // later at step 5.
       Mutation* new_redos_head = nullptr;
 
       bool is_garbage_collected;
@@ -176,8 +177,9 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     // 4) Write the new base data.
     RETURN_NOT_OK(base_data_writer_->AppendBlock(block));
 
-    // 5) Remove the columns that we're compacting from the delta flush, but keep all the
-    //    delete mutations.
+    // 5) Remove the columns that we've done our major REDO delta compaction on
+    //    from this delta flush, except keep all the delete and reinsert
+    //    mutations.
     arena.Reset();
     vector<DeltaKeyAndUpdate> out;
     RETURN_NOT_OK(delta_iter_->FilterColumnIdsAndCollectDeltas(column_ids_, &out, &arena));
@@ -187,7 +189,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
       RETURN_NOT_OK(OpenRedoDeltaFileWriter());
     }
 
-    // 6) Write the deltas we're not compacting back into a delta file.
+    // 6) Write the remaining REDO deltas that we haven't compacted away back
+    //    into a REDO delta file.
     for (const DeltaKeyAndUpdate& key_and_update : out) {
       RowChangeList update(key_and_update.cell);
       RETURN_NOT_OK_PREPEND(new_redo_delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
@@ -260,7 +263,7 @@ Status MajorDeltaCompaction::Compact() {
     LOG(INFO) << "Preparing to major compact delta file: " << ds->ToString();
   }
 
-  // We defer on calling OpenNewDeltaBlock since we might not need to flush.
+  // We defer calling OpenRedoDeltaFileWriter() since we might not need to flush.
   RETURN_NOT_OK(OpenBaseDataWriter());
   RETURN_NOT_OK(FlushRowSetAndDeltas());
   LOG(INFO) << "Finished major delta compaction of columns " <<
