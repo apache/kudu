@@ -490,7 +490,7 @@ class PosixWritableFile : public WritableFile {
       if (PREDICT_FALSE(written != data.size())) {
         return Status::IOError(
             Substitute("pwrite error: expected to write $0 bytes, wrote $1 bytes instead"
-                       " (perhaps the disk is out of space)",,
+                       " (perhaps the disk is out of space)",
                        data.size(), written));
       }
     }
