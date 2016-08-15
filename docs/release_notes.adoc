@@ -56,7 +56,17 @@ Hadoop storage technologies.
 [[rn_0.10.0]]
 === Release notes specific to 0.10.0
 
-Kudu 0.10.0 delivers TODO what it delivers and how compatible it is.
+Kudu 0.10.0 delivers a number of new features, bug fixes, and optimizations,
+detailed below.
+
+Kudu 0.10.0 maintains wire-compatibility with previous releases, meaning
+that applications using the Kudu client libraries may be upgraded either
+before, at the same time, or after the Kudu servers. However, if you begin
+using new features of Kudu 0.10.0 such as manually range-partitioned tables,
+you must first upgrade all clients to this release.
+
+This release does not maintain full Java API or ABI compatibility with
+Kudu 0.9.0 due to a package rename and some other small changes. See below for details.
 
 See also +++<a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20%3D%20Resolved
 %20AND%20fixVersion%20%3D%200.10.0">JIRAs resolved
@@ -94,9 +104,16 @@ To upgrade to Kudu 0.10.0, see link:installation.html#upgrade[Upgrade from 0.9.x
   deprecated and replaced by a new method `TableCreator::add_range_split` which allows
   easier use of smart pointers for safe memory management.
 
-- TODO(dan): should we list the change in buffer size performance due to
-  aa3d4473d229807fa8ee27c6ffb5b4b6fb2893a4 here? users may need to tweak something
-  to keep their existing performance
+- The Java client's internal buffering has been reworked. Previously, the number of
+  buffered write operations was constrained on a per-tablet-server basis. Now, the configured
+  maximum buffer size constrains the total number of buffered operations across all
+  tablet servers in the cluster. This provides a more consistent bound on the memory
+  usage of the client regardless of the size of the cluster to which it is writing.
+
+  This change can negatively affect the write performance of Java clients which rely on
+  buffered writes. Consider using the `setMutationBufferSpace` API to increase a
+  session's maximum buffer size if write performance seems to be degraded after upgrading
+  to Kudu 0.10.0.
 
 - The "remote bootstrap" process used to copy a tablet replica from one host to
   another has been renamed to "Tablet Copy". This resulted in the renaming of
@@ -111,11 +128,33 @@ To upgrade to Kudu 0.10.0, see link:installation.html#upgrade[Upgrade from 0.9.x
 [[rn_0.10.0_new_features]]
 ==== New features
 
-- TODO(dan): add a release note for non-covering range partitions
+- Users may now manually manage the partitioning of a range-partitioned table.
+  When a table is created, the user may specify a set of range partitions that
+  do not cover the entire available key space. A user may add or drop range
+  partitions to existing tables.
 
-- TODO(adar): add something about multi-master support
+  This feature can be particularly helpful with time series workloads in which
+  new partitions can be created on an hourly or daily basis. Old partitions
+  may be efficiently dropped if the application does not need to retain historical
+  data past a certain point.
 
-- TODO(mpercy): add something about reserved space configuration
+// TODO(dan) can we link to the docs once they're committed?
+
+- Support for running Kudu clusters with multiple masters has been stabilized.
+  Users may start a cluster with three or five masters to provide fault tolerance
+  despite a failure of one or two masters, respectively.
+
+  Note that certain tools (e.g. `ksck`) are still lacking complete support for
+  multiple masters. These deficiencies will be addressed in a following release.
+
+- Kudu now supports the ability to reserve a certain amount of free disk space
+  in each of its configured data directories. If a directory's free disk space
+  drops to less than the configured minimum, Kudu will stop writing to that
+  directory until space becomes available. If no space is available in any
+  configured directory, Kudu will abort.
+
+  This feature may be configured using the `fs_data_dirs_reserved_bytes` and
+  `fs_wal_dir_reserved_bytes` flags.
 
 - The Spark integration's `KuduContext` now supports four new methods for writing to
   Kudu tables: `insertRows`, `upsertRows`, `updateRows`, and `deleteRows`. These are
@@ -186,8 +225,9 @@ To upgrade to Kudu 0.10.0, see link:installation.html#upgrade[Upgrade from 0.9.x
   improve the performance of random-write workloads at the cost of an
   incremental increase in disk space usage.
 
-- The C++ API now has a published Doxygen-based online documentation, which can be found at
-  TODO ADD LINK TO DOXYGEN DOC.
+- The Kudu C++ client library now has Doxygen-based
+  link:http://kudu.apache.org/apidocs/cpp-client-api/[API documentation]
+  available online.
 
 - Kudu now
   link:http://kudu.apache.org/2016/06/17/raft-consensus-single-node.html[
@@ -195,7 +235,6 @@ To upgrade to Kudu 0.10.0, see link:installation.html#upgrade[Upgrade from 0.9.x
   This change simplifies code and will also allow administrators to enable
   replication on a previously-unreplicated table. This change is internal and
   should not be visible to users.
-  TODO(mpercy): does this prevent downgrade? does everything upgrade OK on its own?
 
 [[rn_0.9.1]]
 === Release notes specific to 0.9.1
