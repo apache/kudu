@@ -3171,6 +3171,13 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
           ->pb.mutable_committed_consensus_state();
   cstate->set_current_term(kMinimumTerm);
   consensus::RaftConfigPB *config = cstate->mutable_config();
+
+  // Maintain ability to downgrade Kudu to a version with LocalConsensus.
+  if (nreplicas > 1) {
+    // Defaults to true in old versions of Kudu.
+    config->set_obsolete_local(false);
+  }
+
   config->set_opid_index(consensus::kInvalidOpIdIndex);
   SelectReplicas(ts_descs, nreplicas, config);
   return Status::OK();

@@ -180,6 +180,7 @@ Status SysCatalogTable::SetupDistributedConfig(const MasterOptions& options,
   DCHECK(options.IsDistributed());
 
   RaftConfigPB new_config;
+  new_config.set_obsolete_local(false);
   new_config.set_opid_index(consensus::kInvalidOpIdIndex);
 
   // Build the set of followers from our server options.
