@@ -96,36 +96,36 @@ class MergeIterState {
   }
 
   bool IsFullyExhausted() const {
-    return num_valid_ == 0;
+    return num_valid_ == 0 && !iter_->HasNext();
   }
 
   Status PullNextBlock() {
     CHECK_EQ(num_advanced_, num_valid_)
       << "should not pull next block until current block is exhausted";
 
-    if (!iter_->HasNext()) {
-      // Fully exhausted
+    while (iter_->HasNext()) {
+      RETURN_NOT_OK(iter_->NextBlock(&read_block_));
       num_advanced_ = 0;
-      num_valid_ = 0;
-      return Status::OK();
+      // Honor the selection vector of the read_block_, since not all rows are necessarily selected.
+      SelectionVector *selection = read_block_.selection_vector();
+      DCHECK_EQ(selection->nrows(), read_block_.nrows());
+      DCHECK_LE(selection->CountSelected(), read_block_.nrows());
+      num_valid_ = selection->CountSelected();
+      VLOG(2) << selection->CountSelected() << "/" << read_block_.nrows() << " rows selected";
+      // Seek next_row_ to the first selected row.
+      for (next_row_idx_ = 0; next_row_idx_ < read_block_.nrows(); next_row_idx_++) {
+        if (selection->IsRowSelected(next_row_idx_)) {
+          next_row_.Reset(&read_block_, next_row_idx_);
+          return Status::OK();
+        }
+      }
+      // The block may have had no selected rows, in which case we need to continue
+      // to the next block.
     }
 
-    RETURN_NOT_OK(iter_->NextBlock(&read_block_));
+    // The underlying iterator is fully exhausted.
     num_advanced_ = 0;
-    // Honor the selection vector of the read_block_, since not all rows are necessarily selected.
-    SelectionVector *selection = read_block_.selection_vector();
-    DCHECK_EQ(selection->nrows(), read_block_.nrows());
-    DCHECK_LE(selection->CountSelected(), read_block_.nrows());
-    num_valid_ = selection->CountSelected();
-    VLOG(2) << selection->CountSelected() << "/" << read_block_.nrows() << " rows selected";
-    // Seek next_row_ to the first selected row.
-    for (next_row_idx_ = 0; next_row_idx_ < read_block_.nrows(); next_row_idx_++) {
-      if (selection->IsRowSelected(next_row_idx_)) {
-        next_row_.Reset(&read_block_, next_row_idx_);
-        break;
-      }
-    }
-    DCHECK_NE(next_row_idx_, read_block_.nrows()+1) << "No selected rows found!";
+    num_valid_ = 0;
     return Status::OK();
   }
 
