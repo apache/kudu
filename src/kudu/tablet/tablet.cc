@@ -108,7 +108,7 @@ DEFINE_double(tablet_throttler_burst_factor, 1.0f,
              "base rate.");
 TAG_FLAG(tablet_throttler_burst_factor, experimental);
 
-DEFINE_int32(tablet_history_max_age_sec, -1,
+DEFINE_int32(tablet_history_max_age_sec, 15 * 60,
              "Number of seconds to retain tablet history. Reads initiated at a "
              "snapshot that is older than this age will be rejected. "
              "To disable history removal, set to -1.");
