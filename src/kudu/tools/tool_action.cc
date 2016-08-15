@@ -18,6 +18,7 @@
 #include "kudu/tools/tool_action.h"
 
 #include <deque>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -26,35 +27,89 @@
 
 using std::deque;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 namespace tools {
 
-string BuildActionChainString(const vector<Action>& chain) {
-  return JoinMapped(chain, [](const Action& a){ return a.name; }, " ");
+namespace {
+
+string BuildUsageString(const vector<Mode*>& chain) {
+  string modes = JoinMapped(chain, [](Mode* a){ return a->name(); }, " ");
+  return Substitute("Usage: $0", modes);
 }
 
-string BuildUsageString(const vector<Action>& chain) {
-  return Substitute("Usage: $0", BuildActionChainString(chain));
+} // anonymous namespace
+
+ModeBuilder::ModeBuilder(const Label& label)
+    : label_(label) {
 }
 
-string BuildHelpString(const vector<Action>& sub_actions, string usage_str) {
-  string msg = Substitute("$0 <action>\n", usage_str);
+ModeBuilder& ModeBuilder::AddMode(unique_ptr<Mode> mode) {
+  submodes_.push_back(std::move(mode));
+  return *this;
+}
+
+ModeBuilder& ModeBuilder::AddAction(unique_ptr<Action> action) {
+  actions_.push_back(std::move(action));
+  return *this;
+}
+
+unique_ptr<Mode> ModeBuilder::Build() {
+  unique_ptr<Mode> mode(new Mode());
+  mode->label_ = label_;
+  mode->submodes_ = std::move(submodes_);
+  mode->actions_ = std::move(actions_);
+  return mode;
+}
+
+// Get help for this mode, passing in its parent mode chain.
+string Mode::BuildHelp(const vector<Mode*>& chain) const {
+  string msg = Substitute("$0 <action>\n", BuildUsageString(chain));
   msg += "Action can be one of the following:\n";
-  for (const auto& a : sub_actions) {
-    msg += Substitute("  $0 : $1\n", a.name, a.description);
+  for (const auto& m : modes()) {
+    msg += Substitute("  $0 : $1\n", m->name(), m->description());
+  }
+  for (const auto& a : actions()) {
+    msg += Substitute("  $0 : $1\n", a->name(), a->description());
   }
   return msg;
 }
 
-string BuildLeafActionHelpString(const vector<Action>& chain) {
-  DCHECK(!chain.empty());
-  Action action = chain.back();
-  string msg = Substitute("$0", BuildUsageString(chain));
+Mode::Mode() {
+}
+
+ActionBuilder::ActionBuilder(const Label& label, const ActionRunner& runner)
+    : label_(label),
+      runner_(runner) {
+}
+
+ActionBuilder& ActionBuilder::AddGflag(const string& gflag) {
+  gflags_.push_back(gflag);
+  return *this;
+}
+
+unique_ptr<Action> ActionBuilder::Build() {
+  unique_ptr<Action> action(new Action());
+  action->label_ = label_;
+  action->runner_ = runner_;
+  action->gflags_ = gflags_;
+  return action;
+}
+
+Action::Action() {
+}
+
+Status Action::Run(const vector<Mode*>& chain, deque<string> args) const {
+  return runner_(chain, this, args);
+}
+
+string Action::BuildHelp(const vector<Mode*>& chain) const {
+  string msg = Substitute("$0 $1", BuildUsageString(chain), name());
   string gflags_msg;
-  for (const auto& gflag : action.gflags) {
+  for (const auto& gflag : gflags_) {
     google::CommandLineFlagInfo gflag_info =
         google::GetCommandLineFlagInfoOrDie(gflag.c_str());
     string noun;
@@ -69,15 +124,9 @@ string BuildLeafActionHelpString(const vector<Action>& chain) {
     gflags_msg += google::DescribeOneFlag(gflag_info);
   }
   msg += "\n";
-  msg += Substitute("$0\n", action.description);
+  msg += Substitute("$0\n", label_.description);
   msg += gflags_msg;
   return msg;
-}
-
-string BuildNonLeafActionHelpString(const vector<Action>& chain) {
-  string usage = BuildUsageString(chain);
-  DCHECK(!chain.empty());
-  return BuildHelpString(chain.back().sub_actions, usage);
 }
 
 Status ParseAndRemoveArg(const char* arg_name,

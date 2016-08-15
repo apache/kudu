@@ -19,6 +19,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -40,16 +41,17 @@ using std::cout;
 using std::deque;
 using std::endl;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 namespace tools {
 
-int DispatchCommand(const vector<Action>& chain, const deque<string>& args) {
-  DCHECK(!chain.empty());
-  Action action = chain.back();
-  Status s = action.run(chain, args);
+int DispatchCommand(const vector<Mode*>& chain,
+                    Action* action,
+                    const deque<string>& args) {
+  Status s = action->Run(chain, args);
   if (s.ok()) {
     return 0;
   } else {
@@ -58,63 +60,70 @@ int DispatchCommand(const vector<Action>& chain, const deque<string>& args) {
   }
 }
 
-int RunTool(const Action& root, int argc, char** argv, bool show_help) {
+int RunTool(int argc, char** argv, bool show_help) {
+  unique_ptr<Mode> root =
+      ModeBuilder({ argv[0], "" }) // root mode description isn't printed
+      .AddMode(BuildFsMode())
+      .AddMode(BuildTabletMode())
+      .Build();
+
   // Initialize arg parsing state.
-  vector<Action> chain = { root };
+  vector<Mode*> chain = { root.get() };
 
-  // Parse the arguments, matching them up with actions.
+  // Parse the arguments, matching each to a mode or action.
   for (int i = 1; i < argc; i++) {
-    const Action* cur = &chain.back();
-    const auto& sub_actions = cur->sub_actions;
-    if (sub_actions.empty()) {
-      // We've reached an invokable action.
-      if (show_help) {
-        cerr << cur->help(chain) << endl;
-        return 1;
-      } else {
-        // Invoke it with whatever arguments remain.
-        deque<string> remaining_args;
-        for (int j = i; j < argc; j++) {
-          remaining_args.push_back(argv[j]);
-        }
-        return DispatchCommand(chain, remaining_args);
-      }
-    }
+    Mode* cur = chain.back();
+    Mode* next_mode = nullptr;
+    Action* next_action = nullptr;
 
-    // This action is not invokable. Interpret the next command line argument
-    // as a subaction and continue parsing.
-    const Action* next = nullptr;
-    for (const auto& a : sub_actions) {
-      if (a.name == argv[i]) {
-        next = &a;
+    // Match argument with a mode.
+    for (const auto& m : cur->modes()) {
+      if (m->name() == argv[i]) {
+        next_mode = m.get();
         break;
       }
     }
 
-    if (next == nullptr) {
-      // We couldn't find a subaction for the next argument. Raise an error.
-      string msg = Substitute("$0 $1\n",
-                              BuildActionChainString(chain), argv[i]);
-      msg += BuildHelpString(sub_actions, BuildUsageString(chain));
-      Status s = Status::InvalidArgument(msg);
-      cerr << s.ToString() << endl;
-      return 1;
+    // Match argument with an action.
+    for (const auto& a : cur->actions()) {
+      if (a->name() == argv[i]) {
+        next_action = a.get();
+        break;
+      }
     }
 
-    // We're done parsing this argument. Loop and continue.
-    chain.emplace_back(*next);
+    // If both matched, there's an error with the tree.
+    DCHECK(!next_mode || !next_action);
+
+    if (next_mode) {
+      // Add the mode and keep parsing.
+      chain.push_back(next_mode);
+    } else if (next_action) {
+      if (show_help) {
+        cerr << next_action->BuildHelp(chain) << endl;
+        return 1;
+      } else {
+        // Invoke the action with whatever arguments remain, skipping this one.
+        deque<string> remaining_args;
+        for (int j = i + 1; j < argc; j++) {
+          remaining_args.push_back(argv[j]);
+        }
+        return DispatchCommand(chain, next_action, remaining_args);
+      }
+    } else {
+      // Couldn't match the argument at all. Print the help.
+      Status s = Status::InvalidArgument(
+          Substitute("unknown command '$0'\n", argv[i]));
+      cerr << s.ToString() << cur->BuildHelp(chain) << endl;
+      return 1;
+    }
   }
 
-  // We made it to a subaction with no arguments left. Run the subaction if
-  // possible, otherwise print its help.
-  const Action* last = &chain.back();
-  if (show_help || !last->run) {
-    cerr << last->help(chain) << endl;
-    return 1;
-  } else {
-    DCHECK(last->run);
-    return DispatchCommand(chain, {});
-  }
+  // Ran out of arguments before reaching an action. Print the last mode's help.
+  DCHECK(!chain.empty());
+  const Mode* last = chain.back();
+  cerr << last->BuildHelp(chain) << endl;
+  return 1;
 }
 
 } // namespace tools
@@ -145,21 +154,8 @@ static bool ParseCommandLineFlags(int* argc, char*** argv) {
 }
 
 int main(int argc, char** argv) {
-  kudu::tools::Action root = {
-      argv[0],
-      "The root action", // doesn't matter, won't get printed
-      nullptr,
-      &kudu::tools::BuildNonLeafActionHelpString,
-      {
-          kudu::tools::BuildFsAction(),
-          kudu::tools::BuildTabletAction()
-      },
-      {} // no gflags
-  };
-  string usage = root.help({ root });
-  google::SetUsageMessage(usage);
   bool show_help = ParseCommandLineFlags(&argc, &argv);
   FLAGS_logtostderr = true;
   kudu::InitGoogleLoggingSafe(argv[0]);
-  return kudu::tools::RunTool(root, argc, argv, show_help);
+  return kudu::tools::RunTool(argc, argv, show_help);
 }

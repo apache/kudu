@@ -95,11 +95,13 @@ Status ParsePeerString(const string& peer_str,
   return Status::OK();
 }
 
-Status PrintReplicaUuids(const vector<Action>& chain, deque<string> args) {
+Status PrintReplicaUuids(const vector<Mode*>& chain,
+                         const Action* action,
+                         deque<string> args) {
   // Parse tablet ID argument.
   string tablet_id;
   RETURN_NOT_OK(ParseAndRemoveArg("tablet ID", &args, &tablet_id));
-  RETURN_NOT_OK(CheckNoMoreArgs(chain, args));
+  RETURN_NOT_OK(CheckNoMoreArgs(chain, action, args));
 
   FsManagerOpts opts;
   opts.read_only = true;
@@ -116,7 +118,9 @@ Status PrintReplicaUuids(const vector<Action>& chain, deque<string> args) {
   return Status::OK();
 }
 
-Status RewriteRaftConfig(const vector<Action>& chain, deque<string> args) {
+Status RewriteRaftConfig(const vector<Mode*>& chain,
+                         const Action* action,
+                         deque<string> args) {
   // Parse tablet ID argument.
   string tablet_id;
   RETURN_NOT_OK(ParseAndRemoveArg("tablet ID", &args, &tablet_id));
@@ -171,14 +175,16 @@ Status RewriteRaftConfig(const vector<Action>& chain, deque<string> args) {
   return cmeta->Flush();
 }
 
-Status Copy(const vector<Action>& chain, deque<string> args) {
+Status Copy(const vector<Mode*>& chain,
+            const Action* action,
+            deque<string> args) {
   // Parse the tablet ID and source arguments.
   string tablet_id;
   RETURN_NOT_OK(ParseAndRemoveArg("tablet ID", &args, &tablet_id));
   string rpc_address;
   RETURN_NOT_OK(ParseAndRemoveArg("source RPC address of form hostname:port",
                                   &args, &rpc_address));
-  RETURN_NOT_OK(CheckNoMoreArgs(chain, args));
+  RETURN_NOT_OK(CheckNoMoreArgs(chain, action, args));
 
   HostPort hp;
   RETURN_NOT_OK(ParseHostPortString(rpc_address, &hp));
@@ -197,52 +203,40 @@ Status Copy(const vector<Action>& chain, deque<string> args) {
 
 } // anonymous namespace
 
-Action BuildTabletAction() {
+unique_ptr<Mode> BuildTabletMode() {
   // TODO: Need to include required arguments in the help for these actions.
 
-  Action tablet_print_replica_uuids;
-  tablet_print_replica_uuids.name = "print_replica_uuids";
-  tablet_print_replica_uuids.description =
-      "Print all replica UUIDs found in a tablet's Raft configuration";
-  tablet_print_replica_uuids.help = &BuildLeafActionHelpString;
-  tablet_print_replica_uuids.run = &PrintReplicaUuids;
-  tablet_print_replica_uuids.gflags = { "fs_wal_dir", "fs_data_dirs" };
+  unique_ptr<Action> print_replica_uuids = ActionBuilder(
+      { "print_replica_uuids",
+        "Print all replica UUIDs found in a tablet's Raft configuration" },
+      &PrintReplicaUuids)
+    .AddGflag("fs_wal_dir")
+    .AddGflag("fs_data_dirs")
+    .Build();
 
+  unique_ptr<Action> rewrite_raft_config = ActionBuilder(
+      { "rewrite_raft_config", "Rewrite a replica's Raft configuration" },
+      &RewriteRaftConfig)
+    .AddGflag("fs_wal_dir")
+    .AddGflag("fs_data_dirs")
+    .Build();
 
-  Action tablet_rewrite_raft_config;
-  tablet_rewrite_raft_config.name = "rewrite_raft_config";
-  tablet_rewrite_raft_config.description =
-      "Rewrite a replica's Raft configuration";
-  tablet_rewrite_raft_config.help = &BuildLeafActionHelpString;
-  tablet_rewrite_raft_config.run = &RewriteRaftConfig;
-  tablet_rewrite_raft_config.gflags = { "fs_wal_dir", "fs_data_dirs" };
+  unique_ptr<Mode> cmeta = ModeBuilder(
+      { "cmeta", "Operate on a local Kudu tablet's consensus metadata file" })
+    .AddAction(std::move(print_replica_uuids))
+    .AddAction(std::move(rewrite_raft_config))
+    .Build();
 
-  Action tablet_cmeta;
-  tablet_cmeta.name = "cmeta";
-  tablet_cmeta.description =
-      "Operate on a local Kudu tablet's consensus metadata file";
-  tablet_cmeta.help = &BuildNonLeafActionHelpString;
-  tablet_cmeta.sub_actions = {
-      std::move(tablet_print_replica_uuids),
-      std::move(tablet_rewrite_raft_config),
-  };
+  unique_ptr<Action> copy = ActionBuilder(
+      { "copy", "Copy a replica from a remote server" }, &Copy)
+    .AddGflag("fs_wal_dir")
+    .AddGflag("fs_data_dirs")
+    .Build();
 
-  Action tablet_copy;
-  tablet_copy.name = "copy";
-  tablet_copy.description = "Copy a replica from a remote server";
-  tablet_copy.help = &BuildLeafActionHelpString;
-  tablet_copy.run = &Copy;
-  tablet_copy.gflags = { "fs_wal_dir", "fs_data_dirs" };
-
-  Action tablet;
-  tablet.name = "tablet";
-  tablet.description = "Operate on a local Kudu replica";
-  tablet.help = &BuildNonLeafActionHelpString;
-  tablet.sub_actions = {
-      tablet_cmeta,
-      tablet_copy
-  };
-  return tablet;
+  return ModeBuilder({ "tablet", "Operate on a local Kudu replica" })
+      .AddMode(std::move(cmeta))
+      .AddAction(std::move(copy))
+      .Build();
 }
 
 } // namespace tools
