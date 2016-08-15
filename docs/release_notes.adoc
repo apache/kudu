@@ -48,6 +48,7 @@ Kudu 1.0.0 are not supported.
 
 
 [[rn_1.0.0_incompatible_changes]]
+=== Incompatible changes in 1.0.0
 
 - The `kudu-pbc-dump` tool has been removed. The same functionality is now
   implemented as `kudu pbc dump`.
@@ -97,6 +98,23 @@ Clients upgrading to the new client libraries must move to the new name for
 
 - The Kudu Flume Sink now supports processing events containing Avro-encoded
   records, using the new AvroKuduOperationsProducer.
+
+- Removal of multiversion concurrency control (MVCC) history is now supported.
+  This is known as tablet history GC. This allows Kudu to reclaim disk space,
+  where previously Kudu would keep a full history of all changes made to a
+  given table since the beginning of time. Previously, the only way to reclaim
+  disk space was to drop a table.
++
+Kudu will still keep historical data, and the amount of history retained is
+  controlled by setting the configuration flag `--tablet_history_max_age_sec`,
+  which defaults to 15 minutes (expressed in seconds). The timestamp
+  represented by the current time minus `tablet_history_max_age_sec` is known
+  as the ancient history mark (AHM). When a compaction or flush occurs, Kudu
+  will remove the history of changes made prior to the ancient history mark.
+  This only affects historical data; currently-visible data will not be
+  removed. A specialized maintenance manager background task to remove existing
+  "cold" historical data that is not in a row affected by the normal compaction
+  process will be added in a future release.
 
 [[rn_0.10.0]]
 == Release notes specific to 0.10.0
