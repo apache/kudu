@@ -437,8 +437,9 @@ class Tablet {
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
                               CompactFlags flags) const;
 
-  Status DoCompactionOrFlush(const RowSetsInCompaction &input,
-                             int64_t mrs_being_flushed);
+  // Performs a merge compaction or a flush.
+  Status DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
+                                  int64_t mrs_being_flushed);
 
   // Handle the case in which a compaction or flush yielded no output rows.
   // In this case, we just need to remove the rowsets in 'rowsets' from the

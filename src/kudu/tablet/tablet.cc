@@ -810,7 +810,7 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
   input.DumpToLog();
   LOG_WITH_PREFIX(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
 
-  RETURN_NOT_OK(DoCompactionOrFlush(input, mrs_being_flushed));
+  RETURN_NOT_OK(DoMergeCompactionOrFlush(input, mrs_being_flushed));
 
   // Sanity check that no insertions happened during our flush.
   CHECK_EQ(start_insert_count, old_ms->debug_insert_count())
@@ -1270,10 +1270,11 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
   return metadata_->UpdateAndFlush(to_remove_meta, to_add, mrs_being_flushed);
 }
 
-Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs_being_flushed) {
+Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
+                                        int64_t mrs_being_flushed) {
   const char *op_name =
         (mrs_being_flushed == TabletMetadata::kNoMrsFlushed) ? "Compaction" : "Flush";
-  TRACE_EVENT2("tablet", "Tablet::DoCompactionOrFlush",
+  TRACE_EVENT2("tablet", "Tablet::DoMergeCompactionOrFlush",
                "tablet_id", tablet_id(),
                "op", op_name);
 
@@ -1355,7 +1356,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   // - Now we run the "ReupdateMissedDeltas", and copy over the first transaction to the output
   //   DMS, which later flushes.
   // The end result would be that redos[0] has timestamp 2, and redos[1] has timestamp 1.
-  // This breaks an invariant that the redo files are time-ordered, and would we would probably
+  // This breaks an invariant that the redo files are time-ordered, and we would probably
   // reapply the deltas in the wrong order on the read path.
   //
   // The way that we avoid this case is that DuplicatingRowSet's FlushDeltas method is a
@@ -1498,8 +1499,8 @@ Status Tablet::Compact(CompactFlags flags) {
 
   input.DumpToLog();
 
-  return DoCompactionOrFlush(input,
-                             TabletMetadata::kNoMrsFlushed);
+  return DoMergeCompactionOrFlush(input,
+                                  TabletMetadata::kNoMrsFlushed);
 }
 
 void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
