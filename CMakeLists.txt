@@ -982,9 +982,14 @@ if (UNIX)
     set(DOXY_SUBDIR ${CMAKE_CURRENT_BINARY_DIR}/docs/doxygen)
     set(DOXY_CLIENT_DESTDIR ${DOXY_SUBDIR}/tmp.client)
     set(DOXY_CLIENT_API_CFG ${DOXY_SUBDIR}/client_api.doxy)
+    set(DOXY_CLIENT_API_FOOTER ${DOXY_SUBDIR}/client_api.footer)
     set(DOXY_CLIENT_API_OUTDIR ${DOXY_SUBDIR}/client_api)
-    # NOTE: DOXY_CLIENT_API_OUTDIR is used in client_api.doxy.in template file
+    list(APPEND DOXY_CLIENT_API_EXCLUDE
+      "share/doc/kuduClient/samples/sample.cc")
+    # NOTE: DOXY_CLIENT_API_OUTDIR and DOXY_CLIENT_API_FOOTER are used
+    #       in client_api.doxy.in template file
     configure_file(docs/support/doxygen/client_api.doxy.in ${DOXY_CLIENT_API_CFG} @ONLY)
+    configure_file(docs/support/doxygen/client_api.footer.in ${DOXY_CLIENT_API_FOOTER} @ONLY)
     add_custom_target(doxy_install_client_alt_destdir
       COMMAND ${CMAKE_COMMAND} -E remove_directory ${DOXY_CLIENT_DESTDIR}
       COMMAND DESTDIR=${DOXY_CLIENT_DESTDIR} ${CMAKE_MAKE_PROGRAM} install

@@ -1,0 +1,9 @@
+<!-- start footer part -->
+<hr class="footer"/>
+<address class="footer">
+  <small>Generated for Kudu version @KUDU_VERSION_NUMBER@ on $datetime by Doxygen $doxygenversion</small>
+  <br>
+  <small>Copyright © $year The Apache Software Foundation.</small>
+</address>
+</body>
+</html>

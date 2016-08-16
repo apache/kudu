@@ -46,6 +46,25 @@ INPUT                  =
 # file to process, the recursive scan for files is turned on.
 RECURSIVE              = YES
 
+# The EXCLUDE tag can be used to specify files and/or directories that should be
+# excluded from the INPUT source files.  This way you can easily exclude a
+# subdirectory from a directory tree whose root is specified with the INPUT tag.
+#
+# Note that relative paths are relative to the directory from which doxygen is
+# run.
+EXCLUDE                = @DOXY_CLIENT_API_EXCLUDE@
+
+# The HTML_FOOTER tag can be used to specify a user-defined HTML footer for each
+# generated HTML page. If the tag is left blank doxygen will generate a standard
+# footer. See HTML_HEADER for more information on how to generate a default
+# footer and what special commands can be used inside the footer. See also
+# section "Doxygen usage" for information on how to generate the default footer
+# that doxygen normally uses.
+# This tag requires that the tag GENERATE_HTML is set to YES.
+# We add information about the Kudu version the documentation is generated for.
+HTML_FOOTER            = @DOXY_CLIENT_API_FOOTER@
+
+
 # The OUTPUT_DIRECTORY tag is used to specify the (relative or absolute) path
 # into which the generated documentation will be written.  If a relative path is
 # entered, it will be relative to the location where doxygen was started.  If
