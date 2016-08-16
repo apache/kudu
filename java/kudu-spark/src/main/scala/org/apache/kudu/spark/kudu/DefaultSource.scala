@@ -27,13 +27,16 @@ import org.apache.kudu.Type
 import org.apache.kudu.annotations.InterfaceStability
 import org.apache.kudu.client._
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
-import org.apache.spark.sql.SaveMode._
 
 import scala.collection.JavaConverters._
 
 /**
-  * DefaultSource for integration with Spark's dataframe datasources.
-  * This class will produce a relationProvider based on input given to it from Spark.
+  * Data source for integration with Spark's [[DataFrame]] API.
+  *
+  * Serves as a factory for [[KuduRelation]] instances for Spark. Spark will
+  * automatically look for a [[RelationProvider]] implementation named
+  * `DefaultSource` when the user specifies the path of a source during DDL
+  * operations through [[org.apache.spark.sql.DataFrameReader.format]].
   */
 @InterfaceStability.Unstable
 class DefaultSource extends RelationProvider with CreatableRelationProvider {
@@ -53,16 +56,21 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
                               parameters: Map[String, String]):
   BaseRelation = {
     val tableName = parameters.getOrElse(TABLE_KEY,
-      throw new IllegalArgumentException(s"Kudu table name must be specified in create options " +
-        s"using key '$TABLE_KEY'"))
+      throw new IllegalArgumentException(
+        s"Kudu table name must be specified in create options using key '$TABLE_KEY'"))
     val kuduMaster = parameters.getOrElse(KUDU_MASTER, "localhost")
-    val upsert = parameters.getOrElse(OPERATION, "upsert").toLowerCase match {
-      case "upsert" => true
-      case "insert" => false
-      case _ => throw new UnsupportedOperationException(s"$OPERATION must be upsert or insert")
+
+    val opParam = parameters.getOrElse(OPERATION, "upsert")
+    val operationType = opParam.toLowerCase match {
+      case "insert" => Insert
+      case "insert-ignore" => InsertIgnore
+      case "upsert" => Upsert
+      case "update" => Update
+      case "delete" => Delete
+      case _ => throw new IllegalArgumentException(s"Unsupported operation type '$opParam'")
     }
 
-    new KuduRelation(tableName, kuduMaster, upsert)(sqlContext)
+    new KuduRelation(tableName, kuduMaster, operationType)(sqlContext)
   }
 
   /**
@@ -79,7 +87,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
                               parameters: Map[String, String], data: DataFrame): BaseRelation = {
     val kuduRelation = createRelation(sqlContext, parameters)
     mode match {
-      case Append => kuduRelation.asInstanceOf[KuduRelation].insert(data, false)
+      case SaveMode.Append => kuduRelation.asInstanceOf[KuduRelation].insert(data, false)
       case _ => throw new UnsupportedOperationException(
         "Currently, only Append is supported")
     }
@@ -92,14 +100,14 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
   * Implementation of Spark BaseRelation.
   *
   * @param tableName Kudu table that we plan to read from
-  * @param kuduMaster Kudu master addresses
-  * @param upsert Whether the relation will be inserted or upserted by default
+  * @param masterAddrs Kudu master addresses
+  * @param operationType The default operation type to perform when writing to the relation
   * @param sqlContext SparkSQL context
   */
 @InterfaceStability.Unstable
 class KuduRelation(private val tableName: String,
-                   private val kuduMaster: String,
-                   private val upsert: Boolean)(
+                   private val masterAddrs: String,
+                   private val operationType: OperationType)(
                    val sqlContext: SQLContext)
 extends BaseRelation
 with PrunedFilteredScan
@@ -107,7 +115,7 @@ with InsertableRelation {
 
   import KuduRelation._
 
-  private val context: KuduContext = new KuduContext(kuduMaster)
+  private val context: KuduContext = new KuduContext(masterAddrs)
   private val table: KuduTable = context.syncClient.openTable(tableName)
 
   override def unhandledFilters(filters: Array[Filter]): Array[Filter] =
@@ -123,7 +131,7 @@ with InsertableRelation {
     val fields: Array[StructField] =
       table.getSchema.getColumns.asScala.map { columnSchema =>
         val sparkType = kuduTypeToSparkType(columnSchema.getType)
-        new StructField(columnSchema.getName, sparkType, columnSchema.isNullable)
+        StructField(columnSchema.getName, sparkType, columnSchema.isNullable)
       }.toArray
 
     new StructType(fields)
@@ -138,8 +146,8 @@ with InsertableRelation {
     */
   override def buildScan(requiredColumns: Array[String], filters: Array[Filter]): RDD[Row] = {
     val predicates = filters.flatMap(filterToPredicate)
-    new KuduRDD(kuduMaster, 1024 * 1024 * 20, requiredColumns, predicates,
-      table, context, sqlContext.sparkContext)
+    new KuduRDD(masterAddrs, 1024 * 1024 * 20, requiredColumns, predicates,
+                table, context, sqlContext.sparkContext)
   }
 
   /**
@@ -192,21 +200,19 @@ with InsertableRelation {
   }
 
   /**
-    * By default, upserts data into an existing Kudu table.
-    * If the kudu.upsert parameter is set to false, data is inserted instead of upserted.
+    * Writes data into an existing Kudu table.
+    *
+    * If the `kudu.operation` parameter is set, the data will use that operation
+    * type. If the parameter is unset, the data will be upserted.
     *
     * @param data [[DataFrame]] to be inserted into Kudu
     * @param overwrite must be false; otherwise, throws [[UnsupportedOperationException]]
     */
   override def insert(data: DataFrame, overwrite: Boolean): Unit = {
     if (overwrite) {
-      throw new UnsupportedOperationException("overwrite is not supported")
+      throw new UnsupportedOperationException("overwrite is not yet supported")
     }
-    if (upsert) {
-      context.upsertRows(data, tableName)
-    } else {
-      context.insertRows(data, tableName)
-    }
+    context.writeRows(data, tableName, operationType)
   }
 }
 

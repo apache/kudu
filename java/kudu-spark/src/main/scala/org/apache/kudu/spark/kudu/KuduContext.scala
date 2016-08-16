@@ -129,17 +129,18 @@ class KuduContext(kuduMaster: String) extends Serializable {
     * @param tableName the Kudu table to insert into
     */
   def insertRows(data: DataFrame, tableName: String): Unit = {
-    writeRows(data, tableName, table => table.newInsert())
+    writeRows(data, tableName, Insert)
   }
 
   /**
-    * Updates a Kudu table with the rows of a [[DataFrame]].
+    * Inserts the rows of a [[DataFrame]] into a Kudu table, ignoring any new
+    * rows that have a primary key conflict with existing rows.
     *
-    * @param data the data to update into Kudu
-    * @param tableName the Kudu table to update
+    * @param data the data to insert into Kudu
+    * @param tableName the Kudu table to insert into
     */
-  def updateRows(data: DataFrame, tableName: String): Unit = {
-    writeRows(data, tableName, table => table.newUpdate())
+  def insertIgnoreRows(data: DataFrame, tableName: String): Unit = {
+    writeRows(data, tableName, InsertIgnore)
   }
 
   /**
@@ -149,7 +150,17 @@ class KuduContext(kuduMaster: String) extends Serializable {
     * @param tableName the Kudu table to upsert into
     */
   def upsertRows(data: DataFrame, tableName: String): Unit = {
-    writeRows(data, tableName, table => table.newUpsert())
+    writeRows(data, tableName, Upsert)
+  }
+
+  /**
+    * Updates a Kudu table with the rows of a [[DataFrame]].
+    *
+    * @param data the data to update into Kudu
+    * @param tableName the Kudu table to update
+    */
+  def updateRows(data: DataFrame, tableName: String): Unit = {
+    writeRows(data, tableName, Update)
   }
 
   /**
@@ -157,16 +168,16 @@ class KuduContext(kuduMaster: String) extends Serializable {
     *
     * @param data the data to delete from Kudu
     *             note that only the key columns should be specified for deletes
-    * @param tableName
+    * @param tableName The Kudu tabe to delete from
     */
   def deleteRows(data: DataFrame, tableName: String): Unit = {
-    writeRows(data, tableName, table => table.newDelete())
+    writeRows(data, tableName, Delete)
   }
 
-  private def writeRows(data: DataFrame, tableName: String, newOp: KuduTable => Operation) {
+  private[kudu] def writeRows(data: DataFrame, tableName: String, operation: OperationType) {
     val schema = data.schema
     data.foreachPartition(iterator => {
-      val pendingErrors = writePartitionRows(iterator, schema, tableName, newOp)
+      val pendingErrors = writePartitionRows(iterator, schema, tableName, operation)
       val errorCount = pendingErrors.getRowErrors.length
       if (errorCount > 0) {
         val errors = pendingErrors.getRowErrors.take(5).map(_.getErrorStatus).mkString
@@ -179,17 +190,17 @@ class KuduContext(kuduMaster: String) extends Serializable {
   private def writePartitionRows(rows: Iterator[Row],
                                  schema: StructType,
                                  tableName: String,
-                                 newOp: KuduTable => Operation): RowErrorsAndOverflowStatus = {
+                                 operationType: OperationType): RowErrorsAndOverflowStatus = {
     val table: KuduTable = syncClient.openTable(tableName)
-    val kuduSchema = table.getSchema
     val indices: Array[(Int, Int)] = schema.fields.zipWithIndex.map({ case (field, sparkIdx) =>
       sparkIdx -> table.getSchema.getColumnIndex(field.name)
     })
     val session: KuduSession = syncClient.newSession
     session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
+    session.setIgnoreAllDuplicateRows(operationType.ignoreDuplicateRowErrors)
     try {
       for (row <- rows) {
-        val operation = newOp(table)
+        val operation = operationType.operation(table)
         for ((sparkIdx, kuduIdx) <- indices) {
           if (row.isNullAt(sparkIdx)) {
             operation.getRow.setNull(kuduIdx)
@@ -214,7 +225,6 @@ class KuduContext(kuduMaster: String) extends Serializable {
     }
     session.getPendingErrors
   }
-
 }
 
 private object KuduConnection {

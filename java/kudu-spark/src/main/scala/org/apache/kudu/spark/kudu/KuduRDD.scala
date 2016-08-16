@@ -50,10 +50,10 @@ class KuduRDD(val kuduMaster: String,
 
   override protected def getPartitions: Array[Partition] = {
     val builder = kuduContext.syncClient
-                         .newScanTokenBuilder(table)
-                         .batchSizeBytes(batchSize)
-                         .setProjectedColumnNames(projectedCols.toSeq.asJava)
-                         .cacheBlocks(true)
+                             .newScanTokenBuilder(table)
+                             .batchSizeBytes(batchSize)
+                             .setProjectedColumnNames(projectedCols.toSeq.asJava)
+                             .cacheBlocks(true)
 
     for (predicate <- predicates) {
       builder.addPredicate(predicate)
@@ -83,7 +83,7 @@ class KuduRDD(val kuduMaster: String,
   */
 private[spark] class KuduPartition(val index: Int,
                                    val scanToken: Array[Byte],
-                                   val locations : Array[String]) extends Partition {}
+                                   val locations: Array[String]) extends Partition {}
 
 /**
   * A Spark SQL [[Row]] iterator which wraps a [[KuduScanner]].

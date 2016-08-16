@@ -124,6 +124,29 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
     deleteRow(101)
   }
 
+  test("insert ignore rows") {
+    val df = sqlContext.read.options(kuduOptions).kudu
+    val baseDF = df.limit(1) // filter down to just the first row
+
+    // change the c2 string to abc and insert
+    val updateDF = baseDF.withColumn("c2_s", lit("abc"))
+    kuduContext.insertIgnoreRows(updateDF, tableName)
+
+    // change the key and insert
+    val insertDF = df.limit(1).withColumn("key", df("key").plus(100)).withColumn("c2_s", lit("def"))
+    kuduContext.insertIgnoreRows(insertDF, tableName)
+
+    // read the data back
+    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val collectedUpdate = newDF.filter("key = 0").collect()
+    assertEquals("0", collectedUpdate(0).getAs[String]("c2_s"))
+    val collectedInsert = newDF.filter("key = 100").collect()
+    assertEquals("def", collectedInsert(0).getAs[String]("c2_s"))
+
+    // restore the original state of the table
+    deleteRow(100)
+  }
+
   test("upsert rows") {
     val df = sqlContext.read.options(kuduOptions).kudu
     val baseDF = df.limit(1) // filter down to just the first row
