@@ -618,6 +618,10 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
 }
 
 void CatalogManager::VisitTablesAndTabletsTask() {
+  {
+    // Hack to block this function until InitSysCatalogAsync() is finished.
+    shared_lock<LockType> l(lock_);
+  }
   Consensus* consensus = sys_catalog_->tablet_peer()->consensus();
   int64_t term = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
   {
@@ -693,15 +697,17 @@ Status CatalogManager::VisitTablesAndTablets() {
 
 Status CatalogManager::InitSysCatalogAsync(bool is_first_run) {
   std::lock_guard<LockType> l(lock_);
-  sys_catalog_.reset(new SysCatalogTable(master_,
-                                         master_->metric_registry(),
-                                         Bind(&CatalogManager::ElectedAsLeaderCb,
-                                              Unretained(this))));
+  unique_ptr<SysCatalogTable> new_catalog(
+      new SysCatalogTable(master_,
+                          master_->metric_registry(),
+                          Bind(&CatalogManager::ElectedAsLeaderCb,
+                               Unretained(this))));
   if (is_first_run) {
-    RETURN_NOT_OK(sys_catalog_->CreateNew(master_->fs_manager()));
+    RETURN_NOT_OK(new_catalog->CreateNew(master_->fs_manager()));
   } else {
-    RETURN_NOT_OK(sys_catalog_->Load(master_->fs_manager()));
+    RETURN_NOT_OK(new_catalog->Load(master_->fs_manager()));
   }
+  sys_catalog_.reset(new_catalog.release());
   return Status::OK();
 }
 
