@@ -128,7 +128,6 @@ public class MiniKuduCluster implements AutoCloseable {
           "--fs_wal_dir=" + dataDirPath,
           "--fs_data_dirs=" + dataDirPath,
           "--flush_threshold_mb=1",
-          "--enable_exactly_once",
           "--tserver_master_addrs=" + masterAddresses,
           "--webserver_interface=" + localhost,
           "--local_ip_for_outbound_sockets=" + localhost,

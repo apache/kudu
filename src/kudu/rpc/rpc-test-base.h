@@ -46,8 +46,6 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/trace.h"
 
-DECLARE_bool(enable_exactly_once);
-
 namespace kudu { namespace rpc {
 
 using kudu::rpc_test::AddRequestPB;
@@ -321,7 +319,6 @@ class RpcTestBase : public KuduTest {
       n_server_reactor_threads_(3),
       keepalive_time_ms_(1000),
       metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "test.rpc_test")) {
-    FLAGS_enable_exactly_once = true;
   }
 
   void SetUp() override {

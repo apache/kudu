@@ -77,8 +77,6 @@ void ExternalMiniClusterITestBase::StartCluster(const std::vector<std::string>& 
   opts.num_tablet_servers = num_tablet_servers;
   opts.extra_master_flags = extra_master_flags;
   opts.extra_tserver_flags = extra_ts_flags;
-  // TODO remove when this is enabled by default.
-  opts.extra_tserver_flags.push_back("--enable_exactly_once");
   opts.extra_tserver_flags.push_back("--never_fsync"); // fsync causes flakiness on EC2.
   cluster_.reset(new ExternalMiniCluster(opts));
   ASSERT_OK(cluster_->Start());

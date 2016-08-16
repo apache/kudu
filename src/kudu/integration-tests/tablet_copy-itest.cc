@@ -112,9 +112,6 @@ void TabletCopyITest::StartCluster(const vector<string>& extra_tserver_flags,
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = num_tablet_servers;
   opts.extra_tserver_flags = extra_tserver_flags;
-  // Enable EO semantics for tests.
-  // TODO remove this once EO is the default.
-  opts.extra_tserver_flags.push_back("--enable_exactly_once");
   opts.extra_tserver_flags.push_back("--never_fsync"); // fsync causes flakiness on EC2.
   opts.extra_master_flags = extra_master_flags;
   cluster_.reset(new ExternalMiniCluster(opts));
