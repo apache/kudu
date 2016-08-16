@@ -30,9 +30,10 @@
 #include "kudu/util/flag_tags.h"
 
 // TODO remove this once we have fully cluster-tested this.
-DEFINE_bool(enable_exactly_once, false, "Whether to enable exactly once semantics on the client "
-    "(experimental).");
-TAG_FLAG(enable_exactly_once, experimental);
+// Despite being on by default, this is left in in case we discover
+// any issues in 0.10.0, we'll have an easy workaround to disable the feature.
+DEFINE_bool(enable_exactly_once, true, "Whether to enable exactly once semantics.");
+TAG_FLAG(enable_exactly_once, hidden);
 
 using google::protobuf::Message;
 using std::string;
