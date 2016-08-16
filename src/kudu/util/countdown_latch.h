@@ -79,8 +79,7 @@ class CountDownLatch {
   // Returns true if the count became zero, false otherwise.
   bool WaitUntil(const MonoTime& when) const {
     ThreadRestrictions::AssertWaitAllowed();
-    MonoDelta relative = when.GetDeltaSince(MonoTime::Now());
-    return WaitFor(relative);
+    return WaitFor(when - MonoTime::Now());
   }
 
   // Waits for the count on the latch to reach zero, or until 'delta' time elapses.

@@ -135,8 +135,8 @@ void Connection::Shutdown(const Status &status) {
   shutdown_status_ = status.CloneAndPrepend("RPC connection failed");
 
   if (inbound_ && inbound_->TransferStarted()) {
-    double secs_since_active = reactor_thread_->cur_time()
-        .GetDeltaSince(last_activity_time_).ToSeconds();
+    double secs_since_active =
+        (reactor_thread_->cur_time() - last_activity_time_).ToSeconds();
     LOG(WARNING) << "Shutting down connection " << ToString() << " with pending inbound data ("
                  << inbound_->StatusAsString() << ", last active "
                  << HumanReadableElapsedTime::ToShortString(secs_since_active)

@@ -426,11 +426,9 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
 }
 
 Status RaftConsensus::WaitUntilLeaderForTests(const MonoDelta& timeout) {
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(timeout);
+  MonoTime deadline = MonoTime::Now() + timeout;
   while (role() != consensus::RaftPeerPB::LEADER) {
-    MonoTime now = MonoTime::Now();
-    if (!now.ComesBefore(deadline)) {
+    if (MonoTime::Now() >= deadline) {
       return Status::TimedOut(Substitute("Peer $0 is not leader of tablet $1 after $2. Role: $3",
                                          peer_uuid(), tablet_id(), timeout.ToString(), role()));
     }
@@ -1093,9 +1091,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
 
     // Also prohibit voting for anyone for the minimum election timeout.
-    withhold_votes_until_ = MonoTime::Now();
-    withhold_votes_until_.AddDelta(MinimumElectionTimeout());
-
+    withhold_votes_until_ = MonoTime::Now() + MinimumElectionTimeout();
 
     // 1 - Early commit pending (and committed) transactions
 
@@ -1348,8 +1344,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
   // See also https://ramcloud.stanford.edu/~ongaro/thesis.pdf
   // section 4.2.3.
   MonoTime now = MonoTime::Now();
-  if (!request->ignore_live_leader() &&
-      now.ComesBefore(withhold_votes_until_)) {
+  if (!request->ignore_live_leader() && now < withhold_votes_until_) {
     return RequestVoteRespondLeaderIsAlive(request, response);
   }
 
@@ -1969,8 +1964,7 @@ Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_
     return Status::OK();
   }
 
-  MonoTime time = MonoTime::Now();
-  time.AddDelta(additional_delta);
+  MonoTime time = MonoTime::Now() + additional_delta;
 
   if (allow_logging == ALLOW_LOGGING) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Snoozing failure detection for election timeout "

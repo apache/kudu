@@ -167,11 +167,10 @@ void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
 
     double running_secs = 0;
     if (task->completion_timestamp().Initialized()) {
-      running_secs = task->completion_timestamp().GetDeltaSince(
-        task->start_timestamp()).ToSeconds();
+      running_secs =
+          (task->completion_timestamp() - task->start_timestamp()).ToSeconds();
     } else if (task->start_timestamp().Initialized()) {
-      running_secs = MonoTime::Now().GetDeltaSince(
-        task->start_timestamp()).ToSeconds();
+      running_secs = (MonoTime::Now() - task->start_timestamp()).ToSeconds();
     }
 
     *output << Substitute(

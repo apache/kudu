@@ -342,8 +342,7 @@ static void AcceptAndReadForever(Socket* listen_sock) {
   Sockaddr remote;
   CHECK_OK(listen_sock->Accept(&server_sock, &remote, 0));
 
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromSeconds(10));
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(10);
 
   size_t nread;
   uint8_t buf[1024];

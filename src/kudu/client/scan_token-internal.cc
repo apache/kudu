@@ -214,8 +214,7 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
   pb.set_cache_blocks(configuration_.spec().cache_blocks());
   pb.set_fault_tolerant(configuration_.is_fault_tolerant());
 
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(client->default_admin_operation_timeout());
+  MonoTime deadline = MonoTime::Now() + client->default_admin_operation_timeout();
 
   PartitionPruner pruner;
   pruner.Init(*table->schema().schema_, table->partition_schema(), configuration_.spec());

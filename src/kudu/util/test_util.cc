@@ -183,11 +183,10 @@ string GetTestDataDirectory() {
 
 void AssertEventually(const std::function<void(void)>& f,
                       const MonoDelta& timeout) {
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(timeout);
+  const MonoTime deadline = MonoTime::Now() + timeout;
   int attempts = 0;
 
-  while (MonoTime::Now().ComesBefore(deadline)) {
+  while (MonoTime::Now() < deadline) {
     // Capture any assertion failures within this scope (i.e. from their function)
     // into 'results'
     testing::TestPartResultArray results;

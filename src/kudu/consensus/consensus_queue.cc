@@ -299,7 +299,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   }
 
   MonoDelta unreachable_time =
-      MonoTime::Now().GetDeltaSince(peer->last_successful_communication_time);
+      MonoTime::Now() - peer->last_successful_communication_time;
   if (unreachable_time.ToSeconds() > FLAGS_follower_unavailable_considered_failed_sec) {
     if (CountVoters(*queue_state_.active_config) > 2) {
       // We never drop from 2 to 1 automatically, at least for now. We may want

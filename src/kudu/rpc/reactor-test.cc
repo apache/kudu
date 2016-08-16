@@ -70,7 +70,7 @@ TEST_F(ReactorTest, TestFunctionIsCalledAtTheRightTime) {
       MonoDelta::FromMilliseconds(100));
   latch_.Wait();
   MonoTime after = MonoTime::Now();
-  MonoDelta delta = after.GetDeltaSince(before);
+  MonoDelta delta = after - before;
   CHECK_GE(delta.ToMilliseconds(), 100);
 }
 

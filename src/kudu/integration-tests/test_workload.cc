@@ -173,12 +173,11 @@ void TestWorkload::Setup() {
 
   // Retry KuduClient::TableExists() until we make that call retry reliably.
   // See KUDU-1074.
-  MonoTime deadline(MonoTime::Now());
-  deadline.AddDelta(MonoDelta::FromSeconds(10));
+  MonoTime deadline(MonoTime::Now() + MonoDelta::FromSeconds(10));
   Status s;
   while (true) {
     s = client_->TableExists(table_name_, &table_exists);
-    if (s.ok() || deadline.ComesBefore(MonoTime::Now())) break;
+    if (s.ok() || MonoTime::Now() > deadline) break;
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
   CHECK_OK(s);

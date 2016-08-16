@@ -90,27 +90,26 @@ Status RetryFunc(const MonoTime& deadline,
                  const boost::function<Status(const MonoTime&, bool*)>& func) {
   DCHECK(deadline.Initialized());
 
-  MonoTime now = MonoTime::Now();
-  if (deadline.ComesBefore(now)) {
+  if (deadline < MonoTime::Now()) {
     return Status::TimedOut(timeout_msg);
   }
 
   double wait_secs = 0.001;
   const double kMaxSleepSecs = 2;
   while (1) {
-    MonoTime func_stime = now;
+    MonoTime func_stime = MonoTime::Now();
     bool retry = true;
     Status s = func(deadline, &retry);
     if (!retry) {
       return s;
     }
-    now = MonoTime::Now();
-    MonoDelta func_time = now.GetDeltaSince(func_stime);
+    MonoTime now = MonoTime::Now();
+    MonoDelta func_time = now - func_stime;
 
     VLOG(1) << retry_msg << " status=" << s.ToString();
     double secs_remaining = std::numeric_limits<double>::max();
     if (deadline.Initialized()) {
-      secs_remaining = deadline.GetDeltaSince(now).ToSeconds();
+      secs_remaining = (deadline - now).ToSeconds();
     }
     wait_secs = std::min(wait_secs * 1.25, kMaxSleepSecs);
 
@@ -124,8 +123,6 @@ Status RetryFunc(const MonoTime& deadline,
     VLOG(1) << "Waiting for " << HumanReadableElapsedTime::ToShortString(wait_secs)
             << " before retrying...";
     SleepFor(MonoDelta::FromSeconds(wait_secs));
-    now = MonoTime::Now();
-
   }
 
   return Status::TimedOut(timeout_msg);
@@ -155,7 +152,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
 
     // Have we already exceeded our deadline?
     MonoTime now = MonoTime::Now();
-    if (deadline.ComesBefore(now)) {
+    if (deadline < now) {
       return Status::TimedOut(Substitute("$0 timed out after deadline expired",
                                          func_name));
     }
@@ -165,8 +162,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     // leader master and retry before the overall deadline expires.
     //
     // TODO: KUDU-683 tracks cleanup for this.
-    MonoTime rpc_deadline = now;
-    rpc_deadline.AddDelta(client->default_rpc_timeout());
+    MonoTime rpc_deadline = now + client->default_rpc_timeout();
     rpc.set_deadline(MonoTime::Earliest(rpc_deadline, deadline));
 
     for (uint32_t required_feature_flag : required_feature_flags) {
@@ -199,7 +195,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     }
 
     if (s.IsTimedOut()) {
-      if (MonoTime::Now().ComesBefore(deadline)) {
+      if (MonoTime::Now() < deadline) {
         LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
                      << ") to leader Master (" << leader_master_hostport().ToString()
                      << "): " << s.ToString();

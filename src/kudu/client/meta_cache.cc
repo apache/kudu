@@ -296,7 +296,7 @@ bool MetaCacheEntry::Contains(const string& partition_key) const {
 
 bool MetaCacheEntry::stale() const {
   DCHECK(Initialized());
-  return expiration_time_.ComesBefore(MonoTime::Now()) ||
+  return expiration_time_ < MonoTime::Now() ||
          (!is_non_covered_range() && tablet_->stale());
 }
 
@@ -311,7 +311,7 @@ string MetaCacheEntry::DebugString(const KuduTable* table) const {
   string upper_bound_string = upper_bound.empty() ? "<end>" :
     table->partition_schema().PartitionKeyDebugString(upper_bound, *table->schema().schema_);
 
-  MonoDelta ttl = expiration_time_.GetDeltaSince(MonoTime::Now());
+  MonoDelta ttl = expiration_time_ - MonoTime::Now();
 
   if (is_non_covered_range()) {
     return strings::Substitute(
@@ -646,12 +646,11 @@ void LookupRpc::SendRpc() {
 
   // See KuduClient::Data::SyncLeaderMasterRpc().
   MonoTime now = MonoTime::Now();
-  if (retrier().deadline().ComesBefore(now)) {
+  if (retrier().deadline() < now) {
     SendRpcCb(Status::TimedOut("timed out after deadline expired"));
     return;
   }
-  MonoTime rpc_deadline = now;
-  rpc_deadline.AddDelta(meta_cache_->client_->default_rpc_timeout());
+  MonoTime rpc_deadline = now + meta_cache_->client_->default_rpc_timeout();
   mutable_retrier()->mutable_controller()->set_deadline(
       MonoTime::Earliest(rpc_deadline, retrier().deadline()));
 
@@ -718,7 +717,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
 
   // Check for more generic errors (TimedOut can come from multiple places).
   if (new_status.IsTimedOut()) {
-    if (MonoTime::Now().ComesBefore(retrier().deadline())) {
+    if (MonoTime::Now() < retrier().deadline()) {
       if (meta_cache_->client_->IsMultiMaster()) {
         LOG(WARNING) << "Leader Master timed out, re-trying...";
         ResetMasterLeaderAndRetry();
@@ -770,8 +769,8 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
   VLOG(2) << "Processing master response for " << rpc.ToString()
           << ". Response: " << rpc.resp().ShortDebugString();
 
-  MonoTime expiration_time = MonoTime::Now();
-  expiration_time.AddDelta(MonoDelta::FromMilliseconds(rpc.resp().ttl_millis()));
+  MonoTime expiration_time = MonoTime::Now() +
+      MonoDelta::FromMilliseconds(rpc.resp().ttl_millis());
 
   std::lock_guard<rw_spinlock> l(lock_);
   TabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,

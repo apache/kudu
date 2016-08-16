@@ -2033,12 +2033,12 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
     MonoTime before = MonoTime::Now();
     InsertTestRowsRemote(0, i, 1);
     MonoTime after = MonoTime::Now();
-    MonoDelta delta = after.GetDeltaSince(before);
+    MonoDelta delta = after - before;
     histogram->Increment(delta.ToMicroseconds());
   }
 
   MonoTime end = MonoTime::Now();
-  double throughput = ((max_rows - warmup) * 1.0) / end.GetDeltaSince(start).ToSeconds();
+  double throughput = ((max_rows - warmup) * 1.0) / (end - start).ToSeconds();
 
   // Generate the JSON.
   std::stringstream out;

@@ -124,9 +124,8 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
   if (backoff) {
     MonoDelta sleep =
         KuduClient::Data::ComputeExponentialBackoff(scan_attempts_);
-    MonoTime now = MonoTime::Now();
-    now.AddDelta(sleep);
-    if (deadline.ComesBefore(now)) {
+    MonoTime now = MonoTime::Now() + sleep;
+    if (deadline < now) {
       Status ret = Status::TimedOut("unable to retry before timeout",
                                     err.status.ToString());
       return last_error_.ok() ?
@@ -182,7 +181,7 @@ ScanRpcStatus KuduScanner::Data::AnalyzeResponse(const Status& rpc_status,
     }
 
     if (rpc_status.IsTimedOut()) {
-      if (overall_deadline.Equals(deadline)) {
+      if (overall_deadline == deadline) {
         return ScanRpcStatus{ScanRpcStatus::OVERALL_DEADLINE_EXCEEDED, rpc_status};
       } else {
         return ScanRpcStatus{ScanRpcStatus::RPC_DEADLINE_EXCEEDED, rpc_status};
@@ -231,8 +230,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
   // if the first server we try happens to be hung.
   MonoTime rpc_deadline;
   if (allow_time_for_failover) {
-    rpc_deadline = MonoTime::Now();
-    rpc_deadline.AddDelta(table_->client()->default_rpc_timeout());
+    rpc_deadline = MonoTime::Now() + table_->client()->default_rpc_timeout();
     rpc_deadline = MonoTime::Earliest(overall_deadline, rpc_deadline);
   } else {
     rpc_deadline = overall_deadline;
@@ -353,9 +351,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     // currently have any known leader. We should sleep and retry, since
     // it's likely that the tablet is undergoing a leader election and will
     // soon have one.
-    if (lookup_status.IsServiceUnavailable() &&
-        MonoTime::Now().ComesBefore(deadline)) {
-
+    if (lookup_status.IsServiceUnavailable() && MonoTime::Now() < deadline) {
       // ServiceUnavailable means that we have already blacklisted all of the candidate
       // tablet servers. So, we clear the list so that we will cycle through them all
       // another time.

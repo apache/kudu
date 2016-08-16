@@ -213,8 +213,8 @@ Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
       break;
     }
 
-    MonoDelta diff = MonoTime::Now().GetDeltaSince(start_time);
-    if (diff.MoreThan(timeout)) {
+    MonoDelta diff = MonoTime::Now() - start_time;
+    if (diff > timeout) {
       return Status::TimedOut(Substitute("Timed out waiting for all transactions to finish. "
                                          "$0 transactions pending. Waited for $1",
                                          txns.size(), diff.ToString()));

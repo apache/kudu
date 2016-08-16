@@ -93,7 +93,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteRpcPerSec) {
       CHECK_OK(session->Apply(insert.release()));
     }
     MonoTime end = MonoTime::Now();
-    MonoDelta delta = end.GetDeltaSince(begin);
+    MonoDelta delta = end - begin;
     double qps = TARGET_QPS / delta.ToSeconds();
     LOG(INFO) << "Iteration " << t << " qps: " << qps;
     ASSERT_LE(qps, TARGET_QPS * 1.2f);
@@ -125,7 +125,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteBytesPerSec) {
       CHECK_OK(session->Apply(insert.release()));
     }
     MonoTime end = MonoTime::Now();
-    MonoDelta delta = end.GetDeltaSince(begin);
+    MonoDelta delta = end - begin;
     double qps = TARGET_QPS / delta.ToSeconds();
     double bps = TARGET_QPS * BYTES_PER_RPC / delta.ToSeconds();
     LOG(INFO) << "Iteration " << t << " qps: " << qps << " " << bps << " byte/s";

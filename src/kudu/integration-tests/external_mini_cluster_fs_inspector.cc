@@ -223,13 +223,12 @@ Status ExternalMiniClusterFsInspector::CheckTabletDataStateOnTS(
 }
 
 Status ExternalMiniClusterFsInspector::WaitForNoData(const MonoDelta& timeout) {
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(timeout);
+  MonoTime deadline = MonoTime::Now() + timeout;
   Status s;
   while (true) {
     s = CheckNoData();
     if (s.ok()) return Status::OK();
-    if (deadline.ComesBefore(MonoTime::Now())) {
+    if (deadline < MonoTime::Now()) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -238,13 +237,12 @@ Status ExternalMiniClusterFsInspector::WaitForNoData(const MonoDelta& timeout) {
 }
 
 Status ExternalMiniClusterFsInspector::WaitForNoDataOnTS(int index, const MonoDelta& timeout) {
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(timeout);
+  MonoTime deadline = MonoTime::Now() + timeout;
   Status s;
   while (true) {
     s = CheckNoDataOnTS(index);
     if (s.ok()) return Status::OK();
-    if (deadline.ComesBefore(MonoTime::Now())) {
+    if (deadline < MonoTime::Now()) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -257,12 +255,11 @@ Status ExternalMiniClusterFsInspector::WaitForMinFilesInTabletWalDirOnTS(int ind
                                                                          int count,
                                                                          const MonoDelta& timeout) {
   int seen = 0;
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(timeout);
+  MonoTime deadline = MonoTime::Now() + timeout;
   while (true) {
     seen = CountWALSegmentsForTabletOnTS(index, tablet_id);
     if (seen >= count) return Status::OK();
-    if (deadline.ComesBefore(MonoTime::Now())) {
+    if (deadline < MonoTime::Now()) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -274,14 +271,13 @@ Status ExternalMiniClusterFsInspector::WaitForMinFilesInTabletWalDirOnTS(int ind
 
 Status ExternalMiniClusterFsInspector::WaitForReplicaCount(int expected, const MonoDelta& timeout) {
   Status s;
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(timeout);
+  MonoTime deadline = MonoTime::Now() + timeout;
   int found;
   while (true) {
     found = CountReplicasInMetadataDirs();
     if (found == expected) return Status::OK();
     if (CountReplicasInMetadataDirs() == expected) return Status::OK();
-    if (deadline.ComesBefore(MonoTime::Now())) {
+    if (MonoTime::Now() > deadline) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -297,17 +293,16 @@ Status ExternalMiniClusterFsInspector::WaitForTabletDataStateOnTS(
     const vector<TabletDataState>& expected_states,
     const MonoDelta& timeout) {
   MonoTime start = MonoTime::Now();
-  MonoTime deadline = start;
-  deadline.AddDelta(timeout);
+  MonoTime deadline = start + timeout;
   Status s;
   while (true) {
     s = CheckTabletDataStateOnTS(index, tablet_id, expected_states);
     if (s.ok()) return Status::OK();
-    if (deadline.ComesBefore(MonoTime::Now())) break;
+    if (MonoTime::Now() > deadline) break;
     SleepFor(MonoDelta::FromMilliseconds(5));
   }
   return Status::TimedOut(Substitute("Timed out after $0 waiting for correct tablet state: $1",
-                                     MonoTime::Now().GetDeltaSince(start).ToString(),
+                                     (MonoTime::Now() - start).ToString(),
                                      s.ToString()));
 }
 
@@ -317,8 +312,7 @@ Status ExternalMiniClusterFsInspector::WaitForFilePatternInTabletWalDirOnTs(
     const vector<string>& substrings_disallowed,
     const MonoDelta& timeout) {
   Status s;
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(timeout);
+  MonoTime deadline = MonoTime::Now() + timeout;
 
   string data_dir = cluster_->tablet_server(ts_index)->data_dir();
   string ts_wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
@@ -363,7 +357,7 @@ Status ExternalMiniClusterFsInspector::WaitForFilePatternInTabletWalDirOnTs(
     if (!any_missing_required && !any_present_disallowed) {
       return Status::OK();
     }
-    if (deadline.ComesBefore(MonoTime::Now())) {
+    if (MonoTime::Now() > deadline) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));

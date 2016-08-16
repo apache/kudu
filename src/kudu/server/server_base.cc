@@ -262,8 +262,8 @@ void ServerBase::MetricsLoggingThread() {
 
   MonoTime next_log = MonoTime::Now();
   while (!stop_metrics_logging_latch_.WaitUntil(next_log)) {
-    next_log = MonoTime::Now();
-    next_log.AddDelta(MonoDelta::FromMilliseconds(options_.metrics_log_interval_ms));
+    next_log = MonoTime::Now() +
+        MonoDelta::FromMilliseconds(options_.metrics_log_interval_ms);
 
     std::stringstream buf;
     buf << "metrics " << GetCurrentTimeMicros() << " ";
@@ -278,7 +278,7 @@ void ServerBase::MetricsLoggingThread() {
     Status s = metric_registry_->WriteAsJson(&writer, metrics, opts);
     if (!s.ok()) {
       WARN_NOT_OK(s, "Unable to collect metrics to log");
-      next_log.AddDelta(kWaitBetweenFailures);
+      next_log += kWaitBetweenFailures;
       continue;
     }
 
@@ -287,7 +287,7 @@ void ServerBase::MetricsLoggingThread() {
     s = log.Append(buf.str());
     if (!s.ok()) {
       WARN_NOT_OK(s, "Unable to write metrics to log");
-      next_log.AddDelta(kWaitBetweenFailures);
+      next_log += kWaitBetweenFailures;
       continue;
     }
   }

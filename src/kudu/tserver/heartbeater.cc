@@ -424,15 +424,15 @@ void Heartbeater::Thread::RunThread() {
   last_hb_response_.set_needs_full_tablet_report(true);
 
   while (true) {
-    MonoTime next_heartbeat = MonoTime::Now();
-    next_heartbeat.AddDelta(MonoDelta::FromMilliseconds(GetMillisUntilNextHeartbeat()));
+    MonoTime next_heartbeat =
+        MonoTime::Now() + MonoDelta::FromMilliseconds(GetMillisUntilNextHeartbeat());
 
     // Wait for either the heartbeat interval to elapse, or for an "ASAP" heartbeat,
     // or for the signal to shut down.
     {
       MutexLock l(mutex_);
       while (true) {
-        MonoDelta remaining = next_heartbeat.GetDeltaSince(MonoTime::Now());
+        MonoDelta remaining = next_heartbeat - MonoTime::Now();
         if (remaining.ToMilliseconds() <= 0 ||
             heartbeat_asap_ ||
             !should_run_) {

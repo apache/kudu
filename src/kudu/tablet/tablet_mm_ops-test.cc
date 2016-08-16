@@ -48,7 +48,7 @@ class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
   void StatsShouldChange(MaintenanceOp* op) {
     SleepFor(MonoDelta::FromMilliseconds(1));
     op->UpdateStats(&stats_);
-    ASSERT_TRUE(next_time_.ComesBefore(stats_.last_modified()));
+    ASSERT_TRUE(next_time_ < stats_.last_modified());
     next_time_ = stats_.last_modified();
   }
 

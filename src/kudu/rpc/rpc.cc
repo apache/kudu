@@ -73,8 +73,7 @@ void RpcRetrier::DelayedRetryCb(Rpc* rpc, const Status& status) {
   if (new_status.ok()) {
     // Has this RPC timed out?
     if (deadline_.Initialized()) {
-      MonoTime now = MonoTime::Now();
-      if (deadline_.ComesBefore(now)) {
+      if (MonoTime::Now() > deadline_) {
         string err_str = Substitute("$0 passed its deadline", rpc->ToString());
         if (!last_error_.ok()) {
           SubstituteAndAppend(&err_str, ": $0", last_error_.ToString());

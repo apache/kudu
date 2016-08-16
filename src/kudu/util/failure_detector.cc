@@ -91,7 +91,7 @@ Status TimedFailureDetector::MessageFrom(const std::string& name, const MonoTime
 FailureDetector::NodeStatus TimedFailureDetector::GetNodeStatusUnlocked(const std::string& name,
                                                                         const MonoTime& now) {
   Node* node = FindOrDie(nodes_, name);
-  if (now.GetDeltaSince(node->last_heard_of).MoreThan(failure_period_)) {
+  if ((now - node->last_heard_of) > failure_period_) {
     node->status = DEAD;
   }
   return node->status;

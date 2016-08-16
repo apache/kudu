@@ -314,7 +314,7 @@ void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
   std::lock_guard<simple_spinlock> l(lock_);
   resp->mutable_header()->CopyFrom(header_);
   resp->set_micros_elapsed(
-    MonoTime::Now() .GetDeltaSince(start_time_).ToMicroseconds());
+      (MonoTime::Now() - start_time_).ToMicroseconds());
 }
 
 ///

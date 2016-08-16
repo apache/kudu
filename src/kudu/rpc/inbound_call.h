@@ -60,7 +60,7 @@ struct InboundCallTiming {
   MonoTime time_completed;  // Time the call handler completed.
 
   MonoDelta TotalDuration() const {
-    return time_completed.GetDeltaSince(time_received);
+    return time_completed - time_received;
   }
 };
 

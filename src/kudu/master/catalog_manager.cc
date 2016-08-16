@@ -2209,10 +2209,9 @@ class RetryingTSRpcTask : public MonitoredTask {
       replica_picker_(std::move(replica_picker)),
       table_(table),
       start_ts_(MonoTime::Now()),
+      deadline_(start_ts_ + MonoDelta::FromMilliseconds(FLAGS_unresponsive_ts_rpc_timeout_ms)),
       attempt_(0),
       state_(kStateRunning) {
-    deadline_ = start_ts_;
-    deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_unresponsive_ts_rpc_timeout_ms));
   }
 
   // Send the subclass RPC request.
@@ -2232,8 +2231,8 @@ class RetryingTSRpcTask : public MonitoredTask {
     }
 
     // Calculate and set the timeout deadline.
-    MonoTime timeout = MonoTime::Now();
-    timeout.AddDelta(MonoDelta::FromMilliseconds(FLAGS_master_ts_rpc_timeout_ms));
+    MonoTime timeout = MonoTime::Now() +
+        MonoDelta::FromMilliseconds(FLAGS_master_ts_rpc_timeout_ms);
     const MonoTime& deadline = MonoTime::Earliest(timeout, deadline_);
     rpc_.set_deadline(deadline);
 
@@ -2338,7 +2337,7 @@ class RetryingTSRpcTask : public MonitoredTask {
     MonoTime now = MonoTime::Now();
     // We assume it might take 10ms to process the request in the best case,
     // fail if we have less than that amount of time remaining.
-    int64_t millis_remaining = deadline_.GetDeltaSince(now).ToMilliseconds() - 10;
+    int64_t millis_remaining = (deadline_ - now).ToMilliseconds() - 10;
     // Exponential backoff with jitter.
     int64_t base_delay_ms;
     if (attempt_ <= 12) {
@@ -2353,8 +2352,6 @@ class RetryingTSRpcTask : public MonitoredTask {
       LOG(WARNING) << "Request timed out: " << description();
       MarkFailed();
     } else {
-      MonoTime new_start_time = now;
-      new_start_time.AddDelta(MonoDelta::FromMilliseconds(delay_millis));
       LOG(INFO) << "Scheduling retry of " << description() << " with a delay"
                 << " of " << delay_millis << "ms (attempt = " << attempt_ << ")...";
       master_->messenger()->ScheduleOnReactor(
@@ -2455,8 +2452,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
                      const TabletMetadataLock& tablet_lock)
     : RetrySpecificTSRpcTask(master, permanent_uuid, tablet->table()),
       tablet_id_(tablet->tablet_id()) {
-    deadline_ = start_ts_;
-    deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_tablet_creation_timeout_ms));
+    deadline_ = start_ts_ + MonoDelta::FromMilliseconds(FLAGS_tablet_creation_timeout_ms);
 
     TableMetadataLock table_lock(tablet->table().get(), TableMetadataLock::READ);
     req_.set_dest_uuid(permanent_uuid);
@@ -2960,7 +2956,7 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
                                                 DeferredAssignmentActions* deferred,
                                                 vector<scoped_refptr<TabletInfo> >* new_tablets) {
   MonoDelta time_since_updated =
-      MonoTime::Now().GetDeltaSince(tablet->last_create_tablet_time());
+      MonoTime::Now() - tablet->last_create_tablet_time();
   int64_t remaining_timeout_ms =
       FLAGS_tablet_creation_timeout_ms - time_since_updated.ToMilliseconds();
 

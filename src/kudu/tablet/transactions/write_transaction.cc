@@ -177,7 +177,7 @@ void WriteTransaction::Finish(TransactionResult result) {
         metrics->commit_wait_duration->Increment(state_->metrics().commit_wait_duration_usec);
       }
       uint64_t op_duration_usec =
-          MonoTime::Now().GetDeltaSince(start_time_).ToMicroseconds();
+          (MonoTime::Now() - start_time_).ToMicroseconds();
       switch (state()->external_consistency_mode()) {
         case CLIENT_PROPAGATED:
           metrics->write_op_duration_client_propagated_consistency->Increment(op_duration_usec);
@@ -194,7 +194,7 @@ void WriteTransaction::Finish(TransactionResult result) {
 
 string WriteTransaction::ToString() const {
   MonoTime now(MonoTime::Now());
-  MonoDelta d = now.GetDeltaSince(start_time_);
+  MonoDelta d = now - start_time_;
   WallTime abs_time = WallTime_Now() - d.ToSeconds();
   string abs_time_formatted;
   StringAppendStrftime(&abs_time_formatted, "%Y-%m-%d %H:%M:%S", (time_t)abs_time, true);

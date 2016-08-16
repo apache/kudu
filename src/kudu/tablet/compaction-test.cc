@@ -749,8 +749,7 @@ TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
 
   // Block deletion may happen asynchronously, so let's loop for a bit until
   // the space becomes free.
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromSeconds(30));
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(30);
   while (true) {
     uint64_t bytes_after;
     ASSERT_OK(env_->GetFileSizeOnDiskRecursively(
@@ -759,7 +758,7 @@ TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
                             bytes_before, bytes_after);
     if (bytes_after < bytes_before) {
       break;
-    } else if (deadline.ComesBefore(MonoTime::Now())) {
+    } else if (MonoTime::Now() > deadline) {
       FAIL() << "Timed out waiting for compaction to reduce data block disk "
              << "space usage";
     }

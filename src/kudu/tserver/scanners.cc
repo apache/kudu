@@ -159,7 +159,7 @@ void ScannerManager::RemoveExpiredScanners() {
       SharedScanner& scanner = it->second;
       MonoDelta time_live =
           scanner->TimeSinceLastAccess(MonoTime::Now());
-      if (time_live.MoreThan(scanner_ttl)) {
+      if (time_live > scanner_ttl) {
         // TODO: once we have a metric for the number of scanners expired, make this a
         // VLOG(1).
         LOG(INFO) << "Expiring scanner id: " << it->first << ", of tablet " << scanner->tablet_id()

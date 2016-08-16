@@ -278,19 +278,17 @@ class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporte
   // Otherwise, returns true.
   bool WaitFor(const MonoDelta& timeout) const {
     MonoTime start = MonoTime::Now();
-
-    MonoTime deadline = start;
-    deadline.AddDelta(timeout);
+    MonoTime deadline = start + timeout;
 
     bool done = false;
     while (!done) {
       MonoTime now = MonoTime::Now();
-      int rem_ms = deadline.GetDeltaSince(now).ToMilliseconds();
+      int rem_ms = (deadline - now).ToMilliseconds();
       if (rem_ms <= 0) return false;
 
       done = responses_.WaitFor(MonoDelta::FromMilliseconds(std::min(rem_ms, 5000)));
       string status = done ? "finished in " : "running for ";
-      int run_time_sec = MonoTime::Now().GetDeltaSince(start).ToSeconds();
+      int run_time_sec = (MonoTime::Now() - start).ToSeconds();
       Info() << "Checksum " << status << run_time_sec << "s: "
              << responses_.count() << "/" << expected_count_ << " replicas remaining ("
              << HumanReadableNumBytes::ToString(disk_bytes_summed_.Load()) << " from disk, "

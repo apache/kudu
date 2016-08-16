@@ -111,8 +111,7 @@ Status CheckDeadlineNotWithinMicros(const MonoTime& deadline, int64_t wait_for_u
     // No deadline.
     return Status::OK();
   }
-  int64_t us_until_deadline = deadline.GetDeltaSince(
-      MonoTime::Now()).ToMicroseconds();
+  int64_t us_until_deadline = (deadline - MonoTime::Now()).ToMicroseconds();
   if (us_until_deadline <= wait_for_usec) {
     return Status::TimedOut(Substitute(
         "specified time is $0us in the future, but deadline expires in $1us",

@@ -920,9 +920,8 @@ TEST_F(MasterTest, TestMasterMetadataConsistentDespiteFailures) {
 
   // Spend some time hammering the master with create/alter/delete operations.
   MonoDelta time_to_run = MonoDelta::FromSeconds(AllowSlowTests() ? 10 : 1);
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(time_to_run);
-  while (MonoTime::Now().ComesBefore(deadline)) {
+  MonoTime deadline = MonoTime::Now() + time_to_run;
+  while (MonoTime::Now() < deadline) {
     int next_action = r.Uniform(3);
     switch (next_action) {
       case 0:

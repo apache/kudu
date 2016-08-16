@@ -488,9 +488,7 @@ MonoTime Batcher::ComputeDeadlineUnlocked() const {
                                 << GetStackTrace();
     timeout = MonoDelta::FromSeconds(60);
   }
-  MonoTime ret = MonoTime::Now();
-  ret.AddDelta(timeout);
-  return ret;
+  return MonoTime::Now() + timeout;
 }
 
 void Batcher::FlushAsync(KuduStatusCallback* cb) {

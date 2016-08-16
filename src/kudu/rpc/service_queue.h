@@ -127,13 +127,13 @@ class LifoServiceQueue {
                            const InboundCall* b) {
     auto time_a = a->GetClientDeadline();
     auto time_b = b->GetClientDeadline();
-    if (time_a.Equals(time_b)) {
+    if (time_a == time_b) {
       // If two calls have the same deadline (most likely because neither one specified
       // one) then we should order them by arrival order.
       time_a = a->GetTimeReceived();
       time_b = b->GetTimeReceived();
     }
-    return time_a.ComesBefore(time_b);
+    return time_a < time_b;
   }
 
   // Struct functor wrapper for DeadlineLess.

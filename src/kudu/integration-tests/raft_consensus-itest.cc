@@ -148,8 +148,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
                        vector<string>* results) {
     LOG(INFO) << "Waiting for row count " << expected_count << "...";
     MonoTime start = MonoTime::Now();
-    MonoTime deadline = MonoTime::Now();
-    deadline.AddDelta(MonoDelta::FromSeconds(90));
+    MonoTime deadline = start + MonoDelta::FromSeconds(90);
     while (true) {
       results->clear();
       NO_FATALS(ScanReplica(replica_proxy, results));
@@ -157,14 +156,14 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
         return;
       }
       SleepFor(MonoDelta::FromMilliseconds(10));
-      if (!MonoTime::Now().ComesBefore(deadline)) {
+      if (MonoTime::Now() >= deadline) {
         break;
       }
     }
     MonoTime end = MonoTime::Now();
     LOG(WARNING) << "Didn't reach row count " << expected_count;
     FAIL() << "Did not reach expected row count " << expected_count
-           << " after " << end.GetDeltaSince(start).ToString()
+           << " after " << (end - start).ToString()
            << ": rows: " << *results;
   }
 
@@ -1480,8 +1479,7 @@ void RaftConsensusITest::WaitForReplicasReportedToMaster(
     WaitForLeader wait_for_leader,
     bool* has_leader,
     master::TabletLocationsPB* tablet_locations) {
-  MonoTime deadline(MonoTime::Now());
-  deadline.AddDelta(timeout);
+  MonoTime deadline(MonoTime::Now() + timeout);
   while (true) {
     ASSERT_OK(GetTabletLocations(tablet_id, timeout, tablet_locations));
     *has_leader = false;
@@ -1497,7 +1495,7 @@ void RaftConsensusITest::WaitForReplicasReportedToMaster(
         break;
       }
     }
-    if (deadline.ComesBefore(MonoTime::Now())) break;
+    if (deadline < MonoTime::Now()) break;
     SleepFor(MonoDelta::FromMilliseconds(20));
   }
   ASSERT_EQ(num_replicas, tablet_locations->replicas_size()) << tablet_locations->DebugString();
@@ -2219,8 +2217,7 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
   workload.Start();
 
   // Run until the leader has rejected several transactions.
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(kMaxWaitTime);
+  MonoTime deadline = MonoTime::Now() + kMaxWaitTime;
   while (true) {
     int64_t num_rejections = 0;
     ASSERT_OK(cluster_->tablet_server(leader_ts_idx)->GetInt64Metric(
@@ -2231,7 +2228,7 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
         &num_rejections));
     if (num_rejections >= kMinRejections) {
       break;
-    } else if (deadline.ComesBefore(MonoTime::Now())) {
+    } else if (deadline < MonoTime::Now()) {
       FAIL() << "Ran for " << kMaxWaitTime.ToString() << ", deadline expired";
     }
     SleepFor(MonoDelta::FromMilliseconds(200));

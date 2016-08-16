@@ -239,8 +239,7 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
   work.Start();
 
   // Wait until we've rejected some number of requests.
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(kMaxWaitTime);
+  MonoTime deadline = MonoTime::Now() + kMaxWaitTime;
   while (true) {
     int64_t total_num_rejections = 0;
 
@@ -273,7 +272,7 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
     }
     if (total_num_rejections >= kMinRejections) {
       break;
-    } else if (deadline.ComesBefore(MonoTime::Now())) {
+    } else if (MonoTime::Now() > deadline) {
       FAIL() << "Ran for " << kMaxWaitTime.ToString() << ", deadline expired and only saw "
              << total_num_rejections << " memory rejections";
     }

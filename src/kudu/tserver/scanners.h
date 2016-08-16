@@ -238,7 +238,7 @@ class Scanner {
   // Return the delta from the last time this scan was updated to 'now'.
   MonoDelta TimeSinceLastAccess(const MonoTime& now) const {
     std::lock_guard<simple_spinlock> l(lock_);
-    return now.GetDeltaSince(last_access_time_);
+    return now - last_access_time_;
   }
 
   // Returns the time this scan was started.

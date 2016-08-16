@@ -344,7 +344,7 @@ class PeriodicWebUIChecker {
       }
       // Sleep until the next period
       const MonoTime end = MonoTime::Now();
-      const MonoDelta elapsed = end.GetDeltaSince(start);
+      const MonoDelta elapsed = end - start;
       const int64_t sleep_ns = period_.ToNanoseconds() - elapsed.ToNanoseconds();
       if (sleep_ns > 0) {
         SleepFor(MonoDelta::FromNanoseconds(sleep_ns));
@@ -446,8 +446,7 @@ Status LinkedListTester::LoadLinkedList(
   RETURN_NOT_OK(ht_clock->Init());
 
   MonoTime start = MonoTime::Now();
-  MonoTime deadline = start;
-  deadline.AddDelta(run_for);
+  MonoTime deadline = start + run_for;
 
   client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(15000);
@@ -462,8 +461,7 @@ Status LinkedListTester::LoadLinkedList(
   }
 
   MonoDelta sample_interval = MonoDelta::FromMicroseconds(run_for.ToMicroseconds() / num_samples);
-  MonoTime next_sample = start;
-  next_sample.AddDelta(sample_interval);
+  MonoTime next_sample = start + sample_interval;
   LOG(INFO) << "Running for: " << run_for.ToString();
   LOG(INFO) << "Sampling every " << sample_interval.ToMicroseconds() << " us";
 
@@ -476,15 +474,15 @@ Status LinkedListTester::LoadLinkedList(
     }
 
     MonoTime now = MonoTime::Now();
-    if (next_sample.ComesBefore(now)) {
+    if (next_sample < now) {
       Timestamp now = ht_clock->Now();
       sampled_timestamps_and_counts_.push_back(
           pair<uint64_t,int64_t>(now.ToUint64(), *written_count));
-      next_sample.AddDelta(sample_interval);
+      next_sample += sample_interval;
       LOG(INFO) << "Sample at HT timestamp: " << now.ToString()
                 << " Inserted count: " << *written_count;
     }
-    if (deadline.ComesBefore(now)) {
+    if (deadline < now) {
       LOG(INFO) << "Finished inserting list. Added " << (*written_count) << " in chain";
       LOG(INFO) << "Last entries inserted had keys:";
       for (int i = 0; i < num_chains_; i++) {
@@ -499,7 +497,7 @@ Status LinkedListTester::LoadLinkedList(
 
     MonoTime flush_start(MonoTime::Now());
     FlushSessionOrDie(session);
-    MonoDelta elapsed = MonoTime::Now().GetDeltaSince(flush_start);
+    MonoDelta elapsed = MonoTime::Now() - flush_start;
     latency_histogram_.Increment(elapsed.ToMicroseconds());
 
     (*written_count) += chains.size();

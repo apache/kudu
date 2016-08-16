@@ -77,9 +77,8 @@ void DoNothing(const string& s) {
 }
 
 Status WaitUntilLeaderForTests(RaftConsensus* raft) {
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromSeconds(15));
-  while (MonoTime::Now().ComesBefore(deadline)) {
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(15);
+  while (MonoTime::Now() < deadline) {
     if (raft->GetActiveRole() == RaftPeerPB::LEADER) {
       return Status::OK();
     }
@@ -324,8 +323,7 @@ class RaftConsensusQuorumTest : public KuduTest {
           return;
         }
       }
-      MonoDelta elapsed = MonoTime::Now().GetDeltaSince(start);
-      if (elapsed.MoreThan(timeout)) {
+      if (MonoTime::Now() > (start + timeout)) {
         break;
       }
       SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));

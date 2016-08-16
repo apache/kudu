@@ -660,27 +660,27 @@ class TraceEventSyntheticDelayTest : public KuduTest,
     return delay;
   }
 
-  void AdvanceTime(MonoDelta delta) { now_.AddDelta(delta); }
+  void AdvanceTime(MonoDelta delta) { now_ += delta; }
 
   int TestFunction() {
     MonoTime start = Now();
     { TRACE_EVENT_SYNTHETIC_DELAY("test.Delay"); }
     MonoTime end = Now();
-    return end.GetDeltaSince(start).ToMilliseconds();
+    return (end - start).ToMilliseconds();
   }
 
   int AsyncTestFunctionBegin() {
     MonoTime start = Now();
     { TRACE_EVENT_SYNTHETIC_DELAY_BEGIN("test.AsyncDelay"); }
     MonoTime end = Now();
-    return end.GetDeltaSince(start).ToMilliseconds();
+    return (end - start).ToMilliseconds();
   }
 
   int AsyncTestFunctionEnd() {
     MonoTime start = Now();
     { TRACE_EVENT_SYNTHETIC_DELAY_END("test.AsyncDelay"); }
     MonoTime end = Now();
-    return end.GetDeltaSince(start).ToMilliseconds();
+    return (end - start).ToMilliseconds();
   }
 
  private:
@@ -769,11 +769,11 @@ TEST_F(TraceEventSyntheticDelayTest, BeginParallel) {
   EXPECT_FALSE(!end_times[1].Initialized());
 
   delay->EndParallel(end_times[0]);
-  EXPECT_GE(Now().GetDeltaSince(start_time).ToMilliseconds(), kTargetDurationMs);
+  EXPECT_GE((Now() - start_time).ToMilliseconds(), kTargetDurationMs);
 
   start_time = Now();
   delay->EndParallel(end_times[1]);
-  EXPECT_LT(Now().GetDeltaSince(start_time).ToMilliseconds(), kShortDurationMs);
+  EXPECT_LT((Now() - start_time).ToMilliseconds(), kShortDurationMs);
 }
 
 TEST_F(TraceTest, TestVLogTrace) {

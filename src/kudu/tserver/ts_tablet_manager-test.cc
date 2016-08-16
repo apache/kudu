@@ -241,10 +241,11 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
       }
     }
     if (found_tablet_2) break;
-    MonoDelta elapsed(MonoTime::Now().GetDeltaSince(start));
-    ASSERT_TRUE(elapsed.LessThan(timeout)) << "Waited too long for tablet-2 to be marked dirty: "
-                                           << elapsed.ToString() << ". "
-                                           << "Latest report: " << report.ShortDebugString();
+    MonoDelta elapsed(MonoTime::Now() - start);
+    ASSERT_TRUE(elapsed < timeout)
+        << "Waited too long for tablet-2 to be marked dirty: "
+        << elapsed.ToString() << ". "
+        << "Latest report: " << report.ShortDebugString();
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
 

@@ -94,7 +94,7 @@ std::string LogAnchorRegistry::DumpAnchorInfo() const {
     if (!buf.empty()) buf += ", ";
     SubstituteAndAppend(&buf, "LogAnchor[index=$0, age=$1s, owner=$2]",
                         anchor->log_index,
-                        now.GetDeltaSince(anchor->when_registered).ToSeconds(),
+                        (now - anchor->when_registered).ToSeconds(),
                         anchor->owner);
   }
   return buf;

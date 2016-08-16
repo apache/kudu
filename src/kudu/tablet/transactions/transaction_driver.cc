@@ -382,7 +382,7 @@ void TransactionDriver::ReplicationFinished(const Status& status) {
       transaction_status_ = status;
     }
     prepare_state_copy = prepare_state_;
-    replication_duration = replication_finished_time.GetDeltaSince(replication_start_time_);
+    replication_duration = replication_finished_time - replication_start_time_;
   }
 
 
@@ -511,7 +511,7 @@ Status TransactionDriver::CommitWait() {
       mutable_state()->tablet_peer()->clock()->WaitUntilAfter(mutable_state()->timestamp(),
                                                               MonoTime::Max()));
   mutable_state()->mutable_metrics()->commit_wait_duration_usec =
-      MonoTime::Now().GetDeltaSince(before).ToMicroseconds();
+      (MonoTime::Now() - before).ToMicroseconds();
   return Status::OK();
 }
 

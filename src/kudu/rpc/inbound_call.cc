@@ -209,7 +209,7 @@ void InboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
   if (req.include_traces() && trace_) {
     resp->set_trace_buffer(trace_->DumpToString());
   }
-  resp->set_micros_elapsed(MonoTime::Now().GetDeltaSince(timing_.time_received)
+  resp->set_micros_elapsed((MonoTime::Now() - timing_.time_received)
                            .ToMicroseconds());
 }
 
@@ -240,7 +240,7 @@ void InboundCall::RecordHandlingStarted(scoped_refptr<Histogram> incoming_queue_
   DCHECK(!timing_.time_handled.Initialized());  // Protect against multiple calls.
   timing_.time_handled = MonoTime::Now();
   incoming_queue_time->Increment(
-      timing_.time_handled.GetDeltaSince(timing_.time_received).ToMicroseconds());
+      (timing_.time_handled - timing_.time_received).ToMicroseconds());
 }
 
 void InboundCall::RecordHandlingCompleted() {
@@ -255,7 +255,7 @@ void InboundCall::RecordHandlingCompleted() {
 
   if (method_info_) {
     method_info_->handler_latency_histogram->Increment(
-        timing_.time_completed.GetDeltaSince(timing_.time_handled).ToMicroseconds());
+        (timing_.time_completed - timing_.time_handled).ToMicroseconds());
   }
 }
 
@@ -265,7 +265,7 @@ bool InboundCall::ClientTimedOut() const {
   }
 
   MonoTime now = MonoTime::Now();
-  int total_time = now.GetDeltaSince(timing_.time_received).ToMilliseconds();
+  int total_time = (now - timing_.time_received).ToMilliseconds();
   return total_time > header_.timeout_millis();
 }
 
@@ -273,9 +273,7 @@ MonoTime InboundCall::GetClientDeadline() const {
   if (!header_.has_timeout_millis() || header_.timeout_millis() == 0) {
     return MonoTime::Max();
   }
-  MonoTime deadline = timing_.time_received;
-  deadline.AddDelta(MonoDelta::FromMilliseconds(header_.timeout_millis()));
-  return deadline;
+  return timing_.time_received + MonoDelta::FromMilliseconds(header_.timeout_millis());
 }
 
 MonoTime InboundCall::GetTimeReceived() const {

@@ -221,7 +221,7 @@ class LogBlockManager : public BlockManager {
   class ExpiringContainerPairGreaterThanFunctor {
    public:
     bool operator()(const ExpiringContainerPair& a, const ExpiringContainerPair& b) {
-      return b.second.ComesBefore(a.second);
+      return b.second < a.second;
     }
   };
 

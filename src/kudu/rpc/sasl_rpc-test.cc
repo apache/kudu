@@ -175,8 +175,7 @@ static void RunTimeoutNegotiationClient(Socket* sock) {
   SaslClient sasl_client(kSaslAppName, sock->GetFd());
   CHECK_OK(sasl_client.Init(kSaslAppName));
   CHECK_OK(sasl_client.EnableAnonymous());
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromMilliseconds(-100L));
+  MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   sasl_client.set_deadline(deadline);
   Status s = sasl_client.Negotiate();
   ASSERT_TRUE(s.IsTimedOut()) << "Expected timeout! Got: " << s.ToString();
@@ -194,8 +193,7 @@ static void RunTimeoutNegotiationServer(Socket* sock) {
   SaslServer sasl_server(kSaslAppName, sock->GetFd());
   CHECK_OK(sasl_server.Init(kSaslAppName));
   CHECK_OK(sasl_server.EnableAnonymous());
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromMilliseconds(-100L));
+  MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   sasl_server.set_deadline(deadline);
   Status s = sasl_server.Negotiate();
   ASSERT_TRUE(s.IsTimedOut()) << "Expected timeout! Got: " << s.ToString();

@@ -416,8 +416,7 @@ TEST_F(RpcStubTest, TestEarliestDeadlineFirstQueue) {
         while (!done.load()) {
           // Set a deadline in the future. We'll keep using this same deadline
           // on each of our retries.
-          MonoTime deadline = MonoTime::Now();
-          deadline.AddDelta(MonoDelta::FromSeconds(8));
+          MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(8);
 
           for (int attempt = 1; !done.load(); attempt++) {
             RpcController controller;

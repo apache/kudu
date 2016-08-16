@@ -87,7 +87,7 @@ void RpcController::set_timeout(const MonoDelta& timeout) {
 }
 
 void RpcController::set_deadline(const MonoTime& deadline) {
-  set_timeout(deadline.GetDeltaSince(MonoTime::Now()));
+  set_timeout(deadline - MonoTime::Now());
 }
 
 void RpcController::SetRequestIdPB(std::unique_ptr<RequestIdPB> request_id) {

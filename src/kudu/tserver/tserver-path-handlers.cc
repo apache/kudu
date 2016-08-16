@@ -417,7 +417,7 @@ void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& req,
 string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
   std::stringstream html;
   uint64_t time_in_flight_us =
-      MonoTime::Now().GetDeltaSince(scanner.start_time()).ToMicroseconds();
+      (MonoTime::Now() - scanner.start_time()).ToMicroseconds();
   uint64_t time_since_last_access_us =
       scanner.TimeSinceLastAccess(MonoTime::Now()).ToMicroseconds();
 

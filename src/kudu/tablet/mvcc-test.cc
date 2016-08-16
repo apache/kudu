@@ -607,8 +607,7 @@ TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
 
   // Wait until the 'tx1' timestamp is clean -- this won't happen because the
   // transaction isn't committed yet.
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromMilliseconds(10));
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(10);
   MvccSnapshot snap;
   Status s = mgr.WaitForCleanSnapshotAtTimestamp(tx1, &snap, deadline);
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();

@@ -207,10 +207,9 @@ TEST_F(RemoteKsckTest, TestTabletServersOk) {
 }
 
 TEST_F(RemoteKsckTest, TestTableConsistency) {
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromSeconds(30));
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(30);
   Status s;
-  while (MonoTime::Now().ComesBefore(deadline)) {
+  while (MonoTime::Now() < deadline) {
     ASSERT_OK(ksck_->CheckMasterRunning());
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
     ASSERT_OK(ksck_->FetchInfoFromTabletServers());
@@ -228,10 +227,9 @@ TEST_F(RemoteKsckTest, TestChecksum) {
   LOG(INFO) << "Generating row writes...";
   ASSERT_OK(GenerateRowWrites(num_writes));
 
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromSeconds(30));
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(30);
   Status s;
-  while (MonoTime::Now().ComesBefore(deadline)) {
+  while (MonoTime::Now() < deadline) {
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
 
     err_stream_.str("");
@@ -275,8 +273,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
 
   uint64_t ts = client_->GetLatestObservedTimestamp();
   MonoTime start(MonoTime::Now());
-  MonoTime deadline = start;
-  deadline.AddDelta(MonoDelta::FromSeconds(30));
+  MonoTime deadline = start + MonoDelta::FromSeconds(30);
   Status s;
   // TODO: We need to loop here because safe time is not yet implemented.
   // Remove this loop when that is done. See KUDU-1056.
@@ -284,13 +281,13 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
     Status s = ksck_->ChecksumData(ChecksumOptions(MonoDelta::FromSeconds(10), 16, true, ts));
     if (s.ok()) break;
-    if (deadline.ComesBefore(MonoTime::Now())) break;
+    if (MonoTime::Now() > deadline) break;
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
   if (!s.ok()) {
     LOG(WARNING) << Substitute("Timed out after $0 waiting for ksck to become consistent on TS $1. "
                                "Status: $2",
-                               MonoTime::Now().GetDeltaSince(start).ToString(),
+                               (MonoTime::Now() - start).ToString(),
                                ts, s.ToString());
     EXPECT_OK(s); // To avoid ASAN complaints due to thread reading the CountDownLatch.
   }

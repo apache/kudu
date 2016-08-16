@@ -102,7 +102,7 @@ void TSDescriptor::UpdateHeartbeatTime() {
 MonoDelta TSDescriptor::TimeSinceHeartbeat() const {
   MonoTime now(MonoTime::Now());
   std::lock_guard<simple_spinlock> l(lock_);
-  return now.GetDeltaSince(last_heartbeat_);
+  return now - last_heartbeat_;
 }
 
 int64_t TSDescriptor::latest_seqno() const {
@@ -117,7 +117,7 @@ void TSDescriptor::DecayRecentReplicaCreationsUnlocked() {
 
   const double kHalflifeSecs = 60;
   MonoTime now = MonoTime::Now();
-  double secs_since_last_decay = now.GetDeltaSince(last_replica_creations_decay_).ToSeconds();
+  double secs_since_last_decay = (now - last_replica_creations_decay_).ToSeconds();
   recent_replica_creations_ *= pow(0.5, secs_since_last_decay / kHalflifeSecs);
 
   // If sufficiently small, reset down to 0 to take advantage of the fast path above.

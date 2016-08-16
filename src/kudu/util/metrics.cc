@@ -275,16 +275,15 @@ void MetricEntity::RetireOldMetrics() {
       VLOG(3) << "Metric " << it->first << " has become un-referenced. Will retire after "
               << "the retention interval";
       // This is the first time we've seen this metric as retirable.
-      metric->retire_time_ = now;
-      metric->retire_time_.AddDelta(MonoDelta::FromMilliseconds(
-                                      FLAGS_metrics_retirement_age_ms));
+      metric->retire_time_ =
+          now + MonoDelta::FromMilliseconds(FLAGS_metrics_retirement_age_ms);
       ++it;
       continue;
     }
 
     // If we've already seen this metric in a previous scan, check if it's
     // time to retire it yet.
-    if (now.ComesBefore(metric->retire_time_)) {
+    if (now < metric->retire_time_) {
       VLOG(3) << "Metric " << it->first << " is un-referenced, but still within "
               << "the retention interval";
       ++it;
@@ -676,7 +675,7 @@ ScopedLatencyMetric::ScopedLatencyMetric(Histogram* latency_hist)
 ScopedLatencyMetric::~ScopedLatencyMetric() {
   if (latency_hist_ != nullptr) {
     MonoTime time_now = MonoTime::Now();
-    latency_hist_->Increment(time_now.GetDeltaSince(time_started_).ToMicroseconds());
+    latency_hist_->Increment((time_now - time_started_).ToMicroseconds());
   }
 }
 

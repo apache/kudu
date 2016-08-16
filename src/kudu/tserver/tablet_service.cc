@@ -1590,8 +1590,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   // TODO: in the future, use the client timeout to set a budget. For now,
   // just use a half second, which should be plenty to amortize call overhead.
   int budget_ms = 500;
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromMilliseconds(budget_ms));
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(budget_ms);
 
   int64_t rows_scanned = 0;
   while (iter->HasNext()) {
@@ -1622,8 +1621,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     }
 
     // TODO: should check if RPC got cancelled, once we implement RPC cancellation.
-    MonoTime now = MonoTime::Now();
-    if (PREDICT_FALSE(!now.ComesBefore(deadline))) {
+    if (PREDICT_FALSE(MonoTime::Now() >= deadline)) {
       TRACE("Deadline expired - responding early");
       break;
     }
@@ -1732,14 +1730,13 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   // has been since the MVCC manager was able to advance its safe time. If it has been
   // a long time, it's likely that the majority of voters for this tablet are down
   // and some writes are "stuck" and therefore won't be committed.
-  MonoTime client_deadline = rpc_context->GetClientDeadline();
   // Subtract a little bit from the client deadline so that it's more likely we actually
   // have time to send our response sent back before it times out.
-  client_deadline.AddDelta(MonoDelta::FromMilliseconds(-10));
+  MonoTime client_deadline =
+      rpc_context->GetClientDeadline() - MonoDelta::FromMilliseconds(10);
 
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromSeconds(5));
-  if (client_deadline.ComesBefore(deadline)) {
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
+  if (client_deadline < deadline) {
     deadline = client_deadline;
   }
 
@@ -1750,7 +1747,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
           tmp_snap_timestamp, &snap, deadline),
       "could not wait for desired snapshot timestamp to be consistent");
 
-  uint64_t duration_usec = MonoTime::Now().GetDeltaSince(before).ToMicroseconds();
+  uint64_t duration_usec = (MonoTime::Now() - before).ToMicroseconds();
   tablet->metrics()->snapshot_read_inflight_wait_duration->Increment(duration_usec);
   TRACE("All operations in snapshot committed. Waited for $0 microseconds", duration_usec);
 
