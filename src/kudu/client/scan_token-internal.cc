@@ -192,6 +192,10 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
     pb.clear_upper_bound_primary_key();
   }
 
+  for (const auto& predicate_pair : configuration_.spec().predicates()) {
+    ColumnPredicateToPB(predicate_pair.second, pb.add_column_predicates());
+  }
+
   switch (configuration_.read_mode()) {
     case KuduScanner::READ_LATEST: pb.set_read_mode(kudu::READ_LATEST); break;
     case KuduScanner::READ_AT_SNAPSHOT: pb.set_read_mode(kudu::READ_AT_SNAPSHOT); break;
@@ -218,13 +222,29 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
   while (pruner.HasMorePartitionKeyRanges()) {
     scoped_refptr<internal::RemoteTablet> tablet;
     Synchronizer sync;
+    const string& partition_key = pruner.NextPartitionKey();
     client->data_->meta_cache_->LookupTabletByKeyOrNext(table,
-                                                        pruner.NextPartitionKey(),
+                                                        partition_key,
                                                         deadline,
                                                         &tablet,
                                                         sync.AsStatusCallback());
-    RETURN_NOT_OK(sync.Wait());
-    CHECK(tablet);
+    Status s = sync.Wait();
+    if (s.IsNotFound()) {
+      // No more tablets in the table.
+      pruner.RemovePartitionKeyRange("");
+      continue;
+    } else {
+      RETURN_NOT_OK(s);
+    }
+
+    // Check if the meta cache returned a tablet covering a partition key range past
+    // what we asked for. This can happen if the requested partition key falls
+    // in a non-covered range. In this case we can potentially prune the tablet.
+    if (partition_key < tablet->partition().partition_key_start() &&
+        pruner.ShouldPrune(tablet->partition())) {
+      pruner.RemovePartitionKeyRange(tablet->partition().partition_key_end());
+      continue;
+    }
 
     vector<internal::RemoteTabletServer*> remote_tablet_servers;
     tablet->GetRemoteTabletServers(&remote_tablet_servers);

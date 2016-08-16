@@ -43,6 +43,8 @@ using kudu::client::KuduColumnSchema;
 using kudu::client::KuduInsert;
 using kudu::client::KuduPredicate;
 using kudu::client::KuduScanner;
+using kudu::client::KuduScanToken;
+using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
@@ -265,6 +267,15 @@ class FlexPartitioningITest : public KuduTest {
   // in-memory copy 'inserted_rows_'.
   void CheckScanWithColumnPredicate(Slice col_name, int lower, int upper);
 
+  // Perform a scan via the Scan Token API with a predicate on 'col_name'
+  // BETWEEN 'lower' AND 'upper'. Verifies that the results match up with
+  // 'expected_rows'. Called by CheckScanWithColumnPredicates as an additional
+  // check.
+  void CheckScanTokensWithColumnPredicate(Slice col_name,
+                                          int lower,
+                                          int upper,
+                                          const vector<string>& expected_rows);
+
   // Like the above, but uses the primary key range scan API in the client to
   // scan between 'inserted_rows_[lower]' (inclusive) and 'inserted_rows_[upper]'
   // (exclusive).
@@ -323,7 +334,7 @@ Status FlexPartitioningITest::InsertRows(const RangePartitionOptions& range_part
 
 void FlexPartitioningITest::CheckScanWithColumnPredicate(Slice col_name, int lower, int upper) {
   KuduScanner scanner(table_.get());
-  scanner.SetTimeoutMillis(60000);
+  CHECK_OK(scanner.SetTimeoutMillis(60000));
   CHECK_OK(scanner.AddConjunctPredicate(table_->NewComparisonPredicate(
       col_name, KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(lower))));
   CHECK_OK(scanner.AddConjunctPredicate(table_->NewComparisonPredicate(
@@ -343,6 +354,35 @@ void FlexPartitioningITest::CheckScanWithColumnPredicate(Slice col_name, int low
     }
   }
   std::sort(expected_rows.begin(), expected_rows.end());
+
+  ASSERT_EQ(expected_rows.size(), rows.size());
+  ASSERT_EQ(expected_rows, rows);
+
+  NO_FATALS(CheckScanTokensWithColumnPredicate(col_name, lower, upper, expected_rows));
+}
+
+void FlexPartitioningITest::CheckScanTokensWithColumnPredicate(
+    Slice col_name, int lower, int upper, const vector<string>& expected_rows) {
+  KuduScanTokenBuilder builder(table_.get());
+  CHECK_OK(builder.SetTimeoutMillis(60000));
+
+  CHECK_OK(builder.AddConjunctPredicate(table_->NewComparisonPredicate(
+      col_name, KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(lower))));
+  CHECK_OK(builder.AddConjunctPredicate(table_->NewComparisonPredicate(
+      col_name, KuduPredicate::LESS_EQUAL, KuduValue::FromInt(upper))));
+
+  vector<KuduScanToken*> tokens;
+  ElementDeleter DeleteTable(&tokens);
+  CHECK_OK(builder.Build(&tokens));
+
+  vector<string> rows;
+  for (auto token : tokens) {
+    KuduScanner* scanner_ptr;
+    CHECK_OK(token->IntoKuduScanner(&scanner_ptr));
+    unique_ptr<KuduScanner> scanner(scanner_ptr);
+    ScanToStrings(scanner.get(), &rows);
+  }
+  std::sort(rows.begin(), rows.end());
 
   ASSERT_EQ(expected_rows.size(), rows.size());
   ASSERT_EQ(expected_rows, rows);
