@@ -62,7 +62,6 @@ MiniCluster::MiniCluster(Env* env, const MiniClusterOptions& options)
     num_ts_initial_(options.num_tablet_servers),
     master_rpc_ports_(options.master_rpc_ports),
     tserver_rpc_ports_(options.tserver_rpc_ports) {
-  mini_masters_.resize(num_masters_initial_);
 }
 
 MiniCluster::~MiniCluster() {
@@ -115,7 +114,7 @@ Status MiniCluster::StartDistributedMasters() {
                           Substitute("Couldn't start follower $0", i));
     VLOG(1) << "Started MiniMaster with UUID " << mini_master->permanent_uuid()
             << " at index " << i;
-    mini_masters_[i] = shared_ptr<MiniMaster>(mini_master.release());
+    mini_masters_.push_back(shared_ptr<MiniMaster>(mini_master.release()));
   }
   int i = 0;
   for (const shared_ptr<MiniMaster>& master : mini_masters_) {
@@ -138,8 +137,7 @@ Status MiniCluster::StartSync() {
 }
 
 Status MiniCluster::StartSingleMaster() {
-  // If there's a single master, 'mini_masters_' must be size 1.
-  CHECK_EQ(mini_masters_.size(), 1);
+  CHECK_EQ(1, num_masters_initial_);
   CHECK_LE(master_rpc_ports_.size(), 1);
   uint16_t master_rpc_port = 0;
   if (master_rpc_ports_.size() == 1) {
@@ -152,7 +150,7 @@ Status MiniCluster::StartSingleMaster() {
   RETURN_NOT_OK_PREPEND(mini_master->Start(), "Couldn't start master");
   RETURN_NOT_OK(mini_master->master()->
       WaitUntilCatalogManagerIsLeaderAndReadyForTests(MonoDelta::FromSeconds(5)));
-  mini_masters_[0] = shared_ptr<MiniMaster>(mini_master.release());
+  mini_masters_.push_back(shared_ptr<MiniMaster>(mini_master.release()));
   return Status::OK();
 }
 
@@ -184,10 +182,7 @@ void MiniCluster::Shutdown() {
     tablet_server->Shutdown();
   }
   mini_tablet_servers_.clear();
-  for (shared_ptr<MiniMaster>& master_server : mini_masters_) {
-    master_server->Shutdown();
-    master_server.reset();
-  }
+  ShutdownMasters();
   running_ = false;
 }
 
@@ -196,6 +191,7 @@ void MiniCluster::ShutdownMasters() {
     master_server->Shutdown();
     master_server.reset();
   }
+  mini_masters_.clear();
 }
 
 MiniMaster* MiniCluster::mini_master(int idx) {
