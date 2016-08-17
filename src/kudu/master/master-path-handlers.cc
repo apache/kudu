@@ -21,6 +21,7 @@
 #include <boost/bind.hpp>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -42,7 +43,6 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/util/string_case.h"
 #include "kudu/util/url-coding.h"
-
 
 namespace kudu {
 
@@ -120,9 +120,16 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
 
 namespace {
 
+int RoleToSortIndex(RaftPeerPB::Role r) {
+  switch (r) {
+    case RaftPeerPB::LEADER: return 0;
+    default: return 1 + static_cast<int>(r);
+  }
+}
+
 bool CompareByRole(const pair<string, RaftPeerPB::Role>& a,
                    const pair<string, RaftPeerPB::Role>& b) {
-  return a.second < b.second;
+  return RoleToSortIndex(a.second) < RoleToSortIndex(b.second);
 }
 
 } // anonymous namespace
@@ -186,11 +193,17 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     table->GetAllTablets(&tablets);
   }
 
+  *output << "<h3>Schema</h3>";
   HtmlOutputSchemaTable(schema, output);
 
-  *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Tablet ID</th><th>Partition</th><th>State</th>"
-      "<th>Message</th><th>RaftConfig</th></tr>\n";
+  // Prepare the tablets table first because the tablet partition information is
+  // also used to make the range bounds.
+  std::set<std::pair<string, string>> range_bounds;
+  std::stringstream tablets_output;
+  tablets_output << "<h3>Tablets</h3>";
+  tablets_output << "<table class='table table-striped'>\n";
+  tablets_output << "  <tr><th>Tablet ID</th><th>Partition</th><th>State</th>"
+      "<th>Message</th><th>Peers</th></tr>\n";
   for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     vector<pair<string, RaftPeerPB::Role>> sorted_replicas;
     TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
@@ -227,10 +240,12 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
     Partition partition;
     Partition::FromPB(l.data().pb.partition(), &partition);
+    range_bounds.insert({partition.range_key_start().ToString(),
+                         partition.range_key_end().ToString()});
 
     string state = SysTabletsEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);
-    *output << Substitute(
+    tablets_output << Substitute(
         "<tr><th>$0</th><td>$1</td><td>$2</td><td>$3</td><td>$4</td></tr>\n",
         tablet->tablet_id(),
         EscapeForHtmlToString(partition_schema.PartitionDebugString(partition, schema)),
@@ -238,15 +253,25 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
         EscapeForHtmlToString(l.data().pb.state_msg()),
         raft_config_html.str());
   }
-  *output << "</table>\n";
+  tablets_output << "</table>\n";
 
-  *output << "<h2>Partition schema</h2>";
+  // Write out the partition schema and range bound information...
+  *output << "<h3>Partition schema &amp; range bounds</h3>";
   *output << "<pre>";
   *output << EscapeForHtmlToString(partition_schema.DisplayString(schema));
+  *output << "Range bounds:\n";
+  for (const auto& pair : range_bounds) {
+    string range_bound = partition_schema.RangePartitionDebugString(pair.first,
+                                                                    pair.second,
+                                                                    schema);
+    *output << Substitute("  $0\n", EscapeForHtmlToString(range_bound));
+  }
   *output << "</pre>";
 
-  *output << "<h2>Impala CREATE TABLE statement</h2>\n";
+  // ...then the tablets table.
+  *output << tablets_output.str();
 
+  *output << "<h3>Impala CREATE TABLE statement</h3>\n";
   string master_addresses;
   if (master_->opts().IsDistributed()) {
     vector<string> all_addresses;
@@ -268,6 +293,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   }
   HtmlOutputImpalaSchema(table_name, schema, master_addresses, output);
 
+  *output << "<h3>Tasks</h3>";
   std::vector<scoped_refptr<MonitoredTask> > task_list;
   table->GetTaskList(&task_list);
   HtmlOutputTaskList(task_list, output);

@@ -19,7 +19,6 @@
 
 #include <string>
 
-#include "kudu/common/schema.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/human_readable.h"
@@ -70,7 +69,7 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
                             const Schema& schema,
                             const string& master_addresses,
                             std::stringstream* output) {
-  *output << "<code><pre>\n";
+  *output << "<pre><code>\n";
 
   // Escape table and column names with ` to avoid conflicts with Impala reserved words.
   *output << "CREATE EXTERNAL TABLE " << EscapeForHtmlToString("`" + table_name + "`")
@@ -134,11 +133,14 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
 
   *output << "TBLPROPERTIES(\n";
   *output << "  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',\n";
-  *output << "  'kudu.table_name' = '" << table_name << "',\n";
-  *output << "  'kudu.master_addresses' = '" << master_addresses << "',\n";
-  *output << "  'kudu.key_columns' = '" << JoinElements(key_columns, ", ") << "'\n";
+  *output << "  'kudu.table_name' = '";
+  *output << EscapeForHtmlToString(table_name) << "',\n";
+  *output << "  'kudu.master_addresses' = '";
+  *output << EscapeForHtmlToString(master_addresses) << "',\n";
+  *output << "  'kudu.key_columns' = '";
+  *output << EscapeForHtmlToString(JoinElements(key_columns, ", ")) << "'\n";
   *output << ");\n";
-  *output << "</pre></code>\n";
+  *output << "</code></pre>\n";
 }
 
 void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
@@ -182,5 +184,4 @@ void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
   }
   *output << "</table>\n";
 }
-
 } // namespace kudu

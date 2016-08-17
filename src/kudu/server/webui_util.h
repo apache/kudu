@@ -21,6 +21,7 @@
 #include <sstream>
 #include <vector>
 
+#include "kudu/common/schema.h"
 #include "kudu/gutil/ref_counted.h"
 
 namespace kudu {
@@ -36,6 +37,10 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
                             std::stringstream* output);
 void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
                         std::stringstream* output);
+
+string FriendlyEncodingTypeName(EncodingType enc);
+
+string FriendlyCompressionTypeName(CompressionType enc);
 } // namespace kudu
 
 #endif // KUDU_SERVER_WEBUI_UTIL_H

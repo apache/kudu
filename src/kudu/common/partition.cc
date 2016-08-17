@@ -770,27 +770,33 @@ string PartitionSchema::DisplayString(const Schema& schema) const {
   string display_string;
 
   if (!hash_bucket_schemas_.empty()) {
-    display_string.append("Hash bucket schemas:\n");
+    display_string.append("Hash components:\n");
     for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
-      display_string.append("  Key columns:\n");
+      display_string.append("  (");
+      vector<string> hash_components;
+      hash_components.reserve(hash_bucket_schema.column_ids.size());
       for (const ColumnId& col_id : hash_bucket_schema.column_ids) {
         const ColumnSchema& col = schema.column_by_id(col_id);
-        SubstituteAndAppend(&display_string, "    $0 $1\n", col.name(), col.type_info()->name());
+        hash_components.push_back(Substitute("$0 $1", col.name(), col.type_info()->name()));
       }
-      SubstituteAndAppend(&display_string, "  Bucket count: $0\n", hash_bucket_schema.num_buckets);
+      display_string.append(JoinStrings(hash_components, ", "));
+      SubstituteAndAppend(&display_string, ") bucket count: $0", hash_bucket_schema.num_buckets);
       if (hash_bucket_schema.seed != 0) {
-        SubstituteAndAppend(&display_string, "  Seed: $0\n", hash_bucket_schema.seed);
+        SubstituteAndAppend(&display_string, " seed: $0", hash_bucket_schema.seed);
       }
       display_string.append("\n");
     }
   }
 
   if (!range_schema_.column_ids.empty()) {
-    display_string.append("Range columns:\n");
+    display_string.append("Range component:\n");
+    vector<string> range_component;
+    range_component.reserve(range_schema_.column_ids.size());
     for (const ColumnId& col_id : range_schema_.column_ids) {
       const ColumnSchema& col = schema.column_by_id(col_id);
-      SubstituteAndAppend(&display_string, "  $0 $1\n", col.name(), col.type_info()->name());
+      range_component.push_back(Substitute("$0 $1", col.name(), col.type_info()->name()));
     }
+    SubstituteAndAppend(&display_string, "  ($0)\n", JoinStrings(range_component, ", "));
   }
   return display_string;
 }
