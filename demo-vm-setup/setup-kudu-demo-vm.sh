@@ -59,6 +59,10 @@ if ! VBoxManage list vms | grep -q '"kudu-demo"'; then
   VBoxManage sharedfolder add ${VM_NAME} --name examples --hostpath $SHARED_FOLDER_PATH --automount
 fi
 
+# Enable SSE4 pass-through.
+VBoxManage setextradata ${VM_NAME} VBoxInternal/CPUM/SSE4.1 1
+VBoxManage setextradata ${VM_NAME} VBoxInternal/CPUM/SSE4.2 1
+
 # Start the VM
 VBoxManage startvm ${VM_NAME}
 
