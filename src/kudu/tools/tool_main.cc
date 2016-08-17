@@ -16,13 +16,17 @@
 // under the License.
 
 #include <deque>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/util/flags.h"
@@ -42,16 +46,60 @@ using std::deque;
 using std::endl;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 namespace tools {
 
+Status MarshalArgs(const vector<Mode*>& chain,
+                   Action* action,
+                   deque<string> input,
+                   unordered_map<string, string>* required,
+                   vector<string>* variadic) {
+  const ActionArgsDescriptor& args = action->args();
+
+  // Marshal the required arguments from the command line.
+  for (const auto& a : args.required) {
+    if (input.empty()) {
+      return Status::InvalidArgument(Substitute("must provide $0", a.name));
+    }
+    InsertOrDie(required, a.name, input.front());
+    input.pop_front();
+  }
+
+  // Marshal the variable length arguments, if they exist.
+  if (args.variadic) {
+    const ActionArgsDescriptor::Arg& a = args.variadic.get();
+    if (input.empty()) {
+      return Status::InvalidArgument(Substitute("must provide $0", a.name));
+    }
+
+    variadic->assign(input.begin(), input.end());
+    input.clear();
+  }
+
+  // There should be no unparsed arguments left.
+  if (!input.empty()) {
+    DCHECK(!chain.empty());
+    return Status::InvalidArgument(
+        Substitute("too many arguments: '$0'\n$1",
+                   JoinStrings(input, " "), action->BuildHelp(chain)));
+  }
+  return Status::OK();
+}
+
 int DispatchCommand(const vector<Mode*>& chain,
                     Action* action,
-                    const deque<string>& args) {
-  Status s = action->Run(chain, args);
+                    const deque<string>& remaining_args) {
+  unordered_map<string, string> required_args;
+  vector<string> variadic_args;
+  Status s = MarshalArgs(chain, action, remaining_args,
+                         &required_args, &variadic_args);
+  if (s.ok()) {
+    s = action->Run(chain, required_args, variadic_args);
+  }
   if (s.ok()) {
     return 0;
   } else {

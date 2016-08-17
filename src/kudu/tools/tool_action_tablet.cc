@@ -17,7 +17,6 @@
 
 #include "kudu/tools/tool_action.h"
 
-#include <deque>
 #include <iostream>
 #include <list>
 #include <memory>
@@ -27,7 +26,10 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/rpc/messenger.h"
@@ -44,13 +46,13 @@ using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::tserver::TabletCopyClient;
 using std::cout;
-using std::deque;
 using std::endl;
 using std::list;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Split;
 using strings::Substitute;
 
 namespace kudu {
@@ -85,7 +87,7 @@ Status ParseHostPortString(const string& hostport_str, HostPort* hostport) {
 Status ParsePeerString(const string& peer_str,
                        string* uuid,
                        HostPort* hostport) {
-  int first_colon_idx = peer_str.find(":");
+  string::size_type first_colon_idx = peer_str.find(":");
   if (first_colon_idx == string::npos) {
     return Status::InvalidArgument(Substitute("bad peer '$0'", peer_str));
   }
@@ -95,13 +97,8 @@ Status ParsePeerString(const string& peer_str,
   return Status::OK();
 }
 
-Status PrintReplicaUuids(const vector<Mode*>& chain,
-                         const Action* action,
-                         deque<string> args) {
-  // Parse tablet ID argument.
-  string tablet_id;
-  RETURN_NOT_OK(ParseAndRemoveArg("tablet ID", &args, &tablet_id));
-  RETURN_NOT_OK(CheckNoMoreArgs(chain, action, args));
+Status PrintReplicaUuids(const RunnerContext& context) {
+  string tablet_id = FindOrDie(context.required_args, "tablet_id");
 
   FsManagerOpts opts;
   opts.read_only = true;
@@ -118,12 +115,9 @@ Status PrintReplicaUuids(const vector<Mode*>& chain,
   return Status::OK();
 }
 
-Status RewriteRaftConfig(const vector<Mode*>& chain,
-                         const Action* action,
-                         deque<string> args) {
+Status RewriteRaftConfig(const RunnerContext& context) {
   // Parse tablet ID argument.
-  string tablet_id;
-  RETURN_NOT_OK(ParseAndRemoveArg("tablet ID", &args, &tablet_id));
+  string tablet_id = FindOrDie(context.required_args, "tablet_id");
   if (tablet_id != master::SysCatalogTable::kSysCatalogTabletId) {
     LOG(WARNING) << "Master will not notice rewritten Raft config of regular "
                  << "tablets. A regular Raft config change must occur.";
@@ -131,16 +125,13 @@ Status RewriteRaftConfig(const vector<Mode*>& chain,
 
   // Parse peer arguments.
   vector<pair<string, HostPort>> peers;
-  for (const auto& arg : args) {
+  for (const auto& arg : context.variadic_args) {
     pair<string, HostPort> parsed_peer;
     RETURN_NOT_OK(ParsePeerString(arg,
                                   &parsed_peer.first, &parsed_peer.second));
     peers.push_back(parsed_peer);
   }
-  if (peers.empty()) {
-    return Status::InvalidArgument(Substitute(
-        "must provide at least one peer of form uuid:hostname:port"));
-  }
+  DCHECK(!peers.empty());
 
   // Make a copy of the old file before rewriting it.
   Env* env = Env::Default();
@@ -175,16 +166,10 @@ Status RewriteRaftConfig(const vector<Mode*>& chain,
   return cmeta->Flush();
 }
 
-Status Copy(const vector<Mode*>& chain,
-            const Action* action,
-            deque<string> args) {
+Status Copy(const RunnerContext& context) {
   // Parse the tablet ID and source arguments.
-  string tablet_id;
-  RETURN_NOT_OK(ParseAndRemoveArg("tablet ID", &args, &tablet_id));
-  string rpc_address;
-  RETURN_NOT_OK(ParseAndRemoveArg("source RPC address of form hostname:port",
-                                  &args, &rpc_address));
-  RETURN_NOT_OK(CheckNoMoreArgs(chain, action, args));
+  string tablet_id = FindOrDie(context.required_args, "tablet_id");
+  string rpc_address = FindOrDie(context.required_args, "source");
 
   HostPort hp;
   RETURN_NOT_OK(ParseHostPortString(rpc_address, &hp));
@@ -204,21 +189,23 @@ Status Copy(const vector<Mode*>& chain,
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTabletMode() {
-  // TODO: Need to include required arguments in the help for these actions.
-
   unique_ptr<Action> print_replica_uuids = ActionBuilder(
       { "print_replica_uuids",
         "Print all replica UUIDs found in a tablet's Raft configuration" },
       &PrintReplicaUuids)
-    .AddGflag("fs_wal_dir")
-    .AddGflag("fs_data_dirs")
+    .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+    .AddOptionalParameter("fs_wal_dir")
+    .AddOptionalParameter("fs_data_dirs")
     .Build();
 
   unique_ptr<Action> rewrite_raft_config = ActionBuilder(
       { "rewrite_raft_config", "Rewrite a replica's Raft configuration" },
       &RewriteRaftConfig)
-    .AddGflag("fs_wal_dir")
-    .AddGflag("fs_data_dirs")
+    .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+    .AddRequiredVariadicParameter({
+        "peers", "List of peers where each peer is of form uuid:hostname:port" })
+    .AddOptionalParameter("fs_wal_dir")
+    .AddOptionalParameter("fs_data_dirs")
     .Build();
 
   unique_ptr<Mode> cmeta = ModeBuilder(
@@ -229,8 +216,10 @@ unique_ptr<Mode> BuildTabletMode() {
 
   unique_ptr<Action> copy = ActionBuilder(
       { "copy", "Copy a replica from a remote server" }, &Copy)
-    .AddGflag("fs_wal_dir")
-    .AddGflag("fs_data_dirs")
+    .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+    .AddRequiredParameter({ "source", "Source RPC address of form hostname:port" })
+    .AddOptionalParameter("fs_wal_dir")
+    .AddOptionalParameter("fs_data_dirs")
     .Build();
 
   return ModeBuilder({ "tablet", "Operate on a local Kudu replica" })

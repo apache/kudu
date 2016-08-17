@@ -17,17 +17,17 @@
 
 #include "kudu/tools/tool_action.h"
 
-#include <deque>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 
-using std::deque;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -35,6 +35,26 @@ namespace kudu {
 namespace tools {
 
 namespace {
+
+string FakeDescribeOneFlag(const ActionArgsDescriptor::Arg& arg) {
+  string res = google::DescribeOneFlag({
+    arg.name,        // name
+    "string",        // type
+    arg.description, // description
+    "",              // current_value
+    "",              // default_value
+    "",              // filename
+    false,           // has_validator_fn
+    true,            // is_default
+    nullptr          // flag_ptr
+  });
+
+  // Strip the first dash from the description; this is a positional parameter
+  // so let's make sure it looks like one.
+  string::size_type first_dash_idx = res.find("-");
+  DCHECK_NE(string::npos, first_dash_idx);
+  return res.substr(0, first_dash_idx) + res.substr(first_dash_idx + 1);
+}
 
 string BuildUsageString(const vector<Mode*>& chain) {
   string modes = JoinMapped(chain, [](Mode* a){ return a->name(); }, " ");
@@ -86,8 +106,26 @@ ActionBuilder::ActionBuilder(const Label& label, const ActionRunner& runner)
       runner_(runner) {
 }
 
-ActionBuilder& ActionBuilder::AddGflag(const string& gflag) {
-  gflags_.push_back(gflag);
+ActionBuilder& ActionBuilder::AddRequiredParameter(
+    const ActionArgsDescriptor::Arg& arg) {
+  args_.required.push_back(arg);
+  return *this;
+}
+
+ActionBuilder& ActionBuilder::AddRequiredVariadicParameter(
+    const ActionArgsDescriptor::Arg& arg) {
+  DCHECK(!args_.variadic);
+  args_.variadic = arg;
+  return *this;
+}
+
+ActionBuilder& ActionBuilder::AddOptionalParameter(const string& param) {
+#ifndef NDEBUG
+  // Make sure this gflag exists.
+  string option;
+  DCHECK(google::GetCommandLineOption(param.c_str(), &option));
+#endif
+  args_.optional.push_back(param);
   return *this;
 }
 
@@ -95,49 +133,50 @@ unique_ptr<Action> ActionBuilder::Build() {
   unique_ptr<Action> action(new Action());
   action->label_ = label_;
   action->runner_ = runner_;
-  action->gflags_ = gflags_;
+  action->args_ = args_;
   return action;
 }
 
 Action::Action() {
 }
 
-Status Action::Run(const vector<Mode*>& chain, deque<string> args) const {
-  return runner_(chain, this, args);
+Status Action::Run(const vector<Mode*>& chain,
+                   const unordered_map<string, string>& required_args,
+                   const vector<string>& variadic_args) const {
+  return runner_({ chain, this, required_args, variadic_args });
 }
 
 string Action::BuildHelp(const vector<Mode*>& chain) const {
-  string msg = Substitute("$0 $1", BuildUsageString(chain), name());
-  string gflags_msg;
-  for (const auto& gflag : gflags_) {
-    google::CommandLineFlagInfo gflag_info =
-        google::GetCommandLineFlagInfoOrDie(gflag.c_str());
-    string noun;
-    int last_underscore_idx = gflag.rfind('_');
-    if (last_underscore_idx != string::npos &&
-        last_underscore_idx != gflag.size() - 1) {
-      noun = gflag.substr(last_underscore_idx + 1);
-    } else {
-      noun = gflag;
-    }
-    msg += Substitute(" [-$0=<$1>]", gflag, noun);
-    gflags_msg += google::DescribeOneFlag(gflag_info);
+  string usage_msg = Substitute("$0 $1", BuildUsageString(chain), name());
+  string desc_msg;
+  for (const auto& param : args_.required) {
+    usage_msg += Substitute(" <$0>", param.name);
+    desc_msg += FakeDescribeOneFlag(param);
   }
+  if (args_.variadic) {
+    const ActionArgsDescriptor::Arg& param = args_.variadic.get();
+    usage_msg += Substitute(" <$0>...", param.name);
+    desc_msg += FakeDescribeOneFlag(param);
+  }
+  for (const auto& param : args_.optional) {
+    google::CommandLineFlagInfo gflag_info =
+        google::GetCommandLineFlagInfoOrDie(param.c_str());
+    string noun;
+    string::size_type last_underscore_idx = param.rfind('_');
+    if (last_underscore_idx != string::npos &&
+        last_underscore_idx != param.size() - 1) {
+      noun = param.substr(last_underscore_idx + 1);
+    } else {
+      noun = param;
+    }
+    usage_msg += Substitute(" [-$0=<$1>]", param, noun);
+    desc_msg += google::DescribeOneFlag(gflag_info);
+  }
+  string msg = usage_msg;
   msg += "\n";
   msg += Substitute("$0\n", label_.description);
-  msg += gflags_msg;
+  msg += desc_msg;
   return msg;
-}
-
-Status ParseAndRemoveArg(const char* arg_name,
-                         deque<string>* remaining_args,
-                         string* parsed_arg) {
-  if (remaining_args->empty()) {
-    return Status::InvalidArgument(Substitute("must provide $0", arg_name));
-  }
-  *parsed_arg = remaining_args->front();
-  remaining_args->pop_front();
-  return Status::OK();
 }
 
 } // namespace tools

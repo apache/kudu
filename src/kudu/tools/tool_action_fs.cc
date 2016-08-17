@@ -17,18 +17,17 @@
 
 #include "kudu/tools/tool_action.h"
 
-#include <boost/optional/optional.hpp>
-#include <deque>
-#include <gflags/gflags.h>
 #include <iostream>
 #include <memory>
 #include <string>
+
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 
 #include "kudu/fs/fs_manager.h"
 #include "kudu/util/status.h"
 
 using std::cout;
-using std::deque;
 using std::endl;
 using std::string;
 using std::unique_ptr;
@@ -42,11 +41,7 @@ namespace tools {
 
 namespace {
 
-Status Format(const vector<Mode*>& chain,
-              const Action* action,
-              deque<string> args) {
-  RETURN_NOT_OK(CheckNoMoreArgs(chain, action, args));
-
+Status Format(const RunnerContext& context) {
   FsManager fs_manager(Env::Default(), FsManagerOpts());
   boost::optional<string> uuid;
   if (!FLAGS_uuid.empty()) {
@@ -55,11 +50,7 @@ Status Format(const vector<Mode*>& chain,
   return fs_manager.CreateInitialFileSystemLayout(uuid);
 }
 
-Status PrintUuid(const vector<Mode*>& chain,
-                 const Action* action,
-                 deque<string> args) {
-  RETURN_NOT_OK(CheckNoMoreArgs(chain, action, args));
-
+Status PrintUuid(const RunnerContext& context) {
   FsManagerOpts opts;
   opts.read_only = true;
   FsManager fs_manager(Env::Default(), opts);
@@ -73,15 +64,15 @@ Status PrintUuid(const vector<Mode*>& chain,
 unique_ptr<Mode> BuildFsMode() {
   unique_ptr<Action> format = ActionBuilder(
       { "format", "Format a new Kudu filesystem" }, &Format)
-    .AddGflag("fs_wal_dir")
-    .AddGflag("fs_data_dirs")
-    .AddGflag("uuid")
+    .AddOptionalParameter("fs_wal_dir")
+    .AddOptionalParameter("fs_data_dirs")
+    .AddOptionalParameter("uuid")
     .Build();
 
   unique_ptr<Action> print_uuid = ActionBuilder(
       { "print_uuid", "Print the UUID of a Kudu filesystem" }, &PrintUuid)
-    .AddGflag("fs_wal_dir")
-    .AddGflag("fs_data_dirs")
+    .AddOptionalParameter("fs_wal_dir")
+    .AddOptionalParameter("fs_data_dirs")
     .Build();
 
   return ModeBuilder({ "fs", "Operate on a local Kudu filesystem" })

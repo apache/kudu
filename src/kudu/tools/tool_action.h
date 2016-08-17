@@ -17,14 +17,13 @@
 
 #pragma once
 
-#include <deque>
-#include <glog/logging.h>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
-#include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/strings/substitute.h"
+#include <boost/optional/optional.hpp>
+
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -126,12 +125,51 @@ class Mode {
   std::vector<std::unique_ptr<Action>> actions_;
 };
 
-// Function signature for any operation represented by an action. When run, the
-// operation receives the parent mode chain, the current action, and any
-// remaining command line arguments.
-typedef std::function<Status(const std::vector<Mode*>&,
-                             const Action*,
-                             std::deque<std::string>)> ActionRunner;
+// Function signature for any operation represented by an Action.
+//
+// When run, the operation receives the parent mode chain, the current action,
+// and the command line arguments.
+//
+// Prior to running, arguments registered by the action are put into the
+// context. In the event that a required parameter is missing or there are
+// unexpected arguments on the command line, an error is returned and the
+// runner will not be invoked.
+//
+// Note: only required and variadic args are put in the context; it is expected
+// that operations access optional args via gflag variables (i.e. FLAGS_foo).
+struct RunnerContext {
+  std::vector<Mode*> chain;
+  const Action* action;
+  std::unordered_map<std::string, std::string> required_args;
+  std::vector<std::string> variadic_args;
+};
+typedef std::function<Status(const RunnerContext&)> ActionRunner;
+
+// Describes all of the arguments used by an action. At runtime, the tool will
+// parse these arguments out of the command line and marshal them into a
+// key/value argument map (see Run()).
+struct ActionArgsDescriptor {
+  struct Arg {
+    std::string name;
+    std::string description;
+  };
+
+  // Positional (required) command line arguments.
+  std::vector<Arg> required;
+
+  // Key-value command line arguments. These must actually implemented as
+  // gflags, which means all that must be specified here are the gflag names.
+  // The gflag definitions themselves will be accessed to get the argument
+  // descriptions.
+  //
+  // Optional by definition, though some are required internally
+  // (e.g. fs_wal_dir).
+  std::vector<std::string> optional;
+
+  // Variable length command line argument. There may be at most one per
+  // Action, and it's always found at the end of the command line.
+  boost::optional<Arg> variadic;
+};
 
 // Builds a new action (leaf) node.
 class ActionBuilder {
@@ -139,8 +177,32 @@ class ActionBuilder {
   // Creates a new ActionBuilder with a specific label and action runner.
   ActionBuilder(const Label& label, const ActionRunner& runner);
 
-  // Add a new gflag to this builder. They are used when generating help.
-  ActionBuilder& AddGflag(const std::string& gflag);
+  // Add a new required parameter to this builder.
+  //
+  // This parameter will be parsed as a positional argument following the name
+  // of the action. The order in which required parameters are added to the
+  // builder reflects the order they are expected to be parsed from the command
+  // line.
+  ActionBuilder& AddRequiredParameter(
+      const ActionArgsDescriptor::Arg& arg);
+
+  // Add a new required variable-length parameter to this builder.
+  //
+  // This parameter will be parsed following all other positional parameters.
+  // All remaining positional arguments on the command line will be parsed into
+  // this parameter.
+  //
+  // There may be at most one variadic parameter defined per action.
+  ActionBuilder& AddRequiredVariadicParameter(
+      const ActionArgsDescriptor::Arg& arg);
+
+  // Add a new optional parameter to this builder.
+  //
+  // This parameter will be parsed by the gflags system, and thus can be
+  // provided by the user at any point in the command line. It must match a
+  // previously-defined gflag; if a gflag with the same name cannot be found,
+  // the tool will crash.
+  ActionBuilder& AddOptionalParameter(const std::string& param);
 
   // Creates an action using builder state.
   std::unique_ptr<Action> Build();
@@ -150,7 +212,7 @@ class ActionBuilder {
 
   ActionRunner runner_;
 
-  std::vector<std::string> gflags_;
+  ActionArgsDescriptor args_;
 };
 
 // A leaf node in the tree, representing a logical operation taken by the tool.
@@ -161,12 +223,16 @@ class Action {
   std::string BuildHelp(const std::vector<Mode*>& chain) const;
 
   // Runs the operation represented by this action, given a parent mode chain
-  // and list of extra command line arguments.
-  Status Run(const std::vector<Mode*>& chain, std::deque<std::string> args) const;
+  // and marshaled command line arguments.
+  Status Run(const std::vector<Mode*>& chain,
+             const std::unordered_map<std::string, std::string>& required_args,
+             const std::vector<std::string>& variadic_args) const;
 
   const std::string& name() const { return label_.name; }
 
   const std::string& description() const { return label_.description; }
+
+  const ActionArgsDescriptor& args() const { return args_; }
 
  private:
   friend class ActionBuilder;
@@ -177,31 +243,8 @@ class Action {
 
   ActionRunner runner_;
 
-  // This action's gflags (if any).
-  std::vector<std::string> gflags_;
+  ActionArgsDescriptor args_;
 };
-
-// Removes one argument from 'remaining_args' and stores it in 'parsed_arg'.
-//
-// If 'remaining_args' is empty, returns InvalidArgument with 'arg_name' in the
-// message.
-Status ParseAndRemoveArg(const char* arg_name,
-                         std::deque<std::string>* remaining_args,
-                         std::string* parsed_arg);
-
-// Checks that 'args' is empty. If not, returns a bad status.
-template <typename CONTAINER>
-Status CheckNoMoreArgs(const std::vector<Mode*>& chain,
-                       const Action* action,
-                       const CONTAINER& args) {
-  if (args.empty()) {
-    return Status::OK();
-  }
-  DCHECK(!chain.empty());
-  return Status::InvalidArgument(
-      strings::Substitute("too many arguments: '$0'\n$1",
-                          JoinStrings(args, " "), action->BuildHelp(chain)));
-}
 
 // Returns a new "fs" mode node.
 std::unique_ptr<Mode> BuildFsMode();

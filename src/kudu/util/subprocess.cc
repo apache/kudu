@@ -20,6 +20,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <memory>
 #include <signal.h>
 #include <string>
@@ -367,12 +368,12 @@ Status Subprocess::Kill(int signal) {
 }
 
 Status Subprocess::Call(const string& arg_str) {
-  VLOG(2) << "Invoking command: " << arg_str;
   vector<string> argv = Split(arg_str, " ");
   return Call(argv);
 }
 
 Status Subprocess::Call(const vector<string>& argv) {
+  VLOG(2) << "Invoking command: " << argv;
   Subprocess proc(argv[0], argv);
   RETURN_NOT_OK(proc.Start());
   int retcode;
@@ -389,6 +390,7 @@ Status Subprocess::Call(const vector<string>& argv) {
 }
 
 Status Subprocess::Call(const vector<string>& argv, string* stdout_out) {
+  VLOG(2) << "Invoking command: " << argv;
   Subprocess p(argv[0], argv);
   p.ShareParentStdout(false);
   RETURN_NOT_OK_PREPEND(p.Start(), "Unable to fork " + argv[0]);
