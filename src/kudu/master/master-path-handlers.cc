@@ -95,7 +95,8 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
   master_->catalog_manager()->GetAllTables(&tables);
 
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Table Name</th><th>Table Id</th><th>State</th></tr>\n";
+  *output << "  <tr><th>Table Name</th><th>Table Id</th>" <<
+      "<th>State</th><th>State Message</th></tr>\n";
   typedef std::map<string, string> StringMap;
   StringMap ordered_tables;
   for (const scoped_refptr<TableInfo>& table : tables) {
@@ -106,7 +107,8 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
     string state = SysTablesEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);
     ordered_tables[l.data().name()] = Substitute(
-        "<tr><th>$0</th><td><a href=\"/table?id=$1\">$1</a></td><td>$2 $3</td></tr>\n",
+        "<tr><th>$0</th><td><a href=\"/table?id=$1\">$1</a></td>"
+            "<td>$2</td><td>$3</td></tr>\n",
         EscapeForHtmlToString(l.data().name()),
         EscapeForHtmlToString(table->id()),
         state,
