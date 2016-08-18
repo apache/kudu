@@ -15,57 +15,60 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tools/tool_action.h"
+
+#include <gflags/gflags.h>
 #include <iostream>
+#include <memory>
 #include <string>
 
-#include <glog/logging.h>
-
-#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/util/env.h"
-#include "kudu/util/flags.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
-using kudu::Status;
-using std::cerr;
+using std::cout;
 using std::endl;
 using std::string;
+using std::unique_ptr;
 
 DEFINE_bool(oneline, false, "print each protobuf on a single line");
 TAG_FLAG(oneline, stable);
 
 namespace kudu {
-namespace pb_util {
+namespace tools {
 
-Status DumpPBContainerFile(const string& filename) {
+namespace {
+
+const char* const kPathArg = "path";
+
+Status DumpPBContainerFile(const RunnerContext& context) {
+  string path = FindOrDie(context.args, kPathArg);
+
   Env* env = Env::Default();
   gscoped_ptr<RandomAccessFile> reader;
-  RETURN_NOT_OK(env->NewRandomAccessFile(filename, &reader));
-  ReadablePBContainerFile pb_reader(std::move(reader));
+  RETURN_NOT_OK(env->NewRandomAccessFile(path, &reader));
+  pb_util::ReadablePBContainerFile pb_reader(std::move(reader));
   RETURN_NOT_OK(pb_reader.Open());
   RETURN_NOT_OK(pb_reader.Dump(&std::cout, FLAGS_oneline));
 
   return Status::OK();
 }
 
-} // namespace pb_util
-} // namespace kudu
+} // anonymous namespace
 
-int main(int argc, char **argv) {
-  kudu::ParseCommandLineFlags(&argc, &argv, true);
-  kudu::InitGoogleLoggingSafe(argv[0]);
-  if (argc != 2) {
-    cerr << "usage: " << argv[0] << " [--oneline] <protobuf container filename>" << endl;
-    return 2;
-  }
+unique_ptr<Mode> BuildPbcMode() {
+  unique_ptr<Action> dump = ActionBuilder(
+      { "dump", "Dump a PBC (protobuf container) file" }, &DumpPBContainerFile)
+      .AddOptionalParameter("oneline")
+      .AddRequiredParameter({kPathArg, "path to PBC file"})
+      .Build();
 
-  Status s = kudu::pb_util::DumpPBContainerFile(argv[1]);
-  if (s.ok()) {
-    return 0;
-  } else {
-    cerr << s.ToString() << endl;
-    return 1;
-  }
+  return ModeBuilder({ "pbc", "Operate on PBC (protobuf container) files" })
+      .AddAction(std::move(dump))
+      .Build();
 }
+
+} // namespace tools
+} // namespace kudu

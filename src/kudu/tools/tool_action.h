@@ -246,10 +246,9 @@ class Action {
   ActionArgsDescriptor args_;
 };
 
-// Returns a new "fs" mode node.
+// Returns new nodes for each major mode.
 std::unique_ptr<Mode> BuildFsMode();
-
-// Returns a new "tablet" mode node.
+std::unique_ptr<Mode> BuildPbcMode();
 std::unique_ptr<Mode> BuildTabletMode();
 
 } // namespace tools

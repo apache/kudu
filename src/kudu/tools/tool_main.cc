@@ -112,6 +112,7 @@ int RunTool(int argc, char** argv, bool show_help) {
   unique_ptr<Mode> root =
       ModeBuilder({ argv[0], "" }) // root mode description isn't printed
       .AddMode(BuildFsMode())
+      .AddMode(BuildPbcMode())
       .AddMode(BuildTabletMode())
       .Build();
 
