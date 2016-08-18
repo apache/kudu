@@ -197,7 +197,7 @@ static bool ParseCommandLineFlags(int* argc, char*** argv) {
     FLAGS_helpxml = false;
     show_help = true;
   }
-  gflags::HandleCommandLineHelpFlags();
+  kudu::HandleCommonFlags();
   return show_help;
 }
 

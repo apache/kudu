@@ -35,5 +35,12 @@ namespace kudu {
 // See gflags.h for more information.
 int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags);
 
+// Handle common flags such as -version, -disable_core_dumps, etc.
+// This includes the GFlags common flags such as "-help".
+//
+// Requires that flags have already been parsed using
+// google::ParseCommandLineNonHelpFlags().
+void HandleCommonFlags();
+
 } // namespace kudu
 #endif /* KUDU_UTIL_FLAGS_H */

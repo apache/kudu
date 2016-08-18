@@ -264,7 +264,11 @@ void ShowVersionAndExit() {
 
 int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
   int ret = google::ParseCommandLineNonHelpFlags(argc, argv, remove_flags);
+  HandleCommonFlags();
+  return ret;
+}
 
+void HandleCommonFlags() {
   if (FLAGS_helpxml) {
     DumpFlagsXML();
   } else if (FLAGS_dump_metrics_json) {
@@ -289,8 +293,6 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
     HeapProfilerStart(FLAGS_heap_profile_path.c_str());
   }
 #endif
-
-  return ret;
 }
 
 } // namespace kudu
