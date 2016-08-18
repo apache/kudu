@@ -17,9 +17,13 @@
 
 #include "kudu/tools/tool_action.h"
 
+#include <algorithm>
+#include <iomanip>
 #include <memory>
 #include <string>
+#include <strstream>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/strings/join.h"
@@ -87,15 +91,27 @@ unique_ptr<Mode> ModeBuilder::Build() {
 
 // Get help for this mode, passing in its parent mode chain.
 string Mode::BuildHelp(const vector<Mode*>& chain) const {
-  string msg = Substitute("$0 <action>\n", BuildUsageString(chain));
-  msg += "Action can be one of the following:\n";
+  std::ostringstream msg;
+  msg << Substitute("$0 <command> [<args>]\n\n", BuildUsageString(chain));
+  msg << "<command> can be one of the following:\n";
+
+  vector<pair<string, string>> line_pairs;
+  int max_command_len = 0;
   for (const auto& m : modes()) {
-    msg += Substitute("  $0 : $1\n", m->name(), m->description());
+    line_pairs.emplace_back(m->name(), m->description());
+    max_command_len = std::max<int>(max_command_len, m->name().size());
   }
   for (const auto& a : actions()) {
-    msg += Substitute("  $0 : $1\n", a->name(), a->description());
+    line_pairs.emplace_back(a->name(), a->description());
+    max_command_len = std::max<int>(max_command_len, a->name().size());
   }
-  return msg;
+
+  for (const auto& lp : line_pairs) {
+    msg << "  " << std::setw(max_command_len) << lp.first;
+    msg << "   " << lp.second << "\n";
+  }
+
+  return msg.str();
 }
 
 Mode::Mode() {
@@ -161,19 +177,28 @@ string Action::BuildHelp(const vector<Mode*>& chain) const {
   for (const auto& param : args_.optional) {
     google::CommandLineFlagInfo gflag_info =
         google::GetCommandLineFlagInfoOrDie(param.c_str());
-    string noun;
-    string::size_type last_underscore_idx = param.rfind('_');
-    if (last_underscore_idx != string::npos &&
-        last_underscore_idx != param.size() - 1) {
-      noun = param.substr(last_underscore_idx + 1);
+
+    if (gflag_info.type == "bool") {
+      if (gflag_info.default_value == "false") {
+        usage_msg += Substitute(" [-$0]", param);
+      } else {
+        usage_msg += Substitute(" [-no$0]", param);
+      }
     } else {
-      noun = param;
+      string noun;
+      string::size_type last_underscore_idx = param.rfind('_');
+      if (last_underscore_idx != string::npos &&
+          last_underscore_idx != param.size() - 1) {
+        noun = param.substr(last_underscore_idx + 1);
+      } else {
+        noun = param;
+      }
+      usage_msg += Substitute(" [-$0=<$1>]", param, noun);
     }
-    usage_msg += Substitute(" [-$0=<$1>]", param, noun);
     desc_msg += google::DescribeOneFlag(gflag_info);
   }
   string msg = usage_msg;
-  msg += "\n";
+  msg += "\n\n";
   msg += Substitute("$0\n", label_.description);
   msg += desc_msg;
   return msg;
