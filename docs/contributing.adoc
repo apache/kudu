@@ -176,7 +176,8 @@ keep under 80 where possible, but you can spill over to 100 or so if necessary.
 
 Generally, most objects should have clear "single-owner" semantics.
 Most of the time, singly-owned objects can be wrapped in a `gscoped_ptr<>`
-which ensures deletion on scope exit and prevents accidental copying.
+or in a `unique_ptr` which ensures deletion on scope
+exit and prevents accidental copying.
 `gscoped_ptr` is similar to {cpp}11's `unique_ptr` in that it has a `release`
 method and also provides emulated `move` semantics (see _gscoped_ptr.h_ for
 example usage).
@@ -201,13 +202,14 @@ semantics (owned or un-owned). Use utility code from _gutil/stl_util.h_, such as
 contained elements.
 
 WARNING: Using `std::auto_ptr` is strictly disallowed because of its difficult and
-bug-prone semantics.
+bug-prone semantics. Besides, `std::auto_ptr` is declared deprecated
+since {cpp}11.
 
 .Smart Pointers for Multiply-Owned Pointers:
 
 Although single ownership is ideal, sometimes it is not possible, particularly
 when multiple threads are in play and the lifetimes of the pointers are not
-clearly defined. In these cases, you can use either `std::tr1::shared_ptr` or
+clearly defined. In these cases, you can use either `std::shared_ptr` or
 Kudu's own `scoped_refptr` from _gutil/ref_counted.hpp_. Each of these mechanisms
 relies on reference counting to automatically delete the referent once no more
 pointers remain. The key difference between these two types of pointers is that
@@ -223,14 +225,21 @@ The pros and cons are:
 object deriving from a special base class
 * icon:plus-circle[role="green",alt="pro"] part of the standard library and familiar to most
 {cpp} developers
-* icon:minus-circle[role="red",alt="con"] creating a new object requires two allocations instead
-of one (one to create the ref count, and one to create the object)
+* icon:plus-circle[role="green",alt="pro"] supports the `weak_ptr` use cases:
+ ** a temporary ownership when an object needs to be accessed only if it exists
+ ** break circular references of `shared_ptr`, if any exists due to aggregation
+* icon:minus-circle[role="green",alt="pro"] you can convert from the
+`shared_ptr` into the `weak_ptr` and back
+* icon:plus-circle[role="green",alt="pro"] if creating an instance with
+`std::make_shared<>()` only one allocation is made (since {cpp}11;
+a non-binding requirement in the Standard, though)
+* icon:minus-circle[role="red",alt="con"] if creating a new object with
+`shared_ptr<T> p(new T)` requires two allocations (one to create the ref count,
+and one to create the object)
 * icon:minus-circle[role="red",alt="con"] the ref count may not be near the object on the heap,
 so extra cache misses may be incurred on access
 * icon:minus-circle[role="red",alt="con"] the `shared_ptr` instance itself requires 16 bytes
 (pointer to the ref count and pointer to the object)
-* icon:minus-circle[role="red",alt="con"] if you convert from the `shared_ptr` to a raw pointer,
-you can't get back the `shared_ptr`
 
 
 .`scoped_refptr`
@@ -248,7 +257,7 @@ can implement features, such as debug builds that capture the stack trace of eve
 referent to help debug leaks.
 * icon:minus-circle[con, role="red"] the referred-to object must inherit
 from `RefCounted`
-* icon:minus-circle[con, role="red"] does not support `weak_ptr<>` use cases
+* icon:minus-circle[con, role="red"] does not support the `weak_ptr` use cases
 
 Since `scoped_refptr` is generally faster and smaller, try to use it
 rather than `shared_ptr` in new code. Existing code uses `shared_ptr`
