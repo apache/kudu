@@ -32,6 +32,17 @@
 
 If you are new to Kudu, check out its list of link:index.html[features and benefits].
 
+[[rn_1.0.0]]
+=== Release notes specific to 1.0.0 (TODO: UNRELEASED)
+
+Kudu 1.0.0 delivers a number of new features, bug fixes, and optimizations,
+detailed below.
+
+[[rn_1.0.0_incompatible_changes]]
+
+- The `kudu-pbc-dump` tool has been removed. The same functionality is now
+  implemented as `kudu pbc dump`.
+
 [[rn_0.10.0]]
 == Release notes specific to 0.10.0
 
