@@ -75,7 +75,7 @@ class FlushCallback : public KuduStatusCallback {
  private:
   void BatchFinished() {
     int nerrs = session_->CountPendingErrors();
-    if (nerrs) {
+    if (nerrs > 0) {
       LOG(WARNING) << nerrs << " errors occured during last batch.";
       vector<KuduError*> errors;
       ElementDeleter d(&errors);
@@ -97,6 +97,22 @@ class FlushCallback : public KuduStatusCallback {
 } // anonymous namespace
 
 const Slice RpcLineItemDAO::kScanUpperBound = Slice("1998-09-02");
+
+RpcLineItemDAO::~RpcLineItemDAO() {
+  FinishWriting();
+}
+
+RpcLineItemDAO::RpcLineItemDAO(string master_address, string table_name,
+                               int batch_op_num_max, int timeout_ms,
+                               vector<const KuduPartialRow*> tablet_splits)
+    : master_address_(std::move(master_address)),
+      table_name_(std::move(table_name)),
+      timeout_(MonoDelta::FromMilliseconds(timeout_ms)),
+      batch_op_num_max_(batch_op_num_max),
+      tablet_splits_(std::move(tablet_splits)),
+      batch_op_num_(0),
+      semaphore_(1) {
+}
 
 void RpcLineItemDAO::Init() {
   const KuduSchema schema = tpch::CreateLineItemSchema();
@@ -121,32 +137,23 @@ void RpcLineItemDAO::Init() {
 
   session_ = client_->NewSession();
   session_->SetTimeoutMillis(timeout_.ToMilliseconds());
-  CHECK_OK(session_->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  CHECK_OK(session_->SetFlushMode(batch_op_num_max_ > 0
+                                  ? KuduSession::MANUAL_FLUSH
+                                  : KuduSession::AUTO_FLUSH_BACKGROUND));
 }
 
 void RpcLineItemDAO::WriteLine(boost::function<void(KuduPartialRow*)> f) {
   gscoped_ptr<KuduInsert> insert(client_table_->NewInsert());
   f(insert->mutable_row());
   CHECK_OK(session_->Apply(insert.release()));
-  ++batch_size_;
-  FlushIfBufferFull();
-}
-
-void RpcLineItemDAO::FlushIfBufferFull() {
-  if (batch_size_ < batch_max_) return;
-
-  batch_size_ = 0;
-
-  // The callback object frees itself after it is invoked.
-  session_->FlushAsync(new FlushCallback(session_, &semaphore_));
+  HandleLine();
 }
 
 void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
   gscoped_ptr<KuduUpdate> update(client_table_->NewUpdate());
   f(update->mutable_row());
   CHECK_OK(session_->Apply(update.release()));
-  ++batch_size_;
-  FlushIfBufferFull();
+  HandleLine();
 }
 
 void RpcLineItemDAO::FinishWriting() {
@@ -160,21 +167,7 @@ void RpcLineItemDAO::FinishWriting() {
 void RpcLineItemDAO::OpenScanner(const vector<string>& columns,
                                  gscoped_ptr<Scanner>* out_scanner) {
   vector<KuduPredicate*> preds;
-  OpenScanner(columns, preds, out_scanner);
-}
-
-void RpcLineItemDAO::OpenScanner(const vector<string>& columns,
-                                 const vector<KuduPredicate*>& preds,
-                                 gscoped_ptr<Scanner>* out_scanner) {
-  gscoped_ptr<Scanner> ret(new Scanner);
-  ret->scanner_.reset(new KuduScanner(client_table_.get()));
-  ret->scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning);
-  CHECK_OK(ret->scanner_->SetProjectedColumns(columns));
-  for (KuduPredicate* pred : preds) {
-    CHECK_OK(ret->scanner_->AddConjunctPredicate(pred));
-  }
-  CHECK_OK(ret->scanner_->Open());
-  out_scanner->swap(ret);
+  OpenScannerImpl(columns, preds, out_scanner);
 }
 
 void RpcLineItemDAO::OpenTpch1Scanner(gscoped_ptr<Scanner>* out_scanner) {
@@ -182,7 +175,7 @@ void RpcLineItemDAO::OpenTpch1Scanner(gscoped_ptr<Scanner>* out_scanner) {
   preds.push_back(client_table_->NewComparisonPredicate(
                       tpch::kShipDateColName, KuduPredicate::LESS_EQUAL,
                       KuduValue::CopyString(kScanUpperBound)));
-  OpenScanner(tpch::GetTpchQ1QueryColumns(), preds, out_scanner);
+  OpenScannerImpl(tpch::GetTpchQ1QueryColumns(), preds, out_scanner);
 }
 
 void RpcLineItemDAO::OpenTpch1ScannerForOrderKeyRange(int64_t min_key, int64_t max_key,
@@ -197,7 +190,41 @@ void RpcLineItemDAO::OpenTpch1ScannerForOrderKeyRange(int64_t min_key, int64_t m
   preds.push_back(client_table_->NewComparisonPredicate(
                       tpch::kOrderKeyColName, KuduPredicate::LESS_EQUAL,
                       KuduValue::FromInt(max_key)));
-  OpenScanner(tpch::GetTpchQ1QueryColumns(), preds, out_scanner);
+  OpenScannerImpl(tpch::GetTpchQ1QueryColumns(), preds, out_scanner);
+}
+
+bool RpcLineItemDAO::IsTableEmpty() {
+  KuduScanner scanner(client_table_.get());
+  CHECK_OK(scanner.Open());
+  return !scanner.HasMoreRows();
+}
+
+void RpcLineItemDAO::OpenScannerImpl(const vector<string>& columns,
+                                     const vector<KuduPredicate*>& preds,
+                                     gscoped_ptr<Scanner>* out_scanner) {
+  gscoped_ptr<Scanner> ret(new Scanner);
+  ret->scanner_.reset(new KuduScanner(client_table_.get()));
+  ret->scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning);
+  CHECK_OK(ret->scanner_->SetProjectedColumns(columns));
+  for (KuduPredicate* pred : preds) {
+    CHECK_OK(ret->scanner_->AddConjunctPredicate(pred));
+  }
+  CHECK_OK(ret->scanner_->Open());
+  out_scanner->swap(ret);
+}
+
+void RpcLineItemDAO::HandleLine() {
+  if (batch_op_num_max_ == 0) {
+    // Nothing to take care in this case because it is an AUTO_FLUSH_BACKGROUND
+    // session.
+    return;
+  }
+  if (++batch_op_num_ < batch_op_num_max_) {
+    return;
+  }
+  batch_op_num_ = 0;
+  // The callback object frees itself after it is invoked.
+  session_->FlushAsync(new FlushCallback(session_, &semaphore_));
 }
 
 bool RpcLineItemDAO::Scanner::HasMore() {
@@ -210,28 +237,6 @@ bool RpcLineItemDAO::Scanner::HasMore() {
 
 void RpcLineItemDAO::Scanner::GetNext(vector<KuduRowResult> *rows) {
   CHECK_OK(scanner_->NextBatch(rows));
-}
-
-bool RpcLineItemDAO::IsTableEmpty() {
-  KuduScanner scanner(client_table_.get());
-  CHECK_OK(scanner.Open());
-  return !scanner.HasMoreRows();
-}
-
-RpcLineItemDAO::~RpcLineItemDAO() {
-  FinishWriting();
-}
-
-RpcLineItemDAO::RpcLineItemDAO(string master_address, string table_name,
-                               int batch_size, int mstimeout,
-                               vector<const KuduPartialRow*> tablet_splits)
-    : master_address_(std::move(master_address)),
-      table_name_(std::move(table_name)),
-      timeout_(MonoDelta::FromMilliseconds(mstimeout)),
-      batch_max_(batch_size),
-      tablet_splits_(std::move(tablet_splits)),
-      batch_size_(0),
-      semaphore_(1) {
 }
 
 } // namespace kudu

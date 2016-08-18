@@ -89,7 +89,9 @@ DEFINE_string(mini_cluster_base_dir, "/tmp/tpch",
 DEFINE_string(master_address, "localhost",
               "Address of master for the cluster to operate on");
 DEFINE_int32(tpch_max_batch_size, 1000,
-             "Maximum number of inserts/updates to batch at once");
+             "Maximum number of inserts/updates to batch at once.  Set to 0 "
+             "to delegate the batching control to the logic of the "
+             "KuduSession running in AUTO_BACKGROUND_MODE flush mode.");
 DEFINE_string(table_name, "lineitem",
               "The table name to write/read");
 

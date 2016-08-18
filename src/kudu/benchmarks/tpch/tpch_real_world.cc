@@ -38,12 +38,13 @@
 //    insert, so the last timing shouldn't be used.
 //
 // TODO Make the inserts multi-threaded. See Kudu-629 for the technique.
-#include <boost/bind.hpp>
 
-#include <glog/logging.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+
+#include <boost/bind.hpp>
+#include <glog/logging.h>
 
 #include "kudu/benchmarks/tpch/line_item_tsv_importer.h"
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
@@ -69,7 +70,9 @@ DEFINE_bool(tpch_load_data, true,
 DEFINE_bool(tpch_run_queries, true,
             "Query dbgen data as it is inserted");
 DEFINE_int32(tpch_max_batch_size, 1000,
-             "Maximum number of inserts to batch at once");
+             "Maximum number of inserts/updates to batch at once.  Set to 0 "
+             "to delegate the batching control to the logic of the "
+             "KuduSession running in AUTO_BACKGROUND_MODE flush mode.");
 DEFINE_int32(tpch_test_client_timeout_msec, 10000,
              "Timeout that will be used for all operations and RPCs");
 DEFINE_int32(tpch_test_runtime_sec, 0,
@@ -250,11 +253,12 @@ gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
     split_rows.push_back(row);
   }
 
-  gscoped_ptr<RpcLineItemDAO> dao(new RpcLineItemDAO(master_addresses_,
-                                                     FLAGS_tpch_table_name,
-                                                     FLAGS_tpch_max_batch_size,
-                                                     FLAGS_tpch_test_client_timeout_msec,
-                                                     split_rows));
+  gscoped_ptr<RpcLineItemDAO> dao(
+        new RpcLineItemDAO(master_addresses_,
+                           FLAGS_tpch_table_name,
+                           FLAGS_tpch_max_batch_size,
+                           FLAGS_tpch_test_client_timeout_msec,
+                           split_rows));
   dao->Init();
   return std::move(dao);
 }
@@ -266,14 +270,20 @@ void TpchRealWorld::LoadLineItemsThread(int i) {
 
   boost::function<void(KuduPartialRow*)> f =
       boost::bind(&LineItemTsvImporter::GetNextLine, &importer, _1);
-  while (importer.HasNextLine() && !stop_threads_.Load()) {
-    dao->WriteLine(f);
-    int64_t current_count = rows_inserted_.Increment();
-    if (current_count % 250000 == 0) {
-      LOG(INFO) << "Inserted " << current_count << " rows";
+  const string time_spent_msg = Substitute(
+        "by thread $0 to load generated data into the database", i);
+  LOG_TIMING(INFO, time_spent_msg) {
+    while (importer.HasNextLine() && !stop_threads_.Load()) {
+      dao->WriteLine(f);
+      int64_t current_count = rows_inserted_.Increment();
+      if (current_count % 250000 == 0) {
+        LOG(INFO) << "Inserted " << current_count << " rows";
+      }
     }
+    dao->FinishWriting();
   }
-  dao->FinishWriting();
+  LOG(INFO) << Substitute("Thread $0 inserted ", i)
+            << rows_inserted_.Load() << " rows in total";
 }
 
 void TpchRealWorld::MonitorDbgenThread(int i) {
