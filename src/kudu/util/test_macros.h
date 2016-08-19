@@ -63,7 +63,9 @@
   ASSERT_THAT(str, testing::ContainsRegex(pattern))
 
 // Batched substring regular expressions in extended regex (POSIX) syntax.
-#define ASSERT_STRINGS_MATCH(strings, pattern) do { \
+//
+// All strings must match the pattern.
+#define ASSERT_STRINGS_ALL_MATCH(strings, pattern) do { \
   const auto& _strings = (strings); \
   const auto& _pattern = (pattern); \
   int _str_idx = 0; \
@@ -73,6 +75,23 @@
         << " does not match string " << str; \
     _str_idx++; \
   } \
+} while (0)
+
+// Batched substring regular expressions in extended regex (POSIX) syntax.
+//
+// At least one string must match the pattern.
+#define ASSERT_STRINGS_ANY_MATCH(strings, pattern) do { \
+  const auto& _strings = (strings); \
+  const auto& _pattern = (pattern); \
+  bool matched = false; \
+  for (const auto& str : _strings) { \
+    if (testing::internal::RE::PartialMatch(str, testing::internal::RE(_pattern))) { \
+      matched = true; \
+      break; \
+    } \
+  } \
+  ASSERT_TRUE(matched) \
+      << "not one string matched pattern " << _pattern; \
 } while (0)
 
 #define ASSERT_FILE_EXISTS(env, path) do { \

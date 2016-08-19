@@ -182,7 +182,10 @@ def ldd_deps(exe):
   If the provided 'exe' is not a binary executable, returns
   an empty list.
   """
-  if exe.endswith(".sh"):
+  if (exe.endswith(".pl") or
+      exe.endswith(".py") or
+      exe.endswith(".sh") or
+      exe.endswith(".txt")):
     return []
   p = subprocess.Popen(["ldd", exe], stdout=subprocess.PIPE)
   out, err = p.communicate()
@@ -243,7 +246,13 @@ def create_archive_input(staging, argv,
     if os.path.isdir(d):
       d += "/"
     deps.append(d)
-  for d in deps:
+    # DEPS_FOR_ALL may include binaries whose dependencies are not dependencies
+    # of the test executable. We must include those dependencies in the archive
+    # for the binaries to be usable.
+    deps.extend(ldd_deps(d))
+
+  # Deduplicate dependencies included via DEPS_FOR_ALL.
+  for d in set(deps):
     # System libraries will end up being relative paths out
     # of the build tree. We need to copy those into the build
     # tree somewhere.
