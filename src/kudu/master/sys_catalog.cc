@@ -180,6 +180,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
     RETURN_NOT_OK_PREPEND(CreateDistributedConfig(master_->opts(), &config),
                           "Failed to create new distributed Raft config");
   } else {
+    config.set_obsolete_local(true);
     config.set_opid_index(consensus::kInvalidOpIdIndex);
     RaftPeerPB* peer = config.add_peers();
     peer->set_permanent_uuid(fs_manager->uuid());
