@@ -25,6 +25,7 @@
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/generated/version_defines.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.proxy.h"
@@ -275,6 +276,20 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     ASSERT_EQ(1, resp.servers_size());
     ASSERT_EQ("my-ts-uuid", resp.servers(0).instance_id().permanent_uuid());
     ASSERT_EQ(1, resp.servers(0).instance_id().instance_seqno());
+  }
+
+  // Ensure that trying to re-register with a different version is OK.
+  {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    req.mutable_registration()->CopyFrom(fake_reg);
+    // This string should never match the actual VersionInfo string, although
+    // the numeric portion will match.
+    req.mutable_registration()->set_software_version(Substitute("kudu $0 (rev SOME_NON_GIT_HASH)",
+                                                                KUDU_VERSION_STRING));
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
   }
 
   // Ensure that trying to re-register with a different port fails.

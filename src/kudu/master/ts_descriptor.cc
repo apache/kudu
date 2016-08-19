@@ -19,6 +19,7 @@
 
 #include <math.h>
 #include <mutex>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
@@ -55,6 +56,27 @@ TSDescriptor::TSDescriptor(std::string perm_id)
 TSDescriptor::~TSDescriptor() {
 }
 
+// Compares two repeated HostPortPB fields. Returns true if equal, false otherwise.
+static bool HostPortPBsEqual(const google::protobuf::RepeatedPtrField<HostPortPB>& pb1,
+                             const google::protobuf::RepeatedPtrField<HostPortPB>& pb2) {
+  if (pb1.size() != pb2.size()) {
+    return false;
+  }
+
+  // Do a set-based equality search.
+  std::unordered_set<HostPort, HostPortHasher, HostPortEqualityPredicate> hostports1;
+  std::unordered_set<HostPort, HostPortHasher, HostPortEqualityPredicate> hostports2;
+  for (int i = 0; i < pb1.size(); i++) {
+    HostPort hp1;
+    HostPort hp2;
+    if (!HostPortFromPB(pb1.Get(i), &hp1).ok()) return false;
+    if (!HostPortFromPB(pb2.Get(i), &hp2).ok()) return false;
+    hostports1.insert(hp1);
+    hostports2.insert(hp2);
+  }
+  return hostports1 == hostports2;
+}
+
 Status TSDescriptor::Register(const NodeInstancePB& instance,
                               const TSRegistrationPB& registration) {
   std::lock_guard<simple_spinlock> l(lock_);
@@ -62,7 +84,9 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
 
   // TODO(KUDU-418): we don't currently support changing IPs or hosts since the
   // host/port is stored persistently in each tablet's metadata.
-  if (registration_ && registration_->ShortDebugString() != registration.ShortDebugString()) {
+  if (registration_ &&
+      (!HostPortPBsEqual(registration_->rpc_addresses(), registration.rpc_addresses()) ||
+       !HostPortPBsEqual(registration_->http_addresses(), registration.http_addresses()))) {
     string msg = strings::Substitute(
         "Tablet server $0 is attempting to re-register with a different host/port. "
         "This is not currently supported. Old: {$1} New: {$2}",

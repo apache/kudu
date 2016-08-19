@@ -21,6 +21,7 @@
 #include <netdb.h>
 
 #include <algorithm>
+#include <boost/functional/hash.hpp>
 #include <gflags/gflags.h>
 #include <unordered_set>
 #include <utility>
@@ -76,6 +77,17 @@ HostPort::HostPort(std::string host, uint16_t port)
 HostPort::HostPort(const Sockaddr& addr)
   : host_(addr.host()),
     port_(addr.port()) {
+}
+
+bool operator==(const HostPort& hp1, const HostPort& hp2) {
+  return hp1.port() == hp2.port() && hp1.host() == hp2.host();
+}
+
+size_t HostPort::HashCode() const {
+  size_t seed = 0;
+  boost::hash_combine(seed, host_);
+  boost::hash_combine(seed, port_);
+  return seed;
 }
 
 Status HostPort::ParseString(const string& str, uint16_t default_port) {
