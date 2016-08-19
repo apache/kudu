@@ -567,6 +567,20 @@ public class KuduPredicate {
   }
 
   /**
+   * @return the encoded lower bound.
+   */
+  byte[] getLower() {
+    return lower;
+  }
+
+  /**
+   * @return the encoded upper bound.
+   */
+  byte[] getUpper() {
+    return upper;
+  }
+
+  /**
    * Returns the maximum value for the integer type.
    * @param type an integer type
    * @return the maximum value

@@ -45,7 +45,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kudu.tserver.Tserver.NewScanRequestPB;
@@ -60,8 +59,7 @@ import static org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
  * used from a single thread at a time. It's rarely (if ever?) useful to
  * scan concurrently from a shared scanner using multiple threads. If you
  * want to optimize large table scans using extra parallelism, create a few
- * scanners and give each of them a partition of the table to scan. Or use
- * MapReduce.
+ * scanners through the {@link KuduScanToken} API. Or use MapReduce.
  * <p>
  * There's no method in this class to explicitly open the scanner. It will open
  * itself automatically when you start scanning by calling {@link #nextRows()}.
@@ -140,6 +138,8 @@ public final class AsyncKuduScanner {
   private final KuduTable table;
   private final Schema schema;
 
+  private final PartitionPruner pruner;
+
   /**
    * Map of column name to predicate.
    */
@@ -154,18 +154,6 @@ public final class AsyncKuduScanner {
    * The maximum number of rows to scan.
    */
   private final long limit;
-
-  /**
-   * The start partition key of the next tablet to scan.
-   *
-   * Each time the scan exhausts a tablet, this is updated to that tablet's end partition key.
-   */
-  private byte[] nextPartitionKey;
-
-  /**
-   * The end partition key of the last tablet to scan.
-   */
-  private final byte[] endPartitionKey;
 
   /**
    * Set in the builder. If it's not set by the user, it will default to EMPTY_ARRAY.
@@ -228,16 +216,13 @@ public final class AsyncKuduScanner {
 
   final long scanRequestTimeout;
 
-  private static final AtomicBoolean PARTITION_PRUNE_WARN = new AtomicBoolean(true);
-
   AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedNames,
                    List<Integer> projectedIndexes, ReadMode readMode, Common.OrderMode orderMode,
                    long scanRequestTimeout,
                    Map<String, KuduPredicate> predicates, long limit,
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
-                   byte[] startPartitionKey, byte[] endPartitionKey,
-                   long htTimestamp, int batchSizeBytes) {
+                   long htTimestamp, int batchSizeBytes, PartitionPruner pruner) {
     checkArgument(batchSizeBytes > 0, "Need a strictly positive number of bytes, " +
         "got %s", batchSizeBytes);
     checkArgument(limit > 0, "Need a strictly positive number for the limit, " +
@@ -255,6 +240,7 @@ public final class AsyncKuduScanner {
 
     this.client = client;
     this.table = table;
+    this.pruner = pruner;
     this.readMode = readMode;
     this.orderMode = orderMode;
     this.scanRequestTimeout = scanRequestTimeout;
@@ -266,46 +252,6 @@ public final class AsyncKuduScanner {
     this.endPrimaryKey = endPrimaryKey;
     this.htTimestamp = htTimestamp;
     this.batchSizeBytes = batchSizeBytes;
-
-    if (!table.getPartitionSchema().isSimpleRangePartitioning() &&
-        (startPrimaryKey.length != 0 ||
-         endPrimaryKey.length != 0) &&
-        PARTITION_PRUNE_WARN.getAndSet(false)) {
-      LOG.warn("Starting full table scan. " +
-               "In the future this scan may be automatically optimized with partition pruning.");
-    }
-
-    if (table.getPartitionSchema().isSimpleRangePartitioning()) {
-      // If the table is simple range partitioned, then the partition key space
-      // is isomorphic to the primary key space. We can potentially reduce the
-      // scan length by only scanning the intersection of the primary key range
-      // and the partition key range. This is a stop-gap until real partition
-      // pruning is in place that can work across any partitioning type.
-
-      if ((endPartitionKey.length != 0 && Bytes.memcmp(startPrimaryKey, endPartitionKey) >= 0) ||
-          (endPrimaryKey.length != 0 && Bytes.memcmp(startPartitionKey, endPrimaryKey) >= 0)) {
-        // The primary key range and the partition key range do not intersect;
-        // the scan will be empty.
-        this.nextPartitionKey = startPartitionKey;
-        this.endPartitionKey = endPartitionKey;
-      } else {
-        // Assign the scan's partition key range to the intersection of the
-        // primary key and partition key ranges.
-        if (Bytes.memcmp(startPartitionKey, startPrimaryKey) < 0) {
-          this.nextPartitionKey = startPrimaryKey;
-        } else {
-          this.nextPartitionKey = startPartitionKey;
-        }
-        if (endPrimaryKey.length != 0 && Bytes.memcmp(endPartitionKey, endPrimaryKey) > 0) {
-          this.endPartitionKey = endPrimaryKey;
-        } else {
-          this.endPartitionKey = endPartitionKey;
-        }
-      }
-    } else {
-      this.nextPartitionKey = startPartitionKey;
-      this.endPartitionKey = endPartitionKey;
-    }
 
     // Map the column names to actual columns in the table schema.
     // If the user set this to 'null', we scan all columns.
@@ -327,17 +273,9 @@ public final class AsyncKuduScanner {
       this.schema = table.getSchema();
     }
 
-    // If any of the column predicates are of type None (the predicate is known
-    // to match no rows), then the scan can be short circuited without
-    // contacting any tablet servers.
-    boolean shortCircuit = false;
-    for (KuduPredicate predicate : this.predicates.values()) {
-      if (predicate.getType() == KuduPredicate.PredicateType.NONE) {
-        shortCircuit = true;
-        break;
-      }
-    }
-    if (shortCircuit) {
+    // If the partition pruner has pruned all partitions, then the scan can be
+    // short circuited without contacting any tablet servers.
+    if (!pruner.hasMorePartitionKeyRanges()) {
       LOG.debug("Short circuiting scan with predicates: {}", predicates.values());
       this.hasMore = false;
       this.closed = true;
@@ -454,17 +392,14 @@ public final class AsyncKuduScanner {
           invalidate();
           if (e instanceof NonCoveredRangeException) {
             NonCoveredRangeException ncre = (NonCoveredRangeException) e;
-            nextPartitionKey = ncre.getNonCoveredRangeEnd();
+            pruner.removePartitionKeyRange(ncre.getNonCoveredRangeEnd());
 
             // Stop scanning if the non-covered range is past the end partition key.
-            if (ncre.getNonCoveredRangeEnd().length == 0
-                || (endPartitionKey.length != 0
-                && Bytes.memcmp(endPartitionKey, ncre.getNonCoveredRangeEnd()) <= 0)) {
+            if (!pruner.hasMorePartitionKeyRanges()) {
               hasMore = false;
               closed = true; // the scanner is closed on the other side at this point
               return Deferred.fromResult(RowResultIterator.empty());
             }
-            nextPartitionKey = ncre.getNonCoveredRangeEnd();
             scannerId = null;
             sequenceId = 0;
             return nextRows();
@@ -548,10 +483,9 @@ public final class AsyncKuduScanner {
 
   void scanFinished() {
     Partition partition = tablet.getPartition();
+    pruner.removePartitionKeyRange(partition.getPartitionKeyEnd());
     // Stop scanning if we have scanned until or past the end partition key.
-    if (partition.isEndPartition()
-        || (this.endPartitionKey.length != 0
-            && Bytes.memcmp(this.endPartitionKey, partition.getPartitionKeyEnd()) <= 0)) {
+    if (!pruner.hasMorePartitionKeyRanges()) {
       hasMore = false;
       closed = true; // the scanner is closed on the other side at this point
       return;
@@ -560,7 +494,6 @@ public final class AsyncKuduScanner {
       LOG.debug("Done scanning tablet {} for partition {} with scanner id {}",
                 tablet.getTabletIdAsString(), tablet.getPartition(), Bytes.pretty(scannerId));
     }
-    nextPartitionKey = partition.getPartitionKeyEnd();
     scannerId = null;
     sequenceId = 0;
     invalidate();
@@ -859,7 +792,7 @@ public final class AsyncKuduScanner {
     @Override
     public byte[] partitionKey() {
       // This key is used to lookup where the request needs to go
-      return nextPartitionKey;
+      return pruner.nextPartitionKey();
     }
   }
 
@@ -885,8 +818,7 @@ public final class AsyncKuduScanner {
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, orderMode,
           scanRequestTimeout, predicates, limit, cacheBlocks,
           prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
-          lowerBoundPartitionKey, upperBoundPartitionKey,
-          htTimestamp, batchSizeBytes);
+          htTimestamp, batchSizeBytes, PartitionPruner.create(this));
     }
   }
 }

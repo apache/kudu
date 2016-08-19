@@ -308,12 +308,12 @@ public abstract class AbstractKuduScannerBuilder
 
   /**
    * Set an encoded (inclusive) start partition key for the scan.
+   * Not for public consumption: use either predicates or primary key bounds instead.
    *
    * @param partitionKey the encoded partition key
    * @return this instance
    */
-  @InterfaceAudience.LimitedPrivate("Impala")
-  public S lowerBoundPartitionKeyRaw(byte[] partitionKey) {
+  S lowerBoundPartitionKeyRaw(byte[] partitionKey) {
     if (Bytes.memcmp(partitionKey, lowerBoundPartitionKey) > 0) {
       this.lowerBoundPartitionKey = partitionKey;
     }
@@ -322,12 +322,12 @@ public abstract class AbstractKuduScannerBuilder
 
   /**
    * Set an encoded (exclusive) end partition key for the scan.
+   * Not for public consumption: use either predicates or primary key bounds instead.
    *
    * @param partitionKey the encoded partition key
    * @return this instance
    */
-  @InterfaceAudience.LimitedPrivate("Impala")
-  public S exclusiveUpperBoundPartitionKeyRaw(byte[] partitionKey) {
+  S exclusiveUpperBoundPartitionKeyRaw(byte[] partitionKey) {
     if (upperBoundPartitionKey.length == 0 || Bytes.memcmp(partitionKey, upperBoundPartitionKey) < 0) {
       this.upperBoundPartitionKey = partitionKey;
     }

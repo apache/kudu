@@ -79,7 +79,7 @@ public class PartitionSchema {
    * @return a byte array containing the encoded partition key of the row
    */
   public byte[] encodePartitionKey(PartialRow row) {
-    return new KeyEncoder().encodePartitionKey(row, this);
+    return KeyEncoder.encodePartitionKey(row, this);
   }
 
   public RangeSchema getRangeSchema() {

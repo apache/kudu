@@ -1229,7 +1229,6 @@ public class AsyncKuduClient implements AutoCloseable {
    *         get called back, if deadline is reached, the deferred result will get erred back
    * @return a deferred object that yields a list of the tablets in the table, which can be queried
    *         for metadata about each tablet
-   * @throws Exception MasterErrorException if the table doesn't exist
    */
   Deferred<List<LocatedTablet>> locateTable(final KuduTable table,
                                             final byte[] startPartitionKey,

@@ -16,16 +16,18 @@
 // under the License.
 package org.apache.kudu.client;
 
+import com.google.common.primitives.Ints;
 import com.google.common.primitives.UnsignedLongs;
 import com.sangupta.murmur.Murmur2;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
+import org.apache.kudu.util.ByteVec;
 import org.apache.kudu.util.Pair;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -39,7 +41,9 @@ import java.util.List;
 @InterfaceAudience.Private
 class KeyEncoder {
 
-  private final ByteArrayOutputStream buf = new ByteArrayOutputStream();
+  /** Non-constructable utility class. */
+  private KeyEncoder() {
+  }
 
   /**
    * Encodes the primary key of the row.
@@ -47,15 +51,29 @@ class KeyEncoder {
    * @param row the row to encode
    * @return the encoded primary key of the row
    */
-  public byte[] encodePrimaryKey(final PartialRow row) {
-    buf.reset();
-
+  public static byte[] encodePrimaryKey(final PartialRow row) {
+    ByteVec buf = ByteVec.create();
     final Schema schema = row.getSchema();
     for (int columnIdx = 0; columnIdx < schema.getPrimaryKeyColumnCount(); columnIdx++) {
       final boolean isLast = columnIdx + 1 == schema.getPrimaryKeyColumnCount();
-      encodeColumn(row, columnIdx, isLast);
+      encodeColumn(row, columnIdx, isLast, buf);
     }
-    return extractByteArray();
+    return buf.toArray();
+  }
+
+  /**
+   * Returns the bucket of the row for the given hash bucket schema. All columns
+   * in the hash bucket schema must be set in the row.
+   *
+   * @param row the row containing hash schema columns
+   * @param hashSchema the hash schema
+   * @return the hash bucket of the row
+   */
+  public static int getHashBucket(PartialRow row, HashBucketSchema hashSchema) {
+    ByteVec buf = ByteVec.create();
+    encodeColumns(row, hashSchema.getColumnIds(), buf);
+    long hash = Murmur2.hash64(buf.data(), buf.len(), hashSchema.getSeed());
+    return (int) UnsignedLongs.remainder(hash, hashSchema.getNumBuckets());
   }
 
   /**
@@ -65,28 +83,29 @@ class KeyEncoder {
    * @param partitionSchema the partition schema describing the table's partitioning
    * @return an encoded partition key
    */
-  public byte[] encodePartitionKey(PartialRow row, PartitionSchema partitionSchema) {
-    buf.reset();
+  public static byte[] encodePartitionKey(PartialRow row, PartitionSchema partitionSchema) {
+    ByteVec buf = ByteVec.create();
     if (!partitionSchema.getHashBucketSchemas().isEmpty()) {
-      ByteBuffer bucketBuf = ByteBuffer.allocate(4 * partitionSchema.getHashBucketSchemas().size());
-      bucketBuf.order(ByteOrder.BIG_ENDIAN);
-
-      for (final HashBucketSchema hashBucketSchema : partitionSchema.getHashBucketSchemas()) {
-        encodeColumns(row, hashBucketSchema.getColumnIds());
-        byte[] encodedColumns = extractByteArray();
-        long hash = Murmur2.hash64(encodedColumns,
-                                   encodedColumns.length,
-                                   hashBucketSchema.getSeed());
-        int bucket = (int) UnsignedLongs.remainder(hash, hashBucketSchema.getNumBuckets());
-        bucketBuf.putInt(bucket);
+      for (final HashBucketSchema hashSchema : partitionSchema.getHashBucketSchemas()) {
+        encodeHashBucket(getHashBucket(row, hashSchema), buf);
       }
-
-      assert bucketBuf.arrayOffset() == 0;
-      buf.write(bucketBuf.array(), 0, bucketBuf.position());
     }
 
-    encodeColumns(row, partitionSchema.getRangeSchema().getColumns());
-    return extractByteArray();
+    encodeColumns(row, partitionSchema.getRangeSchema().getColumns(), buf);
+    return buf.toArray();
+  }
+
+  /**
+   * Encodes the provided row into a range partition key.
+   *
+   * @param row the row to encode
+   * @param rangeSchema the range partition schema
+   * @return the encoded range partition key
+   */
+  public static byte[] encodeRangePartitionKey(PartialRow row, PartitionSchema.RangeSchema rangeSchema) {
+    ByteVec buf = ByteVec.create();
+    encodeColumns(row, rangeSchema.getColumns(), buf);
+    return buf.toArray();
   }
 
   /**
@@ -94,20 +113,23 @@ class KeyEncoder {
    * @param row the row containing the columns to encode
    * @param columnIds the IDs of each column to encode
    */
-  private void encodeColumns(PartialRow row, List<Integer> columnIds) {
+  private static void encodeColumns(PartialRow row, List<Integer> columnIds, ByteVec buf) {
     for (int i = 0; i < columnIds.size(); i++) {
       boolean isLast = i + 1 == columnIds.size();
-      encodeColumn(row, row.getSchema().getColumnIndex(columnIds.get(i)), isLast);
+      encodeColumn(row, row.getSchema().getColumnIndex(columnIds.get(i)), isLast, buf);
     }
   }
 
   /**
-   * Encodes a single column of a row.
+   * Encodes a single column of a row into the output buffer.
    * @param row the row being encoded
    * @param columnIdx the column index of the column to encode
    * @param isLast whether the column is the last component of the key
    */
-  private void encodeColumn(PartialRow row, int columnIdx, boolean isLast) {
+  private static void encodeColumn(PartialRow row,
+                                   int columnIdx,
+                                   boolean isLast,
+                                   ByteVec buf) {
     final Schema schema = row.getSchema();
     final ColumnSchema column = schema.getColumnByIndex(columnIdx);
     if (!row.isSet(columnIdx)) {
@@ -117,82 +139,75 @@ class KeyEncoder {
     final Type type = column.getType();
 
     if (type == Type.STRING || type == Type.BINARY) {
-      addBinaryComponent(row.getVarLengthData().get(columnIdx), isLast);
+      encodeBinary(row.getVarLengthData().get(columnIdx), isLast, buf);
     } else {
-      addComponent(row.getRowAlloc(),
-                   schema.getColumnOffset(columnIdx),
-                   type.getSize(),
-                   type);
+      encodeSignedInt(row.getRowAlloc(),
+                      schema.getColumnOffset(columnIdx),
+                      type.getSize(),
+                      buf);
     }
   }
 
   /**
-   * Encodes a byte buffer into the key.
+   * Encodes a variable length binary value into the output buffer.
    * @param value the value to encode
    * @param isLast whether the value is the final component in the key
+   * @param buf the output buffer
    */
-  private void addBinaryComponent(ByteBuffer value, boolean isLast) {
+  private static void encodeBinary(ByteBuffer value, boolean isLast, ByteVec buf) {
     value.reset();
 
     // TODO find a way to not have to read byte-by-byte that doesn't require extra copies. This is
     // especially slow now that users can pass direct byte buffers.
     while (value.hasRemaining()) {
       byte currentByte = value.get();
-      buf.write(currentByte);
+      buf.push(currentByte);
       if (!isLast && currentByte == 0x00) {
         // If we're a middle component of a composite key, we need to add a \x00
         // at the end in order to separate this component from the next one. However,
         // if we just did that, we'd have issues where a key that actually has
         // \x00 in it would compare wrong, so we have to instead add \x00\x00, and
         // encode \x00 as \x00\x01. -- key_encoder.h
-        buf.write(0x01);
+        buf.push((byte) 0x01);
       }
     }
 
     if (!isLast) {
-      buf.write(0x00);
-      buf.write(0x00);
+      buf.push((byte) 0x00);
+      buf.push((byte) 0x00);
     }
   }
 
   /**
-   * Encodes a value of the given type into the key.
-   * @param value the value to encode
-   * @param offset the offset into the {@code value} buffer that the value begins
-   * @param len the length of the value
-   * @param type the type of the value to encode
+   * Encodes a signed integer into the output buffer
+   *
+   * @param value an array containing the little-endian encoded integer
+   * @param offset the offset of the value into the value array
+   * @param len the width of the value
+   * @param buf the output buffer
    */
-  private void addComponent(byte[] value, int offset, int len, Type type) {
-    switch (type) {
-      case INT8:
-      case INT16:
-      case INT32:
-      case INT64:
-      case TIMESTAMP:
-        // Picking the first byte because big endian.
-        byte lastByte = value[offset + (len - 1)];
-        lastByte = Bytes.xorLeftMostBit(lastByte);
-        buf.write(lastByte);
-        if (len > 1) {
-          for (int i = len - 2; i >= 0; i--) {
-            buf.write(value[offset + i]);
-          }
-        }
-        break;
-      default:
-        throw new IllegalArgumentException(String.format(
-            "The column type %s is not a valid key component type", type));
+  private static void encodeSignedInt(byte[] value,
+                                      int offset,
+                                      int len,
+                                      ByteVec buf) {
+    // Picking the first byte because big endian.
+    byte lastByte = value[offset + (len - 1)];
+    lastByte = Bytes.xorLeftMostBit(lastByte);
+    buf.push(lastByte);
+    if (len > 1) {
+      for (int i = len - 2; i >= 0; i--) {
+        buf.push(value[offset + i]);
+      }
     }
   }
 
   /**
-   * Returns the encoded key, and resets the key encoder to be used for another key.
-   * @return the encoded key which has been built through calls to {@link #addComponent}
+   * Encodes a hash bucket into the buffer.
+   * @param bucket the bucket
+   * @param buf the buffer
    */
-  private byte[] extractByteArray() {
-    byte[] bytes = buf.toByteArray();
-    buf.reset();
-    return bytes;
+  public static void encodeHashBucket(int bucket, ByteVec buf) {
+    buf.append(Ints.toByteArray(bucket));
   }
 
   /**
@@ -311,19 +326,19 @@ class KeyEncoder {
     // When encoding a binary column that is not the final column in the key, a
     // 0x0000 separator is used to retain lexicographic comparability. Null
     // bytes in the input are escaped as 0x0001.
-    ByteArrayOutputStream baos = new ByteArrayOutputStream(key.remaining());
+    ByteVec buf = ByteVec.withCapacity(key.remaining());
     for (int i = key.position(); i < key.limit(); i++) {
       if (key.get(i) == 0) {
         switch (key.get(i + 1)) {
           case 0: {
-            baos.write(key.array(),
+            buf.append(key.array(),
                        key.arrayOffset() + key.position(),
                        i - key.position());
             key.position(i + 2);
-            return baos.toByteArray();
+            return buf.toArray();
           }
           case 1: {
-            baos.write(key.array(),
+            buf.append(key.array(),
                        key.arrayOffset() + key.position(),
                        i + 1 - key.position());
             i++;
@@ -335,11 +350,11 @@ class KeyEncoder {
       }
     }
 
-    baos.write(key.array(),
+    buf.append(key.array(),
                key.arrayOffset() + key.position(),
                key.remaining());
     key.position(key.limit());
-    return baos.toByteArray();
+    return buf.toArray();
   }
 
   /**

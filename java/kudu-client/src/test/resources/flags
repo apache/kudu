@@ -1,4 +1,3 @@
---v=1
 --logtostderr
 --never_fsync
 --unlock_experimental_flags

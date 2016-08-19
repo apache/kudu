@@ -44,10 +44,10 @@ using std::vector;
 namespace kudu {
 
 void CheckPrunedPartitions(const Schema& schema,
-                            const PartitionSchema& partition_schema,
-                            const vector<Partition> partitions,
-                            const ScanSpec& spec,
-                            size_t remaining_tablets) {
+                           const PartitionSchema& partition_schema,
+                           const vector<Partition> partitions,
+                           const ScanSpec& spec,
+                           size_t remaining_tablets) {
 
   PartitionPruner pruner;
   pruner.Init(schema, partition_schema, spec);
@@ -369,10 +369,6 @@ TEST(TestPartitionPruner, TestRangePruning) {
   // c < 0
   Check({ ColumnPredicate::Range(schema.column(2), &neg_ten, &zero) }, 1);
 
-  // c >= -10
-  // c < 0
-  Check({ ColumnPredicate::Range(schema.column(2), &neg_ten, &zero) }, 1);
-
   // c >= 5
   // c < 100
   Check({ ColumnPredicate::Range(schema.column(2), &five, &hundred) }, 2);
@@ -441,7 +437,7 @@ TEST(TestPartitionPruner, TestRangePruning) {
 
 TEST(TestPartitionPruner, TestHashPruning) {
   // CREATE TABLE t
-  // (a INT8, b STRING, c INT8)
+  // (a INT8, b INT8, c INT8)
   // PRIMARY KEY (a, b, c)
   // DISTRIBUTE BY HASH(a) INTO 2 BUCKETS,
   //               HASH(b, c) INTO 2 BUCKETS;
@@ -523,7 +519,7 @@ TEST(TestPartitionPruner, TestPruning) {
   // CREATE TABLE timeseries
   // (host STRING, metric STRING, time TIMESTAMP, value DOUBLE)
   // PRIMARY KEY (host, metric, time)
-  // DISTRIBUTE BY RANGE(time) SPLIT ROWS [(5), (10)],
+  // DISTRIBUTE BY RANGE(time) SPLIT ROWS [(10)],
   //               HASH(host, metric) INTO 2 BUCKETS;
   Schema schema({ ColumnSchema("host", STRING),
                   ColumnSchema("metric", STRING),
@@ -604,10 +600,10 @@ TEST(TestPartitionPruner, TestPruning) {
 
   // host = "a"
   // metric = "a"
-  // timestamp = 10;
+  // timestamp >= 10;
   Check({ ColumnPredicate::Equality(schema.column(0), &a),
           ColumnPredicate::Equality(schema.column(1), &a),
-          ColumnPredicate::Equality(schema.column(2), &ten) },
+          ColumnPredicate::Range(schema.column(2), &ten, nullptr) },
         "", "",
         1);
 
@@ -626,12 +622,12 @@ TEST(TestPartitionPruner, TestPruning) {
   // partition key >= (hash=1)
   Check({}, string("\0\0\0\1", 4), "", 2);
 
-  // a = 10
+  // timestamp = 10
   // partition key < (hash=1)
   Check({ ColumnPredicate::Equality(schema.column(2), &ten) },
         "", string("\0\0\0\1", 4), 1);
 
-  // a = 10
+  // timestamp = 10
   // partition key >= (hash=1)
   Check({ ColumnPredicate::Equality(schema.column(2), &ten) },
         string("\0\0\0\1", 4), "", 1);

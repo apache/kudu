@@ -16,7 +16,6 @@
 // under the License.
 package org.apache.kudu.client;
 
-import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -237,7 +236,6 @@ public class TestKeyEncoding {
 
   @Test
   public void testPartitionKeyEncoding() {
-    KeyEncoder encoder = new KeyEncoder();
     Schema schema = buildSchema(
         new ColumnSchemaBuilder("a", Type.INT32).key(true),
         new ColumnSchemaBuilder("b", Type.STRING).key(true),
@@ -254,7 +252,7 @@ public class TestKeyEncoding {
     rowA.addInt("a", 0);
     rowA.addString("b", "");
     rowA.addString("c", "");
-    assertBytesEquals(encoder.encodePartitionKey(rowA, partitionSchema),
+    assertBytesEquals(KeyEncoder.encodePartitionKey(rowA, partitionSchema),
                       new byte[]{
                           0, 0, 0, 0,           // hash(0, "")
                           0, 0, 0, 0x14,        // hash("")
@@ -266,7 +264,7 @@ public class TestKeyEncoding {
     rowB.addInt("a", 1);
     rowB.addString("b", "");
     rowB.addString("c", "");
-    assertBytesEquals(encoder.encodePartitionKey(rowB, partitionSchema),
+    assertBytesEquals(KeyEncoder.encodePartitionKey(rowB, partitionSchema),
                       new byte[]{
                           0, 0, 0, 0x5,         // hash(1, "")
                           0, 0, 0, 0x14,        // hash("")
@@ -278,7 +276,7 @@ public class TestKeyEncoding {
     rowC.addInt("a", 0);
     rowC.addString("b", "b");
     rowC.addString("c", "c");
-    assertBytesEquals(encoder.encodePartitionKey(rowC, partitionSchema),
+    assertBytesEquals(KeyEncoder.encodePartitionKey(rowC, partitionSchema),
                       new byte[]{
                           0, 0, 0, 0x1A,        // hash(0, "b")
                           0, 0, 0, 0x1D,        // hash("c")
@@ -291,7 +289,7 @@ public class TestKeyEncoding {
     rowD.addInt("a", 1);
     rowD.addString("b", "b");
     rowD.addString("c", "c");
-    assertBytesEquals(encoder.encodePartitionKey(rowD, partitionSchema),
+    assertBytesEquals(KeyEncoder.encodePartitionKey(rowD, partitionSchema),
                       new byte[]{
                           0, 0, 0, 0,           // hash(1, "b")
                           0, 0, 0, 0x1D,        // hash("c")

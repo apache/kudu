@@ -179,7 +179,7 @@ public class KuduTable {
   @Deprecated
   public List<LocatedTablet> getTabletsLocations(byte[] startKey,
                                                  byte[] endKey,
-                                                 long deadline) throws Exception{
+                                                 long deadline) throws Exception {
     return client.syncLocateTable(this, startKey, endKey, deadline);
   }
 

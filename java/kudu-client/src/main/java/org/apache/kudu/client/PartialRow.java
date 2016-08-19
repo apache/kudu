@@ -29,6 +29,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.util.ByteVec;
 
 /**
  * Class used to represent parts of a row along with its schema.<p>
@@ -511,7 +512,7 @@ public class PartialRow {
    * @return a byte array containing an encoded primary key
    */
   public byte[] encodePrimaryKey() {
-    return new KeyEncoder().encodePrimaryKey(this);
+    return KeyEncoder.encodePrimaryKey(this);
   }
 
   /**
@@ -621,6 +622,104 @@ public class PartialRow {
       case STRING: addStringUtf8(index, AsyncKuduClient.EMPTY_ARRAY); break;
       case BINARY: addBinary(index, AsyncKuduClient.EMPTY_ARRAY); break;
     }
+  }
+
+  /**
+   * Sets the column to the provided raw value.
+   * @param index the index of the column to set
+   * @param value the raw value
+   */
+  void setRaw(int index, byte[] value) {
+    Type type = schema.getColumnByIndex(index).getType();
+    switch (type) {
+      case BOOL:
+      case INT8:
+      case INT16:
+      case INT32:
+      case INT64:
+      case TIMESTAMP:
+      case FLOAT:
+      case DOUBLE: {
+        Preconditions.checkArgument(value.length == type.getSize());
+        System.arraycopy(value, 0, rowAlloc, getPositionInRowAllocAndSetBitSet(index), value.length);
+        break;
+      }
+      case STRING:
+      case BINARY: {
+        addVarLengthData(index, value);
+        break;
+      }
+    }
+  }
+
+  /**
+   * Increments the column at the given index, returning {@code false} if the
+   * value is already the maximum.
+   *
+   * @param index the column index to increment
+   * @return {@code true} if the column is successfully incremented, or {@code false} if
+   *         it is already the maximum value
+   */
+  boolean incrementColumn(int index) {
+    Type type = schema.getColumnByIndex(index).getType();
+    Preconditions.checkState(isSet(index));
+    int offset = getPositionInRowAllocAndSetBitSet(index);
+    switch (type) {
+      case BOOL: {
+        boolean isFalse = rowAlloc[offset] == 0;
+        rowAlloc[offset] = 1;
+        return isFalse;
+      }
+      case INT8:{
+        byte existing = rowAlloc[offset];
+        if (existing == Byte.MAX_VALUE) return false;
+        rowAlloc[offset] = (byte) (existing + 1);
+        return true;
+      }
+      case INT16: {
+        short existing = Bytes.getShort(rowAlloc, offset);
+        if (existing == Short.MAX_VALUE) return false;
+        Bytes.setShort(rowAlloc, (short) (existing + 1), offset);
+        return true;
+      }
+      case INT32: {
+        int existing = Bytes.getInt(rowAlloc, offset);
+        if (existing == Integer.MAX_VALUE) return false;
+        Bytes.setInt(rowAlloc, existing + 1, offset);
+        return true;
+      }
+      case INT64:
+      case TIMESTAMP: {
+        long existing = Bytes.getLong(rowAlloc, offset);
+        if (existing == Long.MAX_VALUE) return false;
+        Bytes.setLong(rowAlloc, existing + 1, offset);
+        return true;
+      }
+      case FLOAT: {
+        float existing = Bytes.getFloat(rowAlloc, offset);
+        float incremented = Math.nextAfter(existing, Float.POSITIVE_INFINITY);
+        if (existing == incremented) return false;
+        Bytes.setFloat(rowAlloc, incremented, offset);
+        return true;
+      }
+      case DOUBLE: {
+        double existing = Bytes.getFloat(rowAlloc, offset);
+        double incremented = Math.nextAfter(existing, Double.POSITIVE_INFINITY);
+        if (existing == incremented) return false;
+        Bytes.setDouble(rowAlloc, incremented, offset);
+        return true;
+      }
+      case STRING:
+      case BINARY: {
+        ByteBuffer data = varLengthData.get(index);
+        int len = data.limit() - data.position();
+        byte[] incremented = new byte[len + 1];
+        System.arraycopy(data.array(), data.arrayOffset() + data.position(), incremented, 0, len);
+        addVarLengthData(index, incremented);
+        return true;
+      }
+    }
+    throw new RuntimeException("unreachable");
   }
 
   /**

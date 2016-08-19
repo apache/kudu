@@ -28,6 +28,7 @@ import org.apache.kudu.Common;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.Client.ScanTokenPB;
+import org.apache.kudu.util.Pair;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -320,15 +321,23 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       proto.setCacheBlocks(cacheBlocks);
 
       try {
-        List<LocatedTablet> tablets;
-        if (table.getPartitionSchema().isSimpleRangePartitioning()) {
-          // TODO: replace this with proper partition pruning.
-          tablets = table.getTabletsLocations(
-              lowerBoundPrimaryKey.length == 0 ? null : lowerBoundPrimaryKey,
-              upperBoundPrimaryKey.length == 0 ? null : upperBoundPrimaryKey,
+        PartitionPruner pruner = PartitionPruner.create(this);
+        List<LocatedTablet> tablets = new ArrayList<>();
+        while (pruner.hasMorePartitionKeyRanges()) {
+          Pair<byte[], byte[]> partitionRange = pruner.nextPartitionKeyRange();
+          List<LocatedTablet> newTablets = table.getTabletsLocations(
+              partitionRange.getFirst().length == 0 ? null : partitionRange.getFirst(),
+              partitionRange.getSecond().length == 0 ? null : partitionRange.getSecond(),
               timeout);
-        } else {
-          tablets = table.getTabletsLocations(timeout);
+
+          if (newTablets.isEmpty()) {
+            pruner.removePartitionKeyRange(partitionRange.getSecond());
+          } else {
+            pruner.removePartitionKeyRange(newTablets.get(newTablets.size() - 1)
+                                                     .getPartition()
+                                                     .getPartitionKeyEnd());
+          }
+          tablets.addAll(newTablets);
         }
 
         List<KuduScanToken> tokens = new ArrayList<>(tablets.size());
