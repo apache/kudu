@@ -197,6 +197,7 @@ set(UTIL_LIBS
   glog
   gutil
   histogram_proto
+  libev
   maintenance_manager_proto
   pb_util_proto
   protobuf

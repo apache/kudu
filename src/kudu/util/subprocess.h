@@ -17,9 +17,10 @@
 #ifndef KUDU_UTIL_SUBPROCESS_H
 #define KUDU_UTIL_SUBPROCESS_H
 
-#include <glog/logging.h>
 #include <string>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
@@ -97,12 +98,12 @@ class Subprocess {
 
   // Same as above, but accepts a vector that includes the path to the
   // executable as argv[0] and the arguments to the program in argv[1..n].
-  static Status Call(const std::vector<std::string>& argv);
-
-  // Same as above, but collects the output from the child process stdout into
-  // 'stdout_out'.
+  //
+  // Also collects the output from the child process stdout and stderr into
+  // 'stdout_out' and 'stderr_out' respectively.
   static Status Call(const std::vector<std::string>& argv,
-                     std::string* stdout_out);
+                     std::string* stdout_out = nullptr,
+                     std::string* stderr_out = nullptr);
 
   // Return the pipe fd to the child's standard stream.
   // Stream should not be disabled or shared.

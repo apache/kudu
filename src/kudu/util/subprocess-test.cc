@@ -15,11 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <vector>
+#include "kudu/util/subprocess.h"
+
+#include <unistd.h>
+
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
-#include "kudu/util/subprocess.h"
+
 #include "kudu/util/test_util.h"
 
 using std::string;
@@ -103,6 +107,24 @@ TEST_F(SubprocessTest, TestKill) {
   wait_status = 0;
   ASSERT_OK(p.Wait(&wait_status));
   ASSERT_EQ(SIGKILL, WTERMSIG(wait_status));
+}
+
+// Writes enough bytes to stdout and stderr concurrently that if Call() were
+// fully reading them one at a time, the test would deadlock.
+TEST_F(SubprocessTest, TestReadFromStdoutAndStderr) {
+  // Set an alarm to break out of any potential deadlocks (if the implementation
+  // regresses).
+  alarm(60);
+
+  string stdout;
+  string stderr;
+  ASSERT_OK(Subprocess::Call({
+    "/bin/bash",
+    "-c",
+    "dd if=/dev/urandom of=/dev/stdout bs=512 count=2048 &"
+    "dd if=/dev/urandom of=/dev/stderr bs=512 count=2048 &"
+    "wait"
+  }, &stdout, &stderr));
 }
 
 } // namespace kudu

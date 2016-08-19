@@ -19,19 +19,21 @@
 
 #include <dirent.h>
 #include <fcntl.h>
-#include <glog/logging.h>
-#include <glog/stl_logging.h>
-#include <memory>
 #include <signal.h>
-#include <string>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#include <vector>
-
 #if defined(__linux__)
 #include <sys/prctl.h>
 #endif
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include <ev++.h>
+#include <glog/logging.h>
+#include <glog/stl_logging.h>
 
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/port.h"
@@ -43,6 +45,7 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/status.h"
 
+using std::unique_ptr;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -144,6 +147,98 @@ void CloseNonStandardFDs(DIR* fd_dir) {
   }
 }
 
+void RedirectToDevNull(int fd) {
+  // We must not close stderr or stdout, because then when a new file descriptor
+  // gets opened, it might get that fd number.  (We always allocate the lowest
+  // available file descriptor number.)  Instead, we reopen that fd as
+  // /dev/null.
+  int dev_null = open("/dev/null", O_WRONLY);
+  if (dev_null < 0) {
+    PLOG(WARNING) << "failed to open /dev/null";
+  } else {
+    PCHECK(dup2(dev_null, fd));
+  }
+}
+
+// Stateful libev watcher to help ReadFdsFully().
+class ReadFdsFullyHelper {
+ public:
+  ReadFdsFullyHelper(const string& progname, ev::dynamic_loop* loop, int fd)
+      : progname_(progname) {
+    // Bind the watcher to the provided loop, to this functor, and to the
+    // readable fd.
+    watcher_.set(*loop);
+    watcher_.set(this);
+    watcher_.set(fd, ev::READ);
+
+    // The watcher will now be polled when its loop is run.
+    watcher_.start();
+  }
+
+  void operator() (ev::io &w, int revents) {
+    DCHECK_EQ(ev::READ, revents);
+
+    char buf[1024];
+    ssize_t n = read(w.fd, buf, arraysize(buf));
+    if (n == 0) {
+      // EOF, stop watching.
+      w.stop();
+    } else if (n < 0) {
+      // Interrupted by a signal, do nothing.
+      if (errno == EINTR) return;
+
+      // A fatal error. Store it and stop watching.
+      status_ = Status::IOError("IO error reading from " + progname_,
+                                ErrnoToString(errno), errno);
+      w.stop();
+    } else {
+      // Add our bytes and keep watching.
+      output_.append(buf, n);
+    }
+  }
+
+  const Status& status() const { return status_; }
+  const string& output() const { return output_; }
+
+ private:
+  const string progname_;
+
+  ev::io watcher_;
+  string output_;
+  Status status_;
+};
+
+// Reads from all descriptors in 'fds' until EOF on all of them. If any read
+// yields an error, it is returned. Otherwise, 'out' contains the bytes read
+// for each fd, in the same order as was in 'fds'.
+Status ReadFdsFully(const string& progname,
+                    const vector<int>& fds,
+                    vector<string>* out) {
+  ev::dynamic_loop loop;
+
+  // Set up a watcher for each fd.
+  vector<unique_ptr<ReadFdsFullyHelper>> helpers;
+  for (int fd : fds) {
+    helpers.emplace_back(new ReadFdsFullyHelper(progname, &loop, fd));
+  }
+
+  // This will read until all fds return EOF.
+  loop.run();
+
+  // Check for failures.
+  for (const auto& h : helpers) {
+    if (!h->status().ok()) {
+      return h->status();
+    }
+  }
+
+  // No failures; write the output to the caller.
+  for (const auto& h : helpers) {
+    out->push_back(h->output());
+  }
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 Subprocess::Subprocess(string program, vector<string> argv)
@@ -192,19 +287,6 @@ void Subprocess::DisableStderr() {
 void Subprocess::DisableStdout() {
   CHECK_EQ(state_, kNotStarted);
   fd_state_[STDOUT_FILENO] = DISABLED;
-}
-
-static void RedirectToDevNull(int fd) {
-  // We must not close stderr or stdout, because then when a new file descriptor
-  // gets opened, it might get that fd number.  (We always allocate the lowest
-  // available file descriptor number.)  Instead, we reopen that fd as
-  // /dev/null.
-  int dev_null = open("/dev/null", O_WRONLY);
-  if (dev_null < 0) {
-    PLOG(WARNING) << "failed to open /dev/null";
-  } else {
-    PCHECK(dup2(dev_null, fd));
-  }
 }
 
 #if defined(__APPLE__)
@@ -369,50 +451,43 @@ Status Subprocess::Kill(int signal) {
 
 Status Subprocess::Call(const string& arg_str) {
   vector<string> argv = Split(arg_str, " ");
-  return Call(argv);
+  return Call(argv, nullptr, nullptr);
 }
 
-Status Subprocess::Call(const vector<string>& argv) {
-  VLOG(2) << "Invoking command: " << argv;
-  Subprocess proc(argv[0], argv);
-  RETURN_NOT_OK(proc.Start());
-  int retcode;
-  RETURN_NOT_OK(proc.Wait(&retcode));
-
-  if (retcode == 0) {
-    return Status::OK();
-  } else {
-    return Status::RuntimeError(Substitute(
-        "Subprocess '$0' terminated with non-zero exit status $1",
-        argv[0],
-        retcode));
-  }
-}
-
-Status Subprocess::Call(const vector<string>& argv, string* stdout_out) {
+Status Subprocess::Call(const vector<string>& argv,
+                        string* stdout_out,
+                        string* stderr_out) {
   VLOG(2) << "Invoking command: " << argv;
   Subprocess p(argv[0], argv);
-  p.ShareParentStdout(false);
-  RETURN_NOT_OK_PREPEND(p.Start(), "Unable to fork " + argv[0]);
+
+  if (stdout_out) {
+    p.ShareParentStdout(false);
+  }
+  if (stderr_out) {
+    p.ShareParentStderr(false);
+  }
+  RETURN_NOT_OK_PREPEND(p.Start(),
+                        "Unable to fork " + argv[0]);
   int err = close(p.ReleaseChildStdinFd());
   if (PREDICT_FALSE(err != 0)) {
     return Status::IOError("Unable to close child process stdin", ErrnoToString(errno), errno);
   }
 
-  stdout_out->clear();
-  char buf[1024];
-  while (true) {
-    ssize_t n = read(p.from_child_stdout_fd(), buf, arraysize(buf));
-    if (n == 0) {
-      // EOF
-      break;
-    }
-    if (n < 0) {
-      if (errno == EINTR) continue;
-      return Status::IOError("IO error reading from " + argv[0], ErrnoToString(errno), errno);
-    }
+  vector<int> fds;
+  if (stdout_out) {
+    fds.push_back(p.from_child_stdout_fd());
+  }
+  if (stderr_out) {
+    fds.push_back(p.from_child_stderr_fd());
+  }
+  vector<string> out;
+  RETURN_NOT_OK(ReadFdsFully(argv[0], fds, &out));
 
-    stdout_out->append(buf, n);
+  if (stdout_out) {
+    *stdout_out = std::move(out[0]);
+  }
+  if (stderr_out) {
+    *stderr_out = std::move(out[1]);
   }
 
   int retcode;
