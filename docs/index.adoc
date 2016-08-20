@@ -64,7 +64,7 @@ refreshes of the predictive model based on all historic data
 
 For more information about these and other scenarios, see <<kudu_use_cases>>.
 
-=== Kudu-Impala Integration Features
+== Kudu-Impala Integration Features
 `CREATE TABLE`::
   Impala supports creating and dropping tables using Kudu as the persistence layer.
   The tables follow the same internal / external approach as other tables in Impala,

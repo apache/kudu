@@ -533,7 +533,6 @@ cd build/release
 make -j4
 ----
 
-====
 .OSX Build Script
 ====
 This script provides an overview of the procedure to build Kudu on OSX, and can
@@ -615,42 +614,22 @@ in `java/kudu-client/target/apidocs/index.html`.
 // end::view_api[]
 
 [[upgrade]]
-== Upgrade from 0.8.0 to 0.9.x
+== Upgrade from a Previous Version of Kudu
 
-Before upgrading, see <<client_compatibility>> and <<api_compatibility>>.
-To upgrade from Kudu 0.8.0 to 0.9.0, perform the following high-level steps, which
-are detailed in <<upgrade_procedure>>:
+Before upgrading, you should read the link:release_notes.html[Release Notes] for
+the version of Kudu that you are about to install. Pay close attention to the
+incompatibilities, upgrade, and downgrade notes that are documented there.
 
-. Shut down all Kudu services.
-. Install the new Kudu packages or parcels, or install Kudu 0.9.1 from source.
-. Restart all Kudu services.
+Additionally, during the beta period:
 
-It is technically possible to upgrade Kudu using rolling restarts, but it has not
-been tested and is not recommended.
+- Upgrades are only supported when going from the previous latest version to
+  the newest released version.
 
-To upgrade from 0.9.0 to 0.9.1, use the same procedure as the upgrade from 0.8.0 to 0.9.0.
-
-NOTE: For the duration of the Kudu Beta, upgrade instructions are only given for going
-from the previous latest version to the newest.
-
-[[client_compatibility]]
-=== Client compatibility
-
-Masters and tablet servers should be upgraded before clients are upgraded. For specific
-information about client compatibility, see the
-link:release_notes.html#rn_0.9.0_incompatible_changes[Incompatible Changes] section
-of the release notes.
-
-[[api_compatibility]]
-
-=== API Compatibility
-
-In Kudu 0.9 and higher, you must set partitioning options explicitly when
-creating a new table. If you do not specify partitioning options, the table
-creation will fail. This behavior change does not affect existing tables.
+- Rolling upgrades are not supported. Please shut down all Kudu services before
+  upgrading the software.
 
 [[upgrade_procedure]]
-=== Upgrade procedure
+=== Upgrade Procedure
 
 . Stop the Kudu master and tablet server services:
 +
