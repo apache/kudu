@@ -205,7 +205,7 @@ To upgrade to Kudu 0.10.0, see link:installation.html#upgrade[Upgrade from 0.9.x
   incremental increase in disk space usage.
 
 - The Kudu C++ client library now has Doxygen-based
-  link:http://kudu.apache.org/apidocs/cpp-client-api/[API documentation]
+  link:http://kudu.apache.org/cpp-client-api/[API documentation]
   available online.
 
 - Kudu now
