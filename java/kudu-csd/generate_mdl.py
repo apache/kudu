@@ -27,6 +27,7 @@
 # argument.
 
 import collections
+from distutils.version import LooseVersion
 try:
   import simplejson as json
 except:
@@ -37,17 +38,20 @@ import sys
 
 BINARIES=["kudu-master", "kudu-tserver"]
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RELATIVE_BUILD_DIR="../../build/latest/bin"
 
+DEPRECATION_MESSAGE = " This metric is no longer produced in " + \
+                      "current versions of Kudu."
+
 def find_binary(bin_name):
-  dirname, _ = os.path.split(os.path.abspath(__file__))
-  build_dir = os.path.join(dirname, RELATIVE_BUILD_DIR)
+  build_dir = os.path.join(BASE_DIR, RELATIVE_BUILD_DIR)
   path = os.path.join(build_dir, bin_name)
   if os.path.exists(path):
     return path
   raise Exception("Cannot find %s in build dir %s" % (bin_name, build_dir))
 
-def load_all_metrics():
+def load_current_metrics():
   """
   For each binary, dump and parse its metrics schema by running it with
   the --dump_metrics_json flag.
@@ -67,8 +71,32 @@ def load_all_metrics():
       sys.exit(1)
 
     metrics_dump = json.loads(stdout)
-    all_metrics.extend(m for m in metrics_dump['metrics'])
+    all_metrics.extend(metrics_dump['metrics'])
   return all_metrics
+
+
+def load_historical_metrics():
+  """
+  Load the metrics dump output from older versions of Kudu. These are checked
+  into the source repository in the "old-version-metrics" directory.
+
+  If any of these metrics has been removed in the current version of Kudu,
+  it will be included, but marked as deprecated and no longer produced.
+  """
+
+  old_metrics = {}
+  old_dir = os.path.join(BASE_DIR, "old-version-metrics")
+
+  # Load the metrics dumps from previous versions in ascending
+  # version order. This way, we retain the latest description/name
+  # of the metric in the remaining (deprecated) metric.
+  for path in sorted(os.listdir(old_dir), key=LooseVersion):
+    if not path.endswith(".json") or path.startswith("."):
+      continue
+    j = json.load(file(os.path.join(old_dir, path)))
+    old_metrics.update((m['name'], m) for m in j['metrics'])
+  return old_metrics.values()
+
 
 def append_sentence(a, b):
   if not a.endswith("."):
@@ -104,29 +132,51 @@ def metric_to_mdl_entries(m):
     description=m['description'],
     label=m['label'])]
 
-def metrics_to_mdl(metrics):
+
+def deprecate_entries(mdl_entries):
+  """ For each entry in 'mdl_entries', mark it as deprecated. """
+  for m in mdl_entries:
+    m['label'] = "DEPRECATED: %s" % m['label']
+    m['description'] += DEPRECATION_MESSAGE
+
+
+def metrics_to_mdl(metrics, historical_metrics):
   """
   For each metric returned by the daemon, convert it to the MDL-compatible dictionary.
+  Metrics which are in 'historical_metrics' but not in 'metrics' are added, but marked
+  as deprecated.
+
   Returns a map of entity_type_name -> [metric dicts].
   """
   seen = set()
 
   by_entity = collections.defaultdict(lambda: [])
-  for m in metrics:
-    # Don't process any metric more than once. Some metrics show up
-    # in both daemons.
-    key = (m['entity_type'], m['name'])
-    if key in seen:
-      continue
-    seen.add(key)
+  def add_metrics(metrics, deprecated=False):
+    for m in metrics:
+      # Don't process any metric more than once. Some metrics show up
+      # in both daemons.
+      key = (m['entity_type'], m['name'])
+      if key in seen:
+        continue
+      seen.add(key)
+      # Convert to the format that CM expects.
+      mdl_entries = metric_to_mdl_entries(m)
+      if deprecated:
+        deprecate_entries(mdl_entries)
+      by_entity[m['entity_type']].extend(mdl_entries)
 
-    # Convert to the format that CM expects.
-    by_entity[m['entity_type']].extend(metric_to_mdl_entries(m))
+  # First add all the current metrics.
+  add_metrics(metrics)
+  # Then add any metrics from old versions that were not already
+  # added by the current version. These are marked as DEPRECATED.
+  add_metrics(historical_metrics, deprecated=True)
   return by_entity
 
+
 def main():
-  all_metrics = load_all_metrics()
-  metrics_by_entity = metrics_to_mdl(all_metrics)
+  all_metrics = load_current_metrics()
+  historical_metrics = load_historical_metrics()
+  metrics_by_entity = metrics_to_mdl(all_metrics, historical_metrics)
   server_metrics = metrics_by_entity['server']
   tablet_metrics = metrics_by_entity['tablet']
 
@@ -202,7 +252,6 @@ def main():
            metricDefinitions=tablet_metrics),
       ])
 
-  
   f = sys.stdout
   if len(sys.argv) > 1:
     f = open(sys.argv[1], 'w')

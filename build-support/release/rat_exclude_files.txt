@@ -9,6 +9,7 @@ pax_global_header
 *.pdf
 version.txt
 build-support/release/rat_exclude_files.txt
+java/kudu-csd/old-version-metrics/*.json
 java/kudu-client/src/main/java/com/google/protobuf/ZeroCopyLiteralByteString.java
 java/kudu-client/src/main/java/org/apache/kudu/client/AsyncKuduClient.java
 java/kudu-client/src/main/java/org/apache/kudu/client/AsyncKuduScanner.java
