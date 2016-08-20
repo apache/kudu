@@ -1484,6 +1484,12 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     }
   }
 
+  // Make a copy of the optimized spec before it's passed to the iterator.
+  // This copy will be given to the Scanner so it can report its predicates to
+  // /scans. The copy is necessary because the original spec will be modified
+  // as its predicates are pushed into lower-level iterators.
+  gscoped_ptr<ScanSpec> orig_spec(new ScanSpec(*spec));
+
   if (PREDICT_TRUE(s.ok())) {
     TRACE_EVENT0("tserver", "iter->Init");
     s = iter->Init(spec.get());
@@ -1511,7 +1517,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     return Status::OK();
   }
 
-  scanner->Init(std::move(iter), std::move(spec));
+  scanner->Init(std::move(iter), std::move(orig_spec));
   unreg_scanner.Cancel();
   *scanner_id = scanner->id();
 

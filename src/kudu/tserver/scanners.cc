@@ -110,7 +110,7 @@ void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
   while (!success) {
     // TODO(security): are these UUIDs predictable? If so, we should
     // probably generate random numbers instead, since we can safely
-    // just retry until we avoid a collission.
+    // just retry until we avoid a collision.
     string id = oid_generator_.Next();
     scanner->reset(new Scanner(id, tablet_peer, requestor_string, metrics_.get()));
 
