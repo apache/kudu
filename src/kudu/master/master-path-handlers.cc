@@ -17,6 +17,7 @@
 
 #include "kudu/master/master-path-handlers.h"
 
+#include <array>
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <map>
@@ -46,8 +47,10 @@
 
 namespace kudu {
 
+using std::array;
 using consensus::ConsensusStatePB;
 using consensus::RaftPeerPB;
+using std::map;
 using std::pair;
 using std::shared_ptr;
 using std::string;
@@ -66,18 +69,40 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
   master_->ts_manager()->GetAllDescriptors(&descs);
 
   *output << "<h1>Tablet Servers</h1>\n";
+  *output << Substitute("<p>There are $0 registered tablet servers.</p>", descs.size());
 
-  *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>UUID</th><th>Time since heartbeat</th><th>Registration</th></tr>\n";
+  map<string, array<int, 2>> version_counts;
+  vector<string> tserver_rows;
   for (const std::shared_ptr<TSDescriptor>& desc : descs) {
     const string time_since_hb = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
     ServerRegistrationPB reg;
     desc->GetRegistration(&reg);
-    *output << Substitute("<tr><th>$0</th><td>$1</td><td><code>$2</code></td></tr>\n",
-                          RegistrationToHtml(reg, desc->permanent_uuid()),
-                          time_since_hb,
-                          EscapeForHtmlToString(reg.ShortDebugString()));
+
+    if (desc->PresumedDead()) {
+      version_counts[reg.software_version()][1]++;
+    } else {
+      version_counts[reg.software_version()][0]++;
+    }
+    string row = Substitute("<tr><th>$0</th><td>$1</td><td><pre><code>$2</code></pre></td></tr>\n",
+                            RegistrationToHtml(reg, desc->permanent_uuid()),
+                            time_since_hb,
+                            EscapeForHtmlToString(reg.ShortDebugString()));
+    tserver_rows.push_back(row);
   }
+
+  *output << "<h3>Version Summary</h3>";
+  *output << "<table class='table table-striped'>\n";
+  *output << "<tr><th>Version</th><th>Count (Live)</th><th>Count (Dead)</th></tr>\n";
+  for (const auto& entry : version_counts) {
+    *output << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
+                          entry.first, entry.second[0], entry.second[1]);
+  }
+  *output << "</table>";
+
+  *output << "<h3>Registrations</h3>";
+  *output << "<table class='table table-striped'>\n";
+  *output << "<tr><th>UUID</th><th>Time since heartbeat</th><th>Registration</th></tr>\n";
+  *output << JoinStrings(tserver_rows, "\n");
   *output << "</table>\n";
 }
 

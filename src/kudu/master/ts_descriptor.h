@@ -66,6 +66,9 @@ class TSDescriptor {
   // from this TS.
   MonoDelta TimeSinceHeartbeat() const;
 
+  // Return whether this server is presumed dead based on last heartbeat time.
+  bool PresumedDead() const;
+
   // Register this tablet server.
   Status Register(const NodeInstancePB& instance,
                   const ServerRegistrationPB& registration);

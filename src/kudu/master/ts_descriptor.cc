@@ -28,6 +28,13 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/flag_tags.h"
+
+DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
+             "The period of time that a Master can go without receiving a heartbeat from a "
+             "tablet server before considering it unresponsive. Unresponsive servers are not "
+             "selected when assigning replicas during table creation or re-replication.");
+TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
 
 using std::make_shared;
 using std::shared_ptr;
@@ -134,6 +141,10 @@ MonoDelta TSDescriptor::TimeSinceHeartbeat() const {
   MonoTime now(MonoTime::Now());
   std::lock_guard<simple_spinlock> l(lock_);
   return now - last_heartbeat_;
+}
+
+bool TSDescriptor::PresumedDead() const {
+  return TimeSinceHeartbeat().ToMilliseconds() >= FLAGS_tserver_unresponsive_timeout_ms;
 }
 
 int64_t TSDescriptor::latest_seqno() const {

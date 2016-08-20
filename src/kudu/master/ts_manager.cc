@@ -24,13 +24,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_descriptor.h"
-#include "kudu/util/flag_tags.h"
-
-DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
-             "The period of time that a Master can go without receiving a heartbeat from a "
-             "tablet server before considering it unresponsive. Unresponsive servers are not "
-             "selected when assigning replicas during table creation or re-replication.");
-TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
 
 using std::shared_ptr;
 using std::string;
@@ -107,7 +100,7 @@ void TSManager::GetAllLiveDescriptors(vector<shared_ptr<TSDescriptor> > *descs) 
   descs->reserve(servers_by_id_.size());
   for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
     const shared_ptr<TSDescriptor>& ts = entry.second;
-    if (ts->TimeSinceHeartbeat().ToMilliseconds() < FLAGS_tserver_unresponsive_timeout_ms) {
+    if (!ts->PresumedDead()) {
       descs->push_back(ts);
     }
   }
