@@ -61,7 +61,7 @@ def check_mdl_compat(old_zip, new_zip, args):
   print "Added %d metric(s):" % len(added_metrics)
   for m_type, m_entity, m_name in added_metrics:
     print "  %s metric %s" % (m_entity, m_name)
-  if len(removed_metrics):
+  if removed_metrics:
     print "Removed %d metric(s):" % len(removed_metrics)
     for m_type, m_entity, m_name in removed_metrics:
       print "  %s metric %s" % (m_entity, m_name)

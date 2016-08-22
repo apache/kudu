@@ -174,9 +174,9 @@ def metrics_to_mdl(metrics, historical_metrics):
 
 
 def main():
-  all_metrics = load_current_metrics()
+  current_metrics = load_current_metrics()
   historical_metrics = load_historical_metrics()
-  metrics_by_entity = metrics_to_mdl(all_metrics, historical_metrics)
+  metrics_by_entity = metrics_to_mdl(current_metrics, historical_metrics)
   server_metrics = metrics_by_entity['server']
   tablet_metrics = metrics_by_entity['tablet']
 
