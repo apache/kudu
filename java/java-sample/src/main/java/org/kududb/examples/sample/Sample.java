@@ -1,9 +1,9 @@
 package org.kududb.examples.sample;
 
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.client.*;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.client.*;
 
 import java.util.ArrayList;
 import java.util.List;

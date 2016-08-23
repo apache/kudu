@@ -60,29 +60,23 @@ You can install it by running:
 
 Download the Kudu MR jar and run Spark with it on the classpath:
 
-    wget http://d2106.halxg.cloudera.com/kudu-2015-08-13-1/org/kududb/kudu-mapreduce/0.1.0-SNAPSHOT/kudu-mapreduce-0.1.0-20150813.213926-1-jar-with-dependencies.jar
-    spark-shell --jars kudu-mapred*jar
+    wget https://repository.cloudera.com/artifactory/cloudera-repos/org/apache/kudu/kudu-spark_2.10/0.10.0/kudu-spark_2.10-0.10.0.jar
+    spark-shell --jars kudu-spark*jar
 
 You can then paste this example script:
 
-    import org.kududb.mapreduce._
-    import org.apache.hadoop.conf.Configuration
-    import org.kududb.client._
-    import org.apache.hadoop.io.NullWritable;
-    
-    val conf = new Configuration
-    conf.set("kudu.mapreduce.master.address", "quickstart.cloudera");
-    conf.set("kudu.mapreduce.input.table", "metrics");
-    conf.set("kudu.mapreduce.column.projection", "host,metric,timestamp,value");
-    val kuduRdd = sc.newAPIHadoopRDD(conf, classOf[KuduTableInputFormat], classOf[NullWritable], classOf[RowResult])
-    
+    import org.apache.kudu.spark.kudu._
+
+    val df = sqlContext.read.options(Map(
+      "kudu.master" -> "quickstart.cloudera",
+      "kudu.table" -> "metrics")).kudu
+    df.registerTempTable("metrics")
+
     // Print the first five values
-    kuduRdd.values.map(r => r.rowToString()).take(5).foreach(x => print(x + "\n"))
+    sqlContext.sql("select * from metrics limit 5").show()
     
     // Calculate the average value of every host/metric pair
-    (kuduRdd.values.map(r => (r.getString(0) + "/" + r.getString(1), r.getDouble(3))).
-        mapValues(x => (x, 1))
-        .reduceByKey((x, y) => (x._1 + y._1, x._2 + y._2))
-        .mapValues(result => result._1)
-        .take(5))
+    sqlContext.sql("select host, metric, avg(value) from metrics group by host, metric").show()
     
+Note that if you are still running the 'collectl' command above, you can see
+the data changing in real time by re-running the queries.

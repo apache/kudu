@@ -1,13 +1,13 @@
 package org.kududb.examples.loadgen;
 
-import org.kududb.Schema;
-import org.kududb.Type;
-import org.kududb.client.Insert;
-import org.kududb.client.KuduClient;
-import org.kududb.client.KuduSession;
-import org.kududb.client.KuduTable;
-import org.kududb.client.PartialRow;
-import org.kududb.client.SessionConfiguration;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.client.Insert;
+import org.apache.kudu.client.KuduClient;
+import org.apache.kudu.client.KuduSession;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.PartialRow;
+import org.apache.kudu.client.SessionConfiguration;
 
 import java.util.ArrayList;
 import java.util.List;
