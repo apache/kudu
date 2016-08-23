@@ -117,7 +117,9 @@ To upgrade to Kudu 0.10.0, see <<rn_0.10.0_upgrade>>.
   may be efficiently dropped if the application does not need to retain historical
   data past a certain point.
 
-// TODO(dan) can we link to the docs once they're committed?
+  This feature is considered experimental for the 0.10 release. More details of
+  the new feature can be found in the accompanying
+  link:https://kudu.apache.org/2016/08/23/new-range-partitioning-features.html[blog post].
 
 - Support for running Kudu clusters with multiple masters has been stabilized.
   Users may start a cluster with three or five masters to provide fault tolerance
