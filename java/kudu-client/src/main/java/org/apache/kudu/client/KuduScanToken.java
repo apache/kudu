@@ -213,8 +213,8 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
 
     @Override
     public List<KuduScanToken> build() {
-      if (lowerBoundPartitionKey != AsyncKuduClient.EMPTY_ARRAY ||
-          upperBoundPartitionKey != AsyncKuduClient.EMPTY_ARRAY) {
+      if (lowerBoundPartitionKey.length != 0 ||
+          upperBoundPartitionKey.length != 0) {
         throw new IllegalArgumentException(
             "Partition key bounds may not be set on KuduScanTokenBuilder");
       }
@@ -254,18 +254,16 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
         proto.addColumnPredicates(predicate.toPB());
       }
 
-      if (lowerBoundPrimaryKey != AsyncKuduClient.EMPTY_ARRAY && lowerBoundPrimaryKey.length > 0) {
+      if (lowerBoundPrimaryKey.length > 0) {
         proto.setLowerBoundPrimaryKey(ZeroCopyLiteralByteString.copyFrom(lowerBoundPrimaryKey));
       }
-      if (upperBoundPrimaryKey != AsyncKuduClient.EMPTY_ARRAY && upperBoundPrimaryKey.length > 0) {
+      if (upperBoundPrimaryKey.length > 0) {
         proto.setUpperBoundPrimaryKey(ZeroCopyLiteralByteString.copyFrom(upperBoundPrimaryKey));
       }
-      if (lowerBoundPartitionKey != AsyncKuduClient.EMPTY_ARRAY &&
-          lowerBoundPartitionKey.length > 0) {
+      if (lowerBoundPartitionKey.length > 0) {
         proto.setLowerBoundPartitionKey(ZeroCopyLiteralByteString.copyFrom(lowerBoundPartitionKey));
       }
-      if (upperBoundPartitionKey != AsyncKuduClient.EMPTY_ARRAY &&
-          upperBoundPartitionKey.length > 0) {
+      if (upperBoundPartitionKey.length > 0) {
         proto.setUpperBoundPartitionKey(ZeroCopyLiteralByteString.copyFrom(upperBoundPartitionKey));
       }
 

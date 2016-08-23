@@ -274,7 +274,7 @@ public abstract class AbstractKuduScannerBuilder
    */
   @Deprecated
   public S lowerBoundRaw(byte[] startPrimaryKey) {
-    if (lowerBoundPrimaryKey == AsyncKuduClient.EMPTY_ARRAY ||
+    if (lowerBoundPrimaryKey.length == 0 ||
         Bytes.memcmp(startPrimaryKey, lowerBoundPrimaryKey) > 0) {
       this.lowerBoundPrimaryKey = startPrimaryKey;
     }
@@ -299,7 +299,7 @@ public abstract class AbstractKuduScannerBuilder
    */
   @Deprecated
   public S exclusiveUpperBoundRaw(byte[] endPrimaryKey) {
-    if (upperBoundPrimaryKey == AsyncKuduClient.EMPTY_ARRAY ||
+    if (upperBoundPrimaryKey.length == 0 ||
         Bytes.memcmp(endPrimaryKey, upperBoundPrimaryKey) < 0) {
       this.upperBoundPrimaryKey = endPrimaryKey;
     }

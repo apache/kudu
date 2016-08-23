@@ -268,8 +268,8 @@ public final class AsyncKuduScanner {
     this.batchSizeBytes = batchSizeBytes;
 
     if (!table.getPartitionSchema().isSimpleRangePartitioning() &&
-        (startPrimaryKey != AsyncKuduClient.EMPTY_ARRAY ||
-         endPrimaryKey != AsyncKuduClient.EMPTY_ARRAY) &&
+        (startPrimaryKey.length != 0 ||
+         endPrimaryKey.length != 0) &&
         PARTITION_PRUNE_WARN.getAndSet(false)) {
       LOG.warn("Starting full table scan. " +
                "In the future this scan may be automatically optimized with partition pruning.");
@@ -458,7 +458,7 @@ public final class AsyncKuduScanner {
 
             // Stop scanning if the non-covered range is past the end partition key.
             if (ncre.getNonCoveredRangeEnd().length == 0
-                || (endPartitionKey != AsyncKuduClient.EMPTY_ARRAY
+                || (endPartitionKey.length != 0
                 && Bytes.memcmp(endPartitionKey, ncre.getNonCoveredRangeEnd()) <= 0)) {
               hasMore = false;
               closed = true; // the scanner is closed on the other side at this point
@@ -550,7 +550,7 @@ public final class AsyncKuduScanner {
     Partition partition = tablet.getPartition();
     // Stop scanning if we have scanned until or past the end partition key.
     if (partition.isEndPartition()
-        || (this.endPartitionKey != AsyncKuduClient.EMPTY_ARRAY
+        || (this.endPartitionKey.length != 0
             && Bytes.memcmp(this.endPartitionKey, partition.getPartitionKeyEnd()) <= 0)) {
       hasMore = false;
       closed = true; // the scanner is closed on the other side at this point
@@ -778,13 +778,11 @@ public final class AsyncKuduScanner {
             newBuilder.setSnapTimestamp(AsyncKuduScanner.this.getSnapshotTimestamp());
           }
 
-          if (AsyncKuduScanner.this.startPrimaryKey != AsyncKuduClient.EMPTY_ARRAY &&
-              AsyncKuduScanner.this.startPrimaryKey.length > 0) {
+          if (AsyncKuduScanner.this.startPrimaryKey.length > 0) {
             newBuilder.setStartPrimaryKey(ZeroCopyLiteralByteString.copyFrom(startPrimaryKey));
           }
 
-          if (AsyncKuduScanner.this.endPrimaryKey != AsyncKuduClient.EMPTY_ARRAY &&
-              AsyncKuduScanner.this.endPrimaryKey.length > 0) {
+          if (AsyncKuduScanner.this.endPrimaryKey.length > 0) {
             newBuilder.setStopPrimaryKey(ZeroCopyLiteralByteString.copyFrom(endPrimaryKey));
           }
 
