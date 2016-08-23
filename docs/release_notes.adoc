@@ -76,8 +76,8 @@ To upgrade to Kudu 0.10.0, see <<rn_0.10.0_upgrade>>.
 
 - The C++ API for specifying split points on range-partitioned tables has been improved
   to make it easier for callers to properly manage the ownership of the provided rows.
-
-  The `TableCreator::split_rows` API took a `vector<const KuduPartialRow*>`, which
++
+The `TableCreator::split_rows` API took a `vector<const KuduPartialRow*>`, which
   made it very difficult for the calling application to do proper error handling with
   cleanup when setting the fields of the `KuduPartialRow`. This API has been now been
   deprecated and replaced by a new method `TableCreator::add_range_split` which allows
@@ -88,8 +88,8 @@ To upgrade to Kudu 0.10.0, see <<rn_0.10.0_upgrade>>.
   maximum buffer size constrains the total number of buffered operations across all
   tablet servers in the cluster. This provides a more consistent bound on the memory
   usage of the client regardless of the size of the cluster to which it is writing.
-
-  This change can negatively affect the write performance of Java clients which rely on
++
+This change can negatively affect the write performance of Java clients which rely on
   buffered writes. Consider using the `setMutationBufferSpace` API to increase a
   session's maximum buffer size if write performance seems to be degraded after upgrading
   to Kudu 0.10.0.
@@ -111,8 +111,8 @@ To upgrade to Kudu 0.10.0, see <<rn_0.10.0_upgrade>>.
   When a table is created, the user may specify a set of range partitions that
   do not cover the entire available key space. A user may add or drop range
   partitions to existing tables.
-
-  This feature can be particularly helpful with time series workloads in which
++
+This feature can be particularly helpful with time series workloads in which
   new partitions can be created on an hourly or daily basis. Old partitions
   may be efficiently dropped if the application does not need to retain historical
   data past a certain point.
@@ -124,8 +124,8 @@ To upgrade to Kudu 0.10.0, see <<rn_0.10.0_upgrade>>.
 - Support for running Kudu clusters with multiple masters has been stabilized.
   Users may start a cluster with three or five masters to provide fault tolerance
   despite a failure of one or two masters, respectively.
-
-  Note that certain tools (e.g. `ksck`) are still lacking complete support for
++
+Note that certain tools (e.g. `ksck`) are still lacking complete support for
   multiple masters. These deficiencies will be addressed in a following release.
 
 - Kudu now supports the ability to reserve a certain amount of free disk space
@@ -133,8 +133,8 @@ To upgrade to Kudu 0.10.0, see <<rn_0.10.0_upgrade>>.
   drops to less than the configured minimum, Kudu will stop writing to that
   directory until space becomes available. If no space is available in any
   configured directory, Kudu will abort.
-
-  This feature may be configured using the `fs_data_dirs_reserved_bytes` and
++
+This feature may be configured using the `fs_data_dirs_reserved_bytes` and
   `fs_wal_dir_reserved_bytes` flags.
 
 - The Spark integration's `KuduContext` now supports four new methods for writing to
