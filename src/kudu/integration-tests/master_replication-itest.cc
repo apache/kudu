@@ -228,7 +228,7 @@ TEST_F(MasterReplicationTest, TestHeartbeatAcceptedByAnyMaster) {
   TSToMasterCommonPB common;
   common.mutable_ts_instance()->set_permanent_uuid("fake-ts-uuid");
   common.mutable_ts_instance()->set_instance_seqno(1);
-  TSRegistrationPB fake_reg;
+  ServerRegistrationPB fake_reg;
   HostPortPB* pb = fake_reg.add_rpc_addresses();
   pb->set_host("localhost");
   pb->set_port(1000);

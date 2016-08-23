@@ -25,15 +25,14 @@
 #include "kudu/server/webserver.h"
 
 namespace kudu {
-
 class Schema;
+class ServerRegistrationPB;
 
 namespace master {
 
 class Master;
 struct TabletReplica;
 class TSDescriptor;
-class TSRegistrationPB;
 
 // Web page support for the master.
 class MasterPathHandlers {
@@ -65,10 +64,8 @@ class MasterPathHandlers {
 
   // Convert the specified server registration to HTML, adding a link
   // to the server's own web server (if specified in 'reg') with
-  // anchor text 'link_text'. 'RegistrationType' must be
-  // TSRegistrationPB or MasterRegistrationPB.
-  template<class RegistrationType>
-  std::string RegistrationToHtml(const RegistrationType& reg,
+  // anchor text 'link_text'.
+  std::string RegistrationToHtml(const ServerRegistrationPB& reg,
                                  const std::string& link_text) const;
 
   Master* master_;

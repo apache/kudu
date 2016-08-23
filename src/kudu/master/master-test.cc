@@ -145,7 +145,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   ASSERT_FALSE(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
 
   // Register the fake TS, without sending any tablet report.
-  TSRegistrationPB fake_reg;
+  ServerRegistrationPB fake_reg;
   MakeHostPortPB("localhost", 1000, fake_reg.add_rpc_addresses());
   MakeHostPortPB("localhost", 2000, fake_reg.add_http_addresses());
 
@@ -165,7 +165,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 
   master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(1, descs.size()) << "Should have registered the TS";
-  TSRegistrationPB reg;
+  ServerRegistrationPB reg;
   descs[0]->GetRegistration(&reg);
   ASSERT_EQ(fake_reg.DebugString(), reg.DebugString()) << "Master got different registration";
 

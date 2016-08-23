@@ -79,10 +79,12 @@ message NodeInstancePB {
   required int64 instance_seqno = 2;
 }
 
-// RPC and HTTP addresses for each server.
+// Some basic properties common to both masters and tservers.
+// They are guaranteed not to change unless the server is restarted.
 message ServerRegistrationPB {
   repeated HostPortPB rpc_addresses = 1;
   repeated HostPortPB http_addresses = 2;
+  optional string software_version = 3;
 }
 
 message ServerEntryPB {

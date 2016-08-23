@@ -74,7 +74,7 @@ namespace itest {
 
 struct TServerDetails {
   NodeInstancePB instance_id;
-  master::TSRegistrationPB registration;
+  ServerRegistrationPB registration;
   gscoped_ptr<tserver::TabletServerServiceProxy> tserver_proxy;
   gscoped_ptr<tserver::TabletServerAdminServiceProxy> tserver_admin_proxy;
   gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy;

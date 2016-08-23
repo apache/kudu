@@ -30,11 +30,11 @@
 namespace kudu {
 
 class NodeInstancePB;
+class ServerRegistrationPB;
 
 namespace master {
 
 class TSDescriptor;
-class TSRegistrationPB;
 
 typedef std::vector<std::shared_ptr<TSDescriptor> > TSDescriptorVector;
 
@@ -70,7 +70,7 @@ class TSManager {
   //
   // If successful, *desc reset to the registered descriptor.
   Status RegisterTS(const NodeInstancePB& instance,
-                    const TSRegistrationPB& registration,
+                    const ServerRegistrationPB& registration,
                     std::shared_ptr<TSDescriptor>* desc);
 
   // Return all of the currently registered TS descriptors into the provided

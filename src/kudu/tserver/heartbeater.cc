@@ -114,7 +114,7 @@ class Heartbeater::Thread {
   int GetMinimumHeartbeatMillis() const;
   int GetMillisUntilNextHeartbeat() const;
   Status DoHeartbeat();
-  Status SetupRegistration(master::TSRegistrationPB* reg);
+  Status SetupRegistration(ServerRegistrationPB* reg);
   void SetupCommonField(master::TSToMasterCommonPB* common);
   bool IsCurrentThread() const;
 
@@ -300,7 +300,7 @@ void Heartbeater::Thread::SetupCommonField(master::TSToMasterCommonPB* common) {
   common->mutable_ts_instance()->CopyFrom(server_->instance_pb());
 }
 
-Status Heartbeater::Thread::SetupRegistration(master::TSRegistrationPB* reg) {
+Status Heartbeater::Thread::SetupRegistration(ServerRegistrationPB* reg) {
   reg->Clear();
 
   vector<Sockaddr> addrs;

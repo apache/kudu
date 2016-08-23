@@ -120,7 +120,7 @@ TEST_F(RegistrationTest, TestTSRegisters) {
   ASSERT_EQ(1, descs.size());
 
   // Verify that the registration is sane.
-  master::TSRegistrationPB reg;
+  ServerRegistrationPB reg;
   descs[0]->GetRegistration(&reg);
   {
     SCOPED_TRACE(reg.ShortDebugString());
@@ -139,6 +139,18 @@ TEST_F(RegistrationTest, TestTSRegisters) {
   // TODO: when the instance ID / sequence number stuff is implemented,
   // restart the TS and ensure that it re-registers with the newer sequence
   // number.
+}
+
+TEST_F(RegistrationTest, TestMasterSoftwareVersion) {
+  // Verify that the master's software version exists.
+  ServerRegistrationPB reg;
+  cluster_->mini_master()->master()->GetMasterRegistration(&reg);
+  {
+    SCOPED_TRACE(reg.ShortDebugString());
+    ASSERT_TRUE(reg.has_software_version());
+    ASSERT_STR_CONTAINS(reg.software_version(),
+                        VersionInfo::GetShortVersionString());
+  }
 }
 
 // Test starting multiple tablet servers and ensuring they both register with the master.

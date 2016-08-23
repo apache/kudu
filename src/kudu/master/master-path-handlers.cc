@@ -71,7 +71,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
   *output << "  <tr><th>UUID</th><th>Time since heartbeat</th><th>Registration</th></tr>\n";
   for (const std::shared_ptr<TSDescriptor>& desc : descs) {
     const string time_since_hb = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
-    TSRegistrationPB reg;
+    ServerRegistrationPB reg;
     desc->GetRegistration(&reg);
     *output << Substitute("<tr><th>$0</th><td>$1</td><td><code>$2</code></td></tr>\n",
                           RegistrationToHtml(reg, desc->permanent_uuid()),
@@ -313,7 +313,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
   }
   *output << "<h1> Masters </h1>\n";
   *output <<  "<table class='table table-striped'>\n";
-  *output <<  "  <tr><th>Registration</th><th>Role</th></tr>\n";
+  *output <<  "  <tr><th>UUID</th><th>Role</th><th>Registration</th></tr>\n";
 
   for (const ServerEntryPB& master : masters) {
     if (master.has_error()) {
@@ -322,13 +322,16 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
                             EscapeForHtmlToString(error.ToString()));
       continue;
     }
-    string reg_text = RegistrationToHtml(master.registration(),
-                                         master.instance_id().permanent_uuid());
-    if (master.instance_id().permanent_uuid() == master_->instance_pb().permanent_uuid()) {
-      reg_text = Substitute("<b>$0</b>", reg_text);
-    }
-    *output << Substitute("  <tr><td>$0</td><td>$1</td></tr>\n", reg_text,
-                          master.has_role() ?  RaftPeerPB_Role_Name(master.role()) : "N/A");
+    string uuid_text = RegistrationToHtml(
+        master.registration(),
+        master.instance_id().permanent_uuid());
+    string reg_str = EscapeForHtmlToString(
+        master.registration().ShortDebugString());
+    *output << Substitute(
+        "  <tr><td>$0</td><td>$1</td><td><code>$2</code></td></tr>\n",
+        uuid_text,
+        master.has_role() ? RaftPeerPB_Role_Name(master.role()) : "N/A",
+        reg_str);
   }
 
   *output << "</table>";
@@ -490,7 +493,7 @@ Status MasterPathHandlers::Register(Webserver* server) {
 
 string MasterPathHandlers::TSDescriptorToHtml(const TSDescriptor& desc,
                                               const std::string& tablet_id) const {
-  TSRegistrationPB reg;
+  ServerRegistrationPB reg;
   desc.GetRegistration(&reg);
 
   if (reg.http_addresses().size() > 0) {
@@ -505,9 +508,9 @@ string MasterPathHandlers::TSDescriptorToHtml(const TSDescriptor& desc,
   }
 }
 
-template<class RegistrationType>
-string MasterPathHandlers::RegistrationToHtml(const RegistrationType& reg,
-                                              const std::string& link_text) const {
+string MasterPathHandlers::RegistrationToHtml(
+    const ServerRegistrationPB& reg,
+    const std::string& link_text) const {
   string link_html = EscapeForHtmlToString(link_text);
   if (reg.http_addresses().size() > 0) {
     link_html = Substitute("<a href=\"http://$0:$1/\">$2</a>",

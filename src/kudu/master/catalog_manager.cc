@@ -2774,7 +2774,7 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
   req_.set_cas_config_opid_index(cstate_.config().opid_index());
   RaftPeerPB* peer = req_.mutable_server();
   peer->set_permanent_uuid(replacement_replica->permanent_uuid());
-  TSRegistrationPB peer_reg;
+  ServerRegistrationPB peer_reg;
   replacement_replica->GetRegistration(&peer_reg);
   if (peer_reg.rpc_addresses_size() == 0) {
     KLOG_EVERY_N(WARNING, 100) << LogPrefix() << "Candidate replacement "
@@ -3296,7 +3296,7 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
     // value decays back to 0 over time.
     ts->IncrementRecentReplicaCreations();
 
-    TSRegistrationPB reg;
+    ServerRegistrationPB reg;
     ts->GetRegistration(&reg);
 
     RaftPeerPB *peer = config->add_peers();
@@ -3336,7 +3336,7 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
 
     shared_ptr<TSDescriptor> ts_desc;
     if (master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
-      TSRegistrationPB reg;
+      ServerRegistrationPB reg;
       ts_desc->GetRegistration(&reg);
       tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
     } else {
@@ -3404,7 +3404,7 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   vector<scoped_refptr<TabletInfo> > tablets_in_range;
   table->GetTabletsInRange(req, &tablets_in_range);
 
-  TSRegistrationPB reg;
+  ServerRegistrationPB reg;
   for (const scoped_refptr<TabletInfo>& tablet : tablets_in_range) {
     Status s = BuildLocationsForTablet(tablet, resp->add_tablet_locations());
     if (s.ok()) {

@@ -154,7 +154,7 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_master_inject_latency_on_tablet_lookups_ms));
   }
 
-  TSRegistrationPB reg;
+  ServerRegistrationPB reg;
   vector<TSDescriptor*> locs;
   for (const string& tablet_id : req->tablet_ids()) {
     // TODO: once we have catalog data. ACL checks would also go here, probably.

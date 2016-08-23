@@ -36,7 +36,7 @@ namespace kudu {
 namespace master {
 
 Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
-                                 const TSRegistrationPB& registration,
+                                 const ServerRegistrationPB& registration,
                                  shared_ptr<TSDescriptor>* desc) {
   shared_ptr<TSDescriptor> ret(make_shared<TSDescriptor>(instance.permanent_uuid()));
   RETURN_NOT_OK(ret->Register(instance, registration));
@@ -78,7 +78,7 @@ static bool HostPortPBsEqual(const google::protobuf::RepeatedPtrField<HostPortPB
 }
 
 Status TSDescriptor::Register(const NodeInstancePB& instance,
-                              const TSRegistrationPB& registration) {
+                              const ServerRegistrationPB& registration) {
   std::lock_guard<simple_spinlock> l(lock_);
   CHECK_EQ(instance.permanent_uuid(), permanent_uuid_);
 
@@ -111,7 +111,7 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
   }
 
   latest_seqno_ = instance.instance_seqno();
-  registration_.reset(new TSRegistrationPB(registration));
+  registration_.reset(new ServerRegistrationPB(registration));
   ts_admin_proxy_.reset();
   consensus_proxy_.reset();
 
@@ -163,7 +163,7 @@ double TSDescriptor::RecentReplicaCreations() {
   return recent_replica_creations_;
 }
 
-void TSDescriptor::GetRegistration(TSRegistrationPB* reg) const {
+void TSDescriptor::GetRegistration(ServerRegistrationPB* reg) const {
   std::lock_guard<simple_spinlock> l(lock_);
   CHECK(registration_) << "No registration";
   CHECK_NOTNULL(reg)->CopyFrom(*registration_);

@@ -71,7 +71,7 @@ bool TSManager::LookupTSByUUID(const string& uuid,
 }
 
 Status TSManager::RegisterTS(const NodeInstancePB& instance,
-                             const TSRegistrationPB& registration,
+                             const ServerRegistrationPB& registration,
                              std::shared_ptr<TSDescriptor>* desc) {
   std::lock_guard<rw_spinlock> l(lock_);
   const string& uuid = instance.permanent_uuid();

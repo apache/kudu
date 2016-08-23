@@ -31,6 +31,7 @@ namespace kudu {
 
 class NodeInstancePB;
 class Sockaddr;
+class ServerRegistrationPB;
 
 namespace consensus {
 class ConsensusServiceProxy;
@@ -46,8 +47,6 @@ class TabletServerAdminServiceProxy;
 
 namespace master {
 
-class TSRegistrationPB;
-
 // Master-side view of a single tablet server.
 //
 // Tracks the last heartbeat, status, instance identifier, etc.
@@ -55,7 +54,7 @@ class TSRegistrationPB;
 class TSDescriptor {
  public:
   static Status RegisterNew(const NodeInstancePB& instance,
-                            const TSRegistrationPB& registration,
+                            const ServerRegistrationPB& registration,
                             std::shared_ptr<TSDescriptor>* desc);
 
   virtual ~TSDescriptor();
@@ -69,7 +68,7 @@ class TSDescriptor {
 
   // Register this tablet server.
   Status Register(const NodeInstancePB& instance,
-                  const TSRegistrationPB& registration);
+                  const ServerRegistrationPB& registration);
 
   const std::string &permanent_uuid() const { return permanent_uuid_; }
   int64_t latest_seqno() const;
@@ -77,7 +76,7 @@ class TSDescriptor {
   // Copy the current registration info into the given PB object.
   // A safe copy is returned because the internal Registration object
   // may be mutated at any point if the tablet server re-registers.
-  void GetRegistration(TSRegistrationPB* reg) const;
+  void GetRegistration(ServerRegistrationPB* reg) const;
 
   void GetNodeInstancePB(NodeInstancePB* instance_pb) const;
 
@@ -138,7 +137,7 @@ class TSDescriptor {
   // The number of live replicas on this host, from the last heartbeat.
   int num_live_replicas_;
 
-  gscoped_ptr<TSRegistrationPB> registration_;
+  gscoped_ptr<ServerRegistrationPB> registration_;
 
   std::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_admin_proxy_;
   std::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;

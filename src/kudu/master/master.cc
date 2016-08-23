@@ -44,6 +44,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"
+#include "kudu/util/version_info.h"
 
 DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
              "Timeout for retrieving master registration over RPC.");
@@ -207,6 +208,7 @@ Status Master::InitMasterRegistration() {
   vector<Sockaddr> http_addrs;
   web_server()->GetBoundAddresses(&http_addrs);
   RETURN_NOT_OK(AddHostPortPBs(http_addrs, reg.mutable_http_addresses()));
+  reg.set_software_version(VersionInfo::GetShortVersionString());
 
   registration_.Swap(&reg);
   registration_initialized_.store(true);

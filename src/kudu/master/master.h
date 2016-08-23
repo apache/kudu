@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/master/master_options.h"
@@ -36,7 +37,6 @@ namespace kudu {
 class MaintenanceManager;
 class RpcServer;
 struct RpcServerOptions;
-class ServerEntryPB;
 class ThreadPool;
 
 namespace rpc {
