@@ -21,6 +21,8 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flags.h"
+#include "kudu/util/logging_test_util.h"
 #include "kudu/util/test_util.h"
 
 DEFINE_int32(flag_with_no_tags, 0, "test flag that has no tags");
@@ -31,6 +33,12 @@ TAG_FLAG(flag_with_one_tag, stable);
 DEFINE_int32(flag_with_two_tags, 0, "test flag that has 2 tags");
 TAG_FLAG(flag_with_two_tags, evolving);
 TAG_FLAG(flag_with_two_tags, unsafe);
+
+DEFINE_bool(test_unsafe_flag, false, "an unsafe flag");
+TAG_FLAG(test_unsafe_flag, unsafe);
+
+DEFINE_bool(test_experimental_flag, false, "an experimental flag");
+TAG_FLAG(test_experimental_flag, experimental);
 
 using std::string;
 using std::unordered_set;
@@ -56,6 +64,51 @@ TEST_F(FlagTagsTest, TestTags) {
 
   GetFlagTags("missing_flag", &tags);
   EXPECT_EQ(0, tags.size());
+}
+
+TEST_F(FlagTagsTest, TestUnlockFlags) {
+  // Setting an unsafe flag without unlocking should crash.
+  {
+    gflags::FlagSaver s;
+    gflags::SetCommandLineOption("test_unsafe_flag", "true");
+    ASSERT_DEATH({ HandleCommonFlags(); },
+                 "Flag --test_unsafe_flag is unsafe and unsupported.*"
+                 "Use --unlock_unsafe_flags to proceed");
+  }
+
+  // Setting an unsafe flag with unlocking should proceed with a warning.
+  {
+    StringVectorSink sink;
+    ScopedRegisterSink reg(&sink);
+    gflags::FlagSaver s;
+    gflags::SetCommandLineOption("test_unsafe_flag", "true");
+    gflags::SetCommandLineOption("unlock_unsafe_flags", "true");
+    HandleCommonFlags();
+    ASSERT_EQ(1, sink.logged_msgs().size());
+    ASSERT_STR_CONTAINS(sink.logged_msgs()[0], "Enabled unsafe flag: --test_unsafe_flag");
+  }
+
+  // Setting an experimental flag without unlocking should crash.
+  {
+    gflags::FlagSaver s;
+    gflags::SetCommandLineOption("test_experimental_flag", "true");
+    ASSERT_DEATH({ HandleCommonFlags(); },
+                 "Flag --test_experimental_flag is experimental and unsupported.*"
+                 "Use --unlock_experimental_flags to proceed");
+  }
+
+  // Setting an experimental flag with unlocking should proceed with a warning.
+  {
+    StringVectorSink sink;
+    ScopedRegisterSink reg(&sink);
+    gflags::FlagSaver s;
+    gflags::SetCommandLineOption("test_experimental_flag", "true");
+    gflags::SetCommandLineOption("unlock_experimental_flags", "true");
+    HandleCommonFlags();
+    ASSERT_EQ(1, sink.logged_msgs().size());
+    ASSERT_STR_CONTAINS(sink.logged_msgs()[0],
+                        "Enabled experimental flag: --test_experimental_flag");
+  }
 }
 
 } // namespace kudu

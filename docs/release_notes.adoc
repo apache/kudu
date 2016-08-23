@@ -52,6 +52,12 @@ detailed below.
 - The KuduScanToken::TabletServers method in the C++ library has been removed.
   The same information can now be found in the KuduScanToken::tablet method.
 
+- Configuration flags which have been marked as 'unsafe' and 'experimental' are now
+  disallowed by default. Users may access these flags by enabling the additional
+  flags '--unlock_unsafe_flags' and '--unlock_experimental_flags'. Such flags
+  are not recommended and may be removed or modified with no deprecation period
+  and without notice in future Kudu releases.
+
 [[rn_0.10.0]]
 == Release notes specific to 0.10.0
 

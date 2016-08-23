@@ -53,6 +53,8 @@ class KuduTestBase(object):
 
         path = [
             "{0}/kudu-master".format(bin_path),
+            "-unlock_unsafe_flags",
+            "-unlock_experimental_flags",
             "-rpc_server_allow_ephemeral_ports",
             "-rpc_bind_addresses=0.0.0.0:0",
             "-fs_wal_dir={0}/master/data".format(local_path),
@@ -93,6 +95,8 @@ class KuduTestBase(object):
 
             path = [
                 "{0}/kudu-tserver".format(bin_path),
+                "-unlock_unsafe_flags",
+                "-unlock_experimental_flags",
                 "-rpc_server_allow_ephemeral_ports",
                 "-rpc_bind_addresses=0.0.0.0:0",
                 "-tserver_master_addrs=127.0.0.1:{0}".format(master_port),

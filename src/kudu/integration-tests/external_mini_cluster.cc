@@ -568,6 +568,11 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   argv.push_back("--logtostderr");
   argv.push_back("--logbuflevel=-1");
 
+  // Allow unsafe and experimental flags from tests, since we often use
+  // fault injection, etc.
+  argv.push_back("--unlock_experimental_flags");
+  argv.push_back("--unlock_unsafe_flags");
+
   gscoped_ptr<Subprocess> p(new Subprocess(exe_, argv));
   p->ShareParentStdout(false);
   LOG(INFO) << "Running " << exe_ << "\n" << JoinStrings(argv, "\n");
