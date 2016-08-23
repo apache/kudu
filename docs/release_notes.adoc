@@ -116,8 +116,8 @@ This feature can be particularly helpful with time series workloads in which
   new partitions can be created on an hourly or daily basis. Old partitions
   may be efficiently dropped if the application does not need to retain historical
   data past a certain point.
-
-  This feature is considered experimental for the 0.10 release. More details of
++
+This feature is considered experimental for the 0.10 release. More details of
   the new feature can be found in the accompanying
   link:https://kudu.apache.org/2016/08/23/new-range-partitioning-features.html[blog post].
 
