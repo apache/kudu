@@ -10,9 +10,10 @@ download and setup the VM. Simply execute the following command:
 
     curl -s https://raw.githubusercontent.com/cloudera/kudu-examples/master/demo-vm-setup/bootstrap.sh | bash
 
-Once the setup is complete, you can ssh into the machine using
+Once the setup is complete, you can ssh into the machine using the username
+and password 'demo'.
 
-    ssh cloudera@quickstart.cloudera
+    ssh demo@quickstart.cloudera
 
 and you can access this directory containing the examples in the following
 location: `/media/sf_examples`.
