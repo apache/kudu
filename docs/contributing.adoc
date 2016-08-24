@@ -96,6 +96,9 @@ or to push a change to the `gh-pages` branch (to update the website):
 git push gerrit HEAD:refs/for/gh-pages --no-thin
 ----
 
+TIP: While preparing a patch for review, it's a good idea to follow
+link:https://git-scm.com/book/en/v2/Distributed-Git-Contributing-to-a-Project#_commit_guidelines[generic git commit guidelines and good practices].
+
 NOTE: The `--no-thin` argument is a workaround to prevent an error in Gerrit. See
 https://code.google.com/p/gerrit/issues/detail?id=1582.
 
