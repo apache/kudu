@@ -27,6 +27,14 @@
     <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
+    <!-- inherit from the ASF POM for distribution management -->
+    <parent>
+      <groupId>org.apache</groupId>
+      <artifactId>apache</artifactId>
+      <version>18</version>
+      <relativePath/>
+    </parent>
+
     <name>Kudu</name>
 
     <description>
@@ -258,19 +266,6 @@
     </repository>
  </repositories>
 
-  <distributionManagement>
-    <repository>
-      <id>cdh.releases.repo</id>
-      <url>${deploy.maven}</url>
-      <name>Releases Repository</name>
-    </repository>
-    <snapshotRepository>
-      <id>cdh.snapshots.repo</id>
-      <url>http://maven.jenkins.cloudera.com:8081/artifactory/cdh-snapshot-local</url>
-      <name>Snapshots Repository</name>
-    </snapshotRepository>
-  </distributionManagement>
-
   <profiles>
     <!-- Build the CSD.
 
@@ -280,21 +275,6 @@
       <modules>
         <module>kudu-csd</module>
       </modules>
-    </profile>
-    <profile>
-      <id>deploy-local</id>
-      <activation>
-        <activeByDefault>true</activeByDefault>
-      </activation>
-      <properties>
-         <deploy.maven>http://maven.jenkins.cloudera.com:8081/artifactory/libs-release-local</deploy.maven>
-       </properties>
-    </profile>
-    <profile>
-      <id>deploy-remote</id>
-      <properties>
-         <deploy.maven>https://repository.cloudera.com/cloudera/libs-release-local</deploy.maven>
-      </properties>
     </profile>
   </profiles>
 </project>
