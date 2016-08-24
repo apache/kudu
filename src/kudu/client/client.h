@@ -1008,7 +1008,7 @@ class KUDU_EXPORT KuduError {
 /// Users who are familiar with the Hibernate ORM framework should find this
 /// concept of a Session familiar.
 ///
-/// @note This class is not thread-safe except where otherwise specified.
+/// @note This class is not thread-safe.
 class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> {
  public:
   ~KuduSession();
@@ -1143,8 +1143,6 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// the write_op is malformed, the write_op is stored in the session's error
   /// collector which may be retrieved at any time.
   ///
-  /// @note This method is thread safe.
-  ///
   /// @param [in] write_op
   ///   Operation to apply. This method transfers the write_op's ownership
   ///   to the KuduSession.
@@ -1172,8 +1170,6 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   ///
   /// In @c AUTO_FLUSH_SYNC mode, this has no effect, since every Apply() call
   /// flushes itself inline.
-  ///
-  /// @note This function is thread-safe.
   ///
   /// @return Operation result status. In particular, returns a non-OK status
   ///   if there are any pending errors after the rows have been flushed.
@@ -1226,8 +1222,6 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
 
   /// Check if there are any pending operations in this session.
   ///
-  /// @note This function is thread-safe.
-  ///
   /// @return @c true if there are operations which have not yet been delivered
   ///   to the cluster. This may include buffered operations (i.e. those
   ///   that have not yet been flushed) as well as in-flight operations
@@ -1245,8 +1239,6 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// In the other flush modes, data is immediately put en-route
   /// to the destination, so this will return 0.
   ///
-  /// @note This function is thread-safe.
-  ///
   /// @return The number of buffered operations. These are operations that have
   ///   not yet been flushed -- i.e. they are not en-route yet.
   int CountBufferedOperations() const;
@@ -1255,8 +1247,6 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   ///
   /// Errors may accumulate in session's lifetime; use this method to
   /// see how many errors happened since last call of GetPendingErrors() method.
-  ///
-  /// @note This function is thread-safe.
   ///
   /// @return Total count of errors accumulated during the session.
   int CountPendingErrors() const;
@@ -1271,8 +1261,6 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// @param [out] overflowed
   ///   If there were more errors than could be held in the session's error
   ///   storage, then @c overflowed is set to @c true.
-  ///
-  /// @note This function is thread-safe.
   void GetPendingErrors(std::vector<KuduError*>* errors, bool* overflowed);
 
   /// @return Client for the session: pointer to the associated client object.
