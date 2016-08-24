@@ -239,7 +239,7 @@ $ sudo yum install gem ruby-devel zlib-devel
 +
 [source,bash]
 ----
-$ git clone https://github.com/apache/incubator-kudu kudu
+$ git clone https://github.com/apache/kudu
 $ cd kudu
 ----
 
@@ -333,7 +333,7 @@ $ sudo apt-get install xsltproc zlib1g-dev
 +
 [source,bash]
 ----
-$ git clone https://github.com/apache/incubator-kudu kudu
+$ git clone https://github.com/apache/kudu
 $ cd kudu
 ----
 
@@ -385,7 +385,7 @@ the steps marked *Optional* above.
 sudo apt-get -y install git autoconf automake \
   curl gcc g++ libsasl2-dev libsasl2-modules \
   libtool ntp patch pkg-config make rsync unzip vim-common gdb python lsb-release
-git clone https://github.com/apache/incubator-kudu kudu
+git clone https://github.com/apache/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build/release
@@ -411,7 +411,7 @@ $ sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
 +
 [source,bash]
 ----
-$ git clone https://github.com/apache/incubator-kudu kudu
+$ git clone https://github.com/apache/kudu
 $ cd kudu
 ----
 
@@ -457,7 +457,7 @@ the steps marked *Optional* above.
 
 sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
   gdb git libtool make ntp patch pkg-config python rsync unzip vim lsb-release
-git clone https://github.com/apache/incubator-kudu kudu
+git clone https://github.com/apache/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build/release
@@ -493,7 +493,7 @@ $ brew install autoconf automake cmake libtool pkg-config pstree
 +
 [source,bash]
 ----
-$ git clone https://github.com/apache/incubator-kudu kudu
+$ git clone https://github.com/apache/kudu
 $ cd kudu
 ----
 
@@ -543,7 +543,7 @@ are installed.
 #!/bin/bash
 
 brew install autoconf automake cmake libtool pkg-config pstree
-git clone https://github.com/apache/incubator-kudu kudu
+git clone https://github.com/apache/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build/release

@@ -50,7 +50,7 @@ in `master`.
 ----
 
 . Push the branch to public remotes https://github.com/cloudera/kudu.git and
-http://git-wip-us.apache.org/repos/asf?p=incubator-kudu.git. The following example
+http://git-wip-us.apache.org/repos/asf?p=kudu.git. The following example
 assumes they are called `cloudera` and `apache`.
 +
 ----
@@ -158,7 +158,7 @@ Apache Git repository:
 ----
 
 . Generate the version-specific documentation from that branch following these
-  link:https://github.com/apache/incubator-kudu/#updating-the-documentation-on-the-kudu-web-site[instructions].
+  link:https://github.com/apache/kudu/#updating-the-documentation-on-the-kudu-web-site[instructions].
 
 . Replace the `apidocs` and `docs` folders in the `gh-pages` branch with the new documentation.
 
