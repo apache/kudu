@@ -311,11 +311,11 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
-   * Restarts the dead tablet servers on the port.
-   * @throws Exception
+   * Restarts any tablet servers which were previously killed.
    */
   public void restartDeadTabletServers() throws Exception {
     for (int port : tserverPorts) {
+      if (tserverProcesses.containsKey(port)) continue;
       restartDeadTabletServerOnPort(port);
     }
   }

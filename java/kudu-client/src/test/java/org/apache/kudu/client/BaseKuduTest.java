@@ -42,7 +42,7 @@ import static org.junit.Assert.fail;
 
 public class BaseKuduTest {
 
-  private static final Logger LOG = LoggerFactory.getLogger(BaseKuduTest.class);
+  protected static final Logger LOG = LoggerFactory.getLogger(BaseKuduTest.class);
 
   private static final String NUM_MASTERS_PROP = "NUM_MASTERS";
   private static final int NUM_TABLET_SERVERS = 3;
