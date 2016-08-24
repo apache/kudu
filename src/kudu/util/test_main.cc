@@ -20,7 +20,9 @@
 #include <gtest/gtest.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <thread>
 
+#include "kudu/gutil/atomicops.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/status.h"
@@ -28,12 +30,27 @@
 DEFINE_int32(test_timeout_after, 0,
              "Maximum total seconds allowed for all unit tests in the suite. Default: disabled");
 
+DEFINE_int32(stress_cpu_threads, 0,
+             "Number of threads to start that burn CPU in an attempt to "
+             "stimulate race conditions");
+
 // Start timer that kills the process if --test_timeout_after is exceeded before
 // the tests complete.
 static void CreateAndStartTimer();
 
 // Gracefully kill the process.
 static void KillTestOnTimeout(int signum);
+
+static void StartStressThreads() {
+  for (int i = 0; i < FLAGS_stress_cpu_threads; i++) {
+    std::thread([]{
+        while (true) {
+          // Do something which won't be optimized out.
+          base::subtle::MemoryBarrier();
+        }
+      }).detach();
+  }
+}
 
 int main(int argc, char **argv) {
   google::InstallFailureSignalHandler();
@@ -44,6 +61,8 @@ int main(int argc, char **argv) {
 
   // Create the test-timeout timer.
   CreateAndStartTimer();
+
+  StartStressThreads();
 
   int ret = RUN_ALL_TESTS();
 
