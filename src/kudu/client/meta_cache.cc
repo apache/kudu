@@ -947,14 +947,14 @@ void MetaCache::ClearCache() {
 }
 
 void MetaCache::LookupTabletByKey(const KuduTable* table,
-                                  const string& partition_key,
+                                  string partition_key,
                                   const MonoTime& deadline,
                                   scoped_refptr<RemoteTablet>* remote_tablet,
                                   const StatusCallback& callback) {
   LookupRpc* rpc = new LookupRpc(this,
                                  callback,
                                  table,
-                                 partition_key,
+                                 std::move(partition_key),
                                  remote_tablet,
                                  deadline,
                                  client_->data_->messenger_,
@@ -963,14 +963,14 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
 }
 
 void MetaCache::LookupTabletByKeyOrNext(const KuduTable* table,
-                                        const string& partition_key,
+                                        string partition_key,
                                         const MonoTime& deadline,
                                         scoped_refptr<RemoteTablet>* remote_tablet,
                                         const StatusCallback& callback) {
   LookupRpc* rpc = new LookupRpc(this,
                                  callback,
                                  table,
-                                 partition_key,
+                                 std::move(partition_key),
                                  remote_tablet,
                                  deadline,
                                  client_->data_->messenger_,

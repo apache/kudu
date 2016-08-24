@@ -361,7 +361,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // NOTE: the memory referenced by 'table' must remain valid until 'callback'
   // is invoked.
   void LookupTabletByKey(const KuduTable* table,
-                         const std::string& partition_key,
+                         std::string partition_key,
                          const MonoTime& deadline,
                          scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
@@ -369,7 +369,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Look up which tablet hosts the given partition key, or the next tablet if
   // the key falls in a non-covered range partition.
   void LookupTabletByKeyOrNext(const KuduTable* table,
-                               const std::string& partition_key,
+                               std::string partition_key,
                                const MonoTime& deadline,
                                scoped_refptr<RemoteTablet>* remote_tablet,
                                const StatusCallback& callback);

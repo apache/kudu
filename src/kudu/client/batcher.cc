@@ -166,8 +166,6 @@ struct InFlightOp {
   // The actual operation.
   gscoped_ptr<KuduWriteOperation> write_op;
 
-  string partition_key;
-
   // The tablet the operation is destined for.
   // This is only filled in after passing through the kLookingUpTablet state.
   scoped_refptr<RemoteTablet> tablet;
@@ -531,8 +529,8 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
   // As soon as we get the op, start looking up where it belongs,
   // so that when the user calls Flush, we are ready to go.
   gscoped_ptr<InFlightOp> op(new InFlightOp());
-  RETURN_NOT_OK(write_op->table_->partition_schema()
-                .EncodeKey(write_op->row(), &op->partition_key));
+  string partition_key;
+  RETURN_NOT_OK(write_op->table_->partition_schema().EncodeKey(write_op->row(), &partition_key));
   op->write_op.reset(write_op);
   op->state = InFlightOp::kLookingUpTablet;
 
@@ -547,7 +545,7 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
   base::RefCountInc(&outstanding_lookups_);
   client_->data_->meta_cache_->LookupTabletByKey(
       op->write_op->table(),
-      op->partition_key,
+      std::move(partition_key),
       deadline,
       &op->tablet,
       Bind(&Batcher::TabletLookupFinished, this, op.get()));
