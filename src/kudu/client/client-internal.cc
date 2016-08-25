@@ -542,7 +542,8 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
                                         const MonoTime& deadline,
                                         KuduSchema* schema,
                                         PartitionSchema* partition_schema,
-                                        string* table_id) {
+                                        string* table_id,
+                                        int* num_replicas) {
   GetTableSchemaRequestPB req;
   GetTableSchemaResponsePB resp;
 
@@ -565,11 +566,19 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
                                         *new_schema.get(),
                                         &new_partition_schema));
 
-  // Parsing was successful; release the schemas to the user.
-  delete schema->schema_;
-  schema->schema_ = new_schema.release();
-  *partition_schema = std::move(new_partition_schema);
-  *table_id = resp.table_id();
+  if (schema) {
+    delete schema->schema_;
+    schema->schema_ = new_schema.release();
+  }
+  if (partition_schema) {
+    *partition_schema = std::move(new_partition_schema);
+  }
+  if (table_id) {
+    *table_id = resp.table_id();
+  }
+  if (num_replicas) {
+    *num_replicas = resp.num_replicas();
+  }
   return Status::OK();
 }
 

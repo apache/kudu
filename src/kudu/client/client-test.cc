@@ -91,6 +91,7 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 using std::map;
+using strings::Substitute;
 
 namespace kudu {
 namespace client {
@@ -138,7 +139,6 @@ class ClientTest : public KuduTest {
                      .Build(&client_));
 
     ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
-    ASSERT_NO_FATAL_FAILURE(CreateTable(kTable2Name, 1, {}, {}, &client_table2_));
   }
 
   // Looks up the remote tablet entry for a given partition key in the meta cache.
@@ -179,7 +179,6 @@ class ClientTest : public KuduTest {
  protected:
 
   static const char *kTableName;
-  static const char *kTable2Name;
   static const int32_t kNoBound;
 
   string GetFirstTabletId(KuduTable* table) {
@@ -491,7 +490,7 @@ class ClientTest : public KuduTest {
       }
     }
     if (!ts_found) {
-      return Status::InvalidArgument(strings::Substitute("Could not find tablet server $1", uuid));
+      return Status::InvalidArgument(Substitute("Could not find tablet server $1", uuid));
     }
 
     return Status::OK();
@@ -522,14 +521,16 @@ class ClientTest : public KuduTest {
   gscoped_ptr<MiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
   shared_ptr<KuduTable> client_table_;
-  shared_ptr<KuduTable> client_table2_;
 };
 
 const char *ClientTest::kTableName = "client-testtb";
-const char *ClientTest::kTable2Name = "client-testtb2";
 const int32_t ClientTest::kNoBound = kint32max;
 
 TEST_F(ClientTest, TestListTables) {
+  const char* kTable2Name = "client-testtb2";
+  shared_ptr<KuduTable> second_table;
+  NO_FATALS(CreateTable(kTable2Name, 1, {}, {}, &second_table));
+
   vector<string> tables;
   ASSERT_OK(client_->ListTables(&tables));
   std::sort(tables.begin(), tables.end());
@@ -1916,6 +1917,9 @@ TEST_F(ClientTest, TestSessionClose) {
 // Test which sends multiple batches through the same session, each of which
 // contains multiple rows spread across multiple tablets.
 TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
+  shared_ptr<KuduTable> second_table;
+  NO_FATALS(CreateTable("second table", 1, {}, {}, &second_table));
+
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
@@ -1928,7 +1932,7 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
     for (int i = 0; i < kRowsPerBatch; i++) {
       ASSERT_OK(ApplyInsertToSession(
                          session.get(),
-                         (row_key % 2 == 0) ? client_table_ : client_table2_,
+                         (row_key % 2 == 0) ? client_table_ : second_table,
                          row_key, row_key * 10, "hello world"));
       row_key++;
     }
@@ -1939,7 +1943,7 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
 
   const int kNumRowsPerTablet = kNumBatches * kRowsPerBatch / 2;
   ASSERT_EQ(kNumRowsPerTablet, CountRowsFromClient(client_table_.get()));
-  ASSERT_EQ(kNumRowsPerTablet, CountRowsFromClient(client_table2_.get()));
+  ASSERT_EQ(kNumRowsPerTablet, CountRowsFromClient(second_table.get()));
 
   // Verify the data looks right.
   vector<string> rows;
@@ -3102,7 +3106,7 @@ TEST_F(ClientTest, TestServerTooBusyRetry) {
   int t = 0;
   while (!stop) {
     scoped_refptr<kudu::Thread> thread;
-    ASSERT_OK(kudu::Thread::Create("test", strings::Substitute("t$0", t++),
+    ASSERT_OK(kudu::Thread::Create("test", Substitute("t$0", t++),
                                    &ClientTest::CheckRowCount, this, client_table_.get(), kNumRows,
                                    &thread));
     threads.push_back(thread);
@@ -3251,6 +3255,15 @@ TEST_F(ClientTest, TestBatchScanConstIterator) {
           ASSERT_TRUE(it != other_it);
       }
     }
+  }
+}
+
+TEST_F(ClientTest, TestTableNumReplicas) {
+  for (int i : { 1, 3, 5, 7, 9 }) {
+    shared_ptr<KuduTable> table;
+    NO_FATALS(CreateTable(Substitute("table_with_$0_replicas", i),
+                          i, {}, {}, &table));
+    ASSERT_EQ(i, table->num_replicas());
   }
 }
 

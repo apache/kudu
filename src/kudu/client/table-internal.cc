@@ -27,11 +27,13 @@ using sp::shared_ptr;
 KuduTable::Data::Data(shared_ptr<KuduClient> client,
                       string name,
                       string id,
+                      int num_replicas,
                       const KuduSchema& schema,
                       PartitionSchema partition_schema)
     : client_(std::move(client)),
       name_(std::move(name)),
       id_(std::move(id)),
+      num_replicas_(num_replicas),
       schema_(schema),
       partition_schema_(std::move(partition_schema)) {
 }

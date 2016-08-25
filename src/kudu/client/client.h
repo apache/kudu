@@ -664,6 +664,9 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   /// @return Reference to the table's schema object.
   const KuduSchema& schema() const;
 
+  /// @return Replication factor of the table.
+  int num_replicas() const;
+
   /// @return New @c INSERT operation for this table. It is the caller's
   ///   responsibility to free the result, unless it is passed to
   ///   KuduSession::Apply().
@@ -725,7 +728,8 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
 
   KuduTable(const sp::shared_ptr<KuduClient>& client,
             const std::string& name,
-            const std::string& table_id,
+            const std::string& id,
+            int num_replicas,
             const KuduSchema& schema,
             const PartitionSchema& partition_schema);
 

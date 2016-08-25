@@ -108,7 +108,8 @@ class KuduClient::Data {
                         const MonoTime& deadline,
                         KuduSchema* schema,
                         PartitionSchema* partition_schema,
-                        std::string* table_id);
+                        std::string* table_id,
+                        int* num_replicas);
 
   Status InitLocalHostNames();
 

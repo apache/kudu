@@ -284,14 +284,13 @@ Status KuduClient::IsAlterTableInProgress(const string& table_name,
 Status KuduClient::GetTableSchema(const string& table_name,
                                   KuduSchema* schema) {
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  string table_id_ignored;
-  PartitionSchema partition_schema;
   return data_->GetTableSchema(this,
                                table_name,
                                deadline,
                                schema,
-                               &partition_schema,
-                               &table_id_ignored);
+                               nullptr, // partition schema
+                               nullptr, // table id
+                               nullptr); // number of replicas
 }
 
 Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) {
@@ -367,6 +366,7 @@ Status KuduClient::OpenTable(const string& table_name,
                              shared_ptr<KuduTable>* table) {
   KuduSchema schema;
   string table_id;
+  int num_replicas;
   PartitionSchema partition_schema;
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
   RETURN_NOT_OK(data_->GetTableSchema(this,
@@ -374,11 +374,13 @@ Status KuduClient::OpenTable(const string& table_name,
                                       deadline,
                                       &schema,
                                       &partition_schema,
-                                      &table_id));
+                                      &table_id,
+                                      &num_replicas));
 
   // TODO: in the future, probably will look up the table in some map to reuse
   // KuduTable instances.
-  table->reset(new KuduTable(shared_from_this(), table_name, table_id,
+  table->reset(new KuduTable(shared_from_this(),
+                             table_name, table_id, num_replicas,
                              schema, partition_schema));
   return Status::OK();
 }
@@ -586,10 +588,12 @@ Status KuduTableCreator::Create() {
 
 KuduTable::KuduTable(const shared_ptr<KuduClient>& client,
                      const string& name,
-                     const string& table_id,
+                     const string& id,
+                     int num_replicas,
                      const KuduSchema& schema,
                      const PartitionSchema& partition_schema)
-  : data_(new KuduTable::Data(client, name, table_id, schema, partition_schema)) {
+  : data_(new KuduTable::Data(client, name, id, num_replicas,
+                              schema, partition_schema)) {
 }
 
 KuduTable::~KuduTable() {
@@ -606,6 +610,10 @@ const string& KuduTable::id() const {
 
 const KuduSchema& KuduTable::schema() const {
   return data_->schema_;
+}
+
+int KuduTable::num_replicas() const {
+  return data_->num_replicas_;
 }
 
 KuduInsert* KuduTable::NewInsert() {

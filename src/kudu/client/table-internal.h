@@ -30,15 +30,17 @@ class KuduTable::Data {
  public:
   Data(sp::shared_ptr<KuduClient> client,
        std::string name,
-       std::string table_id,
+       std::string id,
+       int num_replicas,
        const KuduSchema& schema,
        PartitionSchema partition_schema);
   ~Data();
 
   sp::shared_ptr<KuduClient> client_;
 
-  std::string name_;
+  const std::string name_;
   const std::string id_;
+  const int num_replicas_;
 
   // TODO: figure out how we deal with a schema change from the client perspective.
   // Do we make them call a RefreshSchema() method? Or maybe reopen the table and get
