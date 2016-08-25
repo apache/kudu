@@ -531,7 +531,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     string peer_uuid = Substitute("peer-$0", peer_index);
     unique_ptr<ConsensusMetadata> cmeta;
     CHECK_OK(ConsensusMetadata::Load(fs_managers_[peer_index], kTestTablet, peer_uuid, &cmeta));
-    return std::move(cmeta);
+    return cmeta;
   }
 
   // Assert that the durable term == term and that the peer that got the vote == voted_for.
