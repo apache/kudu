@@ -137,6 +137,12 @@ TEST_F(ToolTest, TestModeHelp) {
     };
     NO_FATALS(RunTestHelp("tablet cmeta", kCmetaModeRegexes));
   }
+  {
+    const vector<string> kClusterModeRegexes = {
+        "ksck.*Check the health of a Kudu cluster",
+    };
+    NO_FATALS(RunTestHelp("cluster", kClusterModeRegexes));
+  }
 }
 
 TEST_F(ToolTest, TestActionHelp) {

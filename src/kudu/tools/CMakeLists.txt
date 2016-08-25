@@ -82,13 +82,9 @@ target_link_libraries(ksck
   ${KUDU_BASE_LIBS}
 )
 
-add_executable(kudu-ksck kudu-ksck.cc)
-target_link_libraries(kudu-ksck
-  ksck
-)
-
 add_executable(kudu
   tool_action.cc
+  tool_action_cluster.cc
   tool_action_fs.cc
   tool_action_pbc.cc
   tool_action_tablet.cc
@@ -100,6 +96,7 @@ target_link_libraries(kudu
   kudu_common
   kudu_fs
   kudu_util
+  ksck
   master
   tserver
   ${KUDU_BASE_LIBS}
