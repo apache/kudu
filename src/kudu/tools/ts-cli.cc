@@ -262,8 +262,7 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
   new_req->set_order_mode(ORDERED);
   new_req->set_read_mode(READ_AT_SNAPSHOT);
 
-  vector<KuduRowResult> rows;
-  while (true) {
+  do {
     RpcController rpc;
     rpc.set_timeout(timeout_);
     RETURN_NOT_OK_PREPEND(ts_proxy_->Scan(req, &resp, &rpc),
@@ -273,17 +272,6 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
       return Status::IOError("Failed to read: ", resp.error().ShortDebugString());
     }
 
-    rows.clear();
-    KuduScanBatch::Data results;
-    RETURN_NOT_OK(results.Reset(&rpc,
-                                &schema,
-                                &client_schema,
-                                make_gscoped_ptr(resp.release_data())));
-    results.ExtractRows(&rows);
-    for (const KuduRowResult& r : rows) {
-      std::cout << r.ToString() << std::endl;
-    }
-
     // The first response has a scanner ID. We use this for all subsequent
     // responses.
     if (resp.has_scanner_id()) {
@@ -291,10 +279,23 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
       req.clear_new_scan_request();
     }
     req.set_call_seq_id(req.call_seq_id() + 1);
-    if (!resp.has_more_results()) {
-      break;
+
+    // Nothing to process from this scan result.
+    if (!resp.has_data()) {
+      continue;
     }
-  }
+
+    KuduScanBatch::Data results;
+    RETURN_NOT_OK(results.Reset(&rpc,
+                                &schema,
+                                &client_schema,
+                                make_gscoped_ptr(resp.release_data())));
+    vector<KuduRowResult> rows;
+    results.ExtractRows(&rows);
+    for (const KuduRowResult& r : rows) {
+      std::cout << r.ToString() << std::endl;
+    }
+  } while (resp.has_more_results());
   return Status::OK();
 }
 
