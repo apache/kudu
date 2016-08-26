@@ -111,6 +111,10 @@ class TSDescriptor {
     return num_live_replicas_;
   }
 
+  // Return a string form of this TS, suitable for printing.
+  // Includes the UUID as well as last known host/port.
+  std::string ToString() const;
+
  private:
   FRIEND_TEST(TestTSDescriptor, TestReplicaCreationsDecay);
 

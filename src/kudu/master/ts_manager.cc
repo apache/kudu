@@ -80,14 +80,14 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
     shared_ptr<TSDescriptor> new_desc;
     RETURN_NOT_OK(TSDescriptor::RegisterNew(instance, registration, &new_desc));
     InsertOrDie(&servers_by_id_, uuid, new_desc);
-    LOG(INFO) << Substitute("Registered new tserver $0 with Master",
-                            instance.ShortDebugString());
+    LOG(INFO) << Substitute("Registered new tserver with Master: $0",
+                            new_desc->ToString());
     desc->swap(new_desc);
   } else {
     shared_ptr<TSDescriptor> found(FindOrDie(servers_by_id_, uuid));
     RETURN_NOT_OK(found->Register(instance, registration));
-    LOG(INFO) << Substitute("Re-registered known tserver $0 with Master",
-                            instance.ShortDebugString());
+    LOG(INFO) << Substitute("Re-registered known tserver with Master: $0",
+                            found->ToString());
     desc->swap(found);
   }
 

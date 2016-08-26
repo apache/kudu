@@ -1907,14 +1907,14 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (report.has_schema_version() &&
       table_lock.data().pb.version() != report.schema_version()) {
     if (report.schema_version() > table_lock.data().pb.version()) {
-      LOG(ERROR) << "TS " << ts_desc->permanent_uuid()
+      LOG(ERROR) << "TS " << ts_desc->ToString()
                  << " has reported a schema version greater than the current one "
                  << " for tablet " << tablet->ToString()
                  << ". Expected version " << table_lock.data().pb.version()
                  << " got " << report.schema_version()
                  << " (corruption)";
     } else {
-      LOG(INFO) << "TS " << ts_desc->permanent_uuid()
+      LOG(INFO) << "TS " << ts_desc->ToString()
             << " does not have the latest schema for tablet " << tablet->ToString()
             << ". Expected version " << table_lock.data().pb.version()
             << " got " << report.schema_version();
@@ -1931,7 +1931,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     DCHECK(!s.ok());
     DCHECK_EQ(report.state(), tablet::FAILED);
     LOG(WARNING) << "Tablet " << tablet->ToString() << " has failed on TS "
-                 << ts_desc->permanent_uuid() << ": " << s.ToString();
+                 << ts_desc->ToString() << ": " << s.ToString();
     return Status::OK();
   }
 
@@ -2031,7 +2031,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 
       VLOG(2) << "Updating consensus configuration for tablet "
               << final_report->tablet_id()
-              << " from config reported by " << ts_desc->permanent_uuid()
+              << " from config reported by " << ts_desc->ToString()
               << " to that committed in log index "
               << final_report->committed_consensus_state().config().opid_index()
               << " with leader state from term "
@@ -2298,7 +2298,7 @@ class RetryingTSRpcTask : public MonitoredTask {
   // Runs on a reactor thread, so should not block or do any IO.
   void RpcCallback() {
     if (!rpc_.status().ok()) {
-      LOG(WARNING) << "TS " << target_ts_desc_->permanent_uuid() << ": "
+      LOG(WARNING) << "TS " << target_ts_desc_->ToString() << ": "
                    << type_name() << " RPC failed for tablet "
                    << tablet_id() << ": " << rpc_.status().ToString();
     } else if (state() != kStateAborted) {
@@ -2483,18 +2483,19 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
       Status s = StatusFromPB(resp_.error().status());
       if (s.IsAlreadyPresent()) {
         LOG(INFO) << "CreateTablet RPC for tablet " << tablet_id_
-                  << " on TS " << permanent_uuid_ << " returned already present: "
+                  << " on TS " << target_ts_desc_->ToString() << " returned already present: "
                   << s.ToString();
         MarkComplete();
       } else {
         LOG(WARNING) << "CreateTablet RPC for tablet " << tablet_id_
-                     << " on TS " << permanent_uuid_ << " failed: " << s.ToString();
+                     << " on TS " << target_ts_desc_->ToString() << " failed: " << s.ToString();
       }
     }
   }
 
   virtual bool SendRequest(int attempt) OVERRIDE {
-    VLOG(1) << "Send create tablet request to " << permanent_uuid_ << ":\n"
+    VLOG(1) << "Send create tablet request to "
+            << target_ts_desc_->ToString() << ":\n"
             << " (attempt " << attempt << "):\n"
             << req_.DebugString();
     ts_proxy_->CreateTabletAsync(req_, &resp_, &rpc_,
@@ -2541,18 +2542,21 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
       TabletServerErrorPB::Code code = resp_.error().code();
       switch (code) {
         case TabletServerErrorPB::TABLET_NOT_FOUND:
-          LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
+          LOG(WARNING) << "TS " << target_ts_desc_->ToString()
+                       << ": delete failed for tablet " << tablet_id_
                        << " because the tablet was not found. No further retry: "
                        << status.ToString();
           MarkComplete();
           break;
         case TabletServerErrorPB::CAS_FAILED:
-          LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
+          LOG(WARNING) << "TS " << target_ts_desc_->ToString()
+                       << ": delete failed for tablet " << tablet_id_
                        << " due to a CAS failure. No further retry: " << status.ToString();
           MarkComplete();
           break;
         default:
-          LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
+          LOG(WARNING) << "TS " << target_ts_desc_->ToString()
+                       << ": delete failed for tablet " << tablet_id_
                        << " with error code " << TabletServerErrorPB::Code_Name(code)
                        << ": " << status.ToString();
           break;
@@ -2560,14 +2564,17 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
     } else {
       master_->catalog_manager()->NotifyTabletDeleteSuccess(permanent_uuid_, tablet_id_);
       if (table_) {
-        LOG(INFO) << "TS " << permanent_uuid_ << ": tablet " << tablet_id_
+        LOG(INFO) << "TS " << target_ts_desc_->ToString()
+                  << ": tablet " << tablet_id_
                   << " (table " << table_->ToString() << ") successfully deleted";
       } else {
-        LOG(WARNING) << "TS " << permanent_uuid_ << ": tablet " << tablet_id_
+        LOG(WARNING) << "TS " << target_ts_desc_->ToString()
+                     << ": tablet " << tablet_id_
                      << " did not belong to a known table, but was successfully deleted";
       }
       MarkComplete();
-      VLOG(1) << "TS " << permanent_uuid_ << ": delete complete on tablet " << tablet_id_;
+      VLOG(1) << "TS " << target_ts_desc_->ToString()
+              << ": delete complete on tablet " << tablet_id_;
     }
   }
 
@@ -2581,9 +2588,12 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
       req.set_cas_config_opid_index_less_or_equal(*cas_config_opid_index_less_or_equal_);
     }
 
-    VLOG(1) << "Send delete tablet request to " << permanent_uuid_
-            << " (attempt " << attempt << "):\n"
-            << req.DebugString();
+    LOG(INFO) << Substitute("Sending DeleteTablet($0) for tablet $1 on $2 "
+                            "($3)",
+                            TabletDataState_Name(delete_type_),
+                            tablet_id_,
+                            target_ts_desc_->ToString(),
+                            reason_);
     ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
                                  boost::bind(&AsyncDeleteReplica::RpcCallback, this));
     return true;
@@ -2621,9 +2631,6 @@ class AsyncAlterTable : public RetryingTSRpcTask {
 
  private:
   virtual string tablet_id() const OVERRIDE { return tablet_->tablet_id(); }
-  string permanent_uuid() const {
-    return target_ts_desc_->permanent_uuid();
-  }
 
   virtual void HandleResponse(int attempt) OVERRIDE {
     if (resp_.has_error()) {
@@ -2634,18 +2641,19 @@ class AsyncAlterTable : public RetryingTSRpcTask {
         case TabletServerErrorPB::TABLET_NOT_FOUND:
         case TabletServerErrorPB::MISMATCHED_SCHEMA:
         case TabletServerErrorPB::TABLET_HAS_A_NEWER_SCHEMA:
-          LOG(WARNING) << "TS " << permanent_uuid() << ": alter failed for tablet "
+          LOG(WARNING) << "TS " << target_ts_desc_->ToString() << ": alter failed for tablet "
                        << tablet_->ToString() << " no further retry: " << status.ToString();
           MarkComplete();
           break;
         default:
-          LOG(WARNING) << "TS " << permanent_uuid() << ": alter failed for tablet "
+          LOG(WARNING) << "TS " << target_ts_desc_->ToString() << ": alter failed for tablet "
                        << tablet_->ToString() << ": " << status.ToString();
           break;
       }
     } else {
       MarkComplete();
-      VLOG(1) << "TS " << permanent_uuid() << ": alter complete on tablet " << tablet_->ToString();
+      VLOG(1) << "TS " << target_ts_desc_->ToString()
+              << ": alter complete on tablet " << tablet_->ToString();
     }
 
     if (state() != kStateComplete) {
@@ -2657,7 +2665,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
     TableMetadataLock l(tablet_->table().get(), TableMetadataLock::READ);
 
     tserver::AlterSchemaRequestPB req;
-    req.set_dest_uuid(permanent_uuid());
+    req.set_dest_uuid(target_ts_desc_->permanent_uuid());
     req.set_tablet_id(tablet_->tablet_id());
     req.set_new_table_name(l.data().pb.name());
     req.set_schema_version(l.data().pb.version());
@@ -2665,7 +2673,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
 
     l.Unlock();
 
-    VLOG(1) << "Send alter table request to " << permanent_uuid()
+    VLOG(1) << "Send alter table request to " << target_ts_desc_->ToString()
             << " (attempt " << attempt << "):\n"
             << req.DebugString();
     ts_proxy_->AlterSchemaAsync(req, &resp_, &rpc_,
@@ -2716,9 +2724,11 @@ class AsyncAddServerTask : public RetryingTSRpcTask {
   virtual string type_name() const OVERRIDE { return "AddServer ChangeConfig"; }
 
   virtual string description() const OVERRIDE {
-    return Substitute("AddServer ChangeConfig RPC for tablet $0 on peer $1 "
+    return Substitute("AddServer ChangeConfig RPC for tablet $0 on TS $1 "
                       "with cas_config_opid_index $2",
-                      tablet_->tablet_id(), permanent_uuid(), cstate_.config().opid_index());
+                      tablet_->tablet_id(),
+                      target_ts_desc_->ToString(),
+                      cstate_.config().opid_index());
   }
 
  protected:
@@ -2727,9 +2737,6 @@ class AsyncAddServerTask : public RetryingTSRpcTask {
 
  private:
   virtual string tablet_id() const OVERRIDE { return tablet_->tablet_id(); }
-  string permanent_uuid() const {
-    return target_ts_desc_->permanent_uuid();
-  }
 
   const scoped_refptr<TabletInfo> tablet_;
   const ConsensusStatePB cstate_;
@@ -2768,7 +2775,7 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
     return false;
   }
 
-  req_.set_dest_uuid(permanent_uuid());
+  req_.set_dest_uuid(target_ts_desc_->permanent_uuid());
   req_.set_tablet_id(tablet_->tablet_id());
   req_.set_type(consensus::ADD_SERVER);
   req_.set_cas_config_opid_index(cstate_.config().opid_index());
@@ -2776,16 +2783,11 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
   peer->set_permanent_uuid(replacement_replica->permanent_uuid());
   ServerRegistrationPB peer_reg;
   replacement_replica->GetRegistration(&peer_reg);
-  if (peer_reg.rpc_addresses_size() == 0) {
-    KLOG_EVERY_N(WARNING, 100) << LogPrefix() << "Candidate replacement "
-                               << replacement_replica->permanent_uuid()
-                               << " has no registered rpc address: "
-                               << peer_reg.ShortDebugString();
-    return false;
-  }
+  CHECK_GT(peer_reg.rpc_addresses_size(), 0);
   *peer->mutable_last_known_addr() = peer_reg.rpc_addresses(0);
   peer->set_member_type(RaftPeerPB::VOTER);
-  VLOG(1) << "Sending AddServer ChangeConfig request to " << permanent_uuid() << ":\n"
+  VLOG(1) << "Sending AddServer ChangeConfig request to "
+          << target_ts_desc_->ToString() << ":\n"
           << req_.DebugString();
   consensus_proxy_->ChangeConfigAsync(req_, &resp_, &rpc_,
                                       boost::bind(&AsyncAddServerTask::RpcCallback, this));
@@ -2804,13 +2806,15 @@ void AsyncAddServerTask::HandleResponse(int attempt) {
   // Do not retry on a CAS error, otherwise retry forever or until cancelled.
   switch (resp_.error().code()) {
     case TabletServerErrorPB::CAS_FAILED:
-      LOG_WITH_PREFIX(WARNING) << "ChangeConfig() failed with leader " << permanent_uuid()
+      LOG_WITH_PREFIX(WARNING) << "ChangeConfig() failed with leader "\
+                               << target_ts_desc_->ToString()
                                << " due to CAS failure. No further retry: "
                                << status.ToString();
       MarkFailed();
       break;
     default:
-      LOG_WITH_PREFIX(INFO) << "ChangeConfig() failed with leader " << permanent_uuid()
+      LOG_WITH_PREFIX(INFO) << "ChangeConfig() failed with leader "
+                            << target_ts_desc_->ToString()
                             << " due to error "
                             << TabletServerErrorPB::Code_Name(resp_.error().code())
                             << ". This operation will be retried. Error detail: "
@@ -2873,11 +2877,6 @@ void CatalogManager::SendDeleteReplicaRequest(
     const scoped_refptr<TableInfo>& table,
     const string& ts_uuid,
     const string& reason) {
-  LOG_WITH_PREFIX(INFO) << Substitute("Deleting tablet $0 on peer $1 "
-                                      "with delete type $2 ($3)",
-                                      tablet_id, ts_uuid,
-                                      TabletDataState_Name(delete_type),
-                                      reason);
   AsyncDeleteReplica* call =
       new AsyncDeleteReplica(master_, ts_uuid, table,
                              tablet_id, delete_type, cas_config_opid_index_less_or_equal,

@@ -97,6 +97,13 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
     return Status::InvalidArgument(msg);
   }
 
+  if (registration.rpc_addresses().empty() ||
+      registration.http_addresses().empty()) {
+    return Status::InvalidArgument(
+        "invalid registration: must have at least one RPC and one HTTP address",
+        registration.ShortDebugString());
+  }
+
   if (instance.instance_seqno() < latest_seqno_) {
     return Status::AlreadyPresent(
       strings::Substitute("Cannot register with sequence number $0:"
@@ -248,6 +255,12 @@ Status TSDescriptor::GetConsensusProxy(const shared_ptr<rpc::Messenger>& messeng
   }
   *proxy = consensus_proxy_;
   return Status::OK();
+}
+
+string TSDescriptor::ToString() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  const auto& addr = registration_->rpc_addresses(0);
+  return strings::Substitute("$0 ($1:$2)", permanent_uuid_, addr.host(), addr.port());
 }
 
 } // namespace master
