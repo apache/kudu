@@ -40,13 +40,14 @@ To upgrade Kudu from a previous version, see <<upgrade>>.
 
 == Prerequisites and Requirements
 .Hardware
-- A host to run the Kudu master.
+- One or more hosts to run Kudu masters. It is recommended to have either one master
+(no fault tolerance), three masters (can tolerate one failure), or five masters (two failures).
 - One or more hosts to run Kudu tablet servers. When using replication, a minimum of
 three tablet servers is necessary.
 
 .Operating System Requirements
 Linux::
-    - RHEL 6, RHEL 7, Ubuntu 14.04 (Trusty), Debian 8 (Jessie), or SLES 12.
+    - RHEL 6, RHEL 7, CentOS 6, CentOS 7, Ubuntu 14.04 (Trusty), Ubuntu 16.04 (Xenial), Debian 8 (Jessie), or SLES 12.
     - A kernel and fileystem that support _hole punching_. Hole punching is the use of the
       `fallocate(2)` system call with the `FALLOC_FL_PUNCH_HOLE` option set. See
       link:troubleshooting.html#req_hole_punching[troubleshooting hole punching] for more
@@ -76,18 +77,21 @@ You can install Kudu using packages managed by the operating system.
 [cols=">s,<,<",options="header"]
 |===
 | OS  | Repository  | Individual Packages
-| RHEL | link:http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6],
-         link:http://archive.cloudera.com/beta/kudu/redhat/7/x86_64/kudu/cloudera-kudu.repo[RHEL 7] |
-         link:http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/0.8.0/RPMS/x86_64/[RHEL 6],
-         link:http://archive.cloudera.com/beta/kudu/redhat/7/x86_64/kudu/0.8.0/RPMS/x86_64/[RHEL 7]
-| Ubuntu | link:http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/cloudera.list[Trusty] |  http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/pool/contrib/k/kudu/[Trusty]
+| RHEL or CentOS | link:http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6 or CentOS 6],
+                   link:http://archive.cloudera.com/beta/kudu/redhat/7/x86_64/kudu/cloudera-kudu.repo[RHEL 7 or CentOS 7] |
+                   link:http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/0/RPMS/x86_64/[RHEL 6 or CentOS 6],
+                   link:http://archive.cloudera.com/beta/kudu/redhat/7/x86_64/kudu/0/RPMS/x86_64/[RHEL 7 or CentOS 7]
+| SLES | link:http://archive.cloudera.com/beta/kudu/sles/12/x86_64/kudu/cloudera-kudu.repo[SLES 12] |
+         link:http://archive.cloudera.com/beta/kudu/sles/12/x86_64/kudu/0/RPMS/x86_64/[SLES 12]
+| Ubuntu | link:http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/cloudera.list[Trusty],
+           link:http://archive.cloudera.com/beta/kudu/ubuntu/xenial/amd64/kudu/cloudera.list[Xenial] |
+           link:http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/pool/contrib/k/kudu/[Trusty],
+           link:http://archive.cloudera.com/beta/kudu/ubuntu/xenial/amd64/kudu/pool/contrib/k/kudu/[Xenial]
+| Debian | link:http://archive.cloudera.com/beta/kudu/debian/jessie/amd64/kudu/cloudera.list[Jessie] |
+           link:http://archive.cloudera.com/beta/kudu/debian/jessie/amd64/kudu/pool/contrib/k/kudu/[Jessie]
 |===
 
-NOTE: For later versions of Ubuntu, the Ubuntu Trusty packages are reported to install, though they have not been extensively tested.
-
-NOTE: packages are not yet provided for SLES.
-
-=== Install On RHEL Hosts
+=== Install on RHEL or CentOS Hosts
 
 . Download and configure the Kudu repositories for your operating system, or manually
 download individual RPMs, using the appropriate link from <<kudu_package_locations>>.
@@ -104,11 +108,40 @@ sudo yum install kudu-client-devel            # Kudu C++ client SDK
 ----
 
 . To manually install the Kudu RPMs, first download them, then use the command
-`sudo rpm -ivh <RPM to install>` and install the
-`kudu-master` and `kudu-tserver` packages on the appropriate hosts. These packages
-provide the operating system commands to start and stop Kudu.
+`sudo rpm -ivh <RPM to install>` to install them.
 
-=== Install On Ubuntu or Debian Hosts
+. Note: the `kudu-master` and `kudu-tserver` packages are only necessary on hosts
+where there is a master or tserver respectively (and completely unnecessary if
+using Cloudera Manager). Each provides configuration files and an init.d script to
+manage the corresponding Kudu process. Once installed, the Kudu process is started
+and stopped automatically when the host starts up and shuts down.
+
+=== Install on SLES Hosts
+
+. Download and configure the Kudu repositories for your operating system, or manually
+download individual RPMs, using the appropriate link from <<kudu_package_locations>>.
+
+. If using a Zypper repository, use the following commands to install Kudu packages on
+each host, after saving the `cloudera-kudu.repo` file to `/etc/zypp/repos.d`.
++
+----
+sudo zypper install kudu                      # Base Kudu files
+sudo zypper install kudu-master               # Kudu master init.d service script and default configuration
+sudo zypper install kudu-tserver              # Kudu tablet server init.d service script and default configuration
+sudo zypper install kudu-client0              # Kudu C++ client shared library
+sudo zypper install kudu-client-devel         # Kudu C++ client SDK
+----
+
+. To manually install the Kudu RPMs, first download them, then use the command
+`sudo rpm -ivh <RPM to install>` to install them.
+
+. Note: the `kudu-master` and `kudu-tserver` packages are only necessary on hosts
+where there is a master or tserver respectively (and completely unnecessary if
+using Cloudera Manager). Each provides configuration files and an init.d script to
+manage the corresponding Kudu process. Once installed, the Kudu process is started
+and stopped automatically when the host starts up and shuts down.
+
+=== Install on Ubuntu or Debian Hosts
 
 . If using an Ubuntu or Debian repository, use the following commands to install Kudu
 packages on each host after saving the `cloudera.list` file to `/etc/apt/sources.list.d/`.
@@ -121,8 +154,14 @@ sudo apt-get install libkuduclient0           # Kudu C++ client shared library
 sudo apt-get install libkuduclient-dev        # Kudu C++ client SDK
 ----
 
-. To manually install individual DEBs, first download them, then use the command
-`sudo dpkg -i <DEB to install>` to install them.
+. To manually install the Kudu RPMs, first download them, then use the command
+`sudo rpm -ivh <RPM to install>` to install them.
+
+. Note: the `kudu-master` and `kudu-tserver` packages are only necessary on hosts
+where there is a master or tserver respectively (and completely unnecessary if
+using Cloudera Manager). Each provides configuration files and an init.d script to
+manage the corresponding Kudu process. Once installed, the Kudu process is started
+and stopped automatically when the host starts up and shuts down.
 
 === Verify the Installation
 
@@ -184,8 +223,8 @@ them to the default runlevel.
 +
 [source,bash]
 ----
-$ sudo chkconfig kudu-master on                # RHEL / CentOS
-$ sudo chkconfig kudu-tserver on               # RHEL / CentOS
+$ sudo chkconfig kudu-master on                # RHEL / CentOS / SLES
+$ sudo chkconfig kudu-tserver on               # RHEL / CentOS / SLES
 
 $ sudo update-rc.d kudu-master defaults        # Debian / Ubuntu
 $ sudo update-rc.d kudu-tserver defaults       # Debian / Ubuntu
@@ -646,6 +685,13 @@ $ sudo service kudu-tserver stop
 ----
 sudo yum clean all
 sudo yum upgrade kudu
+----
+ - On SLES hosts:
++
+[source,bash]
+----
+sudo zypper clean --all
+sudo zypper update kudu
 ----
  - On Ubuntu or Debian hosts:
 +
