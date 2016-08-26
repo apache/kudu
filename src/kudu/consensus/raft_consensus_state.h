@@ -138,12 +138,6 @@ class ReplicaState {
   // Obtains the lock for a state read, does not check state.
   Status LockForRead(UniqueLock* lock) const WARN_UNUSED_RESULT;
 
-  // Obtains the lock so that we can advance the majority replicated
-  // index and possibly the committed index.
-  // Requires that this peer is leader.
-  Status LockForMajorityReplicatedIndexUpdate(
-      UniqueLock* lock) const WARN_UNUSED_RESULT;
-
   // Ensure the local peer is the active leader.
   // Returns OK if leader, IllegalState otherwise.
   Status CheckActiveLeaderUnlocked() const;
@@ -247,27 +241,21 @@ class ReplicaState {
   // Add 'round' to the set of rounds waiting to be committed.
   Status AddPendingOperation(const scoped_refptr<ConsensusRound>& round);
 
-  // Marks ReplicaTransactions up to 'id' as majority replicated, meaning the
-  // transaction may Apply() (immediately if Prepare() has completed or when Prepare()
-  // completes, if not).
-  //
-  // If this advanced the committed index, sets *committed_index_changed to true.
-  Status UpdateMajorityReplicatedUnlocked(const OpId& majority_replicated,
-                                          OpId* committed_index,
-                                          bool* committed_index_changed);
-
   // Advances the committed index.
   // This is a no-op if the committed index has not changed.
-  // Returns in '*committed_index_changed' whether the operation actually advanced
-  // the index.
-  Status AdvanceCommittedIndexUnlocked(const OpId& committed_index,
-                                       bool* committed_index_changed);
+  Status AdvanceCommittedIndexUnlocked(int64_t committed_index);
+
+  // Set the committed op during startup. This should be done after
+  // appending any of the pending transactions, and will take care
+  // of triggering any that are now considered committed.
+  Status SetInitialCommittedOpIdUnlocked(const OpId& committed_op);
 
   // Returns the watermark below which all operations are known to
   // be committed according to consensus.
   //
   // This must be called under a lock.
-  const OpId& GetCommittedOpIdUnlocked() const;
+  int64_t GetCommittedIndexUnlocked() const;
+  int64_t GetTermWithLastCommittedOpUnlocked() const;
 
   // Returns OK iff an op from the current term has been committed.
   Status CheckHasCommittedOpInCurrentTermUnlocked() const;
@@ -378,9 +366,12 @@ class ReplicaState {
   // involved in resetting this every time a new node becomes leader.
   OpId last_received_op_id_current_leader_;
 
-  // The id of the Apply that was last triggered when the last message from the leader
+  // The OpId of the Apply that was last triggered when the last message from the leader
   // was received. Initialized to MinimumOpId().
-  OpId last_committed_index_;
+  //
+  // TODO: are there cases where this doesn't track the actual commit index,
+  // if there are no-ops?
+  OpId last_committed_op_id_;
 
   State state_;
 };

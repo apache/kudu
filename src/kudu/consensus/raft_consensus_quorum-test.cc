@@ -301,7 +301,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   // Waits for an operation to be (database) committed in the replica at index
   // 'peer_idx'. If the operation was already committed this returns immediately.
-  void WaitForCommitIfNotAlreadyPresent(const OpId& to_wait_for,
+  void WaitForCommitIfNotAlreadyPresent(int64_t to_wait_for,
                                         int peer_idx,
                                         int leader_idx) {
     MonoDelta timeout(MonoDelta::FromSeconds(10));
@@ -313,13 +313,13 @@ class RaftConsensusQuorumTest : public KuduTest {
 
     int backoff_exp = 0;
     const int kMaxBackoffExp = 8;
-    OpId committed_op_id;
+    int64_t committed_op_idx;
     while (true) {
       {
         ReplicaState::UniqueLock lock;
         CHECK_OK(state->LockForRead(&lock));
-        committed_op_id = state->GetCommittedOpIdUnlocked();
-        if (OpIdCompare(committed_op_id, to_wait_for) >= 0) {
+        committed_op_idx = state->GetCommittedIndexUnlocked();
+        if (committed_op_idx >= to_wait_for) {
           return;
         }
       }
@@ -332,7 +332,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
     LOG(ERROR) << "Max timeout reached (" << timeout.ToString() << ") while waiting for commit of "
                << "op " << to_wait_for << " on replica. Last committed op on replica: "
-               << committed_op_id << ". Dumping state and quitting.";
+               << committed_op_idx << ". Dumping state and quitting.";
     vector<string> lines;
     scoped_refptr<RaftConsensus> leader;
     CHECK_OK(peers_->GetPeerByIdx(leader_idx, &leader));
@@ -608,8 +608,8 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitMessage) {
   // We thus wait for the commit callback to trigger, ensuring durability
   // on the leader and then for the commits to be present on the replicas.
   ASSERT_OK(commit_sync->Wait());
-  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderIdx);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), kFollower0Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), kFollower1Idx, kLeaderIdx);
   VerifyLogs(2, 0, 1);
 }
 
@@ -646,8 +646,8 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
   // See comment at the end of TestFollowersReplicateAndCommitMessage
   // for an explanation on this waiting sequence.
   ASSERT_OK(commit_sync->Wait());
-  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderIdx);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), kFollower0Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), kFollower1Idx, kLeaderIdx);
   VerifyLogs(2, 0, 1);
 }
 
@@ -686,12 +686,12 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
     // this would hang here). We know he must have replicated but make sure
     // by calling Wait().
     WaitForReplicateIfNotAlreadyPresent(last_replicate, kFollower1Idx);
-    WaitForCommitIfNotAlreadyPresent(last_replicate, kFollower1Idx, kLeaderIdx);
+    WaitForCommitIfNotAlreadyPresent(last_replicate.index(), kFollower1Idx, kLeaderIdx);
   }
 
   // After we let the lock go the remaining follower should get up-to-date
   WaitForReplicateIfNotAlreadyPresent(last_replicate, kFollower0Idx);
-  WaitForCommitIfNotAlreadyPresent(last_replicate, kFollower0Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_replicate.index(), kFollower0Idx, kLeaderIdx);
   VerifyLogs(2, 0, 1);
 }
 
@@ -738,8 +738,8 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind) {
   // Assert that everything was ok
   WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower0Idx);
   WaitForReplicateIfNotAlreadyPresent(last_op_id, kFollower1Idx);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderIdx);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), kFollower0Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), kFollower1Idx, kLeaderIdx);
   VerifyLogs(2, 0, 1);
 }
 
@@ -772,8 +772,8 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
 
   // The commit should eventually reach both followers as well.
   last_op_id = round->id();
-  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderIdx);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), kFollower0Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), kFollower1Idx, kLeaderIdx);
 
   // Append a sequence of messages, and keep injecting errors into the
   // replica proxies.
@@ -804,8 +804,8 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
   // See comment at the end of TestFollowersReplicateAndCommitMessage
   // for an explanation on this waiting sequence.
   ASSERT_OK(commit_sync->Wait());
-  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower0Idx, kLeaderIdx);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, kFollower1Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), kFollower0Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), kFollower1Idx, kLeaderIdx);
   VerifyLogs(2, 0, 1);
 }
 
@@ -847,8 +847,8 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   OpId config_round;
   config_round.set_term(1);
   config_round.set_index(1);
-  WaitForCommitIfNotAlreadyPresent(config_round, kFollower0Idx, kLeaderIdx);
-  WaitForCommitIfNotAlreadyPresent(config_round, kFollower1Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(config_round.index(), kFollower0Idx, kLeaderIdx);
+  WaitForCommitIfNotAlreadyPresent(config_round.index(), kFollower1Idx, kLeaderIdx);
 
   int repl0_init_count = counter_hook_rpl0->num_pre_update_calls();
   int repl1_init_count = counter_hook_rpl1->num_pre_update_calls();
@@ -896,7 +896,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
     // Make sure the last operation is committed everywhere
     ASSERT_OK(last_commit_sync->Wait());
     for (int i = 0; i < current_config_size - 1; i++) {
-      WaitForCommitIfNotAlreadyPresent(last_op_id, i, current_config_size - 1);
+      WaitForCommitIfNotAlreadyPresent(last_op_id.index(), i, current_config_size - 1);
     }
 
     // Now shutdown the current leader.
@@ -929,7 +929,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
     // Make sure the last operation is committed everywhere
     ASSERT_OK(last_commit_sync->Wait());
     for (int i = 0; i < current_config_size - 2; i++) {
-      WaitForCommitIfNotAlreadyPresent(last_op_id, i, current_config_size - 2);
+      WaitForCommitIfNotAlreadyPresent(last_op_id.index(), i, current_config_size - 2);
     }
   }
   // We can only verify the logs of the peers that were not killed, due to the
@@ -953,8 +953,8 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
 
   // Make sure the last operation is committed everywhere
   ASSERT_OK(last_commit_sync->Wait());
-  WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 2);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, 1, 2);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 0, 2);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 1, 2);
 
   // Now replicas should only accept operations with
   // 'last_id' as the preceding id.
@@ -971,7 +971,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
   req.set_caller_uuid(leader->peer_uuid());
   req.set_caller_term(last_op_id.term());
   req.mutable_preceding_id()->CopyFrom(last_op_id);
-  req.mutable_committed_index()->CopyFrom(last_op_id);
+  req.set_committed_index(last_op_id.index());
 
   ReplicateMsg* replicate = req.add_ops();
   replicate->set_timestamp(clock_->Now().ToUint64());
@@ -1016,8 +1016,8 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
 
   // Make sure the last operation is committed everywhere
   ASSERT_OK(last_commit_sync->Wait());
-  WaitForCommitIfNotAlreadyPresent(last_op_id, 0, 2);
-  WaitForCommitIfNotAlreadyPresent(last_op_id, 1, 2);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 0, 2);
+  WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 1, 2);
 
   // Ensure last-logged OpId is > (0,0).
   ASSERT_TRUE(OpIdLessThan(MinimumOpId(), last_op_id));
@@ -1109,7 +1109,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ConsensusRequestPB req;
   req.set_caller_term(last_op_id.term());
   req.set_caller_uuid("peer-0");
-  req.mutable_committed_index()->CopyFrom(last_op_id);
+  req.set_committed_index(last_op_id.index());
   ConsensusResponsePB res;
   Status s = peer->Update(&req, &res);
   ASSERT_EQ(last_op_id.term() + 3, res.responder_term());

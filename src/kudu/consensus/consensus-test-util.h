@@ -841,30 +841,6 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
   mutable simple_spinlock lock_;
 };
 
-class TestRaftConsensusQueueIface : public PeerMessageQueueObserver {
- public:
-  bool IsMajorityReplicated(int64_t index) {
-    std::lock_guard<simple_spinlock> lock(lock_);
-    return index <= majority_replicated_index_;
-  }
-
- protected:
-  virtual void UpdateMajorityReplicated(const OpId& majority_replicated,
-                                        OpId* committed_index) OVERRIDE {
-    std::lock_guard<simple_spinlock> lock(lock_);
-    majority_replicated_index_ = majority_replicated.index();
-    committed_index->CopyFrom(majority_replicated);
-  }
-  virtual void NotifyTermChange(int64_t term) OVERRIDE {}
-  virtual void NotifyFailedFollower(const std::string& uuid,
-                                    int64_t term,
-                                    const std::string& reason) OVERRIDE {}
-
- private:
-  mutable simple_spinlock lock_;
-  int64_t majority_replicated_index_;
-};
-
 }  // namespace consensus
 }  // namespace kudu
 

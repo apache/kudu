@@ -18,6 +18,7 @@
 #ifndef KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 #define KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 
+#include <boost/optional.hpp>
 #include <iosfwd>
 #include <map>
 #include <string>
@@ -72,7 +73,7 @@ class PeerMessageQueue {
           is_new(true),
           next_index(kInvalidOpIdIndex),
           last_received(MinimumOpId()),
-          last_known_committed_idx(MinimumOpId().index()),
+          last_known_committed_index(MinimumOpId().index()),
           is_last_exchange_successful(false),
           last_successful_communication_time(MonoTime::Now()),
           needs_tablet_copy(false),
@@ -102,7 +103,7 @@ class PeerMessageQueue {
     OpId last_received;
 
     // The last committed index this peer knows about.
-    int64_t last_known_committed_idx;
+    int64_t last_known_committed_index;
 
     // Whether the last exchange with this peer was successful.
     bool is_last_exchange_successful;
@@ -138,12 +139,13 @@ class PeerMessageQueue {
   // operations and notifies observers when those change.
   // 'committed_index' corresponds to the id of the last committed operation,
   // i.e. operations with ids <= 'committed_index' should be considered committed.
+  //
   // 'current_term' corresponds to the leader's current term, this is different
   // from 'committed_index.term()' if the leader has not yet committed an
   // operation in the current term.
   // 'active_config' is the currently-active Raft config. This must always be
   // a superset of the tracked peers, and that is enforced with runtime CHECKs.
-  virtual void SetLeaderMode(const OpId& committed_index,
+  virtual void SetLeaderMode(int64_t committed_index,
                              int64_t current_term,
                              const RaftConfigPB& active_config);
 
@@ -219,7 +221,7 @@ class PeerMessageQueue {
 
   // Called by the consensus implementation to update the follower queue's
   // committed index, which is mostly used for metrics.
-  void UpdateFollowerCommittedIndex(const OpId& committed_index);
+  void UpdateFollowerCommittedIndex(int64_t committed_index);
 
   // Closes the queue, peers are still allowed to call UntrackPeer() and
   // ResponseFromPeer() but no additional peers can be tracked or messages
@@ -229,13 +231,14 @@ class PeerMessageQueue {
   virtual int64_t GetQueuedOperationsSizeBytesForTests() const;
 
   // Returns the last message replicated by all peers, for tests.
-  virtual OpId GetAllReplicatedIndexForTests() const;
+  virtual int64_t GetAllReplicatedIndexForTests() const;
 
+  // Returns the committed index. All operations with index less than or equal to
+  // this index have been committed.
+  virtual int64_t GetCommittedIndexForTests() const;
 
-  virtual OpId GetCommittedIndexForTests() const;
-
-  // Returns the current majority replicated OpId, for tests.
-  virtual OpId GetMajorityReplicatedOpIdForTests() const;
+  // Returns the current majority replicated index, for tests.
+  virtual int64_t GetMajorityReplicatedIndexForTests() const;
 
   // Returns a copy of the TrackedPeer with 'uuid' or crashes if the peer is
   // not being tracked.
@@ -288,15 +291,15 @@ class PeerMessageQueue {
 
     // The first operation that has been replicated to all currently
     // tracked peers.
-    OpId all_replicated_opid;
+    int64_t all_replicated_index;
 
     // The index of the last operation replicated to a majority.
     // This is usually the same as 'committed_index' but might not
     // be if the terms changed.
-    OpId majority_replicated_opid;
+    int64_t majority_replicated_index;
 
     // The index of the last operation to be considered committed.
-    OpId committed_index;
+    int64_t committed_index;
 
     // The opid of the last operation appended to the queue.
     OpId last_appended;
@@ -305,9 +308,12 @@ class PeerMessageQueue {
     // Set by the last appended operation.
     // If the queue owner's term is less than the term observed
     // from another peer the queue owner must step down.
-    // TODO: it is likely to be cleaner to get this from the ConsensusMetadata
-    // rather than by snooping on what operations are appended to the queue.
     int64_t current_term;
+
+    // The first index that we saw that was part of this current term.
+    // When the term advances, this is set to boost::none, and then set
+    // when the first operation is appended in the new term.
+    boost::optional<int64_t> first_index_in_current_term;
 
     // The size of the majority for the queue.
     int majority_size_;
@@ -329,8 +335,8 @@ class PeerMessageQueue {
   // fatal error.
   bool IsOpInLog(const OpId& desired_op) const;
 
-  void NotifyObserversOfMajorityReplOpChange(const OpId new_majority_replicated_op);
-  void NotifyObserversOfMajorityReplOpChangeTask(const OpId new_majority_replicated_op);
+  void NotifyObserversOfCommitIndexChange(int64_t new_commit_index);
+  void NotifyObserversOfCommitIndexChangeTask(int64_t new_commit_index);
 
   void NotifyObserversOfTermChange(int64_t term);
   void NotifyObserversOfTermChangeTask(int64_t term);
@@ -373,13 +379,11 @@ class PeerMessageQueue {
 
   // Advances 'watermark' to the smallest op that 'num_peers_required' have.
   void AdvanceQueueWatermark(const char* type,
-                             OpId* watermark,
+                             int64_t* watermark,
                              const OpId& replicated_before,
                              const OpId& replicated_after,
                              int num_peers_required,
                              const TrackedPeer* who_caused);
-
-  void UpdateFollowerCommittedIndexUnlocked(const OpId& committed_index);
 
   std::vector<PeerMessageQueueObserver*> observers_;
 
@@ -412,22 +416,14 @@ class PeerMessageQueue {
 // The interface between RaftConsensus and the PeerMessageQueue.
 class PeerMessageQueueObserver {
  public:
-  // Called by the queue each time the response for a peer is handled with
-  // the resulting majority replicated index.
-  // The consensus implementation decides the commit index based on that
-  // and triggers the apply for pending transactions.
-  // 'committed_index' is set to the id of the last operation considered
-  // committed by consensus.
-  // The implementation is idempotent, i.e. independently of the ordering of
-  // calls to this method only non-triggered applys will be started.
-  virtual void UpdateMajorityReplicated(const OpId& majority_replicated,
-                                        OpId* committed_index) = 0;
+  // Notify the observer that the commit index has advanced to 'committed_index'.
+  virtual void NotifyCommitIndex(int64_t committed_index) = 0;
 
-  // Notify the Consensus implementation that a follower replied with a term
+  // Notify the observer that a follower replied with a term
   // higher than that established in the queue.
   virtual void NotifyTermChange(int64_t term) = 0;
 
-  // Notify Consensus that a peer is unable to catch up due to falling behind
+  // Notify the observer that a peer is unable to catch up due to falling behind
   // the leader's log GC threshold.
   virtual void NotifyFailedFollower(const std::string& peer_uuid,
                                     int64_t term,

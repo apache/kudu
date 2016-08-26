@@ -38,6 +38,15 @@ If you are new to Kudu, check out its list of link:index.html[features and benef
 Kudu 1.0.0 delivers a number of new features, bug fixes, and optimizations,
 detailed below.
 
+Kudu 1.0.0 maintains client-server wire-compatibility with previous releases,
+that applications using the Kudu client libraries may be upgraded either
+before, at the same time, or after the Kudu servers.
+
+Kudu 1.0.0 does _not_ maintain server-server wire compatibility with previous
+releases. Therefore, rolling upgrades between earlier versions of Kudu and
+Kudu 1.0.0 are not supported.
+
+
 [[rn_1.0.0_incompatible_changes]]
 
 - The `kudu-pbc-dump` tool has been removed. The same functionality is now

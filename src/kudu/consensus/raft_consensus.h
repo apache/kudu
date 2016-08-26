@@ -151,19 +151,23 @@ class RaftConsensus : public Consensus,
   // can cause consensus to deadlock.
   ReplicaState* GetReplicaStateForTests();
 
+  virtual Status GetLastOpId(OpIdType type, OpId* id) OVERRIDE;
+
+
+  //------------------------------------------------------------
+  // PeerMessageQueueObserver implementation
+  //------------------------------------------------------------
+
   // Updates the committed_index and triggers the Apply()s for whatever
   // transactions were pending.
   // This is idempotent.
-  void UpdateMajorityReplicated(const OpId& majority_replicated,
-                                OpId* committed_index) OVERRIDE;
+  void NotifyCommitIndex(int64_t commit_index) override;
 
-  virtual void NotifyTermChange(int64_t term) OVERRIDE;
+  void NotifyTermChange(int64_t term) override;
 
-  virtual void NotifyFailedFollower(const std::string& uuid,
-                                    int64_t term,
-                                    const std::string& reason) OVERRIDE;
-
-  virtual Status GetLastOpId(OpIdType type, OpId* id) OVERRIDE;
+  void NotifyFailedFollower(const std::string& uuid,
+                            int64_t term,
+                            const std::string& reason) override;
 
  protected:
   // Trigger that a non-Transaction ConsensusRound has finished replication.
@@ -346,9 +350,6 @@ class RaftConsensus : public Consensus,
   // Respond to VoteRequest that the vote is granted for candidate.
   Status RequestVoteRespondVoteGranted(const VoteRequestPB* request,
                                        VoteResponsePB* response);
-
-  void UpdateMajorityReplicatedUnlocked(const OpId& majority_replicated,
-                                        OpId* committed_index);
 
   // Callback for leader election driver. ElectionCallback is run on the
   // reactor thread, so it simply defers its work to DoElectionCallback.

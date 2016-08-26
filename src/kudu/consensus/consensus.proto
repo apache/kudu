@@ -199,23 +199,10 @@ message CommitMsg {
 //  Internal Consensus Messages and State
 // ===========================================================================
 
-// NoOp requests, mostly used in tests.
+// NO_OP requests are replicated by a peer after being elected leader.
 message NoOpRequestPB {
  // Allows to set a dummy payload, for tests.
  optional bytes payload_for_tests = 1;
-}
-
-// NoOp responses, mostly used in tests.
-message NoOpResponsePB {
-   // Allows to set a dummy payload, for tests.
-   optional bytes payload_for_tests = 1;
-}
-
-message PerOpErrorPB {
-  // The id of the operation that failed in the other peer.
-  required OpId id = 1;
-  // The Status explaining why the operation failed.
-  required AppStatusPB status = 2;
 }
 
 // Status message received in the peer responses.
@@ -330,12 +317,17 @@ message ConsensusRequestPB {
   // This must be set if 'ops' is non-empty.
   optional OpId preceding_id = 4;
 
-  // The id of the last committed operation in the configuration. This is the
-  // id of the last operation the leader deemed committed from a consensus
+  // The index of the last committed operation in the configuration. This is the
+  // index of the last operation the leader deemed committed from a consensus
   // standpoint (not the last operation the leader applied).
   //
   // Raft calls this field 'leaderCommit'.
-  required OpId committed_index = 5;
+  optional int64 committed_index = 8;
+
+  // Deprecated field used in Kudu 0.10.0 and earlier. Remains here to prevent
+  // accidental reuse and provide a nicer error message if the user attempts
+  // a rolling upgrade.
+  optional OpId DEPRECATED_committed_index = 5;
 
   // Sequence of operations to be replicated by this peer.
   // These will be committed when committed_index advances above their

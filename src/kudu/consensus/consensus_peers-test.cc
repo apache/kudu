@@ -66,12 +66,10 @@ class ConsensusPeersTest : public KuduTest {
     clock_.reset(new server::HybridClock());
     ASSERT_OK(clock_->Init());
 
-    consensus_.reset(new TestRaftConsensusQueueIface());
     message_queue_.reset(new PeerMessageQueue(metric_entity_,
                                               log_.get(),
                                               FakeRaftPeerPB(kLeaderUuid),
                                               kTabletId));
-    message_queue_->RegisterObserver(consensus_.get());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -113,18 +111,13 @@ class ConsensusPeersTest : public KuduTest {
   // Registers a callback triggered when the op with the provided term and index
   // is committed in the test consensus impl.
   // This must be called _before_ the operation is committed.
-  void WaitForMajorityReplicatedIndex(int index) {
-    for (int i = 0; i < 100; i++) {
-      if (consensus_->IsMajorityReplicated(index)) {
-        return;
-      }
-      SleepFor(MonoDelta::FromMilliseconds(i));
-    }
-    FAIL() << "Never replicated index " << index << " on a majority";
+  void WaitForCommitIndex(int index) {
+    AssertEventually([&]() {
+        ASSERT_GE(message_queue_->GetCommittedIndexForTests(), index);
+      });
   }
 
  protected:
-  gscoped_ptr<TestRaftConsensusQueueIface> consensus_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<FsManager> fs_manager_;
@@ -146,8 +139,8 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   // We use a majority size of 2 since we make one fake remote peer
   // in addition to our real local log.
   message_queue_->Init(MinimumOpId());
-  message_queue_->SetLeaderMode(MinimumOpId(),
-                                MinimumOpId().term(),
+  message_queue_->SetLeaderMode(kMinimumOpIdIndex,
+                                kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
 
   gscoped_ptr<Peer> remote_peer;
@@ -166,7 +159,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   // now wait on the status of the last operation
   // this will complete once the peer has logged all
   // requests.
-  WaitForMajorityReplicatedIndex(20);
+  WaitForCommitIndex(20);
   // verify that the replicated watermark corresponds to the last replicated
   // message.
   CheckLastRemoteEntry(proxy, 2, 20);
@@ -174,8 +167,8 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
 
 TEST_F(ConsensusPeersTest, TestRemotePeers) {
   message_queue_->Init(MinimumOpId());
-  message_queue_->SetLeaderMode(MinimumOpId(),
-                                MinimumOpId().term(),
+  message_queue_->SetLeaderMode(kMinimumOpIdIndex,
+                                kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
 
   // Create a set of remote peers
@@ -201,7 +194,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   // Now wait for the message to be replicated, this should succeed since
   // majority = 2 and only one peer was delayed. The majority is made up
   // of remote-peer1 and the local log.
-  WaitForMajorityReplicatedIndex(first.index());
+  WaitForCommitIndex(first.index());
 
   CheckLastLogEntry(first.term(), first.index());
   CheckLastRemoteEntry(remote_peer1_proxy, first.term(), first.index());
@@ -210,31 +203,31 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   // Wait until all peers have replicated the message, otherwise
   // when we add the next one remote_peer2 might find the next message
   // in the queue and will replicate it, which is not what we want.
-  while (!OpIdEquals(message_queue_->GetAllReplicatedIndexForTests(), first)) {
+  while (message_queue_->GetAllReplicatedIndexForTests() != first.index()) {
     SleepFor(MonoDelta::FromMilliseconds(1));
   }
 
   // Now append another message to the queue
   AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 2, 1);
 
-  // We should not see it replicated, even after 10ms,
+  // We should not see it committed, even after 10ms,
   // since only the local peer replicates the message.
   SleepFor(MonoDelta::FromMilliseconds(10));
-  ASSERT_FALSE(consensus_->IsMajorityReplicated(2));
+  ASSERT_LT(message_queue_->GetCommittedIndexForTests(), 2);
 
   // Signal one of the two remote peers.
   remote_peer1->SignalRequest();
   // We should now be able to wait for it to replicate, since two peers (a majority)
   // have replicated the message.
-  WaitForMajorityReplicatedIndex(2);
+  WaitForCommitIndex(2);
 }
 
 // Regression test for KUDU-699: even if a peer isn't making progress,
 // and thus always has data pending, we should be able to close the peer.
 TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
   message_queue_->Init(MinimumOpId());
-  message_queue_->SetLeaderMode(MinimumOpId(),
-                                MinimumOpId().term(),
+  message_queue_->SetLeaderMode(kMinimumOpIdIndex,
+                                kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
 
   auto mock_proxy = new MockedPeerProxy(pool_.get());
@@ -271,8 +264,8 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
 
 TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
   message_queue_->Init(MinimumOpId());
-  message_queue_->SetLeaderMode(MinimumOpId(),
-                                MinimumOpId().term(),
+  message_queue_->SetLeaderMode(kMinimumOpIdIndex,
+                                kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
 
   auto mock_proxy = new MockedPeerProxy(pool_.get());
@@ -294,7 +287,10 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
       MakeOpId(1, 1));
   initial_resp.mutable_status()->mutable_last_received_current_leader()->CopyFrom(
       MakeOpId(1, 1));
-  initial_resp.mutable_status()->set_last_committed_idx(0);
+  // We have to set the last_committed_index to 1 to avoid a tight loop
+  // where the peer manager keeps trying to update the peer's committed
+  // index.
+  initial_resp.mutable_status()->set_last_committed_idx(1);
   mock_proxy->set_update_response(initial_resp);
 
   AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 1);
@@ -302,7 +298,7 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
 
   // Now wait for the message to be replicated, this should succeed since
   // the local (leader) peer always acks and the follower also acked this time.
-  WaitForMajorityReplicatedIndex(1);
+  WaitForCommitIndex(1);
 
   // Set up the peer to respond with an error.
   ConsensusResponsePB error_resp;
