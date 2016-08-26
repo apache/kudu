@@ -49,8 +49,6 @@
 
 METRIC_DECLARE_entity(tablet);
 
-DECLARE_int32(log_min_seconds_to_retain);
-
 namespace kudu {
 namespace log {
 
@@ -142,8 +140,6 @@ class LogTestBase : public KuduTest {
 
     clock_.reset(new server::HybridClock());
     ASSERT_OK(clock_->Init());
-
-    FLAGS_log_min_seconds_to_retain = 0;
   }
 
   virtual void TearDown() OVERRIDE {

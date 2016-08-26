@@ -315,6 +315,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     // log entry preceding the first one in 'messages' if messages are found for the peer.
     preceding_id = queue_state_.last_appended;
     request->set_committed_index(queue_state_.committed_index);
+    request->set_all_replicated_index(queue_state_.all_replicated_index);
     request->set_caller_term(queue_state_.current_term);
   }
 
@@ -520,12 +521,13 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   }
 }
 
-void PeerMessageQueue::UpdateFollowerCommittedIndex(int64_t committed_index) {
-  if (queue_state_.mode == NON_LEADER) {
-    std::lock_guard<simple_spinlock> l(queue_lock_);
-    queue_state_.committed_index = committed_index;
-    UpdateMetrics();
-  }
+void PeerMessageQueue::UpdateFollowerWatermarks(int64_t committed_index,
+                                                int64_t all_replicated_index) {
+  std::lock_guard<simple_spinlock> l(queue_lock_);
+  DCHECK_EQ(queue_state_.mode, NON_LEADER);
+  queue_state_.committed_index = committed_index;
+  queue_state_.all_replicated_index = all_replicated_index;
+  UpdateMetrics();
 }
 
 void PeerMessageQueue::NotifyPeerIsResponsiveDespiteError(const std::string& peer_uuid) {
@@ -752,12 +754,12 @@ PeerMessageQueue::TrackedPeer PeerMessageQueue::GetTrackedPeerForTests(string uu
   return *tracked;
 }
 
-int64_t PeerMessageQueue::GetAllReplicatedIndexForTests() const {
+int64_t PeerMessageQueue::GetAllReplicatedIndex() const {
   std::lock_guard<simple_spinlock> lock(queue_lock_);
   return queue_state_.all_replicated_index;
 }
 
-int64_t PeerMessageQueue::GetCommittedIndexForTests() const {
+int64_t PeerMessageQueue::GetCommittedIndex() const {
   std::lock_guard<simple_spinlock> lock(queue_lock_);
   return queue_state_.committed_index;
 }

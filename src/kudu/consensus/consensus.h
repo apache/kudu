@@ -36,6 +36,7 @@ class MonoDelta;
 
 namespace log {
 class Log;
+struct RetentionIndexes;
 }
 
 namespace master {
@@ -259,6 +260,15 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   virtual Status GetLastOpId(OpIdType type, OpId* id) {
     return Status::NotFound("Not implemented.");
   }
+
+
+  // Return the log indexes which the consensus implementation would like to retain.
+  //
+  // The returned 'for_durability' index ensures that no logs are GCed before
+  // the operation is fully committed. The returned 'for_peers' index indicates
+  // the index of the farthest-behind peer so that the log will try to avoid
+  // GCing these before the peer has caught up.
+  virtual log::RetentionIndexes GetRetentionIndexes() = 0;
 
  protected:
   friend class RefCountedThreadSafe<Consensus>;

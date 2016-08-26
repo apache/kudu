@@ -364,10 +364,9 @@ Status TabletPeer::RunLogGC() {
   if (!CheckRunning().ok()) {
     return Status::OK();
   }
-  int64_t min_log_index;
   int32_t num_gced;
-  GetEarliestNeededLogIndex(&min_log_index);
-  Status s = log_->GC(min_log_index, &num_gced);
+  log::RetentionIndexes retention = GetRetentionIndexes();
+  Status s = log_->GC(retention, &num_gced);
   if (!s.ok()) {
     s = s.CloneAndPrepend("Unexpected error while running Log GC from TabletPeer");
     LOG(ERROR) << s.ToString();
@@ -438,18 +437,15 @@ void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
   }
 }
 
-void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
-  // First, we anchor on the last OpId in the Log to establish a lower bound
-  // and avoid racing with the other checks. This limits the Log GC candidate
-  // segments before we check the anchors.
-  {
-    OpId last_log_op;
-    log_->GetLatestEntryOpId(&last_log_op);
-    *min_index = last_log_op.index();
-  }
+log::RetentionIndexes TabletPeer::GetRetentionIndexes() const {
+  // Let consensus set a minimum index that should be anchored.
+  // This ensures that we:
+  //   (a) don't GC any operations which are still in flight
+  //   (b) don't GC any operations that are needed to catch up lagging peers.
+  log::RetentionIndexes ret = consensus_->GetRetentionIndexes();
 
   // If we never have written to the log, no need to proceed.
-  if (*min_index == 0) return;
+  if (ret.for_durability == 0) return ret;
 
   // Next, we interrogate the anchor registry.
   // Returns OK if minimum known, NotFound if no anchors are registered.
@@ -459,7 +455,7 @@ void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
     if (PREDICT_FALSE(!s.ok())) {
       DCHECK(s.IsNotFound()) << "Unexpected error calling LogAnchorRegistry: " << s.ToString();
     } else {
-      *min_index = std::min(*min_index, min_anchor_index);
+      ret.for_durability = std::min(ret.for_durability, min_anchor_index);
     }
   }
 
@@ -471,24 +467,23 @@ void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
     // A transaction which doesn't have an opid hasn't been submitted for replication yet and
     // thus has no need to anchor the log.
     if (tx_op_id.IsInitialized()) {
-      *min_index = std::min(*min_index, tx_op_id.index());
+      ret.for_durability = std::min(ret.for_durability, tx_op_id.index());
     }
   }
+
+  return ret;
 }
 
 Status TabletPeer::GetMaxIndexesToSegmentSizeMap(MaxIdxToSegmentSizeMap* idx_size_map) const {
   RETURN_NOT_OK(CheckRunning());
-  int64_t min_op_idx;
-  GetEarliestNeededLogIndex(&min_op_idx);
-  log_->GetMaxIndexesToSegmentSizeMap(min_op_idx, idx_size_map);
+  log::RetentionIndexes retention = GetRetentionIndexes();
+  log_->GetMaxIndexesToSegmentSizeMap(retention.for_durability, idx_size_map);
   return Status::OK();
 }
 
 Status TabletPeer::GetGCableDataSize(int64_t* retention_size) const {
   RETURN_NOT_OK(CheckRunning());
-  int64_t min_op_idx;
-  GetEarliestNeededLogIndex(&min_op_idx);
-  log_->GetGCableDataSize(min_op_idx, retention_size);
+  log_->GetGCableDataSize(GetRetentionIndexes(), retention_size);
   return Status::OK();
 }
 

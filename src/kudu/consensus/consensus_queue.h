@@ -219,9 +219,11 @@ class PeerMessageQueue {
                                 const ConsensusResponsePB& response,
                                 bool* more_pending);
 
-  // Called by the consensus implementation to update the follower queue's
-  // committed index, which is mostly used for metrics.
-  void UpdateFollowerCommittedIndex(int64_t committed_index);
+  // Called by the consensus implementation to update the queue's watermarks
+  // based on information provided by the leader. This is used for metrics and
+  // log retention.
+  void UpdateFollowerWatermarks(int64_t committed_index,
+                                int64_t all_replicated_index);
 
   // Closes the queue, peers are still allowed to call UntrackPeer() and
   // ResponseFromPeer() but no additional peers can be tracked or messages
@@ -230,12 +232,12 @@ class PeerMessageQueue {
 
   virtual int64_t GetQueuedOperationsSizeBytesForTests() const;
 
-  // Returns the last message replicated by all peers, for tests.
-  virtual int64_t GetAllReplicatedIndexForTests() const;
+  // Returns the last message replicated by all peers.
+  virtual int64_t GetAllReplicatedIndex() const;
 
   // Returns the committed index. All operations with index less than or equal to
   // this index have been committed.
-  virtual int64_t GetCommittedIndexForTests() const;
+  virtual int64_t GetCommittedIndex() const;
 
   // Returns the current majority replicated index, for tests.
   virtual int64_t GetMajorityReplicatedIndexForTests() const;

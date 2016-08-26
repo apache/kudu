@@ -135,7 +135,7 @@ Status DeleteTableTest::CheckTabletTombstonedOrDeletedOnTS(
       IsSuperBlockExpected is_superblock_expected) {
   CHECK(data_state == TABLET_DATA_TOMBSTONED || data_state == TABLET_DATA_DELETED) << data_state;
   // There should be no WALs and no cmeta.
-  if (inspect_->CountWALSegmentsForTabletOnTS(index, tablet_id) > 0) {
+  if (inspect_->CountFilesInWALDirForTS(index, tablet_id) > 0) {
     return Status::IllegalState("WAL segments exist for tablet", tablet_id);
   }
   if (is_cmeta_expected == CMETA_EXPECTED &&

@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/monotime.h"
 
@@ -50,8 +51,9 @@ class ExternalMiniClusterFsInspector {
   ~ExternalMiniClusterFsInspector();
 
   Status ListFilesInDir(const std::string& path, std::vector<std::string>* entries);
-  int CountFilesInDir(const std::string& path);
-  int CountWALSegmentsOnTS(int index);
+
+  // If provided, files are filtered by the glob-style pattern 'pattern'.
+  int CountFilesInDir(const std::string& path, StringPiece pattern = StringPiece());
 
   // List all of the tablets with tablet metadata in the cluster.
   std::vector<std::string> ListTablets();
@@ -64,7 +66,12 @@ class ExternalMiniClusterFsInspector {
   // evidenced by their having a WAL). This excludes those that are tombstoned.
   std::vector<std::string> ListTabletsWithDataOnTS(int index);
 
-  int CountWALSegmentsForTabletOnTS(int index, const std::string& tablet_id);
+  // Return the number of files in the WAL directory for the given 'tablet_id' on TS 'index'.
+  // If provided, files are filtered by the glob-style pattern 'pattern'.
+  int CountFilesInWALDirForTS(int index,
+                              const std::string& tablet_id,
+                              StringPiece pattern = StringPiece());
+
   bool DoesConsensusMetaExistForTabletOnTS(int index, const std::string& tablet_id);
 
   int CountReplicasInMetadataDirs();
@@ -110,6 +117,10 @@ class ExternalMiniClusterFsInspector {
       const MonoDelta& timeout = MonoDelta::FromSeconds(30));
 
  private:
+  // Return the number of files in WAL directories on the given tablet server.
+  // This includes log index files (not just segments).
+  int CountWALFilesOnTS(int index);
+
   std::string GetConsensusMetadataPathOnTS(int index,
                                            const std::string& tablet_id) const;
 

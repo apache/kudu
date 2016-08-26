@@ -64,30 +64,9 @@ class LogReader {
                                     const scoped_refptr<MetricEntity>& metric_entity,
                                     std::shared_ptr<LogReader>* reader);
 
-  // Returns the biggest prefix of segments, from the current sequence, guaranteed
-  // not to include any replicate messages with indexes >= 'index'.
-  Status GetSegmentPrefixNotIncluding(int64_t index,
-                                      SegmentSequence* segments) const;
-
   // Return the minimum replicate index that is retained in the currently available
   // logs. May return -1 if no replicates have been logged.
   int64_t GetMinReplicateIndex() const;
-
-  // Returns a map of maximum log index in segment -> segment size representing all the segments
-  // that start after 'min_op_idx', up to 'segments_count'.
-  //
-  // 'min_op_idx' is the minimum operation index to start looking from, we don't record
-  // the segments before the one that contain that id.
-  //
-  // 'segments_count' is the number of segments we'll add to the map. It _must_ be sized so that
-  // we don't add the last segment. If we find logs that can be GCed, we'll decrease the number of
-  // elements we'll add to the map by 1 since they.
-  //
-  // 'max_close_time_us' is the timestamp in microseconds from which we don't want to evict,
-  // meaning that log segments that we closed after that time must not be added to the map.
-  void GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx, int32_t segments_count,
-                                     int64_t max_close_time_us,
-                                     std::map<int64_t, int64_t>* max_idx_to_segment_size) const;
 
   // Return a readable segment with the given sequence number, or NULL if it
   // cannot be found (e.g. if it has already been GCed).

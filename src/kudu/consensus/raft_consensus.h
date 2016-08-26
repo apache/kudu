@@ -169,6 +169,8 @@ class RaftConsensus : public Consensus,
                             int64_t term,
                             const std::string& reason) override;
 
+  log::RetentionIndexes GetRetentionIndexes() override;
+
  protected:
   // Trigger that a non-Transaction ConsensusRound has finished replication.
   // If the replication was successful, an status will be OK. Otherwise, it

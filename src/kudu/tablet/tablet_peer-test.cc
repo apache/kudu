@@ -47,7 +47,6 @@
 
 METRIC_DECLARE_entity(tablet);
 
-DECLARE_int32(log_min_seconds_to_retain);
 DECLARE_int32(flush_threshold_mb);
 
 namespace kudu {
@@ -241,26 +240,15 @@ class TabletPeerTest : public KuduTabletTest {
   void AssertNoLogAnchors() {
     // Make sure that there are no registered anchors in the registry
     CHECK_EQ(0, tablet_peer_->log_anchor_registry()->GetAnchorCountForTests());
-    int64_t earliest_index = -1;
-    // And that there are no in-flight transactions (which are implicit
-    // anchors) by comparing the TabletPeer's earliest needed OpId and the last
-    // entry in the log; if they match there is nothing in flight.
-    tablet_peer_->GetEarliestNeededLogIndex(&earliest_index);
-    OpId last_log_opid;
-    tablet_peer_->log_->GetLatestEntryOpId(&last_log_opid);
-    CHECK_EQ(earliest_index, last_log_opid.index())
-      << "Found unexpected anchor: " << earliest_index
-      << " Last log entry: " << last_log_opid.ShortDebugString();
   }
 
   // Assert that the Log GC() anchor is earlier than the latest OpId in the Log.
   void AssertLogAnchorEarlierThanLogLatest() {
-    int64_t earliest_index = -1;
-    tablet_peer_->GetEarliestNeededLogIndex(&earliest_index);
+    log::RetentionIndexes retention = tablet_peer_->GetRetentionIndexes();
     OpId last_log_opid;
     tablet_peer_->log_->GetLatestEntryOpId(&last_log_opid);
-    CHECK_LT(earliest_index, last_log_opid.index())
-      << "Expected valid log anchor, got earliest opid: " << earliest_index
+    CHECK_LT(retention.for_durability, last_log_opid.index())
+      << "Expected valid log anchor, got earliest opid: " << retention.for_durability
       << " (expected any value earlier than last log id: " << last_log_opid.ShortDebugString()
       << ")";
   }
@@ -304,7 +292,6 @@ class DelayedApplyTransaction : public WriteTransaction {
 
 // Ensure that Log::GC() doesn't delete logs when the MRS has an anchor.
 TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
-  FLAGS_log_min_seconds_to_retain = 0;
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartPeer(info));
 
@@ -325,10 +312,9 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   ASSERT_GT(tablet_peer_->log_anchor_registry()->GetAnchorCountForTests(), 0);
 
   // Ensure nothing gets deleted.
-  int64_t min_log_index = -1;
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_OK(log->GC(min_log_index, &num_gced));
-  ASSERT_EQ(0, num_gced) << "earliest needed: " << min_log_index;
+  log::RetentionIndexes retention = tablet_peer_->GetRetentionIndexes();
+  ASSERT_OK(log->GC(retention, &num_gced));
+  ASSERT_EQ(0, num_gced) << "earliest needed: " << retention.for_durability;
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
   tablet_peer_->tablet()->Flush();
@@ -337,16 +323,15 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   // The first two segments should be deleted.
   // The last is anchored due to the commit in the last segment being the last
   // OpId in the log.
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_OK(log->GC(min_log_index, &num_gced));
-  ASSERT_EQ(2, num_gced) << "earliest needed: " << min_log_index;
+  retention = tablet_peer_->GetRetentionIndexes();
+  ASSERT_OK(log->GC(retention, &num_gced));
+  ASSERT_EQ(2, num_gced) << "earliest needed: " << retention.for_durability;
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
 }
 
 // Ensure that Log::GC() doesn't delete logs when the DMS has an anchor.
 TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
-  FLAGS_log_min_seconds_to_retain = 0;
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartPeer(info));
 
@@ -365,9 +350,8 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
 
   // Flush MRS & GC log so the next mutation goes into a DMS.
   ASSERT_OK(tablet_peer_->tablet()->Flush());
-  int64_t min_log_index = -1;
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_OK(log->GC(min_log_index, &num_gced));
+  log::RetentionIndexes retention = tablet_peer_->GetRetentionIndexes();
+  ASSERT_OK(log->GC(retention, &num_gced));
   // We will only GC 1, and have 1 left because the earliest needed OpId falls
   // back to the latest OpId written to the Log if no anchors are set.
   ASSERT_EQ(1, num_gced);
@@ -403,8 +387,8 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
 
   // Ensure the delta and last insert remain in the logs, anchored by the delta.
   // Note that this will allow GC of the 2nd insert done above.
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_OK(log->GC(min_log_index, &num_gced));
+  retention = tablet_peer_->GetRetentionIndexes();
+  ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(1, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
@@ -419,8 +403,8 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // The last log OpId is the commit in the last segment, so it only anchors
   // that segment, not the previous, because it's not the first OpId in the
   // segment.
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_OK(log->GC(min_log_index, &num_gced));
+  retention = tablet_peer_->GetRetentionIndexes();
+  ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(3, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
@@ -428,7 +412,6 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
 
 // Ensure that Log::GC() doesn't compact logs with OpIds of active transactions.
 TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
-  FLAGS_log_min_seconds_to_retain = 0;
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartPeer(info));
 
@@ -495,9 +478,8 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   // because we are delaying the Commit message with the CountDownLatch.
 
   // GC the first four segments created by the inserts.
-  int64_t min_log_index = -1;
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_OK(log->GC(min_log_index, &num_gced));
+  log::RetentionIndexes retention = tablet_peer_->GetRetentionIndexes();
+  ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(4, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
@@ -515,8 +497,8 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   AssertLogAnchorEarlierThanLogLatest();
 
   // Try to GC(), nothing should be deleted due to the in-flight transaction.
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_OK(log->GC(min_log_index, &num_gced));
+  retention = tablet_peer_->GetRetentionIndexes();
+  ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(0, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
@@ -532,8 +514,8 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   AssertNoLogAnchors();
 
   // All should be deleted except the two last segments.
-  tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_OK(log->GC(min_log_index, &num_gced));
+  retention = tablet_peer_->GetRetentionIndexes();
+  ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(3, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());

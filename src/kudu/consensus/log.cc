@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <mutex>
+#include <limits>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log_index.h"
@@ -58,16 +59,13 @@ DEFINE_int32(log_min_segments_to_retain, 2,
 TAG_FLAG(log_min_segments_to_retain, runtime);
 TAG_FLAG(log_min_segments_to_retain, advanced);
 
-DEFINE_int32(log_min_seconds_to_retain, 300,
-             "The minimum number of seconds for which to keep log segments to keep at all times, "
-             "regardless of what is required for durability. Logs may be still retained for "
-             "a longer amount of time if they are necessary for correct restart. This should be "
-             "set long enough such that a tablet server which has temporarily failed can be "
-             "restarted within the given time period. If a server is down for longer than this "
-             "amount of time, it is possible that its tablets will be re-replicated on other "
-             "machines.");
-TAG_FLAG(log_min_seconds_to_retain, runtime);
-TAG_FLAG(log_min_seconds_to_retain, advanced);
+DEFINE_int32(log_max_segments_to_retain, 10,
+             "The maximum number of past log segments to keep at all times for "
+             "the purposes of catching up other peers.");
+TAG_FLAG(log_max_segments_to_retain, runtime);
+TAG_FLAG(log_max_segments_to_retain, advanced);
+TAG_FLAG(log_max_segments_to_retain, experimental);
+
 
 // Group commit configuration.
 // -----------------------------
@@ -629,45 +627,39 @@ Status Log::Sync() {
   return Status::OK();
 }
 
-Status Log::GetSegmentsToGCUnlocked(int64_t min_op_idx, SegmentSequence* segments_to_gc) const {
-  // Find the prefix of segments in the segment sequence that is guaranteed not to include
-  // 'min_op_idx'.
-  RETURN_NOT_OK(reader_->GetSegmentPrefixNotIncluding(min_op_idx, segments_to_gc));
-
-  int max_to_delete = std::max(reader_->num_segments() - FLAGS_log_min_segments_to_retain, 0);
-  if (segments_to_gc->size() > max_to_delete) {
-    VLOG(2) << "GCing " << segments_to_gc->size() << " in " << log_dir_
-        << " would not leave enough remaining segments to satisfy minimum "
-        << "retention requirement. Only considering "
-        << max_to_delete << "/" << reader_->num_segments();
-    segments_to_gc->resize(max_to_delete);
-  } else if (segments_to_gc->size() < max_to_delete) {
-    int extra_segments = max_to_delete - segments_to_gc->size();
-    VLOG(2) << tablet_id_ << " has too many log segments, need to GC "
-        << extra_segments << " more. ";
-  }
-
-  // Don't GC segments that are newer than the configured time-based retention.
-  int64_t now = GetCurrentTimeMicros();
-  for (int i = 0; i < segments_to_gc->size(); i++) {
-    const scoped_refptr<ReadableLogSegment>& segment = (*segments_to_gc)[i];
-
-    // Segments here will always have a footer, since we don't return the in-progress segment
-    // up above. However, segments written by older Kudu builds may not have the timestamp
-    // info. In that case, we're allowed to GC them.
-    if (!segment->footer().has_close_timestamp_micros()) continue;
-
-    int64_t age_seconds = (now - segment->footer().close_timestamp_micros()) / 1000000;
-    if (age_seconds < FLAGS_log_min_seconds_to_retain) {
-      VLOG(2) << "Segment " << segment->path() << " is only " << age_seconds << "s old: "
-              << "cannot GC it yet due to configured time-based retention policy.";
-      // Truncate the list of segments to GC here -- if this one is too new, then
-      // all later ones are also too new.
-      segments_to_gc->resize(i);
+int GetPrefixSizeToGC(RetentionIndexes retention, const SegmentSequence& segments) {
+  int rem_segs = segments.size();
+  int prefix_size = 0;
+  for (const scoped_refptr<ReadableLogSegment>& segment : segments) {
+    if (rem_segs <= FLAGS_log_min_segments_to_retain) {
       break;
     }
-  }
 
+    if (!segment->HasFooter()) break;
+
+    int64_t seg_max_idx = segment->footer().max_replicate_index();
+    // If removing this segment would compromise durability, we cannot remove it.
+    if (seg_max_idx >= retention.for_durability) {
+      break;
+    }
+
+    // Check if removing this segment would compromise the ability to catch up a peer,
+    // we should retain it, unless this would break the max_segments flag.
+    if (seg_max_idx >= retention.for_peers &&
+        rem_segs <= FLAGS_log_max_segments_to_retain) {
+      break;
+    }
+
+    prefix_size++;
+    rem_segs--;
+  }
+  return prefix_size;
+}
+
+Status Log::GetSegmentsToGCUnlocked(RetentionIndexes retention,
+                                    SegmentSequence* segments_to_gc) const {
+  RETURN_NOT_OK(reader_->GetSegmentsSnapshot(segments_to_gc));
+  segments_to_gc->resize(GetPrefixSizeToGC(retention, *segments_to_gc));
   return Status::OK();
 }
 
@@ -709,10 +701,12 @@ void Log::GetLatestEntryOpId(consensus::OpId* op_id) const {
   }
 }
 
-Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
-  CHECK_GE(min_op_idx, 0);
+Status Log::GC(RetentionIndexes retention, int32_t* num_gced) {
+  CHECK_GE(retention.for_durability, 0);
 
-  VLOG(1) << "Running Log GC on " << log_dir_ << ": retaining ops >= " << min_op_idx;
+  VLOG(1) << "Running Log GC on " << log_dir_ << ": retaining "
+      "ops >= " << retention.for_durability << " for durability, "
+      "ops >= " << retention.for_peers << " for peers";
   VLOG_TIMING(1, "Log GC") {
     SegmentSequence segments_to_delete;
 
@@ -720,7 +714,7 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
       std::lock_guard<percpu_rwlock> l(state_lock_);
       CHECK_EQ(kLogWriting, log_state_);
 
-      GetSegmentsToGCUnlocked(min_op_idx, &segments_to_delete);
+      RETURN_NOT_OK(GetSegmentsToGCUnlocked(retention, &segments_to_delete));
 
       if (segments_to_delete.size() == 0) {
         VLOG(1) << "No segments to delete.";
@@ -736,8 +730,14 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
     // Now that they are no longer referenced by the Log, delete the files.
     *num_gced = 0;
     for (const scoped_refptr<ReadableLogSegment>& segment : segments_to_delete) {
-      LOG(INFO) << "Deleting log segment in path: " << segment->path()
-                << " (GCed ops < " << min_op_idx << ")";
+      string ops_str;
+      if (segment->HasFooter() && segment->footer().has_min_replicate_index()) {
+        DCHECK(segment->footer().has_max_replicate_index());
+        ops_str = Substitute(" (ops $0-$1)",
+                             segment->footer().min_replicate_index(),
+                             segment->footer().max_replicate_index());
+      }
+      LOG(INFO) << "Deleting log segment in path: " << segment->path() << ops_str;
       RETURN_NOT_OK(fs_manager_->env()->DeleteFile(segment->path()));
       (*num_gced)++;
     }
@@ -752,14 +752,14 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
   return Status::OK();
 }
 
-void Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
-  CHECK_GE(min_op_idx, 0);
+void Log::GetGCableDataSize(RetentionIndexes retention, int64_t* total_size) const {
+  CHECK_GE(retention.for_durability, 0);
   SegmentSequence segments_to_delete;
   *total_size = 0;
   {
     shared_lock<rw_spinlock> l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
-    Status s = GetSegmentsToGCUnlocked(min_op_idx, &segments_to_delete);
+    Status s = GetSegmentsToGCUnlocked(retention, &segments_to_delete);
 
     if (!s.ok() || segments_to_delete.size() == 0) {
       return;
@@ -770,21 +770,24 @@ void Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
   }
 }
 
-void Log::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,
+void Log::GetMaxIndexesToSegmentSizeMap(int64_t idx_for_durability,
                                         std::map<int64_t, int64_t>* max_idx_to_segment_size)
                                         const {
-  shared_lock<rw_spinlock> l(state_lock_.get_lock());
-  CHECK_EQ(kLogWriting, log_state_);
-  // We want to retain segments so we're only asking the extra ones.
-  int segments_count = std::max(reader_->num_segments() - FLAGS_log_min_segments_to_retain, 0);
-  if (segments_count == 0) {
-    return;
+  max_idx_to_segment_size->clear();
+  SegmentSequence segments;
+  {
+    shared_lock<rw_spinlock> l(state_lock_.get_lock());
+    CHECK_EQ(kLogWriting, log_state_);
+    CHECK_OK(reader_->GetSegmentsSnapshot(&segments));
   }
 
-  int64_t now = GetCurrentTimeMicros();
-  int64_t max_close_time_us = now - (FLAGS_log_min_seconds_to_retain * 1000000);
-  reader_->GetMaxIndexesToSegmentSizeMap(min_op_idx, segments_count, max_close_time_us,
-                                         max_idx_to_segment_size);
+  int gc_prefix = GetPrefixSizeToGC(RetentionIndexes(idx_for_durability),
+                                    segments);
+  for (int i = gc_prefix; i < segments.size() - FLAGS_log_min_segments_to_retain; i++) {
+    if (!segments[i]->HasFooter()) break;
+    int64_t max_repl_idx = segments[i]->footer().max_replicate_index();
+    (*max_idx_to_segment_size)[max_repl_idx] = segments[i]->file_size();
+  }
 }
 
 void Log::SetSchemaForNextLogSegment(const Schema& schema,

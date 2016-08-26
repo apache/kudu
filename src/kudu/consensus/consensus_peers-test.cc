@@ -113,7 +113,7 @@ class ConsensusPeersTest : public KuduTest {
   // This must be called _before_ the operation is committed.
   void WaitForCommitIndex(int index) {
     AssertEventually([&]() {
-        ASSERT_GE(message_queue_->GetCommittedIndexForTests(), index);
+        ASSERT_GE(message_queue_->GetCommittedIndex(), index);
       });
   }
 
@@ -203,7 +203,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   // Wait until all peers have replicated the message, otherwise
   // when we add the next one remote_peer2 might find the next message
   // in the queue and will replicate it, which is not what we want.
-  while (message_queue_->GetAllReplicatedIndexForTests() != first.index()) {
+  while (message_queue_->GetAllReplicatedIndex() != first.index()) {
     SleepFor(MonoDelta::FromMilliseconds(1));
   }
 
@@ -213,7 +213,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   // We should not see it committed, even after 10ms,
   // since only the local peer replicates the message.
   SleepFor(MonoDelta::FromMilliseconds(10));
-  ASSERT_LT(message_queue_->GetCommittedIndexForTests(), 2);
+  ASSERT_LT(message_queue_->GetCommittedIndex(), 2);
 
   // Signal one of the two remote peers.
   remote_peer1->SignalRequest();

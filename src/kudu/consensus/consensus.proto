@@ -335,6 +335,14 @@ message ConsensusRequestPB {
   // these operations are already committed, in which case they will be
   // committed during the same request.
   repeated ReplicateMsg ops = 6;
+
+  // The lowest index that is known to be replicated by all members of
+  // the configuration.
+  //
+  // NOTE: this is not necessarily monotonically increasing. For example, if a node is in
+  // the process of being added to the configuration but has not yet copied a snapshot,
+  // this value may drop to 0.
+  optional int64 all_replicated_index = 9;
 }
 
 message ConsensusResponsePB {

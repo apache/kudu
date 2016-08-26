@@ -202,9 +202,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   void GetInFlightTransactions(Transaction::TraceType trace_type,
                                std::vector<consensus::TransactionStatusPB>* out) const;
 
-  // Returns the minimum known log index that is in-memory or in-flight.
+  // Returns the log indexes to be retained for durability and to catch up peers.
   // Used for selection of log segments to delete during Log GC.
-  void GetEarliestNeededLogIndex(int64_t* log_index) const;
+  log::RetentionIndexes GetRetentionIndexes() const;
 
   // Returns a map of log index -> segment size, of all the segments that currently cannot be GCed
   // because in-memory structures have anchors in them.

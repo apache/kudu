@@ -972,6 +972,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
   req.set_caller_term(last_op_id.term());
   req.mutable_preceding_id()->CopyFrom(last_op_id);
   req.set_committed_index(last_op_id.index());
+  req.set_all_replicated_index(0);
 
   ReplicateMsg* replicate = req.add_ops();
   replicate->set_timestamp(clock_->Now().ToUint64());
@@ -1110,6 +1111,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   req.set_caller_term(last_op_id.term());
   req.set_caller_uuid("peer-0");
   req.set_committed_index(last_op_id.index());
+  req.set_all_replicated_index(0);
   ConsensusResponsePB res;
   Status s = peer->Update(&req, &res);
   ASSERT_EQ(last_op_id.term() + 3, res.responder_term());

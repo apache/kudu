@@ -18,6 +18,7 @@
 #ifndef KUDU_CONSENSUS_LOG_H_
 #define KUDU_CONSENSUS_LOG_H_
 
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -46,6 +47,7 @@ namespace log {
 
 struct LogEntryBatchLogicalSize;
 struct LogMetrics;
+struct RetentionIndexes;
 class LogEntryBatch;
 class LogIndex;
 class LogReader;
@@ -193,17 +195,17 @@ class Log : public RefCountedThreadSafe<Log> {
   // If successful, num_gced is set to the number of deleted log segments.
   //
   // This method is thread-safe.
-  Status GC(int64_t min_op_idx, int* num_gced);
+  Status GC(RetentionIndexes indexes, int* num_gced);
 
   // Computes the amount of bytes that would have been GC'd if Log::GC had been called.
-  void GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const;
+  void GetGCableDataSize(RetentionIndexes indexes, int64_t* total_size) const;
 
   // Returns a map of log index -> segment size, of all the segments that currently cannot be GCed
-  // because in-memory structures have anchors in them.
-  //
-  // 'min_op_idx' is the minimum operation index to start looking from, meaning that we skip the
-  // segment that contains it and then start recording segments.
-  void GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,
+  // because of an anchor on the given 'idx_for_durability' log index. Note that, even if
+  // these segments are being retained for peer catchup, they are treated as 'GCable' here,
+  // since the purpose of this method is to bound startup time by flushing in-memory stores
+  // which refer to operations far back in the log.
+  void GetMaxIndexesToSegmentSizeMap(int64_t idx_for_durability,
                                      std::map<int64_t, int64_t>* max_idx_to_segment_size) const;
 
   // Returns the file system location of the currently active WAL segment.
@@ -299,8 +301,8 @@ class Log : public RefCountedThreadSafe<Log> {
 
   Status Sync();
 
-  // Helper method to get the segment sequence to GC based on the provided min_op_idx.
-  Status GetSegmentsToGCUnlocked(int64_t min_op_idx, SegmentSequence* segments_to_gc) const;
+  // Helper method to get the segment sequence to GC based on the provided 'retention' struct.
+  Status GetSegmentsToGCUnlocked(RetentionIndexes retention, SegmentSequence* segments_to_gc) const;
 
   LogEntryBatchQueue* entry_queue() {
     return &entry_batch_queue_;
@@ -397,6 +399,29 @@ class Log : public RefCountedThreadSafe<Log> {
 
   DISALLOW_COPY_AND_ASSIGN(Log);
 };
+
+// Indicates which log indexes should be retained for different purposes.
+//
+// When default-constructed, starts with maximum indexes, indicating no
+// logs need to be retained for either purposes.
+struct RetentionIndexes {
+  RetentionIndexes(int64_t durability = std::numeric_limits<int64_t>::max(),
+                   int64_t peers = std::numeric_limits<int64_t>::max())
+      : for_durability(durability),
+        for_peers(peers) {}
+
+  // The minimum log entry index which *must* be retained in order to
+  // preserve durability and the ability to restart the local node
+  // from its WAL.
+  int64_t for_durability;
+
+  // The minimum log entry index which *should* be retained in order to
+  // catch up other peers hosting this same tablet. These entries may
+  // still be GCed in the case that they are from very old log segments
+  // or the log has become too large.
+  int64_t for_peers;
+};
+
 
 // This class represents a batch of operations to be written and
 // synced to the log. It is opaque to the user and is managed by the

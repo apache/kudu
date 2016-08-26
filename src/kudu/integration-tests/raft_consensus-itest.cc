@@ -387,7 +387,7 @@ void RaftConsensusITest::AddFlagsForLogRolls(vector<string>* extra_tserver_flags
   extra_tserver_flags->push_back("--log_segment_size_mb=1");
   extra_tserver_flags->push_back("--log_async_preallocate_segments=false");
   extra_tserver_flags->push_back("--log_min_segments_to_retain=1");
-  extra_tserver_flags->push_back("--log_min_seconds_to_retain=0");
+  extra_tserver_flags->push_back("--log_max_segments_to_retain=3");
   extra_tserver_flags->push_back("--maintenance_manager_polling_interval_ms=100");
 }
 
@@ -615,10 +615,20 @@ void RaftConsensusITest::Write128KOpsToLeader(int num_writes) {
 // Test that when a follower is stopped for a long time, the log cache
 // properly evicts operations, but still allows the follower to catch
 // up when it comes back.
+//
+// Also asserts that the other replicas retain logs for the stopped
+// follower to catch up from.
 TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
-  vector<string> extra_flags;
-  extra_flags.push_back("--log_cache_size_limit_mb=1");
-  extra_flags.push_back("--consensus_max_batch_size_bytes=500000");
+  vector<string> extra_flags = {
+    "--log_cache_size_limit_mb=1",
+    "--consensus_max_batch_size_bytes=500000",
+    // Use short and synchronous rolls so that we can test log segment retention.
+    "--log_segment_size_mb=1",
+    "--log_async_preallocate_segments=false",
+    // Run the maintenance manager frequently so that we don't have to wait
+    // long for GC.
+    "--maintenance_manager_polling_interval_ms=100"
+  };
   BuildAndStart(extra_flags);
   TServerDetails* replica = (*tablet_replicas_.begin()).second;
   ASSERT_TRUE(replica != nullptr);
@@ -628,14 +638,40 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
   ASSERT_OK(replica_ets->Pause());
   LOG(INFO)<< "Paused one of the replicas, starting to write.";
 
-  // Insert 3MB worth of data.
-  const int kNumWrites = 25;
+  // Insert 5MB worth of data.
+  const int kNumWrites = 40;
   NO_FATALS(Write128KOpsToLeader(kNumWrites));
+
+  // Sleep a bit to give the maintenance manager time to GC logs, if it were
+  // going to.
+  SleepFor(MonoDelta::FromSeconds(1));
+
+  // Check that the leader and non-paused follower have not GCed any logs (since
+  // the third peer needs them to catch up).
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    int num_wals = inspect_->CountFilesInWALDirForTS(i, tablet_id_, "wal-*");
+    if (cluster_->tablet_server(i) == replica_ets) {
+      ASSERT_EQ(1, num_wals) << "Replica should have only one segment";
+    } else {
+      ASSERT_EQ(6, num_wals)
+          << "Other nodes should retain segments for the frozen replica to catch up";
+    }
+  }
 
   // Now unpause the replica, the lagging replica should eventually catch back up.
   ASSERT_OK(replica_ets->Resume());
 
   ASSERT_ALL_REPLICAS_AGREE(kNumWrites);
+
+  // Once the follower has caught up, all replicas should eventually GC the earlier
+  // log segments that they were retaining.
+  AssertEventually([&]() {
+      for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+        SCOPED_TRACE(Substitute("TS $0", i));
+        int num_wals = inspect_->CountFilesInWALDirForTS(i, tablet_id_, "wal-*");
+        ASSERT_EQ(2, num_wals);
+      }
+    });
 }
 
 void RaftConsensusITest::CauseFollowerToFallBehindLogGC(string* leader_uuid,
@@ -1176,6 +1212,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   req.set_dest_uuid(replica_ts->uuid());
   req.set_caller_uuid("fake_caller");
   req.set_caller_term(2);
+  req.set_all_replicated_index(0);
   req.set_committed_index(1);
   req.mutable_preceding_id()->CopyFrom(MakeOpId(1, 1));
 
@@ -2036,6 +2073,7 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   req.set_caller_uuid(tservers[2]->instance_id.permanent_uuid());
   req.set_caller_term(1);
   req.set_committed_index(1);
+  req.set_all_replicated_index(0);
   req.mutable_preceding_id()->CopyFrom(MakeOpId(1, 1));
   for (int i = 0; i < kNumOps; i++) {
     AddOp(MakeOpId(1, 2 + i), &req);
@@ -2449,8 +2487,8 @@ TEST_F(RaftConsensusITest, TestEvictAbandonedFollowers) {
   ASSERT_OK(WaitForServersToAgree(timeout, active_tablet_servers, tablet_id_, 2));
 }
 
-// Test that followers that fall behind the leader's log GC threshold are
-// evicted from the config.
+// Test that, after followers are evicted from the config, the master re-adds a new
+// replica for that follower and it eventually catches back up.
 TEST_F(RaftConsensusITest, TestMasterReplacesEvictedFollowers) {
   vector<string> extra_flags;
   AddFlagsForLogRolls(&extra_flags); // For CauseFollowerToFallBehindLogGC().
@@ -2542,6 +2580,7 @@ TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
   req.set_caller_uuid(tservers[2]->instance_id.permanent_uuid());
   req.set_caller_term(0);
   req.set_committed_index(0);
+  req.set_all_replicated_index(0);
   req.mutable_preceding_id()->CopyFrom(MakeOpId(0, 0));
   for (int i = 0; i < kNumOps; i++) {
     AddOp(MakeOpId(0, 1 + i), &req);

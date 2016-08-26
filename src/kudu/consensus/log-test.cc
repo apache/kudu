@@ -19,6 +19,7 @@
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 #include <glog/stl_logging.h>
+#include <limits>
 #include <vector>
 
 #include "kudu/consensus/consensus-test-util.h"
@@ -34,6 +35,7 @@ DEFINE_int32(num_batches, 10000,
              "Number of batches to write to/read from the Log in TestWriteManyBatches");
 
 DECLARE_int32(log_min_segments_to_retain);
+DECLARE_int32(log_max_segments_to_retain);
 DECLARE_double(log_inject_io_error_on_preallocate_fraction);
 DECLARE_int64(fs_wal_dir_reserved_bytes);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
@@ -474,7 +476,6 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   const int kNumOpsPerSegment = 5;
   int num_gced_segments;
   OpId op_id = MakeOpId(1, 1);
-  int64_t anchored_index = -1;
 
   ASSERT_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, &anchors));
@@ -485,29 +486,31 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   // Anchors should prevent GC.
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
-  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
-  ASSERT_OK(log_->GC(anchored_index, &num_gced_segments));
+  RetentionIndexes retention;
+  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&retention.for_durability));
+  ASSERT_OK(log_->GC(retention, &num_gced_segments));
+  ASSERT_EQ(0, num_gced_segments);
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
 
   // Freeing the first 2 anchors should allow GC of them.
   ASSERT_OK(log_anchor_registry_->Unregister(anchors[0]));
   ASSERT_OK(log_anchor_registry_->Unregister(anchors[1]));
-  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&retention.for_durability));
   // We should now be anchored on op 0.11, i.e. on the 3rd segment
-  ASSERT_EQ(anchors[2]->log_index, anchored_index);
+  ASSERT_EQ(anchors[2]->log_index, retention.for_durability);
 
   // However, first, we'll try bumping the min retention threshold and
   // verify that we don't GC any.
   {
     google::FlagSaver saver;
     FLAGS_log_min_segments_to_retain = 10;
-    ASSERT_OK(log_->GC(anchored_index, &num_gced_segments));
+    ASSERT_OK(log_->GC(retention, &num_gced_segments));
     ASSERT_EQ(0, num_gced_segments);
   }
 
   // Try again without the modified flag.
-  ASSERT_OK(log_->GC(anchored_index, &num_gced_segments));
+  ASSERT_OK(log_->GC(retention, &num_gced_segments));
   ASSERT_EQ(2, num_gced_segments) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
@@ -515,8 +518,8 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   // Release the remaining "rolled segment" anchor. GC will not delete the
   // last rolled segment.
   ASSERT_OK(log_anchor_registry_->Unregister(anchors[2]));
-  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
-  ASSERT_OK(log_->GC(anchored_index, &num_gced_segments));
+  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&retention.for_durability));
+  ASSERT_OK(log_->GC(retention, &num_gced_segments));
   ASSERT_EQ(0, num_gced_segments) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
@@ -561,7 +564,7 @@ TEST_F(LogTest, TestGCOfIndexChunks) {
   // Run a GC on an op in the second index chunk. We should remove only the
   // earliest segment, because we are set to retain 4.
   int num_gced_segments = 0;
-  ASSERT_OK(log_->GC(1000006, &num_gced_segments));
+  ASSERT_OK(log_->GC(RetentionIndexes(1000006, 1000006), &num_gced_segments));
   ASSERT_EQ(1, num_gced_segments);
 
   // And we should still be able to read ops in the retained segment, even though
@@ -573,7 +576,7 @@ TEST_F(LogTest, TestGCOfIndexChunks) {
   // If we drop the retention count down to 1, we can now GC, and the log index
   // chunk should also be GCed.
   FLAGS_log_min_segments_to_retain = 1;
-  ASSERT_OK(log_->GC(1000003, &num_gced_segments));
+  ASSERT_OK(log_->GC(RetentionIndexes(1000003, 1000003), &num_gced_segments));
   ASSERT_EQ(1, num_gced_segments);
 
   Status s = log_->reader()->LookupOpId(999995, &loaded_op);
@@ -619,15 +622,14 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   const int kNumOpsPerSegment = 5;
   int num_gced_segments;
   OpId op_id = MakeOpId(1, 1);
-  int64_t anchored_index = -1;
-
   ASSERT_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, &anchors));
   // Anchors should prevent GC.
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(3, segments.size());
-  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
-  ASSERT_OK(log_->GC(anchored_index, &num_gced_segments));
+  RetentionIndexes retention;
+  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&retention.for_durability));
+  ASSERT_OK(log_->GC(retention, &num_gced_segments));
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(3, segments.size());
 
@@ -650,18 +652,20 @@ TEST_F(LogTest, TestLogReopenAndGC) {
   for (int i = 0; i < 3; i++) {
     ASSERT_OK(log_anchor_registry_->Unregister(anchors[i]));
   }
-  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&retention.for_durability));
 
-  // If we set the min_seconds_to_retain high, then we'll retain the logs even
-  // though we could GC them based on our anchoring.
-  FLAGS_log_min_seconds_to_retain = 500;
-  ASSERT_OK(log_->GC(anchored_index, &num_gced_segments));
+  // If we set the 'for_peers' index to indicate that these log
+  // segments are needed for catchup, that will prevent GC,
+  // even though they're no longer necessary for durability.
+  retention.for_peers = 0;
+  ASSERT_OK(log_->GC(retention, &num_gced_segments));
   ASSERT_EQ(0, num_gced_segments);
+  CheckRightNumberOfSegmentFiles(4);
 
-  // Turn off the time-based retention and try GCing again. This time
-  // we should succeed.
-  FLAGS_log_min_seconds_to_retain = 0;
-  ASSERT_OK(log_->GC(anchored_index, &num_gced_segments));
+  // Set the max segments to retain so that, even though we have peers who need
+  // the segments, we'll GC them.
+  FLAGS_log_max_segments_to_retain = 2;
+  ASSERT_OK(log_->GC(retention, &num_gced_segments));
   ASSERT_EQ(2, num_gced_segments);
 
   // After GC there should be only one left, besides the one currently being
@@ -730,35 +734,6 @@ TEST_F(LogTest, TestLogReader) {
   OpId op;
   op.set_term(0);
   SegmentSequence segments;
-
-  // Queries for segment prefixes (used for GC)
-
-  // Asking the reader the prefix of segments that does not include op 1
-  // should return the empty set.
-  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(1, &segments));
-  ASSERT_TRUE(segments.empty());
-
-  // .. same for op 10
-  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(10, &segments));
-  ASSERT_TRUE(segments.empty());
-
-  // Asking for the prefix of segments not including op 20 should return
-  // the first segment, since 20 is the first operation in segment 3.
-  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(20, &segments));
-  ASSERT_EQ(segments.size(), 1);
-  ASSERT_EQ(segments[0]->header().sequence_number(), 2);
-
-  // Asking for 30 should include the first two.
-  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(30, &segments));
-  ASSERT_EQ(segments.size(), 2);
-  ASSERT_EQ(segments[0]->header().sequence_number(), 2);
-  ASSERT_EQ(segments[1]->header().sequence_number(), 3);
-
-  // Asking for anything higher should return all segments.
-  ASSERT_OK(reader.GetSegmentPrefixNotIncluding(1000, &segments));
-  ASSERT_EQ(segments.size(), 3);
-  ASSERT_EQ(segments[0]->header().sequence_number(), 2);
-  ASSERT_EQ(segments[1]->header().sequence_number(), 3);
 
   // Queries for specific segment sequence numbers.
   scoped_refptr<ReadableLogSegment> segment = reader.GetSegmentBySequenceNumber(2);
@@ -993,7 +968,7 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
     }
 
     int num_gced = 0;
-    ASSERT_OK(log_->GC(gc_index, &num_gced));
+    ASSERT_OK(log_->GC(RetentionIndexes(gc_index), &num_gced));
     gc_index += rng.Uniform(10);
   }
 }
@@ -1016,24 +991,20 @@ TEST_F(LogTest, TestGetMaxIndexesToSegmentSizeMap) {
   // Check getting all the segments we can get rid of (5 - 2).
   log_->GetMaxIndexesToSegmentSizeMap(10, &max_idx_to_segment_size);
   ASSERT_EQ(3, max_idx_to_segment_size.size());
-  max_idx_to_segment_size.clear();
 
   // Check that even when the min index is the last index from the oldest segment,
   // we still return 3.
   log_->GetMaxIndexesToSegmentSizeMap(14, &max_idx_to_segment_size);
   ASSERT_EQ(3, max_idx_to_segment_size.size());
-  max_idx_to_segment_size.clear();
 
   // Check that if the first segment is GCable, we get 2 back.
   log_->GetMaxIndexesToSegmentSizeMap(15, &max_idx_to_segment_size);
   ASSERT_EQ(2, max_idx_to_segment_size.size());
-  max_idx_to_segment_size.clear();
 
   // Check that if the min index is at the very end of the only segment we can get rid of that we
   // get 1 back.
   log_->GetMaxIndexesToSegmentSizeMap(24, &max_idx_to_segment_size);
   ASSERT_EQ(1, max_idx_to_segment_size.size());
-  max_idx_to_segment_size.clear();
 
   // Check that we don't get anything back when there's nothing we want to get rid of.
   log_->GetMaxIndexesToSegmentSizeMap(25, &max_idx_to_segment_size);
@@ -1042,12 +1013,6 @@ TEST_F(LogTest, TestGetMaxIndexesToSegmentSizeMap) {
   // Sanity check that even if the min log index is the newest op that nothing breaks and that
   // we get 0 segments back.
   log_->GetMaxIndexesToSegmentSizeMap(35, &max_idx_to_segment_size);
-  ASSERT_EQ(0, max_idx_to_segment_size.size());
-
-  // Check that logs that would normally count for log retention won't be returned since they are
-  // too young.
-  FLAGS_log_min_seconds_to_retain = 500;
-  log_->GetMaxIndexesToSegmentSizeMap(10, &max_idx_to_segment_size);
   ASSERT_EQ(0, max_idx_to_segment_size.size());
 }
 

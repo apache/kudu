@@ -878,7 +878,8 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
                                                  ConsensusResponsePB* response,
                                                  LeaderRequest* deduped_req) {
 
-  if (request->has_deprecated_committed_index()) {
+  if (request->has_deprecated_committed_index() ||
+      !request->has_all_replicated_index()) {
     return Status::InvalidArgument("Leader appears to be running an earlier version "
                                    "of Kudu. Please shut down and upgrade all servers "
                                    "before restarting.");
@@ -1205,7 +1206,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     VLOG_WITH_PREFIX_UNLOCKED(1) << "Marking committed up to " << apply_up_to;
     TRACE("Marking committed up to $0", apply_up_to);
     CHECK_OK(state_->AdvanceCommittedIndexUnlocked(apply_up_to));
-    queue_->UpdateFollowerCommittedIndex(apply_up_to);
+    queue_->UpdateFollowerWatermarks(apply_up_to, request->all_replicated_index());
 
     // We can now update the last received watermark.
     //
@@ -1872,6 +1873,15 @@ Status RaftConsensus::GetLastOpId(OpIdType type, OpId* id) {
     return Status::InvalidArgument("Unsupported OpIdType", OpIdType_Name(type));
   }
   return Status::OK();
+}
+
+log::RetentionIndexes RaftConsensus::GetRetentionIndexes() {
+  // Grab the watermarks from the queue. It's OK to fetch these two watermarks
+  // separately -- the worst case is we see a relatively "out of date" watermark
+  // which just means we'll retain slightly more than necessary in this invocation
+  // of log GC.
+  return log::RetentionIndexes(queue_->GetCommittedIndex(), // for durability
+                               queue_->GetAllReplicatedIndex()); // for peers
 }
 
 void RaftConsensus::MarkDirty(const std::string& reason) {

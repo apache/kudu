@@ -323,6 +323,7 @@ ConsensusRequestPB RaftConsensusTest::MakeConsensusRequest(int64_t caller_term,
   request.set_caller_term(caller_term);
   request.set_caller_uuid(caller_uuid);
   request.set_tablet_id(kTestTablet);
+  request.set_all_replicated_index(0);
   *request.mutable_preceding_id() = preceding_opid;
   return request;
 }
@@ -500,6 +501,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   const string PEER_0_UUID = "peer-0";
   request.set_caller_uuid(PEER_0_UUID);
   request.set_tablet_id(kTestTablet);
+  request.set_all_replicated_index(0);
   request.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
 
   ReplicateMsg* replicate = request.add_ops();
