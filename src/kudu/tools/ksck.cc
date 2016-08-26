@@ -18,8 +18,10 @@
 #include "kudu/tools/ksck.h"
 
 #include <algorithm>
+#include <boost/optional.hpp>
 #include <glog/logging.h>
 #include <iostream>
+#include <map>
 #include <mutex>
 
 #include "kudu/consensus/quorum_util.h"
@@ -29,6 +31,7 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/tools/color.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/locks.h"
@@ -38,7 +41,6 @@
 namespace kudu {
 namespace tools {
 
-using std::cerr;
 using std::cout;
 using std::endl;
 using std::ostream;
@@ -60,26 +62,23 @@ DEFINE_uint64(checksum_snapshot_timestamp, ChecksumOptions::kCurrentTimestamp,
 DEFINE_int32(fetch_replica_info_concurrency, 20,
              "Number of concurrent tablet servers to fetch replica info from.");
 
-// The stream to write output to. If this is NULL, defaults to cerr.
+// The stream to write output to. If this is NULL, defaults to cout.
 // This is used by tests to capture output.
 ostream* g_err_stream = NULL;
 
-// Print an informational message to cerr.
+// Print an informational message to cout.
 static ostream& Out() {
-  return (g_err_stream ? *g_err_stream : cerr);
-}
-static ostream& Info() {
-  return Out() << "INFO: ";
+  return (g_err_stream ? *g_err_stream : cout);
 }
 
-// Print a warning message to cerr.
+// Print a warning message to cout.
 static ostream& Warn() {
-  return Out() << "WARNING: ";
+  return Out() << Color(AnsiCode::YELLOW, "WARNING: ");
 }
 
-// Print an error message to cerr.
+// Print an error message to cout.
 static ostream& Error() {
-  return Out() << "ERROR: ";
+  return Out() << Color(AnsiCode::RED, "WARNING: ");
 }
 
 namespace {
@@ -151,7 +150,7 @@ Status Ksck::CheckMasterRunning() {
   VLOG(1) << "Connecting to the Master";
   Status s = cluster_->master()->Connect();
   if (s.ok()) {
-    Info() << "Connected to the Master" << endl;
+    Out() << "Connected to the Master" << endl;
   }
   return s;
 }
@@ -188,7 +187,7 @@ Status Ksck::FetchInfoFromTabletServers() {
   pool->Wait();
 
   if (bad_servers.Load() == 0) {
-    Info() << Substitute("Fetched info from all $0 Tablet Servers", servers_count) << endl;
+    Out() << Substitute("Fetched info from all $0 Tablet Servers", servers_count) << endl;
     return Status::OK();
   } else {
     Warn() << Substitute("Fetched info from $0 Tablet Servers, $1 weren't reachable",
@@ -221,15 +220,16 @@ Status Ksck::CheckTablesConsistency() {
     if (!VerifyTable(table)) {
       bad_tables_count++;
     }
+    Out() << endl;
   }
 
   if (tables_checked == 0) {
-    Info() << "The cluster doesn't have any matching tables" << endl;
+    Out() << "The cluster doesn't have any matching tables" << endl;
     return Status::OK();
   }
 
   if (bad_tables_count == 0) {
-    Info() << Substitute("The metadata for $0 table(s) is HEALTHY", tables_checked) << endl;
+    Out() << Substitute("The metadata for $0 table(s) is HEALTHY", tables_checked) << endl;
     return Status::OK();
   } else {
     Warn() << Substitute("$0 out of $1 table(s) are not in a healthy state",
@@ -289,7 +289,7 @@ class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporte
       done = responses_.WaitFor(MonoDelta::FromMilliseconds(std::min(rem_ms, 5000)));
       string status = done ? "finished in " : "running for ";
       int run_time_sec = (MonoTime::Now() - start).ToSeconds();
-      Info() << "Checksum " << status << run_time_sec << "s: "
+      Out() << "Checksum " << status << run_time_sec << "s: "
              << responses_.count() << "/" << expected_count_ << " replicas remaining ("
              << HumanReadableNumBytes::ToString(disk_bytes_summed_.Load()) << " from disk, "
              << HumanReadableInt::ToString(rows_summed_.Load()) << " rows summed)"
@@ -453,7 +453,7 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
       return Status::ServiceUnavailable(
           "No tablet servers were available to fetch the current timestamp");
     }
-    Info() << "Using snapshot timestamp: " << options.snapshot_timestamp << endl;
+    Out() << "Using snapshot timestamp: " << options.snapshot_timestamp << endl;
   }
 
   // Kick off checksum scans in parallel. For each tablet server, we start
@@ -546,7 +546,6 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
 }
 
 bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
-  bool good_table = true;
   const auto all_tablets = table->tablets();
   vector<shared_ptr<KsckTablet>> tablets;
   std::copy_if(all_tablets.begin(), all_tablets.end(), std::back_inserter(tablets),
@@ -555,124 +554,146 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
                  });
 
   int table_num_replicas = table->num_replicas();
-  VLOG(1) << Substitute("Verifying $0 tablets for table $1 configured with num_replicas = $2",
+  VLOG(1) << Substitute("Verifying $0 tablet(s) for table $1 configured with num_replicas = $2",
                         tablets.size(), table->name(), table_num_replicas);
 
-  int bad_tablets_count = 0;
-  for (const shared_ptr<KsckTablet> &tablet : tablets) {
-    if (!VerifyTablet(tablet, table_num_replicas)) {
-      bad_tablets_count++;
-    }
+  map<CheckResult, int> result_counts;
+  for (const auto& tablet : tablets) {
+    auto tablet_result = VerifyTablet(tablet, table_num_replicas);
+    result_counts[tablet_result]++;
   }
-  if (bad_tablets_count == 0) {
-    Info() << Substitute("Table $0 is HEALTHY ($1 tablets checked)",
-                         table->name(), tablets.size()) << endl;
+  if (result_counts[CheckResult::OK] == tablets.size()) {
+    Out() << Substitute("Table $0 is $1 ($2 tablet(s) checked)",
+                        table->name(),
+                        Color(AnsiCode::GREEN, "HEALTHY"),
+                        tablets.size()) << endl;
+    return true;
   } else {
-    Warn() << Substitute("Table $0 has $1 bad tablets", table->name(), bad_tablets_count) << endl;
-    good_table = false;
+    if (result_counts[CheckResult::UNAVAILABLE] > 0) {
+      Out() << Substitute("Table $0 has $1 $2 tablet(s)",
+                          table->name(),
+                          result_counts[CheckResult::UNAVAILABLE],
+                          Color(AnsiCode::RED, "unavailable")) << endl;
+    }
+    if (result_counts[CheckResult::UNDER_REPLICATED] > 0) {
+      Out() << Substitute("Table $0 has $1 $2 tablet(s)",
+                          table->name(),
+                          result_counts[CheckResult::UNDER_REPLICATED],
+                          Color(AnsiCode::YELLOW, "under-replicated")) << endl;
+    }
+    return false;
   }
-  return good_table;
 }
 
-bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_replicas) {
-  string tablet_str = Substitute("Tablet $0 of table '$1'",
+Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_replicas) {
+  const string tablet_str = Substitute("Tablet $0 of table '$1'",
                                  tablet->id(), tablet->table()->name());
-  vector<shared_ptr<KsckTabletReplica> > replicas = tablet->replicas();
-  vector<string> warnings, errors, infos;
-  if (check_replica_count_ && replicas.size() != table_num_replicas) {
-    warnings.push_back(Substitute("$0 has $1 instead of $2 replicas",
-                                  tablet_str, replicas.size(), table_num_replicas));
-  }
-  int leaders_count = 0;
-  int followers_count = 0;
-  int alive_count = 0;
-  int running_count = 0;
-  for (const shared_ptr<KsckTabletReplica> replica : replicas) {
+
+  // Consolidate the state of each replica into a simple struct for easier analysis.
+  struct ReplicaState {
+    KsckTabletReplica* replica;
+    KsckTabletServer* ts = nullptr;
+    tablet::TabletStatePB state = tablet::UNKNOWN;
+    boost::optional<tablet::TabletStatusPB> status_pb;
+  };
+
+  vector<ReplicaState> replica_states;
+  for (const shared_ptr<KsckTabletReplica> replica : tablet->replicas()) {
+    replica_states.emplace_back();
+    auto* repl_state = &replica_states.back();
+    repl_state->replica = replica.get();
+
     VLOG(1) << Substitute("A replica of tablet $0 is on live tablet server $1",
                           tablet->id(), replica->ts_uuid());
     // Check for agreement on tablet assignment and state between the master
     // and the tablet server.
     auto ts = FindPtrOrNull(cluster_->tablet_servers(), replica->ts_uuid());
+    repl_state->ts = ts.get();
+
     if (ts && ts->is_healthy()) {
-      alive_count++;
-      auto state = ts->ReplicaState(tablet->id());
-      if (state != tablet::UNKNOWN) {
-        VLOG(1) << Substitute("Tablet server $0 agrees that it hosts a replica of $1",
-                              ts->ToString(), tablet_str);
+      repl_state->state = ts->ReplicaState(tablet->id());
+      if (ContainsKey(ts->tablet_status_map(), tablet->id())) {
+        repl_state->status_pb = ts->tablet_status_map().at(tablet->id());
       }
-
-      switch (state) {
-        case tablet::RUNNING:
-          VLOG(1) << Substitute("Tablet replica for $0 on TS $1 is RUNNING",
-                                tablet_str, ts->ToString());
-          running_count++;
-          infos.push_back(Substitute("OK state on TS $0: $1",
-                                     ts->ToString(), tablet::TabletStatePB_Name(state)));
-          break;
-
-        case tablet::UNKNOWN:
-          warnings.push_back(Substitute("Missing a tablet replica on tablet server $0",
-                                        ts->ToString()));
-          break;
-
-        default: {
-          const auto& status_pb = ts->tablet_status_map().at(tablet->id());
-          warnings.push_back(
-              Substitute("Bad state on TS $0: $1\n"
-                         "  Last status: $2\n"
-                         "  Data state:  $3",
-                         ts->ToString(), tablet::TabletStatePB_Name(state),
-                         status_pb.last_status(),
-                         tablet::TabletDataState_Name(status_pb.tablet_data_state())));
-          break;
-        }
-      }
-    } else {
-      // no TS or unhealthy TS
-      warnings.push_back(Substitute("Should have a replica on TS $0, but TS is unavailable",
-                                    ts ? ts->ToString() : replica->ts_uuid()));
     }
-    if (replica->is_leader()) {
-      VLOG(1) << Substitute("Replica at $0 is a LEADER", replica->ts_uuid());
+  }
+
+  // Summarize the states.
+  int leaders_count = 0;
+  int running_count = 0;
+  for (const auto& r : replica_states) {
+    if (r.replica->is_leader()) {
       leaders_count++;
-    } else if (replica->is_follower()) {
-      VLOG(1) << Substitute("Replica at $0 is a FOLLOWER", replica->ts_uuid());
-      followers_count++;
     }
-  }
-  if (leaders_count == 0) {
-    errors.push_back("No leader detected");
-  }
-  VLOG(1) << Substitute("$0 has $1 leader and $2 followers",
-                        tablet_str, leaders_count, followers_count);
-  int majority_size = consensus::MajoritySize(table_num_replicas);
-  if (alive_count < majority_size) {
-    errors.push_back(Substitute("$0 does not have a majority of replicas on live tablet servers",
-                                tablet_str));
-  } else if (running_count < majority_size) {
-    errors.push_back(Substitute("$0 does not have a majority of replicas in RUNNING state",
-                                tablet_str));
+    if (r.state == tablet::RUNNING) {
+      running_count++;
+    }
   }
 
-  bool has_issues = !warnings.empty() || !errors.empty();
-  if (has_issues) {
-    Warn() << "Detected problems with " << tablet_str << endl
-           << "------------------------------------------------------------" << endl;
-    for (const auto& s : warnings) {
-      Warn() << s << endl;
+  // Determine the overall health state of the tablet.
+  CheckResult result = CheckResult::OK;
+  int num_voters = replica_states.size();
+  int majority_size = consensus::MajoritySize(num_voters);
+  if (running_count < majority_size) {
+    Out() << Substitute("$0 is $1: $2 replica(s) not RUNNING",
+                        tablet_str,
+                        Color(AnsiCode::RED, "unavailable"),
+                        num_voters - running_count) << endl;
+    result = CheckResult::UNAVAILABLE;
+  } else if (running_count < num_voters) {
+    Out() << Substitute("$0 is $1: $2 replica(s) not RUNNING",
+                        tablet_str,
+                        Color(AnsiCode::YELLOW, "under-replicated"),
+                        num_voters - running_count) << endl;
+    result = CheckResult::UNDER_REPLICATED;
+  } else if (check_replica_count_ && num_voters < table_num_replicas) {
+    Out() << Substitute("$0 is $1: configuration has $2 replicas vs desired $3",
+                        tablet_str,
+                        Color(AnsiCode::YELLOW, "under-replicated"),
+                        num_voters,
+                        table_num_replicas) << endl;
+    result = CheckResult::UNDER_REPLICATED;
+  } else if (leaders_count != 1) {
+    Out() << Substitute("$0 is $1: expected one LEADER replica",
+                        tablet_str, Color(AnsiCode::RED, "unavailable")) << endl;
+    result = CheckResult::UNAVAILABLE;
+  }
+
+  // In the case that we found something wrong, dump info on all the replicas
+  // to make it easy to debug.
+  if (result != CheckResult::OK) {
+    for (const ReplicaState& r : replica_states) {
+      string ts_str = r.ts ? r.ts->ToString() : r.replica->ts_uuid();
+      const char* leader_str = r.replica->is_leader() ? " [LEADER]" : "";
+
+      Out() << "  " << ts_str << ": ";
+      if (!r.ts || !r.ts->is_healthy()) {
+        Out() << Color(AnsiCode::YELLOW, "TS unavailable") << leader_str << endl;
+        continue;
+      }
+      if (r.state == tablet::RUNNING) {
+        Out() << Color(AnsiCode::GREEN, "RUNNING") << leader_str << endl;
+        continue;
+      }
+      if (r.status_pb == boost::none) {
+        Out() << Color(AnsiCode::YELLOW, "missing") << leader_str << endl;
+        continue;
+      }
+
+      Out() << Color(AnsiCode::YELLOW, "bad state") << leader_str << endl;
+      Out() << Substitute(
+          "    State:       $0\n"
+          "    Data state:  $1\n"
+          "    Last status: $2\n",
+          Color(AnsiCode::BLUE, tablet::TabletStatePB_Name(r.state)),
+          Color(AnsiCode::BLUE, tablet::TabletDataState_Name(r.status_pb->tablet_data_state())),
+          Color(AnsiCode::BLUE, r.status_pb->last_status()));
     }
-    for (const auto& s : errors) {
-      Error() << s << endl;
-    }
-    // We only print the 'INFO' messages on tablets that have some issues.
-    // Otherwise, it's a bit verbose.
-    for (const auto& s : infos) {
-      Info() << s << endl;
-    }
+
     Out() << endl;
   }
 
-  return !has_issues;
+  return result;
 }
 
 } // namespace tools

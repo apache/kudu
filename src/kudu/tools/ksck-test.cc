@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <memory>
 #include <unordered_map>
@@ -24,6 +25,8 @@
 #include "kudu/tools/ksck.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_string(color);
 
 namespace kudu {
 namespace tools {
@@ -112,6 +115,7 @@ class KsckTest : public KuduTest {
       : master_(new MockKsckMaster()),
         cluster_(new KsckCluster(static_pointer_cast<KsckMaster>(master_))),
         ksck_(new Ksck(cluster_)) {
+    FLAGS_color = "never";
     unordered_map<string, shared_ptr<KsckTabletServer>> tablet_servers;
     for (int i = 0; i < 3; i++) {
       string name = Substitute("ts-id-$0", i);
@@ -289,25 +293,22 @@ TEST_F(KsckTest, TestBadTabletServer) {
       "ts-id-1 (<mock>): Network error: Network failure");
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
-      "WARNING: Detected problems with Tablet tablet-id-0 of table 'test'\n"
-      "------------------------------------------------------------\n"
-      "WARNING: Should have a replica on TS ts-id-1 (<mock>), but TS is unavailable\n"
-      "INFO: OK state on TS ts-id-0 (<mock>): RUNNING\n"
-      "INFO: OK state on TS ts-id-2 (<mock>): RUNNING\n");
+      "Tablet tablet-id-0 of table 'test' is under-replicated: 1 replica(s) not RUNNING\n"
+      "  ts-id-0 (<mock>): RUNNING [LEADER]\n"
+      "  ts-id-1 (<mock>): TS unavailable\n"
+      "  ts-id-2 (<mock>): RUNNING\n");
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
-      "WARNING: Detected problems with Tablet tablet-id-1 of table 'test'\n"
-      "------------------------------------------------------------\n"
-      "WARNING: Should have a replica on TS ts-id-1 (<mock>), but TS is unavailable\n"
-      "INFO: OK state on TS ts-id-0 (<mock>): RUNNING\n"
-      "INFO: OK state on TS ts-id-2 (<mock>): RUNNING\n");
+      "Tablet tablet-id-1 of table 'test' is under-replicated: 1 replica(s) not RUNNING\n"
+      "  ts-id-0 (<mock>): RUNNING [LEADER]\n"
+      "  ts-id-1 (<mock>): TS unavailable\n"
+      "  ts-id-2 (<mock>): RUNNING\n");
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
-      "WARNING: Detected problems with Tablet tablet-id-2 of table 'test'\n"
-      "------------------------------------------------------------\n"
-      "WARNING: Should have a replica on TS ts-id-1 (<mock>), but TS is unavailable\n"
-      "INFO: OK state on TS ts-id-0 (<mock>): RUNNING\n"
-      "INFO: OK state on TS ts-id-2 (<mock>): RUNNING\n");
+      "Tablet tablet-id-2 of table 'test' is under-replicated: 1 replica(s) not RUNNING\n"
+      "  ts-id-0 (<mock>): RUNNING [LEADER]\n"
+      "  ts-id-1 (<mock>): TS unavailable\n"
+      "  ts-id-2 (<mock>): RUNNING\n");
 }
 
 TEST_F(KsckTest, TestZeroTabletReplicasCheck) {
@@ -340,7 +341,7 @@ TEST_F(KsckTest, TestOneSmallReplicatedTable) {
   Status s = ksck_->ChecksumData(ChecksumOptions());
   EXPECT_EQ("Not found: No table found. Filter: table_filters=xyz", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
-                      "INFO: The cluster doesn't have any matching tables");
+                      "The cluster doesn't have any matching tables");
 
   // Test filtering with a matching table pattern.
   err_stream_.str("");
@@ -365,7 +366,8 @@ TEST_F(KsckTest, TestOneOneTabletBrokenTable) {
   Status s = RunKsck();
   EXPECT_EQ("Corruption: 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
-                      "Tablet tablet-id-1 of table 'test' has 2 instead of 3 replicas");
+                      "Tablet tablet-id-1 of table 'test' is under-replicated: "
+                      "configuration has 2 replicas vs desired 3");
 }
 
 TEST_F(KsckTest, TestMismatchedAssignments) {
@@ -377,9 +379,11 @@ TEST_F(KsckTest, TestMismatchedAssignments) {
   Status s = RunKsck();
   EXPECT_EQ("Corruption: 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
-                      "WARNING: Detected problems with Tablet tablet-id-2 of table 'test'\n"
-                      "------------------------------------------------------------\n"
-                      "WARNING: Missing a tablet replica on tablet server ts-id-0 (<mock>)\n");
+                      "Tablet tablet-id-2 of table 'test' is under-replicated: "
+                      "1 replica(s) not RUNNING\n"
+                      "  ts-id-0 (<mock>): missing [LEADER]\n"
+                      "  ts-id-1 (<mock>): RUNNING\n"
+                      "  ts-id-2 (<mock>): RUNNING\n");
 }
 
 TEST_F(KsckTest, TestTabletNotRunning) {
@@ -389,19 +393,19 @@ TEST_F(KsckTest, TestTabletNotRunning) {
   EXPECT_EQ("Corruption: 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
-      "WARNING: Detected problems with Tablet tablet-id-0 of table 'test'\n"
-      "------------------------------------------------------------\n"
-      "WARNING: Bad state on TS ts-id-0 (<mock>): FAILED\n"
-      "  Last status: \n"
-      "  Data state:  TABLET_DATA_UNKNOWN\n"
-      "WARNING: Bad state on TS ts-id-1 (<mock>): FAILED\n"
-      "  Last status: \n"
-      "  Data state:  TABLET_DATA_UNKNOWN\n"
-      "WARNING: Bad state on TS ts-id-2 (<mock>): FAILED\n"
-      "  Last status: \n"
-      "  Data state:  TABLET_DATA_UNKNOWN\n"
-      "ERROR: Tablet tablet-id-0 of table 'test' does not have a majority of "
-      "replicas in RUNNING state\n");
+      "Tablet tablet-id-0 of table 'test' is unavailable: 3 replica(s) not RUNNING\n"
+      "  ts-id-0 (<mock>): bad state [LEADER]\n"
+      "    State:       FAILED\n"
+      "    Data state:  TABLET_DATA_UNKNOWN\n"
+      "    Last status: \n"
+      "  ts-id-1 (<mock>): bad state\n"
+      "    State:       FAILED\n"
+      "    Data state:  TABLET_DATA_UNKNOWN\n"
+      "    Last status: \n"
+      "  ts-id-2 (<mock>): bad state\n"
+      "    State:       FAILED\n"
+      "    Data state:  TABLET_DATA_UNKNOWN\n"
+      "    Last status: \n");
 }
 
 } // namespace tools

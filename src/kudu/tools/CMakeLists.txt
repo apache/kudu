@@ -30,6 +30,7 @@ set(LINK_LIBS
 )
 
 add_library(kudu_tools_util
+  color.cc
   data_gen_util.cc)
 target_link_libraries(kudu_tools_util
   ${LINK_LIBS})
@@ -75,6 +76,7 @@ add_library(ksck
 )
 target_link_libraries(ksck
   consensus
+  kudu_tools_util
   master_proto
   server_base_proto
   tserver_proto

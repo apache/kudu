@@ -135,6 +135,7 @@ unique_ptr<Mode> BuildClusterMode() {
     .AddRequiredParameter({ "master_address", "Kudu Master RPC address of form hostname:port" })
     .AddOptionalParameter("checksum_scan")
     .AddOptionalParameter("checksum_snapshot")
+    .AddOptionalParameter("color")
     .AddOptionalParameter("tables")
     .AddOptionalParameter("tablets")
     .Build();

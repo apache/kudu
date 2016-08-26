@@ -375,11 +375,18 @@ class Ksck {
   Status ChecksumData(const ChecksumOptions& options);
 
  private:
+  enum class CheckResult {
+    OK,
+    UNDER_REPLICATED,
+    UNAVAILABLE
+  };
+
   bool VerifyTable(const std::shared_ptr<KsckTable>& table);
   bool VerifyTableWithTimeout(const std::shared_ptr<KsckTable>& table,
                               const MonoDelta& timeout,
                               const MonoDelta& retry_interval);
-  bool VerifyTablet(const std::shared_ptr<KsckTablet>& tablet, int table_num_replicas);
+  CheckResult VerifyTablet(const std::shared_ptr<KsckTablet>& tablet,
+                           int table_num_replicas);
 
   const std::shared_ptr<KsckCluster> cluster_;
 
