@@ -174,12 +174,12 @@ hosted on `cloudera.com`.
 
 .Procedure
 
-- Download the `deploy.py` from https://github.com/cloudera/impala-kudu/blob/feature/kudu/infra/deploy/deploy.py
+- Download the `deploy.py` from https://github.com/apache/incubator-impala/blob/master/infra/deploy/deploy.py
 using `curl` or another utility of your choice.
 +
 [source,bash]
 ----
-$ curl -O https://raw.githubusercontent.com/cloudera/impala-kudu/feature/kudu/infra/deploy/deploy.py
+$ curl -O https://raw.githubusercontent.com/apache/incubator-impala/master/infra/deploy/deploy.py
 ----
 +
 - Run the `deploy.py` script. The syntax below creates a standalone IMPALA_KUDU
@@ -238,7 +238,10 @@ alongside another Impala instance if you use packages.
 [cols=">s,<,<",options="header"]
 |===
 | OS  | Repository  | Individual Packages
-| RHEL | link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/cloudera-impala-kudu.repo[RHEL 6] |  link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/0.5.0/RPMS/x86_64/[RHEL 6]
+| RHEL or CentOS | link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/cloudera-impala-kudu.repo[RHEL 6 or CentOS 6],
+                   link:http://archive.cloudera.com/beta/impala-kudu/redhat/7/x86_64/impala-kudu/cloudera-impala-kudu.repo[RHEL 7 or CentOS 7] |
+                   link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/0/RPMS/x86_64/[RHEL 6 or CentOS 6],
+                   link:http://archive.cloudera.com/beta/impala-kudu/redhat/7/x86_64/impala-kudu/0/RPMS/x86_64/[RHEL 7 or CentOS 7]
 | Ubuntu | link:http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/cloudera.list[Trusty] |  http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/pool/contrib/i/impala-kudu/[Trusty]
 |===
 
@@ -271,7 +274,10 @@ Instead, follow <<install_impala_kudu_packages>>.
 [cols=">s,<,<",options="header"]
 |===
 | OS  | Repository  | Individual Packages
-| RHEL | link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/cloudera-impala-kudu.repo[RHEL 6] |  link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/0.5.0/RPMS/x86_64/[RHEL 6]
+| RHEL or CentOS | link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/cloudera-impala-kudu.repo[RHEL 6 or CentOS 6],
+                   link:http://archive.cloudera.com/beta/impala-kudu/redhat/7/x86_64/impala-kudu/cloudera-impala-kudu.repo[RHEL 7 or CentOS 7] |
+                   link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/0/RPMS/x86_64/[RHEL 6 or CentOS 6],
+                   link:http://archive.cloudera.com/beta/impala-kudu/redhat/7/x86_64/impala-kudu/0/RPMS/x86_64/[RHEL 7 or CentOS 7]
 | Ubuntu | link:http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/cloudera.list[Trusty] |  http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/pool/contrib/i/impala-kudu/[Trusty]
 |===
 
@@ -305,7 +311,7 @@ provides the Impala query to map to an existing Kudu table in the web UI.
 
 - Be sure you are using the `impala-shell` binary provided by the Impala_Kudu package,
 rather than the default CDH Impala binary. The following shows how to verify this
-using the `alternatives` command on a RHEL 6 host.
+using the `alternatives` command on a RHEL or CentOS host.
 +
 [source,bash]
 ----
