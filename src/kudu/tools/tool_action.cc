@@ -21,12 +21,12 @@
 #include <iomanip>
 #include <memory>
 #include <string>
-#include <strstream>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 
 using std::string;
@@ -65,6 +65,51 @@ string BuildUsageString(const vector<Mode*>& chain) {
   return Substitute("Usage: $0", modes);
 }
 
+
+// Append 'to_append' to 'dst', but hard-wrapped at 78 columns.
+// After any newline, 'continuation_indent' spaces are prepended.
+void AppendHardWrapped(StringPiece to_append,
+                       int continuation_indent,
+                       string* dst) {
+  const int kWrapColumns = 78;
+  DCHECK_LT(continuation_indent, kWrapColumns);
+
+  // The string we're appending to might not be already at a newline.
+  int last_line_length = 0;
+  auto newline_pos = dst->rfind('\n');
+  if (newline_pos != string::npos) {
+    last_line_length = dst->size() - newline_pos;
+  }
+
+  // Iterate through the words deciding where to wrap.
+  vector<StringPiece> words = strings::Split(to_append, " ");
+  if (words.empty()) return;
+
+  for (const auto& word : words) {
+    // If the next word won't fit on this line, break before we append it.
+    if (last_line_length + word.size() > kWrapColumns) {
+      dst->push_back('\n');
+      for (int i = 0; i < continuation_indent; i++) {
+        dst->push_back(' ');
+      }
+      last_line_length = continuation_indent;
+    }
+    word.AppendToString(dst);
+    dst->push_back(' ');
+    last_line_length += word.size() + 1;
+  }
+
+  // Remove the extra space that we added at the end.
+  dst->resize(dst->size() - 1);
+}
+
+string SpacePad(StringPiece s, int len) {
+  if (s.size() >= len) {
+    return s.ToString();
+  }
+  return string(len - s.size(), ' ' ) + s.ToString();
+}
+
 } // anonymous namespace
 
 ModeBuilder::ModeBuilder(const Label& label)
@@ -91,9 +136,9 @@ unique_ptr<Mode> ModeBuilder::Build() {
 
 // Get help for this mode, passing in its parent mode chain.
 string Mode::BuildHelp(const vector<Mode*>& chain) const {
-  std::ostringstream msg;
-  msg << Substitute("$0 <command> [<args>]\n\n", BuildUsageString(chain));
-  msg << "<command> can be one of the following:\n";
+  string msg;
+  msg += Substitute("$0 <command> [<args>]\n\n", BuildUsageString(chain));
+  msg += "<command> can be one of the following:\n";
 
   vector<pair<string, string>> line_pairs;
   int max_command_len = 0;
@@ -107,11 +152,13 @@ string Mode::BuildHelp(const vector<Mode*>& chain) const {
   }
 
   for (const auto& lp : line_pairs) {
-    msg << "  " << std::setw(max_command_len) << lp.first;
-    msg << "   " << lp.second << "\n";
+    msg += "  " + SpacePad(lp.first, max_command_len);
+    msg += "   ";
+    AppendHardWrapped(lp.second, max_command_len + 5, &msg);
+    msg += "\n";
   }
 
-  return msg.str();
+  return msg;
 }
 
 Mode::Mode() {
@@ -197,9 +244,11 @@ string Action::BuildHelp(const vector<Mode*>& chain) const {
     }
     desc_msg += google::DescribeOneFlag(gflag_info);
   }
-  string msg = usage_msg;
+  string msg;
+  AppendHardWrapped(usage_msg, 8, &msg);
   msg += "\n\n";
-  msg += Substitute("$0\n", label_.description);
+  AppendHardWrapped(label_.description, 0, &msg);
+  msg += "\n\n";
   msg += desc_msg;
   return msg;
 }
