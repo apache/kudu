@@ -361,7 +361,7 @@ Status Subprocess::Start() {
 #if defined(__linux__)
     // TODO: prctl(PR_SET_PDEATHSIG) is Linux-specific, look into portable ways
     // to prevent orphans when parent is killed.
-    prctl(PR_SET_PDEATHSIG, SIGTERM);
+    prctl(PR_SET_PDEATHSIG, SIGKILL);
 #endif
 
     // stdin
