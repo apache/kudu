@@ -85,7 +85,7 @@ class MockKsckMaster : public KsckMaster {
       : fetch_info_status_(Status::OK()) {
   }
 
-  virtual Status Connect() const OVERRIDE {
+  virtual Status Connect() OVERRIDE {
     return fetch_info_status_;
   }
 
@@ -218,7 +218,7 @@ class KsckTest : public KuduTest {
                            bool is_leader,
                            bool is_running) {
     shared_ptr<KsckTabletReplica> replica(new KsckTabletReplica(assignment_plan_.back(),
-                                                                is_leader, !is_leader));
+                                                                is_leader));
     shared_ptr<MockKsckTabletServer> ts = static_pointer_cast<MockKsckTabletServer>(
             master_->tablet_servers_.at(assignment_plan_.back()));
 

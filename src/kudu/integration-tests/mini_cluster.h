@@ -104,26 +104,26 @@ class MiniCluster {
   // If this cluster is configured for a single non-distributed
   // master, return the single master. Exits with a CHECK failure if
   // there are multiple masters.
-  master::MiniMaster* mini_master() {
+  master::MiniMaster* mini_master() const {
     CHECK_EQ(mini_masters_.size(), 1);
     return mini_master(0);
   }
 
   // Returns the Master at index 'idx' for this MiniCluster.
-  master::MiniMaster* mini_master(int idx);
+  master::MiniMaster* mini_master(int idx) const;
 
   // Return number of mini masters.
   int num_masters() const { return mini_masters_.size(); }
 
   // Returns the TabletServer at index 'idx' of this MiniCluster.
   // 'idx' must be between 0 and 'num_tablet_servers' -1.
-  tserver::MiniTabletServer* mini_tablet_server(int idx);
+  tserver::MiniTabletServer* mini_tablet_server(int idx) const;
 
   int num_tablet_servers() const { return mini_tablet_servers_.size(); }
 
-  std::string GetMasterFsRoot(int indx);
+  std::string GetMasterFsRoot(int indx) const;
 
-  std::string GetTabletServerFsRoot(int idx);
+  std::string GetTabletServerFsRoot(int idx) const;
 
   // Wait until the number of registered tablet servers reaches the given
   // count on all masters. Returns Status::TimedOut if the desired count is not
@@ -140,9 +140,9 @@ class MiniCluster {
     // Do not perform any matching on the retrieved tservers.
     DO_NOT_MATCH_TSERVERS,
   };
-  Status WaitForTabletServerCount(int count);
+  Status WaitForTabletServerCount(int count) const;
   Status WaitForTabletServerCount(int count, MatchMode mode,
-                                  std::vector<std::shared_ptr<master::TSDescriptor>>* descs);
+                                  std::vector<std::shared_ptr<master::TSDescriptor>>* descs) const;
 
   // Create a client configured to talk to this cluster. Builder may contain
   // override options for the client. The master address will be overridden to
@@ -151,7 +151,14 @@ class MiniCluster {
   //
   // REQUIRES: the cluster must have already been Start()ed.
   Status CreateClient(client::KuduClientBuilder* builder,
-                      client::sp::shared_ptr<client::KuduClient>* client);
+                      client::sp::shared_ptr<client::KuduClient>* client) const;
+
+  // Determine the leader master of the cluster. Sets 'idx' to the leader
+  // master's index (for calls to to mini_master()).
+  //
+  // Note: if a leader election occurs after this method is executed, the
+  // last result may not be valid.
+  Status GetLeaderMasterIndex(int* idx) const;
 
  private:
   enum {

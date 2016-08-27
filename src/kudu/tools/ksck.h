@@ -69,9 +69,8 @@ struct ChecksumOptions {
 // Representation of a tablet replica on a tablet server.
 class KsckTabletReplica {
  public:
-  KsckTabletReplica(const std::string ts_uuid, const bool is_leader, const bool is_follower)
+  KsckTabletReplica(const std::string ts_uuid, const bool is_leader)
       : is_leader_(is_leader),
-        is_follower_(is_follower),
         is_running_(false),
         ts_uuid_(ts_uuid) {
   }
@@ -80,17 +79,12 @@ class KsckTabletReplica {
     return is_leader_;
   }
 
-  const bool& is_follower() const {
-    return is_follower_;
-  }
-
   const std::string& ts_uuid() const {
     return ts_uuid_;
   }
 
  private:
   const bool is_leader_;
-  const bool is_follower_;
   bool is_running_;
   const std::string ts_uuid_;
   DISALLOW_COPY_AND_ASSIGN(KsckTabletReplica);
@@ -259,7 +253,7 @@ class KsckMaster {
   virtual ~KsckMaster() { }
 
   // Connects to the configured Master.
-  virtual Status Connect() const = 0;
+  virtual Status Connect() = 0;
 
   // Gets the list of Tablet Servers from the Master and stores it in the passed
   // map, which is keyed on server permanent_uuid.

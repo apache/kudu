@@ -26,10 +26,8 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/split.h"
-#include "kudu/master/master.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
@@ -65,15 +63,11 @@ namespace tools {
 namespace {
 
 Status RunKsck(const RunnerContext& context) {
-  vector<Sockaddr> master_addrs;
-  string master_address = FindOrDie(context.required_args, "master_address");
-  RETURN_NOT_OK_PREPEND(ParseAddressList(master_address,
-                                         master::Master::kDefaultPort,
-                                         &master_addrs),
-                        "unable to parse master address");
-
+  string master_addresses_str = FindOrDie(context.required_args,
+                                          "master_addresses");
+  vector<string> master_addresses = strings::Split(master_addresses_str, ",");
   shared_ptr<KsckMaster> master;
-  RETURN_NOT_OK_PREPEND(RemoteKsckMaster::Build(master_addrs[0], &master),
+  RETURN_NOT_OK_PREPEND(RemoteKsckMaster::Build(master_addresses, &master),
                         "unable to build KsckMaster");
 
   shared_ptr<KsckCluster> cluster(new KsckCluster(master));
@@ -132,7 +126,10 @@ unique_ptr<Mode> BuildClusterMode() {
       "actively receiving inserts or updates.";
   unique_ptr<Action> ksck = ActionBuilder(
       { "ksck", desc }, &RunKsck)
-    .AddRequiredParameter({ "master_address", "Kudu Master RPC address of form hostname:port" })
+    .AddRequiredParameter({
+        "master_addresses",
+        "Comma-separated list of Kudu Master addressess where each address is "
+        "of form hostname:port" })
     .AddOptionalParameter("checksum_scan")
     .AddOptionalParameter("checksum_snapshot")
     .AddOptionalParameter("color")

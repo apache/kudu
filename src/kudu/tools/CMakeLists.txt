@@ -110,7 +110,7 @@ set(KUDU_TEST_LINK_LIBS
   integration-tests
   ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(ksck-test)
-ADD_KUDU_TEST(ksck_remote-test)
+ADD_KUDU_TEST(ksck_remote-test RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(kudu-admin-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test
   kudu-admin)

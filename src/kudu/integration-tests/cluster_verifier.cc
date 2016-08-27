@@ -77,10 +77,10 @@ void ClusterVerifier::CheckCluster() {
 }
 
 Status ClusterVerifier::DoKsck() {
-  Sockaddr addr = cluster_->leader_master()->bound_rpc_addr();
+  HostPort hp = cluster_->leader_master()->bound_rpc_hostport();
 
   std::shared_ptr<KsckMaster> master;
-  RETURN_NOT_OK(RemoteKsckMaster::Build(addr, &master));
+  RETURN_NOT_OK(RemoteKsckMaster::Build({ hp.ToString() }, &master));
   std::shared_ptr<KsckCluster> cluster(new KsckCluster(master));
   std::shared_ptr<Ksck> ksck(new Ksck(cluster));
 

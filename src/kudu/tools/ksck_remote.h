@@ -22,8 +22,7 @@
 #include <string>
 #include <vector>
 
-#include "kudu/master/master.h"
-#include "kudu/master/master.proxy.h"
+#include "kudu/client/client.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/server_base.h"
 #include "kudu/server/server_base.proxy.h"
@@ -76,11 +75,12 @@ class RemoteKsckTabletServer : public KsckTabletServer {
 class RemoteKsckMaster : public KsckMaster {
  public:
 
-  static Status Build(const Sockaddr& address, std::shared_ptr<KsckMaster>* master);
+  static Status Build(const std::vector<std::string>& master_addresses,
+                      std::shared_ptr<KsckMaster>* master);
 
   virtual ~RemoteKsckMaster() { }
 
-  virtual Status Connect() const OVERRIDE;
+  virtual Status Connect() OVERRIDE;
 
   virtual Status RetrieveTabletServers(TSMap* tablet_servers) OVERRIDE;
 
@@ -90,25 +90,16 @@ class RemoteKsckMaster : public KsckMaster {
 
  private:
 
-  explicit RemoteKsckMaster(const Sockaddr& address,
-                            const std::shared_ptr<rpc::Messenger>& messenger)
-      : messenger_(messenger),
-        proxy_(new master::MasterServiceProxy(messenger, address)) {
+  RemoteKsckMaster(const std::vector<std::string>& master_addresses,
+                   const std::shared_ptr<rpc::Messenger>& messenger)
+      : master_addresses_(master_addresses),
+        messenger_(messenger) {
   }
 
-  Status GetTableInfo(const std::string& table_name, Schema* schema, int* num_replicas);
+  const std::vector<std::string> master_addresses_;
+  const std::shared_ptr<rpc::Messenger> messenger_;
 
-  // Used to get a batch of tablets from the master, passing a pointer to the
-  // seen last key that will be used as the new start key. The
-  // last_partition_key is updated to point at the new last key that came in
-  // the batch.
-  Status GetTabletsBatch(const std::shared_ptr<KsckTable>& table,
-                         std::string* last_partition_key,
-                         std::vector<std::shared_ptr<KsckTablet> >& tablets,
-                         bool* more_tablets);
-
-  std::shared_ptr<rpc::Messenger> messenger_;
-  std::shared_ptr<master::MasterServiceProxy> proxy_;
+  client::sp::shared_ptr<client::KuduClient> client_;
 };
 
 } // namespace tools

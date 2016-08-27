@@ -194,34 +194,34 @@ void MiniCluster::ShutdownMasters() {
   mini_masters_.clear();
 }
 
-MiniMaster* MiniCluster::mini_master(int idx) {
+MiniMaster* MiniCluster::mini_master(int idx) const {
   CHECK_GE(idx, 0) << "Master idx must be >= 0";
   CHECK_LT(idx, mini_masters_.size()) << "Master idx must be < num masters started";
   return mini_masters_[idx].get();
 }
 
-MiniTabletServer* MiniCluster::mini_tablet_server(int idx) {
+MiniTabletServer* MiniCluster::mini_tablet_server(int idx) const {
   CHECK_GE(idx, 0) << "TabletServer idx must be >= 0";
   CHECK_LT(idx, mini_tablet_servers_.size()) << "TabletServer idx must be < 'num_ts_started_'";
   return mini_tablet_servers_[idx].get();
 }
 
-string MiniCluster::GetMasterFsRoot(int idx) {
+string MiniCluster::GetMasterFsRoot(int idx) const {
   return JoinPathSegments(fs_root_, Substitute("master-$0-root", idx));
 }
 
-string MiniCluster::GetTabletServerFsRoot(int idx) {
+string MiniCluster::GetTabletServerFsRoot(int idx) const {
   return JoinPathSegments(fs_root_, Substitute("ts-$0-root", idx));
 }
 
-Status MiniCluster::WaitForTabletServerCount(int count) {
+Status MiniCluster::WaitForTabletServerCount(int count) const {
   vector<shared_ptr<master::TSDescriptor>> descs;
   return WaitForTabletServerCount(count, MatchMode::MATCH_TSERVERS, &descs);
 }
 
 Status MiniCluster::WaitForTabletServerCount(int count,
                                              MatchMode mode,
-                                             vector<shared_ptr<TSDescriptor>>* descs) {
+                                             vector<shared_ptr<TSDescriptor>>* descs) const {
   unordered_set<int> masters_to_search;
   for (int i = 0; i < num_masters(); i++) {
     if (!mini_master(i)->master()->IsShutdown()) {
@@ -278,7 +278,7 @@ Status MiniCluster::WaitForTabletServerCount(int count,
 }
 
 Status MiniCluster::CreateClient(KuduClientBuilder* builder,
-                                 client::sp::shared_ptr<KuduClient>* client) {
+                                 client::sp::shared_ptr<KuduClient>* client) const {
   KuduClientBuilder default_builder;
   if (builder == nullptr) {
     builder = &default_builder;
@@ -289,6 +289,37 @@ Status MiniCluster::CreateClient(KuduClientBuilder* builder,
     builder->add_master_server_addr(master->bound_rpc_addr_str());
   }
   return builder->Build(client);
+}
+
+Status MiniCluster::GetLeaderMasterIndex(int* idx) const {
+  const MonoTime kDeadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
+
+  int leader_idx = -1;
+  while (MonoTime::Now() < kDeadline) {
+    for (int i = 0; i < num_masters(); i++) {
+      if (mini_master(i)->master()->IsShutdown()) {
+        continue;
+      }
+      master::CatalogManager* catalog =
+          mini_master(i)->master()->catalog_manager();
+      master::CatalogManager::ScopedLeaderSharedLock l(catalog);
+      if (l.first_failed_status().ok()) {
+        leader_idx = i;
+        break;
+      }
+    }
+    if (leader_idx == -1) {
+      SleepFor(MonoDelta::FromMilliseconds(100));
+    } else {
+      break;
+    }
+  }
+  if (leader_idx == -1) {
+    return Status::NotFound("Leader master was not found within deadline");
+  }
+
+  *idx = leader_idx;
+  return Status::OK();
 }
 
 } // namespace kudu

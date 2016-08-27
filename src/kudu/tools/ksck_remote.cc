@@ -17,9 +17,11 @@
 
 #include "kudu/tools/ksck_remote.h"
 
+#include "kudu/client/client.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/net/net_util.h"
@@ -27,13 +29,19 @@
 
 DEFINE_bool(checksum_cache_blocks, false, "Should the checksum scanners cache the read blocks");
 DEFINE_int64(timeout_ms, 1000 * 60, "RPC timeout in milliseconds");
-DEFINE_int32(tablets_batch_size_max, 100, "How many tablets to get from the Master per RPC");
 
 namespace kudu {
 namespace tools {
 
 static const std::string kMessengerName = "ksck";
 
+using client::KuduClient;
+using client::KuduClientBuilder;
+using client::KuduReplica;
+using client::KuduScanToken;
+using client::KuduScanTokenBuilder;
+using client::KuduTable;
+using client::KuduTabletServer;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using rpc::RpcController;
@@ -156,9 +164,9 @@ class ChecksumStepper {
       return; // Deletes 'this'.
     }
     if (resp_.has_resource_metrics() || resp_.has_rows_checksummed()) {
-      auto bytes = resp_.resource_metrics().cfile_cache_miss_bytes() +
+      int64_t bytes = resp_.resource_metrics().cfile_cache_miss_bytes() +
           resp_.resource_metrics().cfile_cache_hit_bytes();
-      callbacks_->Progress(resp_.rows_checksummed(), bytes);;
+      callbacks_->Progress(resp_.rows_checksummed(), bytes);
     }
     DCHECK(resp_.has_checksum());
     checksum_ = resp_.checksum();
@@ -251,35 +259,32 @@ void RemoteKsckTabletServer::RunTabletChecksumScanAsync(
   ignore_result(stepper.release()); // Deletes self on callback.
 }
 
-Status RemoteKsckMaster::Connect() const {
-  master::PingRequestPB req;
-  master::PingResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(GetDefaultTimeout());
-  return proxy_->Ping(req, &resp, &rpc);
+Status RemoteKsckMaster::Connect() {
+  client::sp::shared_ptr<KuduClient> client;
+  KuduClientBuilder builder;
+  builder.master_server_addrs(master_addresses_);
+  return builder.Build(&client_);
 }
 
-Status RemoteKsckMaster::Build(const Sockaddr& address, shared_ptr<KsckMaster>* master) {
+Status RemoteKsckMaster::Build(const vector<string>& master_addresses,
+                               shared_ptr<KsckMaster>* master) {
   shared_ptr<Messenger> messenger;
   MessengerBuilder builder(kMessengerName);
   RETURN_NOT_OK(builder.Build(&messenger));
-  master->reset(new RemoteKsckMaster(address, messenger));
+  master->reset(new RemoteKsckMaster(master_addresses, messenger));
   return Status::OK();
 }
 
 Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
-  master::ListTabletServersRequestPB req;
-  master::ListTabletServersResponsePB resp;
-  RpcController rpc;
+  vector<KuduTabletServer*> servers;
+  ElementDeleter deleter(&servers);
+  RETURN_NOT_OK(client_->ListTabletServers(&servers));
 
-  rpc.set_timeout(GetDefaultTimeout());
-  RETURN_NOT_OK(proxy_->ListTabletServers(req, &resp, &rpc));
   tablet_servers->clear();
-  for (const master::ListTabletServersResponsePB_Entry& e : resp.servers()) {
-    HostPortPB addr = e.registration().rpc_addresses(0);
+  for (const auto* s : servers) {
     shared_ptr<RemoteKsckTabletServer> ts(
-        new RemoteKsckTabletServer(e.instance_id().permanent_uuid(),
-                                   HostPort(addr.host(), addr.port()),
+        new RemoteKsckTabletServer(s->uuid(),
+                                   HostPort(s->hostname(), s->port()),
                                    messenger_));
     RETURN_NOT_OK(ts->Init());
     InsertOrDie(tablet_servers, ts->uuid(), ts);
@@ -288,21 +293,17 @@ Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
 }
 
 Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable>>* tables) {
-  master::ListTablesRequestPB req;
-  master::ListTablesResponsePB resp;
-  RpcController rpc;
+  vector<string> table_names;
+  RETURN_NOT_OK(client_->ListTables(&table_names));
 
-  rpc.set_timeout(GetDefaultTimeout());
-  RETURN_NOT_OK(proxy_->ListTables(req, &resp, &rpc));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
   vector<shared_ptr<KsckTable>> tables_temp;
-  for (const master::ListTablesResponsePB_TableInfo& info : resp.tables()) {
-    Schema schema;
-    int num_replicas;
-    RETURN_NOT_OK(GetTableInfo(info.name(), &schema, &num_replicas));
-    shared_ptr<KsckTable> table(new KsckTable(info.name(), schema, num_replicas));
+  for (const auto& n : table_names) {
+    client::sp::shared_ptr<KuduTable> t;
+    RETURN_NOT_OK(client_->OpenTable(n, &t));
+
+    shared_ptr<KsckTable> table(new KsckTable(n,
+                                              *t->schema().schema_,
+                                              t->num_replicas()));
     tables_temp.push_back(table);
   }
   tables->assign(tables_temp.begin(), tables_temp.end());
@@ -311,71 +312,28 @@ Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable>>* table
 
 Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {
   vector<shared_ptr<KsckTablet>> tablets;
-  bool more_tablets = true;
-  string next_key;
-  int retries = 0;
-  while (more_tablets) {
-    Status s = GetTabletsBatch(table, &next_key, tablets, &more_tablets);
-    if (s.IsServiceUnavailable() && retries++ < 25) {
-      SleepFor(MonoDelta::FromMilliseconds(100 * retries));
-    } else if (!s.ok()) {
-      return s;
-    }
-  }
 
-  table->set_tablets(tablets);
-  return Status::OK();
-}
+  client::sp::shared_ptr<KuduTable> client_table;
+  RETURN_NOT_OK(client_->OpenTable(table->name(), &client_table));
 
-Status RemoteKsckMaster::GetTabletsBatch(const shared_ptr<KsckTable>& table,
-                                         string* next_partition_key,
-                                         vector<shared_ptr<KsckTablet>>& tablets,
-                                         bool* more_tablets) {
-  master::GetTableLocationsRequestPB req;
-  master::GetTableLocationsResponsePB resp;
-  RpcController rpc;
+  vector<KuduScanToken*> tokens;
+  ElementDeleter deleter(&tokens);
 
-  req.mutable_table()->set_table_name(table->name());
-  req.set_max_returned_locations(FLAGS_tablets_batch_size_max);
-  req.set_partition_key_start(*next_partition_key);
-
-  rpc.set_timeout(GetDefaultTimeout());
-  RETURN_NOT_OK(proxy_->GetTableLocations(req, &resp, &rpc));
-  for (const master::TabletLocationsPB& locations : resp.tablet_locations()) {
-    if (locations.partition().partition_key_start() < *next_partition_key) {
-      // We've already seen this partition.
-      continue;
-    }
-
-    *next_partition_key = ImmediateSuccessor(locations.partition().partition_key_start());
-
-    shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), locations.tablet_id()));
+  KuduScanTokenBuilder builder(client_table.get());
+  RETURN_NOT_OK(builder.Build(&tokens));
+  for (const auto* t : tokens) {
+    shared_ptr<KsckTablet> tablet(
+        new KsckTablet(table.get(), t->tablet().id()));
     vector<shared_ptr<KsckTabletReplica>> replicas;
-    for (const master::TabletLocationsPB_ReplicaPB& replica : locations.replicas()) {
-      bool is_leader = replica.role() == consensus::RaftPeerPB::LEADER;
-      bool is_follower = replica.role() == consensus::RaftPeerPB::FOLLOWER;
+    for (const auto* r : t->tablet().replicas()) {
       replicas.push_back(shared_ptr<KsckTabletReplica>(
-          new KsckTabletReplica(replica.ts_info().permanent_uuid(), is_leader, is_follower)));
+          new KsckTabletReplica(r->ts().uuid(), r->is_leader())));
     }
     tablet->set_replicas(replicas);
     tablets.push_back(tablet);
   }
-  *more_tablets = resp.tablet_locations().size() == FLAGS_tablets_batch_size_max;
-  return Status::OK();
-}
 
-Status RemoteKsckMaster::GetTableInfo(const string& table_name, Schema* schema, int* num_replicas) {
-  master::GetTableSchemaRequestPB req;
-  master::GetTableSchemaResponsePB resp;
-  RpcController rpc;
-
-  req.mutable_table()->set_table_name(table_name);
-
-  rpc.set_timeout(GetDefaultTimeout());
-  RETURN_NOT_OK(proxy_->GetTableSchema(req, &resp, &rpc));
-
-  RETURN_NOT_OK(SchemaFromPB(resp.schema(), schema));
-  *num_replicas = resp.num_replicas();
+  table->set_tablets(tablets);
   return Status::OK();
 }
 

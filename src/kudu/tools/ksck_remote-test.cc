@@ -24,11 +24,11 @@
 #include "kudu/tools/data_gen_util.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/promise.h"
 #include "kudu/util/random.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(heartbeat_interval_ms);
-DECLARE_int32(tablets_batch_size_max);
 
 namespace kudu {
 namespace tools {
@@ -72,21 +72,20 @@ class RemoteKsckTest : public KuduTest {
     // Speed up testing, saves about 700ms per TEST_F.
     FLAGS_heartbeat_interval_ms = 10;
 
-    // Fetch the tablets in smaller batches to regression test a bug
-    // previously seen in the batching code.
-    FLAGS_tablets_batch_size_max = 5;
-
     MiniClusterOptions opts;
+
+    // Hard-coded ports for the masters. This is safe, as these tests run under
+    // a resource lock (see CMakeLists.txt in this directory).
+    // TODO we should have a generic method to obtain n free ports.
+    opts.master_rpc_ports = { 11010, 11011, 11012 };
+
+    opts.num_masters = opts.master_rpc_ports.size();
     opts.num_tablet_servers = 3;
     mini_cluster_.reset(new MiniCluster(env_.get(), opts));
     ASSERT_OK(mini_cluster_->Start());
 
-    master_rpc_addr_ = mini_cluster_->mini_master()->bound_rpc_addr();
-
     // Connect to the cluster.
-    ASSERT_OK(client::KuduClientBuilder()
-                     .add_master_server_addr(master_rpc_addr_.ToString())
-                     .Build(&client_));
+    ASSERT_OK(mini_cluster_->CreateClient(nullptr, &client_));
 
     // Create one table.
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
@@ -97,11 +96,18 @@ class RemoteKsckTest : public KuduTest {
                      .split_rows(GenerateSplitRows())
                      .Create());
     // Make sure we can open the table.
-    ASSERT_OK(client_->OpenTable(kTableName, &client_table_));
+    shared_ptr<KuduTable> client_table;
+    ASSERT_OK(client_->OpenTable(kTableName, &client_table));
 
-    ASSERT_OK(RemoteKsckMaster::Build(master_rpc_addr_, &master_));
-    cluster_.reset(new KsckCluster(master_));
-    ksck_.reset(new Ksck(cluster_));
+    vector<string> master_addresses;
+    for (int i = 0; i < mini_cluster_->num_masters(); i++) {
+        master_addresses.push_back(
+            mini_cluster_->mini_master(i)->bound_rpc_addr_str());
+    }
+    std::shared_ptr<KsckMaster> master;
+    ASSERT_OK(RemoteKsckMaster::Build(master_addresses, &master));
+    std::shared_ptr<KsckCluster> cluster(new KsckCluster(master));
+    ksck_.reset(new Ksck(cluster));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -180,6 +186,7 @@ class RemoteKsckTest : public KuduTest {
     return Status::OK();
   }
 
+  std::shared_ptr<MiniCluster> mini_cluster_;
   std::shared_ptr<Ksck> ksck_;
   shared_ptr<client::KuduClient> client_;
 
@@ -187,12 +194,7 @@ class RemoteKsckTest : public KuduTest {
   std::stringstream err_stream_;
 
  private:
-  Sockaddr master_rpc_addr_;
-  std::shared_ptr<MiniCluster> mini_cluster_;
   client::KuduSchema schema_;
-  shared_ptr<client::KuduTable> client_table_;
-  std::shared_ptr<KsckMaster> master_;
-  std::shared_ptr<KsckCluster> cluster_;
   Random random_;
 };
 
@@ -316,6 +318,21 @@ TEST_F(RemoteKsckTest, DISABLED_TestChecksumSnapshotCurrentTimestamp) {
   continue_writing.Store(false);
   ASSERT_OK(promise.Get());
   writer_thread->Join();
+}
+
+TEST_F(RemoteKsckTest, TestLeaderMasterDown) {
+  // Make sure ksck's client is created with the current leader master.
+  ASSERT_OK(ksck_->CheckMasterRunning());
+
+  // Shut down the leader master.
+  int leader_idx;
+  ASSERT_OK(mini_cluster_->GetLeaderMasterIndex(&leader_idx));
+  mini_cluster_->mini_master(leader_idx)->Shutdown();
+
+  // Try to ksck. The underlying client will need to find the new leader master
+  // in order for the test to pass.
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
 }
 
 } // namespace tools

@@ -32,6 +32,7 @@ class Schema;
 class TestWorkload;
 
 namespace tools {
+class RemoteKsckMaster;
 class TsAdminClient;
 }
 
@@ -488,6 +489,7 @@ class KUDU_EXPORT KuduSchema {
   friend class internal::LookupRpc;
   friend class internal::MetaCacheEntry;
   friend class internal::WriteRpc;
+  friend class kudu::tools::RemoteKsckMaster;
   friend class kudu::tools::TsAdminClient;
 
   friend KuduSchema KuduSchemaFromSchema(const Schema& schema);
