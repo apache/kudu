@@ -55,7 +55,7 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
 
   val rowCount = 10
   var sqlContext : SQLContext = _
-  var rows : IndexedSeq[(Int, Int, String)] = _
+  var rows : IndexedSeq[(Int, Int, String, Long)] = _
   var kuduOptions : Map[String, String] = _
 
   before {
@@ -206,36 +206,36 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
   }
 
   test("table scan with projection and predicate double") {
-    assertEquals(rows.count { case (key, i, s) => i != null && i > 5 },
+    assertEquals(rows.count { case (key, i, s, ts) => i != null && i > 5 },
                  sqlContext.sql(s"""SELECT key, c3_double FROM $tableName where c3_double > "5.0"""").count())
   }
 
   test("table scan with projection and predicate long") {
-    assertEquals(rows.count { case (key, i, s) => i != null && i > 5 },
+    assertEquals(rows.count { case (key, i, s, ts) => i != null && i > 5 },
                  sqlContext.sql(s"""SELECT key, c4_long FROM $tableName where c4_long > "5"""").count())
 
   }
   test("table scan with projection and predicate bool") {
-    assertEquals(rows.count { case (key, i, s) => i != null && i%2==0 },
+    assertEquals(rows.count { case (key, i, s, ts) => i != null && i%2==0 },
                  sqlContext.sql(s"""SELECT key, c5_bool FROM $tableName where c5_bool = true""").count())
 
   }
   test("table scan with projection and predicate short") {
-    assertEquals(rows.count { case (key, i, s) => i != null && i > 5},
+    assertEquals(rows.count { case (key, i, s, ts) => i != null && i > 5},
                  sqlContext.sql(s"""SELECT key, c6_short FROM $tableName where c6_short > 5""").count())
 
   }
   test("table scan with projection and predicate float") {
-    assertEquals(rows.count { case (key, i, s) => i != null && i > 5},
+    assertEquals(rows.count { case (key, i, s, ts) => i != null && i > 5},
                  sqlContext.sql(s"""SELECT key, c7_float FROM $tableName where c7_float > 5""").count())
 
   }
 
   test("table scan with projection and predicate ") {
-    assertEquals(rows.count { case (key, i, s) => s != null && s > "5" },
+    assertEquals(rows.count { case (key, i, s, ts) => s != null && s > "5" },
       sqlContext.sql(s"""SELECT key FROM $tableName where c2_s > "5"""").count())
 
-    assertEquals(rows.count { case (key, i, s) => s != null },
+    assertEquals(rows.count { case (key, i, s, ts) => s != null },
       sqlContext.sql(s"""SELECT key, c2_s FROM $tableName where c2_s IS NOT NULL""").count())
   }
 

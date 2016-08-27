@@ -49,7 +49,10 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
       new ColumnSchemaBuilder("c4_long", Type.INT64).build(),
       new ColumnSchemaBuilder("c5_bool", Type.BOOL).build(),
       new ColumnSchemaBuilder("c6_short", Type.INT16).build(),
-      new ColumnSchemaBuilder("c7_float", Type.FLOAT).build())
+      new ColumnSchemaBuilder("c7_float", Type.FLOAT).build(),
+      new ColumnSchemaBuilder("c8_binary", Type.BINARY).build(),
+      new ColumnSchemaBuilder("c9_timestamp", Type.TIMESTAMP).build(),
+      new ColumnSchemaBuilder("c10_byte", Type.INT8).build())
     new Schema(columns)
   }
 
@@ -93,7 +96,7 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
     kuduSession.apply(delete)
   }
 
-  def insertRows(rowCount: Integer): IndexedSeq[(Int, Int, String)] = {
+  def insertRows(rowCount: Integer): IndexedSeq[(Int, Int, String, Long)] = {
     val kuduSession = kuduClient.newSession()
 
     val rows = Range(0, rowCount).map { i =>
@@ -106,6 +109,10 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
       row.addBoolean(5, i%2==1)
       row.addShort(6, i.toShort)
       row.addFloat(7, i.toFloat)
+      row.addBinary(8, s"bytes ${i}".getBytes())
+      val ts = System.currentTimeMillis() * 1000
+      row.addLong(9, ts)
+      row.addByte(10, i.toByte)
 
       // Sprinkling some nulls so that queries see them.
       val s = if (i % 2 == 0) {
@@ -117,7 +124,7 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
       }
 
       kuduSession.apply(insert)
-      (i, i, s)
+      (i, i, s, ts)
     }
     rows
   }

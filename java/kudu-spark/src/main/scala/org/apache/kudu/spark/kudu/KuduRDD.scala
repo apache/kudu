@@ -123,7 +123,7 @@ private[spark] class KuduRow(private val rowResult: RowResult) extends Row {
       case Type.FLOAT => rowResult.getFloat(i)
       case Type.DOUBLE => rowResult.getDouble(i)
       case Type.STRING => rowResult.getString(i)
-      case Type.BINARY => rowResult.getBinary(i)
+      case Type.BINARY => rowResult.getBinaryCopy(i)
     }
   }
 
