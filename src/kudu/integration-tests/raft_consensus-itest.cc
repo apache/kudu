@@ -226,29 +226,9 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
         CHECK_OK(session->Apply(insert.release()));
       }
 
-      // We don't handle write idempotency yet. (i.e making sure that when a leader fails
-      // writes to it that were eventually committed by the new leader but un-ackd to the
-      // client are not retried), so some errors are expected.
-      // It's OK as long as the errors are Status::AlreadyPresent();
+      FlushSessionOrDie(session);
 
       int inserted = last_row_in_batch - first_row_in_batch;
-
-      Status s = session->Flush();
-      if (PREDICT_FALSE(!s.ok())) {
-        std::vector<client::KuduError*> errors;
-        ElementDeleter d(&errors);
-        bool overflow;
-        session->GetPendingErrors(&errors, &overflow);
-        CHECK(!overflow);
-        if (!errors.empty()) {
-          for (const client::KuduError* e : errors) {
-            LOG(ERROR) << "Unexpected error: " << e->status().ToString();
-          }
-          FAIL() << "Found errors while inserting.";
-        }
-        inserted -= errors.size();
-      }
-
       for (CountDownLatch* latch : latches) {
         latch->CountDown(inserted);
       }
