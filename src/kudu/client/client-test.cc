@@ -38,7 +38,6 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -2560,8 +2559,6 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
 // tablet dies.
 // This currently forces leader promotion through RPC and creates
 // a new client afterwards.
-// TODO Remove the leader promotion part when we have automated
-// leader election.
 TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   const string kReplicatedTable = "replicated_failover_on_writes";
   const int kNumRowsToWrite = 100;
@@ -2594,43 +2591,6 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   string killed_uuid = rts->permanent_uuid();
   // Kill the tserver that is serving the leader tablet.
   ASSERT_OK(KillTServer(killed_uuid));
-
-  // Since we waited before, hopefully all replicas will be up to date
-  // and we can just promote another replica.
-  std::shared_ptr<rpc::Messenger> client_messenger;
-  rpc::MessengerBuilder bld("client");
-  ASSERT_OK(bld.Build(&client_messenger));
-  gscoped_ptr<consensus::ConsensusServiceProxy> new_leader_proxy;
-
-  int new_leader_idx = -1;
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    MiniTabletServer* ts = cluster_->mini_tablet_server(i);
-    if (ts->is_started()) {
-      const string& uuid = ts->server()->instance_pb().permanent_uuid();
-      if (uuid != killed_uuid) {
-        new_leader_idx = i;
-        break;
-      }
-    }
-  }
-  ASSERT_NE(-1, new_leader_idx);
-
-  MiniTabletServer* new_leader = cluster_->mini_tablet_server(new_leader_idx);
-  ASSERT_TRUE(new_leader != nullptr);
-  new_leader_proxy.reset(
-      new consensus::ConsensusServiceProxy(client_messenger,
-                                           new_leader->bound_rpc_addr()));
-
-  consensus::RunLeaderElectionRequestPB req;
-  consensus::RunLeaderElectionResponsePB resp;
-  rpc::RpcController controller;
-
-  LOG(INFO) << "Promoting server at index " << new_leader_idx << " listening at "
-            << new_leader->bound_rpc_addr().ToString() << " ...";
-  req.set_dest_uuid(new_leader->server()->fs_manager()->uuid());
-  req.set_tablet_id(rt->tablet_id());
-  ASSERT_OK(new_leader_proxy->RunLeaderElection(req, &resp, &controller));
-  ASSERT_FALSE(resp.has_error()) << "Got error. Response: " << resp.ShortDebugString();
 
   LOG(INFO) << "Inserting additional rows...";
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_.get(),
