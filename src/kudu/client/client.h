@@ -429,6 +429,94 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   DISALLOW_COPY_AND_ASSIGN(KuduClient);
 };
 
+/// @brief In-memory representation of a remote tablet server.
+class KUDU_EXPORT KuduTabletServer {
+ public:
+  ~KuduTabletServer();
+
+  /// @return The UUID which is globally unique and guaranteed not to change
+  ///   for the lifetime of the tablet server.
+  const std::string& uuid() const;
+
+  /// @return Hostname of the first RPC address that this tablet server
+  ///   is listening on.
+  const std::string& hostname() const;
+
+  /// @return Port number of the first RPC address that this tablet server
+  ///   is listening on.
+  uint16_t port() const;
+
+ private:
+  class KUDU_NO_EXPORT Data;
+
+  friend class KuduClient;
+  friend class KuduScanner;
+  friend class KuduScanTokenBuilder;
+
+  KuduTabletServer();
+
+  // Owned.
+  Data* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduTabletServer);
+};
+
+/// @brief In-memory representation of a remote tablet's replica.
+class KUDU_EXPORT KuduReplica {
+ public:
+  ~KuduReplica();
+
+  /// @return Whether or not this replica is a Raft leader.
+  ///
+  /// @note This information may be stale; the role of a replica may change at
+  /// any time.
+  bool is_leader() const;
+
+  /// @return The tablet server hosting this remote replica.
+  const KuduTabletServer& ts() const;
+
+ private:
+  friend class KuduScanTokenBuilder;
+
+  class KUDU_NO_EXPORT Data;
+
+  KuduReplica();
+
+  // Owned.
+  Data* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduReplica);
+};
+
+/// @brief In-memory representation of a remote tablet.
+class KUDU_EXPORT KuduTablet {
+ public:
+  ~KuduTablet();
+
+  /// @return The ID which is globally unique and guaranteed not to change
+  ///    for the lifetime of the tablet.
+  const std::string& id() const;
+
+  /// @return The replicas of this tablet. The KuduTablet retains ownership
+  /// over the replicas.
+  ///
+  /// @note This information may be stale; replicas may be added or removed
+  /// from Raft configurations at any time.
+  const std::vector<const KuduReplica*>& replicas() const;
+
+ private:
+  friend class KuduScanTokenBuilder;
+
+  class KUDU_NO_EXPORT Data;
+
+  KuduTablet();
+
+  // Owned.
+  Data* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduTablet);
+};
+
 /// @brief A helper class to create a new table with the desired options.
 class KUDU_EXPORT KuduTableCreator {
  public:
@@ -1645,7 +1733,7 @@ class KUDU_EXPORT KuduScanner {
 /// instantiating the scanners on those nodes.
 ///
 /// Scan token locality information can be inspected using the
-/// KuduScanToken::TabletServers() method.
+/// KuduScanToken::tablet() function.
 class KUDU_EXPORT KuduScanToken {
  public:
 
@@ -1663,15 +1751,8 @@ class KUDU_EXPORT KuduScanToken {
   /// @return Operation result status.
   Status IntoKuduScanner(KuduScanner** scanner) const WARN_UNUSED_RESULT;
 
-  /// Get hint on candidate servers which may be hosting the source tablet.
-  ///
-  /// This method should be considered a hint, not a definitive answer,
-  /// since tablet to tablet server assignments may change in response to
-  /// external events such as failover or load balancing.
-  ///
-  /// @return Tablet servers who may be hosting the tablet which
-  ///   this scan is retrieving rows from.
-  const std::vector<KuduTabletServer*>& TabletServers() const;
+  /// @return Tablet that this scan will retrieve rows from.
+  const KuduTablet& tablet() const;
 
   /// Serialize the token into a string.
   ///
@@ -1702,7 +1783,7 @@ class KUDU_EXPORT KuduScanToken {
 
   friend class KuduScanTokenBuilder;
 
-  explicit KuduScanToken(Data* data);
+  KuduScanToken();
 
   // Owned.
   Data* data_;
@@ -1813,34 +1894,6 @@ class KUDU_EXPORT KuduScanTokenBuilder {
   Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduScanTokenBuilder);
-};
-
-/// @brief In-memory representation of a remote tablet server.
-class KUDU_EXPORT KuduTabletServer {
- public:
-  ~KuduTabletServer();
-
-  /// @return The UUID which is globally unique and guaranteed not to change
-  ///   for the lifetime of the tablet server.
-  const std::string& uuid() const;
-
-  /// @return Hostname of the first RPC address that this tablet server
-  ///   is listening on.
-  const std::string& hostname() const;
-
- private:
-  class KUDU_NO_EXPORT Data;
-
-  friend class KuduClient;
-  friend class KuduScanner;
-  friend class KuduScanTokenBuilder;
-
-  KuduTabletServer();
-
-  // Owned.
-  Data* data_;
-
-  DISALLOW_COPY_AND_ASSIGN(KuduTabletServer);
 };
 
 } // namespace client

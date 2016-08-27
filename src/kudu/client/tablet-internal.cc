@@ -15,23 +15,27 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/client/tablet_server-internal.h"
+#include "kudu/client/tablet-internal.h"
 
 #include <string>
+#include <utility>
+#include <vector>
 
-#include "kudu/util/net/net_util.h"
+#include "kudu/gutil/stl_util.h"
 
 using std::string;
+using std::vector;
 
 namespace kudu {
 namespace client {
 
-KuduTabletServer::Data::Data(string uuid, HostPort hp)
-    : uuid_(std::move(uuid)),
-      hp_(std::move(hp)) {
+KuduTablet::Data::Data(string id, vector<const KuduReplica*> replicas)
+    : id_(std::move(id)),
+      replicas_(std::move(replicas)) {
 }
 
-KuduTabletServer::Data::~Data() {
+KuduTablet::Data::~Data() {
+  STLDeleteElements(&replicas_);
 }
 
 } // namespace client

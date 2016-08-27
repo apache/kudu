@@ -34,6 +34,7 @@
 #include "kudu/client/error-internal.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
+#include "kudu/client/replica-internal.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_predicate-internal.h"
 #include "kudu/client/scan_token-internal.h"
@@ -43,6 +44,7 @@
 #include "kudu/client/table-internal.h"
 #include "kudu/client/table_alterer-internal.h"
 #include "kudu/client/table_creator-internal.h"
+#include "kudu/client/tablet-internal.h"
 #include "kudu/client/tablet_server-internal.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
@@ -313,10 +315,12 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
   }
   for (int i = 0; i < resp.servers_size(); i++) {
     const ListTabletServersResponsePB_Entry& e = resp.servers(i);
-    auto ts = new KuduTabletServer();
+    HostPort hp;
+    RETURN_NOT_OK(HostPortFromPB(e.registration().rpc_addresses(0), &hp));
+    unique_ptr<KuduTabletServer> ts(new KuduTabletServer);
     ts->data_ = new KuduTabletServer::Data(e.instance_id().permanent_uuid(),
-                                           e.registration().rpc_addresses(0).host());
-    tablet_servers->push_back(ts);
+                                           hp);
+    tablet_servers->push_back(ts.release());
   }
   return Status::OK();
 }
@@ -1305,9 +1309,10 @@ Status KuduScanner::GetCurrentServer(KuduTabletServer** server) {
     return Status::IllegalState(strings::Substitute("No HostPort found for RemoteTabletServer $0",
                                                     rts->ToString()));
   }
-  *server = new KuduTabletServer();
-  (*server)->data_ = new KuduTabletServer::Data(rts->permanent_uuid(),
-                                                host_ports[0].host());
+  unique_ptr<KuduTabletServer> client_server(new KuduTabletServer);
+  client_server->data_ = new KuduTabletServer::Data(rts->permanent_uuid(),
+                                                    host_ports[0]);
+  *server = client_server.release();
   return Status::OK();
 }
 
@@ -1315,8 +1320,8 @@ Status KuduScanner::GetCurrentServer(KuduTabletServer** server) {
 // KuduScanToken
 ////////////////////////////////////////////////////////////
 
-KuduScanToken::KuduScanToken(KuduScanToken::Data* data)
-    : data_(data) {
+KuduScanToken::KuduScanToken()
+    : data_(nullptr) {
 }
 
 KuduScanToken::~KuduScanToken() {
@@ -1327,8 +1332,8 @@ Status KuduScanToken::IntoKuduScanner(KuduScanner** scanner) const {
   return data_->IntoKuduScanner(scanner);
 }
 
-const vector<KuduTabletServer*>& KuduScanToken::TabletServers() const {
-  return data_->TabletServers();
+const KuduTablet& KuduScanToken::tablet() const {
+  return data_->tablet();
 }
 
 Status KuduScanToken::Serialize(string* buf) const {
@@ -1336,9 +1341,10 @@ Status KuduScanToken::Serialize(string* buf) const {
 }
 
 Status KuduScanToken::DeserializeIntoScanner(KuduClient* client,
-                                         const string& serialized_token,
-                                         KuduScanner** scanner) {
-  return KuduScanToken::Data::DeserializeIntoScanner(client, serialized_token, scanner);
+                                             const string& serialized_token,
+                                             KuduScanner** scanner) {
+  return KuduScanToken::Data::DeserializeIntoScanner(
+      client, serialized_token, scanner);
 }
 
 ////////////////////////////////////////////////////////////
@@ -1416,6 +1422,46 @@ Status KuduScanTokenBuilder::Build(vector<KuduScanToken*>* tokens) {
 }
 
 ////////////////////////////////////////////////////////////
+// KuduReplica
+////////////////////////////////////////////////////////////
+
+KuduReplica::KuduReplica()
+  : data_(nullptr) {
+}
+
+KuduReplica::~KuduReplica() {
+  delete data_;
+}
+
+bool KuduReplica::is_leader() const {
+  return data_->is_leader_;
+}
+
+const KuduTabletServer& KuduReplica::ts() const {
+  return *data_->ts_;
+}
+
+////////////////////////////////////////////////////////////
+// KuduTablet
+////////////////////////////////////////////////////////////
+
+KuduTablet::KuduTablet()
+  : data_(nullptr) {
+}
+
+KuduTablet::~KuduTablet() {
+  delete data_;
+}
+
+const string& KuduTablet::id() const {
+  return data_->id_;
+}
+
+const vector<const KuduReplica*>& KuduTablet::replicas() const {
+  return data_->replicas_;
+}
+
+////////////////////////////////////////////////////////////
 // KuduTabletServer
 ////////////////////////////////////////////////////////////
 
@@ -1432,7 +1478,11 @@ const string& KuduTabletServer::uuid() const {
 }
 
 const string& KuduTabletServer::hostname() const {
-  return data_->hostname_;
+  return data_->hp_.host();
+}
+
+uint16_t KuduTabletServer::port() const {
+  return data_->hp_.port();
 }
 
 } // namespace client

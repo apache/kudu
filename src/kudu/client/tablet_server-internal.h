@@ -21,17 +21,18 @@
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/net/net_util.h"
 
 namespace kudu {
 namespace client {
 
 class KuduTabletServer::Data {
  public:
-  Data(std::string uuid, std::string hostname);
+  Data(std::string uuid, HostPort hp);
   ~Data();
 
   const std::string uuid_;
-  const std::string hostname_;
+  const HostPort hp_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

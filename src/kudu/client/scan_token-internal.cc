@@ -25,30 +25,33 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
 #include "kudu/client/meta_cache.h"
+#include "kudu/client/replica-internal.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/client/tablet-internal.h"
 #include "kudu/client/tablet_server-internal.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace client {
 
 KuduScanToken::Data::Data(KuduTable* table,
                           ScanTokenPB message,
-                          vector<KuduTabletServer*> tablet_servers)
+                          unique_ptr<KuduTablet> tablet)
     : table_(table),
       message_(std::move(message)),
-      tablet_servers_(std::move(tablet_servers)) {
+      tablet_(std::move(tablet)) {
 }
 
 KuduScanToken::Data::~Data() {
-  ElementDeleter deleter(&tablet_servers_);
 }
 
 Status KuduScanToken::Data::IntoKuduScanner(KuduScanner** scanner) const {
@@ -96,7 +99,7 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     }
     DataType expectedType = schema->column(columnIdx).type_info()->type();
     if (column.type() != expectedType) {
-      return Status::InvalidArgument(strings::Substitute(
+      return Status::InvalidArgument(Substitute(
             "invalid type $0 for column '$1' in scan token, expected: $2",
             column.type(), column.name(), expectedType));
     }
@@ -245,31 +248,49 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
       continue;
     }
 
-    vector<internal::RemoteTabletServer*> remote_tablet_servers;
-    tablet->GetRemoteTabletServers(&remote_tablet_servers);
+    vector<internal::RemoteReplica> replicas;
+    tablet->GetRemoteReplicas(&replicas);
 
-    vector<KuduTabletServer*> tablet_servers;
-    ElementDeleter deleter(&tablet_servers);
+    vector<const KuduReplica*> client_replicas;
+    ElementDeleter deleter(&client_replicas);
 
-    for (internal::RemoteTabletServer* remote_tablet_server : remote_tablet_servers) {
+    // Convert the replicas from their internal format to something appropriate
+    // for clients.
+    for (const auto& r : replicas) {
       vector<HostPort> host_ports;
-      remote_tablet_server->GetHostPorts(&host_ports);
+      r.ts->GetHostPorts(&host_ports);
       if (host_ports.empty()) {
-        return Status::IllegalState(strings::Substitute("No host found for tablet server $0",
-                                                        remote_tablet_server->ToString()));
+        return Status::IllegalState(Substitute(
+            "No host found for tablet server $0", r.ts->ToString()));
       }
-      KuduTabletServer* tablet_server = new KuduTabletServer;
-      tablet_server->data_ = new KuduTabletServer::Data(remote_tablet_server->permanent_uuid(),
-                                                        host_ports[0].host());
-      tablet_servers.push_back(tablet_server);
+      unique_ptr<KuduTabletServer> client_ts(new KuduTabletServer);
+      client_ts->data_ = new KuduTabletServer::Data(r.ts->permanent_uuid(),
+                                                    host_ports[0]);
+      bool is_leader = r.role == consensus::RaftPeerPB::LEADER;
+      unique_ptr<KuduReplica> client_replica(new KuduReplica);
+      client_replica->data_ = new KuduReplica::Data(is_leader,
+                                                    std::move(client_ts));
+      client_replicas.push_back(client_replica.release());
     }
+
+    unique_ptr<KuduTablet> client_tablet(new KuduTablet);
+    client_tablet->data_ = new KuduTablet::Data(tablet->tablet_id(),
+                                                std::move(client_replicas));
+    client_replicas.clear();
+
+    // Create the scan token itself.
     ScanTokenPB message;
     message.CopyFrom(pb);
-    message.set_lower_bound_partition_key(tablet->partition().partition_key_start());
-    message.set_upper_bound_partition_key(tablet->partition().partition_key_end());
-    tokens->push_back(new KuduScanToken(new KuduScanToken::Data(table,
-                                                                std::move(message),
-                                                                std::move(tablet_servers))));
+    message.set_lower_bound_partition_key(
+        tablet->partition().partition_key_start());
+    message.set_upper_bound_partition_key(
+        tablet->partition().partition_key_end());
+    unique_ptr<KuduScanToken> client_scan_token(new KuduScanToken);
+    client_scan_token->data_ =
+        new KuduScanToken::Data(table,
+                                std::move(message),
+                                std::move(client_tablet));
+    tokens->push_back(client_scan_token.release());
     pruner.RemovePartitionKeyRange(tablet->partition().partition_key_end());
   }
   return Status::OK();

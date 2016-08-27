@@ -92,7 +92,7 @@ class RemoteTabletServer {
   void GetHostPorts(std::vector<HostPort>* host_ports) const;
 
   // Returns the remote server's uuid.
-  std::string permanent_uuid() const;
+  const std::string& permanent_uuid() const;
 
  private:
   // Internal callback for DNS resolution.
@@ -213,6 +213,9 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   // Writes this tablet's TSes (across all replicas) to 'servers'. Skips
   // failed replicas.
   void GetRemoteTabletServers(std::vector<RemoteTabletServer*>* servers) const;
+
+  // Writes this tablet's replicas to 'replicas'. Skips failed replicas.
+  void GetRemoteReplicas(std::vector<RemoteReplica>* replicas) const;
 
   // Return true if the tablet currently has a known LEADER replica
   // (i.e the next call to LeaderTServer() is likely to return non-NULL)

@@ -14,25 +14,29 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#include "kudu/client/tablet_server-internal.h"
+#pragma once
 
 #include <string>
+#include <vector>
 
-#include "kudu/util/net/net_util.h"
-
-using std::string;
+#include "kudu/client/client.h"
+#include "kudu/gutil/macros.h"
 
 namespace kudu {
 namespace client {
 
-KuduTabletServer::Data::Data(string uuid, HostPort hp)
-    : uuid_(std::move(uuid)),
-      hp_(std::move(hp)) {
-}
+class KuduReplica;
 
-KuduTabletServer::Data::~Data() {
-}
+class KuduTablet::Data {
+ public:
+  Data(std::string id, std::vector<const KuduReplica*> replicas);
+  ~Data();
+
+  const std::string id_;
+  std::vector<const KuduReplica*> replicas_;
+
+  DISALLOW_COPY_AND_ASSIGN(Data);
+};
 
 } // namespace client
 } // namespace kudu

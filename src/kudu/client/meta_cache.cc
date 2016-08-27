@@ -135,7 +135,7 @@ void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
   }
 }
 
-string RemoteTabletServer::permanent_uuid() const {
+const string& RemoteTabletServer::permanent_uuid() const {
   return uuid_;
 }
 
@@ -231,12 +231,24 @@ bool RemoteTablet::HasLeader() const {
 }
 
 void RemoteTablet::GetRemoteTabletServers(vector<RemoteTabletServer*>* servers) const {
+  servers->clear();
   std::lock_guard<simple_spinlock> l(lock_);
   for (const RemoteReplica& replica : replicas_) {
     if (replica.failed) {
       continue;
     }
     servers->push_back(replica.ts);
+  }
+}
+
+void RemoteTablet::GetRemoteReplicas(vector<RemoteReplica>* replicas) const {
+  replicas->clear();
+  std::lock_guard<simple_spinlock> l(lock_);
+  for (const auto& r : replicas_) {
+    if (r.failed) {
+      continue;
+    }
+    replicas->push_back(r);
   }
 }
 

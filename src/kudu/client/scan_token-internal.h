@@ -17,8 +17,9 @@
 
 #pragma once
 
-#include <vector>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client.pb.h"
@@ -31,13 +32,13 @@ class KuduScanToken::Data {
  public:
   explicit Data(KuduTable* table,
                 ScanTokenPB message,
-                std::vector<KuduTabletServer*> tablet_servers);
+                std::unique_ptr<KuduTablet> tablet);
   ~Data();
 
   Status IntoKuduScanner(KuduScanner** scanner) const;
 
-  const std::vector<KuduTabletServer*>& TabletServers() const {
-    return tablet_servers_;
+  const KuduTablet& tablet() const {
+    return *tablet_;
   }
 
   Status Serialize(std::string* buf) const;
@@ -47,14 +48,13 @@ class KuduScanToken::Data {
                                        KuduScanner** scanner);
 
  private:
-
   static Status PBIntoScanner(KuduClient* client,
                               const ScanTokenPB& message,
                               KuduScanner** scanner);
 
-  KuduTable* table_;
-  ScanTokenPB message_;
-  std::vector<KuduTabletServer*> tablet_servers_;
+  const KuduTable* table_;
+  const ScanTokenPB message_;
+  const std::unique_ptr<KuduTablet> tablet_;
 };
 
 class KuduScanTokenBuilder::Data {

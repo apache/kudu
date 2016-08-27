@@ -15,23 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/client/tablet_server-internal.h"
+#include "kudu/client/replica-internal.h"
 
-#include <string>
+#include <memory>
 
-#include "kudu/util/net/net_util.h"
-
-using std::string;
+#include "kudu/client/client.h"
 
 namespace kudu {
 namespace client {
 
-KuduTabletServer::Data::Data(string uuid, HostPort hp)
-    : uuid_(std::move(uuid)),
-      hp_(std::move(hp)) {
+using std::unique_ptr;
+
+KuduReplica::Data::Data(bool is_leader, unique_ptr<KuduTabletServer> ts)
+    : is_leader_(is_leader),
+      ts_(std::move(ts)) {
 }
 
-KuduTabletServer::Data::~Data() {
+KuduReplica::Data::~Data() {
 }
 
 } // namespace client

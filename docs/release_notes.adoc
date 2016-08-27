@@ -49,6 +49,9 @@ detailed below.
 - KuduSession methods in the C++ library are no longer advertised as thread-safe
   to have one set of semantics for both C++ and Java Kudu client libraries.
 
+- The KuduScanToken::TabletServers method in the C++ library has been removed.
+  The same information can now be found in the KuduScanToken::tablet method.
+
 [[rn_0.10.0]]
 == Release notes specific to 0.10.0
 

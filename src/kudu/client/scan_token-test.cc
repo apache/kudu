@@ -19,23 +19,27 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/tserver/tablet_server.h"
 #include "kudu/util/test_util.h"
-
-using std::atomic;
-using std::string;
-using std::thread;
-using std::unique_ptr;
-using std::vector;
 
 namespace kudu {
 namespace client {
 
 using sp::shared_ptr;
+using std::atomic;
+using std::string;
+using std::thread;
+using std::unique_ptr;
+using std::unordered_set;
+using std::vector;
+using tserver::MiniTabletServer;
 
 class ScanTokenTest : public KuduTest {
 
@@ -101,6 +105,31 @@ class ScanTokenTest : public KuduTest {
     return rows;
   }
 
+  void VerifyTabletInfo(const vector<KuduScanToken*>& tokens) {
+    unordered_set<string> tablet_ids;
+    for (auto t : tokens) {
+      tablet_ids.insert(t->tablet().id());
+
+      // Check that there's only one replica; this is a non-replicated table.
+      ASSERT_EQ(1, t->tablet().replicas().size());
+
+      // Check that this replica is a leader; since there's only one tserver,
+      // it must be.
+      const KuduReplica* r = t->tablet().replicas()[0];
+      ASSERT_TRUE(r->is_leader());
+
+      // Check that the tserver associated with the replica is the sole tserver
+      // started for this cluster.
+      const MiniTabletServer* ts = cluster_->mini_tablet_server(0);
+      ASSERT_EQ(ts->server()->instance_pb().permanent_uuid(),
+                r->ts().uuid());
+      ASSERT_EQ(ts->bound_rpc_addr().host(), r->ts().hostname());
+      ASSERT_EQ(ts->bound_rpc_addr().port(), r->ts().port());
+    }
+    // Check that there are no duplicate tablet IDs.
+    ASSERT_EQ(tokens.size(), tablet_ids.size());
+  }
+
   shared_ptr<KuduClient> client_;
   gscoped_ptr<MiniCluster> cluster_;
 };
@@ -149,6 +178,7 @@ TEST_F(ScanTokenTest, TestScanTokens) {
 
     ASSERT_EQ(8, tokens.size());
     ASSERT_EQ(200, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
   }
 
   { // range predicate
@@ -163,6 +193,7 @@ TEST_F(ScanTokenTest, TestScanTokens) {
 
     ASSERT_EQ(4, tokens.size());
     ASSERT_EQ(100, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
   }
 
   { // equality predicate
@@ -177,6 +208,7 @@ TEST_F(ScanTokenTest, TestScanTokens) {
 
     ASSERT_EQ(1, tokens.size());
     ASSERT_EQ(1, CountRows(std::move(tokens)));
+    NO_FATALS(VerifyTabletInfo(tokens));
   }
 
   { // primary key bound
@@ -191,6 +223,7 @@ TEST_F(ScanTokenTest, TestScanTokens) {
 
     ASSERT_EQ(4, tokens.size());
     ASSERT_EQ(60, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
   }
 }
 
@@ -257,6 +290,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
 
     ASSERT_EQ(6, tokens.size());
     ASSERT_EQ(300, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
   }
 
   { // range predicate
@@ -271,6 +305,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
 
     ASSERT_EQ(4, tokens.size());
     ASSERT_EQ(200, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
   }
 
   { // equality predicate
@@ -284,7 +319,8 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
     ASSERT_OK(builder.Build(&tokens));
 
     ASSERT_EQ(1, tokens.size());
-    ASSERT_EQ(1, CountRows(std::move(tokens)));
+    ASSERT_EQ(1, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
   }
 
   { // primary key bound
@@ -299,6 +335,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
 
     ASSERT_EQ(2, tokens.size());
     ASSERT_EQ(40, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
   }
 }
 
