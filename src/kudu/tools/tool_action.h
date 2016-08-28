@@ -62,21 +62,18 @@ class Mode;
 // - "<program> fs format" will format a filesystem.
 // - "<program> fs print_uuid" will print a filesystem's UUID.
 
-// Properties common to all nodes.
-struct Label {
-  // The node's name (e.g. "fs"). Uniquely identifies the node action amongst
-  // its siblings in the tree.
-  std::string name;
-
-  // The node's description (e.g. "Operate on a local Kudu filesystem").
-  std::string description;
-};
-
 // Builds a new mode (non-leaf) node.
 class ModeBuilder {
  public:
-  // Creates a new ModeBuilder with a specific label.
-  explicit ModeBuilder(const Label& label);
+  // Creates a new ModeBuilder with a specific name (e.g. "fs"). The name
+  // uniquely identifies the mode amongst its siblings in the tree.
+  explicit ModeBuilder(const std::string& name);
+
+  // Sets the description of this mode (e.g. "Operate on a local Kudu
+  // filesystem"), to be used when printing help.
+  //
+  // Required.
+  ModeBuilder& Description(const std::string& desc);
 
   // Adds a new mode (non-leaf child node) to this builder.
   ModeBuilder& AddMode(std::unique_ptr<Mode> mode);
@@ -90,7 +87,9 @@ class ModeBuilder {
   std::unique_ptr<Mode> Build();
 
  private:
-  const Label label_;
+  const std::string name_;
+
+  std::string description_;
 
   std::vector<std::unique_ptr<Mode>> submodes_;
 
@@ -105,9 +104,9 @@ class Mode {
   // Returns the help for this mode given its parent mode chain.
   std::string BuildHelp(const std::vector<Mode*>& chain) const;
 
-  const std::string& name() const { return label_.name; }
+  const std::string& name() const { return name_; }
 
-  const std::string& description() const { return label_.description; }
+  const std::string& description() const { return description_; }
 
   const std::vector<std::unique_ptr<Mode>>& modes() const { return submodes_; }
 
@@ -118,7 +117,9 @@ class Mode {
 
   Mode();
 
-  Label label_;
+  std::string name_;
+
+  std::string description_;
 
   std::vector<std::unique_ptr<Mode>> submodes_;
 
@@ -174,8 +175,20 @@ struct ActionArgsDescriptor {
 // Builds a new action (leaf) node.
 class ActionBuilder {
  public:
-  // Creates a new ActionBuilder with a specific label and action runner.
-  ActionBuilder(const Label& label, const ActionRunner& runner);
+  // Creates a new ActionBuilder with a specific name (e.g. "format") and
+  // action runner. The name uniquely identifies the action amongst its
+  // siblings in the tree.
+  ActionBuilder(const std::string& name, const ActionRunner& runner);
+
+  // Sets the description of this action (e.g. "Format a new Kudu filesystem"),
+  // to be used when printing the parent mode's help and the action's help.
+  //
+  // Required.
+  ActionBuilder& Description(const std::string& description);
+
+  // Sets the long description of this action. If provided, will added to this
+  // action's help following Description().
+  ActionBuilder& ExtraDescription(const std::string& extra_description);
 
   // Add a new required parameter to this builder.
   //
@@ -208,7 +221,11 @@ class ActionBuilder {
   std::unique_ptr<Action> Build();
 
  private:
-  Label label_;
+  const std::string name_;
+
+  std::string description_;
+
+  boost::optional<std::string> extra_description_;
 
   ActionRunner runner_;
 
@@ -228,9 +245,13 @@ class Action {
              const std::unordered_map<std::string, std::string>& required_args,
              const std::vector<std::string>& variadic_args) const;
 
-  const std::string& name() const { return label_.name; }
+  const std::string& name() const { return name_; }
 
-  const std::string& description() const { return label_.description; }
+  const std::string& description() const { return description_; }
+
+  const boost::optional<std::string>& extra_description() const {
+    return extra_description_;
+  }
 
   const ActionArgsDescriptor& args() const { return args_; }
 
@@ -239,7 +260,11 @@ class Action {
 
   Action();
 
-  Label label_;
+  std::string name_;
+
+  std::string description_;
+
+  boost::optional<std::string> extra_description_;
 
   ActionRunner runner_;
 

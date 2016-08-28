@@ -62,20 +62,23 @@ Status PrintUuid(const RunnerContext& context) {
 } // anonymous namespace
 
 unique_ptr<Mode> BuildFsMode() {
-  unique_ptr<Action> format = ActionBuilder(
-      { "format", "Format a new Kudu filesystem" }, &Format)
-    .AddOptionalParameter("fs_wal_dir")
-    .AddOptionalParameter("fs_data_dirs")
-    .AddOptionalParameter("uuid")
-    .Build();
+  unique_ptr<Action> format =
+      ActionBuilder("format", &Format)
+      .Description("Format a new Kudu filesystem")
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("uuid")
+      .Build();
 
-  unique_ptr<Action> print_uuid = ActionBuilder(
-      { "print_uuid", "Print the UUID of a Kudu filesystem" }, &PrintUuid)
-    .AddOptionalParameter("fs_wal_dir")
-    .AddOptionalParameter("fs_data_dirs")
-    .Build();
+  unique_ptr<Action> print_uuid =
+      ActionBuilder("print_uuid", &PrintUuid)
+      .Description("Print the UUID of a Kudu filesystem")
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .Build();
 
-  return ModeBuilder({ "fs", "Operate on a local Kudu filesystem" })
+  return ModeBuilder("fs")
+      .Description("Operate on a local Kudu filesystem")
       .AddAction(std::move(format))
       .AddAction(std::move(print_uuid))
       .Build();

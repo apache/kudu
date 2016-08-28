@@ -112,8 +112,14 @@ string SpacePad(StringPiece s, int len) {
 
 } // anonymous namespace
 
-ModeBuilder::ModeBuilder(const Label& label)
-    : label_(label) {
+ModeBuilder::ModeBuilder(const string& name)
+    : name_(name) {
+}
+
+ModeBuilder& ModeBuilder::Description(const string& description) {
+  CHECK(description_.empty());
+  description_ = description;
+  return *this;
 }
 
 ModeBuilder& ModeBuilder::AddMode(unique_ptr<Mode> mode) {
@@ -127,8 +133,10 @@ ModeBuilder& ModeBuilder::AddAction(unique_ptr<Action> action) {
 }
 
 unique_ptr<Mode> ModeBuilder::Build() {
+  CHECK(!description_.empty());
   unique_ptr<Mode> mode(new Mode());
-  mode->label_ = label_;
+  mode->name_ = name_;
+  mode->description_ = description_;
   mode->submodes_ = std::move(submodes_);
   mode->actions_ = std::move(actions_);
   return mode;
@@ -164,9 +172,21 @@ string Mode::BuildHelp(const vector<Mode*>& chain) const {
 Mode::Mode() {
 }
 
-ActionBuilder::ActionBuilder(const Label& label, const ActionRunner& runner)
-    : label_(label),
+ActionBuilder::ActionBuilder(const string& name, const ActionRunner& runner)
+    : name_(name),
       runner_(runner) {
+}
+
+ActionBuilder& ActionBuilder::Description(const string& description) {
+  CHECK(description_.empty());
+  description_ = description;
+  return *this;
+}
+
+ActionBuilder& ActionBuilder::ExtraDescription(const string& extra_description) {
+  CHECK(!extra_description_.is_initialized());
+  extra_description_ = extra_description;
+  return *this;
 }
 
 ActionBuilder& ActionBuilder::AddRequiredParameter(
@@ -193,8 +213,11 @@ ActionBuilder& ActionBuilder::AddOptionalParameter(const string& param) {
 }
 
 unique_ptr<Action> ActionBuilder::Build() {
+  CHECK(!description_.empty());
   unique_ptr<Action> action(new Action());
-  action->label_ = label_;
+  action->name_ = name_;
+  action->description_ = description_;
+  action->extra_description_ = extra_description_;
   action->runner_ = runner_;
   action->args_ = args_;
   return action;
@@ -247,7 +270,11 @@ string Action::BuildHelp(const vector<Mode*>& chain) const {
   string msg;
   AppendHardWrapped(usage_msg, 8, &msg);
   msg += "\n\n";
-  AppendHardWrapped(label_.description, 0, &msg);
+  AppendHardWrapped(description_, 0, &msg);
+  if (extra_description_) {
+    msg += "\n\n";
+    AppendHardWrapped(extra_description_.get(), 0, &msg);
+  }
   msg += "\n\n";
   msg += desc_msg;
   return msg;

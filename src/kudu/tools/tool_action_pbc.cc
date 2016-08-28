@@ -59,13 +59,15 @@ Status DumpPBContainerFile(const RunnerContext& context) {
 } // anonymous namespace
 
 unique_ptr<Mode> BuildPbcMode() {
-  unique_ptr<Action> dump = ActionBuilder(
-      { "dump", "Dump a PBC (protobuf container) file" }, &DumpPBContainerFile)
+  unique_ptr<Action> dump =
+      ActionBuilder("dump", &DumpPBContainerFile)
+      .Description("Dump a PBC (protobuf container) file")
       .AddOptionalParameter("oneline")
       .AddRequiredParameter({kPathArg, "path to PBC file"})
       .Build();
 
-  return ModeBuilder({ "pbc", "Operate on PBC (protobuf container) files" })
+  return ModeBuilder("pbc")
+      .Description("Operate on PBC (protobuf container) files")
       .AddAction(std::move(dump))
       .Build();
 }

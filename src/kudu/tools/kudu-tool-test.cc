@@ -21,9 +21,11 @@
 #include <gtest/gtest.h>
 #include <glog/stl_logging.h>
 
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
+#include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
@@ -34,6 +36,7 @@ namespace tools {
 
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 class ToolTest : public KuduTest {
  public:
@@ -63,6 +66,20 @@ class ToolTest : public KuduTest {
     *stderr_lines = strings::Split(stderr, "\n", strings::SkipEmpty());
     return s;
 
+  }
+
+  void RunTestActionNoOut(const string& arg_str) const {
+    vector<string> stdout;
+    RunTestAction(arg_str, &stdout);
+    ASSERT_TRUE(stdout.empty());
+  }
+
+  void RunTestAction(const string& arg_str, vector<string>* stdout) const {
+    vector<string> stderr;
+    Status s = RunTool(arg_str, stdout, &stderr);
+    SCOPED_TRACE(*stdout);
+    SCOPED_TRACE(stderr);
+    ASSERT_OK(s);
   }
 
   void RunTestHelp(const string& arg_str,
@@ -103,6 +120,7 @@ class ToolTest : public KuduTest {
 
 TEST_F(ToolTest, TestTopLevelHelp) {
   const vector<string> kTopLevelRegexes = {
+      "cluster.*Kudu cluster",
       "fs.*Kudu filesystem",
       "pbc.*protobuf container",
       "tablet.*Kudu replica"
@@ -143,6 +161,12 @@ TEST_F(ToolTest, TestModeHelp) {
     };
     NO_FATALS(RunTestHelp("cluster", kClusterModeRegexes));
   }
+  {
+    const vector<string> kPbcModeRegexes = {
+        "dump.*Dump a PBC",
+    };
+    NO_FATALS(RunTestHelp("pbc", kPbcModeRegexes));
+  }
 }
 
 TEST_F(ToolTest, TestActionHelp) {
@@ -154,6 +178,84 @@ TEST_F(ToolTest, TestActionHelp) {
   NO_FATALS(RunTestHelp("fs format --help", kFormatActionRegexes));
   NO_FATALS(RunTestHelp("fs format extra_arg", kFormatActionRegexes,
       Status::InvalidArgument("too many arguments: 'extra_arg'")));
+}
+
+TEST_F(ToolTest, TestFsFormat) {
+  const string kTestDir = GetTestPath("test");
+  NO_FATALS(RunTestActionNoOut(Substitute("fs format --fs_wal_dir=$0", kTestDir)));
+  FsManager fs(env_.get(), kTestDir);
+  ASSERT_OK(fs.Open());
+
+  ObjectIdGenerator generator;
+  string canonicalized_uuid;
+  ASSERT_OK(generator.Canonicalize(fs.uuid(), &canonicalized_uuid));
+  ASSERT_EQ(fs.uuid(), canonicalized_uuid);
+}
+
+TEST_F(ToolTest, TestFsFormatWithUuid) {
+  const string kTestDir = GetTestPath("test");
+  ObjectIdGenerator generator;
+  string original_uuid = generator.Next();
+  NO_FATALS(RunTestActionNoOut(Substitute(
+      "fs format --fs_wal_dir=$0 --uuid=$1", kTestDir, original_uuid)));
+  FsManager fs(env_.get(), kTestDir);
+  ASSERT_OK(fs.Open());
+
+  string canonicalized_uuid;
+  ASSERT_OK(generator.Canonicalize(fs.uuid(), &canonicalized_uuid));
+  ASSERT_EQ(fs.uuid(), canonicalized_uuid);
+  ASSERT_EQ(fs.uuid(), original_uuid);
+}
+
+TEST_F(ToolTest, TestFsPrintUuid) {
+  const string kTestDir = GetTestPath("test");
+  string uuid;
+  {
+    FsManager fs(env_.get(), kTestDir);
+    ASSERT_OK(fs.CreateInitialFileSystemLayout());
+    ASSERT_OK(fs.Open());
+    uuid = fs.uuid();
+  }
+  vector<string> stdout;
+  NO_FATALS(RunTestAction(Substitute(
+      "fs print_uuid --fs_wal_dir=$0", kTestDir), &stdout));
+  SCOPED_TRACE(stdout);
+  ASSERT_EQ(1, stdout.size());
+  ASSERT_EQ(uuid, stdout[0]);
+}
+
+TEST_F(ToolTest, TestPbcDump) {
+  const string kTestDir = GetTestPath("test");
+  string uuid;
+  string instance_path;
+  {
+    ObjectIdGenerator generator;
+    FsManager fs(env_.get(), kTestDir);
+    ASSERT_OK(fs.CreateInitialFileSystemLayout(generator.Next()));
+    ASSERT_OK(fs.Open());
+    uuid = fs.uuid();
+    instance_path = fs.GetInstanceMetadataPath(kTestDir);
+  }
+  vector<string> stdout;
+  {
+    NO_FATALS(RunTestAction(Substitute(
+        "pbc dump $0", instance_path), &stdout));
+    SCOPED_TRACE(stdout);
+    ASSERT_EQ(4, stdout.size());
+    ASSERT_EQ("Message 0", stdout[0]);
+    ASSERT_EQ("-------", stdout[1]);
+    ASSERT_EQ(Substitute("uuid: \"$0\"", uuid), stdout[2]);
+    ASSERT_STR_MATCHES(stdout[3], "^format_stamp: \"Formatted at .*\"$");
+  }
+  {
+    NO_FATALS(RunTestAction(Substitute(
+        "pbc dump $0/instance --oneline", kTestDir), &stdout));
+    SCOPED_TRACE(stdout);
+    ASSERT_EQ(1, stdout.size());
+    ASSERT_STR_MATCHES(
+        stdout[0], Substitute(
+            "^0\tuuid: \"$0\" format_stamp: \"Formatted at .*\"$$", uuid));
+  }
 }
 
 } // namespace tools

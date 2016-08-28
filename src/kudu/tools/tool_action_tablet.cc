@@ -189,40 +189,42 @@ Status Copy(const RunnerContext& context) {
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTabletMode() {
-  unique_ptr<Action> print_replica_uuids = ActionBuilder(
-      { "print_replica_uuids",
-        "Print all replica UUIDs found in a tablet's Raft configuration" },
-      &PrintReplicaUuids)
-    .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
-    .AddOptionalParameter("fs_wal_dir")
-    .AddOptionalParameter("fs_data_dirs")
-    .Build();
+  unique_ptr<Action> print_replica_uuids =
+      ActionBuilder("print_replica_uuids", &PrintReplicaUuids)
+      .Description("Print all replica UUIDs found in a tablet's Raft configuration")
+      .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .Build();
 
-  unique_ptr<Action> rewrite_raft_config = ActionBuilder(
-      { "rewrite_raft_config", "Rewrite a replica's Raft configuration" },
-      &RewriteRaftConfig)
-    .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
-    .AddRequiredVariadicParameter({
+  unique_ptr<Action> rewrite_raft_config =
+      ActionBuilder("rewrite_raft_config", &RewriteRaftConfig)
+      .Description("Rewrite a replica's Raft configuration")
+      .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+      .AddRequiredVariadicParameter({
         "peers", "List of peers where each peer is of form uuid:hostname:port" })
-    .AddOptionalParameter("fs_wal_dir")
-    .AddOptionalParameter("fs_data_dirs")
-    .Build();
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .Build();
 
-  unique_ptr<Mode> cmeta = ModeBuilder(
-      { "cmeta", "Operate on a local Kudu tablet's consensus metadata file" })
-    .AddAction(std::move(print_replica_uuids))
-    .AddAction(std::move(rewrite_raft_config))
-    .Build();
+  unique_ptr<Mode> cmeta =
+      ModeBuilder("cmeta")
+      .Description("Operate on a local Kudu tablet's consensus metadata file")
+      .AddAction(std::move(print_replica_uuids))
+      .AddAction(std::move(rewrite_raft_config))
+      .Build();
 
-  unique_ptr<Action> copy = ActionBuilder(
-      { "copy", "Copy a replica from a remote server" }, &Copy)
-    .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
-    .AddRequiredParameter({ "source", "Source RPC address of form hostname:port" })
-    .AddOptionalParameter("fs_wal_dir")
-    .AddOptionalParameter("fs_data_dirs")
-    .Build();
+  unique_ptr<Action> copy =
+      ActionBuilder("copy", &Copy)
+      .Description("Copy a replica from a remote server")
+      .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+      .AddRequiredParameter({ "source", "Source RPC address of form hostname:port" })
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .Build();
 
-  return ModeBuilder({ "tablet", "Operate on a local Kudu replica" })
+  return ModeBuilder("tablet")
+      .Description("Operate on a local Kudu replica")
       .AddMode(std::move(cmeta))
       .AddAction(std::move(copy))
       .Build();

@@ -117,27 +117,30 @@ Status RunKsck(const RunnerContext& context) {
 } // anonymous namespace
 
 unique_ptr<Mode> BuildClusterMode() {
-  // TODO: the long description looks pretty horrible, need to fix.
-  string desc = "Check the health of a Kudu cluster. By default, ksck checks "
-      "that master and tablet server processes are running, and that table "
-      "metadata is consistent. Use the 'checksum' flag to check that tablet "
-      "data is consistent (also see the 'tables' and 'tablets' flags). Use the "
-      "'checksum_snapshot' along with 'checksum' if the table or tablets are "
-      "actively receiving inserts or updates.";
-  unique_ptr<Action> ksck = ActionBuilder(
-      { "ksck", desc }, &RunKsck)
-    .AddRequiredParameter({
+  string desc = "Check the health of a Kudu cluster";
+  string extra_desc = "By default, ksck checks that master and tablet server "
+      "processes are running, and that table metadata is consistent. Use the "
+      "'checksum' flag to check that tablet data is consistent (also see the "
+      "'tables' and 'tablets' flags). Use the 'checksum_snapshot' along with "
+      "'checksum' if the table or tablets are actively receiving inserts or "
+      "updates.";
+  unique_ptr<Action> ksck =
+      ActionBuilder("ksck", &RunKsck)
+      .Description(desc)
+      .ExtraDescription(extra_desc)
+      .AddRequiredParameter({
         "master_addresses",
         "Comma-separated list of Kudu Master addressess where each address is "
         "of form hostname:port" })
-    .AddOptionalParameter("checksum_scan")
-    .AddOptionalParameter("checksum_snapshot")
-    .AddOptionalParameter("color")
-    .AddOptionalParameter("tables")
-    .AddOptionalParameter("tablets")
-    .Build();
+      .AddOptionalParameter("checksum_scan")
+      .AddOptionalParameter("checksum_snapshot")
+      .AddOptionalParameter("color")
+      .AddOptionalParameter("tables")
+      .AddOptionalParameter("tablets")
+      .Build();
 
-  return ModeBuilder({ "cluster", "Operate on a Kudu cluster" })
+  return ModeBuilder("cluster")
+      .Description("Operate on a Kudu cluster")
       .AddAction(std::move(ksck))
       .Build();
 }

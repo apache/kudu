@@ -109,13 +109,13 @@ int DispatchCommand(const vector<Mode*>& chain,
 }
 
 int RunTool(int argc, char** argv, bool show_help) {
-  unique_ptr<Mode> root =
-      ModeBuilder({ argv[0], "" }) // root mode description isn't printed
-      .AddMode(BuildClusterMode())
-      .AddMode(BuildFsMode())
-      .AddMode(BuildPbcMode())
-      .AddMode(BuildTabletMode())
-      .Build();
+  unique_ptr<Mode> root = ModeBuilder(argv[0])
+    .Description("doesn't matter") // root mode description isn't printed
+    .AddMode(BuildClusterMode())
+    .AddMode(BuildFsMode())
+    .AddMode(BuildPbcMode())
+    .AddMode(BuildTabletMode())
+    .Build();
 
   // Initialize arg parsing state.
   vector<Mode*> chain = { root.get() };
