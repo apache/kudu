@@ -65,7 +65,3 @@ ADD_KUDU_TEST(bloomfile-test)
 ADD_KUDU_TEST(mt-bloomfile-test)
 ADD_KUDU_TEST(block_cache-test)
 ADD_KUDU_TEST(compression-test)
-
-# Tools
-add_executable(cfile-dump cfile-dump.cc)
-target_link_libraries(cfile-dump cfile ${KUDU_BASE_LIBS})

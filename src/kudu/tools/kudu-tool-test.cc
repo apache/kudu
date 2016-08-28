@@ -21,7 +21,12 @@
 #include <gtest/gtest.h>
 #include <glog/stl_logging.h>
 
+#include "kudu/cfile/cfile-test-base.h"
+#include "kudu/cfile/cfile_util.h"
+#include "kudu/cfile/cfile_writer.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
@@ -34,6 +39,10 @@
 namespace kudu {
 namespace tools {
 
+using cfile::CFileWriter;
+using cfile::StringDataGenerator;
+using cfile::WriterOptions;
+using fs::WritableBlock;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -255,6 +264,61 @@ TEST_F(ToolTest, TestPbcDump) {
     ASSERT_STR_MATCHES(
         stdout[0], Substitute(
             "^0\tuuid: \"$0\" format_stamp: \"Formatted at .*\"$$", uuid));
+  }
+}
+
+TEST_F(ToolTest, TestFsDumpCFile) {
+  const int kNumEntries = 8192;
+  const string kTestDir = GetTestPath("test");
+  FsManager fs(env_.get(), kTestDir);
+  ASSERT_OK(fs.CreateInitialFileSystemLayout());
+  ASSERT_OK(fs.Open());
+
+  gscoped_ptr<WritableBlock> block;
+  ASSERT_OK(fs.CreateNewBlock(&block));
+  BlockId block_id = block->id();
+  StringDataGenerator<false> generator("hello %04d");
+  WriterOptions opts;
+  opts.write_posidx = true;
+  CFileWriter writer(opts, GetTypeInfo(generator.kDataType),
+                     generator.has_nulls(), std::move(block));
+  ASSERT_OK(writer.Start());
+  generator.Build(kNumEntries);
+  ASSERT_OK_FAST(writer.AppendEntries(generator.values(), kNumEntries));
+  ASSERT_OK(writer.Finish());
+
+  vector<string> stdout;
+  {
+    NO_FATALS(RunTestAction(Substitute(
+        "fs dump_cfile --fs_wal_dir=$0 $1 --noprint_meta --noprint_rows",
+        kTestDir, block_id.ToString()), &stdout));
+    SCOPED_TRACE(stdout);
+    ASSERT_TRUE(stdout.empty());
+  }
+  {
+    NO_FATALS(RunTestAction(Substitute(
+        "fs dump_cfile --fs_wal_dir=$0 $1 --noprint_rows",
+        kTestDir, block_id.ToString()), &stdout));
+    SCOPED_TRACE(stdout);
+    ASSERT_GE(stdout.size(), 4);
+    ASSERT_EQ(stdout[0], "Header:");
+    ASSERT_EQ(stdout[3], "Footer:");
+  }
+  {
+    NO_FATALS(RunTestAction(Substitute(
+        "fs dump_cfile --fs_wal_dir=$0 $1 --noprint_meta",
+        kTestDir, block_id.ToString()), &stdout));
+    SCOPED_TRACE(stdout);
+    ASSERT_EQ(kNumEntries, stdout.size());
+  }
+  {
+    NO_FATALS(RunTestAction(Substitute(
+        "fs dump_cfile --fs_wal_dir=$0 $1",
+        kTestDir, block_id.ToString()), &stdout));
+    SCOPED_TRACE(stdout);
+    ASSERT_GT(stdout.size(), kNumEntries);
+    ASSERT_EQ(stdout[0], "Header:");
+    ASSERT_EQ(stdout[3], "Footer:");
   }
 }
 

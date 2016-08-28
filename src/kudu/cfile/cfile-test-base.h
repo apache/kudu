@@ -388,7 +388,7 @@ SumType FastSum(const Indexable &data, size_t n) {
 }
 
 template<DataType Type, typename SumType>
-static void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count) {
+void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count) {
   ScopedColumnBlock<Type> cb(8192);
 
   SumType sum = 0;
@@ -404,7 +404,7 @@ static void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count
 }
 
 template<DataType Type>
-static void ReadBinaryFile(CFileIterator* iter, int* count) {
+void ReadBinaryFile(CFileIterator* iter, int* count) {
   ScopedColumnBlock<Type> cb(100);
   uint64_t sum_lens = 0;
   while (iter->HasNext()) {
@@ -420,7 +420,7 @@ static void ReadBinaryFile(CFileIterator* iter, int* count) {
   LOG(INFO) << "Count: " << *count;
 }
 
-static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_ret) {
+void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_ret) {
   Status s;
 
   gscoped_ptr<fs::ReadableBlock> source;
