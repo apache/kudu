@@ -78,28 +78,12 @@ struct ReaderOptions {
   std::shared_ptr<MemTracker> parent_mem_tracker;
 };
 
-struct DumpIteratorOptions {
-  // If true, print values of rows, otherwise only print aggregate
-  // information.
-  bool print_rows;
-
-  // Number of rows to iterate over. If 0, will iterate over all rows.
-  size_t nrows;
-
-  DumpIteratorOptions()
-      : print_rows(false), nrows(0) {
-  }
-};
-
 // Dumps the contents of a cfile to 'out'; 'reader' and 'iterator'
-// must be initialized. See cfile/cfile-dump.cc and tools/fs_tool.cc
-// for sample usage.
-//
-// See also: DumpIteratorOptions
+// must be initialized. If 'num_rows' is 0, all rows will be printed.
 Status DumpIterator(const CFileReader& reader,
                     CFileIterator* it,
                     std::ostream* out,
-                    const DumpIteratorOptions& opts,
+                    int num_rows,
                     int indent);
 
 // Return the length of the common prefix shared by the two strings.

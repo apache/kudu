@@ -28,7 +28,6 @@
 
 DEFINE_bool(print_meta, true, "print the header and footer from the file");
 DEFINE_bool(iterate_rows, true, "iterate each row in the file");
-DEFINE_bool(print_rows, true, "print each row in the file");
 DEFINE_int32(num_iterations, 1, "number of times to iterate the file");
 
 namespace kudu {
@@ -63,11 +62,9 @@ Status DumpFile(const string& block_id_str) {
     gscoped_ptr<CFileIterator> it;
     RETURN_NOT_OK(reader->NewIterator(&it, CFileReader::DONT_CACHE_BLOCK));
 
-    DumpIteratorOptions opts;
-    opts.print_rows = FLAGS_print_rows;
     for (int i = 0; i < FLAGS_num_iterations; i++) {
       RETURN_NOT_OK(it->SeekToFirst());
-      RETURN_NOT_OK(DumpIterator(*reader, it.get(), &cout, opts, 0));
+      RETURN_NOT_OK(DumpIterator(*reader, it.get(), &cout, 0, 0));
     }
   }
 
@@ -84,10 +81,6 @@ int main(int argc, char **argv) {
     std::cerr << "usage: " << argv[0]
               << " -fs_wal_dir <dir> -fs_data_dirs <dirs> <block id>" << std::endl;
     return 1;
-  }
-
-  if (!FLAGS_iterate_rows) {
-    FLAGS_print_rows = false;
   }
 
   kudu::Status s = kudu::cfile::DumpFile(argv[1]);

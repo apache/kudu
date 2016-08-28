@@ -50,7 +50,6 @@ namespace tools {
 using cfile::CFileIterator;
 using cfile::CFileReader;
 using cfile::DumpIterator;
-using cfile::DumpIteratorOptions;
 using cfile::ReaderOptions;
 using fs::ReadableBlock;
 using log::LogReader;
@@ -454,16 +453,16 @@ Status FsTool::DumpCFileBlockInternal(const BlockId& block_id,
 
   std::cout << Indent(indent) << "CFile Header: "
             << reader->header().ShortDebugString() << std::endl;
+  if (detail_level_ <= HEADERS_ONLY) {
+    return Status::OK();
+  }
   std::cout << Indent(indent) << reader->footer().num_values()
             << " values:" << std::endl;
 
   gscoped_ptr<CFileIterator> it;
   RETURN_NOT_OK(reader->NewIterator(&it, CFileReader::DONT_CACHE_BLOCK));
   RETURN_NOT_OK(it->SeekToFirst());
-  DumpIteratorOptions iter_opts;
-  iter_opts.nrows = opts.nrows;
-  iter_opts.print_rows = detail_level_ > HEADERS_ONLY;
-  return DumpIterator(*reader, it.get(), &std::cout, iter_opts, indent + 2);
+  return DumpIterator(*reader, it.get(), &std::cout, opts.nrows, indent + 2);
 }
 
 Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,

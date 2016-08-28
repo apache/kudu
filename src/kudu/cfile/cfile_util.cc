@@ -35,7 +35,7 @@ static const int kBufSize = 1024*1024;
 Status DumpIterator(const CFileReader& reader,
                     CFileIterator* it,
                     std::ostream* out,
-                    const DumpIteratorOptions& opts,
+                    int num_rows,
                     int indent) {
 
   Arena arena(8192, 8*1024*1024);
@@ -48,33 +48,32 @@ Status DumpIterator(const CFileReader& reader,
   string strbuf;
   size_t count = 0;
   while (it->HasNext()) {
-    size_t n = opts.nrows == 0 ? max_rows : std::min(max_rows, opts.nrows - count);
+    size_t n = num_rows == 0 ? max_rows : std::min(max_rows, num_rows - count);
     if (n == 0) break;
 
     RETURN_NOT_OK(it->CopyNextValues(&n, &cb));
 
-    if (opts.print_rows) {
-      if (reader.is_nullable()) {
-        for (size_t i = 0; i < n; i++) {
-          strbuf.append(indent, ' ');
-          const void *ptr = cb.nullable_cell_ptr(i);
-          if (ptr != nullptr) {
-            type->AppendDebugStringForValue(ptr, &strbuf);
-          } else {
-            strbuf.append("NULL");
-          }
-          strbuf.push_back('\n');
+    if (reader.is_nullable()) {
+      for (size_t i = 0; i < n; i++) {
+        strbuf.append(indent, ' ');
+        const void *ptr = cb.nullable_cell_ptr(i);
+        if (ptr != nullptr) {
+          type->AppendDebugStringForValue(ptr, &strbuf);
+        } else {
+          strbuf.append("NULL");
         }
-      } else {
-        for (size_t i = 0; i < n; i++) {
-          strbuf.append(indent, ' ');
-          type->AppendDebugStringForValue(cb.cell_ptr(i), &strbuf);
-          strbuf.push_back('\n');
-        }
+        strbuf.push_back('\n');
       }
-      *out << strbuf;
-      strbuf.clear();
+    } else {
+      for (size_t i = 0; i < n; i++) {
+        strbuf.append(indent, ' ');
+        type->AppendDebugStringForValue(cb.cell_ptr(i), &strbuf);
+        strbuf.push_back('\n');
+      }
     }
+
+    *out << strbuf;
+    strbuf.clear();
     arena.Reset();
     count += n;
   }
