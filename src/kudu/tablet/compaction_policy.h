@@ -86,9 +86,42 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
   virtual uint64_t target_rowset_size() const OVERRIDE;
 
  private:
+  struct SolutionAndValue {
+    std::unordered_set<RowSet*> rowsets;
+    double value = 0;
+  };
+
+  // Sets up the 'asc_min_key' and 'asc_max_key' vectors necessary
+  // for both the approximate and exact solutions below.
   void SetupKnapsackInput(const RowSetTree &tree,
-                          std::vector<RowSetInfo>* min_key,
-                          std::vector<RowSetInfo>* max_key);
+                          std::vector<RowSetInfo>* asc_min_key,
+                          std::vector<RowSetInfo>* asc_max_key);
+
+
+  // Runs the first pass approximate solution for the algorithm.
+  // Stores the best solution found in 'best_solution'.
+  //
+  // Sets best_upper_bounds[i] to the upper bound for any solution containing
+  // asc_min_key[i] as its left-most rowset.
+  void RunApproximation(
+      const std::vector<RowSetInfo>& asc_min_key,
+      const std::vector<RowSetInfo>& asc_max_key,
+      std::vector<double>* best_upper_bounds,
+      SolutionAndValue* best_solution);
+
+
+  // Runs the second pass of the algorithm.
+  //
+  // For each i in asc_min_key, first checks if best_upper_bounds[i] indicates that a
+  // solution containing asc_min_key[i] may be a better solution than the current
+  // 'best_solution' by at least the configured approximation ratio. If so, runs the full
+  // knapsack algorithm to determine the value of that solution and, if it is indeed
+  // better, replaces '*best_solution' with the new best solution.
+  void RunExact(
+      const std::vector<RowSetInfo>& asc_min_key,
+      const std::vector<RowSetInfo>& asc_max_key,
+      const std::vector<double>& best_upper_bounds,
+      SolutionAndValue* best_solution);
 
   size_t size_budget_mb_;
 };
