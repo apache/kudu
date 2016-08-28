@@ -157,15 +157,16 @@ class UpperBoundCalculator {
 
     total_weight_ += candidate.size_mb();
     total_value_ += candidate.width();
-    const RowSetInfo& top = *fractional_solution_.front();
-    if (total_weight_ - top.size_mb() >= max_weight_) {
-      total_weight_ -= top.size_mb();
-      total_value_ -= top.width();
+    const RowSetInfo* top = fractional_solution_.front();
+    while (total_weight_ - top->size_mb() > max_weight_) {
+      total_weight_ -= top->size_mb();
+      total_value_ -= top->width();
       std::pop_heap(fractional_solution_.begin(), fractional_solution_.end(),
                     DerefCompare<CompareByDescendingDensity>());
       fractional_solution_.pop_back();
+      top = fractional_solution_.front();
     }
-    topdensity_ = fractional_solution_.front()->density();
+    topdensity_ = top->density();
   }
 
   // Compute the upper-bound to the 0-1 knapsack problem with the elements
