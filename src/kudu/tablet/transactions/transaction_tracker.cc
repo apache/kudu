@@ -201,10 +201,11 @@ void TransactionTracker::WaitForAllToFinish() const {
 }
 
 Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
-  const int complain_ms = 1000;
-  int wait_time = 250;
+  int wait_time_us = 250;
   int num_complaints = 0;
   MonoTime start_time = MonoTime::Now();
+  MonoTime next_log_time = start_time + MonoDelta::FromSeconds(1);
+
   while (1) {
     vector<scoped_refptr<TransactionDriver> > txns;
     GetPendingTransactions(&txns);
@@ -213,25 +214,27 @@ Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
       break;
     }
 
-    MonoDelta diff = MonoTime::Now() - start_time;
+    MonoTime now = MonoTime::Now();
+    MonoDelta diff = now - start_time;
     if (diff > timeout) {
       return Status::TimedOut(Substitute("Timed out waiting for all transactions to finish. "
                                          "$0 transactions pending. Waited for $1",
                                          txns.size(), diff.ToString()));
     }
-    int64_t waited_ms = diff.ToMilliseconds();
-    if (waited_ms / complain_ms > num_complaints) {
+    if (now > next_log_time) {
       LOG(WARNING) << Substitute("TransactionTracker waiting for $0 outstanding transactions to"
-                                 " complete now for $1 ms", txns.size(), waited_ms);
-      num_complaints++;
-    }
-    wait_time = std::min(wait_time * 5 / 4, 1000000);
+                                 " complete now for $1", txns.size(), diff.ToString());
+      LOG(INFO) << "Dumping currently running transactions: ";
+      for (scoped_refptr<TransactionDriver> driver : txns) {
+        LOG(INFO) << driver->ToString();
+      }
 
-    LOG(INFO) << "Dumping currently running transactions: ";
-    for (scoped_refptr<TransactionDriver> driver : txns) {
-      LOG(INFO) << driver->ToString();
+      num_complaints++;
+      // Exponential back-off on how often the transactions are dumped.
+      next_log_time = now + MonoDelta::FromSeconds(1 << std::min(8, num_complaints));
     }
-    SleepFor(MonoDelta::FromMicroseconds(wait_time));
+    wait_time_us = std::min(wait_time_us * 5 / 4, 1000000);
+    SleepFor(MonoDelta::FromMicroseconds(wait_time_us));
   }
   return Status::OK();
 }
