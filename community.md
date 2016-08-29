@@ -131,6 +131,8 @@ so that we can feature them.
 
 1. Thu, Oct 27, 2016. [Spark Summit EU](https://spark-summit.org/eu-2016/events/apache-kudu-and-spark-sql-for-fast-analytics-on-fast-data/). Brussels, Belgium.<br/>
    _Apache Kudu and Spark SQL_. Presented by Mike Percy.
+1. Tue, Sep 6, 2016. [Boston Cloudera User Group](http://www.meetup.com/Boston-Cloudera-User-Group/events/233452964/). Boston, MA, USA.<br/>
+    Apache Kudu 0.10 and Spark SQL. Presented by William Berkeley.
 1. Thu, Aug 18, 2016. [Boulder/Denver Big Data Meetup](http://www.meetup.com/Boulder-Denver-Big-Data/events/232056701/). Broomfield, CO, USA.<br/>
    _Apache Kudu: New Apache Hadoop Storage for Fast Analytics on Fast Data_. Presented by Mike Percy.
 1. Wed, Aug 17, 2016. [Denver Cloudera User Group](http://www.meetup.com/Denver-Cloudera-User-Group/events/232782782/). Greenwood Village, CO, USA.<br/>
