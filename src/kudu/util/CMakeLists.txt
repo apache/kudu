@@ -178,6 +178,7 @@ set(UTIL_SRCS
   user.cc
   url-coding.cc
   version_info.cc
+  zlib.cc
 )
 
 # overwrite.cc contains a single function which would be a hot spot in

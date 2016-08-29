@@ -16,6 +16,9 @@
 // under the License.
 #include "kudu/tserver/tablet_server-test-base.h"
 
+#include <memory>
+#include <zlib.h>
+
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -27,6 +30,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/url-coding.h"
+#include "kudu/util/zlib.h"
 
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
@@ -39,6 +43,7 @@ using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using strings::Substitute;
 
 DEFINE_int32(single_threaded_insert_latency_bench_warmup_rows, 100,
@@ -218,16 +223,29 @@ TEST_F(TabletServerTest, TestWebPages) {
   string req_b64;
   Base64Escape(enable_req_json, &req_b64);
 
-  ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/begin_recording?$1",
-                                         addr,
-                                         req_b64), &buf));
-  ASSERT_EQ(buf.ToString(), "");
-  ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/end_recording", addr),
-                       &buf));
-  ASSERT_STR_CONTAINS(buf.ToString(), "__metadata");
+  for (bool compressed : {false, true}) {
+    ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/begin_recording?$1",
+                                    addr,
+                                    req_b64), &buf));
+    ASSERT_EQ(buf.ToString(), "");
+    ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/end_recording$1", addr,
+                                    compressed ? "_compressed" : ""),
+                         &buf));
+    string json;
+    if (compressed) {
+      std::stringstream ss;
+      ASSERT_OK(zlib::Uncompress(buf, &ss));
+      json = ss.str();
+    } else {
+      json = buf.ToString();
+    }
+
+    ASSERT_STR_CONTAINS(json, "__metadata");
+  }
+
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/categories", addr),
                        &buf));
-  ASSERT_STR_CONTAINS(buf.ToString(), "\"rpc\"");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"log\"");
 
   // Smoke test the pprof contention profiler handler.
   ASSERT_OK(c.FetchURL(Substitute("http://$0/pprof/contention?seconds=1", addr),

@@ -17,6 +17,8 @@
 #include "kudu/server/tracing-path-handlers.h"
 
 #include <map>
+#include <memory>
+#include <string.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,12 +30,14 @@
 #include <rapidjson/stringbuffer.h>
 
 #include "kudu/gutil/strings/escaping.h"
-#include "kudu/util/jsonwriter.h"
 #include "kudu/util/debug/trace_event_impl.h"
+#include "kudu/util/jsonwriter.h"
+#include "kudu/util/zlib.h"
 
 using std::map;
 using std::string;
 using std::stringstream;
+using std::unique_ptr;
 using std::vector;
 
 using kudu::debug::CategoryFilter;
@@ -52,6 +56,7 @@ enum Handler {
   kBeginRecording,
   kGetBufferPercentFull,
   kEndRecording,
+  kEndRecordingCompressed,
   kSimpleDump
 };
 
@@ -117,12 +122,20 @@ Status BeginRecording(const Webserver::WebRequest& req,
   return Status::OK();
 }
 
-
 Status EndRecording(const Webserver::WebRequest& req,
+                    bool compressed,
                     stringstream* out) {
   TraceLog* tl = TraceLog::GetInstance();
   tl->SetDisabled();
-  *out << TraceResultBuffer::FlushTraceLogToString();
+  string json = TraceResultBuffer::FlushTraceLogToString();
+
+  if (compressed) {
+    RETURN_NOT_OK_PREPEND(zlib::Compress(json, out),
+                          "Could not compress output");
+  } else {
+    *out << json;
+  }
+
   return Status::OK();
 }
 
@@ -213,7 +226,10 @@ Status DoHandleRequest(Handler handler,
       break;
     case kEndMonitoring:
     case kEndRecording:
-      RETURN_NOT_OK(EndRecording(req, output));
+      RETURN_NOT_OK(EndRecording(req, false, output));
+      break;
+    case kEndRecordingCompressed:
+      RETURN_NOT_OK(EndRecording(req, true, output));
       break;
     case kSimpleDump:
       HandleTraceJsonPage(req.parsed_args, output);
@@ -251,6 +267,7 @@ void TracingPathHandlers::RegisterHandlers(Webserver* server) {
     { "/tracing/json/begin_recording", kBeginRecording },
     { "/tracing/json/get_buffer_percent_full", kGetBufferPercentFull },
     { "/tracing/json/end_recording", kEndRecording },
+    { "/tracing/json/end_recording_compressed", kEndRecordingCompressed },
     { "/tracing/json/simple_dump", kSimpleDump } };
 
   typedef pair<string, Handler> HandlerPair;
