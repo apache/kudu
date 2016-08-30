@@ -831,7 +831,15 @@ Status LogWritableBlock::Append(const Slice& data) {
   // The metadata change is deferred to Close() or FlushDataAsync(),
   // whichever comes first. We can't do it now because the block's
   // length is still in flux.
+
+  MicrosecondsInt64 start_time = GetMonoTimeMicros();
   RETURN_NOT_OK(container_->WriteData(block_offset_ + block_length_, data));
+  MicrosecondsInt64 end_time = GetMonoTimeMicros();
+
+  int64_t dur = end_time - start_time;
+  TRACE_COUNTER_INCREMENT("lbm_write_time_us", dur);
+  const char* counter = BUCKETED_COUNTER_NAME("lbm_writes", dur);
+  TRACE_COUNTER_INCREMENT(counter, 1);
 
   block_length_ += data.size();
   state_ = DIRTY;
@@ -1019,16 +1027,7 @@ Status LogReadableBlock::Read(uint64_t offset, size_t length,
   int64_t dur = end_time - start_time;
   TRACE_COUNTER_INCREMENT("lbm_read_time_us", dur);
 
-  const char* counter;
-  if (dur >= 100 * 1000) {
-    counter = "lbm_reads_gt_100_ms";
-  } else if (dur >= 10 * 1000) {
-    counter = "lbm_reads_10-100_ms";
-  } else if (dur >= 1000) {
-    counter = "lbm_reads_1-10_ms";
-  } else {
-    counter = "lbm_reads_lt_1ms";
-  }
+  const char* counter = BUCKETED_COUNTER_NAME("lbm_reads", dur);
   TRACE_COUNTER_INCREMENT(counter, 1);
 
   if (container_->metrics()) {

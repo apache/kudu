@@ -32,6 +32,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/trace.h"
 
 using std::pair;
 using std::shared_ptr;
@@ -350,11 +351,16 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
   MonoTime start_time(MonoTime::Now());
   op->RunningGauge()->Increment();
+
+  scoped_refptr<Trace> trace(new Trace);
   LOG_TIMING(INFO, Substitute("running $0", op->name())) {
+    ADOPT_TRACE(trace.get());
     TRACE_EVENT1("maintenance", "MaintenanceManager::LaunchOp",
                  "name", op->name());
     op->Perform();
   }
+  LOG(INFO) << op->name() << " metrics: " << trace->MetricsAsJSON();
+
   op->RunningGauge()->Decrement();
   MonoTime end_time(MonoTime::Now());
   MonoDelta delta(end_time.GetDeltaSince(start_time));

@@ -93,6 +93,21 @@
 #define TRACE_COUNTER_SCOPE_LATENCY_US(counter_name) \
   ::kudu::ScopedTraceLatencyCounter _scoped_latency(counter_name)
 
+// Construct a constant C string counter name which acts as a sort of
+// coarse-grained histogram for trace metrics.
+#define BUCKETED_COUNTER_NAME(prefix, duration_us)      \
+  [=]() -> const char* {                                \
+    if (duration_us >= 100 * 1000) {                    \
+      return prefix "_gt_100_ms";                       \
+    } else if (duration_us >= 10 * 1000) {              \
+      return prefix "_10-100_ms";                       \
+    } else if (duration_us >= 1000) {                   \
+      return prefix "_1-10_ms";                         \
+    } else {                                            \
+      return prefix "_lt_1ms";                          \
+    }                                                   \
+  }();
+
 namespace kudu {
 
 class JsonWriter;
