@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -24,6 +26,8 @@
 #include "kudu/cfile/cfile-test-base.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -39,6 +43,9 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/tablet-harness.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
@@ -61,9 +68,15 @@ using consensus::ReplicateMsg;
 using fs::WritableBlock;
 using log::Log;
 using log::LogOptions;
+using std::ostringstream;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+using tablet::LocalTabletWriter;
+using tablet::TabletHarness;
+using tablet::TabletMetadata;
+using tablet::TabletSuperBlockPB;
 using tserver::WriteRequestPB;
 
 class ToolTest : public KuduTest {
@@ -183,19 +196,39 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kFsModeRegexes = {
         "format.*new Kudu filesystem",
-        "print_uuid.*UUID of a Kudu filesystem"
+        "dump.*Dump a Kudu filesystem"
     };
     NO_FATALS(RunTestHelp("fs", kFsModeRegexes));
     NO_FATALS(RunTestHelp("fs not_a_mode", kFsModeRegexes,
                           Status::InvalidArgument("unknown command 'not_a_mode'")));
   }
   {
+    const vector<string> kFsDumpModeRegexes = {
+        "cfile.*contents of a CFile",
+        "tree.*tree of a Kudu filesystem",
+        "uuid.*UUID of a Kudu filesystem"
+    };
+    NO_FATALS(RunTestHelp("fs dump", kFsDumpModeRegexes));
+
+  }
+  {
     const vector<string> kLocalReplicaModeRegexes = {
-        "cmeta.*consensus metadata file",
+        "cmeta.*Operate on a local Kudu replica's consensus",
+        "dump.*Dump a Kudu filesystem",
         "copy_from_remote.*Copy a replica",
-        "dump_wals.*Dump all WAL"
+        "list.*Show list of Kudu replicas"
     };
     NO_FATALS(RunTestHelp("local_replica", kLocalReplicaModeRegexes));
+  }
+  {
+    const vector<string> kLocalReplicaDumpModeRegexes = {
+        "block_ids.*Dump the IDs of all blocks",
+        "meta.*Dump the metadata",
+        "rowset.*Dump the rowset contents",
+        "wals.*Dump all WAL"
+    };
+    NO_FATALS(RunTestHelp("local_replica dump", kLocalReplicaDumpModeRegexes));
+
   }
   {
     const vector<string> kCmetaModeRegexes = {
@@ -283,7 +316,7 @@ TEST_F(ToolTest, TestFsFormatWithUuid) {
   ASSERT_EQ(fs.uuid(), original_uuid);
 }
 
-TEST_F(ToolTest, TestFsPrintUuid) {
+TEST_F(ToolTest, TestFsDumpUuid) {
   const string kTestDir = GetTestPath("test");
   string uuid;
   {
@@ -294,7 +327,7 @@ TEST_F(ToolTest, TestFsPrintUuid) {
   }
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute(
-      "fs print_uuid --fs_wal_dir=$0", kTestDir), &stdout));
+      "fs dump uuid --fs_wal_dir=$0", kTestDir), &stdout));
   SCOPED_TRACE(stdout);
   ASSERT_EQ(uuid, stdout);
 }
@@ -354,13 +387,13 @@ TEST_F(ToolTest, TestFsDumpCFile) {
 
   {
     NO_FATALS(RunActionStdoutNone(Substitute(
-        "fs dump_cfile --fs_wal_dir=$0 $1 --noprint_meta --noprint_rows",
+        "fs dump cfile --fs_wal_dir=$0 $1 --noprint_meta --noprint_rows",
         kTestDir, block_id.ToString())));
   }
   vector<string> stdout;
   {
     NO_FATALS(RunActionStdoutLines(Substitute(
-        "fs dump_cfile --fs_wal_dir=$0 $1 --noprint_rows",
+        "fs dump cfile --fs_wal_dir=$0 $1 --noprint_rows",
         kTestDir, block_id.ToString()), &stdout));
     SCOPED_TRACE(stdout);
     ASSERT_GE(stdout.size(), 4);
@@ -369,14 +402,14 @@ TEST_F(ToolTest, TestFsDumpCFile) {
   }
   {
     NO_FATALS(RunActionStdoutLines(Substitute(
-        "fs dump_cfile --fs_wal_dir=$0 $1 --noprint_meta",
+        "fs dump cfile --fs_wal_dir=$0 $1 --noprint_meta",
         kTestDir, block_id.ToString()), &stdout));
     SCOPED_TRACE(stdout);
     ASSERT_EQ(kNumEntries, stdout.size());
   }
   {
     NO_FATALS(RunActionStdoutLines(Substitute(
-        "fs dump_cfile --fs_wal_dir=$0 $1",
+        "fs dump cfile --fs_wal_dir=$0 $1",
         kTestDir, block_id.ToString()), &stdout));
     SCOPED_TRACE(stdout);
     ASSERT_GT(stdout.size(), kNumEntries);
@@ -427,7 +460,7 @@ TEST_F(ToolTest, TestWalDump) {
   string wal_path = fs.GetWalSegmentFileName(kTestTablet, 1);
   string stdout;
   for (const auto& args : { Substitute("wal dump $0", wal_path),
-                            Substitute("local_replica dump_wals --fs_wal_dir=$0 $1",
+                            Substitute("local_replica dump wals --fs_wal_dir=$0 $1",
                                        kTestDir, kTestTablet)
                            }) {
     SCOPED_TRACE(args);
@@ -498,6 +531,193 @@ TEST_F(ToolTest, TestWalDump) {
       ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
       ASSERT_STR_NOT_MATCHES(stdout, "Footer:");
     }
+  }
+}
+
+TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
+  const string kTestDir = GetTestPath("test");
+  const string kTestTablet = "test-tablet";
+  const string kTestTableId = "test-table";
+  const string kTestTableName = "test-fs-meta-dump-table";
+  const Schema kSchema(GetSimpleTestSchema());
+  const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
+
+  FsManager fs(env_.get(), kTestDir);
+  ASSERT_OK(fs.CreateInitialFileSystemLayout());
+  ASSERT_OK(fs.Open());
+
+  pair<PartitionSchema, Partition> partition = tablet::CreateDefaultPartition(
+        kSchemaWithIds);
+  scoped_refptr<TabletMetadata> meta;
+  TabletMetadata::CreateNew(&fs, kTestTablet, kTestTableName, kTestTableId,
+                  kSchemaWithIds, partition.first, partition.second,
+                  tablet::TABLET_DATA_READY, &meta);
+  string stdout;
+  NO_FATALS(RunActionStdoutString(Substitute("local_replica dump meta $0 "
+                                             "--fs_wal_dir=$1 "
+                                             "--fs_data_dirs=$2",
+                                             kTestTablet, kTestDir,
+                                             kTestDir), &stdout));
+
+  // Verify the contents of the metadata output
+  SCOPED_TRACE(stdout);
+  string debug_str = meta->partition_schema()
+      .PartitionDebugString(meta->partition(), meta->schema());
+  StripWhiteSpace(&debug_str);
+  ASSERT_STR_CONTAINS(stdout, debug_str);
+  debug_str = Substitute("Table name: $0 Table id: $1",
+                         meta->table_name(), meta->table_id());
+  ASSERT_STR_CONTAINS(stdout, debug_str);
+  debug_str = Substitute("Schema (version=$0):", meta->schema_version());
+  ASSERT_STR_CONTAINS(stdout, debug_str);
+  debug_str = meta->schema().ToString();
+  StripWhiteSpace(&debug_str);
+  ASSERT_STR_CONTAINS(stdout, debug_str);
+
+  TabletSuperBlockPB pb1;
+  meta->ToSuperBlock(&pb1);
+  debug_str = pb1.DebugString();
+  StripWhiteSpace(&debug_str);
+  ASSERT_STR_CONTAINS(stdout, "Superblock:");
+  ASSERT_STR_CONTAINS(stdout, debug_str);
+}
+
+TEST_F(ToolTest, TestFsDumpTree) {
+  const string kTestDir = GetTestPath("test");
+  const Schema kSchema(GetSimpleTestSchema());
+  const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
+
+  FsManager fs(env_.get(), kTestDir);
+  ASSERT_OK(fs.CreateInitialFileSystemLayout());
+  ASSERT_OK(fs.Open());
+
+  string stdout;
+  NO_FATALS(RunActionStdoutString(Substitute("fs dump tree --fs_wal_dir=$0 "
+                                             "--fs_data_dirs=$1",
+                                             kTestDir, kTestDir), &stdout));
+
+  // It suffices to verify the contents of the top-level tree structure.
+  SCOPED_TRACE(stdout);
+  ostringstream tree_out;
+  fs.DumpFileSystemTree(tree_out);
+  string tree_out_str = tree_out.str();
+  StripWhiteSpace(&tree_out_str);
+  ASSERT_EQ(stdout, tree_out_str);
+}
+
+TEST_F(ToolTest, TestLocalReplicaOps) {
+  const string kTestDir = GetTestPath("test");
+  const string kTestTablet = "test-tablet";
+  const int kRowId = 100;
+  const Schema kSchema(GetSimpleTestSchema());
+  const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
+
+  TabletHarness::Options opts(kTestDir);
+  opts.tablet_id = kTestTablet;
+  TabletHarness harness(kSchemaWithIds, opts);
+  ASSERT_OK(harness.Create(true));
+  ASSERT_OK(harness.Open());
+  LocalTabletWriter writer(harness.tablet().get(), &kSchema);
+  KuduPartialRow row(&kSchemaWithIds);
+  for (int i = 0; i< 10; i++) {
+    ASSERT_OK(row.SetInt32(0, i));
+    ASSERT_OK(row.SetInt32(1, i*10));
+    ASSERT_OK(row.SetStringCopy(2, "HelloWorld"));
+    writer.Insert(row);
+  }
+  harness.tablet()->Flush();
+  harness.tablet()->Shutdown();
+  string fs_paths = "--fs_wal_dir=" + kTestDir + " "
+      "--fs_data_dirs=" + kTestDir;
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("local_replica dump block_ids $0 $1",
+                   kTestTablet, fs_paths), &stdout));
+
+    SCOPED_TRACE(stdout);
+    string tablet_out = "Listing all data blocks in tablet " + kTestTablet;
+    ASSERT_STR_CONTAINS(stdout, tablet_out);
+    ASSERT_STR_CONTAINS(stdout, "Rowset ");
+    ASSERT_STR_MATCHES(stdout, "Column block for column ID .*");
+    ASSERT_STR_CONTAINS(stdout, "key[int32 NOT NULL]");
+    ASSERT_STR_CONTAINS(stdout, "int_val[int32 NOT NULL]");
+    ASSERT_STR_CONTAINS(stdout, "string_val[string NULLABLE]");
+  }
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("local_replica dump rowset $0 $1",
+                   kTestTablet, fs_paths), &stdout));
+
+    SCOPED_TRACE(stdout);
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 0");
+    ASSERT_STR_MATCHES(stdout, "RowSet metadata: .*");
+    ASSERT_STR_MATCHES(stdout, "last_durable_dms_id: .*");
+    ASSERT_STR_CONTAINS(stdout, "columns {");
+    ASSERT_STR_CONTAINS(stdout, "block {");
+    ASSERT_STR_CONTAINS(stdout, "}");
+    ASSERT_STR_MATCHES(stdout, "column_id:.*");
+    ASSERT_STR_CONTAINS(stdout, "bloom_block {");
+    ASSERT_STR_MATCHES(stdout, "id: .*");
+    ASSERT_STR_CONTAINS(stdout, "undo_deltas {");
+    ASSERT_STR_MATCHES(stdout, "CFile Header: "
+                        "major_version: .* minor_version: .*");
+    ASSERT_STR_MATCHES(stdout, "Delta stats:.*");
+    ASSERT_STR_MATCHES(stdout, "ts range=.*");
+    ASSERT_STR_MATCHES(stdout, "update_counts_by_col_id=.*");
+    ASSERT_STR_MATCHES(stdout, "Dumping column block.*for column id.*");
+    ASSERT_STR_MATCHES(stdout, ".*---------------------.*");
+
+    // This is expected to fail with Invalid argument for kRowId.
+    string stderr;
+    Status s = RunTool(
+        Substitute("local_replica dump rowset $0 $1 --rowset_index=$2",
+                   kTestTablet, fs_paths, kRowId),
+                   &stdout, &stderr, nullptr, nullptr);
+    ASSERT_TRUE(s.IsRuntimeError());
+    SCOPED_TRACE(stderr);
+    string expected = "Could not find rowset " + SimpleItoa(kRowId) +
+        " in tablet id " + kTestTablet;
+    ASSERT_STR_CONTAINS(stderr, expected);
+  }
+  {
+    TabletMetadata* meta = harness.tablet()->metadata();
+    string stdout;
+    string debug_str;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("local_replica dump meta $0 $1",
+                   kTestTablet, fs_paths), &stdout));
+
+    SCOPED_TRACE(stdout);
+    debug_str = meta->partition_schema()
+        .PartitionDebugString(meta->partition(), meta->schema());
+    StripWhiteSpace(&debug_str);
+    ASSERT_STR_CONTAINS(stdout, debug_str);
+    debug_str = Substitute("Table name: $0 Table id: $1",
+                           meta->table_name(), meta->table_id());
+    ASSERT_STR_CONTAINS(stdout, debug_str);
+    debug_str = Substitute("Schema (version=$0):", meta->schema_version());
+    StripWhiteSpace(&debug_str);
+    ASSERT_STR_CONTAINS(stdout, debug_str);
+    debug_str = meta->schema().ToString();
+    StripWhiteSpace(&debug_str);
+    ASSERT_STR_CONTAINS(stdout, debug_str);
+
+    TabletSuperBlockPB pb1;
+    meta->ToSuperBlock(&pb1);
+    debug_str = pb1.DebugString();
+    StripWhiteSpace(&debug_str);
+    ASSERT_STR_CONTAINS(stdout, "Superblock:");
+    ASSERT_STR_CONTAINS(stdout, debug_str);
+  }
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(Substitute("local_replica list $0",
+                                               fs_paths), &stdout));
+
+    SCOPED_TRACE(stdout);
+    ASSERT_STR_MATCHES(stdout, kTestTablet);
   }
 }
 

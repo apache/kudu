@@ -48,24 +48,6 @@ add_executable(kudu-ts-cli ts-cli.cc)
 target_link_libraries(kudu-ts-cli
   ${LINK_LIBS})
 
-add_library(fs_tool fs_tool.cc)
-target_link_libraries(fs_tool
-  gutil
-  kudu_common
-  server_common
-  consensus
-  tablet)
-
-add_executable(kudu-fs_list fs_list-tool.cc)
-target_link_libraries(kudu-fs_list
-  ${LINK_LIBS}
-  fs_tool)
-
-add_executable(kudu-fs_dump fs_dump-tool.cc)
-target_link_libraries(kudu-fs_dump
-  ${LINK_LIBS}
-  fs_tool)
-
 add_library(ksck
     ksck.cc
     ksck_remote.cc
@@ -102,6 +84,8 @@ target_link_libraries(kudu
   kudu_util
   log
   master
+  server_common
+  tablet
   tserver
   ${KUDU_BASE_LIBS}
 )

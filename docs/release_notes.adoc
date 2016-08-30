@@ -119,13 +119,19 @@ Kudu 1.0.0 are not supported.
   implemented as `kudu cluster ksck`.
 
 - The `cfile-dump` tool has been removed. The same functionality is now
-  implemented as `kudu fs cfile_dump`.
+  implemented as `kudu fs cfile dump`.
 
 - The `log-dump` tool has been removed. The same functionality is now
-  implemented as `kudu wal dump` and `kudu local_replica dump_wals`.
+  implemented as `kudu wal dump` and `kudu local_replica dump wals`.
 
 - The `kudu-admin` tool has been removed. The same functionality is now
   implemented within `kudu table` and `kudu tablet`.
+
+- The `kudu-fs_dump` tool has been removed. The same functionality is now
+  implemented as `kudu fs dump`.
+
+- The `kudu-fs_list` tool has been removed and some similar useful
+  functionality has been moved under 'kudu local_replica'.
 
 === Configuration flags
 

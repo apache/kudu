@@ -176,7 +176,6 @@ Status RemoveReplica(const RunnerContext& context) {
   return ChangeConfig(context, consensus::REMOVE_SERVER);
 }
 
-
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTabletMode() {

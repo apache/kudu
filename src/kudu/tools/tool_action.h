@@ -50,17 +50,20 @@ class Mode;
 //         root
 //          |
 //          |
-//          |
 //          fs
 //         |  |
 //      +--+  +--+
 //      |        |
-//   format   print_uuid
+//   format    dump
+//             | |
+//         +--+  +--+
+//         |        |
+//      cfile      uuid
 //
 // Given this tree:
 // - "<program> fs" will show all of fs's possible actions.
 // - "<program> fs format" will format a filesystem.
-// - "<program> fs print_uuid" will print a filesystem's UUID.
+// - "<program> fs dump uuid" will print a filesystem's UUID.
 
 // Builds a new mode (non-leaf) node.
 class ModeBuilder {

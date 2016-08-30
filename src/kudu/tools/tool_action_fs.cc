@@ -29,13 +29,16 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/status.h"
 
 DECLARE_bool(print_meta);
 DEFINE_bool(print_rows, true,
             "Print each row in the CFile");
 DEFINE_string(uuid, "",
-              "The uuid to use in the filesystem. If not provided, one is generated");
+              "The uuid to use in the filesystem. "
+              "If not provided, one is generated");
+
 namespace kudu {
 namespace tools {
 
@@ -59,7 +62,7 @@ Status Format(const RunnerContext& context) {
   return fs_manager.CreateInitialFileSystemLayout(uuid);
 }
 
-Status PrintUuid(const RunnerContext& context) {
+Status DumpUuid(const RunnerContext& context) {
   FsManagerOpts opts;
   opts.read_only = true;
   FsManager fs_manager(Env::Default(), opts);
@@ -104,7 +107,50 @@ Status DumpCFile(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status DumpFsTree(const RunnerContext& context) {
+  FsManagerOpts fs_opts;
+  fs_opts.read_only = true;
+  FsManager fs_manager(Env::Default(), fs_opts);
+  RETURN_NOT_OK(fs_manager.Open());
+
+  fs_manager.DumpFileSystemTree(std::cout);
+  return Status::OK();
+}
+
 } // anonymous namespace
+
+static unique_ptr<Mode> BuildFsDumpMode() {
+  unique_ptr<Action> dump_cfile =
+      ActionBuilder("cfile", &DumpCFile)
+      .Description("Dump the contents of a CFile (column file)")
+      .AddRequiredParameter({ "block_id", "block identifier" })
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("print_meta")
+      .AddOptionalParameter("print_rows")
+      .Build();
+
+  unique_ptr<Action> dump_tree =
+      ActionBuilder("tree", &DumpFsTree)
+      .Description("Dump the tree of a Kudu filesystem")
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .Build();
+
+  unique_ptr<Action> dump_uuid =
+      ActionBuilder("uuid", &DumpUuid)
+      .Description("Dump the UUID of a Kudu filesystem")
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .Build();
+
+  return ModeBuilder("dump")
+      .Description("Dump a Kudu filesystem")
+      .AddAction(std::move(dump_cfile))
+      .AddAction(std::move(dump_tree))
+      .AddAction(std::move(dump_uuid))
+      .Build();
+}
 
 unique_ptr<Mode> BuildFsMode() {
   unique_ptr<Action> format =
@@ -115,28 +161,10 @@ unique_ptr<Mode> BuildFsMode() {
       .AddOptionalParameter("uuid")
       .Build();
 
-  unique_ptr<Action> print_uuid =
-      ActionBuilder("print_uuid", &PrintUuid)
-      .Description("Print the UUID of a Kudu filesystem")
-      .AddOptionalParameter("fs_wal_dir")
-      .AddOptionalParameter("fs_data_dirs")
-      .Build();
-
-  unique_ptr<Action> dump_cfile =
-      ActionBuilder("dump_cfile", &DumpCFile)
-      .Description("Dump the contents of a CFile (column file)")
-      .AddRequiredParameter({ "block_id", "block identifier" })
-      .AddOptionalParameter("fs_wal_dir")
-      .AddOptionalParameter("fs_data_dirs")
-      .AddOptionalParameter("print_meta")
-      .AddOptionalParameter("print_rows")
-      .Build();
-
   return ModeBuilder("fs")
       .Description("Operate on a local Kudu filesystem")
+      .AddMode(BuildFsDumpMode())
       .AddAction(std::move(format))
-      .AddAction(std::move(print_uuid))
-      .AddAction(std::move(dump_cfile))
       .Build();
 }
 

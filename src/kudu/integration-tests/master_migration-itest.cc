@@ -124,7 +124,8 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
       vector<string> args = {
           kBinPath,
           "fs",
-          "print_uuid",
+          "dump",
+          "uuid",
           "--fs_wal_dir=" + data_root,
           "--fs_data_dirs=" + data_root
       };
