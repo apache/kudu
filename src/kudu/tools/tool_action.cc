@@ -166,6 +166,7 @@ string Mode::BuildHelp(const vector<Mode*>& chain) const {
     msg += "\n";
   }
 
+  msg += "\n";
   return msg;
 }
 
@@ -238,11 +239,13 @@ string Action::BuildHelp(const vector<Mode*>& chain) const {
   for (const auto& param : args_.required) {
     usage_msg += Substitute(" <$0>", param.name);
     desc_msg += FakeDescribeOneFlag(param);
+    desc_msg += "\n";
   }
   if (args_.variadic) {
     const ActionArgsDescriptor::Arg& param = args_.variadic.get();
     usage_msg += Substitute(" <$0>...", param.name);
     desc_msg += FakeDescribeOneFlag(param);
+    desc_msg += "\n";
   }
   for (const auto& param : args_.optional) {
     google::CommandLineFlagInfo gflag_info =
@@ -266,6 +269,7 @@ string Action::BuildHelp(const vector<Mode*>& chain) const {
       usage_msg += Substitute(" [-$0=<$1>]", param, noun);
     }
     desc_msg += google::DescribeOneFlag(gflag_info);
+    desc_msg += "\n";
   }
   string msg;
   AppendHardWrapped(usage_msg, 8, &msg);

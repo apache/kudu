@@ -25,26 +25,38 @@
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/log_index.h"
+#include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/log_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
-using kudu::consensus::ConsensusMetadata;
-using kudu::consensus::RaftConfigPB;
-using kudu::consensus::RaftPeerPB;
-using kudu::rpc::Messenger;
-using kudu::rpc::MessengerBuilder;
-using kudu::tserver::TabletCopyClient;
+namespace kudu {
+namespace tools {
+
+using consensus::ConsensusMetadata;
+using consensus::RaftConfigPB;
+using consensus::RaftPeerPB;
+using log::LogIndex;
+using log::LogReader;
+using log::ReadableLogSegment;
+using log::SegmentSequence;
+using rpc::Messenger;
+using rpc::MessengerBuilder;
 using std::cout;
 using std::endl;
 using std::list;
@@ -54,9 +66,7 @@ using std::unique_ptr;
 using std::vector;
 using strings::Split;
 using strings::Substitute;
-
-namespace kudu {
-namespace tools {
+using tserver::TabletCopyClient;
 
 namespace {
 
@@ -186,6 +196,31 @@ Status Copy(const RunnerContext& context) {
   return client.Finish();
 }
 
+Status DumpWals(const RunnerContext& context) {
+  string tablet_id = FindOrDie(context.required_args, "tablet_id");
+
+  FsManagerOpts fs_opts;
+  fs_opts.read_only = true;
+  FsManager fs_manager(Env::Default(), fs_opts);
+  RETURN_NOT_OK(fs_manager.Open());
+
+  shared_ptr<LogReader> reader;
+  RETURN_NOT_OK(LogReader::Open(&fs_manager,
+                                scoped_refptr<LogIndex>(),
+                                tablet_id,
+                                scoped_refptr<MetricEntity>(),
+                                &reader));
+
+  SegmentSequence segments;
+  RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segments));
+
+  for (const scoped_refptr<ReadableLogSegment>& segment : segments) {
+    RETURN_NOT_OK(PrintSegment(segment));
+  }
+
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTabletMode() {
@@ -223,10 +258,22 @@ unique_ptr<Mode> BuildTabletMode() {
       .AddOptionalParameter("fs_data_dirs")
       .Build();
 
+  unique_ptr<Action> dump_wals =
+      ActionBuilder("dump_wals", &DumpWals)
+      .Description("Dump all WAL (write-ahead log) segments of a tablet")
+      .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("print_entries")
+      .AddOptionalParameter("print_meta")
+      .AddOptionalParameter("truncate_data")
+      .Build();
+
   return ModeBuilder("tablet")
       .Description("Operate on a local Kudu replica")
       .AddMode(std::move(cmeta))
       .AddAction(std::move(copy))
+      .AddAction(std::move(dump_wals))
       .Build();
 }
 

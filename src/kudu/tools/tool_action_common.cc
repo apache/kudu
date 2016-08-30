@@ -15,27 +15,31 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
-#include <glog/logging.h>
+#include "kudu/tools/tool_action_common.h"
+
 #include <iostream>
-#include <memory>
+#include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/log_index.h"
-#include "kudu/consensus/log_reader.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/consensus/log.pb.h"
+#include "kudu/consensus/log_util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/rpc/rpc_header.pb.h"
-#include "kudu/util/env.h"
-#include "kudu/util/flags.h"
-#include "kudu/util/logging.h"
-#include "kudu/util/metrics.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
 
-DEFINE_bool(print_headers, true, "print the log segment headers/footers");
+DEFINE_bool(print_meta, true, "Include metadata in output");
 DEFINE_string(print_entries, "decoded",
               "How to print entries:\n"
               "  false|0|no = don't print\n"
@@ -45,18 +49,23 @@ DEFINE_string(print_entries, "decoded",
 DEFINE_int32(truncate_data, 100,
              "Truncate the data fields to the given number of bytes "
              "before printing. Set to 0 to disable");
-namespace kudu {
-namespace log {
 
-using consensus::CommitMsg;
-using consensus::OperationType;
+namespace kudu {
+namespace tools {
+
 using consensus::ReplicateMsg;
-using tserver::WriteRequestPB;
-using std::shared_ptr;
+using log::LogEntryPB;
+using log::LogEntryReader;
+using log::ReadableLogSegment;
+using rpc::RequestIdPB;
+using std::cout;
+using std::cerr;
+using std::endl;
 using std::string;
 using std::vector;
-using std::cout;
-using std::endl;
+using tserver::WriteRequestPB;
+
+namespace {
 
 enum PrintEntryType {
   DONT_PRINT,
@@ -65,7 +74,7 @@ enum PrintEntryType {
   PRINT_ID
 };
 
-static PrintEntryType ParsePrintType() {
+PrintEntryType ParsePrintType() {
   if (ParseLeadingBoolValue(FLAGS_print_entries.c_str(), true) == false) {
     return DONT_PRINT;
   } else if (ParseLeadingBoolValue(FLAGS_print_entries.c_str(), false) == true ||
@@ -106,7 +115,7 @@ void PrintIdOnly(const LogEntryPB& entry) {
 Status PrintDecodedWriteRequestPB(const string& indent,
                                   const Schema& tablet_schema,
                                   const WriteRequestPB& write,
-                                  const rpc::RequestIdPB* request_id) {
+                                  const RequestIdPB* request_id) {
   Schema request_schema;
   RETURN_NOT_OK(SchemaFromPB(write.schema(), &request_schema));
 
@@ -159,96 +168,43 @@ Status PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
   return Status::OK();
 }
 
+} // anonymous namespace
+
 Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   PrintEntryType print_type = ParsePrintType();
-  if (FLAGS_print_headers) {
+  if (FLAGS_print_meta) {
     cout << "Header:\n" << segment->header().DebugString();
   }
-  if (print_type == DONT_PRINT) return Status::OK();
+  if (print_type != DONT_PRINT) {
+    Schema tablet_schema;
+    RETURN_NOT_OK(SchemaFromPB(segment->header().schema(), &tablet_schema));
 
-  Schema tablet_schema;
-  RETURN_NOT_OK(SchemaFromPB(segment->header().schema(), &tablet_schema));
+    LogEntryReader reader(segment.get());
+    LogEntryPB entry;
+    while (true) {
+      Status s = reader.ReadNextEntry(&entry);
+      if (s.IsEndOfFile()) break;
+      RETURN_NOT_OK(s);
 
-  LogEntryReader reader(segment.get());
-  LogEntryPB entry;
-  while (true) {
-    Status s = reader.ReadNextEntry(&entry);
-    if (s.IsEndOfFile()) break;
-    RETURN_NOT_OK(s);
+      if (print_type == PRINT_PB) {
+        if (FLAGS_truncate_data > 0) {
+          pb_util::TruncateFields(&entry, FLAGS_truncate_data);
+        }
 
-    if (print_type == PRINT_PB) {
-      if (FLAGS_truncate_data > 0) {
-        pb_util::TruncateFields(&entry, FLAGS_truncate_data);
+        cout << "Entry:\n" << entry.DebugString();
+      } else if (print_type == PRINT_DECODED) {
+        RETURN_NOT_OK(PrintDecoded(entry, tablet_schema));
+      } else if (print_type == PRINT_ID) {
+        PrintIdOnly(entry);
       }
-
-      cout << "Entry:\n" << entry.DebugString();
-    } else if (print_type == PRINT_DECODED) {
-      RETURN_NOT_OK(PrintDecoded(entry, tablet_schema));
-    } else if (print_type == PRINT_ID) {
-      PrintIdOnly(entry);
     }
   }
-  if (FLAGS_print_headers && segment->HasFooter()) {
+  if (FLAGS_print_meta && segment->HasFooter()) {
     cout << "Footer:\n" << segment->footer().DebugString();
   }
 
   return Status::OK();
 }
 
-Status DumpLog(const string& tablet_id) {
-  Env *env = Env::Default();
-  shared_ptr<LogReader> reader;
-  FsManagerOpts fs_opts;
-  fs_opts.read_only = true;
-  FsManager fs_manager(env, fs_opts);
-  RETURN_NOT_OK(fs_manager.Open());
-  RETURN_NOT_OK(LogReader::Open(&fs_manager,
-                                scoped_refptr<LogIndex>(),
-                                tablet_id,
-                                scoped_refptr<MetricEntity>(),
-                                &reader));
-
-  SegmentSequence segments;
-  RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segments));
-
-  for (const scoped_refptr<ReadableLogSegment>& segment : segments) {
-    RETURN_NOT_OK(PrintSegment(segment));
-  }
-
-  return Status::OK();
-}
-
-Status DumpSegment(const string &segment_path) {
-  Env *env = Env::Default();
-  scoped_refptr<ReadableLogSegment> segment;
-  RETURN_NOT_OK(ReadableLogSegment::Open(env, segment_path, &segment));
-  RETURN_NOT_OK(PrintSegment(segment));
-
-  return Status::OK();
-}
-
-} // namespace log
+} // namespace tools
 } // namespace kudu
-
-int main(int argc, char **argv) {
-  kudu::ParseCommandLineFlags(&argc, &argv, true);
-  if (argc != 2) {
-    std::cerr << "usage: " << argv[0]
-              << " -fs_wal_dir <dir> -fs_data_dirs <dirs>"
-              << " <tablet_name> | <log segment path>"
-              << std::endl;
-    return 1;
-  }
-  kudu::InitGoogleLoggingSafe(argv[0]);
-  kudu::Status s = kudu::log::DumpSegment(argv[1]);
-  if (s.ok()) {
-    return 0;
-  } else if (s.IsNotFound()) {
-    s = kudu::log::DumpLog(argv[1]);
-  }
-  if (!s.ok()) {
-    std::cerr << "Error: " << s.ToString() << std::endl;
-    return 1;
-  }
-  return 0;
-}

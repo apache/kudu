@@ -115,6 +115,7 @@ int RunTool(int argc, char** argv, bool show_help) {
     .AddMode(BuildFsMode())
     .AddMode(BuildPbcMode())
     .AddMode(BuildTabletMode())
+    .AddMode(BuildWalMode())
     .Build();
 
   // Initialize arg parsing state.
@@ -150,7 +151,7 @@ int RunTool(int argc, char** argv, bool show_help) {
       chain.push_back(next_mode);
     } else if (next_action) {
       if (show_help) {
-        cerr << next_action->BuildHelp(chain) << endl;
+        cerr << next_action->BuildHelp(chain);
         return 1;
       } else {
         // Invoke the action with whatever arguments remain, skipping this one.
@@ -164,7 +165,7 @@ int RunTool(int argc, char** argv, bool show_help) {
       // Couldn't match the argument at all. Print the help.
       Status s = Status::InvalidArgument(
           Substitute("unknown command '$0'\n", argv[i]));
-      cerr << s.ToString() << cur->BuildHelp(chain) << endl;
+      cerr << s.ToString() << cur->BuildHelp(chain);
       return 1;
     }
   }
@@ -172,7 +173,7 @@ int RunTool(int argc, char** argv, bool show_help) {
   // Ran out of arguments before reaching an action. Print the last mode's help.
   DCHECK(!chain.empty());
   const Mode* last = chain.back();
-  cerr << last->BuildHelp(chain) << endl;
+  cerr << last->BuildHelp(chain);
   return 1;
 }
 

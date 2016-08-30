@@ -31,8 +31,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
-DEFINE_bool(print_meta, true,
-            "Print the header and footer from the CFile");
+DECLARE_bool(print_meta);
 DEFINE_bool(print_rows, true,
             "Print each row in the CFile");
 DEFINE_string(uuid, "",
@@ -47,7 +46,6 @@ using std::cout;
 using std::endl;
 using std::string;
 using std::unique_ptr;
-using std::vector;
 using strings::Substitute;
 
 namespace {

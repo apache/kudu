@@ -62,6 +62,9 @@
 #define ASSERT_STR_MATCHES(str, pattern) \
   ASSERT_THAT(str, testing::ContainsRegex(pattern))
 
+#define ASSERT_STR_NOT_MATCHES(str, pattern) \
+  ASSERT_THAT(str, testing::Not(testing::ContainsRegex(pattern)))
+
 // Batched substring regular expressions in extended regex (POSIX) syntax.
 //
 // All strings must match the pattern.

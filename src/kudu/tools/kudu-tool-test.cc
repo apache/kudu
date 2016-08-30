@@ -24,12 +24,25 @@
 #include "kudu/cfile/cfile-test-base.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/log.h"
+#include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/subprocess.h"
@@ -42,10 +55,16 @@ namespace tools {
 using cfile::CFileWriter;
 using cfile::StringDataGenerator;
 using cfile::WriterOptions;
+using consensus::OpId;
+using consensus::ReplicateRefPtr;
+using consensus::ReplicateMsg;
 using fs::WritableBlock;
+using log::Log;
+using log::LogOptions;
 using std::string;
 using std::vector;
 using strings::Substitute;
+using tserver::WriteRequestPB;
 
 class ToolTest : public KuduTest {
  public:
@@ -59,6 +78,8 @@ class ToolTest : public KuduTest {
   }
 
   Status RunTool(const string& arg_str,
+                 string* stdout,
+                 string* stderr,
                  vector<string>* stdout_lines,
                  vector<string>* stderr_lines) const {
     vector<string> args = { tool_path_ };
@@ -66,28 +87,43 @@ class ToolTest : public KuduTest {
                                               strings::SkipEmpty());
     args.insert(args.end(), more_args.begin(), more_args.end());
 
-    string stdout;
-    string stderr;
-    Status s = Subprocess::Call(args, &stdout, &stderr);
-    StripWhiteSpace(&stdout);
-    StripWhiteSpace(&stderr);
-    *stdout_lines = strings::Split(stdout, "\n", strings::SkipEmpty());
-    *stderr_lines = strings::Split(stderr, "\n", strings::SkipEmpty());
+    string out;
+    string err;
+    Status s = Subprocess::Call(args, &out, &err);
+    if (stdout) {
+      *stdout = out;
+      StripWhiteSpace(stdout);
+    }
+    if (stderr) {
+      *stderr = err;
+      StripWhiteSpace(stderr);
+    }
+    if (stdout_lines) {
+      *stdout_lines = strings::Split(out, "\n", strings::SkipEmpty());
+    }
+    if (stderr_lines) {
+      *stderr_lines = strings::Split(err, "\n", strings::SkipEmpty());
+    }
     return s;
-
   }
 
-  void RunTestActionNoOut(const string& arg_str) const {
-    vector<string> stdout;
-    RunTestAction(arg_str, &stdout);
+  void RunActionStdoutNone(const string& arg_str) const {
+    string stdout;
+    Status s = RunTool(arg_str, &stdout, nullptr, nullptr, nullptr);
+    SCOPED_TRACE(stdout);
+    ASSERT_OK(s);
     ASSERT_TRUE(stdout.empty());
   }
 
-  void RunTestAction(const string& arg_str, vector<string>* stdout) const {
-    vector<string> stderr;
-    Status s = RunTool(arg_str, stdout, &stderr);
+  void RunActionStdoutString(const string& arg_str, string* stdout) const {
+    Status s = RunTool(arg_str, stdout, nullptr, nullptr, nullptr);
     SCOPED_TRACE(*stdout);
-    SCOPED_TRACE(stderr);
+    ASSERT_OK(s);
+  }
+
+  void RunActionStdoutLines(const string& arg_str, vector<string>* stdout_lines) const {
+    Status s = RunTool(arg_str, nullptr, nullptr, stdout_lines, nullptr);
+    SCOPED_TRACE(*stdout_lines);
     ASSERT_OK(s);
   }
 
@@ -96,7 +132,7 @@ class ToolTest : public KuduTest {
                    const Status& expected_status = Status::OK()) const {
     vector<string> stdout;
     vector<string> stderr;
-    Status s = RunTool(arg_str, &stdout, &stderr);
+    Status s = RunTool(arg_str, nullptr, nullptr, &stdout, &stderr);
     SCOPED_TRACE(stdout);
     SCOPED_TRACE(stderr);
 
@@ -132,7 +168,8 @@ TEST_F(ToolTest, TestTopLevelHelp) {
       "cluster.*Kudu cluster",
       "fs.*Kudu filesystem",
       "pbc.*protobuf container",
-      "tablet.*Kudu replica"
+      "tablet.*Kudu replica",
+      "wal.*write-ahead log"
   };
   NO_FATALS(RunTestHelp("", kTopLevelRegexes));
   NO_FATALS(RunTestHelp("--help", kTopLevelRegexes));
@@ -153,7 +190,8 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kTabletModeRegexes = {
         "cmeta.*consensus metadata file",
-        "copy.*Copy a replica"
+        "copy.*Copy a replica",
+        "dump_wals.*Dump all WAL"
     };
     NO_FATALS(RunTestHelp("tablet", kTabletModeRegexes));
   }
@@ -176,6 +214,12 @@ TEST_F(ToolTest, TestModeHelp) {
     };
     NO_FATALS(RunTestHelp("pbc", kPbcModeRegexes));
   }
+  {
+    const vector<string> kWalModeRegexes = {
+        "dump.*Dump a WAL",
+    };
+    NO_FATALS(RunTestHelp("wal", kWalModeRegexes));
+  }
 }
 
 TEST_F(ToolTest, TestActionHelp) {
@@ -191,7 +235,7 @@ TEST_F(ToolTest, TestActionHelp) {
 
 TEST_F(ToolTest, TestFsFormat) {
   const string kTestDir = GetTestPath("test");
-  NO_FATALS(RunTestActionNoOut(Substitute("fs format --fs_wal_dir=$0", kTestDir)));
+  NO_FATALS(RunActionStdoutNone(Substitute("fs format --fs_wal_dir=$0", kTestDir)));
   FsManager fs(env_.get(), kTestDir);
   ASSERT_OK(fs.Open());
 
@@ -205,7 +249,7 @@ TEST_F(ToolTest, TestFsFormatWithUuid) {
   const string kTestDir = GetTestPath("test");
   ObjectIdGenerator generator;
   string original_uuid = generator.Next();
-  NO_FATALS(RunTestActionNoOut(Substitute(
+  NO_FATALS(RunActionStdoutNone(Substitute(
       "fs format --fs_wal_dir=$0 --uuid=$1", kTestDir, original_uuid)));
   FsManager fs(env_.get(), kTestDir);
   ASSERT_OK(fs.Open());
@@ -225,12 +269,11 @@ TEST_F(ToolTest, TestFsPrintUuid) {
     ASSERT_OK(fs.Open());
     uuid = fs.uuid();
   }
-  vector<string> stdout;
-  NO_FATALS(RunTestAction(Substitute(
+  string stdout;
+  NO_FATALS(RunActionStdoutString(Substitute(
       "fs print_uuid --fs_wal_dir=$0", kTestDir), &stdout));
   SCOPED_TRACE(stdout);
-  ASSERT_EQ(1, stdout.size());
-  ASSERT_EQ(uuid, stdout[0]);
+  ASSERT_EQ(uuid, stdout);
 }
 
 TEST_F(ToolTest, TestPbcDump) {
@@ -245,9 +288,9 @@ TEST_F(ToolTest, TestPbcDump) {
     uuid = fs.uuid();
     instance_path = fs.GetInstanceMetadataPath(kTestDir);
   }
-  vector<string> stdout;
   {
-    NO_FATALS(RunTestAction(Substitute(
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(Substitute(
         "pbc dump $0", instance_path), &stdout));
     SCOPED_TRACE(stdout);
     ASSERT_EQ(4, stdout.size());
@@ -257,13 +300,12 @@ TEST_F(ToolTest, TestPbcDump) {
     ASSERT_STR_MATCHES(stdout[3], "^format_stamp: \"Formatted at .*\"$");
   }
   {
-    NO_FATALS(RunTestAction(Substitute(
+    string stdout;
+    NO_FATALS(RunActionStdoutString(Substitute(
         "pbc dump $0/instance --oneline", kTestDir), &stdout));
     SCOPED_TRACE(stdout);
-    ASSERT_EQ(1, stdout.size());
-    ASSERT_STR_MATCHES(
-        stdout[0], Substitute(
-            "^0\tuuid: \"$0\" format_stamp: \"Formatted at .*\"$$", uuid));
+    ASSERT_STR_MATCHES(stdout, Substitute(
+        "^0\tuuid: \"$0\" format_stamp: \"Formatted at .*\"$$", uuid));
   }
 }
 
@@ -287,16 +329,14 @@ TEST_F(ToolTest, TestFsDumpCFile) {
   ASSERT_OK_FAST(writer.AppendEntries(generator.values(), kNumEntries));
   ASSERT_OK(writer.Finish());
 
+  {
+    NO_FATALS(RunActionStdoutNone(Substitute(
+        "fs dump_cfile --fs_wal_dir=$0 $1 --noprint_meta --noprint_rows",
+        kTestDir, block_id.ToString())));
+  }
   vector<string> stdout;
   {
-    NO_FATALS(RunTestAction(Substitute(
-        "fs dump_cfile --fs_wal_dir=$0 $1 --noprint_meta --noprint_rows",
-        kTestDir, block_id.ToString()), &stdout));
-    SCOPED_TRACE(stdout);
-    ASSERT_TRUE(stdout.empty());
-  }
-  {
-    NO_FATALS(RunTestAction(Substitute(
+    NO_FATALS(RunActionStdoutLines(Substitute(
         "fs dump_cfile --fs_wal_dir=$0 $1 --noprint_rows",
         kTestDir, block_id.ToString()), &stdout));
     SCOPED_TRACE(stdout);
@@ -305,20 +345,135 @@ TEST_F(ToolTest, TestFsDumpCFile) {
     ASSERT_EQ(stdout[3], "Footer:");
   }
   {
-    NO_FATALS(RunTestAction(Substitute(
+    NO_FATALS(RunActionStdoutLines(Substitute(
         "fs dump_cfile --fs_wal_dir=$0 $1 --noprint_meta",
         kTestDir, block_id.ToString()), &stdout));
     SCOPED_TRACE(stdout);
     ASSERT_EQ(kNumEntries, stdout.size());
   }
   {
-    NO_FATALS(RunTestAction(Substitute(
+    NO_FATALS(RunActionStdoutLines(Substitute(
         "fs dump_cfile --fs_wal_dir=$0 $1",
         kTestDir, block_id.ToString()), &stdout));
     SCOPED_TRACE(stdout);
     ASSERT_GT(stdout.size(), kNumEntries);
     ASSERT_EQ(stdout[0], "Header:");
     ASSERT_EQ(stdout[3], "Footer:");
+  }
+}
+
+TEST_F(ToolTest, TestWalDump) {
+  const string kTestDir = GetTestPath("test");
+  const string kTestTablet = "test-tablet";
+  const Schema kSchema(GetSimpleTestSchema());
+  const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
+
+  FsManager fs(env_.get(), kTestDir);
+  ASSERT_OK(fs.CreateInitialFileSystemLayout());
+  ASSERT_OK(fs.Open());
+
+  {
+    scoped_refptr<Log> log;
+    ASSERT_OK(Log::Open(LogOptions(),
+                        &fs,
+                        kTestTablet,
+                        kSchemaWithIds,
+                        0, // schema_version
+                        scoped_refptr<MetricEntity>(),
+                        &log));
+
+    OpId opid = consensus::MakeOpId(1, 1);
+    ReplicateRefPtr replicate =
+        consensus::make_scoped_refptr_replicate(new ReplicateMsg());
+    replicate->get()->set_op_type(consensus::WRITE_OP);
+    replicate->get()->mutable_id()->CopyFrom(opid);
+    replicate->get()->set_timestamp(1);
+    WriteRequestPB* write = replicate->get()->mutable_write_request();
+    ASSERT_OK(SchemaToPB(kSchema, write->mutable_schema()));
+    AddTestRowToPB(RowOperationsPB::INSERT, kSchema,
+                   opid.index(),
+                   0,
+                   "this is a test insert",
+                   write->mutable_row_operations());
+    write->set_tablet_id(kTestTablet);
+    Synchronizer s;
+    ASSERT_OK(log->AsyncAppendReplicates({ replicate }, s.AsStatusCallback()));
+    ASSERT_OK(s.Wait());
+  }
+
+  string wal_path = fs.GetWalSegmentFileName(kTestTablet, 1);
+  string stdout;
+  for (const auto& args : { Substitute("wal dump $0", wal_path),
+                            Substitute("tablet dump_wals --fs_wal_dir=$0 $1", kTestDir, kTestTablet)
+                           }) {
+    SCOPED_TRACE(args);
+    for (const auto& print_entries : { "true", "1", "yes", "decoded" }) {
+      SCOPED_TRACE(print_entries);
+      NO_FATALS(RunActionStdoutString(Substitute("$0 --print_entries=$1",
+                                                 args, print_entries), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_MATCHES(stdout, "this is a test insert");
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    for (const auto& print_entries : { "false", "0", "no" }) {
+      SCOPED_TRACE(print_entries);
+      NO_FATALS(RunActionStdoutString(Substitute("$0 --print_entries=$1",
+                                                 args, print_entries), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "this is a test insert");
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute("$0 --print_entries=pb",
+                                                 args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_MATCHES(stdout, "this is a test insert");
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute(
+          "$0 --print_entries=pb --truncate_data=1", args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "this is a test insert");
+      ASSERT_STR_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute(
+          "$0 --print_entries=id", args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "this is a test insert");
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute(
+          "$0 --print_meta=false", args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_NOT_MATCHES(stdout, "Header:");
+      ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_MATCHES(stdout, "this is a test insert");
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_NOT_MATCHES(stdout, "Footer:");
+    }
   }
 }
 

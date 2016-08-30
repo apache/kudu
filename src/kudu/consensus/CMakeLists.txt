@@ -145,9 +145,3 @@ ADD_KUDU_TEST(raft_consensus-test)
 # googletest). Remove this when we upgrade.
 set_source_files_properties(raft_consensus-test.cc
     PROPERTIES COMPILE_FLAGS -Wno-inconsistent-missing-override)
-
-#Tools
-add_executable(log-dump log-dump.cc)
-target_link_libraries(log-dump
-  log
-  ${KUDU_BASE_LIBS})

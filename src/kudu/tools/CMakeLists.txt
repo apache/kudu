@@ -87,18 +87,22 @@ target_link_libraries(ksck
 add_executable(kudu
   tool_action.cc
   tool_action_cluster.cc
+  tool_action_common.cc
   tool_action_fs.cc
   tool_action_pbc.cc
   tool_action_tablet.cc
+  tool_action_wal.cc
   tool_main.cc
 )
 target_link_libraries(kudu
   consensus
   gutil
+  krpc
+  ksck
   kudu_common
   kudu_fs
   kudu_util
-  ksck
+  log
   master
   tserver
   ${KUDU_BASE_LIBS}
