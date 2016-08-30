@@ -376,12 +376,9 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       }
 
       split = (TableSplit) inputSplit;
-
-      try {
-        scanner = KuduScanToken.deserializeIntoScanner(split.getScanToken(), client);
-      } catch (Exception e) {
-        throw new IOException(e);
-      }
+      LOG.debug("Creating scanner for token: {}",
+                KuduScanToken.stringifySerializedToken(split.getScanToken(), client));
+      scanner = KuduScanToken.deserializeIntoScanner(split.getScanToken(), client);
 
       // Calling this now to set iterator.
       tryRefreshIterator();

@@ -28,10 +28,8 @@ import static org.apache.kudu.client.RowResult.timestampToString;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
-import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -409,7 +407,11 @@ public class TestKuduClient extends BaseKuduTest {
     tokenBuilder.setProjectedColumnIndexes(ImmutableList.<Integer>of());
     List<KuduScanToken> tokens = tokenBuilder.build();
     assertEquals(16, tokens.size());
-    assertEquals(100, countScanTokenRows(tokens));
+
+    for (KuduScanToken token : tokens) {
+      // Sanity check to make sure the debug printing does not throw.
+      LOG.debug(KuduScanToken.stringifySerializedToken(token.serialize(), syncClient));
+    }
   }
 
   /**
@@ -465,6 +467,11 @@ public class TestKuduClient extends BaseKuduTest {
     List<KuduScanToken> tokens = tokenBuilder.build();
     assertEquals(6, tokens.size());
     assertEquals('f' - 'a' + 'z' - 'h', countScanTokenRows(tokens));
+
+    for (KuduScanToken token : tokens) {
+      // Sanity check to make sure the debug printing does not throw.
+      LOG.debug(KuduScanToken.stringifySerializedToken(token.serialize(), syncClient));
+    }
   }
 
   /**

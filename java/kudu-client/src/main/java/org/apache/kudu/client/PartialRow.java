@@ -17,6 +17,7 @@
 package org.apache.kudu.client;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
@@ -520,59 +521,106 @@ public class PartialRow {
    */
   public String stringifyRowKey() {
     int numRowKeys = schema.getPrimaryKeyColumnCount();
+    List<Integer> idxs = new ArrayList<>(numRowKeys);
+    for (int i = 0; i < numRowKeys; i++) {
+      idxs.add(i);
+    }
+
     StringBuilder sb = new StringBuilder();
     sb.append("(");
-    for (int i = 0; i < numRowKeys; i++) {
-      if (i > 0) {
+    appendDebugString(idxs, sb);
+    sb.append(")");
+    return sb.toString();
+  }
+
+  /**
+   * Appends a debug string for the provided columns in the row.
+   *
+   * @param idxs the column indexes.
+   * @param sb the string builder to append to
+   */
+  void appendDebugString(List<Integer> idxs, StringBuilder sb) {
+    boolean first = true;
+    for (int idx : idxs) {
+      if (first) {
+        first = false;
+      } else {
         sb.append(", ");
       }
 
-      ColumnSchema col = schema.getColumnByIndex(i);
-      assert !col.isNullable();
-      Preconditions.checkState(columnsBitSet.get(i),
-          "Full row key not specified, missing at least col: " + col.getName());
-      Type type = col.getType();
-      sb.append(type.getName());
-      sb.append(" ");
-      sb.append(col.getName());
-      sb.append("=");
+      ColumnSchema col = schema.getColumnByIndex(idx);
 
-      if (type == Type.STRING || type == Type.BINARY) {
-        ByteBuffer value = getVarLengthData().get(i).duplicate();
-        value.reset(); // Make sure we start at the beginning.
-        byte[] data = new byte[value.limit()];
-        value.get(data);
-        if (type == Type.STRING) {
-          sb.append(Bytes.getString(data));
-        } else {
-          sb.append(Bytes.pretty(data));
-        }
-      } else {
-        switch (type) {
-          case INT8:
-            sb.append(Bytes.getByte(rowAlloc, schema.getColumnOffset(i)));
-            break;
-          case INT16:
-            sb.append(Bytes.getShort(rowAlloc, schema.getColumnOffset(i)));
-            break;
-          case INT32:
-            sb.append(Bytes.getInt(rowAlloc, schema.getColumnOffset(i)));
-            break;
-          case INT64:
-            sb.append(Bytes.getLong(rowAlloc, schema.getColumnOffset(i)));
-            break;
-          case TIMESTAMP:
-            sb.append(Bytes.getLong(rowAlloc, schema.getColumnOffset(i)));
-            break;
-          default:
-            throw new IllegalArgumentException(String.format(
-                "The column type %s is not a valid key component type", type));
-        }
+      sb.append(col.getType().getName());
+      sb.append(' ');
+      sb.append(col.getName());
+      sb.append('=');
+
+      Preconditions.checkState(columnsBitSet.get(idx), "Column %s is not set", col.getName());
+
+      if (nullsBitSet != null && nullsBitSet.get(idx)) {
+        sb.append("NULL");
+        continue;
+      }
+
+      switch (col.getType()) {
+        case BOOL:
+          sb.append(Bytes.getBoolean(rowAlloc, schema.getColumnOffset(idx)));
+          break;
+        case INT8:
+          sb.append(Bytes.getByte(rowAlloc, schema.getColumnOffset(idx)));
+          break;
+        case INT16:
+          sb.append(Bytes.getShort(rowAlloc, schema.getColumnOffset(idx)));
+          break;
+        case INT32:
+          sb.append(Bytes.getInt(rowAlloc, schema.getColumnOffset(idx)));
+          break;
+        case INT64:
+          sb.append(Bytes.getLong(rowAlloc, schema.getColumnOffset(idx)));
+          break;
+        case TIMESTAMP:
+          sb.append(RowResult.timestampToString(
+              Bytes.getLong(rowAlloc, schema.getColumnOffset(idx))));
+          break;
+        case FLOAT:
+          sb.append(Bytes.getFloat(rowAlloc, schema.getColumnOffset(idx)));
+          break;
+        case DOUBLE:
+          sb.append(Bytes.getDouble(rowAlloc, schema.getColumnOffset(idx)));
+          break;
+        case BINARY:
+        case STRING:
+          ByteBuffer value = getVarLengthData().get(idx).duplicate();
+          value.reset(); // Make sure we start at the beginning.
+          byte[] data = new byte[value.limit()];
+          value.get(data);
+          if (col.getType() == Type.STRING) {
+            sb.append(Bytes.getString(data));
+          } else {
+            sb.append(Bytes.pretty(data));
+          }
       }
     }
-    sb.append(")");
+  }
 
-    return sb.toString();
+  /**
+   * Sets the column to the minimum possible value for the column's type.
+   * @param index the index of the column to set to the minimum
+   */
+  void setMin(int index) {
+    Type type = schema.getColumnByIndex(index).getType();
+    switch (type) {
+      case BOOL: addBoolean(index, false); break;
+      case INT8: addByte(index, Byte.MIN_VALUE); break;
+      case INT16: addShort(index, Short.MIN_VALUE); break;
+      case INT32: addInt(index, Integer.MIN_VALUE); break;
+      case INT64:
+      case TIMESTAMP: addLong(index, Integer.MIN_VALUE); break;
+      case FLOAT: addFloat(index, -Float.MAX_VALUE); break;
+      case DOUBLE: addDouble(index, -Double.MAX_VALUE); break;
+      case STRING: addStringUtf8(index, AsyncKuduClient.EMPTY_ARRAY); break;
+      case BINARY: addBinary(index, AsyncKuduClient.EMPTY_ARRAY); break;
+    }
   }
 
   /**

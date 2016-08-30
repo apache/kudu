@@ -21,11 +21,14 @@ import com.google.common.base.Predicates;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -34,9 +37,9 @@ import java.util.Objects;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 
 public class TestFlexiblePartitioning extends BaseKuduTest {
+  private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);
   private String tableName;
 
   @Before
@@ -52,7 +55,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     return new Schema(columns);
   }
 
-  private static Set<Row> rows() throws Exception {
+  private static Set<Row> rows() throws KuduException {
     Set<Row> rows = new HashSet<>();
     for (int a = 0; a < 6; a++) {
       for (int b = 0; b < 6; b++) {
@@ -66,7 +69,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     return rows;
   }
 
-  private void insertRows(KuduTable table, Set<Row> rows) throws Exception {
+  private void insertRows(KuduTable table, Set<Row> rows) throws KuduException {
     KuduSession session = syncClient.newSession();
     try {
       for (Row row : rows) {
@@ -80,12 +83,32 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     }
   }
 
-  private Set<Row> collectRows(KuduScanner scanner) throws Exception {
+  private Set<Row> collectRows(KuduScanner scanner) throws KuduException {
     Set<Row> rows = new HashSet<>();
     while (scanner.hasMoreRows()) {
       for (RowResult result : scanner.nextRows()) {
         rows.add(Row.fromResult(result));
       }
+    }
+    return rows;
+  }
+
+  /**
+   * Collects the rows from a set of scan tokens.
+   *
+   * @param scanTokens the scan token builder
+   * @return the rows
+   */
+  private Set<Row> collectRows(KuduScanToken.KuduScanTokenBuilder scanTokens) throws Exception {
+    Set<Row> rows = new HashSet<>();
+    for (KuduScanToken token : scanTokens.build()) {
+      LOG.debug("Scanning token: {}", KuduScanToken.stringifySerializedToken(token.serialize(),
+                                                                             syncClient));
+
+      int existingCount = rows.size();
+      Set<Row> newRows = collectRows(token.intoScanner(syncClient));
+      rows.addAll(newRows);
+      assertEquals(existingCount + newRows.size(), rows.size());
     }
     return rows;
   }
@@ -112,8 +135,12 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
 
       KuduScanner scanner = syncClient.newScannerBuilder(table).lowerBound(lowerBound).build();
       Set<Row> results = collectRows(scanner);
-
       assertEquals(expected, results);
+
+      KuduScanToken.KuduScanTokenBuilder scanTokens =
+          syncClient.newScanTokenBuilder(table).lowerBound(lowerBound);
+      Set<Row> tokenResults = collectRows(scanTokens);
+      assertEquals(expected, tokenResults);
     }
 
     { // Upper bound
@@ -127,8 +154,12 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
                                       .exclusiveUpperBound(upperBound)
                                       .build();
       Set<Row> results = collectRows(scanner);
-
       assertEquals(expected, results);
+
+      KuduScanToken.KuduScanTokenBuilder scanTokens =
+          syncClient.newScanTokenBuilder(table).exclusiveUpperBound(upperBound);
+      Set<Row> tokenResults = collectRows(scanTokens);
+      assertEquals(expected, tokenResults);
     }
 
     { // Lower & Upper bounds
@@ -146,8 +177,14 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
                                       .exclusiveUpperBound(upperBound)
                                       .build();
       Set<Row> results = collectRows(scanner);
-
       assertEquals(expected, results);
+
+      KuduScanToken.KuduScanTokenBuilder scanTokens =
+          syncClient.newScanTokenBuilder(table)
+                    .lowerBound(lowerBound)
+                    .exclusiveUpperBound(upperBound);
+      Set<Row> tokenResults = collectRows(scanTokens);
+      assertEquals(expected, tokenResults);
     }
 
     List<LocatedTablet> tablets = table.getTabletsLocations(TestTimeouts.DEFAULT_SLEEP);

@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedInputStream;
@@ -97,14 +98,49 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
    * @param buf a byte array containing the serialized scan token.
    * @param client a Kudu client for the cluster
    * @return a scanner for the serialized scan token
-   * @throws Exception
    */
-  public static KuduScanner deserializeIntoScanner(byte[] buf, KuduClient client) throws Exception {
+  public static KuduScanner deserializeIntoScanner(byte[] buf, KuduClient client) throws IOException {
     return pbIntoScanner(ScanTokenPB.parseFrom(CodedInputStream.newInstance(buf)), client);
   }
 
+  /**
+   * Formats the serialized token for debug printing.
+   *
+   * @param buf the serialized token
+   * @param client a Kudu client for the cluster to which the token belongs
+   * @return a debug string
+   */
+  public static String stringifySerializedToken(byte[] buf, KuduClient client) throws IOException {
+    ScanTokenPB token = ScanTokenPB.parseFrom(CodedInputStream.newInstance(buf));
+    KuduTable table = client.openTable(token.getTableName());
+
+    MoreObjects.ToStringHelper helper = MoreObjects.toStringHelper("ScanToken")
+                                                   .add("table", token.getTableName());
+
+    if (token.hasLowerBoundPrimaryKey() && !token.getLowerBoundPrimaryKey().isEmpty()) {
+      helper.add("lower-bound-primary-key",
+                 KeyEncoder.decodePrimaryKey(table.getSchema(),
+                                             token.getLowerBoundPrimaryKey().toByteArray())
+                           .stringifyRowKey());
+    }
+
+    if (token.hasUpperBoundPrimaryKey() && !token.getUpperBoundPrimaryKey().isEmpty()) {
+      helper.add("upper-bound-primary-key",
+                 KeyEncoder.decodePrimaryKey(table.getSchema(),
+                                             token.getUpperBoundPrimaryKey().toByteArray())
+                           .stringifyRowKey());
+    }
+
+    helper.addValue(KeyEncoder.formatPartitionKeyRange(table.getSchema(),
+                                                       table.getPartitionSchema(),
+                                                       token.getLowerBoundPartitionKey().toByteArray(),
+                                                       token.getUpperBoundPartitionKey().toByteArray()));
+
+    return helper.toString();
+  }
+
   private static KuduScanner pbIntoScanner(ScanTokenPB message,
-                                           KuduClient client) throws Exception {
+                                           KuduClient client) throws KuduException {
     Preconditions.checkArgument(
         !message.getFeatureFlagsList().contains(ScanTokenPB.Feature.Unknown),
         "Scan token requires an unsupported feature. This Kudu client must be updated.");
@@ -299,9 +335,9 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
         for (LocatedTablet tablet : tablets) {
           Client.ScanTokenPB.Builder builder = proto.clone();
           builder.setLowerBoundPartitionKey(
-              ZeroCopyLiteralByteString.wrap(tablet.getPartition().partitionKeyStart));
+              ZeroCopyLiteralByteString.wrap(tablet.getPartition().getPartitionKeyStart()));
           builder.setUpperBoundPartitionKey(
-              ZeroCopyLiteralByteString.wrap(tablet.getPartition().partitionKeyEnd));
+              ZeroCopyLiteralByteString.wrap(tablet.getPartition().getPartitionKeyEnd()));
           tokens.add(new KuduScanToken(tablet, builder.build()));
         }
         return tokens;

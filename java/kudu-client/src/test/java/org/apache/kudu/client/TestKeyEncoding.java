@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -48,7 +49,7 @@ public class TestKeyEncoding {
   }
 
   private static void assertBytesEquals(byte[] actual, byte[] expected) {
-    assertTrue(String.format("expected: '%s', got '%s'",
+    assertTrue(String.format("expected: '%s', got: '%s'",
                              Bytes.pretty(expected),
                              Bytes.pretty(actual)),
                Bytes.equals(expected, actual));
@@ -159,13 +160,16 @@ public class TestKeyEncoding {
     rowA.addString("string", "");
     rowA.addBinary("binary", "".getBytes(Charsets.UTF_8));
 
-    assertBytesEquals(rowA.encodePrimaryKey(),
+    byte[] rowAEncoded = rowA.encodePrimaryKey();
+    assertBytesEquals(rowAEncoded,
                       "\0"
                     + "\0\0"
                     + "\0\0\0\0"
                     + "\0\0\0\0\0\0\0\0"
                     + "\0\0"
                     + "");
+    assertEquals(rowA.stringifyRowKey(),
+                 KeyEncoder.decodePrimaryKey(schema, rowAEncoded).stringifyRowKey());
 
     PartialRow rowB = schema.newPartialRow();
     rowB.addByte("int8", Byte.MAX_VALUE);
@@ -175,6 +179,7 @@ public class TestKeyEncoding {
     rowB.addString("string", "abc\1\0def");
     rowB.addBinary("binary", "\0\1binary".getBytes(Charsets.UTF_8));
 
+    byte[] rowBEncoded = rowB.encodePrimaryKey();
     assertBytesEquals(rowB.encodePrimaryKey(),
                       new byte[] {
                           -1,
@@ -184,6 +189,8 @@ public class TestKeyEncoding {
                           'a', 'b', 'c', 1, 0, 1, 'd', 'e', 'f', 0, 0,
                           0, 1, 'b', 'i', 'n', 'a', 'r', 'y',
                       });
+    assertEquals(rowB.stringifyRowKey(),
+                 KeyEncoder.decodePrimaryKey(schema, rowBEncoded).stringifyRowKey());
 
     PartialRow rowC = schema.newPartialRow();
     rowC.addByte("int8", (byte) 1);
@@ -193,7 +200,8 @@ public class TestKeyEncoding {
     rowC.addString("string", "abc\n123");
     rowC.addBinary("binary", "\0\1\2\3\4\5".getBytes(Charsets.UTF_8));
 
-    assertBytesEquals(rowC.encodePrimaryKey(),
+    byte[] rowCEncoded = rowC.encodePrimaryKey();
+    assertBytesEquals(rowCEncoded,
                       new byte[] {
                           (byte) 0x81,
                           (byte) 0x80, 2,
@@ -202,6 +210,29 @@ public class TestKeyEncoding {
                           'a', 'b', 'c', '\n', '1', '2', '3', 0, 0,
                           0, 1, 2, 3, 4, 5,
                       });
+    assertEquals(rowC.stringifyRowKey(),
+                 KeyEncoder.decodePrimaryKey(schema, rowCEncoded).stringifyRowKey());
+
+    PartialRow rowD = schema.newPartialRow();
+    rowD.addByte("int8", (byte) -1);
+    rowD.addShort("int16", (short) -2);
+    rowD.addInt("int32", -3);
+    rowD.addLong("int64", -4);
+    rowD.addString("string", "\0abc\n\1\1\0 123\1\0");
+    rowD.addBinary("binary", "\0\1\2\3\4\5\0".getBytes(Charsets.UTF_8));
+
+    byte[] rowDEncoded = rowD.encodePrimaryKey();
+    assertBytesEquals(rowDEncoded,
+                      new byte[] {
+                          (byte) 127,
+                          (byte) 127, -2,
+                          (byte) 127, -1, -1, -3,
+                          (byte) 127, -1, -1, -1, -1, -1, -1, -4,
+                          0, 1, 'a', 'b', 'c', '\n', 1, 1, 0, 1, ' ', '1', '2', '3', 1, 0, 1, 0, 0,
+                          0, 1, 2, 3, 4, 5, 0,
+                      });
+    assertEquals(rowD.stringifyRowKey(),
+                 KeyEncoder.decodePrimaryKey(schema, rowDEncoded).stringifyRowKey());
   }
 
   @Test

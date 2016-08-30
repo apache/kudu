@@ -148,9 +148,10 @@ public class TestOperation {
     row.addString("c5", "c5_val");
     row.addBinary("c6", Bytes.fromString("c6_val"));
 
-    assertEquals("(int8 c0=1, int16 c1=2, int32 c2=3, int64 c3=4, timestamp c4=5, string" +
-            " c5=c5_val, binary c6=\"c6_val\")",
-        insert.getRow().stringifyRowKey());
+    assertEquals("(int8 c0=1, int16 c1=2, int32 c2=3, int64 c3=4, " +
+                     "timestamp c4=1970-01-01T00:00:00.000005Z, string c5=c5_val, " +
+                     "binary c6=\"c6_val\")",
+                 insert.getRow().stringifyRowKey());
 
     // Test an incomplete row key.
     insert = new Insert(table);

@@ -25,6 +25,7 @@ import org.apache.kudu.util.Slice;
 
 import java.nio.ByteBuffer;
 import java.text.DateFormat;
+import java.text.FieldPosition;
 import java.text.SimpleDateFormat;
 import java.util.BitSet;
 import java.util.Date;
@@ -38,9 +39,9 @@ import java.util.TimeZone;
 public class RowResult {
 
   private static final int INDEX_RESET_LOCATION = -1;
-  private static final DateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-  {
-    DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("GMT"));
+  private static final DateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+  static {
+    DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
   }
   private static final long MS_IN_S = 1000L;
   private static final long US_IN_S = 1000L * 1000L;
@@ -506,14 +507,14 @@ public class RowResult {
    * Transforms a timestamp into a string, whose formatting and timezone is consistent
    * across kudu.
    * @param timestamp the timestamp, in microseconds
-   * @return a string, in the format: YYYY-MM-DD HH:MM:SS.ssssss GMT
+   * @return a string, in the format: YYYY-MM-DDTHH:MM:SS.ssssssZ
    */
   static String timestampToString(long timestamp) {
     long tsMillis = timestamp / MS_IN_S;
     long tsMicros = timestamp % US_IN_S;
     StringBuffer formattedTs = new StringBuffer();
-    formattedTs.append(DATE_FORMAT.format(new Date(tsMillis)));
-    formattedTs.append(String.format(".%06d GMT", tsMicros));
+    DATE_FORMAT.format(new Date(tsMillis), formattedTs, new FieldPosition(0));
+    formattedTs.append(String.format(".%06dZ", tsMicros));
     return formattedTs.toString();
   }
 
@@ -522,7 +523,7 @@ public class RowResult {
    * form.
    */
   public String rowToString() {
-    StringBuffer buf = new StringBuffer();
+    StringBuilder buf = new StringBuilder();
     for (int i = 0; i < schema.getColumnCount(); i++) {
       ColumnSchema col = schema.getColumnByIndex(i);
       if (i != 0) {
@@ -559,12 +560,11 @@ public class RowResult {
    * the iterator as well as its data.
    */
   public String toStringLongFormat() {
-    StringBuffer buf = new StringBuffer(this.rowSize); // super rough estimation
+    StringBuilder buf = new StringBuilder(this.rowSize); // super rough estimation
     buf.append(this.toString());
     buf.append("{");
     buf.append(rowToString());
     buf.append("}");
     return buf.toString();
   }
-
 }
