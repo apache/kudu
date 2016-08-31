@@ -130,9 +130,10 @@ unique_ptr<Mode> BuildClusterMode() {
       .ExtraDescription(extra_desc)
       .AddRequiredParameter({
         "master_addresses",
-        "Comma-separated list of Kudu Master addressess where each address is "
-        "of form hostname:port" })
+        "Comma-separated list of Kudu Master addresses, where each address is "
+        "of form 'hostname:port'" })
       .AddOptionalParameter("checksum_scan")
+      .AddOptionalParameter("checksum_scan_concurrency")
       .AddOptionalParameter("checksum_snapshot")
       .AddOptionalParameter("color")
       .AddOptionalParameter("tables")
