@@ -300,8 +300,7 @@ TEST_F(TabletCopyITest, TestDeleteTabletDuringTabletCopy) {
                                   TABLET_DATA_TOMBSTONED, boost::none, timeout));
 
     // Now finish copying!
-    tablet::TabletStatusListener listener(meta);
-    ASSERT_OK(tc_client.FetchAll(&listener));
+    ASSERT_OK(tc_client.FetchAll(nullptr /* no listener */));
     ASSERT_OK(tc_client.Finish());
 
     // Run destructor, which closes the remote session.

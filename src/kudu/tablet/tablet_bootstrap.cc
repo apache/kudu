@@ -308,6 +308,10 @@ class TabletBootstrap {
   // Return a log prefix string in the standard "T xxx P yyy" format.
   string LogPrefix() const;
 
+  // Report a status message in the WAL as well as update the tablet peer's
+  // status.
+  void StatusMessage(const string& status);
+
   scoped_refptr<TabletMetadata> meta_;
   scoped_refptr<Clock> clock_;
   shared_ptr<MemTracker> mem_tracker_;
@@ -372,35 +376,10 @@ class TabletBootstrap {
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
 
-TabletStatusListener::TabletStatusListener(const scoped_refptr<TabletMetadata>& meta)
-    : meta_(meta),
-      last_status_("") {
-}
-
-const string TabletStatusListener::tablet_id() const {
-  return meta_->tablet_id();
-}
-
-const string TabletStatusListener::table_name() const {
-  return meta_->table_name();
-}
-
-const Partition& TabletStatusListener::partition() const {
-  return meta_->partition();
-}
-
-const Schema& TabletStatusListener::schema() const {
-  return meta_->schema();
-}
-
-TabletStatusListener::~TabletStatusListener() {
-}
-
-void TabletStatusListener::StatusMessage(const string& status) {
-  LOG(INFO) << "T " << tablet_id() << " P " << meta_->fs_manager()->uuid() << ": "
+void TabletBootstrap::StatusMessage(const string& status) {
+  LOG(INFO) << "T " << meta_->tablet_id() << " P " << meta_->fs_manager()->uuid() << ": "
             << status;
-  std::lock_guard<RWMutex> l(lock_);
-  last_status_ = status;
+  if (listener_) listener_->StatusMessage(status);
 }
 
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
@@ -479,7 +458,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 
   meta_->PinFlush();
 
-  listener_->StatusMessage("Bootstrap starting.");
+  StatusMessage("Bootstrap starting.");
 
   if (VLOG_IS_ON(1)) {
     TabletSuperBlockPB super_block;
@@ -547,7 +526,7 @@ Status TabletBootstrap::FinishBootstrap(const string& message,
                                                               log_))));
   tablet_->MarkFinishedBootstrapping();
   RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
-  listener_->StatusMessage(message);
+  StatusMessage(message);
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->swap(log_);
   return Status::OK();
@@ -1104,11 +1083,11 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
     // TODO: could be more granular here and log during the segments as well,
     // plus give info about number of MB processed, but this is better than
     // nothing.
-    listener_->StatusMessage(Substitute("Bootstrap replayed $0/$1 log segments. "
-                                        "Stats: $2. Pending: $3 replicates",
-                                        segment_count + 1, log_reader_->num_segments(),
-                                        stats_.ToString(),
-                                        state.pending_replicates.size()));
+    StatusMessage(Substitute("Bootstrap replayed $0/$1 log segments. "
+                             "Stats: $2. Pending: $3 replicates",
+                             segment_count + 1, log_reader_->num_segments(),
+                             stats_.ToString(),
+                             state.pending_replicates.size()));
     segment_count++;
   }
 

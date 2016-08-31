@@ -102,7 +102,6 @@ class BootstrapTest : public LogTestBase {
   Status RunBootstrapOnTestTablet(const scoped_refptr<TabletMetadata>& meta,
                                   shared_ptr<Tablet>* tablet,
                                   ConsensusBootstrapInfo* boot_info) {
-    gscoped_ptr<TabletStatusListener> listener(new TabletStatusListener(meta));
     scoped_refptr<LogAnchorRegistry> log_anchor_registry(new LogAnchorRegistry());
     // Now attempt to recover the log
     RETURN_NOT_OK(BootstrapTablet(
@@ -111,7 +110,7 @@ class BootstrapTest : public LogTestBase {
         shared_ptr<MemTracker>(),
         scoped_refptr<rpc::ResultTracker>(),
         NULL,
-        listener.get(),
+        nullptr, // no status listener
         tablet,
         &log_,
         log_anchor_registry,

@@ -994,7 +994,7 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   ASSERT_STR_CONTAINS(resp.error().status().message(), "Tablet not RUNNING: FAILED");
 
   // Check that the tablet peer's status message is updated with the failure.
-  ASSERT_STR_CONTAINS(tablet_peer_->status_listener()->last_status(),
+  ASSERT_STR_CONTAINS(tablet_peer_->last_status(),
                       "Log file corruption detected");
 }
 

@@ -33,6 +33,7 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.pb.h"
@@ -434,7 +435,8 @@ Status TSTabletManager::StartTabletCopy(
   string peer_str = copy_source_uuid + " (" + copy_source_addr.ToString() + ")";
 
   // Download all of the remote files.
-  TOMBSTONE_NOT_OK(tc_client.FetchAll(tablet_peer->status_listener()), meta,
+  Status s = tc_client.FetchAll(implicit_cast<TabletStatusListener*>(tablet_peer.get()));
+  TOMBSTONE_NOT_OK(s, meta,
                    "Tablet Copy: Unable to fetch data from remote peer " +
                    copy_source_uuid + " (" + copy_source_addr.ToString() + ")");
 
@@ -544,7 +546,7 @@ Status TSTabletManager::DeleteTablet(
     return s;
   }
 
-  tablet_peer->status_listener()->StatusMessage("Deleted tablet blocks from disk");
+  tablet_peer->StatusMessage("Deleted tablet blocks from disk");
 
   // We only remove DELETED tablets from the tablet map.
   if (delete_type == TABLET_DATA_DELETED) {
@@ -645,7 +647,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
                         server_->mem_tracker(),
                         server_->result_tracker(),
                         metric_registry_,
-                        tablet_peer->status_listener(),
+                        implicit_cast<TabletStatusListener*>(tablet_peer.get()),
                         &tablet,
                         &log,
                         tablet_peer->log_anchor_registry(),

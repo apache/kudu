@@ -30,7 +30,6 @@ namespace tserver {
 using consensus::GetRaftConfigLeader;
 using consensus::RaftPeerPB;
 using tablet::TabletMetadata;
-using tablet::TabletStatusListener;
 
 class TabletCopyClientTest : public TabletCopyTest {
  public:
@@ -92,14 +91,12 @@ Status TabletCopyClientTest::CompareFileContents(const string& path1, const stri
 
 // Basic begin / end tablet copy session.
 TEST_F(TabletCopyClientTest, TestBeginEndSession) {
-  TabletStatusListener listener(meta_);
-  ASSERT_OK(client_->FetchAll(&listener));
+  ASSERT_OK(client_->FetchAll(nullptr /* no listener */));
   ASSERT_OK(client_->Finish());
 }
 
 // Basic data block download unit test.
 TEST_F(TabletCopyClientTest, TestDownloadBlock) {
-  TabletStatusListener listener(meta_);
   BlockId block_id = FirstColumnBlockId(*client_->superblock_);
   Slice slice;
   faststring scratch;

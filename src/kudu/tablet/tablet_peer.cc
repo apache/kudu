@@ -111,7 +111,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
       tablet_id_(meta->tablet_id()),
       local_peer_pb_(local_peer_pb),
       state_(NOT_STARTED),
-      status_listener_(new TabletStatusListener(meta)),
+      last_status_("Tablet initializing..."),
       apply_pool_(apply_pool),
       log_anchor_registry_(new LogAnchorRegistry()),
       mark_dirty_clbk_(std::move(mark_dirty_clbk)) {}
@@ -349,11 +349,10 @@ Status TabletPeer::SubmitAlterSchema(unique_ptr<AlterSchemaTransactionState> sta
 void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   std::lock_guard<simple_spinlock> lock(lock_);
   DCHECK(status_pb_out != nullptr);
-  DCHECK(status_listener_.get() != nullptr);
-  status_pb_out->set_tablet_id(status_listener_->tablet_id());
-  status_pb_out->set_table_name(status_listener_->table_name());
-  status_pb_out->set_last_status(status_listener_->last_status());
-  status_listener_->partition().ToPB(status_pb_out->mutable_partition());
+  status_pb_out->set_tablet_id(meta_->tablet_id());
+  status_pb_out->set_table_name(meta_->table_name());
+  status_pb_out->set_last_status(last_status_);
+  meta_->partition().ToPB(status_pb_out->mutable_partition());
   status_pb_out->set_state(state_);
   status_pb_out->set_tablet_data_state(meta_->tablet_data_state());
   if (tablet_) {
@@ -376,11 +375,21 @@ Status TabletPeer::RunLogGC() {
   return Status::OK();
 }
 
+void TabletPeer::StatusMessage(const std::string& status) {
+  std::lock_guard<simple_spinlock> lock(lock_);
+  last_status_ = status;
+}
+
+string TabletPeer::last_status() const {
+  std::lock_guard<simple_spinlock> lock(lock_);
+  return last_status_;
+}
+
 void TabletPeer::SetFailed(const Status& error) {
   std::lock_guard<simple_spinlock> lock(lock_);
   state_ = FAILED;
   error_ = error;
-  status_listener_->StatusMessage(error.ToString());
+  last_status_ = error.ToString();
 }
 
 string TabletPeer::HumanReadableState() const {

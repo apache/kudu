@@ -60,13 +60,24 @@ class TabletStatusPB;
 class TabletStatusListener;
 class TransactionDriver;
 
+// Interface by which various tablet-related processes can report back their status
+// to TabletPeer without having to have a circular class dependency, and so that
+// those other classes can be easily tested without constructing a TabletPeer.
+class TabletStatusListener {
+ public:
+  virtual ~TabletStatusListener() {}
+
+  virtual void StatusMessage(const std::string& status) = 0;
+};
+
 // A peer in a tablet consensus configuration, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
 // state machine through a consensus algorithm, which makes sure that other
 // peers see the same updates in the same order. In addition to this, this
 // class also splits the work and coordinates multi-threaded execution.
 class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
-                   public consensus::ReplicaTransactionFactory {
+                   public consensus::ReplicaTransactionFactory,
+                   public TabletStatusListener {
  public:
   typedef std::map<int64_t, int64_t> MaxIdxToSegmentSizeMap;
 
@@ -157,16 +168,18 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // TODO: move this to raft_consensus.h.
   Status UpdatePermanentUuids();
 
-  TabletStatusListener* status_listener() const {
-    return status_listener_.get();
-  }
-
   // Sets the tablet to a BOOTSTRAPPING state, indicating it is starting up.
   void SetBootstrapping() {
     std::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(NOT_STARTED, state_);
     state_ = BOOTSTRAPPING;
   }
+
+  // Implementation of TabletStatusListener::StatusMessage().
+  void StatusMessage(const std::string& status) override;
+
+  // Retrieve the last human-readable status of this tablet peer.
+  std::string last_status() const;
 
   // Sets the tablet state to FAILED additionally setting the error to the provided
   // one.
@@ -287,12 +300,15 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   std::shared_ptr<Tablet> tablet_;
   std::shared_ptr<rpc::Messenger> messenger_;
   scoped_refptr<consensus::Consensus> consensus_;
-  gscoped_ptr<TabletStatusListener> status_listener_;
   simple_spinlock prepare_replicate_lock_;
 
-  // Lock protecting state_ as well as smart pointers to collaborating
+  // Lock protecting state_, last_status_, as well as smart pointers to collaborating
   // classes such as tablet_ and consensus_.
   mutable simple_spinlock lock_;
+
+  // The human-readable last status of the tablet, displayed on the web page, command line
+  // tools, etc.
+  std::string last_status_;
 
   // Lock taken during Init/Shutdown which ensures that only a single thread
   // attempts to perform major lifecycle operations (Init/Shutdown) at once.

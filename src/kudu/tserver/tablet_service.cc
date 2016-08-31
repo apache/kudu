@@ -1120,7 +1120,7 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
     peer->GetTabletStatusPB(status->mutable_tablet_status());
 
     if (req->need_schema_info()) {
-      CHECK_OK(SchemaToPB(peer->status_listener()->schema(),
+      CHECK_OK(SchemaToPB(peer->tablet_metadata()->schema(),
                           status->mutable_schema()));
       peer->tablet_metadata()->partition_schema().ToPB(status->mutable_partition_schema());
     }

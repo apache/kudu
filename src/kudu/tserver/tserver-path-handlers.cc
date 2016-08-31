@@ -208,7 +208,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
     }
     string partition = peer->tablet_metadata()
                            ->partition_schema()
-                            .PartitionDebugString(peer->status_listener()->partition(),
+                            .PartitionDebugString(peer->tablet_metadata()->partition(),
                                                   peer->tablet_metadata()->schema());
 
     // TODO: would be nice to include some other stuff like memory usage

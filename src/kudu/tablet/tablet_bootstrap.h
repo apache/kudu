@@ -54,38 +54,7 @@ class Clock;
 namespace tablet {
 class Tablet;
 class TabletMetadata;
-
-// A listener for logging the tablet related statuses as well as
-// piping it into the web UI.
-class TabletStatusListener {
- public:
-  explicit TabletStatusListener(const scoped_refptr<TabletMetadata>& meta);
-
-  ~TabletStatusListener();
-
-  void StatusMessage(const std::string& status);
-
-  const std::string tablet_id() const;
-
-  const std::string table_name() const;
-
-  const Partition& partition() const;
-
-  const Schema& schema() const;
-
-  std::string last_status() const {
-    shared_lock<RWMutex> l(lock_);
-    return last_status_;
-  }
-
- private:
-  mutable RWMutex lock_;
-
-  scoped_refptr<TabletMetadata> meta_;
-  std::string last_status_;
-
-  DISALLOW_COPY_AND_ASSIGN(TabletStatusListener);
-};
+class TabletStatusListener;
 
 extern const char* kLogRecoveryDir;
 
