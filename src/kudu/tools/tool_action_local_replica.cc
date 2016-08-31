@@ -237,7 +237,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .Description("Rewrite a replica's Raft configuration")
       .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
       .AddRequiredVariadicParameter({
-        "peers", "List of peers where each peer is of form uuid:hostname:port" })
+        "peers", "List of peers where each peer is of form 'uuid:hostname:port'" })
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
       .Build();

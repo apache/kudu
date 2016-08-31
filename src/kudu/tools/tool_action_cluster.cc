@@ -49,6 +49,9 @@ DEFINE_string(tablets, "",
               "Tablets to check (comma-separated list of IDs) "
               "If not specified, checks all tablets.");
 
+namespace kudu {
+namespace tools {
+
 using std::cerr;
 using std::cout;
 using std::endl;
@@ -57,14 +60,13 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 
-namespace kudu {
-namespace tools {
-
 namespace {
+
+const char* const kMasterAddressesArg = "master_addresses";
 
 Status RunKsck(const RunnerContext& context) {
   string master_addresses_str = FindOrDie(context.required_args,
-                                          "master_addresses");
+                                          kMasterAddressesArg);
   vector<string> master_addresses = strings::Split(master_addresses_str, ",");
   shared_ptr<KsckMaster> master;
   RETURN_NOT_OK_PREPEND(RemoteKsckMaster::Build(master_addresses, &master),
@@ -129,8 +131,8 @@ unique_ptr<Mode> BuildClusterMode() {
       .Description(desc)
       .ExtraDescription(extra_desc)
       .AddRequiredParameter({
-        "master_addresses",
-        "Comma-separated list of Kudu Master addresses, where each address is "
+        kMasterAddressesArg,
+        "Comma-separated list of Kudu Master addressess where each address is "
         "of form 'hostname:port'" })
       .AddOptionalParameter("checksum_scan")
       .AddOptionalParameter("checksum_scan_concurrency")

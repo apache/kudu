@@ -44,10 +44,6 @@ target_link_libraries(insert-generated-rows
   kudu_tools_util
   ${LINK_LIBS})
 
-add_executable(kudu-admin kudu-admin.cc)
-target_link_libraries(kudu-admin
-  ${LINK_LIBS})
-
 add_executable(kudu-ts-cli ts-cli.cc)
 target_link_libraries(kudu-ts-cli
   ${LINK_LIBS})
@@ -91,6 +87,8 @@ add_executable(kudu
   tool_action_fs.cc
   tool_action_local_replica.cc
   tool_action_pbc.cc
+  tool_action_table.cc
+  tool_action_tablet.cc
   tool_action_wal.cc
   tool_main.cc
 )
@@ -117,7 +115,7 @@ ADD_KUDU_TEST(ksck-test)
 ADD_KUDU_TEST(ksck_remote-test RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(kudu-admin-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test
-  kudu-admin)
+  kudu)
 ADD_KUDU_TEST(kudu-tool-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
   kudu)

@@ -115,6 +115,8 @@ int RunTool(int argc, char** argv, bool show_help) {
     .AddMode(BuildFsMode())
     .AddMode(BuildLocalReplicaMode())
     .AddMode(BuildPbcMode())
+    .AddMode(BuildTableMode())
+    .AddMode(BuildTabletMode())
     .AddMode(BuildWalMode())
     .Build();
 

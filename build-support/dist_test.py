@@ -77,9 +77,8 @@ DEPS_FOR_ALL = \
      #".../example-deletes.txt",
      #".../example-tweets.txt",
 
-     # Tests that require tooling require these.
+     # Tests that require tooling require this.
      "build/latest/bin/kudu",
-     "build/latest/bin/kudu-admin",
      ]
 
 

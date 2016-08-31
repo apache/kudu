@@ -169,6 +169,8 @@ TEST_F(ToolTest, TestTopLevelHelp) {
       "fs.*Kudu filesystem",
       "local_replica.*Kudu replicas",
       "pbc.*protobuf container",
+      "table.*Kudu tables",
+      "tablet.*Kudu tablets",
       "wal.*write-ahead log"
   };
   NO_FATALS(RunTestHelp("", kTopLevelRegexes));
@@ -213,6 +215,27 @@ TEST_F(ToolTest, TestModeHelp) {
         "dump.*Dump a PBC",
     };
     NO_FATALS(RunTestHelp("pbc", kPbcModeRegexes));
+  }
+  {
+    const vector<string> kTableModeRegexes = {
+        "delete.*Delete a table",
+        "list.*List all tables",
+    };
+    NO_FATALS(RunTestHelp("table", kTableModeRegexes));
+  }
+  {
+    const vector<string> kTabletModeRegexes = {
+        "change_config.*Change.*Raft configuration"
+    };
+    NO_FATALS(RunTestHelp("tablet", kTabletModeRegexes));
+  }
+  {
+    const vector<string> kChangeConfigModeRegexes = {
+        "add_replica.*Add a new replica",
+        "change_replica_type.*Change the type of an existing replica",
+        "remove_replica.*Remove an existing replica"
+    };
+    NO_FATALS(RunTestHelp("tablet change_config", kChangeConfigModeRegexes));
   }
   {
     const vector<string> kWalModeRegexes = {

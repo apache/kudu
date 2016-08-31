@@ -14,8 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-//
-// Tests for the kudu-admin command-line tool.
 
 #include <gtest/gtest.h>
 
@@ -42,7 +40,7 @@ static const char* const kTsCliToolName = "kudu-ts-cli";
 
 class KuduTsCliTest : public ExternalMiniClusterITestBase {
  protected:
-  // Figure out where the admin tool is.
+  // Figure out where the tool is.
   string GetTsCliToolPath() const;
 };
 
@@ -51,7 +49,8 @@ string KuduTsCliTest::GetTsCliToolPath() const {
   CHECK_OK(Env::Default()->GetExecutablePath(&exe));
   string binroot = DirName(exe);
   string tool_path = JoinPathSegments(binroot, kTsCliToolName);
-  CHECK(Env::Default()->FileExists(tool_path)) << "kudu-admin tool not found at " << tool_path;
+  CHECK(Env::Default()->FileExists(tool_path))
+      << kTsCliToolName << " tool not found at " << tool_path;
   return tool_path;
 }
 
