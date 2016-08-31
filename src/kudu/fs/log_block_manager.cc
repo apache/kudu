@@ -178,6 +178,10 @@ class LogBlockContainer {
   //
   // Every container is comprised of two files: "<dir>/<id>.data" and
   // "<dir>/<id>.metadata". Together, 'dir' and 'id' fully describe both files.
+  //
+  // Returns Status::Aborted() in the case that the metadata and data files
+  // both appear to have no data (e.g. due to a crash just after creating
+  // one of them but before writing any records).
   static Status Open(LogBlockManager* block_manager,
                      PathInstanceMetadataPB* instance,
                      const std::string& dir,
@@ -395,28 +399,59 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
                                PathInstanceMetadataPB* instance,
                                const string& root_path, const string& id,
                                gscoped_ptr<LogBlockContainer>* container) {
+  Env* env = block_manager->env();
   string common_path = JoinPathSegments(root_path, id);
+  string metadata_path = StrCat(common_path, LogBlockManager::kContainerMetadataFileSuffix);
+  string data_path = StrCat(common_path, LogBlockManager::kContainerDataFileSuffix);
+
+  // Check that both the metadata and data files exist and have valid lengths.
+  // This covers a commonly seen case at startup, where the previous incarnation
+  // of the server crashed due to "too many open files" just as it was trying
+  // to create a data file. This orphans an empty metadata file, which we can
+  // safely delete.
+  {
+    uint64_t metadata_size = 0;
+    uint64_t data_size = 0;
+    Status s = env->GetFileSize(metadata_path, &metadata_size);
+    if (s.IsNotFound()) {
+      LOG(WARNING) << "Missing metadata path at " << metadata_path;
+    } else {
+      RETURN_NOT_OK_PREPEND(s, "unable to determine metadata file size");
+    }
+    s = env->GetFileSize(data_path, &data_size);
+    if (s.IsNotFound()) {
+      LOG(WARNING) << "Missing data path at " << data_path;
+    } else {
+      RETURN_NOT_OK_PREPEND(s, "unable to determine data file size");
+    }
+
+    if (metadata_size < pb_util::kPBContainerMinimumValidLength && data_size == 0) {
+      LOG(WARNING) << "Data and metadata files for container  " << common_path
+                   << " are both missing or empty. Deleting container.";
+      IgnoreResult(env->DeleteFile(metadata_path));
+      IgnoreResult(env->DeleteFile(data_path));
+      return Status::Aborted("orphaned empty metadata and data files removed");
+    }
+  }
 
   // Open the existing metadata and data files for writing.
-  string metadata_path = StrCat(common_path, LogBlockManager::kContainerMetadataFileSuffix);
   gscoped_ptr<RWFile> metadata_writer;
   RWFileOptions wr_opts;
   wr_opts.mode = Env::OPEN_EXISTING;
 
-  RETURN_NOT_OK(block_manager->env()->NewRWFile(wr_opts,
-                                                metadata_path,
-                                                &metadata_writer));
+  RETURN_NOT_OK(env->NewRWFile(wr_opts,
+                               metadata_path,
+                               &metadata_writer));
   gscoped_ptr<WritablePBContainerFile> metadata_pb_writer(
       new WritablePBContainerFile(std::move(metadata_writer)));
   RETURN_NOT_OK(metadata_pb_writer->Reopen());
 
-  string data_path = StrCat(common_path, LogBlockManager::kContainerDataFileSuffix);
   gscoped_ptr<RWFile> data_file;
   RWFileOptions rw_opts;
   rw_opts.mode = Env::OPEN_EXISTING;
-  RETURN_NOT_OK(block_manager->env()->NewRWFile(rw_opts,
-                                                data_path,
-                                                &data_file));
+  RETURN_NOT_OK(env->NewRWFile(rw_opts,
+                               data_path,
+                               &data_file));
 
   // Create the in-memory container and populate it.
   gscoped_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
@@ -1603,6 +1638,10 @@ void LogBlockManager::OpenRootPath(const string& root_path,
     gscoped_ptr<LogBlockContainer> container;
     s = LogBlockContainer::Open(this, metadata->metadata(),
                                 root_path, id, &container);
+    if (s.IsAborted()) {
+      // Skip the container. Open() already handled logging for us.
+      continue;
+    }
     if (!s.ok()) {
       *result_status = s.CloneAndPrepend(Substitute(
           "Could not open container $0", id));

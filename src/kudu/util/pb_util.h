@@ -67,6 +67,9 @@ enum class FileState {
   CLOSED
 };
 
+// The minimum valid length of a PBC file.
+extern const int kPBContainerMinimumValidLength;
+
 // See MessageLite::AppendToString
 bool AppendToString(const MessageLite &msg, faststring *output);
 

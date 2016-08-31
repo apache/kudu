@@ -114,6 +114,8 @@ static const int kPBContainerV1HeaderLen =
 static const int kPBContainerV2HeaderLen =
     kPBContainerV1HeaderLen + kPBContainerChecksumLen; // Same as V1 plus a checksum.
 
+const int kPBContainerMinimumValidLength = kPBContainerV1HeaderLen;
+
 static_assert(arraysize(kPBContainerMagic) - 1 == kPBContainerMagicLen,
               "kPBContainerMagic does not match expected length");
 

@@ -822,6 +822,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 
   string path = LogBlockManager::ContainerPathForTests(bm_->available_containers_.front());
   string metadata_path = path + LogBlockManager::kContainerMetadataFileSuffix;
+  string data_path = path + LogBlockManager::kContainerDataFileSuffix;
 
   uint64_t good_meta_size;
   ASSERT_OK(env_->GetFileSize(metadata_path, &good_meta_size));
@@ -950,10 +951,10 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   // unsigned integer. This will cause the length field to represent a large
   // value and also cause the length checksum not to validate.
   data[offset + 3] ^= 1 << 7;
-  gscoped_ptr<WritableFile> writable_meta;
-  ASSERT_OK(env_->NewWritableFile(metadata_path, &writable_meta));
-  ASSERT_OK(writable_meta->Append(data));
-  ASSERT_OK(writable_meta->Close());
+  gscoped_ptr<WritableFile> writable_file;
+  ASSERT_OK(env_->NewWritableFile(metadata_path, &writable_file));
+  ASSERT_OK(writable_file->Append(data));
+  ASSERT_OK(writable_file->Close());
 
   // Now try to reopen the container.
   // This should look like a bad checksum, and it's not recoverable.
@@ -963,6 +964,18 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
                                false);
   ASSERT_TRUE(s.IsCorruption());
   ASSERT_STR_CONTAINS(s.ToString(), "Incorrect checksum");
+
+  // Now truncate both the data and metadata files.
+  // This should be recoverable. See KUDU-668.
+  ASSERT_OK(env_->NewWritableFile(metadata_path, &writable_file));
+  ASSERT_OK(writable_file->Close());
+  ASSERT_OK(env_->NewWritableFile(data_path, &writable_file));
+  ASSERT_OK(writable_file->Close());
+
+  ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                     shared_ptr<MemTracker>(),
+                                     { GetTestDataDirectory() },
+                                     false));
 }
 
 TEST_F(LogBlockManagerTest, TestDiskSpaceCheck) {
