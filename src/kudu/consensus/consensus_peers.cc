@@ -300,7 +300,6 @@ Status Peer::SendTabletCopyRequest() {
     return Status::NotSupported("Tablet Copy is disabled");
   }
 
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Sending request to start Tablet Copy";
   RETURN_NOT_OK(queue_->GetTabletCopyRequestForPeer(peer_pb_.permanent_uuid(), &tc_request_));
   controller_.Reset();
   proxy_->StartTabletCopy(&tc_request_, &tc_response_, &controller_,

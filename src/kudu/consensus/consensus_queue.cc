@@ -66,7 +66,6 @@ TAG_FLAG(consensus_inject_latency_ms_in_notifications, unsafe);
 namespace kudu {
 namespace consensus {
 
-using log::AsyncLogReader;
 using log::Log;
 using rpc::Messenger;
 using strings::Substitute;
@@ -314,7 +313,8 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   }
 
   if (PREDICT_FALSE(peer->needs_tablet_copy)) {
-    VLOG_WITH_PREFIX_UNLOCKED(1) << "Peer needs tablet copy: " << peer->ToString();
+    KLOG_EVERY_N_SECS_THROTTLER(INFO, 3, peer->status_log_throttler, "tablet copy")
+        << LogPrefixUnlocked() << "Peer " << uuid << " needs tablet copy" << THROTTLE_MSG;
     *needs_tablet_copy = true;
     return Status::OK();
   }
@@ -371,6 +371,19 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
 
   DCHECK(preceding_id.IsInitialized());
   request->mutable_preceding_id()->CopyFrom(preceding_id);
+
+  // If we are sending ops to the follower, but the batch doesn't reach the current
+  // committed index, we can consider the follower lagging, and it's worth
+  // logging this fact periodically.
+  if (request->ops_size() > 0) {
+    int64_t last_op_sent = request->ops(request->ops_size() - 1).id().index();
+    if (last_op_sent < request->committed_index().index()) {
+      KLOG_EVERY_N_SECS_THROTTLER(INFO, 3, peer->status_log_throttler, "lagging")
+          << LogPrefixUnlocked() << "Peer " << uuid << " is lagging by at least "
+          << (request->committed_index().index() - last_op_sent)
+          << " ops behind the committed index " << THROTTLE_MSG;
+    }
+  }
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     if (request->ops_size() > 0) {

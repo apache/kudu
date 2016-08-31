@@ -35,7 +35,7 @@ class StringVectorSink : public google::LogSink {
                                     tm_time, message, message_len));
   }
 
-  const std::vector<std::string>& logged_msgs() const {
+  std::vector<std::string>& logged_msgs() {
     return logged_msgs_;
   }
 

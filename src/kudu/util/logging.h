@@ -22,6 +22,7 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/logging_callback.h"
 
@@ -37,13 +38,45 @@
 //
 // Example usage:
 //   KLOG_EVERY_N_SECS(WARNING, 1) << "server is low on memory" << THROTTLE_MSG;
-#define KLOG_EVERY_N_SECS(severity, n_secs) \
-  static logging_internal::LogThrottler LOG_THROTTLER;  \
-  int num_suppressed = 0; \
-  if (LOG_THROTTLER.ShouldLog(n_secs, &num_suppressed)) \
+//
+//
+// Advanced per-instance throttling
+// -----------------------------------
+// For cases where the throttling should be scoped to a given class instance,
+// you may define a logging::LogThrottler object and pass it to the
+// KLOG_EVERY_N_SECS_THROTTLER(...) macro. In addition, you must pass a "tag".
+// Only log messages with equal tags (by pointer equality) will be throttled.
+// For example:
+//
+//    struct MyThing {
+//      string name;
+//      LogThrottler throttler;
+//    };
+//
+//    if (...) {
+//      LOG_EVERY_N_SECS_THROTTLER(INFO, 1, my_thing->throttler, "coffee") <<
+//        my_thing->name << " needs coffee!";
+//    } else {
+//      LOG_EVERY_N_SECS_THROTTLER(INFO, 1, my_thing->throttler, "wine") <<
+//        my_thing->name << " needs wine!";
+//    }
+//
+// In this example, the "coffee"-related message will be collapsed into other
+// such messages within the prior one second; however, if the state alternates
+// between the "coffee" message and the "wine" message, then each such alternation
+// will yield a message.
+
+#define KLOG_EVERY_N_SECS_THROTTLER(severity, n_secs, throttler, tag) \
+  int VARNAME_LINENUM(num_suppressed) = 0;                            \
+  if (throttler.ShouldLog(n_secs, tag, &VARNAME_LINENUM(num_suppressed)))  \
     google::LogMessage( \
-      __FILE__, __LINE__, google::GLOG_ ## severity, num_suppressed, \
+      __FILE__, __LINE__, google::GLOG_ ## severity, VARNAME_LINENUM(num_suppressed), \
       &google::LogMessage::SendToLog).stream()
+
+#define KLOG_EVERY_N_SECS(severity, n_secs) \
+  static logging::LogThrottler LOG_THROTTLER;  \
+  KLOG_EVERY_N_SECS_THROTTLER(severity, n_secs, LOG_THROTTLER, "no-tag")
+
 
 namespace kudu {
 enum PRIVATE_ThrottleMsg {THROTTLE_MSG};
@@ -179,16 +212,33 @@ void ShutdownLoggingSafe();
 // Writes all command-line flags to the log at level INFO.
 void LogCommandLineFlags();
 
-namespace logging_internal {
-// Internal implementation class used for throttling log messages.
+namespace logging {
+
+// A LogThrottler instance tracks the throttling state for a particular
+// log message.
+//
+// This is used internally by KLOG_EVERY_N_SECS, but can also be used
+// explicitly in conjunction with KLOG_EVERY_N_SECS_THROTTLER. See the
+// macro descriptions above for details.
 class LogThrottler {
  public:
-  LogThrottler() : num_suppressed_(0), last_ts_(0) {
+  LogThrottler() : num_suppressed_(0), last_ts_(0), last_tag_(nullptr) {
     ANNOTATE_BENIGN_RACE(&last_ts_, "OK to be sloppy with log throttling");
   }
 
-  bool ShouldLog(int n_secs, int* num_suppressed) {
+  bool ShouldLog(int n_secs, const char* tag, int* num_suppressed) {
     MicrosecondsInt64 ts = GetMonoTimeMicros();
+
+    // When we switch tags, we should not show the "suppressed" messages, because
+    // in fact it's a different message that we skipped. So, reset it to zero,
+    // and always log the new message.
+    if (tag != last_tag_) {
+      *num_suppressed = num_suppressed_ = 0;
+      last_tag_ = tag;
+      last_ts_ = ts;
+      return true;
+    }
+
     if (ts - last_ts_ < n_secs * 1e6) {
       *num_suppressed = base::subtle::NoBarrier_AtomicIncrement(&num_suppressed_, 1);
       return false;
@@ -200,8 +250,9 @@ class LogThrottler {
  private:
   Atomic32 num_suppressed_;
   uint64_t last_ts_;
+  const char* last_tag_;
 };
-} // namespace logging_internal
+} // namespace logging
 
 std::ostream& operator<<(std::ostream &os, const PRIVATE_ThrottleMsg&);
 

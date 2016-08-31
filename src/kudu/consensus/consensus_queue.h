@@ -32,6 +32,7 @@
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -43,7 +44,6 @@ class ThreadPool;
 
 namespace log {
 class Log;
-class AsyncLogReader;
 }
 
 namespace consensus {
@@ -114,6 +114,10 @@ class PeerMessageQueue {
 
     // Whether the follower was detected to need tablet copy.
     bool needs_tablet_copy;
+
+    // Throttler for how often we will log status messages pertaining to this
+    // peer (eg when it is lagging, etc).
+    logging::LogThrottler status_log_throttler;
 
    private:
     // The last term we saw from a given peer.
