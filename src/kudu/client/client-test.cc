@@ -3825,5 +3825,42 @@ TEST_F(ClientTest, TestTableNumReplicas) {
   }
 }
 
+// Tests that KuduClient::GetTablet() returns the same tablet information as
+// KuduScanToken::tablet().
+TEST_F(ClientTest, TestGetTablet) {
+  KuduScanTokenBuilder builder(client_table_.get());
+  vector<KuduScanToken*> tokens;
+  ElementDeleter deleter(&tokens);
+  ASSERT_OK(builder.Build(&tokens));
+
+  ASSERT_EQ(2, tokens.size());
+  for (const auto* t : tokens) {
+    const KuduTablet& tablet = t->tablet();
+    ASSERT_EQ(1, tablet.replicas().size());
+    const KuduReplica* replica = tablet.replicas()[0];
+    ASSERT_TRUE(replica->is_leader());
+    const MiniTabletServer* ts = cluster_->mini_tablet_server(0);
+    ASSERT_EQ(ts->server()->instance_pb().permanent_uuid(),
+        replica->ts().uuid());
+    ASSERT_EQ(ts->bound_rpc_addr().host(), replica->ts().hostname());
+    ASSERT_EQ(ts->bound_rpc_addr().port(), replica->ts().port());
+
+    unique_ptr<KuduTablet> tablet_copy;
+    {
+      KuduTablet* ptr;
+      ASSERT_OK(client_->GetTablet(tablet.id(), &ptr));
+      tablet_copy.reset(ptr);
+    }
+    ASSERT_EQ(tablet.id(), tablet_copy->id());
+    ASSERT_EQ(1, tablet_copy->replicas().size());
+    const KuduReplica* replica_copy = tablet_copy->replicas()[0];
+
+    ASSERT_EQ(replica->is_leader(), replica_copy->is_leader());
+    ASSERT_EQ(replica->ts().uuid(), replica_copy->ts().uuid());
+    ASSERT_EQ(replica->ts().hostname(), replica_copy->ts().hostname());
+    ASSERT_EQ(replica->ts().port(), replica_copy->ts().port());
+  }
+}
+
 } // namespace client
 } // namespace kudu

@@ -62,6 +62,8 @@ using master::DeleteTableResponsePB;
 using master::GetLeaderMasterRpc;
 using master::GetTableSchemaRequestPB;
 using master::GetTableSchemaResponsePB;
+using master::GetTabletLocationsRequestPB;
+using master::GetTabletLocationsResponsePB;
 using master::IsAlterTableDoneRequestPB;
 using master::IsAlterTableDoneResponsePB;
 using master::IsCreateTableDoneRequestPB;
@@ -228,6 +230,18 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
 }
 
 // Explicit specialization for callers outside this compilation unit.
+template
+Status KuduClient::Data::SyncLeaderMasterRpc(
+    const MonoTime& deadline,
+    KuduClient* client,
+    const GetTabletLocationsRequestPB& req,
+    GetTabletLocationsResponsePB* resp,
+    const char* func_name,
+    const boost::function<Status(MasterServiceProxy*,
+                                 const GetTabletLocationsRequestPB&,
+                                 GetTabletLocationsResponsePB*,
+                                 RpcController*)>& func,
+    vector<uint32_t> required_feature_flags);
 template
 Status KuduClient::Data::SyncLeaderMasterRpc(
     const MonoTime& deadline,

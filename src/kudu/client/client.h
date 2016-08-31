@@ -70,6 +70,7 @@ class KuduStatusCallback;
 class KuduTable;
 class KuduTableAlterer;
 class KuduTableCreator;
+class KuduTablet;
 class KuduTabletServer;
 class KuduValue;
 class KuduWriteOperation;
@@ -345,6 +346,25 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// @return A new session object; caller is responsible for destroying it.
   sp::shared_ptr<KuduSession> NewSession();
 
+  /// @cond false
+
+  /// Get tablet information for a tablet by ID.
+  ///
+  /// Private API.
+  ///
+  /// @todo This operation could benefit from the meta cache if it were
+  /// possible to look up using a tablet ID.
+  ///
+  /// @param [in] tablet_id
+  ///   Unique tablet identifier.
+  /// @param [out] tablet
+  ///   Tablet information. The caller takes ownership of the tablet.
+  /// @return Status object for the operation.
+  Status KUDU_NO_EXPORT GetTablet(const std::string& tablet_id,
+                                  KuduTablet** tablet);
+
+  /// @endcond
+
   /// Policy with which to choose amongst multiple replicas.
   enum ReplicaSelection {
     LEADER_ONLY,      ///< Select the LEADER replica.
@@ -477,6 +497,7 @@ class KUDU_EXPORT KuduReplica {
   const KuduTabletServer& ts() const;
 
  private:
+  friend class KuduClient;
   friend class KuduScanTokenBuilder;
 
   class KUDU_NO_EXPORT Data;
@@ -506,6 +527,7 @@ class KUDU_EXPORT KuduTablet {
   const std::vector<const KuduReplica*>& replicas() const;
 
  private:
+  friend class KuduClient;
   friend class KuduScanTokenBuilder;
 
   class KUDU_NO_EXPORT Data;

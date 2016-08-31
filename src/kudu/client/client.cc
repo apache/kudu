@@ -72,6 +72,8 @@ using kudu::master::DeleteTableRequestPB;
 using kudu::master::DeleteTableResponsePB;
 using kudu::master::GetTableSchemaRequestPB;
 using kudu::master::GetTableSchemaResponsePB;
+using kudu::master::GetTabletLocationsRequestPB;
+using kudu::master::GetTabletLocationsResponsePB;
 using kudu::master::ListTablesRequestPB;
 using kudu::master::ListTablesResponsePB;
 using kudu::master::ListTabletServersRequestPB;
@@ -79,6 +81,7 @@ using kudu::master::ListTabletServersResponsePB;
 using kudu::master::ListTabletServersResponsePB_Entry;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletLocationsPB;
+using kudu::master::TSInfoPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -88,6 +91,7 @@ using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 MAKE_ENUM_LIMITS(kudu::client::KuduSession::FlushMode,
                  kudu::client::KuduSession::AUTO_FLUSH_SYNC,
@@ -394,6 +398,61 @@ shared_ptr<KuduSession> KuduClient::NewSession() {
   return ret;
 }
 
+Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
+  GetTabletLocationsRequestPB req;
+  GetTabletLocationsResponsePB resp;
+
+  req.add_tablet_ids(tablet_id);
+  MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
+  Status s =
+      data_->SyncLeaderMasterRpc<GetTabletLocationsRequestPB, GetTabletLocationsResponsePB>(
+          deadline,
+          this,
+          req,
+          &resp,
+          "GetTabletLocations",
+          &MasterServiceProxy::GetTabletLocations,
+          {});
+  RETURN_NOT_OK(s);
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  if (resp.tablet_locations_size() != 1) {
+    return Status::IllegalState(Substitute(
+        "Expected only one tablet, but received $0",
+        resp.tablet_locations_size()));
+  }
+  const TabletLocationsPB& t = resp.tablet_locations(0);
+
+  vector<const KuduReplica*> replicas;
+  ElementDeleter deleter(&replicas);
+  for (const auto& r : t.replicas()) {
+    const TSInfoPB& ts_info = r.ts_info();
+    if (ts_info.rpc_addresses_size() == 0) {
+      return Status::IllegalState(Substitute(
+          "No RPC addresses found for tserver $0",
+          ts_info.permanent_uuid()));
+    }
+    HostPort hp;
+    RETURN_NOT_OK(HostPortFromPB(ts_info.rpc_addresses(0), &hp));
+    unique_ptr<KuduTabletServer> ts(new KuduTabletServer);
+    ts->data_ = new KuduTabletServer::Data(ts_info.permanent_uuid(), hp);
+
+    bool is_leader = r.role() == consensus::RaftPeerPB::LEADER;
+    unique_ptr<KuduReplica> replica(new KuduReplica);
+    replica->data_ = new KuduReplica::Data(is_leader, std::move(ts));
+
+    replicas.push_back(replica.release());
+  }
+
+  unique_ptr<KuduTablet> client_tablet(new KuduTablet);
+  client_tablet->data_ = new KuduTablet::Data(tablet_id, std::move(replicas));
+  replicas.clear();
+
+  *tablet = client_tablet.release();
+  return Status::OK();
+}
+
 bool KuduClient::IsMultiMaster() const {
   return data_->master_server_addrs_.size() > 1;
 }
@@ -572,8 +631,8 @@ Status KuduTableCreator::Create() {
                                                            *data_->schema_,
                                                            deadline,
                                                            !data_->range_partition_bounds_.empty()),
-                        strings::Substitute("Error creating table $0 on the master",
-                                            data_->table_name_));
+                        Substitute("Error creating table $0 on the master",
+                                   data_->table_name_));
 
   // Spin until the table is fully created, if requested.
   if (data_->wait_) {
@@ -1092,11 +1151,11 @@ struct CloseCallback {
 } // anonymous namespace
 
 string KuduScanner::ToString() const {
-  return strings::Substitute("$0: $1",
-                             data_->table_->name(),
-                             data_->configuration()
-                                   .spec()
-                                   .ToString(*data_->table_->schema().schema_));
+  return Substitute("$0: $1",
+                    data_->table_->name(),
+                    data_->configuration()
+                    .spec()
+                    .ToString(*data_->table_->schema().schema_));
 }
 
 Status KuduScanner::Open() {
@@ -1262,8 +1321,8 @@ Status KuduScanner::GetCurrentServer(KuduTabletServer** server) {
   vector<HostPort> host_ports;
   rts->GetHostPorts(&host_ports);
   if (host_ports.empty()) {
-    return Status::IllegalState(strings::Substitute("No HostPort found for RemoteTabletServer $0",
-                                                    rts->ToString()));
+    return Status::IllegalState(Substitute("No HostPort found for RemoteTabletServer $0",
+                                           rts->ToString()));
   }
   unique_ptr<KuduTabletServer> client_server(new KuduTabletServer);
   client_server->data_ = new KuduTabletServer::Data(rts->permanent_uuid(),
