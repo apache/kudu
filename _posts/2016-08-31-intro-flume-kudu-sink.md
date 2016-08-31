@@ -1,13 +1,13 @@
 ---
 layout: post
-title: "An Introduction to Kudu Flume Sink"
+title: "An Introduction to the Flume Kudu Sink"
 author: Ara Abrahamian
 ---
 This post discusses the Kudu Flume Sink. First, I'll give some background on why we considered
 using Kudu, what Flume does for us, and how Flume fits with Kudu in our project.
 
-Why Kudu
-========
+## Why Kudu
+
 Traditionally in the Hadoop ecosystem we've dealt with various _batch processing_ technologies such
 as MapReduce and the many libraries and tools built on top of it in various languages (Apache Pig,
 Apache Hive, Apache Oozie and many others). The main problem with this approach is that it needs to
@@ -66,19 +66,19 @@ would we take care of ad-hoc queries and long-term persistence? This is where Ku
 the machine learning pipeline ingests and processes real-time data, we store a copy of the same
 ingested data in Kudu for long-term access and ad-hoc queries. Kudu is our _data warehouse_. By
 using Kudu and Impala, we can retire our in-house Presto connector and rely on Impala's
-super-fast query engine. 
-  
+super-fast query engine.
+
 But how would we make sure data is reliably ingested into the streaming pipeline _and_ the
 Kudu-based data warehouse? This is where Apache Flume comes in.
 
-Why Flume
-=========
+## Why Flume
+
 According to their [website](http://flume.apache.org/) "Flume is a distributed, reliable, and
 available service for efficiently collecting, aggregating, and moving large amounts of log data.
 It has a simple and flexible architecture based on streaming data flows. It is robust and fault
 tolerant with tunable reliability mechanisms and many failover and recovery mechanisms." As you
 can see, nowhere is Hadoop mentioned but Flume is typically used for ingesting data to Hadoop
-clusters. 
+clusters.
 
 ![png](https://blogs.apache.org/flume/mediaresource/ab0d50f6-a960-42cc-971e-3da38ba3adad)
 
@@ -86,20 +86,20 @@ Flume has an extensible architecture. An instance of Flume, called an _agent_, c
 _channels_, with each having multiple _sources_ and _sinks_ of various types. Sources queue data
 in channels, which in turn write out data to sinks. Such _pipelines_ can be chained together to
 create even more complex ones. There may be more than one agent and agents can be configured to
-support failover and recovery. 
+support failover and recovery.
 
 Flume comes with a bunch of built-in types of channels, sources and sinks. Memory channel is the
 default (an in-memory queue with no persistence to disk), but other options such as Kafka- and
 File-based channels are also provided. As for the sources, Avro, JMS, Thrift, spooling directory
 source are some of the built-in ones. Flume also ships with many sinks, including sinks for writing
 data to HDFS, HBase, Hive, Kafka, as well as to other Flume agents.
- 
+
 In the rest of this post I'll go over the Kudu Flume sink and show you how to configure Flume to
 write ingested data to a Kudu table. The sink has been part of the Kudu distribution since the 0.8
 release and the source code can be found [here](https://github.com/apache/kudu/tree/master/java/kudu-flume-sink).
 
-Configuring the Kudu Flume Sink
-===============================
+## Configuring the Kudu Flume Sink
+
 Here is a sample flume configuration file:
 
 ```
@@ -156,7 +156,7 @@ Here is a complete list of KuduSink parameters:
 
 Let's take a look at the source code for the built-in producer class:
 
-```
+```java
 public class SimpleKuduEventProducer implements KuduEventProducer {
   private byte[] payload;
   private KuduTable table;
@@ -202,7 +202,7 @@ public class SimpleKuduEventProducer implements KuduEventProducer {
 `SimpleKuduEventProducer` implements the `org.apache.kudu.flume.sink.KuduEventProducer` interface,
 which itself looks like this:
 
-```
+```java
 public interface KuduEventProducer extends Configurable, ConfigurableComponent {
   /**
    * Initialize the event producer.
@@ -234,7 +234,7 @@ configured the KuduSink to listen for events generated from the `vmstat` command
 from that command will be stored as a new row containing a `payload` column in the `stats` table.
 `SimpleKuduEventProducer` does not have any configuration parameters, but if it had any we would
 define them by prefixing it with `producer.` (`agent1.sinks.sink1.producer.parameter1` for
-example). 
+example).
 
 The main producer logic resides in the `public List<Operation> getOperations()` method. In
 SimpleKuduEventProducer's implementation we simply insert the binary body of the Flume event into
@@ -249,8 +249,8 @@ custom event producer is not required to write data to Kudu. See
 [here](https://gerrit.cloudera.org/#/c/4034/) for a work-in-progress generic event producer for
 Avro-encoded Events.
 
-Conclusion
-====
+## Conclusion
+
 Kudu is a scalable data store which lets us ingest insane amounts of data per second. Apache Flume
 helps us aggregate data from various sources, and the Kudu Flume Sink lets us easily store
 the aggregated Flume events into Kudu. Together they enable us to create a data warehouse out of
@@ -258,4 +258,5 @@ disparate sources.
 
 _Ara Abrahamian is a software engineer at Argyle Data building fraud detection systems using
 sophisticated machine learning methods. Ara is the original author of the Flume Kudu Sink that
-is included in the Kudu distribution. You can follow him on Twitter at @ara_e._
+is included in the Kudu distribution. You can follow him on Twitter at
+[@ara_e](https://twitter.com/ara_e)._
