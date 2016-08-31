@@ -137,7 +137,7 @@ double WidthByDataSize(const Slice& prev, const Slice& next,
 
   for (const auto& rs_rsi : active) {
     double fraction = StringFractionInRange(rs_rsi.second, prev, next);
-    weight += rs_rsi.first->EstimateOnDiskSize() * fraction;
+    weight += rs_rsi.second->size_bytes() * fraction;
   }
 
   return weight;
@@ -253,8 +253,8 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
 
 RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
   : rowset_(rs),
-    size_mb_(std::max(implicit_cast<int>(rs->EstimateOnDiskSize() / 1024 / 1024),
-                      kMinSizeMb)),
+    size_bytes_(rs->EstimateOnDiskSize()),
+    size_mb_(std::max(implicit_cast<int>(size_bytes_ / 1024 / 1024), kMinSizeMb)),
     cdf_min_key_(init_cdf),
     cdf_max_key_(init_cdf) {
   has_bounds_ = rs->GetBounds(&min_key_, &max_key_).ok();
@@ -266,7 +266,7 @@ void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,
   for (RowSetInfo& cdf_rs : *vec) {
     CHECK_GT(cdf_rs.size_mb_, 0) << "Expected file size to be at least 1MB "
                                  << "for RowSet " << cdf_rs.rowset_->ToString()
-                                 << ", was " << cdf_rs.rowset_->EstimateOnDiskSize()
+                                 << ", was " << cdf_rs.size_bytes()
                                  << " bytes.";
     cdf_rs.cdf_min_key_ /= quot;
     cdf_rs.cdf_max_key_ /= quot;
