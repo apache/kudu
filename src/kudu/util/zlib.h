@@ -17,8 +17,8 @@
 #pragma once
 
 #include <iosfwd>
-#include <string>
 
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
