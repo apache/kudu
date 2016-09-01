@@ -550,6 +550,14 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   cluster_->tablet_server(2)->Shutdown();
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
 
+  // Check the textual status message for the failed copy.
+  {
+    vector<ListTabletsResponsePB::StatusAndSchemaPB> status_pbs;
+    ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, kTimeout, &status_pbs));
+    ASSERT_STR_CONTAINS(status_pbs[0].tablet_status().last_status(),
+                        "Tombstoned tablet: Tablet Copy: Unable to fetch data from remote peer");
+  }
+
   // Now bring the other replicas back, re-elect the previous leader (TS-1),
   // and wait for the leader to Tablet Copy the tombstoned replica. This
   // will have replaced a tablet with no consensus metadata.

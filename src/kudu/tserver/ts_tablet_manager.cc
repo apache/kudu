@@ -311,11 +311,11 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
 // If 'expr' fails, log a message, tombstone the given tablet, and return the
 // error status.
-#define TOMBSTONE_NOT_OK(expr, meta, msg) \
+#define TOMBSTONE_NOT_OK(expr, peer, msg) \
   do { \
     Status _s = (expr); \
     if (PREDICT_FALSE(!_s.ok())) { \
-      LogAndTombstone((meta), (msg), _s); \
+      LogAndTombstone((peer), (msg), _s); \
       return _s; \
     } \
   } while (0)
@@ -436,7 +436,7 @@ Status TSTabletManager::StartTabletCopy(
 
   // Download all of the remote files.
   Status s = tc_client.FetchAll(implicit_cast<TabletStatusListener*>(tablet_peer.get()));
-  TOMBSTONE_NOT_OK(s, meta,
+  TOMBSTONE_NOT_OK(s, tablet_peer,
                    "Tablet Copy: Unable to fetch data from remote peer " +
                    copy_source_uuid + " (" + copy_source_addr.ToString() + ")");
 
@@ -444,7 +444,7 @@ Status TSTabletManager::StartTabletCopy(
 
   // Write out the last files to make the new replica visible and update the
   // TabletDataState in the superblock to TABLET_DATA_READY.
-  TOMBSTONE_NOT_OK(tc_client.Finish(), meta, "Tablet Copy: Failure calling Finish()");
+  TOMBSTONE_NOT_OK(tc_client.Finish(), tablet_peer, "Tablet Copy: Failure calling Finish()");
 
   // We run this asynchronously. We don't tombstone the tablet if this fails,
   // because if we were to fail to open the tablet, on next startup, it's in a
@@ -941,21 +941,21 @@ Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& me
   return meta->DeleteSuperBlock();
 }
 
-void TSTabletManager::LogAndTombstone(const scoped_refptr<TabletMetadata>& meta,
+void TSTabletManager::LogAndTombstone(const scoped_refptr<TabletPeer>& peer,
                                       const std::string& msg,
                                       const Status& s) {
-  const string& tablet_id = meta->tablet_id();
+  const string& tablet_id = peer->tablet_id();
   const string kLogPrefix = "T " + tablet_id + " P " + fs_manager_->uuid() + ": ";
   LOG(WARNING) << kLogPrefix << msg << ": " << s.ToString();
 
-  // Tombstone the tablet when tablet copy fails.
-  LOG(INFO) << kLogPrefix << "Tombstoning tablet after failed tablet copy";
-  Status delete_status = DeleteTabletData(meta, TABLET_DATA_TOMBSTONED, boost::optional<OpId>());
+  Status delete_status = DeleteTabletData(
+      peer->tablet_metadata(), TABLET_DATA_TOMBSTONED, boost::optional<OpId>());
   if (PREDICT_FALSE(!delete_status.ok())) {
     // This failure should only either indicate a bug or an IO error.
     LOG(FATAL) << kLogPrefix << "Failed to tombstone tablet after tablet copy: "
                << delete_status.ToString();
   }
+  peer->StatusMessage(Substitute("Tombstoned tablet: $0 ($1)", msg, s.ToString()));
 }
 
 TransitionInProgressDeleter::TransitionInProgressDeleter(

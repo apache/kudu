@@ -267,7 +267,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Print a log message using the given info and tombstone the specified
   // tablet. If tombstoning the tablet fails, a FATAL error is logged, resulting
   // in a crash.
-  void LogAndTombstone(const scoped_refptr<tablet::TabletMetadata>& meta,
+  void LogAndTombstone(const scoped_refptr<tablet::TabletPeer>& peer,
                        const std::string& msg,
                        const Status& s);
 
