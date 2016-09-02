@@ -173,18 +173,20 @@ string TabletLink(const string& id) {
                     EscapeForHtmlToString(id));
 }
 
-bool CompareByTabletId(const scoped_refptr<TabletPeer>& a,
-                       const scoped_refptr<TabletPeer>& b) {
-  return a->tablet_id() < b->tablet_id();
-}
-
 } // anonymous namespace
 
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& req,
                                                  std::stringstream *output) {
   vector<scoped_refptr<TabletPeer> > peers;
   tserver_->tablet_manager()->GetTabletPeers(&peers);
-  std::sort(peers.begin(), peers.end(), &CompareByTabletId);
+
+  // Sort by (table_name, tablet_id) tuples.
+  std::sort(peers.begin(), peers.end(),
+            [](const scoped_refptr<TabletPeer>& peer_a,
+               const scoped_refptr<TabletPeer>& peer_b) {
+              return std::make_pair(peer_a->tablet_metadata()->table_name(), peer_a->tablet_id()) <
+                     std::make_pair(peer_b->tablet_metadata()->table_name(), peer_b->tablet_id());
+            });
 
   *output << "<h1>Tablets</h1>\n";
   *output << "<table class='table table-striped'>\n";
