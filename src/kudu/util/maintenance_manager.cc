@@ -411,7 +411,11 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
     }
   }
 
-  for (const CompletedOp& completed_op : completed_ops_) {
+  for (int n = 1; n <= completed_ops_.size(); n++) {
+    int i = completed_ops_count_ - n;
+    if (i < 0) break;
+    const auto& completed_op = completed_ops_[i % completed_ops_.size()];
+
     if (!completed_op.name.empty()) {
       MaintenanceManagerStatusPB_CompletedOpPB* completed_pb = out_pb->add_completed_operations();
       completed_pb->set_name(completed_op.name);

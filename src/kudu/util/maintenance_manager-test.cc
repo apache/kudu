@@ -293,8 +293,9 @@ TEST_F(MaintenanceManagerTest, TestCompletedOpsHistory) {
     manager_->GetMaintenanceManagerStatusDump(&status_pb);
     // The size should be at most the history_size.
     ASSERT_GE(kHistorySize, status_pb.completed_operations_size());
-    // See that we have the right name, even if we wrap around.
-    ASSERT_EQ(name, status_pb.completed_operations(i % 4).name());
+    // The most recently completed op should always be first, even if we wrap
+    // around.
+    ASSERT_EQ(name, status_pb.completed_operations(0).name());
   }
 }
 
