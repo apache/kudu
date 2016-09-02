@@ -15,12 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Require cmake that supports BYPRODUCTS in add_custom_command() [1].
+# Require cmake that can build LLVM [1].
 #
 # Note: cmake in thirdparty/ will always meet this minimum.
 #
-# 1. https://cmake.org/Bug/view.php?id=14963
-cmake_minimum_required(VERSION 3.2.0)
+# 1. http://llvm.org/releases/3.9.0/docs/ReleaseNotes.html
+cmake_minimum_required(VERSION 3.4.3)
 
 # Prevent builds from the top-level source directory. This ensures that build
 # output is well isolated from the source tree.
