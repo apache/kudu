@@ -85,7 +85,8 @@ class TestMaintenanceOp : public MaintenanceOp {
       metric_entity_(METRIC_ENTITY_test.Instantiate(&metric_registry_, "test")),
       maintenance_op_duration_(METRIC_maintenance_op_duration.Instantiate(metric_entity_)),
       maintenance_ops_running_(METRIC_maintenance_ops_running.Instantiate(metric_entity_, 0)),
-      remaining_runs_(1) {
+      remaining_runs_(1),
+      sleep_time_(MonoDelta::FromSeconds(0)) {
   }
 
   virtual ~TestMaintenanceOp() {}
@@ -100,10 +101,14 @@ class TestMaintenanceOp : public MaintenanceOp {
   }
 
   virtual void Perform() OVERRIDE {
-    DLOG(INFO) << "Performing op " << name();
-    std::lock_guard<Mutex> guard(lock_);
-    CHECK_GE(remaining_runs_, 1);
-    remaining_runs_--;
+    {
+      std::lock_guard<Mutex> guard(lock_);
+      DLOG(INFO) << "Performing op " << name();
+      CHECK_GE(remaining_runs_, 1);
+      remaining_runs_--;
+    }
+
+    SleepFor(sleep_time_);
   }
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
@@ -117,6 +122,11 @@ class TestMaintenanceOp : public MaintenanceOp {
   void set_remaining_runs(int runs) {
     std::lock_guard<Mutex> guard(lock_);
     remaining_runs_ = runs;
+  }
+
+  void set_sleep_time(MonoDelta time) {
+    std::lock_guard<Mutex> guard(lock_);
+    sleep_time_ = time;
   }
 
   void set_ram_anchored(uint64_t ram_anchored) {
@@ -156,6 +166,9 @@ class TestMaintenanceOp : public MaintenanceOp {
   // The number of remaining times this operation will run before disabling
   // itself.
   int remaining_runs_;
+
+  // The amount of time each op invocation will sleep.
+  MonoDelta sleep_time_;
 };
 
 // Create an op and wait for it to start running.  Unregister it while it is
@@ -177,6 +190,30 @@ TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
     });
   manager_->UnregisterOp(&op1);
   ThreadJoiner(thread.get()).Join();
+}
+
+// Regression test for KUDU-1495: when an operation is being unregistered,
+// new instances of that operation should not be scheduled.
+TEST_F(MaintenanceManagerTest, TestNewOpsDontGetScheduledDuringUnregister) {
+  TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE, test_tracker_);
+  op1.set_ram_anchored(1001);
+
+  // Set the op to run up to 10 times, and each time should sleep for a second.
+  op1.set_remaining_runs(10);
+  op1.set_sleep_time(MonoDelta::FromSeconds(1));
+  manager_->RegisterOp(&op1);
+
+  // Wait until two instances of the ops start running, since we have two MM threads.
+  AssertEventually([&]() {
+      ASSERT_EQ(op1.RunningGauge()->value(), 2);
+    });
+
+  // Trigger Unregister while they are running. This should wait for the currently-
+  // running operations to complete, but no new operations should be scheduled.
+  manager_->UnregisterOp(&op1);
+
+  // Hence, we should have run only the original two that we saw above.
+  ASSERT_LE(op1.DurationHistogram()->TotalCount(), 2);
 }
 
 // Test that we'll run an operation that doesn't improve performance when memory

@@ -72,7 +72,11 @@ void MaintenanceOpStats::Clear() {
 }
 
 MaintenanceOp::MaintenanceOp(std::string name, IOUsage io_usage)
-    : name_(std::move(name)), running_(0), io_usage_(io_usage) {}
+    : name_(std::move(name)),
+      running_(0),
+      cancel_(false),
+      io_usage_(io_usage) {
+}
 
 MaintenanceOp::~MaintenanceOp() {
   CHECK(!manager_.get()) << "You must unregister the " << name_
@@ -165,6 +169,7 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
       VLOG_AND_TRACE("maintenance", 1) << "Waiting for op " << op->name() << " to finish so "
             << "we can unregister it.";
     }
+    op->CancelAndDisable();
     while (iter->first->running_ > 0) {
       op->cond_->Wait();
       iter = ops_.find(op);
@@ -270,7 +275,7 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
     // Update op stats.
     stats.Clear();
     op->UpdateStats(&stats);
-    if (!stats.valid() || !stats.runnable()) {
+    if (op->cancelled() || !stats.valid() || !stats.runnable()) {
       continue;
     }
     if (stats.logs_retained_bytes() > low_io_most_logs_retained_bytes &&

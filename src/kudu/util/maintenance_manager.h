@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/maintenance_manager.pb.h"
 #include "kudu/util/monotime.h"
@@ -177,6 +178,19 @@ class MaintenanceOp {
 
   IOUsage io_usage() const { return io_usage_; }
 
+  // Return true if the operation has been cancelled due to Unregister() pending.
+  bool cancelled() const {
+    return cancel_.Load();
+  }
+
+  // Cancel this operation, which prevents new instances of it from being scheduled
+  // regardless of whether the statistics indicate it is runnable. Instances may also
+  // optionally poll 'cancelled()' on a periodic basis to know if they should abort a
+  // lengthy operation in the middle of Perform().
+  void CancelAndDisable() {
+    cancel_.Store(true);
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(MaintenanceOp);
 
@@ -185,6 +199,11 @@ class MaintenanceOp {
 
   // The number of times that this op is currently running.
   uint32_t running_;
+
+  // Set when we are trying to unregister the maintenance operation.
+  // Ongoing operations could read this boolean and cancel themselves.
+  // New operations will not be scheduled when this boolean is set.
+  AtomicBool cancel_;
 
   // Condition variable which the UnregisterOp function can wait on.
   //
