@@ -27,11 +27,10 @@ namespace kudu {
 namespace master {
 
 DEFINE_string(master_addresses, "",
-              "Comma-separated list of all the RPC addresses for Master config. "
-              "This is used to configure the replicated Master process "
-              "(currently considered experimental). "
+              "Comma-separated list of the RPC addresses belonging to all "
+              "Masters in this cluster. "
               "NOTE: if not specified, configures a non-replicated Master.");
-TAG_FLAG(master_addresses, experimental);
+TAG_FLAG(master_addresses, stable);
 
 MasterOptions::MasterOptions() {
   rpc_opts.default_port = Master::kDefaultPort;
