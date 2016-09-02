@@ -306,7 +306,7 @@ Status BinaryPlainBlockDecoder::CopyNextAndEval(size_t* n,
   return HandleBatch(n, dst, [&](size_t i, Slice elem, Slice* out, Arena* out_arena) {
     if (!sel->TestBit(i)) {
       return;
-    } else if (ctx->pred()->EvaluateCell(static_cast<const void*>(&elem))) {
+    } else if (ctx->pred()->EvaluateCell<BINARY>(static_cast<const void*>(&elem))) {
       CHECK(out_arena->RelocateSlice(elem, out));
     } else {
       sel->ClearBit(i);

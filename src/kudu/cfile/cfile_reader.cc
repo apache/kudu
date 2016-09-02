@@ -910,7 +910,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
     codewords_matching_pred_->SetAllFalse();
     for (size_t i = 0; i < nwords; i++) {
       Slice cur_string = dict_decoder_->string_at_index(i);
-      if (ctx->pred()->EvaluateCell(static_cast<const void *>(&cur_string))) {
+      if (ctx->pred()->EvaluateCell<BINARY>(static_cast<const void *>(&cur_string))) {
         BitmapSet(codewords_matching_pred_->mutable_bitmap(), i);
       }
     }

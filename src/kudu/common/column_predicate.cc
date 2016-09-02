@@ -265,40 +265,30 @@ void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
 }
 } // anonymous namespace
 
-void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector* sel) const {
-  CHECK_NOTNULL(sel);
-  // The type-specific predicate is provided as a function template to
-  // ApplyPredicate in the hope that they are inlined.
-  //
-  // TODO: In the future we can improve this by also providing the type info as a
-  // template, so that the type-specific data comparisons can be inlined.
-  //
-  // Going a step further we could do runtime codegen to inline the
-  // lower/upper/equality bounds.
-
-  // TODO: equality predicates should use the bloomfilter if it's available.
-
+template <DataType PhysicalType>
+void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
+                                              SelectionVector* sel) const {
   switch (predicate_type()) {
     case PredicateType::Range: {
       if (lower_ == nullptr) {
         ApplyPredicate(block, sel, [this] (const void* cell) {
-          return column_.type_info()->Compare(cell, this->upper_) < 0;
+          return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0;
         });
       } else if (upper_ == nullptr) {
         ApplyPredicate(block, sel, [this] (const void* cell) {
-          return column_.type_info()->Compare(cell, this->lower_) >= 0;
+          return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
         });
       } else {
         ApplyPredicate(block, sel, [this] (const void* cell) {
-          return column_.type_info()->Compare(cell, this->upper_) < 0 &&
-                 column_.type_info()->Compare(cell, this->lower_) >= 0;
+          return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0 &&
+                 DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
         });
       }
       return;
     };
     case PredicateType::Equality: {
       ApplyPredicate(block, sel, [this] (const void* cell) {
-        return column_.type_info()->Compare(cell, this->lower_) == 0;
+        return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) == 0;
       });
       return;
     };
@@ -318,26 +308,22 @@ void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector* sel) c
   }
 }
 
-bool ColumnPredicate::EvaluateCell(const void* cell) const {
-  switch (predicate_type()) {
-    case PredicateType::Range: {
-      if (lower_ == nullptr) {
-        return column_.type_info()->Compare(cell, this->upper_) < 0;
-      } else if (upper_ == nullptr) {
-        return column_.type_info()->Compare(cell, this->lower_) >= 0;
-      } else {
-        return column_.type_info()->Compare(cell, this->upper_) < 0 &&
-               column_.type_info()->Compare(cell, this->lower_) >= 0;
-      }
-    };
-    case PredicateType::Equality: {
-      return column_.type_info()->Compare(cell, this->lower_) == 0;
-    };
-    case PredicateType::IsNotNull: {
-      return true;
-    };
-    default:
-      LOG(FATAL) << "unknown predicate type";
+void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector* sel) const {
+  DCHECK(sel);
+  switch (block.type_info()->physical_type()) {
+    case BOOL: return EvaluateForPhysicalType<BOOL>(block, sel);
+    case INT8: return EvaluateForPhysicalType<INT8>(block, sel);
+    case INT16: return EvaluateForPhysicalType<INT16>(block, sel);
+    case INT32: return EvaluateForPhysicalType<INT32>(block, sel);
+    case INT64: return EvaluateForPhysicalType<INT64>(block, sel);
+    case UINT8: return EvaluateForPhysicalType<UINT8>(block, sel);
+    case UINT16: return EvaluateForPhysicalType<UINT16>(block, sel);
+    case UINT32: return EvaluateForPhysicalType<UINT32>(block, sel);
+    case UINT64: return EvaluateForPhysicalType<UINT64>(block, sel);
+    case FLOAT: return EvaluateForPhysicalType<FLOAT>(block, sel);
+    case DOUBLE: return EvaluateForPhysicalType<DOUBLE>(block, sel);
+    case BINARY: return EvaluateForPhysicalType<BINARY>(block, sel);
+    default: LOG(FATAL) << "unknown physical type: " << block.type_info()->physical_type();
   }
 }
 

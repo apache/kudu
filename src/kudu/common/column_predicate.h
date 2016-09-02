@@ -139,7 +139,31 @@ class ColumnPredicate {
   void Evaluate(const ColumnBlock& block, SelectionVector* sel) const;
 
   // Evaluate the predicate on a single cell.
-  bool EvaluateCell(const void *cell) const;
+  template <DataType PhysicalType>
+  bool EvaluateCell(const void* cell) const {
+    switch (predicate_type()) {
+      case PredicateType::None: {
+        return false;
+      };
+      case PredicateType::Range: {
+        if (lower_ == nullptr) {
+          return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0;
+        } else if (upper_ == nullptr) {
+          return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
+        } else {
+          return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0 &&
+                 DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
+        }
+      };
+      case PredicateType::Equality: {
+        return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) == 0;
+      };
+      case PredicateType::IsNotNull: {
+        return true;
+      }
+    }
+    LOG(FATAL) << "unknown predicate type";
+  }
 
   // Print the predicate for debugging.
   std::string ToString() const;
@@ -189,6 +213,12 @@ class ColumnPredicate {
 
   // Merge another predicate into this Equality predicate.
   void MergeIntoEquality(const ColumnPredicate& other);
+
+  // Templated evaluation to inline the dispatch of comparator. Templating this
+  // allows dispatch to occur only once per batch.
+  template <DataType PhysicalType>
+  void EvaluateForPhysicalType(const ColumnBlock& block,
+                               SelectionVector* sel) const;
 
   // The type of this predicate.
   PredicateType predicate_type_;
