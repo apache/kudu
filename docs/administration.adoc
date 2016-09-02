@@ -194,3 +194,163 @@ WARNING: Although metrics logging automatically rolls and compresses previous lo
 not remove old ones. Since metrics logging can use significant amounts of disk space,
 consider setting up a system utility to monitor space in the log directory and archive or
 delete old segments.
+
+== Common Kudu workflows
+
+=== Migrating to Multiple Kudu Masters
+
+For high availability and to avoid a single point of failure, Kudu clusters should be created with
+multiple masters. Many Kudu clusters were created with just a single master, either for simplicity
+or because Kudu multi-master support was still experimental at the time. This workflow demonstrates
+how to migrate to a multi-master configuration.
+
+WARNING: The workflow is unsafe for adding new masters to an existing multi-master configuration.
+Do not use it for that purpose.
+
+WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
+using Cloudera Manager (CM), the workflow also presupposes familiarity with it.
+
+WARNING: All of the command line steps below should be executed as the Kudu UNIX user, typically
+`kudu`.
+
+==== Prepare for the migration
+
+. Establish a maintenance window (one hour should be sufficient). During this time the Kudu cluster
+  will be unavailable.
+
+. Decide how many masters to use. The number of masters should be odd. Three or five node master
+  configurations are recommendeded; they can tolerate one or two failures respectively.
+
+. Perform the following preparatory steps for the existing master:
+* Identify and record the directory where the master's data lives. If using Kudu system packages,
+  the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir`
+  configuration parameter.
+* Identify and record the port the master is using for RPCs. The default port value is 7051, but it
+  may have been customized using the `rpc_bind_addresses` configuration parameter.
+* Identify the master's UUID. It can be fetched using the following command:
++
+[source,bash]
+----
+$ kudu fs dump uuid --fs_wal_dir=<master_data_dir> 2>/dev/null
+----
+master_data_dir:: existing master's previously recorded data directory
++
+[source,bash]
+.Example
+----
+$ kudu fs dump uuid --fs_wal_dir=/var/lib/kudu/master 2>/dev/null
+4aab798a69e94fab8d77069edff28ce0
+$
+----
++
+* Optional: configure a DNS alias for the master. The alias could be a DNS cname (if the machine
+  already has an A record in DNS), an A record (if the machine is only known by its IP address),
+  or an alias in /etc/hosts. Doing this simplifies recovering from permanent master failures
+  greatly, and is highly recommended. The alias should be an abstract representation of the
+  master (e.g. `master-1`).
+
+. Perform the following preparatory steps for each new master:
+* Choose an unused machine in the cluster. The master generates very little load so it can be
+  colocated with other data services or load-generating processes, though not with another Kudu
+  master from the same configuration.
+* Ensure Kudu is installed on the machine, either via system packages (in which case the `kudu` and
+  `kudu-master` packages should be installed), or via some other means.
+* Choose and record the directory where the master's data will live.
+* Choose and record the port the master should use for RPCs.
+* Optional: configure a DNS alias for the master (e.g. `master-2`, `master-3`, etc).
+
+==== Perform the migration
+
+. Stop all the Kudu processes in the entire cluster.
+
+. Format the data directory on each new master machine, and record the generated UUID. Use the
+  following command sequence:
++
+[source,bash]
+----
+$ kudu fs format --fs_wal_dir=<master_data_dir>
+$ kudu fs dump uuid --fs_wal_dir=<master_data_dir> 2>/dev/null
+----
++
+master_data_dir:: new master's previously recorded data directory
++
+[source,bash]
+.Example
+----
+$ kudu fs format --fs_wal_dir=/var/lib/kudu/master
+$ kudu fs dump uuid --fs_wal_dir=/var/lib/kudu/master 2>/dev/null
+f5624e05f40649b79a757629a69d061e
+$
+----
+
+. If using CM, add the new Kudu master roles now, but do not start them. If using DNS aliases,
+  override the empty value of the `Master Address` parameter for each role (including the
+  existing master role) with that master's alias. Add the port number (separated by a colon) if
+  using a non-default RPC port value.
+
+. Rewrite the master's Raft configuration with the following command, executed on the existing
+  master machine:
++
+[source,bash]
+----
+$ kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=<master_data_dir> <tablet_id> <all_masters>
+----
++
+master_data_dir:: existing master's previously recorded data directory
+tablet_id:: must be the string `00000000000000000000000000000000`
+all_masters:: space-separated list of masters, both new and existing. Each entry in the list must be
+  a string of the form `<uuid>:<hostname>:<port>`
+uuid::: master's previously recorded UUID
+hostname::: master's previously recorded hostname or alias
+port::: master's previously recorded RPC port number
++
+[source,bash]
+.Example
+----
+$ kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=/var/lib/kudu/master 00000000000000000000000000000000 4aab798a69e94fab8d77069edff28ce0:master-1:7051 f5624e05f40649b79a757629a69d061e:master-2:7051 988d8ac6530f426cbe180be5ba52033d:master-3:7051
+----
+
+. Start the existing master.
+
+. Copy the master data to each new master with the following command, executed on each new master
+  machine:
++
+[source,bash]
+----
+$ kudu local_replica copy_from_remote --fs_wal_dir=<master_data_dir> <tablet_id> <existing_master>
+----
++
+master_data_dir:: new master's previously recorded data directory
+tablet_id:: must be the string `00000000000000000000000000000000`
+existing_master:: RPC address of the existing master and must be a string of the form
+`<hostname>:<port>`
+hostname::: existing master's previously recorded hostname or alias
+port::: existing master's previously recorded RPC port number
++
+[source,bash]
+.Example
+----
+$ kudu local_replica copy_from_remote --fs_wal_dir=/var/lib/kudu/master 00000000000000000000000000000000 master-1:7051
+----
+
+. Start all of the new masters.
++
+WARNING: Skip the next step if using CM.
++
+. Modify the value of the `tserver_master_addrs` configuration parameter for each tablet server.
+  The new value must be a comma-separated list of masters where each entry is a string of the form
+  `<hostname>:<port>`
+hostname:: master's previously recorded hostname or alias
+port:: master's previously recorded RPC port number
+
+. Start all of the tablet servers.
+
+Congratulations, the cluster has now been migrated to multiple masters! To verify that all masters
+are working properly, consider performing the following sanity checks:
+
+* Using a browser, visit each master's web UI. Look at the /masters page. All of the masters should
+  be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
+  contents of /masters on each master should be the same.
+
+* Run a Kudu system check (ksck) on the cluster using the `kudu` command line tool. Help for ksck
+  can be viewed via `kudu cluster ksck --help`.
