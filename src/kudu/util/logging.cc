@@ -179,13 +179,13 @@ void InitGoogleLoggingSafe(const char* arg) {
 
   if (!FLAGS_logtostderr) {
     // Verify that a log file can be created in log_dir by creating a tmp file.
-    stringstream ss;
+    ostringstream ss;
     random_generator uuid_generator;
     ss << FLAGS_log_dir << "/" << PROJ_NAME "_test_log." << uuid_generator();
     const string file_name = ss.str();
     ofstream test_file(file_name.c_str());
     if (!test_file.is_open()) {
-      stringstream error_msg;
+      ostringstream error_msg;
       error_msg << "Could not open file in log_dir " << FLAGS_log_dir;
       perror(error_msg.str().c_str());
       // Unlock the mutex before exiting the program to avoid mutex d'tor assert.
@@ -278,7 +278,7 @@ void UnregisterLoggingCallback() {
 }
 
 void GetFullLogFilename(google::LogSeverity severity, string* filename) {
-  stringstream ss;
+  ostringstream ss;
   ss << FLAGS_log_dir << "/" << FLAGS_log_filename << "."
      << google::GetLogSeverityName(severity);
   *filename = ss.str();

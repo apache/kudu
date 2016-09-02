@@ -19,13 +19,15 @@
 
 #include <array>
 #include <algorithm>
-#include <boost/bind.hpp>
 #include <map>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <boost/bind.hpp>
 
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
@@ -47,14 +49,14 @@
 
 namespace kudu {
 
-using std::array;
 using consensus::ConsensusStatePB;
 using consensus::RaftPeerPB;
+using std::array;
 using std::map;
+using std::ostringstream;
 using std::pair;
 using std::shared_ptr;
 using std::string;
-using std::stringstream;
 using std::vector;
 using strings::Substitute;
 
@@ -64,7 +66,7 @@ MasterPathHandlers::~MasterPathHandlers() {
 }
 
 void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
-                                             stringstream* output) {
+                                             ostringstream* output) {
   vector<std::shared_ptr<TSDescriptor> > descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
 
@@ -107,7 +109,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
 }
 
 void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
-                                              stringstream* output) {
+                                              ostringstream* output) {
   CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
   if (!l.first_failed_status().ok()) {
     *output << "Master is not ready: " << l.first_failed_status().ToString();
@@ -163,7 +165,7 @@ bool CompareByRole(const pair<string, RaftPeerPB::Role>& a,
 
 
 void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
-                                         stringstream *output) {
+                                         ostringstream* output) {
   // Parse argument.
   string table_id;
   if (!FindCopy(req.parsed_args, "id", &table_id)) {
@@ -226,7 +228,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   // Prepare the tablets table first because the tablet partition information is
   // also used to make the range bounds.
   std::set<std::pair<string, string>> range_bounds;
-  std::stringstream tablets_output;
+  std::ostringstream tablets_output;
   tablets_output << "<h3>Tablets</h3>";
   tablets_output << "<table class='table table-striped'>\n";
   tablets_output << "  <tr><th>Tablet ID</th><th>Partition</th><th>State</th>"
@@ -258,7 +260,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     std::sort(sorted_replicas.begin(), sorted_replicas.end(), &CompareByRole);
 
     // Generate the RaftConfig table cell.
-    stringstream raft_config_html;
+    ostringstream raft_config_html;
     raft_config_html << "<ul>\n";
     for (const auto& e : sorted_replicas) {
       raft_config_html << e.first;
@@ -327,7 +329,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 }
 
 void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
-                                       stringstream* output) {
+                                       ostringstream* output) {
   vector<ServerEntryPB> masters;
   Status s = master_->ListMasters(&masters);
   if (!s.ok()) {
@@ -457,7 +459,7 @@ class JsonDumper : public TableVisitor, public TabletVisitor {
   JsonWriter* jw_;
 };
 
-void JsonError(const Status& s, stringstream* out) {
+void JsonError(const Status& s, ostringstream* out) {
   out->str("");
   JsonWriter jw(out, JsonWriter::COMPACT);
   jw.StartObject();
@@ -468,7 +470,7 @@ void JsonError(const Status& s, stringstream* out) {
 } // anonymous namespace
 
 void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& req,
-                                            stringstream* output) {
+                                            ostringstream* output) {
   JsonWriter jw(output, JsonWriter::COMPACT);
   JsonDumper d(&jw);
 

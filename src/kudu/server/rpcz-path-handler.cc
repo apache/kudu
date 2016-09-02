@@ -17,10 +17,11 @@
 
 #include "kudu/server/rpcz-path-handler.h"
 
-#include <boost/bind.hpp>
-#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
+
+#include <boost/bind.hpp>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -34,15 +35,15 @@ using kudu::rpc::DumpRunningRpcsResponsePB;
 using kudu::rpc::DumpRpczStoreRequestPB;
 using kudu::rpc::DumpRpczStoreResponsePB;
 using kudu::rpc::Messenger;
+using std::ostringstream;
 using std::shared_ptr;
-using std::stringstream;
 
 namespace kudu {
 
 namespace {
 
 void RpczPathHandler(const shared_ptr<Messenger>& messenger,
-                     const Webserver::WebRequest& req, stringstream* output) {
+                     const Webserver::WebRequest& req, ostringstream* output) {
   DumpRunningRpcsResponsePB running_rpcs;
   {
     DumpRunningRpcsRequestPB dump_req;

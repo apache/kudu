@@ -75,8 +75,8 @@ using llvm::Type;
 using llvm::Value;
 using std::move;
 using std::ostream;
+using std::ostringstream;
 using std::string;
-using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -87,7 +87,7 @@ namespace codegen {
 namespace {
 
 string ToString(const SMDiagnostic& err) {
-  stringstream sstr;
+  ostringstream sstr;
   raw_os_ostream os(sstr);
   err.print("precompiled.ll", os);
   os.flush();
@@ -97,7 +97,7 @@ string ToString(const SMDiagnostic& err) {
 }
 
 string ToString(const Module& m) {
-  stringstream sstr;
+  ostringstream sstr;
   raw_os_ostream os(sstr);
   os << m;
   return sstr.str();

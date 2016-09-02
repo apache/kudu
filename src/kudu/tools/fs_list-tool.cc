@@ -102,7 +102,7 @@ bool ValidateCommand(int argc, char** argv, CommandType* out) {
 
 static int FsListToolMain(int argc, char** argv) {
   FLAGS_logtostderr = 1;
-  std::stringstream usage_str;
+  std::ostringstream usage_str;
   PrintUsageToStream(argv[0], &usage_str);
   google::SetUsageMessage(usage_str.str());
   ParseCommandLineFlags(&argc, &argv, true);

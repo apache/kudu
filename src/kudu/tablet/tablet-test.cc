@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <ctime>
+
 #include <glog/logging.h>
-#include <time.h>
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/row.h"
@@ -938,7 +939,7 @@ TYPED_TEST(TestTablet, TestMetricsInit) {
   // Create a tablet, but do not open it
   this->CreateTestTablet();
   MetricRegistry* registry = this->harness()->metrics_registry();
-  std::stringstream out;
+  std::ostringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
   ASSERT_OK(registry->WriteAsJson(&writer, { "*" }, MetricJsonOptions()));
   // Open tablet, should still work

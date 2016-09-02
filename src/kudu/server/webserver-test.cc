@@ -15,9 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <string>
+
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <string>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"

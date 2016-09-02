@@ -19,11 +19,13 @@
 
 #include <algorithm>
 #include <deque>
-#include <gperftools/malloc_extension.h>
 #include <limits>
 #include <list>
 #include <memory>
 #include <mutex>
+#include <sstream>
+
+#include <gperftools/malloc_extension.h>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/once.h"
@@ -71,9 +73,9 @@ namespace kudu {
 
 using std::deque;
 using std::list;
-using std::string;
-using std::stringstream;
+using std::ostringstream;
 using std::shared_ptr;
+using std::string;
 using std::vector;
 using std::weak_ptr;
 
@@ -515,7 +517,7 @@ void MemTracker::GcTcmalloc() {
 }
 
 string MemTracker::LogUsage(const string& prefix) const {
-  stringstream ss;
+  ostringstream ss;
   ss << prefix << id_ << ":";
   if (CheckLimitExceeded()) {
     ss << " memory limit exceeded.";
@@ -525,7 +527,7 @@ string MemTracker::LogUsage(const string& prefix) const {
   }
   ss << " Consumption=" << HumanReadableNumBytes::ToString(consumption());
 
-  stringstream prefix_ss;
+  ostringstream prefix_ss;
   prefix_ss << prefix << "  ";
   string new_prefix = prefix_ss.str();
   MutexLock l(child_trackers_lock_);
@@ -559,7 +561,7 @@ void MemTracker::AddChildTrackerUnlocked(const shared_ptr<MemTracker>& tracker) 
 }
 
 void MemTracker::LogUpdate(bool is_consume, int64_t bytes) const {
-  stringstream ss;
+  ostringstream ss;
   ss << this << " " << (is_consume ? "Consume: " : "Release: ") << bytes
      << " Consumption: " << consumption() << " Limit: " << limit_;
   if (log_stack_) {

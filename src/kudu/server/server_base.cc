@@ -16,10 +16,12 @@
 // under the License.
 #include "kudu/server/server_base.h"
 
-#include <boost/algorithm/string/predicate.hpp>
-#include <gflags/gflags.h>
+#include <sstream>
 #include <string>
 #include <vector>
+
+#include <boost/algorithm/string/predicate.hpp>
+#include <gflags/gflags.h>
 
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -59,9 +61,9 @@ TAG_FLAG(num_reactor_threads, advanced);
 
 DECLARE_bool(use_hybrid_clock);
 
+using std::ostringstream;
 using std::shared_ptr;
 using std::string;
-using std::stringstream;
 using std::vector;
 using strings::Substitute;
 
@@ -265,7 +267,7 @@ void ServerBase::MetricsLoggingThread() {
     next_log = MonoTime::Now() +
         MonoDelta::FromMilliseconds(options_.metrics_log_interval_ms);
 
-    std::stringstream buf;
+    std::ostringstream buf;
     buf << "metrics " << GetCurrentTimeMicros() << " ";
 
     // Collect the metrics JSON string.

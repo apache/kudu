@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <sstream>
+
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
@@ -191,7 +193,7 @@ class RemoteKsckTest : public KuduTest {
   shared_ptr<client::KuduClient> client_;
 
   // Captures logged messages from ksck.
-  std::stringstream err_stream_;
+  std::ostringstream err_stream_;
 
  private:
   client::KuduSchema schema_;

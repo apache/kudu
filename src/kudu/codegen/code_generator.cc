@@ -219,7 +219,7 @@ Status CodeGenerator::CompileRowProjector(const Schema& base, const Schema& proj
 
   if (FLAGS_codegen_dump_mc) {
     static const int kInstrMax = 500;
-    std::stringstream sstr;
+    std::ostringstream sstr;
     sstr << "Printing read projection function:\n";
     int instrs = DumpAsm((*out)->read(), *tm, &sstr, kInstrMax);
     sstr << "Printed " << instrs << " instructions.";

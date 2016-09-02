@@ -20,13 +20,15 @@
 #ifndef KUDU_UTIL_THREAD_H
 #define KUDU_UTIL_THREAD_H
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
 #include <pthread.h>
-#include <string>
 #include <sys/syscall.h>
 #include <sys/types.h>
+
+#include <string>
 #include <vector>
+
+#include <boost/bind.hpp>
+#include <boost/function.hpp>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/ref_counted.h"

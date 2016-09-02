@@ -68,7 +68,7 @@ TEST_F(SpinLockProfilingTest, TestStackCollection) {
   base::SpinLock lock;
   gutil::SubmitSpinLockProfileData(&lock, 12345);
   StopSynchronizationProfiling();
-  std::stringstream str;
+  std::ostringstream str;
   int64_t dropped = 0;
   FlushSynchronizationProfile(&str, &dropped);
   string s = str.str();

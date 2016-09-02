@@ -17,6 +17,8 @@
 #include "kudu/tserver/tablet_server-test-base.h"
 
 #include <memory>
+#include <sstream>
+
 #include <zlib.h>
 
 #include "kudu/consensus/log-test-base.h"
@@ -233,7 +235,7 @@ TEST_F(TabletServerTest, TestWebPages) {
                          &buf));
     string json;
     if (compressed) {
-      std::stringstream ss;
+      std::ostringstream ss;
       ASSERT_OK(zlib::Uncompress(buf, &ss));
       json = ss.str();
     } else {
@@ -2059,7 +2061,7 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
   double throughput = ((max_rows - warmup) * 1.0) / (end - start).ToSeconds();
 
   // Generate the JSON.
-  std::stringstream out;
+  std::ostringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
   ASSERT_OK(histogram->WriteAsJson(&writer, MetricJsonOptions()));
 

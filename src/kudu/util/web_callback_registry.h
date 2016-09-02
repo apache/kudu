@@ -17,9 +17,11 @@
 #ifndef KUDU_UTIL_WEB_CALLBACK_REGISTRY_H
 #define KUDU_UTIL_WEB_CALLBACK_REGISTRY_H
 
-#include <boost/function.hpp>
+#include <iosfwd>
 #include <map>
 #include <string>
+
+#include <boost/function.hpp>
 
 namespace kudu {
 
@@ -42,7 +44,7 @@ class WebCallbackRegistry {
     std::string post_data;
   };
 
-  typedef boost::function<void (const WebRequest& args, std::stringstream* output)>
+  typedef boost::function<void (const WebRequest& args, std::ostringstream* output)>
       PathHandlerCallback;
 
   virtual ~WebCallbackRegistry() {}

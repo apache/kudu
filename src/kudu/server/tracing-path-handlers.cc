@@ -35,8 +35,8 @@
 #include "kudu/util/zlib.h"
 
 using std::map;
+using std::ostringstream;
 using std::string;
-using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 
@@ -124,7 +124,7 @@ Status BeginRecording(const Webserver::WebRequest& req,
 
 Status EndRecording(const Webserver::WebRequest& req,
                     bool compressed,
-                    stringstream* out) {
+                    ostringstream* out) {
   TraceLog* tl = TraceLog::GetInstance();
   tl->SetDisabled();
   string json = TraceResultBuffer::FlushTraceLogToString();
@@ -139,7 +139,7 @@ Status EndRecording(const Webserver::WebRequest& req,
   return Status::OK();
 }
 
-Status CaptureMonitoring(stringstream* out) {
+Status CaptureMonitoring(ostringstream* out) {
   TraceLog* tl = TraceLog::GetInstance();
   if (!tl->IsEnabled()) {
     return Status::IllegalState("monitoring not enabled");
@@ -148,7 +148,7 @@ Status CaptureMonitoring(stringstream* out) {
   return Status::OK();
 }
 
-void GetCategories(stringstream* out) {
+void GetCategories(ostringstream* out) {
   vector<string> groups;
   kudu::debug::TraceLog::GetInstance()->GetKnownCategoryGroups(&groups);
   JsonWriter j(out, JsonWriter::COMPACT);
@@ -159,13 +159,13 @@ void GetCategories(stringstream* out) {
   j.EndArray();
 }
 
-void GetMonitoringStatus(stringstream* out) {
+void GetMonitoringStatus(ostringstream* out) {
   TraceLog* tl = TraceLog::GetInstance();
   bool is_monitoring = tl->IsEnabled();
   std::string category_filter = tl->GetCurrentCategoryFilter().ToString();
   int options = static_cast<int>(tl->trace_options());
 
-  stringstream json_out;
+  ostringstream json_out;
   JsonWriter j(&json_out, JsonWriter::COMPACT);
   j.StartObject();
 
@@ -189,7 +189,7 @@ void GetMonitoringStatus(stringstream* out) {
 }
 
 void HandleTraceJsonPage(const Webserver::ArgumentMap &args,
-                         std::stringstream* output) {
+                         std::ostringstream* output) {
   TraceLog* tl = TraceLog::GetInstance();
   tl->SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
                  TraceLog::RECORDING_MODE,
@@ -202,7 +202,7 @@ void HandleTraceJsonPage(const Webserver::ArgumentMap &args,
 
 Status DoHandleRequest(Handler handler,
                        const Webserver::WebRequest& req,
-                       std::stringstream* output) {
+                       std::ostringstream* output) {
   VLOG(2) << "Tracing request type=" << handler << ": " << req.query_string;
 
   switch (handler) {
@@ -242,7 +242,7 @@ Status DoHandleRequest(Handler handler,
 
 void HandleRequest(Handler handler,
                    const Webserver::WebRequest& req,
-                   std::stringstream* output) {
+                   std::ostringstream* output) {
   Status s = DoHandleRequest(handler, req, output);
   if (!s.ok()) {
     LOG(WARNING) << "Tracing error for handler " << handler << ": "

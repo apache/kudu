@@ -17,6 +17,8 @@
 
 #include "kudu/util/spinlock_profiling.h"
 
+#include <sstream>
+
 #include <glog/logging.h>
 #include <gflags/gflags.h>
 
@@ -100,7 +102,7 @@ class ContentionStacks {
   //
   // On return, guarantees that any stack traces that were present at the beginning of
   // the call have been flushed. However, new stacks can be added concurrently with this call.
-  void Flush(std::stringstream* out, int64_t* dropped);
+  void Flush(std::ostringstream* out, int64_t* dropped);
 
  private:
 
@@ -187,7 +189,7 @@ void ContentionStacks::AddStack(const StackTrace& s, int64_t cycles) {
   dropped_samples_.Increment();
 }
 
-void ContentionStacks::Flush(std::stringstream* out, int64_t* dropped) {
+void ContentionStacks::Flush(std::ostringstream* out, int64_t* dropped) {
   uint64_t iterator = 0;
   StackTrace t;
   int64_t cycles;
@@ -308,7 +310,7 @@ void StartSynchronizationProfiling() {
   base::subtle::Barrier_AtomicIncrement(&g_profiling_enabled, 1);
 }
 
-void FlushSynchronizationProfile(std::stringstream* out,
+void FlushSynchronizationProfile(std::ostringstream* out,
                                  int64_t* drop_count) {
   CHECK_NOTNULL(g_contention_stacks)->Flush(out, drop_count);
 }

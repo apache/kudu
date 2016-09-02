@@ -47,8 +47,8 @@ using kudu::KuduPartialRow;
 using kudu::MonoDelta;
 using kudu::Status;
 
+using std::ostringstream;
 using std::string;
-using std::stringstream;
 using std::vector;
 
 static Status CreateClient(const string& addr,
@@ -197,7 +197,7 @@ static Status ScanRows(const shared_ptr<KuduTable>& table) {
       int32_t val;
       KUDU_RETURN_NOT_OK(result.GetInt32("key", &val));
       if (val != next_row) {
-        stringstream out;
+        ostringstream out;
         out << "Scan returned the wrong results. Expected key "
             << next_row << " but got " << val;
         return Status::IOError(out.str());
@@ -210,7 +210,7 @@ static Status ScanRows(const shared_ptr<KuduTable>& table) {
   int last_row_seen = next_row - 1;
 
   if (last_row_seen != kUpperBound) {
-    stringstream out;
+    ostringstream out;
     out << "Scan returned the wrong results. Expected last row to be "
         << kUpperBound << " rows but got " << last_row_seen;
     return Status::IOError(out.str());

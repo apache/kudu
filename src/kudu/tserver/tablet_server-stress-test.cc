@@ -129,7 +129,7 @@ TEST_F(TSStressTest, TestMTInserts) {
   LOG(INFO) << "CPU efficiency: " << (num_rows / s.elapsed().user_cpu_seconds()) << " rows/cpusec";
 
   // Generate the JSON.
-  std::stringstream out;
+  std::ostringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
   ASSERT_OK(histogram_->WriteAsJson(&writer, MetricJsonOptions()));
 

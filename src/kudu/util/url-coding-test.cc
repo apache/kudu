@@ -99,7 +99,7 @@ TEST(Base64Test, Basic) {
 
 TEST(HtmlEscapingTest, Basic) {
   string before = "<html><body>&amp";
-  stringstream after;
+  ostringstream after;
   EscapeForHtml(before, &after);
   EXPECT_EQ(after.str(), "&lt;html&gt;&lt;body&gt;&amp;amp");
 }

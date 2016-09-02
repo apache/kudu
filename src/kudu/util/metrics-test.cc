@@ -171,7 +171,7 @@ TEST_F(MetricsTest, JsonPrintTest) {
   entity_->SetAttribute("test_attr", "attr_val");
 
   // Generate the JSON.
-  std::stringstream out;
+  std::ostringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
   ASSERT_OK(entity_->WriteAsJson(&writer, { "*" }, MetricJsonOptions()));
 
@@ -268,7 +268,7 @@ TEST_F(MetricsTest, TestInstantiatingDifferentEntities) {
 
 TEST_F(MetricsTest, TestDumpJsonPrototypes) {
   // Dump the prototype info.
-  std::stringstream out;
+  std::ostringstream out;
   JsonWriter w(&out, JsonWriter::PRETTY);
   MetricPrototypeRegistry::get()->WriteAsJson(&w);
   string json = out.str();

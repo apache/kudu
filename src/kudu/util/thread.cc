@@ -19,15 +19,17 @@
 
 #include "kudu/util/thread.h"
 
-#include <algorithm>
-#include <map>
-#include <memory>
-#include <set>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include <algorithm>
+#include <map>
+#include <memory>
+#include <set>
+#include <sstream>
 #include <vector>
 
 #if defined(__linux__)
@@ -55,8 +57,8 @@ using boost::bind;
 using boost::mem_fn;
 using std::endl;
 using std::map;
+using std::ostringstream;
 using std::shared_ptr;
-using std::stringstream;
 using strings::Substitute;
 
 METRIC_DEFINE_gauge_uint64(server, threads_started,
@@ -211,8 +213,8 @@ class ThreadMgr {
   uint64_t ReadThreadsRunning();
 
   // Webpage callback; prints all threads by category
-  void ThreadPathHandler(const WebCallbackRegistry::WebRequest& args, stringstream* output);
-  void PrintThreadCategoryRows(const ThreadCategory& category, stringstream* output);
+  void ThreadPathHandler(const WebCallbackRegistry::WebRequest& args, ostringstream* output);
+  void PrintThreadCategoryRows(const ThreadCategory& category, ostringstream* output);
 };
 
 void ThreadMgr::SetThreadName(const string& name, int64 tid) {
@@ -327,7 +329,7 @@ void ThreadMgr::RemoveThread(const pthread_t& pthread_id, const string& category
 }
 
 void ThreadMgr::PrintThreadCategoryRows(const ThreadCategory& category,
-    stringstream* output) {
+    ostringstream* output) {
   for (const ThreadCategory::value_type& thread : category) {
     ThreadStats stats;
     Status status = GetThreadStats(thread.second.thread_id(), &stats);
@@ -343,7 +345,7 @@ void ThreadMgr::PrintThreadCategoryRows(const ThreadCategory& category,
 }
 
 void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
-    stringstream* output) {
+    ostringstream* output) {
   MutexLock l(lock_);
   vector<const ThreadCategory*> categories_to_print;
   auto category_name = req.parsed_args.find("group");

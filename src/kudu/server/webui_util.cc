@@ -17,6 +17,7 @@
 
 #include "kudu/server/webui_util.h"
 
+#include <sstream>
 #include <string>
 
 #include "kudu/gutil/strings/join.h"
@@ -31,7 +32,7 @@ using strings::Substitute;
 namespace kudu {
 
 void HtmlOutputSchemaTable(const Schema& schema,
-                           std::stringstream* output) {
+                           std::ostringstream* output) {
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr>"
           << "<th>Column</th><th>ID</th><th>Type</th>"
@@ -68,7 +69,7 @@ void HtmlOutputSchemaTable(const Schema& schema,
 void HtmlOutputImpalaSchema(const std::string& table_name,
                             const Schema& schema,
                             const string& master_addresses,
-                            std::stringstream* output) {
+                            std::ostringstream* output) {
   *output << "<pre><code>\n";
 
   // Escape table and column names with ` to avoid conflicts with Impala reserved words.
@@ -144,7 +145,7 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
 }
 
 void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
-                        std::stringstream* output) {
+                        std::ostringstream* output) {
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Task Name</th><th>State</th><th>Time</th><th>Description</th></tr>\n";
   for (const scoped_refptr<MonitoredTask>& task : tasks) {

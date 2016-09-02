@@ -19,9 +19,9 @@
 
 #include <inttypes.h>
 
+#include <memory>
 #include <string>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 
 namespace google {
@@ -52,7 +52,7 @@ class JsonWriter {
     COMPACT
   };
 
-  JsonWriter(std::stringstream* out, Mode mode);
+  JsonWriter(std::ostringstream* out, Mode mode);
   ~JsonWriter();
 
   void Null();
@@ -87,7 +87,7 @@ class JsonWriter {
                              const google::protobuf::FieldDescriptor* field,
                              int index);
 
-  gscoped_ptr<JsonWriterIf> impl_;
+  std::unique_ptr<JsonWriterIf> impl_;
   DISALLOW_COPY_AND_ASSIGN(JsonWriter);
 };
 

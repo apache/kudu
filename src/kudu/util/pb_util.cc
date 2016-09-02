@@ -27,6 +27,7 @@
 #include <initializer_list>
 #include <memory>
 #include <ostream>
+#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -888,7 +889,7 @@ PbTracer::PbTracer(const Message& msg) : msg_(msg.New()) {
 
 void PbTracer::AppendAsTraceFormat(std::string* out) const {
   pb_util::TruncateFields(msg_.get(), kMaxFieldLengthToTrace);
-  std::stringstream ss;
+  std::ostringstream ss;
   JsonWriter jw(&ss, JsonWriter::COMPACT);
   jw.Protobuf(*msg_);
   out->append(ss.str());

@@ -16,6 +16,7 @@
 // under the License.
 #include "kudu/util/jsonwriter.h"
 
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -29,8 +30,8 @@ using google::protobuf::FieldDescriptor;
 using google::protobuf::Message;
 using google::protobuf::Reflection;
 
+using std::ostringstream;
 using std::string;
-using std::stringstream;
 using std::vector;
 
 namespace kudu {
@@ -39,10 +40,10 @@ namespace kudu {
 // Since Squeasel exposes a stringstream as its interface, this is needed to avoid overcopying.
 class UTF8StringStreamBuffer {
  public:
-  explicit UTF8StringStreamBuffer(std::stringstream* out);
+  explicit UTF8StringStreamBuffer(std::ostringstream* out);
   void Put(rapidjson::UTF8<>::Ch c);
  private:
-  std::stringstream* out_;
+  std::ostringstream* out_;
 };
 
 // rapidjson doesn't provide any common interface between the PrettyWriter and
@@ -75,7 +76,7 @@ class JsonWriterIf {
 template<class T>
 class JsonWriterImpl : public JsonWriterIf {
  public:
-  explicit JsonWriterImpl(stringstream* out);
+  explicit JsonWriterImpl(ostringstream* out);
 
   virtual void Null() OVERRIDE;
   virtual void Bool(bool b) OVERRIDE;
@@ -106,7 +107,7 @@ class JsonWriterImpl : public JsonWriterIf {
 typedef rapidjson::PrettyWriter<UTF8StringStreamBuffer> PrettyWriterClass;
 typedef rapidjson::Writer<UTF8StringStreamBuffer> CompactWriterClass;
 
-JsonWriter::JsonWriter(stringstream* out, Mode m) {
+JsonWriter::JsonWriter(ostringstream* out, Mode m) {
   switch (m) {
     case PRETTY:
       impl_.reset(new JsonWriterImpl<PrettyWriterClass>(DCHECK_NOTNULL(out)));
@@ -118,6 +119,7 @@ JsonWriter::JsonWriter(stringstream* out, Mode m) {
 }
 JsonWriter::~JsonWriter() {
 }
+
 void JsonWriter::Null() { impl_->Null(); }
 void JsonWriter::Bool(bool b) { impl_->Bool(b); }
 void JsonWriter::Int(int i) { impl_->Int(i); }
@@ -260,7 +262,7 @@ void JsonWriter::ProtobufRepeatedField(const Message& pb, const FieldDescriptor*
 }
 
 string JsonWriter::ToJson(const Message& pb, Mode mode) {
-  stringstream stream;
+  ostringstream stream;
   JsonWriter writer(&stream, mode);
   writer.Protobuf(pb);
   return stream.str();
@@ -270,7 +272,7 @@ string JsonWriter::ToJson(const Message& pb, Mode mode) {
 // UTF8StringStreamBuffer
 //
 
-UTF8StringStreamBuffer::UTF8StringStreamBuffer(std::stringstream* out)
+UTF8StringStreamBuffer::UTF8StringStreamBuffer(std::ostringstream* out)
   : out_(DCHECK_NOTNULL(out)) {
 }
 
@@ -283,7 +285,7 @@ void UTF8StringStreamBuffer::Put(rapidjson::UTF8<>::Ch c) {
 //
 
 template<class T>
-JsonWriterImpl<T>::JsonWriterImpl(stringstream* out)
+JsonWriterImpl<T>::JsonWriterImpl(ostringstream* out)
   : stream_(DCHECK_NOTNULL(out)),
     writer_(stream_) {
 }

@@ -23,7 +23,7 @@
 #include <map>
 #include <mutex>
 #include <string>
-#include <strstream>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -190,13 +190,13 @@ void Trace::Dump(std::ostream* out, int flags) const {
 }
 
 string Trace::DumpToString(int flags) const {
-  std::stringstream s;
+  std::ostringstream s;
   Dump(&s, flags);
   return s.str();
 }
 
 string Trace::MetricsAsJSON() const {
-  std::stringstream s;
+  std::ostringstream s;
   JsonWriter jw(&s, JsonWriter::COMPACT);
   MetricsToJSON(&jw);
   return s.str();

@@ -39,7 +39,7 @@
 
 using std::ifstream;
 using std::istreambuf_iterator;
-using std::stringstream;
+using std::ostringstream;
 using strings::Split;
 using strings::Substitute;
 
@@ -107,7 +107,7 @@ Status GetThreadStats(int64_t tid, ThreadStats* stats) {
     return Status::NotSupported("ThreadStats not supported");
   }
 
-  stringstream proc_path;
+  ostringstream proc_path;
   proc_path << "/proc/self/task/" << tid << "/stat";
   ifstream proc_file(proc_path.str().c_str());
   if (!proc_file.is_open()) {

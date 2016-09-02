@@ -17,6 +17,7 @@
 #ifndef KUDU_UTIL_WEBSERVER_H
 #define KUDU_UTIL_WEBSERVER_H
 
+#include <iosfwd>
 #include <map>
 #include <string>
 #include <vector>
@@ -101,11 +102,11 @@ class Webserver : public WebCallbackRegistry {
   Status BuildListenSpec(std::string* spec) const;
 
   // Renders a common Bootstrap-styled header
-  void BootstrapPageHeader(std::stringstream* output);
+  void BootstrapPageHeader(std::ostringstream* output);
 
   // Renders a common Bootstrap-styled footer. Must be used in conjunction with
   // BootstrapPageHeader.
-  void BootstrapPageFooter(std::stringstream* output);
+  void BootstrapPageFooter(std::ostringstream* output);
 
   // Dispatch point for all incoming requests.
   // Static so that it can act as a function pointer, and then call the next method
@@ -122,7 +123,7 @@ class Webserver : public WebCallbackRegistry {
                                       const char* message);
 
   // Registered to handle "/", and prints a list of available URIs
-  void RootHandler(const WebRequest& args, std::stringstream* output);
+  void RootHandler(const WebRequest& args, std::ostringstream* output);
 
   // Builds a map of argument name to argument value from a typical URL argument
   // string (that is, "key1=value1&key2=value2.."). If no value is given for a

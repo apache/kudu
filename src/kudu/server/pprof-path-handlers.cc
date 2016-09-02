@@ -14,16 +14,19 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/server/pprof-path-handlers.h"
 
+#include <sys/stat.h>
+
 #include <fstream>
+#include <string>
+#include <vector>
+
 #include <glog/logging.h>
 #include <gperftools/heap-profiler.h>
 #include <gperftools/malloc_extension.h>
 #include <gperftools/profiler.h>
-#include <string>
-#include <sys/stat.h>
-#include <vector>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -46,7 +49,6 @@ using std::endl;
 using std::ifstream;
 using std::ostringstream;
 using std::string;
-using std::stringstream;
 
 // GLog already implements symbolization. Just import their hidden symbol.
 namespace google {
@@ -63,7 +65,7 @@ const int PPROF_DEFAULT_SAMPLE_SECS = 30; // pprof default sample time in second
 
 // pprof asks for the url /pprof/cmdline to figure out what application it's profiling.
 // The server should respond by sending the executable path.
-static void PprofCmdLineHandler(const Webserver::WebRequest& req, stringstream* output) {
+static void PprofCmdLineHandler(const Webserver::WebRequest& req, ostringstream* output) {
   string executable_path;
   Env* env = Env::Default();
   WARN_NOT_OK(env->GetExecutablePath(&executable_path), "Failed to get executable path");
@@ -73,7 +75,7 @@ static void PprofCmdLineHandler(const Webserver::WebRequest& req, stringstream* 
 // pprof asks for the url /pprof/heap to get heap information. This should be implemented
 // by calling HeapProfileStart(filename), continue to do work, and then, some number of
 // seconds later, call GetHeapProfile() followed by HeapProfilerStop().
-static void PprofHeapHandler(const Webserver::WebRequest& req, stringstream* output) {
+static void PprofHeapHandler(const Webserver::WebRequest& req, ostringstream* output) {
 #ifndef TCMALLOC_ENABLED
   (*output) << "Heap profiling is not available without tcmalloc.";
 #else
@@ -102,7 +104,7 @@ static void PprofHeapHandler(const Webserver::WebRequest& req, stringstream* out
 // pprof asks for the url /pprof/profile?seconds=XX to get cpu-profiling information.
 // The server should respond by calling ProfilerStart(), continuing to do its work,
 // and then, XX seconds later, calling ProfilerStop().
-static void PprofCpuProfileHandler(const Webserver::WebRequest& req, stringstream* output) {
+static void PprofCpuProfileHandler(const Webserver::WebRequest& req, ostringstream* output) {
 #ifndef TCMALLOC_ENABLED
   (*output) << "CPU profiling is not available without tcmalloc.";
 #else
@@ -129,7 +131,7 @@ static void PprofCpuProfileHandler(const Webserver::WebRequest& req, stringstrea
 // pprof asks for the url /pprof/growth to get heap-profiling delta (growth) information.
 // The server should respond by calling:
 // MallocExtension::instance()->GetHeapGrowthStacks(&output);
-static void PprofGrowthHandler(const Webserver::WebRequest& req, stringstream* output) {
+static void PprofGrowthHandler(const Webserver::WebRequest& req, ostringstream* output) {
 #ifndef TCMALLOC_ENABLED
   (*output) << "Growth profiling is not available without tcmalloc.";
 #else
@@ -140,7 +142,7 @@ static void PprofGrowthHandler(const Webserver::WebRequest& req, stringstream* o
 }
 
 // Lock contention profiling
-static void PprofContentionHandler(const Webserver::WebRequest& req, stringstream* output) {
+static void PprofContentionHandler(const Webserver::WebRequest& req, ostringstream* output) {
   string secs_str = FindWithDefault(req.parsed_args, "seconds", "");
   int32_t seconds = ParseLeadingInt32Value(secs_str.c_str(), PPROF_DEFAULT_SAMPLE_SECS);
   int64_t discarded_samples = 0;
@@ -187,7 +189,7 @@ static void PprofContentionHandler(const Webserver::WebRequest& req, stringstrea
 // <hex address><tab><function name>
 // For instance:
 // 0x08b2dabd    _Update
-static void PprofSymbolHandler(const Webserver::WebRequest& req, stringstream* output) {
+static void PprofSymbolHandler(const Webserver::WebRequest& req, ostringstream* output) {
   if (req.request_method == "GET") {
     // Per the above comment, pprof doesn't expect to know the actual number of symbols.
     // Any non-zero value indicates that we support symbol lookup.

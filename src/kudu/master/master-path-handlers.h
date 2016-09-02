@@ -17,8 +17,8 @@
 #ifndef KUDU_MASTER_MASTER_PATH_HANDLERS_H
 #define KUDU_MASTER_MASTER_PATH_HANDLERS_H
 
+#include <iosfwd>
 #include <string>
-#include <sstream>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
@@ -47,15 +47,15 @@ class MasterPathHandlers {
 
  private:
   void HandleTabletServers(const Webserver::WebRequest& req,
-                           std::stringstream* output);
+                           std::ostringstream* output);
   void HandleCatalogManager(const Webserver::WebRequest& req,
-                            std::stringstream* output);
+                            std::ostringstream* output);
   void HandleTablePage(const Webserver::WebRequest& req,
-                       std::stringstream *output);
+                       std::ostringstream *output);
   void HandleMasters(const Webserver::WebRequest& req,
-                     std::stringstream* output);
+                     std::ostringstream* output);
   void HandleDumpEntities(const Webserver::WebRequest& req,
-                          std::stringstream* output);
+                          std::ostringstream* output);
 
   // Convert the specified TSDescriptor to HTML, adding a link to the
   // tablet server's own webserver if specified in 'desc'.
@@ -72,7 +72,7 @@ class MasterPathHandlers {
   DISALLOW_COPY_AND_ASSIGN(MasterPathHandlers);
 };
 
-void HandleTabletServersPage(const Webserver::WebRequest& req, std::stringstream* output);
+void HandleTabletServersPage(const Webserver::WebRequest& req, std::ostringstream* output);
 
 } // namespace master
 } // namespace kudu

@@ -106,7 +106,7 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
 }
 
 void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebRequest& req,
-                                                      std::stringstream* output) {
+                                                      std::ostringstream* output) {
   bool as_text = ContainsKey(req.parsed_args, "raw");
 
   vector<scoped_refptr<TabletPeer> > peers;
@@ -176,7 +176,7 @@ string TabletLink(const string& id) {
 } // anonymous namespace
 
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& req,
-                                                 std::stringstream *output) {
+                                                 std::ostringstream *output) {
   vector<scoped_refptr<TabletPeer> > peers;
   tserver_->tablet_manager()->GetTabletPeers(&peers);
 
@@ -242,7 +242,7 @@ bool CompareByMemberType(const RaftPeerPB& a, const RaftPeerPB& b) {
 } // anonymous namespace
 
 string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& cstate) const {
-  std::stringstream html;
+  std::ostringstream html;
 
   html << "<ul>\n";
   std::vector<RaftPeerPB> sorted_peers;
@@ -270,7 +270,7 @@ string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& 
 
 namespace {
 
-bool GetTabletID(const Webserver::WebRequest& req, string* id, std::stringstream *out) {
+bool GetTabletID(const Webserver::WebRequest& req, string* id, std::ostringstream* out) {
   if (!FindCopy(req.parsed_args, "id", id)) {
     // TODO: webserver should give a way to return a non-200 response code
     (*out) << "Tablet missing 'id' argument";
@@ -281,7 +281,7 @@ bool GetTabletID(const Webserver::WebRequest& req, string* id, std::stringstream
 
 bool GetTabletPeer(TabletServer* tserver, const Webserver::WebRequest& req,
                    scoped_refptr<TabletPeer>* peer, const string& tablet_id,
-                   std::stringstream *out) {
+                   std::ostringstream* out) {
   if (!tserver->tablet_manager()->LookupTablet(tablet_id, peer)) {
     (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " not found";
     return false;
@@ -290,7 +290,7 @@ bool GetTabletPeer(TabletServer* tserver, const Webserver::WebRequest& req,
 }
 
 bool TabletBootstrapping(const scoped_refptr<TabletPeer>& peer, const string& tablet_id,
-                         std::stringstream* out) {
+                         std::ostringstream* out) {
   if (peer->state() == tablet::BOOTSTRAPPING) {
     (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " is still bootstrapping";
     return false;
@@ -303,7 +303,7 @@ bool TabletBootstrapping(const scoped_refptr<TabletPeer>& peer, const string& ta
 bool LoadTablet(TabletServer* tserver,
                 const Webserver::WebRequest& req,
                 string* tablet_id, scoped_refptr<TabletPeer>* peer,
-                std::stringstream* out) {
+                std::ostringstream* out) {
   if (!GetTabletID(req, tablet_id, out)) return false;
   if (!GetTabletPeer(tserver, req, peer, *tablet_id, out)) return false;
   if (!TabletBootstrapping(*peer, *tablet_id, out)) return false;
@@ -313,7 +313,7 @@ bool LoadTablet(TabletServer* tserver,
 } // anonymous namespace
 
 void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req,
-                                                std::stringstream *output) {
+                                                std::ostringstream *output) {
   string tablet_id;
   scoped_refptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, req, &tablet_id, &peer, output)) return;
@@ -358,7 +358,7 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
 }
 
 void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::WebRequest& req,
-                                                   std::stringstream* output) {
+                                                   std::ostringstream* output) {
   string id;
   scoped_refptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, req, &id, &peer, output)) return;
@@ -375,7 +375,7 @@ void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::WebRequest& 
 }
 
 void TabletServerPathHandlers::HandleLogAnchorsPage(const Webserver::WebRequest& req,
-                                                    std::stringstream* output) {
+                                                    std::ostringstream* output) {
   string tablet_id;
   scoped_refptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, req, &tablet_id, &peer, output)) return;
@@ -388,7 +388,7 @@ void TabletServerPathHandlers::HandleLogAnchorsPage(const Webserver::WebRequest&
 }
 
 void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebRequest& req,
-                                                         std::stringstream* output) {
+                                                         std::ostringstream* output) {
   string id;
   scoped_refptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, req, &id, &peer, output)) return;
@@ -401,7 +401,7 @@ void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebReq
 }
 
 void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& req,
-                                               std::stringstream* output) {
+                                               std::ostringstream* output) {
   *output << "<h1>Scans</h1>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "<tr><th>Tablet id</th><th>Scanner id</th><th>Total time in-flight</th>"
@@ -417,7 +417,7 @@ void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& req,
 }
 
 string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
-  std::stringstream html;
+  std::ostringstream html;
   uint64_t time_in_flight_us =
       (MonoTime::Now() - scanner.start_time()).ToMicroseconds();
   uint64_t time_since_last_access_us =
@@ -471,7 +471,7 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
 
 string TabletServerPathHandlers::IteratorStatsToHtml(const Schema& projection,
                                                      const vector<IteratorStats>& stats) const {
-  std::stringstream html;
+  std::ostringstream html;
   html << "<table>\n";
   html << "<tr><th>Column</th>"
        << "<th>Blocks read from disk</th>"
@@ -500,7 +500,7 @@ string TabletServerPathHandlers::IteratorStatsToHtml(const Schema& projection,
 }
 
 void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::WebRequest& req,
-                                                    std::stringstream* output) {
+                                                    std::ostringstream* output) {
 
   *output << "<h3>Dashboards</h3>\n";
   *output << "<table class='table table-striped'>\n";
@@ -523,7 +523,7 @@ string TabletServerPathHandlers::GetDashboardLine(const std::string& link,
 }
 
 void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
-                                                            std::stringstream* output) {
+                                                            std::ostringstream* output) {
   MaintenanceManager* manager = tserver_->maintenance_manager();
   MaintenanceManagerStatusPB pb;
   manager->GetMaintenanceManagerStatusDump(&pb);

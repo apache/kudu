@@ -15,10 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
+#include <iosfwd>
 #include <memory>
 #include <unordered_map>
+
+#include <gflags/gflags.h>
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -255,7 +257,7 @@ class KsckTest : public KuduTest {
   // are assigned first, end up on ts1 and ts3.
   vector<string> assignment_plan_;
 
-  std::stringstream err_stream_;
+  std::ostringstream err_stream_;
 };
 
 TEST_F(KsckTest, TestMasterOk) {
