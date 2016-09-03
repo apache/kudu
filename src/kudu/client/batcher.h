@@ -124,7 +124,9 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   }
 
   // Compute in-buffer size for the given write operation.
-  static int64_t GetOperationSizeInBuffer(KuduWriteOperation* write_op);
+  static int64_t GetOperationSizeInBuffer(KuduWriteOperation* write_op) {
+    return write_op->SizeInBuffer();
+  }
 
  private:
   friend class RefCountedThreadSafe<Batcher>;

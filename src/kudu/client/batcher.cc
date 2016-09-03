@@ -510,10 +510,6 @@ void Batcher::FlushAsync(KuduStatusCallback* cb) {
   FlushBuffersIfReady();
 }
 
-int64_t Batcher::GetOperationSizeInBuffer(KuduWriteOperation* write_op) {
-  return write_op->SizeInBuffer();
-}
-
 Status Batcher::Add(KuduWriteOperation* write_op) {
   // As soon as we get the op, start looking up where it belongs,
   // so that when the user calls Flush, we are ready to go.

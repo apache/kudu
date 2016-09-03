@@ -77,9 +77,8 @@ int64_t KuduWriteOperation::SizeInBuffer() const {
       size += schema->column(i).type_info()->size();
       if (schema->column(i).type_info()->physical_type() == BINARY) {
         ContiguousRow row(schema, row_.row_data_);
-        Slice bin;
-        memcpy(&bin, row.cell_ptr(i), sizeof(bin));
-        size += bin.size();
+        const Slice* bin = reinterpret_cast<const Slice*>(row.cell_ptr(i));
+        size += bin->size();
       }
     }
   }

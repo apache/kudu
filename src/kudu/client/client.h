@@ -1244,7 +1244,7 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// when running in AUTO_FLUSH_BACKGROUND mode: once the specified threshold
   /// is reached, the session starts sending the accumulated write operations
   /// to the appropriate tablet servers. By default, the buffer flush watermark
-  /// is to to 80%.
+  /// is to to 50%.
   ///
   /// @note This setting is applicable only for AUTO_FLUSH_BACKGROUND sessions.
   ///   I.e., calling this method in other flush modes is safe, but

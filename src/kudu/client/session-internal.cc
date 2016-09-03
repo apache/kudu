@@ -53,7 +53,7 @@ KuduSession::Data::Data(shared_ptr<KuduClient> client,
       batchers_num_(0),
       batchers_num_limit_(2),
       buffer_bytes_limit_(7 * 1024 * 1024),
-      buffer_watermark_pct_(80),
+      buffer_watermark_pct_(50),
       buffer_bytes_used_(0),
       buffer_pre_flush_enabled_(true) {
 }
@@ -323,10 +323,10 @@ Status KuduSession::Data::ApplyWriteOp(
     sp::weak_ptr<KuduSession> weak_session,
     KuduWriteOperation* write_op) {
 
-  if (!write_op) {
+  if (PREDICT_FALSE(!write_op)) {
     return Status::InvalidArgument("NULL operation");
   }
-  if (!write_op->row().IsKeySet()) {
+  if (PREDICT_FALSE(!write_op->row().IsKeySet())) {
     Status status = Status::IllegalState(
         "Key not specified", write_op->ToString());
     error_collector_->AddError(
@@ -358,7 +358,7 @@ Status KuduSession::Data::ApplyWriteOp(
   // A sanity check: before trying to validate against any of run-time metrics,
   // verify that the single operation can fit into an empty buffer
   // given the restriction on the buffer size.
-  if (required_size > max_size) {
+  if (PREDICT_FALSE(required_size > max_size)) {
     Status s = Status::Incomplete(strings::Substitute(
           "buffer size limit is too small to fit operation: "
           "required $0, size limit $1",
