@@ -87,6 +87,8 @@ build_llvm() {
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DLLVM_TARGETS_TO_BUILD=X86 \
     -DLLVM_ENABLE_RTTI=ON \
+    -DLLVM_TOOL_LIBCXX_BUILD=OFF \
+    -DLLVM_TOOL_LIBCXXABI_BUILD=OFF \
     -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS" \
     -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
     $LLVM_DIR
@@ -117,6 +119,17 @@ build_libstdcxx() {
     $GCC_DIR/libstdc++-v3/configure \
     --enable-multilib=no \
     --prefix="$PREFIX"
+
+  # On Ubuntu distros (tested on 14.04 and 16.04), the configure script has a
+  # nasty habit of disabling TLS support when -fsanitize=thread is used. This
+  # appears to be an interaction between TSAN and the GCC_CHECK_TLS m4 macro
+  # used by configure. It doesn't manifest on el6 because the devtoolset
+  # causes an early conftest to fail, which passes the macro's smell test.
+  #
+  # This is a silly hack to force TLS support back on, but it's only temporary,
+  # as we're about to replace all of this with libc++.
+  sed -ie 's|/\* #undef HAVE_TLS \*/|#define HAVE_TLS 1|' config.h
+
   make -j$PARALLEL install
 }
 

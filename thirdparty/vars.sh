@@ -111,13 +111,15 @@ LIBUNWIND_DIR=$TP_DIR/libunwind-${LIBUNWIND_VERSION}
 #
 # Summary:
 # 1. Unpack the llvm tarball
-# 2. Unpack the clang tarball into the llvm tree as tools/clang (rename from cfe-<version> to clang)
-# 3. Unpack the extra clang tools tarball as tools/clang/tools/clang-tools-extra
-# 4. Unpack the lld tarball into the llvm tree as tools/lld
+# 2. Unpack the clang tarball as tools/clang (rename from cfe-<version> to clang)
+# 3. Unpack the extra clang tools tarball as tools/clang/tools/extra
+# 4. Unpack the lld tarball as tools/lld
 # 5. Unpack the compiler-rt tarball as projects/compiler-rt
-# 6. Create new tarball from the resulting source tree
+# 6. Unpack the libc++ tarball as projects/libcxx
+# 7. Unpack the libc++abi tarball as projects/libcxxabi
+# 8. Create new tarball from the resulting source tree
 #
-LLVM_VERSION=3.8.0
+LLVM_VERSION=3.9.0
 LLVM_DIR=$TP_DIR/llvm-${LLVM_VERSION}.src
 LLVM_BUILD_DIR=$TP_DIR/llvm-${LLVM_VERSION}.build
 

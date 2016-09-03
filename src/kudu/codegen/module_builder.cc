@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <glog/logging.h>
@@ -29,6 +30,7 @@
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/GlobalValue.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/LLVMContext.h>
@@ -43,6 +45,7 @@
 
 #include "kudu/codegen/precompiled.ll.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
@@ -61,6 +64,7 @@ using llvm::EngineBuilder;
 using llvm::ExecutionEngine;
 using llvm::Function;
 using llvm::FunctionType;
+using llvm::GlobalValue;
 using llvm::IntegerType;
 using llvm::legacy::FunctionPassManager;
 using llvm::legacy::PassManager;
@@ -78,6 +82,7 @@ using std::ostream;
 using std::ostringstream;
 using std::string;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -209,7 +214,7 @@ namespace {
 
 void DoOptimizations(ExecutionEngine* engine,
                      Module* module,
-                     const vector<const char*>& external_functions) {
+                     const unordered_set<string>& external_functions) {
   PassManagerBuilder pass_builder;
   pass_builder.OptLevel = 2;
   // Don't optimize for code size (this corresponds to -O2/-O3)
@@ -231,7 +236,9 @@ void DoOptimizations(ExecutionEngine* engine,
   PassManager module_passes;
 
   // Internalize all functions that aren't explicitly specified with external linkage.
-  module_passes.add(llvm::createInternalizePass(external_functions));
+  module_passes.add(llvm::createInternalizePass([&](const GlobalValue& v) {
+    return ContainsKey(external_functions, v.getGlobalIdentifier());
+  }));
   pass_builder.populateModulePassManager(module_passes);
 
   // Same as above, the result here just indicates whether optimization made any changes.
@@ -316,11 +323,10 @@ TargetMachine* ModuleBuilder::GetTargetMachine() const {
   return CHECK_NOTNULL(target_);
 }
 
-vector<const char*> ModuleBuilder::GetFunctionNames() const {
-  vector<const char*> ret;
+unordered_set<string> ModuleBuilder::GetFunctionNames() const {
+  unordered_set<string> ret;
   for (const JITFuture& fut : futures_) {
-    const char* name = CHECK_NOTNULL(fut.llvm_f_)->getName().data();
-    ret.push_back(name);
+    ret.insert(CHECK_NOTNULL(fut.llvm_f_)->getName());
   }
   return ret;
 }
