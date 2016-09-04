@@ -188,5 +188,23 @@ Status KuduValue::Data::CheckAndPointToString(const string& col_name,
   return Status::OK();
 }
 
+const Slice KuduValue::Data::GetSlice() {
+  switch (type_) {
+    case INT: {
+      return Slice(reinterpret_cast<uint8_t *>(&int_val_),
+                   sizeof(int64_t));
+    }
+    case FLOAT:
+      return Slice(reinterpret_cast<uint8_t*>(&float_val_),
+                   sizeof(float));
+    case DOUBLE:
+      return Slice(reinterpret_cast<uint8_t*>(&double_val_),
+                   sizeof(double));
+    case SLICE:
+      return slice_val_;
+  }
+  LOG(FATAL);
+}
+
 } // namespace client
 } // namespace kudu

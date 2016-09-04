@@ -350,7 +350,7 @@ class ClientTest : public KuduTest {
   void DoTestScanResourceMetrics() {
     KuduScanner scanner(client_table_.get());
     string tablet_id = GetFirstTabletId(client_table_.get());
-    // flush to ensure we scan disk later
+    // Flush to ensure we scan disk later.
     FlushTablet(tablet_id);
     ASSERT_OK(scanner.SetProjectedColumns({ "key" }));
     LOG_TIMING(INFO, "Scanning disk with no predicates") {
@@ -712,8 +712,8 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          half_the_rows));
 
-  // get the time from the server and transform to micros disregarding any
-  // logical values (we shouldn't have any with a single server anyway);
+  // Get the time from the server and transform to micros, disregarding any
+  // logical values (we shouldn't have any with a single server anyway).
   int64_t ts = server::HybridClock::GetPhysicalValueMicros(
       cluster_->mini_tablet_server(0)->server()->clock()->Now());
 
@@ -1269,7 +1269,7 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
 
   // Scans
 
-  { // full table scan
+  { // Full table scan
     vector<string> rows;
     KuduScanner scanner(table.get());
     ASSERT_OK(scanner.SetFaultTolerant());
@@ -2945,7 +2945,7 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   Status s = session->Flush();
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
-  // verify error
+  // Verify error
   gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
             "UPDATE int32 key=1, int32 int_val=2");
@@ -2957,7 +2957,7 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   s = session->Flush();
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
-  // verify error
+  // Verify error
   error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
             "DELETE int32 key=1");
@@ -2975,7 +2975,7 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   Status s = session->Flush();
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
-  // verify error
+  // Verify error
   gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
             "UPDATE int32 key=1, int32 int_val=2");
@@ -2987,7 +2987,7 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   s = session->Flush();
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
-  // verify error
+  // Verify error
   error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
             "DELETE int32 key=1");
@@ -3113,51 +3113,6 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
 TEST_F(ClientTest, TestBasicAlterOperations) {
   const vector<string> kBadNames = {"", string(1000, 'x')};
 
-  // test that having no steps throws an error
-  {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
-    Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "No alter steps provided");
-  }
-
-  // test that adding a non-nullable column with no default value throws an error
-  {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
-    table_alterer->AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull();
-    Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "column `key`: NOT NULL columns must have a default");
-  }
-
-  // test that remove key should throws an error
-  {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
-    Status s = table_alterer
-      ->DropColumn("key")
-      ->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "cannot remove a key column");
-  }
-
-  // test that renaming a key should throws an error
-  {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
-    table_alterer->AlterColumn("key")->RenameTo("key2");
-    Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "cannot rename a key column");
-  }
-
-  // test that renaming to an already-existing name throws an error
-  {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
-    table_alterer->AlterColumn("int_val")->RenameTo("string_val");
-    Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsAlreadyPresent());
-    ASSERT_STR_CONTAINS(s.ToString(), "The column already exists: string_val");
-  }
-
   // Test that renaming a column to an invalid name throws an error.
   for (const string& bad_name : kBadNames) {
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
@@ -3181,13 +3136,92 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   {
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     for (int i = 0; i < 1000; i++) {
-      table_alterer->AddColumn(Substitute("c$0", i))->Type(KuduColumnSchema::INT32);
+    table_alterer->AddColumn(Substitute("c$0", i))->Type(KuduColumnSchema::INT32);
     }
     Status s = table_alterer->Alter();
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "number of columns 1004 is greater than the "
-                        "permitted maximum 300");
+    "number of columns 1004 is greater than the "
+    "permitted maximum 300");
+  }
+
+  // Having no steps should throw an error.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "No alter steps provided");
+  }
+
+  // Adding a non-nullable column with no default value should throw an error.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull();
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "column `key`: NOT NULL columns must have a default");
+  }
+
+  // Removing a key should throw an error.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    Status s = table_alterer
+      ->DropColumn("key")
+      ->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "cannot remove a key column: key");
+  }
+
+  // Renaming a key should throw an error.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("key")->RenameTo("key2");
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "cannot alter a key column: key");
+  }
+
+  // Renaming a column to an already-existing name should throw an error.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("int_val")->RenameTo("string_val");
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsAlreadyPresent());
+    ASSERT_STR_CONTAINS(s.ToString(), "The column already exists: string_val");
+  }
+
+  // Altering a column but specifying no alterations should throw an error.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("string_val");
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "no alter operation specified: string_val");
+  }
+
+  // Trying to change type or nullability of a column is an error.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("string_val")->Type(KuduColumnSchema::STRING);
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsNotSupported());
+    ASSERT_STR_CONTAINS(s.ToString(), "unsupported alter operation: string_val");
+  }
+
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("string_val")->Nullable();
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsNotSupported());
+    ASSERT_STR_CONTAINS(s.ToString(), "unsupported alter operation: string_val");
+  }
+
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("string_val")->NotNull();
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsNotSupported());
+    ASSERT_STR_CONTAINS(s.ToString(), "unsupported alter operation: string_val");
   }
 
   // Need a tablet peer for the next set of tests.
@@ -3204,8 +3238,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
   }
 
-  // test that specifying an encoding incompatible with the column's
-  // type throws an error
+  // Specifying an encoding incompatible with the column's type is an error.
   {
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AddColumn("new_string_val")->Type(KuduColumnSchema::STRING)
@@ -3224,13 +3257,103 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_EQ(2, tablet_peer->tablet()->metadata()->schema_version());
   }
 
+  // Test changing a default value for a binary column.
+  // There are separate tests for fixed- and variable-length types because
+  // the implementations differ a little
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("string_val")
+        ->Default(KuduValue::CopyString("hello!"));
+    ASSERT_OK(table_alterer->Alter());
+    ASSERT_EQ(3, tablet_peer->tablet()->metadata()->schema_version());
+    Schema schema = tablet_peer->tablet()->metadata()->schema();
+    ColumnSchema col_schema = schema.column(schema.find_column("string_val"));
+    ASSERT_FALSE(col_schema.has_read_default());
+    ASSERT_TRUE(col_schema.has_write_default());
+    ASSERT_EQ("hello!", *reinterpret_cast<const Slice*>(col_schema.write_default_value()));
+  }
+
+  // Change a default value for an integer column.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("non_null_with_default")
+        ->Default(KuduValue::FromInt(54321));
+    ASSERT_OK(table_alterer->Alter());
+    ASSERT_EQ(4, tablet_peer->tablet()->metadata()->schema_version());
+    Schema schema = tablet_peer->tablet()->metadata()->schema();
+    ColumnSchema col_schema = schema.column(schema.find_column("non_null_with_default"));
+    ASSERT_TRUE(col_schema.has_read_default()); // Started with a default
+    ASSERT_TRUE(col_schema.has_write_default());
+    ASSERT_EQ(54321, *reinterpret_cast<const int32_t*>(col_schema.write_default_value()));
+  }
+
+  // Clear a default value from a nullable column
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("string_val")
+        ->RemoveDefault();
+    ASSERT_OK(table_alterer->Alter());
+    ASSERT_EQ(5, tablet_peer->tablet()->metadata()->schema_version());
+    Schema schema = tablet_peer->tablet()->metadata()->schema();
+    ColumnSchema col_schema = schema.column(schema.find_column("string_val"));
+    ASSERT_FALSE(col_schema.has_read_default());
+    ASSERT_FALSE(col_schema.has_write_default());
+  }
+
+  // Clear a default value from a non-nullable column
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("non_null_with_default")
+        ->RemoveDefault();
+    ASSERT_OK(table_alterer->Alter());
+    ASSERT_EQ(6, tablet_peer->tablet()->metadata()->schema_version());
+    Schema schema = tablet_peer->tablet()->metadata()->schema();
+    ColumnSchema col_schema = schema.column(schema.find_column("non_null_with_default"));
+    ASSERT_TRUE(col_schema.has_read_default());
+    ASSERT_FALSE(col_schema.has_write_default());
+  }
+
+  // Test that specifying a default of the wrong size fails.
+  // Note that, since the column's type isn't checked (or necessarily known)
+  // client-side, the server just receives some bytes, and, since the client
+  // stores 64-bit integer values as defaults for all integer-backed types, the
+  // value might be too large. We'll still be ok if we just truncate, though.
+  // This is actually how it works for regular add column and create table, but
+  // there the type of the column is known, so the truncation is backed up by
+  // column type-checking, and it can't be the case that there's too few bytes.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("non_null_with_default")
+        ->Default(KuduValue::CopyString("aaa"));
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "wrong size for default value");
+    ASSERT_EQ(6, tablet_peer->tablet()->metadata()->schema_version());
+  }
+
+  // Test altering encoding, compression, and block size.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("string_val")
+        ->Encoding(KuduColumnStorageAttributes::DICT_ENCODING)
+        ->Compression(KuduColumnStorageAttributes::LZ4)
+        ->BlockSize(16 * 1024 * 1024);
+    ASSERT_OK(table_alterer->Alter());
+    ASSERT_EQ(7, tablet_peer->tablet()->metadata()->schema_version());
+    Schema schema = tablet_peer->tablet()->metadata()->schema();
+    ColumnSchema col_schema = schema.column(schema.find_column("string_val"));
+    ASSERT_EQ(KuduColumnStorageAttributes::DICT_ENCODING, col_schema.attributes().encoding);
+    ASSERT_EQ(KuduColumnStorageAttributes::LZ4, col_schema.attributes().compression);
+    ASSERT_EQ(16 * 1024 * 1024, col_schema.attributes().cfile_block_size);
+  }
+
   {
     const char *kRenamedTableName = "RenamedTable";
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     ASSERT_OK(table_alterer
               ->RenameTo(kRenamedTableName)
               ->Alter());
-    ASSERT_EQ(3, tablet_peer->tablet()->metadata()->schema_version());
+    ASSERT_EQ(8, tablet_peer->tablet()->metadata()->schema_version());
     ASSERT_EQ(kRenamedTableName, tablet_peer->tablet()->metadata()->table_name());
 
     CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();

@@ -17,6 +17,7 @@
 #ifndef KUDU_COMMON_SCHEMA_H
 #define KUDU_COMMON_SCHEMA_H
 
+#include <boost/optional.hpp>
 #include <functional>
 #include <glog/logging.h>
 #include <memory>
@@ -104,6 +105,37 @@ struct ColumnStorageAttributes {
   int32_t cfile_block_size;
 };
 
+// A struct representing changes to a ColumnSchema.
+//
+// In the future, as more complex alter operations need to be supported,
+// this may evolve into a class, but for now it's just POD.
+struct ColumnSchemaDelta {
+public:
+  explicit ColumnSchemaDelta(std::string name)
+      : name(std::move(name)),
+        remove_default(false) {
+  }
+
+  const std::string name;
+
+  boost::optional<std::string> new_name;
+
+  // NB: these properties of a column cannot be changed yet,
+  // ergo type and nullable should always be empty.
+  // TODO(wdberkeley) allow changing of type and nullability
+  boost::optional<DataType> type;
+
+  boost::optional<bool> nullable;
+
+  boost::optional<Slice> default_value;
+
+  bool remove_default;
+
+  boost::optional<EncodingType> encoding;
+  boost::optional<CompressionType> compression;
+  boost::optional<int32_t> cfile_block_size;
+};
+
 // The schema for a given column.
 //
 // Holds the data type as well as information about nullability & column name.
@@ -138,7 +170,6 @@ class ColumnSchema {
     if (write_default == read_default) {
       write_default_ = read_default_;
     } else if (write_default != NULL) {
-      DCHECK(read_default != NULL) << "Must have a read default";
       write_default_.reset(new Variant(type, write_default));
     }
   }
@@ -233,6 +264,11 @@ class ColumnSchema {
     }
     return true;
   }
+
+  // Apply a ColumnSchemaDelta to this column schema, altering it according to
+  // the changes in the delta.
+  // The original column schema is not changed unless ApplyDelta returns OK.
+  Status ApplyDelta(const ColumnSchemaDelta& col_delta);
 
   // Returns extended attributes (such as encoding, compression, etc...)
   // associated with the column schema. The reason they are kept in a separate
@@ -848,7 +884,10 @@ class SchemaBuilder {
                    const void *write_default);
 
   Status RemoveColumn(const string& name);
+
   Status RenameColumn(const string& old_name, const string& new_name);
+
+  Status ApplyColumnSchemaDelta(const ColumnSchemaDelta& col_delta);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SchemaBuilder);

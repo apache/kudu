@@ -32,6 +32,7 @@ namespace kudu {
 class Arena;
 class ColumnPredicate;
 class ColumnSchema;
+struct ColumnSchemaDelta;
 class ConstContiguousRow;
 class faststring;
 class HostPort;
@@ -84,6 +85,13 @@ void ColumnSchemaToPB(const ColumnSchema& schema, ColumnSchemaPB *pb, int flags 
 
 // Return the ColumnSchema created from the specified protobuf.
 ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb);
+
+// Convert the column schema delta `col_delta` to protobuf.
+void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb);
+
+// Return the ColumnSchemaDelta created from the protobuf `pb`.
+// The protobuf must outlive the returned ColumnSchemaDelta.
+ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb);
 
 // Convert the given list of ColumnSchemaPB objects into a Schema object.
 //
