@@ -226,7 +226,7 @@ cdef class Client:
         # Nothing yet to clean up here
         pass
 
-    def create_table(self, table_name, Schema schema, partitioning):
+    def create_table(self, table_name, Schema schema, partitioning, n_replicas=None):
         """
         Creates a new Kudu table from the passed Schema and options.
 
@@ -236,6 +236,8 @@ cdef class Client:
         schema : kudu.Schema
           Create using kudu.schema_builder
         partitioning : Partitioning object
+        n_replicas : int Number of replicas to set. This should be an odd number.
+          If not provided (or if <= 0), falls back to the server-side default.
         """
         cdef:
             KuduTableCreator* c
@@ -245,6 +247,8 @@ cdef class Client:
             c.table_name(tobytes(table_name))
             c.schema(schema.schema)
             self._apply_partitioning(c, partitioning)
+            if n_replicas:
+                c.num_replicas(n_replicas)
             s = c.Create()
             check_status(s)
         finally:
@@ -489,6 +493,7 @@ cdef class Table:
         object _name
         Schema schema
         Client parent
+        int num_replicas
 
     def __cinit__(self, name, Client client):
         self._name = name
@@ -502,6 +507,7 @@ cdef class Table:
         self.schema.schema = &self.ptr().schema()
         self.schema.own_schema = 0
         self.schema.parent = self
+        self.num_replicas = self.ptr().num_replicas()
 
     def __len__(self):
         # TODO: is this cheaply knowable?

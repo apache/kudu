@@ -94,6 +94,26 @@ class TestClient(KuduTestBase, unittest.TestCase):
         self.assertRaises(kudu.KuduNotFound, self.client.table,
                           '__donotexist__')
 
+    def test_create_table_with_different_replication_factors(self):
+        name = "different_replica_table"
+
+        # Test setting the number of replicas for 1, 3 and 5 provided that the
+        # number does not exceed the number of tservers
+        for n_replicas in [n for n in [1, 3, 5] if n <= self.NUM_TABLET_SERVERS]:
+            try:
+                self.client.create_table(
+                    name, self.schema,
+                    partitioning=Partitioning().add_hash_partitions(['key'], 2),
+                    n_replicas=n_replicas)
+
+                assert n_replicas == self.client.table(name).num_replicas
+
+            finally:
+                try:
+                    self.client.delete_table(name)
+                except:
+                    pass
+
     def test_create_partitioned_table(self):
         name = 'partitioned_table'
         try:

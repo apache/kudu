@@ -522,6 +522,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         string& name()
         KuduSchema& schema()
+        int num_replicas()
 
         KuduInsert* NewInsert()
         KuduUpsert* NewUpsert()
