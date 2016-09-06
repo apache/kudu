@@ -1,6 +1,6 @@
 {"namespace": "org.apache.kudu.flume.sink",
   "type": "record",
-  "name": "AvroKuduEventProducerTestRecord",
+  "name": "AvroKuduOperationsProducerTestRecord",
   "fields": [
     {"name": "key", "type": "int"},
     {"name": "longField",  "type": "long"},

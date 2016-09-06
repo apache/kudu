@@ -18,10 +18,22 @@
  */
 package org.apache.kudu.flume.sink;
 
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.MASTER_ADDRESSES;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER_PREFIX;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TABLE_NAME;
+import static org.apache.kudu.flume.sink.SimpleKeyedKuduOperationsProducer.KEY_COLUMN_DEFAULT;
+import static org.apache.kudu.flume.sink.SimpleKeyedKuduOperationsProducer.OPERATION_PROP;
+import static org.apache.kudu.flume.sink.SimpleKeyedKuduOperationsProducer.PAYLOAD_COLUMN_DEFAULT;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import org.apache.flume.Channel;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
@@ -40,24 +52,21 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-
-public class KeyedKuduEventProducerTest extends BaseKuduTest {
-  private static final Logger LOG = LoggerFactory.getLogger(KeyedKuduEventProducerTest.class);
+public class KeyedKuduOperationsProducerTest extends BaseKuduTest {
+  private static final Logger LOG = LoggerFactory.getLogger(KeyedKuduOperationsProducerTest.class);
 
   private KuduTable createNewTable(String tableName) throws Exception {
     LOG.info("Creating new table...");
 
     ArrayList<ColumnSchema> columns = new ArrayList<>(2);
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING).key(true).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("payload", Type.BINARY).key(false).build());
+    columns.add(
+        new ColumnSchema.ColumnSchemaBuilder(KEY_COLUMN_DEFAULT, Type.STRING)
+            .key(true).build());
+    columns.add(
+        new ColumnSchema.ColumnSchemaBuilder(PAYLOAD_COLUMN_DEFAULT, Type.BINARY)
+            .key(false).build());
     CreateTableOptions createOptions =
-      new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key"))
+      new CreateTableOptions().setRangePartitionColumns(ImmutableList.of(KEY_COLUMN_DEFAULT))
                               .setNumReplicas(1);
     KuduTable table = createTable(tableName, new Schema(columns), createOptions);
 
@@ -68,32 +77,32 @@ public class KeyedKuduEventProducerTest extends BaseKuduTest {
 
   @Test
   public void testEmptyChannelWithInsert() throws Exception {
-    testEvents(0, "false");
+    testEvents(0, "insert");
   }
 
   @Test
   public void testOneEventWithInsert() throws Exception {
-    testEvents(1, "false");
+    testEvents(1, "insert");
   }
 
   @Test
   public void testThreeEventsWithInsert() throws Exception {
-    testEvents(3, "false");
+    testEvents(3, "insert");
   }
 
   @Test
   public void testEmptyChannelWithUpsert() throws Exception {
-    testEvents(0, "true");
+    testEvents(0, "upsert");
   }
 
   @Test
   public void testOneEventWithUpsert() throws Exception {
-    testEvents(1, "true");
+    testEvents(1, "upsert");
   }
 
   @Test
   public void testThreeEventsWithUpsert() throws Exception {
-    testEvents(3, "true");
+    testEvents(3, "upsert");
   }
 
   @Test
@@ -102,7 +111,7 @@ public class KeyedKuduEventProducerTest extends BaseKuduTest {
 
     KuduTable table = createNewTable("testDupUpsertEvents");
     String tableName = table.getName();
-    Context ctx = new Context(ImmutableMap.of("producer.upsert", "true"));
+    Context ctx = new Context(ImmutableMap.of(PRODUCER_PREFIX + OPERATION_PROP, "upsert"));
     KuduSink sink = createSink(tableName, ctx);
 
     Channel channel = new MemoryChannel();
@@ -116,7 +125,7 @@ public class KeyedKuduEventProducerTest extends BaseKuduTest {
     int numRows = 3;
     for (int i = 0; i < numRows; i++) {
       Event e = EventBuilder.withBody(String.format("payload body %s", i), Charsets.UTF_8);
-      e.setHeaders(ImmutableMap.of("key", String.format("key %s", i)));
+      e.setHeaders(ImmutableMap.of(KEY_COLUMN_DEFAULT, String.format("key %s", i)));
       channel.put(e);
     }
 
@@ -157,12 +166,12 @@ public class KeyedKuduEventProducerTest extends BaseKuduTest {
     LOG.info("Testing events with upsert finished successfully.");
   }
 
-  private void testEvents(int eventCount, String upsert) throws Exception {
+  private void testEvents(int eventCount, String operation) throws Exception {
     LOG.info("Testing {} events...", eventCount);
 
-    KuduTable table = createNewTable("test" + eventCount + "eventsUp" + upsert);
+    KuduTable table = createNewTable("test" + eventCount + "events" + operation);
     String tableName = table.getName();
-    Context ctx = new Context(ImmutableMap.of("producer.upsert", upsert));
+    Context ctx = new Context(ImmutableMap.of(PRODUCER_PREFIX + OPERATION_PROP, operation));
     KuduSink sink = createSink(tableName, ctx);
 
     Channel channel = new MemoryChannel();
@@ -204,9 +213,9 @@ public class KeyedKuduEventProducerTest extends BaseKuduTest {
 
     KuduSink sink = new KuduSink(syncClient);
     HashMap<String, String> parameters = new HashMap<>();
-    parameters.put(KuduSinkConfigurationConstants.TABLE_NAME, tableName);
-    parameters.put(KuduSinkConfigurationConstants.MASTER_ADDRESSES, getMasterAddresses());
-    parameters.put(KuduSinkConfigurationConstants.PRODUCER, "org.apache.kudu.flume.sink.SimpleKeyedKuduEventProducer");
+    parameters.put(TABLE_NAME, tableName);
+    parameters.put(MASTER_ADDRESSES, getMasterAddresses());
+    parameters.put(PRODUCER, SimpleKeyedKuduOperationsProducer.class.getName());
     Context context = new Context(parameters);
     context.putAll(ctx.getParameters());
     Configurables.configure(sink, context);

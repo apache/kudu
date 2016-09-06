@@ -18,6 +18,13 @@
  */
 package org.apache.kudu.flume.sink;
 
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.BATCH_SIZE;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.IGNORE_DUPLICATE_ROWS;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.MASTER_ADDRESSES;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TABLE_NAME;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TIMEOUT_MILLIS;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
@@ -53,13 +60,13 @@ import java.util.List;
  * <tr><th>Property Name</th><th>Default</th><th>Required?</th><th>Description</th></tr>
  * <tr><td>channel</td><td></td><td>Yes</td><td>The name of the Flume channel to read from.</td></tr>
  * <tr><td>type</td><td></td><td>Yes</td><td>Component name. Must be {@code org.apache.kudu.flume.sink.KuduSink}</td></tr>
- * <tr><td>masterAddresses</td><td></td><td>Yes</td><td>Comma-separated list of "host:port" pairs of the Kudu master servers. The port is optional.</td></tr>
+ * <tr><td>masterAddresses</td><td></td><td>Yes</td><td>Comma-separated list of "host:port" Kudu master addresses. The port is optional.</td></tr>
  * <tr><td>tableName</td><td></td><td>Yes</td><td>The name of the Kudu table to write to.</td></tr>
  * <tr><td>batchSize</td><td>100</td><td>No</td><td>The maximum number of events the sink will attempt to take from the channel per transaction.</td></tr>
- * <tr><td>ignoreDuplicateRows</td><td>true</td><td>No</td><td>Whether to ignore errors indicating that we attempted to insert duplicate rows into Kudu.</td></tr>
+ * <tr><td>ignoreDuplicateRows</td><td>true</td><td>No</td><td>Whether to ignore duplicate primary key errors caused by inserts.</td></tr>
  * <tr><td>timeoutMillis</td><td>10000</td><td>No</td><td>Timeout period for Kudu write operations, in milliseconds.</td></tr>
- * <tr><td>producer</td><td>{@link org.apache.kudu.flume.sink.SimpleKuduEventProducer}</td><td>No</td><td>The fully qualified class name of the {@link KuduEventProducer} the sink should use.</td></tr>
- * <tr><td>producer.*</td><td></td><td>(Varies by event producer)</td><td>Configuration properties to pass to the event producer implementation.</td></tr>
+ * <tr><td>producer</td><td>{@link SimpleKuduOperationsProducer}</td><td>No</td><td>The fully qualified class name of the {@link KuduOperationsProducer} the sink should use.</td></tr>
+ * <tr><td>producer.*</td><td></td><td>(Varies by operations producer)</td><td>Configuration properties to pass to the operations producer implementation.</td></tr>
  * </table>
  *
  * <p><strong>Installation</strong>
@@ -78,8 +85,8 @@ public class KuduSink extends AbstractSink implements Configurable {
   private static final Long DEFAULT_BATCH_SIZE = 100L;
   private static final Long DEFAULT_TIMEOUT_MILLIS =
           AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
-  private static final String DEFAULT_KUDU_EVENT_PRODUCER =
-          "org.apache.kudu.flume.sink.SimpleKuduEventProducer";
+  private static final String DEFAULT_KUDU_OPERATION_PRODUCER =
+          "org.apache.kudu.flume.sink.SimpleKuduOperationsProducer";
   private static final boolean DEFAULT_IGNORE_DUPLICATE_ROWS = true;
 
   private String masterAddresses;
@@ -90,9 +97,7 @@ public class KuduSink extends AbstractSink implements Configurable {
   private KuduTable table;
   private KuduSession session;
   private KuduClient client;
-  private KuduEventProducer eventProducer;
-  private String eventProducerType;
-  private Context producerContext;
+  private KuduOperationsProducer operationsProducer;
   private SinkCounter sinkCounter;
 
   public KuduSink() {
@@ -107,10 +112,10 @@ public class KuduSink extends AbstractSink implements Configurable {
 
   @Override
   public void start() {
-    Preconditions.checkState(table == null && session == null, "Please call stop " +
-        "before calling start on an old instance.");
+    Preconditions.checkState(table == null && session == null,
+        "Please call stop before calling start on an old instance.");
 
-    // This is not null only inside tests
+    // client is not null only inside tests
     if (client == null) {
       client = new KuduClient.KuduClientBuilder(masterAddresses).build();
     }
@@ -123,10 +128,11 @@ public class KuduSink extends AbstractSink implements Configurable {
       table = client.openTable(tableName);
     } catch (Exception e) {
       sinkCounter.incrementConnectionFailedCount();
-      String msg = String.format("Could not open table '%s' from Kudu", tableName);
+      String msg = String.format("Could not open Kudu table '%s'", tableName);
       logger.error(msg, e);
       throw new FlumeException(msg, e);
     }
+    operationsProducer.initialize(table);
 
     super.start();
     sinkCounter.incrementConnectionCreatedCount();
@@ -135,6 +141,13 @@ public class KuduSink extends AbstractSink implements Configurable {
 
   @Override
   public void stop() {
+    Exception ex = null;
+    try {
+      operationsProducer.close();
+    } catch (Exception e) {
+      ex = e;
+      logger.error("Error closing operations producer", e);
+    }
     try {
       if (client != null) {
         client.shutdown();
@@ -143,53 +156,52 @@ public class KuduSink extends AbstractSink implements Configurable {
       table = null;
       session = null;
     } catch (Exception e) {
-      throw new FlumeException("Error closing client.", e);
+      ex = e;
+      logger.error("Error closing client", e);
     }
     sinkCounter.incrementConnectionClosedCount();
     sinkCounter.stop();
+    if (ex != null) {
+      throw new FlumeException("Error stopping sink", ex);
+    }
   }
 
   @SuppressWarnings("unchecked")
   @Override
   public void configure(Context context) {
-    masterAddresses = context.getString(KuduSinkConfigurationConstants.MASTER_ADDRESSES);
-    tableName = context.getString(KuduSinkConfigurationConstants.TABLE_NAME);
-
-    batchSize = context.getLong(
-            KuduSinkConfigurationConstants.BATCH_SIZE, DEFAULT_BATCH_SIZE);
-    timeoutMillis = context.getLong(
-            KuduSinkConfigurationConstants.TIMEOUT_MILLIS, DEFAULT_TIMEOUT_MILLIS);
-    ignoreDuplicateRows = context.getBoolean(
-            KuduSinkConfigurationConstants.IGNORE_DUPLICATE_ROWS, DEFAULT_IGNORE_DUPLICATE_ROWS);
-    eventProducerType = context.getString(KuduSinkConfigurationConstants.PRODUCER);
-
+    masterAddresses = context.getString(MASTER_ADDRESSES);
     Preconditions.checkNotNull(masterAddresses,
-        "Master address cannot be empty, please specify '" +
-                KuduSinkConfigurationConstants.MASTER_ADDRESSES +
-                "' in configuration file");
-    Preconditions.checkNotNull(tableName,
-        "Table name cannot be empty, please specify '" +
-                KuduSinkConfigurationConstants.TABLE_NAME +
-                "' in configuration file");
+        "Missing master addresses. Please specify property '$s'.",
+        MASTER_ADDRESSES);
 
-    // Check for event producer, if null set event producer type.
-    if (eventProducerType == null || eventProducerType.isEmpty()) {
-      eventProducerType = DEFAULT_KUDU_EVENT_PRODUCER;
-      logger.info("No Kudu event producer defined, will use default");
+    tableName = context.getString(TABLE_NAME);
+    Preconditions.checkNotNull(tableName,
+        "Missing table name. Please specify property '%s'",
+        TABLE_NAME);
+
+    batchSize = context.getLong(BATCH_SIZE, DEFAULT_BATCH_SIZE);
+    timeoutMillis = context.getLong(TIMEOUT_MILLIS, DEFAULT_TIMEOUT_MILLIS);
+    ignoreDuplicateRows = context.getBoolean(IGNORE_DUPLICATE_ROWS, DEFAULT_IGNORE_DUPLICATE_ROWS);
+    String operationProducerType = context.getString(PRODUCER);
+
+    // Check for operations producer, if null set default operations producer type.
+    if (operationProducerType == null || operationProducerType.isEmpty()) {
+      operationProducerType = DEFAULT_KUDU_OPERATION_PRODUCER;
+      logger.warn("No Kudu operations producer provided, using default");
     }
 
-    producerContext = new Context();
+    Context producerContext = new Context();
     producerContext.putAll(context.getSubProperties(
             KuduSinkConfigurationConstants.PRODUCER_PREFIX));
 
     try {
-      Class<? extends KuduEventProducer> clazz =
-          (Class<? extends KuduEventProducer>)
-          Class.forName(eventProducerType);
-      eventProducer = clazz.newInstance();
-      eventProducer.configure(producerContext);
+      Class<? extends KuduOperationsProducer> clazz =
+          (Class<? extends KuduOperationsProducer>)
+          Class.forName(operationProducerType);
+      operationsProducer = clazz.newInstance();
+      operationsProducer.configure(producerContext);
     } catch (Exception e) {
-      logger.error("Could not instantiate Kudu event producer." , e);
+      logger.error("Could not instantiate Kudu operations producer" , e);
       Throwables.propagate(e);
     }
     sinkCounter = new SinkCounter(this.getName());
@@ -202,9 +214,9 @@ public class KuduSink extends AbstractSink implements Configurable {
   @Override
   public Status process() throws EventDeliveryException {
     if (session.hasPendingOperations()) {
-      // If for whatever reason we have pending operations then just refuse to process
-      // and tell caller to try again a bit later. We don't want to pile on the kudu
-      // session object.
+      // If for whatever reason we have pending operations, refuse to process
+      // more and tell the caller to try again a bit later. We don't want to
+      // pile on the KuduSession.
       return Status.BACKOFF;
     }
 
@@ -221,8 +233,7 @@ public class KuduSink extends AbstractSink implements Configurable {
           break;
         }
 
-        eventProducer.initialize(event, table);
-        List<Operation> operations = eventProducer.getOperations();
+        List<Operation> operations = operationsProducer.getOperations(event);
         for (Operation o : operations) {
           session.apply(o);
         }
@@ -279,11 +290,5 @@ public class KuduSink extends AbstractSink implements Configurable {
     }
 
     return Status.BACKOFF;
-  }
-
-  @VisibleForTesting
-  @InterfaceAudience.Private
-  KuduEventProducer getEventProducer() {
-    return eventProducer;
   }
 }

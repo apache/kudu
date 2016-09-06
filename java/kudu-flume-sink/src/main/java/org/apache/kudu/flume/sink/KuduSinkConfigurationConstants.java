@@ -22,15 +22,13 @@ package org.apache.kudu.flume.sink;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 
-/**
- * Constants used for configuration of KuduSink
- */
-
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public class KuduSinkConfigurationConstants {
   /**
-   * Comma-separated list of "host:port" pairs of the masters (port optional).
+   * Comma-separated list of "host:port" Kudu master addresses.
+   * The port is optional and defaults to the Kudu Java client's default master
+   * port.
    */
   public static final String MASTER_ADDRESSES = "masterAddresses";
 
@@ -40,18 +38,20 @@ public class KuduSinkConfigurationConstants {
   public static final String TABLE_NAME = "tableName";
 
   /**
-   * The fully qualified class name of the Kudu event producer the sink should use.
+   * The fully qualified class name of the KuduOperationsProducer class that the
+   * sink should use.
    */
   public static final String PRODUCER = "producer";
 
   /**
-   * Configuration to pass to the Kudu event producer.
+   * Prefix for configuration parameters that are passed to the
+   * KuduOperationsProducer.
    */
   public static final String PRODUCER_PREFIX = PRODUCER + ".";
 
   /**
-   * Maximum number of events the sink should take from the channel per
-   * transaction, if available.
+   * Maximum number of events that the sink should take from the channel per
+   * transaction.
    */
   public static final String BATCH_SIZE = "batchSize";
 
@@ -61,7 +61,7 @@ public class KuduSinkConfigurationConstants {
   public static final String TIMEOUT_MILLIS = "timeoutMillis";
 
   /**
-   * Whether to ignore errors indicating that we attempted to insert duplicate rows into Kudu.
+   * Whether to ignore duplicate primary key errors caused by inserts.
    */
   public static final String IGNORE_DUPLICATE_ROWS = "ignoreDuplicateRows";
 }

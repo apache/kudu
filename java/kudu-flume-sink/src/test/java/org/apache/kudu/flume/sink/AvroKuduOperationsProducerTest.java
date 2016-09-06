@@ -19,16 +19,15 @@
 
 package org.apache.kudu.flume.sink;
 
-import static org.apache.kudu.flume.sink.AvroKuduEventProducer.SCHEMA_LITERAL_HEADER;
-import static org.apache.kudu.flume.sink.AvroKuduEventProducer.SCHEMA_PROP;
-import static org.apache.kudu.flume.sink.AvroKuduEventProducer.SCHEMA_URL_HEADER;
+import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_LITERAL_HEADER;
+import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_PROP;
+import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_URL_HEADER;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.MASTER_ADDRESSES;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER_PREFIX;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TABLE_NAME;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
@@ -64,11 +63,9 @@ import org.apache.kudu.client.KuduTable;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-public class AvroKuduEventProducerTest extends BaseKuduTest {
-  private static final String schemaPath = "src/test/avro/testAvroEventProducer.avsc";
+public class AvroKuduOperationsProducerTest extends BaseKuduTest {
+  private static final String schemaPath = "src/test/avro/testAvroKuduOperationsProducer.avsc";
   private static String schemaLiteral;
-
-  private static org.apache.avro.Schema schema;
 
   enum SchemaLocation {
     GLOBAL, URL, LITERAL
@@ -76,12 +73,10 @@ public class AvroKuduEventProducerTest extends BaseKuduTest {
 
   @BeforeClass
   public static void setupAvroSchemaBeforeClass() {
-    org.apache.avro.Schema.Parser parser = new org.apache.avro.Schema.Parser();
     try {
       schemaLiteral = Files.toString(new File(schemaPath), Charsets.UTF_8);
-      schema = parser.parse(new File(schemaPath));
     } catch (IOException e) {
-      throw new FlumeException("Unable to open and parse schema file!", e);
+      throw new FlumeException("Unable to read schema file!", e);
     }
   }
 
@@ -162,8 +157,7 @@ public class AvroKuduEventProducerTest extends BaseKuduTest {
     HashMap<String, String> parameters = new HashMap<>();
     parameters.put(TABLE_NAME, tableName);
     parameters.put(MASTER_ADDRESSES, getMasterAddresses());
-    parameters.put(PRODUCER,
-        "org.apache.kudu.flume.sink.AvroKuduEventProducer");
+    parameters.put(PRODUCER, AvroKuduOperationsProducer.class.getName());
     Context context = new Context(parameters);
     context.putAll(ctx.getParameters());
     Configurables.configure(sink, context);
@@ -174,7 +168,7 @@ public class AvroKuduEventProducerTest extends BaseKuduTest {
   private void writeEventsToChannel(Channel channel, int eventCount,
                                     SchemaLocation schemaLocation) throws Exception {
     for (int i = 0; i < eventCount; i++) {
-      AvroKuduEventProducerTestRecord record = new AvroKuduEventProducerTestRecord();
+      AvroKuduOperationsProducerTestRecord record = new AvroKuduOperationsProducerTestRecord();
       record.setKey(10 * i);
       record.setLongField(2L * i);
       record.setDoubleField(2.71828 * i);
@@ -182,8 +176,8 @@ public class AvroKuduEventProducerTest extends BaseKuduTest {
       record.setStringField(String.format("hello %d", i));
       ByteArrayOutputStream out = new ByteArrayOutputStream();
       Encoder encoder = EncoderFactory.get().binaryEncoder(out, null);
-      DatumWriter<AvroKuduEventProducerTestRecord> writer =
-          new SpecificDatumWriter<>(AvroKuduEventProducerTestRecord.class);
+      DatumWriter<AvroKuduOperationsProducerTestRecord> writer =
+          new SpecificDatumWriter<>(AvroKuduOperationsProducerTestRecord.class);
       writer.write(record, encoder);
       encoder.flush();
       Event e = EventBuilder.withBody(out.toByteArray());

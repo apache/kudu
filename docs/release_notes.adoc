@@ -73,6 +73,17 @@ Kudu 1.0.0 are not supported.
   are not recommended and may be removed or modified with no deprecation period
   and without notice in future Kudu releases.
 
+- The KuduEventProducer interface used to process Flume events into Kudu operations
+  for the Kudu Flume Sink has changed, and has been renamed KuduOperationsProducer.
+  The existing KuduEventProducers have been updated for the new interface, and have
+  been renamed similarly.
+
+[[rn_1.0.0_new_features]]
+=== New features
+
+- The Kudu Flume Sink now supports processing events containing Avro-encoded
+  records, using the new AvroKuduOperationsProducer.
+
 [[rn_0.10.0]]
 == Release notes specific to 0.10.0
 

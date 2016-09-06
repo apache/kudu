@@ -22,7 +22,6 @@ package org.apache.kudu.flume.sink;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.FlumeException;
-import org.apache.flume.conf.ComponentConfiguration;
 import org.apache.kudu.client.Insert;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
@@ -32,49 +31,56 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * <p>A simple serializer that generates one {@link Insert} per {@link Event} by writing the event
- * body into a BINARY column. The headers are discarded.</p>
+ * <p>A simple serializer that generates one {@link Insert} per {@link Event}
+ * by writing the event body into a BINARY column. The headers are discarded.
  *
- * <p><strong>Simple Kudu Event Producer configuration parameters</strong></p>
+ * <p><strong>Simple Kudu Event Producer configuration parameters</strong>
  *
  * <table cellpadding=3 cellspacing=0 border=1>
- * <tr><th>Property Name</th><th>Default</th><th>Required?</th><th>Description</th></tr>
- * <tr><td>producer.payloadColumn</td><td>payload</td><td>No</td><td>The name of the BINARY column to write the Flume the event body to.</td></tr>
+ * <tr>
+ *   <th>Property Name</th>
+ *   <th>Default</th>
+ *   <th>Required?</th>
+ *   <th>Description</th>
+ * </tr>
+ * <tr>
+ *   <td>producer.payloadColumn</td>
+ *   <td>payload</td>
+ *   <td>No</td>
+ *   <td>The name of the BINARY column to write the Flume the event body to.</td>
+ * </tr>
  * </table>
  */
-public class SimpleKuduEventProducer implements KuduEventProducer {
-  private byte[] payload;
+public class SimpleKuduOperationsProducer implements KuduOperationsProducer {
+  public static final String PAYLOAD_COLUMN_PROP = "payloadColumn";
+  public static final String PAYLOAD_COLUMN_DEFAULT = "payload";
+
   private KuduTable table;
   private String payloadColumn;
 
-  public SimpleKuduEventProducer(){
+  public SimpleKuduOperationsProducer(){
   }
 
   @Override
   public void configure(Context context) {
-    payloadColumn = context.getString("payloadColumn","payload");
+    payloadColumn = context.getString(PAYLOAD_COLUMN_PROP, PAYLOAD_COLUMN_DEFAULT);
   }
 
   @Override
-  public void configure(ComponentConfiguration conf) {
-  }
-
-  @Override
-  public void initialize(Event event, KuduTable table) {
-    this.payload = event.getBody();
+  public void initialize(KuduTable table) {
     this.table = table;
   }
 
   @Override
-  public List<Operation> getOperations() throws FlumeException {
+  public List<Operation> getOperations(Event event) throws FlumeException {
     try {
       Insert insert = table.newInsert();
       PartialRow row = insert.getRow();
-      row.addBinary(payloadColumn, payload);
+      row.addBinary(payloadColumn, event.getBody());
 
       return Collections.singletonList((Operation) insert);
     } catch (Exception e){
-      throw new FlumeException("Failed to create Kudu Insert object!", e);
+      throw new FlumeException("Failed to create Kudu Insert object", e);
     }
   }
 

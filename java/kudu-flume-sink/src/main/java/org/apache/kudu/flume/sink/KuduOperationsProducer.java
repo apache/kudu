@@ -20,7 +20,6 @@ package org.apache.kudu.flume.sink;
 
 import org.apache.flume.Event;
 import org.apache.flume.conf.Configurable;
-import org.apache.flume.conf.ConfigurableComponent;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.KuduTable;
@@ -29,31 +28,29 @@ import org.apache.kudu.client.Operation;
 import java.util.List;
 
 /**
- * Interface for an event producer which produces Kudu Operations to write
- * the headers and body of an event in a Kudu table. This is configurable,
- * so any config params required should be taken through this. The columns
- * should exist in the table specified in the configuration for the KuduSink.
+ * Interface for an operations producer that produces Kudu Operations from
+ * Flume events.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface KuduEventProducer extends Configurable, ConfigurableComponent {
+public interface KuduOperationsProducer extends Configurable, AutoCloseable {
   /**
-   * Initialize the event producer.
-   * @param event to be written to Kudu
-   * @param table the KuduTable object used for creating Kudu Operation objects
+   * Initializes the operations producer. Called between configure and
+   * getOperations.
+   * @param table the KuduTable used to create Kudu Operation objects
    */
-  void initialize(Event event, KuduTable table);
+  void initialize(KuduTable table);
 
   /**
-   * Get the operations that should be written out to Kudu as a result of this
-   * event. This list is written to Kudu using the Kudu client API.
-   * @return List of {@link org.apache.kudu.client.Operation} which
-   * are written as such to Kudu
+   * Returns the operations that should be written to Kudu as a result of this
+   * event.
+   * @return List of {@link org.apache.kudu.client.Operation} that
+   * should be written to Kudu
    */
-  List<Operation> getOperations();
+  List<Operation> getOperations(Event event);
 
-  /*
-   * Clean up any state. This will be called when the sink is being stopped.
+  /**
+   * Cleans up any state. Called when the sink is stopped.
    */
   void close();
 }

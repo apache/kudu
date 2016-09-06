@@ -42,7 +42,6 @@ import org.apache.avro.io.DecoderFactory;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.FlumeException;
-import org.apache.flume.conf.ComponentConfiguration;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -52,31 +51,33 @@ import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.PartialRow;
 
 /**
- * <p>An Avro serializer that generates one insert or operation per event by deserializing the event
+ * <p>An Avro serializer that generates one operation per event by deserializing the event
  * body as an Avro record and mapping its fields to columns in a Kudu table.
- * <p><strong>Avro Kudu Event Producer configuration parameters</strong>
+ * <p><strong>Avro Kudu Operations Producer configuration parameters</strong>
  * <table cellpadding=3 cellspacing=0 border=1>
  * <tr><th>Property Name</th>
- * <th>Default</th>
- * <th>Required?</th>
- * <th>Description</th></tr>
- * <tr><td>producer.operation</td>
- * <td>operation</td>
- * <td>No</td>
- * <td>The operation used to write events to Kudu.</td>
+ *   <th>Default</th>
+ *   <th>Required?</th>
+ *   <th>Description</th></tr>
+ * <tr>
+ *   <td>producer.operation</td>
+ *   <td>upsert</td>
+ *   <td>No</td>
+ *   <td>The operation used to write events to Kudu.
+ *   Supported operations are 'insert' and 'upsert'</td>
  * </tr>
- * <tr><td>producer.schemaPath</td>
- * <td></td>
- * <td>No</td>
- * <td>The location of the Avro schema file used to deserialize the Avro-encoded event bodies.
- * It's used whenever an event does not include its own schema. If not specified, the
- * schema must be specified on a per-event basis, either by url or as a literal.
- * Schemas must be a record type.
- * </td>
+ * <tr>
+ *   <td>producer.schemaPath</td>
+ *   <td></td>
+ *   <td>No</td>
+ *   <td>The location of the Avro schema file used to deserialize the Avro-encoded event bodies.
+ *   It's used whenever an event does not include its own schema. If not specified, the
+ *   schema must be specified on a per-event basis, either by url or as a literal.
+ *   Schemas must be record type.</td>
  * </tr>
  * </table>
  */
-public class AvroKuduEventProducer implements KuduEventProducer {
+public class AvroKuduOperationsProducer implements KuduOperationsProducer {
   public static final String OPERATION_PROP = "operation";
   public static final String SCHEMA_PROP = "schemaPath";
   public static final String DEFAULT_OPERATION = "upsert";
@@ -84,21 +85,14 @@ public class AvroKuduEventProducer implements KuduEventProducer {
   public static final String SCHEMA_LITERAL_HEADER = "flume.avro.schema.literal";
 
   private String operation;
-  private DatumReader<GenericRecord> reader;
   private GenericRecord reuse;
   private KuduTable table;
-  private byte[] payload;
   private String defaultSchemaURL;
 
   /**
    * The binary decoder to reuse for event parsing.
    */
   private BinaryDecoder decoder = null;
-
-  public AvroKuduEventProducer() {
-  }
-
-  private static final Configuration conf = new Configuration();
 
   /**
    * A cache of schemas retrieved by URL to avoid re-parsing the schema.
@@ -143,7 +137,7 @@ public class AvroKuduEventProducer implements KuduEventProducer {
   /**
    * A cache of DatumReaders per schema.
    */
-  private final LoadingCache<Schema, DatumReader<GenericRecord>> readers =
+  private static final LoadingCache<Schema, DatumReader<GenericRecord>> readers =
       CacheBuilder.newBuilder()
           .build(new CacheLoader<Schema, DatumReader<GenericRecord>>() {
             @Override
@@ -151,6 +145,11 @@ public class AvroKuduEventProducer implements KuduEventProducer {
               return new GenericDatumReader<>(schema);
             }
           });
+
+  private static final Configuration conf = new Configuration();
+
+  public AvroKuduOperationsProducer() {
+  }
 
   @Override
   public void configure(Context context) {
@@ -163,20 +162,14 @@ public class AvroKuduEventProducer implements KuduEventProducer {
   }
 
   @Override
-  public void configure(ComponentConfiguration conf) {
-  }
-
-  // NB: this is called once per event
-  @Override
-  public void initialize(Event event, KuduTable table) {
-    this.payload = event.getBody();
+  public void initialize(KuduTable table) {
     this.table = table;
-    this.reader = readers.getUnchecked(getSchema(event));
   }
 
   @Override
-  public List<Operation> getOperations() throws FlumeException {
-    decoder = DecoderFactory.get().binaryDecoder(payload, decoder);
+  public List<Operation> getOperations(Event event) throws FlumeException {
+    DatumReader<GenericRecord> reader = readers.getUnchecked(getSchema(event));
+    decoder = DecoderFactory.get().binaryDecoder(event.getBody(), decoder);
     try {
       reuse = reader.read(reuse, decoder);
     } catch (IOException e) {
@@ -246,7 +239,8 @@ public class AvroKuduEventProducer implements KuduEventProducer {
                   "Unrecognized type %s for column %s", col.getType().toString(), name));
           }
         } catch (ClassCastException e) {
-          throw new FlumeException(String.format("Failed to coerce value for column %s to type %s",
+          throw new FlumeException(
+              String.format("Failed to coerce value for column '%s' to type %s",
               col.getName(),
               col.getType()));
         }
@@ -267,7 +261,8 @@ public class AvroKuduEventProducer implements KuduEventProducer {
         return schemasFromURL.get(defaultSchemaURL);
       } else {
         throw new FlumeException(
-            String.format("No schema for event! Specify configuration property %s or event header %s",
+            String.format("No schema for event. " +
+                  "Specify configuration property '%s' or event header '%s'",
                 SCHEMA_PROP,
                 SCHEMA_URL_HEADER));
       }
