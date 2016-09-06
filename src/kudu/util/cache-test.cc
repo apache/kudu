@@ -185,13 +185,16 @@ TEST_P(CacheTest, EvictionPolicy) {
   const int kNumElems = 1000;
   const int kSizePerElem = kCacheSize / kNumElems;
 
-  // Frequently used entry must be kept around
-  for (int i = 0; i < kNumElems + 100; i++) {
+  // Loop adding and looking up new entries, but repeatedly accessing key 101. This
+  // frequently-used entry should not be evicted.
+  for (int i = 0; i < kNumElems + 1000; i++) {
     Insert(1000+i, 2000+i, kSizePerElem);
     ASSERT_EQ(2000+i, Lookup(1000+i));
     ASSERT_EQ(101, Lookup(100));
   }
   ASSERT_EQ(101, Lookup(100));
+  // Since '200' wasn't accessed in the loop above, it should have
+  // been evicted.
   ASSERT_EQ(-1, Lookup(200));
 }
 
