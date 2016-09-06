@@ -114,9 +114,6 @@ for submodule_name in ext_submodules:
     ext = Extension('kudu.{0}'.format(submodule_name),
                     ['kudu/{0}.pyx'.format(submodule_name)],
                     libraries=['kudu_client'],
-                    # Disable the 'new' gcc5 ABI; see the top-level
-                    # CMakeLists.txt for details.
-                    define_macros=[('_GLIBCXX_USE_CXX11_ABI', '0')],
                     include_dirs=INCLUDE_PATHS,
                     library_dirs=LIBRARY_DIRS,
                     runtime_library_dirs=RT_LIBRARY_DIRS)

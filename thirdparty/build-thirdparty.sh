@@ -128,17 +128,8 @@ EXTRA_CXXFLAGS="-fno-omit-frame-pointer -O2 $EXTRA_CXXFLAGS"
 
 if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
-  PARALLEL=$(grep -c processor /proc/cpuinfo)
-
-  # Explicitly disable the new gcc5 ABI. Until clang supports abi tags [1],
-  # Kudu's generated code (which always uses clang) must be built against the
-  # old ABI. There's no recourse for using both ABIs in the same process; gcc's
-  # advice [2] is to build everything against the old ABI.
-  #
-  # 1. https://llvm.org/bugs/show_bug.cgi?id=23529
-  # 2. https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
-  EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS -D_GLIBCXX_USE_CXX11_ABI=0"
   DYLIB_SUFFIX="so"
+  PARALLEL=$(grep -c processor /proc/cpuinfo)
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   OS_OSX=1
   DYLIB_SUFFIX="dylib"

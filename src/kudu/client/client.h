@@ -47,14 +47,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
-#if _GLIBCXX_USE_CXX11_ABI
-#error \
-  "Kudu will not function properly if built with gcc 5's new ABI. " \
-  "Please modify your application to set -D_GLIBCXX_USE_CXX11_ABI=0. " \
-  "For more information about the new ABI, see " \
-  "https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html."
-#endif
-
 namespace kudu {
 
 class ClientStressTest_TestUniqueClientIds_Test;

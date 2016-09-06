@@ -47,7 +47,6 @@ flags = [
 '-DKUDU_HEADERS_USE_SHORT_STATUS_MACROS=1',
 '-DKUDU_STATIC_DEFINE',
 '-Dintegration_tests_EXPORTS',
-'-D_GLIBCXX_USE_CXX11_ABI=0',
 '-D__STDC_FORMAT_MACROS',
 '-fno-strict-aliasing',
 '-msse4.2',

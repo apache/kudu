@@ -141,15 +141,6 @@ set(CXX_COMMON_FLAGS "-fno-strict-aliasing -msse4.2 -Wall -Wno-sign-compare -Wno
 # We want access to the PRI* print format macros.
 add_definitions(-D__STDC_FORMAT_MACROS)
 
-# Explicitly disable the new gcc5 ABI. Until clang supports abi tags [1], Kudu's
-# generated code (which always uses clang) must be built against the old ABI.
-# There's no recourse for using both ABIs in the same process; gcc's advice [2]
-# is to build everything against the old ABI.
-#
-# 1. https://llvm.org/bugs/show_bug.cgi?id=23529
-# 2. https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
-
 # We want short macros from util/status.h.
 add_definitions(-DKUDU_HEADERS_USE_SHORT_STATUS_MACROS=1)
 
