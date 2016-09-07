@@ -223,7 +223,7 @@ namespace logging {
 class LogThrottler {
  public:
   LogThrottler() : num_suppressed_(0), last_ts_(0), last_tag_(nullptr) {
-    ANNOTATE_BENIGN_RACE(&last_ts_, "OK to be sloppy with log throttling");
+    ANNOTATE_BENIGN_RACE_SIZED(this, sizeof(*this), "OK to be sloppy with log throttling");
   }
 
   bool ShouldLog(int n_secs, const char* tag, int* num_suppressed) {
