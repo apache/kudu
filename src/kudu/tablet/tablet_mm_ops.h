@@ -18,6 +18,7 @@
 #ifndef KUDU_TABLET_TABLET_MM_OPS_H_
 #define KUDU_TABLET_TABLET_MM_OPS_H_
 
+#include "kudu/util/locks.h"
 #include "kudu/util/maintenance_manager.h"
 
 namespace kudu {
@@ -27,6 +28,8 @@ template<class T>
 class AtomicGauge;
 
 namespace tablet {
+
+class Tablet;
 
 // MaintenanceOp for rowset compaction.
 //
