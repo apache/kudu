@@ -186,6 +186,8 @@ void ConsensusMetadata::MergeCommittedConsensusStatePB(const ConsensusStatePB& c
 
 Status ConsensusMetadata::Flush() {
   SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500, LogPrefix(), "flushing consensus metadata");
+
+  flush_count_for_tests_++;
   // Sanity test to ensure we never write out a bad configuration.
   RETURN_NOT_OK_PREPEND(VerifyRaftConfig(pb_.committed_config(), COMMITTED_QUORUM),
                         "Invalid config in ConsensusMetadata, cannot flush to disk");
@@ -222,7 +224,8 @@ ConsensusMetadata::ConsensusMetadata(FsManager* fs_manager,
     : fs_manager_(CHECK_NOTNULL(fs_manager)),
       tablet_id_(std::move(tablet_id)),
       peer_uuid_(std::move(peer_uuid)),
-      has_pending_config_(false) {}
+      has_pending_config_(false),
+      flush_count_for_tests_(0) {}
 
 std::string ConsensusMetadata::LogPrefix() const {
   return Substitute("T $0 P $1: ", tablet_id_, peer_uuid_);

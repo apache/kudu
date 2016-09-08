@@ -1026,6 +1026,10 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   const int kPeerIndex = 1;
   scoped_refptr<RaftConsensus> peer;
   CHECK_OK(peers_->GetPeerByIdx(kPeerIndex, &peer));
+  auto flush_count = [&]() {
+    return peer->GetReplicaStateForTests()
+      ->consensus_metadata_for_tests()->flush_count_for_tests();
+  };
 
   VoteRequestPB request;
   request.set_tablet_id(kTestTablet);
@@ -1033,29 +1037,39 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
 
   // Test that the replica won't vote since it has recently heard from
   // a valid leader.
+  int flush_count_before = flush_count();
   VoteResponsePB response;
   request.set_candidate_uuid("peer-0");
   request.set_candidate_term(last_op_id.term() + 1);
   ASSERT_OK(peer->RequestVote(&request, &response));
   ASSERT_FALSE(response.vote_granted());
   ASSERT_EQ(ConsensusErrorPB::LEADER_IS_ALIVE, response.consensus_error().code());
+  ASSERT_EQ(0, flush_count() - flush_count_before)
+      << "A rejected vote should not flush metadata";
 
   // Test that replicas only vote yes for a single peer per term.
 
   // Indicate that replicas should vote even if they think another leader is alive.
   // This will allow the rest of the requests in the test to go through.
+  flush_count_before = flush_count();
   request.set_ignore_live_leader(true);
   ASSERT_OK(peer->RequestVote(&request, &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
   ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1, "peer-0"));
+  ASSERT_EQ(1, flush_count() - flush_count_before)
+      << "A granted vote should flush only once";
 
   // Ensure we get same response for same term and same UUID.
   response.Clear();
+  flush_count_before = flush_count();
   ASSERT_OK(peer->RequestVote(&request, &response));
   ASSERT_TRUE(response.vote_granted());
+  ASSERT_EQ(0, flush_count() - flush_count_before)
+      << "Confirming a previous vote should not flush";
 
   // Ensure we get a "no" for a different candidate UUID for that term.
+  flush_count_before = flush_count();
   response.Clear();
   request.set_candidate_uuid("peer-2");
   ASSERT_OK(peer->RequestVote(&request, &response));
@@ -1064,6 +1078,8 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_EQ(ConsensusErrorPB::ALREADY_VOTED, response.consensus_error().code());
   ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
   ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1, "peer-0"));
+  ASSERT_EQ(0, flush_count() - flush_count_before)
+      << "Rejected votes for same term should not flush";
 
   //
   // Test that replicas refuse votes for an old term.
@@ -1071,6 +1087,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
 
   // Increase the term of our candidate, which will cause the voter replica to
   // increase its own term to match.
+  flush_count_before = flush_count();
   request.set_candidate_uuid("peer-0");
   request.set_candidate_term(last_op_id.term() + 2);
   response.Clear();
@@ -1078,10 +1095,13 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
   ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2, "peer-0"));
+  ASSERT_EQ(1, flush_count() - flush_count_before)
+      << "Accepted votes with increased term should flush once";
 
   // Now try the old term.
   // Note: Use the peer who "won" the election on the previous term (peer-0),
   // although in practice the impl does not store historical vote data.
+  flush_count_before = flush_count();
   request.set_candidate_term(last_op_id.term() + 1);
   response.Clear();
   ASSERT_OK(peer->RequestVote(&request, &response));
@@ -1090,11 +1110,14 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_EQ(ConsensusErrorPB::INVALID_TERM, response.consensus_error().code());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
   ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2, "peer-0"));
+  ASSERT_EQ(0, flush_count() - flush_count_before)
+      << "Rejected votes for old terms should not flush";
 
   //
   // Ensure replicas vote no for an old op index.
   //
 
+  flush_count_before = flush_count();
   request.set_candidate_uuid("peer-0");
   request.set_candidate_term(last_op_id.term() + 3);
   request.mutable_candidate_status()->mutable_last_received()->CopyFrom(MinimumOpId());
@@ -1105,6 +1128,9 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_EQ(ConsensusErrorPB::LAST_OPID_TOO_OLD, response.consensus_error().code());
   ASSERT_EQ(last_op_id.term() + 3, response.responder_term());
   ASSERT_NO_FATAL_FAILURE(AssertDurableTermWithoutVote(kPeerIndex, last_op_id.term() + 3));
+  ASSERT_EQ(1, flush_count() - flush_count_before)
+      << "Rejected votes for old op index but new term should flush once.";
+
 
   // Send a "heartbeat" to the peer. It should be rejected.
   ConsensusRequestPB req;

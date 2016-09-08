@@ -194,9 +194,19 @@ class ReplicaState {
   // otherwise return the committed configuration.
   const RaftConfigPB& GetActiveConfigUnlocked() const;
 
+  // Enum for the 'flush' argument to SetCurrentTermUnlocked() below.
+  enum FlushToDisk {
+    SKIP_FLUSH_TO_DISK,
+    FLUSH_TO_DISK
+  };
+
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.
-  Status SetCurrentTermUnlocked(int64_t new_term) WARN_UNUSED_RESULT;
+  //
+  // If the caller knows that it will call another method soon after
+  // to flush the change to disk, it may set 'flush' to 'SKIP_FLUSH_TO_DISK'.
+  Status SetCurrentTermUnlocked(int64_t new_term,
+                                FlushToDisk flush) WARN_UNUSED_RESULT;
 
   // Returns the term set in the last config change round.
   const int64_t GetCurrentTermUnlocked() const;
@@ -325,6 +335,10 @@ class ReplicaState {
   // Return the current state of this object.
   // The update_lock_ must be held.
   ReplicaState::State state() const;
+
+  ConsensusMetadata* consensus_metadata_for_tests() {
+    return cmeta_.get();
+  }
 
  private:
   const ConsensusOptions options_;

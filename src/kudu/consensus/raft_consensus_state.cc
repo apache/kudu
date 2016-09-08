@@ -280,7 +280,8 @@ bool ReplicaState::IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch
   return true;
 }
 
-Status ReplicaState::SetCurrentTermUnlocked(int64_t new_term) {
+Status ReplicaState::SetCurrentTermUnlocked(int64_t new_term,
+                                            FlushToDisk flush) {
   TRACE_EVENT1("consensus", "ReplicaState::SetCurrentTermUnlocked",
                "term", new_term);
   DCHECK(update_lock_.is_locked());
@@ -291,7 +292,9 @@ Status ReplicaState::SetCurrentTermUnlocked(int64_t new_term) {
   }
   cmeta_->set_current_term(new_term);
   cmeta_->clear_voted_for();
-  CHECK_OK(cmeta_->Flush());
+  if (flush == FLUSH_TO_DISK) {
+    CHECK_OK(cmeta_->Flush());
+  }
   ClearLeaderUnlocked();
   last_received_op_id_current_leader_ = MinimumOpId();
   return Status::OK();

@@ -378,6 +378,8 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     }
 
     // Increment the term.
+    // TODO: this causes an extra flush of the consensus metadata which
+    // will be flushed again for our vote below. Consolidate these.
     RETURN_NOT_OK(IncrementTermUnlocked());
 
     // Snooze to avoid the election timer firing again as much as possible.
@@ -1365,17 +1367,24 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
     return RequestVoteRespondAlreadyVotedForOther(request, response);
   }
 
-  // The term advanced.
+  // Candidate must have last-logged OpId at least as large as our own to get
+  // our vote.
+  OpId local_last_logged_opid = GetLatestOpIdFromLog();
+  bool vote_yes = !OpIdLessThan(request->candidate_status().last_received(),
+                                local_last_logged_opid);
+
+  // Record the term advancement if necessary.
   if (request->candidate_term() > state_->GetCurrentTermUnlocked()) {
-    RETURN_NOT_OK_PREPEND(HandleTermAdvanceUnlocked(request->candidate_term()),
+    // If we are going to vote for this peer, then we will flush the consensus metadata
+    // to disk below when we record the vote, and we can skip flushing the term advancement
+    // to disk here.
+    auto flush = vote_yes ? ReplicaState::SKIP_FLUSH_TO_DISK : ReplicaState::FLUSH_TO_DISK;
+    RETURN_NOT_OK_PREPEND(HandleTermAdvanceUnlocked(request->candidate_term(), flush),
         Substitute("Could not step down in RequestVote. Current term: $0, candidate term: $1",
                    state_->GetCurrentTermUnlocked(), request->candidate_term()));
   }
 
-  // Candidate must have last-logged OpId at least as large as our own to get
-  // our vote.
-  OpId local_last_logged_opid = GetLatestOpIdFromLog();
-  if (OpIdLessThan(request->candidate_status().last_received(), local_last_logged_opid)) {
+  if (!vote_yes) {
     return RequestVoteRespondLastOpIdTooOld(local_last_logged_opid, request, response);
   }
 
@@ -2017,7 +2026,8 @@ Status RaftConsensus::IncrementTermUnlocked() {
   return HandleTermAdvanceUnlocked(state_->GetCurrentTermUnlocked() + 1);
 }
 
-Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term) {
+Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term,
+                                                ReplicaState::FlushToDisk flush) {
   if (new_term <= state_->GetCurrentTermUnlocked()) {
     return Status::IllegalState(Substitute("Can't advance term to: $0 current term: $1 is higher.",
                                            new_term, state_->GetCurrentTermUnlocked()));
@@ -2029,7 +2039,7 @@ Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term) {
   }
 
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Advancing to term " << new_term;
-  RETURN_NOT_OK(state_->SetCurrentTermUnlocked(new_term));
+  RETURN_NOT_OK(state_->SetCurrentTermUnlocked(new_term, flush));
   term_metric_->set_value(new_term);
   return Status::OK();
 }

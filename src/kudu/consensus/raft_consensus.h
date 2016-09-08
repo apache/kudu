@@ -29,6 +29,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
+#include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/failure_detector.h"
 
@@ -55,7 +56,6 @@ class ConsensusMetadata;
 class Peer;
 class PeerProxyFactory;
 class PeerManager;
-class ReplicaState;
 struct ElectionResult;
 
 class RaftConsensus : public Consensus,
@@ -405,7 +405,10 @@ class RaftConsensus : public Consensus,
   Status IncrementTermUnlocked();
 
   // Handle when the term has advanced beyond the current term.
-  Status HandleTermAdvanceUnlocked(ConsensusTerm new_term);
+  //
+  // 'flush' may be used to control whether the term change is flushed to disk.
+  Status HandleTermAdvanceUnlocked(ConsensusTerm new_term,
+                                   ReplicaState::FlushToDisk flush = ReplicaState::FLUSH_TO_DISK);
 
   // Asynchronously (on thread_pool_) notify the tablet peer that the consensus configuration
   // has changed, thus reporting it back to the master.

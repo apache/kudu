@@ -138,6 +138,10 @@ class ConsensusMetadata {
   // Persist current state of the protobuf to disk.
   Status Flush();
 
+  int flush_count_for_tests() const {
+    return flush_count_for_tests_;
+  }
+
  private:
   ConsensusMetadata(FsManager* fs_manager, std::string tablet_id,
                     std::string peer_uuid);
@@ -161,6 +165,9 @@ class ConsensusMetadata {
 
   // Cached role of the peer_uuid_ within the active configuration.
   RaftPeerPB::Role active_role_;
+
+  // The number of times the metadata has been flushed to disk.
+  int flush_count_for_tests_;
 
   // Durable fields.
   ConsensusMetadataPB pb_;
