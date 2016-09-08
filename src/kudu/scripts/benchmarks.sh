@@ -240,7 +240,7 @@ run_benchmarks() {
   # Run multi-threaded TS insert benchmark
   for i in $(seq 1 $NUM_SAMPLES) ; do
     KUDU_ALLOW_SLOW_TESTS=1 build/latest/bin/tablet_server-stress-test \
-      --num_inserts_per_thread=30000 &> $LOGDIR/${TS_8THREAD_BENCH}$i.log
+      --num_inserts_per_thread=30000 -runtime_secs=0 &> $LOGDIR/${TS_8THREAD_BENCH}$i.log
   done
 
   # Run full stack scan/insert test using MRS only, ~26s each
