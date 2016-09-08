@@ -1327,23 +1327,6 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// @return Operation result status.
   Status Apply(KuduWriteOperation* write_op) WARN_UNUSED_RESULT;
 
-  /// Apply the write operation asynchronously.
-  ///
-  /// This method is similar to Apply(), except it never blocks. Even in the
-  /// flush modes that return immediately, @c cb is triggered with the result.
-  /// The callback may be called by a reactor thread, or in some cases
-  /// may be called inline by the same thread which calls ApplyAsync().
-  ///
-  /// @param [in] write_op
-  ///   Operation to apply. This method transfers the write_op's ownership
-  ///   to the KuduSession.
-  /// @param [in] cb
-  ///   Callback to report the status of the operation. The @c cb object
-  ///   must remain valid until it is called.
-  ///
-  /// @warning Not yet implemented.
-  void ApplyAsync(KuduWriteOperation* write_op, KuduStatusCallback* cb);
-
   /// Flush any pending writes.
   ///
   /// This method initiates flushing of the current batch of buffered
