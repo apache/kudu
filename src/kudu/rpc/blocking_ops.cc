@@ -38,6 +38,8 @@ namespace rpc {
 
 using google::protobuf::MessageLite;
 
+const char kHTTPHeader[] = "HTTP";
+
 Status EnsureBlockingMode(const Socket* const sock) {
   bool is_nonblocking;
   RETURN_NOT_OK(sock->IsNonBlocking(&is_nonblocking));
@@ -96,9 +98,17 @@ Status ReceiveFramedMessageBlocking(Socket* sock, faststring* recv_buf,
   // Verify that the payload size isn't out of bounds.
   // This can happen because of network corruption, or a naughty client.
   if (PREDICT_FALSE(payload_len > FLAGS_rpc_max_message_size)) {
+    // A common user mistake is to try to speak the Kudu RPC protocol to an
+    // HTTP endpoint, or vice versa.
+    if (memcmp(recv_buf->data(), kHTTPHeader, arraysize(kHTTPHeader)) == 0) {
+      return Status::IOError(
+          "received invalid RPC message which appears to be an HTTP response. "
+          "Verify that you have specified a valid RPC port and not an HTTP port.");
+    }
+
     return Status::IOError(
         strings::Substitute(
-            "Received invalid message of size $0 which exceeds"
+            "received invalid message of size $0 which exceeds"
             " the rpc_max_message_size of $1 bytes",
             payload_len, FLAGS_rpc_max_message_size));
   }

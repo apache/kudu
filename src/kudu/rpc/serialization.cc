@@ -167,7 +167,13 @@ Status ValidateConnHeader(const Slice& slice) {
 
   // validate actual magic
   if (!slice.starts_with(kMagicNumber)) {
-    return Status::InvalidArgument("Connection must begin with magic number", kMagicNumber);
+    if (slice.starts_with("GET ") ||
+        slice.starts_with("POST") ||
+        slice.starts_with("HEAD")) {
+      return Status::InvalidArgument("invalid negotation, appears to be an HTTP client on "
+                                     "the RPC port");
+    }
+    return Status::InvalidArgument("connection must begin with magic number", kMagicNumber);
   }
 
   const uint8_t *data = slice.data();
