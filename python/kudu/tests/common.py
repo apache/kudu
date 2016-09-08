@@ -38,6 +38,7 @@ class KuduTestBase(object):
 
     BASE_PORT = 37000
     NUM_TABLET_SERVERS = 3
+    TSERVER_START_TIMEOUT_SECS = 10
 
     @classmethod
     def start_cluster(cls):
@@ -134,6 +135,16 @@ class KuduTestBase(object):
         cls.master_port = master_port
 
         cls.client = kudu.connect(cls.master_host, cls.master_port)
+
+        # Wait for all tablet servers to start with the configured timeout
+        timeout = time.time() + cls.TSERVER_START_TIMEOUT_SECS
+        while len(cls.client.list_tablet_servers()) < cls.NUM_TABLET_SERVERS:
+            if time.time() > timeout:
+                raise TimeoutError(
+                    "Tablet servers took too long to start. Timeout set to {}"
+                                   .format(cls.TSERVER_START_TIMEOUT_SECS))
+            # Sleep 50 milliseconds to avoid tight-looping rpc
+            time.sleep(0.05)
 
         cls.schema = cls.example_schema()
         cls.partitioning = cls.example_partitioning()

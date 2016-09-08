@@ -463,6 +463,8 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status ListTables(vector[string]* tables)
         Status ListTables(vector[string]* tables, const string& filter)
 
+        Status ListTabletServers(vector[KuduTabletServer*]* tablet_servers)
+
         Status TableExists(const string& table_name, c_bool* exists)
 
         KuduTableAlterer* NewTableAlterer()
@@ -482,6 +484,12 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         KuduClientBuilder& default_rpc_timeout(const MonoDelta& timeout)
 
         Status Build(shared_ptr[KuduClient]* client)
+
+    cdef cppclass KuduTabletServer:
+        KuduTabletServer()
+        string& uuid()
+        string& hostname()
+        uint16_t port()
 
     cdef cppclass KuduTableCreator:
         KuduTableCreator& table_name(string& name)

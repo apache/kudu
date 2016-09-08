@@ -221,6 +221,17 @@ class TestClient(KuduTestBase, unittest.TestCase):
     def test_capture_kudu_error(self):
         pass
 
+    def test_list_tablet_server(self):
+        # Not confirming the number of tablet servers in this test because
+        # that is confirmed in the beginning of testing. This test confirms
+        # that all of the KuduTabletServer methods returned results and that
+        # a result is returned from the list_tablet_servers method.
+        tservers = self.client.list_tablet_servers()
+        self.assertTrue(tservers)
+        for tserver in tservers:
+            assert tserver.uuid() is not None
+            assert tserver.hostname() is not None
+            assert tserver.port() is not None
 
 class TestMonoDelta(unittest.TestCase):
 

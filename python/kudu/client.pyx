@@ -352,6 +352,27 @@ cdef class Client:
             result.append(frombytes(tables[i]))
         return result
 
+    def list_tablet_servers(self):
+        """
+        Retrieve a list of tablet servers currently running in the Kudu cluster
+
+        Returns
+        -------
+        tservers : list[TabletServer]
+          List of TabletServer objects
+        """
+        cdef:
+            vector[KuduTabletServer*] tservers
+            size_t i
+
+        check_status(self.cp.ListTabletServers(&tservers))
+
+        result = []
+        for i in range(tservers.size()):
+            ts = TabletServer()
+            result.append(ts._init(tservers[i]))
+        return result
+
     def new_session(self, flush_mode='manual', timeout_ms=5000):
         """
         Create a new KuduSession for applying write operations.
@@ -477,6 +498,32 @@ cdef class StringVal(RawValue):
         del self.val
 
 #----------------------------------------------------------------------
+cdef class TabletServer:
+    """
+    Represents a Kudu tablet server, containing the uuid, hostname and port.
+    Create a list of TabletServers by using the kudu.Client.list_tablet_servers
+    method after connecting to a cluster
+    """
+
+    cdef:
+        KuduTabletServer* _tserver
+
+    cdef _init(self, KuduTabletServer* tserver):
+        self._tserver = tserver
+        return self
+
+    def __dealloc__(self):
+        if self._tserver != NULL:
+            del self._tserver
+
+    def uuid(self):
+        return frombytes(self._tserver.uuid())
+
+    def hostname(self):
+        return frombytes(self._tserver.hostname())
+
+    def port(self):
+        return self._tserver.port()
 
 
 cdef class Table:
