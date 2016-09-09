@@ -80,6 +80,9 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
   ASSERT_OK(itest::StartElection(leader_ts, tablet_id, timeout));
   ASSERT_OK(itest::WaitForServersToAgree(timeout, ts_map_, tablet_id, 1)); // Wait for NO_OP.
 
+  // Wait until it has committed its NO_OP, so that we can perform a config change.
+  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id, timeout));
+
   // Remove a follower from the config.
   ASSERT_OK(itest::RemoveServer(leader_ts, tablet_id, follower_ts, boost::none, timeout));
 
