@@ -256,7 +256,8 @@ of the column. Columns use plain encoding by default.
 [options="header"]
 |===
 | Column Type             | Encoding
-| integer, unix_microtime | plain, bitshuffle, run length (except for 64-bit)
+| int8, int16, int32      | plain, bitshuffle, run length
+| int64, unixtime_micros  | plain, bitshuffle
 | float, double           | plain, bitshuffle
 | bool                    | plain, run length
 | string, binary          | plain, prefix, dictionary
