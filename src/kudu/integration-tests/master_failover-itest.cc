@@ -379,7 +379,7 @@ TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
     {
       vector<string> args = {
           kBinPath,
-          "tablet",
+          "local_replica",
           "cmeta",
           "print_replica_uuids",
           "--fs_wal_dir=" + other_master->data_dir(),
@@ -419,8 +419,8 @@ TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
     {
       vector<string> args = {
           kBinPath,
-          "tablet",
-          "copy",
+          "local_replica",
+          "copy_from_remote",
           "--fs_wal_dir=" + data_root,
           "--fs_data_dirs=" + data_root,
           master::SysCatalogTable::kSysCatalogTabletId,

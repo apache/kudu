@@ -113,8 +113,8 @@ int RunTool(int argc, char** argv, bool show_help) {
     .Description("doesn't matter") // root mode description isn't printed
     .AddMode(BuildClusterMode())
     .AddMode(BuildFsMode())
+    .AddMode(BuildLocalReplicaMode())
     .AddMode(BuildPbcMode())
-    .AddMode(BuildTabletMode())
     .AddMode(BuildWalMode())
     .Build();
 

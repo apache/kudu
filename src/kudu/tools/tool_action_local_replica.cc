@@ -176,7 +176,7 @@ Status RewriteRaftConfig(const RunnerContext& context) {
   return cmeta->Flush();
 }
 
-Status Copy(const RunnerContext& context) {
+Status CopyFromRemote(const RunnerContext& context) {
   // Parse the tablet ID and source arguments.
   string tablet_id = FindOrDie(context.required_args, "tablet_id");
   string rpc_address = FindOrDie(context.required_args, "source");
@@ -223,7 +223,7 @@ Status DumpWals(const RunnerContext& context) {
 
 } // anonymous namespace
 
-unique_ptr<Mode> BuildTabletMode() {
+unique_ptr<Mode> BuildLocalReplicaMode() {
   unique_ptr<Action> print_replica_uuids =
       ActionBuilder("print_replica_uuids", &PrintReplicaUuids)
       .Description("Print all replica UUIDs found in a tablet's Raft configuration")
@@ -249,8 +249,8 @@ unique_ptr<Mode> BuildTabletMode() {
       .AddAction(std::move(rewrite_raft_config))
       .Build();
 
-  unique_ptr<Action> copy =
-      ActionBuilder("copy", &Copy)
+  unique_ptr<Action> copy_from_remote =
+      ActionBuilder("copy_from_remote", &CopyFromRemote)
       .Description("Copy a replica from a remote server")
       .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
       .AddRequiredParameter({ "source", "Source RPC address of form hostname:port" })
@@ -269,10 +269,10 @@ unique_ptr<Mode> BuildTabletMode() {
       .AddOptionalParameter("truncate_data")
       .Build();
 
-  return ModeBuilder("tablet")
-      .Description("Operate on a local Kudu replica")
+  return ModeBuilder("local_replica")
+      .Description("Operate on local Kudu replicas via the local filesystem")
       .AddMode(std::move(cmeta))
-      .AddAction(std::move(copy))
+      .AddAction(std::move(copy_from_remote))
       .AddAction(std::move(dump_wals))
       .Build();
 }

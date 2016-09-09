@@ -167,8 +167,8 @@ TEST_F(ToolTest, TestTopLevelHelp) {
   const vector<string> kTopLevelRegexes = {
       "cluster.*Kudu cluster",
       "fs.*Kudu filesystem",
+      "local_replica.*Kudu replicas",
       "pbc.*protobuf container",
-      "tablet.*Kudu replica",
       "wal.*write-ahead log"
   };
   NO_FATALS(RunTestHelp("", kTopLevelRegexes));
@@ -188,19 +188,19 @@ TEST_F(ToolTest, TestModeHelp) {
                           Status::InvalidArgument("unknown command 'not_a_mode'")));
   }
   {
-    const vector<string> kTabletModeRegexes = {
+    const vector<string> kLocalReplicaModeRegexes = {
         "cmeta.*consensus metadata file",
-        "copy.*Copy a replica",
+        "copy_from_remote.*Copy a replica",
         "dump_wals.*Dump all WAL"
     };
-    NO_FATALS(RunTestHelp("tablet", kTabletModeRegexes));
+    NO_FATALS(RunTestHelp("local_replica", kLocalReplicaModeRegexes));
   }
   {
     const vector<string> kCmetaModeRegexes = {
         "print_replica_uuids.*Print all replica UUIDs",
         "rewrite_raft_config.*Rewrite a replica"
     };
-    NO_FATALS(RunTestHelp("tablet cmeta", kCmetaModeRegexes));
+    NO_FATALS(RunTestHelp("local_replica cmeta", kCmetaModeRegexes));
   }
   {
     const vector<string> kClusterModeRegexes = {
@@ -404,7 +404,8 @@ TEST_F(ToolTest, TestWalDump) {
   string wal_path = fs.GetWalSegmentFileName(kTestTablet, 1);
   string stdout;
   for (const auto& args : { Substitute("wal dump $0", wal_path),
-                            Substitute("tablet dump_wals --fs_wal_dir=$0 $1", kTestDir, kTestTablet)
+                            Substitute("local_replica dump_wals --fs_wal_dir=$0 $1",
+                                       kTestDir, kTestTablet)
                            }) {
     SCOPED_TRACE(args);
     for (const auto& print_entries : { "true", "1", "yes", "decoded" }) {

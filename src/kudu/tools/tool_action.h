@@ -274,8 +274,8 @@ class Action {
 // Returns new nodes for each major mode.
 std::unique_ptr<Mode> BuildClusterMode();
 std::unique_ptr<Mode> BuildFsMode();
+std::unique_ptr<Mode> BuildLocalReplicaMode();
 std::unique_ptr<Mode> BuildPbcMode();
-std::unique_ptr<Mode> BuildTabletMode();
 std::unique_ptr<Mode> BuildWalMode();
 
 } // namespace tools

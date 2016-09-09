@@ -140,7 +140,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
     string data_root = cluster_->GetDataPath("master-0");
     vector<string> args = {
         kBinPath,
-        "tablet",
+        "local_replica",
         "cmeta",
         "rewrite_raft_config",
         "--fs_wal_dir=" + data_root,
@@ -168,8 +168,8 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
     string data_root = cluster_->GetDataPath(Substitute("master-$0", i));
     vector<string> args = {
         kBinPath,
-        "tablet",
-        "copy",
+        "local_replica",
+        "copy_from_remote",
         "--fs_wal_dir=" + data_root,
         "--fs_data_dirs=" + data_root,
         SysCatalogTable::kSysCatalogTabletId,

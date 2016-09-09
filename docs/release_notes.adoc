@@ -59,7 +59,7 @@ Kudu 1.0.0 are not supported.
   implemented as `kudu fs cfile_dump`.
 
 - The `log-dump` tool has been removed. The same functionality is now
-  implemented as `kudu wal dump` and `kudu tablet dump_wals`.
+  implemented as `kudu wal dump` and `kudu local_replica dump_wals`.
 
 - KuduSession methods in the C++ library are no longer advertised as thread-safe
   to have one set of semantics for both C++ and Java Kudu client libraries.
