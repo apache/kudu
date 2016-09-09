@@ -86,13 +86,9 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
 
   // We have to loop a little bit because it takes a little while for the thread
   // to start up and actually call our function.
-  string stack;
-  for (int i = 0; i < 10000; i++) {
-    stack = DumpThreadStack(t->tid());
-    if (stack.find("SleeperThread") != string::npos) break;
-    SleepFor(MonoDelta::FromMicroseconds(100));
-  }
-  ASSERT_STR_CONTAINS(stack, "SleeperThread");
+  AssertEventually([&]() {
+      ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "SleeperThread")
+    });
 
   // Test that we can change the signal and that the stack traces still work,
   // on the new signal.
