@@ -62,6 +62,7 @@ using std::vector;
 using strings::Substitute;
 
 METRIC_DECLARE_entity(server);
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_TSHeartbeat);
 METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet);
 
 namespace kudu {
@@ -915,8 +916,20 @@ TEST_F(DeleteTableTest, TestUnknownTabletsAreNotDeleted) {
   cluster_->master()->Shutdown();
   ASSERT_OK(env_->DeleteRecursively(cluster_->master()->data_dir()));
   ASSERT_OK(cluster_->master()->Restart());
-  SleepFor(MonoDelta::FromSeconds(2));
+
+  // Give the master a chance to finish writing the new master tablet to disk
+  // so that it can be found after the subsequent restart below.
+  ASSERT_OK(cluster_->master()->WaitForCatalogManager());
+
   int64_t num_delete_attempts;
+  AssertEventually([&]() {
+    int64_t num_heartbeats;
+    ASSERT_OK(cluster_->master()->GetInt64Metric(
+        &METRIC_ENTITY_server, "kudu.master",
+        &METRIC_handler_latency_kudu_master_MasterService_TSHeartbeat, "total_count",
+        &num_heartbeats));
+    ASSERT_GE(num_heartbeats, 1);
+  });
   ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
       &METRIC_ENTITY_server, "kudu.tabletserver",
       &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
@@ -929,12 +942,13 @@ TEST_F(DeleteTableTest, TestUnknownTabletsAreNotDeleted) {
   cluster_->master()->mutable_flags()->push_back(
       "--catalog_manager_delete_orphaned_tablets");
   ASSERT_OK(cluster_->master()->Restart());
-  SleepFor(MonoDelta::FromSeconds(2));
-  ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
-      &METRIC_ENTITY_server, "kudu.tabletserver",
-      &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
-      "total_count", &num_delete_attempts));
-  ASSERT_EQ(1, num_delete_attempts);
+  AssertEventually([&]() {
+    ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
+        &METRIC_ENTITY_server, "kudu.tabletserver",
+        &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
+        "total_count", &num_delete_attempts));
+    ASSERT_EQ(1, num_delete_attempts);
+  });
 
 }
 
