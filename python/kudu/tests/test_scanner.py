@@ -97,6 +97,32 @@ class TestScanner(KuduTestBase, unittest.TestCase):
 
         self.assertEqual(sorted(tuples), [(20, 'hello_20'), (22, 'hello_22')])
 
+    def test_index_projection_with_schema(self):
+        scanner = self.table.scanner()
+        scanner.set_projected_column_indexes([0, 1])
+
+        scanner.set_fault_tolerant()
+        scanner.open()
+
+        tuples = scanner.read_all_tuples()
+
+        # Build schema to check against
+        builder = kudu.schema_builder()
+        builder.add_column('key', kudu.int32, nullable=False)
+        builder.add_column('int_val', kudu.int32)
+        builder.set_primary_keys(['key'])
+        expected_schema = builder.build()
+
+        # Build new schema from projection schema
+        builder = kudu.schema_builder()
+        for col in scanner.get_projection_schema():
+            builder.copy_column(col)
+        builder.set_primary_keys(['key'])
+        new_schema = builder.build()
+
+        self.assertEqual(tuples, [t[0:2] for t in self.tuples])
+        self.assertTrue(expected_schema.equals(new_schema))
+
     def test_scan_with_bounds(self):
         scanner = self.table.scanner()
         scanner.set_fault_tolerant()

@@ -156,6 +156,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
 
     cdef cppclass KuduSchema:
         KuduSchema()
+        KuduSchema(const KuduSchema& schema)
         KuduSchema(vector[KuduColumnSchema]& columns, int key_columns)
 
         c_bool Equals(const KuduSchema& other)
@@ -613,10 +614,12 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status SetSnapshot(uint64_t snapshot_timestamp_micros)
         Status SetTimeoutMillis(int millis)
         Status SetProjectedColumnNames(const vector[string]& col_names)
+        Status SetProjectedColumnIndexes(const vector[int]& col_indexes)
         Status SetFaultTolerant()
         Status AddLowerBound(const KuduPartialRow& key)
         Status AddExclusiveUpperBound(const KuduPartialRow& key)
 
+        KuduSchema GetProjectionSchema()
         string ToString()
 
     cdef cppclass C_KuduError " kudu::client::KuduError":

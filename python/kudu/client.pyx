@@ -1145,6 +1145,22 @@ cdef class Scanner:
         check_status(self.scanner.SetProjectedColumnNames(v_names))
         return self
 
+    def set_projected_column_indexes(self, indexes):
+        """
+        Sets the columns to be scanned.
+
+        Parameters
+        ----------
+        indexes : list of integers representing column indexes
+
+        Returns
+        -------
+        self : Scanner
+        """
+        cdef vector[int] v_indexes = indexes
+        check_status(self.scanner.SetProjectedColumnIndexes(v_indexes))
+        return self
+
     def set_fault_tolerant(self):
         """
         Makes the underlying KuduScanner fault tolerant.
@@ -1191,6 +1207,22 @@ cdef class Scanner:
         """
         check_status(self.scanner.AddExclusiveUpperBound(deref(bound.row)))
         return self
+
+    def get_projection_schema(self):
+        """
+        Returns the schema of the projection being scanned
+
+        Returns
+        -------
+        schema : kudu.Schema
+        """
+        result = Schema()
+        # Had to instantiate a new schema to return a pointer since the
+        # GetProjectionSchema method does not
+        cdef KuduSchema* schema = new KuduSchema(self.scanner.
+                                                 GetProjectionSchema())
+        result.schema = schema
+        return result
 
     def open(self):
         """
