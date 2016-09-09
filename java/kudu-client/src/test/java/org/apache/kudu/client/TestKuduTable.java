@@ -76,7 +76,7 @@ public class TestKuduTable extends BaseKuduTest {
       ato = new AlterTableOptions()
           .addColumn("testaddmulticolnotnull", Type.INT32, 4)
           .addNullableColumn("testaddmulticolnull", Type.STRING)
-          .addColumn("testaddmulticolTimestampcol", Type.TIMESTAMP,
+          .addColumn("testaddmulticolTimestampcol", Type.UNIXTIME_MICROS,
               (System.currentTimeMillis() * 1000));
       submitAlterAndCheck(ato, tableName);
 

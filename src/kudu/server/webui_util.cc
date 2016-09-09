@@ -105,8 +105,8 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
       case INT64:
         *output << "BIGINT";
         break;
-      case TIMESTAMP:
-        *output << "TIMESTAMP";
+      case UNIXTIME_MICROS:
+        *output << "INT64";
         break;
       case FLOAT:
         *output << "FLOAT";

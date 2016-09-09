@@ -219,7 +219,7 @@ public class RowResult {
   /**
    * Get the specified column's long
    *
-   * If this is a TIMESTAMP column, the long value corresponds to a number of microseconds
+   * If this is a UNIXTIME_MICROS column, the long value corresponds to a number of microseconds
    * since midnight, January 1, 1970 UTC.
    *
    * @param columnName name of the column to get data for
@@ -233,7 +233,7 @@ public class RowResult {
   /**
    * Get the specified column's long
    *
-   * If this is a TIMESTAMP column, the long value corresponds to a number of microseconds
+   * If this is a UNIXTIME_MICROS column, the long value corresponds to a number of microseconds
    * since midnight, January 1, 1970 UTC.
    *
    * @param columnIndex Column index in the schema
@@ -540,7 +540,7 @@ public class RowResult {
             break;
           case INT32: buf.append(getInt(i)); break;
           case INT64: buf.append(getLong(i)); break;
-          case TIMESTAMP: {
+          case UNIXTIME_MICROS: {
             buf.append(timestampToString(getLong(i)));
           } break;
           case STRING: buf.append(getString(i)); break;

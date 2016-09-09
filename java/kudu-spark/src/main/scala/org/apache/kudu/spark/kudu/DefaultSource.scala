@@ -229,7 +229,7 @@ private[spark] object KuduRelation {
     case Type.INT16 => ShortType
     case Type.INT32 => IntegerType
     case Type.INT64 => LongType
-    case Type.TIMESTAMP => TimestampType
+    case Type.UNIXTIME_MICROS => TimestampType
     case Type.FLOAT => FloatType
     case Type.DOUBLE => DoubleType
     case Type.STRING => StringType

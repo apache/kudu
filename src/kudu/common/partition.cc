@@ -951,7 +951,7 @@ namespace {
         RETURN_NOT_OK(row->SetInt32(idx, INT32_MIN + 1));
         break;
       case INT64:
-      case TIMESTAMP:
+      case UNIXTIME_MICROS:
         RETURN_NOT_OK(row->SetInt64(idx, INT64_MIN + 1));
         break;
       case STRING:
@@ -1004,7 +1004,7 @@ namespace {
         break;
       }
       case INT64:
-      case TIMESTAMP: {
+      case UNIXTIME_MICROS: {
         int64_t value;
         RETURN_NOT_OK(row->GetInt64(idx, &value));
         if (value < INT64_MAX) {

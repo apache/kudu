@@ -112,7 +112,7 @@ class KuduContext(kuduMaster: String) extends Serializable {
     case DataTypes.BinaryType => Type.BINARY
     case DataTypes.BooleanType => Type.BOOL
     case DataTypes.StringType => Type.STRING
-    case DataTypes.TimestampType => Type.TIMESTAMP
+    case DataTypes.TimestampType => Type.UNIXTIME_MICROS
     case DataTypes.ByteType => Type.INT8
     case DataTypes.ShortType => Type.INT16
     case DataTypes.IntegerType => Type.INT32

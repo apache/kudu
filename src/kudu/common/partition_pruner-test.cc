@@ -517,13 +517,13 @@ TEST(TestPartitionPruner, TestHashPruning) {
 
 TEST(TestPartitionPruner, TestPruning) {
   // CREATE TABLE timeseries
-  // (host STRING, metric STRING, time TIMESTAMP, value DOUBLE)
+  // (host STRING, metric STRING, time UNIXTIME_MICROS, value DOUBLE)
   // PRIMARY KEY (host, metric, time)
   // DISTRIBUTE BY RANGE(time) SPLIT ROWS [(10)],
   //               HASH(host, metric) INTO 2 BUCKETS;
   Schema schema({ ColumnSchema("host", STRING),
                   ColumnSchema("metric", STRING),
-                  ColumnSchema("time", TIMESTAMP),
+                  ColumnSchema("time", UNIXTIME_MICROS),
                   ColumnSchema("value", DOUBLE) },
                 { ColumnId(0), ColumnId(1), ColumnId(2), ColumnId(3) },
                 3);
@@ -540,7 +540,7 @@ TEST(TestPartitionPruner, TestPruning) {
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   KuduPartialRow split(&schema);
-  ASSERT_OK(split.SetTimestamp("time", 10));
+  ASSERT_OK(split.SetUnixTimeMicros("time", 10));
 
   vector<Partition> partitions;
   ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>{ move(split) },

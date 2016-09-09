@@ -128,7 +128,7 @@ public class TestOperation {
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT16).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.INT32).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.INT64).key(true).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c4", Type.TIMESTAMP).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c4", Type.UNIXTIME_MICROS).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c5", Type.STRING).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c6", Type.BINARY).key(true).build());
     return new Schema(columns);
@@ -149,8 +149,8 @@ public class TestOperation {
     row.addBinary("c6", Bytes.fromString("c6_val"));
 
     assertEquals("(int8 c0=1, int16 c1=2, int32 c2=3, int64 c3=4, " +
-                     "timestamp c4=1970-01-01T00:00:00.000005Z, string c5=c5_val, " +
-                     "binary c6=\"c6_val\")",
+                 "unixtime_micros c4=1970-01-01T00:00:00.000005Z, string c5=c5_val, " +
+                 "binary c6=\"c6_val\")",
                  insert.getRow().stringifyRowKey());
 
     // Test an incomplete row key.

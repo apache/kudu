@@ -123,7 +123,7 @@ public class TestRowResult extends BaseKuduTest {
       assertEquals(Type.DOUBLE, rr.getColumnType(6));
       assertEquals(Type.STRING, rr.getColumnType(7));
       assertEquals(Type.BINARY, rr.getColumnType(8));
-      assertEquals(Type.TIMESTAMP, rr.getColumnType(11));
+      assertEquals(Type.UNIXTIME_MICROS, rr.getColumnType(11));
     }
   }
 }

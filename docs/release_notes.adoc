@@ -78,6 +78,17 @@ Kudu 1.0.0 are not supported.
   The existing KuduEventProducers have been updated for the new interface, and have
   been renamed similarly.
 
+- The `TIMESTAMP` column type has been renamed to `UNIXTIME_MICROS` in order to
+  reduce confusion between Kudu's timestamp support and the timestamps supported
+  by other systems such as Apache Hive and Apache Impala (incubating). Existing
+  tables will automatically be updated to use the new name for the type.
++
+Clients upgrading to the new client libraries must move to the new name for
+  the type.  Clients using old client libraries will continue to operate using
+  the old type name, even when connected to clusters that have been
+  upgraded. Similarly, if clients are upgraded before servers, existing
+  timestamp columns will be available using the new type name.
+
 [[rn_1.0.0_new_features]]
 === New features
 

@@ -211,14 +211,14 @@ public class PartialRow {
    * @throws IllegalStateException if the row was already applied
    */
   public void addLong(int columnIndex, long val) {
-    checkColumn(schema.getColumnByIndex(columnIndex), Type.INT64, Type.TIMESTAMP);
+    checkColumn(schema.getColumnByIndex(columnIndex), Type.INT64, Type.UNIXTIME_MICROS);
     Bytes.setLong(rowAlloc, val, getPositionInRowAllocAndSetBitSet(columnIndex));
   }
 
   /**
    * Add an long for the specified column.
    *
-   * If this is a TIMESTAMP column, the long value provided should be the number of microseconds
+   * If this is a UNIXTIME_MICROS column, the long value provided should be the number of microseconds
    * between a given time and January 1, 1970 UTC.
    * For example, to encode the current time, use setLong(System.currentTimeMillis() * 1000);
    *
@@ -579,7 +579,7 @@ public class PartialRow {
         case INT64:
           sb.append(Bytes.getLong(rowAlloc, schema.getColumnOffset(idx)));
           break;
-        case TIMESTAMP:
+        case UNIXTIME_MICROS:
           sb.append(RowResult.timestampToString(
               Bytes.getLong(rowAlloc, schema.getColumnOffset(idx))));
           break;
@@ -616,7 +616,7 @@ public class PartialRow {
       case INT16: addShort(index, Short.MIN_VALUE); break;
       case INT32: addInt(index, Integer.MIN_VALUE); break;
       case INT64:
-      case TIMESTAMP: addLong(index, Integer.MIN_VALUE); break;
+      case UNIXTIME_MICROS: addLong(index, Integer.MIN_VALUE); break;
       case FLOAT: addFloat(index, -Float.MAX_VALUE); break;
       case DOUBLE: addDouble(index, -Double.MAX_VALUE); break;
       case STRING: addStringUtf8(index, AsyncKuduClient.EMPTY_ARRAY); break;
@@ -637,7 +637,7 @@ public class PartialRow {
       case INT16:
       case INT32:
       case INT64:
-      case TIMESTAMP:
+      case UNIXTIME_MICROS:
       case FLOAT:
       case DOUBLE: {
         Preconditions.checkArgument(value.length == type.getSize());
@@ -689,7 +689,7 @@ public class PartialRow {
         return true;
       }
       case INT64:
-      case TIMESTAMP: {
+      case UNIXTIME_MICROS: {
         long existing = Bytes.getLong(rowAlloc, offset);
         if (existing == Long.MAX_VALUE) return false;
         Bytes.setLong(rowAlloc, existing + 1, offset);

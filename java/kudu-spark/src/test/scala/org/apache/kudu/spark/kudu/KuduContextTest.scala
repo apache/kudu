@@ -31,7 +31,7 @@ class KuduContextTest extends FunSuite with TestContext with Matchers {
   test("Test basic kuduRDD") {
     val rows = insertRows(rowCount)
     val scanList = kuduContext.kuduRDD(sc, "test", Seq("key", "c1_i", "c2_s", "c3_double",
-        "c4_long", "c5_bool", "c6_short", "c7_float", "c8_binary", "c9_timestamp", "c10_byte"))
+        "c4_long", "c5_bool", "c6_short", "c7_float", "c8_binary", "c9_unixtime_micros", "c10_byte"))
       .map(r => r.toSeq).collect()
     scanList.foreach(r => {
       val index = r.apply(0).asInstanceOf[Int]

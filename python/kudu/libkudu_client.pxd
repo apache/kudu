@@ -117,7 +117,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         KUDU_FLOAT " kudu::client::KuduColumnSchema::FLOAT"
         KUDU_DOUBLE " kudu::client::KuduColumnSchema::DOUBLE"
         KUDU_BINARY " kudu::client::KuduColumnSchema::BINARY"
-        KUDU_TIMESTAMP " kudu::client::KuduColumnSchema::TIMESTAMP"
+        KUDU_UNIXTIME_MICROS " kudu::client::KuduColumnSchema::UNIXTIME_MICROS"
 
     enum EncodingType" kudu::client::KuduColumnStorageAttributes::EncodingType":
         EncodingType_AUTO " kudu::client::KuduColumnStorageAttributes::AUTO_ENCODING"
@@ -211,7 +211,7 @@ cdef extern from "kudu/client/scan_batch.h" namespace "kudu::client" nogil:
         Status GetInt32(Slice& col_name, int32_t* val)
         Status GetInt64(Slice& col_name, int64_t* val)
 
-        Status GetTimestamp(const Slice& col_name,
+        Status GetUnixTimeMicros(const Slice& col_name,
                             int64_t* micros_since_utc_epoch)
 
         Status GetBool(int col_idx, c_bool* val)
@@ -293,9 +293,9 @@ cdef extern from "kudu/common/partial_row.h" namespace "kudu" nogil:
         Status SetInt32(Slice& col_name, int32_t val)
         Status SetInt64(Slice& col_name, int64_t val)
 
-        Status SetTimestamp(const Slice& col_name,
-                            int64_t micros_since_utc_epoch)
-        Status SetTimestamp(int col_idx, int64_t micros_since_utc_epoch)
+        Status SetUnixTimeMicros(const Slice& col_name,
+                                 int64_t micros_since_utc_epoch)
+        Status SetUnixTimeMicros(int col_idx, int64_t micros_since_utc_epoch)
 
         Status SetDouble(Slice& col_name, double val)
         Status SetFloat(Slice& col_name, float val)
@@ -351,9 +351,9 @@ cdef extern from "kudu/common/partial_row.h" namespace "kudu" nogil:
         Status GetInt64(Slice& col_name, int64_t* val)
         Status GetInt64(int col_idx, int64_t* val)
 
-        Status GetTimestamp(const Slice& col_name,
+        Status GetUnixTimeMicros(const Slice& col_name,
                             int64_t* micros_since_utc_epoch)
-        Status GetTimestamp(int col_idx, int64_t* micros_since_utc_epoch)
+        Status GetUnixTimeMicros(int col_idx, int64_t* micros_since_utc_epoch)
 
         Status GetDouble(Slice& col_name, double* val)
         Status GetDouble(int col_idx, double* val)

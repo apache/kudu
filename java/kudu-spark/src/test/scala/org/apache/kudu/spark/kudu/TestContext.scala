@@ -51,7 +51,7 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
       new ColumnSchemaBuilder("c6_short", Type.INT16).build(),
       new ColumnSchemaBuilder("c7_float", Type.FLOAT).build(),
       new ColumnSchemaBuilder("c8_binary", Type.BINARY).build(),
-      new ColumnSchemaBuilder("c9_timestamp", Type.TIMESTAMP).build(),
+      new ColumnSchemaBuilder("c9_unixtime_micros", Type.UNIXTIME_MICROS).build(),
       new ColumnSchemaBuilder("c10_byte", Type.INT8).build())
     new Schema(columns)
   }

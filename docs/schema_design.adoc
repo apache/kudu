@@ -176,7 +176,7 @@ Consider the following table schema.
 CREATE TABLE metrics (
   host STRING NOT NULL,
   metric STRING,
-  time TIMESTAMP NOT NULL,
+  time UNIXTIME_MICROS NOT NULL,
   measurement DOUBLE,
   PRIMARY KEY (time, metric, host),
 )
@@ -233,7 +233,7 @@ Supported column types include:
 * 16-bit signed integer
 * 32-bit signed integer
 * 64-bit signed integer
-* timestamp
+* unixtime_micros (64-bit microseconds since the Unix epoch)
 * single-precision (32-bit) IEEE-754 floating-point number
 * double-precision (64-bit) IEEE-754 floating-point number
 * UTF-8 encoded string
@@ -255,11 +255,11 @@ of the column. Columns use plain encoding by default.
 .Encoding Types
 [options="header"]
 |===
-| Column Type        | Encoding
-| integer, timestamp | plain, bitshuffle, run length (except for 64-bit)
-| float, double      | plain, bitshuffle
-| bool               | plain, run length
-| string, binary     | plain, prefix, dictionary
+| Column Type             | Encoding
+| integer, unix_microtime | plain, bitshuffle, run length (except for 64-bit)
+| float, double           | plain, bitshuffle
+| bool                    | plain, run length
+| string, binary          | plain, prefix, dictionary
 |===
 
 [[plain]]

@@ -78,7 +78,7 @@ public class ColumnRangePredicate {
       case INT16: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getShort(bound));
       case INT32: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getInt(bound));
       case INT64:
-      case TIMESTAMP: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getLong(bound));
+      case UNIXTIME_MICROS: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getLong(bound));
       case FLOAT: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getFloat(bound));
       case DOUBLE: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getDouble(bound));
       case STRING: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getString(bound));
@@ -152,7 +152,7 @@ public class ColumnRangePredicate {
    * @param lowerBound value for the lower bound
    */
   public void setLowerBound(long lowerBound) {
-    checkColumn(Type.INT64, Type.TIMESTAMP);
+    checkColumn(Type.INT64, Type.UNIXTIME_MICROS);
     setLowerBoundInternal(Bytes.fromLong(lowerBound));
   }
 
@@ -237,7 +237,7 @@ public class ColumnRangePredicate {
    * @param upperBound value for the upper bound
    */
   public void setUpperBound(long upperBound) {
-    checkColumn(Type.INT64, Type.TIMESTAMP);
+    checkColumn(Type.INT64, Type.UNIXTIME_MICROS);
     setUpperBoundInternal(Bytes.fromLong(upperBound));
   }
 

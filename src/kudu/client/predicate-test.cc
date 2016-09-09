@@ -561,14 +561,14 @@ TEST_F(PredicateTest, TestInt64Predicates) {
 }
 
 TEST_F(PredicateTest, TestTimestampPredicates) {
-  shared_ptr<KuduTable> table = CreateAndOpenTable(KuduColumnSchema::TIMESTAMP);
+  shared_ptr<KuduTable> table = CreateAndOpenTable(KuduColumnSchema::UNIXTIME_MICROS);
   shared_ptr<KuduSession> session = CreateSession();
 
   int i = 0;
   for (int64_t value : CreateIntValues<int64_t>()) {
       unique_ptr<KuduInsert> insert(table->NewInsert());
       ASSERT_OK(insert->mutable_row()->SetInt64("key", i++));
-      ASSERT_OK(insert->mutable_row()->SetTimestamp("value", value));
+      ASSERT_OK(insert->mutable_row()->SetUnixTimeMicros("value", value));
       ASSERT_OK(session->Apply(insert.release()));
   }
   unique_ptr<KuduInsert> null_insert(table->NewInsert());

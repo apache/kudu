@@ -465,7 +465,7 @@ public class TestPartitionPruner extends BaseKuduTest {
   @Test
   public void testPruning() throws Exception {
     // CREATE TABLE timeseries
-    // (host STRING, metric STRING, timestamp TIMESTAMP, value DOUBLE)
+    // (host STRING, metric STRING, timestamp UNIXTIME_MICROS, value DOUBLE)
     // PRIMARY KEY (host, metric, time)
     // DISTRIBUTE BY
     //    RANGE(time) SPLIT ROWS [(10)],
@@ -475,7 +475,7 @@ public class TestPartitionPruner extends BaseKuduTest {
 
     ColumnSchema host = new ColumnSchema.ColumnSchemaBuilder("host", Type.STRING).key(true).build();
     ColumnSchema metric = new ColumnSchema.ColumnSchemaBuilder("metric", Type.STRING).key(true).build();
-    ColumnSchema timestamp = new ColumnSchema.ColumnSchemaBuilder("timestamp", Type.TIMESTAMP).key(true).build();
+    ColumnSchema timestamp = new ColumnSchema.ColumnSchemaBuilder("timestamp", Type.UNIXTIME_MICROS).key(true).build();
     ColumnSchema value = new ColumnSchema.ColumnSchemaBuilder("value", Type.DOUBLE).build();
     Schema schema = new Schema(ImmutableList.of(host, metric, timestamp, value));
 

@@ -72,8 +72,8 @@ public class TestKuduClient extends BaseKuduTest {
 
   private Schema createSchemaWithTimestampColumns() {
     ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.TIMESTAMP).key(true).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.TIMESTAMP).nullable(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.UNIXTIME_MICROS).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.UNIXTIME_MICROS).nullable(true).build());
     return new Schema(columns);
   }
 
@@ -275,7 +275,7 @@ public class TestKuduClient extends BaseKuduTest {
     assertEquals(100, rowStrings.size());
     for (int i = 0; i < rowStrings.size(); i++) {
       StringBuilder expectedRow = new StringBuilder();
-      expectedRow.append(String.format("TIMESTAMP key=%s, TIMESTAMP c1=",
+      expectedRow.append(String.format("UNIXTIME_MICROS key=%s, UNIXTIME_MICROS c1=",
           timestampToString(timestamps.get(i))));
       if (i % 2 == 1) {
         expectedRow.append(timestampToString(timestamps.get(i)));

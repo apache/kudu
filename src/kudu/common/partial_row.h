@@ -89,7 +89,8 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetInt16(const Slice& col_name, int16_t val) WARN_UNUSED_RESULT;
   Status SetInt32(const Slice& col_name, int32_t val) WARN_UNUSED_RESULT;
   Status SetInt64(const Slice& col_name, int64_t val) WARN_UNUSED_RESULT;
-  Status SetTimestamp(const Slice& col_name, int64_t micros_since_utc_epoch) WARN_UNUSED_RESULT;
+  Status SetUnixTimeMicros(const Slice& col_name,
+                           int64_t micros_since_utc_epoch) WARN_UNUSED_RESULT;
 
   Status SetFloat(const Slice& col_name, float val) WARN_UNUSED_RESULT;
   Status SetDouble(const Slice& col_name, double val) WARN_UNUSED_RESULT;
@@ -117,7 +118,7 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetInt16(int col_idx, int16_t val) WARN_UNUSED_RESULT;
   Status SetInt32(int col_idx, int32_t val) WARN_UNUSED_RESULT;
   Status SetInt64(int col_idx, int64_t val) WARN_UNUSED_RESULT;
-  Status SetTimestamp(int col_idx, int64_t micros_since_utc_epoch) WARN_UNUSED_RESULT;
+  Status SetUnixTimeMicros(int col_idx, int64_t micros_since_utc_epoch) WARN_UNUSED_RESULT;
 
   Status SetFloat(int col_idx, float val) WARN_UNUSED_RESULT;
   Status SetDouble(int col_idx, double val) WARN_UNUSED_RESULT;
@@ -337,7 +338,7 @@ class KUDU_EXPORT KuduPartialRow {
   Status GetInt16(const Slice& col_name, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(const Slice& col_name, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(const Slice& col_name, int64_t* val) const WARN_UNUSED_RESULT;
-  Status GetTimestamp(const Slice& col_name,
+  Status GetUnixTimeMicros(const Slice& col_name,
                       int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
 
   Status GetFloat(const Slice& col_name, float* val) const WARN_UNUSED_RESULT;
@@ -368,7 +369,7 @@ class KUDU_EXPORT KuduPartialRow {
   Status GetInt16(int col_idx, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(int col_idx, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(int col_idx, int64_t* val) const WARN_UNUSED_RESULT;
-  Status GetTimestamp(int col_idx, int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
+  Status GetUnixTimeMicros(int col_idx, int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
 
   Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;

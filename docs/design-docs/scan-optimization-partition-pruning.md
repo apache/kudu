@@ -50,7 +50,7 @@ The following sections will reference two example table schemas:
 
 ```sql
 CREATE TABLE 'machine_metrics'
-(STRING host, STRING metric, TIMESTAMP time, DOUBLE value)
+(STRING host, STRING metric, UNIXTIME_MICROS time, DOUBLE value)
 PRIMARY KEY (host, metric, time)
 DISTRIBUTE BY
   HASH (host, metric) INTO 2 BUCKETS

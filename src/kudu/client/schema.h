@@ -126,7 +126,8 @@ class KUDU_EXPORT KuduColumnSchema {
     FLOAT = 6,
     DOUBLE = 7,
     BINARY = 8,
-    TIMESTAMP = 9
+    UNIXTIME_MICROS = 9,
+    TIMESTAMP = UNIXTIME_MICROS //!< deprecated, use UNIXTIME_MICROS
   };
 
   /// @param [in] type

@@ -219,7 +219,7 @@ public class AvroKuduOperationsProducer implements KuduOperationsProducer {
               row.addInt(name, (int) value);
               break;
             case INT64: // Fall through
-            case TIMESTAMP:
+            case UNIXTIME_MICROS:
               row.addLong(name, (long) value);
               break;
             case FLOAT:

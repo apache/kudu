@@ -185,7 +185,7 @@ public class ProtobufHelper {
       case INT32:
         return Bytes.fromInt((Integer) value);
       case INT64:
-      case TIMESTAMP:
+      case UNIXTIME_MICROS:
         return Bytes.fromLong((Long) value);
       case STRING:
         return ((String) value).getBytes(Charsets.UTF_8);
@@ -213,7 +213,7 @@ public class ProtobufHelper {
       case INT32:
         return Bytes.getInt(buf);
       case INT64:
-      case TIMESTAMP:
+      case UNIXTIME_MICROS:
         return Bytes.getLong(buf);
       case FLOAT:
         return Bytes.getFloat(buf);

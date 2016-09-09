@@ -28,7 +28,7 @@ from kudu.errors import (KuduException, KuduBadStatus, KuduNotFound,  # noqa
 
 from kudu.schema import (int8, int16, int32, int64, string_ as string,  # noqa
                          double_ as double, float_, binary,
-                         timestamp,
+                         unixtime_micros,
                          KuduType,
                          SchemaBuilder, ColumnSpec, Schema, ColumnSchema,
                          COMPRESSION_DEFAULT,

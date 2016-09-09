@@ -143,7 +143,7 @@ public class KuduPredicate {
   public static KuduPredicate newComparisonPredicate(ColumnSchema column,
                                                      ComparisonOp op,
                                                      long value) {
-    checkColumn(column, Type.INT8, Type.INT16, Type.INT32, Type.INT64, Type.TIMESTAMP);
+    checkColumn(column, Type.INT8, Type.INT16, Type.INT32, Type.INT64, Type.UNIXTIME_MICROS);
     Preconditions.checkArgument(value <= maxIntValue(column.getType()) &&
                                     value >= minIntValue(column.getType()),
                                 "integer value out of range for %s column: %s",
@@ -181,7 +181,7 @@ public class KuduPredicate {
         break;
       }
       case INT64:
-      case TIMESTAMP: {
+      case UNIXTIME_MICROS: {
         bytes = Bytes.fromLong(value);
         break;
       }
@@ -499,7 +499,7 @@ public class KuduPredicate {
       case INT32:
         return Integer.compare(Bytes.getInt(a), Bytes.getInt(b));
       case INT64:
-      case TIMESTAMP:
+      case UNIXTIME_MICROS:
         return Long.compare(Bytes.getLong(a), Bytes.getLong(b));
       case FLOAT:
         return Float.compare(Bytes.getFloat(a), Bytes.getFloat(b));
@@ -538,7 +538,7 @@ public class KuduPredicate {
         return m < n && m + 1 == n;
       }
       case INT64:
-      case TIMESTAMP: {
+      case UNIXTIME_MICROS: {
         long m = Bytes.getLong(a);
         long n = Bytes.getLong(b);
         return m < n && m + 1 == n;
@@ -591,7 +591,7 @@ public class KuduPredicate {
       case INT8: return Byte.MAX_VALUE;
       case INT16: return Short.MAX_VALUE;
       case INT32: return Integer.MAX_VALUE;
-      case TIMESTAMP:
+      case UNIXTIME_MICROS:
       case INT64: return Long.MAX_VALUE;
       default: throw new IllegalArgumentException("type must be an integer type");
     }
@@ -608,7 +608,7 @@ public class KuduPredicate {
       case INT8: return Byte.MIN_VALUE;
       case INT16: return Short.MIN_VALUE;
       case INT32: return Integer.MIN_VALUE;
-      case TIMESTAMP:
+      case UNIXTIME_MICROS:
       case INT64: return Long.MIN_VALUE;
       default: throw new IllegalArgumentException("type must be an integer type");
     }
@@ -641,7 +641,7 @@ public class KuduPredicate {
       case INT16: return Short.toString(Bytes.getShort(value));
       case INT32: return Integer.toString(Bytes.getInt(value));
       case INT64: return Long.toString(Bytes.getLong(value));
-      case TIMESTAMP: return RowResult.timestampToString(Bytes.getLong(value));
+      case UNIXTIME_MICROS: return RowResult.timestampToString(Bytes.getLong(value));
       case FLOAT: return Float.toString(Bytes.getFloat(value));
       case DOUBLE: return Double.toString(Bytes.getDouble(value));
       case STRING: {

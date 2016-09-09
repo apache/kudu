@@ -289,7 +289,7 @@ class KeyEncoder {
       case INT16: row.addShort(idx, (short) (buf.getShort() ^ Short.MIN_VALUE)); break;
       case INT32: row.addInt(idx, buf.getInt() ^ Integer.MIN_VALUE); break;
       case INT64:
-      case TIMESTAMP: row.addLong(idx, buf.getLong() ^ Long.MIN_VALUE); break;
+      case UNIXTIME_MICROS: row.addLong(idx, buf.getLong() ^ Long.MIN_VALUE); break;
       case BINARY: {
         byte[] binary = decodeBinaryColumn(buf, isLast);
         row.addBinary(idx, binary);

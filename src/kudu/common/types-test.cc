@@ -34,7 +34,7 @@ using std::vector;
 namespace kudu {
 
 TEST(TestTypes, TestTimestampPrinting) {
-  const TypeInfo* info = GetTypeInfo(TIMESTAMP);
+  const TypeInfo* info = GetTypeInfo(UNIXTIME_MICROS);
 
   // Test the minimum value
   int64 time;

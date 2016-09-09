@@ -420,7 +420,7 @@ static const char* kDateFormat = "%Y-%m-%d %H:%M:%S";
 static const char* kDateMicrosAndTzFormat = "%s.%06d GMT";
 
 template<>
-struct DataTypeTraits<TIMESTAMP> : public DerivedTypeTraits<INT64>{
+struct DataTypeTraits<UNIXTIME_MICROS> : public DerivedTypeTraits<INT64>{
   static const int US_TO_S = 1000L * 1000L;
 
   static const char* name() {
@@ -509,7 +509,7 @@ class Variant {
       case UINT32:
         numeric_.u32 = *static_cast<const uint32_t *>(value);
         break;
-      case TIMESTAMP:
+      case UNIXTIME_MICROS:
       case INT64:
         numeric_.i64 = *static_cast<const int64_t *>(value);
         break;
@@ -579,7 +579,7 @@ class Variant {
       case INT32:        return &(numeric_.i32);
       case UINT32:       return &(numeric_.u32);
       case INT64:        return &(numeric_.i64);
-      case TIMESTAMP:    return &(numeric_.i64);
+      case UNIXTIME_MICROS:    return &(numeric_.i64);
       case UINT64:       return &(numeric_.u64);
       case FLOAT:        return (&numeric_.float_val);
       case DOUBLE:       return (&numeric_.double_val);

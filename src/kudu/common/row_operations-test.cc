@@ -626,7 +626,7 @@ TEST_F(RowOperationsTest, SplitKeyRoundTrip) {
                                   ColumnSchema("int64", INT64),
                                   ColumnSchema("string", STRING),
                                   ColumnSchema("binary", BINARY),
-                                  ColumnSchema("timestamp", TIMESTAMP),
+                                  ColumnSchema("timestamp", UNIXTIME_MICROS),
                                   ColumnSchema("missing", STRING) },
                                 8);
 
@@ -643,7 +643,7 @@ TEST_F(RowOperationsTest, SplitKeyRoundTrip) {
   ASSERT_OK(row.SetInt64("int64", int64_expected));
   ASSERT_OK(row.SetStringNoCopy("string", "string-value"));
   ASSERT_OK(row.SetBinaryNoCopy("binary", "binary-value"));
-  ASSERT_OK(row.SetTimestamp("timestamp", 9));
+  ASSERT_OK(row.SetUnixTimeMicros("timestamp", 9));
 
   RowOperationsPB pb;
   RowOperationsPBEncoder(&pb).Add(RowOperationsPB::SPLIT_ROW, row);

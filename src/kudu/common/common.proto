@@ -45,7 +45,7 @@ enum DataType {
   FLOAT = 10;
   DOUBLE = 11;
   BINARY = 12;
-  TIMESTAMP = 13;
+  UNIXTIME_MICROS = 13;
 }
 
 enum EncodingType {
