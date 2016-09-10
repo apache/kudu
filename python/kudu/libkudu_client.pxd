@@ -446,7 +446,10 @@ cdef extern from "kudu/client/value.h" namespace "kudu::client" nogil:
 
 cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
-    # Omitted KuduClient::ReplicaSelection enum
+    enum ReplicaSelection" kudu::client::KuduClient::ReplicaSelection":
+        LEADER_ONLY " kudu::client::KuduClient::LEADER_ONLY"
+        CLOSEST_REPLICA " kudu::client::KuduClient::CLOSEST_REPLICA"
+        FIRST_REPLICA " kudu::client::KuduClient::FIRST_REPLICA"
 
     cdef cppclass KuduClient:
 
@@ -607,8 +610,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status NextBatch(KuduScanBatch* batch)
         Status SetBatchSizeBytes(uint32_t batch_size)
 
-        # Pending definition of ReplicaSelection enum
-        # Status SetSelection(ReplicaSelection selection)
+        Status SetSelection(ReplicaSelection selection)
 
         Status SetReadMode(ReadMode read_mode)
         Status SetSnapshot(uint64_t snapshot_timestamp_micros)
@@ -621,6 +623,47 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         KuduSchema GetProjectionSchema()
         string ToString()
+
+    cdef cppclass KuduScanToken:
+        KuduScanToken()
+
+        const KuduTablet& tablet()
+
+        Status IntoKuduScanner(KuduScanner** scanner)
+        Status Serialize(string* buf)
+        Status DeserializeIntoScanner(KuduClient* client,
+                                      const string& serialized_token,
+                                      KuduScanner** scanner)
+
+    cdef cppclass KuduScanTokenBuilder:
+        KuduScanTokenBuilder(KuduTable* table)
+
+        Status SetProjectedColumnNames(const vector[string]& col_names)
+        Status SetProjectedColumnIndexes(const vector[int]& col_indexes)
+        Status SetBatchSizeBytes(uint32_t batch_size)
+        Status SetReadMode(ReadMode read_mode)
+        Status SetFaultTolerant()
+        Status SetSnapshotMicros(uint64_t snapshot_timestamp_micros)
+        Status SetSnapshotRaw(uint64_t snapshot_timestamp)
+        Status SetSelection(ReplicaSelection selection)
+        Status SetTimeoutMillis(int millis)
+        Status AddConjunctPredicate(KuduPredicate* pred)
+        Status AddLowerBound(const KuduPartialRow& key)
+        Status AddUpperBound(const KuduPartialRow& key)
+        Status SetCacheBlocks(c_bool cache_blocks)
+        Status Build(vector[KuduScanToken*]* tokens)
+
+    cdef cppclass KuduTablet:
+        KuduTablet()
+
+        const string& id()
+        const vector[const KuduReplica*]& replicas()
+
+    cdef cppclass KuduReplica:
+        KuduReplica()
+
+        c_bool is_leader()
+        const KuduTabletServer& ts()
 
     cdef cppclass C_KuduError " kudu::client::KuduError":
 
