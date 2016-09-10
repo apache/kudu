@@ -471,6 +471,11 @@ void JsonError(const Status& s, ostringstream* out) {
 
 void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& req,
                                             ostringstream* output) {
+  Status s = master_->catalog_manager()->CheckOnline();
+  if (!s.ok()) {
+    JsonError(s, output);
+    return;
+  }
   JsonWriter jw(output, JsonWriter::COMPACT);
   JsonDumper d(&jw);
 
@@ -478,7 +483,7 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& req,
 
   jw.String("tables");
   jw.StartArray();
-  Status s = master_->catalog_manager()->sys_catalog()->VisitTables(&d);
+  s = master_->catalog_manager()->sys_catalog()->VisitTables(&d);
   if (!s.ok()) {
     JsonError(s, output);
     return;

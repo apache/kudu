@@ -71,6 +71,7 @@ static const char* const kMasterBinaryName = "kudu-master";
 static const char* const kTabletServerBinaryName = "kudu-tserver";
 static double kProcessStartTimeoutSeconds = 30.0;
 static double kTabletServerRegistrationTimeoutSeconds = 15.0;
+static double kMasterCatalogManagerTimeoutSeconds = 30.0;
 
 #if defined(__APPLE__)
 static bool kBindToUniqueLoopbackAddress = false;
@@ -869,7 +870,9 @@ Status ExternalMaster::Restart() {
 Status ExternalMaster::WaitForCatalogManager() {
   unique_ptr<MasterServiceProxy> proxy(
       new MasterServiceProxy(messenger_, bound_rpc_addr()));
-  while (true) {
+  Stopwatch sw;
+  sw.start();
+  while (sw.elapsed().wall_seconds() < kMasterCatalogManagerTimeoutSeconds) {
     ListTablesRequestPB req;
     ListTablesResponsePB resp;
     RpcController rpc;
@@ -896,6 +899,12 @@ Status ExternalMaster::WaitForCatalogManager() {
     // There was some kind of transient network error or the master isn't yet
     // ready. Sleep and retry.
     SleepFor(MonoDelta::FromMilliseconds(50));
+  }
+  if (sw.elapsed().wall_seconds() > kMasterCatalogManagerTimeoutSeconds) {
+    return Status::TimedOut(
+        Substitute("Timed out after $0s waiting for master ($1) startup",
+                   kMasterCatalogManagerTimeoutSeconds,
+                   bound_rpc_addr().ToString()));
   }
   return Status::OK();
 }

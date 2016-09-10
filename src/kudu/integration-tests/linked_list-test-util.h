@@ -334,17 +334,16 @@ class PeriodicWebUIChecker {
     for (std::string url : urls_) {
       LOG(INFO) << url;
     }
-    for (int count = 0; is_running_.Load(); count++) {
-      const std::string &url = urls_[count % urls_.size()];
-      LOG(INFO) << "Curling URL " << url;
+    while (is_running_.Load()) {
+      // Poll all of the URLs.
       const MonoTime start = MonoTime::Now();
-      Status status = curl.FetchURL(url, &dst);
-      if (status.ok()) {
-        CHECK_GT(dst.length(), 0);
+      for (const auto& url : urls_) {
+        if (curl.FetchURL(url, &dst).ok()) {
+          CHECK_GT(dst.length(), 0);
+        }
       }
       // Sleep until the next period
-      const MonoTime end = MonoTime::Now();
-      const MonoDelta elapsed = end - start;
+      const MonoDelta elapsed = MonoTime::Now() - start;
       const int64_t sleep_ns = period_.ToNanoseconds() - elapsed.ToNanoseconds();
       if (sleep_ns > 0) {
         SleepFor(MonoDelta::FromNanoseconds(sleep_ns));

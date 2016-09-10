@@ -29,6 +29,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/linked_list-test-util.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
@@ -462,6 +463,23 @@ TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
         ASSERT_OK(client_->OpenTable(table_name, &table));
         ASSERT_EQ(0, CountTableRows(table.get()));
       }
+    }
+  }
+}
+
+// Tests that accessing the web UI while the master is starting doesn't cause
+// any crashes.
+TEST_F(MasterFailoverTest, TestWebUIDuringStartup) {
+  PeriodicWebUIChecker checker(
+      *cluster_.get(),
+      "doesn't matter", // it'll ping a non-existent page
+      MonoDelta::FromMilliseconds(50));
+
+  for (int i = 0; i < 5; i++) {
+    for (int j = 0; j < cluster_->num_masters(); j++) {
+      cluster_->master(j)->Shutdown();
+      ASSERT_OK(cluster_->master(j)->Restart());
+      ASSERT_OK(cluster_->master(j)->WaitForCatalogManager());
     }
   }
 }
