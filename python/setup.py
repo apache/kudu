@@ -28,8 +28,8 @@ from distutils.command.clean import clean as _clean
 from distutils.extension import Extension
 import os
 
-if Cython.__version__ < '0.19.1':
-    raise Exception('Please upgrade to Cython 0.19.1 or newer')
+if Cython.__version__ < '0.21.0':
+    raise Exception('Please upgrade to Cython 0.21.0 or newer')
 
 MAJOR = 0
 MINOR = 3
