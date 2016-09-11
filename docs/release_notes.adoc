@@ -60,8 +60,42 @@ Kudu will still keep historical data, and the amount of history retained is
   "cold" historical data that is not in a row affected by the normal compaction
   process will be added in a future release.
 
+- Most of Kudu's command line tools have been consolidated under a new
+  top-level `kudu` tool. This reduces the number of large binaries distributed
+  with Kudu and also includes much-improved help output.
+
 - The Kudu Flume Sink now supports processing events containing Avro-encoded
   records, using the new `AvroKuduOperationsProducer`.
+
+- Administrative tools including `kudu cluster ksck` now support running
+  against multi-master Kudu clusters.
+
+- The output of the `ksck` tool is now colorized and much easier to read.
+
+- The {cpp} client API now supports writing data in `AUTO_FLUSH_BACKGROUND` mode.
+  This can provide higher throughput for ingest workloads.
+
+== Optimizations and improvements
+
+- The performance of comparison predicates on dictionary-encoded columns has
+  been substantially optimized. Users are encouraged to use dictionary encoding
+  on any string or binary columns with low cardinality, especially if these
+  columns will be filtered with predicates.
+
+- The Java client is now able to prune partitions from scanners based on the
+  provided predicates. For example, an equality predicate on a hash-partitioned
+  column will now only access those tablets that could possibly contain matching
+  data. This is expected to improve performance for the Spark integration as well
+  as applications using the Java client API.
+
+- The performance of compaction selection in the tablet server has been
+  substantially improved. This can increase the efficiency of the background
+  maintenance threads and improve overall throughput of heavy write workloads.
+
+- The policy by which the tablet server retains write-ahead log (WAL) files has
+  been improved so that it takes into account other replicas of the tablet.
+  This should help mitigate the spurious eviction of tablet replicas on machines
+  that temporarily lag behind the other replicas.
 
 == Wire protocol compatibility
 
