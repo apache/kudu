@@ -50,10 +50,6 @@ class TestScanner(KuduTestBase, unittest.TestCase):
         cls.table = table
         cls.tuples = tuples
 
-    @classmethod
-    def tearDownClass(cls):
-        pass
-
     def setUp(self):
         pass
 
