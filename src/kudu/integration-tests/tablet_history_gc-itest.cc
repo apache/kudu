@@ -50,6 +50,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(use_mock_wall_clock);
+DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(tablet_history_max_age_sec);
 DECLARE_string(block_manager);
 DECLARE_bool(enable_maintenance_manager);
@@ -67,7 +68,9 @@ class TabletHistoryGcITest : public MiniClusterITestBase {
 // Check that attempts to scan prior to the ancient history mark fail.
 TEST_F(TabletHistoryGcITest, TestSnapshotScanBeforeAHM) {
   FLAGS_tablet_history_max_age_sec = 0;
-
+  // Set high scanner TTL, since this test opens scanners and then waits for some
+  // time before reading from them.
+  FLAGS_scanner_ttl_ms = 1000 * 60 * 60 * 24;
   NO_FATALS(StartCluster());
 
   // Create a tablet so we can scan it.
