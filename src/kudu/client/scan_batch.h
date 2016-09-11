@@ -33,7 +33,7 @@ namespace kudu {
 class Schema;
 
 namespace tools {
-class TsAdminClient;
+class ReplicaDumper;
 } // namespace tools
 
 namespace client {
@@ -119,7 +119,7 @@ class KUDU_EXPORT KuduScanBatch {
  private:
   class KUDU_NO_EXPORT Data;
   friend class KuduScanner;
-  friend class kudu::tools::TsAdminClient;
+  friend class tools::ReplicaDumper;
 
   Data* data_;
   DISALLOW_COPY_AND_ASSIGN(KuduScanBatch);

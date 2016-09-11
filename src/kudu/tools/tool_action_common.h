@@ -17,6 +17,9 @@
 
 #pragma once
 
+#include <memory>
+#include <string>
+
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
 
@@ -26,9 +29,29 @@ namespace log {
 class ReadableLogSegment;
 } // namespace log
 
+namespace server {
+class ServerStatusPB;
+} // namespace server
+
 namespace tools {
 
 // Utility methods used by multiple actions across different modes.
+
+// Builds a proxy to a Kudu server running at 'address', returning it in
+// 'proxy'.
+//
+// If 'address' does not contain a port, 'default_port' is used instead.
+template<class ProxyClass>
+Status BuildProxy(const std::string& address,
+                  uint16_t default_port,
+                  std::unique_ptr<ProxyClass>* proxy);
+
+// Get the current status of the Kudu server running at 'address', storing it
+// in 'status'.
+//
+// If 'address' does not contain a port, 'default_port' is used instead.
+Status GetServerStatus(const std::string& address, uint16_t default_port,
+                       server::ServerStatusPB* status);
 
 // Prints the contents of a WAL segment to stdout.
 //
@@ -37,6 +60,23 @@ namespace tools {
 // - print_meta: whether or not headers/footers are printed.
 // - truncate_data: how many bytes to print for each data field.
 Status PrintSegment(const scoped_refptr<log::ReadableLogSegment>& segment);
+
+// Print the current status of the Kudu server running at 'address'.
+//
+// If 'address' does not contain a port, 'default_port' is used instead.
+Status PrintServerStatus(const std::string& address, uint16_t default_port);
+
+// Print the current timestamp of the Kudu server running at 'address'.
+//
+// If 'address' does not contain a port, 'default_port' is used instead.
+Status PrintServerTimestamp(const std::string& address, uint16_t default_port);
+
+// Changes the value of the gflag given by 'flag' to the value in 'value' on
+// the Kudu server running at 'address'.
+//
+// If 'address' does not contain a port, 'default_port' is used instead.
+Status SetServerFlag(const std::string& address, uint16_t default_port,
+                     const std::string& flag, const std::string& value);
 
 } // namespace tools
 } // namespace kudu

@@ -69,7 +69,6 @@ DEPS_FOR_ALL = \
      # TODO: declare these dependencies per-test.
      "build/latest/bin/kudu-tserver",
      "build/latest/bin/kudu-master",
-     "build/latest/bin/kudu-ts-cli",
 
      # parser-test requires these data files.
      # TODO: again, we should do this with some per-test metadata file.

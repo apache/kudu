@@ -114,9 +114,12 @@ int RunTool(int argc, char** argv, bool show_help) {
     .AddMode(BuildClusterMode())
     .AddMode(BuildFsMode())
     .AddMode(BuildLocalReplicaMode())
+    .AddMode(BuildMasterMode())
     .AddMode(BuildPbcMode())
+    .AddMode(BuildRemoteReplicaMode())
     .AddMode(BuildTableMode())
     .AddMode(BuildTabletMode())
+    .AddMode(BuildTServerMode())
     .AddMode(BuildWalMode())
     .Build();
 

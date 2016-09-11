@@ -36,7 +36,7 @@ using strings::Substitute;
 namespace kudu {
 namespace tools {
 
-static const char* const kTsCliToolName = "kudu-ts-cli";
+static const char* const kTsCliToolName = "kudu";
 
 class KuduTsCliTest : public ExternalMiniClusterITestBase {
  protected:
@@ -78,9 +78,9 @@ TEST_F(KuduTsCliTest, TestDeleteTablet) {
   string out;
   ASSERT_OK(Subprocess::Call({
     GetTsCliToolPath(),
-    "--server_address",
+    "remote_replica",
+    "delete",
     cluster_->tablet_server(0)->bound_rpc_addr().ToString(),
-    "delete_tablet",
     tablet_id,
     "Deleting for kudu-ts-cli-test"
   }, &out));
@@ -117,9 +117,9 @@ TEST_F(KuduTsCliTest, TestDumpTablet) {
   // Test for dump_tablet when there is no data in tablet.
   ASSERT_OK(Subprocess::Call({
     GetTsCliToolPath(),
-    "--server_address",
+    "remote_replica",
+    "dump",
     cluster_->tablet_server(0)->bound_rpc_addr().ToString(),
-    "dump_tablet",
     tablet_id
   }, &out));
   ASSERT_EQ("", out);
@@ -133,9 +133,9 @@ TEST_F(KuduTsCliTest, TestDumpTablet) {
   ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
   ASSERT_OK(Subprocess::Call({
     GetTsCliToolPath(),
-    "--server_address",
+    "remote_replica",
+    "dump",
     cluster_->tablet_server(0)->bound_rpc_addr().ToString(),
-    "dump_tablet",
     tablet_id
   }, &out));
 

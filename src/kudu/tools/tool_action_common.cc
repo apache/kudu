@@ -18,6 +18,7 @@
 #include "kudu/tools/tool_action_common.h"
 
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -29,16 +30,32 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/server/server_base.pb.h"
+#include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
+#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
+DECLARE_int64(timeout_ms); // defined in ksck
+
+DEFINE_bool(force, false, "If true, allows the set_flag command to set a flag "
+            "which is not explicitly marked as runtime-settable. Such flag "
+            "changes may be simply ignored on the server, or may cause the "
+            "server to crash.");
 DEFINE_bool(print_meta, true, "Include metadata in output");
 DEFINE_string(print_entries, "decoded",
               "How to print entries:\n"
@@ -53,16 +70,32 @@ DEFINE_int32(truncate_data, 100,
 namespace kudu {
 namespace tools {
 
+using consensus::ConsensusServiceProxy;
 using consensus::ReplicateMsg;
 using log::LogEntryPB;
 using log::LogEntryReader;
 using log::ReadableLogSegment;
+using rpc::Messenger;
+using rpc::MessengerBuilder;
 using rpc::RequestIdPB;
+using rpc::RpcController;
+using server::GenericServiceProxy;
+using server::GetStatusRequestPB;
+using server::GetStatusResponsePB;
+using server::ServerClockRequestPB;
+using server::ServerClockResponsePB;
+using server::ServerStatusPB;
+using server::SetFlagRequestPB;
+using server::SetFlagResponsePB;
 using std::cout;
 using std::cerr;
 using std::endl;
+using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
+using tserver::TabletServerAdminServiceProxy;
+using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
 
 namespace {
@@ -170,6 +203,55 @@ Status PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
 
 } // anonymous namespace
 
+template<class ProxyClass>
+Status BuildProxy(const string& address,
+                  uint16_t default_port,
+                  unique_ptr<ProxyClass>* proxy) {
+  HostPort hp;
+  RETURN_NOT_OK(hp.ParseString(address, default_port));
+  shared_ptr<Messenger> messenger;
+  RETURN_NOT_OK(MessengerBuilder("tool").Build(&messenger));
+
+  vector<Sockaddr> resolved;
+  RETURN_NOT_OK(hp.ResolveAddresses(&resolved));
+
+  proxy->reset(new ProxyClass(messenger, resolved[0]));
+  return Status::OK();
+}
+
+// Explicit specialization for callers outside this compilation unit.
+template
+Status BuildProxy(const string& address,
+                  uint16_t default_port,
+                  unique_ptr<ConsensusServiceProxy>* proxy);
+template
+Status BuildProxy(const string& address,
+                  uint16_t default_port,
+                  unique_ptr<TabletServerServiceProxy>* proxy);
+template
+Status BuildProxy(const string& address,
+                  uint16_t default_port,
+                  unique_ptr<TabletServerAdminServiceProxy>* proxy);
+
+Status GetServerStatus(const string& address, uint16_t default_port,
+                       ServerStatusPB* status) {
+  unique_ptr<GenericServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(address, default_port, &proxy));
+
+  GetStatusRequestPB req;
+  GetStatusResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+
+  RETURN_NOT_OK(proxy->GetStatus(req, &resp, &rpc));
+  if (!resp.has_status()) {
+    return Status::Incomplete("Server response did not contain status",
+                              proxy->ToString());
+  }
+  *status = resp.status();
+  return Status::OK();
+}
+
 Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   PrintEntryType print_type = ParsePrintType();
   if (FLAGS_print_meta) {
@@ -203,6 +285,56 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
     cout << "Footer:\n" << segment->footer().DebugString();
   }
 
+  return Status::OK();
+}
+
+Status SetServerFlag(const string& address, uint16_t default_port,
+                     const string& flag, const string& value) {
+  unique_ptr<GenericServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(address, default_port, &proxy));
+
+  SetFlagRequestPB req;
+  SetFlagResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+
+  req.set_flag(flag);
+  req.set_value(value);
+  req.set_force(FLAGS_force);
+
+  RETURN_NOT_OK(proxy->SetFlag(req, &resp, &rpc));
+  switch (resp.result()) {
+    case server::SetFlagResponsePB::SUCCESS:
+      return Status::OK();
+    case server::SetFlagResponsePB::NOT_SAFE:
+      return Status::RemoteError(resp.msg() +
+                                 " (use --force flag to allow anyway)");
+    default:
+      return Status::RemoteError(resp.ShortDebugString());
+  }
+}
+
+Status PrintServerStatus(const string& address, uint16_t default_port) {
+  ServerStatusPB status;
+  RETURN_NOT_OK(GetServerStatus(address, default_port, &status));
+  cout << status.DebugString() << endl;
+  return Status::OK();
+}
+
+Status PrintServerTimestamp(const string& address, uint16_t default_port) {
+  unique_ptr<GenericServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(address, default_port, &proxy));
+
+  ServerClockRequestPB req;
+  ServerClockResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+  RETURN_NOT_OK(proxy->ServerClock(req, &resp, &rpc));
+  if (!resp.has_timestamp()) {
+    return Status::Incomplete("Server response did not contain timestamp",
+                              proxy->ToString());
+  }
+  cout << resp.timestamp() << endl;
   return Status::OK();
 }
 

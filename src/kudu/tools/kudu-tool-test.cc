@@ -181,9 +181,12 @@ TEST_F(ToolTest, TestTopLevelHelp) {
       "cluster.*Kudu cluster",
       "fs.*Kudu filesystem",
       "local_replica.*Kudu replicas",
+      "master.*Kudu Master",
       "pbc.*protobuf container",
+      "remote_replica.*replicas on a Kudu Tablet Server",
       "table.*Kudu tables",
       "tablet.*Kudu tablets",
+      "tserver.*Kudu Tablet Server",
       "wal.*write-ahead log"
   };
   NO_FATALS(RunTestHelp("", kTopLevelRegexes));
@@ -244,10 +247,27 @@ TEST_F(ToolTest, TestModeHelp) {
     NO_FATALS(RunTestHelp("cluster", kClusterModeRegexes));
   }
   {
+    const vector<string> kMasterModeRegexes = {
+        "set_flag.*Change a gflag value",
+        "status.*Get the status",
+        "timestamp.*Get the current timestamp"
+    };
+    NO_FATALS(RunTestHelp("master", kMasterModeRegexes));
+  }
+  {
     const vector<string> kPbcModeRegexes = {
         "dump.*Dump a PBC",
     };
     NO_FATALS(RunTestHelp("pbc", kPbcModeRegexes));
+  }
+  {
+    const vector<string> kRemoteReplicaModeRegexes = {
+        "check.*Check if all replicas",
+        "delete.*Delete a replica",
+        "dump.*Dump the data of a replica",
+        "list.*List all replicas"
+    };
+    NO_FATALS(RunTestHelp("remote_replica", kRemoteReplicaModeRegexes));
   }
   {
     const vector<string> kTableModeRegexes = {
@@ -269,6 +289,14 @@ TEST_F(ToolTest, TestModeHelp) {
         "remove_replica.*Remove an existing replica"
     };
     NO_FATALS(RunTestHelp("tablet change_config", kChangeConfigModeRegexes));
+  }
+  {
+    const vector<string> kTServerModeRegexes = {
+        "set_flag.*Change a gflag value",
+        "status.*Get the status",
+        "timestamp.*Get the current timestamp"
+    };
+    NO_FATALS(RunTestHelp("tserver", kTServerModeRegexes));
   }
   {
     const vector<string> kWalModeRegexes = {

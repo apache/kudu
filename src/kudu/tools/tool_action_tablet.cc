@@ -30,8 +30,8 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
@@ -46,8 +46,6 @@ using client::KuduTabletServer;
 using consensus::ChangeConfigType;
 using consensus::ConsensusServiceProxy;
 using consensus::RaftPeerPB;
-using rpc::Messenger;
-using rpc::MessengerBuilder;
 using rpc::RpcController;
 using std::shared_ptr;
 using std::string;
@@ -145,9 +143,8 @@ Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
         leader_hp.ToString());
   }
 
-  shared_ptr<Messenger> messenger;
-  RETURN_NOT_OK(MessengerBuilder("kudu").Build(&messenger));
-  ConsensusServiceProxy proxy(messenger, leader_addrs[0]);
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
 
   consensus::ChangeConfigRequestPB req;
   consensus::ChangeConfigResponsePB resp;
@@ -157,7 +154,7 @@ Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
   req.set_tablet_id(tablet_id);
   req.set_type(cc_type);
   *req.mutable_server() = peer_pb;
-  RETURN_NOT_OK(proxy.ChangeConfig(req, &resp, &rpc));
+  RETURN_NOT_OK(proxy->ChangeConfig(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }

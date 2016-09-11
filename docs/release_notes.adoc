@@ -130,6 +130,9 @@ Kudu 1.0.0 are not supported.
 - The `kudu-fs_dump` tool has been removed. The same functionality is now
   implemented as `kudu fs dump`.
 
+- The `kudu-ts-cli` tool has been removed. The same functionality is now
+  implemented within `kudu master`, `kudu remote_replica`, and `kudu tserver`.
+
 - The `kudu-fs_list` tool has been removed and some similar useful
   functionality has been moved under 'kudu local_replica'.
 

@@ -44,10 +44,6 @@ target_link_libraries(insert-generated-rows
   kudu_tools_util
   ${LINK_LIBS})
 
-add_executable(kudu-ts-cli ts-cli.cc)
-target_link_libraries(kudu-ts-cli
-  ${LINK_LIBS})
-
 add_library(ksck
     ksck.cc
     ksck_remote.cc
@@ -68,9 +64,12 @@ add_executable(kudu
   tool_action_common.cc
   tool_action_fs.cc
   tool_action_local_replica.cc
+  tool_action_master.cc
   tool_action_pbc.cc
+  tool_action_remote_replica.cc
   tool_action_table.cc
   tool_action_tablet.cc
+  tool_action_tserver.cc
   tool_action_wal.cc
   tool_main.cc
 )
@@ -79,6 +78,7 @@ target_link_libraries(kudu
   gutil
   krpc
   ksck
+  kudu_client
   kudu_common
   kudu_fs
   kudu_util
@@ -105,5 +105,5 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
   kudu)
 ADD_KUDU_TEST(kudu-ts-cli-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
-  kudu-ts-cli)
+  kudu)
 

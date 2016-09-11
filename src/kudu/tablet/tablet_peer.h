@@ -196,9 +196,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // etc. For use in places like the Web UI.
   std::string HumanReadableState() const;
 
-  // Adds list of transactions in-flight at the time of the call to
-  // 'out'. TransactionStatusPB objects are used to allow this method
-  // to be used by both the web-UI and ts-cli.
+  // Adds list of transactions in-flight at the time of the call to 'out'.
   void GetInFlightTransactions(Transaction::TraceType trace_type,
                                std::vector<consensus::TransactionStatusPB>* out) const;
 

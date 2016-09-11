@@ -262,6 +262,7 @@ void RemoteKsckTabletServer::RunTabletChecksumScanAsync(
 Status RemoteKsckMaster::Connect() {
   client::sp::shared_ptr<KuduClient> client;
   KuduClientBuilder builder;
+  builder.default_rpc_timeout(GetDefaultTimeout());
   builder.master_server_addrs(master_addresses_);
   return builder.Build(&client_);
 }
