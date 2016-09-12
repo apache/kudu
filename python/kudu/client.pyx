@@ -562,7 +562,7 @@ cdef class Table:
 
     def __getitem__(self, key):
         spec = self.schema[key]
-        return Column(self, key, spec)
+        return Column(self, spec)
 
     property name:
 
@@ -664,8 +664,8 @@ cdef class Column:
         Table parent
         ColumnSchema spec
 
-    def __cinit__(self, Table parent, object name, ColumnSchema spec):
-        self.name = tobytes(name)
+    def __cinit__(self, Table parent, ColumnSchema spec):
+        self.name = tobytes(spec.name)
         self.parent = parent
         self.spec = spec
 

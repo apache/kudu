@@ -35,15 +35,18 @@ class TestClient(KuduTestBase, unittest.TestCase):
 
     def test_table_column(self):
         table = self.client.table(self.ex_table)
-        col = table['key']
+        cols = [(table['key'], 'key', 'int32'),
+                (table[1], 'int_val', 'int32'),
+                (table[-1], 'string_val', 'string')]
 
-        assert col.name == b'key'
-        assert col.parent is table
+        for col, name, type in cols:
+            assert col.name == bytes(name)
+            assert col.parent is table
 
-        result_repr = repr(col)
-        expected_repr = ('Column(key, parent={0}, type=int32)'
-                         .format(self.ex_table))
-        assert result_repr == expected_repr
+            result_repr = repr(col)
+            expected_repr = ('Column({0}, parent={1}, type={2})'
+                             .format(name, self.ex_table, type))
+            assert result_repr == expected_repr
 
     def test_table_schema_retains_reference(self):
         import gc
