@@ -81,6 +81,18 @@ DEPS_FOR_ALL = \
      "build/latest/bin/kudu",
      ]
 
+# The number of shards to split tests into. This is set on a per-test basis
+# since it's only worth doing when a test has lots of separate cases and
+# more than one of them runs relatively long.
+NUM_SHARDS_BY_TEST = {
+  'cfile-test': 4,
+  'client-test': 8,
+  'delete_table-test': 8,
+  'flex_partitioning-itest': 8,
+  'mt-tablet-test': 4,
+  'raft_consensus-itest': 8
+}
+
 
 class StagingDir(object):
   @staticmethod
@@ -210,16 +222,6 @@ def ldd_deps(exe):
   return ret
 
 
-def num_shards_for_test(test_name):
-  if 'raft_consensus-itest' in test_name:
-    return 8
-  if 'cfile-test' in test_name:
-    return 4
-  if 'mt-tablet-test' in test_name:
-    return 4
-  return 1
-
-
 def create_archive_input(staging, argv,
                          disable_sharding=False):
   """
@@ -262,7 +264,7 @@ def create_archive_input(staging, argv,
   if disable_sharding:
     num_shards = 1
   else:
-    num_shards = num_shards_for_test(test_name)
+    num_shards = NUM_SHARDS_BY_TEST.get(test_name, 1)
   for shard in xrange(0, num_shards):
     out_archive = os.path.join(staging.dir, '%s.%d.gen.json' % (test_name, shard))
     out_isolate = os.path.join(staging.dir, '%s.%d.isolate' % (test_name, shard))
