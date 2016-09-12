@@ -142,7 +142,10 @@ string PartitionOptionsToString(const vector<HashPartitionOptions>& hash_partiti
   return s;
 }
 
-class FlexPartitioningITest : public KuduTest {
+typedef std::tuple<vector<HashPartitionOptions>, RangePartitionOptions> TestParamType;
+
+class FlexPartitioningITest : public KuduTest,
+                              public testing::WithParamInterface<TestParamType> {
  public:
   FlexPartitioningITest()
     : random_(GetRandomSeed32()) {
@@ -543,48 +546,62 @@ void FlexPartitioningITest::InsertAndVerifyScans(const RangePartitionOptions& ra
   }
 }
 
-TEST_F(FlexPartitioningITest, TestFlexPartitioning) {
-  vector<vector<HashPartitionOptions>> hash_options {
-    // No hash partitioning
-    {},
-    // HASH (c1) INTO 4 BUCKETS
-    { HashPartitionOptions { { "c1" }, 4 } },
-    // HASH (c0, c1) INTO 3 BUCKETS
-    { HashPartitionOptions { { "c0", "c1" }, 3 } },
-    // HASH (c1, c0) INTO 3 BUCKETS, HASH (c2) INTO 3 BUCKETS
-    { HashPartitionOptions { { "c1", "c0" }, 3 },
-      HashPartitionOptions { { "c2" }, 3 } },
-    // HASH (c2) INTO 2 BUCKETS, HASH (c1) INTO 2 BUCKETS, HASH (c0) INTO 2 BUCKETS
-    { HashPartitionOptions { { "c2" }, 2 },
-      HashPartitionOptions { { "c1" }, 2 },
-      HashPartitionOptions { { "c0" }, 2 } },
-  };
+const vector<vector<HashPartitionOptions>> kHashOptions {
+  // No hash partitioning
+  {},
+  // HASH (c1) INTO 4 BUCKETS
+  { HashPartitionOptions { { "c1" }, 4 } },
+  // HASH (c0, c1) INTO 3 BUCKETS
+  { HashPartitionOptions { { "c0", "c1" }, 3 } },
+  // HASH (c1, c0) INTO 3 BUCKETS, HASH (c2) INTO 3 BUCKETS
+  { HashPartitionOptions { { "c1", "c0" }, 3 },
+    HashPartitionOptions { { "c2" }, 3 } },
+  // HASH (c2) INTO 2 BUCKETS, HASH (c1) INTO 2 BUCKETS, HASH (c0) INTO 2 BUCKETS
+  { HashPartitionOptions { { "c2" }, 2 },
+    HashPartitionOptions { { "c1" }, 2 },
+    HashPartitionOptions { { "c0" }, 2 } },
+};
 
-  vector<RangePartitionOptions> range_options {
-    // No range partitioning
-    RangePartitionOptions { {}, {}, {} },
-    // RANGE (c0)
-    RangePartitionOptions { { "c0" }, { }, { } },
-    // RANGE (c0) SPLIT ROWS (500)
-    RangePartitionOptions { { "c0" }, { { 500 } }, { } },
-    // RANGE (c2, c1) SPLIT ROWS (500, 0), (500, 500), (1000, 0)
-    RangePartitionOptions { { "c2", "c1" }, { { 500, 0 }, { 500, 500 }, { 1000, 0 } }, { } },
-    // RANGE (c0) BOUNDS ((0), (500)), ((500), (1000))
-    RangePartitionOptions { { "c0" }, { }, { { { 0 }, { 500 } }, { { 500 }, { 1000 } } } },
-    // RANGE (c0) SPLIT ROWS (500) BOUNDS ((0), (1000))
-    RangePartitionOptions { { "c0" }, { }, { { { 0 }, { 500 } }, { { 500 }, { 1000 } } } },
-    // RANGE (c0, c1) SPLIT ROWS (500), (2001), (2500), (2999)
-    //                BOUNDS ((0), (1000)), ((2000), (3000))
-     RangePartitionOptions{ { "c0", "c1" }, { { 500 }, { 2001 }, { 2500 }, { 2999 } },
-                            { { { 0 }, { 1000 } }, { { 2000 }, { 3000 } } } },
-  };
+const vector<RangePartitionOptions> kRangeOptions {
+  // No range partitioning
+  RangePartitionOptions { {}, {}, {} },
+  // RANGE (c0)
+  RangePartitionOptions { { "c0" }, { }, { } },
+  // RANGE (c0) SPLIT ROWS (500)
+  RangePartitionOptions { { "c0" }, { { 500 } }, { } },
+  // RANGE (c2, c1) SPLIT ROWS (500, 0), (500, 500), (1000, 0)
+  RangePartitionOptions { { "c2", "c1" }, { { 500, 0 }, { 500, 500 }, { 1000, 0 } }, { } },
+  // RANGE (c0) BOUNDS ((0), (500)), ((500), (1000))
+  RangePartitionOptions { { "c0" }, { }, { { { 0 }, { 500 } }, { { 500 }, { 1000 } } } },
+  // RANGE (c0) SPLIT ROWS (500) BOUNDS ((0), (1000))
+  RangePartitionOptions { { "c0" }, { }, { { { 0 }, { 500 } }, { { 500 }, { 1000 } } } },
+  // RANGE (c0, c1) SPLIT ROWS (500), (2001), (2500), (2999)
+  //                BOUNDS ((0), (1000)), ((2000), (3000))
+   RangePartitionOptions{ { "c0", "c1" }, { { 500 }, { 2001 }, { 2500 }, { 2999 } },
+                          { { { 0 }, { 1000 } }, { { 2000 }, { 3000 } } } },
+};
 
-  for (const auto& hash_option : hash_options) {
-    for (const auto& range_option: range_options) {
-      SCOPED_TRACE(PartitionOptionsToString(hash_option, range_option));
-      NO_FATALS(TestPartitionOptions(hash_option, range_option));
-    }
-  }
+// Instantiate all combinations of hash options and range options.
+INSTANTIATE_TEST_CASE_P(Shards, FlexPartitioningITest,
+                        testing::Combine(
+                            testing::ValuesIn(kHashOptions),
+                            testing::ValuesIn(kRangeOptions)));
+
+TEST_P(FlexPartitioningITest, TestFlexPartitioning) {
+  const auto& hash_option = std::get<0>(GetParam());
+  const auto& range_option = std::get<1>(GetParam());
+  NO_FATALS(TestPartitionOptions(hash_option, range_option));
 }
 } // namespace itest
 } // namespace kudu
+
+// Define a gtest printer overload so that the test output clearly identifies the test case that
+// failed.
+namespace testing {
+template <>
+std::string PrintToString<kudu::itest::TestParamType>(const kudu::itest::TestParamType& param) {
+  const auto& hash_option = std::get<0>(param);
+  const auto& range_option = std::get<1>(param);
+  return kudu::itest::PartitionOptionsToString(hash_option, range_option);
+}
+} // namespace testing
