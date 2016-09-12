@@ -1775,8 +1775,11 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     TabletClient old;
+    ArrayList<RemoteTablet> tablets = null;
     synchronized (ip2client) {
-      old = ip2client.remove(hostport);
+      if ((old = ip2client.remove(hostport)) != null) {
+        tablets = client2tablets.remove(client);
+      }
     }
     LOG.debug("Removed from IP cache: {" + hostport + "} -> {" + client + "}");
     if (old == null) {
@@ -1788,28 +1791,17 @@ public class AsyncKuduClient implements AutoCloseable {
           + hostport + "), it was found that there was no entry"
           + " corresponding to " + remote + ".  This shouldn't happen.");
     } else {
-      removeClient(old);
-    }
-  }
-
-  /**
-   * Remove all references to a client from client2tablets and from the remoteTablets
-   * that reference it.
-   * @param client tablet client to remove
-   */
-  void removeClient(final TabletClient client) {
-    ArrayList<RemoteTablet> tablets = client2tablets.get(client);
-    if (tablets != null) {
-      // Make a copy so we don't need to synchronize on it while iterating.
-      RemoteTablet[] tablets_copy;
-      synchronized (tablets) {
-        tablets_copy = tablets.toArray(new RemoteTablet[tablets.size()]);
-      }
-      for (final RemoteTablet remoteTablet : tablets_copy) {
-        remoteTablet.removeTabletClient(client);
+      if (tablets != null) {
+        // Make a copy so we don't need to synchronize on it while iterating.
+        RemoteTablet[] tablets_copy;
+        synchronized (tablets) {
+          tablets_copy = tablets.toArray(new RemoteTablet[tablets.size()]);
+        }
+        for (final RemoteTablet remoteTablet : tablets_copy) {
+          remoteTablet.removeTabletClient(client);
+        }
       }
     }
-    client2tablets.remove(client);
   }
 
   /**
