@@ -68,9 +68,7 @@ class TabletHistoryGcITest : public MiniClusterITestBase {
 // Check that attempts to scan prior to the ancient history mark fail.
 TEST_F(TabletHistoryGcITest, TestSnapshotScanBeforeAHM) {
   FLAGS_tablet_history_max_age_sec = 0;
-  // Set high scanner TTL, since this test opens scanners and then waits for some
-  // time before reading from them.
-  FLAGS_scanner_ttl_ms = 1000 * 60 * 60 * 24;
+
   NO_FATALS(StartCluster());
 
   // Create a tablet so we can scan it.
@@ -345,6 +343,10 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
                            Substitute("$0", FLAGS_test_num_rounds * 10));
 
   LOG(INFO) << "Running " << FLAGS_test_num_rounds << " rounds";
+
+  // Set high scanner TTL, since this test opens scanners and then waits for some
+  // time before reading from them.
+  FLAGS_scanner_ttl_ms = 1000 * 60 * 60 * 24;
 
   StartCluster(1); // Start MiniCluster with a single tablet server.
   TestWorkload workload(cluster_.get());
