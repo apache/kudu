@@ -28,14 +28,14 @@
 
 /// @brief Return the given status if it is not @c OK.
 #define KUDU_RETURN_NOT_OK(s) do { \
-    ::kudu::Status _s = (s); \
+    const ::kudu::Status& _s = (s);             \
     if (PREDICT_FALSE(!_s.ok())) return _s;     \
   } while (0);
 
 /// @brief Return the given status if it is not OK, but first clone it and
 ///   prepend the given message.
 #define KUDU_RETURN_NOT_OK_PREPEND(s, msg) do { \
-    ::kudu::Status _s = (s); \
+    const ::kudu::Status& _s = (s);                              \
     if (PREDICT_FALSE(!_s.ok())) return _s.CloneAndPrepend(msg); \
   } while (0);
 
@@ -43,13 +43,13 @@
 ///   The substitution for 'to_return' may reference the variable
 ///   @c s for the bad status.
 #define KUDU_RETURN_NOT_OK_RET(to_call, to_return) do { \
-    ::kudu::Status s = (to_call); \
+    const ::kudu::Status& s = (to_call);                \
     if (PREDICT_FALSE(!s.ok())) return (to_return);  \
   } while (0);
 
 /// @brief Emit a warning if @c to_call returns a bad status.
 #define KUDU_WARN_NOT_OK(to_call, warning_prefix) do { \
-    ::kudu::Status _s = (to_call); \
+    const ::kudu::Status& _s = (to_call);              \
     if (PREDICT_FALSE(!_s.ok())) { \
       KUDU_LOG(WARNING) << (warning_prefix) << ": " << _s.ToString();  \
     } \
@@ -57,7 +57,7 @@
 
 /// @brief Log the given status and return immediately.
 #define KUDU_LOG_AND_RETURN(level, status) do { \
-    ::kudu::Status _s = (status); \
+    const ::kudu::Status& _s = (status);        \
     KUDU_LOG(level) << _s.ToString(); \
     return _s; \
   } while (0);
@@ -65,8 +65,8 @@
 /// @brief If @c to_call returns a bad status, CHECK immediately with
 ///   a logged message of @c msg followed by the status.
 #define KUDU_CHECK_OK_PREPEND(to_call, msg) do { \
-  ::kudu::Status _s = (to_call); \
-  KUDU_CHECK(_s.ok()) << (msg) << ": " << _s.ToString(); \
+    const ::kudu::Status& _s = (to_call);                   \
+    KUDU_CHECK(_s.ok()) << (msg) << ": " << _s.ToString();  \
   } while (0);
 
 /// @brief If the status is bad, CHECK immediately, appending the status to the
