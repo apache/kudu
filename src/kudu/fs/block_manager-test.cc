@@ -111,8 +111,6 @@ class BlockManagerTest : public KuduTest {
                             const shared_ptr<MemTracker>& parent_mem_tracker,
                             const vector<string>& paths,
                             bool create) {
-    // Blow away old memtrackers first.
-    bm_.reset();
     bm_.reset(CreateBlockManager(metric_entity, parent_mem_tracker, paths));
     if (create) {
       RETURN_NOT_OK(bm_->Create());

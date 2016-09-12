@@ -74,9 +74,6 @@ class LogCacheTest : public KuduTest {
   }
 
   void CloseAndReopenCache(const OpId& preceding_id) {
-    // Blow away the memtrackers before creating the new cache.
-    cache_.reset();
-
     cache_.reset(new LogCache(metric_entity_,
                               log_.get(),
                               kPeerUuid,
@@ -271,6 +268,11 @@ TEST_F(LogCacheTest, TestMemoryLimit) {
 }
 
 TEST_F(LogCacheTest, TestGlobalMemoryLimit) {
+  // Need to force the global cache memtracker to be destroyed before calling
+  // CloseAndreopenCache(), otherwise it'll just be reused instead of recreated
+  // with a new limit.
+  cache_.reset();
+
   FLAGS_global_log_cache_size_limit_mb = 4;
   CloseAndReopenCache(MinimumOpId());
 
@@ -292,7 +294,7 @@ TEST_F(LogCacheTest, TestGlobalMemoryLimit) {
 // consumption wasn't properly managed when messages were replaced.
 TEST_F(LogCacheTest, TestReplaceMessages) {
   const int kPayloadSize = 128 * 1024;
-  shared_ptr<MemTracker> tracker = cache_->tracker_;;
+  shared_ptr<MemTracker> tracker = cache_->tracker_;
   ASSERT_EQ(0, tracker->consumption());
 
   ASSERT_OK(AppendReplicateMessagesToCache(1, 1, kPayloadSize));

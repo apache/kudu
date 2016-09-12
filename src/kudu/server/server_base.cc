@@ -120,7 +120,6 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
 
 ServerBase::~ServerBase() {
   Shutdown();
-  mem_tracker_->UnregisterFromParent();
 }
 
 Sockaddr ServerBase::first_rpc_address() const {

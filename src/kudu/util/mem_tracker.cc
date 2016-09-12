@@ -188,16 +188,12 @@ MemTracker::~MemTracker() {
     DCHECK(consumption() == 0) << "Memory tracker " << ToString()
         << " has unreleased consumption " << consumption();
     parent_->Release(consumption());
-    UnregisterFromParent();
-  }
-}
 
-void MemTracker::UnregisterFromParent() {
-  DCHECK(parent_);
-  MutexLock l(parent_->child_trackers_lock_);
-  if (child_tracker_it_ != parent_->child_trackers_.end()) {
-    parent_->child_trackers_.erase(child_tracker_it_);
-    child_tracker_it_ = parent_->child_trackers_.end();
+    MutexLock l(parent_->child_trackers_lock_);
+    if (child_tracker_it_ != parent_->child_trackers_.end()) {
+      parent_->child_trackers_.erase(child_tracker_it_);
+      child_tracker_it_ = parent_->child_trackers_.end();
+    }
   }
 }
 
@@ -227,12 +223,22 @@ bool MemTracker::FindTrackerUnlocked(const string& id,
                                      const shared_ptr<MemTracker>& parent) {
   DCHECK(parent != NULL);
   parent->child_trackers_lock_.AssertAcquired();
+  vector<shared_ptr<MemTracker>> found;
   for (const auto& child_weak : parent->child_trackers_) {
     shared_ptr<MemTracker> child = child_weak.lock();
     if (child && child->id() == id) {
-      *tracker = std::move(child);
-      return true;
+      found.emplace_back(std::move(child));
     }
+  }
+  if (PREDICT_TRUE(found.size() == 1)) {
+    *tracker = found[0];
+    return true;
+  } else if (found.size() > 1) {
+    LOG(DFATAL) <<
+        Substitute("Multiple memtrackers with same id ($0) found on parent $1",
+                   id, parent->ToString());
+    *tracker = found[0];
+    return true;
   }
   return false;
 }
@@ -551,12 +557,6 @@ void MemTracker::Init() {
 
 void MemTracker::AddChildTrackerUnlocked(const shared_ptr<MemTracker>& tracker) {
   child_trackers_lock_.AssertAcquired();
-#ifndef NDEBUG
-  shared_ptr<MemTracker> found;
-  CHECK(!FindTrackerUnlocked(tracker->id(), &found, shared_from_this()))
-    << Substitute("Duplicate memory tracker (id $0) on parent $1",
-                  tracker->id(), ToString());
-#endif
   tracker->child_tracker_it_ = child_trackers_.insert(child_trackers_.end(), tracker);
 }
 

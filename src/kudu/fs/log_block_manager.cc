@@ -1147,7 +1147,6 @@ LogBlockManager::~LogBlockManager() {
   STLDeleteElements(&all_containers_);
   STLDeleteValues(&thread_pools_by_root_path_);
   STLDeleteValues(&instances_by_root_path_);
-  mem_tracker_->UnregisterFromParent();
 }
 
 static const char kHolePunchErrorMsg[] =

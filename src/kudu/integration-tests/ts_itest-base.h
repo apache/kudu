@@ -441,10 +441,6 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
              .schema(&client_schema)
              .set_range_partition_columns({ "key" })
              .num_replicas(FLAGS_num_replicas)
-             // NOTE: this is quite high as a timeout, but the default (5 sec) does not
-             // seem to be high enough in some cases (see KUDU-550). We should remove
-             // this once that ticket is addressed.
-             .timeout(MonoDelta::FromSeconds(20))
              .Create());
     ASSERT_OK(client_->OpenTable(kTableId, &table_));
   }

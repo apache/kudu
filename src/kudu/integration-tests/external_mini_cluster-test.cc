@@ -15,13 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
-#include <gtest/gtest.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <vector>
+
+#include <string>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/metrics.h"
@@ -33,24 +36,18 @@ METRIC_DECLARE_gauge_uint64(threads_running);
 
 namespace kudu {
 
-class EMCTest : public KuduTest {
- public:
-  EMCTest() {
-    // Hard-coded RPC ports for the masters. This is safe, as this unit test
-    // runs under a resource lock (see CMakeLists.txt in this directory).
-    // TODO we should have a generic method to obtain n free ports.
-    master_peer_ports_ = { 11010, 11011, 11012 };
-  }
+using std::string;
+using strings::Substitute;
 
- protected:
-  std::vector<uint16_t> master_peer_ports_;
-};
-
-TEST_F(EMCTest, TestBasicOperation) {
+TEST_F(KuduTest, TestBasicOperation) {
   ExternalMiniClusterOptions opts;
-  opts.num_masters = master_peer_ports_.size();
+
+  // Hard-coded RPC ports for the masters. This is safe, as this unit test
+  // runs under a resource lock (see CMakeLists.txt in this directory).
+  // TODO we should have a generic method to obtain n free ports.
+  opts.master_rpc_ports = { 11010, 11011, 11012 };
+  opts.num_masters = opts.master_rpc_ports.size();
   opts.num_tablet_servers = 3;
-  opts.master_rpc_ports = master_peer_ports_;
 
   ExternalMiniCluster cluster(opts);
   ASSERT_OK(cluster.Start());
@@ -80,7 +77,7 @@ TEST_F(EMCTest, TestBasicOperation) {
     SCOPED_TRACE(i);
     ExternalTabletServer* ts = CHECK_NOTNULL(cluster.tablet_server(i));
     HostPort ts_rpc = ts->bound_rpc_hostport();
-    string expected_prefix = strings::Substitute("$0:", cluster.GetBindIpForTabletServer(i));
+    string expected_prefix = Substitute("$0:", cluster.GetBindIpForTabletServer(i));
     EXPECT_NE(expected_prefix, "127.0.0.1") << "Should bind to unique per-server hosts";
     EXPECT_TRUE(HasPrefixString(ts_rpc.ToString(), expected_prefix)) << ts_rpc.ToString();
 

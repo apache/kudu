@@ -290,11 +290,16 @@ class PeriodicWebUIChecker {
     master_pages.push_back("/tables");
     master_pages.push_back("/dump-entities");
     master_pages.push_back("/tablet-servers");
+    master_pages.push_back("/mem-trackers");
 
     ts_pages.push_back("/metrics");
     ts_pages.push_back("/tablets");
-    ts_pages.push_back(strings::Substitute("/transactions?tablet_id=$0", tablet_id));
+    if (!tablet_id.empty()) {
+      ts_pages.push_back(strings::Substitute("/transactions?tablet_id=$0",
+                                             tablet_id));
+    }
     ts_pages.push_back("/maintenance-manager");
+    ts_pages.push_back("/mem-trackers");
 
     // Generate list of urls for each master and tablet server
     for (int i = 0; i < cluster.num_masters(); i++) {
