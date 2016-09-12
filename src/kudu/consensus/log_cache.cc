@@ -104,10 +104,6 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
 LogCache::~LogCache() {
   tracker_->Release(tracker_->consumption());
   cache_.clear();
-
-  // Don't need to unregister parent_tracker_ because it is reused in each
-  // LogCache, not duplicated.
-  tracker_->UnregisterFromParent();
 }
 
 void LogCache::Init(const OpId& preceding_op) {

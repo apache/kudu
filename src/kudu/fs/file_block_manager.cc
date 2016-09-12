@@ -522,7 +522,6 @@ FileBlockManager::FileBlockManager(Env* env, const BlockManagerOptions& opts)
 
 FileBlockManager::~FileBlockManager() {
   STLDeleteValues(&root_paths_by_idx_);
-  mem_tracker_->UnregisterFromParent();
 }
 
 Status FileBlockManager::Create() {

@@ -49,9 +49,6 @@ class FsManagerTestBase : public KuduTest {
   }
 
   void ReinitFsManager(const string& wal_path, const vector<string>& data_paths) {
-    // Blow away the old memtrackers first.
-    fs_manager_.reset();
-
     FsManagerOpts opts;
     opts.wal_path = wal_path;
     opts.data_paths = data_paths;

@@ -105,7 +105,6 @@ MemRowSet::MemRowSet(int64_t id,
 }
 
 MemRowSet::~MemRowSet() {
-  mem_tracker_->UnregisterFromParent();
 }
 
 Status MemRowSet::DebugDump(vector<string> *lines) {

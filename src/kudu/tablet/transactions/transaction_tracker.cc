@@ -88,9 +88,6 @@ TransactionTracker::TransactionTracker() {
 TransactionTracker::~TransactionTracker() {
   std::lock_guard<simple_spinlock> l(lock_);
   CHECK_EQ(pending_txns_.size(), 0);
-  if (mem_tracker_) {
-    mem_tracker_->UnregisterFromParent();
-  }
 }
 
 Status TransactionTracker::Add(TransactionDriver* driver) {

@@ -204,10 +204,6 @@ void TestWorkload::Setup() {
              .num_replicas(num_replicas_)
              .set_range_partition_columns({ "key" })
              .split_rows(splits)
-             // NOTE: this is quite high as a timeout, but the default (5 sec) does not
-             // seem to be high enough in some cases (see KUDU-550). We should remove
-             // this once that ticket is addressed.
-             .timeout(MonoDelta::FromSeconds(20))
              .Create());
   } else {
     LOG(INFO) << "TestWorkload: Skipping table creation because table "

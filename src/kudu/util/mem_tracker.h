@@ -44,16 +44,16 @@ class MemTracker;
 // ancestor to all MemTrackers. All operations that discover MemTrackers begin
 // at the root and work their way down the tree, while operations that deal
 // with adjusting memory consumption begin at a particular MemTracker and work
-// their way up the tree to the root. The tree structure is strictly enforced:
-// all MemTrackers (except the root) must have a parent, and all children
-// belonging to a parent must have unique ids.
+// their way up the tree to the root. All MemTrackers (except the root) must
+// have a parent. As a rule, all children belonging to a parent should have
+// unique ids, but this is only enforced during a Find() operation to allow for
+// transient duplicates (e.g. the web UI grabbing very short-lived references
+// to all MemTrackers while rendering a web page). This also means id
+// uniqueness only exists where it's actually needed.
 //
 // When a MemTracker begins its life, it has a strong reference to its parent
-// and the parent has a weak reference to it. The strong reference remains for
-// the lifetime of the MemTracker, but the weak reference can be dropped via
-// UnregisterFromParent(). A MemTracker in this state may continue servicing
-// memory consumption operations while allowing a new MemTracker with the same
-// id to be created on the old parent.
+// and the parent has a weak reference to it. Both remain for the lifetime of
+// the MemTracker.
 //
 // By default, memory consumption is tracked via calls to Consume()/Release(), either to
 // the tracker itself or to one of its descendents. Alternatively, a consumption function
@@ -95,35 +95,24 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
 
   ~MemTracker();
 
-  // Removes this tracker from its parent's children. This tracker retains its
-  // link to its parent. Must be called on a tracker with a parent.
-  //
-  // Automatically called in the MemTracker destructor, but should be called
-  // explicitly when an object is destroyed if that object is also the "primary
-  // owner" of a tracker (i.e. the object that originally created the tracker).
-  // This orphans the tracker so that if the object is recreated, its new
-  // tracker won't collide with the now orphaned tracker.
-  //
-  // Is thread-safe on the parent but not the child. Meaning, multiple trackers
-  // that share the same parent can all UnregisterFromParent() at the same
-  // time, but all UnregisterFromParent() calls on a given tracker must be
-  // externally synchronized.
-  void UnregisterFromParent();
-
   // Creates and adds the tracker to the tree so that it can be retrieved with
   // FindTracker/FindOrCreateTracker.
   //
   // byte_limit < 0 means no limit; 'id' is a used as a label for LogUsage()
-  // and web UI and must be unique for the given parent. Use the two-argument
-  // form if there is no parent.
+  // and web UI. Use the two-argument form if there is no parent.
   static std::shared_ptr<MemTracker> CreateTracker(
       int64_t byte_limit,
       const std::string& id,
       const std::shared_ptr<MemTracker>& parent = std::shared_ptr<MemTracker>());
 
   // If a tracker with the specified 'id' and 'parent' exists in the tree, sets
-  // 'tracker' to reference that instance. Use the two-argument form if there
-  // is no parent. Returns false if no such tracker exists.
+  // 'tracker' to reference that instance. Returns false if no such tracker
+  // exists.
+  //
+  // Use the two-argument form if there is no parent.
+  //
+  // Note: this function will enforce that 'id' is unique amongst the children
+  // of 'parent'.
   static bool FindTracker(
       const std::string& id,
       std::shared_ptr<MemTracker>* tracker,
@@ -131,8 +120,12 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
 
   // If a tracker with the specified 'id' and 'parent' exists in the tree,
   // returns a shared_ptr to that instance. Otherwise, creates a new
-  // MemTracker with the specified byte_limit, id, and parent. Use the two
-  // argument form if there is no parent.
+  // MemTracker with the specified byte_limit, id, and parent.
+  //
+  // Use the two argument form if there is no parent.
+  //
+  // Note: this function will enforce that 'id' is unique amongst the children
+  // of 'parent'.
   static std::shared_ptr<MemTracker> FindOrCreateTracker(
       int64_t byte_limit,
       const std::string& id,
@@ -228,8 +221,8 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
     log_stack_ = log_stack;
   }
 
-  // Returns a textual representation of the tracker that is guaranteed to be
-  // globally unique.
+  // Returns a textual representation of the tracker that is likely (but not
+  // guaranteed) to be globally unique.
   std::string ToString() const;
 
  private:

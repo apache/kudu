@@ -309,34 +309,37 @@ TEST(MemTrackerTest, TcMallocRootTracker) {
 }
 #endif
 
-TEST(MemTrackerTest, UnregisterFromParent) {
+TEST(MemTrackerTest, CollisionDetection) {
   shared_ptr<MemTracker> p = MemTracker::CreateTracker(-1, "parent");
   shared_ptr<MemTracker> c = MemTracker::CreateTracker(-1, "child", p);
-  vector<shared_ptr<MemTracker> > all;
+  vector<shared_ptr<MemTracker>> all;
 
   // Three trackers: root, parent, and child.
   MemTracker::ListTrackers(&all);
   ASSERT_EQ(3, all.size());
 
-  c->UnregisterFromParent();
-
-  // Now only two because the child cannot be found from the root, though it is
-  // still alive.
+  // Now only two because the child has been destroyed.
+  c.reset();
   MemTracker::ListTrackers(&all);
   ASSERT_EQ(2, all.size());
   shared_ptr<MemTracker> not_found;
   ASSERT_FALSE(MemTracker::FindTracker("child", &not_found, p));
 
-  // We can also recreate the child with the same name without colliding
-  // with the old one.
-  shared_ptr<MemTracker> c2 = MemTracker::CreateTracker(-1, "child", p);
+  // Let's duplicate the parent. It's not recommended, but it's allowed.
+  shared_ptr<MemTracker> p2 = MemTracker::CreateTracker(-1, "parent");
+  ASSERT_EQ(p->ToString(), p2->ToString());
 
-  // We should still able to walk up to the root from the unregistered child
-  // without crashing.
-  LOG(INFO) << c->ToString();
-
-  // And this should no-op.
-  c->UnregisterFromParent();
+  // Only when we do a Find() operation do we crash.
+#ifndef NDEBUG
+  const string kDeathMsg = "Multiple memtrackers with same id";
+  EXPECT_DEATH({
+    shared_ptr<MemTracker> found;
+    MemTracker::FindTracker("parent", &found);
+  }, kDeathMsg);
+  EXPECT_DEATH({
+    MemTracker::FindOrCreateTracker(-1, "parent");
+  }, kDeathMsg);
+#endif
 }
 
 TEST(MemTrackerTest, TestMultiThreadedRegisterAndDestroy) {
