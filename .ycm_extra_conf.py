@@ -34,41 +34,15 @@
 # This file is based on the example configuration file from YouCompleteMe.
 
 import os
+import sys
 import ycm_core
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "build-support"))
+from compile_flags import get_flags
 
 # These are the compilation flags that will be used in case there's no
 # compilation database set (by default, one is not set).
-# CHANGE THIS LIST OF FLAGS. YES, THIS IS THE DROID YOU HAVE BEEN LOOKING FOR.
-flags = [
-'-x',
-'c++',
-'-DKUDU_HEADERS_NO_STUBS=1',
-'-DKUDU_HEADERS_USE_RICH_SLICE=1',
-'-DKUDU_HEADERS_USE_SHORT_STATUS_MACROS=1',
-'-DKUDU_STATIC_DEFINE',
-'-Dintegration_tests_EXPORTS',
-'-D__STDC_FORMAT_MACROS',
-'-fno-strict-aliasing',
-'-msse4.2',
-'-Wall',
-'-Wno-sign-compare',
-'-Wno-deprecated',
-'-pthread',
-'-ggdb',
-'-Qunused-arguments',
-'-Wno-ambiguous-member-template',
-'-std=c++11',
-'-g',
-'-fPIC',
-'-I',
-'src',
-'-I',
-'build/latest/src',
-'-isystem',
-'thirdparty/installed/common/include',
-'-isystem',
-'thirdparty/installed/uninstrumented/include',
-]
+flags = get_flags()
 
 # Set this to the absolute path to the folder (NOT the file!) containing the
 # compile_commands.json file to use that instead of 'flags'. See here for

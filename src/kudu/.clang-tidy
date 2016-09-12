@@ -14,6 +14,5 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
----
-Checks:          '-*,clang-diagnostic-*,-clang-diagnostic-unused-const-variable,readability-*,-readability-implicit-bool-cast,-readability-braces-around-statements,-readability-redundant-string-init,-readability-inconsistent-declaration-parameter-name,performance-*,google-*,-google-readability-todo,-google-readability-braces-around-statements,misc-*,-misc-unused-parameters'
+Checks:          'clang-diagnostic-*,clang-analyzer-*,-clang-analyzer-alpha*,-*,readability-*,-readability-braces-around-statements,llvm-include-order,misc-*,-modernize-*,performance-*,-readability-implicit-bool-cast,google-*,-google-readability-braces-around-statements,-readability-redundant-string-init'
 HeaderFilterRegex: '.*,-*.pb.h'
