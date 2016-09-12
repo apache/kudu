@@ -159,8 +159,9 @@ space immediately.
   or dropped after a table has been created. See
   link:schema_design.html[Schema Design] for more information.
 
-* Tablets cannot currently be merged. Instead, create a new table with the contents
-  of the old tables to be merged.
+* Data in existing tables cannot currently be automatically repartitioned. As a workaround,
+  create a new table with the new partitioning and insert the contents of the old
+  table.
 
 === Replication and Backup Limitations
 * Kudu does not currently include any built-in features for backup and restore.
