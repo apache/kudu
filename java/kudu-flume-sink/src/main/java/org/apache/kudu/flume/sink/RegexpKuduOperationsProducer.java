@@ -263,7 +263,7 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
       case DOUBLE:
         row.addDouble(colName, Double.parseDouble(rawVal));
         break;
-      case TIMESTAMP:
+      case UNIXTIME_MICROS:
         row.addLong(colName, Long.parseLong(rawVal));
         break;
       default:
