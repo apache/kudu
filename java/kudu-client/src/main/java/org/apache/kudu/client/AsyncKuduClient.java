@@ -167,8 +167,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * Maps a client connected to a TabletServer to the list of tablets we know
    * it's serving so far.
    */
-  @VisibleForTesting
-  final ConcurrentHashMap<TabletClient, ArrayList<RemoteTablet>> client2tablets =
+  private final ConcurrentHashMap<TabletClient, ArrayList<RemoteTablet>> client2tablets =
       new ConcurrentHashMap<>();
 
   /**
@@ -1529,8 +1528,7 @@ public class AsyncKuduClient implements AutoCloseable {
       final TabletClientPipeline pipeline = new TabletClientPipeline();
       client = pipeline.init(uuid, host, port);
       chan = channelFactory.newChannel(pipeline);
-      TabletClient oldClient = ip2client.put(hostport, client);
-      assert oldClient == null;
+      ip2client.put(hostport, client);  // This is guaranteed to return null.
 
       // The client2tables map is assumed to contain `client` after it is published in ip2client.
       this.client2tablets.put(client, new ArrayList<RemoteTablet>());
@@ -1787,29 +1785,7 @@ public class AsyncKuduClient implements AutoCloseable {
       LOG.trace("When expiring " + client + " from the client cache (host:port="
           + hostport + "), it was found that there was no entry"
           + " corresponding to " + remote + ".  This shouldn't happen.");
-    } else {
-      removeClient(old);
     }
-  }
-
-  /**
-   * Remove all references to a client from client2tablets and from the remoteTablets
-   * that reference it.
-   * @param client tablet client to remove
-   */
-  void removeClient(final TabletClient client) {
-    ArrayList<RemoteTablet> tablets = client2tablets.get(client);
-    if (tablets != null) {
-      // Make a copy so we don't need to synchronize on it while iterating.
-      RemoteTablet[] tablets_copy;
-      synchronized (tablets) {
-        tablets_copy = tablets.toArray(new RemoteTablet[tablets.size()]);
-      }
-      for (final RemoteTablet remoteTablet : tablets_copy) {
-        remoteTablet.removeTabletClient(client);
-      }
-    }
-    client2tablets.remove(client);
   }
 
   /**

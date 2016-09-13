@@ -172,49 +172,6 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     }
   }
 
-  /**
-   * Regression test for a bug in which, when a tablet client is disconnected
-   * and we reconnect, we were previously leaking the old TabletClient
-   * object in the client2tablets map.
-   */
-  @Test(timeout = 100000)
-  public void testRestartBetweenWrites() throws Exception {
-    // Create a non-replicated table for this test, so that
-    // we're sure when we reconnect to the leader after restarting
-    // the tablet servers, it's definitely the same leader we wrote
-    // to before.
-    KuduTable nonReplicatedTable = createTable(
-        "non-replicated",
-        basicSchema,
-        getBasicCreateTableOptions().setNumReplicas(1));
-
-    try {
-      // Write before doing any restarts to establish a connection.
-      AsyncKuduSession session = client.newSession();
-      session.setTimeoutMillis(30000);
-      session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
-      session.apply(createBasicSchemaInsert(nonReplicatedTable, 1)).join();
-
-      int numClientsBefore = client.client2tablets.size();
-
-      // Restart all the tablet servers.
-      killTabletServers();
-      restartTabletServers();
-
-      // Perform another write, which will require reconnecting to the same
-      // tablet server that we wrote to above.
-      session.apply(createBasicSchemaInsert(nonReplicatedTable, 2)).join();
-
-      // We should not have leaked an entry in the client2tablets map.
-      int numClientsAfter = client.client2tablets.size();
-      assertEquals(numClientsBefore, numClientsAfter);
-    } finally {
-      restartTabletServers();
-
-      client.deleteTable("non-replicated").join();
-    }
-  }
-
   @Test(timeout = 100000)
   public void test() throws Exception {
 
