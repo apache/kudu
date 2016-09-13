@@ -117,11 +117,6 @@ public class TestKuduTable extends BaseKuduTest {
   private void submitAlterAndCheck(AlterTableOptions ato,
                                          String tableToAlter, String tableToCheck) throws
       Exception {
-    if (masterHostPorts.size() > 1) {
-      LOG.info("Alter table is not yet supported with multiple masters. Specify " +
-          "-DnumMasters=1 on the command line to start a single-master cluster to run this test.");
-      return;
-    }
     AlterTableResponse alterResponse = syncClient.alterTable(tableToAlter, ato);
     boolean done  = syncClient.isAlterTableDone(tableToCheck);
     assertTrue(done);
