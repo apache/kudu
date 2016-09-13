@@ -117,7 +117,11 @@ class TestWorkload {
     // kNumRowsForDuplicateKeyWorkload unique keys. This ensures that,
     // after a very short initial warm-up period, all inserts fail with
     // duplicate keys.
-    INSERT_WITH_MANY_DUP_KEYS
+    INSERT_WITH_MANY_DUP_KEYS,
+
+    // Insert sequential rows.
+    // This causes flushes but no compactions.
+    INSERT_SEQUENTIAL_ROWS
   };
 
   void set_write_pattern(WritePattern pattern) {
@@ -176,6 +180,7 @@ class TestWorkload {
   AtomicBool should_run_;
   AtomicInt<int64_t> rows_inserted_;
   AtomicInt<int64_t> batches_completed_;
+  AtomicInt<int32_t> sequential_key_gen_;
 
   std::vector<scoped_refptr<Thread> > threads_;
 

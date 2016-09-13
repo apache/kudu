@@ -218,10 +218,10 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                       copy_peer_uuid));
     }
 
-    // This will flush to disk, but we set the data state to COPYING above.
-    RETURN_NOT_OK_PREPEND(meta_->ReplaceSuperBlock(*superblock_),
-                          "Tablet Copy unable to replace superblock on tablet " +
-                          tablet_id_);
+    // Remove any existing orphaned blocks from the tablet, and
+    // set the data state to 'COPYING'.
+    RETURN_NOT_OK_PREPEND(meta_->DeleteTabletData(tablet::TABLET_DATA_COPYING, boost::none),
+                          "Couldn't replace superblock with COPYING data state");
   } else {
 
     Partition partition;

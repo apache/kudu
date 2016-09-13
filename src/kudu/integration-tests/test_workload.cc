@@ -65,7 +65,8 @@ TestWorkload::TestWorkload(MiniClusterBase* cluster)
     start_latch_(0),
     should_run_(false),
     rows_inserted_(0),
-    batches_completed_(0) {
+    batches_completed_(0),
+    sequential_key_gen_(0) {
 }
 
 TestWorkload::~TestWorkload() {
@@ -115,9 +116,14 @@ void TestWorkload::WriteThread() {
       } else {
         gscoped_ptr<KuduInsert> insert(table->NewInsert());
         KuduPartialRow* row = insert->mutable_row();
-        int32_t key = r.Next();
-        if (write_pattern_ == INSERT_WITH_MANY_DUP_KEYS) {
-          key %= kNumRowsForDuplicateKeyWorkload;
+        int32_t key;
+        if (write_pattern_ == INSERT_SEQUENTIAL_ROWS) {
+          key = sequential_key_gen_.Increment();
+        } else {
+          key = r.Next();
+          if (write_pattern_ == INSERT_WITH_MANY_DUP_KEYS) {
+            key %= kNumRowsForDuplicateKeyWorkload;
+          }
         }
         CHECK_OK(row->SetInt32(0, key));
         CHECK_OK(row->SetInt32(1, r.Next()));

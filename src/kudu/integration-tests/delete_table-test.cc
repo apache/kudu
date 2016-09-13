@@ -413,66 +413,151 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
 }
 
 // Test that a tablet replica is automatically tombstoned on startup if a local
-// crash occurs in the middle of Tablet Copy.
+// crash occurs in the middle of Tablet Copy. Additionally acts as a regression
+// test for KUDU-1605.
 TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
-  NO_FATALS(StartCluster());
+  // Set up flags to flush frequently, so that we get data on disk.
+  vector<string> ts_flags = {
+    "--flush_threshold_mb=0",
+    "--maintenance_manager_polling_interval_ms=100"
+  };
+  NO_FATALS(StartCluster(ts_flags));
   const MonoDelta timeout = MonoDelta::FromSeconds(10);
   const int kTsIndex = 0; // We'll test with the first TS.
 
-  // We'll do a config change to Tablet Copy a replica here later. For
-  // now, shut it down.
-  LOG(INFO) << "Shutting down TS " << cluster_->tablet_server(kTsIndex)->uuid();
-  cluster_->tablet_server(kTsIndex)->Shutdown();
-
-  // Bounce the Master so it gets new tablet reports and doesn't try to assign
-  // a replica to the dead TS.
-  cluster_->master()->Shutdown();
-  ASSERT_OK(cluster_->master()->Restart());
-  cluster_->WaitForTabletServerCount(2, timeout);
-
-  // Start a workload on the cluster, and run it for a little while.
-  TestWorkload workload(cluster_.get());
-  workload.set_num_replicas(2);
-  workload.Setup();
-  ASSERT_OK(inspect_->WaitForReplicaCount(2));
-
-  workload.Start();
-  while (workload.rows_inserted() < 100) {
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-  workload.StopAndJoin();
-
-  // Enable a fault crash when Tablet Copy occurs on TS 0.
-  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
-  const string& kFaultFlag = "fault_crash_after_tc_files_fetched";
-  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex), kFaultFlag, "1.0"));
-
-  // Figure out the tablet id to Tablet Copy.
-  vector<string> tablets = inspect_->ListTabletsOnTS(1);
-  ASSERT_EQ(1, tablets.size());
-  const string& tablet_id = tablets[0];
-
-  // Add our TS 0 to the config and wait for it to crash.
-  string leader_uuid = GetLeaderUUID(cluster_->tablet_server(1)->uuid(), tablet_id);
-  TServerDetails* leader = DCHECK_NOTNULL(ts_map_[leader_uuid]);
-  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
-  ASSERT_OK(itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, boost::none, timeout));
-  NO_FATALS(WaitForTSToCrash(kTsIndex));
-
-  // The superblock should be in TABLET_DATA_COPYING state on disk.
-  NO_FATALS(inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, { TABLET_DATA_COPYING }));
-
-  // Kill the other tablet servers so the leader doesn't try to Tablet Copy
-  // it again during our verification here.
+  // Shut down TS 1, 2, write some data to TS 0 alone.
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();
+  cluster_->master()->Shutdown();
+  ASSERT_OK(cluster_->master()->Restart());
+  ASSERT_OK(cluster_->WaitForTabletServerCount(1, MonoDelta::FromSeconds(30)));
 
-  // Now we restart the TS. It will clean up the failed Tablet Copy and
-  // convert it to TABLET_DATA_TOMBSTONED. It crashed, so we have to call
-  // Shutdown() then Restart() to bring it back up.
+  // Set up a table which has a table only on TS 0. This will be used to test for
+  // "collateral damage" bugs where incorrect handling of the main test tablet
+  // accidentally removes blocks from another tablet.
+  // We use a sequential workload so that we just flush and don't compact.
+  // Thus we use a contiguous set of block IDs starting with 1, with no "holes"
+  // from deleted blocks.
+  string unaffected_tablet_id;
+  TestWorkload unrepl_workload(cluster_.get());
+  {
+    unrepl_workload.set_num_replicas(1);
+    unrepl_workload.set_table_name("other-table");
+    unrepl_workload.set_num_write_threads(1);
+    unrepl_workload.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+    unrepl_workload.Setup();
+
+    // Figure out the tablet ID.
+    vector<string> tablets = inspect_->ListTabletsOnTS(kTsIndex);
+    ASSERT_EQ(1, tablets.size());
+    unaffected_tablet_id = tablets[0];
+
+    // Write rows until it has flushed a few times.
+    unrepl_workload.Start();
+    TabletSuperBlockPB sb;
+    while (sb.rowsets().size() < 3) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+      ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(kTsIndex, unaffected_tablet_id, &sb));
+    }
+    unrepl_workload.StopAndJoin();
+  }
+
+  // Restart the other two servers.
+  ASSERT_OK(cluster_->tablet_server(1)->Restart());
+  ASSERT_OK(cluster_->tablet_server(2)->Restart());
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+
+  // Create a new tablet which is replicated on the other two servers.
+  // We use the same sequential workload. This produces block ID sequences
+  // that look like:
+  //   TS 0: |---- blocks from 'other-table' ---]
+  //   TS 1: |---- blocks from default workload table ---]
+  //   TS 2: |---- blocks from default workload table ---]
+  // So, if we were to accidentally reuse or delete block IDs from TS 1 or TS 2 when
+  // copying a tablet to TS 0, we'd surely notice it!
+  string replicated_tablet_id;
+
+  TestWorkload repl_workload(cluster_.get());
+  {
+    repl_workload.set_num_replicas(2);
+    repl_workload.set_num_write_threads(1);
+    repl_workload.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+    repl_workload.Setup();
+    ASSERT_OK(inspect_->WaitForReplicaCount(3)); // 1 original plus 2 new replicas.
+
+    // Figure out the tablet id of the new table.
+    vector<string> tablets = inspect_->ListTabletsOnTS(1);
+    ASSERT_EQ(1, tablets.size());
+    replicated_tablet_id = tablets[0];
+
+    repl_workload.Start();
+    TabletSuperBlockPB sb;
+    while (sb.rowsets().size() < 3) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+      ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(1, replicated_tablet_id, &sb));
+    }
+    repl_workload.StopAndJoin();
+  }
+
+  // Enable a fault crash when Tablet Copy occurs on TS 0.
+  cluster_->tablet_server(kTsIndex)->mutable_flags()->push_back(
+      "--fault_crash_after_tc_files_fetched=1.0");
+
+  // Restart TS 0 and add it to the config. It will crash when tablet copy starts.
+  string leader_uuid = GetLeaderUUID(cluster_->tablet_server(1)->uuid(), replicated_tablet_id);
+  TServerDetails* leader = DCHECK_NOTNULL(ts_map_[leader_uuid]);
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+  ASSERT_OK(itest::AddServer(leader, replicated_tablet_id, ts, RaftPeerPB::VOTER,
+                             boost::none, timeout));
+  NO_FATALS(WaitForTSToCrash(kTsIndex));
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+
+  LOG(INFO) << "Test progress: crashed on first attempt to copy";
+
+  // The superblock should be in TABLET_DATA_COPYING state on disk.
+  NO_FATALS(inspect_->CheckTabletDataStateOnTS(kTsIndex, replicated_tablet_id,
+                                               { TABLET_DATA_COPYING }));
+
+  // Restart and let it crash one more time.
   cluster_->tablet_server(kTsIndex)->Shutdown();
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
-  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
+  NO_FATALS(WaitForTSToCrash(kTsIndex));
+  LOG(INFO) << "Test progress: crashed on second attempt to copy";
+
+  // Remove the fault flag and let it successfully copy the tablet.
+  cluster_->tablet_server(kTsIndex)->mutable_flags()->pop_back();
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
+
+  // Everything should be consistent now.
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(repl_workload.table_name(), ClusterVerifier::AT_LEAST,
+                            repl_workload.rows_inserted()));
+  NO_FATALS(v.CheckRowCount(unrepl_workload.table_name(), ClusterVerifier::AT_LEAST,
+                            unrepl_workload.rows_inserted()));
+
+  // Now we want to test the case where crashed while copying over a previously-tombstoned tablet.
+  // So, we first remove the server, causing it to get tombstoned.
+  ASSERT_OK(itest::RemoveServer(leader, replicated_tablet_id, ts, boost::none, timeout));
+  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, replicated_tablet_id, CMETA_EXPECTED));
+
+  // ... and then add it back, with the fault runtime-enabled.
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex),
+                              "fault_crash_after_tc_files_fetched", "1.0"));
+  ASSERT_OK(itest::AddServer(leader, replicated_tablet_id, ts, RaftPeerPB::VOTER,
+                             boost::none, timeout));
+  NO_FATALS(WaitForTSToCrash(kTsIndex));
+  LOG(INFO) << "Test progress: crashed on attempt to copy over tombstoned";
+
+  // Finally, crashing with no fault flags should fully recover again.
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(repl_workload.table_name(), ClusterVerifier::AT_LEAST,
+                            repl_workload.rows_inserted()));
+  NO_FATALS(v.CheckRowCount(unrepl_workload.table_name(), ClusterVerifier::AT_LEAST,
+                            unrepl_workload.rows_inserted()));
 }
 
 // Test that a tablet replica automatically tombstones itself if the remote

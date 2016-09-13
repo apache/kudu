@@ -153,7 +153,8 @@ void TabletMetadata::CollectBlockIdPBs(const TabletSuperBlockPB& superblock,
 Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
                                         const boost::optional<OpId>& last_logged_opid) {
   CHECK(delete_type == TABLET_DATA_DELETED ||
-        delete_type == TABLET_DATA_TOMBSTONED)
+        delete_type == TABLET_DATA_TOMBSTONED ||
+        delete_type == TABLET_DATA_COPYING)
       << "DeleteTabletData() called with unsupported delete_type on tablet "
       << tablet_id_ << ": " << TabletDataState_Name(delete_type)
       << " (" << delete_type << ")";

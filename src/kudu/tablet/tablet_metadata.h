@@ -173,7 +173,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // then delete all of the rowsets in this tablet.
   // The metadata (superblock) is not deleted. For that, call DeleteSuperBlock().
   //
-  // 'delete_type' must be one of TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED.
+  // 'delete_type' must be one of TABLET_DATA_DELETED, TABLET_DATA_TOMBSTONED,
+  // or TABLET_DATA_COPYING.
+  //
   // 'last_logged_opid' should be set to the last opid in the log, if any is known.
   // If 'last_logged_opid' is not set, then the current value of
   // last_logged_opid is not modified. This is important for roll-forward of

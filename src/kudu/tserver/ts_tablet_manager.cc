@@ -887,14 +887,15 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
       << "Unexpected TabletDataState in tablet " << tablet_id << ": "
       << TabletDataState_Name(data_state) << " (" << data_state << ")";
 
+  // Roll forward deletions, as needed.
+  LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Manager startup: Rolling forward tablet deletion "
+               << "of type " << TabletDataState_Name(data_state);
+
   if (data_state == TABLET_DATA_COPYING) {
     // We tombstone tablets that failed to copy.
     data_state = TABLET_DATA_TOMBSTONED;
   }
 
-  // Roll forward deletions, as needed.
-  LOG(INFO) << LogPrefix(tablet_id) << "Tablet Manager startup: Rolling forward tablet deletion "
-                                    << "of type " << TabletDataState_Name(data_state);
   // Passing no OpId will retain the last_logged_opid that was previously in the metadata.
   RETURN_NOT_OK(DeleteTabletData(meta, data_state, boost::none));
 
