@@ -232,7 +232,7 @@ class ReplicaState {
   // Aborts pending operations after, but not including 'index'. The OpId with 'index'
   // will become our new last received id. If there are pending operations with indexes
   // higher than 'index' those operations are aborted.
-  Status AbortOpsAfterUnlocked(int64_t index);
+  void AbortOpsAfterUnlocked(int64_t index);
 
   // Returns the the ConsensusRound with the provided index, if there is any, or NULL
   // if there isn't.

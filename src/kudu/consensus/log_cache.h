@@ -97,6 +97,15 @@ class LogCache {
   Status AppendOperations(const std::vector<ReplicateRefPtr>& msgs,
                           const StatusCallback& callback);
 
+  // Truncate any operations with index > 'index'.
+  //
+  // Following this, reads of truncated indexes using ReadOps(), LookupOpId(),
+  // HasOpBeenWritten(), etc, will return as if the operations were never appended.
+  //
+  // NOTE: unless a new operation is appended followig 'index', this truncation does
+  // not persist across server restarts.
+  void TruncateOpsAfter(int64_t index);
+
   // Return true if an operation with the given index has been written through
   // the cache. The operation may not necessarily be durable yet -- it could still be
   // en route to the log.
@@ -137,6 +146,7 @@ class LogCache {
   FRIEND_TEST(LogCacheTest, TestAppendAndGetMessages);
   FRIEND_TEST(LogCacheTest, TestGlobalMemoryLimit);
   FRIEND_TEST(LogCacheTest, TestReplaceMessages);
+  FRIEND_TEST(LogCacheTest, TestTruncation);
   friend class LogCacheTest;
 
   // Try to evict the oldest operations from the queue, stopping either when
@@ -147,6 +157,8 @@ class LogCache {
   // Update metrics and MemTracker to account for the removal of the
   // given message.
   void AccountForMessageRemovalUnlocked(const ReplicateRefPtr& msg);
+
+  void TruncateOpsAfterUnlocked(int64_t index);
 
   // Return a string with stats
   std::string StatsStringUnlocked() const;

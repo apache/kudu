@@ -78,6 +78,7 @@ class MockQueue : public PeerMessageQueue {
   }
   MOCK_METHOD2(AppendOperationsMock, Status(const vector<ReplicateRefPtr>& msgs,
                                             const StatusCallback& callback));
+  MOCK_METHOD1(TruncateOpsAfter, void(const OpId& op_id));
   MOCK_METHOD1(TrackPeer, void(const string&));
   MOCK_METHOD1(UntrackPeer, void(const string&));
   MOCK_METHOD4(RequestForPeer, Status(const std::string& uuid,
@@ -432,6 +433,10 @@ MATCHER_P2(RoundHasOpId, term, index, "") {
   return arg->id().term() == term && arg->id().index() == index;
 }
 
+MATCHER_P2(EqOpId, term, index, "") {
+  return arg.term() == term && arg.index() == index;
+}
+
 // Tests the case where a a leader is elected and pushed a sequence of
 // operations of which some never get committed. Eventually a new leader in a higher
 // term pushes operations that overwrite some of the original indexes.
@@ -488,6 +493,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   }
   EXPECT_CALL(*consensus_.get(),
               NonTxRoundReplicationFinished(RoundHasOpId(3, 6), _, IsOk())).Times(1);
+  EXPECT_CALL(*queue_, TruncateOpsAfter(EqOpId(2, 5))).Times(1);
 
   // Nothing's committed so far, so now just send an Update() message
   // emulating another guy got elected leader and is overwriting a suffix

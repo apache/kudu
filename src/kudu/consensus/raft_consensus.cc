@@ -868,10 +868,18 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
   // why this is actually critical to do here, as opposed to just on requests that
   // append some ops.
   if (term_mismatch) {
-    return state_->AbortOpsAfterUnlocked(req.preceding_opid->index() - 1);
+    TruncateAndAbortOpsAfterUnlocked(req.preceding_opid->index() - 1);
   }
 
   return Status::OK();
+}
+
+void RaftConsensus::TruncateAndAbortOpsAfterUnlocked(int64_t truncate_after_index) {
+  state_->AbortOpsAfterUnlocked(truncate_after_index);
+  // Above resets the 'last received' to the operation with index 'truncate_after_index'.
+  OpId new_last_received = state_->GetLastReceivedOpIdUnlocked();
+  DCHECK_EQ(truncate_after_index, new_last_received.index());
+  queue_->TruncateOpsAfter(new_last_received);
 }
 
 Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* request,
@@ -942,7 +950,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
     // If the index is in our log but the terms are not the same abort down to the leader's
     // preceding id.
     if (term_mismatch) {
-      RETURN_NOT_OK(state_->AbortOpsAfterUnlocked(deduped_req->preceding_opid->index()));
+      TruncateAndAbortOpsAfterUnlocked(deduped_req->preceding_opid->index());
     }
   }
 

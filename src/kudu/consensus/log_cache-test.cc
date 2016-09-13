@@ -312,5 +312,45 @@ TEST_F(LogCacheTest, TestReplaceMessages) {
             cache_->ToString());
 }
 
+// Test that the cache truncates any future messages when either explicitly
+// truncated or replacing any earlier message.
+TEST_F(LogCacheTest, TestTruncation) {
+  enum {
+    TRUNCATE_BY_APPEND,
+    TRUNCATE_EXPLICITLY
+  };
+
+  // Append 1 through 3.
+  AppendReplicateMessagesToCache(1, 3, 100);
+
+  for (auto mode : {TRUNCATE_BY_APPEND, TRUNCATE_EXPLICITLY}) {
+    SCOPED_TRACE(mode == TRUNCATE_BY_APPEND ? "by append" : "explicitly");
+    // Append messages 4 through 10.
+    AppendReplicateMessagesToCache(4, 7, 100);
+    ASSERT_EQ(10, cache_->metrics_.log_cache_num_ops->value());
+
+    switch (mode) {
+      case TRUNCATE_BY_APPEND:
+        AppendReplicateMessagesToCache(3, 1, 100);
+        break;
+      case TRUNCATE_EXPLICITLY:
+        cache_->TruncateOpsAfter(3);
+        break;
+    }
+
+    ASSERT_EQ(3, cache_->metrics_.log_cache_num_ops->value());
+
+    // Op 3 should still be in the cache.
+    OpId op;
+    ASSERT_OK(cache_->LookupOpId(3, &op));
+    ASSERT_TRUE(cache_->HasOpBeenWritten(3));
+
+    // Op 4 should have been removed.
+    Status s = cache_->LookupOpId(4, &op);
+    ASSERT_TRUE(s.IsIncomplete()) << "should be truncated, but got: " << s.ToString();
+    ASSERT_FALSE(cache_->HasOpBeenWritten(4));
+  }
+}
+
 } // namespace consensus
 } // namespace kudu

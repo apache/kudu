@@ -114,6 +114,27 @@ void LogCache::Init(const OpId& preceding_op) {
   min_pinned_op_index_ = next_sequential_op_index_;
 }
 
+void LogCache::TruncateOpsAfter(int64_t index) {
+  std::unique_lock<simple_spinlock> l(lock_);
+  TruncateOpsAfterUnlocked(index);
+}
+
+void LogCache::TruncateOpsAfterUnlocked(int64_t index) {
+  int64_t first_to_truncate = index + 1;
+  // If the index is not consecutive then it must be lower than or equal
+  // to the last index, i.e. we're overwriting.
+  CHECK_LE(first_to_truncate, next_sequential_op_index_);
+
+  // Now remove the overwritten operations.
+  for (int64_t i = first_to_truncate; i < next_sequential_op_index_; ++i) {
+    ReplicateRefPtr msg = EraseKeyReturnValuePtr(&cache_, i);
+    if (msg != nullptr) {
+      AccountForMessageRemovalUnlocked(msg);
+    }
+  }
+  next_sequential_op_index_ = index + 1;
+}
+
 Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
                                   const StatusCallback& callback) {
   std::unique_lock<simple_spinlock> l(lock_);
@@ -127,17 +148,7 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   int64_t last_idx_in_batch = msgs.back()->get()->id().index();
 
   if (first_idx_in_batch != next_sequential_op_index_) {
-    // If the index is not consecutive then it must be lower than or equal
-    // to the last index, i.e. we're overwriting.
-    CHECK_LE(first_idx_in_batch, next_sequential_op_index_);
-
-    // Now remove the overwritten operations.
-    for (int64_t i = first_idx_in_batch; i < next_sequential_op_index_; ++i) {
-      ReplicateRefPtr msg = EraseKeyReturnValuePtr(&cache_, i);
-      if (msg != nullptr) {
-        AccountForMessageRemovalUnlocked(msg);
-      }
-    }
+    TruncateOpsAfterUnlocked(first_idx_in_batch - 1);
   }
 
 

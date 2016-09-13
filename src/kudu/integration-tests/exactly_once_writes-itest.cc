@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/integration-tests/log_verifier.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/logging.h"
@@ -223,6 +224,13 @@ void ExactlyOnceSemanticsITest::DoTestWritesWithExactlyOnceSemantics(
   if (mismatched) {
     FAIL() << "Got mismatched responses";
   }
+
+  // Check that the servers have matching commit indexes. We shut down first because otherwise
+  // they keep appending to the logs, and the verifier can hit checksum issues trying to
+  // read from a log which is in the process of being written.
+  cluster_->Shutdown();
+  LogVerifier lv(cluster_.get());
+  ASSERT_OK(lv.VerifyCommittedOpIdsMatch());
 }
 
 // This tests exactly once semantics by starting a cluster with multiple replicas and attempting
