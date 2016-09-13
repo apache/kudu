@@ -26,64 +26,37 @@
 # with custom settings are left.
 #
 
-# The PROJECT_NAME tag is a single word (or a sequence of words surrounded by
-# double-quotes, unless you are using Doxywizard) that should identify the
-# project for which the documentation is generated.  This name is used in the
-# title of most generated pages and in a few other places.  Here we generate
-# documentation for Kudu C++ client API.
+# Here we generate documentation for the Kudu C++ client API.
 PROJECT_NAME           = "Kudu C++ client API"
 
-# The INPUT tag is used to specify the files and/or directories that contain
-# documented source files.  You may enter file names like myfile.cpp or
-# directories like /usr/src/myproject.  Separate the files or directories with
-# spaces.  Current empty value reflects the fact that working directory where
+# Current empty value reflects the fact that working directory where
 # doxygen runs is the location where necessary directory structure
 # with header files resides.
 INPUT                  =
 
-# The RECURSIVE tag can be used to specify whether or not subdirectories should
-# be searched for input files as well.  Due to current layout of the header
-# file to process, the recursive scan for files is turned on.
+# Due to current layout of the header files to process, the recursive scan
+# for files is turned on.
 RECURSIVE              = YES
 
-# The EXCLUDE tag can be used to specify files and/or directories that should be
-# excluded from the INPUT source files.  This way you can easily exclude a
-# subdirectory from a directory tree whose root is specified with the INPUT tag.
-#
-# Note that relative paths are relative to the directory from which doxygen is
-# run.
+# We exclude some of the sources under the top-level client hierarchy
+# which we don't want to process since there isn't doxygen documentation
+# in those anyway.
 EXCLUDE                = @DOXY_CLIENT_API_EXCLUDE@
 
-# The HTML_FOOTER tag can be used to specify a user-defined HTML footer for each
-# generated HTML page. If the tag is left blank doxygen will generate a standard
-# footer. See HTML_HEADER for more information on how to generate a default
-# footer and what special commands can be used inside the footer. See also
-# section "Doxygen usage" for information on how to generate the default footer
-# that doxygen normally uses.
-# This tag requires that the tag GENERATE_HTML is set to YES.
 # We add information about the Kudu version the documentation is generated for.
+# NOTE: this tag requires GENERATE_HTML enabled.
 HTML_FOOTER            = @DOXY_CLIENT_API_FOOTER@
 
-
-# The OUTPUT_DIRECTORY tag is used to specify the (relative or absolute) path
-# into which the generated documentation will be written.  If a relative path is
-# entered, it will be relative to the location where doxygen was started.  If
-# left blank the current directory will be used.  Current value is set by
-# one of make targets while generating the Kudu C++ client API documentation.
+# Current value is set by one of make targets while generating
+# the Kudu C++ client API documentation.
 OUTPUT_DIRECTORY       = @DOXY_CLIENT_API_OUTDIR@
 
-# The QUIET tag can be used to turn on/off the messages that are generated to
-# standard output by doxygen. Do not be too verbose: QUIET is set to YES,
-# so informational messages are off.
+# Do not be too verbose: QUIET is set to YES, so informational messages are off.
 QUIET                  = YES
 
-# This WARN_NO_PARAMDOC option can be enabled to get warnings for functions that
-# are documented, but have no documentation for their parameters or return
-# value.  If set to NO, doxygen will only warn about wrong or incomplete
-# parameter documentation, but not about the absence of documentation.
-# We want to have those warnings on for now.
+# We want to have warnings for functions/methods which are documented,
+# but have no documentation for their parameters or the return value.
 WARN_NO_PARAMDOC       = YES
 
-# If the GENERATE_LATEX tag is set to YES, doxygen will generate LaTeX output.
 # As for now, documentation in LaTeX format is not needed.
 GENERATE_LATEX         = NO
