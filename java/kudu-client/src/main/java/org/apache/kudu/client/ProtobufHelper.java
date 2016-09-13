@@ -86,12 +86,14 @@ public class ProtobufHelper {
     ColumnSchema.Encoding encoding = ColumnSchema.Encoding.valueOf(pb.getEncoding().name());
     ColumnSchema.CompressionAlgorithm compressionAlgorithm =
         ColumnSchema.CompressionAlgorithm.valueOf(pb.getCompression().name());
+    int desiredBlockSize = pb.getCfileBlockSize();
     return new ColumnSchema.ColumnSchemaBuilder(pb.getName(), type)
                            .key(pb.getIsKey())
                            .nullable(pb.getIsNullable())
                            .defaultValue(defaultValue)
                            .encoding(encoding)
                            .compressionAlgorithm(compressionAlgorithm)
+                           .desiredBlockSize(desiredBlockSize)
                            .build();
   }
 
