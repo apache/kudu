@@ -586,7 +586,6 @@ Status ReplicaState::SetInitialCommittedOpIdUnlocked(const OpId& committed_op) {
 
   } else {
     last_committed_op_id_ = committed_op;
-    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "setting committed at start to " << committed_op;
   }
   return Status::OK();
 }
