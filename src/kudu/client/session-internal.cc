@@ -40,7 +40,7 @@ using sp::weak_ptr;
 
 
 KuduSession::Data::Data(shared_ptr<KuduClient> client,
-                        std::shared_ptr<rpc::Messenger> messenger)
+                        std::weak_ptr<rpc::Messenger> messenger)
     : client_(std::move(client)),
       messenger_(std::move(messenger)),
       error_collector_(new ErrorCollector()),
@@ -58,8 +58,8 @@ KuduSession::Data::Data(shared_ptr<KuduClient> client,
       buffer_pre_flush_enabled_(true) {
 }
 
-void KuduSession::Data::Init(const weak_ptr<KuduSession>& session) {
-  TimeBasedFlushInit(session);
+void KuduSession::Data::Init(weak_ptr<KuduSession> session) {
+  TimeBasedFlushInit(std::move(session));
 }
 
 void KuduSession::Data::FlushFinished(Batcher* batcher) {
@@ -109,7 +109,7 @@ Status KuduSession::Data::SetExternalConsistencyMode(
 }
 
 Status KuduSession::Data::SetFlushMode(FlushMode mode,
-                                       const sp::weak_ptr<KuduSession>& session) {
+                                       sp::weak_ptr<KuduSession> session) {
   {
     std::lock_guard<Mutex> l(mutex_);
     if (HasPendingOperationsUnlocked()) {
@@ -129,7 +129,7 @@ Status KuduSession::Data::SetFlushMode(FlushMode mode,
     flush_mode_ = mode;
   }
 
-  TimeBasedFlushInit(session);
+  TimeBasedFlushInit(std::move(session));
 
   return Status::OK();
 }
@@ -320,7 +320,7 @@ MonoDelta KuduSession::Data::FlushCurrentBatcher(const MonoDelta& max_age) {
 // batcher (success path) or in the error collector (failure path). Otherwise
 // it would be a memory leak.
 Status KuduSession::Data::ApplyWriteOp(
-    const sp::weak_ptr<KuduSession>& weak_session,
+    sp::weak_ptr<KuduSession> weak_session,
     KuduWriteOperation* write_op) {
 
   if (!write_op) {
@@ -429,7 +429,7 @@ Status KuduSession::Data::ApplyWriteOp(
       // of control since no thread-safety is advertised
       // for the kudu::KuduSession interface.
       scoped_refptr<Batcher> batcher(
-          new Batcher(client_.get(), error_collector_, weak_session,
+          new Batcher(client_.get(), error_collector_, std::move(weak_session),
                       external_consistency_mode_));
       if (timeout_ms_ != -1) {
         batcher->SetTimeoutMillis(timeout_ms_);
@@ -462,7 +462,7 @@ Status KuduSession::Data::ApplyWriteOp(
 void KuduSession::Data::TimeBasedFlushInit(
     sp::weak_ptr<KuduSession> weak_session) {
   KuduSession::Data::TimeBasedFlushTask(
-      Status::OK(), messenger_, weak_session, true);
+      Status::OK(), messenger_, std::move(weak_session), true);
 }
 
 void KuduSession::Data::TimeBasedFlushTask(
@@ -513,8 +513,8 @@ void KuduSession::Data::TimeBasedFlushTask(
   std::shared_ptr<rpc::Messenger> messenger(weak_messenger.lock());
   if (PREDICT_TRUE(messenger)) {
     messenger->ScheduleOnReactor(
-        boost::bind(&KuduSession::Data::TimeBasedFlushTask,
-                    _1, messenger, session, false),
+        boost::bind(&KuduSession::Data::TimeBasedFlushTask, _1,
+                    std::move(weak_messenger), std::move(weak_session), false),
         next_run);
   }
 }

@@ -55,9 +55,9 @@ class ErrorCollector;
 class KuduSession::Data {
  public:
   explicit Data(sp::shared_ptr<KuduClient> client,
-                std::shared_ptr<rpc::Messenger> messenger);
+                std::weak_ptr<rpc::Messenger> messenger);
 
-  void Init(const sp::weak_ptr<KuduSession>& session);
+  void Init(sp::weak_ptr<KuduSession> session);
 
   // Called by Batcher when a flush has finished.
   void FlushFinished(internal::Batcher* b);
@@ -68,7 +68,7 @@ class KuduSession::Data {
   Status Close(bool force);
 
   // Set flush mode for the session.
-  Status SetFlushMode(FlushMode mode, const sp::weak_ptr<KuduSession>& session);
+  Status SetFlushMode(FlushMode mode, sp::weak_ptr<KuduSession> session);
 
   // Set external consistency mode for the session.
   Status SetExternalConsistencyMode(KuduSession::ExternalConsistencyMode m);
@@ -123,7 +123,7 @@ class KuduSession::Data {
   MonoDelta FlushCurrentBatcher(const MonoDelta& max_age);
 
   // Apply a write operation, i.e. push it through the batcher chain.
-  Status ApplyWriteOp(const sp::weak_ptr<KuduSession>& session,
+  Status ApplyWriteOp(sp::weak_ptr<KuduSession> session,
                       KuduWriteOperation* write_op);
 
   // Check and start the time-based flush task in background, if necessary.
@@ -160,7 +160,7 @@ class KuduSession::Data {
 
   // The reference to the client's messenger (keeping the reference instead of
   // declaring friendship to KuduClient and accessing it via the client_).
-  std::shared_ptr<rpc::Messenger> messenger_;
+  std::weak_ptr<rpc::Messenger> messenger_;
 
   // Buffer for errors.
   scoped_refptr<internal::ErrorCollector> error_collector_;
