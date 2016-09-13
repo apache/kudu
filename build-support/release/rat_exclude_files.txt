@@ -9,7 +9,9 @@ pax_global_header
 *.pdf
 version.txt
 build-support/release/rat_exclude_files.txt
+docs/support/doxygen/client_api.footer.in
 java/kudu-csd/old-version-metrics/*.json
+java/kudu-flume-sink/src/test/avro/testAvroKuduOperationsProducer.avsc
 java/kudu-client/src/main/java/com/google/protobuf/ZeroCopyLiteralByteString.java
 java/kudu-client/src/main/java/org/apache/kudu/client/AsyncKuduClient.java
 java/kudu-client/src/main/java/org/apache/kudu/client/AsyncKuduScanner.java
