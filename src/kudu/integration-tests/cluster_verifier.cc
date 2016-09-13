@@ -24,6 +24,7 @@
 #include "kudu/client/row_result.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
+#include "kudu/integration-tests/log_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/util/monotime.h"
@@ -74,6 +75,15 @@ void ClusterVerifier::CheckCluster() {
     SleepFor(MonoDelta::FromSeconds(sleep_time));
   }
   ASSERT_OK(s);
+
+  // Verify that the committed op indexes match up across the servers.
+  // We have to use "AssertEventually" here because many tests verify clusters
+  // while they are still running, and the verification can fail spuriously in
+  // the case that
+  LogVerifier lv(cluster_);
+  AssertEventually([&]() {
+      ASSERT_OK(lv.VerifyCommittedOpIdsMatch());
+    });
 }
 
 Status ClusterVerifier::DoKsck() {

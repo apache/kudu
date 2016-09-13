@@ -382,23 +382,23 @@ void ReplicaState::GetUncommittedPendingOperationsUnlocked(
   }
 }
 
-Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
+void ReplicaState::AbortOpsAfterUnlocked(int64_t index) {
   DCHECK(update_lock_.is_locked());
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting all transactions after (but not including): "
-      << new_preceding_idx << ". Current State: " << ToStringUnlocked();
+      << index << ". Current State: " << ToStringUnlocked();
 
-  DCHECK_GE(new_preceding_idx, 0);
+  DCHECK_GE(index, 0);
   OpId new_preceding;
 
-  auto iter = pending_txns_.lower_bound(new_preceding_idx);
+  auto iter = pending_txns_.lower_bound(index);
 
   // Either the new preceding id is in the pendings set or it must be equal to the
   // committed index since we can't truncate already committed operations.
-  if (iter != pending_txns_.end() && (*iter).first == new_preceding_idx) {
+  if (iter != pending_txns_.end() && (*iter).first == index) {
     new_preceding = (*iter).second->replicate_msg()->id();
     ++iter;
   } else {
-    CHECK_EQ(new_preceding_idx, last_committed_op_id_.index());
+    CHECK_EQ(index, last_committed_op_id_.index());
     new_preceding = last_committed_op_id_;
   }
 
@@ -429,8 +429,6 @@ Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
     // Erase the entry from pendings.
     pending_txns_.erase(iter++);
   }
-
-  return Status::OK();
 }
 
 Status ReplicaState::AddPendingOperation(const scoped_refptr<ConsensusRound>& round) {

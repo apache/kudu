@@ -292,6 +292,16 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   return Status::OK();
 }
 
+void PeerMessageQueue::TruncateOpsAfter(const OpId& op) {
+  DFAKE_SCOPED_LOCK(append_fake_lock_); // should not race with append.
+
+  {
+    std::unique_lock<simple_spinlock> lock(queue_lock_);
+    queue_state_.last_appended = op;
+  }
+  log_cache_.TruncateOpsAfter(op.index());
+}
+
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request,
                                         vector<ReplicateRefPtr>* msg_refs,

@@ -284,6 +284,10 @@ class RaftConsensus : public Consensus,
                                     ConsensusResponsePB* response,
                                     LeaderRequest* deduped_req);
 
+  // Abort any pending operations after the given op index,
+  // and also truncate the LogCache accordingly.
+  void TruncateAndAbortOpsAfterUnlocked(int64_t truncate_after_index);
+
   // Pushes a new Raft configuration to a majority of peers. Contrary to write operations,
   // this actually waits for the commit round to reach a majority of peers, so that we know
   // we can proceed. If this returns Status::OK(), a majority of peers have accepted the new
