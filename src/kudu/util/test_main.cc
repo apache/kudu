@@ -18,11 +18,8 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <signal.h>
-#include <sys/time.h>
 #include <thread>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/status.h"
@@ -34,12 +31,23 @@ DEFINE_int32(stress_cpu_threads, 0,
              "Number of threads to start that burn CPU in an attempt to "
              "stimulate race conditions");
 
-// Start timer that kills the process if --test_timeout_after is exceeded before
-// the tests complete.
-static void CreateAndStartTimer();
+namespace kudu {
 
-// Gracefully kill the process.
-static void KillTestOnTimeout(int signum);
+// Start thread that kills the process if --test_timeout_after is exceeded before
+// the tests complete.
+static void CreateAndStartTimeoutThread() {
+  if (FLAGS_test_timeout_after == 0) return;
+  std::thread([=](){
+      SleepFor(MonoDelta::FromSeconds(FLAGS_test_timeout_after));
+      // Dump a pstack to stdout.
+      WARN_NOT_OK(PstackWatcher::DumpStacks(), "Unable to print pstack");
+
+      // ...and abort.
+      LOG(FATAL) << "Maximum unit test time exceeded (" << FLAGS_test_timeout_after << " sec)";
+    }).detach();
+}
+} // namespace kudu
+
 
 static void StartStressThreads() {
   for (int i = 0; i < FLAGS_stress_cpu_threads; i++) {
@@ -60,36 +68,11 @@ int main(int argc, char **argv) {
   kudu::ParseCommandLineFlags(&argc, &argv, true);
 
   // Create the test-timeout timer.
-  CreateAndStartTimer();
+  kudu::CreateAndStartTimeoutThread();
 
   StartStressThreads();
 
   int ret = RUN_ALL_TESTS();
 
   return ret;
-}
-
-static void CreateAndStartTimer() {
-  struct sigaction action;
-  struct itimerval timer;
-
-  // Create the test-timeout timer.
-  memset(&action, 0, sizeof(action));
-  action.sa_handler = &KillTestOnTimeout;
-  CHECK_ERR(sigaction(SIGALRM, &action, nullptr)) << "Unable to set timeout action";
-
-  timer.it_interval.tv_sec = 0;                      // No repeat.
-  timer.it_interval.tv_usec = 0;
-  timer.it_value.tv_sec = FLAGS_test_timeout_after;  // Fire in timeout seconds.
-  timer.it_value.tv_usec = 0;
-
-  CHECK_ERR(setitimer(ITIMER_REAL, &timer, nullptr)) << "Unable to set timeout timer";
-}
-
-static void KillTestOnTimeout(int signum) {
-  // Dump a pstack to stdout.
-  WARN_NOT_OK(kudu::PstackWatcher::DumpStacks(), "Unable to print pstack");
-
-  // ...and abort.
-  LOG(FATAL) << "Maximum unit test time exceeded (" << FLAGS_test_timeout_after << " sec)";
 }
