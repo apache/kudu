@@ -101,13 +101,13 @@ Status GetTabletLeader(const client::sp::shared_ptr<KuduClient>& client,
 Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
   // Parse and validate arguments.
   RaftPeerPB peer_pb;
-  string master_addresses_str = FindOrDie(context.required_args,
-                                          kMasterAddressesArg);
+  const string& master_addresses_str = FindOrDie(context.required_args,
+                                                 kMasterAddressesArg);
   vector<string> master_addresses = strings::Split(master_addresses_str, ",");
-  string tablet_id = FindOrDie(context.required_args, kTabletIdArg);
-  string replica_uuid = FindOrDie(context.required_args, kReplicaUuidArg);
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  const string& replica_uuid = FindOrDie(context.required_args, kReplicaUuidArg);
   if (cc_type == consensus::ADD_SERVER || cc_type == consensus::CHANGE_ROLE) {
-    string replica_type = FindOrDie(context.required_args, kReplicaTypeArg);
+    const string& replica_type = FindOrDie(context.required_args, kReplicaTypeArg);
     string uppercase_peer_type;
     ToUpperCase(replica_type, &uppercase_peer_type);
     RaftPeerPB::MemberType member_type_val;

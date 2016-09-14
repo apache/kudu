@@ -40,11 +40,6 @@ add_executable(create-demo-table create-demo-table.cc)
 target_link_libraries(create-demo-table
   ${LINK_LIBS})
 
-add_executable(insert-generated-rows insert-generated-rows.cc)
-target_link_libraries(insert-generated-rows
-  kudu_tools_util
-  ${LINK_LIBS})
-
 add_library(ksck
     ksck.cc
     ksck_remote.cc
@@ -70,6 +65,7 @@ add_executable(kudu
   tool_action_remote_replica.cc
   tool_action_table.cc
   tool_action_tablet.cc
+  tool_action_test.cc
   tool_action_tserver.cc
   tool_action_wal.cc
   tool_main.cc
@@ -115,4 +111,3 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
 ADD_KUDU_TEST(kudu-ts-cli-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
   kudu)
-

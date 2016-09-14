@@ -161,7 +161,7 @@ Status GetReplicas(TabletServerServiceProxy* proxy,
 }
 
 Status CheckReplicas(const RunnerContext& context) {
-  string address = FindOrDie(context.required_args, kTServerAddressArg);
+  const string& address = FindOrDie(context.required_args, kTServerAddressArg);
 
   unique_ptr<TabletServerServiceProxy> proxy;
   RETURN_NOT_OK(BuildProxy(address, tserver::TabletServer::kDefaultPort,
@@ -188,9 +188,9 @@ Status CheckReplicas(const RunnerContext& context) {
 }
 
 Status DeleteReplica(const RunnerContext& context) {
-  string address = FindOrDie(context.required_args, kTServerAddressArg);
-  string tablet_id = FindOrDie(context.required_args, kTabletArg);
-  string reason = FindOrDie(context.required_args, kReasonArg);
+  const string& address = FindOrDie(context.required_args, kTServerAddressArg);
+  const string& tablet_id = FindOrDie(context.required_args, kTabletArg);
+  const string& reason = FindOrDie(context.required_args, kReasonArg);
 
   ServerStatusPB status;
   RETURN_NOT_OK(GetServerStatus(address, tserver::TabletServer::kDefaultPort,
@@ -219,8 +219,8 @@ Status DeleteReplica(const RunnerContext& context) {
 }
 
 Status DumpReplica(const RunnerContext& context) {
-  string address = FindOrDie(context.required_args, kTServerAddressArg);
-  string tablet_id = FindOrDie(context.required_args, kTabletArg);
+  const string& address = FindOrDie(context.required_args, kTServerAddressArg);
+  const string& tablet_id = FindOrDie(context.required_args, kTabletArg);
 
   unique_ptr<TabletServerServiceProxy> proxy;
   RETURN_NOT_OK(BuildProxy(address, tserver::TabletServer::kDefaultPort,
@@ -243,7 +243,7 @@ Status DumpReplica(const RunnerContext& context) {
 }
 
 Status ListReplicas(const RunnerContext& context) {
-  string address = FindOrDie(context.required_args, kTServerAddressArg);
+  const string& address = FindOrDie(context.required_args, kTServerAddressArg);
   unique_ptr<TabletServerServiceProxy> proxy;
   RETURN_NOT_OK(BuildProxy(address, tserver::TabletServer::kDefaultPort,
                            &proxy));

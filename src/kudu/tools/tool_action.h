@@ -118,7 +118,7 @@ class Mode {
  private:
   friend class ModeBuilder;
 
-  Mode();
+  Mode() = default;
 
   std::string name_;
 
@@ -261,7 +261,7 @@ class Action {
  private:
   friend class ActionBuilder;
 
-  Action();
+  Action() = default;
 
   std::string name_;
 
@@ -283,6 +283,7 @@ std::unique_ptr<Mode> BuildPbcMode();
 std::unique_ptr<Mode> BuildRemoteReplicaMode();
 std::unique_ptr<Mode> BuildTableMode();
 std::unique_ptr<Mode> BuildTabletMode();
+std::unique_ptr<Mode> BuildTestMode();
 std::unique_ptr<Mode> BuildTServerMode();
 std::unique_ptr<Mode> BuildWalMode();
 

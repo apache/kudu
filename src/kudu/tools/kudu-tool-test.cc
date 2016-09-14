@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <iterator>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -26,6 +28,7 @@
 #include "kudu/cfile/cfile-test-base.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/client/client-test-util.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
@@ -43,6 +46,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet_metadata.h"
@@ -51,6 +55,7 @@
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/subprocess.h"
@@ -58,17 +63,21 @@
 #include "kudu/util/test_util.h"
 
 namespace kudu {
+
 namespace tools {
 
 using cfile::CFileWriter;
 using cfile::StringDataGenerator;
 using cfile::WriterOptions;
+using client::sp::shared_ptr;
 using consensus::OpId;
 using consensus::ReplicateRefPtr;
 using consensus::ReplicateMsg;
 using fs::WritableBlock;
 using log::Log;
 using log::LogOptions;
+using std::back_inserter;
+using std::copy;
 using std::ostringstream;
 using std::string;
 using std::unique_ptr;
@@ -159,10 +168,8 @@ class ToolTest : public KuduTest {
     ASSERT_EQ(0, stderr[usage_idx].find("Usage: "));
 
     // Strip away everything up to the usage string to test for regexes.
-    vector<string> remaining_lines;
-    for (int i = usage_idx + 1; i < stderr.size(); i++) {
-      remaining_lines.push_back(stderr[i]);
-    }
+    const vector<string> remaining_lines(stderr.begin() + usage_idx + 1,
+                                         stderr.end());
     for (const auto& r : regexes) {
       ASSERT_STRINGS_ANY_MATCH(remaining_lines, r);
     }
@@ -182,6 +189,7 @@ TEST_F(ToolTest, TestTopLevelHelp) {
       "remote_replica.*replicas on a Kudu Tablet Server",
       "table.*Kudu tables",
       "tablet.*Kudu tablets",
+      "test.*tests",
       "tserver.*Kudu Tablet Server",
       "wal.*write-ahead log"
   };
@@ -285,6 +293,12 @@ TEST_F(ToolTest, TestModeHelp) {
         "remove_replica.*Remove an existing replica"
     };
     NO_FATALS(RunTestHelp("tablet change_config", kChangeConfigModeRegexes));
+  }
+  {
+    const vector<string> kTestRegexes = {
+        "loadgen.*Run load generation test with optional scan afterwards",
+    };
+    NO_FATALS(RunTestHelp("test", kTestRegexes));
   }
   {
     const vector<string> kTServerModeRegexes = {
@@ -743,6 +757,112 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     SCOPED_TRACE(stdout);
     ASSERT_STR_MATCHES(stdout, kTestTablet);
   }
+}
+
+// Create and start Kudu mini cluster, optionally creating a table in the DB,
+// and then run 'kudu test loadgen ...' utility against it.
+void RunLoadgen(size_t num_tservers = 1,
+                const vector<string>& tool_args = {},
+                const string& table_name = "") {
+  kudu::ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = num_tservers;
+  // fsync causes flakiness on EC2
+  opts.extra_tserver_flags.push_back("--never_fsync");
+
+  unique_ptr<ExternalMiniCluster> cluster(new ExternalMiniCluster(opts));
+  ASSERT_OK(cluster->Start());
+  if (!table_name.empty()) {
+    static const string kKeyColumnName = "key";
+    static const Schema kSchema = Schema(
+      {
+        ColumnSchema(kKeyColumnName, INT64),
+        ColumnSchema("bool_val", BOOL),
+        ColumnSchema("int8_val", INT8),
+        ColumnSchema("int16_val", INT16),
+        ColumnSchema("int32_val", INT32),
+        ColumnSchema("int64_val", INT64),
+        ColumnSchema("float_val", FLOAT),
+        ColumnSchema("double_val", DOUBLE),
+        ColumnSchema("unixtime_micros_val", UNIXTIME_MICROS),
+        ColumnSchema("string_val", STRING),
+        ColumnSchema("binary_val", BINARY),
+      }, 1);
+
+    shared_ptr<client::KuduClient> client;
+    ASSERT_OK(cluster->CreateClient(nullptr, &client));
+    client::KuduSchema client_schema(client::KuduSchemaFromSchema(kSchema));
+    unique_ptr<client::KuduTableCreator> table_creator(
+        client->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(table_name)
+              .schema(&client_schema)
+              .add_hash_partitions({kKeyColumnName}, 2)
+              .num_replicas(cluster->num_tablet_servers())
+              .Create());
+  }
+  vector<string> args = {
+    GetKuduCtlAbsolutePath(),
+    "test",
+    "loadgen",
+    cluster->master()->bound_rpc_addr().ToString(),
+  };
+  if (!table_name.empty()) {
+    args.push_back(Substitute("-table_name=$0", table_name));
+  }
+  copy(tool_args.begin(), tool_args.end(), back_inserter(args));
+  ASSERT_OK(Subprocess::Call(args));
+}
+
+// Run the loadgen benchmark with all optional parameters set to defaults.
+TEST_F(ToolTest, TestLoadgenDefaultParameters) {
+  NO_FATALS(RunLoadgen());
+}
+
+// Run the loadgen benchmark in AUTO_FLUSH_BACKGROUND mode, sequential values.
+TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundSequential) {
+  NO_FATALS(RunLoadgen(3,
+      {
+        "--buffer_flush_watermark_pct=0.125",
+        "--buffer_size_bytes=65536",
+        "--buffers_num=8",
+        "--num_rows_per_thread=2048",
+        "--num_threads=4",
+        "--run_scan",
+        "--string_fixed=0123456789",
+      },
+      "bench_auto_flush_background_sequential"));
+}
+
+// Run loadgen benchmark in AUTO_FLUSH_BACKGROUND mode, randomized values.
+TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundRandom) {
+  NO_FATALS(RunLoadgen(5,
+      {
+        "--buffer_flush_watermark_pct=0.125",
+        "--buffer_size_bytes=65536",
+        "--buffers_num=8",
+        // small number of rows to avoid collisions: it's random generation mode
+        "--num_rows_per_thread=16",
+        "--num_threads=1",
+        "--run_scan",
+        "--string_len=8",
+        "--use_random",
+      },
+      "bench_auto_flush_background_random"));
+}
+
+// Run the loadgen benchmark in MANUAL_FLUSH mode.
+TEST_F(ToolTest, TestLoadgenManualFlush) {
+  NO_FATALS(RunLoadgen(3,
+      {
+        "--buffer_size_bytes=524288",
+        "--buffers_num=2",
+        "--flush_per_n_rows=1024",
+        "--num_rows_per_thread=4096",
+        "--num_threads=3",
+        "--run_scan",
+        "--show_first_n_errors=3",
+        "--string_len=16",
+      },
+      "bench_manual_flush"));
 }
 
 } // namespace tools

@@ -172,7 +172,7 @@ Status ParsePeerString(const string& peer_str,
 Status PrintReplicaUuids(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
-  string tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
 
   // Load the cmeta file and print all peer uuids.
   unique_ptr<ConsensusMetadata> cmeta;
@@ -186,7 +186,7 @@ Status PrintReplicaUuids(const RunnerContext& context) {
 
 Status RewriteRaftConfig(const RunnerContext& context) {
   // Parse tablet ID argument.
-  string tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
   if (tablet_id != master::SysCatalogTable::kSysCatalogTabletId) {
     LOG(WARNING) << "Master will not notice rewritten Raft config of regular "
                  << "tablets. A regular Raft config change must occur.";
@@ -238,8 +238,8 @@ Status RewriteRaftConfig(const RunnerContext& context) {
 
 Status CopyFromRemote(const RunnerContext& context) {
   // Parse the tablet ID and source arguments.
-  string tablet_id = FindOrDie(context.required_args, "tablet_id");
-  string rpc_address = FindOrDie(context.required_args, "source");
+  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& rpc_address = FindOrDie(context.required_args, "source");
 
   HostPort hp;
   RETURN_NOT_OK(ParseHostPortString(rpc_address, &hp));
@@ -259,7 +259,7 @@ Status CopyFromRemote(const RunnerContext& context) {
 Status DumpWals(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
-  string tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
 
   shared_ptr<LogReader> reader;
   RETURN_NOT_OK(LogReader::Open(fs_manager.get(),
@@ -309,7 +309,7 @@ Status ListBlocksInRowSet(const Schema& schema,
 Status DumpBlockIdsForLocalReplica(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
-  string tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
 
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(TabletMetadata::Load(fs_manager.get(), tablet_id, &meta));
@@ -567,7 +567,7 @@ Status DumpRowSetInternal(FsManager* fs_manager,
 Status DumpRowSet(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
-  string tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
 
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(TabletMetadata::Load(fs_manager.get(), tablet_id, &meta));
@@ -607,7 +607,7 @@ Status DumpRowSet(const RunnerContext& context) {
 Status DumpMeta(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
-  string tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
   RETURN_NOT_OK(DumpTabletMeta(fs_manager.get(), tablet_id, 0));
   return Status::OK();
 }

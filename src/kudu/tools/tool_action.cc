@@ -170,9 +170,6 @@ string Mode::BuildHelp(const vector<Mode*>& chain) const {
   return msg;
 }
 
-Mode::Mode() {
-}
-
 ActionBuilder::ActionBuilder(const string& name, const ActionRunner& runner)
     : name_(name),
       runner_(runner) {
@@ -222,9 +219,6 @@ unique_ptr<Action> ActionBuilder::Build() {
   action->runner_ = runner_;
   action->args_ = args_;
   return action;
-}
-
-Action::Action() {
 }
 
 Status Action::Run(const vector<Mode*>& chain,

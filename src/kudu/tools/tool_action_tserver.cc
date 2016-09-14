@@ -44,20 +44,20 @@ const char* const kFlagArg = "flag";
 const char* const kValueArg = "value";
 
 Status TServerSetFlag(const RunnerContext& context) {
-  string address = FindOrDie(context.required_args, kTServerAddressArg);
-  string flag = FindOrDie(context.required_args, kFlagArg);
-  string value = FindOrDie(context.required_args, kValueArg);
+  const string& address = FindOrDie(context.required_args, kTServerAddressArg);
+  const string& flag = FindOrDie(context.required_args, kFlagArg);
+  const string& value = FindOrDie(context.required_args, kValueArg);
   return SetServerFlag(address, tserver::TabletServer::kDefaultPort,
                        flag, value);
 }
 
 Status TServerStatus(const RunnerContext& context) {
-  string address = FindOrDie(context.required_args, kTServerAddressArg);
+  const string& address = FindOrDie(context.required_args, kTServerAddressArg);
   return PrintServerStatus(address, tserver::TabletServer::kDefaultPort);
 }
 
 Status TServerTimestamp(const RunnerContext& context) {
-  string address = FindOrDie(context.required_args, kTServerAddressArg);
+  const string& address = FindOrDie(context.required_args, kTServerAddressArg);
   return PrintServerTimestamp(address, tserver::TabletServer::kDefaultPort);
 }
 

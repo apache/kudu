@@ -44,7 +44,7 @@ namespace {
 const char* const kPathArg = "path";
 
 Status DumpPBContainerFile(const RunnerContext& context) {
-  string path = FindOrDie(context.required_args, kPathArg);
+  const string& path = FindOrDie(context.required_args, kPathArg);
 
   Env* env = Env::Default();
   gscoped_ptr<RandomAccessFile> reader;

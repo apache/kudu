@@ -72,7 +72,7 @@ Status DumpUuid(const RunnerContext& context) {
 }
 
 Status DumpCFile(const RunnerContext& context) {
-  string block_id_str = FindOrDie(context.required_args, "block_id");
+  const string& block_id_str = FindOrDie(context.required_args, "block_id");
   uint64_t numeric_id;
   if (!safe_strtou64(block_id_str, &numeric_id)) {
     return Status::InvalidArgument(Substitute(

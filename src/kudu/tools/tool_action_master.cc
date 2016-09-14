@@ -44,19 +44,19 @@ const char* const kFlagArg = "flag";
 const char* const kValueArg = "value";
 
 Status MasterSetFlag(const RunnerContext& context) {
-  string address = FindOrDie(context.required_args, kMasterAddressArg);
-  string flag = FindOrDie(context.required_args, kFlagArg);
-  string value = FindOrDie(context.required_args, kValueArg);
+  const string& address = FindOrDie(context.required_args, kMasterAddressArg);
+  const string& flag = FindOrDie(context.required_args, kFlagArg);
+  const string& value = FindOrDie(context.required_args, kValueArg);
   return SetServerFlag(address, master::Master::kDefaultPort, flag, value);
 }
 
 Status MasterStatus(const RunnerContext& context) {
-  string address = FindOrDie(context.required_args, kMasterAddressArg);
+  const string& address = FindOrDie(context.required_args, kMasterAddressArg);
   return PrintServerStatus(address, master::Master::kDefaultPort);
 }
 
 Status MasterTimestamp(const RunnerContext& context) {
-  string address = FindOrDie(context.required_args, kMasterAddressArg);
+  const string& address = FindOrDie(context.required_args, kMasterAddressArg);
   return PrintServerTimestamp(address, master::Master::kDefaultPort);
 }
 

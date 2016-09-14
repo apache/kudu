@@ -53,10 +53,10 @@ const char* const kMasterAddressesArg = "master_addresses";
 const char* const kTableNameArg = "table_name";
 
 Status DeleteTable(const RunnerContext& context) {
-  string master_addresses_str = FindOrDie(context.required_args,
-                                          kMasterAddressesArg);
+  const string& master_addresses_str = FindOrDie(context.required_args,
+                                                 kMasterAddressesArg);
   vector<string> master_addresses = strings::Split(master_addresses_str, ",");
-  string table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
 
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(KuduClientBuilder()
@@ -66,8 +66,8 @@ Status DeleteTable(const RunnerContext& context) {
 }
 
 Status ListTables(const RunnerContext& context) {
-  string master_addresses_str = FindOrDie(context.required_args,
-                                          kMasterAddressesArg);
+  const string& master_addresses_str = FindOrDie(context.required_args,
+                                                 kMasterAddressesArg);
   vector<string> master_addresses = strings::Split(master_addresses_str, ",");
 
   client::sp::shared_ptr<KuduClient> client;

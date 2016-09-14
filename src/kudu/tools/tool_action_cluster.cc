@@ -65,8 +65,8 @@ namespace {
 const char* const kMasterAddressesArg = "master_addresses";
 
 Status RunKsck(const RunnerContext& context) {
-  string master_addresses_str = FindOrDie(context.required_args,
-                                          kMasterAddressesArg);
+  const string& master_addresses_str = FindOrDie(context.required_args,
+                                                 kMasterAddressesArg);
   vector<string> master_addresses = strings::Split(master_addresses_str, ",");
   shared_ptr<KsckMaster> master;
   RETURN_NOT_OK_PREPEND(RemoteKsckMaster::Build(master_addresses, &master),
