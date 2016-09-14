@@ -239,3 +239,26 @@ class TestScanToken(TestScanBase):
         # Test a single precision float predicate
         # Does a row check count only
         self._test_float_pred()
+
+    def test_scan_selection(self):
+        """
+        This test confirms that setting the scan selection policy on the
+        ScanTokenBuilder does not cause any errors . There is no way to
+        confirm that the policy was actually set. This functionality is
+        tested in the C++ test:
+            ClientTest.TestReplicatedMultiTabletTableFailover.
+        """
+
+        for policy in ['leader', kudu.CLOSEST_REPLICA, 2]:
+            builder = self.table.scan_token_builder()
+            builder.set_selection(policy)
+            tokens = builder.build()
+
+            tuples = []
+            for token in tokens:
+                scanner = token.into_kudu_scanner()
+                scanner.open()
+                tuples.extend(scanner.read_all_tuples())
+
+            self.assertEqual(sorted(tuples),
+                             sorted(self.tuples))

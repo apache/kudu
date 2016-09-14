@@ -34,6 +34,16 @@ from errors import KuduException
 
 import six
 
+# Replica selection enums
+LEADER_ONLY = ReplicaSelection_Leader
+CLOSEST_REPLICA = ReplicaSelection_Closest
+FIRST_REPLICA = ReplicaSelection_First
+
+cdef dict _replica_selection_policies = {
+    'leader': ReplicaSelection_Leader,
+    'closest': ReplicaSelection_Closest,
+    'first': ReplicaSelection_First
+}
 
 # Read mode enums
 READ_LATEST = ReadMode_Latest
@@ -1336,6 +1346,41 @@ cdef class Scanner:
         check_status(self.scanner.SetProjectedColumnNames(v_names))
         return self
 
+    def set_selection(self, replica_selection):
+        """
+        Set the replica selection policy while scanning.
+
+        Parameters
+        ----------
+        replica_selection : {'leader', 'closest', 'first'}
+          You can also use the constants LEADER_ONLY, CLOSEST_REPLICA,
+          and FIRST_REPLICA
+
+        Returns
+        -------
+        self : Scanner
+        """
+        cdef ReplicaSelection selection
+
+        def invalid_selection_policy():
+            raise ValueError('Invalid replica selection policy: {0}'
+                             .format(replica_selection))
+
+        if isinstance(replica_selection, int):
+            if 0 <= replica_selection < len(_replica_selection_policies):
+                check_status(self.scanner.SetSelection(
+                             <ReplicaSelection> replica_selection))
+            else:
+                invalid_selection_policy()
+        else:
+            try:
+                check_status(self.scanner.SetSelection(
+                    _replica_selection_policies[replica_selection.lower()]))
+            except KeyError:
+                invalid_selection_policy()
+
+        return self
+
     def set_projected_column_indexes(self, indexes):
         """
         Sets the columns to be scanned.
@@ -1577,6 +1622,7 @@ cdef class Scanner:
         cdef RowBatch batch = RowBatch()
         check_status(self.scanner.NextBatch(&batch.batch))
         return batch
+
 
 cdef class ScanToken:
     """
@@ -1824,6 +1870,41 @@ cdef class ScanTokenBuilder:
         self : ScanTokenBuilder
         """
         check_status(self._builder.SetFaultTolerant())
+        return self
+
+    def set_selection(self, replica_selection):
+        """
+        Set the replica selection policy while scanning.
+
+        Parameters
+        ----------
+        replica_selection : {'leader', 'closest', 'first'}
+          You can also use the constants LEADER_ONLY, CLOSEST_REPLICA,
+          and FIRST_REPLICA
+
+        Returns
+        -------
+        self : ScanTokenBuilder
+        """
+        cdef ReplicaSelection selection
+
+        def invalid_selection_policy():
+            raise ValueError('Invalid replica selection policy: {0}'
+                             .format(replica_selection))
+
+        if isinstance(replica_selection, int):
+            if 0 <= replica_selection < len(_replica_selection_policies):
+                check_status(self._builder.SetSelection(
+                             <ReplicaSelection> replica_selection))
+            else:
+                invalid_selection_policy()
+        else:
+            try:
+                check_status(self._builder.SetSelection(
+                    _replica_selection_policies[replica_selection.lower()]))
+            except KeyError:
+                invalid_selection_policy()
+
         return self
 
     def add_predicates(self, preds):

@@ -258,3 +258,19 @@ class TestScanner(TestScanBase):
         # Test a single precision float predicate
         # Does a row check count only
         self._test_float_pred()
+
+    def test_scan_selection(self):
+        """
+        This test confirms that setting the scan selection policy on the
+        scanner does not cause any errors. There is no way to confirm
+        that the policy was actually set. This functionality is
+        tested in the C++ test:
+            ClientTest.TestReplicatedMultiTabletTableFailover.
+        """
+
+        for policy in ['leader', kudu.CLOSEST_REPLICA, 2]:
+            scanner = self.table.scanner()
+            scanner.set_selection(policy)
+            scanner.open()
+            self.assertEqual(sorted(scanner.read_all_tuples()),
+                             sorted(self.tuples))

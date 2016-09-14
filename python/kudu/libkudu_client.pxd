@@ -453,9 +453,9 @@ cdef extern from "kudu/client/value.h" namespace "kudu::client" nogil:
 cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
     enum ReplicaSelection" kudu::client::KuduClient::ReplicaSelection":
-        LEADER_ONLY " kudu::client::KuduClient::LEADER_ONLY"
-        CLOSEST_REPLICA " kudu::client::KuduClient::CLOSEST_REPLICA"
-        FIRST_REPLICA " kudu::client::KuduClient::FIRST_REPLICA"
+        ReplicaSelection_Leader " kudu::client::KuduClient::LEADER_ONLY"
+        ReplicaSelection_Closest " kudu::client::KuduClient::CLOSEST_REPLICA"
+        ReplicaSelection_First " kudu::client::KuduClient::FIRST_REPLICA"
 
     enum ReadMode" kudu::client::KuduScanner::ReadMode":
         ReadMode_Latest " kudu::client::KuduScanner::READ_LATEST"
