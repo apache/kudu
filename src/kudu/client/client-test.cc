@@ -3639,7 +3639,11 @@ TEST_F(ClientTest, TestClonePredicates) {
 // Test that scanners will retry after receiving ERROR_SERVER_TOO_BUSY from an
 // overloaded tablet server. Regression test for KUDU-1079.
 TEST_F(ClientTest, TestServerTooBusyRetry) {
+#ifdef THREAD_SANITIZER
+  const int kNumRows = 10000;
+#else
   const int kNumRows = 100000;
+#endif
   NO_FATALS(InsertTestRows(client_table_.get(), kNumRows));
 
   // Introduce latency in each scan to increase the likelihood of
