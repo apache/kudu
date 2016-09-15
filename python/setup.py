@@ -155,7 +155,7 @@ setup(
     },
     setup_requires=['pytest-runner'],
     tests_require=['pytest', 'multiprocessing'],
-    install_requires=['cython >= 0.21'],
+    install_requires=['cython >= 0.21', 'pytz', 'six'],
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     license='Apache License, Version 2.0',

@@ -19,36 +19,17 @@
 from __future__ import division
 
 from kudu.compat import unittest
+from kudu.tests.util import TestScanBase
 from kudu.tests.common import KuduTestBase
 import kudu
+import datetime
 
 
-class TestScanner(KuduTestBase, unittest.TestCase):
+class TestScanner(TestScanBase):
 
     @classmethod
-    def setUpClass(cls):
-        super(TestScanner, cls).setUpClass()
-
-        cls.nrows = 100
-        table = cls.client.table(cls.ex_table)
-        session = cls.client.new_session()
-
-        tuples = []
-        for i in range(cls.nrows):
-            op = table.new_insert()
-            tup = i, i * 2, 'hello_%d' % i if i % 2 == 0 else None
-            op['key'] = tup[0]
-            op['int_val'] = tup[1]
-            if i % 2 == 0:
-                op['string_val'] = tup[2]
-            elif i % 3 == 0:
-                op['string_val'] = None
-            session.apply(op)
-            tuples.append(tup)
-        session.flush()
-
-        cls.table = table
-        cls.tuples = tuples
+    def setUpClass(self):
+        super(TestScanner, self).setUpClass()
 
     def setUp(self):
         pass
@@ -161,3 +142,15 @@ class TestScanner(KuduTestBase, unittest.TestCase):
             tuples.extend(batch.as_tuples())
 
         self.assertEqual(sorted(tuples), self.tuples[10:90])
+
+    def test_unixtime_micros(self):
+        """
+        Test setting and getting unixtime_micros fields
+        """
+        # Insert new rows
+        self.insert_new_unixtime_micros_rows()
+
+        # Validate results
+        scanner = self.table.scanner()
+        scanner.set_fault_tolerant().open()
+        self.assertEqual(sorted(self.tuples), scanner.read_all_tuples())

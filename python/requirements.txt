@@ -3,3 +3,4 @@ cython >= 0.21
 setuptools >= 0.8
 six
 unittest2
+pytz

@@ -20,6 +20,8 @@ from kudu.compat import unittest, long
 from kudu.tests.common import KuduTestBase
 from kudu.client import Partitioning
 import kudu
+import datetime
+from pytz import utc
 
 
 class TestClient(KuduTestBase, unittest.TestCase):
@@ -37,7 +39,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
         table = self.client.table(self.ex_table)
         cols = [(table['key'], 'key', 'int32'),
                 (table[1], 'int_val', 'int32'),
-                (table[-1], 'string_val', 'string')]
+                (table[-1], 'unixtime_micros_val', 'unixtime_micros')]
 
         for col, name, type in cols:
             assert col.name == bytes(name)
@@ -166,6 +168,9 @@ class TestClient(KuduTestBase, unittest.TestCase):
         op['key'] = 1
         op['int_val'] = 111
         op['string_val'] = 'updated'
+        # Insert datetime without timezone specified, will be assumed
+        # to be UTC
+        op['unixtime_micros_val'] = datetime.datetime(2016, 10, 30, 10, 12)
         session.apply(op)
 
         op = table.new_upsert()
@@ -178,8 +183,10 @@ class TestClient(KuduTestBase, unittest.TestCase):
         scanner = table.scanner().open()
         rows = dict((t[0], t) for t in scanner.read_all_tuples())
         assert len(rows) == nrows
-        assert rows[1] == (1, 111, 'updated')
-        assert rows[2] == (2, 222, 'upserted')
+        assert rows[1] == (1, 111, 'updated',
+                           datetime.datetime(2016, 10, 30, 10, 12)
+                           .replace(tzinfo=utc))
+        assert rows[2] == (2, 222, 'upserted', None)
 
         # Delete the rows we just wrote
         for i in range(nrows):

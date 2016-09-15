@@ -164,6 +164,7 @@ class KuduTestBase(object):
         builder.add_column('key', kudu.int32, nullable=False)
         builder.add_column('int_val', kudu.int32)
         builder.add_column('string_val', kudu.string)
+        builder.add_column('unixtime_micros_val', kudu.unixtime_micros)
         builder.set_primary_keys(['key'])
 
         return builder.build()

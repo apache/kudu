@@ -17,9 +17,11 @@
 # under the License.
 
 from kudu.compat import unittest
+from kudu.tests.util import TestScanBase
 from kudu.tests.common import KuduTestBase
 import kudu
 from multiprocessing import Pool
+import datetime
 
 def _get_scan_token_results(input):
     client = kudu.Client("{0}:{1}".format(input[1], input[2]))
@@ -27,36 +29,11 @@ def _get_scan_token_results(input):
     scanner.open()
     return scanner.read_all_tuples()
 
-class TestScanToken(KuduTestBase, unittest.TestCase):
+class TestScanToken(TestScanBase):
 
     @classmethod
     def setUpClass(self):
-        """
-        Stolen from the the test scanner given the similarity in
-        functionality.
-        """
         super(TestScanToken, self).setUpClass()
-
-        self.nrows = 100
-        table = self.client.table(self.ex_table)
-        session = self.client.new_session()
-
-        tuples = []
-        for i in range(self.nrows):
-            op = table.new_insert()
-            tup = i, i * 2, 'hello_%d' % i if i % 2 == 0 else None
-            op['key'] = tup[0]
-            op['int_val'] = tup[1]
-            if i % 2 == 0:
-                op['string_val'] = tup[2]
-            elif i % 3 == 0:
-                op['string_val'] = None
-            session.apply(op)
-            tuples.append(tup)
-        session.flush()
-
-        self.table = table
-        self.tuples = tuples
 
     def setUp(self):
         pass
@@ -160,3 +137,25 @@ class TestScanToken(KuduTestBase, unittest.TestCase):
                 tuples.extend(batch.as_tuples())
 
         self.assertEqual(sorted(tuples), self.tuples[10:90])
+
+    def test_unixtime_micros(self):
+        """
+        Test setting and getting unixtime_micros fields
+        """
+        # Insert new rows
+        self.insert_new_unixtime_micros_rows()
+
+        # Validate results
+        builder = self.table.scan_token_builder()
+        tokens = builder.set_fault_tolerant().build()
+
+        tuples = []
+        for token in tokens:
+            scanner = token.into_kudu_scanner()
+            scanner.open()
+
+            while scanner.has_more_rows():
+                batch = scanner.next_batch()
+                tuples.extend(batch.as_tuples())
+
+        self.assertEqual(sorted(self.tuples), tuples)

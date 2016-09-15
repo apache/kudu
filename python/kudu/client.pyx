@@ -25,13 +25,27 @@ cimport cpython
 from cython.operator cimport dereference as deref
 
 from libkudu_client cimport *
-
 from kudu.compat import tobytes, frombytes
 from kudu.schema cimport Schema, ColumnSchema
 from kudu.errors cimport check_status
+from kudu.util import to_unixtime_micros, from_unixtime_micros
 from errors import KuduException
 
 import six
+
+
+cdef dict _type_names = {
+    KUDU_INT8 : "KUDU_INT8",
+    KUDU_INT16 : "KUDU_INT16",
+    KUDU_INT32 : "KUDU_INT32",
+    KUDU_INT64 : "KUDU_INT64",
+    KUDU_STRING : "KUDU_STRING",
+    KUDU_BOOL : "KUDU_BOOL",
+    KUDU_FLOAT : "KUDU_FLOAT",
+    KUDU_DOUBLE : "KUDU_DOUBLE",
+    KUDU_BINARY : "KUDU_BINARY",
+    KUDU_UNIXTIME_MICROS : "KUDU_UNIXTIME_MICROS"
+}
 
 
 cdef class TimeDelta:
@@ -512,6 +526,14 @@ cdef class StringVal(RawValue):
 
     def __dealloc__(self):
         del self.val
+
+cdef class UnixtimeMicrosVal(RawValue):
+    cdef:
+        int64_t val
+
+    def __cinit__(self, obj):
+        self.val = to_unixtime_micros(obj)
+        self.data = &self.val
 
 #----------------------------------------------------------------------
 cdef class TabletServer:
@@ -1030,6 +1052,11 @@ cdef class Row:
         return cpython.PyBytes_FromStringAndSize(<char*> val.mutable_data(),
                                                  val.size())
 
+    cdef inline get_unixtime_micros(self, int i):
+        cdef int64_t val
+        check_status(self.row.GetUnixTimeMicros(i, &val))
+        return val
+
     cdef inline get_slot(self, int i):
         cdef:
             Status s
@@ -1051,8 +1078,11 @@ cdef class Row:
             return self.get_float(i)
         elif t == KUDU_STRING:
             return frombytes(self.get_string(i))
+        elif t == KUDU_UNIXTIME_MICROS:
+            return from_unixtime_micros(self.get_unixtime_micros(i))
         else:
-            raise TypeError(t)
+            raise TypeError("Cannot get kudu type <{0}>"
+                                .format(_type_names[t]))
 
     cdef inline bint is_null(self, int i):
         return self.row.IsNull(i)
@@ -1712,6 +1742,11 @@ cdef class PartialRow:
     cpdef set_field(self, key, value):
         cdef:
             int i = self.table.schema.get_loc(key)
+
+        self.set_loc(i, value)
+
+    cpdef set_loc(self, int i, value):
+        cdef:
             DataType t = self.table.schema.loc_type(i)
             cdef Slice* slc
 
@@ -1746,9 +1781,18 @@ cdef class PartialRow:
             # Not safe to take a reference to PyBytes data for now
             self.row.SetStringCopy(i, deref(slc))
             del slc
-
-    cpdef set_loc(self, int i, value):
-        pass
+        elif t == KUDU_UNIXTIME_MICROS:
+            # String with custom format
+            #  eg: ("2016-01-01", "%Y-%m-%d")
+            if type(value) is tuple:
+                self.row.SetUnixTimeMicros(i, <int64_t>
+                    to_unixtime_micros(value[0], value[1]))
+                # datetime.datetime input or string with default format
+            else:
+                self.row.SetUnixTimeMicros(i, <int64_t>
+                    to_unixtime_micros(value))
+        else:
+            raise TypeError("Cannot set kudu type <{0}>.".format(_type_names[t]))
 
     cpdef set_field_null(self, key):
         pass
@@ -1839,5 +1883,7 @@ cdef inline cast_pyvalue(DataType t, object o):
         return FloatVal(o)
     elif t == KUDU_STRING:
         return StringVal(o)
+    elif t == KUDU_UNIXTIME_MICROS:
+        return UnixtimeMicrosVal(o)
     else:
-        raise TypeError(t)
+        raise TypeError("Cannot cast kudu type <{0}>".format(_type_names[t]))

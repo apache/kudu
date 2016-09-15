@@ -206,21 +206,24 @@ cdef extern from "kudu/client/scan_batch.h" namespace "kudu::client" nogil:
         # the value is unset, or the value is NULL. Otherwise they return
         # the current set value in *val.
         Status GetBool(Slice& col_name, c_bool* val)
+        Status GetBool(int col_idx, c_bool* val)
 
         Status GetInt8(Slice& col_name, int8_t* val)
+        Status GetInt8(int col_idx, int8_t* val)
+
         Status GetInt16(Slice& col_name, int16_t* val)
+        Status GetInt16(int col_idx, int16_t* val)
+
         Status GetInt32(Slice& col_name, int32_t* val)
+        Status GetInt32(int col_idx, int32_t* val)
+
         Status GetInt64(Slice& col_name, int64_t* val)
+        Status GetInt64(int col_idx, int64_t* val)
 
         Status GetUnixTimeMicros(const Slice& col_name,
                             int64_t* micros_since_utc_epoch)
-
-        Status GetBool(int col_idx, c_bool* val)
-
-        Status GetInt8(int col_idx, int8_t* val)
-        Status GetInt16(int col_idx, int16_t* val)
-        Status GetInt32(int col_idx, int32_t* val)
-        Status GetInt64(int col_idx, int64_t* val)
+        Status GetUnixTimeMicros(int col_idx,
+                            int64_t* micros_since_utc_epoch)
 
         Status GetString(Slice& col_name, Slice* val)
         Status GetString(int col_idx, Slice* val)
