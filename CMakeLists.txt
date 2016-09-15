@@ -617,6 +617,15 @@ endfunction()
 # Testing
 ############################################################
 
+# Add a new binary that is compiled just like a unit test but is not executed
+# by or registered with "ctest". Useful for writing tests that use the Google
+# Test infrastructure but cannot or should not be run pre-commit.
+function(ADD_KUDU_TEST_NO_CTEST REL_TEST_NAME)
+  get_filename_component(TEST_NAME ${REL_TEST_NAME} NAME_WE)
+  add_executable(${TEST_NAME} "${REL_TEST_NAME}.cc")
+  target_link_libraries(${TEST_NAME} ${KUDU_TEST_LINK_LIBS})
+endfunction()
+
 # Add a new test case, with or without an executable that should be built.
 #
 # REL_TEST_NAME is the name of the test. It may be a single component
@@ -629,13 +638,13 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
   if(NO_TESTS)
     return()
   endif()
+
   get_filename_component(TEST_NAME ${REL_TEST_NAME} NAME_WE)
 
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${REL_TEST_NAME}.cc)
     # This test has a corresponding .cc file, set it up as an executable.
     set(TEST_PATH "${EXECUTABLE_OUTPUT_PATH}/${TEST_NAME}")
-    add_executable(${TEST_NAME} "${REL_TEST_NAME}.cc")
-    target_link_libraries(${TEST_NAME} ${KUDU_TEST_LINK_LIBS})
+    ADD_KUDU_TEST_NO_CTEST(${REL_TEST_NAME})
   else()
     # No executable, just invoke the test (probably a script) directly.
     get_filename_component(TEST_NAME_WITH_EXT ${REL_TEST_NAME} NAME)

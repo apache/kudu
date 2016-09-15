@@ -193,6 +193,16 @@ Status ExternalMiniCluster::Restart() {
   return Status::OK();
 }
 
+void ExternalMiniCluster::SetDaemonBinPath(string daemon_bin_path) {
+  daemon_bin_path_ = std::move(daemon_bin_path);
+  for (auto& master : masters_) {
+    master->SetExePath(GetBinaryPath(kMasterBinaryName));
+  }
+  for (auto& ts : tablet_servers_) {
+    ts->SetExePath(GetBinaryPath(kTabletServerBinaryName));
+  }
+}
+
 string ExternalMiniCluster::GetBinaryPath(const string& binary) const {
   CHECK(!daemon_bin_path_.empty());
   return JoinPathSegments(daemon_bin_path_, binary);
@@ -530,8 +540,8 @@ ExternalDaemon::ExternalDaemon(std::shared_ptr<rpc::Messenger> messenger,
                                string exe, string data_dir,
                                vector<string> extra_flags)
     : messenger_(std::move(messenger)),
-      exe_(std::move(exe)),
       data_dir_(std::move(data_dir)),
+      exe_(std::move(exe)),
       extra_flags_(std::move(extra_flags)) {}
 
 ExternalDaemon::~ExternalDaemon() {
@@ -624,6 +634,11 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
 
   process_.swap(p);
   return Status::OK();
+}
+
+void ExternalDaemon::SetExePath(string exe) {
+  CHECK(IsShutdown()) << "Call Shutdown() before changing the executable path";
+  exe_ = std::move(exe);
 }
 
 Status ExternalDaemon::Pause() {

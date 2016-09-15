@@ -249,6 +249,11 @@ class ExternalMiniCluster : public MiniClusterBase {
                  const std::string& flag,
                  const std::string& value);
 
+  // Set the path where daemon binaries can be found.
+  // Overrides 'daemon_bin_path' set by ExternalMiniClusterOptions.
+  // The cluster must be shut down before calling this method.
+  void SetDaemonBinPath(std::string daemon_bin_path);
+
   // Returns the path where 'binary' is expected to live, based on
   // ExternalMiniClusterOptions.daemon_bin_path if it was provided, or on the
   // path of the currently running executable otherwise.
@@ -298,6 +303,11 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Return the pid of the running process.
   // Causes a CHECK failure if the process is not running.
   pid_t pid() const;
+
+  // Set the path of the executable to run as a daemon.
+  // Overrides the exe path specified in the constructor.
+  // The daemon must be shut down before calling this method.
+  void SetExePath(std::string exe);
 
   // Sends a SIGSTOP signal to the daemon.
   Status Pause();
@@ -351,8 +361,8 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   void FlushCoverage();
 
   const std::shared_ptr<rpc::Messenger> messenger_;
-  const std::string exe_;
   const std::string data_dir_;
+  std::string exe_;
   std::vector<std::string> extra_flags_;
 
   gscoped_ptr<Subprocess> process_;

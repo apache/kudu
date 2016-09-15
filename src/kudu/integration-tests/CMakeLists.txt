@@ -18,9 +18,9 @@
 set(INTEGRATION_TESTS_SRCS
   cluster_itest_util.cc
   cluster_verifier.cc
+  log_verifier.cc
   external_mini_cluster.cc
   external_mini_cluster_fs_inspector.cc
-  log_verifier.cc
   mini_cluster.cc
   test_workload.cc
 )
@@ -72,6 +72,9 @@ ADD_KUDU_TEST(ts_recovery-itest)
 ADD_KUDU_TEST(ts_tablet_manager-itest)
 ADD_KUDU_TEST(webserver-stress-itest)
 ADD_KUDU_TEST(write_throttling-itest)
+
+# Tests that should not be run automatically by ctest.
+ADD_KUDU_TEST_NO_CTEST(version_migration-test)
 
 # Some tests have additional dependencies
 set(KUDU_TEST_LINK_LIBS kudu_tools_util ${KUDU_TEST_LINK_LIBS})
