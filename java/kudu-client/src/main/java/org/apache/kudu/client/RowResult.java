@@ -39,10 +39,17 @@ import java.util.TimeZone;
 public class RowResult {
 
   private static final int INDEX_RESET_LOCATION = -1;
-  private static final DateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
-  static {
-    DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
-  }
+
+  // Thread local DateFormat since they're not thread-safe.
+  private static final ThreadLocal<DateFormat> DATE_FORMAT = new ThreadLocal<DateFormat>(){
+    @Override
+    protected DateFormat initialValue() {
+      SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+      sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+      return sdf;
+    }
+  };
+
   private static final long MS_IN_S = 1000L;
   private static final long US_IN_S = 1000L * 1000L;
   private int index = INDEX_RESET_LOCATION;
@@ -513,7 +520,7 @@ public class RowResult {
     long tsMillis = timestamp / MS_IN_S;
     long tsMicros = timestamp % US_IN_S;
     StringBuffer formattedTs = new StringBuffer();
-    DATE_FORMAT.format(new Date(tsMillis), formattedTs, new FieldPosition(0));
+    DATE_FORMAT.get().format(new Date(tsMillis), formattedTs, new FieldPosition(0));
     formattedTs.append(String.format(".%06dZ", tsMicros));
     return formattedTs.toString();
   }
