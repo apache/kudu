@@ -36,8 +36,8 @@ using std::vector;
 
 // Tests that pounding the web UI doesn't cause any crashes.
 TEST_F(KuduTest, TestWebUIDoesNotCrashCluster) {
-#ifdef THREAD_SANITIZER
-  // When using TSAN, more than one checker is too much load on the cluster.
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+  // When using a sanitizer, checkers place a lot of load on the cluster.
   const int kWebUICheckers = 1;
 #else
   const int kWebUICheckers = 10;
@@ -78,7 +78,7 @@ TEST_F(KuduTest, TestWebUIDoesNotCrashCluster) {
   ASSERT_OK(cluster.Restart());
   ASSERT_OK(cluster.WaitForTabletsRunning(cluster.tablet_server(0),
                                           kNumTablets,
-                                          MonoDelta::FromSeconds(30)));
+                                          MonoDelta::FromSeconds(180)));
   NO_FATALS(cluster.AssertNoCrashes());
 }
 
