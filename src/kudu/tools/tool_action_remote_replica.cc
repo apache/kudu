@@ -35,6 +35,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/human_readable.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/tool_action_common.h"
@@ -42,8 +43,6 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/rpc/messenger.h"
-#include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -56,14 +55,11 @@ namespace tools {
 using client::KuduRowResult;
 using client::KuduScanBatch;
 using client::KuduSchema;
-using rpc::Messenger;
-using rpc::MessengerBuilder;
 using rpc::RpcController;
 using server::ServerStatusPB;
 using std::cerr;
 using std::cout;
 using std::endl;
-using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -176,7 +172,7 @@ Status CheckReplicas(const RunnerContext& context) {
 
   bool all_running = true;
   for (const auto& r : replicas) {
-    TabletStatusPB rs = r.tablet_status();
+    const TabletStatusPB& rs = r.tablet_status();
     if (rs.state() != tablet::RUNNING) {
       cerr << "Tablet id: " << rs.tablet_id() << " is "
            << tablet::TabletStatePB_Name(rs.state()) << endl;
@@ -187,9 +183,8 @@ Status CheckReplicas(const RunnerContext& context) {
   if (all_running) {
     cout << "All tablets are running" << endl;
     return Status::OK();
-  } else {
-    return Status::IllegalState("Not all tablets are running");
   }
+  return Status::IllegalState("Not all tablets are running");
 }
 
 Status DeleteReplica(const RunnerContext& context) {
@@ -271,7 +266,7 @@ Status ListReplicas(const RunnerContext& context) {
     Partition partition;
     Partition::FromPB(rs.partition(), &partition);
 
-    string state = tablet::TabletStatePB_Name(rs.state());
+    const string& state = tablet::TabletStatePB_Name(rs.state());
     cout << "Tablet id: " << rs.tablet_id() << endl;
     cout << "State: " << state << endl;
     cout << "Table name: " << rs.table_name() << endl;

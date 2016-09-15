@@ -47,7 +47,6 @@ using consensus::ChangeConfigType;
 using consensus::ConsensusServiceProxy;
 using consensus::RaftPeerPB;
 using rpc::RpcController;
-using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;

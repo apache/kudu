@@ -88,7 +88,6 @@ using server::ServerStatusPB;
 using server::SetFlagRequestPB;
 using server::SetFlagResponsePB;
 using std::cout;
-using std::cerr;
 using std::endl;
 using std::shared_ptr;
 using std::string;
