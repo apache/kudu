@@ -389,6 +389,7 @@ Batcher::Batcher(KuduClient* client,
     had_errors_(false),
     flush_callback_(nullptr),
     next_op_sequence_number_(0),
+    timeout_(MonoDelta::FromSeconds(60)),
     outstanding_lookups_(0),
     buffer_bytes_used_(0) {
 }
@@ -427,10 +428,9 @@ Batcher::~Batcher() {
   CHECK(state_ == kFlushed || state_ == kAborted) << "Bad state: " << state_;
 }
 
-void Batcher::SetTimeoutMillis(int millis) {
-  CHECK_GE(millis, 0);
+void Batcher::SetTimeout(const MonoDelta& timeout) {
   std::lock_guard<simple_spinlock> l(lock_);
-  timeout_ = MonoDelta::FromMilliseconds(millis);
+  timeout_ = timeout;
 }
 
 
@@ -478,13 +478,7 @@ void Batcher::CheckForFinishedFlush() {
 }
 
 MonoTime Batcher::ComputeDeadlineUnlocked() const {
-  MonoDelta timeout = timeout_;
-  if (PREDICT_FALSE(!timeout.Initialized())) {
-    KLOG_EVERY_N(WARNING, 1000) << "Client writing with no timeout set, using 60 seconds.\n"
-                                << GetStackTrace();
-    timeout = MonoDelta::FromSeconds(60);
-  }
-  return MonoTime::Now() + timeout;
+  return MonoTime::Now() + timeout_;
 }
 
 void Batcher::FlushAsync(KuduStatusCallback* cb) {

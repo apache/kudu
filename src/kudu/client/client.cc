@@ -775,7 +775,7 @@ Status KuduSession::SetFlushMode(FlushMode m) {
     // Be paranoid in client code.
     return Status::InvalidArgument("Bad flush mode");
   }
-  return data_->SetFlushMode(m, shared_from_this());
+  return data_->SetFlushMode(m);
 }
 
 Status KuduSession::SetExternalConsistencyMode(ExternalConsistencyMode m) {
@@ -820,7 +820,7 @@ bool KuduSession::HasPendingOperations() const {
 }
 
 Status KuduSession::Apply(KuduWriteOperation* write_op) {
-  RETURN_NOT_OK(data_->ApplyWriteOp(shared_from_this(), write_op));
+  RETURN_NOT_OK(data_->ApplyWriteOp(write_op));
   // Thread-safety note: this method should not be called concurrently
   // with other methods which modify the KuduSession::Data members, so it
   // should be safe to read KuduSession::Data members without protection.

@@ -60,7 +60,7 @@ class KuduSession::Data {
   void Init(sp::weak_ptr<KuduSession> session);
 
   // Called by Batcher when a flush has finished.
-  void FlushFinished(internal::Batcher* b);
+  void FlushFinished(internal::Batcher* batcher);
 
   // Returns Status::IllegalState() if 'force' is false and there are still pending
   // operations. If 'force' is true batcher_ is aborted even if there are pending
@@ -68,7 +68,7 @@ class KuduSession::Data {
   Status Close(bool force);
 
   // Set flush mode for the session.
-  Status SetFlushMode(FlushMode mode, sp::weak_ptr<KuduSession> session);
+  Status SetFlushMode(FlushMode mode);
 
   // Set external consistency mode for the session.
   Status SetExternalConsistencyMode(KuduSession::ExternalConsistencyMode m);
@@ -123,11 +123,10 @@ class KuduSession::Data {
   MonoDelta FlushCurrentBatcher(const MonoDelta& max_age);
 
   // Apply a write operation, i.e. push it through the batcher chain.
-  Status ApplyWriteOp(sp::weak_ptr<KuduSession> session,
-                      KuduWriteOperation* write_op);
+  Status ApplyWriteOp(KuduWriteOperation* write_op);
 
   // Check and start the time-based flush task in background, if necessary.
-  void TimeBasedFlushInit(sp::weak_ptr<KuduSession> weak_session);
+  void TimeBasedFlushInit();
 
   // The self-rescheduling task to flush write operations which have been
   // accumulating for too long (controlled by flush_interval_).
@@ -158,6 +157,12 @@ class KuduSession::Data {
   // The client that this session is associated with.
   const sp::shared_ptr<KuduClient> client_;
 
+  // Weak reference to the containing session. The reference is weak to
+  // avoid circular referencing.  The reference to the KuduSession object
+  // is needed by batchers and time-based flush task: being run in independent
+  // threads, they need to make sure the object is alive before accessing it.
+  sp::weak_ptr<KuduSession> session_;
+
   // The reference to the client's messenger (keeping the reference instead of
   // declaring friendship to KuduClient and accessing it via the client_).
   std::weak_ptr<rpc::Messenger> messenger_;
@@ -168,7 +173,7 @@ class KuduSession::Data {
   kudu::client::KuduSession::ExternalConsistencyMode external_consistency_mode_;
 
   // Timeout for the next batch.
-  int timeout_ms_;
+  MonoDelta timeout_;
 
   // Interval for the max-wait flush background task.
   MonoDelta flush_interval_;  // protected by mutex_
@@ -207,12 +212,18 @@ class KuduSession::Data {
   // operations. The buffer is a virtual entity: there isn't contiguous place
   // in the memory which would contain that 'buffered' data. Instead, buffer's
   // data is spread across all pending operations in all active batchers.
+  // Thread-safety note: buffer_bytes_limit_ is not supposed to be modified
+  // from any other thread since no thread-safety is advertised for the
+  // kudu::KuduSession interface.
   size_t buffer_bytes_limit_;
 
   // The high-watermark level as the percentage of the buffer space used by
   // freshly added (not-yet-scheduled-for-flush) write operations.
   // Once the level is reached, the BackgroundFlusher triggers flushing
   // of accumulated write operations when running in AUTO_FLUSH_BACKGROUND mode.
+  // Thread-safety note: buffer_watermark_pct_ is not supposed to be modified
+  // from any other thread since no thread-safety is advertised for the
+  // kudu::KuduSession interface.
   int32_t buffer_watermark_pct_;
 
   // The total number of bytes used by buffered write operations.

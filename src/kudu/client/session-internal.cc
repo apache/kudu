@@ -45,7 +45,6 @@ KuduSession::Data::Data(shared_ptr<KuduClient> client,
       messenger_(std::move(messenger)),
       error_collector_(new ErrorCollector()),
       external_consistency_mode_(CLIENT_PROPAGATED),
-      timeout_ms_(-1),
       flush_interval_(MonoDelta::FromMilliseconds(1000)),
       flush_task_active_(false),
       flush_mode_(AUTO_FLUSH_SYNC),
@@ -59,7 +58,8 @@ KuduSession::Data::Data(shared_ptr<KuduClient> client,
 }
 
 void KuduSession::Data::Init(weak_ptr<KuduSession> session) {
-  TimeBasedFlushInit(std::move(session));
+  session_.swap(session);
+  TimeBasedFlushInit();
 }
 
 void KuduSession::Data::FlushFinished(Batcher* batcher) {
@@ -100,7 +100,7 @@ Status KuduSession::Data::SetExternalConsistencyMode(
         "Cannot change external consistency mode when writes are buffered");
   }
   // Thread-safety note: the external_consistency_mode_ is not supposed
-  // to be accessed or modified from any other thread of control:
+  // to be accessed or modified from any other thread:
   // no thread-safety is assumed for the kudu::KuduSession interface.
   // However, the lock is needed to check for pending operations because
   // there may be pending RPCs and the background flush task may be running.
@@ -108,8 +108,7 @@ Status KuduSession::Data::SetExternalConsistencyMode(
   return Status::OK();
 }
 
-Status KuduSession::Data::SetFlushMode(FlushMode mode,
-                                       sp::weak_ptr<KuduSession> session) {
+Status KuduSession::Data::SetFlushMode(FlushMode mode) {
   {
     std::lock_guard<Mutex> l(mutex_);
     if (HasPendingOperationsUnlocked()) {
@@ -129,7 +128,7 @@ Status KuduSession::Data::SetFlushMode(FlushMode mode,
     flush_mode_ = mode;
   }
 
-  TimeBasedFlushInit(std::move(session));
+  TimeBasedFlushInit();
 
   return Status::OK();
 }
@@ -142,7 +141,7 @@ Status KuduSession::Data::SetBufferBytesLimit(size_t size) {
         "Cannot change buffer size limit when writes are buffered.");
   }
   // Thread-safety note: the buffer_bytes_limit_ is not supposed to be accessed
-  // or modified from any other thread of control: no thread-safety is assumed
+  // or modified from any other thread: no thread-safety is assumed
   // for the kudu::KuduSession interface. Due to the latter reason,
   // there should not be any threads waiting on conditions which are affected
   // by the change, so signalling other threads isn't necessary here.
@@ -165,7 +164,7 @@ Status KuduSession::Data::SetBufferFlushWatermark(int watermark_pct) {
         "Cannot change buffer flush watermark when writes are buffered.");
   }
   // Thread-safety note: the buffer_watermark_pct_ is not supposed
-  // to be accessed or modified from any other thread of control:
+  // to be accessed or modified from any other thread:
   // no thread-safety is assumed for the kudu::KuduSession interface.
   // Due to the latter reason, there should not be any threads waiting on
   // conditions which are affected by the setting, so no signalling
@@ -199,7 +198,7 @@ Status KuduSession::Data::SetMaxBatchersNum(unsigned int max_num) {
         "Cannot change the limit on maximum number of batchers when writes are buffered.");
   }
   // Thread-safety note: the batchers_num_limit_ is not supposed
-  // to be accessed or modified from any other thread of control:
+  // to be accessed or modified from any other thread:
   // no thread-safety is assumed for the kudu::KuduSession interface.
   // Due to the latter reason, there should not be any threads waiting
   // on conditions which are affected by the setting, so no signalling
@@ -216,9 +215,9 @@ void KuduSession::Data::SetTimeoutMillis(int timeout_ms) {
   }
   {
     std::lock_guard<Mutex> l(mutex_);
-    timeout_ms_ = timeout_ms;
+    timeout_ = MonoDelta::FromMilliseconds(timeout_ms);
     if (batcher_) {
-      batcher_->SetTimeoutMillis(timeout_ms);
+      batcher_->SetTimeout(timeout_);
     }
   }
 }
@@ -272,7 +271,7 @@ void KuduSession::Data::FlushCurrentBatcher(int64_t watermark,
   scoped_refptr<Batcher> batcher_to_flush;
   {
     std::lock_guard<Mutex> l(mutex_);
-    if (batcher_ && batcher_->buffer_bytes_used() >= watermark) {
+    if (PREDICT_TRUE(batcher_) && batcher_->buffer_bytes_used() >= watermark) {
       batcher_to_flush.swap(batcher_);
     }
   }
@@ -319,10 +318,7 @@ MonoDelta KuduSession::Data::FlushCurrentBatcher(const MonoDelta& max_age) {
 // from this this method, the operation must end up either in the corresponding
 // batcher (success path) or in the error collector (failure path). Otherwise
 // it would be a memory leak.
-Status KuduSession::Data::ApplyWriteOp(
-    sp::weak_ptr<KuduSession> weak_session,
-    KuduWriteOperation* write_op) {
-
+Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
   if (PREDICT_FALSE(!write_op)) {
     return Status::InvalidArgument("NULL operation");
   }
@@ -337,14 +333,7 @@ Status KuduSession::Data::ApplyWriteOp(
   // Get 'wire size' of the write operation.
   const int64_t required_size = Batcher::GetOperationSizeInBuffer(write_op);
 
-  // Thread-safety note: the buffer_bytes_limit_ and
-  // buffer_watermark_pct_ are not supposed to be modified
-  // from any other thread of control since no thread-safety is advertised
-  // for the kudu::KuduSession interface.
-  // So, no protection while accessing those members.
   const size_t max_size = buffer_bytes_limit_;
-  const size_t flush_watermark =
-      buffer_bytes_limit_ * buffer_watermark_pct_ / 100;
   // Thread-safety note: the flush_mode_ is accessed from the background
   // time-based flush task for reading. Practically, it would be possible
   // to get away with not protecting the flush_mode_ since it's read-only
@@ -426,13 +415,12 @@ Status KuduSession::Data::ApplyWriteOp(
       DCHECK(!batcher_);
       // Thread-safety note: the external_consistecy_mode_ and timeout_ms_
       // are not supposed to be accessed or modified from any other thread
-      // of control since no thread-safety is advertised
-      // for the kudu::KuduSession interface.
+      // no thread-safety is advertised for the kudu::KuduSession interface.
       scoped_refptr<Batcher> batcher(
-          new Batcher(client_.get(), error_collector_, std::move(weak_session),
+          new Batcher(client_.get(), error_collector_, session_,
                       external_consistency_mode_));
-      if (timeout_ms_ != -1) {
-        batcher->SetTimeoutMillis(timeout_ms_);
+      if (timeout_.Initialized()) {
+        batcher->SetTimeout(timeout_);
       }
       batcher.swap(batcher_);
       ++batchers_num_;
@@ -448,6 +436,8 @@ Status KuduSession::Data::ApplyWriteOp(
   }
 
   if (flush_mode == AUTO_FLUSH_BACKGROUND) {
+    const size_t flush_watermark =
+        buffer_bytes_limit_ * buffer_watermark_pct_ / 100;
     // In AUTO_FLUSH_BACKGROUND mode it's necessary to flush the newly added
     // operations if the flush watermark is reached. The current batcher is
     // the exclusive and the only container for the newly added operations.
@@ -459,10 +449,9 @@ Status KuduSession::Data::ApplyWriteOp(
   return Status::OK();
 }
 
-void KuduSession::Data::TimeBasedFlushInit(
-    sp::weak_ptr<KuduSession> weak_session) {
+void KuduSession::Data::TimeBasedFlushInit() {
   KuduSession::Data::TimeBasedFlushTask(
-      Status::OK(), messenger_, std::move(weak_session), true);
+      Status::OK(), messenger_, session_, true);
 }
 
 void KuduSession::Data::TimeBasedFlushTask(
