@@ -20,23 +20,28 @@
 
 #include "kudu/util/memory/memory.h"
 
+#include <string.h>
+
+#include <algorithm>
+#include <cstdlib>
+
+#include <gflags/gflags.h>
+
 #include "kudu/util/alignment.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/memory/overwrite.h"
 #include "kudu/util/mem_tracker.h"
 
-#include <gflags/gflags.h>
-#include <string.h>
-
-#include <algorithm>
 using std::copy;
-using std::max;
 using std::min;
-using std::reverse;
-using std::sort;
-using std::swap;
-#include <cstdlib>
 
+// TODO(onufry) - test whether the code still tests OK if we set this to true,
+// or remove this code and add a test that Google allocator does not change it's
+// contract - 16-aligned in -c opt and %16 == 8 in debug.
+DEFINE_bool(allocator_aligned_mode, false,
+            "Use 16-byte alignment instead of 8-byte, "
+            "unless explicitly specified otherwise - to boost SIMD");
+TAG_FLAG(allocator_aligned_mode, hidden);
 
 namespace kudu {
 
@@ -76,14 +81,6 @@ void BufferAllocator::LogAllocation(size_t requested,
                  << ", and actually allocated: " << buffer->size();
   }
 }
-
-// TODO(onufry) - test whether the code still tests OK if we set this to true,
-// or remove this code and add a test that Google allocator does not change it's
-// contract - 16-aligned in -c opt and %16 == 8 in debug.
-DEFINE_bool(allocator_aligned_mode, false,
-            "Use 16-byte alignment instead of 8-byte, "
-            "unless explicitly specified otherwise - to boost SIMD");
-TAG_FLAG(allocator_aligned_mode, hidden);
 
 HeapBufferAllocator::HeapBufferAllocator()
   : aligned_mode_(FLAGS_allocator_aligned_mode) {

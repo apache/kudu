@@ -38,6 +38,20 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/threadpool.h"
 
+DEFINE_int32(checksum_timeout_sec, 3600,
+             "Maximum total seconds to wait for a checksum scan to complete "
+             "before timing out.");
+DEFINE_int32(checksum_scan_concurrency, 4,
+             "Number of concurrent checksum scans to execute per tablet server.");
+DEFINE_bool(checksum_snapshot, true, "Should the checksum scanner use a snapshot scan");
+DEFINE_uint64(checksum_snapshot_timestamp,
+              kudu::tools::ChecksumOptions::kCurrentTimestamp,
+              "timestamp to use for snapshot checksum scans, defaults to 0, which "
+              "uses the current timestamp of a tablet server involved in the scan");
+
+DEFINE_int32(fetch_replica_info_concurrency, 20,
+             "Number of concurrent tablet servers to fetch replica info from.");
+
 namespace kudu {
 namespace tools {
 
@@ -48,19 +62,6 @@ using std::shared_ptr;
 using std::string;
 using std::unordered_map;
 using strings::Substitute;
-
-DEFINE_int32(checksum_timeout_sec, 3600,
-             "Maximum total seconds to wait for a checksum scan to complete "
-             "before timing out.");
-DEFINE_int32(checksum_scan_concurrency, 4,
-             "Number of concurrent checksum scans to execute per tablet server.");
-DEFINE_bool(checksum_snapshot, true, "Should the checksum scanner use a snapshot scan");
-DEFINE_uint64(checksum_snapshot_timestamp, ChecksumOptions::kCurrentTimestamp,
-              "timestamp to use for snapshot checksum scans, defaults to 0, which "
-              "uses the current timestamp of a tablet server involved in the scan");
-
-DEFINE_int32(fetch_replica_info_concurrency, 20,
-             "Number of concurrent tablet servers to fetch replica info from.");
 
 // The stream to write output to. If this is NULL, defaults to cout.
 // This is used by tests to capture output.

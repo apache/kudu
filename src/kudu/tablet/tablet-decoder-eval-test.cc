@@ -24,6 +24,11 @@
 #include "kudu/common/schema.h"
 #include "kudu/tablet/tablet-test-base.h"
 
+DEFINE_int32(decoder_eval_test_nrepeats, 1, "Number of times to repeat per tablet");
+DEFINE_int32(decoder_eval_test_lower, 0, "Lower bound on the predicate [lower, upper)");
+DEFINE_int32(decoder_eval_test_upper, 50, "Upper bound on the predicate [lower, upper)");
+DEFINE_int32(decoder_eval_test_strlen, 10, "Number of strings per cell");
+
 namespace kudu {
 namespace tablet {
 
@@ -36,11 +41,6 @@ enum Setup {
   SMALL = 100, MEDIUM = 5000, LARGE = 100000
 #endif
 };
-
-DEFINE_int32(decoder_eval_test_nrepeats, 1, "Number of times to repeat per tablet");
-DEFINE_int32(decoder_eval_test_lower, 0, "Lower bound on the predicate [lower, upper)");
-DEFINE_int32(decoder_eval_test_upper, 50, "Upper bound on the predicate [lower, upper)");
-DEFINE_int32(decoder_eval_test_strlen, 10, "Number of strings per cell");
 
 class TabletDecoderEvalTest : public KuduTabletTest,
                               public ::testing::WithParamInterface<Setup> {

@@ -18,10 +18,8 @@
 #include "kudu/server/server_base_options.h"
 
 #include <gflags/gflags.h>
-#include "kudu/util/flag_tags.h"
 
-namespace kudu {
-namespace server {
+#include "kudu/util/flag_tags.h"
 
 DEFINE_string(server_dump_info_path, "",
               "Path into which the server information will be "
@@ -40,6 +38,9 @@ DEFINE_int32(metrics_log_interval_ms, 0,
              "directory as specified by the -log_dir flag. If this is not a positive "
              "value, then metrics logging will be disabled.");
 TAG_FLAG(metrics_log_interval_ms, advanced);
+
+namespace kudu {
+namespace server {
 
 ServerBaseOptions::ServerBaseOptions()
   : env(Env::Default()),

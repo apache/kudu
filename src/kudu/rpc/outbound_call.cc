@@ -19,7 +19,6 @@
 #include <boost/functional/hash.hpp>
 #include <gflags/gflags.h>
 #include <mutex>
-#include <set>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -35,16 +34,6 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
 
-namespace kudu {
-namespace rpc {
-
-using google::protobuf::io::CodedOutputStream;
-using google::protobuf::Message;
-using std::set;
-using strings::Substitute;
-
-static const double kMicrosPerSecond = 1000000.0;
-
 // 100M cycles should be about 50ms on a 2Ghz box. This should be high
 // enough that involuntary context switches don't trigger it, but low enough
 // that any serious blocking behavior on the reactor would.
@@ -54,6 +43,14 @@ DEFINE_int64(rpc_callback_max_cycles, 100 * 1000 * 1000,
              " (Advanced debugging option)");
 TAG_FLAG(rpc_callback_max_cycles, advanced);
 TAG_FLAG(rpc_callback_max_cycles, runtime);
+
+namespace kudu {
+namespace rpc {
+
+using google::protobuf::Message;
+using strings::Substitute;
+
+static const double kMicrosPerSecond = 1000000.0;
 
 ///
 /// OutboundCall

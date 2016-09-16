@@ -31,20 +31,19 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/test_macros.h"
 
-using std::shared_ptr;
-using std::unordered_set;
-
-namespace kudu {
-namespace tablet {
-
-using fs::ReadableBlock;
-
 DEFINE_int32(testflush_num_inserts, 1000,
              "Number of rows inserted in TestFlush");
 DEFINE_int32(testiterator_num_inserts, 1000,
              "Number of rows inserted in TestRowIterator/TestInsert");
 DEFINE_int32(testcompaction_num_rows, 1000,
              "Number of rows per rowset in TestCompaction");
+
+using std::shared_ptr;
+
+namespace kudu {
+namespace tablet {
+
+using fs::ReadableBlock;
 
 template<class SETUP>
 class TestTablet : public TabletTestBase<SETUP> {

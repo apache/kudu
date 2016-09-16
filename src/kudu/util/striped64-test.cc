@@ -25,11 +25,11 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
-namespace kudu {
-
 // These flags are used by the multi-threaded tests, can be used for microbenchmarking.
 DEFINE_int32(num_operations, 10*1000, "Number of operations to perform");
 DEFINE_int32(num_threads, 2, "Number of worker threads");
+
+namespace kudu {
 
 // Test some basic operations
 TEST(Striped64Test, TestBasic) {

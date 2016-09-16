@@ -23,14 +23,14 @@
 #include "kudu/master/master.h"
 #include "kudu/util/flag_tags.h"
 
-namespace kudu {
-namespace master {
-
 DEFINE_string(master_addresses, "",
               "Comma-separated list of the RPC addresses belonging to all "
               "Masters in this cluster. "
               "NOTE: if not specified, configures a non-replicated Master.");
 TAG_FLAG(master_addresses, stable);
+
+namespace kudu {
+namespace master {
 
 MasterOptions::MasterOptions() {
   rpc_opts.default_port = Master::kDefaultPort;
