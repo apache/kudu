@@ -197,6 +197,7 @@ delete old segments.
 
 == Common Kudu workflows
 
+[[migrate_to_multi_master]]
 === Migrating to Multiple Kudu Masters
 
 For high availability and to avoid a single point of failure, Kudu clusters should be created with
@@ -236,19 +237,21 @@ $ kudu fs dump uuid --fs_wal_dir=<master_data_dir> 2>/dev/null
 master_data_dir:: existing master's previously recorded data directory
 +
 [source,bash]
-.Example
+Example::
++
 ----
 $ kudu fs dump uuid --fs_wal_dir=/var/lib/kudu/master 2>/dev/null
 4aab798a69e94fab8d77069edff28ce0
-$
 ----
 +
 * Optional: configure a DNS alias for the master. The alias could be a DNS cname (if the machine
   already has an A record in DNS), an A record (if the machine is only known by its IP address),
-  or an alias in /etc/hosts. Doing this simplifies recovering from permanent master failures
-  greatly, and is highly recommended. The alias should be an abstract representation of the
-  master (e.g. `master-1`).
-
+  or an alias in /etc/hosts. The alias should be an abstract representation of the master (e.g.
+  `master-1`).
++
+WARNING: Without DNS aliases it is not possible to recover from permanent master failures, and as
+such it is highly recommended.
++
 . Perform the following preparatory steps for each new master:
 * Choose an unused machine in the cluster. The master generates very little load so it can be
   colocated with other data services or load-generating processes, though not with another Kudu
@@ -275,18 +278,18 @@ $ kudu fs dump uuid --fs_wal_dir=<master_data_dir> 2>/dev/null
 master_data_dir:: new master's previously recorded data directory
 +
 [source,bash]
-.Example
+Example::
++
 ----
 $ kudu fs format --fs_wal_dir=/var/lib/kudu/master
 $ kudu fs dump uuid --fs_wal_dir=/var/lib/kudu/master 2>/dev/null
 f5624e05f40649b79a757629a69d061e
-$
 ----
 
-. If using CM, add the new Kudu master roles now, but do not start them. If using DNS aliases,
-  override the empty value of the `Master Address` parameter for each role (including the
-  existing master role) with that master's alias. Add the port number (separated by a colon) if
-  using a non-default RPC port value.
+. If using CM, add the new Kudu master roles now, but do not start them.
+* If using DNS aliases, override the empty value of the `Master Address` parameter for each role
+  (including the existing master role) with that master's alias.
+* Add the port number (separated by a colon) if using a non-default RPC port value.
 
 . Rewrite the master's Raft configuration with the following command, executed on the existing
   master machine:
@@ -305,7 +308,8 @@ hostname::: master's previously recorded hostname or alias
 port::: master's previously recorded RPC port number
 +
 [source,bash]
-.Example
+Example::
++
 ----
 $ kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=/var/lib/kudu/master 00000000000000000000000000000000 4aab798a69e94fab8d77069edff28ce0:master-1:7051 f5624e05f40649b79a757629a69d061e:master-2:7051 988d8ac6530f426cbe180be5ba52033d:master-3:7051
 ----
@@ -328,7 +332,8 @@ hostname::: existing master's previously recorded hostname or alias
 port::: existing master's previously recorded RPC port number
 +
 [source,bash]
-.Example
+Example::
++
 ----
 $ kudu local_replica copy_from_remote --fs_wal_dir=/var/lib/kudu/master 00000000000000000000000000000000 master-1:7051
 ----
@@ -347,6 +352,152 @@ port:: master's previously recorded RPC port number
 
 Congratulations, the cluster has now been migrated to multiple masters! To verify that all masters
 are working properly, consider performing the following sanity checks:
+
+* Using a browser, visit each master's web UI. Look at the /masters page. All of the masters should
+  be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
+  contents of /masters on each master should be the same.
+
+* Run a Kudu system check (ksck) on the cluster using the `kudu` command line tool. Help for ksck
+  can be viewed via `kudu cluster ksck --help`.
+
+=== Recovering from a dead Kudu Master in a Multi-Master Deployment
+
+Kudu multi-master deployments function normally in the event of a master loss. However, it is
+important to replace the dead master; otherwise a second failure may lead to a loss of availability,
+depending on the number of available masters. This workflow describes how to replace the dead
+master.
+
+Due to https://issues.apache.org/jira/browse/KUDU-1620[KUDU-1620], it is not possible to perform
+this workflow without also restarting the live masters. As such, the workflow requires a
+maintenance window, albeit a brief one as masters generally restart quickly.
+
+WARNING: Kudu does not yet support Raft configuration changes for masters. As such, it is only
+possible to replace a master if the deployment was created with DNS aliases. See the
+<<migrate_to_multi_master,multi-master migration workflow>> for more details.
+
+WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
+using Cloudera Manager (CM), the workflow also presupposes familiarity with it.
+
+WARNING: All of the command line steps below should be executed as the Kudu UNIX user, typically
+`kudu`.
+
+==== Prepare for the recovery
+
+. Ensure that the dead master is well and truly dead. Take whatever steps needed to prevent it from
+  accidentally restarting; this can be quite dangerous for the cluster post-recovery.
+
+. Choose one of the remaining live masters to serve as a basis for recovery. The rest of this
+  workflow will refer to this master as the "reference" master.
+
+. Choose an unused machine in the cluster where the new master will live. The master generates very
+  little load so it can be colocated with other data services or load-generating processes, though
+  not with another Kudu master from the same configuration. The rest of this workflow will refer to
+  this master as the "replacement" master.
+
+. Perform the following preparatory steps for the replacement master:
+* Ensure Kudu is installed on the machine, either via system packages (in which case the `kudu` and
+  `kudu-master` packages should be installed), or via some other means.
+* Choose and record the directory where the master's data will live.
+
+. Perform the following preparatory steps for each live master:
+* Identify and record the directory where the master's data lives. If using Kudu system packages,
+  the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir`
+  configuration parameter.
+* Identify and record the master's UUID. It can be fetched using the following command:
++
+[source,bash]
+----
+$ kudu fs dump uuid --fs_wal_dir=<master_data_dir> 2>/dev/null
+----
+master_data_dir:: live master's previously recorded data directory
++
+[source,bash]
+Example::
++
+----
+$ kudu fs dump uuid --fs_wal_dir=/var/lib/kudu/master 2>/dev/null
+80a82c4b8a9f4c819bab744927ad765c
+----
++
+. Perform the following preparatory steps for the reference master:
+* Identify and record the directory where the master's data lives. If using Kudu system packages,
+  the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir`
+  configuration parameter.
+* Identify and record the UUIDs of every master in the cluster, using the following command:
++
+[source,bash]
+----
+$ kudu local_replica cmeta print_replica_uuids --fs_wal_dir=<master_data_dir> <tablet_id> 2>/dev/null
+----
+master_data_dir:: reference master's previously recorded data directory
+tablet_id:: must be the string `00000000000000000000000000000000`
++
+[source,bash]
+Example::
++
+----
+$ kudu local_replica cmeta print_replica_uuids --fs_wal_dir=/var/lib/kudu/master 00000000000000000000000000000000 2>/dev/null
+80a82c4b8a9f4c819bab744927ad765c 2a73eeee5d47413981d9a1c637cce170 1c3f3094256347528d02ec107466aef3
+----
++
+. Using the two previously-recorded lists of UUIDs (one for all live masters and one for all
+  masters), determine and record (by process of elimination) the UUID of the dead master.
+
+==== Perform the recovery
+
+. Format the data directory on the replacement master machine using the previously recorded
+  UUID of the dead master. Use the following command sequence:
++
+[source,bash]
+----
+$ kudu fs format --fs_wal_dir=<master_data_dir> --uuid=<uuid>
+----
++
+master_data_dir:: replacement master's previously recorded data directory
+uuid:: dead master's previously recorded UUID
++
+[source,bash]
+Example::
++
+----
+$ kudu fs format --fs_wal_dir=/var/lib/kudu/master --uuid=80a82c4b8a9f4c819bab744927ad765c
+----
++
+. Copy the master data to the replacement master with the following command:
++
+[source,bash]
+----
+$ kudu local_replica copy_from_remote --fs_wal_dir=<master_data_dir> <tablet_id> <reference_master>
+----
++
+master_data_dir:: replacement master's previously recorded data directory
+tablet_id:: must be the string `00000000000000000000000000000000`
+reference_master:: RPC address of the reference master and must be a string of the form
+`<hostname>:<port>`
+hostname::: reference master's previously recorded hostname or alias
+port::: reference master's previously recorded RPC port number
++
+[source,bash]
+Example::
++
+----
+$ kudu local_replica copy_from_remote --fs_wal_dir=/var/lib/kudu/master 00000000000000000000000000000000 master-2:7051
+----
++
+. If using CM, add the replacement Kudu master role now, but do not start it.
+* Override the empty value of the `Master Address` parameter for the new role with the replacement
+  master's alias.
+* Add the port number (separated by a colon) if using a non-default RPC port value.
+
+. Reconfigure the DNS alias for the dead master to point at the replacement master.
+
+. Start the replacement master.
+
+. Restart the existing live masters. This results in a brief availability outage, but it should
+  last only as long as it takes for the masters to come back up.
+
+Congratulations, the dead master has been replaced! To verify that all masters are working properly,
+consider performing the following sanity checks:
 
 * Using a browser, visit each master's web UI. Look at the /masters page. All of the masters should
   be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
