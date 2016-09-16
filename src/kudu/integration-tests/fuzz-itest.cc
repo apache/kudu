@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <boost/optional.hpp>
+#include <boost/optional/optional_io.hpp>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -31,6 +33,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -43,6 +46,7 @@ DEFINE_int32(keyspace_size, 2,  "number of distinct primary keys to test with");
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(use_hybrid_clock);
 
+using boost::optional;
 using std::string;
 using std::vector;
 using std::unique_ptr;
@@ -52,6 +56,7 @@ using std::unique_ptr;
 enum TestOpType {
   TEST_INSERT,
   TEST_UPSERT,
+  TEST_UPSERT_PK_ONLY,
   TEST_UPDATE,
   TEST_DELETE,
   TEST_FLUSH_OPS,
@@ -93,6 +98,7 @@ namespace tablet {
 const char* TestOpType_names[] = {
   "TEST_INSERT",
   "TEST_UPSERT",
+  "TEST_UPSERT_PK_ONLY",
   "TEST_UPDATE",
   "TEST_DELETE",
   "TEST_FLUSH_OPS",
@@ -129,10 +135,7 @@ class FuzzTest : public KuduTest {
     FLAGS_enable_maintenance_manager = false;
     FLAGS_use_hybrid_clock = false;
 
-    KuduSchemaBuilder b;
-    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-    b.AddColumn("val")->Type(KuduColumnSchema::INT32);
-    CHECK_OK(b.Build(&schema_));
+    schema_ = client::KuduSchemaFromSchema(CreateKeyValueTestSchema());
   }
 
   void SetUp() override {
@@ -192,9 +195,12 @@ class FuzzTest : public KuduTest {
     return tablet_peer_->tablet();
   }
 
-  // Adds an insert for the given key/value pair to 'ops', returning the new stringified
-  // value of the row.
-  string InsertOrUpsertRow(int key, int val, TestOpType type) {
+  // Adds an insert for the given key/value pair to 'ops', returning the new contents
+  // of the row.
+  ExpectedKeyValueRow InsertOrUpsertRow(int key, int val,
+                                        optional<ExpectedKeyValueRow> old_row,
+                                        TestOpType type) {
+    ExpectedKeyValueRow ret;
     unique_ptr<KuduWriteOperation> op;
     if (type == TEST_INSERT) {
       op.reset(table_->NewInsert());
@@ -203,45 +209,54 @@ class FuzzTest : public KuduTest {
     }
     KuduPartialRow* row = op->mutable_row();
     CHECK_OK(row->SetInt32(0, key));
-    if (val & 1) {
-      CHECK_OK(row->SetNull(1));
+    ret.key = key;
+    if (type != TEST_UPSERT_PK_ONLY) {
+      if (val & 1) {
+        CHECK_OK(row->SetNull(1));
+      } else {
+        CHECK_OK(row->SetInt32(1, val));
+        ret.val = val;
+      }
     } else {
-      CHECK_OK(row->SetInt32(1, val));
+      // For "upsert PK only", we expect the row to keep its old value
+      // the row existed, or NULL if there was no old row.
+      ret.val = old_row ? old_row->val : boost::none;
     }
-    string ret = row->ToString();
     CHECK_OK(session_->Apply(op.release()));
     return ret;
   }
 
-  // Adds an update of the given key/value pair to 'ops', returning the new stringified
-  // value of the row.
-  string MutateRow(int key, uint32_t new_val) {
+  // Adds an update of the given key/value pair to 'ops', returning the new contents
+  // of the row.
+  ExpectedKeyValueRow MutateRow(int key, uint32_t new_val) {
+    ExpectedKeyValueRow ret;
     unique_ptr<KuduUpdate> update(table_->NewUpdate());
     KuduPartialRow* row = update->mutable_row();
     CHECK_OK(row->SetInt32(0, key));
+    ret.key = key;
     if (new_val & 1) {
       CHECK_OK(row->SetNull(1));
     } else {
       CHECK_OK(row->SetInt32(1, new_val));
+      ret.val = new_val;
     }
-    string ret = row->ToString();
     CHECK_OK(session_->Apply(update.release()));
     return ret;
   }
 
-  // Adds a delete of the given row to 'ops', returning an empty string (indicating that
+  // Adds a delete of the given row to 'ops', returning boost::none (indicating that
   // the row no longer exists).
-  string DeleteRow(int key) {
+  optional<ExpectedKeyValueRow> DeleteRow(int key) {
     unique_ptr<KuduDelete> del(table_->NewDelete());
     KuduPartialRow* row = del->mutable_row();
     CHECK_OK(row->SetInt32(0, key));
     CHECK_OK(session_->Apply(del.release()));
-    return "";
+    return boost::none;
   }
 
   // Random-read the given row, returning its current value.
-  // If the row doesn't exist, returns "()".
-  string GetRow(int key) {
+  // If the row doesn't exist, returns boost::none.
+  optional<ExpectedKeyValueRow> GetRow(int key) {
     KuduScanner s(table_.get());
     CHECK_OK(s.AddConjunctPredicate(table_->NewComparisonPredicate(
         "key", KuduPredicate::EQUAL, KuduValue::FromInt(key))));
@@ -250,10 +265,16 @@ class FuzzTest : public KuduTest {
       KuduScanBatch batch;
       CHECK_OK(s.NextBatch(&batch));
       for (KuduScanBatch::RowPtr row : batch) {
-        return row.ToString();
+        ExpectedKeyValueRow ret;
+        CHECK_OK(row.GetInt32(0, &ret.key));
+        if (!row.IsNull(1)) {
+          ret.val = 0;
+          CHECK_OK(row.GetInt32(1, ret.val.get_ptr()));
+        }
+        return ret;
       }
     }
-    return "()";
+    return boost::none;
   }
 
  protected:
@@ -290,7 +311,8 @@ void GenerateTestCase(vector<TestOp>* ops, int len) {
         data_in_mrs = true;
         break;
       case TEST_UPSERT:
-        ops->push_back({TEST_UPSERT, row_key});
+      case TEST_UPSERT_PK_ONLY:
+        ops->push_back({r, row_key});
         exists[row_key] = true;
         ops_pending = true;
         // If the row doesn't currently exist, this will act like an insert
@@ -387,20 +409,23 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
   // into a test method in order to reproduce a failure.
   LOG(INFO) << "test case:\n" << DumpTestCase(test_ops);
 
-  vector<string> cur_val(FLAGS_keyspace_size);
-  vector<string> pending_val(FLAGS_keyspace_size);
+  vector<optional<ExpectedKeyValueRow>> cur_val(FLAGS_keyspace_size);
+  vector<optional<ExpectedKeyValueRow>> pending_val(FLAGS_keyspace_size);
 
   int i = 0;
   for (const TestOp& test_op : test_ops) {
-    string val_in_table = GetRow(test_op.row_key);
-    EXPECT_EQ("(" + cur_val[test_op.row_key] + ")", val_in_table);
+    optional<ExpectedKeyValueRow> val_in_table = GetRow(test_op.row_key);
+    EXPECT_EQ(cur_val[test_op.row_key], val_in_table);
 
     LOG(INFO) << test_op.ToString();
     switch (test_op.type) {
       case TEST_INSERT:
       case TEST_UPSERT:
-        pending_val[test_op.row_key] = InsertOrUpsertRow(test_op.row_key, i++, test_op.type);
+      case TEST_UPSERT_PK_ONLY: {
+        pending_val[test_op.row_key] = InsertOrUpsertRow(
+            test_op.row_key, i++, pending_val[test_op.row_key], test_op.type);
         break;
+      }
       case TEST_UPDATE:
         for (int j = 0; j < update_multiplier; j++) {
           pending_val[test_op.row_key] = MutateRow(test_op.row_key, i++);
@@ -666,6 +691,18 @@ TEST_F(FuzzTest, TestUpsertSeq) {
       {TEST_FLUSH_TABLET, 0},
       {TEST_RESTART_TS, 0},
       {TEST_UPDATE, 1},
+    });
+}
+
+// Regression test for KUDU-1623: updates without primary key
+// columns specified can cause crashes and issues at restart.
+TEST_F(FuzzTest, TestUpsert_PKOnly) {
+  RunFuzzCase({
+      {TEST_INSERT, 1},
+      {TEST_FLUSH_OPS, 0},
+      {TEST_UPSERT_PK_ONLY, 1},
+      {TEST_FLUSH_OPS, 0},
+      {TEST_RESTART_TS, 0}
     });
 }
 

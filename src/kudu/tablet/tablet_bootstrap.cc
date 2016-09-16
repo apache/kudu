@@ -1448,10 +1448,13 @@ Status TabletBootstrap::FilterOperation(const OperationResultPB& op_result,
   }
 
   int num_mutated_stores = op_result.mutated_stores_size();
-  if (PREDICT_FALSE(num_mutated_stores == 0 || num_mutated_stores > 2)) {
-    return Status::Corruption(Substitute("All operations must have one or two mutated_stores: $0",
+  if (PREDICT_FALSE(num_mutated_stores > 2)) {
+    return Status::Corruption(Substitute("All operations must have at most two mutated_stores: $0",
                                          op_result.ShortDebugString()));
   }
+  // NOTE: it's possible that num_mutated_stores = 0 in the case of an
+  // UPSERT which only specified the primary key. In that case, if the
+  // row already existed, it gets dropped without converting into an UPDATE.
 
   // The mutation may have been duplicated, so we'll check whether any of the
   // output targets was active.
