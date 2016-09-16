@@ -199,12 +199,16 @@ void TestWorkload::Setup() {
     }
 
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-    CHECK_OK(table_creator->table_name(table_name_)
-             .schema(&client_schema)
-             .num_replicas(num_replicas_)
-             .set_range_partition_columns({ "key" })
-             .split_rows(splits)
-             .Create());
+    Status s = table_creator->table_name(table_name_)
+        .schema(&client_schema)
+        .num_replicas(num_replicas_)
+        .set_range_partition_columns({ "key" })
+        .split_rows(splits)
+        .Create();
+    if (!s.ok() && !s.IsAlreadyPresent() && !s.IsServiceUnavailable()) {
+      // TODO(KUDU-1537): Should be fixed with Exactly Once semantics.
+      LOG(FATAL) << s.ToString();
+    }
   } else {
     LOG(INFO) << "TestWorkload: Skipping table creation because table "
               << table_name_ << " already exists";

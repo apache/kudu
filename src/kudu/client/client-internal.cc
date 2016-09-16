@@ -205,8 +205,8 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
           LOG(INFO) << "Determining the new leader Master and retrying...";
           WARN_NOT_OK(SetMasterServerProxy(client, deadline),
                       "Unable to determine the new leader Master");
-          continue;
         }
+        continue;
       } else {
         // Operation deadline expired during this latest RPC.
         s = s.CloneAndPrepend(Substitute("$0 timed out after deadline expired",
