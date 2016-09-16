@@ -2264,6 +2264,8 @@ void ClientTest::TimeInsertOpBatch(
   const size_t row_num = string_sizes.size();
   shared_ptr<KuduSession> session(client_->NewSession());
   ASSERT_OK(session->SetMutationBufferSpace(buffer_size));
+  ASSERT_OK(session->SetMutationBufferFlushWatermark(0.5));
+  ASSERT_OK(session->SetMutationBufferMaxNum(2));
   ASSERT_OK(session->SetFlushMode(mode));
   Stopwatch sw(Stopwatch::ALL_THREADS);
   LOG_TIMING(INFO, "Running in " + mode_str + " mode") {
@@ -2388,10 +2390,10 @@ TEST_F(ClientTest, TestSessionMutationBufferMaxNum) {
 // in AUTO_FLUSH and AUTO_FLUSH_BACKGROUND mode; all the operations have
 // the same pre-defined size.
 TEST_F(ClientTest, TestFlushModesCompareOpRatesFixedSize) {
-  const size_t kBufferSizeBytes = 32 * 1024;
-  const size_t kRowNum = 4 * 1024;
+  const size_t kBufferSizeBytes = 1024;
+  const size_t kRowNum = 256;
 
-  vector<size_t> str_sizes(kRowNum, kBufferSizeBytes / 8);
+  vector<size_t> str_sizes(kRowNum, kBufferSizeBytes / 128);
   CpuTimes t_afb;
   TimeInsertOpBatch(KuduSession::AUTO_FLUSH_BACKGROUND,
                     kBufferSizeBytes, 0, 2, str_sizes,
@@ -2407,13 +2409,13 @@ TEST_F(ClientTest, TestFlushModesCompareOpRatesFixedSize) {
 // A test scenario to compare rate of submission of small write operations
 // in AUTO_FLUSH and AUTO_FLUSH_BACKGROUND mode with operations of random size.
 TEST_F(ClientTest, TestFlushModesCompareOpRatesRandomSize) {
-  const size_t kBufferSizeBytes = 32 * 1024;
-  const size_t kRowNum = 4 * 1024;
+  const size_t kBufferSizeBytes = 1024;
+  const size_t kRowNum = 256;
 
   SeedRandom();
   vector<size_t> str_sizes(kRowNum);
   for (size_t i = 0; i < kRowNum; ++i) {
-    str_sizes[i] = rand() % (kBufferSizeBytes / 8);
+    str_sizes[i] = rand() % (kBufferSizeBytes / 128);
   }
   CpuTimes t_afb;
   TimeInsertOpBatch(KuduSession::AUTO_FLUSH_BACKGROUND,
