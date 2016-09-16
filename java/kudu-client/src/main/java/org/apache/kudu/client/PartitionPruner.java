@@ -168,7 +168,8 @@ public class PartitionPruner {
     // The index of the final constrained component in the partition key.
     int constrainedIndex = 0;
     if (rangeLowerBound.length > 0 || rangeUpperBound.length > 0) {
-      // The range component is constrained.
+      // The range component is constrained if either of the range bounds are
+      // specified (non-empty).
       constrainedIndex = hashBuckets.size();
     } else {
       // Search the hash bucket constraints from right to left, looking for the

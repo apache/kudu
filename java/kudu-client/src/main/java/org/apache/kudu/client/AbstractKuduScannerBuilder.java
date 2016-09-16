@@ -308,7 +308,6 @@ public abstract class AbstractKuduScannerBuilder
 
   /**
    * Set an encoded (inclusive) start partition key for the scan.
-   * Not for public consumption: use either predicates or primary key bounds instead.
    *
    * @param partitionKey the encoded partition key
    * @return this instance
@@ -322,7 +321,6 @@ public abstract class AbstractKuduScannerBuilder
 
   /**
    * Set an encoded (exclusive) end partition key for the scan.
-   * Not for public consumption: use either predicates or primary key bounds instead.
    *
    * @param partitionKey the encoded partition key
    * @return this instance

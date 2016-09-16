@@ -113,7 +113,7 @@ public final class ByteVec {
    *
    * @param additional capacity to reserve
    */
-  public void reserve(int additional) {
+  public void reserveAdditional(int additional) {
     Preconditions.checkArgument(additional >= 0, "negative additional");
     if (data.length - len >= additional) return;
     // Use a 1.5x growth factor. According to
@@ -169,7 +169,7 @@ public final class ByteVec {
    * @param element the element to append
    */
   public void push(byte element) {
-    reserve(1);
+    reserveAdditional(1);
     data[len++] = element;
   }
 
@@ -193,7 +193,7 @@ public final class ByteVec {
    * @param len the number of bytes from {@code values} to append
    */
   public void append(byte[] values, int offset, int len) {
-    reserve(len);
+    reserveAdditional(len);
     System.arraycopy(values, offset, this.data, this.len, len);
     this.len += len;
   }

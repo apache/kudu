@@ -194,10 +194,8 @@ class KeyEncoder {
     byte lastByte = value[offset + (len - 1)];
     lastByte = Bytes.xorLeftMostBit(lastByte);
     buf.push(lastByte);
-    if (len > 1) {
-      for (int i = len - 2; i >= 0; i--) {
-        buf.push(value[offset + i]);
-      }
+    for (int i = len - 2; i >= 0; i--) {
+      buf.push(value[offset + i]);
     }
   }
 

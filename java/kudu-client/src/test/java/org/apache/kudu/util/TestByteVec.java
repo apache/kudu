@@ -76,13 +76,13 @@ public class TestByteVec {
       assertNotEquals(vals, copy.asList());
     }
 
-    // reserve
+    // reserveAdditional
     int unused = copy.capacity() - copy.len();
 
-    copy.reserve(unused);
+    copy.reserveAdditional(unused);
     assertEquals(vec.capacity(), copy.capacity());
 
-    copy.reserve(unused + 1);
+    copy.reserveAdditional(unused + 1);
     assertTrue(copy.capacity() > vec.capacity());
 
     // reserveExact
