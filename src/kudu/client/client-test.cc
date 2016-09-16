@@ -2134,32 +2134,30 @@ TEST_F(ClientTest, TestApplyToSessionWithoutFlushing_OpsBuffered) {
   DoApplyWithoutFlushTest(10000);
 }
 
-// Apply a large amount of data without calling Flush() in MANUAL_FLUSH mode,
+// Apply a large amount of data (relative to size of the mutation buffer)
+// without calling Flush() in MANUAL_FLUSH mode,
 // and ensure that we get an error on Apply() rather than sending a too-large
 // RPC to the server.
 TEST_F(ClientTest, TestApplyTooMuchWithoutFlushing) {
-
   // Applying a bunch of small rows without a flush should result
   // in an error.
-  {
-    const size_t kBufferSizeBytes = 1024 * 1024;
-    bool got_expected_error = false;
-    shared_ptr<KuduSession> session = client_->NewSession();
-    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    ASSERT_OK(session->SetMutationBufferSpace(kBufferSizeBytes));
-    for (int i = 0; i < kBufferSizeBytes; i++) {
-      Status s = ApplyInsertToSession(session.get(), client_table_, 1, 1, "x");
-      if (s.IsIncomplete()) {
-        ASSERT_STR_CONTAINS(s.ToString(), "not enough mutation buffer space");
-        got_expected_error = true;
-        break;
-      } else {
-        ASSERT_OK(s);
-      }
+  const size_t kBufferSizeBytes = 1024;
+  bool got_expected_error = false;
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetMutationBufferSpace(kBufferSizeBytes));
+  for (int i = 0; i < kBufferSizeBytes; i++) {
+    Status s = ApplyInsertToSession(session.get(), client_table_, 1, 1, "x");
+    if (s.IsIncomplete()) {
+      ASSERT_STR_CONTAINS(s.ToString(), "not enough mutation buffer space");
+      got_expected_error = true;
+      break;
+    } else {
+      ASSERT_OK(s);
     }
-    ASSERT_TRUE(got_expected_error);
-    EXPECT_TRUE(session->HasPendingOperations());
   }
+  ASSERT_TRUE(got_expected_error);
+  EXPECT_TRUE(session->HasPendingOperations());
 }
 
 // Applying a big operation which does not fit into the buffer should
@@ -2427,6 +2425,32 @@ TEST_F(ClientTest, TestFlushModesCompareOpRatesRandomSize) {
                     &t_afs);
   // AUTO_FLUSH_BACKGROUND should be faster than AUTO_FLUSH_SYNC.
   EXPECT_GT(t_afs.wall, t_afb.wall);
+}
+
+// A test which verifies that a session in AUTO_FLUSH_BACKGROUND mode can
+// be safely abandoned: its pending data should not be flushed.
+// This test also checks that the reference to a session stored by the
+// background flusher task is not leaked: the leak might appear due to
+// circular reference between the session and the messenger's reactor
+// which is used to execute the background flush task.
+TEST_F(ClientTest, TestAutoFlushBackgroundDropSession) {
+  const int32_t kFlushIntervalMs = 1000;
+  shared_ptr<KuduSession> session(client_->NewSession());
+  ASSERT_OK(session->SetMutationBufferFlushInterval(kFlushIntervalMs));
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "x"));
+  session.reset();
+
+  // Wait for the background flusher task to awake and try to do its job.
+  // The 3x extra is to deal with occasional delays to avoid flakiness.
+  SleepFor(MonoDelta::FromMilliseconds(3L * kFlushIntervalMs));
+
+  // The session should be gone, and the background flusher thread
+  // should notice that and do not perform flush, so no data is supposed
+  // to appear in the table.
+  vector<string> rows;
+  ScanTableToStrings(client_table_.get(), &rows);
+  EXPECT_TRUE(rows.empty());
 }
 
 // A test scenario for AUTO_FLUSH_BACKGROUND mode:
