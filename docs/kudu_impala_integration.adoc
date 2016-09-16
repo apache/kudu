@@ -1083,3 +1083,25 @@ The examples above have only explored a fraction of what you can do with Impala 
 - View the link:http://www.cloudera.com/content/www/en-us/documentation/enterprise/latest/topics/impala_langref.html[Impala SQL reference].
 - Read about Impala internals or learn how to contribute to Impala on the link:https://github.com/cloudera/Impala/wiki[Impala Wiki].
 - Read about the native link:installation.html#view_api[Kudu APIs].
+
+=== Known Issues and Limitations
+
+- Kudu tables with a name containing upper case or non-ascii characters must be
+  assigned an alternate name when used as an external table in Impala.
+- Kudu tables with a column name containing upper case or non-ascii characters
+  may not be used as an external table in Impala. Non-primary key columns may be
+  renamed in Kudu to work around this issue.
+- When creating a Kudu table, the `CREATE TABLE` statement must include the
+  primary key columns before other columns, in primary key order.
+- Kudu tables containing `UNIXTIME_MICROS`-typed columns may not be used as an
+  external table in Impala.
+- Impala can not create Kudu tables with `TIMESTAMP` or nested-typed columns.
+- Impala can not update values in primary key columns.
+- `NULL`, `NOT NULL`, `!=`, and `IN` predicates are not pushed to Kudu, and
+  instead will be evaluated by the Impala scan node.
+- Impala can not specify column encoding or compression during Kudu table
+  creation, or alter a columns encoding or compression.
+- Impala can not create Kudu tables with bounded range partitions, and can not
+  alter a table to add or remove range partitions.
+- When bulk writing to a Kudu table, performance may be improved by setting the
+  `batch_size` option (see <<kudu_impala_insert_bulk>>).
