@@ -1997,7 +1997,7 @@ MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
   int term_difference =  state_->GetCurrentTermUnlocked() -
       state_->GetTermWithLastCommittedOpUnlocked();
 
-  double backoff_factor = pow(1.1, term_difference);
+  double backoff_factor = pow(1.5, term_difference);
   double min_timeout = MinimumElectionTimeout().ToMilliseconds();
   double max_timeout = std::min<double>(
       min_timeout * backoff_factor,
