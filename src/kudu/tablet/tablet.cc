@@ -457,9 +457,18 @@ Status Tablet::ApplyUpsertAsUpdate(WriteTransactionState* tx_state,
     enc.AddColumnUpdate(c, schema->column_id(i), val);
   }
 
+  // If the UPSERT just included the primary key columns, and the rest
+  // were unset (eg because the table only _has_ primary keys, or because
+  // the rest are intended to be set to their defaults), we need to
+  // avoid doing anything.
+  gscoped_ptr<OperationResultPB> result(new OperationResultPB());
+  if (enc.is_empty()) {
+    upsert->SetMutateSucceeded(std::move(result));
+    return Status::OK();
+  }
+
   RowChangeList rcl = enc.as_changelist();
 
-  gscoped_ptr<OperationResultPB> result(new OperationResultPB());
   Status s = rowset->MutateRow(tx_state->timestamp(),
                                *upsert->key_probe,
                                rcl,

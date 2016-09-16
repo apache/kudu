@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <boost/optional.hpp>
+#include <boost/optional/optional_io.hpp>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -24,6 +26,7 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet-test-base.h"
 #include "kudu/util/stopwatch.h"
@@ -36,6 +39,7 @@ DEFINE_int32(update_delete_ratio, 4, "ratio of update:delete when mutating exist
 
 DECLARE_int32(deltafile_default_block_size);
 
+using boost::optional;
 using std::string;
 using std::vector;
 
@@ -51,9 +55,8 @@ namespace tablet {
 class TestRandomAccess : public KuduTabletTest {
  public:
   TestRandomAccess()
-    : KuduTabletTest(Schema({ ColumnSchema("key", INT32),
-                              ColumnSchema("val", INT32, true) }, 1)),
-      done_(1) {
+      : KuduTabletTest(CreateKeyValueTestSchema()),
+        done_(1) {
     OverrideFlagForSlowTests("keyspace_size", "30000");
     OverrideFlagForSlowTests("runtime_seconds", "10");
     OverrideFlagForSlowTests("sleep_between_background_ops_ms", "1000");
@@ -67,6 +70,7 @@ class TestRandomAccess : public KuduTabletTest {
   virtual void SetUp() OVERRIDE {
     KuduTabletTest::SetUp();
     writer_.reset(new LocalTabletWriter(tablet().get(), &client_schema_));
+    SeedRandom();
   }
 
   // Pick a random row of the table, verify its current state, and then
@@ -81,21 +85,21 @@ class TestRandomAccess : public KuduTabletTest {
   // and validates the correct errors.
   void DoRandomBatch() {
     int key = rand() % expected_tablet_state_.size();
-    string& cur_val = expected_tablet_state_[key];
+    optional<ExpectedKeyValueRow>& cur_val = expected_tablet_state_[key];
 
     // Check that a read yields what we expect.
-    string val_in_table = GetRow(key);
-    ASSERT_EQ("(" + cur_val + ")", val_in_table);
+    optional<ExpectedKeyValueRow> val_in_table = GetRow(key);
+    ASSERT_EQ(cur_val, val_in_table);
 
     vector<LocalTabletWriter::Op> pending;
     for (int i = 0; i < 3; i++) {
       int new_val = rand();
-      if (cur_val.empty()) {
+      if (cur_val == boost::none) {
         // If there is no row, then randomly insert or upsert.
         if (rand() % 2 == 1) {
           cur_val = InsertRow(key, new_val, &pending);
         } else {
-          cur_val = UpsertRow(key, new_val, &pending);
+          cur_val = UpsertRow(key, new_val, cur_val, &pending);
         }
       } else {
         if (new_val % (FLAGS_update_delete_ratio + 1) == 0) {
@@ -104,13 +108,19 @@ class TestRandomAccess : public KuduTabletTest {
           // If we are meant to update an existing row, randomly choose
           // between update and upsert.
           if (rand() % 2 == 1) {
-            cur_val = MutateRow(key, new_val, &pending);
+            cur_val = MutateRow(key, new_val, cur_val, &pending);
           } else {
-            cur_val = UpsertRow(key, new_val, &pending);
+            cur_val = UpsertRow(key, new_val, cur_val, &pending);
           }
         }
       }
     }
+
+    VLOG(1) << "Performing batch:";
+    for (const auto& op : pending) {
+      VLOG(1) << RowOperationsPB::Type_Name(op.type) << " " << op.row->ToString();
+    }
+
     CHECK_OK(writer_->WriteBatch(pending));
     for (LocalTabletWriter::Op op : pending) {
       delete op.row;
@@ -153,55 +163,88 @@ class TestRandomAccess : public KuduTabletTest {
 
   // Adds an insert for the given key/value pair to 'ops', returning the new stringified
   // value of the row.
-  string InsertRow(int key, int val, vector<LocalTabletWriter::Op>* ops) {
-    return InsertOrUpsertRow(RowOperationsPB::INSERT, key, val, ops);
+  optional<ExpectedKeyValueRow> InsertRow(int key, int val, vector<LocalTabletWriter::Op>* ops) {
+    return DoRowOp(RowOperationsPB::INSERT, key, val, boost::none, ops);
   }
 
-  string UpsertRow(int key, int val, vector<LocalTabletWriter::Op>* ops) {
-    return InsertOrUpsertRow(RowOperationsPB::UPSERT, key, val, ops);
-  }
-
-  string InsertOrUpsertRow(RowOperationsPB::Type type, int key, int val,
-                           vector<LocalTabletWriter::Op>* ops) {
-    gscoped_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
-    CHECK_OK(row->SetInt32(0, key));
-    if (val & 1) {
-      CHECK_OK(row->SetNull(1));
-    } else {
-      CHECK_OK(row->SetInt32(1, val));
-    }
-    string ret = row->ToString();
-    ops->push_back(LocalTabletWriter::Op(type, row.release()));
-    return ret;
+  optional<ExpectedKeyValueRow> UpsertRow(int key,
+                                          int val,
+                                          const optional<ExpectedKeyValueRow>& old_row,
+                                          vector<LocalTabletWriter::Op>* ops) {
+    return DoRowOp(RowOperationsPB::UPSERT, key, val, old_row, ops);
   }
 
   // Adds an update of the given key/value pair to 'ops', returning the new stringified
   // value of the row.
-  string MutateRow(int key, uint32_t new_val, vector<LocalTabletWriter::Op>* ops) {
+  optional<ExpectedKeyValueRow> MutateRow(int key,
+                                          uint32_t new_val,
+                                          const optional<ExpectedKeyValueRow>& old_row,
+                                          vector<LocalTabletWriter::Op>* ops) {
+    return DoRowOp(RowOperationsPB::UPDATE, key, new_val, old_row, ops);
+  }
+
+  optional<ExpectedKeyValueRow> DoRowOp(RowOperationsPB::Type type,
+                                        int key,
+                                        int val,
+                                        const optional<ExpectedKeyValueRow>& old_row,
+                                        vector<LocalTabletWriter::Op>* ops) {
+
     gscoped_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
     CHECK_OK(row->SetInt32(0, key));
-    if (new_val & 1) {
-      CHECK_OK(row->SetNull(1));
-    } else {
-      CHECK_OK(row->SetInt32(1, new_val));
+    optional<ExpectedKeyValueRow> ret = ExpectedKeyValueRow();
+    ret->key = key;
+
+    switch (type) {
+      case RowOperationsPB::UPSERT:
+      case RowOperationsPB::UPDATE:
+      case RowOperationsPB::INSERT:
+        switch (val % 2) {
+          case 0:
+            CHECK_OK(row->SetNull(1));
+            ret->val = boost::none;
+            break;
+          case 1:
+            CHECK_OK(row->SetInt32(1, val));
+            ret->val = val;
+            break;
+        }
+
+        if ((type != RowOperationsPB::UPDATE) && (val % 3 == 1)) {
+          // Don't set the value. In the case of an INSERT or an UPSERT with no pre-existing
+          // row, this should default to NULL. Otherwise it should remain set to whatever it
+          // was previously set to.
+          CHECK_OK(row->Unset(1));
+
+          if (type == RowOperationsPB::INSERT || old_row == boost::none) {
+            ret->val = boost::none;
+          } else {
+            ret->val = old_row->val;
+          }
+        }
+        break;
+      case RowOperationsPB::DELETE:
+        ret = boost::none;
+        break;
+      default:
+        LOG(FATAL) << "Unknown type: " << type;
     }
-    string ret = row->ToString();
-    ops->push_back(LocalTabletWriter::Op(RowOperationsPB::UPDATE, row.release()));
+    ops->push_back(LocalTabletWriter::Op(type, row.release()));
     return ret;
   }
 
+
   // Adds a delete of the given row to 'ops', returning an empty string (indicating that
   // the row no longer exists).
-  string DeleteRow(int key, vector<LocalTabletWriter::Op>* ops) {
+  optional<ExpectedKeyValueRow> DeleteRow(int key, vector<LocalTabletWriter::Op>* ops) {
     gscoped_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
     CHECK_OK(row->SetInt32(0, key));
     ops->push_back(LocalTabletWriter::Op(RowOperationsPB::DELETE, row.release()));
-    return "";
+    return boost::none;
   }
 
   // Random-read the given row, returning its current value.
-  // If the row doesn't exist, returns "()".
-  string GetRow(int key) {
+  // If the row doesn't exist, returns boost::none.
+  optional<ExpectedKeyValueRow> GetRow(int key) {
     ScanSpec spec;
     const Schema& schema = this->client_schema_;
     gscoped_ptr<RowwiseIterator> iter;
@@ -210,7 +253,7 @@ class TestRandomAccess : public KuduTabletTest {
     spec.AddPredicate(pred_one);
     CHECK_OK(iter->Init(&spec));
 
-    string ret = "()";
+    optional<ExpectedKeyValueRow> ret;
     int n_results = 0;
 
     Arena arena(1024, 4*1024*1024);
@@ -229,7 +272,11 @@ class TestRandomAccess : public KuduTabletTest {
           << " and now have new matching row: "
           << schema.DebugRow(block.row(i))
           << "  iterator: " << iter->ToString();
-        ret = schema.DebugRow(block.row(i));
+        ret = ExpectedKeyValueRow();
+        ret->key = *schema.ExtractColumnFromRow<INT32>(block.row(i), 0);
+        if (!block.row(i).is_null(1)) {
+          ret->val = *schema.ExtractColumnFromRow<INT32>(block.row(i), 1);
+        }
         n_results++;
       }
     }
@@ -238,7 +285,7 @@ class TestRandomAccess : public KuduTabletTest {
 
  protected:
   // The current expected state of the tablet.
-  vector<string> expected_tablet_state_;
+  vector<optional<ExpectedKeyValueRow>> expected_tablet_state_;
 
   // Latch triggered when the main thread is finished performing
   // operations. This stops the compact/flush thread.
