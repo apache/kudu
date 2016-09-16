@@ -340,7 +340,7 @@ class ReupdateHooks : public Tablet::FlushCompactCommonHooks {
 // Randomized test that attempts to test many arbitrary history GC use cases.
 TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
   OverrideFlagForSlowTests("test_num_rounds",
-                           Substitute("$0", FLAGS_test_num_rounds * 10));
+                           Substitute("$0", FLAGS_test_num_rounds * 5));
 
   LOG(INFO) << "Running " << FLAGS_test_num_rounds << " rounds";
 
