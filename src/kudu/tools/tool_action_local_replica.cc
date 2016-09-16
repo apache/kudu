@@ -64,14 +64,16 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
+DEFINE_bool(dump_data, false,
+            "Dump the data for each column in the rowset.");
 DEFINE_bool(metadata_only, false,
             "Only dump the block metadata when printing blocks.");
 DEFINE_int64(nrows, 0, "Number of rows to dump");
+DEFINE_bool(list_detail, false,
+            "Print partition info for the local replicas");
 DEFINE_int64(rowset_index, -1,
              "Index of the rowset in local replica, default value(-1) "
              "will dump all the rowsets of the local replica");
-DEFINE_bool(verbose, false,
-            "Print additional information (if any)");
 
 namespace kudu {
 namespace tools {
@@ -363,7 +365,7 @@ Status ListLocalReplicas(const RunnerContext& context) {
   vector<string> tablets;
   RETURN_NOT_OK(fs_manager->ListTabletIds(&tablets));
   for (const string& tablet : tablets) {
-    if (FLAGS_verbose) {
+    if (FLAGS_list_detail) {
       cout << "Tablet: " << tablet << endl;
       RETURN_NOT_OK(DumpTabletMeta(fs_manager.get(), tablet, 2));
     } else {
@@ -383,7 +385,7 @@ Status DumpCFileBlockInternal(FsManager* fs_manager,
 
   cout << Indent(indent) << "CFile Header: "
        << reader->header().ShortDebugString() << endl;
-  if (!FLAGS_verbose) {
+  if (!FLAGS_dump_data) {
     return Status::OK();
   }
   cout << Indent(indent) << reader->footer().num_values()
@@ -489,7 +491,7 @@ Status DumpDeltaCFileBlockInternal(FsManager* fs_manager,
                                                               &out,
                                                               &arena));
     for (const DeltaKeyAndUpdate& upd : out) {
-      if (FLAGS_verbose) {
+      if (FLAGS_dump_data) {
         cout << Indent(indent) << upd.key.ToString() << " "
              << RowChangeList(upd.cell).ToString(schema) << endl;
         ++ndeltas;
@@ -631,12 +633,12 @@ unique_ptr<Mode> BuildDumpMode() {
       ActionBuilder("rowset", &DumpRowSet)
       .Description("Dump the rowset contents of a local replica")
       .AddRequiredParameter({ "tablet_id", "tablet identifier" })
+      .AddOptionalParameter("dump_data")
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("metadata_only")
       .AddOptionalParameter("nrows")
       .AddOptionalParameter("rowset_index")
-      .AddOptionalParameter("verbose")
       .Build();
 
   unique_ptr<Action> dump_wals =
@@ -706,7 +708,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .Description("Show list of Kudu replicas in the local filesystem")
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
-      .AddOptionalParameter("verbose")
+      .AddOptionalParameter("list_detail")
       .Build();
 
   return ModeBuilder("local_replica")

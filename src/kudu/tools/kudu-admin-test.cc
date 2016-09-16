@@ -33,6 +33,8 @@ namespace tools {
 
 using client::KuduClient;
 using client::KuduClientBuilder;
+using client::KuduSchema;
+using client::KuduTableCreator;
 using client::sp::shared_ptr;
 using itest::TabletServerMap;
 using itest::TServerDetails;
@@ -207,6 +209,54 @@ TEST_F(AdminCliTest, TestListTables) {
                                                strings::SkipEmpty());
   ASSERT_EQ(1, stdout_lines.size());
   ASSERT_EQ(Substitute("$0\n", kTableId), stdout_lines[0]);
+}
+
+TEST_F(AdminCliTest, TestListTablesDetail) {
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+
+  BuildAndStart({}, {});
+
+  // Add another table to test multiple tables output.
+  const string kAnotherTableId = "TestAnotherTable";
+  KuduSchema client_schema(client::KuduSchemaFromSchema(schema_));
+  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kAnotherTableId)
+           .schema(&client_schema)
+           .set_range_partition_columns({ "key" })
+           .num_replicas(FLAGS_num_replicas)
+           .Create());
+
+  // Grab list of tablet_ids from any tserver.
+  vector<TServerDetails*> tservers;
+  vector<string> tablet_ids;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ListRunningTabletIds(tservers.front(),
+                       MonoDelta::FromSeconds(30), &tablet_ids);
+
+  string stdout;
+  ASSERT_OK(Subprocess::Call({
+    GetAdminToolPath(),
+    "table",
+    "list",
+    "--list_tablets",
+    cluster_->master()->bound_rpc_addr().ToString()
+  }, &stdout, nullptr));
+
+  vector<string> stdout_lines = strings::Split(stdout, "\n",
+                                               strings::SkipEmpty());
+
+  // Verify multiple tables along with their tablets and replica-uuids.
+  ASSERT_EQ(4, stdout_lines.size());
+  ASSERT_STR_CONTAINS(stdout, kTableId);
+  ASSERT_STR_CONTAINS(stdout, kAnotherTableId);
+  ASSERT_STR_CONTAINS(stdout, tablet_ids.front());
+  ASSERT_STR_CONTAINS(stdout, tablet_ids.back());
+
+  for (auto& ts : tservers) {
+    ASSERT_STR_CONTAINS(stdout, ts->uuid());
+    ASSERT_STR_CONTAINS(stdout, ts->uuid());
+  }
 }
 
 } // namespace tools

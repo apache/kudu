@@ -18,7 +18,6 @@
 #include "kudu/tools/tool_action.h"
 
 #include <algorithm>
-#include <iterator>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -27,14 +26,21 @@
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/util/status.h"
+
+DEFINE_bool(list_tablets, false,
+            "Include tablet and replica UUIDs in the output");
 
 namespace kudu {
 namespace tools {
 
 using client::KuduClient;
 using client::KuduClientBuilder;
+using client::KuduScanToken;
+using client::KuduScanTokenBuilder;
+using client::KuduTable;
 using std::cout;
 using std::endl;
 using std::string;
@@ -71,8 +77,28 @@ Status ListTables(const RunnerContext& context) {
   vector<string> table_names;
   RETURN_NOT_OK(client->ListTables(&table_names));
 
-  std::copy(table_names.begin(), table_names.end(),
-            std::ostream_iterator<string>(cout, "\n"));
+  for (const auto& tname : table_names) {
+    cout << tname << endl;
+    if (!FLAGS_list_tablets) {
+      continue;
+    }
+    client::sp::shared_ptr<KuduTable> client_table;
+    RETURN_NOT_OK(client->OpenTable(tname, &client_table));
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(client_table.get());
+    RETURN_NOT_OK(builder.Build(&tokens));
+
+    for (const auto* token : tokens) {
+      cout << "T " << token->tablet().id() << "\t";
+      for (const auto* replica : token->tablet().replicas()) {
+        cout << "P" << (replica->is_leader() ? "(L) " : "    ")
+             << replica->ts().uuid() << "    ";
+      }
+      cout << endl;
+    }
+    cout << endl;
+  }
   return Status::OK();
 }
 
@@ -96,6 +122,7 @@ unique_ptr<Mode> BuildTableMode() {
         kMasterAddressesArg,
         "Comma-separated list of Kudu Master addresses where each address is "
         "of form 'hostname:port'" })
+      .AddOptionalParameter("list_tablets")
       .Build();
 
   return ModeBuilder("table")
