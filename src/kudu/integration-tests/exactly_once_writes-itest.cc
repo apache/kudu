@@ -257,9 +257,9 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithCrashyNo
   // log area.
   ts_flags.push_back("--log_preallocate_segments=false");
 
-  int num_batches = 50;
+  int num_batches = 10;
   if (AllowSlowTests()) {
-    num_batches = 500;
+    num_batches = 100;
     FLAGS_num_tablet_servers = 7;
     FLAGS_num_replicas = 7;
   }
@@ -285,9 +285,9 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithChurnyEl
   ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=1");
   ts_flags.push_back("--never_fsync");
 
-  int num_batches = 1000;
+  int num_batches = 200;
   if (AllowSlowTests()) {
-    num_batches = 5000;
+    num_batches = 1000;
     // Only set this to 5 replicas, for slow tests, otherwise we overwhelm the jenkins slaves,
     // elections run forever and the test doesn't complete.
     FLAGS_num_tablet_servers = 5;
