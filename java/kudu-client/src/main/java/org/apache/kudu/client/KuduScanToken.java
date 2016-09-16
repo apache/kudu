@@ -297,12 +297,6 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       if (upperBoundPrimaryKey.length > 0) {
         proto.setUpperBoundPrimaryKey(ZeroCopyLiteralByteString.copyFrom(upperBoundPrimaryKey));
       }
-      if (lowerBoundPartitionKey.length > 0) {
-        proto.setLowerBoundPartitionKey(ZeroCopyLiteralByteString.copyFrom(lowerBoundPartitionKey));
-      }
-      if (upperBoundPartitionKey.length > 0) {
-        proto.setUpperBoundPartitionKey(ZeroCopyLiteralByteString.copyFrom(upperBoundPartitionKey));
-      }
 
       proto.setLimit(limit);
       proto.setReadMode(readMode.pbVersion());
