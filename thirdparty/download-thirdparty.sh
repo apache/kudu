@@ -100,13 +100,14 @@ fetch_and_expand() {
   echo
 }
 
-GLOG_PATCHLEVEL=1
+GLOG_PATCHLEVEL=2
 delete_if_wrong_patchlevel $GLOG_DIR $GLOG_PATCHLEVEL
 if [ ! -d $GLOG_DIR ]; then
   fetch_and_expand glog-${GLOG_VERSION}.tar.gz
 
   pushd $GLOG_DIR
   patch -p0 < $TP_DIR/patches/glog-issue-198-fix-unused-warnings.patch
+  patch -p0 < $TP_DIR/patches/glog-issue-54-dont-build-tests.patch
   touch patchlevel-$GLOG_PATCHLEVEL
   autoreconf -fvi
   popd
