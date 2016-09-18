@@ -28,205 +28,42 @@
 :experimental:
 
 Kudu tables have a structured data model similar to tables in a traditional
-RDBMS. Schema design is critical for achieving the best performance and operational
-stability from Kudu. Every workload is unique, and there is no single schema design
-that is best for every table. This document outlines effective schema design
-philosophies for Kudu, paying particular attention to where they differ from
-approaches used for traditional RDBMS schemas.
+RDBMS. Schema design is critical for achieving the best performance and
+operational stability from Kudu. Every workload is unique, and there is no
+single schema design that is best for every table. This document outlines
+effective schema design philosophies for Kudu, paying particular attention to
+where they differ from approaches used for traditional RDBMS schemas.
 
-At a high level, there are three concerns in Kudu schema design:
-<<column-design,column design>>, <<primary-keys,primary keys>>, and
-<<data-distribution,data distribution>>. Of these, only data distribution will
-be a new concept for those familiar with traditional relational databases. The
-next sections discuss <<alter-schema,altering the schema>> of an existing table,
-and <<known-limitations,known limitations>> with regard to schema design.
+At a high level, there are three concerns when creating Kudu tables:
+<<column-design,column design>>, <<primary-key,primary key design>>, and
+<<partitioning,partitioning design>>. Of these, only partitioning will be a new
+concept for those familiar with traditional non-distributed relational
+databases. The final sections discuss <<alter-schema,altering the schema>> of an
+existing table, and <<known-limitations,known limitations>> with regard to
+schema design.
 
 == The Perfect Schema
 
 The perfect schema would accomplish the following:
 
-- Data would be distributed in such a way that reads and writes are spread evenly
-  across tablet servers. This is impacted by the partition schema.
-- Tablets would grow at an even, predictable rate and load across tablets would remain
-  steady over time. This is most impacted by the partition schema.
+- Data would be distributed in such a way that reads and writes are spread
+  evenly across tablet servers. This is impacted by partitioning.
+- Tablets would grow at an even, predictable rate and load across tablets would
+  remain steady over time. This is most impacted by partitioning.
 - Scans would read the minimum amount of data necessary to fulfill a query. This
-  is impacted mostly by primary key design, but partition design also plays a
-  role via partition pruning.
+  is impacted mostly by primary key design, but partitioning also plays a role
+  via partition pruning.
 
 The perfect schema depends on the characteristics of your data, what you need to do
 with it, and the topology of your cluster. Schema design is the single most important
 thing within your control to maximize the performance of your Kudu cluster.
 
-[[primary-keys]]
-== Primary Keys
-
-Each Kudu table must declare a primary key comprised of one or more columns.
-Primary key columns must be non-nullable, and may not be a boolean or
-floating-point type. Every row in a table must have a unique set of values for
-its primary key columns. As with a traditional RDBMS, primary key
-selection is critical to ensuring performant database operations.
-
-Unlike an RDBMS, Kudu does not provide an auto-incrementing column feature, so
-the application must always provide the full primary key during insert or
-ingestion. In addition, Kudu does not allow the primary key values of a row to
-be updated.
-
-Within a tablet, rows are stored sorted lexicographically by primary key. Advanced
-schema designs can take advantage of this ordering to achieve good distribution of
-data among tablets, while retaining consistent ordering in intra-tablet scans. See
-<<data-distribution>> for more information.
-
-[[data-distribution]]
-== Data Distribution
-
-Kudu tables, unlike traditional relational tables, are partitioned into tablets
-and distributed across many tablet servers. A row always belongs to a single
-tablet (and its replicas). The method of assigning rows to tablets is specified
-in a configurable _partition schema_ for each table, during table creation.
-
-Choosing a data distribution strategy requires you to understand the data model and
-expected workload of a table. For write-heavy workloads, it is important to
-design the distribution such that writes are spread across tablets in order to
-avoid overloading a single tablet. For workloads involving many short scans, performance
-can be improved if all of the data for the scan is located in the same
-tablet. Understanding these fundamental trade-offs is central to designing an effective
-partition schema.
-
-[[no_default_partitioning]]
-[IMPORTANT]
-.No Default Partitioning
-===
-Kudu does not provide a default partitioning strategy when creating tables. It
-is strongly recommended to ensure that new tables have at least as many tablets
-as tablet servers (but Kudu can support many tablets per tablet server).
-===
-
-Kudu provides two types of partition schema: <<range-partitioning, range partitioning>> and
-<<hash-bucketing,hash bucketing>>. These schema types can be <<hash-and-range, used
-together>> or independently. Kudu does not yet allow tablets to be split after
-creation, so you must design your partition schema ahead of time to ensure that
-a sufficient number of tablets are created.
-
-[[range-partitioning]]
-=== Range Partitioning
-
-With range partitioning, rows are distributed into tablets using a totally-ordered
-distribution key. Each tablet is assigned a contiguous segment of the table's
-distribution keyspace. Tables may be range partitioned on any subset of the
-primary key columns.
-
-During table creation, tablet boundaries are specified as a sequence of _split
-rows_. Consider the following table schema (using SQL syntax for clarity):
-
-[source,sql]
-----
-CREATE TABLE customers (last_name STRING NOT NULL,
-                        first_name STRING NOT NULL,
-                        order_count INT32)
-PRIMARY KEY (last_name, first_name)
-DISTRIBUTE BY RANGE (last_name, first_name);
-----
-
-Specifying the split rows as `\(("b", ""), ("c", ""), ("d", ""), .., ("z", ""))`
-(25 split rows total) will result in the creation of 26 tablets, with each
-tablet containing a range of customer surnames all beginning with a given letter.
-This is an effective partition schema for a workload where customers are inserted
-and updated uniformly by last name, and scans are typically performed over a range
-of surnames.
-
-It may make sense to partition a table by range using only a subset of the
-primary key columns, or with a different ordering than the primary key. For
-instance, you can change the above example to specify that the range partition
-should only include the `last_name` column. In that case, Kudu would guarantee that all
-customers with the same last name would fall into the same tablet, regardless of
-the provided split rows.
-
-[[range-partition-management]]
-==== Range Partition Management
-
-Kudu 0.10 introduces the ability to specify bounded range partitions during
-table creation, and the ability add and drop range partitions on the fly. This is
-a good strategy for data which is always increasing, such as timestamps, or for
-categorical data, such as geographic regions.
-
-For example, during table creation, bounded range partitions can be
-added for the regions 'US-EAST', 'US-WEST', and 'EUROPE'. If you attempt to insert a
-row with a region that does not match an existing range partition, the insertion will
-fail. Later, when a new region is needed it can be efficiently added as part of an
-`ALTER TABLE` operation. This feature is particularly useful for timeseries data,
-since it allows new range partitions for the current period to be added as
-needed, and old partitions covering historical periods to be dropped if
-necessary.
-
-[[hash-bucketing]]
-=== Hash Bucketing
-
-Hash bucketing distributes rows by hash value into one of many buckets. Each
-tablet is responsible for the rows falling into a single bucket. The number of
-buckets (and therefore tablets), is specified during table creation. Typically,
-all of the primary key columns are used as the columns to hash, but as with range
-partitioning, any subset of the primary key columns can be used.
-
-Hash partitioning is an effective strategy to increase the amount of parallelism
-for workloads that would otherwise skew writes into a small number of tablets.
-Consider the following table schema.
-
-[source,sql]
-----
-CREATE TABLE metrics (
-  host STRING NOT NULL,
-  metric STRING,
-  time UNIXTIME_MICROS NOT NULL,
-  measurement DOUBLE,
-  PRIMARY KEY (time, metric, host),
-)
-----
-
-If you use range partitioning over the primary key columns, inserts will
-tend to only go to the tablet covering the current time, which limits the
-maximum write throughput to the throughput of a single tablet. If you use hash
-partitioning, you can guarantee a number of parallel writes equal to the number
-of buckets specified when defining the partition schema. The trade-off is that a
-scan over a single time range now must touch each of these tablets, instead of
-(possibly) a single tablet. Hash bucketing can be an effective tool for mitigating
-other types of write skew as well, such as monotonically increasing values.
-
-As an advanced optimization, you can create a table with more than one
-hash bucket component, as long as the column sets included in each are disjoint,
-and all hashed columns are part of the primary key. The total number of tablets
-created will be the product of the hash bucket counts. For example, the above
-`metrics` table could be created with two hash bucket components, one over the
-`time` column with 4 buckets, and one over the `metric` and `host` columns with
-8 buckets. The total number of tablets will be 32. The advantage of using two
-separate hash bucket components is that scans which specify equality constraints
-on the `metric` and `host` columns will be able to skip 7/8 of the total
-tablets, leaving a total of just 4 tablets to scan.
-
-[[hash-and-range]]
-=== Hash Bucketing and Range Partitioning
-
-Hash bucketing can be combined with range partitioning. Adding hash bucketing to
-a range partitioned table has the effect of parallelizing operations that would
-otherwise operate sequentially over the range. The total number of tablets is
-the product of the number of hash buckets and the number of split rows plus one.
-
-[[alter-schema]]
-== Schema Alterations
-
-You can alter a table's schema in the following ways:
-
-- Rename the table
-- Rename, add, or drop columns
-- Rename (but not drop) primary key columns
-
-You cannot modify the partition schema after table creation.
-
 [[column-design]]
 == Column Design
 
-A Kudu Table consists of one or more columns, each with a predefined type.
-Columns that are not part of the primary key may optionally be nullable.
-Supported column types include:
+A Kudu Table consists of one or more columns, each with a defined type. Columns
+that are not part of the primary key may be nullable. Supported
+column types include:
 
 * boolean
 * 8-bit signed integer
@@ -240,11 +77,11 @@ Supported column types include:
 * binary
 
 Kudu takes advantage of strongly-typed columns and a columnar on-disk storage
-format to provide efficient encoding and serialization. To make the most of these
-features, columns must be specified as the appropriate type, rather than
+format to provide efficient encoding and serialization. To make the most of
+these features, columns should be specified as the appropriate type, rather than
 simulating a 'schemaless' table using string or binary columns for data which
-may otherwise be structured. In addition to encoding, Kudu optionally allows
-compression to be specified on a per-column basis.
+may otherwise be structured. In addition to encoding, Kudu allows compression to
+be specified on a per-column basis.
 
 [[encoding]]
 === Column Encoding
@@ -264,17 +101,17 @@ of the column. Columns use plain encoding by default.
 |===
 
 [[plain]]
-Plain Encoding:: Data is stored in its natural format. For example, `int32` values
-are stored as fixed-size 32-bit little-endian integers.
+Plain Encoding:: Data is stored in its natural format. For example, `int32`
+values are stored as fixed-size 32-bit little-endian integers.
 
 [[bitshuffle]]
-Bitshuffle Encoding:: Data is rearranged to store the most significant bit of
-every value, followed by the second most significant bit of every value, and so
-on. Finally, the result is LZ4 compressed. Bitshuffle encoding is a good choice for
-columns that have many repeated values, or values that change by small amounts
-when sorted by primary key. The
-https://github.com/kiyo-masui/bitshuffle[bitshuffle] project has a good
-overview of performance and use cases.
+Bitshuffle Encoding:: A block of values is rearranged to store the most
+significant bit of every value, followed by the second most significant bit of
+every value, and so on. Finally, the result is LZ4 compressed. Bitshuffle
+encoding is a good choice for columns that have many repeated values, or values
+that change by small amounts when sorted by primary key. The
+https://github.com/kiyo-masui/bitshuffle[bitshuffle] project has a good overview
+of performance and use cases.
 
 [[run-length]]
 Run Length Encoding:: _Runs_ (consecutive repeated values) are compressed in a
@@ -282,29 +119,325 @@ column by storing only the value and the count. Run length encoding is effective
 for columns with many consecutive repeated values when sorted by primary key.
 
 [[dictionary]]
-Dictionary Encoding:: A dictionary of unique values is built, and each column value
-is encoded as its corresponding index in the dictionary. Dictionary encoding
-is effective for columns with low cardinality. If the column values of a given row set
-are unable to be compressed because the number of unique values is too high, Kudu will
-transparently fall back to plain encoding for that row set. This is evaluated during
-flush.
+Dictionary Encoding:: A dictionary of unique values is built, and each column
+value is encoded as its corresponding index in the dictionary. Dictionary
+encoding is effective for columns with low cardinality. If the column values of
+a given row set are unable to be compressed because the number of unique values
+is too high, Kudu will transparently fall back to plain encoding for that row
+set. This is evaluated during flush.
 
 [[prefix]]
-Prefix Encoding:: Common prefixes are compressed in consecutive column values. Prefix
-encoding can be effective for values that share common prefixes, or the first
-column of the primary key, since rows are sorted by primary key within tablets.
+Prefix Encoding:: Common prefixes are compressed in consecutive column values.
+Prefix encoding can be effective for values that share common prefixes, or the
+first column of the primary key, since rows are sorted by primary key within
+tablets.
 
 [[compression]]
 === Column Compression
 
-Kudu allows per-column compression using LZ4, `snappy`, or `zlib` compression
-codecs. By default, columns are stored uncompressed. Consider using compression
-if reducing storage space is more important than raw scan performance.
+Kudu allows per-column compression using the `LZ4`, `Snappy`, or `zlib`
+compression codecs. By default, columns are stored uncompressed. Consider using
+compression if reducing storage space is more important than raw scan
+performance.
 
-Every data set will compress differently, but in general LZ4 has the least effect on
-performance, while `zlib` will compress to the smallest data sizes.
-Bitshuffle-encoded columns are inherently compressed using LZ4, so it is not
-typically beneficial to apply additional compression on top of this encoding.
+Every data set will compress differently, but in general LZ4 is the most
+performant codec, while `zlib` will compress to the smallest data sizes.
+Bitshuffle-encoded columns are automatically compressed using LZ4, so it is not
+recommended to apply additional compression on top of this encoding.
+
+[[primary-keys]]
+== Primary Key Design
+
+Every Kudu table must declare a primary key index comprised of one or more
+columns. Primary key columns must be non-nullable, and may not be a boolean or
+floating-point type. Once set during table creation, the set of columns in the
+primary key may not be altered. Like an RDBMS primary key, the Kudu primary key
+enforces a uniqueness constraint; attempting to insert a row with the same
+primary key values as an existing row will result in a duplicate key error.
+
+Unlike an RDBMS, Kudu does not provide an auto-incrementing column feature, so
+the application must always provide the full primary key during insert. Row
+delete and update operations must also specify the full primary key of the row
+to be changed; Kudu does not natively support range deletes or updates. The
+primary key values of a column may not be updated after the row is inserted;
+however, the row may be deleted and re-inserted with the updated value.
+
+[[indexing]]
+=== Primary Key Index
+
+As with many traditional relational databases, Kudu's primary key is a clustered
+index. All rows within a tablet are kept in primary key sorted order. Kudu scans
+which specify equality or range constraints on the primary key will
+automatically skip rows which can not satisfy the predicate. This allows
+individual rows to be efficiently found by specifying equality constraints on
+the primary key columns.
+
+NOTE: Primary key indexing optimizations apply to scans on individual tablets.
+See the <<partition-pruning>> section for details on how scans can use
+predicates to skip entire tablets.
+
+[[partitioning]]
+== Partitioning
+
+In order to provide scalability, Kudu tables are partitioned into units called
+tablets, and distributed across many tablet servers. A row always belongs to a
+single tablet. The method of assigning rows to tablets is determined by the
+partitioning of the table, which is set during table creation.
+
+Choosing a partitioning strategy requires understanding the data model and the
+expected workload of a table. For write-heavy workloads, it is important to
+design the partitioning such that writes are spread across tablets in order to
+avoid overloading a single tablet. For workloads involving many short scans,
+where the overhead of contacting remote servers dominates, performance can be
+improved if all of the data for the scan is located in the same tablet.
+Understanding these fundamental trade-offs is central to designing an effective
+partition schema.
+
+[[no_default_partitioning]]
+[IMPORTANT]
+.No Default Partitioning
+Kudu does not provide a default partitioning strategy when creating tables. It
+is recommended that new tables which are expected to have heavy read and write
+workloads have at least as many tablets as tablet servers.
+
+Kudu provides two types of partitioning: <<range-partitioning,range
+partitioning>> and <<hash-partitioning,hash partitioning>>. Tables may also have
+<<multilevel-partitioning,multilevel partitioning>>, which combines range and hash
+partitioning, or multiple instances of hash partitioning.
+
+[[range-partitioning]]
+=== Range Partitioning
+
+Range partitioning distributes rows using a totally-ordered range partition key.
+Each partition is assigned a contiguous segment of the range partition keyspace.
+The key must be comprised of a subset of the primary key columns. If the range
+partition columns match the primary key columns, then the range partition key of
+a row will equal its primary key. In range partitioned tables without hash
+partitioning, each range partition will correspond to exactly one tablet.
+
+The initial set of range partitions is specified during table creation as a set
+of partition bounds and split rows. For each bound, a range partition will be
+created in the table. Each split will divide a range partition in two.  If no
+partition bounds are specified, then the table will default to a single
+partition covering the entire key space (unbounded below and above). Range
+partitions must always be non-overlapping, and split rows must fall within a
+range partition.
+
+NOTE: see the <<range-partitioning-example>> for further discussion of range
+partitioning.
+
+[[range-partition-management]]
+==== Range Partition Management
+
+Kudu allows range partitions to be dynamically added and removed from a table at
+runtime, without affecting the availability of other partitions. Removing a
+partition will delete the tablets belonging to the partition, as well as the
+data contained in them. Subsequent inserts into the dropped partition will fail.
+New partitions can be added, but they must not overlap with any existing range
+partitions. Kudu allows dropping and adding any number of range partitions in a
+single transactional alter table operation.
+
+Dynamically adding and dropping range partitions is particularly useful for time
+series use cases. As time goes on, range partitions can be added to cover
+upcoming time ranges. For example, a table storing an event log could add a
+month-wide partition just before the start of each month in order to hold the
+upcoming events. Old range partitions can be dropped in order to efficiently
+remove historical data, as necessary.
+
+[[hash-partitioning]]
+=== Hash Partitioning
+
+Hash partitioning distributes rows by hash value into one of many buckets.  In
+single-level hash partitioned tables, each bucket will correspond to exactly
+one tablet. The number of buckets is set during table creation. Typically the
+primary key columns are used as the columns to hash, but as with range
+partitioning, any subset of the primary key columns can be used.
+
+Hash partitioning is an effective strategy when ordered access to the table is
+not needed. Hash partitioning is effective for spreading writes randomly among
+tablets, which helps mitigate hot-spotting and uneven tablet sizes.
+
+NOTE: see the <<hash-partitioning-example>> for further discussion of hash
+partitioning.
+
+[[multilevel-partitioning]]
+=== Multilevel Partitioning
+
+Kudu allows a table to combine multiple levels of partitioning on a single
+table. Zero or more hash partition levels can be combined with an optional range
+partition level. The only additional constraint on multilevel partitioning
+beyond the constraints of the individual partition types, is that multiple levels
+of hash partitions must not hash the same columns.
+
+When used correctly, multilevel partitioning can retain the benefits of the
+individual partitioning types, while reducing the downsides of each. The total
+number of tablets in a multilevel partitioned table is the product of the
+number of partitions in each level.
+
+NOTE: see the <<hash-range-partitioning-example>> and the
+<<hash-hash-partitioning-example>> for further discussion of multilevel
+partitioning.
+
+[[partition-pruning]]
+=== Partition Pruning
+
+Kudu scans will automatically skip scanning entire partitions when it can be
+determined that the partition can be entirely filtered by the scan predicates.
+To prune hash partitions, the scan must include equality predicates on every
+hashed column. To prune range partitions, the scan must include equality or
+range predicates on the range partitioned columns. Scans on multilevel
+partitioned tables can take advantage of partition pruning on any of the levels
+independently.
+
+[[partitioning-examples]]
+=== Partitioning Examples
+
+To illustrate the factors and tradeoffs associated with designing a partitioning
+strategy for a table, we will walk through some different partitioning
+scenarios. Consider the following table schema for storing machine metrics data
+(using SQL syntax and date-formatted timestamps for clarity):
+
+[source,sql]
+----
+CREATE TABLE metrics (
+    host STRING NOT NULL,
+    metric STRING NOT NULL,
+    time INT64 NOT NULL,
+    value DOUBLE NOT NULL,
+    PRIMARY KEY (host, metric, time),
+);
+----
+
+[[range-partitioning-example]]
+==== Range Partitioning Example
+
+A natural way to partition the `metrics` table is to range partition on the
+`time` column. Let's assume that we want to have a partition per year, and the
+table will hold data for 2014, 2015, and 2016. There are at least two ways that
+the table could be partitioned: with unbounded range partitions, or with bounded
+range partitions.
+
+image::range-partitioning-example.png[Range Partitioning by `time`]
+
+The image above shows the two ways the `metrics` table can be range partitioned
+on the `time` column. In the first example (in blue), the default range
+partition bounds are used, with splits at `2015-01-01` and `2016-01-01`. This
+results in three tablets: the first containing values before 2015, the second
+containing values in the year 2015, and the third containing values after 2016.
+The second example (in green) uses a range partition bound of `[(2014-01-01),
+(2017-01-01)]`, and splits at `2015-01-01` and `2016-01-01`. The second example
+could have equivalently been expressed through range partition bounds of
+`[(2014-01-01), (2015-01-01)]`, `[(2015-01-01), (2016-01-01)]`, and
+`[(2016-01-01), (2017-01-01)]`, with no splits. The first example has unbounded
+lower and upper range partitions, while the second example includes bounds.
+
+Each of the range partition examples above allows time-bounded scans to prune
+partitions falling outside of the scan's time bound. This can greatly improve
+performance when there are many partitions. When writing, both examples suffer
+from potential hot-spotting issues. Because metrics tend to always be written
+at the current time, most writes will go into a single range partition.
+
+The second example is more flexible than the first, because it allows range
+partitions for future years to be added to the table. In the first example, all
+writes for times after `2016-01-01` will fall into the last partition, so the
+partition may eventually become too large for a single tablet server to handle.
+
+[[hash-partitioning-example]]
+==== Hash Partitioning Example
+
+Another way of partitioning the `metrics` table is to hash partition on the
+`host` and `metric` columns.
+
+image::hash-partitioning-example.png[Hash Partitioning by `host` and `metric`]
+
+In the example above, the `metrics` table is hash partitioned on the `host` and
+`metric` columns into four buckets. Unlike the range partitioning example
+earlier, this partitioning strategy will spread writes over all tablets in the
+table evenly, which helps overall write throughput. Scans over a specific host
+and metric can take advantage of partition pruning by specifying equality
+predicates, reducing the number of scanned tablets to one. One issue to be
+careful of with a pure hash partitioning strategy, is that tablets could grow
+indefinitely as more and more data is inserted into the table. Eventually
+tablets will become too big for an individual tablet server to hold.
+
+NOTE: Although these examples number the tablets, in reality tablets are only
+given UUID identifiers. There is no natural ordering among the tablets in a hash
+partitioned table.
+
+[[hash-range-partitioning-example]]
+==== Hash and Range Partitioning Example
+
+The previous examples showed how the `metrics` table could be range partitioned
+on the `time` column, or hash partitioned on the `host` and `metric` columns.
+These strategies have associated strength and weaknesses:
+
+.Partitioning Strategies
+|===
+| Strategy | Writes | Reads | Tablet Growth
+
+| `range(time)`
+| ✗ - all writes go to latest partition
+| ✓ - time-bounded scans can be pruned
+| ✓ - new tablets can be added for future time periods
+
+| `hash(host, metric)`
+| ✓ - writes are spread evenly among tablets
+| ✓ - scans on specific hosts and metrics can be pruned
+| ✗ - tablets could grow too large
+|===
+
+Hash partitioning is good at maximizing write throughput, while range
+partitioning avoids issues of unbounded tablet growth. Both strategies can take
+advantage of partition pruning to optimize scans in different scenarios. Using
+multilevel partitioning, it is possible to combine the two strategies in order
+to gain the benefits of both, while minimizing the drawbacks of each.
+
+image::hash-range-partitioning-example.png[Hash and Range Partitioning]
+
+In the example above, range partitioning on the `time` column is combined with
+hash partitioning on the `host` and `metric` columns. This strategy can be
+thought of as having two dimensions of partitioning: one for the hash level and
+one for the range level. Writes into this table at the current time will be
+parallelized up to the number of hash buckets, in this case 4. Reads can take
+advantage of time bound *and* specific host and metric predicates to prune
+partitions. New range partitions can be added, which results in creating 4
+additional tablets (as if a new column were added to the diagram).
+
+[[hash-hash-partitioning-example]]
+==== Hash and Hash Partitioning Example
+
+Kudu can support any number of hash partitioning levels in the same table, as
+long as the levels have no hashed columns in common.
+
+image::hash-hash-partitioning-example.png[Hash and Hash Partitioning]
+
+In the example above, the table is hash partitioned on `host` into 4 buckets,
+and hash partitioned on `metric` into 3 buckets, resulting in 12 tablets.
+Although writes will tend to be spread among all tablets when using this
+strategy, it is slightly more prone to hot-spotting than when hash partitioning
+over multiple independent columns, since all values for an individual host or
+metric will always belong to a single tablet. Scans can take advantage of
+equality predicates on the `host` and `metric` columns separately to prune
+partitions.
+
+Multiple levels of hash partitioning can also be combined with range
+partitioning, which logically adds another dimension of partitioning.
+
+[[alter-schema]]
+== Schema Alterations
+
+You can alter a table's schema in the following ways:
+
+- Rename the table
+- Rename, add, or drop non-primary key columns
+- Add and drop range partitions
+
+Multiple alteration steps can be combined in a single transactional operation.
+
+[IMPORTANT]
+.Renaming Primary Key Columns
+https://issues.apache.org/jira/browse/KUDU-1626[KUDU-1626]: Kudu does not yet
+support renaming primary key columns.
 
 [[known-limitations]]
 == Known Limitations
@@ -320,27 +453,19 @@ and we recommend schemas with fewer than 50 columns per table.
 Size of Rows:: Kudu has not been thoroughly tested with rows larger than 10 kb. Most
 testing has been on rows at 1 kb.
 
-Size of Cells:: There is no hard limit imposed by Kudu, but large values (10s of
-  kilobytes and above) are likely to perform poorly and may cause stability issues
-  in current Kudu releases.
+Size of Cells:: There is no hard limit imposed by Kudu, however large cells may
+push the entire row over the recommended size.
 
-Immutable Primary Keys:: Kudu does not allow you to update the primary key of a
-  row after insertion.
+Immutable Primary Keys:: Kudu does not allow you to update the primary key
+columns of a row.
 
 Non-alterable Primary Key:: Kudu does not allow you to alter the primary key
-  columns after table creation.
+columns after table creation.
 
-Non-alterable Partition Schema:: Kudu does not allow you to alter the
-  partition schema after table creation.
+Non-alterable Partitioning:: Kudu does not allow you to change how a table is
+partitioned after creation.
 
-Partition Pruning:: When tables use hash buckets, the Java client does not yet
-use scan predicates to prune tablets for scans over these tables. In the future,
-specifying an equality predicate on all columns in the hash bucket component
-will limit the scan to only the tablets corresponding to the hash bucket.
+Non-alterable Column Types:: Kudu does not allow the type of a column to be
+altered.
 
-Tablet Splitting:: You currently cannot split or merge tablets after table
-creation. You must create the appropriate number of tablets in the
-partition schema at table creation. As a workaround, you can copy the contents
-of one table to another by using a `CREATE TABLE AS SELECT` statement or creating
-an empty table and using an `INSERT` query with `SELECT` in the predicate to
-populate the new table.
+Partition Splitting:: Partitions cannot be split or merged after table creation.
