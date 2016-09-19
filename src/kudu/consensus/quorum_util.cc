@@ -103,17 +103,17 @@ int MajoritySize(int num_voters) {
   return (num_voters / 2) + 1;
 }
 
-RaftPeerPB::Role GetConsensusRole(const std::string& permanent_uuid,
+RaftPeerPB::Role GetConsensusRole(const std::string& uuid,
                                     const ConsensusStatePB& cstate) {
-  if (cstate.leader_uuid() == permanent_uuid) {
-    if (IsRaftConfigVoter(permanent_uuid, cstate.config())) {
+  if (cstate.leader_uuid() == uuid) {
+    if (IsRaftConfigVoter(uuid, cstate.config())) {
       return RaftPeerPB::LEADER;
     }
     return RaftPeerPB::NON_PARTICIPANT;
   }
 
   for (const RaftPeerPB& peer : cstate.config().peers()) {
-    if (peer.permanent_uuid() == permanent_uuid) {
+    if (peer.permanent_uuid() == uuid) {
       switch (peer.member_type()) {
         case RaftPeerPB::VOTER:
           return RaftPeerPB::FOLLOWER;

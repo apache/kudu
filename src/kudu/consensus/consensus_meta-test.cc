@@ -255,7 +255,7 @@ TEST_F(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB) {
   ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, "e",
                                       committed_config, 1, &cmeta));
 
-  uuids.push_back("e");
+  uuids.emplace_back("e");
   RaftConfigPB pending_config = BuildConfig(uuids);
   cmeta->set_pending_config(pending_config);
   cmeta->set_leader_uuid("e");

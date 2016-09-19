@@ -67,7 +67,6 @@ using log::Log;
 using log::LogEntryPB;
 using log::LogOptions;
 using log::LogReader;
-using rpc::RpcContext;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 
@@ -130,9 +129,9 @@ class RaftConsensusQuorumTest : public KuduTest {
                               kTestTablet,
                               schema_,
                               0, // schema_version
-                              NULL,
+                              nullptr,
                               &log));
-      logs_.push_back(log.get());
+      logs_.emplace_back(std::move(log));
       fs_managers_.push_back(fs_manager.release());
     }
     return Status::OK();
@@ -326,7 +325,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       if (MonoTime::Now() > (start + timeout)) {
         break;
       }
-      SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));
+      SleepFor(MonoDelta::FromMilliseconds(1LL << backoff_exp));
       backoff_exp = std::min(backoff_exp + 1, kMaxBackoffExp);
     }
 
@@ -855,7 +854,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
 
   // Now wait for about 4 times the hearbeat period the counters
   // should have increased 3/4 times.
-  SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 4));
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 4LL));
 
   int repl0_final_count = counter_hook_rpl0->num_pre_update_calls();
   int repl1_final_count = counter_hook_rpl1->num_pre_update_calls();

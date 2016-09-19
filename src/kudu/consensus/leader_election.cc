@@ -160,7 +160,7 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
     : has_responded_(false),
       request_(request),
       vote_counter_(std::move(vote_counter)),
-      timeout_(std::move(timeout)),
+      timeout_(timeout),
       decision_callback_(std::move(decision_callback)) {
   for (const RaftPeerPB& peer : config.peers()) {
     if (request.candidate_uuid() == peer.permanent_uuid()) continue;

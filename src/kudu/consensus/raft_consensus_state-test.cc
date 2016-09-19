@@ -20,9 +20,9 @@
 #include <memory>
 #include <vector>
 
+#include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
-#include "kudu/consensus/consensus-test-util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -31,9 +31,8 @@ namespace kudu {
 namespace consensus {
 
 using std::unique_ptr;
-using std::vector;
 
-// TODO: Share a test harness with ConsensusMetadataTest?
+// TODO(mpercy): Share a test harness with ConsensusMetadataTest?
 const char* kTabletId = "TestTablet";
 
 class RaftConsensusStateTest : public KuduTest {

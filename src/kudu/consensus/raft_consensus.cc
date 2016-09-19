@@ -207,7 +207,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
 RaftConsensus::RaftConsensus(
     const ConsensusOptions& options,
     unique_ptr<ConsensusMetadata> cmeta,
-    gscoped_ptr<PeerProxyFactory> proxy_factory,
+    gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
     gscoped_ptr<PeerMessageQueue> queue,
     gscoped_ptr<PeerManager> peer_manager,
     gscoped_ptr<ThreadPool> thread_pool,
@@ -221,7 +221,7 @@ RaftConsensus::RaftConsensus(
     : thread_pool_(std::move(thread_pool)),
       log_(log),
       clock_(clock),
-      peer_proxy_factory_(std::move(proxy_factory)),
+      peer_proxy_factory_(std::move(peer_proxy_factory)),
       peer_manager_(std::move(peer_manager)),
       queue_(std::move(queue)),
       rng_(GetRandomSeed32()),
@@ -360,7 +360,8 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     if (active_role == RaftPeerPB::LEADER) {
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Not starting election -- already leader";
       return Status::OK();
-    } else if (PREDICT_FALSE(active_role == RaftPeerPB::NON_PARTICIPANT)) {
+    }
+    if (PREDICT_FALSE(active_role == RaftPeerPB::NON_PARTICIPANT)) {
       SnoozeFailureDetectorUnlocked(); // Avoid excessive election noise while in this state.
       return Status::IllegalState("Not starting election: Node is currently "
                                   "a non-participant in the raft config",
@@ -697,10 +698,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
 // Helper function to check if the op is a non-Transaction op.
 static bool IsConsensusOnlyOperation(OperationType op_type) {
-  if (op_type == NO_OP || op_type == CHANGE_CONFIG_OP) {
-    return true;
-  }
-  return false;
+  return op_type == NO_OP || op_type == CHANGE_CONFIG_OP;
 }
 
 Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg) {
@@ -829,9 +827,8 @@ Status RaftConsensus::HandleLeaderRequestTermUnlocked(const ConsensusRequestPB* 
                                  ConsensusErrorPB::INVALID_TERM,
                                  Status::IllegalState(msg));
       return Status::OK();
-    } else {
-      RETURN_NOT_OK(HandleTermAdvanceUnlocked(request->caller_term()));
     }
+    RETURN_NOT_OK(HandleTermAdvanceUnlocked(request->caller_term()));
   }
   return Status::OK();
 }
@@ -1116,8 +1113,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     Status prepare_status;
     auto iter = deduped_req.messages.begin();
 
-    if (PREDICT_TRUE(deduped_req.messages.size() > 0)) {
-      // TODO Temporary until the leader explicitly propagates the safe timestamp.
+    if (PREDICT_TRUE(!deduped_req.messages.empty())) {
+      // TODO(KUDU-798) Temporary until the leader explicitly propagates the safe timestamp.
       clock_->Update(Timestamp(deduped_req.messages.back()->get()->timestamp()));
 
       // This request contains at least one message, and is likely to increase
@@ -1184,7 +1181,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // 3 - Enqueue the writes.
     // Now that we've triggered the prepares enqueue the operations to be written
     // to the WAL.
-    if (PREDICT_TRUE(deduped_req.messages.size() > 0)) {
+    if (PREDICT_TRUE(!deduped_req.messages.empty())) {
       last_from_leader = deduped_req.messages.back()->get()->id();
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
@@ -1237,7 +1234,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // We'll re-acquire it before we update the state again.
 
   // Update the last replicated op id
-  if (deduped_req.messages.size() > 0) {
+  if (!deduped_req.messages.empty()) {
 
     // 5 - We wait for the writes to be durable.
 
@@ -1919,7 +1916,7 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
                                                   const StatusCallback& client_cb,
                                                   const Status& status) {
   OperationType op_type = round->replicate_msg()->op_type();
-  string op_type_str = OperationType_Name(op_type);
+  const string& op_type_str = OperationType_Name(op_type);
   CHECK(IsConsensusOnlyOperation(op_type)) << "Unexpected op type: " << op_type_str;
   if (!status.ok()) {
     // In the case that a change-config operation is aborted, RaftConsensusState

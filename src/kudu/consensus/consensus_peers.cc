@@ -72,7 +72,6 @@ TAG_FLAG(enable_tablet_copy, unsafe);
 namespace kudu {
 namespace consensus {
 
-using log::Log;
 using std::shared_ptr;
 using rpc::Messenger;
 using rpc::RpcController;
@@ -467,7 +466,7 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
     MonoTime now = MonoTime::Now();
     if (now < deadline) {
       int64_t remaining_ms = (deadline - now).ToMilliseconds();
-      int64_t base_delay_ms = 1 << (attempt + 3); // 1st retry delayed 2^4 ms, 2nd 2^5, etc..
+      int64_t base_delay_ms = 1LL << (attempt + 3); // 1st retry delayed 2^4 ms, 2nd 2^5, etc..
       int64_t jitter_ms = rand() % 50; // Add up to 50ms of additional random delay.
       int64_t delay_ms = std::min<int64_t>(base_delay_ms + jitter_ms, remaining_ms);
       VLOG(1) << "Sleeping " << delay_ms << " ms. before retrying to get uuid from remote peer...";

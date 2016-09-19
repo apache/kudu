@@ -112,10 +112,10 @@ class Peer {
   Status Init();
 
   // Signals that this peer has a new request to replicate/store.
-  // 'force_if_queue_empty' indicates whether the peer should force
+  // 'even_if_queue_empty' indicates whether the peer should force
   // send the request even if the queue is empty. This is used for
   // status-only requests.
-  Status SignalRequest(bool force_if_queue_empty = false);
+  Status SignalRequest(bool even_if_queue_empty = false);
 
   const RaftPeerPB& peer_pb() const { return peer_pb_; }
 
@@ -145,7 +145,7 @@ class Peer {
                               gscoped_ptr<Peer>* peer);
 
  private:
-  Peer(const RaftPeerPB& peer, std::string tablet_id, std::string leader_uuid,
+  Peer(const RaftPeerPB& peer_pb, std::string tablet_id, std::string leader_uuid,
        gscoped_ptr<PeerProxy> proxy, PeerMessageQueue* queue,
        ThreadPool* thread_pool);
 

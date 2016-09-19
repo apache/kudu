@@ -112,9 +112,9 @@ class Log : public RefCountedThreadSafe<Log> {
                  gscoped_ptr<LogEntryBatchPB> entry_batch,
                  LogEntryBatch** reserved_entry);
 
-  // Asynchronously appends 'entry' to the log. Once the append
+  // Asynchronously appends 'entry_batch' to the log. Once the append
   // completes and is synced, 'callback' will be invoked.
-  Status AsyncAppend(LogEntryBatch* entry,
+  Status AsyncAppend(LogEntryBatch* entry_batch,
                      const StatusCallback& callback);
 
   // Synchronously append a new entry to the log.
@@ -195,10 +195,10 @@ class Log : public RefCountedThreadSafe<Log> {
   // If successful, num_gced is set to the number of deleted log segments.
   //
   // This method is thread-safe.
-  Status GC(RetentionIndexes indexes, int* num_gced);
+  Status GC(RetentionIndexes retention_indexes, int* num_gced);
 
   // Computes the amount of bytes that would have been GC'd if Log::GC had been called.
-  void GetGCableDataSize(RetentionIndexes indexes, int64_t* total_size) const;
+  void GetGCableDataSize(RetentionIndexes retention_indexes, int64_t* total_size) const;
 
   // Returns a map of log index -> segment size, of all the segments that currently cannot be GCed
   // because of an anchor on the given 'idx_for_durability' log index. Note that, even if
@@ -284,7 +284,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // AppenderThread. If 'caller_owns_operation' is true, then the
   // 'operation' field of the entry will be released after the entry
   // is appended.
-  Status DoAppend(LogEntryBatch* entry);
+  Status DoAppend(LogEntryBatch* entry_batch);
 
   // Update footer_builder_ to reflect the log indexes seen in 'batch'.
   void UpdateFooterForBatch(LogEntryBatch* batch);
@@ -302,7 +302,8 @@ class Log : public RefCountedThreadSafe<Log> {
   Status Sync();
 
   // Helper method to get the segment sequence to GC based on the provided 'retention' struct.
-  Status GetSegmentsToGCUnlocked(RetentionIndexes retention, SegmentSequence* segments_to_gc) const;
+  Status GetSegmentsToGCUnlocked(RetentionIndexes retention_indexes,
+                                 SegmentSequence* segments_to_gc) const;
 
   LogEntryBatchQueue* entry_queue() {
     return &entry_batch_queue_;
@@ -405,8 +406,8 @@ class Log : public RefCountedThreadSafe<Log> {
 // When default-constructed, starts with maximum indexes, indicating no
 // logs need to be retained for either purposes.
 struct RetentionIndexes {
-  RetentionIndexes(int64_t durability = std::numeric_limits<int64_t>::max(),
-                   int64_t peers = std::numeric_limits<int64_t>::max())
+  explicit RetentionIndexes(int64_t durability = std::numeric_limits<int64_t>::max(),
+                            int64_t peers = std::numeric_limits<int64_t>::max())
       : for_durability(durability),
         for_peers(peers) {}
 

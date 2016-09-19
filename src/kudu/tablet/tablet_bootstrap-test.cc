@@ -38,14 +38,6 @@ using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
-
-namespace log {
-
-extern const char* kTestTable;
-extern const char* kTestTablet;
-
-} // namespace log
-
 namespace tablet {
 
 using consensus::ConsensusBootstrapInfo;

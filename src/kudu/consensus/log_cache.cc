@@ -35,10 +35,10 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/mem_tracker.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/mem_tracker.h"
+#include "kudu/util/metrics.h"
 
 DEFINE_int32(log_cache_size_limit_mb, 128,
              "The total per-tablet size of consensus entries which may be kept in memory. "
@@ -80,8 +80,8 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
     metrics_(metric_entity) {
 
 
-  const int64_t max_ops_size_bytes = FLAGS_log_cache_size_limit_mb * 1024 * 1024;
-  const int64_t global_max_ops_size_bytes = FLAGS_global_log_cache_size_limit_mb * 1024 * 1024;
+  const int64_t max_ops_size_bytes = FLAGS_log_cache_size_limit_mb * 1024L * 1024L;
+  const int64_t global_max_ops_size_bytes = FLAGS_global_log_cache_size_limit_mb * 1024L * 1024L;
 
   // Set up (or reuse) a tracker with the global limit. It is parented directly
   // to the root tracker so that it's always global.

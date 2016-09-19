@@ -37,7 +37,6 @@
 namespace kudu {
 
 class HostPort;
-class ReplicaState;
 class ThreadPool;
 
 namespace rpc {
@@ -100,7 +99,7 @@ class ReplicaState {
                std::unique_ptr<ConsensusMetadata> cmeta,
                ReplicaTransactionFactory* txn_factory);
 
-  Status StartUnlocked(const OpId& last_in_wal);
+  Status StartUnlocked(const OpId& last_id_in_wal);
 
   // Locks a replica in preparation for StartUnlocked(). Makes
   // sure the replica is in kInitialized state.
@@ -185,7 +184,7 @@ class ReplicaState {
   // Changes the committed config for this replica. Checks that there is a
   // pending configuration and that it is equal to this one. Persists changes to disk.
   // Resets the pending configuration to null.
-  Status SetCommittedConfigUnlocked(const RaftConfigPB& new_config);
+  Status SetCommittedConfigUnlocked(const RaftConfigPB& committed_config);
 
   // Return the persisted configuration.
   const RaftConfigPB& GetCommittedConfigUnlocked() const;

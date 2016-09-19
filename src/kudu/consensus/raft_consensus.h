@@ -339,7 +339,7 @@ class RaftConsensus : public Consensus,
                                                 VoteResponsePB* response);
 
   // Respond to VoteRequest that the candidate's last-logged OpId is too old.
-  Status RequestVoteRespondLastOpIdTooOld(const OpId& local_last_opid,
+  Status RequestVoteRespondLastOpIdTooOld(const OpId& local_last_logged_opid,
                                           const VoteRequestPB* request,
                                           VoteResponsePB* response);
 

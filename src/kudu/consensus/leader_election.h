@@ -35,10 +35,6 @@
 namespace kudu {
 class Status;
 
-namespace metadata {
-class RaftPeerPB;
-}
-
 namespace rpc {
 class Messenger;
 class RpcController;

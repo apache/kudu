@@ -51,8 +51,8 @@ class PeerManager {
   //
   // 'request_thread_pool' is the pool used to construct requests to send
   // to the peers.
-  PeerManager(const std::string tablet_id,
-              const std::string local_uuid,
+  PeerManager(std::string tablet_id,
+              std::string local_uuid,
               PeerProxyFactory* peer_proxy_factory,
               PeerMessageQueue* queue,
               ThreadPool* request_thread_pool,

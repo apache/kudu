@@ -61,7 +61,7 @@ class LogCacheTest : public KuduTest {
                             kTestTablet,
                             schema_,
                             0, // schema_version
-                            NULL,
+                            nullptr,
                             &log_));
 
     CloseAndReopenCache(MinimumOpId());

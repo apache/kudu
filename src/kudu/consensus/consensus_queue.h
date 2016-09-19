@@ -156,10 +156,10 @@ class PeerMessageQueue {
   virtual void SetNonLeaderMode();
 
   // Makes the queue track this peer.
-  virtual void TrackPeer(const std::string& peer_uuid);
+  virtual void TrackPeer(const std::string& uuid);
 
   // Makes the queue untrack this peer.
-  virtual void UntrackPeer(const std::string& peer_uuid);
+  virtual void UntrackPeer(const std::string& uuid);
 
   // Appends a single message to be replicated to the peers.
   // Returns OK unless the message could not be added to the queue for some
@@ -248,7 +248,7 @@ class PeerMessageQueue {
 
   // Returns a copy of the TrackedPeer with 'uuid' or crashes if the peer is
   // not being tracked.
-  virtual TrackedPeer GetTrackedPeerForTests(std::string uuid);
+  virtual TrackedPeer GetTrackedPeerForTests(const std::string& uuid);
 
   virtual std::string ToString() const;
 

@@ -372,7 +372,7 @@ class WritableLogSegment {
   // Appends the provided batch of data, including a header
   // and checksum.
   // Makes sure that the log segment has not been closed.
-  Status WriteEntryBatch(const Slice& entry_batch_data);
+  Status WriteEntryBatch(const Slice& data);
 
   // Makes sure the I/O buffers in the underlying writable file are flushed.
   Status Sync() {

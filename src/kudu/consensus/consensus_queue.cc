@@ -35,10 +35,10 @@
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/human_readable.h"
+#include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
@@ -69,7 +69,6 @@ namespace kudu {
 namespace consensus {
 
 using log::Log;
-using rpc::Messenger;
 using strings::Substitute;
 
 METRIC_DEFINE_gauge_int64(tablet, majority_done_ops, "Leader Operations Acked by Majority",
@@ -377,17 +376,17 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
         return s;
       // IsIncomplete() means that we tried to read beyond the head of the log
       // (in the future). See KUDU-1078.
-      } else if (s.IsIncomplete()) {
+      }
+      if (s.IsIncomplete()) {
         LOG_WITH_PREFIX_UNLOCKED(ERROR) << "Error trying to read ahead of the log "
                                         << "while preparing peer request: "
                                         << s.ToString() << ". Destination peer: "
                                         << peer->ToString();
         return s;
-      } else {
-        LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error reading the log while preparing peer request: "
-                                        << s.ToString() << ". Destination peer: "
-                                        << peer->ToString();
       }
+      LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error reading the log while preparing peer request: "
+                                      << s.ToString() << ". Destination peer: "
+                                      << peer->ToString();
     }
 
     // We use AddAllocated rather than copy, because we pin the log cache at the
@@ -463,11 +462,11 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
                                              const OpId& replicated_before,
                                              const OpId& replicated_after,
                                              int num_peers_required,
-                                             const TrackedPeer* peer) {
+                                             const TrackedPeer* who_caused) {
 
   if (VLOG_IS_ON(2)) {
     VLOG_WITH_PREFIX_UNLOCKED(2) << "Updating " << type << " watermark: "
-        << "Peer (" << peer->ToString() << ") changed from "
+        << "Peer (" << who_caused->ToString() << ") changed from "
         << replicated_before << " to " << replicated_after << ". "
                                  << "Current value: " << *watermark;
   }
@@ -758,7 +757,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
   }
 }
 
-PeerMessageQueue::TrackedPeer PeerMessageQueue::GetTrackedPeerForTests(string uuid) {
+PeerMessageQueue::TrackedPeer PeerMessageQueue::GetTrackedPeerForTests(const string& uuid) {
   std::lock_guard<simple_spinlock> scoped_lock(queue_lock_);
   TrackedPeer* tracked = FindOrDie(peers_map_, uuid);
   return *tracked;
@@ -884,10 +883,10 @@ bool PeerMessageQueue::IsOpInLog(const OpId& desired_op) const {
   return false; // Unreachable; here to squelch GCC warning.
 }
 
-void PeerMessageQueue::NotifyObserversOfCommitIndexChange(int64_t commit_index) {
+void PeerMessageQueue::NotifyObserversOfCommitIndexChange(int64_t new_commit_index) {
   WARN_NOT_OK(observers_pool_->SubmitClosure(
       Bind(&PeerMessageQueue::NotifyObserversOfCommitIndexChangeTask,
-           Unretained(this), commit_index)),
+           Unretained(this), new_commit_index)),
               LogPrefixUnlocked() + "Unable to notify RaftConsensus of "
                                     "commit index change.");
 }

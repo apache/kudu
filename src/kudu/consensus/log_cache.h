@@ -109,7 +109,7 @@ class LogCache {
   // Return true if an operation with the given index has been written through
   // the cache. The operation may not necessarily be durable yet -- it could still be
   // en route to the log.
-  bool HasOpBeenWritten(int64_t log_index) const;
+  bool HasOpBeenWritten(int64_t index) const;
 
   // Evict any operations with op index <= 'index'.
   void EvictThroughOp(int64_t index);

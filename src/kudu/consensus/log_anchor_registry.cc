@@ -27,7 +27,6 @@ namespace kudu {
 namespace log {
 
 using consensus::kInvalidOpIdIndex;
-using std::pair;
 using std::string;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
@@ -125,9 +124,8 @@ Status LogAnchorRegistry::UnregisterUnlocked(LogAnchor* anchor) {
       anchors_.erase(iter);
       // No need for the iterator to remain valid since we return here.
       return Status::OK();
-    } else {
-      ++iter;
     }
+    ++iter;
   }
   return Status::NotFound(Substitute("Anchor with index $0 and owner $1 not found",
                                      anchor->log_index, anchor->owner));

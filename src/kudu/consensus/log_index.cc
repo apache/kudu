@@ -47,9 +47,9 @@
 using std::string;
 using strings::Substitute;
 
-#define RETRY_ON_EINTR(ret, expr) do { \
-  ret = expr; \
-} while ((ret == -1) && (errno == EINTR));
+#define RETRY_ON_EINTR(ret, expr) do {          \
+    (ret) = (expr);                             \
+  } while (((ret) == -1) && (errno == EINTR));
 
 namespace kudu {
 namespace log {
@@ -137,11 +137,11 @@ void LogIndex::IndexChunk::GetEntry(int entry_index, PhysicalEntry* ret) {
   memcpy(ret, mapping_ + sizeof(PhysicalEntry) * entry_index, sizeof(PhysicalEntry));
 }
 
-void LogIndex::IndexChunk::SetEntry(int entry_index, const PhysicalEntry& phys) {
+void LogIndex::IndexChunk::SetEntry(int entry_index, const PhysicalEntry& entry) {
   DCHECK_GE(fd_, 0) << "Must Open() first";
   DCHECK_LT(entry_index, kEntriesPerIndexChunk);
 
-  memcpy(mapping_ + sizeof(PhysicalEntry) * entry_index, &phys, sizeof(PhysicalEntry));
+  memcpy(mapping_ + sizeof(PhysicalEntry) * entry_index, &entry, sizeof(PhysicalEntry));
 }
 
 ////////////////////////////////////////////////////////////

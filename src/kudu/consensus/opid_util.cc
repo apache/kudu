@@ -32,13 +32,13 @@ const int64_t kMinimumTerm = 0;
 const int64_t kMinimumOpIdIndex = 0;
 const int64_t kInvalidOpIdIndex = -1;
 
-int OpIdCompare(const OpId& first, const OpId& second) {
-  DCHECK(first.IsInitialized());
-  DCHECK(second.IsInitialized());
-  if (PREDICT_TRUE(first.term() == second.term())) {
-    return first.index() < second.index() ? -1 : first.index() == second.index() ? 0 : 1;
+int OpIdCompare(const OpId& left, const OpId& right) {
+  DCHECK(left.IsInitialized());
+  DCHECK(right.IsInitialized());
+  if (PREDICT_TRUE(left.term() == right.term())) {
+    return left.index() < right.index() ? -1 : left.index() == right.index() ? 0 : 1;
   }
-  return first.term() < second.term() ? -1 : 1;
+  return left.term() < right.term() ? -1 : 1;
 }
 
 bool OpIdEquals(const OpId& left, const OpId& right) {
@@ -130,11 +130,11 @@ std::ostream& operator<<(std::ostream& os, const consensus::OpId& op_id) {
   return os;
 }
 
-std::string OpIdToString(const OpId& op_id) {
-  if (!op_id.IsInitialized()) {
+std::string OpIdToString(const OpId& id) {
+  if (!id.IsInitialized()) {
     return "<uninitialized op>";
   }
-  return strings::Substitute("$0.$1", op_id.term(), op_id.index());
+  return strings::Substitute("$0.$1", id.term(), id.index());
 }
 
 std::string OpsRangeString(const ConsensusRequestPB& req) {

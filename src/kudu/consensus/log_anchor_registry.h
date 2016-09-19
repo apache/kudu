@@ -17,9 +17,9 @@
 #ifndef KUDU_CONSENSUS_LOG_ANCHOR_REGISTRY_
 #define KUDU_CONSENSUS_LOG_ANCHOR_REGISTRY_
 
+#include <gtest/gtest_prod.h>
 #include <map>
 #include <string>
-#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -66,7 +66,7 @@ class LogAnchorRegistry : public RefCountedThreadSafe<LogAnchorRegistry> {
 
   // Query the registry to find the earliest anchored log index in the registry.
   // Returns Status::NotFound if no anchors are currently active.
-  Status GetEarliestRegisteredLogIndex(int64_t* op_id);
+  Status GetEarliestRegisteredLogIndex(int64_t* log_index);
 
   // Simply returns the number of active anchors for use in debugging / tests.
   // This is _not_ a constant-time operation.

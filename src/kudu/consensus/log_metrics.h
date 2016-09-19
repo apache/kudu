@@ -45,7 +45,7 @@ struct LogMetrics {
 
 // TODO extract and generalize this for all histogram metrics
 #define SCOPED_LATENCY_METRIC(_mtx, _h) \
-  ScopedLatencyMetric _h##_metric(_mtx ? _mtx->_h.get() : NULL)
+  ScopedLatencyMetric _h##_metric((_mtx) ? (_mtx)->_h.get() : NULL)
 
 } // namespace log
 } // namespace kudu

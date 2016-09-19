@@ -18,8 +18,8 @@
 #include "kudu/consensus/log.h"
 
 #include <algorithm>
-#include <mutex>
 #include <limits>
+#include <mutex>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log_index.h"
@@ -294,7 +294,7 @@ Status Log::Open(const LogOptions &options,
 Log::Log(LogOptions options, FsManager* fs_manager, string log_path,
          string tablet_id, const Schema& schema, uint32_t schema_version,
          const scoped_refptr<MetricEntity>& metric_entity)
-    : options_(std::move(options)),
+    : options_(options),
       fs_manager_(fs_manager),
       log_dir_(std::move(log_path)),
       tablet_id_(std::move(tablet_id)),
@@ -450,17 +450,17 @@ Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callba
   return Status::OK();
 }
 
-Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& msgs,
+Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& replicates,
                                   const StatusCallback& callback) {
   gscoped_ptr<LogEntryBatchPB> batch;
-  CreateBatchFromAllocatedOperations(msgs, &batch);
+  CreateBatchFromAllocatedOperations(replicates, &batch);
 
   LogEntryBatch* reserved_entry_batch;
   RETURN_NOT_OK(Reserve(REPLICATE, std::move(batch), &reserved_entry_batch));
   // If we're able to reserve set the vector of replicate scoped ptrs in
   // the LogEntryBatch. This will make sure there's a reference for each
   // replicate while we're appending.
-  reserved_entry_batch->SetReplicates(msgs);
+  reserved_entry_batch->SetReplicates(replicates);
 
   RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
   return Status::OK();
@@ -627,7 +627,7 @@ Status Log::Sync() {
   return Status::OK();
 }
 
-int GetPrefixSizeToGC(RetentionIndexes retention, const SegmentSequence& segments) {
+int GetPrefixSizeToGC(RetentionIndexes retention_indexes, const SegmentSequence& segments) {
   int rem_segs = segments.size();
   int prefix_size = 0;
   for (const scoped_refptr<ReadableLogSegment>& segment : segments) {
@@ -639,13 +639,13 @@ int GetPrefixSizeToGC(RetentionIndexes retention, const SegmentSequence& segment
 
     int64_t seg_max_idx = segment->footer().max_replicate_index();
     // If removing this segment would compromise durability, we cannot remove it.
-    if (seg_max_idx >= retention.for_durability) {
+    if (seg_max_idx >= retention_indexes.for_durability) {
       break;
     }
 
     // Check if removing this segment would compromise the ability to catch up a peer,
     // we should retain it, unless this would break the max_segments flag.
-    if (seg_max_idx >= retention.for_peers &&
+    if (seg_max_idx >= retention_indexes.for_peers &&
         rem_segs <= FLAGS_log_max_segments_to_retain) {
       break;
     }
@@ -656,17 +656,17 @@ int GetPrefixSizeToGC(RetentionIndexes retention, const SegmentSequence& segment
   return prefix_size;
 }
 
-Status Log::GetSegmentsToGCUnlocked(RetentionIndexes retention,
+Status Log::GetSegmentsToGCUnlocked(RetentionIndexes retention_indexes,
                                     SegmentSequence* segments_to_gc) const {
   RETURN_NOT_OK(reader_->GetSegmentsSnapshot(segments_to_gc));
-  segments_to_gc->resize(GetPrefixSizeToGC(retention, *segments_to_gc));
+  segments_to_gc->resize(GetPrefixSizeToGC(retention_indexes, *segments_to_gc));
   return Status::OK();
 }
 
-Status Log::Append(LogEntryPB* phys_entry) {
+Status Log::Append(LogEntryPB* entry) {
   gscoped_ptr<LogEntryBatchPB> entry_batch_pb(new LogEntryBatchPB);
-  entry_batch_pb->mutable_entry()->AddAllocated(phys_entry);
-  LogEntryBatch entry_batch(phys_entry->type(), std::move(entry_batch_pb), 1);
+  entry_batch_pb->mutable_entry()->AddAllocated(entry);
+  LogEntryBatch entry_batch(entry->type(), std::move(entry_batch_pb), 1);
   entry_batch.state_ = LogEntryBatch::kEntryReserved;
   Status s = entry_batch.Serialize();
   if (s.ok()) {
@@ -701,12 +701,12 @@ void Log::GetLatestEntryOpId(consensus::OpId* op_id) const {
   }
 }
 
-Status Log::GC(RetentionIndexes retention, int32_t* num_gced) {
-  CHECK_GE(retention.for_durability, 0);
+Status Log::GC(RetentionIndexes retention_indexes, int32_t* num_gced) {
+  CHECK_GE(retention_indexes.for_durability, 0);
 
   VLOG(1) << "Running Log GC on " << log_dir_ << ": retaining "
-      "ops >= " << retention.for_durability << " for durability, "
-      "ops >= " << retention.for_peers << " for peers";
+      "ops >= " << retention_indexes.for_durability << " for durability, "
+      "ops >= " << retention_indexes.for_peers << " for peers";
   VLOG_TIMING(1, "Log GC") {
     SegmentSequence segments_to_delete;
 
@@ -714,9 +714,9 @@ Status Log::GC(RetentionIndexes retention, int32_t* num_gced) {
       std::lock_guard<percpu_rwlock> l(state_lock_);
       CHECK_EQ(kLogWriting, log_state_);
 
-      RETURN_NOT_OK(GetSegmentsToGCUnlocked(retention, &segments_to_delete));
+      RETURN_NOT_OK(GetSegmentsToGCUnlocked(retention_indexes, &segments_to_delete));
 
-      if (segments_to_delete.size() == 0) {
+      if (segments_to_delete.empty()) {
         VLOG(1) << "No segments to delete.";
         *num_gced = 0;
         return Status::OK();
@@ -752,16 +752,16 @@ Status Log::GC(RetentionIndexes retention, int32_t* num_gced) {
   return Status::OK();
 }
 
-void Log::GetGCableDataSize(RetentionIndexes retention, int64_t* total_size) const {
-  CHECK_GE(retention.for_durability, 0);
+void Log::GetGCableDataSize(RetentionIndexes retention_indexes, int64_t* total_size) const {
+  CHECK_GE(retention_indexes.for_durability, 0);
   SegmentSequence segments_to_delete;
   *total_size = 0;
   {
     shared_lock<rw_spinlock> l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
-    Status s = GetSegmentsToGCUnlocked(retention, &segments_to_delete);
+    Status s = GetSegmentsToGCUnlocked(retention_indexes, &segments_to_delete);
 
-    if (!s.ok() || segments_to_delete.size() == 0) {
+    if (!s.ok() || segments_to_delete.empty()) {
       return;
     }
   }

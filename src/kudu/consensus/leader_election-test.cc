@@ -42,7 +42,7 @@ namespace {
 const int kLeaderElectionTimeoutSecs = 10;
 
 // Generate list of voter uuids.
-static vector<string> GenVoterUUIDs(int num_voters) {
+vector<string> GenVoterUUIDs(int num_voters) {
   vector<string> voter_uuids;
   for (int i = 0; i < num_voters; i++) {
     voter_uuids.push_back(Substitute("peer-$0", i));
@@ -266,7 +266,7 @@ TEST_F(LeaderElectionTest, TestPerfectElection) {
   for (int num_voters : config_sizes) {
     LOG(INFO) << "Testing election with config size of " << num_voters;
     int majority_size = (num_voters / 2) + 1;
-    ConsensusTerm election_term = 10 + num_voters; // Just to be able to differentiate.
+    ConsensusTerm election_term = 10L + num_voters; // Just to be able to differentiate.
 
     InitUUIDs(num_voters);
     InitNoOpPeerProxies();

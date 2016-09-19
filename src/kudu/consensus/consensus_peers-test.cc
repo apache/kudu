@@ -38,7 +38,6 @@ namespace consensus {
 
 using log::Log;
 using log::LogOptions;
-using log::LogAnchorRegistry;
 
 const char* kTabletId = "test-peers-tablet";
 const char* kLeaderUuid = "peer-0";

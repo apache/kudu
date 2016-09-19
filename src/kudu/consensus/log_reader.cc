@@ -60,7 +60,6 @@ struct LogSegmentSeqnoComparator {
 
 using consensus::OpId;
 using consensus::ReplicateMsg;
-using env_util::ReadFully;
 using std::shared_ptr;
 using strings::Substitute;
 
@@ -175,10 +174,8 @@ Status LogReader::Init(const string& tablet_wal_path) {
             "Previous segment: seqno $0, path $1; Current segment: seqno $2, path $3",
             previous_seg_seqno, previous_seg_path,
             entry->header().sequence_number(), entry->path()));
-        previous_seg_seqno++;
-      } else {
-        previous_seg_seqno = entry->header().sequence_number();
       }
+      previous_seg_seqno = entry->header().sequence_number();
       previous_seg_path = entry->path();
       RETURN_NOT_OK(AppendSegmentUnlocked(entry));
     }
@@ -260,8 +257,8 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
   return Status::OK();
 }
 
-Status LogReader::ReadReplicatesInRange(const int64_t starting_at,
-                                        const int64_t up_to,
+Status LogReader::ReadReplicatesInRange(int64_t starting_at,
+                                        int64_t up_to,
                                         int64_t max_bytes_to_read,
                                         vector<ReplicateMsg*>* replicates) const {
   DCHECK_GT(starting_at, 0);

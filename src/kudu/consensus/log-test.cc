@@ -47,9 +47,6 @@ using std::shared_ptr;
 using consensus::MakeOpId;
 using strings::Substitute;
 
-extern const char* kTestTable;
-extern const char* kTestTablet;
-
 struct TestLogSequenceElem {
   enum ElemType {
     REPLICATE,
@@ -110,7 +107,7 @@ class LogTest : public LogTestBase {
     LogSegmentFooterPB footer;
     footer.set_num_entries(10);
     footer.set_min_replicate_index(first_repl_index);
-    footer.set_max_replicate_index(first_repl_index + 9);
+    footer.set_max_replicate_index(first_repl_index + 9L);
 
     RETURN_NOT_OK(readable_segment->Init(header, footer, 0));
     RETURN_NOT_OK(reader->AppendSegment(readable_segment));
@@ -131,7 +128,7 @@ class LogTest : public LogTestBase {
   };
 
   void DoCorruptionTest(CorruptionType type, CorruptionPosition place,
-                        Status expected_status, int expected_entries);
+                        const Status& expected_status, int expected_entries);
 
 };
 
@@ -275,7 +272,7 @@ TEST_F(LogTest, TestBlankLogFile) {
 }
 
 void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
-                               Status expected_status, int expected_entries) {
+                               const Status& expected_status, int expected_entries) {
   const int kNumEntries = 4;
   ASSERT_OK(BuildLog());
   OpId op_id = MakeOpId(1, 1);
@@ -415,7 +412,7 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   repl->set_timestamp(0L);
 
   // Entries are prefixed with a header.
-  int single_entry_size = batch.ByteSize() + kEntryHeaderSize;
+  int64_t single_entry_size = batch.ByteSize() + kEntryHeaderSize;
 
   int written_entries_size = header_size;
   ASSERT_OK(AppendNoOps(&op_id, kNumEntries, &written_entries_size));
@@ -705,7 +702,7 @@ TEST_F(LogTest, TestWriteManyBatches) {
     ASSERT_OK(LogReader::Open(fs_manager_.get(), NULL, kTestTablet, NULL, &reader));
     ASSERT_OK(reader->GetSegmentsSnapshot(&segments));
 
-    for (const scoped_refptr<ReadableLogSegment> entry : segments) {
+    for (const scoped_refptr<ReadableLogSegment>& entry : segments) {
       STLDeleteElements(&entries_);
       ASSERT_OK(entry->ReadEntries(&entries_));
       num_entries += entries_.size();
@@ -800,7 +797,7 @@ std::ostream& operator<<(std::ostream& os, const TestLogSequenceElem& elem) {
 void LogTest::GenerateTestSequence(Random* rng, int seq_len,
                                    vector<TestLogSequenceElem>* ops,
                                    vector<int64_t>* terms_by_index) {
-  terms_by_index->assign(seq_len + 1, -1);
+  terms_by_index->assign(seq_len + 1L, -1L);
   int64_t committed_index = 0;
   int64_t max_repl_index = 0;
 

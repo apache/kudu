@@ -85,8 +85,8 @@ class LogReader {
   //
   // Requires that a LogIndex was passed into LogReader::Open().
   Status ReadReplicatesInRange(
-      const int64_t starting_at,
-      const int64_t up_to,
+      int64_t starting_at,
+      int64_t up_to,
       int64_t max_bytes_to_read,
       std::vector<consensus::ReplicateMsg*>* replicates) const;
   static const int kNoSizeLimit;
@@ -122,8 +122,9 @@ class LogReader {
   // Used by the Log to add "empty" segments.
   Status AppendEmptySegment(const scoped_refptr<ReadableLogSegment>& segment);
 
-  // Removes segments with sequence numbers less than or equal to 'seg_seqno' from this reader.
-  Status TrimSegmentsUpToAndIncluding(int64_t seg_seqno);
+  // Removes segments with sequence numbers less than or equal to
+  // 'segment_sequence_number' from this reader.
+  Status TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number);
 
   // Replaces the last segment in the reader with 'segment'.
   // Used to replace a segment that was still in the process of being written
@@ -153,11 +154,11 @@ class LogReader {
                                   gscoped_ptr<LogEntryBatchPB>* batch) const;
 
   LogReader(FsManager* fs_manager, const scoped_refptr<LogIndex>& index,
-            std::string tablet_name,
+            std::string tablet_id,
             const scoped_refptr<MetricEntity>& metric_entity);
 
-  // Reads the headers of all segments in 'path_'.
-  Status Init(const std::string& path_);
+  // Reads the headers of all segments in 'tablet_wal_path'.
+  Status Init(const std::string& tablet_wal_path);
 
   // Initializes an 'empty' reader for tests, i.e. does not scan a path looking for segments.
   Status InitEmptyReaderForTests();

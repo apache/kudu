@@ -68,8 +68,6 @@ class CustomLatchCallback : public RefCountedThreadSafe<CustomLatchCallback> {
 
 } // anonymous namespace
 
-extern const char *kTestTablet;
-
 class MultiThreadedLogTest : public LogTestBase {
  public:
   MultiThreadedLogTest()
@@ -158,7 +156,7 @@ TEST_F(MultiThreadedLogTest, TestAppends) {
   ASSERT_OK(log_->Close());
 
   shared_ptr<LogReader> reader;
-  ASSERT_OK(LogReader::Open(fs_manager_.get(), NULL, kTestTablet, NULL, &reader));
+  ASSERT_OK(LogReader::Open(fs_manager_.get(), nullptr, kTestTablet, nullptr, &reader));
   SegmentSequence segments;
   ASSERT_OK(reader->GetSegmentsSnapshot(&segments));
 

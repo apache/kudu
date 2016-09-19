@@ -32,14 +32,14 @@ namespace consensus {
 using log::Log;
 using strings::Substitute;
 
-PeerManager::PeerManager(const std::string tablet_id,
-                         const std::string local_uuid,
+PeerManager::PeerManager(std::string tablet_id,
+                         std::string local_uuid,
                          PeerProxyFactory* peer_proxy_factory,
                          PeerMessageQueue* queue,
                          ThreadPool* request_thread_pool,
                          const scoped_refptr<log::Log>& log)
-    : tablet_id_(tablet_id),
-      local_uuid_(local_uuid),
+    : tablet_id_(std::move(tablet_id)),
+      local_uuid_(std::move(local_uuid)),
       peer_proxy_factory_(peer_proxy_factory),
       queue_(queue),
       thread_pool_(request_thread_pool),

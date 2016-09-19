@@ -50,11 +50,9 @@ using log::LogOptions;
 using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::AtLeast;
-using ::testing::Eq;
 using ::testing::InSequence;
 using ::testing::Invoke;
 using ::testing::Mock;
-using ::testing::Property;
 using ::testing::Return;
 
 const char* kTestTablet = "TestTablet";
@@ -189,7 +187,7 @@ class RaftConsensusTest : public KuduTest {
                        kTestTablet,
                        schema_,
                        0, // schema_version
-                       NULL,
+                       nullptr,
                        &log_));
 
     queue_ = new MockQueue(metric_entity_, log_.get());
@@ -361,7 +359,7 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
   for (int i = 0; i < 10; i++) {
     auto replicate = new ReplicateMsg();
     replicate->set_op_type(NO_OP);
-    info.last_id.set_index(100 + i);
+    info.last_id.set_index(100L + i);
     replicate->mutable_id()->CopyFrom(info.last_id);
     info.orphaned_replicates.push_back(replicate);
   }
