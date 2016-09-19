@@ -241,7 +241,13 @@ void GlogFailure() {
 // random mutations like adding an extra column, removing a column, changing
 // types, and changing nullability.
 TEST_F(RowOperationsTest, SchemaFuzz) {
-  const int n_iters = AllowSlowTests() ? 10000 : 10;
+#ifdef ADDRESS_SANITIZER
+  // Prevent timeouts in ASAN build.
+  const int kSlowTestIters = 1000;
+#else
+  const int kSlowTestIters = 10000;
+#endif
+  const int n_iters = AllowSlowTests() ? kSlowTestIters : 10;
   for (int i = 0; i < n_iters; i++) {
     // Generate a random client and server schema pair.
     Schema client_schema = GenRandomSchema(false);
