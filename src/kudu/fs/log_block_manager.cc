@@ -532,7 +532,9 @@ void LogBlockContainer::CheckBlockRecord(const BlockRecordPB& record,
         record.offset() < 0  ||
         record.length() < 0  ||
         record.offset() + record.length() > data_file_size)) {
-    LOG(FATAL) << "Found malformed block record: " << record.DebugString();
+    LOG(FATAL) << "Found malformed block record in data file: " << data_file_->filename()
+               << "\nRecord: " << record.DebugString()
+               << "\nData file size: " << data_file_size;
   }
 }
 
