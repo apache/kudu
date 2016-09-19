@@ -287,18 +287,6 @@ class ReplicaState {
   // latest index). This must be called under the lock.
   OpId GetLastPendingTransactionOpIdUnlocked() const;
 
-  // Updates the last committed operation including removing it from the pending commits.
-  //
-  // 'commit_op_id' refers to the OpId of the actual commit operation, whereas
-  // 'committed_op_id' refers to the OpId of the original REPLICATE message which was
-  // committed.
-  //
-  // This must be called under a lock.
-  void UpdateReplicaCommittedOpIdUnlocked(const OpId& committed_op_id);
-
-  // Waits for already triggered Apply()s to commit.
-  Status WaitForOustandingApplies();
-
   // Used by replicas to cancel pending transactions. Pending transaction are those
   // that have completed prepare/replicate but are waiting on the LEADER's commit
   // to complete. This does not cancel transactions being applied.
