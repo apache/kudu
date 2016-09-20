@@ -1013,6 +1013,10 @@ class ScopedLatencyMetric {
   MonoTime time_started_;
 };
 
+#define SCOPED_LATENCY_METRIC(_mtx, _h) \
+  ScopedLatencyMetric _h##_metric((_mtx) ? (_mtx)->_h.get() : NULL)
+
+
 ////////////////////////////////////////////////////////////
 // Inline implementations of template methods
 ////////////////////////////////////////////////////////////
