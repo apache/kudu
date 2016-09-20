@@ -40,40 +40,21 @@ class KuduStatusCallback;
 
 namespace twitter_demo {
 
-class InsertConsumer;
-
-class FlushCB : public client::KuduStatusCallback {
- public:
-  explicit FlushCB(InsertConsumer* consumer);
-
-  virtual ~FlushCB();
-
-  virtual void Run(const Status& status) OVERRIDE;
- private:
-  InsertConsumer* consumer_;
-};
-
 // Consumer of tweet data which parses the JSON and inserts
 // into a remote tablet via RPC.
 class InsertConsumer : public TwitterConsumer {
  public:
-  explicit InsertConsumer(
-    const client::sp::shared_ptr<client::KuduClient> &client);
+  explicit InsertConsumer(client::sp::shared_ptr<client::KuduClient> client);
   ~InsertConsumer();
 
   Status Init();
 
-  virtual void ConsumeJSON(const Slice& json) OVERRIDE;
+  virtual void ConsumeJSON(const Slice& json_slice) OVERRIDE;
 
  private:
-  friend class FlushCB;
-
-  void BatchFinished(const Status& s);
-
   bool initted_;
 
   client::KuduSchema schema_;
-  FlushCB flush_cb_;
   TwitterEventParser parser_;
 
   // Reusable object for latest event.
@@ -82,9 +63,6 @@ class InsertConsumer : public TwitterConsumer {
   client::sp::shared_ptr<client::KuduClient> client_;
   client::sp::shared_ptr<client::KuduSession> session_;
   client::sp::shared_ptr<client::KuduTable> table_;
-
-  simple_spinlock lock_;
-  bool request_pending_;
 };
 
 } // namespace twitter_demo
