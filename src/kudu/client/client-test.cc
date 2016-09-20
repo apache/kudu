@@ -1606,7 +1606,6 @@ int64_t SumResults(const KuduScanBatch& batch) {
 TEST_F(ClientTest, TestScannerKeepAlive) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1000));
   // Set the scanner ttl really low
-  ANNOTATE_BENIGN_RACE(&FLAGS_scanner_ttl_ms, "Set at runtime, for tests.");
   FLAGS_scanner_ttl_ms = 100; // 100 milliseconds
   // Start a scan but don't get the whole data back
   KuduScanner scanner(client_table_.get());

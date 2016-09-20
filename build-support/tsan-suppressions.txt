@@ -38,15 +38,33 @@ race:epoll_ctl
 # a lot of stress testing.
 race:concurrent_btree.h
 
-# GLog's fatal signal handler isn't signal-safe -- it allocates memory.
-# This isn't great, but nothing we can do about it. See
-# https://code.google.com/p/google-glog/issues/detail?id=191
-signal:logging_fail
-
-# LOG(FATAL) from multiple threads can also end up triggering a TSAN error.
 # See https://github.com/google/glog/issues/80 for a general list of TSAN
 # issues in glog.
+# 1. glog's fatal signal handler isn't signal-safe -- it allocates memory.
+#    This isn't great, but nothing we can do about it. See
+#    https://code.google.com/p/google-glog/issues/detail?id=191
+# 2. LOG(FATAL) from multiple threads can also end up triggering a TSAN error.
+# 3. g_now_entering in stacktrace_libunwind-inl.h is reset to false without
+#    a Release_Store.
+# 4. glog's ANNOTATE_BENIGN_RACE macro doesn't do anything.
+# 5. Mutex::is_safe_ is accessed in an unsafe way.
+# 6. vlocal__ is access in an unsafe way at every VLOG() or VLOG_IS_ON()
+#    call-site.
+signal:logging_fail
 race:google::LogMessage::Init
+race:google::GetStackTrace
+race:google::InitVLOG3__
+race:glog_internal_namespace_::Mutex
+race:vlocal__
+
+# gflags variables are accessed without synchronization, but FlagSaver and other
+# APIs acquire locks when accessing them. This should be safe on x86 for
+# primitive flag types, but not for string flags, which is why fLS is omitted.
+race:fLB::
+race:fLD::
+race:fLI::
+race:fLI64::
+race:fLU64::
 
 # This method in Boost's UUID library operates on static state with impunity,
 # triggering (harmless) data races in TSAN when boost::uuids::random_generator

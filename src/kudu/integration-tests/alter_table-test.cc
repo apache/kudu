@@ -96,10 +96,6 @@ class AlterTableTest : public KuduTest {
 
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
     FLAGS_use_hybrid_clock = false;
-    ANNOTATE_BENIGN_RACE(&FLAGS_flush_threshold_mb,
-                         "safe to change at runtime");
-    ANNOTATE_BENIGN_RACE(&FLAGS_enable_maintenance_manager,
-                         "safe to change at runtime");
   }
 
   void SetUp() override {
