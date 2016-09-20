@@ -25,18 +25,15 @@
 /// does not require c++11. We use std::tr1::shared_ptr in our public interface
 /// to hold shared instances of KuduClient, KuduSession, and KuduTable.
 ///
-/// Unfortunately, if using clang on OS X, libc++ is the default
-/// C++ standard library implementation and it is required when compiling
-/// with c++11. However, libc++ does not include the TR1 APIs. As a workaround,
-/// we use std::shared_ptr on OS X. Since OS X is for development only,
-/// it is acceptable to require clients to compile with c++11.
+/// However, if building with libc++ (e.g. if building on macOS), the TR1 APIs
+/// are not implemented. As a workaround, we use std::shared_ptr with libc++.
 ///
-/// In order to allow applications to compile against Kudu on both Linux and OS
-/// X, we provide this typedef which resolves to std::tr1::shared_ptr on Linux
-/// and std::shared_ptr on OS X. Clients are encouraged to use these typedefs in
-/// order to ensure that applications will compile on both Linux and OS X.
+/// In order to allow applications to compile against Kudu with libstdc++ as
+/// well as with libc++, macros are provided that will resolve to the correct
+/// namespace in either case. Clients are encouraged to use these macros in
+/// order to ensure that applications compile universally.
 
-#if defined(__APPLE__)
+#if defined(_LIBCPP_VERSION)
 #include <memory>
 
 namespace kudu {
