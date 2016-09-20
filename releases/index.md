@@ -7,16 +7,16 @@ single_col_extra_classes: releases
 
 ## Apache Kudu releases
 
-Kudu is currently in a beta period. It is not yet considered to be production-ready.
+### Latest release
 
-### Latest beta release
+* **[Kudu 1.0.0](1.0.0/)** was released on September 19, 2016.
+  It is the first release not considered "beta".
 
-* **[Kudu 0.10.0 (beta)](0.10.0/)** was released on August 23, 2016.
-    It is the first version to be released after Kudu's graduation from the
+### Previous releases
+
+* [Kudu 0.10.0 (beta)](0.10.0/) was released on August 23, 2016.
+    It was the first version to be released after Kudu's graduation from the
     Apache Incubator.
-
-### Previous beta releases
-
 * [Kudu 0.9.1-incubating (beta)](0.9.1/) was released on June 30, 2016.
 * [Kudu 0.9.0-incubating (beta)](0.9.0/) was released on June 9, 2016.
 * [Kudu 0.8.0-incubating (beta)](0.8.0/) was released on April 10, 2016.
