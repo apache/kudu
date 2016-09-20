@@ -52,14 +52,6 @@ class ScanTokenTest : public KuduTest {
     ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
   }
 
-  // Creates a new session in manual flush mode.
-  shared_ptr<KuduSession> CreateSession() {
-    shared_ptr<KuduSession> session = client_->NewSession();
-    session->SetTimeoutMillis(10000);
-    CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    return session;
-  }
-
   // Count the rows in a table which satisfy the specified predicates. Simulates
   // a central query planner / remote task execution by creating a thread per
   // token, each with a new client.
@@ -70,7 +62,7 @@ class ScanTokenTest : public KuduTest {
       string buf;
       CHECK_OK(token->Serialize(&buf));
 
-      threads.emplace_back(thread([this, &rows] (string serialized_token) {
+      threads.emplace_back([this, &rows] (string serialized_token) {
         shared_ptr<KuduClient> client;
         ASSERT_OK(cluster_->CreateClient(nullptr, &client));
         KuduScanner* scanner_ptr;
@@ -78,7 +70,7 @@ class ScanTokenTest : public KuduTest {
                                                         serialized_token,
                                                         &scanner_ptr));
         unique_ptr<KuduScanner> scanner(scanner_ptr);
-        scanner->Open();
+        ASSERT_OK(scanner->Open());
 
         while (scanner->HasMoreRows()) {
           KuduScanBatch batch;
@@ -86,7 +78,7 @@ class ScanTokenTest : public KuduTest {
           rows += batch.NumRows();
         }
         scanner->Close();
-      }, std::move(buf)));
+      }, std::move(buf));
     }
 
     for (thread& thread : threads) {
@@ -152,7 +144,7 @@ TEST_F(ScanTokenTest, TestScanTokens) {
   // Create session
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(10000);
-  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
 
   // Insert rows
   for (int i = -100; i < 100; i++) {
@@ -259,7 +251,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
   // Create session
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(10000);
-  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
 
   // Insert rows
   for (int i = 0; i < 100; i++) {

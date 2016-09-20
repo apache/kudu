@@ -17,11 +17,12 @@
 
 #include <algorithm>
 #include <cmath>
-#include <gtest/gtest.h>
 #include <limits>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/stringprintf.h"
@@ -75,11 +76,11 @@ class PredicateTest : public KuduTest {
     return table;
   }
 
-  // Creates a new session in manual flush mode.
+  // Creates a new session in automatic background flush mode.
   shared_ptr<KuduSession> CreateSession() {
     shared_ptr<KuduSession> session = client_->NewSession();
     session->SetTimeoutMillis(10000);
-    CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    CHECK_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
     return session;
   }
 

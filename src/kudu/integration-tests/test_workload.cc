@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/schema-internal.h"
@@ -32,15 +31,8 @@
 
 namespace kudu {
 
-using client::FromInternalCompressionType;
-using client::FromInternalDataType;
-using client::FromInternalEncodingType;
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;;
 using client::KuduInsert;
 using client::KuduSchema;
-using client::KuduSchemaBuilder;
 using client::KuduSchemaFromSchema;
 using client::KuduSession;
 using client::KuduTable;
@@ -218,16 +210,15 @@ void TestWorkload::Setup() {
   if (write_pattern_ == UPDATE_ONE_ROW) {
     shared_ptr<KuduSession> session = client_->NewSession();
     session->SetTimeoutMillis(20000);
-    CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    CHECK_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
     shared_ptr<KuduTable> table;
     CHECK_OK(client_->OpenTable(table_name_, &table));
-    gscoped_ptr<KuduInsert> insert(table->NewInsert());
+    std::unique_ptr<KuduInsert> insert(table->NewInsert());
     KuduPartialRow* row = insert->mutable_row();
     CHECK_OK(row->SetInt32(0, 0));
     CHECK_OK(row->SetInt32(1, 0));
     CHECK_OK(row->SetStringCopy(2, "hello world"));
     CHECK_OK(session->Apply(insert.release()));
-    CHECK_OK(session->Flush());
   }
 }
 

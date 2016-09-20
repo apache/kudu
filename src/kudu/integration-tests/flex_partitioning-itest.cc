@@ -307,7 +307,7 @@ Status FlexPartitioningITest::InsertRows(const RangePartitionOptions& range_part
 
   shared_ptr<KuduSession> session(client_->NewSession());
   session->SetTimeoutMillis(10000);
-  RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  RETURN_NOT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
 
   int count = 0;
   for (const auto& bound : bounds) {
@@ -317,10 +317,6 @@ Status FlexPartitioningITest::InsertRows(const RangePartitionOptions& range_part
       inserted_rows_.emplace_back(new KuduPartialRow(*insert->mutable_row()));
       RETURN_NOT_OK(session->Apply(insert.release()));
       count++;
-
-      if (i > 0 && i % 1000 == 0) {
-        RETURN_NOT_OK(session->Flush());
-      }
     }
   }
 

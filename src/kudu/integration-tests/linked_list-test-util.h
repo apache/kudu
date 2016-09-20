@@ -16,12 +16,14 @@
 // under the License.
 
 #include <algorithm>
-#include <glog/logging.h>
 #include <iostream>
 #include <list>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
@@ -253,18 +255,14 @@ class ScopedRowUpdater {
   void RowUpdaterThread() {
     client::sp::shared_ptr<client::KuduSession> session(table_->client()->NewSession());
     session->SetTimeoutMillis(15000);
-    CHECK_OK(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
+    CHECK_OK(session->SetFlushMode(client::KuduSession::AUTO_FLUSH_BACKGROUND));
 
     int64_t next_key;
-    int64_t updated_count = 0;
     while (to_update_.BlockingGet(&next_key)) {
-      gscoped_ptr<client::KuduUpdate> update(table_->NewUpdate());
+      std::unique_ptr<client::KuduUpdate> update(table_->NewUpdate());
       CHECK_OK(update->mutable_row()->SetInt64(kKeyColumnName, next_key));
       CHECK_OK(update->mutable_row()->SetBool(kUpdatedColumnName, true));
       CHECK_OK(session->Apply(update.release()));
-      if (++updated_count % 50 == 0) {
-        FlushSessionOrDie(session);
-      }
     }
 
     FlushSessionOrDie(session);

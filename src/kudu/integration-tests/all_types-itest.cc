@@ -15,8 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
 #include <vector>
+
+#include <gflags/gflags.h>
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/client/row_result.h"
@@ -212,16 +214,25 @@ class AllTypesItest : public KuduTest {
   }
 
   Status CreateCluster() {
-    vector<string> ts_flags;
-    // Set the flush threshold low so that we have flushes and test the on-disk formats.
-    ts_flags.push_back("--flush_threshold_mb=1");
-    // Set the major delta compaction ratio low enough that we trigger a lot of them.
-    ts_flags.push_back("--tablet_delta_store_major_compact_min_ratio=0.001");
+    static const vector<string> kTsFlags = {
+      // Set the flush threshold low so that we have flushes and test the on-disk formats.
+      "--flush_threshold_mb=1",
+
+      // Set the major delta compaction ratio low enough that we trigger a lot of them.
+      "--tablet_delta_store_major_compact_min_ratio=0.001",
+
+      // TODO(KUDU-1346) Remove custom consensus_max_batch_size_bytes setting
+      // once KUDU-1346 is fixed. It's necessary to change the default
+      // value of the consensus_max_batch_size_bytes flag to avoid
+      // triggering debug assert when a relatively big chunk of write operations
+      // is flushed to the tablet server.
+      "--consensus_max_batch_size_bytes=2097152",
+    };
 
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = kNumTabletServers;
 
-    for (const std::string& flag : ts_flags) {
+    for (const std::string& flag : kTsFlags) {
       opts.extra_tserver_flags.push_back(flag);
     }
 
@@ -276,17 +287,14 @@ class AllTypesItest : public KuduTest {
   // ended up in the right place.
   Status InsertRows() {
     shared_ptr<KuduSession> session = client_->NewSession();
-    RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    int max_rows_per_tablet = setup_.GetRowsPerTablet();
+    RETURN_NOT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+    const int max_rows_per_tablet = setup_.GetRowsPerTablet();
     for (int i = 0; i < kNumTablets; ++i) {
       for (int j = 0; j < max_rows_per_tablet; ++j) {
         RETURN_NOT_OK(GenerateRow(session.get(), i, j));
-        if (j % 1000 == 0) {
-          RETURN_NOT_OK(session->Flush());
-        }
       }
-      RETURN_NOT_OK(session->Flush());
     }
+    RETURN_NOT_OK(session->Flush());
     return Status::OK();
   }
 

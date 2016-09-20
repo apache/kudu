@@ -15,13 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/bind.hpp>
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <string>
 #include <utility>
+
+#include <boost/bind.hpp>
+#include <gflags/gflags.h>
+#include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
@@ -41,7 +43,6 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
@@ -62,7 +63,6 @@ using client::KuduColumnSchema;
 using client::KuduError;
 using client::KuduInsert;
 using client::KuduRowResult;
-using client::KuduScanBatch;
 using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduSchemaBuilder;
@@ -75,19 +75,19 @@ using client::KuduValue;
 using client::sp::shared_ptr;
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
-using master::MiniMaster;
+using std::atomic;
 using std::map;
 using std::pair;
 using std::unique_ptr;
 using std::vector;
 using tablet::TabletPeer;
-using tserver::MiniTabletServer;
 
 class AlterTableTest : public KuduTest {
  public:
   AlterTableTest()
-    : stop_threads_(false),
-      inserted_idx_(0) {
+      : stop_threads_(false),
+        next_idx_(0),
+        update_ops_cnt_(0) {
 
     KuduSchemaBuilder b;
     b.AddColumn("c0")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
@@ -257,12 +257,14 @@ class AlterTableTest : public KuduTest {
 
   scoped_refptr<TabletPeer> tablet_peer_;
 
-  AtomicBool stop_threads_;
+  atomic<bool> stop_threads_;
 
-  // The index of the last row inserted by InserterThread.
-  // UpdaterThread uses this to figure out which rows can be
-  // safely updated.
-  AtomicInt<int32_t> inserted_idx_;
+  // The index of the next row to be inserted by the InserterThread.
+  // The UpdaterThread uses this to figure out which rows can be safely updated.
+  atomic<uint32_t> next_idx_;
+
+  // Number of update operations issues by the UpdaterThread so far.
+  atomic<uint32_t> update_ops_cnt_;
 };
 
 // Subclass which creates three servers and a replicated cluster.
@@ -426,7 +428,7 @@ TEST_F(AlterTableTest, TestGetSchemaAfterAlterTable) {
 void AlterTableTest::InsertRows(int start_row, int num_rows) {
   shared_ptr<KuduSession> session = client_->NewSession();
   shared_ptr<KuduTable> table;
-  CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  CHECK_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
   session->SetTimeoutMillis(15 * 1000);
   CHECK_OK(client_->OpenTable(kTableName, &table));
 
@@ -456,7 +458,7 @@ void AlterTableTest::InsertRows(int start_row, int num_rows) {
 Status AlterTableTest::InsertRowsSequential(const string& table_name, int start_row, int num_rows) {
   shared_ptr<KuduSession> session = client_->NewSession();
   shared_ptr<KuduTable> table;
-  RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  RETURN_NOT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
   session->SetTimeoutMillis(15 * 1000);
   RETURN_NOT_OK(client_->OpenTable(table_name, &table));
 
@@ -487,7 +489,7 @@ void AlterTableTest::UpdateRow(int32_t row_key,
   shared_ptr<KuduSession> session = client_->NewSession();
   shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
-  CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  CHECK_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
   session->SetTimeoutMillis(15 * 1000);
   unique_ptr<KuduUpdate> update(table->NewUpdate());
   int32_t key = bswap_32(row_key); // endian swap to match 'InsertRows'
@@ -852,18 +854,18 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn) {
 }
 
 // Thread which inserts rows into the table.
-// After each batch of rows is inserted, inserted_idx_ is updated
+// After each batch of rows is inserted, next_idx_ is updated
 // to communicate how much data has been written (and should now be
 // updateable)
 void AlterTableTest::InserterThread() {
   shared_ptr<KuduSession> session = client_->NewSession();
-  shared_ptr<KuduTable> table;
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15 * 1000);
 
+  shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
-  int32_t i = 0;
-  while (!stop_threads_.Load()) {
+  uint32_t i = 0;
+  while (!stop_threads_) {
     unique_ptr<KuduInsert> insert(table->NewInsert());
     // Endian-swap the key so that we spew inserts randomly
     // instead of just a sequential write pattern. This way
@@ -875,30 +877,28 @@ void AlterTableTest::InserterThread() {
 
     if (i % 50 == 0) {
       FlushSessionOrDie(session);
-      inserted_idx_.Store(i);
+      next_idx_ = i;
     }
   }
 
   FlushSessionOrDie(session);
-  inserted_idx_.Store(i);
+  next_idx_ = i;
 }
 
 // Thread which follows behind the InserterThread and generates random
 // updates across the previously inserted rows.
 void AlterTableTest::UpdaterThread() {
   shared_ptr<KuduSession> session = client_->NewSession();
-  shared_ptr<KuduTable> table;
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15 * 1000);
 
+  shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
 
   Random rng(1);
-  int32_t i = 0;
-  while (!stop_threads_.Load()) {
-    unique_ptr<KuduUpdate> update(table->NewUpdate());
-
-    int32_t max = inserted_idx_.Load();
+  uint32_t i = 0;
+  while (!stop_threads_) {
+    const uint32_t max = next_idx_;
     if (max == 0) {
       // Inserter hasn't inserted anything yet, so we have nothing to update.
       SleepFor(MonoDelta::FromMicroseconds(100));
@@ -906,10 +906,12 @@ void AlterTableTest::UpdaterThread() {
     }
     // Endian-swap the key to match the way the InserterThread generates
     // keys to insert.
-    int32_t key = bswap_32(rng.Uniform(max));
+    uint32_t key = bswap_32(rng.Uniform(max - 1));
+    unique_ptr<KuduUpdate> update(table->NewUpdate());
     CHECK_OK(update->mutable_row()->SetInt32(0, key));
     CHECK_OK(update->mutable_row()->SetInt32(1, i));
     CHECK_OK(session->Apply(update.release()));
+    ++update_ops_cnt_;
 
     if (i++ % 50 == 0) {
       FlushSessionOrDie(session);
@@ -924,9 +926,9 @@ void AlterTableTest::UpdaterThread() {
 void AlterTableTest::ScannerThread() {
   shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
-  while (!stop_threads_.Load()) {
+  while (!stop_threads_) {
     KuduScanner scanner(table.get());
-    int inserted_at_scanner_start = inserted_idx_.Load();
+    uint32_t inserted_at_scanner_start = next_idx_;
     CHECK_OK(scanner.Open());
     int count = 0;
     vector<KuduRowResult> results;
@@ -979,10 +981,13 @@ TEST_F(AlterTableTest, TestAlterUnderWriteLoad) {
                                      i));
   }
 
-  stop_threads_.Store(true);
+  stop_threads_ = true;
   writer->Join();
   updater->Join();
   scanner->Join();
+  // A sanity check: the updater should have generate at least one update
+  // given the parameters the test is running with.
+  CHECK_GE(update_ops_cnt_, 0U);
 }
 
 TEST_F(AlterTableTest, TestInsertAfterAlterTable) {

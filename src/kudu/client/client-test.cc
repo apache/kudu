@@ -270,7 +270,7 @@ class ClientTest : public KuduTest {
   // Inserts 'num_rows' test rows using 'client'
   void InsertTestRows(KuduClient* client, KuduTable* table, int num_rows, int first_row = 0) {
     shared_ptr<KuduSession> session = client->NewSession();
-    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
     session->SetTimeoutMillis(60000);
     for (int i = first_row; i < num_rows + first_row; i++) {
       gscoped_ptr<KuduInsert> insert(BuildTestRow(table, i));
@@ -287,7 +287,7 @@ class ClientTest : public KuduTest {
 
   void UpdateTestRows(KuduTable* table, int lo, int hi) {
     shared_ptr<KuduSession> session = client_->NewSession();
-    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
     session->SetTimeoutMillis(10000);
     for (int i = lo; i < hi; i++) {
       gscoped_ptr<KuduUpdate> update(UpdateTestRow(table, i));
@@ -299,7 +299,7 @@ class ClientTest : public KuduTest {
 
   void DeleteTestRows(KuduTable* table, int lo, int hi) {
     shared_ptr<KuduSession> session = client_->NewSession();
-    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
     session->SetTimeoutMillis(10000);
     for (int i = lo; i < hi; i++) {
       gscoped_ptr<KuduDelete> del(DeleteTestRow(table, i));
@@ -3498,7 +3498,7 @@ TEST_F(ClientTest, TestDeadlockSimulation) {
   const int kTimeoutMillis = 60000;
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(kTimeoutMillis);
-  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
   for (int i = 0; i < kNumRows; ++i)
     ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, i, i,  ""));
   FlushSessionOrDie(session);

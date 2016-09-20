@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
 #include <sstream>
 
 #include <gtest/gtest.h>
@@ -42,8 +43,8 @@ using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
 using client::sp::shared_ptr;
-using std::static_pointer_cast;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -173,16 +174,12 @@ class RemoteKsckTest : public KuduTest {
     RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
     shared_ptr<KuduSession> session(client_->NewSession());
     session->SetTimeoutMillis(10000);
-    RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    RETURN_NOT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
     for (uint64_t i = 0; i < num_rows; i++) {
       VLOG(1) << "Generating write for row id " << i;
-      gscoped_ptr<KuduInsert> insert(table->NewInsert());
+      unique_ptr<KuduInsert> insert(table->NewInsert());
       GenerateDataForRow(table->schema(), i, &random_, insert->mutable_row());
       RETURN_NOT_OK(session->Apply(insert.release()));
-
-      if (i > 0 && i % 1000 == 0) {
-        RETURN_NOT_OK(session->Flush());
-      }
     }
     RETURN_NOT_OK(session->Flush());
     return Status::OK();

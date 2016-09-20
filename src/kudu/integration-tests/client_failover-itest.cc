@@ -107,7 +107,7 @@ TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(TestWorkload::kDefaultTableName, &table));
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
   session->SetTimeoutMillis(kTimeout.ToMilliseconds());
 
   // The row we will update later when testing writes.
@@ -117,7 +117,6 @@ TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
   ASSERT_OK(insert->mutable_row()->SetInt32(1, 1));
   ASSERT_OK(insert->mutable_row()->SetStringNoCopy(2, "a"));
   ASSERT_OK(session->Apply(insert));
-  ASSERT_OK(session->Flush());
   ASSERT_EQ(1, CountTableRows(table.get()));
 
   // Write data to a tablet.
