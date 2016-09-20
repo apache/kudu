@@ -18,5 +18,5 @@
 installed/
 src/
 build/
-.build-hash
+.build-hash*
 clang-toolchain

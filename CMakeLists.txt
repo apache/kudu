@@ -102,8 +102,11 @@ set(CMAKE_ENABLE_EXPORTS true)
 
 # Make sure thirdparty stuff is up-to-date.
 if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
+  if (${KUDU_USE_TSAN})
+    set(TP_ARGS "tsan")
+  endif()
   execute_process(
-    COMMAND ${THIRDPARTY_DIR}/build-if-necessary.sh
+    COMMAND ${THIRDPARTY_DIR}/build-if-necessary.sh ${TP_ARGS}
     RESULT_VARIABLE THIRDPARTY_SCRIPT_RESULT)
   if (NOT (${THIRDPARTY_SCRIPT_RESULT} EQUAL 0))
     message(FATAL_ERROR "Thirdparty was built unsuccessfully, terminating.")
