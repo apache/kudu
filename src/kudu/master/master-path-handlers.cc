@@ -74,22 +74,26 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
   *output << Substitute("<p>There are $0 registered tablet servers.</p>", descs.size());
 
   map<string, array<int, 2>> version_counts;
-  vector<string> tserver_rows;
+  vector<string> live_tserver_rows;
+  vector<string> dead_tserver_rows;
   for (const std::shared_ptr<TSDescriptor>& desc : descs) {
     const string time_since_hb = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
     ServerRegistrationPB reg;
     desc->GetRegistration(&reg);
 
-    if (desc->PresumedDead()) {
-      version_counts[reg.software_version()][1]++;
-    } else {
-      version_counts[reg.software_version()][0]++;
-    }
     string row = Substitute("<tr><th>$0</th><td>$1</td><td><pre><code>$2</code></pre></td></tr>\n",
                             RegistrationToHtml(reg, desc->permanent_uuid()),
                             time_since_hb,
                             EscapeForHtmlToString(reg.ShortDebugString()));
-    tserver_rows.push_back(row);
+
+    if (desc->PresumedDead()) {
+      version_counts[reg.software_version()][1]++;
+      dead_tserver_rows.push_back(row);
+    } else {
+      version_counts[reg.software_version()][0]++;
+      live_tserver_rows.push_back(row);
+    }
+
   }
 
   *output << "<h3>Version Summary</h3>";
@@ -101,11 +105,20 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
   }
   *output << "</table>";
 
-  *output << "<h3>Registrations</h3>";
-  *output << "<table class='table table-striped'>\n";
-  *output << "<tr><th>UUID</th><th>Time since heartbeat</th><th>Registration</th></tr>\n";
-  *output << JoinStrings(tserver_rows, "\n");
-  *output << "</table>\n";
+  *output << "<h3>" << "Registrations" << "</h3>\n";
+  auto generate_table = [](const vector<string>& rows,
+                           const string& header,
+                           ostream* output) {
+    if (!rows.empty()) {
+      *output << "<h4>" << header << "</h4>\n";
+      *output << "<table class='table table-striped'>\n";
+      *output << "<tr><th>UUID</th><th>Time since heartbeat</th><th>Registration</th></tr>\n";
+      *output << JoinStrings(rows, "\n");
+      *output << "</table>\n";
+    }
+  };
+  generate_table(live_tserver_rows, "Live Tablet Servers", output);
+  generate_table(dead_tserver_rows, "Dead Tablet Servers", output);
 }
 
 void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
