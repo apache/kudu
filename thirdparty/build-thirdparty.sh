@@ -22,8 +22,7 @@
 # used, corresponding to build type:
 #
 #   * /thirdparty/installed/common - prefix directory for libraries and binary tools
-#                                    common to all build types, e.g. LLVM, Clang, and
-#                                    CMake.
+#                                    common to all build types, e.g. CMake, C dependencies.
 #   * /thirdparty/installed/uninstrumented - prefix directory for libraries built with
 #                                            normal options (no sanitizer instrumentation).
 #   * /thirdparty/installed/tsan - prefix directory for libraries built
@@ -47,7 +46,7 @@ source $TP_DIR/build-definitions.sh
 # read the docs)
 $TP_DIR/preflight.py
 
-for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN $PREFIX_LIBSTDCXX $PREFIX_LIBSTDCXX_TSAN; do
+for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN; do
   mkdir -p $PREFIX_DIR/lib
   mkdir -p $PREFIX_DIR/include
 
@@ -127,7 +126,6 @@ else
       "crcutil")    F_CRCUTIL=1 ;;
       "libunwind")  F_LIBUNWIND=1 ;;
       "llvm")       F_LLVM=1 ;;
-      "libstdcxx")  F_LIBSTDCXX=1 ;;
       "trace-viewer") F_TRACE_VIEWER=1 ;;
       "nvml")       F_NVML=1 ;;
       "boost")      F_BOOST=1 ;;
@@ -150,18 +148,13 @@ if [ -n "$F_ALL" -o -n "$F_CMAKE" ]; then
   build_cmake
 fi
 
-if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
-  build_llvm
-fi
+save_env
 
 # Enable debug symbols so that stacktraces and linenumbers are available at
-# runtime. CMake and LLVM are compiled without debug symbols since CMake is a
-# compile-time only tool, and the LLVM debug symbols take up more than 20GiB of
-# disk space.
+# runtime. CMake is compiled without debug symbols since it is a compile-time
+# only tool.
 EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
 EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
-
-save_env
 
 # Specifying -Wl,-rpath has different default behavior on GNU binutils ld vs.
 # the GNU gold linker. ld sets RPATH (due to defaulting to --disable-new-dtags)
@@ -234,7 +227,18 @@ PREFIX=$PREFIX_DEPS
 MODE_SUFFIX=""
 
 save_env
+
 EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
+
+if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
+  build_llvm normal
+fi
+
+# Enable debug symbols so that stacktraces and linenumbers are available at
+# runtime. LLVM is compiled without debug symbols as they take up more than
+# 20GiB of disk space.
+EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
+EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
 
 if [ -n "$F_ALL" -o -n "$F_GFLAGS" ]; then
   build_gflags
@@ -270,23 +274,27 @@ restore_env
 
 if [ -n "$F_TSAN" ]; then
 
-  # Achieving good results with TSAN requires that the C++ standard
-  # library be instrumented with TSAN. Additionally, dependencies which
-  # internally use threads or synchronization should be instrumented.
-  # libstdc++ requires that all shared objects linked into an executable should
-  # be built against the same version of libstdc++. As a result, we must build
-  # libstdc++ twice: once instrumented, and once uninstrumented, in order to
-  # guarantee that the versions match.
+  # Achieving good results with TSAN requires that:
+  # 1. The C++ standard library should be instrumented with TSAN.
+  # 2. Dependencies which internally use threads or synchronization be
+  #    instrumented with TSAN.
+  # 3. As a corollary to 1, the C++ standard library requires that all shared
+  #    objects linked into an executable be built against the same version of
+  #    the C++ standard library version.
   #
-  # Currently protobuf is the only thirdparty dependency that we build with
-  # instrumentation.
+  # At the very least, we must build our own C++ standard library. We use libc++
+  # because it's easy to build with clang, which has better TSAN support than gcc.
+  #
+  # To satisfy all of the above requirements, we first build libc++ instrumented
+  # with TSAN, then build a second copy of every C++ dependency against that
+  # libc++. Later on in the build process, Kudu is also built against libc++.
   #
   # Special flags for TSAN builds:
   #   * -fsanitize=thread -  enable the thread sanitizer during compilation.
-  #   * -L ... - add the instrumented libstdc++ to the library search paths.
-  #   * -isystem ... - Add libstdc++ headers to the system header search paths.
+  #   * -L ... - add the instrumented libc++ to the library search paths.
+  #   * -isystem ... - Add libc++ headers to the system header search paths.
   #   * -nostdinc++ - Do not automatically link the system C++ standard library.
-  #   * -Wl,-rpath,... - Add instrumented libstdc++ location to the rpath so that
+  #   * -Wl,-rpath,... - Add instrumented libc++ location to the rpath so that
   #                      it can be found at runtime.
 
   if which ccache >/dev/null ; then
@@ -302,49 +310,47 @@ if [ -n "$F_TSAN" ]; then
   PREFIX=$PREFIX_DEPS_TSAN
   MODE_SUFFIX=".tsan"
 
-  if [ -n "$F_ALL" -o -n "$F_LIBSTDCXX" ]; then
-    save_env
+  save_env
 
-    # Build uninstrumented libstdcxx
-    PREFIX=$PREFIX_LIBSTDCXX
-    MODE_SUFFIX=""
-    EXTRA_CFLAGS=
-    EXTRA_CXXFLAGS=
-    build_libstdcxx
-
-    # Build instrumented libstdxx
-    PREFIX=$PREFIX_LIBSTDCXX_TSAN
-    MODE_SUFFIX=".tsan"
-    EXTRA_CFLAGS="-fsanitize=thread"
-    EXTRA_CXXFLAGS="-fsanitize=thread"
-    build_libstdcxx
-
-    restore_env
+  # Build libc++abi first as it is a dependency for libc++. Its build has no
+  # built-in support for sanitizers, so we build it regularly.
+  if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
+    build_libcxxabi
   fi
 
-  # Build dependencies that require TSAN instrumentation
+  # The libc++ build needs to be able to find libc++abi.
+  EXTRA_CXXFLAGS="-L$PREFIX/lib $EXTRA_CXXFLAGS"
+  EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
 
-  save_env
+  # Build libc++ with TSAN enabled.
+  if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
+    build_libcxx tsan
+  fi
+
+  # Build the rest of the dependencies against the TSAN-instrumented libc++
+  # instead of the system's C++ standard library.
+  EXTRA_CXXFLAGS="-nostdinc++ $EXTRA_CXXFLAGS"
+  EXTRA_CXXFLAGS="-stdlib=libc++ $EXTRA_CXXFLAGS"
+  EXTRA_CXXFLAGS="-isystem $PREFIX/include/c++/v1 $EXTRA_CXXFLAGS"
+
+  # Build the rest of the dependencies with TSAN instrumentation.
   EXTRA_CFLAGS="-fsanitize=thread $EXTRA_CFLAGS"
-  EXTRA_CXXFLAGS="-nostdinc++ -fsanitize=thread $EXTRA_CXXFLAGS"
+  EXTRA_CXXFLAGS="-fsanitize=thread $EXTRA_CXXFLAGS"
   EXTRA_CXXFLAGS="-DTHREAD_SANITIZER $EXTRA_CXXFLAGS"
-  EXTRA_CXXFLAGS="-isystem $PREFIX_LIBSTDCXX_TSAN/include/c++/$GCC_VERSION/backward $EXTRA_CXXFLAGS"
-  EXTRA_CXXFLAGS="-isystem $PREFIX_LIBSTDCXX_TSAN/include/c++/$GCC_VERSION $EXTRA_CXXFLAGS"
-  EXTRA_CXXFLAGS="-L$PREFIX_LIBSTDCXX_TSAN/lib $EXTRA_CXXFLAGS"
-  EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX_LIBSTDCXX_TSAN/lib,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
+
+  if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
+    build_llvm tsan
+  fi
+
+  # Enable debug symbols so that stacktraces and linenumbers are available at
+  # runtime. LLVM is compiled without debug symbols because the LLVM debug symbols
+  # take up more than 20GiB of disk space.
+  EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
+  EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
 
   if [ -n "$F_ALL" -o -n "$F_PROTOBUF" ]; then
     build_protobuf
   fi
-  restore_env
-
-  # Build dependencies that do not require TSAN instrumentation
-
-  EXTRA_CXXFLAGS="-nostdinc++ $EXTRA_CXXFLAGS"
-  EXTRA_CXXFLAGS="-isystem $PREFIX_LIBSTDCXX/include/c++/$GCC_VERSION/backward $EXTRA_CXXFLAGS"
-  EXTRA_CXXFLAGS="-isystem $PREFIX_LIBSTDCXX/include/c++/$GCC_VERSION $EXTRA_CXXFLAGS"
-  EXTRA_CXXFLAGS="-L$PREFIX_LIBSTDCXX/lib $EXTRA_CXXFLAGS"
-  EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX_LIBSTDCXX/lib,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
 
   if [ -n "$F_ALL" -o -n "$F_GFLAGS" ]; then
     build_gflags
@@ -369,6 +375,8 @@ if [ -n "$F_TSAN" ]; then
   if [ -n "$F_ALL" -o -n "$F_CRCUTIL" ]; then
     build_crcutil
   fi
+
+  restore_env
 fi
 
 echo "---------------------"

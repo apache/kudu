@@ -218,26 +218,6 @@ if [ ! -d $LLVM_SOURCE ]; then
   echo
 fi
 
-GCC_PATCHLEVEL=2
-delete_if_wrong_patchlevel $GCC_SOURCE $GCC_PATCHLEVEL
-if [[ "$OSTYPE" =~ ^linux ]] && [[ ! -d $GCC_SOURCE ]]; then
-  fetch_and_expand gcc-${GCC_VERSION}.tar.gz
-  pushd $GCC_SOURCE/libstdc++-v3
-  patch -p0 < $TP_DIR/patches/libstdcxx-fix-string-dtor.patch
-  patch -p0 < $TP_DIR/patches/libstdcxx-fix-tr1-shared-ptr.patch
-  cd ..
-  touch patchlevel-$GCC_PATCHLEVEL
-  popd
-
-  # Configure libstdcxx to use posix threads by default. Normally this symlink
-  # would be created automatically while building libgcc as part of the overall
-  # GCC build, but since we are only building libstdcxx we must configure it
-  # manually.
-  ln -sf $GCC_SOURCE/libgcc/gthr-posix.h $GCC_SOURCE/libgcc/gthr-default.h
-
-  echo
-fi
-
 LZ4_PATCHLEVEL=1
 delete_if_wrong_patchlevel $LZ4_SOURCE $LZ4_PATCHLEVEL
 if [ ! -d $LZ4_SOURCE ]; then

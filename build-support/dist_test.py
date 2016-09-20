@@ -63,7 +63,7 @@ DEPS_FOR_ALL = \
      "build-support/lsan-suppressions.txt",
 
      # The LLVM symbolizer is necessary for suppressions to work
-     "thirdparty/installed/common/bin/llvm-symbolizer",
+     "thirdparty/installed/uninstrumented/bin/llvm-symbolizer",
 
      # Tests that use the external minicluster require these.
      # TODO: declare these dependencies per-test.

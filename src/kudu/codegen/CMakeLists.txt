@@ -51,7 +51,7 @@ llvm_map_components_to_libnames(llvm_LIBRARIES "${LLVM_REQ_COMPONENTS}")
 #######################################
 
 ## Create .ll file for precompiled functions (and their dependencies)
-set(CLANG_EXEC ${THIRDPARTY_PREFIX}/bin/clang++)
+set(CLANG_EXEC ${THIRDPARTY_DIR}/clang-toolchain/bin/clang++)
 set(IR_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/precompiled.cc)
 set(IR_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/precompiled.ll)
 set(IR_OUTPUT_CC ${IR_OUTPUT}.cc)

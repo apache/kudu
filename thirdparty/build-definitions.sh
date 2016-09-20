@@ -63,9 +63,56 @@ build_cmake() {
   popd
 }
 
-build_llvm() {
+build_libcxxabi() {
+  LIBCXXABI_BDIR=$TP_BUILD_DIR/llvm-$LLVM_VERSION.libcxxabi$MODE_SUFFIX
+  mkdir -p $LIBCXXABI_BDIR
+  pushd $LIBCXXABI_BDIR
+  rm -Rf CMakeCache.txt CMakeFiles/
+  cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS $EXTRA_LDFLAGS" \
+    -DLLVM_PATH=$LLVM_SOURCE \
+    $LLVM_SOURCE/projects/libcxxabi
+  make -j$PARALLEL install
+  popd
+}
 
-  # Build Python if necessary.
+build_libcxx() {
+  local BUILD_TYPE=$1
+  case $BUILD_TYPE in
+    "tsan")
+      SANITIZER_TYPE=Thread
+      ;;
+    *)
+      echo "Unknown build type: $BUILD_TYPE"
+      exit 1
+      ;;
+  esac
+
+  LIBCXX_BDIR=$TP_BUILD_DIR/llvm-$LLVM_VERSION.libcxx$MODE_SUFFIX
+  mkdir -p $LIBCXX_BDIR
+  pushd $LIBCXX_BDIR
+  rm -Rf CMakeCache.txt CMakeFiles/
+  cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS $EXTRA_LDFLAGS" \
+    -DLLVM_PATH=$LLVM_SOURCE \
+    -DLIBCXX_CXX_ABI=libcxxabi \
+    -DLIBCXX_CXX_ABI_INCLUDE_PATHS=$LLVM_SOURCE/projects/libcxxabi/include \
+    -DLLVM_USE_SANITIZER=$SANITIZER_TYPE \
+    $LLVM_SOURCE/projects/libcxx
+  make -j$PARALLEL install
+  popd
+}
+
+build_or_find_python() {
+  if [ -n "$PYTHON_EXECUTABLE" ]; then
+    return
+  fi
+
+  # Build Python only if necessary.
   if [[ $(python2.7 -V 2>&1) =~ "Python 2.7." ]]; then
     PYTHON_EXECUTABLE=$(which python2.7)
   elif [[ $(python -V 2>&1) =~ "Python 2.7." ]]; then
@@ -74,11 +121,41 @@ build_llvm() {
     PYTHON_BDIR=$TP_BUILD_DIR/$PYTHON_NAME$MODE_SUFFIX
     mkdir -p $PYTHON_BDIR
     pushd $PYTHON_BDIR
-    $PYTHON_SOURCE/configure --prefix=$PREFIX
+    $PYTHON_SOURCE/configure
     make -j$PARALLEL
     PYTHON_EXECUTABLE="$PYTHON_BDIR/python"
     popd
   fi
+}
+
+build_llvm() {
+  local TOOLS_ARGS=
+  local BUILD_TYPE=$1
+
+  build_or_find_python
+
+  # Always disabled; these subprojects are built standalone.
+  TOOLS_ARGS="$TOOLS_ARGS -DLLVM_TOOL_LIBCXX_BUILD=OFF"
+  TOOLS_ARGS="$TOOLS_ARGS -DLLVM_TOOL_LIBCXXABI_BUILD=OFF"
+
+  case $BUILD_TYPE in
+    "normal")
+      # Default build: core LLVM libraries, clang, compiler-rt, and all tools.
+      ;;
+    "tsan")
+      # Build just the core LLVM libraries, dependent on libc++.
+      TOOLS_ARGS="$TOOLS_ARGS -DLLVM_ENABLE_LIBCXX=ON"
+      TOOLS_ARGS="$TOOLS_ARGS -DLLVM_INCLUDE_TOOLS=OFF"
+      TOOLS_ARGS="$TOOLS_ARGS -DLLVM_TOOL_COMPILER_RT_BUILD=OFF"
+
+      # Configure for TSAN.
+      TOOLS_ARGS="$TOOLS_ARGS -DLLVM_USE_SANITIZER=Thread"
+      ;;
+    *)
+      echo "Unknown LLVM build type: $BUILD_TYPE"
+      exit 1
+      ;;
+  esac
 
   LLVM_BDIR=$TP_BUILD_DIR/llvm-$LLVM_VERSION$MODE_SUFFIX
   mkdir -p $LLVM_BDIR
@@ -98,50 +175,27 @@ build_llvm() {
   cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    -DLLVM_INCLUDE_DOCS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_UTILS=OFF \
     -DLLVM_TARGETS_TO_BUILD=X86 \
     -DLLVM_ENABLE_RTTI=ON \
-    -DLLVM_TOOL_LIBCXX_BUILD=OFF \
-    -DLLVM_TOOL_LIBCXXABI_BUILD=OFF \
-    -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS" \
+    -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS $EXTRA_LDFLAGS" \
     -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+    $TOOLS_ARGS \
     $LLVM_SOURCE
 
   make -j$PARALLEL install
 
-  # Create a link from Clang to thirdparty/clang-toolchain. This path is used
-  # for compiling Kudu with sanitizers. The link can't point to the Clang
-  # installed in the prefix directory, since this confuses CMake into believing
-  # the thirdparty prefix directory is the system-wide prefix, and it omits the
-  # thirdparty prefix directory from the rpath of built binaries.
-  ln -sfn $LLVM_BDIR $TP_DIR/clang-toolchain
-  popd
-}
-
-build_libstdcxx() {
-  GCC_BDIR=$TP_BUILD_DIR/$GCC_NAME$MODE_SUFFIX
-
-  # Remove the GCC build directory to remove cached build configuration.
-  rm -rf $GCC_BDIR
-
-  mkdir -p $GCC_BDIR
-  pushd $GCC_BDIR
-  CFLAGS=$EXTRA_CFLAGS \
-    CXXFLAGS=$EXTRA_CXXFLAGS \
-    $GCC_SOURCE/libstdc++-v3/configure \
-    --enable-multilib=no \
-    --prefix="$PREFIX"
-
-  # On Ubuntu distros (tested on 14.04 and 16.04), the configure script has a
-  # nasty habit of disabling TLS support when -fsanitize=thread is used. This
-  # appears to be an interaction between TSAN and the GCC_CHECK_TLS m4 macro
-  # used by configure. It doesn't manifest on el6 because the devtoolset
-  # causes an early conftest to fail, which passes the macro's smell test.
-  #
-  # This is a silly hack to force TLS support back on, but it's only temporary,
-  # as we're about to replace all of this with libc++.
-  sed -ie 's|/\* #undef HAVE_TLS \*/|#define HAVE_TLS 1|' config.h
-
-  make -j$PARALLEL install
+  if [[ "$BUILD_TYPE" == "normal" ]]; then
+    # Create a link from Clang to thirdparty/clang-toolchain. This path is used
+    # for all Clang invocations. The link can't point to the Clang installed in
+    # the prefix directory, since this confuses CMake into believing the
+    # thirdparty prefix directory is the system-wide prefix, and it omits the
+    # thirdparty prefix directory from the rpath of built binaries.
+    ln -sfn $LLVM_BDIR $TP_DIR/clang-toolchain
+  fi
   popd
 }
 

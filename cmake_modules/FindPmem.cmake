@@ -24,10 +24,10 @@
 #  PMEMOBJ_DEPS, dependencies required for using libpmemobj
 
 set(PMEM_SEARCH_LIB_PATH
-  ${THIRDPARTY_PREFIX}/lib
+  ${THIRDPARTY_INSTALL_COMMON_DIR}/lib
 )
 set(PMEM_SEARCH_HEADER_PATHS
-  ${THIRDPARTY_PREFIX}/include
+  ${THIRDPARTY_INSTALL_COMMON_DIR}/include
 )
 
 find_path(VMEM_INCLUDE_DIR libvmem.h PATHS ${PMEM_SEARCH_HEADER_PATHS}

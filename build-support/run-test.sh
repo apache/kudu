@@ -98,7 +98,7 @@ fi
 # Suppressions require symbolization. We'll default to using the symbolizer in
 # thirdparty.
 if [ -z "$ASAN_SYMBOLIZER_PATH" ]; then
-  export ASAN_SYMBOLIZER_PATH=$SOURCE_ROOT/thirdparty/clang-toolchain/bin/llvm-symbolizer
+  export ASAN_SYMBOLIZER_PATH=$SOURCE_ROOT/thirdparty/installed/uninstrumented/bin/llvm-symbolizer
 fi
 
 # Configure TSAN (ignored if this isn't a TSAN build).

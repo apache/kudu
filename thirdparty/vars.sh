@@ -34,11 +34,6 @@ PREFIX_COMMON=$TP_DIR/installed/common
 PREFIX_DEPS=$TP_DIR/installed/uninstrumented
 PREFIX_DEPS_TSAN=$TP_DIR/installed/tsan
 
-# libstdcxx needs its own prefix so that it is not inadvertently
-# included in the library search path during non-TSAN builds.
-PREFIX_LIBSTDCXX=$PREFIX_DEPS/gcc
-PREFIX_LIBSTDCXX_TSAN=$PREFIX_DEPS_TSAN/gcc
-
 GFLAGS_VERSION=2.1.2
 GFLAGS_NAME=gflags-$GFLAGS_VERSION
 GFLAGS_SOURCE=$TP_SOURCE_DIR/$GFLAGS_NAME
@@ -156,10 +151,6 @@ LLVM_SOURCE=$TP_SOURCE_DIR/$LLVM_NAME
 PYTHON_VERSION=2.7.10
 PYTHON_NAME=python-$PYTHON_VERSION
 PYTHON_SOURCE=$TP_SOURCE_DIR/$PYTHON_NAME
-
-GCC_VERSION=4.9.3
-GCC_NAME=gcc-$GCC_VERSION
-GCC_SOURCE=$TP_SOURCE_DIR/$GCC_NAME
 
 # Our trace-viewer repository is separate since it's quite large and
 # shouldn't change frequently. We upload the built artifacts (HTML/JS)
