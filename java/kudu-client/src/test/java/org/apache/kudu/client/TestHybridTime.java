@@ -93,8 +93,8 @@ public class TestHybridTime extends BaseKuduTest {
       row.addString(schema.getColumnByIndex(0).getName(), keys[i]);
       Deferred<OperationResponse> d = session.apply(insert);
       OperationResponse response = d.join(DEFAULT_SLEEP);
-      assertTrue(response.getWriteTimestamp() != 0);
-      clockValues = HTTimestampToPhysicalAndLogical(response.getWriteTimestamp());
+      assertTrue(response.getWriteTimestampRaw() != 0);
+      clockValues = HTTimestampToPhysicalAndLogical(response.getWriteTimestampRaw());
       LOG.debug("Clock value after write[" + i + "]: " + new Date(clockValues[0] / 1000).toString()
         + " Logical value: " + clockValues[1]);
       // on the very first write we update the clock into the future
@@ -128,8 +128,8 @@ public class TestHybridTime extends BaseKuduTest {
         1, responses.size());
 
       OperationResponse response = responses.get(0);
-      assertTrue(response.getWriteTimestamp() != 0);
-      clockValues = HTTimestampToPhysicalAndLogical(response.getWriteTimestamp());
+      assertTrue(response.getWriteTimestampRaw() != 0);
+      clockValues = HTTimestampToPhysicalAndLogical(response.getWriteTimestampRaw());
       LOG.debug("Clock value after write[" + i + "]: " + new Date(clockValues[0] / 1000).toString()
         + " Logical value: " + clockValues[1]);
       assertEquals(clockValues[0], previousPhysicalValue);

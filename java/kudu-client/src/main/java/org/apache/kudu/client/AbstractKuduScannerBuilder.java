@@ -220,7 +220,7 @@ public abstract class AbstractKuduScannerBuilder
    * Sets a previously encoded HT timestamp as a snapshot timestamp, for tests. None is used by
    * default.
    * Requires that the ReadMode is READ_AT_SNAPSHOT.
-   * @param htTimestamp a long representing a HybridClock-encoded timestamp
+   * @param htTimestamp a long representing a HybridTime-encoded timestamp
    * @return this instance
    * @throws IllegalArgumentException on build(), if the timestamp is less than 0 or if the
    *                                  read mode was not set to READ_AT_SNAPSHOT
