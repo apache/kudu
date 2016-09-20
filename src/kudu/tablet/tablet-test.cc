@@ -950,37 +950,39 @@ TYPED_TEST(TestTablet, TestMetricsInit) {
 }
 
 // Test that we find the correct log segment size for different indexes.
-TEST(TestTablet, TestGetLogRetentionSizeForIndex) {
-  std::map<int64_t, int64_t> idx_size_map;
-  // We build a map that represents 3 logs. The key is the index where that log ends, and the value
-  // is its size.
-  idx_size_map[3] = 1;
-  idx_size_map[6] = 10;
-  idx_size_map[9] = 100;
+TEST(TestTablet, TestGetReplaySizeForIndex) {
+  std::map<int64_t, int64_t> replay_size_map;
 
-  // The default value should return a size of 0.
+  // We build a map that represents 3 logs.
+  // See Log::GetReplaySizeMap(...) for details.
+  replay_size_map[100] = 45;
+  replay_size_map[200] = 25;
+  replay_size_map[300] = 10;
+
+  // -1 indicates that no logs are anchored, and thus we it should report
+  // no logs need to be replayed.
   int64_t min_log_index = -1;
-  ASSERT_EQ(Tablet::GetLogRetentionSizeForIndex(min_log_index, idx_size_map), 0);
+  EXPECT_EQ(Tablet::GetReplaySizeForIndex(min_log_index, replay_size_map), 0);
 
-  // A value at the beginning of the first segment retains all the logs.
+  // A value in or before the first segment retains all the logs.
   min_log_index = 1;
-  ASSERT_EQ(Tablet::GetLogRetentionSizeForIndex(min_log_index, idx_size_map), 111);
+  EXPECT_EQ(Tablet::GetReplaySizeForIndex(min_log_index, replay_size_map), 45);
 
   // A value at the end of the first segment also retains everything.
-  min_log_index = 3;
-  ASSERT_EQ(Tablet::GetLogRetentionSizeForIndex(min_log_index, idx_size_map), 111);
+  min_log_index = 100;
+  EXPECT_EQ(Tablet::GetReplaySizeForIndex(min_log_index, replay_size_map), 45);
 
   // Beginning of second segment, only retain that one and the next.
-  min_log_index = 4;
-  ASSERT_EQ(Tablet::GetLogRetentionSizeForIndex(min_log_index, idx_size_map), 110);
+  min_log_index = 101;
+  EXPECT_EQ(Tablet::GetReplaySizeForIndex(min_log_index, replay_size_map), 25);
 
   // Beginning of third segment, only retain that one.
-  min_log_index = 7;
-  ASSERT_EQ(Tablet::GetLogRetentionSizeForIndex(min_log_index, idx_size_map), 100);
+  min_log_index = 201;
+  EXPECT_EQ(Tablet::GetReplaySizeForIndex(min_log_index, replay_size_map), 10);
 
   // A value after all the passed segments, doesn't retain anything.
-  min_log_index = 10;
-  ASSERT_EQ(Tablet::GetLogRetentionSizeForIndex(min_log_index, idx_size_map), 0);
+  min_log_index = 301;
+  EXPECT_EQ(Tablet::GetReplaySizeForIndex(min_log_index, replay_size_map), 0);
 }
 
 } // namespace tablet

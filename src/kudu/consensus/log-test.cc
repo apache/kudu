@@ -490,6 +490,16 @@ TEST_F(LogTest, TestGCWithLogRunning) {
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments))
   ASSERT_EQ(4, segments.size()) << DumpSegmentsToString(segments);
 
+  // Logs should be retained for durability even if this puts it above the
+  // maximum configured number of segments.
+  {
+    google::FlagSaver saver;
+    FLAGS_log_min_segments_to_retain = 1;
+    FLAGS_log_max_segments_to_retain = 1;
+    ASSERT_OK(log_->GC(retention, &num_gced_segments));
+    ASSERT_EQ(0, num_gced_segments);
+  }
+
   // Freeing the first 2 anchors should allow GC of them.
   ASSERT_OK(log_anchor_registry_->Unregister(anchors[0]));
   ASSERT_OK(log_anchor_registry_->Unregister(anchors[1]));
@@ -972,45 +982,45 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
 
 // Test various situations where we expect different segments depending on what the
 // min log index is.
-TEST_F(LogTest, TestGetMaxIndexesToSegmentSizeMap) {
+TEST_F(LogTest, TestGetGCableDataSize) {
   FLAGS_log_min_segments_to_retain = 2;
   ASSERT_OK(BuildLog());
 
   const int kNumTotalSegments = 5;
   const int kNumOpsPerSegment = 5;
+  const int kSegmentSizeBytes = 315;
   OpId op_id = MakeOpId(1, 10);
   // Create 5 segments, starting from log index 10, with 5 ops per segment.
+  // [10-14], [15-19], [20-24], [25-29], [30-34]
   ASSERT_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
                                               &op_id, nullptr));
 
-  std::map<int64_t, int64_t> max_idx_to_segment_size;
-
-  // Check getting all the segments we can get rid of (5 - 2).
-  log_->GetMaxIndexesToSegmentSizeMap(10, &max_idx_to_segment_size);
-  ASSERT_EQ(3, max_idx_to_segment_size.size());
+  // GCing through the first op should not be able to remove any logs.
+  EXPECT_EQ(0, log_->GetGCableDataSize(RetentionIndexes(10)));
 
   // Check that even when the min index is the last index from the oldest segment,
-  // we still return 3.
-  log_->GetMaxIndexesToSegmentSizeMap(14, &max_idx_to_segment_size);
-  ASSERT_EQ(3, max_idx_to_segment_size.size());
+  // we still return the same result.
+  EXPECT_EQ(0, log_->GetGCableDataSize(RetentionIndexes(14)));
 
-  // Check that if the first segment is GCable, we get 2 back.
-  log_->GetMaxIndexesToSegmentSizeMap(15, &max_idx_to_segment_size);
-  ASSERT_EQ(2, max_idx_to_segment_size.size());
+  // Check that if the first segment is GCable, we return its size.
+  EXPECT_EQ(kSegmentSizeBytes, log_->GetGCableDataSize(RetentionIndexes(15)));
 
-  // Check that if the min index is at the very end of the only segment we can get rid of that we
-  // get 1 back.
-  log_->GetMaxIndexesToSegmentSizeMap(24, &max_idx_to_segment_size);
-  ASSERT_EQ(1, max_idx_to_segment_size.size());
+  // GCable index at the end of the third segment. Should only be able to GC the first
+  // two.
+  EXPECT_EQ(kSegmentSizeBytes * 2, log_->GetGCableDataSize(RetentionIndexes(24)));
 
-  // Check that we don't get anything back when there's nothing we want to get rid of.
-  log_->GetMaxIndexesToSegmentSizeMap(25, &max_idx_to_segment_size);
-  ASSERT_EQ(0, max_idx_to_segment_size.size());
+  // GCing through the first op in the fourth segment should be able to remove
+  // the first three.
+  EXPECT_EQ(kSegmentSizeBytes * 3, log_->GetGCableDataSize(RetentionIndexes(25)));
 
-  // Sanity check that even if the min log index is the newest op that nothing breaks and that
-  // we get 0 segments back.
-  log_->GetMaxIndexesToSegmentSizeMap(35, &max_idx_to_segment_size);
-  ASSERT_EQ(0, max_idx_to_segment_size.size());
+  // Even if we could GC all of the ops written, we should respect the 'log_min_segments_to_retain'
+  // setting and not GC the last two.
+  EXPECT_EQ(kSegmentSizeBytes * 3, log_->GetGCableDataSize(RetentionIndexes(35)));
+
+  // If we change the configuration, we should be able to GC all of the closed segments.
+  // The last segment is not GCable because it is still open.
+  FLAGS_log_min_segments_to_retain = 0;
+  EXPECT_EQ(kSegmentSizeBytes * 4, log_->GetGCableDataSize(RetentionIndexes(35)));
 }
 
 // Regression test. Check that failed preallocation returns an error instead of

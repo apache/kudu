@@ -43,6 +43,8 @@ METRIC_DEFINE_histogram(test, maintenance_op_duration,
                         "Maintenance Operation Duration",
                         kudu::MetricUnit::kSeconds, "", 60000000LU, 2);
 
+DECLARE_int64(log_target_replay_size_mb);
+
 namespace kudu {
 
 const int kHistorySize = 4;
@@ -249,19 +251,21 @@ TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
 
 // Test that ops are prioritized correctly when we add log retention.
 TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
+  const int64_t kMB = 1024 * 1024;
+
   manager_->Shutdown();
 
   TestMaintenanceOp op1("op1", MaintenanceOp::LOW_IO_USAGE, test_tracker_);
   op1.set_ram_anchored(0);
-  op1.set_logs_retained_bytes(100);
+  op1.set_logs_retained_bytes(100 * kMB);
 
   TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, test_tracker_);
   op2.set_ram_anchored(100);
-  op2.set_logs_retained_bytes(100);
+  op2.set_logs_retained_bytes(100 * kMB);
 
   TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, test_tracker_);
   op3.set_ram_anchored(200);
-  op3.set_logs_retained_bytes(100);
+  op3.set_logs_retained_bytes(100 * kMB);
 
   manager_->RegisterOp(&op1);
   manager_->RegisterOp(&op2);
@@ -272,7 +276,13 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
 
   manager_->UnregisterOp(&op1);
 
-  // Low IO is taken care of, now we find the op clears the most log retention and ram.
+  // Low IO is taken care of, now we find the op that clears the most log retention and ram.
+  // However, with the default settings, we won't bother running any of these operations
+  // which only retain 100MB of logs.
+  ASSERT_EQ(nullptr, manager_->FindBestOp());
+
+  // If we change the target WAL size, we will select these ops.
+  FLAGS_log_target_replay_size_mb = 50;
   ASSERT_EQ(&op3, manager_->FindBestOp());
 
   manager_->UnregisterOp(&op3);

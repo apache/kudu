@@ -79,8 +79,6 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
                    public consensus::ReplicaTransactionFactory,
                    public TabletStatusListener {
  public:
-  typedef std::map<int64_t, int64_t> MaxIdxToSegmentSizeMap;
-
   TabletPeer(const scoped_refptr<TabletMetadata>& meta,
              const consensus::RaftPeerPB& local_peer_pb, ThreadPool* apply_pool,
              Callback<void(const std::string& reason)> mark_dirty_clbk);
@@ -204,11 +202,10 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Used for selection of log segments to delete during Log GC.
   log::RetentionIndexes GetRetentionIndexes() const;
 
-  // Returns a map of log index -> segment size, of all the segments that currently cannot be GCed
-  // because in-memory structures have anchors in them.
+  // See Log::GetReplaySizeMap(...).
   //
   // Returns a non-ok status if the tablet isn't running.
-  Status GetMaxIndexesToSegmentSizeMap(MaxIdxToSegmentSizeMap* idx_size_map) const;
+  Status GetReplaySizeMap(std::map<int64_t, int64_t>* replay_size_map) const;
 
   // Returns the amount of bytes that would be GC'd if RunLogGC() was called.
   //

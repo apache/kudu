@@ -1421,12 +1421,11 @@ bool Tablet::MemRowSetEmpty() const {
   return comps->memrowset->empty();
 }
 
-size_t Tablet::MemRowSetLogRetentionSize(const MaxIdxToSegmentMap& max_idx_to_segment_size) const {
+size_t Tablet::MemRowSetLogReplaySize(const ReplaySizeMap& replay_size_map) const {
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
 
-  return GetLogRetentionSizeForIndex(comps->memrowset->MinUnflushedLogIndex(),
-                                     max_idx_to_segment_size);
+  return GetReplaySizeForIndex(comps->memrowset->MinUnflushedLogIndex(), replay_size_map);
 }
 
 size_t Tablet::EstimateOnDiskSize() const {
@@ -1468,31 +1467,29 @@ bool Tablet::DeltaMemRowSetEmpty() const {
   return true;
 }
 
-void Tablet::GetInfoForBestDMSToFlush(const MaxIdxToSegmentMap& max_idx_to_segment_size,
-                                      int64_t* mem_size, int64_t* retention_size) const {
-  shared_ptr<RowSet> rowset = FindBestDMSToFlush(max_idx_to_segment_size);
+void Tablet::GetInfoForBestDMSToFlush(const ReplaySizeMap& replay_size_map,
+                                      int64_t* mem_size, int64_t* replay_size) const {
+  shared_ptr<RowSet> rowset = FindBestDMSToFlush(replay_size_map);
 
   if (rowset) {
-    *retention_size = GetLogRetentionSizeForIndex(rowset->MinUnflushedLogIndex(),
-                                            max_idx_to_segment_size);
+    *replay_size = GetReplaySizeForIndex(rowset->MinUnflushedLogIndex(),
+                                         replay_size_map);
     *mem_size = rowset->DeltaMemStoreSize();
   } else {
-    *retention_size = 0;
+    *replay_size = 0;
     *mem_size = 0;
   }
 }
 
-Status Tablet::FlushDMSWithHighestRetention(const MaxIdxToSegmentMap&
-                                            max_idx_to_segment_size) const {
-  shared_ptr<RowSet> rowset = FindBestDMSToFlush(max_idx_to_segment_size);
+Status Tablet::FlushDMSWithHighestRetention(const ReplaySizeMap& replay_size_map) const {
+  shared_ptr<RowSet> rowset = FindBestDMSToFlush(replay_size_map);
   if (rowset) {
     return rowset->FlushDeltas();
   }
   return Status::OK();
 }
 
-shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const MaxIdxToSegmentMap&
-                                              max_idx_to_segment_size) const {
+shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const ReplaySizeMap& replay_size_map) const {
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
   int64_t mem_size = 0;
@@ -1502,8 +1499,8 @@ shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const MaxIdxToSegmentMap&
     if (rowset->DeltaMemStoreEmpty()) {
       continue;
     }
-    int64_t size = GetLogRetentionSizeForIndex(rowset->MinUnflushedLogIndex(),
-                                               max_idx_to_segment_size);
+    int64_t size = GetReplaySizeForIndex(rowset->MinUnflushedLogIndex(),
+                                         replay_size_map);
     if ((size > retention_size) ||
         (size == retention_size &&
          (rowset->DeltaMemStoreSize() > mem_size))) {
@@ -1515,19 +1512,19 @@ shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const MaxIdxToSegmentMap&
   return best_dms;
 }
 
-int64_t Tablet::GetLogRetentionSizeForIndex(int64_t min_log_index,
-                                            const MaxIdxToSegmentMap& max_idx_to_segment_size) {
-  if (max_idx_to_segment_size.size() == 0 || min_log_index == -1) {
+int64_t Tablet::GetReplaySizeForIndex(int64_t min_log_index,
+                                      const ReplaySizeMap& size_map) {
+  // If min_log_index is -1, that indicates that there is no anchor held
+  // for the tablet, and therefore no logs would need to be replayed.
+  if (size_map.empty() || min_log_index == -1) {
     return 0;
   }
-  int64_t total_size = 0;
-  for (const MaxIdxToSegmentMap::value_type& entry : max_idx_to_segment_size) {
-    if (min_log_index > entry.first) {
-      continue; // We're not in this segment, probably someone else is retaining it.
-    }
-    total_size += entry.second;
+
+  const auto& it = size_map.lower_bound(min_log_index);
+  if (it == size_map.end()) {
+    return 0;
   }
-  return total_size;
+  return it->second;
 }
 
 Status Tablet::FlushBiggestDMS() {

@@ -18,6 +18,7 @@
 #include "kudu/consensus/log.h"
 
 #include <algorithm>
+#include <boost/range/adaptor/reversed.hpp>
 #include <limits>
 #include <mutex>
 
@@ -752,28 +753,27 @@ Status Log::GC(RetentionIndexes retention_indexes, int32_t* num_gced) {
   return Status::OK();
 }
 
-void Log::GetGCableDataSize(RetentionIndexes retention_indexes, int64_t* total_size) const {
+int64_t Log::GetGCableDataSize(RetentionIndexes retention_indexes) const {
   CHECK_GE(retention_indexes.for_durability, 0);
   SegmentSequence segments_to_delete;
-  *total_size = 0;
   {
     shared_lock<rw_spinlock> l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
     Status s = GetSegmentsToGCUnlocked(retention_indexes, &segments_to_delete);
 
     if (!s.ok() || segments_to_delete.empty()) {
-      return;
+      return 0;
     }
   }
+  int64_t total_size = 0;
   for (const scoped_refptr<ReadableLogSegment>& segment : segments_to_delete) {
-    *total_size += segment->file_size();
+    total_size += segment->file_size();
   }
+  return total_size;
 }
 
-void Log::GetMaxIndexesToSegmentSizeMap(int64_t idx_for_durability,
-                                        std::map<int64_t, int64_t>* max_idx_to_segment_size)
-                                        const {
-  max_idx_to_segment_size->clear();
+void Log::GetReplaySizeMap(std::map<int64_t, int64_t>* replay_size) const {
+  replay_size->clear();
   SegmentSequence segments;
   {
     shared_lock<rw_spinlock> l(state_lock_.get_lock());
@@ -781,12 +781,12 @@ void Log::GetMaxIndexesToSegmentSizeMap(int64_t idx_for_durability,
     CHECK_OK(reader_->GetSegmentsSnapshot(&segments));
   }
 
-  int gc_prefix = GetPrefixSizeToGC(RetentionIndexes(idx_for_durability),
-                                    segments);
-  for (int i = gc_prefix; i < segments.size() - FLAGS_log_min_segments_to_retain; i++) {
-    if (!segments[i]->HasFooter()) break;
-    int64_t max_repl_idx = segments[i]->footer().max_replicate_index();
-    (*max_idx_to_segment_size)[max_repl_idx] = segments[i]->file_size();
+  int64_t cumulative_size = 0;
+  for (const auto& segment : boost::adaptors::reverse(segments)) {
+    if (!segment->HasFooter()) continue;
+    cumulative_size += segment->file_size();
+    int64_t max_repl_idx = segment->footer().max_replicate_index();
+    (*replay_size)[max_repl_idx] = cumulative_size;
   }
 }
 

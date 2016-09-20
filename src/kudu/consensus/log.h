@@ -198,15 +198,31 @@ class Log : public RefCountedThreadSafe<Log> {
   Status GC(RetentionIndexes retention_indexes, int* num_gced);
 
   // Computes the amount of bytes that would have been GC'd if Log::GC had been called.
-  void GetGCableDataSize(RetentionIndexes retention_indexes, int64_t* total_size) const;
+  int64_t GetGCableDataSize(RetentionIndexes retention_indexes) const;
 
-  // Returns a map of log index -> segment size, of all the segments that currently cannot be GCed
-  // because of an anchor on the given 'idx_for_durability' log index. Note that, even if
-  // these segments are being retained for peer catchup, they are treated as 'GCable' here,
-  // since the purpose of this method is to bound startup time by flushing in-memory stores
-  // which refer to operations far back in the log.
-  void GetMaxIndexesToSegmentSizeMap(int64_t idx_for_durability,
-                                     std::map<int64_t, int64_t>* max_idx_to_segment_size) const;
+  // Returns a map which can be used to determine the cumulative size of log segments
+  // containing entries at or above any given log index.
+  //
+  // For example, if the current log segments are:
+  //
+  //    Indexes    Size
+  //    ------------------
+  //    [1-100]    20MB
+  //    [101-200]  15MB
+  //    [201-300]  10MB
+  //    [302-???]  <open>   (counts as 0MB)
+  //
+  // This function will return:
+  //
+  //    {100 => 45MB,
+  //     200 => 25MB,
+  //     300 => 10MB}
+  //
+  // In other words, an anchor on any index <= 100 would retain 45MB of logs,
+  // and any anchor on 100 < index <= 200 would retain 25MB of logs, etc.
+  //
+  // Note that the returned values are in units of bytes, not MB.
+  void GetReplaySizeMap(std::map<int64_t, int64_t>* replay_size) const;
 
   // Returns the file system location of the currently active WAL segment.
   const std::string& ActiveSegmentPathForTests() const {

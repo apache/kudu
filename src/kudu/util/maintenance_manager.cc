@@ -57,6 +57,13 @@ DEFINE_bool(enable_maintenance_manager, true,
        "Enable the maintenance manager, runs compaction and tablet cleaning tasks.");
 TAG_FLAG(enable_maintenance_manager, unsafe);
 
+DEFINE_int64(log_target_replay_size_mb, 1024,
+             "The target maximum size of logs to be replayed at startup. If a tablet "
+             "has in-memory operations that are causing more than this size of logs "
+             "to be retained, then the maintenance manager will prioritize flushing "
+             "these operations to disk.");
+TAG_FLAG(log_target_replay_size_mb, experimental);
+
 namespace kudu {
 
 MaintenanceOpStats::MaintenanceOpStats() {
@@ -229,8 +236,9 @@ void MaintenanceManager::RunSchedulerThread() {
 // - If there's an Op that we can run quickly that frees log retention, we run it.
 // - If we've hit the overall process memory limit (note: this includes memory that the Ops cannot
 //   free), we run the Op with the highest RAM usage.
-// - If there are Ops that retain logs, we run the one that has the highest retention (and if many
-//   qualify, then we run the one that also frees up the most RAM).
+// - If there are Ops that are retaining logs past our target replay size, we run the one that has
+//   the highest retention (and if many qualify, then we run the one that also frees up the
+//   most RAM).
 // - Finally, if there's nothing else that we really need to do, we run the Op that will improve
 //   performance the most.
 //
@@ -334,11 +342,12 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
     return most_mem_anchored_op;
   }
 
-  if (most_logs_retained_bytes_op) {
+  if (most_logs_retained_bytes_op &&
+      most_logs_retained_bytes / 1024 / 1024 >= FLAGS_log_target_replay_size_mb) {
     VLOG_AND_TRACE("maintenance", 1)
             << "Performing " << most_logs_retained_bytes_op->name() << ", "
-            << "because it can free up more logs " << "at " << most_logs_retained_bytes
-            << " bytes";
+            << "because it can free up more logs (" << most_logs_retained_bytes
+            << " bytes)";
     return most_logs_retained_bytes_op;
   }
 

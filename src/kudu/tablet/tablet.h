@@ -76,7 +76,7 @@ class WriteTransactionState;
 
 class Tablet {
  public:
-  typedef std::map<int64_t, int64_t> MaxIdxToSegmentMap;
+  typedef std::map<int64_t, int64_t> ReplaySizeMap;
   friend class CompactRowSetsOp;
   friend class FlushMRSOp;
 
@@ -260,8 +260,9 @@ class Tablet {
   // This method takes a read lock on component_lock_ and is thread-safe.
   bool MemRowSetEmpty() const;
 
-  // Returns the size in bytes for the MRS's log retention.
-  size_t MemRowSetLogRetentionSize(const MaxIdxToSegmentMap& max_idx_to_segment_size) const;
+  // Returns the size in bytes of WALs that would need to be replayed to restore
+  // the current MRS.
+  size_t MemRowSetLogReplaySize(const ReplaySizeMap& replay_size_map) const;
 
   // Estimate the total on-disk size of this tablet, in bytes.
   size_t EstimateOnDiskSize() const;
@@ -272,13 +273,13 @@ class Tablet {
   // Same as MemRowSetEmpty(), but for the DMS.
   bool DeltaMemRowSetEmpty() const;
 
-  // Fills in the in-memory size and retention size in bytes for the DMS with the
+  // Fills in the in-memory size and replay size in bytes for the DMS with the
   // highest retention.
-  void GetInfoForBestDMSToFlush(const MaxIdxToSegmentMap& max_idx_to_segment_size,
-                                int64_t* mem_size, int64_t* retention_size) const;
+  void GetInfoForBestDMSToFlush(const ReplaySizeMap& replay_size_map,
+                                int64_t* mem_size, int64_t* replay_size) const;
 
   // Flushes the DMS with the highest retention.
-  Status FlushDMSWithHighestRetention(const MaxIdxToSegmentMap& max_idx_to_segment_size) const;
+  Status FlushDMSWithHighestRetention(const ReplaySizeMap& replay_size_map) const;
 
   // Flush only the biggest DMS
   Status FlushBiggestDMS();
@@ -389,7 +390,7 @@ class Tablet {
  private:
   friend class Iterator;
   friend class TabletPeerTest;
-  FRIEND_TEST(TestTablet, TestGetLogRetentionSizeForIndex);
+  FRIEND_TEST(TestTablet, TestGetReplaySizeForIndex);
 
   Status FlushUnlocked();
 
@@ -490,15 +491,15 @@ class Tablet {
   Status GetMappedReadProjection(const Schema& projection,
                                  Schema *mapped_projection) const;
 
-  Status CheckRowInTablet(const ConstContiguousRow& probe) const;
+  Status CheckRowInTablet(const ConstContiguousRow& row) const;
 
   // Helper method to find the rowset that has the DMS with the highest retention.
-  std::shared_ptr<RowSet> FindBestDMSToFlush(
-      const MaxIdxToSegmentMap& max_idx_to_segment_size) const;
+  std::shared_ptr<RowSet> FindBestDMSToFlush(const ReplaySizeMap& replay_size_map) const;
 
-  // Helper method to find how many bytes this index retains.
-  static int64_t GetLogRetentionSizeForIndex(int64_t min_log_index,
-                                             const MaxIdxToSegmentMap& max_idx_to_segment_size);
+  // Helper method to find how many bytes need to be replayed to restore in-memory
+  // state from this index.
+  static int64_t GetReplaySizeForIndex(int64_t min_log_index,
+                                       const ReplaySizeMap& size_map);
 
   std::string LogPrefix() const;
 

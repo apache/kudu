@@ -92,9 +92,9 @@ void FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(MaintenanceOpStats
 void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
   std::lock_guard<simple_spinlock> l(lock_);
 
-  map<int64_t, int64_t> max_idx_to_segment_size;
+  map<int64_t, int64_t> replay_size_map;
   if (tablet_peer_->tablet()->MemRowSetEmpty() ||
-      !tablet_peer_->GetMaxIndexesToSegmentSizeMap(&max_idx_to_segment_size).ok()) {
+      !tablet_peer_->GetReplaySizeMap(&replay_size_map).ok()) {
     return;
   }
 
@@ -105,9 +105,9 @@ void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
 
   stats->set_ram_anchored(tablet_peer_->tablet()->MemRowSetSize());
   stats->set_logs_retained_bytes(
-      tablet_peer_->tablet()->MemRowSetLogRetentionSize(max_idx_to_segment_size));
+      tablet_peer_->tablet()->MemRowSetLogReplaySize(replay_size_map));
 
-  // TODO: use workload statistics here to find out how "hot" the tablet has
+  // TODO(todd): use workload statistics here to find out how "hot" the tablet has
   // been in the last 5 minutes.
   FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(
       stats,
@@ -150,12 +150,12 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
   std::lock_guard<simple_spinlock> l(lock_);
   int64_t dms_size;
   int64_t retention_size;
-  map<int64_t, int64_t> max_idx_to_segment_size;
+  map<int64_t, int64_t> max_idx_to_replay_size;
   if (tablet_peer_->tablet()->DeltaMemRowSetEmpty() ||
-      !tablet_peer_->GetMaxIndexesToSegmentSizeMap(&max_idx_to_segment_size).ok()) {
+      !tablet_peer_->GetReplaySizeMap(&max_idx_to_replay_size).ok()) {
     return;
   }
-  tablet_peer_->tablet()->GetInfoForBestDMSToFlush(max_idx_to_segment_size,
+  tablet_peer_->tablet()->GetInfoForBestDMSToFlush(max_idx_to_replay_size,
                                                    &dms_size, &retention_size);
 
   stats->set_ram_anchored(dms_size);
@@ -168,13 +168,13 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
 }
 
 void FlushDeltaMemStoresOp::Perform() {
-  map<int64_t, int64_t> max_idx_to_segment_size;
-  if (!tablet_peer_->GetMaxIndexesToSegmentSizeMap(&max_idx_to_segment_size).ok()) {
+  map<int64_t, int64_t> max_idx_to_replay_size;
+  if (!tablet_peer_->GetReplaySizeMap(&max_idx_to_replay_size).ok()) {
     LOG(WARNING) << "Won't flush deltas since tablet shutting down: " << tablet_peer_->tablet_id();
     return;
   }
   KUDU_CHECK_OK_PREPEND(tablet_peer_->tablet()->FlushDMSWithHighestRetention(
-                            max_idx_to_segment_size),
+                            max_idx_to_replay_size),
                         Substitute("Failed to flush DMS on $0",
                                    tablet_peer_->tablet()->tablet_id()));
   {

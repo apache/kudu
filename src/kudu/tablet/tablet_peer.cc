@@ -54,6 +54,7 @@
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
+using std::map;
 using std::shared_ptr;
 using std::unique_ptr;
 
@@ -474,16 +475,15 @@ log::RetentionIndexes TabletPeer::GetRetentionIndexes() const {
   return ret;
 }
 
-Status TabletPeer::GetMaxIndexesToSegmentSizeMap(MaxIdxToSegmentSizeMap* idx_size_map) const {
+Status TabletPeer::GetReplaySizeMap(map<int64_t, int64_t>* replay_size_map) const {
   RETURN_NOT_OK(CheckRunning());
-  log::RetentionIndexes retention = GetRetentionIndexes();
-  log_->GetMaxIndexesToSegmentSizeMap(retention.for_durability, idx_size_map);
+  log_->GetReplaySizeMap(replay_size_map);
   return Status::OK();
 }
 
 Status TabletPeer::GetGCableDataSize(int64_t* retention_size) const {
   RETURN_NOT_OK(CheckRunning());
-  log_->GetGCableDataSize(GetRetentionIndexes(), retention_size);
+  *retention_size = log_->GetGCableDataSize(GetRetentionIndexes());
   return Status::OK();
 }
 
