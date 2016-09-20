@@ -13,6 +13,7 @@ Following is a list of current Kudu committers and members of the Kudu PMC.
 | Username | Name | Role |
 | --- | --- | --- |
 | adar | Adar Dembo | PMC |
+| alexey | Alexey Serbin | PMC |
 | bchang | Binglin Chang | PMC |
 | danburkert | Dan Burkert | PMC |
 | dralves | David Alves | PMC |
@@ -25,3 +26,4 @@ Following is a list of current Kudu committers and members of the Kudu PMC.
 | mpercy | Mike Percy | PMC |
 | stack | Michael Stack | PMC |
 | todd | Todd Lipcon | VP, PMC |
+| wdberkeley | William Berkeley | PMC |
