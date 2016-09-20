@@ -269,19 +269,6 @@ class ReplicaState {
   // Returns OK iff an op from the current term has been committed.
   Status CheckHasCommittedOpInCurrentTermUnlocked() const;
 
-  // Updates the last received operation, if 'op_id''s index is higher than
-  // the previous last received. Also updates 'last_received_from_current_leader_'
-  // regardless of whether it is higher or lower than the prior value.
-  //
-  // This must be called under a lock.
-  void UpdateLastReceivedOpIdUnlocked(const OpId& op_id);
-
-  // Returns the last received op id. This must be called under the lock.
-  const OpId& GetLastReceivedOpIdUnlocked() const;
-
-  // Returns the id of the last op received from the current leader.
-  const OpId& GetLastReceivedOpIdCurLeaderUnlocked() const;
-
   // Returns the id of the latest pending transaction (i.e. the one with the
   // latest index). This must be called under the lock.
   OpId GetLastPendingTransactionOpIdUnlocked() const;
@@ -290,8 +277,6 @@ class ReplicaState {
   // that have completed prepare/replicate but are waiting on the LEADER's commit
   // to complete. This does not cancel transactions being applied.
   Status CancelPendingTransactions();
-
-  void NewIdUnlocked(OpId* id);
 
   // Used when, for some reason, an operation that failed before it could be considered
   // a part of the state machine. Basically restores the id gen to the state it was before
@@ -338,10 +323,6 @@ class ReplicaState {
   // Consensus metadata persistence object.
   std::unique_ptr<ConsensusMetadata> cmeta_;
 
-  // Used by the LEADER. This is the index of the next operation generated
-  // by this LEADER.
-  int64_t next_index_;
-
   // Index=>Round map that manages pending ops, i.e. operations for which we've
   // received a replicate message from the leader but have yet to be committed.
   // The key is the index of the replicate operation.
@@ -350,22 +331,6 @@ class ReplicaState {
   // When we receive a message from a remote peer telling us to start a transaction, we use
   // this factory to start it.
   ReplicaTransactionFactory* txn_factory_;
-
-  // The id of the last received operation, which corresponds to the last entry
-  // written to the local log. Operations whose id is lower than or equal to
-  // this id do not need to be resent by the leader. This is not guaranteed to
-  // be monotonically increasing due to the possibility for log truncation and
-  // aborted operations when a leader change occurs.
-  OpId last_received_op_id_;
-
-  // Same as last_received_op_id_ but only includes operations sent by the
-  // current leader. The "term" in this op may not actually match the current
-  // term, since leaders may replicate ops from prior terms.
-  //
-  // As an implementation detail, this field is reset to MinumumOpId() every
-  // time there is a term advancement on the local node, to simplify the logic
-  // involved in resetting this every time a new node becomes leader.
-  OpId last_received_op_id_current_leader_;
 
   // The OpId of the Apply that was last triggered when the last message from the leader
   // was received. Initialized to MinimumOpId().

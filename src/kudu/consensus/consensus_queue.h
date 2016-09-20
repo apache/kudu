@@ -181,9 +181,17 @@ class PeerMessageQueue {
   virtual Status AppendOperations(const std::vector<ReplicateRefPtr>& msgs,
                                   const StatusCallback& log_append_callback);
 
-  // Truncate all operations coming after 'op'. Following this, the 'last_appended'
-  // operation is reset to 'op', and the log cache will be truncated accordingly.
-  virtual void TruncateOpsAfter(const OpId& op);
+  // Truncate all operations coming after 'index'. Following this, the 'last_appended'
+  // operation is reset to the OpId with this index, and the log cache will be truncated
+  // accordingly.
+  virtual void TruncateOpsAfter(int64_t index);
+
+  // Return the last OpId in the log.
+  // Note that this can move backwards after a truncation (TruncateOpsAfter).
+  virtual OpId GetLastOpIdInLog() const;
+
+  // Return the next OpId to be appended to the queue in the current term.
+  virtual OpId GetNextOpId() const;
 
   // Assembles a request for a peer, adding entries past 'op_id' up to
   // 'consensus_max_batch_size_bytes'.

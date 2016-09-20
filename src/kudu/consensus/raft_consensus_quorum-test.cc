@@ -285,14 +285,9 @@ class RaftConsensusQuorumTest : public KuduTest {
   void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, int peer_idx) {
     scoped_refptr<RaftConsensus> peer;
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
-    ReplicaState* state = peer->GetReplicaStateForTests();
     while (true) {
-      {
-        ReplicaState::UniqueLock lock;
-        CHECK_OK(state->LockForRead(&lock));
-        if (OpIdCompare(state->GetLastReceivedOpIdUnlocked(), to_wait_for) >= 0) {
-          return;
-        }
+      if (OpIdCompare(peer->queue_->GetLastOpIdInLog(), to_wait_for) >= 0) {
+        return;
       }
       SleepFor(MonoDelta::FromMilliseconds(1));
     }

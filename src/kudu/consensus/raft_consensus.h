@@ -459,9 +459,14 @@ class RaftConsensus : public Consensus,
   // nodes from disturbing the healthy leader.
   MonoTime withhold_votes_until_;
 
+  // The last OpId received from the current leader. This is updated whenever the follower
+  // accepts operations from a leader, and passed back so that the leader knows from what
+  // point to continue sending operations.
+  OpId last_received_cur_leader_;
+
   const Callback<void(const std::string& reason)> mark_dirty_clbk_;
 
-  // TODO hack to serialize updates due to repeated/out-of-order messages
+  // TODO(dralves) hack to serialize updates due to repeated/out-of-order messages
   // should probably be refactored out.
   //
   // Lock ordering note: If both this lock and the ReplicaState lock are to be

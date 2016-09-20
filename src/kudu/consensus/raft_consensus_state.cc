@@ -48,10 +48,7 @@ ReplicaState::ReplicaState(ConsensusOptions options, string peer_uuid,
     : options_(std::move(options)),
       peer_uuid_(std::move(peer_uuid)),
       cmeta_(std::move(cmeta)),
-      next_index_(0),
       txn_factory_(txn_factory),
-      last_received_op_id_(MinimumOpId()),
-      last_received_op_id_current_leader_(MinimumOpId()),
       last_committed_op_id_(MinimumOpId()),
       state_(kInitialized) {
   CHECK(cmeta_) << "ConsensusMeta passed as NULL";
@@ -70,9 +67,6 @@ Status ReplicaState::StartUnlocked(const OpId& last_id_in_wal) {
         last_id_in_wal.term(),
         GetCurrentTermUnlocked()));
   }
-
-  next_index_ = last_id_in_wal.index() + 1;
-  last_received_op_id_.CopyFrom(last_id_in_wal);
 
   state_ = kRunning;
   return Status::OK();
@@ -266,12 +260,10 @@ bool ReplicaState::IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch
     return true;
   }
 
-  if (op_id.index() > GetLastReceivedOpIdUnlocked().index()) {
+  scoped_refptr<ConsensusRound> round = GetPendingOpByIndexOrNullUnlocked(op_id.index());
+  if (!round) {
     return false;
   }
-
-  scoped_refptr<ConsensusRound> round = GetPendingOpByIndexOrNullUnlocked(op_id.index());
-  DCHECK(round);
 
   if (round->id().term() != op_id.term()) {
     *term_mismatch = true;
@@ -296,7 +288,6 @@ Status ReplicaState::SetCurrentTermUnlocked(int64_t new_term,
     CHECK_OK(cmeta_->Flush());
   }
   ClearLeaderUnlocked();
-  last_received_op_id_current_leader_ = MinimumOpId();
   return Status::OK();
 }
 
@@ -404,12 +395,6 @@ void ReplicaState::AbortOpsAfterUnlocked(int64_t index) {
     CHECK_EQ(index, last_committed_op_id_.index());
     new_preceding = last_committed_op_id_;
   }
-
-  // This is the same as UpdateLastReceivedOpIdUnlocked() but we do it
-  // here to avoid the bounds check, since we're breaking monotonicity.
-  last_received_op_id_ = new_preceding;
-  last_received_op_id_current_leader_ = last_received_op_id_;
-  next_index_ = new_preceding.index() + 1;
 
   for (; iter != pending_txns_.end();) {
     const scoped_refptr<ConsensusRound>& round = (*iter).second;
@@ -611,53 +596,19 @@ Status ReplicaState::CheckHasCommittedOpInCurrentTermUnlocked() const {
   return Status::OK();
 }
 
-void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
-  DCHECK(update_lock_.is_locked());
-  if (OpIdCompare(op_id, last_received_op_id_) > 0) {
-    TRACE("Updating last received op as $0", OpIdToString(op_id));
-    last_received_op_id_ = op_id;
-    next_index_ = op_id.index() + 1;
-  }
-  last_received_op_id_current_leader_ = op_id;
-}
-
-const OpId& ReplicaState::GetLastReceivedOpIdUnlocked() const {
-  DCHECK(update_lock_.is_locked());
-  return last_received_op_id_;
-}
-
-const OpId& ReplicaState::GetLastReceivedOpIdCurLeaderUnlocked() const {
-  DCHECK(update_lock_.is_locked());
-  return last_received_op_id_current_leader_;
-}
-
 OpId ReplicaState::GetLastPendingTransactionOpIdUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return pending_txns_.empty()
       ? MinimumOpId() : (--pending_txns_.end())->second->id();
 }
 
-void ReplicaState::NewIdUnlocked(OpId* id) {
-  DCHECK(update_lock_.is_locked());
-  id->set_term(GetCurrentTermUnlocked());
-  id->set_index(next_index_++);
-}
 
 void ReplicaState::CancelPendingOperation(const OpId& id) {
   OpId previous = id;
   previous.set_index(previous.index() - 1);
   DCHECK(update_lock_.is_locked());
   CHECK_EQ(GetCurrentTermUnlocked(), id.term());
-  CHECK_EQ(next_index_, id.index() + 1);
-  next_index_ = id.index();
 
-  // We don't use UpdateLastReceivedOpIdUnlocked because we're actually
-  // updating it back to a lower value and we need to avoid the checks
-  // that method has.
-
-  // This is only ok if we do _not_ release the lock after calling
-  // NewIdUnlocked() (which we don't in RaftConsensus::Replicate()).
-  last_received_op_id_ = previous;
   scoped_refptr<ConsensusRound> round = EraseKeyReturnValuePtr(&pending_txns_, id.index());
   DCHECK(round);
 }
@@ -696,10 +647,9 @@ string ReplicaState::ToString() const {
 
 string ReplicaState::ToStringUnlocked() const {
   DCHECK(update_lock_.is_locked());
-  return Substitute("Replica: $0, State: $1, Role: $2, Watermarks: {Received: $3, Committed: $4}",
+  return Substitute("Replica: $0, State: $1, Role: $2, Last Committed: $3",
                     peer_uuid_, state_, RaftPeerPB::Role_Name(GetActiveRoleUnlocked()),
-                    last_received_op_id_.ShortDebugString(),
-                    last_committed_op_id_.ShortDebugString());
+                    OpIdToString(last_committed_op_id_));
 }
 
 Status ReplicaState::CheckOpInSequence(const OpId& previous, const OpId& current) {

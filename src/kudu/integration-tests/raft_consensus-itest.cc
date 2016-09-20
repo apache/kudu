@@ -897,10 +897,9 @@ TEST_F(RaftConsensusITest, TestChurnyElections) {
 }
 
 // The same test, except inject artificial latency when propagating notifications
-// from the queue back to consensus. This can reproduce bugs like KUDU-1078 which
-// normally only appear under high load. TODO: Re-enable once we get to the
-// bottom of KUDU-1078.
-TEST_F(RaftConsensusITest, DISABLED_TestChurnyElections_WithNotificationLatency) {
+// from the queue back to consensus. This previously reproduced bugs like KUDU-1078 which
+// normally only appear under high load.
+TEST_F(RaftConsensusITest, TestChurnyElections_WithNotificationLatency) {
   DoTestChurnyElections(WITH_NOTIFICATION_LATENCY);
 }
 

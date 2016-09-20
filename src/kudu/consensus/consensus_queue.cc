@@ -291,15 +291,31 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   return Status::OK();
 }
 
-void PeerMessageQueue::TruncateOpsAfter(const OpId& op) {
+void PeerMessageQueue::TruncateOpsAfter(int64_t index) {
   DFAKE_SCOPED_LOCK(append_fake_lock_); // should not race with append.
-
+  OpId op;
+  CHECK_OK_PREPEND(log_cache_.LookupOpId(index, &op),
+                   Substitute("$0: cannot truncate ops after bad index $1",
+                              LogPrefixUnlocked(),
+                              index));
   {
     std::unique_lock<simple_spinlock> lock(queue_lock_);
     queue_state_.last_appended = op;
   }
   log_cache_.TruncateOpsAfter(op.index());
 }
+
+OpId PeerMessageQueue::GetLastOpIdInLog() const {
+  std::unique_lock<simple_spinlock> lock(queue_lock_);
+  return queue_state_.last_appended;
+}
+
+OpId PeerMessageQueue::GetNextOpId() const {
+  std::unique_lock<simple_spinlock> lock(queue_lock_);
+  return MakeOpId(queue_state_.current_term,
+                  queue_state_.last_appended.index() + 1);
+}
+
 
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request,

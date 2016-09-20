@@ -231,6 +231,7 @@ RaftConsensus::RaftConsensus(
           FLAGS_raft_heartbeat_interval_ms *
           FLAGS_leader_failure_max_missed_heartbeat_periods))),
       withhold_votes_until_(MonoTime::Min()),
+      last_received_cur_leader_(MinimumOpId()),
       mark_dirty_clbk_(std::move(mark_dirty_clbk)),
       shutdown_(false),
       follower_memory_pressure_rejections_(metric_entity->FindOrCreateCounter(
@@ -283,7 +284,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
 
     state_->SetInitialCommittedOpIdUnlocked(info.last_committed_id);
 
-    queue_->Init(state_->GetLastReceivedOpIdUnlocked());
+    queue_->Init(info.last_id);
   }
 
   {
@@ -413,7 +414,7 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     request.set_candidate_term(state_->GetCurrentTermUnlocked());
     request.set_tablet_id(state_->GetOptions().tablet_id);
     *request.mutable_candidate_status()->mutable_last_received() =
-        state_->GetLastReceivedOpIdUnlocked();
+        queue_->GetLastOpIdInLog();
 
     election.reset(new LeaderElection(active_config,
                                       peer_proxy_factory_.get(),
@@ -548,7 +549,7 @@ Status RaftConsensus::CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRo
 }
 
 Status RaftConsensus::AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round) {
-  state_->NewIdUnlocked(round->replicate_msg()->mutable_id());
+  *round->replicate_msg()->mutable_id() = queue_->GetNextOpId();
   RETURN_NOT_OK(state_->AddPendingOperation(round));
 
   Status s = queue_->AppendOperation(round->replicate_scoped_refptr());
@@ -556,23 +557,17 @@ Status RaftConsensus::AppendNewRoundToQueueUnlocked(const scoped_refptr<Consensu
   // Handle Status::ServiceUnavailable(), which means the queue is full.
   if (PREDICT_FALSE(s.IsServiceUnavailable())) {
     gscoped_ptr<OpId> id(round->replicate_msg()->release_id());
-    // Rollback the id gen. so that we reuse this id later, when we can
-    // actually append to the state machine, i.e. this makes the state
-    // machine have continuous ids, for the same term, even if the queue
-    // refused to add any more operations.
+    // Cancel the operation that we started.
     state_->CancelPendingOperation(*id);
     LOG_WITH_PREFIX_UNLOCKED(WARNING) << ": Could not append replicate request "
                  << "to the queue. Queue is Full. "
                  << "Queue metrics: " << queue_->ToString();
-
-    // TODO Possibly evict a dangling peer from the configuration here.
-    // TODO count of number of ops failed due to consensus queue overflow.
+    // TODO(todd) count of number of ops failed due to consensus queue overflow.
   } else if (PREDICT_FALSE(s.IsIOError())) {
     // This likely came from the log.
     LOG(FATAL) << "IO error appending to the queue: " << s.ToString();
   }
   RETURN_NOT_OK_PREPEND(s, "Unable to append operation to consensus queue");
-  state_->UpdateLastReceivedOpIdUnlocked(round->id());
   return Status::OK();
 }
 
@@ -754,7 +749,7 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req
   // The leader's preceding id.
   deduplicated_req->preceding_opid = &rpc_req->preceding_id();
 
-  int64_t dedup_up_to_index = state_->GetLastReceivedOpIdUnlocked().index();
+  int64_t dedup_up_to_index = queue_->GetLastOpIdInLog().index();
 
   deduplicated_req->first_message_idx = -1;
 
@@ -844,7 +839,7 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
   string error_msg = Substitute(
     "Log matching property violated."
     " Preceding OpId in replica: $0. Preceding OpId from leader: $1. ($2 mismatch)",
-    state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
+    queue_->GetLastOpIdInLog().ShortDebugString(),
     req.preceding_opid->ShortDebugString(),
     term_mismatch ? "term" : "index");
 
@@ -875,10 +870,7 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
 
 void RaftConsensus::TruncateAndAbortOpsAfterUnlocked(int64_t truncate_after_index) {
   state_->AbortOpsAfterUnlocked(truncate_after_index);
-  // Above resets the 'last received' to the operation with index 'truncate_after_index'.
-  OpId new_last_received = state_->GetLastReceivedOpIdUnlocked();
-  DCHECK_EQ(truncate_after_index, new_last_received.index());
-  queue_->TruncateOpsAfter(new_last_received);
+  queue_->TruncateOpsAfter(truncate_after_index);
 }
 
 Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* request,
@@ -1215,16 +1207,10 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     CHECK_OK(state_->AdvanceCommittedIndexUnlocked(apply_up_to));
     queue_->UpdateFollowerWatermarks(apply_up_to, request->all_replicated_index());
 
-    // We can now update the last received watermark.
-    //
-    // We do it here (and before we actually hear back from the wal whether things
-    // are durable) so that, if we receive another, possible duplicate, message
-    // that exercises this path we don't handle these messages twice.
-    //
     // If any messages failed to be started locally, then we already have removed them
-    // from 'deduped_req' at this point. So, we can simply update our last-received
-    // watermark to the last message that remains in 'deduped_req'.
-    state_->UpdateLastReceivedOpIdUnlocked(last_from_leader);
+    // from 'deduped_req' at this point. So, 'last_from_leader' is the last one that
+    // we might apply.
+    last_received_cur_leader_ = last_from_leader;
 
     // Fill the response with the current state. We will not mutate anymore state until
     // we actually reply to the leader, we'll just wait for the messages to be durable.
@@ -1269,12 +1255,11 @@ void RaftConsensus::FillConsensusResponseOKUnlocked(ConsensusResponsePB* respons
   TRACE("Filling consensus response to leader.");
   response->set_responder_term(state_->GetCurrentTermUnlocked());
   response->mutable_status()->mutable_last_received()->CopyFrom(
-      state_->GetLastReceivedOpIdUnlocked());
+      queue_->GetLastOpIdInLog());
   response->mutable_status()->mutable_last_received_current_leader()->CopyFrom(
-      state_->GetLastReceivedOpIdCurLeaderUnlocked());
-  // TODO: interrogate queue rather than state?
+      last_received_cur_leader_);
   response->mutable_status()->set_last_committed_idx(
-      state_->GetCommittedIndexUnlocked());
+      queue_->GetCommittedIndex());
 }
 
 void RaftConsensus::FillConsensusResponseError(ConsensusResponsePB* response,
@@ -1879,7 +1864,7 @@ Status RaftConsensus::GetLastOpId(OpIdType type, OpId* id) {
   ReplicaState::UniqueLock lock;
   RETURN_NOT_OK(state_->LockForRead(&lock));
   if (type == RECEIVED_OPID) {
-    *DCHECK_NOTNULL(id) = state_->GetLastReceivedOpIdUnlocked();
+    *DCHECK_NOTNULL(id) = queue_->GetLastOpIdInLog();
   } else if (type == COMMITTED_OPID) {
     id->set_term(state_->GetTermWithLastCommittedOpUnlocked());
     id->set_index(state_->GetCommittedIndexUnlocked());
@@ -2038,6 +2023,7 @@ Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term,
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Advancing to term " << new_term;
   RETURN_NOT_OK(state_->SetCurrentTermUnlocked(new_term, flush));
   term_metric_->set_value(new_term);
+  last_received_cur_leader_ = MinimumOpId();
   return Status::OK();
 }
 
