@@ -346,7 +346,8 @@ Impala, and dropping such a table does not drop the table from its source locati
 (here, Kudu). Instead, it only removes the mapping between Impala and Kudu. This is
 the mode used in the syntax provided by Kudu for mapping an existing table to Impala.
 
-See link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_tables.html
+See the
+http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_tables.html[Impala documentation]
 for more information about internal and external tables.
 
 === Querying an Existing Kudu Table In Impala
