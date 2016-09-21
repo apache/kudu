@@ -2429,6 +2429,28 @@ TEST_F(ClientTest, TestFlushModesCompareOpRatesRandomSize) {
   EXPECT_GT(t_afs.wall, t_afb.wall);
 }
 
+// A test to verify that it's safe to perform synchronous and/or asynchronous
+// flush while having the auto-flusher thread running in the background.
+TEST_F(ClientTest, TestAutoFlushBackgroundAndExplicitFlush) {
+  const size_t kIterNum = AllowSlowTests() ? 8192 : 1024;
+  shared_ptr<KuduSession> session(client_->NewSession());
+  // The background flush interval is short to have more contention.
+  ASSERT_OK(session->SetMutationBufferFlushInterval(3));
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+  for (size_t i = 0; i < kIterNum; i += 2) {
+    ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, i, i, "x"));
+    SleepFor(MonoDelta::FromMilliseconds(1));
+    session->FlushAsync(nullptr);
+    ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, i + 1, i + 1, "y"));
+    SleepFor(MonoDelta::FromMilliseconds(1));
+    ASSERT_OK(session->Flush());
+  }
+  EXPECT_EQ(0, session->CountPendingErrors());
+  EXPECT_FALSE(session->HasPendingOperations());
+  // Check that all rows have reached the table.
+  EXPECT_EQ(kIterNum, CountRowsFromClient(client_table_.get()));
+}
+
 // A test which verifies that a session in AUTO_FLUSH_BACKGROUND mode can
 // be safely abandoned: its pending data should not be flushed.
 // This test also checks that the reference to a session stored by the
