@@ -60,6 +60,8 @@ public class ITClient extends BaseKuduTest {
   private static KuduTable table;
   private static long runtimeInSeconds;
 
+  private volatile long sharedWriteTimestamp;
+
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
 
@@ -89,6 +91,9 @@ public class ITClient extends BaseKuduTest {
 
   @Test(timeout = TEST_TIMEOUT_SECONDS)
   public void test() throws Exception {
+
+    UncaughtExceptionHandler uncaughtExceptionHandler = new UncaughtExceptionHandler();
+
     ArrayList<Thread> threads = new ArrayList<>();
     Thread chaosThread = new Thread(new ChaosThread());
     Thread writerThread = new Thread(new WriterThread());
@@ -99,6 +104,7 @@ public class ITClient extends BaseKuduTest {
     threads.add(scannerThread);
 
     for (Thread thread : threads) {
+      thread.setUncaughtExceptionHandler(uncaughtExceptionHandler);
       thread.start();
     }
 
@@ -235,6 +241,7 @@ public class ITClient extends BaseKuduTest {
 
     @Override
     public void run() {
+      session.setExternalConsistencyMode(ExternalConsistencyMode.CLIENT_PROPAGATED);
       while (KEEP_RUNNING_LATCH.getCount() > 0) {
         try {
           OperationResponse resp = session.apply(createBasicSchemaInsert(table, currentRowKey));
@@ -279,6 +286,13 @@ public class ITClient extends BaseKuduTest {
             " returned this error: " + resp.getRowError(), null);
         return true;
       }
+
+      if (resp == null) {
+        return false;
+      }
+
+      sharedWriteTimestamp = resp.getWriteTimestampRaw();
+
       return false;
     }
   }
@@ -299,8 +313,11 @@ public class ITClient extends BaseKuduTest {
 
         boolean shouldContinue;
 
-        // Always scan until we find rows.
-        if (lastRowCount == 0 || random.nextBoolean()) {
+        // First check if we've written at least one row.
+        if (sharedWriteTimestamp == 0) {
+          shouldContinue = true;
+        } else if (lastRowCount == 0 || // Need to full scan once before random reading
+            random.nextBoolean()) {
           shouldContinue = fullScan();
         } else {
           shouldContinue = randomGet();
@@ -322,14 +339,16 @@ public class ITClient extends BaseKuduTest {
     }
 
     /**
-     * Reads a row at random that it knows to exist (smaller than lastRowCount).
-     * @return
+     * Reads a row at random that should exist (smaller than lastRowCount).
+     * @return true if the get was successful, false if there was an error
      */
     private boolean randomGet() {
       int key = random.nextInt(lastRowCount);
       KuduPredicate predicate = KuduPredicate.newComparisonPredicate(
           table.getSchema().getColumnByIndex(0), KuduPredicate.ComparisonOp.EQUAL, key);
-      KuduScanner scanner = localClient.newScannerBuilder(table).addPredicate(predicate).build();
+      KuduScanner scanner = getScannerBuilder()
+          .addPredicate(predicate)
+          .build();
 
       List<RowResult> results = new ArrayList<>();
       while (scanner.hasMoreRows()) {
@@ -338,7 +357,7 @@ public class ITClient extends BaseKuduTest {
           for (RowResult row : ite) {
             results.add(row);
           }
-        } catch (Exception e) {
+        } catch (KuduException e) {
           return checkAndReportError("Got error while getting row " + key, e);
         }
       }
@@ -357,23 +376,31 @@ public class ITClient extends BaseKuduTest {
     }
 
     /**
-     * Rusn a full table scan and updates the lastRowCount.
-     * @return
+     * Runs a full table scan and updates the lastRowCount.
+     * @return true if the full scan was successful, false if there was an error
      */
     private boolean fullScan() {
-      AsyncKuduScanner scannerBuilder = localAsyncClient.newScannerBuilder(table).build();
+      KuduScanner scanner = getScannerBuilder().build();
       try {
-        int rowCount = countRowsInScan(scannerBuilder);
+        int rowCount = countRowsInScan(scanner);
         if (rowCount < lastRowCount) {
           reportError("Row count regressed: " + rowCount + " < " + lastRowCount, null);
           return false;
         }
-        lastRowCount = rowCount;
-        LOG.info("New row count {}", lastRowCount);
-      } catch (Exception e) {
-        checkAndReportError("Got error while row counting", e);
+        if (rowCount > lastRowCount) {
+          lastRowCount = rowCount;
+          LOG.info("New row count {}", lastRowCount);
+        }
+      } catch (KuduException e) {
+        return checkAndReportError("Got error while row counting", e);
       }
       return true;
+    }
+
+    private KuduScanner.KuduScannerBuilder getScannerBuilder() {
+      return localClient.newScannerBuilder(table)
+          .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
+          .snapshotTimestampRaw(sharedWriteTimestamp);
     }
 
     /**
@@ -384,12 +411,28 @@ public class ITClient extends BaseKuduTest {
      * @param e the exception to check
      * @return true if the scanner failed because it wasn't false, otherwise false
      */
-    private boolean checkAndReportError(String message, Exception e) {
-      if (!e.getCause().getMessage().contains("Scanner not found")) {
+    private boolean checkAndReportError(String message, KuduException e) {
+      // Do nasty things, expect nasty results. The scanners are a bit too happy to retry TS
+      // disconnections so we might end up retrying a scanner on a node that restarted, or we might
+      // get disconnected just after sending an RPC so when we reconnect to the same TS we might get
+      // the "Invalid call sequence ID" message.
+      if (!e.getStatus().isNotFound() &&
+          !e.getStatus().getMessage().contains("Invalid call sequence ID")) {
         reportError(message, e);
         return false;
       }
       return true;
+    }
+  }
+
+  class UncaughtExceptionHandler implements Thread.UncaughtExceptionHandler {
+
+    @Override
+    public void uncaughtException(Thread t, Throwable e) {
+      // Only report an error if we're still running, else we'll spam the log.
+      if (KEEP_RUNNING_LATCH.getCount() != 0) {
+        reportError("Uncaught exception", new Exception(e));
+      }
     }
   }
 }

@@ -140,11 +140,15 @@ public class BaseKuduTest {
       data.addCallbacks(cb, defaultErrorCB);
       data.join(DEFAULT_SLEEP);
     }
-
-    Deferred<RowResultIterator> closer = scanner.close();
-    closer.addCallbacks(cb, defaultErrorCB);
-    closer.join(DEFAULT_SLEEP);
     return counter.get();
+  }
+
+  protected static int countRowsInScan(KuduScanner scanner) throws KuduException {
+    int counter = 0;
+    while (scanner.hasMoreRows()) {
+      counter += scanner.nextRows().getNumRows();
+    }
+    return counter;
   }
 
   /**
@@ -155,17 +159,12 @@ public class BaseKuduTest {
    */
   protected long countRowsInTable(KuduTable table, KuduPredicate... predicates)
       throws KuduException {
-    long count = 0;
     KuduScanner.KuduScannerBuilder scanBuilder = syncClient.newScannerBuilder(table);
     for (KuduPredicate predicate : predicates) {
       scanBuilder.addPredicate(predicate);
     }
     scanBuilder.setProjectedColumnIndexes(ImmutableList.<Integer>of());
-    KuduScanner scanner = scanBuilder.build();
-    while (scanner.hasMoreRows()) {
-      count += scanner.nextRows().getNumRows();
-    }
-    return count;
+    return countRowsInScan(scanBuilder.build());
   }
 
   protected List<String> scanTableToStrings(KuduTable table,
