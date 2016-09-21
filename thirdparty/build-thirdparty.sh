@@ -379,5 +379,8 @@ if [ -n "$F_TSAN" ]; then
   restore_env
 fi
 
+# Now run the post-flight checks.
+$TP_DIR/postflight.py
+
 echo "---------------------"
 echo "Thirdparty dependencies built and installed into $PREFIX successfully"

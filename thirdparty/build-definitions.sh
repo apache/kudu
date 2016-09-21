@@ -51,6 +51,39 @@ restore_env() {
   EXTRA_LIBS=${_EXTRA_LIBS}
 }
 
+# Some versions of libtool are vulnerable to a bug[1] wherein clang's -stdlib
+# parameter isn't passed through to the link command line. This causes the
+# libtool to link the shared object against libstdc++ instead of libc++.
+#
+# The bug was only fixed in version 2.4.2 of libtool and el6 carries version
+# 2.2.6, so we work around it here.
+#
+# 1. https://debbugs.gnu.org/db/10/10579.html
+fixup_libtool() {
+  if [[ ! "$EXTRA_CXXFLAGS" =~ "-stdlib=libc++" ]]; then
+    echo "libtool does not need to be fixed up: not using libc++"
+    return
+  fi
+  if [ ! -f libtool ]; then
+    echo "libtool not found"
+    exit 1
+  fi
+  if ! grep -q -e 'postdeps=.*-lstdc++' libtool; then
+    echo "libtool does not need to be fixed up: already configured for libc++"
+    return
+  fi
+
+  # Modify a line like:
+  #
+  #   postdeps="-lfoo -lstdc++ -lbar -lstdc++ -lbaz"
+  #
+  # To become:
+  #
+  #   postdeps="-lfoo -lc++ -lbar -lc++ -lbaz"
+  sed -i.before_fixup -e '/postdeps=/s/-lstdc++/-lc++/g' libtool
+  echo "libtool has been fixed up"
+}
+
 build_cmake() {
   CMAKE_BDIR=$TP_BUILD_DIR/$CMAKE_NAME$MODE_SUFFIX
   mkdir -p $CMAKE_BDIR
@@ -241,6 +274,7 @@ build_glog() {
     --with-pic \
     --prefix=$PREFIX \
     --with-gflags=$PREFIX
+  fixup_libtool
   make -j$PARALLEL install
   popd
 }
@@ -258,6 +292,7 @@ build_gperftools() {
     --enable-heap-checker \
     --with-pic \
     --prefix=$PREFIX
+  fixup_libtool
   make -j$PARALLEL install
   popd
 }
@@ -303,6 +338,7 @@ build_protobuf() {
     --enable-shared \
     --enable-static \
     --prefix=$PREFIX
+  fixup_libtool
   make -j$PARALLEL install
   popd
 }
@@ -318,6 +354,7 @@ build_snappy() {
     $SNAPPY_SOURCE/configure \
     --with-pic \
     --prefix=$PREFIX
+  fixup_libtool
   make -j$PARALLEL install
   popd
 }
@@ -445,6 +482,7 @@ build_crcutil() {
     LIBS="$EXTRA_LIBS" \
     ./configure \
     --prefix=$PREFIX
+  fixup_libtool
   make -j$PARALLEL install
   popd
 }
