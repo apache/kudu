@@ -80,20 +80,23 @@ public abstract class KuduException extends IOException {
    * @return a KuduException that's easier to handle
    */
   static KuduException transformException(Exception e) {
+    // The message may be null.
+    String message =  e.getMessage() == null ? "" : e.getMessage();
     if (e instanceof KuduException) {
       return (KuduException) e;
     } else if (e instanceof DeferredGroupException) {
       // TODO anything we can do to improve on that kind of exception?
     } else if (e instanceof TimeoutException) {
-      Status statusTimeout = Status.TimedOut(e.getMessage());
+      Status statusTimeout = Status.TimedOut(message);
       return new NonRecoverableException(statusTimeout, e);
     } else if (e instanceof InterruptedException) {
       // Need to reset the interrupt flag since we caught it but aren't handling it.
       Thread.currentThread().interrupt();
-      Status statusAborted = Status.Aborted(e.getMessage());
+
+      Status statusAborted = Status.Aborted(message);
       return new NonRecoverableException(statusAborted, e);
     }
-    Status status = Status.IOError(e.getMessage());
+    Status status = Status.IOError(message);
     return new NonRecoverableException(status, e);
   }
 }
