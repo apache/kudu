@@ -283,7 +283,7 @@ class MetaCacheEntry {
   // Returns the remote tablet, should only be called if this entry contains a
   // tablet.
   const scoped_refptr<RemoteTablet>& tablet() const {
-    DCHECK_NOTNULL(tablet_.get());
+    DCHECK(tablet_);
     DCHECK(Initialized());
     return tablet_;
   }

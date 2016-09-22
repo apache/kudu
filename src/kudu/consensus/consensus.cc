@@ -52,7 +52,7 @@ ConsensusRound::ConsensusRound(Consensus* consensus,
     : consensus_(consensus),
       replicate_msg_(replicate_msg),
       bound_term_(-1) {
-  DCHECK_NOTNULL(replicate_msg_.get());
+  DCHECK(replicate_msg_);
 }
 
 void ConsensusRound::NotifyReplicationFinished(const Status& status) {

@@ -596,7 +596,7 @@ template<bool IS_NULLABLE, bool IS_VARLEN>
 static void CopyColumn(const RowBlock& block, int col_idx,
                        int dst_col_idx, uint8_t* dst_base,
                        faststring* indirect_data, const Schema* dst_schema) {
-  DCHECK_NOTNULL(dst_schema);
+  DCHECK(dst_schema);
   ColumnBlock cblock = block.column_block(col_idx);
   size_t row_stride = ContiguousRowHelper::row_size(*dst_schema);
   uint8_t* dst = dst_base + dst_schema->column_offset(dst_col_idx);

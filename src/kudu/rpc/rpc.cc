@@ -20,7 +20,6 @@
 #include <boost/bind.hpp>
 #include <string>
 
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -34,8 +33,8 @@ namespace kudu {
 namespace rpc {
 
 bool RpcRetrier::HandleResponse(Rpc* rpc, Status* out_status) {
-  ignore_result(DCHECK_NOTNULL(rpc));
-  ignore_result(DCHECK_NOTNULL(out_status));
+  DCHECK(rpc);
+  DCHECK(out_status);
 
   // Always retry a TOO_BUSY error.
   Status controller_status = controller_.status();

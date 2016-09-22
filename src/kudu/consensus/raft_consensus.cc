@@ -238,7 +238,7 @@ RaftConsensus::RaftConsensus(
       term_metric_(metric_entity->FindOrCreateGauge(&METRIC_raft_term,
                                                     cmeta->current_term())),
       parent_mem_tracker_(std::move(parent_mem_tracker)) {
-  DCHECK_NOTNULL(log_.get());
+  DCHECK(log_);
   state_.reset(new ReplicaState(options,
                                 peer_uuid,
                                 std::move(cmeta),
