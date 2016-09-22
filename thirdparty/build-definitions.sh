@@ -267,8 +267,24 @@ build_glog() {
   GLOG_BDIR=$TP_BUILD_DIR/$GLOG_NAME$MODE_SUFFIX
   mkdir -p $GLOG_BDIR
   pushd $GLOG_BDIR
-  CXXFLAGS="$EXTRA_CXXFLAGS" \
-    LDFLAGS="$EXTRA_LDFLAGS" \
+
+  # glog depends on libunwind from PREFIX_COMMON and on gflags from PREFIX.
+  #
+  # Specifying -Wl,-rpath has different default behavior on GNU binutils ld vs.
+  # the GNU gold linker. ld sets RPATH (due to defaulting to --disable-new-dtags)
+  # and gold sets RUNPATH (due to defaulting to --enable-new-dtags). At the time
+  # of this writing, contrary to the way RPATH is treated, when RUNPATH is
+  # specified on a binary, glibc doesn't respect it for transitive (non-direct)
+  # library dependencies (see https://sourceware.org/bugzilla/show_bug.cgi?id=13945).
+  # So we must set RUNPATH for all deps-of-deps on the dep libraries themselves.
+  #
+  # This comment applies both here and the locations elsewhere in this script
+  # where we add something to -Wl,-rpath.
+  GLOG_CXXFLAGS="-I$PREFIX_COMMON/include"
+  GLOG_LDFLAGS="-L$PREFIX/lib -Wl,-rpath,$PREFIX/lib"
+  GLOG_LDFLAGS="$GLOG_LDFLAGS -L$PREFIX_COMMON/lib -Wl,-rpath,$PREFIX_COMMON/lib"
+  CXXFLAGS="$EXTRA_CXXFLAGS $GLOG_CXXFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS $GLOG_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
     $GLOG_SOURCE/configure \
     --with-pic \
@@ -518,7 +534,13 @@ build_nvml() {
     perl -p -i -e "s,(EXTRA_CFLAGS=\"),\$1$EXTRA_CFLAGS ," jemalloc/jemalloc.cfg
   fi
   for LIB in libvmem libpmem libpmemobj; do
-    EXTRA_CFLAGS="$EXTRA_CFLAGS" make -j$PARALLEL $LIB DEBUG=0
+    # Disable -Werror; it prevents jemalloc from building via clang.
+    #
+    # Add PREFIX/lib to the rpath; libpmemobj depends on libpmem at runtime.
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -Wno-error" \
+      EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-rpath,$PREFIX/lib" \
+      make -j$PARALLEL $LIB DEBUG=0
+
     # NVML doesn't allow configuring PREFIX -- it always installs into
     # DESTDIR/usr/lib. Additionally, the 'install' target builds all of
     # the NVML libraries, even though we only need the three libraries above.

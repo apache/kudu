@@ -106,16 +106,21 @@ for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN; do
   ln -sf "$PREFIX_DIR/lib" "$PREFIX_DIR/lib64"
 done
 
+# Incorporate the value of these standard compilation environment variables into
+# the EXTRA_* environment variables.
+EXTRA_CFLAGS="$CFLAGS $EXTRA_CFLAGS"
+EXTRA_CXXFLAGS="$CXXFLAGS $EXTRA_CXXFLAGS"
+EXTRA_LDFLAGS="$LDFLAGS $EXTRA_LDFLAGS"
+EXTRA_LIBS="$LIBS $EXTRA_LIBS"
+
 # We use -O2 instead of -O3 for thirdparty since benchmarks indicate
 # that the benefits of a smaller code size outweight the benefits of
 # more inlining.
 #
 # We also enable -fno-omit-frame-pointer so that profiling tools which
 # use frame-pointer based stack unwinding can function correctly.
-EXTRA_CFLAGS="$CFLAGS $EXTRA_CFLAGS -fno-omit-frame-pointer"
-EXTRA_CXXFLAGS="$CXXFLAGS $EXTRA_CXXFLAGS -I${PREFIX_COMMON}/include -fno-omit-frame-pointer -O2"
-EXTRA_LDFLAGS="$LDFLAGS $EXTRA_LDFLAGS -L${PREFIX_COMMON}/lib"
-EXTRA_LIBS="$LIBS $EXTRA_LIBS"
+EXTRA_CFLAGS="-fno-omit-frame-pointer $EXTRA_CFLAGS"
+EXTRA_CXXFLAGS="-fno-omit-frame-pointer -O2 $EXTRA_CXXFLAGS"
 
 if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
@@ -177,17 +182,6 @@ save_env
 EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
 EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
 
-# Specifying -Wl,-rpath has different default behavior on GNU binutils ld vs.
-# the GNU gold linker. ld sets RPATH (due to defaulting to --disable-new-dtags)
-# and gold sets RUNPATH (due to defaulting to --enable-new-dtags). At the time
-# of this writing, contrary to the way RPATH is treated, when RUNPATH is
-# specified on a binary, glibc doesn't respect it for transitive (non-direct)
-# library dependencies (see https://sourceware.org/bugzilla/show_bug.cgi?id=13945).
-# So we must set RUNPATH for all deps-of-deps on the dep libraries themselves.
-# This applies both here and the locations elsewhere in this script where we
-# add $PREFIX/lib to -Wl,-rpath.
-EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
-
 if [ -n "$OS_LINUX" ] && [ -n "$F_COMMON" -o -n "$F_LIBUNWIND" ]; then
   build_libunwind
 fi
@@ -248,8 +242,6 @@ PREFIX=$PREFIX_DEPS
 MODE_SUFFIX=""
 
 save_env
-
-EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
 
 # Clang is used by all builds so it is part of the 'common' library group even
 # though its LLVM libraries are installed to $PREFIX_DEPS.
@@ -339,8 +331,8 @@ if [ -n "$F_TSAN" -o -n "$F_LLVM" ]; then
   build_libcxxabi
 fi
 
-# The libc++ build needs to be able to find libc++abi.
-EXTRA_CXXFLAGS="-L$PREFIX/lib $EXTRA_CXXFLAGS"
+# libc++ (and its dependents) need to find libc++abi at link and run time.
+EXTRA_LDFLAGS="-L$PREFIX/lib $EXTRA_LDFLAGS"
 EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
 
 # Build libc++ with TSAN enabled.
