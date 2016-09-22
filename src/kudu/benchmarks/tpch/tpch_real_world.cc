@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <csignal>
 
 #include <boost/bind.hpp>
 #include <glog/logging.h>
@@ -300,9 +301,14 @@ void TpchRealWorld::MonitorDbgenThread(int i) {
       SleepFor(MonoDelta::FromMilliseconds(100));
     }
   }
-  dbgen_proc->Kill(9);
-  int ret;
-  dbgen_proc->Wait(&ret);
+  Status s = dbgen_proc->Kill(SIGKILL);
+  if (!s.ok()) {
+    LOG(FATAL) << "Failed to send SIGKILL to dbgen: " << s.ToString();
+  }
+  s = dbgen_proc->Wait(nullptr);
+  if (!s.ok()) {
+    LOG(FATAL) << "Failed to await for dbgen exit: " << s.ToString();
+  }
 }
 
 void TpchRealWorld::RunQueriesThread() {

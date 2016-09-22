@@ -305,11 +305,15 @@ void FullStackInsertScanTest::DoTestScans() {
   LOG(INFO) << "Doing test scans on table of " << kNumRows << " rows.";
 
   gscoped_ptr<Subprocess> stat = MakePerfStat();
+  if (stat) {
+    ASSERT_OK(stat->Start());
+  }
   gscoped_ptr<Subprocess> record = MakePerfRecord();
-  if (stat) stat->Start();
-  if (record) record->Start();
+  if (record) {
+    ASSERT_OK(record->Start());
+  }
 
-  NO_FATALS(ScanProjection(vector<string>(), "empty projection, 0 col"));
+  NO_FATALS(ScanProjection({}, "empty projection, 0 col"));
   NO_FATALS(ScanProjection({ "key" }, "key scan, 1 col"));
   NO_FATALS(ScanProjection(AllColumnNames(), "full schema scan, 10 col"));
   NO_FATALS(ScanProjection(StringColumnNames(), "String projection, 1 col"));

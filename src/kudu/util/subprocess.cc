@@ -27,6 +27,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -45,9 +46,8 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/status.h"
 
-using std::unique_ptr;
-using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Split;
 using strings::Substitute;
@@ -314,12 +314,14 @@ static int pipe2(int pipefd[2], int flags) {
 #endif
 
 Status Subprocess::Start() {
-  CHECK_EQ(state_, kNotStarted);
-  EnsureSigPipeDisabled();
-
-  if (argv_.size() < 1) {
+  if (state_ != kNotStarted) {
+    return Status::IllegalState(
+        Substitute("$0: illegal sub-process state", state_));
+  }
+  if (argv_.empty()) {
     return Status::InvalidArgument("argv must have at least one elem");
   }
+  EnsureSigPipeDisabled();
 
   vector<char*> argv_ptrs;
   for (const string& arg : argv_) {
@@ -348,8 +350,8 @@ Status Subprocess::Start() {
 
   DIR* fd_dir = nullptr;
   RETURN_NOT_OK_PREPEND(OpenProcFdDir(&fd_dir), "Unable to open fd dir");
-  shared_ptr<DIR> fd_dir_closer(fd_dir, CloseProcFdDir);
-
+  unique_ptr<DIR, std::function<void(DIR*)>> fd_dir_closer(fd_dir,
+                                                           CloseProcFdDir);
   int ret = fork();
   if (ret == -1) {
     return Status::RuntimeError("Unable to fork", ErrnoToString(errno), errno);
@@ -417,12 +419,18 @@ Status Subprocess::Start() {
 
 Status Subprocess::DoWait(int* ret, int options) {
   if (state_ == kExited) {
-    *ret = cached_rc_;
+    if (ret != nullptr) {
+      *ret = cached_rc_;
+    }
     return Status::OK();
   }
-  CHECK_EQ(state_, kRunning);
+  if (state_ != kRunning) {
+    return Status::IllegalState(
+        Substitute("$0: illegal sub-process state", state_));
+  }
 
-  int rc = waitpid(child_pid_, ret, options);
+  int proc_exit_info;
+  int rc = waitpid(child_pid_, &proc_exit_info, options);
   if (rc == -1) {
     return Status::RuntimeError("Unable to wait on child",
                                 ErrnoToString(errno),
@@ -434,13 +442,18 @@ Status Subprocess::DoWait(int* ret, int options) {
 
   CHECK_EQ(rc, child_pid_);
   child_pid_ = -1;
-  cached_rc_ = *ret;
+  cached_rc_ = proc_exit_info;
   state_ = kExited;
+  if (ret != nullptr) {
+    *ret = proc_exit_info;
+  }
   return Status::OK();
 }
 
 Status Subprocess::Kill(int signal) {
-  CHECK_EQ(state_, kRunning);
+  if (state_ != kRunning) {
+    return Status::IllegalState("Sub-process is not running");
+  }
   if (kill(child_pid_, signal) != 0) {
     return Status::RuntimeError("Unable to kill",
                                 ErrnoToString(errno),
