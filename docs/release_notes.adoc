@@ -318,7 +318,7 @@ This affects RHEL/CentOS 6.8 and below. A fix is planned for RHEL/CentOS 6.9.
 - link:http://kudu.apache.org[Kudu Website]
 - link:http://github.com/apache/kudu[Kudu GitHub Repository]
 - link:index.html[Kudu Documentation]
-- link:prior_release_notes.adoc[Release notes for older releases]
+- link:prior_release_notes.html[Release notes for older releases]
 
 == Installation Options
 
