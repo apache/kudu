@@ -145,6 +145,10 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   private final RequestTracker requestTracker;
 
+  // If an uncaught exception forced us to shutdown this TabletClient, we'll handle the retry
+  // differently by also clearing the caches.
+  private volatile boolean gotUncaughtException = false;
+
   public TabletClient(AsyncKuduClient client, String uuid, String host, int port) {
     this.kuduClient = client;
     this.uuid = uuid;
@@ -752,7 +756,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (tablet == null) {  // Can't retry, dunno where this RPC should go.
       rpc.errback(exception);
     } else {
-      kuduClient.handleRetryableError(rpc, exception);
+      if (gotUncaughtException) {
+        // This will remove this TabletClient from this RPC's cache since there's something wrong
+        // about it.
+        kuduClient.handleTabletNotFound(rpc, exception, this);
+      } else {
+        kuduClient.handleRetryableError(rpc, exception);
+      }
     }
   }
 
@@ -770,9 +780,9 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       LOG.debug(getPeerUuidLoggingString() + "Encountered a read timeout, will close the channel");
     } else {
       LOG.error(getPeerUuidLoggingString() + "Unexpected exception from downstream on " + c, e);
-      // For any other exception, likely a connection error, we clear the leader state
-      // for those tablets that this TS is the cached leader of.
-      kuduClient.demoteAsLeaderForAllTablets(this);
+      // For any other exception, likely a connection error, we'll clear the tablet caches for the
+      // RPCs we're going to retry.
+      gotUncaughtException = true;
     }
     if (c.isOpen()) {
       Channels.close(c);  // Will trigger channelClosed(), which will cleanup()

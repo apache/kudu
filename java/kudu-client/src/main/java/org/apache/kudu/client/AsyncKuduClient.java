@@ -1775,12 +1775,11 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     TabletClient old;
-    ArrayList<RemoteTablet> tablets = null;
     synchronized (ip2client) {
-      if ((old = ip2client.remove(hostport)) != null) {
-        tablets = client2tablets.remove(client);
-      }
+      old = ip2client.remove(hostport);
+      client2tablets.remove(client);
     }
+
     LOG.debug("Removed from IP cache: {" + hostport + "} -> {" + client + "}");
     if (old == null) {
       // Currently we're seeing this message when masters are disconnected and the hostport we got
@@ -1790,37 +1789,6 @@ public class AsyncKuduClient implements AutoCloseable {
       LOG.trace("When expiring " + client + " from the client cache (host:port="
           + hostport + "), it was found that there was no entry"
           + " corresponding to " + remote + ".  This shouldn't happen.");
-    } else {
-      if (tablets != null) {
-        // Make a copy so we don't need to synchronize on it while iterating.
-        RemoteTablet[] tablets_copy;
-        synchronized (tablets) {
-          tablets_copy = tablets.toArray(new RemoteTablet[tablets.size()]);
-        }
-        for (final RemoteTablet remoteTablet : tablets_copy) {
-          remoteTablet.removeTabletClient(client);
-        }
-      }
-    }
-  }
-
-  /**
-   * Call this method after encountering an error connecting to a tablet server so that we stop
-   * considering it a leader for the tablets it serves.
-   * @param client tablet server to use for demotion
-   */
-  void demoteAsLeaderForAllTablets(final TabletClient client) {
-    ArrayList<RemoteTablet> tablets = client2tablets.get(client);
-    if (tablets != null) {
-      // Make a copy so we don't need to synchronize on it while iterating.
-      RemoteTablet[] tablets_copy;
-      synchronized (tablets) {
-        tablets_copy = tablets.toArray(new RemoteTablet[tablets.size()]);
-      }
-      for (final RemoteTablet remoteTablet : tablets_copy) {
-        // It will be a no-op if it's not already a leader.
-        remoteTablet.demoteLeader(client);
-      }
     }
   }
 
@@ -2076,7 +2044,12 @@ public class AsyncKuduClient implements AutoCloseable {
       }
       TabletClient client = newClient(uuid, ip, port);
 
-      final ArrayList<RemoteTablet> tablets = client2tablets.get(client);
+      ArrayList<RemoteTablet> tablets = client2tablets.get(client);
+
+      if (tablets == null) {
+        // We lost a race, someone removed the client we received.
+        return;
+      }
 
       synchronized (tablets) {
         tabletServers.add(client);
