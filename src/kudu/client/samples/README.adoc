@@ -1,0 +1,167 @@
+= Kudu {cpp} client sample README
+:author: Kudu Team
+:homepage: https://kudu.apache.org/
+
+== Summary
+The Kudu {cpp} client library distribution contains {cpp} example application
+that demonstrates how to use the Kudu {cpp} client API.  The sample
+can be used as a starting point for a custom Kudu {cpp} client application.
+This note contains information on how to build the Kudu {cpp} client sample.
+
+== How to build the example if installing Kudu from packages
+This section describes how to build the example if installing Kudu
+using pre-built packages.
+
+. Install the required packages as described in the
+https://kudu.apache.org/docs/installation.html#install_packages[documentation on the Kudu Web site].
+The `kudu-client0` package (`libkuduclient0` on Debian/Ubuntu Linux
+distributions) contains the Kudu {cpp} client library, and the `kudu-client-dev`
+package (`libkuduclient-dev` on Debian/Ubuntu Linux distributions) contains
+the Kudu {cpp} client header files and {cpp} code sample (`sample.cc`)
+along with other auxiliary content.
+
+. Make sure `cmake` of version at least 2.8 is installed on the system.
+
+. Copy the sample into a custom location where you would like to work
+with the code. Working in the `/usr/share/doc/kuduClient/samples`
+directory is possible but is not recommended since it requires
+super-user access and pollutes the `sample` directory with
+intermediate files.
+For example, to copy the `/usr/share/doc/kuduClient/samples` directory
+recursively into `/tmp/kuduClient`:
+[source,shell]
+cp -r /usr/share/doc/kuduClient/samples /tmp/kuduClient
+
+. Navigate into the directory where the `sample.cc.gz` file was copied and
+unpack the sample source file.  For example:
+[source,shell]
+cd /tmp/kuduClient/samples
+gunzip sample.cc.gz
+
+. Run `cmake` to generate appropriate makefiles.  For example, if targeting
+for a debug build
+(for a release build, use `release` for `CMAKE_BUILD_TYPE` correspondingly):
+[source,shell]
+cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=debug
+
+. Run `make` to build the sample:
+[source,shell]
+make
+
+. After the sample is built, it is ready to run against your Kudu master server.
+The sample application assumes the target Kudu cluster has at least 3
+tablet servers up and running (because it creates a table with replication
+factor 3).  If it's not the case, you can modify the `sample.cc` accordingly
+and re-compile it.  Below is the sample output with log messages in the middle
+removed: the `sample` binary runs against Kudu master server running
+with the default parameters at the same machine.  Port 7051 is the default
+one and could be omitted along with the preceding colomn because the master
+server is running with the default parameters (it's left only to illustrate how
+to specify port number).
+[source,shell]
+$ ./sample 127.0.0.1:7051
+Running with Kudu client version: kudu 1.1.0-SNAPSHOT (rev 91a1ed09c4c572a22bab15360ddaf481d5632927)
+Long version info: kudu 1.1.0-SNAPSHOT
+revision 91a1ed09c4c572a22bab15360ddaf481d5632927
+build type DEBUG
+built by aserbin at 06 Oct 2016 14:15:10 PST on ve0518.halxg.cloudera.com
+Received log message from Kudu client library
+ Severity: 0
+ Filename: /home/aserbin/Projects/kudu/src/kudu/util/thread.cc
+ Line number: 546
+ Time: Thu Oct 06 14:50:47 2016
+ Message: Started thread 11197 - kernel-watchdog:kernel-watcher
+...
+Received log message from Kudu client library
+ Severity: 0
+ Filename: /home/aserbin/Projects/kudu/src/kudu/client/client-internal.cc
+ Line number: 534
+ Time: Thu Oct 06 14:50:47 2016
+ Message: Considering host 10.17.240.17 local
+Created a client connection
+Created a schema
+Created a table
+Altered a table
+Inserted some rows into a table
+Scanned some rows out of a table
+Deleted a table
+Done
+
+== How to build the example if building Kudu from source
+This section describes how to build the example if building Kudu from source.
+To install the `sample.cc` and other files, an alternate destination root
+is used.
+
+Specifying an alternate destination root allows you to install the
+Kudu {cpp} client library, the sample file and other content
+under the specified destination prefix.
+
+. Follow the https://kudu.apache.org/docs/installation.html#_build_from_source[instructions on the Kudu Web site]
+to build the project from source.
+
+. Once the project is built, change into the `<build_dir>/src/kudu/client`
+sub-directory.
+
+. Run `make install` with an alternate destination root.  For example, if
+installing into `/tmp/client_alt_root`
+[source,shell]
+make install DESTDIR=/tmp/client_alt_root
+
+. Change the current working directory into the
+`usr/local/share/doc/kuduClient/samples` subdirectory of the alternate
+destination root.  For example, if installing into `/tmp/client_alt_root`
+[source,shell]
+cd /tmp/client_alt_root/usr/local/share/doc/kuduClient/samples
+
+. Run `cmake` to generate appropriate makefiles.  For example, if installing
+into `/tmp/client_alt_root` and targeting for a debug build
+(for a release build, use `release` for `CMAKE_BUILD_TYPE` correspondingly):
+[source,shell]
+cmake -G "Unix Makefiles" -DkuduClient_DIR=/tmp/client_alt_root/usr/local/share/kuduClient/cmake -DCMAKE_BUILD_TYPE=debug
+
+. Run `make` to build the sample:
+[source,shell]
+make
+
+. After the sample is built, it is ready to run against your Kudu master server.
+The sample application assumes the target Kudu cluster has at least 3
+tablet servers up and running (because it creates a table with replication
+factor 3).  If it's not the case, you can modify the `sample.cc` accordingly
+and re-compile it.  Below is the sample output with log messages in the middle
+removed: the `sample` binary runs against Kudu master server running
+with the default parameters at the same machine.  Port 7051 is the default
+one and could be omitted along with the preceding colomn because the master
+server is running with the default parameters (it's left only to illustrate how
+to specify port number).
+[source,shell]
+$ ./sample 127.0.0.1:7051
+Running with Kudu client version: kudu 1.1.0-SNAPSHOT (rev 91a1ed09c4c572a22bab15360ddaf481d5632927)
+Long version info: kudu 1.1.0-SNAPSHOT
+revision 91a1ed09c4c572a22bab15360ddaf481d5632927
+build type DEBUG
+built by aserbin at 06 Oct 2016 14:15:10 PST on ve0518.halxg.cloudera.com
+Received log message from Kudu client library
+ Severity: 0
+ Filename: /home/aserbin/Projects/kudu/src/kudu/util/thread.cc
+ Line number: 546
+ Time: Thu Oct 06 14:50:47 2016
+ Message: Started thread 11197 - kernel-watchdog:kernel-watcher
+...
+Received log message from Kudu client library
+ Severity: 0
+ Filename: /home/aserbin/Projects/kudu/src/kudu/client/client-internal.cc
+ Line number: 534
+ Time: Thu Oct 06 14:50:47 2016
+ Message: Considering host 10.17.240.17 local
+Created a client connection
+Created a schema
+Created a table
+Altered a table
+Inserted some rows into a table
+Scanned some rows out of a table
+Deleted a table
+Done
+
+== References
+. https://kudu.apache.org/[The Kudu Project Web Site]
+. https://kudu.apache.org/cpp-client-api/[Kudu {cpp} client API documentation]
