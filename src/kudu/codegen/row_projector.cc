@@ -405,7 +405,7 @@ Status RowProjector::Init() {
   //
   // This equivalence relation can be decomposed as:
   //
-  //   ProjectionsCompatible((base1, proj1), (base2, proj2)) :=
+  //   compat_check((base1, proj1), (base2, proj2)) :=
   //     WELLFORMED(base1, proj1) &&
   //     WELLFORMED(base2, proj2) &&
   //     PROJEQUALS(base1, base2) &&

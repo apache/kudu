@@ -98,6 +98,7 @@ struct CompileAssert {
 // http://gcc.gnu.org/PR51213 in gcc-4.7 / Crosstool v16.
 // TODO(user): Remove "&& !defined(__clang_)" when =delete is
 // gcc-4.7 before =delete is allowed, go back to the C++98 definition.
+#ifndef DISALLOW_COPY_AND_ASSIGN
 #if LANG_CXX11 && !defined(__clang__)
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
   TypeName(const TypeName&) = delete;      \
@@ -106,6 +107,7 @@ struct CompileAssert {
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
   TypeName(const TypeName&);               \
   void operator=(const TypeName&)
+#endif
 #endif
 
 // An older, politically incorrect name for the above.

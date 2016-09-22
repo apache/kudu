@@ -55,6 +55,7 @@ string DecodedRowOperation::ToString(const Schema& schema) const {
     case RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND:
       return Substitute("INCLUSIVE_RANGE_UPPER_BOUND $0", split_row->ToString());
   }
+  return "UNKNOWN";
 }
 
 RowOperationsPBEncoder::RowOperationsPBEncoder(RowOperationsPB* pb)
