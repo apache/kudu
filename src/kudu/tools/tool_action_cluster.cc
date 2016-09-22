@@ -28,6 +28,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/status.h"
 
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
@@ -61,8 +62,6 @@ using std::unique_ptr;
 using std::vector;
 
 namespace {
-
-const char* const kMasterAddressesArg = "master_addresses";
 
 Status RunKsck(const RunnerContext& context) {
   const string& master_addresses_str = FindOrDie(context.required_args,
@@ -130,10 +129,7 @@ unique_ptr<Mode> BuildClusterMode() {
       ActionBuilder("ksck", &RunKsck)
       .Description(desc)
       .ExtraDescription(extra_desc)
-      .AddRequiredParameter({
-        kMasterAddressesArg,
-        "Comma-separated list of Kudu Master addressess where each address is "
-        "of form 'hostname:port'" })
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddOptionalParameter("checksum_scan")
       .AddOptionalParameter("checksum_scan_concurrency")
       .AddOptionalParameter("checksum_snapshot")

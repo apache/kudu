@@ -116,8 +116,8 @@ using tserver::WriteRequestPB;
 
 namespace {
 
-static const char* const kSeparatorLine =
-  "----------------------------------------------------------------------\n";
+const char* const kSeparatorLine =
+    "----------------------------------------------------------------------\n";
 
 string Indent(int indent) {
   return string(indent, ' ');
@@ -172,7 +172,7 @@ Status ParsePeerString(const string& peer_str,
 Status PrintReplicaUuids(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
-  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   // Load the cmeta file and print all peer uuids.
   unique_ptr<ConsensusMetadata> cmeta;
@@ -186,7 +186,7 @@ Status PrintReplicaUuids(const RunnerContext& context) {
 
 Status RewriteRaftConfig(const RunnerContext& context) {
   // Parse tablet ID argument.
-  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   if (tablet_id != master::SysCatalogTable::kSysCatalogTabletId) {
     LOG(WARNING) << "Master will not notice rewritten Raft config of regular "
                  << "tablets. A regular Raft config change must occur.";
@@ -238,7 +238,7 @@ Status RewriteRaftConfig(const RunnerContext& context) {
 
 Status CopyFromRemote(const RunnerContext& context) {
   // Parse the tablet ID and source arguments.
-  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const string& rpc_address = FindOrDie(context.required_args, "source");
 
   HostPort hp;
@@ -259,7 +259,7 @@ Status CopyFromRemote(const RunnerContext& context) {
 Status DumpWals(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
-  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   shared_ptr<LogReader> reader;
   RETURN_NOT_OK(LogReader::Open(fs_manager.get(),
@@ -309,7 +309,7 @@ Status ListBlocksInRowSet(const Schema& schema,
 Status DumpBlockIdsForLocalReplica(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
-  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(TabletMetadata::Load(fs_manager.get(), tablet_id, &meta));
@@ -567,7 +567,7 @@ Status DumpRowSetInternal(FsManager* fs_manager,
 Status DumpRowSet(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
-  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(TabletMetadata::Load(fs_manager.get(), tablet_id, &meta));
@@ -607,7 +607,7 @@ Status DumpRowSet(const RunnerContext& context) {
 Status DumpMeta(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
-  const string& tablet_id = FindOrDie(context.required_args, "tablet_id");
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   RETURN_NOT_OK(DumpTabletMeta(fs_manager.get(), tablet_id, 0));
   return Status::OK();
 }
@@ -616,7 +616,7 @@ unique_ptr<Mode> BuildDumpMode() {
   unique_ptr<Action> dump_block_ids =
       ActionBuilder("block_ids", &DumpBlockIdsForLocalReplica)
       .Description("Dump the IDs of all blocks belonging to a local replica")
-      .AddRequiredParameter({ "tablet_id", "tablet identifier" })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
       .Build();
@@ -624,7 +624,7 @@ unique_ptr<Mode> BuildDumpMode() {
   unique_ptr<Action> dump_meta =
       ActionBuilder("meta", &DumpMeta)
       .Description("Dump the metadata of a local replica")
-      .AddRequiredParameter({ "tablet_id", "tablet identifier" })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
       .Build();
@@ -632,7 +632,7 @@ unique_ptr<Mode> BuildDumpMode() {
   unique_ptr<Action> dump_rowset =
       ActionBuilder("rowset", &DumpRowSet)
       .Description("Dump the rowset contents of a local replica")
-      .AddRequiredParameter({ "tablet_id", "tablet identifier" })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("dump_data")
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
@@ -645,7 +645,7 @@ unique_ptr<Mode> BuildDumpMode() {
       ActionBuilder("wals", &DumpWals)
       .Description("Dump all WAL (write-ahead log) segments of "
         "a local replica")
-      .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("print_entries")
@@ -669,7 +669,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       ActionBuilder("print_replica_uuids", &PrintReplicaUuids)
       .Description("Print all replica UUIDs found in a "
         "tablet's Raft configuration")
-      .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
       .Build();
@@ -677,7 +677,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
   unique_ptr<Action> rewrite_raft_config =
       ActionBuilder("rewrite_raft_config", &RewriteRaftConfig)
       .Description("Rewrite a replica's Raft configuration")
-      .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredVariadicParameter({
         "peers", "List of peers where each peer is of "
         "form 'uuid:hostname:port'" })
@@ -696,7 +696,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
   unique_ptr<Action> copy_from_remote =
       ActionBuilder("copy_from_remote", &CopyFromRemote)
       .Description("Copy a replica from a remote server")
-      .AddRequiredParameter({ "tablet_id", "Tablet identifier" })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ "source", "Source RPC address of "
         "form hostname:port" })
       .AddOptionalParameter("fs_wal_dir")

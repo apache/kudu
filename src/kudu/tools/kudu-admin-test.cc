@@ -37,6 +37,7 @@ using client::KuduClientBuilder;
 using client::KuduSchema;
 using client::KuduTableCreator;
 using client::sp::shared_ptr;
+using consensus::ConsensusStatePB;
 using itest::TabletServerMap;
 using itest::TServerDetails;
 using std::string;
@@ -151,6 +152,96 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
                                                 leader, tablet_id_,
                                                 MonoDelta::FromSeconds(10)));
+}
+
+Status GetTermFromConsensus(const vector<TServerDetails*>& tservers,
+                            const string& tablet_id,
+                            int64 *current_term) {
+  ConsensusStatePB cstate;
+  for (auto& ts : tservers) {
+    RETURN_NOT_OK(
+        itest::GetConsensusState(ts, tablet_id,
+                                 consensus::CONSENSUS_CONFIG_COMMITTED,
+                                 MonoDelta::FromSeconds(10), &cstate));
+    if (cstate.has_leader_uuid() && cstate.has_current_term()) {
+      *current_term = cstate.current_term();
+      return Status::OK();
+    }
+  }
+  return Status::NotFound(Substitute(
+      "No leader replica found for tablet $0", tablet_id));
+}
+
+TEST_F(AdminCliTest, TestLeaderStepDown) {
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  BuildAndStart({}, {});
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+  for (auto& ts : tservers) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts,
+                                            tablet_id_,
+                                            MonoDelta::FromSeconds(10)));
+  }
+
+  int64 current_term;
+  ASSERT_OK(GetTermFromConsensus(tservers, tablet_id_,
+                                 &current_term));
+
+  // The leader for the given tablet may change anytime, resulting in
+  // the command returning an error code. Hence checking for term advancement
+  // only if the leader_step_down succeeds. It is also unsafe to check
+  // the term advancement without honoring status of the command since
+  // there may not have been another election in the meanwhile.
+  string stderr;
+  Status s = Subprocess::Call({GetKuduCtlAbsolutePath(),
+                               "tablet", "leader_step_down",
+                               cluster_->master()->bound_rpc_addr().ToString(),
+                               tablet_id_}, nullptr, &stderr);
+  bool not_currently_leader = stderr.find(
+      Status::IllegalState("").CodeAsString()) != string::npos;
+  ASSERT_TRUE(s.ok() || not_currently_leader);
+  if (s.ok()) {
+    int64 new_term;
+    AssertEventually([&]() {
+        ASSERT_OK(GetTermFromConsensus(tservers, tablet_id_,
+                                       &new_term));
+        ASSERT_GT(new_term, current_term);
+      });
+  }
+}
+
+TEST_F(AdminCliTest, TestLeaderStepDownWhenNotPresent) {
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  BuildAndStart(
+      { "--enable_leader_failure_detection=false" },
+      { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false" });
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+  for (auto& ts : tservers) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts,
+                                            tablet_id_,
+                                            MonoDelta::FromSeconds(10)));
+  }
+
+  int64 current_term;
+  ASSERT_TRUE(GetTermFromConsensus(tservers, tablet_id_,
+                                   &current_term).IsNotFound());
+  string stdout;
+  ASSERT_OK(Subprocess::Call({
+    GetKuduCtlAbsolutePath(),
+    "tablet",
+    "leader_step_down",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    tablet_id_
+  }, &stdout));
+  ASSERT_STR_CONTAINS(stdout,
+                      Substitute("No leader replica found for tablet $0",
+                                 tablet_id_));
 }
 
 TEST_F(AdminCliTest, TestDeleteTable) {

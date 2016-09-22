@@ -28,6 +28,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/status.h"
 
 DEFINE_bool(list_tablets, false,
@@ -49,7 +50,6 @@ using std::vector;
 
 namespace {
 
-const char* const kMasterAddressesArg = "master_addresses";
 const char* const kTableNameArg = "table_name";
 
 Status DeleteTable(const RunnerContext& context) {
@@ -93,7 +93,8 @@ Status ListTables(const RunnerContext& context) {
       cout << "T " << token->tablet().id() << "\t";
       for (const auto* replica : token->tablet().replicas()) {
         cout << "P" << (replica->is_leader() ? "(L) " : "    ")
-             << replica->ts().uuid() << "    ";
+             << replica->ts().uuid() << "(" << replica->ts().hostname()
+             << ":" << replica->ts().port() << ")" << "    ";
       }
       cout << endl;
     }
@@ -108,20 +109,14 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> delete_table =
       ActionBuilder("delete", &DeleteTable)
       .Description("Delete a table")
-      .AddRequiredParameter({
-        kMasterAddressesArg,
-        "Comma-separated list of Kudu Master addresses where each address is "
-        "of form 'hostname:port'" })
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to delete" })
       .Build();
 
   unique_ptr<Action> list_tables =
       ActionBuilder("list", &ListTables)
       .Description("List all tables")
-      .AddRequiredParameter({
-        kMasterAddressesArg,
-        "Comma-separated list of Kudu Master addresses where each address is "
-        "of form 'hostname:port'" })
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddOptionalParameter("list_tablets")
       .Build();
 

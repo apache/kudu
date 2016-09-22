@@ -35,6 +35,12 @@ class ServerStatusPB;
 
 namespace tools {
 
+// Constants for parameters and descriptions.
+extern const char* const kMasterAddressesArg;
+extern const char* const kMasterAddressesArgDesc;
+extern const char* const kTabletIdArg;
+extern const char* const kTabletIdArgDesc;
+
 // Utility methods used by multiple actions across different modes.
 
 // Builds a proxy to a Kudu server running at 'address', returning it in

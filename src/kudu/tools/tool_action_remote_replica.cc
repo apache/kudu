@@ -136,8 +136,6 @@ class ReplicaDumper {
 namespace {
 
 const char* const kReasonArg = "reason";
-const char* const kTabletArg = "tablet_id";
-const char* const kTabletDesc = "Tablet identifier";
 const char* const kTServerAddressArg = "tserver_address";
 const char* const kTServerAddressDesc = "Address of a Kudu Tablet Server of "
     "form 'hostname:port'. Port may be omitted if the Tablet Server is bound "
@@ -189,7 +187,7 @@ Status CheckReplicas(const RunnerContext& context) {
 
 Status DeleteReplica(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kTServerAddressArg);
-  const string& tablet_id = FindOrDie(context.required_args, kTabletArg);
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const string& reason = FindOrDie(context.required_args, kReasonArg);
 
   ServerStatusPB status;
@@ -220,7 +218,7 @@ Status DeleteReplica(const RunnerContext& context) {
 
 Status DumpReplica(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kTServerAddressArg);
-  const string& tablet_id = FindOrDie(context.required_args, kTabletArg);
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   unique_ptr<TabletServerServiceProxy> proxy;
   RETURN_NOT_OK(BuildProxy(address, tserver::TabletServer::kDefaultPort,
@@ -295,7 +293,7 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       ActionBuilder("delete", &DeleteReplica)
       .Description("Delete a replica from a Kudu Tablet Server")
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
-      .AddRequiredParameter({ kTabletArg, kTabletDesc })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kReasonArg, "Reason for deleting the replica" })
       .Build();
 
@@ -303,7 +301,7 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       ActionBuilder("dump", &DumpReplica)
       .Description("Dump the data of a replica on a Kudu Tablet Server")
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
-      .AddRequiredParameter({ kTabletArg, kTabletDesc })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .Build();
 
   unique_ptr<Action> list =

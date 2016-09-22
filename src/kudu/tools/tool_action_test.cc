@@ -105,6 +105,7 @@
 #include "kudu/common/types.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
@@ -204,10 +205,7 @@ DEFINE_bool(use_random, false,
 namespace kudu {
 namespace tools {
 
-
 namespace {
-
-const char* const kMasterAddressesArg = "master_addresses";
 
 class Generator {
  public:

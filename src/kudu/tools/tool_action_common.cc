@@ -97,6 +97,12 @@ using tserver::TabletServerAdminServiceProxy;
 using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
 
+const char* const kMasterAddressesArg = "master_addresses";
+const char* const kMasterAddressesArgDesc = "Comma-separated list of Kudu "
+    "Master addresses where each address is of form 'hostname:port'";
+const char* const kTabletIdArg = "tablet_id";
+const char* const kTabletIdArgDesc = "Tablet Identifier";
+
 namespace {
 
 enum PrintEntryType {

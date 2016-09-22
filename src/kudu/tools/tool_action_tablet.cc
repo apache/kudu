@@ -18,6 +18,7 @@
 #include "kudu/tools/tool_action.h"
 
 #include <algorithm>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -31,6 +32,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/server/server_base.pb.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -47,6 +49,8 @@ using consensus::ChangeConfigType;
 using consensus::ConsensusServiceProxy;
 using consensus::RaftPeerPB;
 using rpc::RpcController;
+using std::cout;
+using std::endl;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -54,10 +58,8 @@ using strings::Substitute;
 
 namespace {
 
-const char* const kMasterAddressesArg = "master_addresses";
 const char* const kReplicaTypeArg = "replica_type";
 const char* const kReplicaUuidArg = "replica_uuid";
-const char* const kTabletIdArg = "tablet_id";
 
 Status GetRpcAddressForTS(const client::sp::shared_ptr<KuduClient>& client,
                           const string& uuid,
@@ -94,6 +96,7 @@ Status GetTabletLeader(const client::sp::shared_ptr<KuduClient>& client,
       return Status::OK();
     }
   }
+
   return Status::NotFound(Substitute(
       "No leader replica found for tablet $0", tablet_id));
 }
@@ -134,13 +137,6 @@ Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
   string leader_uuid;
   HostPort leader_hp;
   RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
-  vector<Sockaddr> leader_addrs;
-  RETURN_NOT_OK(leader_hp.ResolveAddresses(&leader_addrs));
-  if (leader_addrs.empty()) {
-    return Status::NotFound(
-        "Unable to resolve IP address for tablet leader host",
-        leader_hp.ToString());
-  }
 
   unique_ptr<ConsensusServiceProxy> proxy;
   RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
@@ -172,17 +168,52 @@ Status RemoveReplica(const RunnerContext& context) {
   return ChangeConfig(context, consensus::REMOVE_SERVER);
 }
 
+Status LeaderStepDown(const RunnerContext& context) {
+  const string& master_addresses_str = FindOrDie(context.required_args,
+                                                 kMasterAddressesArg);
+  vector<string> master_addresses = strings::Split(master_addresses_str, ",");
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(KuduClientBuilder()
+                .master_server_addrs(master_addresses)
+                .Build(&client));
+
+  // If leader is not present, command can gracefully return.
+  string leader_uuid;
+  HostPort leader_hp;
+  Status s = GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp);
+  if (s.IsNotFound()) {
+    cout << s.ToString() << endl;
+    return Status::OK();
+  }
+  RETURN_NOT_OK(s);
+
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  consensus::LeaderStepDownRequestPB req;
+  consensus::LeaderStepDownResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(client->default_admin_operation_timeout());
+  req.set_dest_uuid(leader_uuid);
+  req.set_tablet_id(tablet_id);
+
+  RETURN_NOT_OK(proxy->LeaderStepDown(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTabletMode() {
   unique_ptr<Action> add_replica =
       ActionBuilder("add_replica", &AddReplica)
       .Description("Add a new replica to a tablet's Raft configuration")
-      .AddRequiredParameter({
-        kMasterAddressesArg,
-        "Comma-separated list of Kudu Master addresses where each address is "
-        "of form 'hostname:port'" })
-      .AddRequiredParameter({ kTabletIdArg, "Tablet Identifier" })
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kReplicaUuidArg, "New replica's UUID" })
       .AddRequiredParameter(
           { kReplicaTypeArg, "New replica's type. Must be VOTER or NON-VOTER."
@@ -193,11 +224,8 @@ unique_ptr<Mode> BuildTabletMode() {
       ActionBuilder("change_replica_type", &ChangeReplicaType)
       .Description(
           "Change the type of an existing replica in a tablet's Raft configuration")
-      .AddRequiredParameter({
-        kMasterAddressesArg,
-        "Comma-separated list of Kudu Master addresses where each address is "
-        "of 'form hostname:port'" })
-      .AddRequiredParameter({ kTabletIdArg, "Tablet Identifier" })
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kReplicaUuidArg, "Existing replica's UUID" })
       .AddRequiredParameter(
           { kReplicaTypeArg, "Existing replica's new type. Must be VOTER or NON-VOTER."
@@ -207,12 +235,16 @@ unique_ptr<Mode> BuildTabletMode() {
   unique_ptr<Action> remove_replica =
       ActionBuilder("remove_replica", &RemoveReplica)
       .Description("Remove an existing replica from a tablet's Raft configuration")
-      .AddRequiredParameter({
-        kMasterAddressesArg,
-        "Comma-separated list of Kudu Master addresses where each address is "
-        "of form 'hostname:port'" })
-      .AddRequiredParameter({ kTabletIdArg, "Tablet Identifier" })
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kReplicaUuidArg, "Existing replica's UUID" })
+      .Build();
+
+  unique_ptr<Action> leader_step_down =
+      ActionBuilder("leader_step_down", &LeaderStepDown)
+      .Description("Force the tablet's leader replica to step down")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .Build();
 
   unique_ptr<Mode> change_config =
@@ -226,6 +258,7 @@ unique_ptr<Mode> BuildTabletMode() {
   return ModeBuilder("tablet")
       .Description("Operate on remote Kudu tablets")
       .AddMode(std::move(change_config))
+      .AddAction(std::move(leader_step_down))
       .Build();
 }
 
