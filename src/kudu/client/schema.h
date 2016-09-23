@@ -85,12 +85,14 @@ class KUDU_EXPORT KuduColumnStorageAttributes {
   ///   Compression type for the column storage.
   /// @param [in] block_size
   ///   Block size (in bytes, uncompressed data) for the column storage.
-  KuduColumnStorageAttributes(EncodingType encoding = AUTO_ENCODING,
-                              CompressionType compression = DEFAULT_COMPRESSION,
-                              int32_t block_size = 0)
+  explicit KuduColumnStorageAttributes(
+      EncodingType encoding = AUTO_ENCODING,
+      CompressionType compression = DEFAULT_COMPRESSION,
+      int32_t block_size = 0)
+      ATTRIBUTE_DEPRECATED("this constructor will be private in a future release")
       : encoding_(encoding),
-      compression_(compression),
-      block_size_(block_size) {
+        compression_(compression),
+        block_size_(block_size) {
   }
 
   /// @return Encoding type for the column storage.
@@ -155,7 +157,8 @@ class KUDU_EXPORT KuduColumnSchema {
                    DataType type,
                    bool is_nullable = false,
                    const void* default_value = NULL,
-                   KuduColumnStorageAttributes attributes = KuduColumnStorageAttributes());
+                   KuduColumnStorageAttributes attributes = KuduColumnStorageAttributes())
+      ATTRIBUTE_DEPRECATED("use KuduSchemaBuilder instead");
 
   /// Construct KuduColumnSchema object as a copy of another object.
   ///
@@ -439,7 +442,8 @@ class KUDU_EXPORT KuduSchema {
   ///   Number of key columns in the schema.
   /// @return Operation result status.
   Status Reset(const std::vector<KuduColumnSchema>& columns, int key_columns)
-    WARN_UNUSED_RESULT;
+      ATTRIBUTE_DEPRECATED("this method will be removed in a future release")
+      WARN_UNUSED_RESULT;
 
   /// Check whether the schema is identical to the other one.
   ///

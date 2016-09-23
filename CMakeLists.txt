@@ -221,6 +221,11 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
   # Clang generates ambiguous member template warnings when calling the ev++ api.
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ambiguous-member-template")
 
+  # Emit a warning when the method/function marked as deprecated
+  # in its in-line documentation but lacks the deprecated attribute
+  # ATTRIBUTE_DEPRECATED in its signature.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wdocumentation-deprecated-sync")
+
   # Only hardcode -fcolor-diagnostics if stderr is opened on a terminal. Otherwise
   # the color codes show up as noisy artifacts.
   #

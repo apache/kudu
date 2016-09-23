@@ -675,7 +675,8 @@ class KUDU_EXPORT KuduTableCreator {
   /// @param [in] split_rows
   ///   The row to use for partitioning.
   /// @return Reference to the modified table creator.
-  KuduTableCreator& split_rows(const std::vector<const KuduPartialRow*>& split_rows);
+  KuduTableCreator& split_rows(const std::vector<const KuduPartialRow*>& split_rows)
+      ATTRIBUTE_DEPRECATED("use add_range_partition_split() instead");
 
   /// Set the table replication factor.
   ///
@@ -1573,7 +1574,8 @@ class KUDU_EXPORT KuduScanner {
   ///   Column names to use for the projection.
   /// @return Operation result status.
   Status SetProjectedColumns(const std::vector<std::string>& col_names)
-    WARN_UNUSED_RESULT;
+      WARN_UNUSED_RESULT
+      ATTRIBUTE_DEPRECATED("use SetProjectedColumnNames() instead");
 
   /// Add a predicate for the scan.
   ///
@@ -1602,7 +1604,8 @@ class KUDU_EXPORT KuduScanner {
   /// @param [in] key
   ///   The primary key to use as an opaque slice of data.
   /// @return Operation result status.
-  Status AddLowerBoundRaw(const Slice& key);
+  Status AddLowerBoundRaw(const Slice& key)
+      ATTRIBUTE_DEPRECATED("use AddLowerBound() instead");
 
   /// Add an upper bound (exclusive) primary key for the scan.
   ///
@@ -1621,7 +1624,8 @@ class KUDU_EXPORT KuduScanner {
   /// @param [in] key
   ///   The encoded primary key is an opaque slice of data.
   /// @return Operation result status.
-  Status AddExclusiveUpperBoundRaw(const Slice& key);
+  Status AddExclusiveUpperBoundRaw(const Slice& key)
+      ATTRIBUTE_DEPRECATED("use AddExclusiveUpperBound() instead");
 
   /// Add a lower bound (inclusive) partition key for the scan.
   ///
@@ -1702,7 +1706,8 @@ class KUDU_EXPORT KuduScanner {
   /// @param [out] rows
   ///   Placeholder for the result.
   /// @return Operation result status.
-  Status NextBatch(std::vector<KuduRowResult>* rows);
+  Status NextBatch(std::vector<KuduRowResult>* rows)
+      ATTRIBUTE_DEPRECATED("use NextBatch(KuduScanBatch*) instead");
 
   /// Fetch the next batch of results for this scanner.
   ///
@@ -1755,9 +1760,10 @@ class KUDU_EXPORT KuduScanner {
   /// @deprecated Use SetFaultTolerant() instead.
   ///
   /// @param [in] order_mode
-  ///   Result record orderind mode to set.
+  ///   Result record ordering mode to set.
   /// @return Operation result status.
-  Status SetOrderMode(OrderMode order_mode) WARN_UNUSED_RESULT;
+  Status SetOrderMode(OrderMode order_mode) WARN_UNUSED_RESULT
+      ATTRIBUTE_DEPRECATED("use SetFaultTolerant() instead");
 
   /// Make scans resumable at another tablet server if current server fails.
   ///
