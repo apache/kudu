@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.0 Release Notes
+= Apache Kudu 1.1 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -28,149 +28,25 @@
 :sectlinks:
 :experimental:
 
-[[rn_1.0.0]]
+[[rn_1.1.0]]
 
-== Overview
-
-After approximately a year of beta releases, Apache Kudu has reached version 1.0.
-This version number signifies that the development team feels that Kudu is stable
-enough for usage in production environments.
-
-If you are new to Kudu, check out its list of link:index.html[features and benefits].
-
-[[rn_1.0.0_new_features]]
+[[rn_1.1.0_new_features]]
 == New features
 
-Kudu 1.0.0 delivers a number of new features, bug fixes, and optimizations.
-
-- Removal of multiversion concurrency control (MVCC) history is now supported.
-  This is known as tablet history GC. This allows Kudu to reclaim disk space,
-  where previously Kudu would keep a full history of all changes made to a
-  given table since the beginning of time. Previously, the only way to reclaim
-  disk space was to drop a table.
-+
-Kudu will still keep historical data, and the amount of history retained is
-  controlled by setting the configuration flag `--tablet_history_max_age_sec`,
-  which defaults to 15 minutes (expressed in seconds). The timestamp
-  represented by the current time minus `tablet_history_max_age_sec` is known
-  as the ancient history mark (AHM). When a compaction or flush occurs, Kudu
-  will remove the history of changes made prior to the ancient history mark.
-  This only affects historical data; currently-visible data will not be
-  removed. A specialized maintenance manager background task to remove existing
-  "cold" historical data that is not in a row affected by the normal compaction
-  process will be added in a future release.
-
-- Most of Kudu's command line tools have been consolidated under a new
-  top-level `kudu` tool. This reduces the number of large binaries distributed
-  with Kudu and also includes much-improved help output.
-
-- The Kudu Flume Sink now supports processing events containing Avro-encoded
-  records, using the new `AvroKuduOperationsProducer`.
-
-- Administrative tools including `kudu cluster ksck` now support running
-  against multi-master Kudu clusters.
-
-- The output of the `ksck` tool is now colorized and much easier to read.
-
-- The {cpp} client API now supports writing data in `AUTO_FLUSH_BACKGROUND` mode.
-  This can provide higher throughput for ingest workloads.
+XXX
 
 == Optimizations and improvements
 
-- The performance of comparison predicates on dictionary-encoded columns has
-  been substantially optimized. Users are encouraged to use dictionary encoding
-  on any string or binary columns with low cardinality, especially if these
-  columns will be filtered with predicates.
-
-- The Java client is now able to prune partitions from scanners based on the
-  provided predicates. For example, an equality predicate on a hash-partitioned
-  column will now only access those tablets that could possibly contain matching
-  data. This is expected to improve performance for the Spark integration as well
-  as applications using the Java client API.
-
-- The performance of compaction selection in the tablet server has been
-  substantially improved. This can increase the efficiency of the background
-  maintenance threads and improve overall throughput of heavy write workloads.
-
-- The policy by which the tablet server retains write-ahead log (WAL) files has
-  been improved so that it takes into account other replicas of the tablet.
-  This should help mitigate the spurious eviction of tablet replicas on machines
-  that temporarily lag behind the other replicas.
+XXX
 
 == Wire protocol compatibility
 
-Kudu 1.0.0 maintains client-server wire-compatibility with previous releases.
-Applications using the Kudu client libraries may be upgraded either
-before, at the same time, or after the Kudu servers.
+XXX
 
-Kudu 1.0.0 does _not_ maintain server-server wire compatibility with previous
-releases. Therefore, rolling upgrades between earlier versions of Kudu and
-Kudu 1.0.0 are not supported.
+[[rn_1.1.0_incompatible_changes]]
+== Incompatible changes in Kudu 1.1.0
 
-[[rn_1.0.0_incompatible_changes]]
-== Incompatible changes in Kudu 1.0.0
-
-=== Command line tools
-
-- The `kudu-pbc-dump` tool has been removed. The same functionality is now
-  implemented as `kudu pbc dump`.
-
-- The `kudu-ksck` tool has been removed. The same functionality is now
-  implemented as `kudu cluster ksck`.
-
-- The `cfile-dump` tool has been removed. The same functionality is now
-  implemented as `kudu fs cfile dump`.
-
-- The `log-dump` tool has been removed. The same functionality is now
-  implemented as `kudu wal dump` and `kudu local_replica dump wals`.
-
-- The `kudu-admin` tool has been removed. The same functionality is now
-  implemented within `kudu table` and `kudu tablet`.
-
-- The `kudu-fs_dump` tool has been removed. The same functionality is now
-  implemented as `kudu fs dump`.
-
-- The `kudu-ts-cli` tool has been removed. The same functionality is now
-  implemented within `kudu master`, `kudu remote_replica`, and `kudu tserver`.
-
-- The `kudu-fs_list` tool has been removed and some similar useful
-  functionality has been moved under 'kudu local_replica'.
-
-=== Configuration flags
-
-- Some configuration flags are now marked as 'unsafe' and 'experimental'. Such flags
-  are disallowed by default. Users may access these flags by enabling the additional
-  flags `--unlock_unsafe_flags` and `--unlock_experimental_flags`. Usage of such flags
-  is not recommended, as the flags may be removed or modified with no deprecation period
-  and without notice in future Kudu releases.
-
-=== Client APIs ({cpp}/Java/Python)
-
-- The `TIMESTAMP` column type has been renamed to `UNIXTIME_MICROS` in order to
-  reduce confusion between Kudu's timestamp support and the timestamps supported
-  by other systems such as Apache Hive and Apache Impala (incubating). Existing
-  tables will automatically be updated to use the new name for the type.
-+
-Clients upgrading to the new client libraries must move to the new name for
-  the type.  Clients using old client libraries will continue to operate using
-  the old type name, even when connected to clusters that have been
-  upgraded. Similarly, if clients are upgraded before servers, existing
-  timestamp columns will be available using the new type name.
-
-
-- `KuduSession` methods in the {cpp} library are no longer advertised as thread-safe
-  to have one set of semantics for both {cpp} and Java Kudu client libraries.
-
-- The `KuduScanToken::TabletServers` method in the {cpp} library has been removed.
-  The same information can now be found in the KuduScanToken::tablet method.
-
-=== Apache Flume Integration
-
-- The `KuduEventProducer` interface used to process Flume events into Kudu operations
-  for the Kudu Flume Sink has changed, and has been renamed `KuduOperationsProducer`.
-  The existing `KuduEventProducer`s have been updated for the new interface, and have
-  been renamed similarly.
-
+XXX
 
 [[known_issues_and_limitations]]
 == Known Issues and Limitations
