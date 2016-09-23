@@ -23,6 +23,7 @@ from kudu.tests.util import TestScanBase
 from kudu.tests.common import KuduTestBase
 import kudu
 import datetime
+import time
 
 
 class TestScanner(TestScanBase):
@@ -182,3 +183,34 @@ class TestScanner(TestScanBase):
         scanner = self.table.scanner()
         scanner.set_fault_tolerant().open()
         self.assertEqual(sorted(self.tuples), scanner.read_all_tuples())
+
+    def test_read_mode(self):
+        """
+        Test setting the read mode and scanning against a
+        snapshot and latest
+        """
+        # Delete row
+        self.delete_insert_row_for_read_test()
+
+        # Check scanner results prior to delete
+        scanner = self.table.scanner()
+        scanner.set_read_mode('snapshot')\
+            .set_snapshot(self.snapshot_timestamp)\
+            .open()
+
+        self.assertEqual(sorted(self.tuples[1:]), sorted(scanner.read_all_tuples()))
+
+        #Check scanner results after delete
+        timeout = time.time() + 10
+        check_tuples = []
+        while check_tuples != sorted(self.tuples):
+            if time.time() > timeout:
+                raise TimeoutError("Could not validate results in allocated" +
+                                   "time.")
+
+            scanner = self.table.scanner()
+            scanner.set_read_mode(kudu.READ_LATEST)\
+                .open()
+            check_tuples = sorted(scanner.read_all_tuples())
+            # Avoid tight looping
+            time.sleep(0.05)

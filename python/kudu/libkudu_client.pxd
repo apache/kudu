@@ -456,6 +456,10 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         CLOSEST_REPLICA " kudu::client::KuduClient::CLOSEST_REPLICA"
         FIRST_REPLICA " kudu::client::KuduClient::FIRST_REPLICA"
 
+    enum ReadMode" kudu::client::KuduScanner::ReadMode":
+        ReadMode_Latest " kudu::client::KuduScanner::READ_LATEST"
+        ReadMode_Snapshot " kudu::client::KuduScanner::READ_AT_SNAPSHOT"
+
     cdef cppclass KuduClient:
 
         Status DeleteTable(const string& table_name)
@@ -479,6 +483,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         KuduTableAlterer* NewTableAlterer()
         Status IsAlterTableInProgress(const string& table_name,
                                       c_bool* alter_in_progress)
+        uint64_t GetLatestObservedTimestamp()
 
         shared_ptr[KuduSession] NewSession()
 
@@ -601,9 +606,6 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         KuduClient* client()
 
-    enum ReadMode" kudu::client::KuduScanner::ReadMode":
-        READ_LATEST " kudu::client::KuduScanner::READ_LATEST"
-        READ_AT_SNAPSHOT " kudu::client::KuduScanner::READ_AT_SNAPSHOT"
 
     cdef cppclass KuduScanner:
         KuduScanner(KuduTable* table)
@@ -620,7 +622,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status SetSelection(ReplicaSelection selection)
 
         Status SetReadMode(ReadMode read_mode)
-        Status SetSnapshot(uint64_t snapshot_timestamp_micros)
+        Status SetSnapshotMicros(uint64_t snapshot_timestamp_micros)
         Status SetTimeoutMillis(int millis)
         Status SetProjectedColumnNames(const vector[string]& col_names)
         Status SetProjectedColumnIndexes(const vector[int]& col_indexes)
@@ -651,7 +653,6 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status SetReadMode(ReadMode read_mode)
         Status SetFaultTolerant()
         Status SetSnapshotMicros(uint64_t snapshot_timestamp_micros)
-        Status SetSnapshotRaw(uint64_t snapshot_timestamp)
         Status SetSelection(ReplicaSelection selection)
         Status SetTimeoutMillis(int millis)
         Status AddConjunctPredicate(KuduPredicate* pred)

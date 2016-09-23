@@ -28,11 +28,20 @@ from libkudu_client cimport *
 from kudu.compat import tobytes, frombytes
 from kudu.schema cimport Schema, ColumnSchema
 from kudu.errors cimport check_status
-from kudu.util import to_unixtime_micros, from_unixtime_micros
+from kudu.util import to_unixtime_micros, from_unixtime_micros, from_hybridtime
 from errors import KuduException
 
 import six
 
+
+# Read mode enums
+READ_LATEST = ReadMode_Latest
+READ_AT_SNAPSHOT = ReadMode_Snapshot
+
+cdef dict _read_modes = {
+    'latest': ReadMode_Latest,
+    'snapshot': ReadMode_Snapshot
+}
 
 cdef dict _type_names = {
     KUDU_INT8 : "KUDU_INT8",
@@ -239,6 +248,25 @@ cdef class Client:
     cpdef close(self):
         # Nothing yet to clean up here
         pass
+
+    def latest_observed_timestamp(self):
+        """
+        Get the highest timestamp observed by the client in UTC. This
+        is intended to gain external consistency across clients.
+
+        Note: The latest observed timestamp can also be used to start a
+        snapshot scan on a table which is guaranteed to contain all data
+        written or previously read by this client. This should be treated
+        as experimental as it this method will change or disappear in a
+        future release. Additionally, note that 1 must be added to the
+        value to be used in snapshot reads (this is taken care of in the
+        from_hybridtime method).
+
+        Returns
+        -------
+        latest : datetime.datetime
+        """
+        return from_hybridtime(self.cp.GetLatestObservedTimestamp())
 
     def create_table(self, table_name, Schema schema, partitioning, n_replicas=None):
         """
@@ -1286,6 +1314,75 @@ cdef class Scanner:
         check_status(self.scanner.SetProjectedColumnIndexes(v_indexes))
         return self
 
+    def set_read_mode(self, read_mode):
+        """
+        Set the read mode for scanning.
+
+        Parameters
+        ----------
+        read_mode : {'latest', 'snapshot'}
+          You can also use the constants READ_LATEST, READ_AT_SNAPSHOT
+
+        Returns
+        -------
+        self : Scanner
+        """
+        cdef ReadMode rmode
+
+        def invalid_selection_policy():
+            raise ValueError('Invalid read mode: {0}'
+                             .format(read_mode))
+
+        if isinstance(read_mode, int):
+            if 0 <= read_mode < len(_read_modes):
+                check_status(self.scanner.SetReadMode(
+                             <ReadMode> read_mode))
+            else:
+                invalid_selection_policy()
+        else:
+            try:
+                check_status(self.scanner.SetReadMode(
+                    _read_modes[read_mode.lower()]))
+            except KeyError:
+                invalid_selection_policy()
+
+        return self
+
+    def set_snapshot(self, timestamp, format=None):
+        """
+        Set the snapshot timestamp for this scanner.
+
+        Parameters
+        ---------
+        timestamp : datetime.datetime or string
+          If a string is provided, a format must be provided as well.
+          NOTE: This should be in UTC. If a timezone aware datetime
+          object is provided, it will be converted to UTC, otherwise,
+          all other input is assumed to be UTC.
+        format : Required if a string timestamp is provided
+          Uses the C strftime() function, see strftime(3) documentation.
+
+        Returns
+        -------
+        self : Scanner
+        """
+        # Confirm that a format is provided if timestamp is a string
+        if isinstance(timestamp, six.string_types) and not format:
+            raise ValueError(
+                "To use a string timestamp you must provide a format. " +
+                "See the strftime(3) documentation.")
+
+        snapshot_micros = to_unixtime_micros(timestamp, format)
+
+        if snapshot_micros >= 0:
+            check_status(self.scanner.SetSnapshotMicros(
+                         <uint64_t> snapshot_micros))
+        else:
+            raise ValueError(
+                "Snapshot Timestamps be greater than the unix epoch.")
+
+        return self
+
     def set_fault_tolerant(self):
         """
         Makes the underlying KuduScanner fault tolerant.
@@ -1551,6 +1648,75 @@ cdef class ScanTokenBuilder:
         self : ScanTokenBuilder
         """
         check_status(self._builder.SetBatchSizeBytes(batch_size))
+        return self
+
+    def set_read_mode(self, read_mode):
+        """
+        Set the read mode for scanning.
+
+        Parameters
+        ----------
+        read_mode : {'latest', 'snapshot'}
+          You can also use the constants READ_LATEST, READ_AT_SNAPSHOT
+
+        Returns
+        -------
+        self : ScanTokenBuilder
+        """
+        cdef ReadMode rmode
+
+        def invalid_selection_policy():
+            raise ValueError('Invalid read mode: {0}'
+                             .format(read_mode))
+
+        if isinstance(read_mode, int):
+            if 0 <= read_mode < len(_read_modes):
+                check_status(self._builder.SetReadMode(
+                             <ReadMode> read_mode))
+            else:
+                invalid_selection_policy()
+        else:
+            try:
+                check_status(self._builder.SetReadMode(
+                    _read_modes[read_mode.lower()]))
+            except KeyError:
+                invalid_selection_policy()
+
+        return self
+
+    def set_snapshot(self, timestamp, format=None):
+        """
+        Set the snapshot timestamp for this ScanTokenBuilder.
+
+        Parameters
+        ---------
+        timestamp : datetime.datetime or string
+          If a string is provided, a format must be provided as well.
+          NOTE: This should be in UTC. If a timezone aware datetime
+          object is provided, it will be converted to UTC, otherwise,
+          all other input is assumed to be UTC.
+        format : Required if a string timestamp is provided
+          Uses the C strftime() function, see strftime(3) documentation.
+
+        Returns
+        -------
+        self : ScanTokenBuilder
+        """
+        # Confirm that a format is provided if timestamp is a string
+        if isinstance(timestamp, six.string_types) and not format:
+            raise ValueError(
+                "To use a string timestamp you must provide a format. " +
+                "See the strftime(3) documentation.")
+
+        snapshot_micros = to_unixtime_micros(timestamp, format)
+
+        if snapshot_micros >= 0:
+            check_status(self._builder.SetSnapshotMicros(
+                         <uint64_t> snapshot_micros))
+        else:
+            raise ValueError(
+                "Snapshot Timestamps be greater than the unix epoch.")
+
         return self
 
     def set_timout_millis(self, millis):

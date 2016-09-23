@@ -92,3 +92,18 @@ def from_unixtime_micros(unixtime_micros):
     else:
         raise ValueError("Invalid unixtime_micros value." +
                          "You must provide an integer value.")
+
+def from_hybridtime(hybridtime):
+    """
+    Convert a raw HybridTime value to a datetime in UTC.
+
+    Parameters
+    ----------
+    hybridtime : long
+
+    Returns
+    -------
+    timestamp : datetime.datetime in UTC
+    """
+    # Add 1 so the value is usable for snapshot scans
+    return from_unixtime_micros(int(hybridtime >> 12) + 1)

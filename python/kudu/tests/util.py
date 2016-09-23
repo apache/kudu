@@ -62,6 +62,12 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
         pass
 
     def insert_new_unixtime_micros_rows(self):
+        # Get current UTC datetime to be used for read at snapshot test
+        # Not using the easter time value below as that may not be the
+        # actual local timezone of the host executing this test and as
+        # such does would not accurately be offset to UTC
+        self.snapshot_timestamp = datetime.datetime.utcnow()
+
         # Insert new rows
         # Also test a timezone other than UTC to confirm that
         # conversion to UTC is properly applied
@@ -94,4 +100,31 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
             # Apply timezone
             list[3] = list[3].replace(tzinfo=pytz.utc)
             self.tuples.append(tuple(list))
+        session.flush()
+
+    def delete_insert_row_for_read_test(self):
+
+        # Retrive row to delete so it can be reinserted into the table so
+        # that other tests do not fail
+        row = self.table.scanner()\
+                    .set_fault_tolerant()\
+                    .open()\
+                    .read_all_tuples()[0]
+
+        # Delete row from table
+        session = self.client.new_session()
+        op = self.table.new_delete()
+        op['key'] = row[0]
+        session.apply(op)
+        session.flush()
+
+        # Get latest observed timestamp for snapshot
+        self.snapshot_timestamp = self.client.latest_observed_timestamp()
+
+        # Insert row back into table so that other tests don't fail.
+        session = self.client.new_session()
+        op = self.table.new_insert()
+        for idx, val in enumerate(row):
+            op[idx] = val
+        session.apply(op)
         session.flush()

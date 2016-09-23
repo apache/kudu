@@ -176,3 +176,36 @@ class TestScanToken(TestScanBase):
         # Serialize execute and verify
         self._subtest_serialize_thread_and_verify(builder.build(),
                                                   [self.tuples[98]])
+
+    def test_read_mode(self):
+        """
+        Test setting the read mode and scanning against a
+        snapshot and latest
+        """
+        # Delete row
+        self.delete_insert_row_for_read_test()
+
+        # Check scanner results prior to delete
+        builder = self.table.scan_token_builder()
+        tokens = builder.set_read_mode('snapshot') \
+            .set_snapshot(self.snapshot_timestamp) \
+            .build()
+
+        tuples = []
+        for token in tokens:
+            scanner = token.into_kudu_scanner().open()
+            tuples.extend(scanner.read_all_tuples())
+
+        self.assertEqual(sorted(self.tuples[1:]), sorted(tuples))
+
+        #Check scanner results after insterts
+        builder = self.table.scan_token_builder()
+        tokens = builder.set_read_mode(kudu.READ_LATEST) \
+            .build()
+
+        tuples = []
+        for token in tokens:
+            scanner = token.into_kudu_scanner().open()
+            tuples.extend(scanner.read_all_tuples())
+
+        self.assertEqual(sorted(self.tuples), sorted(tuples))
