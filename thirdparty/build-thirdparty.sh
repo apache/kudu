@@ -97,13 +97,17 @@ fi
 ################################################################################
 
 for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN; do
-  mkdir -p $PREFIX_DIR/lib
   mkdir -p $PREFIX_DIR/include
 
-  # On some systems, autotools installs libraries to lib64 rather than lib.  Fix
-  # this by setting up lib64 as a symlink to lib.  We have to do this step first
-  # to handle cases where one third-party library depends on another.
-  ln -sf "$PREFIX_DIR/lib" "$PREFIX_DIR/lib64"
+  # PREFIX_COMMON is for header-only libraries.
+  if [ "$PREFIX_DIR" != "$PREFIX_COMMON" ]; then
+    mkdir -p $PREFIX_DIR/lib
+
+    # On some systems, autotools installs libraries to lib64 rather than lib.  Fix
+    # this by setting up lib64 as a symlink to lib.  We have to do this step first
+    # to handle cases where one third-party library depends on another.
+    ln -sf "$PREFIX_DIR/lib" "$PREFIX_DIR/lib64"
+  fi
 done
 
 # Incorporate the value of these standard compilation environment variables into
@@ -162,7 +166,7 @@ else
   exit 1
 fi
 
-### Build common tools and libraries
+### Build common tools and header-only libraries
 
 PREFIX=$PREFIX_COMMON
 MODE_SUFFIX=""
@@ -174,44 +178,8 @@ if [ -n "$F_COMMON" -o -n "$F_CMAKE" ]; then
   build_cmake
 fi
 
-save_env
-
-# Enable debug symbols so that stacktraces and linenumbers are available at
-# runtime. CMake is compiled without debug symbols since it is a compile-time
-# only tool.
-EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
-EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
-
-if [ -n "$OS_LINUX" ] && [ -n "$F_COMMON" -o -n "$F_LIBUNWIND" ]; then
-  build_libunwind
-fi
-
-if [ -n "$F_COMMON" -o -n "$F_ZLIB" ]; then
-  build_zlib
-fi
-
-if [ -n "$F_COMMON" -o -n "$F_LZ4" ]; then
-  build_lz4
-fi
-
-if [ -n "$F_COMMON" -o -n "$F_BITSHUFFLE" ]; then
-  build_bitshuffle
-fi
-
-if [ -n "$F_COMMON" -o -n "$F_LIBEV" ]; then
-  build_libev
-fi
-
 if [ -n "$F_COMMON" -o -n "$F_RAPIDJSON" ]; then
   build_rapidjson
-fi
-
-if [ -n "$F_COMMON" -o -n "$F_SQUEASEL" ]; then
-  build_squeasel
-fi
-
-if [ -n "$F_COMMON" -o -n "$F_CURL" ]; then
-  build_curl
 fi
 
 if [ -n "$F_COMMON" -o -n "$F_GSG" ]; then
@@ -226,28 +194,64 @@ if [ -n "$F_COMMON" -o -n "$F_TRACE_VIEWER" ]; then
   build_trace_viewer
 fi
 
-if [ -n "$OS_LINUX" ] && [ -n "$F_COMMON" -o -n "$F_NVML" ]; then
-  build_nvml
-fi
-
 if [ -n "$F_COMMON" -o -n "$F_BOOST" ]; then
   build_boost
 fi
 
-restore_env
-
-### Build C++ dependencies
+### Build C dependencies without instrumentation
 
 PREFIX=$PREFIX_DEPS
 MODE_SUFFIX=""
 
 save_env
 
+# Enable debug symbols so that stacktraces and linenumbers are available at runtime.
+EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
+EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
+
+if [ -n "$OS_LINUX" ] && [ -n "$F_UNINSTRUMENTED" -o -n "$F_LIBUNWIND" ]; then
+  build_libunwind
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_ZLIB" ]; then
+  build_zlib
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_LZ4" ]; then
+  build_lz4
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BITSHUFFLE" ]; then
+  build_bitshuffle
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_LIBEV" ]; then
+  build_libev
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_SQUEASEL" ]; then
+  build_squeasel
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CURL" ]; then
+  build_curl
+fi
+
+if [ -n "$OS_LINUX" ] && [ -n "$F_UNINSTRUMENTED" -o -n "$F_NVML" ]; then
+  build_nvml
+fi
+
+restore_env
+
+### Build C++ dependencies without instrumentation
+
 # Clang is used by all builds so it is part of the 'common' library group even
 # though its LLVM libraries are installed to $PREFIX_DEPS.
 if [ -n "$F_COMMON" -o -n "$F_LLVM" ]; then
   build_llvm normal
 fi
+
+save_env
 
 # Enable debug symbols so that stacktraces and linenumbers are available at
 # runtime. LLVM is compiled without debug symbols as they take up more than
@@ -285,7 +289,7 @@ fi
 
 restore_env
 
-## Build C++ dependencies with TSAN instrumentation
+### Build dependencies with TSAN instrumentation
 
 # Achieving good results with TSAN requires that:
 # 1. The C++ standard library should be instrumented with TSAN.
@@ -325,11 +329,56 @@ MODE_SUFFIX=".tsan"
 
 save_env
 
+# Build the dependencies with TSAN instrumentation.
+EXTRA_CFLAGS="-fsanitize=thread $EXTRA_CFLAGS"
+
+# Enable debug symbols so that stacktraces and linenumbers are available at runtime.
+EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
+EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
+
+if [ -n "$OS_LINUX" ] && [ -n "$F_TSAN" -o -n "$F_LIBUNWIND" ]; then
+  build_libunwind
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_ZLIB" ]; then
+  build_zlib
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_LZ4" ]; then
+  build_lz4
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_BITSHUFFLE" ]; then
+  build_bitshuffle
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_LIBEV" ]; then
+  build_libev
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_SQUEASEL" ]; then
+  build_squeasel
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_CURL" ]; then
+  build_curl
+fi
+
+if [ -n "$OS_LINUX" ] && [ -n "$F_TSAN" -o -n "$F_NVML" ]; then
+  build_nvml
+fi
+
+restore_env
+
+### Build C++ dependencies with TSAN instrumentation
+
 # Build libc++abi first as it is a dependency for libc++. Its build has no
 # built-in support for sanitizers, so we build it regularly.
 if [ -n "$F_TSAN" -o -n "$F_LLVM" ]; then
   build_libcxxabi
 fi
+
+save_env
 
 # libc++ (and its dependents) need to find libc++abi at link and run time.
 EXTRA_LDFLAGS="-L$PREFIX/lib $EXTRA_LDFLAGS"

@@ -268,7 +268,7 @@ build_glog() {
   mkdir -p $GLOG_BDIR
   pushd $GLOG_BDIR
 
-  # glog depends on libunwind from PREFIX_COMMON and on gflags from PREFIX.
+  # glog depends on libunwind and gflags.
   #
   # Specifying -Wl,-rpath has different default behavior on GNU binutils ld vs.
   # the GNU gold linker. ld sets RPATH (due to defaulting to --disable-new-dtags)
@@ -280,11 +280,8 @@ build_glog() {
   #
   # This comment applies both here and the locations elsewhere in this script
   # where we add something to -Wl,-rpath.
-  GLOG_CXXFLAGS="-I$PREFIX_COMMON/include"
-  GLOG_LDFLAGS="-L$PREFIX/lib -Wl,-rpath,$PREFIX/lib"
-  GLOG_LDFLAGS="$GLOG_LDFLAGS -L$PREFIX_COMMON/lib -Wl,-rpath,$PREFIX_COMMON/lib"
-  CXXFLAGS="$EXTRA_CXXFLAGS $GLOG_CXXFLAGS" \
-    LDFLAGS="$EXTRA_LDFLAGS $GLOG_LDFLAGS" \
+  CXXFLAGS="$EXTRA_CXXFLAGS -I$PREFIX/include" \
+    LDFLAGS="$EXTRA_LDFLAGS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib" \
     LIBS="$EXTRA_LIBS" \
     $GLOG_SOURCE/configure \
     --with-pic \

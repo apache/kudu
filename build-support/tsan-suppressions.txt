@@ -32,6 +32,13 @@ race:_ULx86_64_local_addr_space_init
 race:evpipe_write
 race:evpipe_init
 race:epoll_ctl
+race:ev_async_send
+race:ev_run
+race:pipecb
+
+# TSAN complains about data races on the global signals variable in
+# ev_feed_signal and spoiled errno in ev_sighandler. Both are probably noise.
+race:ev_sighandler
 
 # concurrent btree uses optimistic concurrency, needs to be annotated a bunch
 # more before it would pass. Relatively confident that it is correct based on
@@ -70,6 +77,15 @@ race:fLU64::
 # triggering (harmless) data races in TSAN when boost::uuids::random_generator
 # instances are created across threads (see kudu::ObjectIdGenerator).
 race:boost::uuids::detail::seed_rng::sha1_random_digest_
+
+# Squeasel uses ctx->stop_flag to synchronize stopping. It always sets it with
+# the context lock held, but sometimes reads it without the context lock. This
+# should be safe on x86, but is nonetheless flagged by TSAN.
+race:sq_stop
+
+# Squeasel reads and frees ctx->listening_sockets without taking any locks. This
+# may be an unsafe race.
+race:close_all_listening_sockets
 
 # ------------------------------------------------------------
 # Known bugs below. As these JIRAs are resolved, please remove the relevant
