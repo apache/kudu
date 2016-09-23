@@ -360,21 +360,24 @@ public class PartitionPruner {
 
     // Copy predicates into the row in range partition key column order,
     // stopping after the first missing predicate.
-    for (int idx : rangePartitionColumnIdxs) {
+    loop: for (int idx : rangePartitionColumnIdxs) {
       ColumnSchema column = schema.getColumnByIndex(idx);
       KuduPredicate predicate = predicates.get(column.getName());
       if (predicate == null) break;
 
-      if (predicate.getType() != KuduPredicate.PredicateType.EQUALITY &&
-          predicate.getType() != KuduPredicate.PredicateType.RANGE) {
-        throw new IllegalArgumentException(
-            String.format("unexpected predicate type can not be pushed into key: %s", predicate));
+      switch (predicate.getType()) {
+        case RANGE:
+          if (predicate.getLower() == null) break loop;
+          // fall through
+        case EQUALITY:
+          row.setRaw(idx, predicate.getLower());
+          pushedPredicates++;
+          break;
+        case IS_NOT_NULL: break loop;
+        default:
+          throw new IllegalArgumentException(
+              String.format("unexpected predicate type can not be pushed into key: %s", predicate));
       }
-
-      byte[] value = predicate.getLower();
-      if (value == null) break;
-      row.setRaw(idx, value);
-      pushedPredicates++;
     }
 
     // If no predicates were pushed, no need to do any more work.
@@ -407,32 +410,34 @@ public class PartitionPruner {
 
     // Step 1: copy predicates into the row in range partition key column order, stopping after
     // the first missing predicate.
-    for (int idx : rangePartitionColumnIdxs) {
+    loop: for (int idx : rangePartitionColumnIdxs) {
       ColumnSchema column = schema.getColumnByIndex(idx);
       KuduPredicate predicate = predicates.get(column.getName());
       if (predicate == null) break;
 
-      if (predicate.getType() == KuduPredicate.PredicateType.EQUALITY) {
-        byte[] value = predicate.getLower();
-        row.setRaw(idx, value);
-        pushedPredicates++;
-        finalPredicate = predicate;
-      } else if (predicate.getType() == KuduPredicate.PredicateType.RANGE) {
-
-        if (predicate.getUpper() != null) {
-          row.setRaw(idx, predicate.getUpper());
+      switch (predicate.getType()) {
+        case EQUALITY:
+          row.setRaw(idx, predicate.getLower());
           pushedPredicates++;
           finalPredicate = predicate;
-        }
+          break;
+        case RANGE:
+          if (predicate.getUpper() != null) {
+            row.setRaw(idx, predicate.getUpper());
+            pushedPredicates++;
+            finalPredicate = predicate;
+          }
 
-        // After the first column with a range constraint we stop pushing
-        // constraints into the upper bound. Instead, we push minimum values
-        // to the remaining columns (below), which is the maximally tight
-        // constraint.
-        break;
-      } else {
-        throw new IllegalArgumentException(
-            String.format("unexpected predicate type can not be pushed into key: %s", predicate));
+          // After the first column with a range constraint we stop pushing
+          // constraints into the upper bound. Instead, we push minimum values
+          // to the remaining columns (below), which is the maximally tight
+          // constraint.
+          break loop;
+        case IS_NOT_NULL:
+          break loop;
+        default:
+          throw new IllegalArgumentException(
+              String.format("unexpected predicate type can not be pushed into key: %s", predicate));
       }
     }
 

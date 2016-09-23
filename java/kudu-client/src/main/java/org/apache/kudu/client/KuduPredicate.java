@@ -22,6 +22,7 @@ import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.UnsignedBytes;
 import com.google.protobuf.ByteString;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
@@ -467,18 +468,19 @@ public class KuduPredicate {
   public static KuduPredicate fromPB(Schema schema, Common.ColumnPredicatePB pb) {
     ColumnSchema column = schema.getColumn(pb.getColumn());
     switch (pb.getPredicateCase()) {
-      case EQUALITY: {
+      case EQUALITY:
         return new KuduPredicate(PredicateType.EQUALITY, column,
                                  pb.getEquality().getValue().toByteArray(), null);
-
-      }
       case RANGE: {
         Common.ColumnPredicatePB.Range range = pb.getRange();
         return new KuduPredicate(PredicateType.RANGE, column,
                                  range.hasLower() ? range.getLower().toByteArray() : null,
                                  range.hasUpper() ? range.getUpper().toByteArray() : null);
       }
-      default: throw new IllegalArgumentException("unknown predicate type");
+      case IS_NOT_NULL:
+        return newIsNotNullPredicate(column);
+      default:
+        throw new IllegalArgumentException("unknown predicate type");
     }
   }
 
@@ -613,7 +615,6 @@ public class KuduPredicate {
       default: throw new IllegalArgumentException("type must be an integer type");
     }
   }
-
 
   /**
    * Checks that the column is one of the expected types.

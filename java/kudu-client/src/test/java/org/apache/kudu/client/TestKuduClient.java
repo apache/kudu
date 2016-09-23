@@ -331,6 +331,12 @@ public class TestKuduClient extends BaseKuduTest {
         KuduPredicate.newComparisonPredicate(schema.getColumn("c2"), GREATER, "c2_30"),
         KuduPredicate.newComparisonPredicate(schema.getColumn("c2"), LESS, "c2_20")
     ).size());
+
+    // IS NOT NULL
+    assertEquals(100, scanTableToStrings(table,
+       KuduPredicate.newIsNotNullPredicate(schema.getColumn("c2")),
+       KuduPredicate.newIsNotNullPredicate(schema.getColumn("key"))
+    ).size());
   }
 
   /**

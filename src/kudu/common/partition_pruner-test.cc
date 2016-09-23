@@ -433,6 +433,9 @@ TEST(TestPartitionPruner, TestRangePruning) {
   Check({ ColumnPredicate::Equality(schema.column(2), &zero),
           ColumnPredicate::Range(schema.column(1), nullptr, &m0) },
         2);
+
+  // c IS NOT NULL
+  Check({ ColumnPredicate::IsNotNull(schema.column(2)) }, 3);
 }
 
 TEST(TestPartitionPruner, TestHashPruning) {
