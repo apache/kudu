@@ -423,6 +423,8 @@ cdef extern from "kudu/client/scan_predicate.h" namespace "kudu::client" nogil:
         KUDU_LESS_EQUAL    " kudu::client::KuduPredicate::LESS_EQUAL"
         KUDU_GREATER_EQUAL " kudu::client::KuduPredicate::GREATER_EQUAL"
         KUDU_EQUAL         " kudu::client::KuduPredicate::EQUAL"
+        KUDU_LESS          " kudu::client::KuduPredicate::LESS"
+        KUDU_GREATER       " kudu::client::KuduPredicate::GREATER"
 
     cdef cppclass KuduPredicate:
         KuduPredicate* Clone()

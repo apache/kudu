@@ -76,7 +76,7 @@ class TestScanToken(TestScanBase):
         them in parallel with seperate clients.
         """
         key = self.table['key']
-        preds = [key >= 20, key <= 49]
+        preds = [key > 19, key < 50]
 
         builder = self.table.scan_token_builder()
         builder.set_projected_column_indexes([0, 1])\

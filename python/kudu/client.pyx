@@ -768,10 +768,14 @@ cdef class Column:
                                    len(self.name))
 
         try:
-            if op == 1: # <=
+            if op == 0: # <
+                cmp_op = KUDU_LESS
+            elif op == 1: # <=
                 cmp_op = KUDU_LESS_EQUAL
             elif op == 2: # ==
                 cmp_op = KUDU_EQUAL
+            elif op == 4: # >
+                cmp_op = KUDU_GREATER
             elif op == 5: # >=
                 cmp_op = KUDU_GREATER_EQUAL
             else:

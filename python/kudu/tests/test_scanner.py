@@ -43,7 +43,7 @@ class TestScanner(TestScanBase):
 
     def test_scan_rows_simple_predicate(self):
         key = self.table['key']
-        preds = [key >= 20, key <= 49]
+        preds = [key > 19, key < 50]
 
         def _read_predicates(preds):
             scanner = self.table.scanner()
