@@ -177,7 +177,7 @@ string TabletLink(const string& id) {
 
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& req,
                                                  std::ostringstream *output) {
-  vector<scoped_refptr<TabletPeer> > peers;
+  vector<scoped_refptr<TabletPeer>> peers;
   tserver_->tablet_manager()->GetTabletPeers(&peers);
 
   // Sort by (table_name, tablet_id) tuples.
@@ -188,47 +188,71 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
                      std::make_pair(peer_b->tablet_metadata()->table_name(), peer_b->tablet_id());
             });
 
-  *output << "<h1>Tablets</h1>\n";
-  *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Table name</th><th>Tablet ID</th>"
-      "<th>Partition</th>"
-      "<th>State</th><th>On-disk size</th><th>RaftConfig</th><th>Last status</th></tr>\n";
-  for (const scoped_refptr<TabletPeer>& peer : peers) {
-    TabletStatusPB status;
-    peer->GetTabletStatusPB(&status);
-    string id = status.tablet_id();
-    string table_name = status.table_name();
-    string tablet_id_or_link;
-    if (peer->tablet() != nullptr) {
-      tablet_id_or_link = TabletLink(id);
-    } else {
-      tablet_id_or_link = EscapeForHtmlToString(id);
-    }
-    string n_bytes = "";
-    if (status.has_estimated_on_disk_size()) {
-      n_bytes = HumanReadableNumBytes::ToString(status.estimated_on_disk_size());
-    }
-    string partition = peer->tablet_metadata()
-                           ->partition_schema()
-                            .PartitionDebugString(peer->tablet_metadata()->partition(),
-                                                  peer->tablet_metadata()->schema());
+  auto generate_table = [this](const string& header,
+                               const vector<scoped_refptr<TabletPeer>>& peers,
+                               ostream* output) {
+    *output << "<h3>" << header << "</h3>\n";
+    *output << "<table class='table table-striped'>\n";
+    *output << "  <tr><th>Table name</th><th>Tablet ID</th>"
+         "<th>Partition</th>"
+         "<th>State</th><th>On-disk size</th><th>RaftConfig</th><th>Last status</th></tr>\n";
+    for (const scoped_refptr<TabletPeer>& peer : peers) {
+      TabletStatusPB status;
+      peer->GetTabletStatusPB(&status);
+      string id = status.tablet_id();
+      string table_name = status.table_name();
+      string tablet_id_or_link;
+      if (peer->tablet() != nullptr) {
+        tablet_id_or_link = TabletLink(id);
+      } else {
+        tablet_id_or_link = EscapeForHtmlToString(id);
+      }
+      string n_bytes = "";
+      if (status.has_estimated_on_disk_size()) {
+        n_bytes = HumanReadableNumBytes::ToString(status.estimated_on_disk_size());
+      }
+      string partition = peer->tablet_metadata()
+                             ->partition_schema()
+                              .PartitionDebugString(peer->tablet_metadata()->partition(),
+                                                    peer->tablet_metadata()->schema());
 
-    // TODO: would be nice to include some other stuff like memory usage
-    scoped_refptr<consensus::Consensus> consensus = peer->shared_consensus();
-    (*output) << Substitute(
-        // Table name, tablet id, partition
-        "<tr><td>$0</td><td>$1</td><td>$2</td>"
-        // State, on-disk size, consensus configuration, last status
-        "<td>$3</td><td>$4</td><td>$5</td><td>$6</td></tr>\n",
-        EscapeForHtmlToString(table_name), // $0
-        tablet_id_or_link, // $1
-        EscapeForHtmlToString(partition), // $2
-        EscapeForHtmlToString(peer->HumanReadableState()), n_bytes, // $3, $4
-        consensus ? ConsensusStatePBToHtml(consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED))
-                  : "", // $5
-        EscapeForHtmlToString(status.last_status())); // $6
+      // TODO(unknown): would be nice to include some other stuff like memory usage
+      scoped_refptr<consensus::Consensus> consensus = peer->shared_consensus();
+      (*output) << Substitute(
+          // Table name, tablet id, partition
+          "<tr><td>$0</td><td>$1</td><td>$2</td>"
+          // State, on-disk size, consensus configuration, last status
+          "<td>$3</td><td>$4</td><td>$5</td><td>$6</td></tr>\n",
+          EscapeForHtmlToString(table_name), // $0
+          tablet_id_or_link, // $1
+          EscapeForHtmlToString(partition), // $2
+          EscapeForHtmlToString(peer->HumanReadableState()), n_bytes, // $3, $4
+          consensus ? ConsensusStatePBToHtml(consensus->
+              ConsensusState(CONSENSUS_CONFIG_COMMITTED))
+                    : "", // $5
+          EscapeForHtmlToString(status.last_status())); // $6
+    }
+    *output << "</table>\n";
+  };
+
+  vector<scoped_refptr<TabletPeer>> live_peers;
+  vector<scoped_refptr<TabletPeer>> tombstoned_peers;
+  for (const scoped_refptr<TabletPeer>& peer : peers) {
+    if (peer->HumanReadableState() != "TABLET_DATA_TOMBSTONED") {
+      live_peers.push_back(peer);
+    } else {
+      tombstoned_peers.push_back(peer);
+    }
   }
-  *output << "</table>\n";
+
+  if (!live_peers.empty()) {
+    generate_table("Live Tablets", live_peers, output);
+  }
+  if (!tombstoned_peers.empty()) {
+    generate_table("Tombstoned Tablets", tombstoned_peers, output);
+    *output << "<p><small>Tombstoned tablets are tablets that previously "
+           "stored a replica on this server.</small></p>";
+  }
 }
 
 namespace {
