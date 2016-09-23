@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableList;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.client.KuduPredicate.ComparisonOp;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -277,124 +278,144 @@ public class TestPartitionPruner extends BaseKuduTest {
 
     // c < -10
     assertEquals(1, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.LESS, -10)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, -10)));
 
     // c = -10
     assertEquals(1, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.EQUAL, -10)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, -10)));
 
     // c < 10
     assertEquals(2, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.LESS, 10)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, 10)));
 
     // c < 100
     assertEquals(3, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.LESS, 100)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, 100)));
 
 
     // c >= -10
     assertEquals(3, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.GREATER_EQUAL, -10)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, -10)));
 
     // c >= 0
     assertEquals(3, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.GREATER_EQUAL, -10)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, -10)));
 
     // c >= 5
     assertEquals(2, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.GREATER_EQUAL, 5)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, 5)));
 
     // c >= 10
     assertEquals(2, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.GREATER_EQUAL, 10)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, 10)));
 
     // c >= 100
     assertEquals(1, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.GREATER_EQUAL, 100)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, 100)));
 
     // c >= -10
     // c < 0
     assertEquals(1, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.GREATER_EQUAL, -10),
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.LESS, 0)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, -10),
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, 0)));
 
     // c >= 5
     // c < 100
     assertEquals(2, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.GREATER_EQUAL, 5),
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.LESS, 100)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, 5),
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, 100)));
 
     // b = ""
     assertEquals(3, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.EQUAL, "")));
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.EQUAL, "")));
 
     // b >= "z"
     assertEquals(3, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.GREATER_EQUAL, "z")));
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.GREATER_EQUAL, "z")));
 
     // b < "a"
     assertEquals(3, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.LESS, "a")));
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.LESS, "a")));
 
     // b >= "m"
     // b < "z"
     assertEquals(3, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.GREATER_EQUAL, "m"),
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.LESS, "z")));
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.GREATER_EQUAL, "m"),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.LESS, "z")));
 
     // c >= 10
     // b >= "r"
     assertEquals(1, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.GREATER_EQUAL, 10),
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.GREATER_EQUAL, "r")));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, 10),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.GREATER_EQUAL, "r")));
 
     // c >= 10
     // b < "r"
     assertEquals(2, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.GREATER_EQUAL, 10),
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.LESS, "r")));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, 10),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.LESS, "r")));
 
     // c = 10
     // b < "r"
     assertEquals(1, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.EQUAL, 10),
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.LESS, "r")));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 10),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.LESS, "r")));
 
     // c < 0
     // b < "m"
     assertEquals(1, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.EQUAL, 0),
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.LESS, "m")));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 0),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.LESS, "m")));
 
     // c < 0
     // b < "z"
     assertEquals(1, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.LESS, 0),
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.LESS, "z")));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, 0),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.LESS, "z")));
 
     // c = 0
     // b = "m\0"
     assertEquals(1, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.EQUAL, 0),
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.EQUAL, "m\0")));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 0),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.EQUAL, "m\0")));
 
     // c = 0
     // b < "m"
     assertEquals(1, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.EQUAL, 0),
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.LESS, "m")));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 0),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.LESS, "m")));
 
     // c = 0
     // b < "m\0"
     assertEquals(2, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.EQUAL, 0),
-        KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.LESS, "m\0")));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 0),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.LESS, "m\0")));
 
     // c = 0
     // c = 2
     assertEquals(0, countPartitions(table, partitions,
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.EQUAL, 0),
-        KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.EQUAL, 2)));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 0),
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 2)));
+
+    // a IN (1, 2)
+    assertEquals(1, countPartitions(table, partitions,
+        KuduPredicate.newInListPredicate(c, ImmutableList.of((byte) 1, (byte) 2))));
+
+    // a IN (0, 1, 2)
+    assertEquals(2, countPartitions(table, partitions,
+        KuduPredicate.newInListPredicate(c, ImmutableList.of((byte) 0, (byte) 1, (byte) 2))));
+
+    // a IN (-10, 0)
+    // B < "m"
+    assertEquals(1, countPartitions(table, partitions,
+        KuduPredicate.newInListPredicate(c, ImmutableList.of((byte) -10, (byte) 0)),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.LESS, "m")));
+
+    // a IN (-10, 0)
+    // B < "m\0"
+    assertEquals(2, countPartitions(table, partitions,
+        KuduPredicate.newInListPredicate(c, ImmutableList.of((byte) -10, (byte) 0)),
+        KuduPredicate.newComparisonPredicate(b, ComparisonOp.LESS, "m\0")));
   }
 
   @Test
@@ -425,41 +446,45 @@ public class TestPartitionPruner extends BaseKuduTest {
 
     // a = 0;
     assertEquals(2, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(a, KuduPredicate.ComparisonOp.EQUAL, 0)));
+          KuduPredicate.newComparisonPredicate(a, ComparisonOp.EQUAL, 0)));
 
     // a >= 0;
     assertEquals(4, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(a, KuduPredicate.ComparisonOp.GREATER_EQUAL, 0)));
+          KuduPredicate.newComparisonPredicate(a, ComparisonOp.GREATER_EQUAL, 0)));
 
     // a >= 0;
     // a < 1;
     assertEquals(2, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(a, KuduPredicate.ComparisonOp.GREATER_EQUAL, 0),
-          KuduPredicate.newComparisonPredicate(a, KuduPredicate.ComparisonOp.LESS, 1)));
+          KuduPredicate.newComparisonPredicate(a, ComparisonOp.GREATER_EQUAL, 0),
+          KuduPredicate.newComparisonPredicate(a, ComparisonOp.LESS, 1)));
 
     // a >= 0;
     // a < 2;
     assertEquals(4, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(a, KuduPredicate.ComparisonOp.GREATER_EQUAL, 0),
-          KuduPredicate.newComparisonPredicate(a, KuduPredicate.ComparisonOp.LESS, 2)));
+          KuduPredicate.newComparisonPredicate(a, ComparisonOp.GREATER_EQUAL, 0),
+          KuduPredicate.newComparisonPredicate(a, ComparisonOp.LESS, 2)));
 
     // b = 1;
     assertEquals(4, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.EQUAL, 1)));
+          KuduPredicate.newComparisonPredicate(b, ComparisonOp.EQUAL, 1)));
 
     // b = 1;
     // c = 2;
     assertEquals(2, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.EQUAL, 1),
-          KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.EQUAL, 2)));
+          KuduPredicate.newComparisonPredicate(b, ComparisonOp.EQUAL, 1),
+          KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 2)));
 
     // a = 0;
     // b = 1;
     // c = 2;
     assertEquals(1, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(a, KuduPredicate.ComparisonOp.EQUAL, 0),
-          KuduPredicate.newComparisonPredicate(b, KuduPredicate.ComparisonOp.EQUAL, 1),
-          KuduPredicate.newComparisonPredicate(c, KuduPredicate.ComparisonOp.EQUAL, 2)));
+          KuduPredicate.newComparisonPredicate(a, ComparisonOp.EQUAL, 0),
+          KuduPredicate.newComparisonPredicate(b, ComparisonOp.EQUAL, 1),
+          KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 2)));
+
+    // a IN (0, 10)
+    assertEquals(4, countPartitions(table, partitions,
+          KuduPredicate.newInListPredicate(c, ImmutableList.of((byte) 0, (byte) 10))));
   }
 
   @Test
@@ -468,9 +493,9 @@ public class TestPartitionPruner extends BaseKuduTest {
     // (host STRING, metric STRING, timestamp UNIXTIME_MICROS, value DOUBLE)
     // PRIMARY KEY (host, metric, time)
     // DISTRIBUTE BY
-    //    RANGE(time) SPLIT ROWS [(10)],
-    //        (PARTITION       VALUES < 10,
-    //         PARTITION 10 <= VALUES);
+    //    RANGE(time)
+    //        (PARTITION VALUES < 10,
+    //         PARTITION VALUES >= 10);
     //    HASH (host, metric) 2 PARTITIONS;
 
     ColumnSchema host = new ColumnSchema.ColumnSchemaBuilder("host", Type.STRING).key(true).build();
@@ -498,55 +523,55 @@ public class TestPartitionPruner extends BaseKuduTest {
 
     // host = "a"
     assertEquals(4, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(host, KuduPredicate.ComparisonOp.EQUAL, "a")));
+          KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a")));
 
     // host = "a"
     // metric = "a"
     assertEquals(2, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(host, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(metric, KuduPredicate.ComparisonOp.EQUAL, "a")));
+          KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a")));
 
     // host = "a"
     // metric = "a"
     // timestamp >= 9;
     assertEquals(2, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(host, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(metric, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(timestamp, KuduPredicate.ComparisonOp.GREATER_EQUAL, 9)));
+          KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 9)));
 
     // host = "a"
     // metric = "a"
     // timestamp >= 10;
     // timestamp < 20;
     assertEquals(1, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(host, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(metric, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(timestamp, KuduPredicate.ComparisonOp.GREATER_EQUAL, 10),
-          KuduPredicate.newComparisonPredicate(timestamp, KuduPredicate.ComparisonOp.LESS, 20)));
+          KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 10),
+          KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.LESS, 20)));
 
     // host = "a"
     // metric = "a"
     // timestamp < 10;
     assertEquals(1, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(host, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(metric, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(timestamp, KuduPredicate.ComparisonOp.LESS, 10)));
+          KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.LESS, 10)));
 
     // host = "a"
     // metric = "a"
     // timestamp >= 10;
     assertEquals(1, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(host, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(metric, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(timestamp, KuduPredicate.ComparisonOp.GREATER_EQUAL, 10)));
+          KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 10)));
 
     // host = "a"
     // metric = "a"
     // timestamp = 10;
     assertEquals(1, countPartitions(table, partitions,
-          KuduPredicate.newComparisonPredicate(host, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(metric, KuduPredicate.ComparisonOp.EQUAL, "a"),
-          KuduPredicate.newComparisonPredicate(timestamp, KuduPredicate.ComparisonOp.EQUAL, 10)));
+          KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.EQUAL, 10)));
 
     // partition key < (hash=1)
     assertEquals(2, countPartitions(table, partitions, new byte[] {}, new byte[] { 0, 0, 0, 1 }));
@@ -557,11 +582,34 @@ public class TestPartitionPruner extends BaseKuduTest {
     // timestamp = 10
     // partition key < (hash=1)
     assertEquals(1, countPartitions(table, partitions, new byte[] {}, new byte[] { 0, 0, 0, 1 },
-          KuduPredicate.newComparisonPredicate(timestamp, KuduPredicate.ComparisonOp.EQUAL, 10)));
+          KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.EQUAL, 10)));
 
     // timestamp = 10
     // partition key >= (hash=1)
     assertEquals(1, countPartitions(table, partitions, new byte[] { 0, 0, 0, 1 }, new byte[] {},
-          KuduPredicate.newComparisonPredicate(timestamp, KuduPredicate.ComparisonOp.EQUAL, 10)));
+          KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.EQUAL, 10)));
+
+    // timestamp IN (0, 9)
+    // host = "a"
+    // metric IN ("foo", "bar")
+    //
+    // We do not prune hash partitions based on IN list predicates (yet),
+    // so the IN list on the hash columns is really just testing that it doesn't fail.
+    assertEquals(2, countPartitions(table, partitions,
+          KuduPredicate.newInListPredicate(timestamp, ImmutableList.of(0L, 9L)),
+          KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+          KuduPredicate.newInListPredicate(metric, ImmutableList.of("foo", "bar"))));
+
+    // timestamp IN (10, 100)
+    assertEquals(2, countPartitions(table, partitions,
+          KuduPredicate.newInListPredicate(timestamp, ImmutableList.of(10L, 100L))));
+
+    // timestamp IN (9, 10)
+    assertEquals(4, countPartitions(table, partitions,
+          KuduPredicate.newInListPredicate(timestamp, ImmutableList.of(9L, 10L))));
+
+    // timestamp IS NOT NULL
+    assertEquals(4, countPartitions(table, partitions,
+          KuduPredicate.newIsNotNullPredicate(timestamp)));
   }
 }

@@ -373,7 +373,12 @@ public class PartitionPruner {
           row.setRaw(idx, predicate.getLower());
           pushedPredicates++;
           break;
-        case IS_NOT_NULL: break loop;
+        case IS_NOT_NULL:
+          break loop;
+        case IN_LIST:
+          row.setRaw(idx, predicate.getInListValues()[0]);
+          pushedPredicates++;
+          break;
         default:
           throw new IllegalArgumentException(
               String.format("unexpected predicate type can not be pushed into key: %s", predicate));
@@ -435,6 +440,13 @@ public class PartitionPruner {
           break loop;
         case IS_NOT_NULL:
           break loop;
+        case IN_LIST: {
+          byte[][] values = predicate.getInListValues();
+          row.setRaw(idx, values[values.length - 1]);
+          pushedPredicates++;
+          finalPredicate = predicate;
+          break;
+        }
         default:
           throw new IllegalArgumentException(
               String.format("unexpected predicate type can not be pushed into key: %s", predicate));
@@ -444,9 +456,10 @@ public class PartitionPruner {
     // If no predicates were pushed, no need to do any more work.
     if (pushedPredicates == 0) return AsyncKuduClient.EMPTY_ARRAY;
 
-    // Step 2: If the final predicate is an equality predicate, increment the
+    // Step 2: If the final predicate is an equality or IN-list predicate, increment the
     // key to convert it to an exclusive upper bound.
-    if (finalPredicate.getType() == KuduPredicate.PredicateType.EQUALITY) {
+    if (finalPredicate.getType() == KuduPredicate.PredicateType.EQUALITY ||
+        finalPredicate.getType() == KuduPredicate.PredicateType.IN_LIST) {
       incrementKey(row, rangePartitionColumnIdxs.subList(0, pushedPredicates));
     }
 

@@ -337,6 +337,23 @@ public class TestKuduClient extends BaseKuduTest {
        KuduPredicate.newIsNotNullPredicate(schema.getColumn("c2")),
        KuduPredicate.newIsNotNullPredicate(schema.getColumn("key"))
     ).size());
+
+    // IN list
+    assertEquals(3, scanTableToStrings(table,
+       KuduPredicate.newInListPredicate(schema.getColumn("key"),
+                                        ImmutableList.of("key_30", "key_01", "invalid", "key_99"))
+    ).size());
+    assertEquals(3, scanTableToStrings(table,
+       KuduPredicate.newInListPredicate(schema.getColumn("c2"),
+                                        ImmutableList.of("c2_30", "c2_1", "invalid", "c2_99"))
+    ).size());
+    assertEquals(2, scanTableToStrings(table,
+       KuduPredicate.newInListPredicate(schema.getColumn("c2"),
+                                        ImmutableList.of("c2_30", "c2_1", "invalid", "c2_99")),
+       KuduPredicate.newIsNotNullPredicate(schema.getColumn("c2")),
+       KuduPredicate.newInListPredicate(schema.getColumn("key"),
+                                        ImmutableList.of("key_30", "key_45", "invalid", "key_99"))
+    ).size());
   }
 
   /**

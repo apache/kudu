@@ -18,10 +18,14 @@
 package org.apache.kudu.client;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+
 import org.junit.Assert;
 import org.junit.Test;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
+
+import java.util.Arrays;
 
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.EQUAL;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER;
@@ -62,6 +66,18 @@ public class TestKuduPredicate {
   private static KuduPredicate intRange(int lower, int upper) {
     Preconditions.checkArgument(lower < upper);
     return new KuduPredicate(RANGE, intCol, Bytes.fromInt(lower), Bytes.fromInt(upper));
+  }
+
+  private static KuduPredicate intInList(Integer... values) {
+    return KuduPredicate.newInListPredicate(intCol, Arrays.asList(values));
+  }
+
+  private static KuduPredicate boolInList(Boolean... values) {
+    return KuduPredicate.newInListPredicate(boolCol, Arrays.asList(values));
+  }
+
+  private static KuduPredicate stringInList(String... values) {
+    return KuduPredicate.newInListPredicate(stringCol, Arrays.asList(values));
   }
 
   private void testMerge(KuduPredicate a,
@@ -351,6 +367,113 @@ public class TestKuduPredicate {
               KuduPredicate.newComparisonPredicate(intCol, EQUAL, 7),
               KuduPredicate.none(intCol));
 
+    // IN list + IN list
+
+    // | | |
+    //   | | |
+    testMerge(intInList(0, 10, 20),
+              intInList(20, 10, 20, 30),
+              intInList(10, 20));
+
+    // |   |
+    //    | |
+    testMerge(intInList(0, 20),
+              intInList(15, 30),
+              KuduPredicate.none(intCol));
+
+    // IN list + NOT NULL
+    testMerge(intInList(10),
+              KuduPredicate.newIsNotNullPredicate(intCol),
+              KuduPredicate.newComparisonPredicate(intCol, EQUAL, 10));
+
+    testMerge(intInList(10, -100),
+              KuduPredicate.newIsNotNullPredicate(intCol),
+              intInList(-100, 10));
+
+    // IN list + Equality
+
+    // | | |
+    //   |
+    // =
+    //   |
+    testMerge(intInList(0, 10, 20),
+              KuduPredicate.newComparisonPredicate(intCol, EQUAL, 10),
+              KuduPredicate.newComparisonPredicate(intCol, EQUAL, 10));
+
+    // | | |
+    //       |
+    // =
+    // none
+    testMerge(intInList(0, 10, 20),
+              KuduPredicate.newComparisonPredicate(intCol, EQUAL, 30),
+              KuduPredicate.none(intCol));
+
+    // IN list + Range
+
+    // | | | | |
+    //   [---)
+    // =
+    //   | |
+    testMerge(intInList(0, 10, 20, 30, 40),
+              intRange(10, 30),
+              intInList(10, 20));
+
+    // | |   | |
+    //    [--)
+    // =
+    // none
+    testMerge(intInList(0, 10, 20, 30),
+              intRange(25, 30),
+              KuduPredicate.none(intCol));
+
+    // | | | |
+    //    [------>
+    // =
+    //   | |
+    testMerge(intInList(0, 10, 20, 30),
+              KuduPredicate.newComparisonPredicate(intCol, GREATER_EQUAL, 15),
+              intInList(20, 30));
+
+    // | | |
+    //    [------>
+    // =
+    //     |
+    testMerge(intInList(0, 10, 20),
+              KuduPredicate.newComparisonPredicate(intCol, GREATER_EQUAL, 15),
+              KuduPredicate.newComparisonPredicate(intCol, EQUAL, 20));
+
+    // | |
+    //    [------>
+    // =
+    // none
+    testMerge(intInList(0, 10),
+              KuduPredicate.newComparisonPredicate(intCol, GREATER_EQUAL, 15),
+              KuduPredicate.none(intCol));
+
+    // | | | |
+    // <--)
+    // =
+    // | |
+    testMerge(intInList(0, 10, 20, 30),
+              KuduPredicate.newComparisonPredicate(intCol, LESS, 15),
+              intInList(0, 10));
+
+    // |  | |
+    // <--)
+    // =
+    // |
+    testMerge(intInList(0, 10, 20),
+              KuduPredicate.newComparisonPredicate(intCol, LESS, 10),
+              KuduPredicate.newComparisonPredicate(intCol, EQUAL, 0));
+
+    //      | |
+    // <--)
+    // =
+    // none
+    testMerge(intInList(10, 20),
+              KuduPredicate.newComparisonPredicate(intCol, LESS, 5),
+              KuduPredicate.none(intCol));
+
     // None
 
     // None AND
@@ -431,6 +554,22 @@ public class TestKuduPredicate {
               KuduPredicate.newComparisonPredicate(stringCol, LESS, "a\0\0"),
               new KuduPredicate(RANGE, stringCol,
                                 Bytes.fromString("a"), Bytes.fromString("a\0\0")));
+
+    //     [----->
+    //   | | | |
+    // =
+    //     [--)
+    testMerge(KuduPredicate.newComparisonPredicate(stringCol, GREATER_EQUAL, "a"),
+              stringInList("a", "c", "b", ""),
+              stringInList("a", "b", "c"));
+
+    //   IS NOT NULL
+    //   | | | |
+    // =
+    //     [--)
+    testMerge(KuduPredicate.newIsNotNullPredicate(stringCol),
+              stringInList("a", "c", "b", ""),
+              stringInList("", "a", "b", "c"));
   }
 
   @Test
@@ -467,6 +606,21 @@ public class TestKuduPredicate {
     // b <= true
     Assert.assertEquals(KuduPredicate.newIsNotNullPredicate(boolCol),
                         KuduPredicate.newComparisonPredicate(boolCol, LESS_EQUAL, true));
+
+    // b IN ()
+    Assert.assertEquals(KuduPredicate.none(boolCol), boolInList());
+
+    // b IN (true)
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(boolCol, EQUAL, true),
+                        boolInList(true, true, true));
+
+    // b IN (false)
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(boolCol, EQUAL, false),
+                        boolInList(false));
+
+    // b IN (false, true)
+    Assert.assertEquals(KuduPredicate.newIsNotNullPredicate(boolCol),
+                        boolInList(false, true, false, true));
   }
 
   /**
@@ -493,12 +647,20 @@ public class TestKuduPredicate {
                                 new byte[] { (byte) 0 },
                                 new byte[] { (byte) 10 }));
 
+    testMerge(KuduPredicate.newInListPredicate(byteCol, ImmutableList.of((byte) 12, (byte) 14, (byte) 16, (byte) 18)),
+              KuduPredicate.newInListPredicate(byteCol, ImmutableList.of((byte) 14, (byte) 18, (byte) 20)),
+              KuduPredicate.newInListPredicate(byteCol, ImmutableList.of((byte) 14, (byte) 18)));
+
     testMerge(KuduPredicate.newComparisonPredicate(shortCol, GREATER_EQUAL, 0),
               KuduPredicate.newComparisonPredicate(shortCol, LESS, 10),
               new KuduPredicate(RANGE,
                                 shortCol,
                                 Bytes.fromShort((short) 0),
                                 Bytes.fromShort((short) 10)));
+
+    testMerge(KuduPredicate.newInListPredicate(shortCol, ImmutableList.of((short) 12, (short) 14, (short) 16, (short) 18)),
+              KuduPredicate.newInListPredicate(shortCol, ImmutableList.of((short) 14, (short) 18, (short) 20)),
+              KuduPredicate.newInListPredicate(shortCol, ImmutableList.of((short) 14, (short) 18)));
 
     testMerge(KuduPredicate.newComparisonPredicate(longCol, GREATER_EQUAL, 0),
               KuduPredicate.newComparisonPredicate(longCol, LESS, 10),
@@ -507,12 +669,20 @@ public class TestKuduPredicate {
                                 Bytes.fromLong(0),
                                 Bytes.fromLong(10)));
 
+    testMerge(KuduPredicate.newInListPredicate(longCol, ImmutableList.of(12L, 14L, 16L, 18L)),
+              KuduPredicate.newInListPredicate(longCol, ImmutableList.of(14L, 18L, 20L)),
+              KuduPredicate.newInListPredicate(longCol, ImmutableList.of(14L, 18L)));
+
     testMerge(KuduPredicate.newComparisonPredicate(floatCol, GREATER_EQUAL, 123.45f),
               KuduPredicate.newComparisonPredicate(floatCol, LESS, 678.90f),
               new KuduPredicate(RANGE,
                                 floatCol,
                                 Bytes.fromFloat(123.45f),
                                 Bytes.fromFloat(678.90f)));
+
+    testMerge(KuduPredicate.newInListPredicate(floatCol, ImmutableList.of(12f, 14f, 16f, 18f)),
+              KuduPredicate.newInListPredicate(floatCol, ImmutableList.of(14f, 18f, 20f)),
+              KuduPredicate.newInListPredicate(floatCol, ImmutableList.of(14f, 18f)));
 
     testMerge(KuduPredicate.newComparisonPredicate(doubleCol, GREATER_EQUAL, 123.45),
               KuduPredicate.newComparisonPredicate(doubleCol, LESS, 678.90),
@@ -521,6 +691,10 @@ public class TestKuduPredicate {
                                 Bytes.fromDouble(123.45),
                                 Bytes.fromDouble(678.90)));
 
+    testMerge(KuduPredicate.newInListPredicate(doubleCol, ImmutableList.of(12d, 14d, 16d, 18d)),
+              KuduPredicate.newInListPredicate(doubleCol, ImmutableList.of(14d, 18d, 20d)),
+              KuduPredicate.newInListPredicate(doubleCol, ImmutableList.of(14d, 18d)));
+
     testMerge(KuduPredicate.newComparisonPredicate(binaryCol, GREATER_EQUAL,
                                                    new byte[] { 0, 1, 2, 3, 4, 5, 6 }),
               KuduPredicate.newComparisonPredicate(binaryCol, LESS, new byte[] { 10 }),
@@ -528,6 +702,10 @@ public class TestKuduPredicate {
                                 binaryCol,
                                 new byte[] { 0, 1, 2, 3, 4, 5, 6 },
                                 new byte[] { 10 }));
+
+    testMerge(KuduPredicate.newInListPredicate(binaryCol, ImmutableList.of("a".getBytes(), "b".getBytes(), "c".getBytes(), "d".getBytes())),
+              KuduPredicate.newInListPredicate(binaryCol, ImmutableList.of("b".getBytes(), "d".getBytes(), "e".getBytes())),
+              KuduPredicate.newInListPredicate(binaryCol, ImmutableList.of("b".getBytes(), "d".getBytes())));
   }
 
   @Test
@@ -624,5 +802,33 @@ public class TestKuduPredicate {
                         KuduPredicate.newComparisonPredicate(stringCol, EQUAL, "my string").toString());
     Assert.assertEquals("`binary` = 0xAB01CD", KuduPredicate.newComparisonPredicate(
         binaryCol, EQUAL, new byte[] { (byte) 0xAB, (byte) 0x01, (byte) 0xCD }).toString());
+    Assert.assertEquals("`int` IN (-10, 0, 10)",
+                        intInList(10, 0, -10).toString());
+    Assert.assertEquals("`string` IS NOT NULL",
+                        KuduPredicate.newIsNotNullPredicate(stringCol).toString());
+
+    Assert.assertEquals("`bool` = true", KuduPredicate.newInListPredicate(
+        boolCol, ImmutableList.of(true)).toString());
+    Assert.assertEquals("`bool` = false", KuduPredicate.newInListPredicate(
+        boolCol, ImmutableList.of(false)).toString());
+    Assert.assertEquals("`bool` IS NOT NULL", KuduPredicate.newInListPredicate(
+        boolCol, ImmutableList.of(false, true, true)).toString());
+    Assert.assertEquals("`byte` IN (1, 10, 100)", KuduPredicate.newInListPredicate(
+        byteCol, ImmutableList.of((byte) 1, (byte) 10, (byte) 100)).toString());
+    Assert.assertEquals("`short` IN (1, 10, 100)", KuduPredicate.newInListPredicate(
+        shortCol, ImmutableList.of((short) 1, (short) 100, (short) 10)).toString());
+    Assert.assertEquals("`int` IN (1, 10, 100)", KuduPredicate.newInListPredicate(
+        intCol, ImmutableList.of(1, 100, 10)).toString());
+    Assert.assertEquals("`long` IN (1, 10, 100)", KuduPredicate.newInListPredicate(
+        longCol, ImmutableList.of(1L, 100L, 10L)).toString());
+    Assert.assertEquals("`float` IN (78.9, 123.456)", KuduPredicate.newInListPredicate(
+        floatCol, ImmutableList.of(123.456f, 78.9f)).toString());
+    Assert.assertEquals("`double` IN (78.9, 123.456)", KuduPredicate.newInListPredicate(
+        doubleCol, ImmutableList.of(123.456d, 78.9d)).toString());
+    Assert.assertEquals("`string` IN (\"a\", \"my string\")",
+                        KuduPredicate.newInListPredicate(stringCol, ImmutableList.of("my string", "a")).toString());
+    Assert.assertEquals("`binary` IN (0x00, 0xAB01CD)", KuduPredicate.newInListPredicate(
+        binaryCol, ImmutableList.of(new byte[] { (byte) 0xAB, (byte) 0x01, (byte) 0xCD },
+                                    new byte[] { (byte) 0x00 })).toString());
   }
 }

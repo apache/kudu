@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.UnsignedBytes;
@@ -30,7 +31,13 @@ import org.apache.kudu.Type;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 /**
  * A predicate which can be used to filter rows based on the value of a column.
@@ -52,6 +59,8 @@ public class KuduPredicate {
     RANGE,
     /** A predicate which filters all null rows. */
     IS_NOT_NULL,
+    /** A predicate which filters all rows not matching a list of values. */
+    IN_LIST,
   }
 
   /**
@@ -78,6 +87,9 @@ public class KuduPredicate {
 
   /** The exclusive upper bound value if this is a Range predicate. */
   private final byte[] upper;
+
+  /** IN-list values. */
+  private final byte[][] inListValues;
 
   /**
    * Creates a new {@code KuduPredicate} on a boolean column.
@@ -316,6 +328,80 @@ public class KuduPredicate {
   }
 
   /**
+   * Creates a new IN list predicate.
+   *
+   * The list must contain values of the correct type for the column.
+   *
+   * @param column the column that the predicate applies to
+   * @param values list of values which the column values must match
+   * @param <T> the type of values, must match the type of the column
+   * @return an IN list predicate
+   */
+  public static <T> KuduPredicate newInListPredicate(final ColumnSchema column, List<T> values) {
+    if (values.isEmpty()) return none(column);
+    T t = values.get(0);
+
+    SortedSet<byte[]> vals = new TreeSet<>(new Comparator<byte[]>() {
+      @Override
+      public int compare(byte[] a, byte[] b) {
+        return KuduPredicate.compare(column, a, b);
+      }
+    });
+
+    if (t instanceof Boolean) {
+      checkColumn(column, Type.BOOL);
+      for (T value : values) {
+        vals.add(Bytes.fromBoolean((Boolean) value));
+      }
+    } else if (t instanceof Byte) {
+      checkColumn(column, Type.INT8);
+      for (T value : values) {
+        vals.add(new byte[] {(Byte) value});
+      }
+    } else if (t instanceof Short) {
+      checkColumn(column, Type.INT16);
+      for (T value : values) {
+        vals.add(Bytes.fromShort((Short) value));
+      }
+    } else if (t instanceof Integer) {
+      checkColumn(column, Type.INT32);
+      for (T value : values) {
+        vals.add(Bytes.fromInt((Integer) value));
+      }
+    } else if (t instanceof Long) {
+      checkColumn(column, Type.INT64, Type.UNIXTIME_MICROS);
+      for (T value : values) {
+        vals.add(Bytes.fromLong((Long) value));
+      }
+    } else if (t instanceof Float) {
+      checkColumn(column, Type.FLOAT);
+      for (T value : values) {
+        vals.add(Bytes.fromFloat((Float) value));
+      }
+    } else if (t instanceof Double) {
+      checkColumn(column, Type.DOUBLE);
+      for (T value : values) {
+        vals.add(Bytes.fromDouble((Double) value));
+      }
+    } else if (t instanceof String) {
+      checkColumn(column, Type.STRING);
+      for (T value : values) {
+        vals.add(Bytes.fromString((String) value));
+      }
+    } else if (t instanceof byte[]) {
+      checkColumn(column, Type.BINARY);
+      for (T value : values) {
+        vals.add((byte[]) value);
+      }
+    } else {
+      throw new IllegalArgumentException(String.format("illegal type for IN list values: %s",
+                                                       t.getClass().getName()));
+    }
+
+    return buildInList(column, vals);
+  }
+
+  /**
    * @param type the predicate type
    * @param column the column to which the predicate applies
    * @param lower the lower bound serialized value if this is a Range predicate,
@@ -328,6 +414,20 @@ public class KuduPredicate {
     this.column = column;
     this.lower = lower;
     this.upper = upper;
+    this.inListValues = null;
+  }
+
+  /**
+   * Constructor for IN list predicate.
+   * @param column the column to which the predicate applies
+   * @param inListValues the encoded IN list values
+   */
+  private KuduPredicate(ColumnSchema column, byte[][] inListValues) {
+    this.column = column;
+    this.type = PredicateType.IN_LIST;
+    this.lower = null;
+    this.upper = null;
+    this.inListValues = inListValues;
   }
 
   /**
@@ -367,54 +467,129 @@ public class KuduPredicate {
   KuduPredicate merge(KuduPredicate other) {
     Preconditions.checkArgument(column.equals(other.column),
                                 "predicates from different columns may not be merged");
-    if (type == PredicateType.NONE || other.type == PredicateType.NONE) {
-      return none(column);
-    }
 
-    if (type == PredicateType.IS_NOT_NULL) {
-      // NOT NULL is less selective than all other predicate types, so the
-      // intersection of NOT NULL with any other predicate is just the other
-      // predicate.
-      //
-      // Note: this will no longer be true when an IS NULL predicate type is
-      // added.
-      return other;
-    }
+    // NONE predicates dominate.
+    if (other.type == PredicateType.NONE) return other;
 
-    if (type == PredicateType.EQUALITY) {
-      if (other.type == PredicateType.EQUALITY) {
-        if (compare(lower, other.lower) != 0) {
-          return none(this.column);
+    // NOT NULL is dominated by all other predicates.
+    // Note: this will no longer be true when an IS NULL predicate type is
+    // added.
+    if (other.type == PredicateType.IS_NOT_NULL) return this;
+
+    switch (type) {
+      case NONE: return this;
+      case IS_NOT_NULL: return other;
+      case EQUALITY: {
+        if (other.type == PredicateType.EQUALITY) {
+          if (compare(column, lower, other.lower) != 0) {
+            return none(this.column);
+          } else {
+            return this;
+          }
+        } else if (other.type == PredicateType.RANGE) {
+          if (other.rangeContains(lower)) {
+            return this;
+          } else {
+            return none(this.column);
+          }
         } else {
-          return this;
-        }
-      } else {
-        if ((other.lower == null || compare(lower, other.lower) >= 0) &&
-            (other.upper == null || compare(lower, other.upper) < 0)) {
-          return this;
-        } else {
-          return none(this.column);
+          Preconditions.checkState(other.type == PredicateType.IN_LIST);
+          return other.merge(this);
         }
       }
-    } else {
-      if (other.type == PredicateType.EQUALITY) {
-        return other.merge(this);
-      } else {
-        byte[] newLower = other.lower == null ||
-            (lower != null && compare(lower, other.lower) >= 0) ? lower : other.lower;
-        byte[] newUpper = other.upper == null ||
-            (upper != null && compare(upper, other.upper) <= 0) ? upper : other.upper;
-        if (newLower != null && newUpper != null && compare(newLower, newUpper) >= 0) {
-          return none(column);
+      case RANGE: {
+        if (other.type == PredicateType.EQUALITY || other.type == PredicateType.IN_LIST) {
+          return other.merge(this);
         } else {
-          if (newLower != null && newUpper != null && areConsecutive(newLower, newUpper)) {
-            return new KuduPredicate(PredicateType.EQUALITY, column, newLower, null);
+          Preconditions.checkState(other.type == PredicateType.RANGE);
+          byte[] newLower = other.lower == null ||
+              (lower != null && compare(column, lower, other.lower) >= 0) ? lower : other.lower;
+          byte[] newUpper = other.upper == null ||
+              (upper != null && compare(column, upper, other.upper) <= 0) ? upper : other.upper;
+          if (newLower != null && newUpper != null && compare(column, newLower, newUpper) >= 0) {
+            return none(column);
           } else {
-            return new KuduPredicate(PredicateType.RANGE, column, newLower, newUpper);
+            if (newLower != null && newUpper != null && areConsecutive(newLower, newUpper)) {
+              return new KuduPredicate(PredicateType.EQUALITY, column, newLower, null);
+            } else {
+              return new KuduPredicate(PredicateType.RANGE, column, newLower, newUpper);
+            }
           }
         }
       }
+      case IN_LIST: {
+        if (other.type == PredicateType.EQUALITY) {
+          if (this.inListContains(other.lower)) {
+            return other;
+          } else {
+            return none(column);
+          }
+        } else if (other.type == PredicateType.RANGE) {
+          List<byte[]> values = new ArrayList<>();
+          for (byte[] value : inListValues) {
+            if (other.rangeContains(value)) {
+              values.add(value);
+            }
+          }
+          return buildInList(column, values);
+        } else {
+          Preconditions.checkState(other.type == PredicateType.IN_LIST);
+          List<byte[]> values = new ArrayList<>();
+          for (byte[] value : inListValues) {
+            if (other.inListContains(value)) {
+              values.add(value);
+            }
+          }
+          return buildInList(column, values);
+        }
+      }
+      default: throw new IllegalStateException(String.format("unknown predicate type %s", this));
     }
+  }
+
+  /**
+   * Builds an IN list predicate from a collection of raw values. The collection
+   * must be sorted and deduplicated.
+   *
+   * @param column the column
+   * @param values the IN list values
+   * @return an IN list predicate
+   */
+  private static KuduPredicate buildInList(ColumnSchema column, Collection<byte[]> values) {
+    // IN (true, false) predicates can be simplified to IS NOT NULL.
+    if (column.getType().getDataType() == Common.DataType.BOOL && values.size() > 1) {
+      return KuduPredicate.newIsNotNullPredicate(column);
+    }
+
+    switch (values.size()) {
+      case 0: return KuduPredicate.none(column);
+      case 1: return new KuduPredicate(PredicateType.EQUALITY, column,
+                                       values.iterator().next(), null);
+      default: return new KuduPredicate(column, values.toArray(new byte[values.size()][]));
+    }
+  }
+
+  /**
+   * @param value the value to check for
+   * @return {@code true} if this IN list predicate contains the value
+   */
+  boolean inListContains(byte[] value) {
+    final Comparator<byte[]> comparator = new Comparator<byte[]>() {
+      @Override
+      public int compare(byte[] a, byte[] b) {
+        return KuduPredicate.compare(column, a, b);
+      }
+    };
+    return Arrays.binarySearch(inListValues, value, comparator) >= 0;
+  }
+
+  /**
+   * @param value the value to check
+   * @return {@code true} if this RANGE predicate contains the value
+   */
+  boolean rangeContains(byte[] value) {
+    return (lower == null || compare(column, value, lower) >= 0) &&
+           (upper == null || compare(column, value, upper) < 0);
   }
 
   /**
@@ -426,7 +601,7 @@ public class KuduPredicate {
 
   /**
    * Convert the predicate to the protobuf representation.
-   * @return the protobuf message for this predicate.
+   * @return the protobuf message for this predicate
    */
   @InterfaceAudience.Private
   public Common.ColumnPredicatePB toPB() {
@@ -452,6 +627,13 @@ public class KuduPredicate {
         builder.setIsNotNull(builder.getIsNotNullBuilder());
         break;
       }
+      case IN_LIST: {
+        Common.ColumnPredicatePB.InList.Builder inListBuilder = builder.getInListBuilder();
+        for (byte[] value : inListValues) {
+          inListBuilder.addValues(ByteString.copyFrom(value));
+        }
+        break;
+      }
       case NONE: throw new IllegalStateException(
           "can not convert None predicate to protobuf message");
       default: throw new IllegalArgumentException(
@@ -466,7 +648,7 @@ public class KuduPredicate {
    */
   @InterfaceAudience.Private
   public static KuduPredicate fromPB(Schema schema, Common.ColumnPredicatePB pb) {
-    ColumnSchema column = schema.getColumn(pb.getColumn());
+    final ColumnSchema column = schema.getColumn(pb.getColumn());
     switch (pb.getPredicateCase()) {
       case EQUALITY:
         return new KuduPredicate(PredicateType.EQUALITY, column,
@@ -479,18 +661,34 @@ public class KuduPredicate {
       }
       case IS_NOT_NULL:
         return newIsNotNullPredicate(column);
+      case IN_LIST: {
+        Common.ColumnPredicatePB.InList inList = pb.getInList();
+
+        SortedSet<byte[]> values = new TreeSet<>(new Comparator<byte[]>() {
+          @Override
+          public int compare(byte[] a, byte[] b) {
+            return KuduPredicate.compare(column, a, b);
+          }
+        });
+
+        for (ByteString value : inList.getValuesList()) {
+          values.add(value.toByteArray());
+        }
+        return buildInList(column, values);
+      }
       default:
         throw new IllegalArgumentException("unknown predicate type");
     }
   }
 
   /**
-   * Compares two bounds based on the type of this predicate's column.
+   * Compares two bounds based on the type of the column.
+   * @param column the column which the values belong to
    * @param a the first serialized value
    * @param b the second serialized value
    * @return the comparison of the serialized values based on the column type
    */
-  private int compare(byte[] a, byte[] b) {
+  private static int compare(ColumnSchema column, byte[] a, byte[] b) {
     switch (column.getType().getDataType()) {
       case BOOL:
         return Boolean.compare(Bytes.getBoolean(a), Bytes.getBoolean(b));
@@ -580,6 +778,13 @@ public class KuduPredicate {
    */
   byte[] getUpper() {
     return upper;
+  }
+
+  /**
+   * @return the IN list values. Always kept sorted and de-duplicated.
+   */
+  byte[][] getInListValues() {
+    return inListValues;
   }
 
   /**
@@ -674,6 +879,13 @@ public class KuduPredicate {
                                column.getName(), valueToString(upper));
         }
       }
+      case IN_LIST: {
+        List<String> strings = new ArrayList<>(inListValues.length);
+        for (byte[] value : inListValues) {
+          strings.add(valueToString(value));
+        }
+        return String.format("`%s` IN (%s)", column.getName(), Joiner.on(", ").join(strings));
+      }
       case IS_NOT_NULL: return String.format("`%s` IS NOT NULL", column.getName());
       case NONE: return String.format("`%s` NONE", column.getName());
       default: throw new IllegalArgumentException(String.format("unknown predicate type %s", type));
@@ -688,11 +900,13 @@ public class KuduPredicate {
     return type == that.type &&
         column.equals(that.column) &&
         Arrays.equals(lower, that.lower) &&
-        Arrays.equals(upper, that.upper);
+        Arrays.equals(upper, that.upper) &&
+        Arrays.deepEquals(inListValues, that.inListValues);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(type, column, Arrays.hashCode(lower), Arrays.hashCode(upper));
+    return Objects.hashCode(type, column, Arrays.hashCode(lower),
+                            Arrays.hashCode(upper), Arrays.deepHashCode(inListValues));
   }
 }
