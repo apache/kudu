@@ -108,7 +108,6 @@ ColumnPredicate ColumnPredicate::ExclusiveRange(ColumnSchema column,
 }
 
 ColumnPredicate ColumnPredicate::IsNotNull(ColumnSchema column) {
-  CHECK(column.is_nullable());
   return ColumnPredicate(PredicateType::IsNotNull, move(column), nullptr, nullptr);
 }
 

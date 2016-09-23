@@ -146,28 +146,35 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
   // Step 1: copy predicates into the row in key column order, stopping after
   // the first range predicate.
 
-  for (auto col_idx_it = first; col_idx_it < last; std::advance(col_idx_it, 1)) {
+  bool break_loop = false;
+  for (auto col_idx_it = first; !break_loop && col_idx_it < last; std::advance(col_idx_it, 1)) {
     const ColumnSchema& column = schema.column(*col_idx_it);
     const ColumnPredicate* predicate = FindOrNull(predicates, column.name());
     if (predicate == nullptr) break;
     size_t size = column.type_info()->size();
-    if (predicate->predicate_type() == PredicateType::Equality) {
-      memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_lower(), size);
-      pushed_predicates++;
-      final_predicate = predicate;
-    } else if (predicate->predicate_type() == PredicateType::Range) {
-      if (predicate->raw_upper() != nullptr) {
-        memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_upper(), size);
+    switch (predicate->predicate_type()) {
+      case PredicateType::Equality:
+        memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_lower(), size);
         pushed_predicates++;
         final_predicate = predicate;
-      }
-      // After the first column with a range constraint we stop pushing
-      // constraints into the upper bound. Instead, we push minimum values
-      // to the remaining columns (below), which is the maximally tight
-      // constraint.
-      break;
-    } else {
-      LOG(FATAL) << "unexpected predicate type can not be pushed into key";
+        break;
+      case PredicateType::Range:
+        if (predicate->raw_upper() != nullptr) {
+          memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_upper(), size);
+          pushed_predicates++;
+          final_predicate = predicate;
+        }
+        // After the first column with a range constraint we stop pushing
+        // constraints into the upper bound. Instead, we push minimum values
+        // to the remaining columns (below), which is the maximally tight
+        // constraint.
+        break_loop = true;
+        break;
+      case PredicateType::IsNotNull:
+        break_loop = true;
+        break;
+      case PredicateType::None:
+        LOG(FATAL) << "NONE predicate can not be pushed into key";
     }
   }
 
@@ -200,23 +207,29 @@ int PushLowerBoundKeyPredicates(ColIdxIter first,
   // Step 1: copy predicates into the row in key column order, stopping after
   // the first missing predicate.
 
-  for (auto col_idx_it = first; col_idx_it < last; std::advance(col_idx_it, 1)) {
+  bool break_loop = false;
+  for (auto col_idx_it = first; !break_loop && col_idx_it < last; std::advance(col_idx_it, 1)) {
     const ColumnSchema& column = schema.column(*col_idx_it);
     const ColumnPredicate* predicate = FindOrNull(predicates, column.name());
     if (predicate == nullptr) break;
     size_t size = column.type_info()->size();
-    if (predicate->predicate_type() == PredicateType::Equality) {
-      memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_lower(), size);
-      pushed_predicates++;
-    } else if (predicate->predicate_type() == PredicateType::Range) {
-      if (predicate->raw_lower() != nullptr) {
+
+    switch (predicate->predicate_type()) {
+      case PredicateType::Range:
+        if (predicate->raw_lower() == nullptr) {
+          break_loop = true;
+          break;
+        }
+        // Fall through.
+      case PredicateType::Equality:
         memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_lower(), size);
         pushed_predicates++;
-      } else {
         break;
-      }
-    } else {
-      LOG(FATAL) << "unexpected predicate type can not be pushed into key";
+      case PredicateType::IsNotNull:
+        break_loop = true;
+        break;
+      case PredicateType::None:
+        LOG(FATAL) << "NONE predicate can not be pushed into key";
     }
   }
 
