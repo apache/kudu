@@ -395,7 +395,9 @@ class ShardedLRUCache : public Cache {
   }
 
   uint32_t Shard(uint32_t hash) {
-    return hash >> (32 - shard_bits_);
+    // Widen to uint64 before shifting, or else on a single CPU,
+    // we would try to shift a uint32_t by 32 bits, which is undefined.
+    return static_cast<uint64_t>(hash) >> (32 - shard_bits_);
   }
 
  public:
