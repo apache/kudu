@@ -87,6 +87,14 @@ set(BUILD_SUPPORT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build-support)
 # Must be declared in the top-level CMakeLists.txt.
 set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
 
+# Codegen-dependent executables need to be linked with -rdynamic; otherwise LLVM
+# can't find dependent Kudu symbols at runtime.
+#
+# Setting the ENABLE_EXPORTS target property for each codegen-dependent
+# executable is more precise, but that's a rather long target list, so we'll
+# just do it once here for all Kudu executables.
+set(CMAKE_ENABLE_EXPORTS true)
+
 # Make sure thirdparty stuff is up-to-date.
 if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
   execute_process(
