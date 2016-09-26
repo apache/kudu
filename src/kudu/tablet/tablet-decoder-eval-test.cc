@@ -31,9 +31,9 @@ using strings::Substitute;
 
 enum Setup {
 #ifdef ADDRESS_SANITIZER
-  SMALL = 100, MEDIUM = 3000, LARGE = 10000
+  EMPTY = 0, SMALL = 100, MEDIUM = 3000, LARGE = 10000
 #else
-  SMALL = 100, MEDIUM = 5000, LARGE = 100000
+  EMPTY = 0, SMALL = 100, MEDIUM = 5000, LARGE = 100000
 #endif
 };
 
@@ -287,6 +287,12 @@ TEST_P(TabletDecoderEvalTest, NullableHighCardinality) {
   TestNullableScanAndFilter(50000, 30, 200, 75);
 }
 
+TEST_P(TabletDecoderEvalTest, CompletelyNullColumn) {
+  // Fill a tablet with pattern [0, 50) but with all values being NULL.
+  // Query for values [30, 50).
+  TestNullableScanAndFilter(50, 30, 50, 50);
+}
+
 TEST_P(TabletDecoderEvalTest, MultipleColumns) {
   // Fill a tablet with pattern [0, 10) and query a:[0, 5) AND b:[3, 10).
   // To be considered correct, returned columns must align as they do in the
@@ -294,7 +300,8 @@ TEST_P(TabletDecoderEvalTest, MultipleColumns) {
   TestMultipleColumnPredicates(10, 3, 5);
 }
 
-INSTANTIATE_TEST_CASE_P(DecoderEvaluation, TabletDecoderEvalTest, ::testing::Values(SMALL,
+INSTANTIATE_TEST_CASE_P(DecoderEvaluation, TabletDecoderEvalTest, ::testing::Values(EMPTY,
+                                                                                    SMALL,
                                                                                     MEDIUM,
                                                                                     LARGE));
 

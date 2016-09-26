@@ -264,6 +264,7 @@ Status BinaryDictBlockDecoder::CopyNextAndEval(size_t* n,
 
   // Predicates that have no matching words should return no data.
   SelectionVector* codewords_matching_pred = parent_cfile_iter_->GetCodeWordsMatchingPredicate();
+  CHECK(codewords_matching_pred != nullptr);
   if (!codewords_matching_pred->AnySelected()) {
     // If nothing is selected, move the data_decoder_ pointer forward and clear
     // the corresponding bits in the selection vector.
