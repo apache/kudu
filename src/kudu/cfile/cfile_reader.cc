@@ -906,12 +906,14 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
   // yet been determined for this CFile.
   if (dict_decoder_ && ctx->DecoderEvalNotDisabled() && !codewords_matching_pred_) {
     size_t nwords = dict_decoder_->Count();
-    codewords_matching_pred_.reset(new SelectionVector(nwords));
-    codewords_matching_pred_->SetAllFalse();
-    for (size_t i = 0; i < nwords; i++) {
-      Slice cur_string = dict_decoder_->string_at_index(i);
-      if (ctx->pred()->EvaluateCell<BINARY>(static_cast<const void *>(&cur_string))) {
-        BitmapSet(codewords_matching_pred_->mutable_bitmap(), i);
+    if (nwords > 0) {
+      codewords_matching_pred_.reset(new SelectionVector(nwords));
+      codewords_matching_pred_->SetAllFalse();
+      for (size_t i = 0; i < nwords; i++) {
+        Slice cur_string = dict_decoder_->string_at_index(i);
+        if (ctx->pred()->EvaluateCell<BINARY>(static_cast<const void *>(&cur_string))) {
+          BitmapSet(codewords_matching_pred_->mutable_bitmap(), i);
+        }
       }
     }
   }
@@ -940,7 +942,6 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
         }
         size_t this_batch = nblock;
         if (not_null) {
-          // TODO: Maybe copy all and shift later?
           if (ctx->DecoderEvalNotDisabled()) {
             RETURN_NOT_OK(pb->dblk_->CopyNextAndEval(&this_batch,
                                                      ctx,
