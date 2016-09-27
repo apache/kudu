@@ -409,9 +409,18 @@ public class ITClient extends BaseKuduTest {
      * We need to do this because the scans in this client aren't fault tolerant.
      * @param message message to print if the exception contains a real error
      * @param e the exception to check
-     * @return true if the scanner failed because it wasn't false, otherwise false
+     * @return true if the scanner failed on a non-FATAL error, otherwise false which will kill
+     *         this test
      */
     private boolean checkAndReportError(String message, KuduException e) {
+      // It's possible to get timeouts if we're unlucky. A particularly common one is
+      // "could not wait for desired snapshot timestamp to be consistent" since we're using
+      // READ_AT_SNAPSHOT scanners.
+      // TODO revisit once KUDU-1656 is taken care of.
+      if (e.getStatus().isTimedOut()) {
+        LOG.warn("Received a scan timeout", e);
+        return true;
+      }
       // Do nasty things, expect nasty results. The scanners are a bit too happy to retry TS
       // disconnections so we might end up retrying a scanner on a node that restarted, or we might
       // get disconnected just after sending an RPC so when we reconnect to the same TS we might get
