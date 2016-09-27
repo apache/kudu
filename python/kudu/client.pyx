@@ -719,18 +719,18 @@ cdef class Column:
     scanner.add_predicate(table[col_name] <= 10)
     """
     cdef readonly:
-        object name
         Table parent
         ColumnSchema spec
+        str name
 
     def __cinit__(self, Table parent, ColumnSchema spec):
-        self.name = tobytes(spec.name)
+        self.name = spec.name
         self.parent = parent
         self.spec = spec
 
     def __repr__(self):
         result = ('Column({0}, parent={1}, type={2})'
-                  .format(frombytes(self.name),
+                  .format(self.name,
                           self.parent.name,
                           self.spec.type.name))
         return result
@@ -763,9 +763,10 @@ cdef class Column:
             Slice* col_name_slice
             ComparisonOp cmp_op
             Predicate result
+            object _name = tobytes(self.name)
 
-        col_name_slice = new Slice(<char*> self.name,
-                                   len(self.name))
+        col_name_slice = new Slice(<char*> _name,
+                                   len(_name))
 
         try:
             if op == 0: # <

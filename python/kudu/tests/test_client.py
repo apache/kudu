@@ -42,7 +42,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
                 (table[-1], 'unixtime_micros_val', 'unixtime_micros')]
 
         for col, name, type in cols:
-            assert col.name == bytes(name)
+            assert col.name == name
             assert col.parent is table
 
             result_repr = repr(col)
