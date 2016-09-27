@@ -63,7 +63,7 @@ DEPS_FOR_ALL = \
      "build-support/lsan-suppressions.txt",
 
      # The LLVM symbolizer is necessary for suppressions to work
-     "thirdparty/installed/bin/llvm-symbolizer",
+     "thirdparty/installed/common/bin/llvm-symbolizer",
 
      # Tests that use the external minicluster require these.
      # TODO: declare these dependencies per-test.
@@ -131,7 +131,7 @@ def abs_to_rel(abs_path, staging):
 
 
 def get_test_commandlines():
-  ctest_bin = os.path.join(rel_to_abs("thirdparty/installed/bin/ctest"))
+  ctest_bin = os.path.join(rel_to_abs("thirdparty/installed/common/bin/ctest"))
   p = subprocess.Popen([ctest_bin, "-V", "-N", "-LE", "no_dist_test"], stdout=subprocess.PIPE)
   out, err = p.communicate()
   if p.returncode != 0:

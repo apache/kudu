@@ -147,7 +147,7 @@ fi
 
 $SOURCE_ROOT/build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 
-THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
+THIRDPARTY_BIN=$(pwd)/thirdparty/installed/common/bin
 export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
 if which ccache >/dev/null ; then

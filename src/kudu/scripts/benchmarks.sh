@@ -148,7 +148,7 @@ build_kudu() {
   $BASE_DIR/build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 
   # PATH=<thirdparty_stuff>:<toolchain_stuff>:$PATH
-  THIRDPARTY_BIN=$BASE_DIR/thirdparty/installed/bin
+  THIRDPARTY_BIN=$BASE_DIR/thirdparty/installed/common/bin
   export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
   BUILD_TYPE=release

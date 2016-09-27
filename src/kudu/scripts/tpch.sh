@@ -102,7 +102,7 @@ fi
 $ROOT/build-support/enable_devtoolset.sh $ROOT/thirdparty/build-if-necessary.sh
 
 # PATH=<thirdparty_stuff>:<toolchain_stuff>:$PATH
-THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
+THIRDPARTY_BIN=$(pwd)/thirdparty/installed/common/bin
 export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
 BUILD_TYPE=release

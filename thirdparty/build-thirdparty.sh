@@ -21,13 +21,13 @@
 # directories within the thirdparty directory. Three prefix directories are
 # used, corresponding to build type:
 #
-#   * /thirdparty/installed - prefix directory for libraries and binary tools
-#                             common to all build types, e.g. LLVM, Clang, and
-#                             CMake.
-#   * /thirdparty/installed-deps - prefix directory for libraries built with
-#                                  normal options (no sanitizer instrumentation).
-#   * /thirdparty/installed-deps-tsan - prefix directory for libraries built
-#                                       with thread sanitizer instrumentation.
+#   * /thirdparty/installed/common - prefix directory for libraries and binary tools
+#                                    common to all build types, e.g. LLVM, Clang, and
+#                                    CMake.
+#   * /thirdparty/installed/uninstrumented - prefix directory for libraries built with
+#                                            normal options (no sanitizer instrumentation).
+#   * /thirdparty/installed/tsan - prefix directory for libraries built
+#                                  with thread sanitizer instrumentation.
 #
 # Environment variables which can be set when calling build-thirdparty.sh:
 #   * EXTRA_CFLAGS - additional flags passed to the C compiler.
@@ -39,13 +39,13 @@ set -ex
 
 TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 
+source $TP_DIR/vars.sh
+source $TP_DIR/build-definitions.sh
+
 # Before doing anything, run the pre-flight check for missing dependencies.
 # This avoids the most common issues people have with building (if they don't
 # read the docs)
 $TP_DIR/preflight.py
-
-source $TP_DIR/vars.sh
-source $TP_DIR/build-definitions.sh
 
 for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN $PREFIX_LIBSTDCXX $PREFIX_LIBSTDCXX_TSAN; do
   mkdir -p $PREFIX_DIR/lib
@@ -141,6 +141,7 @@ fi
 ### Build common tools and libraries
 
 PREFIX=$PREFIX_COMMON
+MODE_SUFFIX=""
 
 # Add tools to path
 export PATH=$PREFIX/bin:$PATH
@@ -230,6 +231,7 @@ restore_env
 ### Build C++ dependencies
 
 PREFIX=$PREFIX_DEPS
+MODE_SUFFIX=""
 
 save_env
 EXTRA_LDFLAGS="-Wl,-rpath,$PREFIX/lib $EXTRA_LDFLAGS"
@@ -298,18 +300,21 @@ if [ -n "$F_TSAN" ]; then
   export CXX=$CLANGXX
 
   PREFIX=$PREFIX_DEPS_TSAN
+  MODE_SUFFIX=".tsan"
 
   if [ -n "$F_ALL" -o -n "$F_LIBSTDCXX" ]; then
     save_env
 
     # Build uninstrumented libstdcxx
     PREFIX=$PREFIX_LIBSTDCXX
+    MODE_SUFFIX=""
     EXTRA_CFLAGS=
     EXTRA_CXXFLAGS=
     build_libstdcxx
 
     # Build instrumented libstdxx
     PREFIX=$PREFIX_LIBSTDCXX_TSAN
+    MODE_SUFFIX=".tsan"
     EXTRA_CFLAGS="-fsanitize=thread"
     EXTRA_CXXFLAGS="-fsanitize=thread"
     build_libstdcxx

@@ -300,7 +300,7 @@ else you'll get `cc1plus: error: unrecognized command line option "-std=c++11"`.
 mkdir -p build/release
 cd build/release
 ../../build-support/enable_devtoolset.sh \
-  ../../thirdparty/installed/bin/cmake \
+  ../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ../..
 make -j4
@@ -344,7 +344,7 @@ build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 mkdir -p build/release
 cd build/release
 ../../build-support/enable_devtoolset.sh \
-  ../../thirdparty/installed/bin/cmake \
+  ../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ../..
 make -j4
@@ -391,7 +391,7 @@ except for the `kudu` directory itself.
 ----
 mkdir -p build/release
 cd build/release
-../../thirdparty/installed/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
+../../thirdparty/installed/common/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
 
@@ -429,7 +429,7 @@ cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build/release
 cd build/release
-../../thirdparty/installed/bin/cmake \
+../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ../..
 make -j4
@@ -469,7 +469,7 @@ except for the `kudu` directory itself.
 ----
 mkdir -p build/release
 cd build/release
-../../thirdparty/installed/bin/cmake \
+../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ../..
 make -j4
@@ -501,7 +501,7 @@ cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build/release
 cd build/release
-../../thirdparty/installed/bin/cmake \
+../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ../..
 make -j4
@@ -568,7 +568,7 @@ anywhere in your filesystem except for the `kudu` directory itself.
 ----
 mkdir -p build/release
 cd build/release
-../../thirdparty/installed/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
+../../thirdparty/installed/common/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
 
@@ -587,7 +587,7 @@ cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build/release
 cd build/release
-../../thirdparty/installed/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
+../../thirdparty/installed/common/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
 ====

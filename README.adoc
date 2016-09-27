@@ -57,9 +57,9 @@ between two commits which may have different dependencies.
 
 [source,bash]
 ----
-# Add <root of kudu tree>/thirdparty/installed/bin to your $PATH
+# Add <root of kudu tree>/thirdparty/installed/common/bin to your $PATH
 # before other parts of $PATH that may contain cmake, such as /usr/bin
-# For example: "export PATH=$HOME/git/kudu/thirdparty/installed/bin:$PATH"
+# For example: "export PATH=$HOME/git/kudu/thirdparty/installed/common/bin:$PATH"
 # if using bash.
 $ mkdir -p build/debug
 $ cd build/debug
@@ -239,7 +239,7 @@ gcovr:
 ----
 $ cd build/coverage
 $ mkdir cov_html
-$ ../../thirdparty/installed/bin/gcovr \
+$ ../../thirdparty/installed/common/bin/gcovr \
       --gcov-executable=$(pwd)/../../build-support/llvm-gcov-wrapper \
       --html --html-details -o cov_html/coverage.html
 ----
@@ -377,9 +377,9 @@ Either way, these complicated source files must be excluded from indexing. To do
 this, right click on the project in the Project Explorer and select Properties. In
 the dialog box, select "C/C++ Project Paths", select the Source tab, highlight
 "Exclusion filter: (None)", and click "Edit...". In the new dialog box, click
-"Add Multiple...". Select every subdirectory inside _thirdparty_ except _installed_
-and _installed-deps_. Click OK all the way out and rebuild the project index by
-right clicking the project in the Project Explorer and selecting Index -> Rebuild.
+"Add Multiple...". Select every subdirectory inside _thirdparty_ except _installed_.
+Click OK all the way out and rebuild the project index by right clicking the project
+in the Project Explorer and selecting Index -> Rebuild.
 
 With this exclusion, the only false positives (shown as "red squigglies") that
 CDT presents appear to be in atomicops functions (`NoBarrier_CompareAndSwap` for

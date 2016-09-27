@@ -128,7 +128,7 @@ def main():
   env['GTEST_OUTPUT'] = 'xml:' + os.path.abspath(
     os.path.join(test_dir, "..", "test-logs")) + '/'
 
-  env['ASAN_SYMBOLIZER_PATH'] = os.path.join(ROOT, "thirdparty/installed/bin/llvm-symbolizer")
+  env['ASAN_SYMBOLIZER_PATH'] = os.path.join(ROOT, "thirdparty/installed/common/bin/llvm-symbolizer")
   rc = subprocess.call([os.path.join(ROOT, "build-support/run-test.sh")] + args,
                        env=env)
   sys.exit(rc)

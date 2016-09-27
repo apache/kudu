@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -22,6 +22,7 @@
 # be influenced by setting environment variables:
 #
 # * PREFIX - the install destination directory.
+# * MODE_SUFFIX - an optional suffix to add to each build directory's name.
 # * EXTRA_CFLAGS - additional flags to pass to the C compiler.
 # * EXTRA_CXXFLAGS - additional flags to pass to the C++ compiler.
 # * EXTRA_LDFLAGS - additional flags to pass to the linker.
@@ -33,6 +34,7 @@
 # Save the current build environment.
 save_env() {
   _PREFIX=${PREFIX}
+  _MODE_SUFFIX=${MODE_SUFFIX}
   _EXTRA_CFLAGS=${EXTRA_CFLAGS}
   _EXTRA_CXXFLAGS=${EXTRA_CXXFLAGS}
   _EXTRA_LDFLAGS=${EXTRA_LDFLAGS}
@@ -42,6 +44,7 @@ save_env() {
 # Restore the most recently saved build environment.
 restore_env() {
   PREFIX=${_PREFIX}
+  MODE_SUFFIX=${_MODE_SUFFIX}
   EXTRA_CFLAGS=${_EXTRA_CFLAGS}
   EXTRA_CXXFLAGS=${_EXTRA_CXXFLAGS}
   EXTRA_LDFLAGS=${_EXTRA_LDFLAGS}
@@ -49,10 +52,15 @@ restore_env() {
 }
 
 build_cmake() {
-  cd $CMAKE_DIR
-  ./bootstrap --prefix=$PREFIX --parallel=$PARALLEL
+  CMAKE_BDIR=$TP_BUILD_DIR/$CMAKE_NAME$MODE_SUFFIX
+  mkdir -p $CMAKE_BDIR
+  pushd $CMAKE_BDIR
+  $CMAKE_SOURCE/bootstrap \
+    --prefix=$PREFIX \
+    --parallel=$PARALLEL
   make -j$PARALLEL
   make install
+  popd
 }
 
 build_llvm() {
@@ -63,14 +71,18 @@ build_llvm() {
   elif [[ $(python -V 2>&1) =~ "Python 2.7." ]]; then
     PYTHON_EXECUTABLE=$(which python)
   else
-    cd $PYTHON_DIR
-    ./configure --prefix=$PREFIX
+    PYTHON_BDIR=$TP_BUILD_DIR/$PYTHON_NAME$MODE_SUFFIX
+    mkdir -p $PYTHON_BDIR
+    pushd $PYTHON_BDIR
+    $PYTHON_SOURCE/configure --prefix=$PREFIX
     make -j$PARALLEL
-    PYTHON_EXECUTABLE=$PYTHON_DIR/python
+    PYTHON_EXECUTABLE="$PYTHON_BDIR/python"
+    popd
   fi
 
-  mkdir -p $LLVM_BUILD_DIR
-  cd $LLVM_BUILD_DIR
+  LLVM_BDIR=$TP_BUILD_DIR/llvm-$LLVM_VERSION$MODE_SUFFIX
+  mkdir -p $LLVM_BDIR
+  pushd $LLVM_BDIR
 
   # Rebuild the CMake cache every time.
   rm -Rf CMakeCache.txt CMakeFiles/
@@ -92,7 +104,7 @@ build_llvm() {
     -DLLVM_TOOL_LIBCXXABI_BUILD=OFF \
     -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS" \
     -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
-    $LLVM_DIR
+    $LLVM_SOURCE
 
   make -j$PARALLEL install
 
@@ -101,23 +113,21 @@ build_llvm() {
   # installed in the prefix directory, since this confuses CMake into believing
   # the thirdparty prefix directory is the system-wide prefix, and it omits the
   # thirdparty prefix directory from the rpath of built binaries.
-  ln -sfn $LLVM_BUILD_DIR $TP_DIR/clang-toolchain
+  ln -sfn $LLVM_BDIR $TP_DIR/clang-toolchain
+  popd
 }
 
 build_libstdcxx() {
-  # Configure libstdcxx to use posix threads by default. Normally this symlink
-  # would be created automatically while building libgcc as part of the overall
-  # GCC build, but since we are only building libstdcxx we must configure it
-  # manually.
-  ln -sf $GCC_DIR/libgcc/gthr-posix.h $GCC_DIR/libgcc/gthr-default.h
+  GCC_BDIR=$TP_BUILD_DIR/$GCC_NAME$MODE_SUFFIX
 
   # Remove the GCC build directory to remove cached build configuration.
-  rm -rf $GCC_BUILD_DIR
-  mkdir -p $GCC_BUILD_DIR
-  cd $GCC_BUILD_DIR
+  rm -rf $GCC_BDIR
+
+  mkdir -p $GCC_BDIR
+  pushd $GCC_BDIR
   CFLAGS=$EXTRA_CFLAGS \
     CXXFLAGS=$EXTRA_CXXFLAGS \
-    $GCC_DIR/libstdc++-v3/configure \
+    $GCC_SOURCE/libstdc++-v3/configure \
     --enable-multilib=no \
     --prefix="$PREFIX"
 
@@ -132,10 +142,13 @@ build_libstdcxx() {
   sed -ie 's|/\* #undef HAVE_TLS \*/|#define HAVE_TLS 1|' config.h
 
   make -j$PARALLEL install
+  popd
 }
 
 build_gflags() {
-  cd $GFLAGS_DIR
+  GFLAGS_BDIR=$TP_BUILD_DIR/$GFLAGS_NAME$MODE_SUFFIX
+  mkdir -p $GFLAGS_BDIR
+  pushd $GFLAGS_BDIR
   rm -rf CMakeCache.txt CMakeFiles/
   CXXFLAGS="$EXTRA_CFLAGS $EXTRA_CXXFLAGS $EXTRA_LDFLAGS $EXTRA_LIBS" \
     cmake \
@@ -143,134 +156,205 @@ build_gflags() {
     -DCMAKE_POSITION_INDEPENDENT_CODE=On \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DBUILD_SHARED_LIBS=On \
-    -DBUILD_STATIC_LIBS=On
+    -DBUILD_STATIC_LIBS=On \
+    $GFLAGS_SOURCE
   make -j$PARALLEL install
+  popd
 }
 
 build_libunwind() {
-  cd $LIBUNWIND_DIR
+  LIBUNWIND_BDIR=$TP_BUILD_DIR/$LIBUNWIND_NAME$MODE_SUFFIX
+  mkdir -p $LIBUNWIND_BDIR
+  pushd $LIBUNWIND_BDIR
   # Disable minidebuginfo, which depends on liblzma, until/unless we decide to
   # add liblzma to thirdparty.
-  ./configure --disable-minidebuginfo --with-pic --prefix=$PREFIX
+  $LIBUNWIND_SOURCE/configure \
+    --disable-minidebuginfo \
+    --with-pic \
+    --prefix=$PREFIX
   make -j$PARALLEL install
+  popd
 }
 
 build_glog() {
-  cd $GLOG_DIR
+  GLOG_BDIR=$TP_BUILD_DIR/$GLOG_NAME$MODE_SUFFIX
+  mkdir -p $GLOG_BDIR
+  pushd $GLOG_BDIR
   CXXFLAGS="$EXTRA_CXXFLAGS" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
-    ./configure --with-pic --prefix=$PREFIX --with-gflags=$PREFIX
+    $GLOG_SOURCE/configure \
+    --with-pic \
+    --prefix=$PREFIX \
+    --with-gflags=$PREFIX
   make -j$PARALLEL install
+  popd
 }
 
 build_gperftools() {
-  cd $GPERFTOOLS_DIR
+  GPERFTOOLS_BDIR=$TP_BUILD_DIR/$GPERFTOOLS_NAME$MODE_SUFFIX
+  mkdir -p $GPERFTOOLS_BDIR
+  pushd $GPERFTOOLS_BDIR
   CFLAGS="$EXTRA_CFLAGS" \
     CXXFLAGS="$EXTRA_CXXFLAGS" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
-    ./configure --enable-frame-pointers --enable-heap-checker --with-pic --prefix=$PREFIX
+    $GPERFTOOLS_SOURCE/configure \
+    --enable-frame-pointers \
+    --enable-heap-checker \
+    --with-pic \
+    --prefix=$PREFIX
   make -j$PARALLEL install
+  popd
 }
 
 build_gmock() {
-  cd $GMOCK_DIR
-  for SHARED in OFF ON; do
+  GMOCK_SHARED_BDIR=$TP_BUILD_DIR/$GMOCK_NAME.shared$MODE_SUFFIX
+  GMOCK_STATIC_BDIR=$TP_BUILD_DIR/$GMOCK_NAME.static$MODE_SUFFIX
+  for SHARED in ON OFF; do
+    if [ $SHARED = "ON" ]; then
+      GMOCK_BDIR=$GMOCK_SHARED_BDIR
+    else
+      GMOCK_BDIR=$GMOCK_STATIC_BDIR
+    fi
+    mkdir -p $GMOCK_BDIR
+    pushd $GMOCK_BDIR
     rm -rf CMakeCache.txt CMakeFiles/
     CXXFLAGS="$EXTRA_CXXFLAGS $EXTRA_LDFLAGS $EXTRA_LIBS" \
       cmake \
       -DCMAKE_BUILD_TYPE=Debug \
       -DCMAKE_POSITION_INDEPENDENT_CODE=On \
-      -DBUILD_SHARED_LIBS=$SHARED .
+      -DBUILD_SHARED_LIBS=$SHARED \
+      $GMOCK_SOURCE
     make -j$PARALLEL
+    popd
   done
   echo Installing gmock...
-  cp -a libgmock.$DYLIB_SUFFIX libgmock.a $PREFIX/lib/
-  rsync -av include/ $PREFIX/include/
-  rsync -av gtest/include/ $PREFIX/include/
+  cp -a $GMOCK_SHARED_BDIR/libgmock.$DYLIB_SUFFIX $PREFIX/lib/
+  cp -a $GMOCK_STATIC_BDIR/libgmock.a $PREFIX/lib/
+  rsync -av $GMOCK_SOURCE/include/ $PREFIX/include/
+  rsync -av $GMOCK_SOURCE/gtest/include/ $PREFIX/include/
 }
 
 build_protobuf() {
-  cd $PROTOBUF_DIR
-  # We build protobuf in both instrumented and non-instrumented modes.
-  # If we don't clean in between, we may end up mixing modes.
-  test -f Makefile && make distclean
+  PROTOBUF_BDIR=$TP_BUILD_DIR/$PROTOBUF_NAME$MODE_SUFFIX
+  mkdir -p $PROTOBUF_BDIR
+  pushd $PROTOBUF_BDIR
   CFLAGS="$EXTRA_CFLAGS" \
     CXXFLAGS="$EXTRA_CXXFLAGS" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
-    ./configure \
+    $PROTOBUF_SOURCE/configure \
     --with-pic \
     --enable-shared \
     --enable-static \
     --prefix=$PREFIX
   make -j$PARALLEL install
+  popd
 }
 
 build_snappy() {
-  cd $SNAPPY_DIR
+  SNAPPY_BDIR=$TP_BUILD_DIR/$SNAPPY_NAME$MODE_SUFFIX
+  mkdir -p $SNAPPY_BDIR
+  pushd $SNAPPY_BDIR
   CFLAGS="$EXTRA_CFLAGS" \
     CXXFLAGS="$EXTRA_CXXFLAGS" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
-    ./configure --with-pic --prefix=$PREFIX
+    $SNAPPY_SOURCE/configure \
+    --with-pic \
+    --prefix=$PREFIX
   make -j$PARALLEL install
+  popd
 }
 
 build_zlib() {
-  cd $ZLIB_DIR
-  CFLAGS="$EXTRA_CFLAGS -fPIC" ./configure --prefix=$PREFIX
+  ZLIB_BDIR=$TP_BUILD_DIR/$ZLIB_NAME$MODE_SUFFIX
+  mkdir -p $ZLIB_BDIR
+  pushd $ZLIB_BDIR
+
+  # It doesn't appear possible to isolate source and build directories, so just
+  # prepopulate the latter using the former.
+  rsync -av --delete $ZLIB_SOURCE/ .
+
+  CFLAGS="$EXTRA_CFLAGS -fPIC" \
+    ./configure \
+    --prefix=$PREFIX
   make -j$PARALLEL install
+  popd
 }
 
 build_lz4() {
-  cd $LZ4_DIR
-  CFLAGS="$EXTRA_CFLAGS" cmake -DCMAKE_BUILD_TYPE=release \
-    -DBUILD_TOOLS=0 -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX cmake_unofficial/
+  LZ4_BDIR=$TP_BUILD_DIR/$LZ4_NAME$MODE_SUFFIX
+  mkdir -p $LZ4_BDIR
+  pushd $LZ4_BDIR
+  CFLAGS="$EXTRA_CFLAGS" \
+    cmake \
+    -DCMAKE_BUILD_TYPE=release \
+    -DBUILD_TOOLS=0 \
+    -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX \
+    $LZ4_SOURCE/cmake_unofficial
   make -j$PARALLEL install
+  popd
 }
 
 build_bitshuffle() {
-  cd $BITSHUFFLE_DIR
+  BITSHUFFLE_BDIR=$TP_BUILD_DIR/$BITSHUFFLE_NAME$MODE_SUFFIX
+  mkdir -p $BITSHUFFLE_BDIR
+  pushd $BITSHUFFLE_BDIR
   # bitshuffle depends on lz4, therefore set the flag I$PREFIX/include
   ${CC:-gcc} $EXTRA_CFLAGS -std=c99 -I$PREFIX/include -O3 -DNDEBUG -fPIC -c \
-    src/bitshuffle_core.c src/bitshuffle.c src/iochain.c
+    "$BITSHUFFLE_SOURCE/src/bitshuffle_core.c" \
+    "$BITSHUFFLE_SOURCE/src/bitshuffle.c" \
+    "$BITSHUFFLE_SOURCE/src/iochain.c"
   ar rs bitshuffle.a bitshuffle_core.o bitshuffle.o iochain.o
   cp bitshuffle.a $PREFIX/lib/
-  cp src/bitshuffle.h $PREFIX/include/bitshuffle.h
-  cp src/bitshuffle_core.h $PREFIX/include/bitshuffle_core.h
+  cp $BITSHUFFLE_SOURCE/src/bitshuffle.h $PREFIX/include/bitshuffle.h
+  cp $BITSHUFFLE_SOURCE/src/bitshuffle_core.h $PREFIX/include/bitshuffle_core.h
+  popd
 }
 
 build_libev() {
-  cd $LIBEV_DIR
+  LIBEV_BDIR=$TP_BUILD_DIR/$LIBEV_NAME$MODE_SUFFIX
+  mkdir -p $LIBEV_BDIR
+  pushd $LIBEV_BDIR
   CFLAGS="$EXTRA_CFLAGS" \
     CXXFLAGS="$EXTRA_CXXFLAGS" \
-    ./configure --with-pic --prefix=$PREFIX
+    $LIBEV_SOURCE/configure \
+    --with-pic \
+    --prefix=$PREFIX
   make -j$PARALLEL install
+  popd
 }
 
 build_rapidjson() {
   # just installing it into our prefix
-  cd $RAPIDJSON_DIR
-  rsync -av --delete $RAPIDJSON_DIR/include/rapidjson/ $PREFIX/include/rapidjson/
+  pushd $RAPIDJSON_SOURCE
+  rsync -av --delete $RAPIDJSON_SOURCE/include/rapidjson/ $PREFIX/include/rapidjson/
+  popd
 }
 
 build_squeasel() {
   # Mongoose's Makefile builds a standalone web server, whereas we just want
   # a static lib
-  cd $SQUEASEL_DIR
-  ${CC:-gcc} $EXTRA_CFLAGS -std=c99 -O3 -DNDEBUG -fPIC -c squeasel.c
+  SQUEASEL_BDIR=$TP_BUILD_DIR/$SQUEASEL_NAME$MODE_SUFFIX
+  mkdir -p $SQUEASEL_BDIR
+  pushd $SQUEASEL_BDIR
+  ${CC:-gcc} $EXTRA_CFLAGS -std=c99 -O3 -DNDEBUG -fPIC -c "$SQUEASEL_SOURCE/squeasel.c"
   ar rs libsqueasel.a squeasel.o
   cp libsqueasel.a $PREFIX/lib/
-  cp squeasel.h $PREFIX/include/
+  cp $SQUEASEL_SOURCE/squeasel.h $PREFIX/include/
+  popd
 }
 
 build_curl() {
   # Configure for a very minimal install - basically only HTTP, since we only
   # use this for testing our own HTTP endpoints at this point in time.
-  cd $CURL_DIR
-  ./configure --prefix=$PREFIX \
+  CURL_BDIR=$TP_BUILD_DIR/$CURL_NAME$MODE_SUFFIX
+  mkdir -p $CURL_BDIR
+  pushd $CURL_BDIR
+  $CURL_SOURCE/configure \
+    --prefix=$PREFIX \
     --disable-dict \
     --disable-file \
     --disable-ftp \
@@ -287,38 +371,54 @@ build_curl() {
     --disable-tftp \
     --without-librtmp \
     --without-ssl
-  make -j$PARALLEL
-  make install
+  make -j$PARALLEL install
+  popd
 }
 
 build_crcutil() {
-  cd $CRCUTIL_DIR
+  CRCUTIL_BDIR=$TP_BUILD_DIR/$CRCUTIL_NAME$MODE_SUFFIX
+  mkdir -p $CRCUTIL_BDIR
+  pushd $CRCUTIL_BDIR
+
+  # The autogen.sh script makes it difficult to isolate source and build
+  # directories, so just prepopulate the latter using the former.
+  rsync -av --delete $CRCUTIL_SOURCE/ .
   ./autogen.sh
+
   CFLAGS="$EXTRA_CFLAGS" \
     CXXFLAGS="$EXTRA_CXXFLAGS" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
-    ./configure --prefix=$PREFIX
+    ./configure \
+    --prefix=$PREFIX
   make -j$PARALLEL install
+  popd
 }
 
 build_cpplint() {
   # Copy cpplint tool into bin directory
-  cp $GSG_DIR/cpplint/cpplint.py $PREFIX/bin/cpplint.py
+  cp $GSG_SOURCE/cpplint/cpplint.py $PREFIX/bin/cpplint.py
 }
 
 build_gcovr() {
   # Copy gcovr tool into bin directory
-  cp -a $GCOVR_DIR/scripts/gcovr $PREFIX/bin/gcovr
+  cp -a $GCOVR_SOURCE/scripts/gcovr $PREFIX/bin/gcovr
 }
 
 build_trace_viewer() {
   echo Installing trace-viewer into the www directory
-  cp -a $TRACE_VIEWER_DIR/* $TP_DIR/../www/
+  cp -a $TRACE_VIEWER_SOURCE/* $TP_DIR/../www/
 }
 
 build_nvml() {
-  cd $NVML_DIR/src/
+  NVML_BDIR=$TP_BUILD_DIR/$NVML_NAME$MODE_SUFFIX
+  mkdir -p $NVML_BDIR
+  pushd $NVML_BDIR
+
+  # It doesn't appear possible to isolate source and build directories, so just
+  # prepopulate the latter using the former.
+  rsync -av --delete $NVML_SOURCE/ .
+  cd src/
 
   # The embedded jemalloc build doesn't pick up the EXTRA_CFLAGS environment
   # variable, so we have to stick our flags into this config file.
@@ -331,12 +431,13 @@ build_nvml() {
     # DESTDIR/usr/lib. Additionally, the 'install' target builds all of
     # the NVML libraries, even though we only need the three libraries above.
     # So, we manually install the built artifacts.
-    cp -a $NVML_DIR/src/include/$LIB.h $PREFIX/include
-    cp -a $NVML_DIR/src/nondebug/$LIB.{so*,a} $PREFIX/lib
+    cp -a $NVML_BDIR/src/include/$LIB.h $PREFIX/include
+    cp -a $NVML_BDIR/src/nondebug/$LIB.{so*,a} $PREFIX/lib
   done
+  popd
 }
 
 build_boost() {
   # This is a header-only installation of Boost.
-  rsync -a $BOOST_DIR/boost $PREFIX/include
+  rsync -a --delete $BOOST_SOURCE/boost $PREFIX/include
 }

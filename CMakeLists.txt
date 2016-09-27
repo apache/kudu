@@ -351,7 +351,7 @@ if (${KUDU_USE_TSAN})
   add_definitions("-D_GLIBCXX_EXTERN_TEMPLATE=0")
 
   # Compile and link against the thirdparty TSAN instrumented libstdcxx.
-  set(TSAN_GCC_DIR "${CMAKE_SOURCE_DIR}/thirdparty/installed-deps-tsan/gcc")
+  set(TSAN_GCC_DIR "${CMAKE_SOURCE_DIR}/thirdparty/installed/tsan/gcc")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,${TSAN_GCC_DIR}/lib -fsanitize=thread")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -L${TSAN_GCC_DIR}/lib")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -isystem ${TSAN_GCC_DIR}/include/c++/4.9.3")
@@ -733,13 +733,13 @@ function(ADD_THIRDPARTY_LIB LIB_NAME)
 endfunction()
 
 # Look in thirdparty prefix paths before anywhere else for system dependencies.
-set(THIRDPARTY_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/installed)
+set(THIRDPARTY_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/installed/common)
 set(CMAKE_PREFIX_PATH ${THIRDPARTY_PREFIX} ${CMAKE_PREFIX_PATH})
 if (${KUDU_USE_TSAN})
-  set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/installed-deps-tsan
+  set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/installed/tsan
       ${CMAKE_PREFIX_PATH})
 else()
-  set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/installed-deps
+  set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/installed/uninstrumented
       ${CMAKE_PREFIX_PATH})
 endif()
 

@@ -23,13 +23,12 @@
 set -e
 
 TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
-cd $TP_DIR
+
+source $TP_DIR/vars.sh
 
 if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
 fi
-
-source vars.sh
 
 delete_if_wrong_patchlevel() {
   local DIR=$1
@@ -100,12 +99,15 @@ fetch_and_expand() {
   echo
 }
 
+mkdir -p $TP_SOURCE_DIR
+cd $TP_SOURCE_DIR
+
 GLOG_PATCHLEVEL=2
-delete_if_wrong_patchlevel $GLOG_DIR $GLOG_PATCHLEVEL
-if [ ! -d $GLOG_DIR ]; then
+delete_if_wrong_patchlevel $GLOG_SOURCE $GLOG_PATCHLEVEL
+if [ ! -d $GLOG_SOURCE ]; then
   fetch_and_expand glog-${GLOG_VERSION}.tar.gz
 
-  pushd $GLOG_DIR
+  pushd $GLOG_SOURCE
   patch -p0 < $TP_DIR/patches/glog-issue-198-fix-unused-warnings.patch
   patch -p0 < $TP_DIR/patches/glog-issue-54-dont-build-tests.patch
   touch patchlevel-$GLOG_PATCHLEVEL
@@ -114,23 +116,20 @@ if [ ! -d $GLOG_DIR ]; then
   echo
 fi
 
-if [ ! -d $GMOCK_DIR ]; then
+if [ ! -d $GMOCK_SOURCE ]; then
   fetch_and_expand gmock-${GMOCK_VERSION}.zip
 fi
 
-if [ ! -d $GFLAGS_DIR ]; then
+if [ ! -d $GFLAGS_SOURCE ]; then
   fetch_and_expand gflags-${GFLAGS_VERSION}.tar.gz
 fi
 
-# Check that the gperftools patch has been applied.
-# If you add or remove patches, bump the patchlevel below to ensure
-# that any new Jenkins builds pick up your patches.
 GPERFTOOLS_PATCHLEVEL=3
-delete_if_wrong_patchlevel $GPERFTOOLS_DIR $GPERFTOOLS_PATCHLEVEL
-if [ ! -d $GPERFTOOLS_DIR ]; then
+delete_if_wrong_patchlevel $GPERFTOOLS_SOURCE $GPERFTOOLS_PATCHLEVEL
+if [ ! -d $GPERFTOOLS_SOURCE ]; then
   fetch_and_expand gperftools-${GPERFTOOLS_VERSION}.tar.gz
 
-  pushd $GPERFTOOLS_DIR
+  pushd $GPERFTOOLS_SOURCE
   patch -p1 < $TP_DIR/patches/gperftools-Change-default-TCMALLOC_TRANSFER_NUM_OBJ-to-40.patch
   patch -p1 < $TP_DIR/patches/gperftools-hook-mi_force_unlock-on-OSX-instead-of-pthread_atfork.patch
   patch -p1 < $TP_DIR/patches/gperftools-issue-827-add_get_default_zone_to_osx_libc_override.patch
@@ -140,79 +139,79 @@ if [ ! -d $GPERFTOOLS_DIR ]; then
   echo
 fi
 
-if [ ! -d $PROTOBUF_DIR ]; then
+if [ ! -d $PROTOBUF_SOURCE ]; then
   fetch_and_expand protobuf-${PROTOBUF_VERSION}.tar.gz
-  pushd $PROTOBUF_DIR
+  pushd $PROTOBUF_SOURCE
   autoreconf -fvi
   popd
 fi
 
-if [ ! -d $CMAKE_DIR ]; then
+if [ ! -d $CMAKE_SOURCE ]; then
   fetch_and_expand cmake-${CMAKE_VERSION}.tar.gz
 fi
 
-if [ ! -d $SNAPPY_DIR ]; then
+if [ ! -d $SNAPPY_SOURCE ]; then
   fetch_and_expand snappy-${SNAPPY_VERSION}.tar.gz
-  pushd $SNAPPY_DIR
+  pushd $SNAPPY_SOURCE
   autoreconf -fvi
   popd
 fi
 
-if [ ! -d $ZLIB_DIR ]; then
+if [ ! -d $ZLIB_SOURCE ]; then
   fetch_and_expand zlib-${ZLIB_VERSION}.tar.gz
 fi
 
-if [ ! -d $LIBEV_DIR ]; then
+if [ ! -d $LIBEV_SOURCE ]; then
   fetch_and_expand libev-${LIBEV_VERSION}.tar.gz
 fi
 
-if [ ! -d $RAPIDJSON_DIR ]; then
+if [ ! -d $RAPIDJSON_SOURCE ]; then
   fetch_and_expand rapidjson-${RAPIDJSON_VERSION}.zip
-  mv rapidjson ${RAPIDJSON_DIR}
+  mv rapidjson ${RAPIDJSON_SOURCE}
 fi
 
-if [ ! -d $SQUEASEL_DIR ]; then
+if [ ! -d $SQUEASEL_SOURCE ]; then
   fetch_and_expand squeasel-${SQUEASEL_VERSION}.tar.gz
 fi
 
-if [ ! -d $GSG_DIR ]; then
+if [ ! -d $GSG_SOURCE ]; then
   fetch_and_expand google-styleguide-${GSG_VERSION}.tar.gz
 fi
 
-if [ ! -d $GCOVR_DIR ]; then
+if [ ! -d $GCOVR_SOURCE ]; then
   fetch_and_expand gcovr-${GCOVR_VERSION}.tar.gz
 fi
 
-if [ ! -d $CURL_DIR ]; then
+if [ ! -d $CURL_SOURCE ]; then
   fetch_and_expand curl-${CURL_VERSION}.tar.gz
 fi
 
 CRCUTIL_PATCHLEVEL=1
-delete_if_wrong_patchlevel $CRCUTIL_DIR $CRCUTIL_PATCHLEVEL
-if [ ! -d $CRCUTIL_DIR ]; then
+delete_if_wrong_patchlevel $CRCUTIL_SOURCE $CRCUTIL_PATCHLEVEL
+if [ ! -d $CRCUTIL_SOURCE ]; then
   fetch_and_expand crcutil-${CRCUTIL_VERSION}.tar.gz
 
-  pushd $CRCUTIL_DIR
+  pushd $CRCUTIL_SOURCE
   patch -p0 < $TP_DIR/patches/crcutil-fix-libtoolize-on-osx.patch
   touch patchlevel-$CRCUTIL_PATCHLEVEL
   popd
   echo
 fi
 
-if [ ! -d $LIBUNWIND_DIR ]; then
+if [ ! -d $LIBUNWIND_SOURCE ]; then
   fetch_and_expand libunwind-${LIBUNWIND_VERSION}.tar.gz
 fi
 
-if [ ! -d $PYTHON_DIR ]; then
+if [ ! -d $PYTHON_SOURCE ]; then
   fetch_and_expand python-${PYTHON_VERSION}.tar.gz
 fi
 
 LLVM_PATCHLEVEL=1
-delete_if_wrong_patchlevel $LLVM_DIR $LLVM_PATCHLEVEL
-if [ ! -d $LLVM_DIR ]; then
+delete_if_wrong_patchlevel $LLVM_SOURCE $LLVM_PATCHLEVEL
+if [ ! -d $LLVM_SOURCE ]; then
   fetch_and_expand llvm-${LLVM_VERSION}.src.tar.gz
 
-  pushd $LLVM_DIR
+  pushd $LLVM_SOURCE
   patch -p1 < $TP_DIR/patches/llvm-fix-amazon-linux.patch
   touch patchlevel-$LLVM_PATCHLEVEL
   popd
@@ -220,46 +219,53 @@ if [ ! -d $LLVM_DIR ]; then
 fi
 
 GCC_PATCHLEVEL=2
-delete_if_wrong_patchlevel $GCC_DIR $GCC_PATCHLEVEL
-if [[ "$OSTYPE" =~ ^linux ]] && [[ ! -d $GCC_DIR ]]; then
+delete_if_wrong_patchlevel $GCC_SOURCE $GCC_PATCHLEVEL
+if [[ "$OSTYPE" =~ ^linux ]] && [[ ! -d $GCC_SOURCE ]]; then
   fetch_and_expand gcc-${GCC_VERSION}.tar.gz
-  pushd $GCC_DIR/libstdc++-v3
+  pushd $GCC_SOURCE/libstdc++-v3
   patch -p0 < $TP_DIR/patches/libstdcxx-fix-string-dtor.patch
   patch -p0 < $TP_DIR/patches/libstdcxx-fix-tr1-shared-ptr.patch
   cd ..
   touch patchlevel-$GCC_PATCHLEVEL
   popd
+
+  # Configure libstdcxx to use posix threads by default. Normally this symlink
+  # would be created automatically while building libgcc as part of the overall
+  # GCC build, but since we are only building libstdcxx we must configure it
+  # manually.
+  ln -sf $GCC_SOURCE/libgcc/gthr-posix.h $GCC_SOURCE/libgcc/gthr-default.h
+
   echo
 fi
 
 LZ4_PATCHLEVEL=1
-delete_if_wrong_patchlevel $LZ4_DIR $LZ4_PATCHLEVEL
-if [ ! -d $LZ4_DIR ]; then
+delete_if_wrong_patchlevel $LZ4_SOURCE $LZ4_PATCHLEVEL
+if [ ! -d $LZ4_SOURCE ]; then
   fetch_and_expand lz4-lz4-$LZ4_VERSION.tar.gz
-  pushd $LZ4_DIR
+  pushd $LZ4_SOURCE
   patch -p1 < $TP_DIR/patches/lz4-0001-Fix-cmake-build-to-use-gnu-flags-on-clang.patch
   touch patchlevel-$LZ4_PATCHLEVEL
   popd
   echo
 fi
 
-if [ ! -d $BITSHUFFLE_DIR ]; then
+if [ ! -d $BITSHUFFLE_SOURCE ]; then
   fetch_and_expand bitshuffle-${BITSHUFFLE_VERSION}.tar.gz
 fi
 
-if [ ! -d $TRACE_VIEWER_DIR ]; then
+if [ ! -d $TRACE_VIEWER_SOURCE ]; then
   fetch_and_expand kudu-trace-viewer-${TRACE_VIEWER_VERSION}.tar.gz
 fi
 
-if [ -n "$OS_LINUX" -a ! -d $NVML_DIR ]; then
+if [ -n "$OS_LINUX" -a ! -d $NVML_SOURCE ]; then
   fetch_and_expand nvml-${NVML_VERSION}.tar.gz
 fi
 
 BOOST_PATCHLEVEL=1
-delete_if_wrong_patchlevel $BOOST_DIR $BOOST_PATCHLEVEL
-if [ ! -d $BOOST_DIR ]; then
+delete_if_wrong_patchlevel $BOOST_SOURCE $BOOST_PATCHLEVEL
+if [ ! -d $BOOST_SOURCE ]; then
   fetch_and_expand boost_${BOOST_VERSION}.tar.gz
-  pushd $BOOST_DIR
+  pushd $BOOST_SOURCE
   patch -p0 < $TP_DIR/patches/boost-issue-12179-fix-compilation-errors.patch
   touch patchlevel-$BOOST_PATCHLEVEL
   popd

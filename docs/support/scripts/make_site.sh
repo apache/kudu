@@ -64,7 +64,7 @@ mkdir -p "$BUILD_ROOT"
 cd "$BUILD_ROOT"
 rm -rf CMakeCache CMakeFiles/
 $SOURCE_ROOT/build-support/enable_devtoolset.sh \
-    $SOURCE_ROOT/thirdparty/installed/bin/cmake \
+    $SOURCE_ROOT/thirdparty/installed/common/bin/cmake \
     -DNO_TESTS=1 \
     -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
     $SOURCE_ROOT

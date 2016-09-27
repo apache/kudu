@@ -49,7 +49,7 @@ fi
 
 cd $ROOT
 
-$ROOT/thirdparty/installed/bin/cpplint.py \
+$ROOT/thirdparty/installed/common/bin/cpplint.py \
   --verbose=4 \
   --filter=-whitespace/comments,-readability/todo,-readability/inheritance,-build/header_guard,-build/include_order,-legal/copyright,-build/c++11 \
   $FILES 2>&1 | grep -v 'Done processing' | tee $TMP

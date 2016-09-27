@@ -117,13 +117,13 @@
                     <checkStaleness>true</checkStaleness>
                     <protoSourceRoot>${project.basedir}/../../src</protoSourceRoot>
                     <protocExecutable>
-                      ${project.basedir}/../../thirdparty/installed-deps/bin/protoc
+                      ${project.basedir}/../../thirdparty/installed/uninstrumented/bin/protoc
                     </protocExecutable>
                     <!-- Where we'll look for built-in .proto files such as
                          google/protobuf/descriptor.proto. -->
                     <additionalProtoPathElements>
                       <additionalProtoPathElement>
-                        ${project.basedir}/../../thirdparty/installed-deps/include
+                        ${project.basedir}/../../thirdparty/installed/uninstrumented/include
                       </additionalProtoPathElement>
                     </additionalProtoPathElements>
                     <excludes>
@@ -322,7 +322,7 @@
         <id>protoc-system</id>
         <activation>
           <file>
-            <missing>${basedir}/../../thirdparty/installed-deps/bin/protoc</missing>
+            <missing>${basedir}/../../thirdparty/installed/uninstrumented/bin/protoc</missing>
           </file>
         </activation>
         <build>

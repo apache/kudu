@@ -97,7 +97,7 @@ fi
 CMAKE=$(which cmake || :)
 if [ -z "$CMAKE" ]; then
   # TODO: temporary hack which assumes this script is in src/build/<type>/bin
-  CMAKE=$OUTPUT_DIR/../../../thirdparty/installed/bin/cmake
+  CMAKE=$OUTPUT_DIR/../../../thirdparty/installed/common/bin/cmake
 fi
 
 # Build the client samples using the client library.

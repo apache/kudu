@@ -66,9 +66,9 @@ flags = [
 '-I',
 'build/latest/src',
 '-isystem',
-'thirdparty/installed/include',
+'thirdparty/installed/common/include',
 '-isystem',
-'thirdparty/installed-deps/include',
+'thirdparty/installed/uninstrumented/include',
 ]
 
 # Set this to the absolute path to the folder (NOT the file!) containing the
