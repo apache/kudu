@@ -1407,7 +1407,7 @@ cdef class ScanToken:
         """
         cdef string buf
         check_status(self._token.Serialize(&buf))
-        return frombytes(buf)
+        return buf
 
     def deserialize_into_scanner(self, Client client, serialized_token):
         """
@@ -1426,7 +1426,7 @@ cdef class ScanToken:
         cdef:
             Scanner result = Scanner()
             KuduScanner* _scanner
-        check_status(self._token.DeserializeIntoScanner(client.cp, tobytes(serialized_token), &_scanner))
+        check_status(self._token.DeserializeIntoScanner(client.cp, serialized_token, &_scanner))
         result.scanner = _scanner
         return result
 
