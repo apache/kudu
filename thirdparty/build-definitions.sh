@@ -80,7 +80,8 @@ build_llvm() {
   # of the one being built.
   rm -Rf $PREFIX/include/{llvm*,clang*} \
          $PREFIX/lib/lib{LLVM,LTO,clang}* \
-         $PREFIX/lib/clang/
+         $PREFIX/lib/clang/ \
+         $PREFIX/lib/cmake/{llvm,clang}
 
   cmake \
     -DCMAKE_BUILD_TYPE=Release \
