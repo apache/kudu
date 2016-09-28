@@ -38,6 +38,12 @@ Here are some of the sessions to check out:
   collect and process real-time IoT data using Apache Apex and Apache Spark, and
   how they've been experimenting with Apache Kudu for time series data storage.
 
+* [Apache Kudu: 1.0 and Beyond](http://conferences.oreilly.com/strata/hadoop-big-data-ny/public/schedule/detail/51887) (Thursday, 4:35pm)
+
+  Todd Lipcon from Cloudera will review the new features that were developed between Kudu 0.5
+  (the first public release one year ago) and Kudu 1.0, released just last week. Additionally,
+  this talk will provide some insight into the upcoming project roadmap for the coming year.
+
 Aside from these organized sessions, word has it that there will be various demos
 featuring Apache Kudu at the Cloudera and ZoomData vendor booths.
 
