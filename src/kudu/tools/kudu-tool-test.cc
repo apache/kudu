@@ -46,6 +46,7 @@
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
@@ -81,13 +82,8 @@ using tserver::WriteRequestPB;
 
 class ToolTest : public KuduTest {
  public:
-  ToolTest() {
-    string exe;
-    CHECK_OK(env_->GetExecutablePath(&exe));
-    string bin_root = DirName(exe);
-    string tool_path = JoinPathSegments(bin_root, "kudu");
-    CHECK(env_->FileExists(tool_path)) << "kudu tool not found at " << tool_path;
-    tool_path_ = tool_path;
+  ToolTest()
+      : tool_path_(GetKuduCtlAbsolutePath()) {
   }
 
   Status RunTool(const string& arg_str,

@@ -31,7 +31,8 @@ set(LINK_LIBS
 
 add_library(kudu_tools_util
   color.cc
-  data_gen_util.cc)
+  data_gen_util.cc
+)
 target_link_libraries(kudu_tools_util
   ${LINK_LIBS})
 
@@ -90,9 +91,17 @@ target_link_libraries(kudu
   ${KUDU_BASE_LIBS}
 )
 
+add_library(kudu_tools_test_util
+  tool_test_util.cc
+)
+target_link_libraries(kudu_tools_test_util
+  kudu_util
+)
+
 set(KUDU_TEST_LINK_LIBS
   ksck
   kudu_tools_util
+  kudu_tools_test_util
   integration-tests
   ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(ksck-test)

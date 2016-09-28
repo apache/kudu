@@ -25,6 +25,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
+#include "kudu/tools/tool_test_util.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
@@ -42,23 +43,8 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
-static const char* const kAdminToolName = "kudu";
-
 class AdminCliTest : public tserver::TabletServerIntegrationTestBase {
- protected:
-  // Figure out where the tool is.
-  string GetAdminToolPath() const;
 };
-
-string AdminCliTest::GetAdminToolPath() const {
-  string exe;
-  CHECK_OK(Env::Default()->GetExecutablePath(&exe));
-  string binroot = DirName(exe);
-  string tool_path = JoinPathSegments(binroot, kAdminToolName);
-  CHECK(Env::Default()->FileExists(tool_path))
-      << kAdminToolName << " tool not found at " << tool_path;
-  return tool_path;
-}
 
 // Test config change while running a workload.
 // 1. Instantiate external mini cluster with 3 TS.
@@ -114,7 +100,7 @@ TEST_F(AdminCliTest, TestChangeConfig) {
 
   LOG(INFO) << "Adding tserver with uuid " << new_node->uuid() << " as VOTER...";
   ASSERT_OK(Subprocess::Call({
-    GetAdminToolPath(),
+    GetKuduCtlAbsolutePath(),
     "tablet",
     "change_config",
     "add_replica",
@@ -152,7 +138,7 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   // Now remove the server once again.
   LOG(INFO) << "Removing tserver with uuid " << new_node->uuid() << " from the config...";
   ASSERT_OK(Subprocess::Call({
-    GetAdminToolPath(),
+    GetKuduCtlAbsolutePath(),
     "tablet",
     "change_config",
     "remove_replica",
@@ -179,7 +165,7 @@ TEST_F(AdminCliTest, TestDeleteTable) {
             .Build(&client));
 
   ASSERT_OK(Subprocess::Call({
-    GetAdminToolPath(),
+    GetKuduCtlAbsolutePath(),
     "table",
     "delete",
     master_address,
@@ -199,7 +185,7 @@ TEST_F(AdminCliTest, TestListTables) {
 
   string stdout;
   ASSERT_OK(Subprocess::Call({
-    GetAdminToolPath(),
+    GetKuduCtlAbsolutePath(),
     "table",
     "list",
     cluster_->master()->bound_rpc_addr().ToString()
@@ -236,7 +222,7 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
 
   string stdout;
   ASSERT_OK(Subprocess::Call({
-    GetAdminToolPath(),
+    GetKuduCtlAbsolutePath(),
     "table",
     "list",
     "--list_tablets",
