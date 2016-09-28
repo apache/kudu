@@ -492,7 +492,17 @@ Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) co
       local_records.pop_back();
       break;
     }
-    CheckBlockRecord(local_records.back(), data_file_size);
+
+    const auto& record = local_records.back();
+    if (PREDICT_FALSE(data_file_size < record.offset() + record.length())) {
+      // KUDU-1657: When opening a container in read-only mode which is actively
+      // being written to by another lbm, we must reinspect the data file's size
+      // frequently in order to account for the latest appends. Inspecting the
+      // file size is expensive, so we only do it when the metadata indicates
+      // that additional data has been written to the file.
+      RETURN_NOT_OK(data_file_->Size(&data_file_size));
+    }
+    CheckBlockRecord(record, data_file_size);
   }
   // NOTE: 'read_status' will never be OK here.
   if (PREDICT_TRUE(read_status.IsEndOfFile())) {
