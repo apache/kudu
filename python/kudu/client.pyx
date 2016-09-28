@@ -760,34 +760,73 @@ cdef class Column:
         cdef:
             KuduPredicate* pred
             KuduValue* val
-            Slice* col_name_slice
+            Slice col_name_slice
             ComparisonOp cmp_op
             Predicate result
             object _name = tobytes(self.name)
 
-        col_name_slice = new Slice(<char*> _name,
-                                   len(_name))
+        col_name_slice = Slice(<char*> _name, len(_name))
+        if op == 0: # <
+            cmp_op = KUDU_LESS
+        elif op == 1: # <=
+            cmp_op = KUDU_LESS_EQUAL
+        elif op == 2: # ==
+            cmp_op = KUDU_EQUAL
+        elif op == 4: # >
+            cmp_op = KUDU_GREATER
+        elif op == 5: # >=
+            cmp_op = KUDU_GREATER_EQUAL
+        else:
+            raise NotImplementedError
+
+        val = self.box_value(value)
+        pred = (self.parent.ptr()
+                .NewComparisonPredicate(col_name_slice,
+                                        cmp_op, val))
+
+        result = Predicate()
+        result.init(pred)
+
+        return result
+
+    def in_list(Column self, values):
+        """
+        Creates a new InListPredicate for the Column. If a single value is
+        provided, then an equality comparison predicate is created.
+
+        Parameters
+        ----------
+        values : list
+
+        Examples
+        --------
+        scanner.add_predicate(table['key'].in_list([1, 2, 3])
+
+        Returns
+        -------
+        pred : Predicate
+        """
+        cdef:
+            KuduPredicate* pred
+            vector[KuduValue*] vals
+            Slice col_name_slice
+            Predicate result
+            object _name = tobytes(self.name)
+
+        col_name_slice = Slice(<char*> _name, len(_name))
 
         try:
-            if op == 0: # <
-                cmp_op = KUDU_LESS
-            elif op == 1: # <=
-                cmp_op = KUDU_LESS_EQUAL
-            elif op == 2: # ==
-                cmp_op = KUDU_EQUAL
-            elif op == 4: # >
-                cmp_op = KUDU_GREATER
-            elif op == 5: # >=
-                cmp_op = KUDU_GREATER_EQUAL
-            else:
-                raise NotImplementedError
+            for val in values:
+                vals.push_back(self.box_value(val))
+        except TypeError:
+            while not vals.empty():
+                _val = vals.back()
+                del _val
+                vals.pop_back()
+            raise
 
-            val = self.box_value(value)
-            pred = (self.parent.ptr()
-                    .NewComparisonPredicate(deref(col_name_slice),
-                                            cmp_op, val))
-        finally:
-            del col_name_slice
+        pred = (self.parent.ptr()
+                .NewInListPredicate(col_name_slice, &vals))
 
         result = Predicate()
         result.init(pred)
@@ -1163,7 +1202,8 @@ cdef class Scanner:
     def add_predicates(self, preds):
         """
         Add a list of scan predicates to the scanner. Select columns from the
-        parent table and make comparisons to create predicates.
+        parent table and make comparisons to create predicates. Returns a
+        reference to itself to facilitate chaining.
 
         Examples
         --------
@@ -1174,14 +1214,21 @@ cdef class Scanner:
         Parameters
         ----------
         preds : list of Predicate
+
+        Returns
+        -------
+        self : scanner
         """
         for pred in preds:
             self.add_predicate(pred)
 
+        return self
+
     cpdef add_predicate(self, Predicate pred):
         """
         Add a scan predicates to the scanner. Select columns from the
-        parent table and make comparisons to create predicates.
+        parent table and make comparisons to create predicates. Returns
+        a reference to itself to facilitate chaining.
 
         Examples
         --------
@@ -1191,6 +1238,10 @@ cdef class Scanner:
         Parameters
         ----------
         pred : kudu.Predicate
+
+        Returns
+        -------
+        self : scanner
         """
         cdef KuduPredicate* clone
 
@@ -1198,6 +1249,8 @@ cdef class Scanner:
         # reused
         clone = pred.pred.Clone()
         check_status(self.scanner.AddConjunctPredicate(clone))
+
+        return self
 
     def set_projected_column_names(self, names):
         """

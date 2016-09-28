@@ -74,6 +74,24 @@ class TestScanner(TestScanBase):
 
         self.assertEqual(sorted(tuples), [(20, 'hello_20'), (22, 'hello_22')])
 
+    def test_scan_rows_in_list_predicate(self):
+        """
+        Test scanner with an InList predicate and
+        a string comparison predicate
+        """
+        key_list = [2, 98]
+        scanner = self.table.scanner()
+        scanner.set_fault_tolerant()\
+            .add_predicates([
+                self.table[0].in_list(key_list),
+                self.table['string_val'] >= 'hello_9'
+            ])
+        scanner.open()
+
+        tuples = scanner.read_all_tuples()
+
+        self.assertEqual(tuples, [self.tuples[98]])
+
     def test_index_projection_with_schema(self):
         scanner = self.table.scanner()
         scanner.set_projected_column_indexes([0, 1])
@@ -124,6 +142,16 @@ class TestScanner(TestScanBase):
 
         with self.assertRaises(kudu.KuduInvalidArgument):
             scanner.add_predicates([sv >= 1])
+
+        with self.assertRaises(TypeError):
+            scanner.add_predicates([sv.in_list(['testing',
+                                                datetime.datetime.utcnow()])])
+
+        with self.assertRaises(kudu.KuduInvalidArgument):
+            scanner.add_predicates([sv.in_list([
+                'hello_20',
+                120
+            ])])
 
     def test_scan_batch_by_batch(self):
         scanner = self.table.scanner()

@@ -549,6 +549,8 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         KuduPredicate* NewComparisonPredicate(const Slice& col_name,
                                               ComparisonOp op,
                                               KuduValue* value);
+        KuduPredicate* NewInListPredicate(const Slice& col_name,
+                                          vector[KuduValue*]* values)
 
         KuduClient* client()
         # const PartitionSchema& partition_schema()

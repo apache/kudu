@@ -159,3 +159,20 @@ class TestScanToken(TestScanBase):
                 tuples.extend(batch.as_tuples())
 
         self.assertEqual(sorted(self.tuples), tuples)
+
+    def test_scan_rows_in_list_predicate(self):
+        """
+        Test scan token builder/scanner with an InList predicate and
+        a string comparison predicate
+        """
+        key_list = [2, 98]
+        builder = self.table.scan_token_builder()
+        builder.set_fault_tolerant() \
+            .add_predicates([
+            self.table[0].in_list(key_list),
+            self.table['string_val'] >= 'hello_9'
+        ])
+
+        # Serialize execute and verify
+        self._subtest_serialize_thread_and_verify(builder.build(),
+                                                  [self.tuples[98]])
