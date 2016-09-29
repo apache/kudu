@@ -200,8 +200,6 @@ to allow for both leaders and followers for both the masters and tablet servers.
 addition, a tablet server can be a leader for some tablets, and a follower for others.
 Leaders are shown in gold, while followers are shown in blue.
 
-NOTE: Multiple masters are not supported during the Kudu beta period.
-
 image::kudu-architecture-2.png[Kudu Architecture, 800]
 
 [[kudu_use_cases]]
