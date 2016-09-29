@@ -55,6 +55,10 @@ XXX
   used by the client library; an easy way to guarantee this is to use the same compiler
   to build both.
 
+- The Java client's `OperationResponse.getWriteTimestamp` method was renamed to `getWriteTimestampRaw`
+  to emphasize that it doesn't return milliseconds, unlike what its Javadoc indicated. The renamed
+  method was also hidden from the public APIs and should not be used.
+
 [[known_issues_and_limitations]]
 == Known Issues and Limitations
 
