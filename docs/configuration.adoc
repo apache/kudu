@@ -30,7 +30,7 @@
 
 NOTE: Kudu is easier to configure with link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager]
 than in a standalone installation. See Cloudera's
-link:http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/0-5-0/topics/kudu_installation.html[Kudu documentation]
+link:http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/latest/topics/kudu_installation.html[Kudu documentation]
 for more details about using Kudu with Cloudera Manager.
 
 == Configure Kudu
@@ -69,8 +69,8 @@ $ kudu-master --help
 |===
 | Flag      | Valid Options     | Default     | Description
 
-// TODO commented out for the beta|--master_addresses | string | localhost |  Comma-separated list of all the RPC
-// addresses for Master quorum. If not specified, assumes a standalone Master.
+|--master_addresses | string | localhost |  Comma-separated list of all the RPC
+addresses for Master consensus-configuration. If not specified, assumes a standalone Master.
 |--fs_data_dirs | string | | Comma-separated list of
 directories where the Master will place its data blocks.
 |--fs_wal_dir | string | | The directory where the Master will
