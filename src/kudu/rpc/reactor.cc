@@ -399,20 +399,19 @@ Status ReactorThread::StartConnect(Socket *sock, const Sockaddr &remote, bool *i
   if (ret.ok()) {
     VLOG(3) << "StartConnect: connect finished immediately for " << remote.ToString();
     *in_progress = false; // connect() finished immediately.
-    return ret;
+    return Status::OK();
   }
 
   int posix_code = ret.posix_code();
-  if (Socket::IsTemporarySocketError(posix_code) || (posix_code == EINPROGRESS)) {
-    // The connect operation is in progress.
-    *in_progress = true;
+  if (Socket::IsTemporarySocketError(posix_code) || posix_code == EINPROGRESS) {
     VLOG(3) << "StartConnect: connect in progress for " << remote.ToString();
+    *in_progress = true; // The connect operation is in progress.
     return Status::OK();
-  } else {
-    LOG(WARNING) << "failed to create an outbound connection to " << remote.ToString()
-                 << " because connect failed: " << ret.ToString();
-    return ret;
   }
+
+  LOG(WARNING) << "Failed to create an outbound connection to " << remote.ToString()
+               << " because connect() failed: " << ret.ToString();
+  return ret;
 }
 
 void ReactorThread::DestroyConnection(Connection *conn,
