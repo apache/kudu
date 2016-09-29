@@ -85,8 +85,8 @@ class PredicateTest : public KuduTest {
   }
 
   // Count the rows in a table which satisfy the specified predicates.
-  int CountRows(const shared_ptr<KuduTable>& table,
-                const vector<KuduPredicate*>& predicates) {
+  int DoCountRows(const shared_ptr<KuduTable>& table,
+                  const vector<KuduPredicate*>& predicates) {
     KuduScanner scanner(table.get());
     for (KuduPredicate* predicate : predicates) {
       CHECK_OK(scanner.AddConjunctPredicate(predicate));
@@ -100,6 +100,23 @@ class PredicateTest : public KuduTest {
       rows += batch.NumRows();
     }
     return rows;
+  }
+
+  // Count the rows in a table which satisfy the specified predicates. This
+  // also does a separate scan with cloned predicates, in order to test that
+  // cloned predicates behave exactly as the original.
+  int CountRows(const shared_ptr<KuduTable>& table,
+                const vector<KuduPredicate*>& predicates) {
+
+    vector<KuduPredicate*> cloned_predicates;
+    for (KuduPredicate* pred : predicates) {
+      cloned_predicates.push_back(pred->Clone());
+    }
+
+    int cloned_count = DoCountRows(table, cloned_predicates);
+    int count = DoCountRows(table, predicates);
+    CHECK_EQ(count, cloned_count);
+    return count;
   }
 
   template <typename T>

@@ -100,7 +100,8 @@ class InListPredicateData : public KuduPredicate::Data {
   Status AddToScanSpec(ScanSpec* spec, Arena* arena) override;
 
   InListPredicateData* Clone() const override {
-    std::vector<KuduValue*> values(vals_.size());
+    std::vector<KuduValue*> values;
+    values.reserve(vals_.size());
     for (KuduValue* val : vals_) {
       values.push_back(val->Clone());
     }
