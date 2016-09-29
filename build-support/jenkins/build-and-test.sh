@@ -321,7 +321,7 @@ if [ "$DO_COVERAGE" == "1" ]; then
   echo
   echo Generating coverage report...
   echo ------------------------------------------------------------
-  if ! $SOURCE_ROOT/thirdparty/gcovr-3.0/scripts/gcovr \
+  if ! $SOURCE_ROOT/thirdparty/installed/common/bin/gcovr \
       -r $SOURCE_ROOT \
       --gcov-filter='.*src#kudu.*' \
       --gcov-executable=$SOURCE_ROOT/build-support/llvm-gcov-wrapper \
