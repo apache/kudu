@@ -95,7 +95,7 @@ class CreateTableStressTest : public KuduTest {
 
     ASSERT_OK(MessengerBuilder("stress-test-msgr")
               .set_num_reactors(1)
-              .set_negotiation_threads(1)
+              .set_max_negotiation_threads(1)
               .Build(&messenger_));
     master_proxy_.reset(new MasterServiceProxy(messenger_,
                                                cluster_->mini_master()->bound_rpc_addr()));

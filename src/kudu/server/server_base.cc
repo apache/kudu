@@ -59,6 +59,12 @@
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start.");
 TAG_FLAG(num_reactor_threads, advanced);
 
+DEFINE_int32(min_negotiation_threads, 0, "Minimum number of connection negotiation threads.");
+TAG_FLAG(min_negotiation_threads, advanced);
+
+DEFINE_int32(max_negotiation_threads, 50, "Maximum number of connection negotiation threads.");
+TAG_FLAG(max_negotiation_threads, advanced);
+
 DECLARE_bool(use_hybrid_clock);
 
 using std::ostringstream;
@@ -177,6 +183,8 @@ Status ServerBase::Init() {
   rpc::MessengerBuilder builder(name_);
 
   builder.set_num_reactors(FLAGS_num_reactor_threads);
+  builder.set_min_negotiation_threads(FLAGS_min_negotiation_threads);
+  builder.set_max_negotiation_threads(FLAGS_max_negotiation_threads);
   builder.set_metric_entity(metric_entity());
   RETURN_NOT_OK(builder.Build(&messenger_));
 

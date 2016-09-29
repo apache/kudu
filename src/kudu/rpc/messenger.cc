@@ -94,7 +94,8 @@ MessengerBuilder::MessengerBuilder(std::string name)
       connection_keepalive_time_(
           MonoDelta::FromMilliseconds(FLAGS_rpc_default_keepalive_time_ms)),
       num_reactors_(4),
-      num_negotiation_threads_(4),
+      min_negotiation_threads_(0),
+      max_negotiation_threads_(4),
       coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)) {}
 
 MessengerBuilder& MessengerBuilder::set_connection_keepalive_time(const MonoDelta &keepalive) {
@@ -107,8 +108,13 @@ MessengerBuilder& MessengerBuilder::set_num_reactors(int num_reactors) {
   return *this;
 }
 
-MessengerBuilder& MessengerBuilder::set_negotiation_threads(int num_negotiation_threads) {
-  num_negotiation_threads_ = num_negotiation_threads;
+MessengerBuilder& MessengerBuilder::set_min_negotiation_threads(int min_negotiation_threads) {
+  min_negotiation_threads_ = min_negotiation_threads;
+  return *this;
+}
+
+MessengerBuilder& MessengerBuilder::set_max_negotiation_threads(int max_negotiation_threads) {
+  max_negotiation_threads_ = max_negotiation_threads;
   return *this;
 }
 
@@ -271,7 +277,8 @@ Messenger::Messenger(const MessengerBuilder &bld)
     reactors_.push_back(new Reactor(retain_self_, i, bld));
   }
   CHECK_OK(ThreadPoolBuilder("negotiator")
-              .set_max_threads(bld.num_negotiation_threads_)
+              .set_min_threads(bld.min_negotiation_threads_)
+              .set_max_threads(bld.max_negotiation_threads_)
               .Build(&negotiation_pool_));
 }
 

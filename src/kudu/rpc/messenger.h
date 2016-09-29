@@ -83,9 +83,13 @@ class MessengerBuilder {
   // receiving.
   MessengerBuilder &set_num_reactors(int num_reactors);
 
-  // Set the number of connection-negotiation threads that will be used to handle the
-  // blocking connection-negotiation step.
-  MessengerBuilder &set_negotiation_threads(int num_negotiation_threads);
+  // Set the minimum number of connection-negotiation threads that will be used
+  // to handle the blocking connection-negotiation step.
+  MessengerBuilder &set_min_negotiation_threads(int min_negotiation_threads);
+
+  // Set the maximum number of connection-negotiation threads that will be used
+  // to handle the blocking connection-negotiation step.
+  MessengerBuilder &set_max_negotiation_threads(int max_negotiation_threads);
 
   // Set the granularity with which connections are checked for keepalive.
   MessengerBuilder &set_coarse_timer_granularity(const MonoDelta &granularity);
@@ -99,7 +103,8 @@ class MessengerBuilder {
   const std::string name_;
   MonoDelta connection_keepalive_time_;
   int num_reactors_;
-  int num_negotiation_threads_;
+  int min_negotiation_threads_;
+  int max_negotiation_threads_;
   MonoDelta coarse_timer_granularity_;
   scoped_refptr<MetricEntity> metric_entity_;
 };

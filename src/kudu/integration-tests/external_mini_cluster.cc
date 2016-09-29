@@ -129,7 +129,7 @@ Status ExternalMiniCluster::Start() {
 
   RETURN_NOT_OK_PREPEND(rpc::MessengerBuilder("minicluster-messenger")
                         .set_num_reactors(1)
-                        .set_negotiation_threads(1)
+                        .set_max_negotiation_threads(1)
                         .Build(&messenger_),
                         "Failed to start Messenger for minicluster");
 
