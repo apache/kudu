@@ -417,6 +417,7 @@ Status CountTableRows(const shared_ptr<KuduClient>& client,
     // NOTE: +1 is due to the current implementation of the scanner.
     RETURN_NOT_OK(scanner.SetSnapshotRaw(snapshot_timestamp + 1));
     RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+    RETURN_NOT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
     row_count_status = scanner.Open();
     if (!row_count_status.ok()) {
       if (row_count_status.IsTimedOut()) {
