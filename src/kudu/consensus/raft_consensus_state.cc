@@ -696,15 +696,10 @@ string ReplicaState::ToString() const {
 
 string ReplicaState::ToStringUnlocked() const {
   DCHECK(update_lock_.is_locked());
-  string ret;
-  SubstituteAndAppend(&ret, "Replica: $0, State: $1, Role: $2\n",
-                      peer_uuid_, state_,
-                      RaftPeerPB::Role_Name(GetActiveRoleUnlocked()));
-
-  SubstituteAndAppend(&ret, "Watermarks: {Received: $0 Committed: $1}\n",
-                      last_received_op_id_.ShortDebugString(),
-                      last_committed_op_id_.ShortDebugString());
-  return ret;
+  return Substitute("Replica: $0, State: $1, Role: $2, Watermarks: {Received: $3, Committed: $4}",
+                    peer_uuid_, state_, RaftPeerPB::Role_Name(GetActiveRoleUnlocked()),
+                    last_received_op_id_.ShortDebugString(),
+                    last_committed_op_id_.ShortDebugString());
 }
 
 Status ReplicaState::CheckOpInSequence(const OpId& previous, const OpId& current) {
