@@ -906,7 +906,7 @@ Status ExternalMaster::WaitForCatalogManager() {
           return s;
         }
       }
-    } else if (!s.IsNetworkError()) {
+    } else if (!s.IsTimedOut() && !s.IsNetworkError()) {
       // Unexpected error from proxy.
       return s;
     }
