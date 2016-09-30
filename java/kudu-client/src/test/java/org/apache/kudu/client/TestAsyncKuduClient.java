@@ -38,20 +38,20 @@ import static org.junit.Assert.*;
 public class TestAsyncKuduClient extends BaseKuduTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestAsyncKuduClient.class);
 
-  private static final String TABLE_NAME =
-      TestAsyncKuduClient.class.getName() + "-" + System.currentTimeMillis();
-  private static KuduTable table;
-
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    // Set to 1 for testDisconnect to always test disconnecting the right server.
-    CreateTableOptions options = getBasicCreateTableOptions().setNumReplicas(1);
-    table = createTable(TABLE_NAME, basicSchema, options);
   }
 
   @Test(timeout = 100000)
   public void testDisconnect() throws Exception {
+    // Set to 1 to always test disconnecting the right server.
+    CreateTableOptions options = getBasicCreateTableOptions().setNumReplicas(1);
+    KuduTable table = createTable(
+        "testDisconnect-" + System.currentTimeMillis(),
+        basicSchema,
+        options);
+
     // Test that we can reconnect to a TS after a disconnection.
     // 1. Warm up the cache.
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
@@ -149,9 +149,51 @@ public class TestAsyncKuduClient extends BaseKuduTest {
           "Invalid table ID", null, null);
       client.discoverTablets(badTable, null, tabletLocations, 1000);
       fail("This should have failed quickly");
-    } catch (Exception ex) {
-      assertTrue(ex instanceof NonRecoverableException);
+    } catch (NonRecoverableException ex) {
       assertTrue(ex.getMessage().contains(badHostname));
+    }
+  }
+
+  @Test
+  public void testNoLeader() throws Exception {
+    CreateTableOptions options = getBasicCreateTableOptions();
+    KuduTable table = createTable(
+        "testNoLeader-" + System.currentTimeMillis(),
+        basicSchema,
+        options);
+
+    // Lookup the current locations so that we can pass some valid information to discoverTablets.
+    List<LocatedTablet> tablets =
+        client.locateTable(table, null, null, DEFAULT_SLEEP).join(DEFAULT_SLEEP);
+    LocatedTablet tablet = tablets.get(0);
+    LocatedTablet.Replica leader = tablet.getLeaderReplica();
+
+    // Fake a master lookup that only returns one follower for the tablet.
+    List<Master.TabletLocationsPB> tabletLocations = new ArrayList<>();
+    Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
+    Common.PartitionPB.Builder partition = Common.PartitionPB.newBuilder();
+    partition.setPartitionKeyStart(ByteString.EMPTY);
+    partition.setPartitionKeyEnd(ByteString.EMPTY);
+    tabletPb.setPartition(partition);
+    tabletPb.setTabletId(ByteString.copyFrom(tablet.getTabletId()));
+    Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
+    Common.HostPortPB.Builder hostBuilder = Common.HostPortPB.newBuilder();
+    hostBuilder.setHost(leader.getRpcHost());
+    hostBuilder.setPort(leader.getRpcPort());
+    tsInfoBuilder.addRpcAddresses(hostBuilder);
+    tsInfoBuilder.setPermanentUuid(ByteString.copyFromUtf8("some uuid"));
+    Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder =
+        Master.TabletLocationsPB.ReplicaPB.newBuilder();
+    replicaBuilder.setTsInfo(tsInfoBuilder);
+    replicaBuilder.setRole(Metadata.RaftPeerPB.Role.FOLLOWER); // This is a lie
+    tabletPb.addReplicas(replicaBuilder);
+    tabletLocations.add(tabletPb.build());
+
+    try {
+      client.discoverTablets(table, new byte[0], tabletLocations, 1000);
+      fail("discoverTablets should throw an exception if there's no leader");
+    } catch (NoSuitableReplicaException ex) {
+      // Expected.
     }
   }
 }

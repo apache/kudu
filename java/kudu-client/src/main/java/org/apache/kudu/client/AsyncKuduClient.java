@@ -816,7 +816,8 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * "Errback" used to delayed-retry a RPC if it fails due to no leader master being found.
+   * "Errback" used to delayed-retry a RPC if a recoverable exception is thrown in the callback
+   * chain.
    * Other exceptions are used to notify request RPC error, and passed through to be handled
    * by the caller.
    * <p>
@@ -835,14 +836,9 @@ public class AsyncKuduClient implements AutoCloseable {
 
     @Override
     public Deferred<R> call(Exception arg) {
-      if (arg instanceof NoLeaderMasterFoundException) {
-        // If we could not find the leader master, try looking up the leader master
-        // again.
-        // TODO: Handle the situation when multiple in-flight RPCs are queued waiting
-        // for the leader master to be determine (either after a failure or at initialization
-        // time). This could re-use some of the existing piping in place for non-master tablets.
+      if (arg instanceof RecoverableException) {
         Deferred<R> d = request.getDeferred();
-        delayedSendRpcToTablet(request, (NoLeaderMasterFoundException) arg);
+        delayedSendRpcToTablet(request, (KuduException) arg);
         return d;
       }
       if (LOG.isDebugEnabled()) {
@@ -1318,7 +1314,7 @@ public class AsyncKuduClient implements AutoCloseable {
                           partitionKey,
                           response.getTabletLocationsList(),
                           response.getTtlMillis());
-        } catch (NonRecoverableException e) {
+        } catch (KuduException e) {
           return e;
         }
       }
@@ -1359,7 +1355,7 @@ public class AsyncKuduClient implements AutoCloseable {
   void discoverTablets(KuduTable table,
                        byte[] requestPartitionKey,
                        List<Master.TabletLocationsPB> locations,
-                       long ttl) throws NonRecoverableException {
+                       long ttl) throws KuduException {
     String tableId = table.getTableId();
     String tableName = table.getName();
 
@@ -1408,6 +1404,15 @@ public class AsyncKuduClient implements AutoCloseable {
     // Give the locations to the tablet location cache for the table, so that it
     // can cache them and discover non-covered ranges.
     locationsCache.cacheTabletLocations(tablets, requestPartitionKey, ttl);
+
+    // Now test if we found the tablet we were looking for. If so, RetryRpcCB will retry the RPC
+    // right away. If not, we throw an exception that RetryRpcErrback will understand as needing to
+    // sleep before retrying.
+    TableLocationsCache.Entry entry = locationsCache.get(requestPartitionKey);
+    if (!entry.isNonCoveredRange() && clientFor(entry.getTablet()) == null) {
+      throw new NoSuitableReplicaException(
+          Status.NotFound("Tablet " + entry.toString() + " doesn't have a leader"));
+    }
   }
 
   RemoteTablet createTabletFromPb(String tableId, Master.TabletLocationsPB tabletPb) {
@@ -1490,6 +1495,8 @@ public class AsyncKuduClient implements AutoCloseable {
    * @return A Deferred object for the master replica's current registration.
    */
   Deferred<GetMasterRegistrationResponse> getMasterRegistration(TabletClient masterClient) {
+    // TODO: Handle the situation when multiple in-flight RPCs all want to query the masters,
+    // basically reuse in some way the master permits.
     GetMasterRegistrationRequest rpc = new GetMasterRegistrationRequest(masterTable);
     rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     Deferred<GetMasterRegistrationResponse> d = rpc.getDeferred();
