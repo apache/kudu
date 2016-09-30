@@ -116,16 +116,6 @@
                          http://sergei-ivanov.github.io/maven-protoc-plugin/compile-mojo.html -->
                     <checkStaleness>true</checkStaleness>
                     <protoSourceRoot>${project.basedir}/../../src</protoSourceRoot>
-                    <protocExecutable>
-                      ${project.basedir}/../../thirdparty/installed/uninstrumented/bin/protoc
-                    </protocExecutable>
-                    <!-- Where we'll look for built-in .proto files such as
-                         google/protobuf/descriptor.proto. -->
-                    <additionalProtoPathElements>
-                      <additionalProtoPathElement>
-                        ${project.basedir}/../../thirdparty/installed/uninstrumented/include
-                      </additionalProtoPathElement>
-                    </additionalProtoPathElements>
                     <excludes>
                       <exclude>**/*test*.proto</exclude>
                     </excludes>
@@ -154,6 +144,8 @@
                     <goal>clean</goal>
                   </goals>
                   <configuration>
+                    <!-- Additional configuration (e.g. the location of protoc)
+                         is done via maven profiles later in the file. -->
                     <excludeDefaultDirectories>true</excludeDefaultDirectories>
                     <filesets>
                       <fileset>
@@ -315,15 +307,75 @@
         </pluginManagement>
     </build>
 
+    <!-- Find a protoc with which to compile the .proto files.
+
+         This is done via maven profiles. The order of activation:
+         1. Use TSAN protoc if it exists.
+         2. Use uninstrumented protoc if it exists.
+         3. Use system protoc if no other profile was activated.
+
+         If both TSAN and uninstrumented protoc exist, the latter will override
+         the former by virtue of being activated after it, which is why the
+         profile declaration order is important. -->
     <profiles>
-      <!-- If thirdparty's protoc can't be found, this profile will activate and
-           use the system's protoc during the build. -->
+      <profile>
+        <id>protoc-tsan</id>
+        <activation>
+          <file>
+            <exists>${basedir}/../../thirdparty/installed/tsan/bin/protoc</exists>
+          </file>
+        </activation>
+        <build>
+          <plugins>
+            <plugin>
+              <groupId>com.google.protobuf.tools</groupId>
+              <artifactId>maven-protoc-plugin</artifactId>
+              <version>${maven-protoc-plugin.version}</version>
+              <configuration>
+                <protocExecutable>
+                  ${project.basedir}/../../thirdparty/installed/tsan/bin/protoc
+                </protocExecutable>
+                <additionalProtoPathElements>
+                  <additionalProtoPathElement>
+                    ${project.basedir}/../../thirdparty/installed/tsan/include
+                  </additionalProtoPathElement>
+                </additionalProtoPathElements>
+              </configuration>
+            </plugin>
+          </plugins>
+        </build>
+      </profile>
+      <profile>
+        <id>protoc-uninstrumented</id>
+        <activation>
+          <file>
+            <exists>${basedir}/../../thirdparty/installed/uninstrumented/bin/protoc</exists>
+          </file>
+        </activation>
+        <build>
+          <plugins>
+            <plugin>
+              <groupId>com.google.protobuf.tools</groupId>
+              <artifactId>maven-protoc-plugin</artifactId>
+              <version>${maven-protoc-plugin.version}</version>
+              <configuration>
+                <protocExecutable>
+                  ${project.basedir}/../../thirdparty/installed/uninstrumented/bin/protoc
+                </protocExecutable>
+                <additionalProtoPathElements>
+                  <additionalProtoPathElement>
+                    ${project.basedir}/../../thirdparty/installed/uninstrumented/include
+                  </additionalProtoPathElement>
+                </additionalProtoPathElements>
+              </configuration>
+            </plugin>
+          </plugins>
+        </build>
+      </profile>
       <profile>
         <id>protoc-system</id>
         <activation>
-          <file>
-            <missing>${basedir}/../../thirdparty/installed/uninstrumented/bin/protoc</missing>
-          </file>
+          <activeByDefault>true</activeByDefault>
         </activation>
         <build>
           <plugins>
