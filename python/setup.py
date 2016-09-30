@@ -127,7 +127,11 @@ LONG_DESCRIPTION = open(os.path.join(setup_dir, "README.md")).read()
 DESCRIPTION = "Python interface to the Apache Kudu C++ Client API"
 
 CLASSIFIERS = [
-    'Development Status :: 3 - Alpha',
+    'Development Status :: 4 - Beta',
+    'Intended Audience :: Developers',
+    'License :: OSI Approved :: Apache Software License',
+    'Topic :: Database :: Front-Ends',
+    'Topic :: Scientific/Engineering :: Interface Engine/Protocol Translator',
     'Environment :: Console',
     'Programming Language :: Python',
     'Programming Language :: Python :: 2',
@@ -138,7 +142,7 @@ CLASSIFIERS = [
     'Programming Language :: Cython'
 ]
 
-URL = 'http://getkudu.io'
+URL = 'http://kudu.apache.org/'
 
 setup(
     name="kudu-python",
