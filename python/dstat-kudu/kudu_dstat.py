@@ -4,14 +4,10 @@ import subprocess
 import sys
 import tempfile
 import time
+from kudu.client import Partitioning
 
 DSTAT_COL_NAMES = ["usr", "sys", "idl", "wai", "hiq", "siq", "read", "writ", "recv", "send",
                   "in","out","int","csw"]
-
-
-def connect_to(host, port=7051):
-  """Returns a kudu client object connecting to the specified kudu master"""
-  return kudu.Client("{0}:{1}".format(host, port))
 
 
 def open_or_create_table(client, table, drop=False):
@@ -25,23 +21,27 @@ def open_or_create_table(client, table, drop=False):
 
   if not exists:
     # Create the schema for the table, basically all float cols
-    cols = [kudu.ColumnSchema.create("ts", kudu.INT64)]
-    cols += [kudu.ColumnSchema.create(x, kudu.FLOAT) for x in DSTAT_COL_NAMES]
+    builder = kudu.schema_builder()
+    builder.add_column("ts", kudu.int64, nullable=False, primary_key=True)
+    for col in DSTAT_COL_NAMES:
+      builder.add_column(col, kudu.float_)
+    schema = builder.build()
 
-    # Based on the column meta data create a new schema object, where the first column
-    # is the key column.
-    schema = kudu.schema_from_list(cols, 1)
-    client.create_table(table, schema)
+    # Create hash partitioning buckets
+    partitioning = Partitioning().add_hash_partitions('ts', 2)
 
-  return client.open_table(table)
+    client.create_table(table, schema, partitioning)
+
+  return client.table(table)
 
 def append_row(table, line):
   """The line is the raw string read from stdin, that is then splitted by , and prepended
   with the current timestamp."""
   data = [float(x.strip()) for x in line.split(",")]
 
-  op = table.insert()
-  op["ts"] = int(time.time())
+  op = table.new_insert()
+  # Convert to microseconds
+  op["ts"] = int(time.time() * 1000000)
   for c, v in zip(DSTAT_COL_NAMES, data):
     op[c] = v
   return op
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     if operation in ["drop"]:
       drop = True
 
-  client = connect_to("127.0.0.1")
+  client = kudu.connect("127.0.0.1", 7051)
   table = open_or_create_table(client, "dstat", drop)
 
   # Start dstat
