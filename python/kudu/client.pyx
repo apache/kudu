@@ -766,21 +766,28 @@ cdef class Column:
     cdef KuduValue* box_value(self, object obj) except NULL:
         cdef:
             KuduValue* val
-            Slice* slc
+            Slice slc
 
-        if isinstance(obj, unicode):
-            obj = obj.encode('utf8')
-
-        if isinstance(obj, bytes):
-            slc = new Slice(<char*> obj, len(obj))
-            val = KuduValue.CopyString(deref(slc))
-            del slc
-        elif isinstance(obj, int):
+        if (self.spec.type.name[:3] == 'int'):
             val = KuduValue.FromInt(obj)
-        elif isinstance(obj, float):
+        elif (self.spec.type.name == 'string'):
+            if isinstance(obj, unicode):
+                obj = obj.encode('utf8')
+
+            slc = Slice(<char*> obj, len(obj))
+            val = KuduValue.CopyString(slc)
+        elif (self.spec.type.name == 'bool'):
+            val = KuduValue.FromBool(obj)
+        elif (self.spec.type.name == 'float'):
+            val = KuduValue.FromFloat(obj)
+        elif (self.spec.type.name == 'double'):
             val = KuduValue.FromDouble(obj)
+        elif (self.spec.type.name == 'unixtime_micros'):
+            obj = to_unixtime_micros(obj)
+            val = KuduValue.FromInt(obj)
         else:
-            raise TypeError(obj)
+            raise TypeError("Cannot add predicate for kudu type <{0}>"
+                            .format(self.spec.type.name))
 
         return val
 
@@ -2006,15 +2013,8 @@ cdef class PartialRow:
             self.row.SetStringCopy(i, deref(slc))
             del slc
         elif t == KUDU_UNIXTIME_MICROS:
-            # String with custom format
-            #  eg: ("2016-01-01", "%Y-%m-%d")
-            if type(value) is tuple:
-                self.row.SetUnixTimeMicros(i, <int64_t>
-                    to_unixtime_micros(value[0], value[1]))
-                # datetime.datetime input or string with default format
-            else:
-                self.row.SetUnixTimeMicros(i, <int64_t>
-                    to_unixtime_micros(value))
+            self.row.SetUnixTimeMicros(i, <int64_t>
+                to_unixtime_micros(value))
         else:
             raise TypeError("Cannot set kudu type <{0}>.".format(_type_names[t]))
 

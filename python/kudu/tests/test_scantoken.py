@@ -38,7 +38,7 @@ class TestScanToken(TestScanBase):
     def setUp(self):
         pass
 
-    def _subtest_serialize_thread_and_verify(self, tokens, expected_tuples):
+    def _subtest_serialize_thread_and_verify(self, tokens, expected_tuples, count_only=False):
         """
         Given the input serialized tokens, spawn new threads,
         execute them and validate the results
@@ -55,7 +55,10 @@ class TestScanToken(TestScanBase):
         for result in results:
             actual_tuples += result
 
-        self.assertEqual(sorted(expected_tuples), sorted(actual_tuples))
+        if count_only:
+            self.assertEqual(expected_tuples, actual_tuples)
+        else:
+            self.assertEqual(sorted(expected_tuples), sorted(actual_tuples))
 
     def test_scan_token_serde_threaded_with_named_projection(self):
         """
@@ -113,7 +116,7 @@ class TestScanToken(TestScanBase):
         with self.assertRaises(TypeError):
             builder.add_predicates([sv >= None])
 
-        with self.assertRaises(kudu.KuduInvalidArgument):
+        with self.assertRaises(TypeError):
             builder.add_predicates([sv >= 1])
 
     def test_scan_token_batch_by_batch_with_local_scanner(self):
@@ -209,3 +212,34 @@ class TestScanToken(TestScanBase):
             tuples.extend(scanner.read_all_tuples())
 
         self.assertEqual(sorted(self.tuples), sorted(tuples))
+
+    def verify_pred_type_scans(self, preds, row_indexes, count_only=False):
+        # Using the incoming list of predicates, verify that the row returned
+        # matches the inserted tuple at the row indexes specified in a
+        # slice object
+        builder = self.type_table.scan_token_builder()
+        builder.set_fault_tolerant()
+        builder.set_projected_column_names(self.projected_names_w_o_float)
+        builder.add_predicates(preds)
+
+        # Verify rows
+        self._subtest_serialize_thread_and_verify(builder.build(),
+                                                  self.type_test_rows[row_indexes],
+                                                  count_only)
+
+    def test_unixtime_micros_pred(self):
+        # Test unixtime_micros value predicate
+        self._test_unixtime_micros_pred()
+
+    def test_bool_pred(self):
+        # Test a boolean value predicate
+        self._test_bool_pred()
+
+    def test_double_pred(self):
+        # Test a double precision float predicate
+        self._test_double_pred()
+
+    def test_float_pred(self):
+        # Test a single precision float predicate
+        # Does a row check count only
+        self._test_float_pred()

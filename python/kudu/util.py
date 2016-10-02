@@ -46,6 +46,9 @@ def to_unixtime_micros(timestamp, format = "%Y-%m-%dT%H:%M:%S.%f"):
     ---------
     timestamp : datetime.datetime or string
       If a string is provided, a format must be provided as well.
+      A tuple may be provided in place of the timestamp with a
+      string value and a format. This is useful for predicates
+      and setting values where this method is indirectly called.
       Timezones provided in the string are not supported at this
       time. UTC unless provided in a datetime object.
     format : Required if a string timestamp is provided
@@ -60,6 +63,8 @@ def to_unixtime_micros(timestamp, format = "%Y-%m-%dT%H:%M:%S.%f"):
         pass
     elif isinstance(timestamp, six.string_types):
         timestamp = datetime.datetime.strptime(timestamp, format)
+    elif isinstance(timestamp, tuple):
+        timestamp = datetime.datetime.strptime(timestamp[0], timestamp[1])
     else:
         raise ValueError("Invalid timestamp type. " +
                          "You must provide a datetime.datetime or a string.")

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,6 +18,7 @@
 # under the License.
 
 from kudu.compat import unittest
+from kudu.client import Partitioning
 from kudu.tests.common import KuduTestBase
 import kudu
 import datetime
@@ -57,6 +59,50 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
 
         self.table = table
         self.tuples = tuples
+
+        # Create table to test all types
+        # for various predicate tests
+        table_name = 'type-test'
+        # Create schema, partitioning and then table
+        builder = kudu.schema_builder()
+        builder.add_column('key').type(kudu.int64).nullable(False).primary_key()
+        builder.add_column('unixtime_micros_val', type_=kudu.unixtime_micros, nullable=False)
+        builder.add_column('string_val', type_=kudu.string, compression=kudu.COMPRESSION_LZ4, encoding='prefix')
+        builder.add_column('bool_val', type_=kudu.bool)
+        builder.add_column('double_val', type_=kudu.double)
+        builder.add_column('int8_val', type_=kudu.int8)
+        builder.add_column('float_val', type_=kudu.float)
+        schema = builder.build()
+
+        self.projected_names_w_o_float = [
+            col for col in schema.names if col != 'float_val'
+        ]
+
+        partitioning = Partitioning().add_hash_partitions(column_names=['key'], num_buckets=3)
+
+        self.client.create_table(table_name, schema, partitioning)
+        self.type_table = self.client.table(table_name)
+
+        # Insert new rows
+        self.type_test_rows = [
+            (1, datetime.datetime(2016, 1, 1).replace(tzinfo=pytz.utc),
+             "Test One", True, 1.7976931348623157 * (10^308), 127, 3.402823 * (10^38)),
+            (2, datetime.datetime.utcnow().replace(tzinfo=pytz.utc),
+             "测试二", False, 200.1, -1, -150.2)
+        ]
+        session = self.client.new_session()
+        for row in self.type_test_rows:
+            op = self.type_table.new_insert()
+            for idx, val in enumerate(row):
+                op[idx] = val
+            session.apply(op)
+        session.flush()
+
+        # Remove the float values from the type_test_rows tuples so we can
+        # compare the other vals
+        self.type_test_rows = [
+            tuple[:-1] for tuple in self.type_test_rows
+        ]
 
     def setUp(self):
         pass
@@ -128,3 +174,39 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
             op[idx] = val
         session.apply(op)
         session.flush()
+
+    def _test_unixtime_micros_pred(self):
+        # Test unixtime_micros value predicate
+        self.verify_pred_type_scans(
+            preds=[
+                self.type_table['unixtime_micros_val'] == ("2016-01-01", "%Y-%m-%d")
+            ],
+            row_indexes=slice(0,1)
+        )
+
+    def _test_bool_pred(self):
+        # Test a boolean value predicate
+        self.verify_pred_type_scans(
+            preds=[
+                self.type_table['bool_val'] == False
+            ],
+            row_indexes=slice(1,2)
+        )
+
+    def _test_double_pred(self):
+        # Test a double precision float predicate
+        self.verify_pred_type_scans(
+            preds=[
+                self.type_table['double_val'] < 200.11
+            ],
+            row_indexes=slice(1,2)
+        )
+
+    def _test_float_pred(self):
+        self.verify_pred_type_scans(
+            preds=[
+                self.type_table['float_val'] == 3.402823 * (10^38)
+            ],
+            row_indexes=slice(0, 1),
+            count_only=True
+        )

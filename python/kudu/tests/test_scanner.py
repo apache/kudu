@@ -141,14 +141,14 @@ class TestScanner(TestScanBase):
         with self.assertRaises(TypeError):
             scanner.add_predicates([sv >= None])
 
-        with self.assertRaises(kudu.KuduInvalidArgument):
+        with self.assertRaises(TypeError):
             scanner.add_predicates([sv >= 1])
 
         with self.assertRaises(TypeError):
             scanner.add_predicates([sv.in_list(['testing',
                                                 datetime.datetime.utcnow()])])
 
-        with self.assertRaises(kudu.KuduInvalidArgument):
+        with self.assertRaises(TypeError):
             scanner.add_predicates([sv.in_list([
                 'hello_20',
                 120
@@ -214,3 +214,36 @@ class TestScanner(TestScanBase):
             check_tuples = sorted(scanner.read_all_tuples())
             # Avoid tight looping
             time.sleep(0.05)
+
+    def verify_pred_type_scans(self, preds, row_indexes, count_only=False):
+        # Using the incoming list of predicates, verify that the row returned
+        # matches the inserted tuple at the row indexes specified in a
+        # slice object
+        scanner = self.type_table.scanner()
+        scanner.set_fault_tolerant()
+        scanner.add_predicates(preds)
+        scanner.set_projected_column_names(self.projected_names_w_o_float)
+        tuples = scanner.open().read_all_tuples()
+
+        # verify rows
+        if count_only:
+            self.assertEqual(len(self.type_test_rows[row_indexes]), len(tuples))
+        else:
+            self.assertEqual(sorted(self.type_test_rows[row_indexes]), tuples)
+
+    def test_unixtime_micros_pred(self):
+        # Test unixtime_micros value predicate
+        self._test_unixtime_micros_pred()
+
+    def test_bool_pred(self):
+        # Test a boolean value predicate
+        self._test_bool_pred()
+
+    def test_double_pred(self):
+        # Test a double precision float predicate
+        self._test_double_pred()
+
+    def test_float_pred(self):
+        # Test a single precision float predicate
+        # Does a row check count only
+        self._test_float_pred()
