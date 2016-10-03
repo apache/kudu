@@ -493,14 +493,18 @@ Status Subprocess::Call(const vector<string>& argv,
   if (stderr_out) {
     fds.push_back(p.from_child_stderr_fd());
   }
-  vector<string> out;
-  RETURN_NOT_OK(ReadFdsFully(argv[0], fds, &out));
+  vector<string> outv;
+  RETURN_NOT_OK(ReadFdsFully(argv[0], fds, &outv));
 
+  // Given that ReadFdsFully captures the strings in the order in which we
+  // had installed 'fds' above, it can be assured that we can receive
+  // as many strings as there were 'fds' in the vector and in that order.
+  CHECK_EQ(outv.size(), fds.size());
   if (stdout_out) {
-    *stdout_out = std::move(out[0]);
+    *stdout_out = std::move(outv.front());
   }
   if (stderr_out) {
-    *stderr_out = std::move(out[1]);
+    *stderr_out = std::move(outv.back());
   }
 
   int retcode;

@@ -24,6 +24,7 @@
 
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
@@ -125,6 +126,25 @@ TEST_F(SubprocessTest, TestReadFromStdoutAndStderr) {
     "dd if=/dev/urandom of=/dev/stderr bs=512 count=2048 &"
     "wait"
   }, &stdout, &stderr));
+}
+
+// Test KUDU-1674: '/bin/bash -c "echo"' command below is expected to
+// capture a string on stderr. This test validates that passing
+// stderr alone doesn't result in SIGSEGV as reported in the bug and
+// also check for sanity of stderr in the output.
+TEST_F(SubprocessTest, TestReadSingleFD) {
+  string stderr;
+  const string str = "ApacheKudu";
+  const string cmd_str = strings::Substitute("/bin/echo -n $0 1>&2", str);
+  ASSERT_OK(Subprocess::Call({"/bin/sh", "-c", cmd_str}, nullptr, &stderr));
+  ASSERT_EQ(stderr, str);
+
+  // Also sanity check other combinations.
+  string stdout;
+  ASSERT_OK(Subprocess::Call({"/bin/ls", "/dev/null"}, &stdout, nullptr));
+  ASSERT_STR_CONTAINS(stdout, "/dev/null");
+
+  ASSERT_OK(Subprocess::Call({"/bin/ls", "/dev/zero"}, nullptr, nullptr));
 }
 
 } // namespace kudu
