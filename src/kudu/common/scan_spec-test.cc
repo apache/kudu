@@ -118,7 +118,8 @@ class CompositeIntKeysTest : public TestScanSpec {
     TestScanSpec(
         Schema({ ColumnSchema("a", INT8),
                  ColumnSchema("b", INT8),
-                 ColumnSchema("c", INT8) },
+                 ColumnSchema("c", INT8),
+                 ColumnSchema("d", INT8, true) },
                3)) {
   }
 };
@@ -324,15 +325,16 @@ TEST_F(CompositeIntKeysTest, TestPredicateOrderDoesntMatter) {
             spec.ToString(schema_));
 }
 
-// Test that IS NOT NULL predicates do *not* get pushed into the primary key
-// bounds. This is a regression test for KUDU-1652, where previously attempting
+// Test that IS NOT NULL predicates do *not* get filtered from non-nullable
+// columns. This is a regression test for KUDU-1652, where previously attempting
 // to push an IS NOT NULL predicate would cause a CHECK failure.
 TEST_F(CompositeIntKeysTest, TestIsNotNullPushdown) {
   ScanSpec spec;
   spec.AddPredicate(ColumnPredicate::IsNotNull(schema_.column(0)));
+  spec.AddPredicate(ColumnPredicate::IsNotNull(schema_.column(3)));
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
-  EXPECT_EQ("`a` IS NOT NULL", spec.ToString(schema_));
+  EXPECT_EQ("`d` IS NOT NULL", spec.ToString(schema_));
 }
 
 // Test that IN list predicates get pushed into the primary key bounds.

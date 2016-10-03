@@ -126,11 +126,17 @@ public abstract class AbstractKuduScannerBuilder
   public S addPredicate(KuduPredicate predicate) {
     String columnName = predicate.getColumn().getName();
     KuduPredicate existing = predicates.get(columnName);
-    if (existing == null) {
-      predicates.put(columnName, predicate);
-    } else {
-      predicates.put(columnName, existing.merge(predicate));
+    if (existing != null) {
+      predicate = existing.merge(predicate);
     }
+
+    // KUDU-1652: Do not send an IS NOT NULL predicate to the server for a non-nullable column.
+    if (!predicate.getColumn().isNullable() &&
+        predicate.getType() == KuduPredicate.PredicateType.IS_NOT_NULL) {
+      return (S) this;
+    }
+
+    predicates.put(columnName, predicate);
     return (S) this;
   }
 
