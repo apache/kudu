@@ -124,6 +124,16 @@ void ScanSpec::OptimizeScan(const Schema& schema,
     LiftPrimaryKeyBounds(schema, arena);
     PushPredicatesIntoPrimaryKeyBounds(schema, arena, pool, remove_pushed_predicates);
   }
+
+  // KUDU-1652: Filter IS NOT NULL predicates for non-nullable columns.
+  for (auto itr = predicates_.begin(); itr != predicates_.end(); ) {
+    if (!itr->second.column().is_nullable() &&
+        itr->second.predicate_type() == PredicateType::IsNotNull) {
+      itr = predicates_.erase(itr);
+    } else {
+      itr = std::next(itr);
+    }
+  }
 }
 
 void ScanSpec::PushPredicatesIntoPrimaryKeyBounds(const Schema& schema,
