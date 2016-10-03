@@ -425,8 +425,8 @@ void ColumnPredicate::MergeIntoInList(const ColumnPredicate &other) {
       Simplify();
       return;
     };
-    default: LOG(FATAL) << "unknown predicate type";
   }
+  LOG(FATAL) << "unknown predicate type";
 }
 
 namespace {
@@ -499,9 +499,9 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
       });
       return;
     };
-    default:
-      LOG(FATAL) << "unknown predicate type";
+    case PredicateType::None: LOG(FATAL) << "NONE predicate evaluation";
   }
+  LOG(FATAL) << "unknown predicate type";
 }
 
 void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector* sel) const {
@@ -584,10 +584,12 @@ bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
       for (int i = 0; i < values_.size(); i++) {
         if (column_.type_info()->Compare(values_[i], other.values_[i]) != 0) return false;
       }
+      return true;
     };
     case PredicateType::None:
     case PredicateType::IsNotNull: return true;
   }
+  LOG(FATAL) << "unknown predicate type";
 }
 
 bool ColumnPredicate::CheckValueInRange(const void* value) const {
