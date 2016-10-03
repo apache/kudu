@@ -40,6 +40,7 @@
 #include "kudu/rpc/sasl_server.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
@@ -174,6 +175,10 @@ Status ReactorThread::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
 }
 
 void ReactorThread::WakeThread() {
+  // libev uses some lock-free synchronization, but doesn't have TSAN annotations.
+  // See http://lists.schmorp.de/pipermail/libev/2013q2/002178.html or KUDU-366
+  // for examples.
+  debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
   async_.send();
 }
 

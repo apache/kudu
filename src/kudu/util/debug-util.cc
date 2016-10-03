@@ -28,6 +28,7 @@
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/monotime.h"
@@ -330,6 +331,9 @@ string GetLogFormatStackTraceHex() {
 }
 
 void StackTrace::Collect(int skip_frames) {
+  // google::GetStackTrace has a data race. This is called frequently, so better
+  // to ignore it with an annotation rather than use a suppression.
+  debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
   num_frames_ = google::GetStackTrace(frames_, arraysize(frames_), skip_frames);
 }
 

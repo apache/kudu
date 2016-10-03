@@ -23,6 +23,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/util/barrier.h"
+#include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/memory.h"
 #include "kudu/util/memory/overwrite.h"
@@ -342,6 +343,7 @@ TEST_F(TestCBTree, TestInsertAndVerifyRandom) {
 // - either mark it splitting or inserting (alternatingly)
 // - unlock it
 void LockCycleThread(AtomicVersion *v, int count_split, int count_insert) {
+  debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
   int i = 0;
   while (count_split > 0 || count_insert > 0) {
     i++;

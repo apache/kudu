@@ -35,6 +35,11 @@
 // - The leaf nodes are linked together with a "next" pointer. This makes
 //   scanning simpler (the Masstree implementation avoids this because it
 //   complicates the removal operation)
+//
+// NOTE: this code disables TSAN for the most part. This is because it uses
+// some "clever" concurrency mechanisms which are difficult to model in TSAN.
+// We instead ensure correctness by heavy stress-testing.
+
 #ifndef KUDU_TABLET_CONCURRENT_BTREE_H
 #define KUDU_TABLET_CONCURRENT_BTREE_H
 
@@ -44,6 +49,7 @@
 #include <memory>
 #include <string>
 
+#include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/inline_slice.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
@@ -849,6 +855,7 @@ class PreparedMutation {
   // If the returned PreparedMutation object is not used with
   // Insert(), it will be automatically unlocked by its destructor.
   void Prepare(CBTree<Traits> *tree) {
+    debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
     CHECK(!prepared());
     this->tree_ = tree;
     this->arena_ = tree->arena_.get();
@@ -965,6 +972,7 @@ class CBTree {
   //
   // More advanced users can use the PreparedMutation class instead.
   bool Insert(const Slice &key, const Slice &val) {
+    debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
     PreparedMutation<Traits> mutation(key);
     mutation.Prepare(this);
     return mutation.Insert(val);
@@ -992,6 +1000,7 @@ class CBTree {
   //
   // TODO: this call probably won't be necessary in the final implementation
   GetResult GetCopy(const Slice &key, char *buf, size_t *buf_len) const {
+    debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
     size_t in_buf_len = *buf_len;
 
     retry_from_root:
@@ -1047,6 +1056,7 @@ class CBTree {
   // Returns true if the given key is contained in the tree.
   // TODO: unit test
   bool ContainsKey(const Slice &key) const {
+    debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
     bool ret;
 
     retry_from_root:
@@ -1290,6 +1300,7 @@ class CBTree {
   //   'node' is unlocked
   bool Insert(PreparedMutation<Traits> *mutation,
               const Slice &val) {
+    debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
     CHECK(!frozen_);
     CHECK_NOTNULL(mutation);
     DCHECK_EQ(mutation->tree(), this);
@@ -1712,6 +1723,7 @@ class CBTreeIterator {
 
 
   void SeekToLeaf(const Slice &key) {
+    debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
     retry_from_root:
     {
       AtomicVersion version;
@@ -1747,6 +1759,7 @@ class CBTreeIterator {
   }
 
   bool SeekNextLeaf() {
+    debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
     DCHECK(seeked_);
     LeafNode<Traits> *next = leaf_to_scan_->next_;
     if (PREDICT_FALSE(next == NULL)) {
