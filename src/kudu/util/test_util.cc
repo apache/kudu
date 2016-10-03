@@ -184,9 +184,8 @@ string GetTestDataDirectory() {
 void AssertEventually(const std::function<void(void)>& f,
                       const MonoDelta& timeout) {
   const MonoTime deadline = MonoTime::Now() + timeout;
-  int attempts = 0;
 
-  while (MonoTime::Now() < deadline) {
+  for (int attempts = 0; MonoTime::Now() < deadline; attempts++) {
     // Capture any assertion failures within this scope (i.e. from their function)
     // into 'results'
     testing::TestPartResultArray results;
