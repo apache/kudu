@@ -380,21 +380,35 @@ public class ITClient extends BaseKuduTest {
      * @return true if the full scan was successful, false if there was an error
      */
     private boolean fullScan() {
-      KuduScanner scanner = getScannerBuilder().build();
-      try {
-        int rowCount = countRowsInScan(scanner);
-        if (rowCount < lastRowCount) {
-          reportError("Row count regressed: " + rowCount + " < " + lastRowCount, null);
-          return false;
+      int rowCount;
+      DeadlineTracker deadlineTracker = new DeadlineTracker();
+      deadlineTracker.setDeadline(DEFAULT_SLEEP);
+
+      while (KEEP_RUNNING_LATCH.getCount() > 0 && !deadlineTracker.timedOut()) {
+        KuduScanner scanner = getScannerBuilder().build();
+
+        try {
+          rowCount = countRowsInScan(scanner);
+        } catch (KuduException e) {
+          return checkAndReportError("Got error while row counting", e);
         }
-        if (rowCount > lastRowCount) {
-          lastRowCount = rowCount;
-          LOG.info("New row count {}", lastRowCount);
+
+        if (rowCount >= lastRowCount) {
+          if (rowCount > lastRowCount) {
+            lastRowCount = rowCount;
+            LOG.info("New row count {}", lastRowCount);
+          }
+          return true;
         }
-      } catch (KuduException e) {
-        return checkAndReportError("Got error while row counting", e);
+
+        // Due to the lack of KUDU-430, we need to loop until the row count stops regressing.
+        try {
+          KEEP_RUNNING_LATCH.await(50, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+          // No need to do anything, we'll exit the loop once we test getCount() in the condition.
+        }
       }
-      return true;
+      return !deadlineTracker.timedOut();
     }
 
     private KuduScanner.KuduScannerBuilder getScannerBuilder() {
