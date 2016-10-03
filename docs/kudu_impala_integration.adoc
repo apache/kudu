@@ -365,13 +365,6 @@ to an Impala table, except that you need to write the `CREATE` statement yoursel
 Use the following example as a guideline. Impala first creates the table, then creates
 the mapping.
 
-IMPORTANT: When creating a new Kudu table, you are strongly encouraged to specify
-a distribution scheme. If you do not, your table will consist of a single tablet,
-and thus load will not be distributed across your cluster. See
-<<partitioning_tables>>. The table creation example below is distributed into 16
-buckets by hashing the `id` column, for simplicity. See
-<<partitioning_rules_of_thumb>> for guidelines on partitioning.
-
 [source,sql]
 ----
 CREATE TABLE my_first_table
@@ -400,6 +393,11 @@ For Kudu tables, this must be `com.cloudera.kudu.hive.KuduStorageHandler`.
 `kudu.master_addresses`:: the list of Kudu masters Impala should communicate with.
 `kudu.key_columns`:: the comma-separated list of primary key columns, whose contents
 should not be nullable.
+
+When creating a new Kudu table, you are required to specify a distribution scheme.
+See <<partitioning_tables>>. The table creation example above is distributed into
+16 buckets by hashing the `id` column, for simplicity. See
+<<partitioning_rules_of_thumb>> for guidelines on partitioning.
 
 ==== `CREATE TABLE AS SELECT`
 You can create a table by querying any other table or tables in Impala, using a `CREATE
