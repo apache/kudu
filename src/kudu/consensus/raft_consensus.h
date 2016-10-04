@@ -91,68 +91,63 @@ class RaftConsensus : public Consensus,
 
   virtual ~RaftConsensus();
 
-  virtual Status Start(const ConsensusBootstrapInfo& info) OVERRIDE;
+  Status Start(const ConsensusBootstrapInfo& info) override;
 
-  virtual bool IsRunning() const OVERRIDE;
+  bool IsRunning() const override;
 
   // Emulates an election by increasing the term number and asserting leadership
   // in the configuration by sending a NO_OP to other peers.
   // This is NOT safe to use in a distributed configuration with failure detection
   // enabled, as it could result in a split-brain scenario.
-  virtual Status EmulateElection() OVERRIDE;
+  Status EmulateElection() override;
 
-  virtual Status StartElection(ElectionMode mode) OVERRIDE;
+  Status StartElection(ElectionMode mode) override;
 
-  virtual Status WaitUntilLeaderForTests(const MonoDelta& timeout) OVERRIDE;
+  Status WaitUntilLeaderForTests(const MonoDelta& timeout) override;
 
-  virtual Status StepDown(LeaderStepDownResponsePB* resp) OVERRIDE;
+  Status StepDown(LeaderStepDownResponsePB* resp) override;
 
   // Call StartElection(), log a warning if the call fails (usually due to
   // being shut down).
   void ReportFailureDetected(const std::string& name, const Status& msg);
 
-  virtual Status Replicate(const scoped_refptr<ConsensusRound>& round) OVERRIDE;
+  Status Replicate(const scoped_refptr<ConsensusRound>& round) override;
 
-  virtual Status CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRound>& round) OVERRIDE;
+  Status CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRound>& round) override;
 
-  virtual Status Update(const ConsensusRequestPB* request,
-                        ConsensusResponsePB* response) OVERRIDE;
+  Status Update(const ConsensusRequestPB* request,
+                ConsensusResponsePB* response) override;
 
-  virtual Status RequestVote(const VoteRequestPB* request,
-                             VoteResponsePB* response) OVERRIDE;
+  Status RequestVote(const VoteRequestPB* request,
+                     VoteResponsePB* response) override;
 
-  virtual Status ChangeConfig(const ChangeConfigRequestPB& req,
-                              const StatusCallback& client_cb,
-                              boost::optional<tserver::TabletServerErrorPB::Code>* error_code)
-                              OVERRIDE;
+  Status ChangeConfig(const ChangeConfigRequestPB& req,
+                      const StatusCallback& client_cb,
+                      boost::optional<tserver::TabletServerErrorPB::Code>* error_code) override;
 
-  virtual RaftPeerPB::Role role() const OVERRIDE;
+  Status GetLastOpId(OpIdType type, OpId* id) override;
 
-  virtual std::string peer_uuid() const OVERRIDE;
+  RaftPeerPB::Role role() const override;
 
-  virtual std::string tablet_id() const OVERRIDE;
+  std::string peer_uuid() const override;
 
-  virtual ConsensusStatePB ConsensusState(ConsensusConfigType type) const OVERRIDE;
+  std::string tablet_id() const override;
 
-  virtual RaftConfigPB CommittedConfig() const OVERRIDE;
+  ConsensusStatePB ConsensusState(ConsensusConfigType type) const override;
 
-  virtual void DumpStatusHtml(std::ostream& out) const OVERRIDE;
+  RaftConfigPB CommittedConfig() const override;
 
-  virtual void Shutdown() OVERRIDE;
+  void DumpStatusHtml(std::ostream& out) const override;
+
+  void Shutdown() override;
 
   // Makes this peer advance it's term (and step down if leader), for tests.
-  virtual Status AdvanceTermForTests(int64_t new_term);
-
-  // Return the active (as opposed to committed) role.
-  RaftPeerPB::Role GetActiveRole() const;
+  Status AdvanceTermForTests(int64_t new_term);
 
   // Returns the replica state for tests. This should never be used outside of
   // tests, in particular calling the LockFor* methods on the returned object
   // can cause consensus to deadlock.
   ReplicaState* GetReplicaStateForTests();
-
-  virtual Status GetLastOpId(OpIdType type, OpId* id) OVERRIDE;
-
 
   //------------------------------------------------------------
   // PeerMessageQueueObserver implementation
@@ -170,25 +165,6 @@ class RaftConsensus : public Consensus,
                             const std::string& reason) override;
 
   log::RetentionIndexes GetRetentionIndexes() override;
-
- protected:
-  // Trigger that a non-Transaction ConsensusRound has finished replication.
-  // If the replication was successful, an status will be OK. Otherwise, it
-  // may be Aborted or some other error status.
-  // If 'status' is OK, write a Commit message to the local WAL based on the
-  // type of message it is.
-  // The 'client_cb' will be invoked at the end of this execution.
-  virtual void NonTxRoundReplicationFinished(ConsensusRound* round,
-                                             const StatusCallback& client_cb,
-                                             const Status& status);
-
-  // As a leader, append a new ConsensusRound to the queue.
-  // Only virtual and protected for mocking purposes.
-  virtual Status AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round);
-
-  // As a follower, start a consensus round not associated with a Transaction.
-  // Only virtual and protected for mocking purposes.
-  virtual Status StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg);
 
  private:
   friend class ReplicaState;
@@ -287,12 +263,6 @@ class RaftConsensus : public Consensus,
   // Abort any pending operations after the given op index,
   // and also truncate the LogCache accordingly.
   void TruncateAndAbortOpsAfterUnlocked(int64_t truncate_after_index);
-
-  // Pushes a new Raft configuration to a majority of peers. Contrary to write operations,
-  // this actually waits for the commit round to reach a majority of peers, so that we know
-  // we can proceed. If this returns Status::OK(), a majority of peers have accepted the new
-  // configuration. The peer cannot perform any additional operations until this succeeds.
-  Status PushConfigurationToPeersUnlocked(const RaftConfigPB& new_config);
 
   // Returns the most recent OpId written to the Log.
   OpId GetLatestOpIdFromLog();
@@ -431,6 +401,24 @@ class RaftConsensus : public Consensus,
   void TryRemoveFollowerTask(const std::string& uuid,
                              const RaftConfigPB& committed_config,
                              const std::string& reason);
+
+  // Trigger that a non-Transaction ConsensusRound has finished replication.
+  // If the replication was successful, an status will be OK. Otherwise, it
+  // may be Aborted or some other error status.
+  // If 'status' is OK, write a Commit message to the local WAL based on the
+  // type of message it is.
+  // The 'client_cb' will be invoked at the end of this execution.
+  void NonTxRoundReplicationFinished(ConsensusRound* round,
+                                     const StatusCallback& client_cb,
+                                     const Status& status);
+
+  // As a leader, append a new ConsensusRound to the queue.
+  // Only virtual and protected for mocking purposes.
+  Status AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round);
+
+  // As a follower, start a consensus round not associated with a Transaction.
+  // Only virtual and protected for mocking purposes.
+  Status StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg);
 
   // Threadpool for constructing requests to peers, handling RPC callbacks,
   // etc.

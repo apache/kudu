@@ -1511,12 +1511,6 @@ void RaftConsensus::Shutdown() {
   shutdown_.Store(true, kMemOrderRelease);
 }
 
-RaftPeerPB::Role RaftConsensus::GetActiveRole() const {
-  ReplicaState::UniqueLock lock;
-  CHECK_OK(state_->LockForRead(&lock));
-  return state_->GetActiveRoleUnlocked();
-}
-
 OpId RaftConsensus::GetLatestOpIdFromLog() {
   OpId id;
   log_->GetLatestEntryOpId(&id);
@@ -1675,8 +1669,7 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
 RaftPeerPB::Role RaftConsensus::role() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
-  return GetConsensusRole(state_->GetPeerUuid(),
-                          state_->ConsensusStateUnlocked(CONSENSUS_CONFIG_ACTIVE));
+  return state_->GetActiveRoleUnlocked();
 }
 
 std::string RaftConsensus::LogPrefixUnlocked() {

@@ -78,7 +78,7 @@ void DoNothing(const string& s) {
 Status WaitUntilLeaderForTests(RaftConsensus* raft) {
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(15);
   while (MonoTime::Now() < deadline) {
-    if (raft->GetActiveRole() == RaftPeerPB::LEADER) {
+    if (raft->role() == RaftPeerPB::LEADER) {
       return Status::OK();
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
