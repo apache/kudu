@@ -651,7 +651,7 @@ Hash partitioning is a reasonable approach if primary key values are evenly
 distributed in their domain and no data skew is apparent, such as timestamps or
 serial IDs.
 
-The following example creates 16 tablets by hashing the `id` column. This spreads
+The following example creates 16 tablets by hashing the `id` and `sku` columns. This spreads
 writes across all 16 tablets. In this example, a query for a range of `sku` values
 is likely to need to read all 16 tablets, so this may not be the optimum schema for
 this table. See <<advanced_partitioning>> for an extended example.
