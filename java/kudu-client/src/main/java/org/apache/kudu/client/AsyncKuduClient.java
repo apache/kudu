@@ -1410,7 +1410,7 @@ public class AsyncKuduClient implements AutoCloseable {
     // sleep before retrying.
     TableLocationsCache.Entry entry = locationsCache.get(requestPartitionKey);
     if (!entry.isNonCoveredRange() && clientFor(entry.getTablet()) == null) {
-      throw new NoSuitableReplicaException(
+      throw new NoLeaderFoundException(
           Status.NotFound("Tablet " + entry.toString() + " doesn't have a leader"));
     }
   }

@@ -22,16 +22,17 @@ import org.apache.kudu.annotations.InterfaceStability;
 import java.util.List;
 
 /**
- * Indicates that the request failed because we couldn't find a leader master server.
+ * Indicates that the request failed because we couldn't find a leader. It is retried as long
+ * as the original call hasn't timed out.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
-final class NoLeaderMasterFoundException extends RecoverableException {
+final class NoLeaderFoundException extends RecoverableException {
 
-  NoLeaderMasterFoundException(Status status) {
+  NoLeaderFoundException(Status status) {
     super(status);
   }
-  NoLeaderMasterFoundException(Status status, Exception cause) {
+  NoLeaderFoundException(Status status, Exception cause) {
     super(status, cause);
   }
 }

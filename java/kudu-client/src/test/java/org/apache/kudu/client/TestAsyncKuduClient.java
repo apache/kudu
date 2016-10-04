@@ -192,7 +192,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     try {
       client.discoverTablets(table, new byte[0], tabletLocations, 1000);
       fail("discoverTablets should throw an exception if there's no leader");
-    } catch (NoSuitableReplicaException ex) {
+    } catch (NoLeaderFoundException ex) {
       // Expected.
     }
   }

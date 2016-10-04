@@ -46,8 +46,8 @@ public class TestGetMasterRegistrationReceived {
         Status.RuntimeError(""));
     RecoverableException reusableRE = new RecoverableException(
         Status.RuntimeError(""));
-    NoLeaderMasterFoundException retryResponse =
-        new NoLeaderMasterFoundException(Status.RuntimeError(""));
+    NoLeaderFoundException retryResponse =
+        new NoLeaderFoundException(Status.RuntimeError(""));
     // We don't test for a particular good response, so as long as we pass something that's not an
     // exception to runTest() we're good.
     Object successResponse = new Object();

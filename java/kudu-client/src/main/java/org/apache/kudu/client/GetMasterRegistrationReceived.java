@@ -59,7 +59,6 @@ final class GetMasterRegistrationReceived {
   private final AtomicInteger countResponsesReceived = new AtomicInteger(0);
 
   // Exceptions received so far: kept for debugging purposes.
-  // (see: NoLeaderMasterFoundException#create() for how this is used).
   private final List<Exception> exceptionsReceived =
       Collections.synchronizedList(new ArrayList<Exception>());
 
@@ -102,7 +101,7 @@ final class GetMasterRegistrationReceived {
   /**
    * Checks if we've already received a response or an exception from every master that
    * we've sent a GetMasterRegistrationRequest to. If so -- and no leader has been found
-   * (that is, 'responseD' was never called) -- pass a {@link NoLeaderMasterFoundException}
+   * (that is, 'responseD' was never called) -- pass a {@link NoLeaderFoundException}
    * to responseD.
    */
   private void incrementCountAndCheckExhausted() {
@@ -142,7 +141,7 @@ final class GetMasterRegistrationReceived {
             LOG.warn(String.format(
                 "None of the provided masters (%s) is a leader, will retry.",
                 allHosts));
-            ex = new NoLeaderMasterFoundException(Status.ServiceUnavailable(message));
+            ex = new NoLeaderFoundException(Status.ServiceUnavailable(message));
           } else {
             LOG.warn(String.format(
                 "Unable to find the leader master (%s), will retry",
@@ -151,7 +150,7 @@ final class GetMasterRegistrationReceived {
                 Joiner.on(",").join(Lists.transform(
                     exceptionsReceived, Functions.toStringFunction()));
             Status s = Status.ServiceUnavailable(joinedMsg);
-            ex = new NoLeaderMasterFoundException(s,
+            ex = new NoLeaderFoundException(s,
                 exceptionsReceived.get(exceptionsReceived.size() - 1));
           }
           responseD.callback(ex);
@@ -166,7 +165,7 @@ final class GetMasterRegistrationReceived {
    * the callback in 'responseD' is invoked with an initialized GetTableLocationResponsePB
    * object containing the leader's RPC address.
    * If the master is not a leader, increment 'countResponsesReceived': if the count equals to
-   * the number of masters, pass {@link NoLeaderMasterFoundException} into
+   * the number of masters, pass {@link NoLeaderFoundException} into
    * 'responseD' if no one else had called 'responseD' before; otherwise, do nothing.
    */
   final class GetMasterRegistrationCB implements Callback<Void, GetMasterRegistrationResponse> {
@@ -220,7 +219,7 @@ final class GetMasterRegistrationReceived {
    * Errback for each GetMasterRegistrationRequest sent in getMasterTableLocations() above.
    * Stores each exception in 'exceptionsReceived'. Increments 'countResponseReceived': if
    * the count is equal to the number of masters and no one else had called 'responseD' before,
-   * pass a {@link NoLeaderMasterFoundException} into 'responseD'; otherwise, do
+   * pass a {@link NoLeaderFoundException} into 'responseD'; otherwise, do
    * nothing.
    */
   final class GetMasterRegistrationErrCB implements Callback<Void, Exception> {
