@@ -28,6 +28,45 @@
 :sectlinks:
 :experimental:
 
+[[rn_1.0.1]]
+
+== Overview
+
+Apache Kudu 1.0.1 is a bug fix release, with no new features or backwards
+incompatible changes.
+
+[[rn_1.0.1_fixed_issues]]
+=== Fixed Issues
+
+- link:https://issues.apache.org/jira/browse/KUDU-1660[KUDU-1660]: Fixed a bug
+  which would cause the Kudu master and tablet server to fail to start on single
+  CPU systems.
+
+- link:https://issues.apache.org/jira/browse/KUDU-1651[KUDU-1652]: Fixed a bug
+  that would cause the C++ client, tablet server, and Java client to crash or
+  throw an exception when attempting to scan a table with a predicate which
+  simplifies to `IS NOT NULL` on a non-nullable column. For instance, setting a
+  `<= 127` predicate on an `INT8` column could trigger this bug, since the
+  predicate only filters null values.
+
+- link:https://issues.apache.org/jira/browse/KUDU-1651[KUDU-1651]: Fixed a bug
+  that would cause the tablet server to crash when evaluating a scan with
+  predicates over a dictionary encoded column containing an entire block of null
+  values.
+
+- link:https://issues.apache.org/jira/browse/KUDU-1623[KUDU-1623]: Fixed a bug
+  that would cause the tablet server to crash when handling UPSERT operations
+  that only set values for the primary key columns.
+
+- link:http://gerrit.cloudera.org:8080/4488[Gerrit #4488] Fixed a bug in the
+  Java client's KuduException class which could cause an unexpected
+  NullPointerException to be thrown when the exception did not have an
+  associated message.
+
+- link:https://issues.apache.org/jira/browse/KUDU-1090[KUDU-1090] Fixed a bug in
+  the memory tracker which could cause a rare crash during tablet server
+  startup.
+
 [[rn_1.0.0]]
 
 == Overview
