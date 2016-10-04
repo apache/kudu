@@ -118,18 +118,14 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
       std::shared_ptr<MemTracker>* tracker,
       const std::shared_ptr<MemTracker>& parent = std::shared_ptr<MemTracker>());
 
-  // If a tracker with the specified 'id' and 'parent' exists in the tree,
-  // returns a shared_ptr to that instance. Otherwise, creates a new
-  // MemTracker with the specified byte_limit, id, and parent.
-  //
-  // Use the two argument form if there is no parent.
+  // If a global tracker with the specified 'id' exists in the tree, returns a
+  // shared_ptr to that instance. Otherwise, creates a new MemTracker with the
+  // specified byte_limit and id, parented to the root MemTracker.
   //
   // Note: this function will enforce that 'id' is unique amongst the children
-  // of 'parent'.
-  static std::shared_ptr<MemTracker> FindOrCreateTracker(
-      int64_t byte_limit,
-      const std::string& id,
-      const std::shared_ptr<MemTracker>& parent = std::shared_ptr<MemTracker>());
+  // of the root MemTracker.
+  static std::shared_ptr<MemTracker> FindOrCreateGlobalTracker(
+      int64_t byte_limit, const std::string& id);
 
   // Returns a list of all the valid trackers.
   static void ListTrackers(std::vector<std::shared_ptr<MemTracker> >* trackers);
@@ -258,9 +254,7 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
   void Init();
 
   // Adds tracker to child_trackers_.
-  //
-  // child_trackers_lock_ must be held.
-  void AddChildTrackerUnlocked(const std::shared_ptr<MemTracker>& tracker);
+  void AddChildTracker(const std::shared_ptr<MemTracker>& tracker);
 
   // Logs the stack of the current consume/release. Used for debugging only.
   void LogUpdate(bool is_consume, int64_t bytes) const;
@@ -268,18 +262,8 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
   static std::string LogUsage(const std::string& prefix,
                               const std::list<std::weak_ptr<MemTracker>>& trackers);
 
-  // Variant of CreateTracker() that:
-  // 1. Must be called with a non-NULL parent, and
-  // 2. Must be called with parent->child_trackers_lock_ held.
-  static std::shared_ptr<MemTracker> CreateTrackerUnlocked(
-      int64_t byte_limit,
-      const std::string& id,
-      const std::shared_ptr<MemTracker>& parent);
-
-  // Variant of FindTracker() that:
-  // 1. Must be called with a non-NULL parent, and
-  // 2. Must be called with parent->child_trackers_lock_ held.
-  static bool FindTrackerUnlocked(
+  // Variant of FindTracker() that must be called with a non-NULL parent.
+  static bool FindTrackerInternal(
       const std::string& id,
       std::shared_ptr<MemTracker>* tracker,
       const std::shared_ptr<MemTracker>& parent);

@@ -85,8 +85,8 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
 
   // Set up (or reuse) a tracker with the global limit. It is parented directly
   // to the root tracker so that it's always global.
-  parent_tracker_ = MemTracker::FindOrCreateTracker(global_max_ops_size_bytes,
-                                                    kParentMemTrackerId);
+  parent_tracker_ = MemTracker::FindOrCreateGlobalTracker(global_max_ops_size_bytes,
+                                                          kParentMemTrackerId);
 
   // And create a child tracker with the per-tablet limit.
   tracker_ = MemTracker::CreateTracker(

@@ -407,7 +407,7 @@ class ShardedLRUCache : public Cache {
     // A cache is often a singleton, so:
     // 1. We reuse its MemTracker if one already exists, and
     // 2. It is directly parented to the root MemTracker.
-    mem_tracker_ = MemTracker::FindOrCreateTracker(
+    mem_tracker_ = MemTracker::FindOrCreateGlobalTracker(
         -1, strings::Substitute("$0-sharded_lru_cache", id));
 
     int num_shards = 1 << shard_bits_;
