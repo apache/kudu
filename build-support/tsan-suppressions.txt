@@ -26,6 +26,9 @@
 race:_ULx86_64_init
 race:_ULx86_64_local_addr_space_init
 
+# libev uses some lock-free synchronization, but doesn't have TSAN annotations.
+race:epoll_ctl
+
 # TSAN complains about data races on the global signals variable in
 # ev_feed_signal and spoiled errno in ev_sighandler. Both are probably noise.
 race:ev_sighandler
