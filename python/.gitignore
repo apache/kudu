@@ -19,11 +19,14 @@
 *flymake*
 
 # Compiled source and in-place build files
+__pycache__
+*$py.class
 *.py[ocd]
 *.so
 .build_cache_dir
 .cache
 .eggs
+*.egg
 MANIFEST
 
 # Generated sources
@@ -41,6 +44,18 @@ dist
 # coverage
 .coverage
 coverage.xml
+
+# other distribution/packaging directories
+env/
+develop-eggs/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+.installed.cfg
 
 # automatically generated during local development
 kudu/version.py
