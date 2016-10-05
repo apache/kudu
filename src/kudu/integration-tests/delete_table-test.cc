@@ -432,7 +432,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
   ASSERT_OK(cluster_->master()->Restart());
   ASSERT_OK(cluster_->WaitForTabletServerCount(1, MonoDelta::FromSeconds(30)));
 
-  // Set up a table which has a table only on TS 0. This will be used to test for
+  // Set up a table which has a tablet only on TS 0. This will be used to test for
   // "collateral damage" bugs where incorrect handling of the main test tablet
   // accidentally removes blocks from another tablet.
   // We use a sequential workload so that we just flush and don't compact.
@@ -467,7 +467,15 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
   ASSERT_OK(cluster_->tablet_server(2)->Restart());
   cluster_->tablet_server(kTsIndex)->Shutdown();
 
-  // Create a new tablet which is replicated on the other two servers.
+  // Restart the master to be sure that it only sees the live servers.
+  // Otherwise it may try to create a tablet with a replica on the down server.
+  // The table creation would eventually succeed after picking a different set of
+  // replicas, but not before causing a timeout.
+  cluster_->master()->Shutdown();
+  ASSERT_OK(cluster_->master()->Restart());
+  ASSERT_OK(cluster_->WaitForTabletServerCount(2, MonoDelta::FromSeconds(30)));
+
+  // Create a new table with a single tablet replicated on the other two servers.
   // We use the same sequential workload. This produces block ID sequences
   // that look like:
   //   TS 0: |---- blocks from 'other-table' ---]
