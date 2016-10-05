@@ -63,8 +63,9 @@
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/mutex.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/threadlocal.h"
 
 #define SCOPED_WATCH_STACK(threshold_ms) \
@@ -167,7 +168,7 @@ class KernelStackWatchdog {
   void Register(TLS* tls);
 
   // Called when a thread's TLS is destructed (i.e. when the thread exits).
-  void Unregister(TLS* tls);
+  void Unregister();
 
   // The actual watchdog loop that the watchdog thread runs.
   void RunThread();
@@ -181,8 +182,22 @@ class KernelStackWatchdog {
   // Used by tests.
   gscoped_ptr<std::vector<std::string> > log_collector_;
 
-  // Lock protecting tls_by_tid_ and log_collector_.
-  mutable Mutex lock_;
+  // Lock protecting log_collector_.
+  mutable simple_spinlock log_lock_;
+
+  // Lock protecting tls_by_tid_.
+  mutable simple_spinlock tls_lock_;
+
+  // Lock which prevents threads from unregistering while the watchdog
+  // sends signals.
+  //
+  // This is used to prevent the watchdog from sending a signal to a pid just
+  // after the pid has actually exited and been reused. Sending a signal to
+  // a non-Kudu thread could have unintended consequences.
+  //
+  // When this lock is held concurrently with 'tls_lock_' or 'log_lock_',
+  // this lock must be acquired first.
+  Mutex unregister_lock_;
 
   // The watchdog thread itself.
   scoped_refptr<Thread> thread_;
