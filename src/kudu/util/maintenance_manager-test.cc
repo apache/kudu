@@ -86,6 +86,7 @@ class TestMaintenanceOp : public MaintenanceOp {
       maintenance_op_duration_(METRIC_maintenance_op_duration.Instantiate(metric_entity_)),
       maintenance_ops_running_(METRIC_maintenance_ops_running.Instantiate(metric_entity_, 0)),
       remaining_runs_(1),
+      prepared_runs_(0),
       sleep_time_(MonoDelta::FromSeconds(0)) {
   }
 
@@ -96,6 +97,8 @@ class TestMaintenanceOp : public MaintenanceOp {
     if (remaining_runs_ == 0) {
       return false;
     }
+    remaining_runs_--;
+    prepared_runs_++;
     DLOG(INFO) << "Prepared op " << name();
     return true;
   }
@@ -104,8 +107,11 @@ class TestMaintenanceOp : public MaintenanceOp {
     {
       std::lock_guard<Mutex> guard(lock_);
       DLOG(INFO) << "Performing op " << name();
-      CHECK_GE(remaining_runs_, 1);
-      remaining_runs_--;
+
+      // Ensure that we don't call Perform() more times than we returned
+      // success from Prepare().
+      CHECK_GE(prepared_runs_, 1);
+      prepared_runs_--;
     }
 
     SleepFor(sleep_time_);
@@ -166,6 +172,8 @@ class TestMaintenanceOp : public MaintenanceOp {
   // The number of remaining times this operation will run before disabling
   // itself.
   int remaining_runs_;
+  // The number of Prepared() operations which have not yet been Perform()ed.
+  int prepared_runs_;
 
   // The amount of time each op invocation will sleep.
   MonoDelta sleep_time_;
