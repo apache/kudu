@@ -193,6 +193,9 @@ DEFINE_string(table_name, "",
               "an already existing table, it's highly recommended to use a "
               "dedicated table created just for testing purposes: "
               "the existing table nor its data is never dropped/deleted.");
+DEFINE_int32(num_buckets, 8,
+             "The number of buckets to create when this tool creates a new table.");
+
 DEFINE_bool(use_random, false,
             "Whether to use random numbers instead of sequential ones. "
             "In case of using random numbers collisions are possible over "
@@ -495,7 +498,7 @@ Status TestLoadGenerator(const RunnerContext& context) {
     RETURN_NOT_OK(table_creator->table_name(table_name)
                   .schema(&schema)
                   .num_replicas(1)
-                  .add_hash_partitions(vector<string>({ kKeyColumnName }), 8)
+                  .add_hash_partitions(vector<string>({ kKeyColumnName }), FLAGS_num_buckets)
                   .wait(true)
                   .Create());
   }
@@ -570,6 +573,7 @@ unique_ptr<Mode> BuildTestMode() {
       .AddOptionalParameter("string_fixed")
       .AddOptionalParameter("string_len")
       .AddOptionalParameter("table_name")
+      .AddOptionalParameter("num_buckets")
       .AddOptionalParameter("use_random")
       .Build();
 
