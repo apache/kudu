@@ -18,8 +18,10 @@
 #include "kudu/consensus/log-test-base.h"
 
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 #include "kudu/consensus/log_index.h"
@@ -135,9 +137,28 @@ class MultiThreadedLogTest : public LogTestBase {
           &MultiThreadedLogTest::LogWriterThread, this, i, &new_thread));
       threads_.push_back(new_thread);
     }
+
+    // Start a thread which calls some read-only methods on the log
+    // to check for races against writers.
+    std::atomic<bool> stop_reader(false);
+    std::thread reader_thread([&]() {
+        std::map<int64_t, int64_t> map;
+        OpId opid;
+        while (!stop_reader) {
+          log_->GetLatestEntryOpId(&opid);
+          log_->GetReplaySizeMap(&map);
+          IgnoreResult(log_->GetGCableDataSize(RetentionIndexes(FLAGS_num_batches_per_thread)));
+        }
+      });
+
+    // Wait for the writers to finish.
     for (scoped_refptr<kudu::Thread>& thread : threads_) {
       ASSERT_OK(ThreadJoiner(thread.get()).Join());
     }
+
+    // Then stop the reader and join on it as well.
+    stop_reader = true;
+    reader_thread.join();
   }
  private:
   ThreadSafeRandom random_;
@@ -146,6 +167,9 @@ class MultiThreadedLogTest : public LogTestBase {
 };
 
 TEST_F(MultiThreadedLogTest, TestAppends) {
+  // Roll frequently to stress related code paths.
+  options_.segment_size_mb = 1;
+
   ASSERT_OK(BuildLog());
   int start_current_id = current_index_;
   LOG_TIMING(INFO, strings::Substitute("inserting $0 batches($1 threads, $2 per-thread)",
