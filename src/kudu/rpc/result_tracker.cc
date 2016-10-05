@@ -347,12 +347,16 @@ void ResultTracker::FailAndRespondInternal(const RequestIdPB& request_id,
   }
 
   CompletionRecord* completion_record = state_and_record.second;
-  ScopedMemTrackerUpdater<CompletionRecord> cr_updater(mem_tracker_.get(), completion_record);
 
+  // It is possible for this method to be called for an RPC that was never actually tracked (though
+  // RecordCompletionAndRespond() can't). One such case is when a follower transaction fails
+  // on the TransactionManager, for some reason, before it was tracked. The CompletionCallback still
+  // calls this method. In this case, do nothing.
   if (completion_record == nullptr) {
     return;
   }
 
+  ScopedMemTrackerUpdater<CompletionRecord> cr_updater(mem_tracker_.get(), completion_record);
   completion_record->last_updated = MonoTime::Now();
 
   int64_t seq_no = request_id.seq_no();
