@@ -116,8 +116,8 @@ public class ITClient extends BaseKuduTest {
     KEEP_RUNNING_LATCH.countDown();
 
     for (Thread thread : threads) {
-      thread.interrupt();
-      thread.join();
+      // Give plenty of time for threads to stop.
+      thread.join(DEFAULT_SLEEP);
     }
 
     AsyncKuduScanner scannerBuilder = localAsyncClient.newScannerBuilder(table).build();
@@ -166,7 +166,6 @@ public class ITClient extends BaseKuduTest {
           }
           KEEP_RUNNING_LATCH.await(5, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
-          e.printStackTrace();
           return;
         }
 
