@@ -294,8 +294,7 @@ public class MiniKuduCluster implements AutoCloseable {
       return;
     }
     LOG.info("Killing server at port " + port);
-    ts.destroy();
-    ts.waitFor();
+    destroyAndWaitForProcess(ts);
   }
 
   /**
@@ -304,8 +303,7 @@ public class MiniKuduCluster implements AutoCloseable {
    */
   public void killTabletServers() throws InterruptedException {
     for (Process tserver : tserverProcesses.values()) {
-      tserver.destroy();
-      tserver.waitFor();
+      destroyAndWaitForProcess(tserver);
     }
     tserverProcesses.clear();
   }
@@ -333,8 +331,7 @@ public class MiniKuduCluster implements AutoCloseable {
       return;
     }
     LOG.info("Killing master at port " + port);
-    master.destroy();
-    master.waitFor();
+    destroyAndWaitForProcess(master);
   }
 
   /**
@@ -351,15 +348,31 @@ public class MiniKuduCluster implements AutoCloseable {
    */
   public void shutdown() {
     for (Iterator<Process> masterIter = masterProcesses.values().iterator(); masterIter.hasNext(); ) {
-      masterIter.next().destroy();
+      try {
+        destroyAndWaitForProcess(masterIter.next());
+      } catch (InterruptedException e) {
+        // Need to continue cleaning up.
+      }
       masterIter.remove();
     }
+
     for (Iterator<Process> tsIter = tserverProcesses.values().iterator(); tsIter.hasNext(); ) {
-      tsIter.next().destroy();
+      try {
+        destroyAndWaitForProcess(tsIter.next());
+      } catch (InterruptedException e) {
+        // Need to continue cleaning up.
+      }
       tsIter.remove();
     }
+
+    // Whether we were interrupted or not above we still destroyed all the processes, so the input
+    // printers will hit EOFs and stop.
     for (Thread thread : PROCESS_INPUT_PRINTERS) {
-      thread.interrupt();
+      try {
+        thread.join();
+      } catch (InterruptedException e) {
+        // Need to continue cleaning up.
+      }
     }
 
     for (String path : pathsToDelete) {
@@ -374,6 +387,11 @@ public class MiniKuduCluster implements AutoCloseable {
         LOG.warn("Could not delete path {}", path, e);
       }
     }
+  }
+
+  private void destroyAndWaitForProcess(Process process) throws InterruptedException {
+    process.destroy();
+    process.waitFor();
   }
 
   /**
