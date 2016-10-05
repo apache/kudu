@@ -1546,7 +1546,7 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   TServerDetails* leader_tserver = tservers[0];
   const string& leader_uuid = tservers[0]->uuid();
   ASSERT_OK(StartElection(leader_tserver, tablet_id_, kTimeout));
-  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_, tablet_id_, 1));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_tserver, tablet_id_, kTimeout));
 
   // Make sure the server rejects removal of itself from the configuration.
   Status s = RemoveServer(leader_tserver, tablet_id_, leader_tserver, boost::none, kTimeout);
@@ -1692,7 +1692,8 @@ TEST_F(RaftConsensusITest, TestAtomicAddRemoveServer) {
   // Elect server 0 as leader and wait for log index 1 to propagate to all servers.
   TServerDetails* leader_tserver = tservers[0];
   ASSERT_OK(StartElection(leader_tserver, tablet_id_, MonoDelta::FromSeconds(10)));
-  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_tserver, tablet_id_,
+                                          MonoDelta::FromSeconds(10)));
   int64_t cur_log_index = 1;
 
   TabletServerMap active_tablet_servers = tablet_servers_;
@@ -1776,7 +1777,8 @@ TEST_F(RaftConsensusITest, TestElectPendingVoter) {
   // Elect server 0 as leader and wait for log index 1 to propagate to all servers.
   TServerDetails* initial_leader = tservers[0];
   ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
-  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, initial_leader, tablet_id_,
+                                          MonoDelta::FromSeconds(10)));
 
   // The server we will remove and then bring back.
   TServerDetails* final_leader = tservers[4];
