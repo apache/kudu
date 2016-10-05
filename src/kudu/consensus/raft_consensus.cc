@@ -173,6 +173,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
   gscoped_ptr<ThreadPool> thread_pool;
   CHECK_OK(ThreadPoolBuilder(Substitute("$0-raft", options.tablet_id.substr(0, 6)))
            .set_trace_metric_prefix("raft")
+           .set_idle_timeout(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 2))
            .Build(&thread_pool));
 
   DCHECK(local_peer_pb.has_permanent_uuid());
