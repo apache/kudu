@@ -1916,21 +1916,35 @@ TEST_F(ClientTest, TestWriteTimeout) {
 TEST_F(ClientTest, TestFailedDnsResolution) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  const string kMasterError = "timed out after deadline expired: GetTableLocations RPC";
 
   // First time disable dns resolution.
   // Set the timeout to be short since we know it can't succeed, but not to the point where we
   // can timeout before getting the dns error.
   {
-    google::FlagSaver saver;
-    FLAGS_fail_dns_resolution = true;
-    session->SetTimeoutMillis(500);
-    ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
-    Status s = session->Flush();
-    ASSERT_TRUE(s.IsIOError()) << "unexpected status: " << s.ToString();
-    gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
-    ASSERT_TRUE(error->status().IsTimedOut()) << error->status().ToString();
-    ASSERT_STR_CONTAINS(error->status().ToString(),
-                        "Network error: Failed to resolve address for TS");
+    for (int i = 0;;i++) {
+      google::FlagSaver saver;
+      FLAGS_fail_dns_resolution = true;
+      session->SetTimeoutMillis(500);
+      ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
+      Status s = session->Flush();
+      ASSERT_TRUE(s.IsIOError()) << "unexpected status: " << s.ToString();
+      gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
+      ASSERT_TRUE(error->status().IsTimedOut()) << error->status().ToString();
+
+      // Due to KUDU-1466 there is a narrow window in which the error reported might be that the
+      // GetTableLocations RPC to the master timed out instead of the expected dns resolution error.
+      // In that case just loop again.
+
+      if (error->status().ToString().find(kMasterError) != std::string::npos) {
+        ASSERT_LE(i, 10) << "Didn't get a dns resolution error after 10 tries.";
+        continue;
+      }
+
+      ASSERT_STR_CONTAINS(error->status().ToString(),
+                          "Network error: Failed to resolve address for TS");
+      break;
+    }
   }
 
   // Now re-enable dns resolution, the write should succeed.
