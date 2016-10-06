@@ -156,9 +156,9 @@ PYTHON_SOURCE=$TP_SOURCE_DIR/$PYTHON_NAME
 # shouldn't change frequently. We upload the built artifacts (HTML/JS)
 # when we need to roll to a new revision.
 #
-# The source can be found at https://github.com/cloudera/kudu-trace-viewer
-# and built with "kudu-build.sh" included within the repository.
-TRACE_VIEWER_VERSION=cd1f3ba6a75aa98f7081353aca4e7ab75d6ad53d
+# The source can be found in the 'kudu' branch of https://github.com/cloudera/catapult
+# and built with "tracing/kudu-build.sh" included within the repository.
+TRACE_VIEWER_VERSION=21d76f8350fea2da2aa25cb6fd512703497d0c11
 TRACE_VIEWER_NAME=kudu-trace-viewer-$TRACE_VIEWER_VERSION
 TRACE_VIEWER_SOURCE=$TP_SOURCE_DIR/$TRACE_VIEWER_NAME
 
