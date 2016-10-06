@@ -607,16 +607,15 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
-    int rc;
-    Status s = p->WaitNoBlock(&rc);
+    Status s = p->WaitNoBlock();
     if (s.IsTimedOut()) {
       // The process is still running.
       continue;
     }
     RETURN_NOT_OK_PREPEND(s, Substitute("Failed waiting on $0", exe_));
-    return Status::RuntimeError(
-      Substitute("Process exited with rc=$0", rc),
-      exe_);
+    string exit_info;
+    RETURN_NOT_OK(p->GetExitStatus(nullptr, &exit_info));
+    return Status::RuntimeError(exit_info);
   }
 
   if (!success) {
@@ -661,9 +660,7 @@ bool ExternalDaemon::IsProcessAlive() const {
   if (IsShutdown()) {
     return false;
   }
-
-  int rc = 0;
-  Status s = process_->WaitNoBlock(&rc);
+  Status s = process_->WaitNoBlock();
   // If the non-blocking Wait "times out", that means the process
   // is running.
   return s.IsTimedOut();
@@ -702,8 +699,7 @@ void ExternalDaemon::Shutdown() {
     LOG(INFO) << "Killing " << exe_ << " with pid " << process_->pid();
     ignore_result(process_->Kill(SIGKILL));
   }
-  int ret;
-  WARN_NOT_OK(process_->Wait(&ret), "Waiting on " + exe_);
+  WARN_NOT_OK(process_->Wait(), "Waiting on " + exe_);
   process_.reset();
 }
 

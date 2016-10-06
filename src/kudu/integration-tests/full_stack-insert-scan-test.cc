@@ -231,12 +231,14 @@ gscoped_ptr<Subprocess> MakePerfRecord() {
 
 void InterruptNotNull(gscoped_ptr<Subprocess> sub) {
   if (!sub) return;
+
   ASSERT_OK(sub->Kill(SIGINT));
-  int exit_status = 0;
-  ASSERT_OK(sub->Wait(&exit_status));
-  if (!exit_status) {
-    LOG(WARNING) << "Subprocess returned " << exit_status
-                 << ": " << ErrnoToString(exit_status);
+  ASSERT_OK(sub->Wait());
+  int exit_status;
+  string exit_info_str;
+  ASSERT_OK(sub->GetExitStatus(&exit_status, &exit_info_str));
+  if (exit_status != 0) {
+    LOG(WARNING) << exit_info_str;
   }
 }
 

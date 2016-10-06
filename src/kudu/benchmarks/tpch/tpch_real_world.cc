@@ -290,22 +290,26 @@ void TpchRealWorld::LoadLineItemsThread(int i) {
 void TpchRealWorld::MonitorDbgenThread(int i) {
   Subprocess* dbgen_proc = dbgen_processes_[i];
   while (!stop_threads_.Load()) {
-    int ret;
-    Status s = dbgen_proc->WaitNoBlock(&ret);
+    Status s = dbgen_proc->WaitNoBlock();
     if (s.ok()) {
-      CHECK(ret == 0) << "dbgen exited with a non-zero return code: " << ret;
+      int exit_status;
+      string exit_info;
+      CHECK_OK(dbgen_proc->GetExitStatus(&exit_status, &exit_info));
+      if (exit_status != 0) {
+        LOG(FATAL) << exit_info;
+      }
       LOG(INFO) << "dbgen finished inserting data";
       dbgen_processes_finished_.CountDown();
       return;
-    } else {
-      SleepFor(MonoDelta::FromMilliseconds(100));
     }
+    CHECK(s.IsTimedOut()) << "Unexpected wait status: " << s.ToString();
+    SleepFor(MonoDelta::FromMilliseconds(100));
   }
   Status s = dbgen_proc->Kill(SIGKILL);
   if (!s.ok()) {
     LOG(FATAL) << "Failed to send SIGKILL to dbgen: " << s.ToString();
   }
-  s = dbgen_proc->Wait(nullptr);
+  s = dbgen_proc->Wait();
   if (!s.ok()) {
     LOG(FATAL) << "Failed to await for dbgen exit: " << s.ToString();
   }

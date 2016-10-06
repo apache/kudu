@@ -73,7 +73,7 @@ class Subprocess {
   // NOTE: unlike the standard wait(2) call, this may be called multiple
   // times. If the process has exited, it will repeatedly return the same
   // exit code.
-  Status Wait(int* ret) { return DoWait(ret, 0); }
+  Status Wait(int* wait_status = nullptr);
 
   // Like the above, but does not block. This returns Status::TimedOut
   // immediately if the child has not exited. Otherwise returns Status::OK
@@ -82,12 +82,16 @@ class Subprocess {
   // NOTE: unlike the standard wait(2) call, this may be called multiple
   // times. If the process has exited, it will repeatedly return the same
   // exit code.
-  Status WaitNoBlock(int* ret) { return DoWait(ret, WNOHANG); }
+  Status WaitNoBlock(int* wait_status = nullptr);
 
   // Send a signal to the subprocess.
   // Note that this does not reap the process -- you must still Wait()
   // in order to reap it. Only call after starting.
   Status Kill(int signal);
+
+  // Retrieve exit status of the process awaited by Wait() and/or WaitNoBlock()
+  // methods. Must be called only after calling Wait()/WaitNoBlock().
+  Status GetExitStatus(int* exit_status, std::string* info_str = nullptr) const;
 
   // Helper method that creates a Subprocess, issues a Start() then a Wait().
   // Expects a blank-separated list of arguments, with the first being the
@@ -122,29 +126,29 @@ class Subprocess {
   pid_t pid() const;
 
  private:
-  void SetFdShared(int stdfd, bool share);
-  int CheckAndOffer(int stdfd) const;
-  int ReleaseChildFd(int stdfd);
-  Status DoWait(int* ret, int options);
-
-  enum StreamMode {SHARED, DISABLED, PIPED};
-
-  std::string program_;
-  std::vector<std::string> argv_;
-
   enum State {
     kNotStarted,
     kRunning,
     kExited
   };
+  enum StreamMode {SHARED, DISABLED, PIPED};
+  enum WaitMode {BLOCKING, NON_BLOCKING};
+
+  Status DoWait(int* wait_status, WaitMode mode);
+  void SetFdShared(int stdfd, bool share);
+  int CheckAndOffer(int stdfd) const;
+  int ReleaseChildFd(int stdfd);
+
+  std::string program_;
+  std::vector<std::string> argv_;
   State state_;
   int child_pid_;
   enum StreamMode fd_state_[3];
   int child_fds_[3];
 
-  // The cached exit result code if Wait() has been called.
+  // The cached wait status if Wait()/WaitNoBlock() has been called.
   // Only valid if state_ == kExited.
-  int cached_rc_;
+  int wait_status_;
 
   DISALLOW_COPY_AND_ASSIGN(Subprocess);
 };

@@ -29,6 +29,7 @@
 
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -100,6 +101,7 @@ TEST_F(SubprocessTest, TestKill) {
 
   int wait_status = 0;
   ASSERT_OK(p.Wait(&wait_status));
+  ASSERT_TRUE(WIFSIGNALED(wait_status));
   ASSERT_EQ(SIGKILL, WTERMSIG(wait_status));
 
   // Test that calling Wait() a second time returns the same
@@ -107,6 +109,7 @@ TEST_F(SubprocessTest, TestKill) {
   // that was assigned the same pid.
   wait_status = 0;
   ASSERT_OK(p.Wait(&wait_status));
+  ASSERT_TRUE(WIFSIGNALED(wait_status));
   ASSERT_EQ(SIGKILL, WTERMSIG(wait_status));
 }
 
@@ -135,7 +138,7 @@ TEST_F(SubprocessTest, TestReadFromStdoutAndStderr) {
 TEST_F(SubprocessTest, TestReadSingleFD) {
   string stderr;
   const string str = "ApacheKudu";
-  const string cmd_str = strings::Substitute("/bin/echo -n $0 1>&2", str);
+  const string cmd_str = Substitute("/bin/echo -n $0 1>&2", str);
   ASSERT_OK(Subprocess::Call({"/bin/sh", "-c", cmd_str}, nullptr, &stderr));
   ASSERT_EQ(stderr, str);
 
@@ -145,6 +148,56 @@ TEST_F(SubprocessTest, TestReadSingleFD) {
   ASSERT_STR_CONTAINS(stdout, "/dev/null");
 
   ASSERT_OK(Subprocess::Call({"/bin/ls", "/dev/zero"}, nullptr, nullptr));
+}
+
+TEST_F(SubprocessTest, TestGetExitStatusExitSuccess) {
+  Subprocess p("/bin/sh", { "/bin/sh", "-c", "exit 0" });
+  ASSERT_OK(p.Start());
+  ASSERT_OK(p.Wait());
+  int exit_status;
+  string exit_info;
+  ASSERT_OK(p.GetExitStatus(&exit_status, &exit_info));
+  ASSERT_EQ(0, exit_status);
+  ASSERT_STR_CONTAINS(exit_info, "process successfully exited");
+}
+
+TEST_F(SubprocessTest, TestGetExitStatusExitFailure) {
+  static const vector<int> kStatusCodes = { 1, 255 };
+  for (auto code : kStatusCodes) {
+    vector<string> argv = { "/bin/sh", "-c", Substitute("exit $0", code)};
+    Subprocess p("/bin/sh", argv);
+    ASSERT_OK(p.Start());
+    ASSERT_OK(p.Wait());
+    int exit_status;
+    string exit_info;
+    ASSERT_OK(p.GetExitStatus(&exit_status, &exit_info));
+    ASSERT_EQ(code, exit_status);
+    ASSERT_STR_CONTAINS(exit_info,
+                        Substitute("process exited with non-zero status $0",
+                                   exit_status));
+  }
+}
+
+TEST_F(SubprocessTest, TestGetExitStatusSignaled) {
+  static const vector<int> kSignals = {
+    SIGHUP,
+    SIGABRT,
+    SIGKILL,
+    SIGTERM,
+    SIGUSR1,
+  };
+  for (auto signum : kSignals) {
+    Subprocess p("/bin/cat", { "cat" });
+    ASSERT_OK(p.Start());
+    ASSERT_OK(p.Kill(signum));
+    ASSERT_OK(p.Wait());
+    int exit_status;
+    string exit_info;
+    ASSERT_OK(p.GetExitStatus(&exit_status, &exit_info));
+    EXPECT_EQ(signum, exit_status);
+    ASSERT_STR_CONTAINS(exit_info, Substitute("process exited on signal $0",
+                                              signum));
+  }
 }
 
 } // namespace kudu
