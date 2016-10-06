@@ -240,6 +240,10 @@ class TestScanToken(TestScanBase):
         # Does a row check count only
         self._test_float_pred()
 
+    def test_binary_pred(self):
+        # Test a binary predicate
+        self._test_binary_pred()
+
     def test_scan_selection(self):
         """
         This test confirms that setting the scan selection policy on the

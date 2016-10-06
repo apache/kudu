@@ -821,7 +821,7 @@ cdef class Column:
 
         if (self.spec.type.name[:3] == 'int'):
             val = KuduValue.FromInt(obj)
-        elif (self.spec.type.name == 'string'):
+        elif (self.spec.type.name in ['string', 'binary']):
             if isinstance(obj, unicode):
                 obj = obj.encode('utf8')
 
@@ -1185,6 +1185,12 @@ cdef class Row:
         return cpython.PyBytes_FromStringAndSize(<char*> val.mutable_data(),
                                                  val.size())
 
+    cdef inline get_binary(self, int i):
+        cdef Slice val
+        check_status(self.row.GetBinary(i, &val))
+        return cpython.PyBytes_FromStringAndSize(<char*> val.mutable_data(),
+                                                 val.size())
+
     cdef inline get_unixtime_micros(self, int i):
         cdef int64_t val
         check_status(self.row.GetUnixTimeMicros(i, &val))
@@ -1211,6 +1217,8 @@ cdef class Row:
             return self.get_float(i)
         elif t == KUDU_STRING:
             return frombytes(self.get_string(i))
+        elif t == KUDU_BINARY:
+            return self.get_binary(i)
         elif t == KUDU_UNIXTIME_MICROS:
             return from_unixtime_micros(self.get_unixtime_micros(i))
         else:
@@ -2189,7 +2197,7 @@ cdef class PartialRow:
     cpdef set_loc(self, int i, value):
         cdef:
             DataType t = self.schema.loc_type(i)
-            cdef Slice* slc
+            Slice slc
 
         if value is None:
             self.row.SetNull(i)
@@ -2213,15 +2221,18 @@ cdef class PartialRow:
         elif t == KUDU_DOUBLE:
             self.row.SetDouble(i, <double> value)
         elif t == KUDU_STRING:
-            if not cpython.PyBytes_Check(value):
+            if isinstance(value, unicode):
                 value = value.encode('utf8')
 
-            # TODO: It would be much better not to heap-allocate a Slice object
-            slc = new Slice(cpython.PyBytes_AsString(value))
+            slc = Slice(<char*> value, len(value))
+            self.row.SetStringCopy(i, slc)
+        elif t == KUDU_BINARY:
+            if isinstance(value, unicode):
+                raise TypeError("Unicode objects must be explicitly encoded " +
+                                "before storing in a Binary field.")
 
-            # Not safe to take a reference to PyBytes data for now
-            self.row.SetStringCopy(i, deref(slc))
-            del slc
+            slc = Slice(<char*> value, len(value))
+            self.row.SetBinaryCopy(i, slc)
         elif t == KUDU_UNIXTIME_MICROS:
             self.row.SetUnixTimeMicros(i, <int64_t>
                 to_unixtime_micros(value))
@@ -2329,5 +2340,7 @@ cdef inline cast_pyvalue(DataType t, object o):
         return StringVal(o)
     elif t == KUDU_UNIXTIME_MICROS:
         return UnixtimeMicrosVal(o)
+    elif t == KUDU_BINARY:
+        return StringVal(o)
     else:
         raise TypeError("Cannot cast kudu type <{0}>".format(_type_names[t]))

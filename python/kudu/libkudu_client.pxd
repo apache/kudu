@@ -323,6 +323,9 @@ cdef extern from "kudu/common/partial_row.h" namespace "kudu" nogil:
         Status SetStringCopy(Slice& col_name, Slice& val)
         Status SetStringCopy(int col_idx, Slice& val)
 
+        Status SetBinary(Slice& col_name, Slice& val)
+        Status SetBinary(int col_idx, Slice&val)
+
         Status SetBinaryCopy(const Slice& col_name, const Slice& val)
         Status SetBinaryCopy(int col_idx, const Slice& val)
 
