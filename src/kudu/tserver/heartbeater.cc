@@ -280,9 +280,7 @@ Heartbeater::Thread::Thread(const HostPort& master_address, TabletServer* server
 
 Status Heartbeater::Thread::ConnectToMaster() {
   gscoped_ptr<MasterServiceProxy> new_proxy;
-  MasterServiceProxyForHostPort(master_address_,
-                                server_->messenger(),
-                                &new_proxy);
+  RETURN_NOT_OK(MasterServiceProxyForHostPort(master_address_, server_->messenger(), &new_proxy));
 
   // Ping the master to verify that it's alive.
   master::PingRequestPB req;
