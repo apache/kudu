@@ -142,7 +142,7 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
             << " for host/port " << ToString();
   }
   if (PREDICT_FALSE(FLAGS_fail_dns_resolution)) {
-    addresses->clear();
+    return Status::NetworkError("injected DNS resolution failure");
   }
   return Status::OK();
 }

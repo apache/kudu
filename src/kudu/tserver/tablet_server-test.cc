@@ -29,6 +29,7 @@
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/tserver/heartbeater.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/url-coding.h"
@@ -56,8 +57,9 @@ DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
              "Number of rows to insert in the testing phase of the single threaded"
              " tablet server insert latency micro-benchmark");
 
-DECLARE_int32(scanner_batch_size_rows);
+DECLARE_bool(fail_dns_resolution);
 DECLARE_int32(metrics_retirement_age_ms);
+DECLARE_int32(scanner_batch_size_rows);
 DECLARE_string(block_manager);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
@@ -2333,6 +2335,15 @@ TEST_F(TabletServerTest, TestKudu120PreRequisites) {
   log_hook->Continue();
   log_hook->Continue();
   flush_done_latch.Wait();
+}
+
+// Test DNS resolution failure in the master heartbeater.
+// Regression test for KUDU-1681.
+TEST_F(TabletServerTest, TestFailedDnsResolution) {
+  FLAGS_fail_dns_resolution = true;
+  mini_server_->server()->heartbeater()->TriggerASAP();
+  // Wait to make sure the heartbeater thread attempts the DNS lookup.
+  usleep(100 * 1000);
 }
 
 } // namespace tserver
