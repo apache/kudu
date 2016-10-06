@@ -272,7 +272,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   }
 
   if (last_primary_key_.length() > 0) {
-    VLOG(1) << "Setting NewScanRequestPB last_primary_key to hex value "
+    VLOG(2) << "Setting NewScanRequestPB last_primary_key to hex value "
         << HexDump(last_primary_key_);
     scan->set_last_primary_key(last_primary_key_);
   }
@@ -358,7 +358,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
       blacklist->clear();
       int sleep_ms = attempt * 100;
       // TODO: should ensure that sleep_ms does not pass the provided deadline.
-      VLOG(1) << "Tablet " << remote_->tablet_id() << " current unavailable: "
+      VLOG(1) << "Tablet " << remote_->tablet_id() << " currently unavailable: "
               << lookup_status.ToString() << ". Sleeping for " << sleep_ms << "ms "
               << "and retrying...";
       SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
@@ -386,12 +386,12 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   data_in_open_ = last_response_.has_data();
   if (last_response_.has_more_results()) {
     next_req_.set_scanner_id(last_response_.scanner_id());
-    VLOG(1) << "Opened tablet " << remote_->tablet_id()
+    VLOG(2) << "Opened tablet " << remote_->tablet_id()
             << ", scanner ID " << last_response_.scanner_id();
   } else if (last_response_.has_data()) {
-    VLOG(1) << "Opened tablet " << remote_->tablet_id() << ", no scanner ID assigned";
+    VLOG(2) << "Opened tablet " << remote_->tablet_id() << ", no scanner ID assigned";
   } else {
-    VLOG(1) << "Opened tablet " << remote_->tablet_id() << " (no rows), no scanner ID assigned";
+    VLOG(2) << "Opened tablet " << remote_->tablet_id() << " (no rows), no scanner ID assigned";
   }
 
   // If present in the response, set the snapshot timestamp and the encoded last
@@ -514,7 +514,7 @@ void KuduScanBatch::Data::ExtractRows(vector<KuduScanBatch::RowPtr>* rows) {
 
   if (PREDICT_FALSE(n_rows == 0)) {
     // Early-out here to avoid a UBSAN failure.
-    VLOG(1) << "Extracted 0 rows";
+    VLOG(2) << "Extracted 0 rows";
     return;
   }
 
@@ -530,7 +530,7 @@ void KuduScanBatch::Data::ExtractRows(vector<KuduScanBatch::RowPtr>* rows) {
     src += projected_row_size_;
     n_rows--;
   }
-  VLOG(1) << "Extracted " << rows->size() << " rows";
+  VLOG(2) << "Extracted " << rows->size() << " rows";
 }
 
 void KuduScanBatch::Data::Clear() {

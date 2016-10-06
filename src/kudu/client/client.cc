@@ -1186,13 +1186,13 @@ Status KuduScanner::Open() {
 
   if (data_->configuration().spec().CanShortCircuit() ||
       !data_->partition_pruner_.HasMorePartitionKeyRanges()) {
-    VLOG(1) << "Short circuiting scan " << ToString();
+    VLOG(2) << "Short circuiting scan " << ToString();
     data_->open_ = true;
     data_->short_circuit_ = true;
     return Status::OK();
   }
 
-  VLOG(1) << "Beginning scan " << ToString();
+  VLOG(2) << "Beginning scan " << ToString();
 
   MonoTime deadline = MonoTime::Now() + data_->configuration().timeout();
   set<string> blacklist;
@@ -1210,7 +1210,7 @@ Status KuduScanner::KeepAlive() {
 void KuduScanner::Close() {
   if (!data_->open_) return;
 
-  VLOG(1) << "Ending scan " << ToString();
+  VLOG(2) << "Ending scan " << ToString();
 
   // Close the scanner on the server-side, if necessary.
   //
@@ -1263,7 +1263,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
 
   if (data_->data_in_open_) {
     // We have data from a previous scan.
-    VLOG(1) << "Extracting data from scan " << ToString();
+    VLOG(2) << "Extracting data from scan " << ToString();
     data_->data_in_open_ = false;
     return batch->data_->Reset(&data_->controller_,
                                data_->configuration().projection(),
@@ -1271,7 +1271,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
                                 make_gscoped_ptr(data_->last_response_.release_data()));
   } else if (data_->last_response_.has_more_results()) {
     // More data is available in this tablet.
-    VLOG(1) << "Continuing scan " << ToString();
+    VLOG(2) << "Continuing scan " << ToString();
 
     MonoTime batch_deadline = MonoTime::Now() + data_->configuration().timeout();
     data_->PrepareRequest(KuduScanner::Data::CONTINUE);
@@ -1318,7 +1318,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
     // More data may be available in other tablets.
     // No need to close the current tablet; we scanned all the data so the
     // server closed it for us.
-    VLOG(1) << "Scanning next tablet " << ToString();
+    VLOG(2) << "Scanning next tablet " << ToString();
     data_->last_primary_key_.clear();
     MonoTime deadline = MonoTime::Now() + data_->configuration().timeout();
     set<string> blacklist;
