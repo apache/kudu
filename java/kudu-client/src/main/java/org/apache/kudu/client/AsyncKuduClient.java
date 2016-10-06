@@ -654,8 +654,7 @@ public class AsyncKuduClient implements AutoCloseable {
       // A null client means we either don't know about this tablet anymore (unlikely) or we
       // couldn't find a leader (which could be triggered by a read timeout).
       // We'll first delay the RPC in case things take some time to settle down, then retry.
-      delayedSendRpcToTablet(next_request, null);
-      return next_request.getDeferred();
+      return delayedSendRpcToTablet(next_request, null);
     }
     client.sendRpc(next_request);
     return d;
@@ -753,8 +752,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
         if (newTabletClient == null) {
           // Wait a little bit before hitting the master.
-          delayedSendRpcToTablet(request, null);
-          return request.getDeferred();
+          return delayedSendRpcToTablet(request, null);
         }
 
         if (!newTabletClient.isAlive()) {
@@ -837,9 +835,7 @@ public class AsyncKuduClient implements AutoCloseable {
     @Override
     public Deferred<R> call(Exception arg) {
       if (arg instanceof RecoverableException) {
-        Deferred<R> d = request.getDeferred();
-        delayedSendRpcToTablet(request, (KuduException) arg);
-        return d;
+        return delayedSendRpcToTablet(request, (KuduException) arg);
       }
       if (LOG.isDebugEnabled()) {
         LOG.debug(String.format("Notify RPC %s after lookup exception", request), arg);
@@ -1257,10 +1253,22 @@ public class AsyncKuduClient implements AutoCloseable {
 
   <R> void handleRetryableError(final KuduRpc<R> rpc, KuduException ex) {
     // TODO we don't always need to sleep, maybe another replica can serve this RPC.
+    // We don't care about the returned Deferred in this case, since we're not in a context where
+    // we're eventually returning a Deferred.
     delayedSendRpcToTablet(rpc, ex);
   }
 
-  private <R> void delayedSendRpcToTablet(final KuduRpc<R> rpc, KuduException ex) {
+  /**
+   * This methods enable putting RPCs on hold for a period of time determined by
+   * {@link #getSleepTimeForRpc(KuduRpc)}. If the RPC is out of time/retries, its errback will
+   * be immediately called.
+   * @param rpc the RPC to retry later
+   * @param ex the reason why we need to retry, might be null
+   * @return a Deferred object to use if this method is called inline with the user's original
+   * attempt to send the RPC. Can be ignored in any other context that doesn't need to return a
+   * Deferred back to the user.
+   */
+  private <R> Deferred<R> delayedSendRpcToTablet(final KuduRpc<R> rpc, KuduException ex) {
     // Here we simply retry the RPC later. We might be doing this along with a lot of other RPCs
     // in parallel. Asynchbase does some hacking with a "probe" RPC while putting the other ones
     // on hold but we won't be doing this for the moment. Regions in HBase can move a lot,
@@ -1272,11 +1280,11 @@ public class AsyncKuduClient implements AutoCloseable {
     }
     long sleepTime = getSleepTimeForRpc(rpc);
     if (cannotRetryRequest(rpc) || rpc.deadlineTracker.wouldSleepingTimeout(sleepTime)) {
-      tooManyAttemptsOrTimeout(rpc, ex);
       // Don't let it retry.
-      return;
+      return tooManyAttemptsOrTimeout(rpc, ex);
     }
     newTimeout(new RetryTimer(), sleepTime);
+    return rpc.getDeferred();
   }
 
   /**
