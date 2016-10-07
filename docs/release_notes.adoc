@@ -38,6 +38,10 @@ incompatible changes.
 [[rn_1.0.1_fixed_issues]]
 === Fixed Issues
 
+- link:https://issues.apache.org/jira/browse/KUDU-1681[KUDU-1681] Fixed a bug in
+  the tablet server which could cause a crash when the DNS lookup during master
+  heartbeat failed.
+
 - link:https://issues.apache.org/jira/browse/KUDU-1660[KUDU-1660]: Fixed a bug
   which would cause the Kudu master and tablet server to fail to start on single
   CPU systems.
