@@ -77,32 +77,5 @@ scoped_refptr<ConsensusRound> Consensus::NewRound(
   return make_scoped_refptr(new ConsensusRound(this, std::move(replicate_msg), replicated_cb));
 }
 
-void Consensus::SetFaultHooks(const shared_ptr<ConsensusFaultHooks>& hooks) {
-  fault_hooks_ = hooks;
-}
-
-const shared_ptr<Consensus::ConsensusFaultHooks>& Consensus::GetFaultHooks() const {
-  return fault_hooks_;
-}
-
-Status Consensus::ExecuteHook(HookPoint point) {
-  if (PREDICT_FALSE(fault_hooks_ != nullptr)) {
-    switch (point) {
-      case Consensus::PRE_START: return fault_hooks_->PreStart();
-      case Consensus::POST_START: return fault_hooks_->PostStart();
-      case Consensus::PRE_CONFIG_CHANGE: return fault_hooks_->PreConfigChange();
-      case Consensus::POST_CONFIG_CHANGE: return fault_hooks_->PostConfigChange();
-      case Consensus::PRE_REPLICATE: return fault_hooks_->PreReplicate();
-      case Consensus::POST_REPLICATE: return fault_hooks_->PostReplicate();
-      case Consensus::PRE_UPDATE: return fault_hooks_->PreUpdate();
-      case Consensus::POST_UPDATE: return fault_hooks_->PostUpdate();
-      case Consensus::PRE_SHUTDOWN: return fault_hooks_->PreShutdown();
-      case Consensus::POST_SHUTDOWN: return fault_hooks_->PostShutdown();
-      default: LOG(FATAL) << "Unknown fault hook.";
-    }
-  }
-  return Status::OK();
-}
-
 } // namespace consensus
 } // namespace kudu

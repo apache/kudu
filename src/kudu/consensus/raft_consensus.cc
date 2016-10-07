@@ -235,6 +235,7 @@ RaftConsensus::RaftConsensus(
       last_received_cur_leader_(MinimumOpId()),
       mark_dirty_clbk_(std::move(mark_dirty_clbk)),
       shutdown_(false),
+      update_calls_for_tests_(0),
       follower_memory_pressure_rejections_(metric_entity->FindOrCreateCounter(
           &METRIC_follower_memory_pressure_rejections)),
       term_metric_(metric_entity->FindOrCreateGauge(&METRIC_raft_term,
@@ -252,8 +253,6 @@ RaftConsensus::~RaftConsensus() {
 }
 
 Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
-  RETURN_NOT_OK(ExecuteHook(PRE_START));
-
   // This just starts the monitor thread -- no failure detector is registered yet.
   if (FLAGS_enable_leader_failure_detection) {
     RETURN_NOT_OK(failure_monitor_.Start());
@@ -321,8 +320,6 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     LOG_WITH_PREFIX(INFO) << "Only one voter in the Raft config. Triggering election immediately";
     RETURN_NOT_OK(StartElection(NORMAL_ELECTION));
   }
-
-  RETURN_NOT_OK(ExecuteHook(POST_START));
 
   // Report become visible to the Master.
   MarkDirty("RaftConsensus started");
@@ -526,8 +523,6 @@ Status RaftConsensus::BecomeReplicaUnlocked() {
 
 Status RaftConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
 
-  RETURN_NOT_OK(ExecuteHook(PRE_REPLICATE));
-
   std::lock_guard<simple_spinlock> lock(update_lock_);
   {
     ReplicaState::UniqueLock lock;
@@ -537,8 +532,6 @@ Status RaftConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
   }
 
   peer_manager_->SignalRequest();
-
-  RETURN_NOT_OK(ExecuteHook(POST_REPLICATE));
   return Status::OK();
 }
 
@@ -666,13 +659,13 @@ void RaftConsensus::TryRemoveFollowerTask(const string& uuid,
 
 Status RaftConsensus::Update(const ConsensusRequestPB* request,
                              ConsensusResponsePB* response) {
+  update_calls_for_tests_.Increment();
 
   if (PREDICT_FALSE(FLAGS_follower_reject_update_consensus_requests)) {
     return Status::IllegalState("Rejected: --follower_reject_update_consensus_requests "
                                 "is set to true.");
   }
 
-  RETURN_NOT_OK(ExecuteHook(PRE_UPDATE));
   response->set_responder_uuid(state_->GetPeerUuid());
 
   VLOG_WITH_PREFIX(2) << "Replica received request: " << request->ShortDebugString();
@@ -686,10 +679,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
                           << state_->ToString() << ". Response: " << response->ShortDebugString();
     }
   }
-  RETURN_NOT_OK(s);
-
-  RETURN_NOT_OK(ExecuteHook(POST_UPDATE));
-  return Status::OK();
+  return s;
 }
 
 // Helper function to check if the op is a non-Transaction op.
@@ -1478,8 +1468,6 @@ void RaftConsensus::Shutdown() {
   // the last outstanding reference.
   if (shutdown_.Load(kMemOrderAcquire)) return;
 
-  CHECK_OK(ExecuteHook(PRE_SHUTDOWN));
-
   {
     ReplicaState::UniqueLock lock;
     // Transition to kShuttingDown state.
@@ -1506,8 +1494,6 @@ void RaftConsensus::Shutdown() {
   // Shut down things that might acquire locks during destruction.
   thread_pool_->Shutdown();
   failure_monitor_.Shutdown();
-
-  CHECK_OK(ExecuteHook(POST_SHUTDOWN));
 
   shutdown_.Store(true, kMemOrderRelease);
 }

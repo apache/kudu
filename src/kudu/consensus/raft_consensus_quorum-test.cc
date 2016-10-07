@@ -805,7 +805,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
 
 // In this test we test the ability of the leader to send heartbeats
 // to replicas by simply pushing nothing after the configuration round
-// and still expecting for the replicas Update() hooks to be called.
+// and still expecting for the replicas' Update() method to be called.
 TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   // Constants with the indexes of peers with certain roles,
   // since peers don't change roles in this test.
@@ -819,16 +819,6 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   CHECK_OK(peers_->GetPeerByIdx(kFollower0Idx, &follower0));
   scoped_refptr<RaftConsensus> follower1;
   CHECK_OK(peers_->GetPeerByIdx(kFollower1Idx, &follower1));
-
-  shared_ptr<CounterHooks> counter_hook_rpl0(
-      new CounterHooks(follower0->GetFaultHooks()));
-  shared_ptr<CounterHooks> counter_hook_rpl1(
-      new CounterHooks(follower1->GetFaultHooks()));
-
-  // Replace the default fault hooks on the replicas with counter hooks
-  // before we start the configuration.
-  follower0->SetFaultHooks(counter_hook_rpl0);
-  follower1->SetFaultHooks(counter_hook_rpl1);
 
   ASSERT_OK(StartPeers());
 
@@ -844,15 +834,15 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   WaitForCommitIfNotAlreadyPresent(config_round.index(), kFollower0Idx, kLeaderIdx);
   WaitForCommitIfNotAlreadyPresent(config_round.index(), kFollower1Idx, kLeaderIdx);
 
-  int repl0_init_count = counter_hook_rpl0->num_pre_update_calls();
-  int repl1_init_count = counter_hook_rpl1->num_pre_update_calls();
+  int repl0_init_count = follower0->update_calls_for_tests();
+  int repl1_init_count = follower1->update_calls_for_tests();
 
   // Now wait for about 4 times the hearbeat period the counters
   // should have increased 3/4 times.
   SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 4LL));
 
-  int repl0_final_count = counter_hook_rpl0->num_pre_update_calls();
-  int repl1_final_count = counter_hook_rpl1->num_pre_update_calls();
+  int repl0_final_count = follower0->update_calls_for_tests();
+  int repl1_final_count = follower1->update_calls_for_tests();
 
   ASSERT_GE(repl0_final_count - repl0_init_count, 3);
   ASSERT_LE(repl0_final_count - repl0_init_count, 4);

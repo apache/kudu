@@ -61,8 +61,6 @@ struct ElectionResult;
 class RaftConsensus : public Consensus,
                       public PeerMessageQueueObserver {
  public:
-  class ConsensusFaultHooks;
-
   static scoped_refptr<RaftConsensus> Create(
     const ConsensusOptions& options,
     std::unique_ptr<ConsensusMetadata> cmeta,
@@ -148,6 +146,10 @@ class RaftConsensus : public Consensus,
   // tests, in particular calling the LockFor* methods on the returned object
   // can cause consensus to deadlock.
   ReplicaState* GetReplicaStateForTests();
+
+  int update_calls_for_tests() const {
+    return update_calls_for_tests_.Load();
+  }
 
   //------------------------------------------------------------
   // PeerMessageQueueObserver implementation
@@ -462,6 +464,9 @@ class RaftConsensus : public Consensus,
   mutable simple_spinlock update_lock_;
 
   AtomicBool shutdown_;
+
+  // The number of times Update() has been called, used for some test assertions.
+  AtomicInt<int32_t> update_calls_for_tests_;
 
   scoped_refptr<Counter> follower_memory_pressure_rejections_;
   scoped_refptr<AtomicGauge<int64_t> > term_metric_;

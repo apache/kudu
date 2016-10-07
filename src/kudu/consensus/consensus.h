@@ -105,8 +105,6 @@ struct ConsensusBootstrapInfo {
 // 3 - destroy Consensus
 class Consensus : public RefCountedThreadSafe<Consensus> {
  public:
-  class ConsensusFaultHooks;
-
   Consensus() {}
 
   // Starts running the consensus algorithm.
@@ -247,10 +245,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
   virtual void DumpStatusHtml(std::ostream& out) const = 0;
 
-  void SetFaultHooks(const std::shared_ptr<ConsensusFaultHooks>& hooks);
-
-  const std::shared_ptr<ConsensusFaultHooks>& GetFaultHooks() const;
-
   // Stops running the consensus algorithm.
   virtual void Shutdown() = 0;
 
@@ -277,26 +271,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
   // This class is refcounted.
   virtual ~Consensus() {}
-
-  // Fault hooks for tests. In production code this will always be null.
-  std::shared_ptr<ConsensusFaultHooks> fault_hooks_;
-
-  enum HookPoint {
-    PRE_START,
-    POST_START,
-    PRE_CONFIG_CHANGE,
-    POST_CONFIG_CHANGE,
-    PRE_REPLICATE,
-    POST_REPLICATE,
-    PRE_COMMIT,
-    POST_COMMIT,
-    PRE_UPDATE,
-    POST_UPDATE,
-    PRE_SHUTDOWN,
-    POST_SHUTDOWN
-  };
-
-  Status ExecuteHook(HookPoint point);
 
   enum State {
     kNotInitialized,
@@ -420,21 +394,6 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
   //
   // Set to -1 if no term has been bound.
   int64_t bound_term_;
-};
-
-class Consensus::ConsensusFaultHooks {
- public:
-  virtual Status PreStart() { return Status::OK(); }
-  virtual Status PostStart() { return Status::OK(); }
-  virtual Status PreConfigChange() { return Status::OK(); }
-  virtual Status PostConfigChange() { return Status::OK(); }
-  virtual Status PreReplicate() { return Status::OK(); }
-  virtual Status PostReplicate() { return Status::OK(); }
-  virtual Status PreUpdate() { return Status::OK(); }
-  virtual Status PostUpdate() { return Status::OK(); }
-  virtual Status PreShutdown() { return Status::OK(); }
-  virtual Status PostShutdown() { return Status::OK(); }
-  virtual ~ConsensusFaultHooks() {}
 };
 
 } // namespace consensus
