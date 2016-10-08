@@ -21,6 +21,7 @@ from libc.stdint cimport *
 from libcpp cimport bool as c_bool
 from libcpp.string cimport string
 from libcpp.vector cimport vector
+from libcpp.map cimport map
 
 # This must be included for cerr and other things to work
 cdef extern from "<iostream>":
@@ -631,6 +632,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status AddExclusiveUpperBound(const KuduPartialRow& key)
 
         KuduSchema GetProjectionSchema()
+        const ResourceMetrics& GetResourceMetrics()
         string ToString()
 
     cdef cppclass KuduScanToken:
@@ -681,3 +683,11 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         KuduWriteOperation* release_failed_op()
 
         c_bool was_possibly_successful()
+
+cdef extern from "kudu/client/resource_metrics.h" namespace "kudu::client" nogil:
+
+    cdef cppclass ResourceMetrics:
+        ResourceMetrics()
+
+        map[string, int64_t] Get()
+        int64_t GetMetric(const string& name)

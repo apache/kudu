@@ -215,6 +215,21 @@ class TestScanner(TestScanBase):
             # Avoid tight looping
             time.sleep(0.05)
 
+    def test_resource_metrics(self):
+        """
+        Test getting the resource metrics after scanning.
+        """
+
+        # Build scanner and read through all batches and retrieve metrics.
+        scanner = self.table.scanner()
+        scanner.set_fault_tolerant().open()
+        scanner.read_all_tuples()
+        metrics = scanner.get_resource_metrics()
+
+        # Confirm that the scanner returned cache hit and miss values.
+        self.assertTrue('cfile_cache_hit_bytes' in metrics)
+        self.assertTrue('cfile_cache_miss_bytes' in metrics)
+
     def verify_pred_type_scans(self, preds, row_indexes, count_only=False):
         # Using the incoming list of predicates, verify that the row returned
         # matches the inserted tuple at the row indexes specified in a

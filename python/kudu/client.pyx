@@ -20,6 +20,7 @@
 
 from libcpp.string cimport string
 from libcpp cimport bool as c_bool
+from libcpp.map cimport map
 
 cimport cpython
 from cython.operator cimport dereference as deref
@@ -1451,6 +1452,22 @@ cdef class Scanner:
         cdef KuduSchema* schema = new KuduSchema(self.scanner.
                                                  GetProjectionSchema())
         result.schema = schema
+        return result
+
+    def get_resource_metrics(self):
+        """
+        Return the cumulative resource metrics since the scan was started.
+
+        Returns
+        -------
+        metrics : Dictionary
+        """
+        _map = self.scanner.GetResourceMetrics().Get()
+
+        # Convert map to python dictionary
+        result = {}
+        for it in _map:
+            result[frombytes(it.first)] = it.second
         return result
 
     def open(self):
