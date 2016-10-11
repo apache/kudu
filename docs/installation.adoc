@@ -233,6 +233,7 @@ $ sudo update-rc.d kudu-tserver defaults       # Debian / Ubuntu
 . For additional configuration of Kudu services, see link:configuration.html[Configuring
 Kudu].
 
+[[build_from_source]]
 == Build From Source
 If installing Kudu using parcels or packages does not provide the flexibility you
 need, you can build Kudu from source. You can build from source on any supported operating system.
@@ -632,19 +633,17 @@ see `java/README.md`.
 
 // tag::view_api[]
 .C++ API Documentation
-The documentation for the C++ client APIs is included in the header files in
-`/usr/include/kudu/` if you installed Kudu using packages or subdirectories
-of `src/kudu/client/` if you built Kudu from source. If you installed Kudu using parcels,
-no headers are included in your installation. and you will need to <<build_kudu,build
-Kudu from source>> in order to have access to the headers and shared libraries.
+You can view the link:../cpp-client-api/index.html[C++ client API documentation]
+online. Alternatively, after <<build_from_source,building Kudu from source>>,
+you can additionally build the `doxygen` target (e.g., run `make doxygen`
+if using make) and use the locally generated API documentation by opening
+`docs/doxygen/client_api/html/index.html` file in your favorite Web browser.
 
-The following command is a naive approach to finding relevant header files. Use
-of any APIs other than the client APIs is unsupported.
-
-[source,bash]
-----
-$ find /usr/include/kudu -type f -name *.h
-----
+NOTE: In order to build the `doxygen` target, it's necessary to have
+doxygen with Dot (graphviz) support installed at your build machine. If
+you installed doxygen after building Kudu from source, you will need to run
+`cmake` again to pick up the doxygen location and generate appropriate
+targets.
 
 .Java API Documentation
 You can view the link:../apidocs/index.html[Java API documentation] online. Alternatively,
