@@ -373,9 +373,6 @@ class RaftConsensus : public Consensus,
   // The maximum delta is capped by 'FLAGS_leader_failure_exp_backoff_max_delta_ms'.
   MonoDelta LeaderElectionExpBackoffDeltaUnlocked();
 
-  // Increment the term to the next term, resetting the current leader, etc.
-  Status IncrementTermUnlocked();
-
   // Handle when the term has advanced beyond the current term.
   //
   // 'flush' may be used to control whether the term change is flushed to disk.

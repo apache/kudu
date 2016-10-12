@@ -896,11 +896,17 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
 
     // This will force an election in which we expect to make the last
     // non-shutdown peer in the list become leader.
+    int flush_count_before = new_leader->GetReplicaStateForTests()
+        ->consensus_metadata_for_tests()->flush_count_for_tests();
     LOG(INFO) << "Running election for future leader with index " << (current_config_size - 1);
     ASSERT_OK(new_leader->StartElection(Consensus::ELECT_EVEN_IF_LEADER_IS_ALIVE,
                                         Consensus::EXTERNAL_REQUEST));
     WaitUntilLeaderForTests(new_leader.get());
     LOG(INFO) << "Election won";
+    int flush_count_after = new_leader->GetReplicaStateForTests()
+        ->consensus_metadata_for_tests()->flush_count_for_tests();
+    ASSERT_EQ(flush_count_after, flush_count_before + 1)
+        << "Expected only one consensus metadata flush for a leader election";
 
     // ... replicating a set of messages to the new leader should now be possible.
     REPLICATE_SEQUENCE_OF_MESSAGES(10,

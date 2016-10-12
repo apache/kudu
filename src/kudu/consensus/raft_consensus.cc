@@ -350,7 +350,7 @@ Status RaftConsensus::EmulateElection() {
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Emulating election...";
 
   // Assume leadership of new term.
-  RETURN_NOT_OK(IncrementTermUnlocked());
+  RETURN_NOT_OK(HandleTermAdvanceUnlocked(state_->GetCurrentTermUnlocked() + 1));
   SetLeaderUuidUnlocked(state_->GetPeerUuid());
   return BecomeLeaderUnlocked();
 }
@@ -419,11 +419,12 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
 
     // Increment the term and vote for ourselves, unless it's a pre-election.
     if (mode != PRE_ELECTION) {
-      // TODO(todd): the IncrementTermUnlocked call flushes to disk once, and then
-      // the SetVotedForCurrentTerm flushes again. We should avoid flushing to disk
-      // on the term bump.
       // TODO(mpercy): Consider using a separate Mutex for voting, which must sync to disk.
-      RETURN_NOT_OK(IncrementTermUnlocked());
+
+      // We skip flushing the term to disk because setting the vote just below also
+      // flushes to disk, and the double fsync doesn't buy us anything.
+      RETURN_NOT_OK(HandleTermAdvanceUnlocked(state_->GetCurrentTermUnlocked() + 1,
+                                              ReplicaState::SKIP_FLUSH_TO_DISK));
       RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(state_->GetPeerUuid()));
     }
 
@@ -2084,10 +2085,6 @@ MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
   DCHECK_GE(timeout, min_timeout);
 
   return MonoDelta::FromMilliseconds(timeout);
-}
-
-Status RaftConsensus::IncrementTermUnlocked() {
-  return HandleTermAdvanceUnlocked(state_->GetCurrentTermUnlocked() + 1);
 }
 
 Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term,
