@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
 
@@ -45,22 +46,31 @@ class TableLocationsCache {
   private static final Logger LOG = LoggerFactory.getLogger(TableLocationsCache.class);
   private static final Comparator<byte[]> COMPARATOR = UnsignedBytes.lexicographicalComparator();
 
-  private final Object monitor = new Object();
+  private final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
 
-  @GuardedBy("monitor")
+  @GuardedBy("rwl")
   private final NavigableMap<byte[], Entry> entries = new TreeMap<>(COMPARATOR);
 
   public Entry get(byte[] partitionKey) {
+
     if (partitionKey == null) {
       // Master lookup.
-      synchronized (monitor) {
+      rwl.readLock().lock();
+      try {
         Preconditions.checkState(entries.size() <= 1);
         return entries.get(AsyncKuduClient.EMPTY_ARRAY);
+      } finally {
+        rwl.readLock().unlock();
       }
+
     }
+
     Map.Entry<byte[], Entry> entry;
-    synchronized (monitor) {
+    rwl.readLock().lock();
+    try {
       entry = entries.floorEntry(partitionKey);
+    } finally {
+      rwl.readLock().unlock();
     }
 
     if (entry == null ||
@@ -89,9 +99,13 @@ class TableLocationsCache {
       // Master lookup.
       Preconditions.checkArgument(tablets.size() == 1);
       Entry entry = Entry.tablet(tablets.get(0), TimeUnit.DAYS.toMillis(1));
-      synchronized (monitor) {
+
+      rwl.writeLock().lock();
+      try {
         entries.clear();
         entries.put(AsyncKuduClient.EMPTY_ARRAY, entry);
+      } finally {
+        rwl.writeLock().unlock();
       }
       return;
     }
@@ -164,7 +178,8 @@ class TableLocationsCache {
 
     LOG.debug("Discovered table locations:\t{}", newEntries);
 
-    synchronized (monitor) {
+    rwl.writeLock().lock();
+    try {
       // Remove all existing overlapping entries, and add the new entries.
       Map.Entry<byte[], Entry> floorEntry = entries.floorEntry(discoveredlowerBound);
       if (floorEntry != null &&
@@ -186,6 +201,8 @@ class TableLocationsCache {
       for (Entry entry : newEntries) {
         entries.put(entry.getLowerBoundPartitionKey(), entry);
       }
+    } finally {
+      rwl.writeLock().unlock();
     }
   }
 
