@@ -479,7 +479,6 @@ void TransactionDriver::ApplyTask() {
     // until now.earliest > prepare_latest. Only after this are the locks
     // released.
     if (mutable_state()->external_consistency_mode() == COMMIT_WAIT) {
-      // TODO: only do this on the leader side
       TRACE("APPLY: Commit Wait.");
       // If we can't commit wait and have already applied we might have consistency
       // issues if we still reply to the client that the operation was a success.
@@ -505,11 +504,8 @@ void TransactionDriver::SetResponseTimestamp(TransactionState* transaction_state
 Status TransactionDriver::CommitWait() {
   MonoTime before = MonoTime::Now();
   DCHECK(mutable_state()->external_consistency_mode() == COMMIT_WAIT);
-  // TODO: we could plumb the RPC deadline in here, and not bother commit-waiting
-  // if the deadline is already expired.
-  RETURN_NOT_OK(
-      mutable_state()->tablet_peer()->clock()->WaitUntilAfter(mutable_state()->timestamp(),
-                                                              MonoTime::Max()));
+  RETURN_NOT_OK(mutable_state()->tablet_peer()->clock()->WaitUntilAfter(
+      mutable_state()->timestamp(), MonoTime::Max()));
   mutable_state()->mutable_metrics()->commit_wait_duration_usec =
       (MonoTime::Now() - before).ToMicroseconds();
   return Status::OK();
