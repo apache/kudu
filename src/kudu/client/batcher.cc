@@ -389,7 +389,7 @@ Batcher::Batcher(KuduClient* client,
     had_errors_(false),
     flush_callback_(nullptr),
     next_op_sequence_number_(0),
-    timeout_(MonoDelta::FromSeconds(60)),
+    timeout_(client->default_rpc_timeout()),
     outstanding_lookups_(0),
     buffer_bytes_used_(0) {
 }
