@@ -100,19 +100,17 @@ class VoteCounter {
 // The result of a leader election.
 struct ElectionResult {
  public:
-  ElectionResult(ConsensusTerm election_term, ElectionVote decision);
-  ElectionResult(ConsensusTerm election_term, ElectionVote decision,
-                 ConsensusTerm higher_term, const std::string& message);
+  ElectionResult(const VoteRequestPB& vote_request, ElectionVote decision,
+                 ConsensusTerm highest_term, const std::string& message);
 
-  // Term the election was run for.
-  const ConsensusTerm election_term;
+  // The vote request that was sent to the voters for this election.
+  const VoteRequestPB vote_request;
 
   // The overall election GRANTED/DENIED decision of the configuration.
   const ElectionVote decision;
 
-  // At least one voter had a higher term than the candidate.
-  const bool has_higher_term;
-  const ConsensusTerm higher_term;
+  // The highest term seen from any voter.
+  const ConsensusTerm highest_voter_term;
 
   // Human-readable explanation of the vote result, if any.
   const std::string message;
@@ -232,6 +230,9 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
 
   // Map of UUID -> VoterState.
   VoterStateMap voter_state_;
+
+  // The highest term seen from a voter so far (or 0 if no votes).
+  int64_t highest_voter_term_;
 };
 
 } // namespace consensus

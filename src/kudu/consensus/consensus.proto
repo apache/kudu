@@ -270,6 +270,10 @@ message VoteRequestPB {
   // for example to force a faster leader hand-off rather than waiting for
   // the election timer to expire.
   optional bool ignore_live_leader = 5 [ default = false ];
+
+  // In a "pre-election", voters should respond how they _would_ have voted
+  // but not actually record the vote.
+  optional bool is_pre_election = 7 [ default = false ];
 }
 
 // A response from a replica to a leader election request.

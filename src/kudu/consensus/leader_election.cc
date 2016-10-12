@@ -17,6 +17,7 @@
 
 #include "kudu/consensus/leader_election.h"
 
+#include <algorithm>
 #include <boost/bind.hpp>
 #include <mutex>
 
@@ -128,22 +129,12 @@ bool VoteCounter::AreAllVotesIn() const {
 // ElectionResult
 ///////////////////////////////////////////////////
 
-ElectionResult::ElectionResult(ConsensusTerm election_term, ElectionVote decision)
-  : election_term(election_term),
+ElectionResult::ElectionResult(const VoteRequestPB& vote_request, ElectionVote decision,
+                               ConsensusTerm highest_voter_term, const std::string& message)
+  : vote_request(vote_request),
     decision(decision),
-    has_higher_term(false),
-    higher_term(kMinimumTerm) {
-}
-
-ElectionResult::ElectionResult(ConsensusTerm election_term, ElectionVote decision,
-                               ConsensusTerm higher_term, const std::string& message)
-  : election_term(election_term),
-    decision(decision),
-    has_higher_term(true),
-    higher_term(higher_term),
+    highest_voter_term(highest_voter_term),
     message(message) {
-  CHECK_EQ(VOTE_DENIED, decision);
-  CHECK_GT(higher_term, election_term);
   DCHECK(!message.empty());
 }
 
@@ -161,7 +152,8 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
       request_(request),
       vote_counter_(std::move(vote_counter)),
       timeout_(timeout),
-      decision_callback_(std::move(decision_callback)) {
+      decision_callback_(std::move(decision_callback)),
+      highest_voter_term_(0) {
   for (const RaftPeerPB& peer : config.peers()) {
     if (request.candidate_uuid() == peer.permanent_uuid()) continue;
     follower_uuids_.push_back(peer.permanent_uuid());
@@ -220,7 +212,9 @@ void LeaderElection::Run() {
     }
 
     // Send the RPC request.
-    LOG_WITH_PREFIX(INFO) << "Requesting vote from peer " << voter_uuid;
+    LOG_WITH_PREFIX(INFO) << "Requesting "
+                          << (request_.is_pre_election() ? "pre-" : "")
+                          << "vote from peer " << voter_uuid;
     state->rpc.set_timeout(timeout_);
 
     state->request = request_;
@@ -247,7 +241,9 @@ void LeaderElection::CheckForDecision() {
       CHECK_OK(vote_counter_->GetDecision(&decision));
       LOG_WITH_PREFIX(INFO) << "Election decided. Result: candidate "
                 << ((decision == VOTE_GRANTED) ? "won." : "lost.");
-      result_.reset(new ElectionResult(election_term(), decision));
+      string msg = (decision == VOTE_GRANTED) ?
+          "achieved majority votes" : "could not achieve majority";
+      result_.reset(new ElectionResult(request_, decision, highest_voter_term_, msg));
     }
     // Check whether to respond. This can happen as a result of either getting
     // a majority vote or of something invalidating the election, like
@@ -290,13 +286,15 @@ void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid) {
                   << voter_uuid << ", but its actual UUID is " << state->response.responder_uuid();
       RecordVoteUnlocked(voter_uuid, VOTE_DENIED);
 
-    // Count the granted votes.
-    } else if (state->response.vote_granted()) {
-      HandleVoteGrantedUnlocked(voter_uuid, *state);
-
-    // Anything else is a denied vote.
     } else {
-      HandleVoteDeniedUnlocked(voter_uuid, *state);
+      // No error: count actual votes.
+
+      highest_voter_term_ = std::max(highest_voter_term_, state->response.responder_term());
+      if (state->response.vote_granted()) {
+        HandleVoteGrantedUnlocked(voter_uuid, *state);
+      } else {
+        HandleVoteDeniedUnlocked(voter_uuid, *state);
+      }
     }
   }
 
@@ -334,14 +332,16 @@ void LeaderElection::HandleHigherTermUnlocked(const string& voter_uuid, const Vo
 
   if (!result_) {
     LOG_WITH_PREFIX(INFO) << "Cancelling election due to peer responding with higher term";
-    result_.reset(new ElectionResult(election_term(), VOTE_DENIED,
+    result_.reset(new ElectionResult(request_, VOTE_DENIED,
                                      state.response.responder_term(), msg));
   }
 }
 
 void LeaderElection::HandleVoteGrantedUnlocked(const string& voter_uuid, const VoterState& state) {
   DCHECK(lock_.is_locked());
-  DCHECK_EQ(state.response.responder_term(), election_term());
+  if (!request_.is_pre_election()) {
+    DCHECK_EQ(state.response.responder_term(), election_term());
+  }
   DCHECK(state.response.vote_granted());
 
   LOG_WITH_PREFIX(INFO) << "Vote granted by peer " << voter_uuid;
@@ -364,10 +364,11 @@ void LeaderElection::HandleVoteDeniedUnlocked(const string& voter_uuid, const Vo
 }
 
 std::string LeaderElection::LogPrefix() const {
-  return Substitute("T $0 P $1 [CANDIDATE]: Term $2 election: ",
+  return Substitute("T $0 P $1 [CANDIDATE]: Term $2 $3election: ",
                     request_.tablet_id(),
                     request_.candidate_uuid(),
-                    request_.candidate_term());
+                    request_.candidate_term(),
+                    request_.is_pre_election() ? "pre-" : "");
 }
 
 } // namespace consensus

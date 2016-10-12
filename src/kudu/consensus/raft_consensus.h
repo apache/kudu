@@ -99,7 +99,7 @@ class RaftConsensus : public Consensus,
   // enabled, as it could result in a split-brain scenario.
   Status EmulateElection() override;
 
-  Status StartElection(ElectionMode mode) override;
+  Status StartElection(ElectionMode mode, ElectionReason reason) override;
 
   Status WaitUntilLeaderForTests(const MonoDelta& timeout) override;
 
@@ -278,7 +278,7 @@ class RaftConsensus : public Consensus,
   Status IsSingleVoterConfig(bool* single_voter) const;
 
   // Return header string for RequestVote log messages. The ReplicaState lock must be held.
-  std::string GetRequestVoteLogPrefixUnlocked() const;
+  std::string GetRequestVoteLogPrefixUnlocked(const VoteRequestPB& request) const;
 
   // Fills the response with the current status, if an update was successful.
   void FillConsensusResponseOKUnlocked(ConsensusResponsePB* response);
@@ -331,8 +331,8 @@ class RaftConsensus : public Consensus,
 
   // Callback for leader election driver. ElectionCallback is run on the
   // reactor thread, so it simply defers its work to DoElectionCallback.
-  void ElectionCallback(const ElectionResult& result);
-  void DoElectionCallback(const ElectionResult& result);
+  void ElectionCallback(ElectionReason reason, const ElectionResult& result);
+  void DoElectionCallback(ElectionReason reason, const ElectionResult& result);
 
   // Start tracking the leader for failures. This typically occurs at startup
   // and when the local peer steps down as leader.
@@ -453,6 +453,11 @@ class RaftConsensus : public Consensus,
   // accepts operations from a leader, and passed back so that the leader knows from what
   // point to continue sending operations.
   OpId last_received_cur_leader_;
+
+  // The number of times this node has called and lost a leader election since
+  // the last time it saw a stable leader (either itself or another node).
+  // This is used to calculate back-off of the election timeout.
+  int failed_elections_since_stable_leader_;
 
   const Callback<void(const std::string& reason)> mark_dirty_clbk_;
 

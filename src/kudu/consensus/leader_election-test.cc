@@ -285,7 +285,7 @@ TEST_F(LeaderElectionTest, TestPerfectElection) {
     election->Run();
     latch_.Wait();
 
-    ASSERT_EQ(election_term, result_->election_term);
+    ASSERT_EQ(election_term, result_->vote_request.candidate_term());
     ASSERT_EQ(VOTE_GRANTED, result_->decision);
 
     pool_->Wait();
@@ -307,10 +307,9 @@ TEST_F(LeaderElectionTest, TestHigherTermBeforeDecision) {
       ->Respond(TestPeerProxy::kRequestVote);
   latch_.Wait();
 
-  ASSERT_EQ(kElectionTerm, result_->election_term);
+  ASSERT_EQ(kElectionTerm, result_->vote_request.candidate_term());
   ASSERT_EQ(VOTE_DENIED, result_->decision);
-  ASSERT_TRUE(result_->has_higher_term);
-  ASSERT_EQ(kElectionTerm + 1, result_->higher_term);
+  ASSERT_EQ(kElectionTerm + 1, result_->highest_voter_term);
   LOG(INFO) << "Election lost. Reason: " << result_->message;
 
   // This guy will vote "yes".
@@ -332,10 +331,10 @@ TEST_F(LeaderElectionTest, TestHigherTermAfterDecision) {
       ->Respond(TestPeerProxy::kRequestVote);
   latch_.Wait();
 
-  ASSERT_EQ(kElectionTerm, result_->election_term);
+  ASSERT_EQ(kElectionTerm, result_->vote_request.candidate_term());
   ASSERT_EQ(VOTE_GRANTED, result_->decision);
-  ASSERT_FALSE(result_->has_higher_term);
-  ASSERT_TRUE(result_->message.empty());
+  ASSERT_EQ(kElectionTerm, result_->highest_voter_term);
+  ASSERT_EQ("achieved majority votes", result_->message);
   LOG(INFO) << "Election won.";
 
   // This guy has a higher term.
@@ -357,10 +356,10 @@ TEST_F(LeaderElectionTest, TestWithDenyVotes) {
   election->Run();
 
   latch_.Wait();
-  ASSERT_EQ(kElectionTerm, result_->election_term);
+  ASSERT_EQ(kElectionTerm, result_->vote_request.candidate_term());
   ASSERT_EQ(VOTE_DENIED, result_->decision);
-  ASSERT_FALSE(result_->has_higher_term);
-  ASSERT_TRUE(result_->message.empty());
+  ASSERT_EQ(kElectionTerm, result_->highest_voter_term);
+  ASSERT_EQ("could not achieve majority", result_->message);
   LOG(INFO) << "Election denied.";
 
   pool_->Wait(); // Wait for the election callbacks to finish before we destroy proxies.
@@ -377,10 +376,10 @@ TEST_F(LeaderElectionTest, TestWithErrorVotes) {
   election->Run();
 
   latch_.Wait();
-  ASSERT_EQ(kElectionTerm, result_->election_term);
+  ASSERT_EQ(kElectionTerm, result_->vote_request.candidate_term());
   ASSERT_EQ(VOTE_DENIED, result_->decision);
-  ASSERT_FALSE(result_->has_higher_term);
-  ASSERT_TRUE(result_->message.empty());
+  ASSERT_EQ(0, result_->highest_voter_term); // no valid votes
+  ASSERT_EQ("could not achieve majority", result_->message);
   LOG(INFO) << "Election denied.";
 
   pool_->Wait(); // Wait for the election callbacks to finish before we destroy proxies.
@@ -413,10 +412,10 @@ TEST_F(LeaderElectionTest, TestFailToCreateProxy) {
                               Unretained(this))));
   election->Run();
   latch_.Wait();
-  ASSERT_EQ(kElectionTerm, result_->election_term);
+  ASSERT_EQ(kElectionTerm, result_->vote_request.candidate_term());
   ASSERT_EQ(VOTE_DENIED, result_->decision);
-  ASSERT_FALSE(result_->has_higher_term);
-  ASSERT_TRUE(result_->message.empty());
+  ASSERT_EQ(0, result_->highest_voter_term); // no votes
+  ASSERT_EQ("could not achieve majority", result_->message);
 }
 
 ////////////////////////////////////////

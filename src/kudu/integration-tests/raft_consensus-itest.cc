@@ -371,10 +371,18 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
                                       int64_t* orig_term,
                                       string* fell_behind_uuid);
 
+  // Retrieve the current term of the first tablet on this tablet server.
+  Status GetTermMetricValue(ExternalTabletServer* ts, int64_t* term);
+
   shared_ptr<KuduTable> table_;
   std::vector<scoped_refptr<kudu::Thread> > threads_;
   CountDownLatch inserters_;
 };
+
+Status RaftConsensusITest::GetTermMetricValue(ExternalTabletServer* ts,
+                                              int64_t *term) {
+  return ts->GetInt64Metric(&METRIC_ENTITY_tablet, nullptr, &METRIC_raft_term, "value", term);
+}
 
 void RaftConsensusITest::AddFlagsForLogRolls(vector<string>* extra_tserver_flags) {
   // We configure a small log segment size so that we roll frequently,
@@ -777,6 +785,7 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   int64_t orig_term;
   string follower_uuid;
   NO_FATALS(CauseFollowerToFallBehindLogGC(&leader_uuid, &orig_term, &follower_uuid));
+  SCOPED_TRACE(Substitute("leader: $0 follower: $1", leader_uuid, follower_uuid));
 
   // Wait for remaining majority to agree.
   TabletServerMap active_tablet_servers = tablet_servers_;
@@ -787,12 +796,21 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
 
   if (AllowSlowTests()) {
     // Sleep long enough that the "abandoned" server's leader election interval
-    // will trigger several times. Then, verify that the term has not increased.
-    // This ensures that the other servers properly ignore the election requests
-    // from the abandoned node.
-    // TODO: would be nicer to use an RPC to check the current term of the
-    // abandoned replica, and wait until it has incremented a couple of times.
+    // will trigger several times. Then, verify that the term has not increased
+    // on any of the servers.
+    // This ensures that the other servers properly reject the pre-election requests
+    // from the abandoned node, and that the abandoned node doesn't bump its term
+    // either, since that would cause spurious leader elections upon the node coming back
+    // to life.
     SleepFor(MonoDelta::FromSeconds(5));
+
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      ExternalTabletServer* ts = cluster_->tablet_server(i);
+      SCOPED_TRACE(ts->uuid());
+      int64_t term_from_metric = -1;
+      ASSERT_OK(GetTermMetricValue(ts, &term_from_metric));
+      ASSERT_EQ(term_from_metric, orig_term);
+    }
     OpId op_id;
     TServerDetails* leader = tablet_servers_[leader_uuid];
     ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, consensus::RECEIVED_OPID,
@@ -1193,12 +1211,8 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   // Check that the 'term' metric is correctly exposed.
   {
     int64_t term_from_metric = -1;
-    ASSERT_OK(cluster_->tablet_server_by_uuid(replica_ts->uuid())->GetInt64Metric(
-                  &METRIC_ENTITY_tablet,
-                  nullptr,
-                  &METRIC_raft_term,
-                  "value",
-                  &term_from_metric));
+    ASSERT_OK(GetTermMetricValue(cluster_->tablet_server_by_uuid(replica_ts->uuid()),
+                                 &term_from_metric));
     ASSERT_EQ(term_from_metric, 1);
   }
 

@@ -102,8 +102,16 @@ DEFINE_bool(follower_fail_all_prepare, false,
             "Warning! This is only intended for testing.");
 TAG_FLAG(follower_fail_all_prepare, unsafe);
 
+DEFINE_bool(raft_enable_pre_election, true,
+            "When enabled, candidates will call a pre-election before "
+            "running a real leader election.");
+TAG_FLAG(raft_enable_pre_election, experimental);
+TAG_FLAG(raft_enable_pre_election, runtime);
+
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 
+// Metrics
+// ---------
 METRIC_DEFINE_counter(tablet, follower_memory_pressure_rejections,
                       "Follower Memory Pressure Rejections",
                       kudu::MetricUnit::kRequests,
@@ -233,6 +241,7 @@ RaftConsensus::RaftConsensus(
           FLAGS_leader_failure_max_missed_heartbeat_periods))),
       withhold_votes_until_(MonoTime::Min()),
       last_received_cur_leader_(MinimumOpId()),
+      failed_elections_since_stable_leader_(0),
       mark_dirty_clbk_(std::move(mark_dirty_clbk)),
       shutdown_(false),
       update_calls_for_tests_(0),
@@ -318,7 +327,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   RETURN_NOT_OK(IsSingleVoterConfig(&single_voter));
   if (single_voter && FLAGS_enable_leader_failure_detection) {
     LOG_WITH_PREFIX(INFO) << "Only one voter in the Raft config. Triggering election immediately";
-    RETURN_NOT_OK(StartElection(NORMAL_ELECTION));
+    RETURN_NOT_OK(StartElection(NORMAL_ELECTION, INITIAL_SINGLE_NODE_ELECTION));
   }
 
   // Report become visible to the Master.
@@ -346,10 +355,40 @@ Status RaftConsensus::EmulateElection() {
   return BecomeLeaderUnlocked();
 }
 
-Status RaftConsensus::StartElection(ElectionMode mode) {
+namespace {
+const char* ModeString(Consensus::ElectionMode mode) {
+  switch (mode) {
+    case Consensus::NORMAL_ELECTION:
+      return "leader election";
+    case Consensus::PRE_ELECTION:
+      return "pre-election";
+    case Consensus::ELECT_EVEN_IF_LEADER_IS_ALIVE:
+      return "forced leader election";
+  }
+  __builtin_unreachable(); // silence gcc warnings
+}
+string ReasonString(Consensus::ElectionReason reason, StringPiece leader_uuid) {
+  switch (reason) {
+    case Consensus::INITIAL_SINGLE_NODE_ELECTION:
+      return "initial election of a single-replica configuration";
+    case Consensus::EXTERNAL_REQUEST:
+      return "received explicit request";
+    case Consensus::ELECTION_TIMEOUT_EXPIRED:
+      if (leader_uuid.empty()) {
+        return "no leader contacted us within the election timeout";
+      }
+      return Substitute("detected failure of leader $0", leader_uuid);
+  }
+  __builtin_unreachable(); // silence gcc warnings
+}
+} // anonymous namespace
+
+Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
+  const char* mode_str = ModeString(mode);
+
   TRACE_EVENT2("consensus", "RaftConsensus::StartElection",
-               "peer", peer_uuid(),
-               "tablet", tablet_id());
+               "peer", state_->LogPrefixThreadSafe(),
+               "mode", mode_str);
   scoped_refptr<LeaderElection> election;
   {
     ReplicaState::UniqueLock lock;
@@ -357,7 +396,7 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
 
     RaftPeerPB::Role active_role = state_->GetActiveRoleUnlocked();
     if (active_role == RaftPeerPB::LEADER) {
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Not starting election -- already leader";
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Not starting " << mode << " -- already leader";
       return Status::OK();
     }
     if (PREDICT_FALSE(active_role == RaftPeerPB::NON_PARTICIPANT)) {
@@ -366,40 +405,38 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
                                   "a non-participant in the raft config",
                                   state_->GetActiveConfigUnlocked().ShortDebugString());
     }
-
-    if (state_->HasLeaderUnlocked()) {
-      LOG_WITH_PREFIX_UNLOCKED(INFO)
-          << "Failure of leader " << state_->GetLeaderUuidUnlocked()
-          << " detected. Triggering leader election";
-    } else {
-      LOG_WITH_PREFIX_UNLOCKED(INFO)
-          << "No leader contacted us within the election timeout. "
-          << "Triggering leader election";
-    }
-
-    // Increment the term.
-    // TODO: this causes an extra flush of the consensus metadata which
-    // will be flushed again for our vote below. Consolidate these.
-    RETURN_NOT_OK(IncrementTermUnlocked());
+    LOG_WITH_PREFIX_UNLOCKED(INFO)
+        << "Starting " << mode_str
+        << " (" << ReasonString(reason, state_->GetLeaderUuidUnlocked()) << ")";
 
     // Snooze to avoid the election timer firing again as much as possible.
-    // We do not disable the election timer while running an election.
+    // We do not disable the election timer while running an election, so that
+    // if the election times out, we will try again.
     RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
 
     MonoDelta timeout = LeaderElectionExpBackoffDeltaUnlocked();
     RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(timeout, ALLOW_LOGGING));
 
+    // Increment the term and vote for ourselves, unless it's a pre-election.
+    if (mode != PRE_ELECTION) {
+      // TODO(todd): the IncrementTermUnlocked call flushes to disk once, and then
+      // the SetVotedForCurrentTerm flushes again. We should avoid flushing to disk
+      // on the term bump.
+      // TODO(mpercy): Consider using a separate Mutex for voting, which must sync to disk.
+      RETURN_NOT_OK(IncrementTermUnlocked());
+      RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(state_->GetPeerUuid()));
+    }
+
     const RaftConfigPB& active_config = state_->GetActiveConfigUnlocked();
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Starting election with config: "
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Starting " << mode_str << " with config: "
                                    << active_config.ShortDebugString();
 
     // Initialize the VoteCounter.
     int num_voters = CountVoters(active_config);
     int majority_size = MajoritySize(num_voters);
     gscoped_ptr<VoteCounter> counter(new VoteCounter(num_voters, majority_size));
+
     // Vote for ourselves.
-    // TODO: Consider using a separate Mutex for voting, which must sync to disk.
-    RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(state_->GetPeerUuid()));
     bool duplicate;
     RETURN_NOT_OK(counter->RegisterVote(state_->GetPeerUuid(), VOTE_GRANTED, &duplicate));
     CHECK(!duplicate) << state_->LogPrefixUnlocked()
@@ -409,7 +446,14 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     VoteRequestPB request;
     request.set_ignore_live_leader(mode == ELECT_EVEN_IF_LEADER_IS_ALIVE);
     request.set_candidate_uuid(state_->GetPeerUuid());
-    request.set_candidate_term(state_->GetCurrentTermUnlocked());
+    if (mode == PRE_ELECTION) {
+      // In a pre-election, we haven't bumped our own term yet, so we need to be
+      // asking for votes for the next term.
+      request.set_is_pre_election(true);
+      request.set_candidate_term(state_->GetCurrentTermUnlocked() + 1);
+    } else {
+      request.set_candidate_term(state_->GetCurrentTermUnlocked());
+    }
     request.set_tablet_id(state_->GetOptions().tablet_id);
     *request.mutable_candidate_status()->mutable_last_received() =
         queue_->GetLastOpIdInLog();
@@ -417,7 +461,7 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     election.reset(new LeaderElection(active_config,
                                       peer_proxy_factory_.get(),
                                       request, std::move(counter), timeout,
-                                      Bind(&RaftConsensus::ElectionCallback, this)));
+                                      Bind(&RaftConsensus::ElectionCallback, this, reason)));
   }
 
   // Start the election outside the lock.
@@ -453,10 +497,11 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
   return Status::OK();
 }
 
-void RaftConsensus::ReportFailureDetected(const std::string& name, const Status& msg) {
+void RaftConsensus::ReportFailureDetected(const std::string& name, const Status& /*msg*/) {
   DCHECK_EQ(name, kTimerId);
   // Start an election.
-  Status s = StartElection(NORMAL_ELECTION);
+  Status s = StartElection(FLAGS_raft_enable_pre_election ? PRE_ELECTION : NORMAL_ELECTION,
+                           ELECTION_TIMEOUT_EXPIRED);
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX(WARNING) << "Failed to trigger leader election: " << s.ToString();
   }
@@ -1346,8 +1391,12 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
   bool vote_yes = !OpIdLessThan(request->candidate_status().last_received(),
                                 local_last_logged_opid);
 
-  // Record the term advancement if necessary.
-  if (request->candidate_term() > state_->GetCurrentTermUnlocked()) {
+  // Record the term advancement if necessary. We don't do so in the case of
+  // pre-elections because it's possible that the node who called the pre-election
+  // has actually now successfully become leader of the prior term, in which case
+  // bumping our term here would disrupt it.
+  if (!request->is_pre_election() &&
+      request->candidate_term() > state_->GetCurrentTermUnlocked()) {
     // If we are going to vote for this peer, then we will flush the consensus metadata
     // to disk below when we record the vote, and we can skip flushing the term advancement
     // to disk here.
@@ -1528,8 +1577,10 @@ Status RaftConsensus::AdvanceTermForTests(int64_t new_term) {
   return HandleTermAdvanceUnlocked(new_term);
 }
 
-std::string RaftConsensus::GetRequestVoteLogPrefixUnlocked() const {
-  return state_->LogPrefixUnlocked() + "Leader election vote request";
+std::string RaftConsensus::GetRequestVoteLogPrefixUnlocked(const VoteRequestPB& request) const {
+  return Substitute("$0Leader $1election vote request",
+                    state_->LogPrefixUnlocked(),
+                    request.is_pre_election() ? "pre-" : "");
 }
 
 void RaftConsensus::FillVoteResponseVoteGranted(VoteResponsePB* response) {
@@ -1549,7 +1600,7 @@ Status RaftConsensus::RequestVoteRespondInvalidTerm(const VoteRequestPB* request
   FillVoteResponseVoteDenied(ConsensusErrorPB::INVALID_TERM, response);
   string msg = Substitute("$0: Denying vote to candidate $1 for earlier term $2. "
                           "Current term is $3.",
-                          GetRequestVoteLogPrefixUnlocked(),
+                          GetRequestVoteLogPrefixUnlocked(*request),
                           request->candidate_uuid(),
                           request->candidate_term(),
                           state_->GetCurrentTermUnlocked());
@@ -1563,7 +1614,7 @@ Status RaftConsensus::RequestVoteRespondVoteAlreadyGranted(const VoteRequestPB* 
   FillVoteResponseVoteGranted(response);
   LOG(INFO) << Substitute("$0: Already granted yes vote for candidate $1 in term $2. "
                           "Re-sending same reply.",
-                          GetRequestVoteLogPrefixUnlocked(),
+                          GetRequestVoteLogPrefixUnlocked(*request),
                           request->candidate_uuid(),
                           request->candidate_term());
   return Status::OK();
@@ -1574,7 +1625,7 @@ Status RaftConsensus::RequestVoteRespondAlreadyVotedForOther(const VoteRequestPB
   FillVoteResponseVoteDenied(ConsensusErrorPB::ALREADY_VOTED, response);
   string msg = Substitute("$0: Denying vote to candidate $1 in current term $2: "
                           "Already voted for candidate $3 in this term.",
-                          GetRequestVoteLogPrefixUnlocked(),
+                          GetRequestVoteLogPrefixUnlocked(*request),
                           request->candidate_uuid(),
                           state_->GetCurrentTermUnlocked(),
                           state_->GetVotedForCurrentTermUnlocked());
@@ -1590,7 +1641,7 @@ Status RaftConsensus::RequestVoteRespondLastOpIdTooOld(const OpId& local_last_lo
   string msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
                           "replica has last-logged OpId of $3, which is greater than that of the "
                           "candidate, which has last-logged OpId of $4.",
-                          GetRequestVoteLogPrefixUnlocked(),
+                          GetRequestVoteLogPrefixUnlocked(*request),
                           request->candidate_uuid(),
                           request->candidate_term(),
                           local_last_logged_opid.ShortDebugString(),
@@ -1606,7 +1657,7 @@ Status RaftConsensus::RequestVoteRespondLeaderIsAlive(const VoteRequestPB* reque
   string msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
                           "replica is either leader or believes a valid leader to "
                           "be alive.",
-                          GetRequestVoteLogPrefixUnlocked(),
+                          GetRequestVoteLogPrefixUnlocked(*request),
                           request->candidate_uuid(),
                           request->candidate_term());
   LOG(INFO) << msg;
@@ -1620,7 +1671,7 @@ Status RaftConsensus::RequestVoteRespondIsBusy(const VoteRequestPB* request,
   string msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
                           "replica is already servicing an update from a current leader "
                           "or another vote.",
-                          GetRequestVoteLogPrefixUnlocked(),
+                          GetRequestVoteLogPrefixUnlocked(*request),
                           request->candidate_uuid(),
                           request->candidate_term());
   LOG(INFO) << msg;
@@ -1637,8 +1688,10 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
   MonoDelta additional_backoff = LeaderElectionExpBackoffDeltaUnlocked();
   RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(additional_backoff, ALLOW_LOGGING));
 
-  // Persist our vote to disk.
-  RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(request->candidate_uuid()));
+  if (!request->is_pre_election()) {
+    // Persist our vote to disk.
+    RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(request->candidate_uuid()));
+  }
 
   FillVoteResponseVoteGranted(response);
 
@@ -1647,7 +1700,7 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
   RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(additional_backoff, DO_NOT_LOG));
 
   LOG(INFO) << Substitute("$0: Granting yes vote for candidate $1 in term $2.",
-                          GetRequestVoteLogPrefixUnlocked(),
+                          GetRequestVoteLogPrefixUnlocked(*request),
                           request->candidate_uuid(),
                           state_->GetCurrentTermUnlocked());
   return Status::OK();
@@ -1668,6 +1721,7 @@ std::string RaftConsensus::LogPrefix() {
 }
 
 void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
+  failed_elections_since_stable_leader_ = 0;
   state_->SetLeaderUuidUnlocked(uuid);
   MarkDirty("New leader " + uuid);
 }
@@ -1766,78 +1820,129 @@ ReplicaState* RaftConsensus::GetReplicaStateForTests() {
   return state_.get();
 }
 
-void RaftConsensus::ElectionCallback(const ElectionResult& result) {
+void RaftConsensus::ElectionCallback(ElectionReason reason, const ElectionResult& result) {
   // The election callback runs on a reactor thread, so we need to defer to our
   // threadpool. If the threadpool is already shut down for some reason, it's OK --
   // we're OK with the callback never running.
-  WARN_NOT_OK(thread_pool_->SubmitClosure(Bind(&RaftConsensus::DoElectionCallback, this, result)),
+  WARN_NOT_OK(thread_pool_->SubmitClosure(Bind(&RaftConsensus::DoElectionCallback,
+                                               this, reason, result)),
               state_->LogPrefixThreadSafe() + "Unable to run election callback");
 }
 
-void RaftConsensus::DoElectionCallback(const ElectionResult& result) {
+void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResult& result) {
+  const int64_t election_term = result.vote_request.candidate_term();
+  const bool was_pre_election = result.vote_request.is_pre_election();
+  const char* election_type = was_pre_election ? "pre-election" : "election";
+
   // Snooze to avoid the election timer firing again as much as possible.
   {
     ReplicaState::UniqueLock lock;
     CHECK_OK(state_->LockForRead(&lock));
     // We need to snooze when we win and when we lose:
     // - When we win because we're about to disable the timer and become leader.
-    // - When we loose or otherwise we can fall into a cycle, where everyone keeps
+    // - When we lose or otherwise we can fall into a cycle, where everyone keeps
     //   triggering elections but no election ever completes because by the time they
     //   finish another one is triggered already.
     // We ignore the status as we don't want to fail if we the timer is
     // disabled.
     ignore_result(SnoozeFailureDetectorUnlocked(LeaderElectionExpBackoffDeltaUnlocked(),
                                                 ALLOW_LOGGING));
-  }
 
-  if (result.decision == VOTE_DENIED) {
-    LOG_WITH_PREFIX(INFO) << "Leader election lost for term " << result.election_term
-                             << ". Reason: "
-                             << (!result.message.empty() ? result.message : "None given");
-    return;
+    if (result.decision == VOTE_DENIED) {
+      failed_elections_since_stable_leader_++;
+
+      // If we called an election and one of the voters had a higher term than we did,
+      // we should bump our term before we potentially try again. This is particularly
+      // important with pre-elections to avoid getting "stuck" in a case like:
+      //    Peer A: has ops through 1.10, term = 2, voted in term 2 for peer C
+      //    Peer B: has ops through 1.15, term = 1
+      // In this case, Peer B will reject peer A's pre-elections for term 3 because
+      // the local log is longer. Peer A will reject B's pre-elections for term 2
+      // because it already voted in term 2. The check below ensures that peer B
+      // will bump to term 2 when it gets the vote rejection, such that its
+      // next pre-election (for term 3) would succeed.
+      if (result.highest_voter_term > state_->GetCurrentTermUnlocked()) {
+        HandleTermAdvanceUnlocked(result.highest_voter_term);
+      }
+
+      LOG_WITH_PREFIX_UNLOCKED(INFO)
+          << "Leader " << election_type << " lost for term " << election_term
+          << ". Reason: "
+          << (!result.message.empty() ? result.message : "None given");
+      return;
+    }
   }
 
   ReplicaState::UniqueLock lock;
   Status s = state_->LockForConfigChange(&lock);
   if (PREDICT_FALSE(!s.ok())) {
-    LOG_WITH_PREFIX(INFO) << "Received election callback for term "
-                          << result.election_term << " while not running: "
+    LOG_WITH_PREFIX(INFO) << "Received " << election_type << " callback for term "
+                          << election_term << " while not running: "
                           << s.ToString();
     return;
   }
 
-  if (result.election_term != state_->GetCurrentTermUnlocked()) {
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Leader election decision for defunct term "
-                                   << result.election_term << ": "
-                                   << (result.decision == VOTE_GRANTED ? "won" : "lost");
+  // In a pre-election, we collected votes for the _next_ term.
+  // So, we need to adjust our expectations of what the current term should be.
+  int64_t election_started_in_term = election_term;
+  if (was_pre_election) {
+    election_started_in_term--;
+  }
+
+  if (election_started_in_term != state_->GetCurrentTermUnlocked()) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO)
+        << "Leader " << election_type << " decision vote started in "
+        << "defunct term " << election_started_in_term << ": "
+        << (result.decision == VOTE_GRANTED ? "won" : "lost");
     return;
   }
 
   const RaftConfigPB& active_config = state_->GetActiveConfigUnlocked();
   if (!IsRaftConfigVoter(state_->GetPeerUuid(), active_config)) {
-    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Leader election decision while not in active config. "
-                                      << "Result: Term " << result.election_term << ": "
+    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Leader " << election_type
+                                      << " decision while not in active config. "
+                                      << "Result: Term " << election_term << ": "
                                       << (result.decision == VOTE_GRANTED ? "won" : "lost")
                                       << ". RaftConfig: " << active_config.ShortDebugString();
     return;
   }
 
   if (state_->GetActiveRoleUnlocked() == RaftPeerPB::LEADER) {
-    LOG_WITH_PREFIX_UNLOCKED(DFATAL) << "Leader election callback while already leader! "
-                          "Result: Term " << result.election_term << ": "
-                          << (result.decision == VOTE_GRANTED ? "won" : "lost");
+    // If this was a pre-election, it's possible to see the following interleaving:
+    //
+    //  1. Term N (follower): send a real election for term N
+    //  2. Election callback expires again
+    //  3. Term N (follower): send a pre-election for term N+1
+    //  4. Election callback for real election from term N completes.
+    //     Peer is now leader for term N.
+    //  5. Pre-election callback from term N+1 completes, even though
+    //     we are currently a leader of term N.
+    // In this case, we should just ignore the pre-election, since we're
+    // happily the leader of the prior term.
+    if (was_pre_election) return;
+    LOG_WITH_PREFIX_UNLOCKED(DFATAL)
+        << "Leader " << election_type << " callback while already leader! "
+        << "Result: Term " << election_term << ": "
+        << (result.decision == VOTE_GRANTED ? "won" : "lost");
     return;
   }
 
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Leader election won for term " << result.election_term;
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Leader " << election_type << " won for term " << election_term;
 
-  // Convert role to LEADER.
-  SetLeaderUuidUnlocked(state_->GetPeerUuid());
+  if (was_pre_election) {
+    // We just won the pre-election. So, we need to call a real election.
+    lock.unlock();
+    WARN_NOT_OK(StartElection(NORMAL_ELECTION, reason),
+                "Couldn't start leader election after successful pre-election");
+  } else {
+    // We won a real election. Convert role to LEADER.
+    SetLeaderUuidUnlocked(state_->GetPeerUuid());
 
-  // TODO: BecomeLeaderUnlocked() can fail due to state checks during shutdown.
-  // It races with the above state check.
-  // This could be a problem during tablet deletion.
-  CHECK_OK(BecomeLeaderUnlocked());
+    // TODO(todd): BecomeLeaderUnlocked() can fail due to state checks during shutdown.
+    // It races with the above state check.
+    // This could be a problem during tablet deletion.
+    CHECK_OK(BecomeLeaderUnlocked());
+  }
 }
 
 Status RaftConsensus::GetLastOpId(OpIdType type, OpId* id) {
@@ -1964,11 +2069,8 @@ MonoDelta RaftConsensus::MinimumElectionTimeout() const {
 
 MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
   // Compute a backoff factor based on how many leader elections have
-  // taken place since a leader was successfully elected.
-  int term_difference =  state_->GetCurrentTermUnlocked() -
-      state_->GetTermWithLastCommittedOpUnlocked();
-
-  double backoff_factor = pow(1.5, term_difference);
+  // failed since a stable leader was last seen.
+  double backoff_factor = pow(1.5, failed_elections_since_stable_leader_ + 1);
   double min_timeout = MinimumElectionTimeout().ToMilliseconds();
   double max_timeout = std::min<double>(
       min_timeout * backoff_factor,

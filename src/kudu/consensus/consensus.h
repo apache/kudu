@@ -116,18 +116,40 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // Emulates a leader election by simply making this peer leader.
   virtual Status EmulateElection() = 0;
 
-  // Triggers a leader election.
+  // Modes for StartElection().
   enum ElectionMode {
     // A normal leader election. Peers will not vote for this node
     // if they believe that a leader is alive.
     NORMAL_ELECTION,
+
+    // A "pre-election". Peers will vote as they would for a normal
+    // election, except that the votes will not be "binding". In other
+    // words, they will not durably record their vote.
+    PRE_ELECTION,
 
     // In this mode, peers will vote for this candidate even if they
     // think a leader is alive. This can be used for a faster hand-off
     // between a leader and one of its replicas.
     ELECT_EVEN_IF_LEADER_IS_ALIVE
   };
-  virtual Status StartElection(ElectionMode mode) = 0;
+
+  // Reasons for StartElection().
+  enum ElectionReason {
+    // The election is being called because the Raft configuration has only
+    // a single node and has just started up.
+    INITIAL_SINGLE_NODE_ELECTION,
+
+    // The election is being called because the timeout expired. In other
+    // words, the previous leader probably failed (or there was no leader
+    // in this term)
+    ELECTION_TIMEOUT_EXPIRED,
+
+    // The election is being started because of an explicit external request.
+    EXTERNAL_REQUEST
+  };
+
+  // Triggers a leader election.
+  virtual Status StartElection(ElectionMode mode, ElectionReason reason) = 0;
 
   // Wait until the node has LEADER role.
   // Returns Status::TimedOut if the role is not LEADER within 'timeout'.
