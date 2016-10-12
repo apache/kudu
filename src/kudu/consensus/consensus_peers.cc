@@ -114,9 +114,6 @@ Peer::Peer(const RaftPeerPB& peer_pb, string tablet_id, string leader_uuid,
       thread_pool_(thread_pool),
       state_(kPeerCreated) {}
 
-void Peer::SetTermForTest(int term) {
-  response_.set_responder_term(term);
-}
 
 Status Peer::Init() {
   std::lock_guard<simple_spinlock> lock(peer_lock_);

@@ -149,10 +149,6 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
   // Append a bunch of messages to the queue
   AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 20);
 
-  // The above append ends up appending messages in term 2, so we
-  // update the peer's term to match.
-  remote_peer->SetTermForTest(2);
-
   // signal the peer there are requests pending.
   remote_peer->SignalRequest();
   // now wait on the status of the last operation

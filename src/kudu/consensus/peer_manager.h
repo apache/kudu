@@ -41,9 +41,8 @@ class PeerMessageQueue;
 class PeerProxyFactory;
 class RaftConfigPB;
 
-// Manages the set of local and remote peers that pull data from the
-// queue into the local log/remote machines.
-// Methods are virtual to ease mocking.
+// Manages the remote peers that pull data from the local queue and send updates to the
+// remote machines.
 class PeerManager {
  public:
   // All of the raw pointer arguments are not owned by the PeerManager
@@ -58,16 +57,16 @@ class PeerManager {
               ThreadPool* request_thread_pool,
               const scoped_refptr<log::Log>& log);
 
-  virtual ~PeerManager();
+  ~PeerManager();
 
   // Updates 'peers_' according to the new configuration config.
-  virtual Status UpdateRaftConfig(const RaftConfigPB& config);
+  Status UpdateRaftConfig(const RaftConfigPB& config);
 
   // Signals all peers of the current configuration that there is a new request pending.
-  virtual void SignalRequest(bool force_if_queue_empty = false);
+  void SignalRequest(bool force_if_queue_empty = false);
 
   // Closes all peers.
-  virtual void Close();
+  void Close();
 
  private:
   std::string GetLogPrefix() const;

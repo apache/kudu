@@ -55,57 +55,24 @@ class PeerMessageQueue;
 class VoteRequestPB;
 class VoteResponsePB;
 
-// A peer in consensus (local or remote).
+// A remote peer in consensus.
 //
-// Leaders use peers to update the local Log and remote replicas.
+// Leaders use peers to update the remote replicas. Each peer
+// may have at most one outstanding request at a time. If a
+// request is signaled when there is already one outstanding,
+// the request will be generated once the outstanding one finishes.
 //
 // Peers are owned by the consensus implementation and do not keep
-// state aside from whether there are requests pending or if requests
-// are being processed.
+// state aside from the most recent request and response.
 //
-// There are two external actions that trigger a state change:
+// Peers are also responsible for sending periodic heartbeats
+// to assert liveness of the leader. The peer constructs a heartbeater
+// thread to trigger these heartbeats.
 //
-// SignalRequest(): Called by the consensus implementation, notifies
-// that the queue contains messages to be processed.
-//
-// ProcessResponse() Called a response from a peer is received.
-//
-// The following state diagrams describe what happens when a state
-// changing method is called.
-//
-//                        +
-//                        |
-//       SignalRequest()  |
-//                        |
-//                        |
-//                        v
-//              +------------------+
-//       +------+    processing ?  +-----+
-//       |      +------------------+     |
-//       |                               |
-//       | Yes                           | No
-//       |                               |
-//       v                               v
-//     return                      ProcessNextRequest()
-//                                 processing = true
-//                                 - get reqs. from queue
-//                                 - update peer async
-//                                 return
-//
-//                         +
-//                         |
-//      ProcessResponse()  |
-//      processing = false |
-//                         v
-//               +------------------+
-//        +------+   more pending?  +-----+
-//        |      +------------------+     |
-//        |                               |
-//        | Yes                           | No
-//        |                               |
-//        v                               v
-//  SignalRequest()                    return
-//
+// The actual request construction is delegated to a PeerMessageQueue
+// object, and performed on a thread pool (since it may do IO). When a
+// response is received, the peer updates the PeerMessageQueue
+// using PeerMessageQueue::ResponseFromPeer(...) on the same threadpool.
 class Peer {
  public:
   // Initializes a peer and get its status.
@@ -119,15 +86,12 @@ class Peer {
 
   const RaftPeerPB& peer_pb() const { return peer_pb_; }
 
-  // Returns the PeerProxy if this is a remote peer or NULL if it
-  // isn't. Used for tests to fiddle with the proxy and emulate remote
-  // behavior.
-  PeerProxy* GetPeerProxyForTests();
-
+  // Stop sending requests and periodic heartbeats.
+  // TODO(KUDU-699). This currently blocks until the most recent request
+  // has completed, which is problematic.
   void Close();
 
-  void SetTermForTest(int term);
-
+  // Calls Close() automatically.
   ~Peer();
 
   // Creates a new remote peer and makes the queue track it.'
