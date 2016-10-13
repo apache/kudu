@@ -39,7 +39,7 @@ public class LocatedTablet {
 
   private final List<Replica> replicas;
 
-  LocatedTablet(AsyncKuduClient.RemoteTablet tablet) {
+  LocatedTablet(RemoteTablet tablet) {
     partition = tablet.getPartition();
     tabletId = tablet.getTabletIdAsBytes();
     replicas = tablet.getReplicas();

@@ -21,7 +21,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.primitives.UnsignedBytes;
 
 import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.client.AsyncKuduClient.RemoteTablet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

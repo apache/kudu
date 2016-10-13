@@ -87,7 +87,7 @@ public abstract class KuduRpc<R> {
    */
   private Deferred<R> deferred;
 
-  private AsyncKuduClient.RemoteTablet tablet;
+  private RemoteTablet tablet;
 
   final KuduTable table;
 
@@ -233,11 +233,11 @@ public abstract class KuduRpc<R> {
     return deferred;
   }
 
-  AsyncKuduClient.RemoteTablet getTablet() {
+  RemoteTablet getTablet() {
     return this.tablet;
   }
 
-  void setTablet(AsyncKuduClient.RemoteTablet tablet) {
+  void setTablet(RemoteTablet tablet) {
     this.tablet = tablet;
   }
 

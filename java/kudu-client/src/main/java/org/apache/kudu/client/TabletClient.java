@@ -750,7 +750,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    */
   private void failOrRetryRpc(final KuduRpc<?> rpc,
                               final RecoverableException exception) {
-    AsyncKuduClient.RemoteTablet tablet = rpc.getTablet();
+    RemoteTablet tablet = rpc.getTablet();
     // Note As of the time of writing (03/11/16), a null tablet doesn't make sense, if we see a null
     // tablet it's because we didn't set it properly before calling sendRpc().
     if (tablet == null) {  // Can't retry, dunno where this RPC should go.

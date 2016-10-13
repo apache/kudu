@@ -18,7 +18,6 @@ package org.apache.kudu.client;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.WireProtocol.AppStatusPB;
-import org.apache.kudu.client.AsyncKuduClient.RemoteTablet;
 import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
 
 import com.stumbleupon.async.Callback;
@@ -123,7 +122,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     RemoteTablet rt =
         client.getTableLocationEntry(table.getTableId(), insert.partitionKey()).getTablet();
     String tabletId = rt.getTabletIdAsString();
-    TabletClient tc = client.clientFor(rt);
+    TabletClient tc = rt.getLeaderConnection();
     try {
       // Delete table so we get table not found error.
       client.deleteTable(TABLE_NAME).join();

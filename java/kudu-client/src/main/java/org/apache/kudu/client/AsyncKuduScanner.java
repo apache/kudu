@@ -192,7 +192,7 @@ public final class AsyncKuduScanner {
    * If == DONE, then we're done scanning.
    * Otherwise it contains a proper tabletSlice name, and we're currently scanning.
    */
-  private AsyncKuduClient.RemoteTablet tablet;
+  private RemoteTablet tablet;
 
   /**
    * This is the scanner ID we got from the TabletServer.
@@ -469,7 +469,7 @@ public final class AsyncKuduScanner {
   private final Callback<Exception, Exception> nextRowErrback() {
     return new Callback<Exception, Exception>() {
       public Exception call(final Exception error) {
-        final AsyncKuduClient.RemoteTablet old_tablet = tablet;  // Save before invalidate().
+        final RemoteTablet old_tablet = tablet;  // Save before invalidate().
         String message = old_tablet + " pretends to not know " + AsyncKuduScanner.this;
         LOG.warn(message, error);
         invalidate();  // If there was an error, don't assume we're still OK.
@@ -560,7 +560,7 @@ public final class AsyncKuduScanner {
    * Sets the name of the tabletSlice that's hosting {@code this.start_key}.
    * @param tablet The tabletSlice we're currently supposed to be scanning.
    */
-  void setTablet(final AsyncKuduClient.RemoteTablet tablet) {
+  void setTablet(final RemoteTablet tablet) {
     this.tablet = tablet;
   }
 
@@ -577,7 +577,7 @@ public final class AsyncKuduScanner {
   /**
    * Returns the tabletSlice currently being scanned, if any.
    */
-  AsyncKuduClient.RemoteTablet currentTablet() {
+  RemoteTablet currentTablet() {
     return tablet;
   }
 
