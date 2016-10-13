@@ -590,7 +590,7 @@ Status RaftConsensus::CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRo
 
 Status RaftConsensus::AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round) {
   *round->replicate_msg()->mutable_id() = queue_->GetNextOpId();
-  RETURN_NOT_OK(state_->AddPendingOperation(round));
+  RETURN_NOT_OK(AddPendingOperationUnlocked(round));
 
   Status s = queue_->AppendOperation(round->replicate_scoped_refptr());
 
@@ -609,6 +609,45 @@ Status RaftConsensus::AppendNewRoundToQueueUnlocked(const scoped_refptr<Consensu
   }
   RETURN_NOT_OK_PREPEND(s, "Unable to append operation to consensus queue");
   return Status::OK();
+}
+
+Status RaftConsensus::AddPendingOperationUnlocked(const scoped_refptr<ConsensusRound>& round) {
+  // If we are adding a pending config change, we need to propagate it to the
+  // metadata.
+  if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
+    DCHECK(round->replicate_msg()->change_config_record().has_old_config());
+    DCHECK(round->replicate_msg()->change_config_record().old_config().has_opid_index());
+    DCHECK(round->replicate_msg()->change_config_record().has_new_config());
+    DCHECK(!round->replicate_msg()->change_config_record().new_config().has_opid_index());
+    const RaftConfigPB& old_config = round->replicate_msg()->change_config_record().old_config();
+    const RaftConfigPB& new_config = round->replicate_msg()->change_config_record().new_config();
+    if (state_->GetActiveRoleUnlocked() != RaftPeerPB::LEADER) {
+      // The leader has to mark the configuration as pending before it gets here
+      // because the active configuration affects the replication queue.
+      // Do one last sanity check.
+      Status s = state_->CheckNoConfigChangePendingUnlocked();
+      if (PREDICT_FALSE(!s.ok())) {
+        s = s.CloneAndAppend(Substitute("\n  New config: $0", new_config.ShortDebugString()));
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << s.ToString();
+        return s;
+      }
+      // Check if the pending Raft config has an OpId less than the committed
+      // config. If so, this is a replay at startup in which the COMMIT
+      // messages were delayed.
+      const RaftConfigPB& committed_config = state_->GetCommittedConfigUnlocked();
+      if (round->replicate_msg()->id().index() > committed_config.opid_index()) {
+        CHECK_OK(state_->SetPendingConfigUnlocked(new_config));
+      } else {
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << "Ignoring setting pending config change with OpId "
+            << round->replicate_msg()->id() << " because the committed config has OpId index "
+            << committed_config.opid_index() << ". The config change we are ignoring is: "
+            << "Old config: { " << old_config.ShortDebugString() << " }. "
+            << "New config: { " << new_config.ShortDebugString() << " }";
+      }
+    }
+  }
+
+  return state_->AddPendingOperation(round);
 }
 
 void RaftConsensus::NotifyCommitIndex(int64_t commit_index) {
@@ -748,7 +787,7 @@ Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg
   ConsensusRound* round_ptr = round.get();
   RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->
       StartReplicaTransaction(round));
-  return state_->AddPendingOperation(round_ptr);
+  return AddPendingOperationUnlocked(round_ptr);
 }
 
 Status RaftConsensus::IsSingleVoterConfig(bool* single_voter) const {
@@ -1434,10 +1473,14 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
     RETURN_NOT_OK(state_->LockForConfigChange(&lock));
     RETURN_NOT_OK(state_->CheckActiveLeaderUnlocked());
     RETURN_NOT_OK(state_->CheckNoConfigChangePendingUnlocked());
+
     // We are required by Raft to reject config change operations until we have
     // committed at least one operation in our current term as leader.
     // See https://groups.google.com/forum/#!topic/raft-dev/t4xj6dJTP6E
-    RETURN_NOT_OK(state_->CheckHasCommittedOpInCurrentTermUnlocked());
+    if (!queue_->IsCommittedIndexInCurrentTerm()) {
+      return Status::IllegalState("Leader has not yet committed an operation in its own term");
+    }
+
     if (!server.has_permanent_uuid()) {
       return Status::InvalidArgument("server must have permanent_uuid specified",
                                      req.ShortDebugString());
@@ -1569,7 +1612,7 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg
                                                   Unretained(this),
                                                   string("Replicated consensus-only round"),
                                                   Bind(&DoNothingStatusCB))));
-  return state_->AddPendingOperation(round);
+  return AddPendingOperationUnlocked(round);
 }
 
 Status RaftConsensus::AdvanceTermForTests(int64_t new_term) {
@@ -1726,6 +1769,7 @@ void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
   state_->SetLeaderUuidUnlocked(uuid);
   MarkDirty("New leader " + uuid);
 }
+
 
 Status RaftConsensus::ReplicateConfigChangeUnlocked(const RaftConfigPB& old_config,
                                                     const RaftConfigPB& new_config,
@@ -1986,12 +2030,18 @@ void RaftConsensus::MarkDirtyOnSuccess(const string& reason,
 void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
                                                   const StatusCallback& client_cb,
                                                   const Status& status) {
+  // NOTE: the ReplicaState lock is held here because this is triggered by
+  // ReplicaState's abort or commit paths.
   OperationType op_type = round->replicate_msg()->op_type();
   const string& op_type_str = OperationType_Name(op_type);
   CHECK(IsConsensusOnlyOperation(op_type)) << "Unexpected op type: " << op_type_str;
+
+  if (op_type == CHANGE_CONFIG_OP) {
+    CompleteConfigChangeRoundUnlocked(round, status);
+    // Fall through to the generic handling.
+  }
+
   if (!status.ok()) {
-    // In the case that a change-config operation is aborted, RaftConsensusState
-    // already handled clearing the pending config state.
     LOG(INFO) << state_->LogPrefixThreadSafe() << op_type_str << " replication failed: "
               << status.ToString();
     client_cb.Run(status);
@@ -2009,6 +2059,48 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
 
   client_cb.Run(status);
 }
+
+void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round, const Status& status) {
+  if (!status.ok()) {
+    // Abort a failed config change.
+    CHECK(state_->IsConfigChangePendingUnlocked())
+        << LogPrefixUnlocked() << "Aborting CHANGE_CONFIG_OP but "
+        << "there was no pending config set. Op: "
+        << round->replicate_msg()->ShortDebugString();
+    state_->ClearPendingConfigUnlocked();
+    return;
+  }
+
+  // Commit the successful config change.
+  const OpId& op_id = round->replicate_msg()->id();
+
+  DCHECK(round->replicate_msg()->change_config_record().has_old_config());
+  DCHECK(round->replicate_msg()->change_config_record().has_new_config());
+  RaftConfigPB old_config = round->replicate_msg()->change_config_record().old_config();
+  RaftConfigPB new_config = round->replicate_msg()->change_config_record().new_config();
+  DCHECK(old_config.has_opid_index());
+  DCHECK(!new_config.has_opid_index());
+  new_config.set_opid_index(op_id.index());
+  // Check if the pending Raft config has an OpId less than the committed
+  // config. If so, this is a replay at startup in which the COMMIT
+  // messages were delayed.
+  const RaftConfigPB& committed_config = state_->GetCommittedConfigUnlocked();
+  if (new_config.opid_index() > committed_config.opid_index()) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Committing config change with OpId "
+                                   << op_id << ": "
+                                   << DiffRaftConfigs(old_config, new_config)
+                                   << ". New config: { " << new_config.ShortDebugString() << " }";
+    CHECK_OK(state_->SetCommittedConfigUnlocked(new_config));
+  } else {
+    LOG_WITH_PREFIX_UNLOCKED(INFO)
+        << "Ignoring commit of config change with OpId "
+        << op_id << " because the committed config has OpId index "
+        << committed_config.opid_index() << ". The config change we are ignoring is: "
+        << "Old config: { " << old_config.ShortDebugString() << " }. "
+        << "New config: { " << new_config.ShortDebugString() << " }";
+  }
+}
+
 
 Status RaftConsensus::EnsureFailureDetectorEnabledUnlocked() {
   if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {

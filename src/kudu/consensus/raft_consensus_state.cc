@@ -403,16 +403,6 @@ void ReplicaState::AbortOpsAfterUnlocked(int64_t index) {
         << "Aborting uncommitted " << OperationType_Name(op_type)
         << " operation due to leader change: " << round->replicate_msg()->id();
 
-    // When aborting a config-change operation, go back to using the committed
-    // configuration.
-    if (PREDICT_FALSE(op_type == CHANGE_CONFIG_OP)) {
-      CHECK(IsConfigChangePendingUnlocked())
-          << LogPrefixUnlocked() << "Aborting CHANGE_CONFIG_OP but "
-          << "there was no pending config set. Op: "
-          << round->replicate_msg()->ShortDebugString();
-      ClearPendingConfigUnlocked();
-    }
-
     round->NotifyReplicationFinished(Status::Aborted("Transaction aborted by new leader"));
     // Erase the entry from pendings.
     pending_txns_.erase(iter++);
@@ -422,46 +412,7 @@ void ReplicaState::AbortOpsAfterUnlocked(int64_t index) {
 Status ReplicaState::AddPendingOperation(const scoped_refptr<ConsensusRound>& round) {
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(state_ != kRunning)) {
-    // Special case when we're configuring and this is a config change, refuse
-    // everything else.
-    // TODO: Don't require a NO_OP to get to kRunning state
-    if (round->replicate_msg()->op_type() != NO_OP) {
-      return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
-    }
-  }
-
-  // Mark pending configuration.
-  if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
-    DCHECK(round->replicate_msg()->change_config_record().has_old_config());
-    DCHECK(round->replicate_msg()->change_config_record().old_config().has_opid_index());
-    DCHECK(round->replicate_msg()->change_config_record().has_new_config());
-    DCHECK(!round->replicate_msg()->change_config_record().new_config().has_opid_index());
-    const RaftConfigPB& old_config = round->replicate_msg()->change_config_record().old_config();
-    const RaftConfigPB& new_config = round->replicate_msg()->change_config_record().new_config();
-    if (GetActiveRoleUnlocked() != RaftPeerPB::LEADER) {
-      // The leader has to mark the configuration as pending before it gets here
-      // because the active configuration affects the replication queue.
-      // Do one last sanity check.
-      Status s = CheckNoConfigChangePendingUnlocked();
-      if (PREDICT_FALSE(!s.ok())) {
-        s = s.CloneAndAppend(Substitute("\n  New config: $0", new_config.ShortDebugString()));
-        LOG_WITH_PREFIX_UNLOCKED(INFO) << s.ToString();
-        return s;
-      }
-      // Check if the pending Raft config has an OpId less than the committed
-      // config. If so, this is a replay at startup in which the COMMIT
-      // messages were delayed.
-      const RaftConfigPB& committed_config = GetCommittedConfigUnlocked();
-      if (round->replicate_msg()->id().index() > committed_config.opid_index()) {
-        CHECK_OK(SetPendingConfigUnlocked(new_config));
-      } else {
-        LOG_WITH_PREFIX_UNLOCKED(INFO) << "Ignoring setting pending config change with OpId "
-            << round->replicate_msg()->id() << " because the committed config has OpId index "
-            << committed_config.opid_index() << ". The config change we are ignoring is: "
-            << "Old config: { " << old_config.ShortDebugString() << " }. "
-            << "New config: { " << new_config.ShortDebugString() << " }";
-      }
-    }
+    return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
   }
 
   InsertOrDie(&pending_txns_, round->replicate_msg()->id().index(), round);
@@ -515,35 +466,6 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(int64_t committed_index) {
     }
 
     pending_txns_.erase(iter++);
-
-    // Set committed configuration.
-    if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
-      DCHECK(round->replicate_msg()->change_config_record().has_old_config());
-      DCHECK(round->replicate_msg()->change_config_record().has_new_config());
-      RaftConfigPB old_config = round->replicate_msg()->change_config_record().old_config();
-      RaftConfigPB new_config = round->replicate_msg()->change_config_record().new_config();
-      DCHECK(old_config.has_opid_index());
-      DCHECK(!new_config.has_opid_index());
-      new_config.set_opid_index(current_id.index());
-      // Check if the pending Raft config has an OpId less than the committed
-      // config. If so, this is a replay at startup in which the COMMIT
-      // messages were delayed.
-      const RaftConfigPB& committed_config = GetCommittedConfigUnlocked();
-      if (new_config.opid_index() > committed_config.opid_index()) {
-        LOG_WITH_PREFIX_UNLOCKED(INFO) << "Committing config change with OpId "
-            << current_id << ": "
-            << DiffRaftConfigs(old_config, new_config)
-            << ". New config: { " << new_config.ShortDebugString() << " }";
-        CHECK_OK(SetCommittedConfigUnlocked(new_config));
-      } else {
-        LOG_WITH_PREFIX_UNLOCKED(INFO) << "Ignoring commit of config change with OpId "
-            << current_id << " because the committed config has OpId index "
-            << committed_config.opid_index() << ". The config change we are ignoring is: "
-            << "Old config: { " << old_config.ShortDebugString() << " }. "
-            << "New config: { " << new_config.ShortDebugString() << " }";
-      }
-    }
-
     last_committed_op_id_ = round->id();
     round->NotifyReplicationFinished(Status::OK());
   }
@@ -584,16 +506,6 @@ int64_t ReplicaState::GetCommittedIndexUnlocked() const {
 int64_t ReplicaState::GetTermWithLastCommittedOpUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return last_committed_op_id_.term();
-}
-
-
-Status ReplicaState::CheckHasCommittedOpInCurrentTermUnlocked() const {
-  int64_t term = GetCurrentTermUnlocked();
-  const OpId& opid = last_committed_op_id_;
-  if (opid.term() != term) {
-    return Status::IllegalState("Latest committed op is not from this term", OpIdToString(opid));
-  }
-  return Status::OK();
 }
 
 OpId ReplicaState::GetLastPendingTransactionOpIdUnlocked() const {

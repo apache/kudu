@@ -266,9 +266,6 @@ class ReplicaState {
   int64_t GetCommittedIndexUnlocked() const;
   int64_t GetTermWithLastCommittedOpUnlocked() const;
 
-  // Returns OK iff an op from the current term has been committed.
-  Status CheckHasCommittedOpInCurrentTermUnlocked() const;
-
   // Returns the id of the latest pending transaction (i.e. the one with the
   // latest index). This must be called under the lock.
   OpId GetLastPendingTransactionOpIdUnlocked() const;

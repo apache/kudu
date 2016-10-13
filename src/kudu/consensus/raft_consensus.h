@@ -401,12 +401,23 @@ class RaftConsensus : public Consensus,
                              const RaftConfigPB& committed_config,
                              const std::string& reason);
 
+
+  // Handle the completion of replication of a config change operation.
+  // If 'status' is OK, this takes care of persisting the new configuration
+  // to disk as the committed configuration. A non-OK status indicates that
+  // the replication failed, in which case the pending configuration needs
+  // to be cleared such that we revert back to the old configuration.
+  void CompleteConfigChangeRoundUnlocked(ConsensusRound* round,
+                                         const Status& status);
+
   // Trigger that a non-Transaction ConsensusRound has finished replication.
   // If the replication was successful, an status will be OK. Otherwise, it
   // may be Aborted or some other error status.
   // If 'status' is OK, write a Commit message to the local WAL based on the
   // type of message it is.
   // The 'client_cb' will be invoked at the end of this execution.
+  //
+  // NOTE: this must be called with the ReplicaState lock held.
   void NonTxRoundReplicationFinished(ConsensusRound* round,
                                      const StatusCallback& client_cb,
                                      const Status& status);
@@ -418,6 +429,12 @@ class RaftConsensus : public Consensus,
   // As a follower, start a consensus round not associated with a Transaction.
   // Only virtual and protected for mocking purposes.
   Status StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg);
+
+  // Add a new pending operation to the ReplicaState, including the special handling
+  // necessary if this round contains a configuration change. These rounds must
+  // take effect as soon as they are received, rather than waiting for commitment
+  // (see Diego Ongaro's thesis section 4.1).
+  Status AddPendingOperationUnlocked(const scoped_refptr<ConsensusRound>& round);
 
   // Threadpool for constructing requests to peers, handling RPC callbacks,
   // etc.

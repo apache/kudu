@@ -2562,7 +2562,7 @@ TEST_F(RaftConsensusITest, TestChangeConfigRejectedUnlessNoopReplicated) {
                                  tablet_servers_[cluster_->tablet_server(1)->uuid()],
                                  boost::none, timeout);
   ASSERT_TRUE(!s.ok()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Latest committed op is not from this term");
+  ASSERT_STR_CONTAINS(s.ToString(), "Leader has not yet committed an operation in its own term");
 }
 
 // Test that if for some reason none of the transactions can be prepared, that it will come

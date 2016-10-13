@@ -62,9 +62,11 @@ extern const char kConsensusQueueParentTrackerId[];
 //
 // This class is used only on the LEADER side.
 //
-// TODO Right now this class is able to track one outstanding operation
+// TODO(todd): Right now this class is able to track one outstanding operation
 // per peer. If we want to have more than one outstanding RPC we need to
 // modify it.
+//
+// TODO(todd): make methods non-virtual since they aren't overridden.
 class PeerMessageQueue {
  public:
   struct TrackedPeer {
@@ -250,6 +252,9 @@ class PeerMessageQueue {
   // Returns the committed index. All operations with index less than or equal to
   // this index have been committed.
   virtual int64_t GetCommittedIndex() const;
+
+  // Return true if the committed index falls within the current term.
+  bool IsCommittedIndexInCurrentTerm() const;
 
   // Returns the current majority replicated index, for tests.
   virtual int64_t GetMajorityReplicatedIndexForTests() const;

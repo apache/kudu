@@ -789,6 +789,12 @@ int64_t PeerMessageQueue::GetCommittedIndex() const {
   return queue_state_.committed_index;
 }
 
+bool PeerMessageQueue::IsCommittedIndexInCurrentTerm() const {
+  std::lock_guard<simple_spinlock> lock(queue_lock_);
+  return queue_state_.first_index_in_current_term != boost::none &&
+      queue_state_.committed_index >= *queue_state_.first_index_in_current_term;
+}
+
 int64_t PeerMessageQueue::GetMajorityReplicatedIndexForTests() const {
   std::lock_guard<simple_spinlock> lock(queue_lock_);
   return queue_state_.majority_replicated_index;
