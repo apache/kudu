@@ -234,6 +234,7 @@ RaftConsensus::RaftConsensus(
       txn_factory_(txn_factory),
       peer_manager_(std::move(peer_manager)),
       queue_(std::move(queue)),
+      pending_(Substitute("T $0 P $1", options.tablet_id, peer_uuid)),
       rng_(GetRandomSeed32()),
       failure_monitor_(GetRandomSeed32(), GetFailureMonitorCheckMeanMs(),
                        GetFailureMonitorCheckStddevMs()),
@@ -291,7 +292,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
       RETURN_NOT_OK(StartReplicaTransactionUnlocked(replicate_ptr));
     }
 
-    state_->SetInitialCommittedOpIdUnlocked(info.last_committed_id);
+    pending_.SetInitialCommittedOpId(info.last_committed_id);
 
     queue_->Init(info.last_id);
   }
@@ -635,7 +636,7 @@ Status RaftConsensus::AddPendingOperationUnlocked(const scoped_refptr<ConsensusR
     }
   }
 
-  return state_->AddPendingOperation(round);
+  return pending_.AddPendingOperation(round);
 }
 
 void RaftConsensus::NotifyCommitIndex(int64_t commit_index) {
@@ -648,10 +649,8 @@ void RaftConsensus::NotifyCommitIndex(int64_t commit_index) {
     return;
   }
 
-  state_->AdvanceCommittedIndexUnlocked(commit_index);
+  pending_.AdvanceCommittedIndex(commit_index);
 
-  // TODO: is this right? the goal is to signal a new request
-  // whenever we have new commit-index to propagate.
   if (state_->GetActiveRoleUnlocked() == RaftPeerPB::LEADER) {
     peer_manager_->SignalRequest(false);
   }
@@ -807,7 +806,8 @@ std::string RaftConsensus::LeaderRequest::OpsRangeString() const {
 
 void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req,
                                                      LeaderRequest* deduplicated_req) {
-  int64_t last_committed_index = state_->GetCommittedIndexUnlocked();
+  // TODO(todd): use queue committed index?
+  int64_t last_committed_index = pending_.GetCommittedIndex();
 
   // The leader's preceding id.
   deduplicated_req->preceding_opid = &rpc_req->preceding_id();
@@ -832,7 +832,7 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req
       // If the index is uncommitted and below our match index, then it must be in the
       // pendings set.
       scoped_refptr<ConsensusRound> round =
-          state_->GetPendingOpByIndexOrNullUnlocked(leader_msg->id().index());
+          pending_.GetPendingOpByIndexOrNull(leader_msg->id().index());
       DCHECK(round) << "Could not find op with index " << leader_msg->id().index()
                     << " in pending set. committed= " << last_committed_index
                     << " dedup=" << dedup_up_to_index;
@@ -895,7 +895,7 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
                                                                 ConsensusResponsePB* response) {
 
   bool term_mismatch;
-  if (state_->IsOpCommittedOrPending(*req.preceding_opid, &term_mismatch)) {
+  if (pending_.IsOpCommittedOrPending(*req.preceding_opid, &term_mismatch)) {
     return Status::OK();
   }
 
@@ -932,7 +932,7 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
 }
 
 void RaftConsensus::TruncateAndAbortOpsAfterUnlocked(int64_t truncate_after_index) {
-  state_->AbortOpsAfterUnlocked(truncate_after_index);
+  pending_.AbortOpsAfter(truncate_after_index);
   queue_->TruncateOpsAfter(truncate_after_index);
 }
 
@@ -960,7 +960,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
   Status s;
   const OpId* prev = deduped_req->preceding_opid;
   for (const ReplicateRefPtr& message : deduped_req->messages) {
-    s = ReplicaState::CheckOpInSequence(*prev, message->get()->id());
+    s = PendingRounds::CheckOpInSequence(*prev, message->get()->id());
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Leader request contained out-of-sequence messages. Status: "
           << s.ToString() << ". Leader Request: " << request->ShortDebugString();
@@ -999,7 +999,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
   if (!deduped_req->messages.empty()) {
 
     bool term_mismatch;
-    CHECK(!state_->IsOpCommittedOrPending(deduped_req->messages[0]->get()->id(), &term_mismatch));
+    CHECK(!pending_.IsOpCommittedOrPending(deduped_req->messages[0]->get()->id(), &term_mismatch));
 
     // If the index is in our log but the terms are not the same abort down to the leader's
     // preceding id.
@@ -1153,13 +1153,13 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // 2. ...if we commit beyond the preceding index, we'd regress KUDU-639, and...
     // 3. ...the leader's committed index is always our upper bound.
     int64_t early_apply_up_to = std::min<int64_t>({
-        state_->GetLastPendingTransactionOpIdUnlocked().index(),
+        pending_.GetLastPendingTransactionOpId().index(),
         deduped_req.preceding_opid->index(),
         request->committed_index()});
 
     VLOG_WITH_PREFIX_UNLOCKED(1) << "Early marking committed up to " << early_apply_up_to;
     TRACE("Early marking committed up to index $0", early_apply_up_to);
-    CHECK_OK(state_->AdvanceCommittedIndexUnlocked(early_apply_up_to));
+    CHECK_OK(pending_.AdvanceCommittedIndex(early_apply_up_to));
 
     // 2 - Enqueue the prepares
 
@@ -1267,7 +1267,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     VLOG_WITH_PREFIX_UNLOCKED(1) << "Marking committed up to " << apply_up_to;
     TRACE("Marking committed up to $0", apply_up_to);
-    CHECK_OK(state_->AdvanceCommittedIndexUnlocked(apply_up_to));
+    CHECK_OK(pending_.AdvanceCommittedIndex(apply_up_to));
     queue_->UpdateFollowerWatermarks(apply_up_to, request->all_replicated_index());
 
     // If any messages failed to be started locally, then we already have removed them
@@ -1561,7 +1561,7 @@ void RaftConsensus::Shutdown() {
   // We must close the queue after we close the peers.
   queue_->Close();
 
-  CHECK_OK(state_->CancelPendingTransactions());
+  CHECK_OK(pending_.CancelPendingTransactions());
 
   {
     ReplicaState::UniqueLock lock;
@@ -1797,7 +1797,9 @@ Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
   // in the queue -- when the queue is in LEADER mode, it checks that all
   // registered peers are a part of the active config.
   peer_manager_->Close();
-  queue_->SetLeaderMode(state_->GetCommittedIndexUnlocked(),
+  // TODO(todd): should use queue committed index here? in that case do
+  // we need to pass it in at all?
+  queue_->SetLeaderMode(pending_.GetCommittedIndex(),
                         state_->GetCurrentTermUnlocked(),
                         active_config);
   RETURN_NOT_OK(peer_manager_->UpdateRaftConfig(active_config));
@@ -1983,8 +1985,8 @@ Status RaftConsensus::GetLastOpId(OpIdType type, OpId* id) {
   if (type == RECEIVED_OPID) {
     *DCHECK_NOTNULL(id) = queue_->GetLastOpIdInLog();
   } else if (type == COMMITTED_OPID) {
-    id->set_term(state_->GetTermWithLastCommittedOpUnlocked());
-    id->set_index(state_->GetCommittedIndexUnlocked());
+    id->set_term(pending_.GetTermWithLastCommittedOp());
+    id->set_index(pending_.GetCommittedIndex());
   } else {
     return Status::InvalidArgument("Unsupported OpIdType", OpIdType_Name(type));
   }

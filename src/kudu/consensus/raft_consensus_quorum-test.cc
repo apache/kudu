@@ -303,19 +303,14 @@ class RaftConsensusQuorumTest : public KuduTest {
 
     scoped_refptr<RaftConsensus> peer;
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
-    ReplicaState* state = peer->GetReplicaStateForTests();
 
     int backoff_exp = 0;
     const int kMaxBackoffExp = 8;
-    int64_t committed_op_idx;
+    OpId committed;
     while (true) {
-      {
-        ReplicaState::UniqueLock lock;
-        CHECK_OK(state->LockForRead(&lock));
-        committed_op_idx = state->GetCommittedIndexUnlocked();
-        if (committed_op_idx >= to_wait_for) {
-          return;
-        }
+      if (peer->GetLastOpId(COMMITTED_OPID, &committed).ok() &&
+          committed.index() >= to_wait_for) {
+        return;
       }
       if (MonoTime::Now() > (start + timeout)) {
         break;
@@ -326,7 +321,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
     LOG(ERROR) << "Max timeout reached (" << timeout.ToString() << ") while waiting for commit of "
                << "op " << to_wait_for << " on replica. Last committed op on replica: "
-               << committed_op_idx << ". Dumping state and quitting.";
+               << committed.index() << ". Dumping state and quitting.";
     vector<string> lines;
     scoped_refptr<RaftConsensus> leader;
     CHECK_OK(peers_->GetPeerByIdx(leader_idx, &leader));

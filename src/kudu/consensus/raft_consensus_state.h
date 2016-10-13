@@ -28,8 +28,8 @@
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
-#include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
@@ -45,7 +45,7 @@ class Messenger;
 
 namespace consensus {
 
-// Class that coordinates access to the replica state (independently of Role).
+// Class that coordinates access to the persistent Raft state (independently of Role).
 // This has a 1-1 relationship with RaftConsensus and is essentially responsible for
 // keeping state and checking if state changes are viable.
 //
@@ -54,20 +54,9 @@ namespace consensus {
 // considered to be the pending configuration if it is non-null, otherwise the
 // committed configuration is the active configuration.
 //
-// When a replica becomes a leader of a configuration, it sets the pending configuration to
-// a new configuration declaring itself as leader and sets its "active" role to LEADER.
-// It then starts up ConsensusPeers for each member of the pending configuration and
-// tries to push a new configuration to the peers. Once that configuration is
-// pushed to a majority of the cluster, it is considered committed and the
-// replica flushes that configuration to disk as the committed configuration.
-//
-// Each time an operation is to be performed on the replica the appropriate LockFor*()
-// method should be called. The LockFor*() methods check that the replica is in the
-// appropriate state to perform the requested operation and returns the lock or return
-// Status::IllegalState if that is not the case.
-//
-// All state reading/writing methods acquire the lock, unless suffixed by "Unlocked", in
-// which case a lock should be obtained prior to calling them.
+// TODO(todd): Currently this also performs some coarse-grained locking across the consensus
+// implementation in addition to providing a fairly thin wrapper around ConsensusMetadata.
+// The class should be renamed at the least and probably substantially simplified.
 class ReplicaState {
  public:
   enum State {
@@ -88,8 +77,6 @@ class ReplicaState {
   };
 
   typedef std::unique_lock<simple_spinlock> UniqueLock;
-
-  typedef std::map<int64_t, scoped_refptr<ConsensusRound> > IndexToRoundMap;
 
   ReplicaState(ConsensusOptions options, std::string peer_uuid,
                std::unique_ptr<ConsensusMetadata> cmeta);
@@ -159,13 +146,6 @@ class ReplicaState {
   // configuration change pending.
   Status CheckNoConfigChangePendingUnlocked() const;
 
-  // Returns true if an operation is in this replica's log, namely:
-  // - If the op's index is lower than or equal to our committed index
-  // - If the op id matches an inflight op.
-  // If an operation with the same index is in our log but the terms
-  // are different 'term_mismatch' is set to true, it is false otherwise.
-  bool IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch);
-
   // Sets the given configuration as pending commit. Does not persist into the peers
   // metadata. In order to be persisted, SetCommittedConfigUnlocked() must be called.
   Status SetPendingConfigUnlocked(const RaftConfigPB& new_config) WARN_UNUSED_RESULT;
@@ -228,47 +208,6 @@ class ReplicaState {
 
   const ConsensusOptions& GetOptions() const;
 
-  // Aborts pending operations after, but not including 'index'. The OpId with 'index'
-  // will become our new last received id. If there are pending operations with indexes
-  // higher than 'index' those operations are aborted.
-  void AbortOpsAfterUnlocked(int64_t index);
-
-  // Returns the the ConsensusRound with the provided index, if there is any, or NULL
-  // if there isn't.
-  scoped_refptr<ConsensusRound> GetPendingOpByIndexOrNullUnlocked(int64_t index);
-
-  // Add 'round' to the set of rounds waiting to be committed.
-  Status AddPendingOperation(const scoped_refptr<ConsensusRound>& round);
-
-  // Advances the committed index.
-  // This is a no-op if the committed index has not changed.
-  Status AdvanceCommittedIndexUnlocked(int64_t committed_index);
-
-  // Set the committed op during startup. This should be done after
-  // appending any of the pending transactions, and will take care
-  // of triggering any that are now considered committed.
-  Status SetInitialCommittedOpIdUnlocked(const OpId& committed_op);
-
-  // Returns the watermark below which all operations are known to
-  // be committed according to consensus.
-  //
-  // This must be called under a lock.
-  int64_t GetCommittedIndexUnlocked() const;
-  int64_t GetTermWithLastCommittedOpUnlocked() const;
-
-  // Returns the id of the latest pending transaction (i.e. the one with the
-  // latest index). This must be called under the lock.
-  OpId GetLastPendingTransactionOpIdUnlocked() const;
-
-  // Used by replicas to cancel pending transactions. Pending transaction are those
-  // that have completed prepare/replicate but are waiting on the LEADER's commit
-  // to complete. This does not cancel transactions being applied.
-  Status CancelPendingTransactions();
-
-  // Returns the number of transactions that are currently in the pending state
-  // i.e. transactions for which Prepare() is done or under way.
-  int GetNumPendingTxnsUnlocked() const;
-
   std::string ToString() const;
   std::string ToStringUnlocked() const;
 
@@ -281,10 +220,6 @@ class ReplicaState {
   // less thorough prefix which only includes immutable (and thus thread-safe)
   // information, but does not require the lock.
   std::string LogPrefixThreadSafe() const;
-
-  // Checks that 'current' correctly follows 'previous'. Specifically it checks
-  // that the term is the same or higher and that the index is sequential.
-  static Status CheckOpInSequence(const OpId& previous, const OpId& current);
 
   // Return the current state of this object.
   // The update_lock_ must be held.
@@ -305,19 +240,85 @@ class ReplicaState {
   // Consensus metadata persistence object.
   std::unique_ptr<ConsensusMetadata> cmeta_;
 
+  State state_;
+};
+
+// Tracks the pending consensus rounds being managed by a Raft replica (either leader
+// or follower).
+//
+// This class is not thread-safe.
+//
+// TODO(todd): this class inconsistently uses the term "round", "op", and "transaction".
+// We should consolidate to "round".
+class PendingRounds {
+ public:
+  explicit PendingRounds(std::string log_prefix);
+  ~PendingRounds();
+
+  // Set the committed op during startup. This should be done after
+  // appending any of the pending transactions, and will take care
+  // of triggering any that are now considered committed.
+  Status SetInitialCommittedOpId(const OpId& committed_op);
+
+  // Returns the the ConsensusRound with the provided index, if there is any, or NULL
+  // if there isn't.
+  scoped_refptr<ConsensusRound> GetPendingOpByIndexOrNull(int64_t index);
+
+  // Add 'round' to the set of rounds waiting to be committed.
+  Status AddPendingOperation(const scoped_refptr<ConsensusRound>& round);
+
+  // Advances the committed index.
+  // This is a no-op if the committed index has not changed.
+  Status AdvanceCommittedIndex(int64_t committed_index);
+
+  // Aborts pending operations after, but not including 'index'. The OpId with 'index'
+  // will become our new last received id. If there are pending operations with indexes
+  // higher than 'index' those operations are aborted.
+  void AbortOpsAfter(int64_t index);
+
+  // Returns true if an operation is in this replica's log, namely:
+  // - If the op's index is lower than or equal to our committed index
+  // - If the op id matches an inflight op.
+  // If an operation with the same index is in our log but the terms
+  // are different 'term_mismatch' is set to true, it is false otherwise.
+  bool IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch);
+
+  // Returns the id of the latest pending transaction (i.e. the one with the
+  // latest index). This must be called under the lock.
+  OpId GetLastPendingTransactionOpId() const;
+
+  // Used by replicas to cancel pending transactions. Pending transaction are those
+  // that have completed prepare/replicate but are waiting on the LEADER's commit
+  // to complete. This does not cancel transactions being applied.
+  Status CancelPendingTransactions();
+
+  // Returns the number of transactions that are currently in the pending state
+  // i.e. transactions for which Prepare() is done or under way.
+  int GetNumPendingTxns() const;
+
+  // Returns the watermark below which all operations are known to
+  // be committed according to consensus.
+  // TODO(todd): these should probably be removed in favor of using the queue.
+  int64_t GetCommittedIndex() const;
+  int64_t GetTermWithLastCommittedOp() const;
+
+  // Checks that 'current' correctly follows 'previous'. Specifically it checks
+  // that the term is the same or higher and that the index is sequential.
+  static Status CheckOpInSequence(const OpId& previous, const OpId& current);
+
+ private:
+  const std::string& LogPrefix() const { return log_prefix_; }
+
+  const std::string log_prefix_;
+
   // Index=>Round map that manages pending ops, i.e. operations for which we've
   // received a replicate message from the leader but have yet to be committed.
   // The key is the index of the replicate operation.
+  typedef std::map<int64_t, scoped_refptr<ConsensusRound> > IndexToRoundMap;
   IndexToRoundMap pending_txns_;
 
-  // The OpId of the Apply that was last triggered when the last message from the leader
-  // was received. Initialized to MinimumOpId().
-  //
-  // TODO: are there cases where this doesn't track the actual commit index,
-  // if there are no-ops?
+  // The OpId of the round that was last committed. Initialized to MinimumOpId().
   OpId last_committed_op_id_;
-
-  State state_;
 };
 
 }  // namespace consensus

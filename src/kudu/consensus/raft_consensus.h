@@ -455,9 +455,14 @@ class RaftConsensus : public Consensus,
 
   gscoped_ptr<ReplicaState> state_;
 
+  // The currently pending rounds that have not yet been committed by
+  // consensus. Protected by the locks inside state_.
+  // TODO(todd) these locks will become more fine-grained.
+  PendingRounds pending_;
+
   Random rng_;
 
-  // TODO: Plumb this from ServerBase.
+  // TODO(mpercy): Plumb this from ServerBase.
   RandomizedFailureMonitor failure_monitor_;
 
   scoped_refptr<FailureDetector> failure_detector_;
