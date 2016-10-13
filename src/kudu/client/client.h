@@ -1479,14 +1479,26 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   ///
   /// Note that this is different than HasPendingOperations() above,
   /// which includes operations which have been sent and not yet responded to.
-  /// This is only relevant in @c MANUAL_FLUSH mode, where the result will not
-  /// decrease except for after a manual flush, after which point it will be 0.
-  /// In the other flush modes, data is immediately put en-route
-  /// to the destination, so this will return 0.
+  ///
+  /// This method is most relevant in @c MANUAL_FLUSH mode, where
+  /// the result count stays valid until next explicit flush or Apply() call.
+  /// There is not much sense using this method in other flush modes:
+  ///   @li in @c AUTO_FLUSH_SYNC mode, the data is immediately put en-route
+  ///     to the destination by Apply() method itself, so this method always
+  ///     returns zero.
+  ///   @li in @c AUTO_FLUSH_BACKGROUND mode, the result count returned by
+  ///     this method expires unpredictably and there isn't any guaranteed
+  ///     validity interval for the result: the background flush task can run
+  ///     any moment, invalidating the result.
+  ///
+  /// @deprecated This method is experimental and will disappear
+  ///   in a future release.
   ///
   /// @return The number of buffered operations. These are operations that have
   ///   not yet been flushed -- i.e. they are not en-route yet.
-  int CountBufferedOperations() const;
+  int CountBufferedOperations() const
+      ATTRIBUTE_DEPRECATED("this method is experimental and will disappear "
+                           "in a future release");
 
   /// Get error count for pending operations.
   ///
