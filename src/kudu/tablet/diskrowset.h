@@ -35,9 +35,11 @@
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/mem_tracker.h"
 
 namespace kudu {
 
@@ -270,9 +272,8 @@ class DiskRowSet : public RowSet {
   // If successful, sets *rowset to the newly open rowset
   static Status Open(const std::shared_ptr<RowSetMetadata>& rowset_metadata,
                      log::LogAnchorRegistry* log_anchor_registry,
-                     std::shared_ptr<DiskRowSet> *rowset,
-                     const std::shared_ptr<MemTracker>& parent_tracker =
-                     std::shared_ptr<MemTracker>());
+                     const TabletMemTrackers& mem_trackers,
+                     std::shared_ptr<DiskRowSet> *rowset);
 
   ////////////////////////////////////////////////////////////
   // "Management" functions
@@ -378,7 +379,7 @@ class DiskRowSet : public RowSet {
 
   DiskRowSet(std::shared_ptr<RowSetMetadata> rowset_metadata,
              log::LogAnchorRegistry* log_anchor_registry,
-             std::shared_ptr<MemTracker> parent_tracker);
+             const TabletMemTrackers& mem_trackers);
 
   Status Open();
 
@@ -397,7 +398,7 @@ class DiskRowSet : public RowSet {
 
   log::LogAnchorRegistry* log_anchor_registry_;
 
-  std::shared_ptr<MemTracker> parent_tracker_;
+  TabletMemTrackers mem_trackers_;
 
   // Base data for this rowset.
   mutable percpu_rwlock component_lock_;

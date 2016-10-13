@@ -19,6 +19,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/row.h"
 #include "kudu/common/scan_spec.h"
@@ -43,6 +44,7 @@ using std::shared_ptr;
 namespace kudu {
 namespace tablet {
 
+using cfile::ReaderOptions;
 using fs::ReadableBlock;
 
 template<class SETUP>
@@ -85,7 +87,7 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_OK(this->fs_manager()->OpenBlock(undo_blocks[0], &block));
 
   shared_ptr<DeltaFileReader> dfr;
-  ASSERT_OK(DeltaFileReader::Open(std::move(block), undo_blocks[0], &dfr, UNDO));
+  ASSERT_OK(DeltaFileReader::Open(std::move(block), UNDO, ReaderOptions(), &dfr));
   // Assert there were 'max_rows' deletions in the undo delta (one for each inserted row)
   ASSERT_EQ(dfr->delta_stats().delete_count(), max_rows);
 }

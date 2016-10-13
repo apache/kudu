@@ -17,10 +17,12 @@
 
 #include "kudu/tablet/memrowset.h"
 
-#include <gflags/gflags.h>
-#include <glog/logging.h>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/codegen/row_projector.h"
@@ -83,15 +85,26 @@ shared_ptr<MemTracker> CreateMemTrackerForMemRowSet(
 
 } // anonymous namespace
 
+Status MemRowSet::Create(int64_t id,
+                         const Schema &schema,
+                         LogAnchorRegistry* log_anchor_registry,
+                         shared_ptr<MemTracker> parent_tracker,
+                         shared_ptr<MemRowSet>* mrs) {
+  shared_ptr<MemRowSet> local_mrs(new MemRowSet(
+      id, schema, log_anchor_registry, std::move(parent_tracker)));
+
+  mrs->swap(local_mrs);
+  return Status::OK();
+}
+
 MemRowSet::MemRowSet(int64_t id,
                      const Schema &schema,
                      LogAnchorRegistry* log_anchor_registry,
-                     const shared_ptr<MemTracker>& parent_tracker)
+                     shared_ptr<MemTracker> parent_tracker)
   : id_(id),
     schema_(schema),
-    parent_tracker_(parent_tracker),
-    mem_tracker_(CreateMemTrackerForMemRowSet(id, parent_tracker)),
-    allocator_(new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker_)),
+    allocator_(new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(),
+                                                 CreateMemTrackerForMemRowSet(id, parent_tracker))),
     arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, kMaxArenaBufferSize,
                                              allocator_)),
     tree_(arena_),

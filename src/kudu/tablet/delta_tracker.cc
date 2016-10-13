@@ -35,24 +35,39 @@
 namespace kudu {
 namespace tablet {
 
+using cfile::ReaderOptions;
 using fs::ReadableBlock;
 using fs::WritableBlock;
+using log::LogAnchorRegistry;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
 
+Status DeltaTracker::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
+                          rowid_t num_rows,
+                          LogAnchorRegistry* log_anchor_registry,
+                          const TabletMemTrackers& mem_trackers,
+                          gscoped_ptr<DeltaTracker>* delta_tracker) {
+  gscoped_ptr<DeltaTracker> local_dt(
+      new DeltaTracker(rowset_metadata, num_rows, log_anchor_registry,
+                       mem_trackers));
+  RETURN_NOT_OK(local_dt->DoOpen());
+
+  delta_tracker->swap(local_dt);
+  return Status::OK();
+}
+
 DeltaTracker::DeltaTracker(shared_ptr<RowSetMetadata> rowset_metadata,
                            rowid_t num_rows,
-                           log::LogAnchorRegistry* log_anchor_registry,
-                           shared_ptr<MemTracker> parent_tracker)
+                           LogAnchorRegistry* log_anchor_registry,
+                           const TabletMemTrackers& mem_trackers)
     : rowset_metadata_(std::move(rowset_metadata)),
       num_rows_(num_rows),
       open_(false),
       log_anchor_registry_(log_anchor_registry),
-      parent_tracker_(std::move(parent_tracker)),
-      dms_empty_(true) {
-}
+      mem_trackers_(mem_trackers),
+      dms_empty_(true) {}
 
 Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
                                       vector<shared_ptr<DeltaStore> >* stores,
@@ -69,7 +84,12 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
     }
 
     shared_ptr<DeltaFileReader> dfr;
-    s = DeltaFileReader::OpenNoInit(std::move(block), block_id, &dfr, type);
+    ReaderOptions options;
+    options.parent_mem_tracker = mem_trackers_.tablet_tracker;
+    s = DeltaFileReader::OpenNoInit(std::move(block),
+                                    type,
+                                    std::move(options),
+                                    &dfr);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
                  << " delta file reader " << block_id.ToString() << ": "
@@ -86,7 +106,7 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
 
 
 // Open any previously flushed DeltaFiles in this rowset
-Status DeltaTracker::Open() {
+Status DeltaTracker::DoOpen() {
   CHECK(redo_delta_stores_.empty()) << "should call before opening any readers";
   CHECK(undo_delta_stores_.empty()) << "should call before opening any readers";
   CHECK(!open_);
@@ -99,10 +119,13 @@ Status DeltaTracker::Open() {
                                  UNDO));
 
   // the id of the first DeltaMemStore is the max id of the current ones +1
-  dms_.reset(new DeltaMemStore(rowset_metadata_->last_durable_redo_dms_id() + 1,
-                               rowset_metadata_->id(),
-                               log_anchor_registry_,
-                               parent_tracker_));
+  RETURN_NOT_OK(DeltaMemStore::Create(rowset_metadata_->last_durable_redo_dms_id() + 1,
+                                      rowset_metadata_->id(),
+                                      log_anchor_registry_,
+                                      mem_trackers_.dms_tracker,
+                                      &dms_));
+  RETURN_NOT_OK(dms_->Init());
+
   open_ = true;
   return Status::OK();
 }
@@ -405,7 +428,12 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   // Now re-open for read
   gscoped_ptr<ReadableBlock> readable_block;
   RETURN_NOT_OK(fs->OpenBlock(block_id, &readable_block));
-  RETURN_NOT_OK(DeltaFileReader::OpenNoInit(std::move(readable_block), block_id, dfr, REDO));
+  ReaderOptions options;
+  options.parent_mem_tracker = mem_trackers_.tablet_tracker;
+  RETURN_NOT_OK(DeltaFileReader::OpenNoInit(std::move(readable_block),
+                                            REDO,
+                                            std::move(options),
+                                            dfr));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));
@@ -434,8 +462,12 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
 
     // Swap the DeltaMemStore to use the new schema
     old_dms = dms_;
-    dms_.reset(new DeltaMemStore(old_dms->id() + 1, rowset_metadata_->id(),
-                                 log_anchor_registry_, parent_tracker_));
+    RETURN_NOT_OK(DeltaMemStore::Create(old_dms->id() + 1,
+                                        rowset_metadata_->id(),
+                                        log_anchor_registry_,
+                                        mem_trackers_.dms_tracker,
+                                        &dms_));
+    RETURN_NOT_OK(dms_->Init());
     dms_empty_.Store(true);
 
     if (count == 0) {
@@ -480,7 +512,7 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
 
 size_t DeltaTracker::DeltaMemStoreSize() const {
   shared_lock<rw_spinlock> lock(component_lock_);
-  return dms_->memory_footprint();
+  return dms_->EstimateSize();
 }
 
 int64_t DeltaTracker::MinUnflushedLogIndex() const {

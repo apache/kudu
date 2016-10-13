@@ -42,26 +42,33 @@ using strings::Substitute;
 static const int kInitialArenaSize = 16;
 static const int kMaxArenaBufferSize = 5*1024*1024;
 
+Status DeltaMemStore::Create(int64_t id,
+                             int64_t rs_id,
+                             LogAnchorRegistry* log_anchor_registry,
+                             shared_ptr<MemTracker> parent_tracker,
+                             shared_ptr<DeltaMemStore>* dms) {
+  shared_ptr<DeltaMemStore> local_dms(new DeltaMemStore(id, rs_id,
+                                                        log_anchor_registry,
+                                                        std::move(parent_tracker)));
+
+  dms->swap(local_dms);
+  return Status::OK();
+}
+
 DeltaMemStore::DeltaMemStore(int64_t id,
                              int64_t rs_id,
                              LogAnchorRegistry* log_anchor_registry,
-                             const shared_ptr<MemTracker>& parent_tracker)
+                             shared_ptr<MemTracker> parent_tracker)
   : id_(id),
     rs_id_(rs_id),
-    anchorer_(log_anchor_registry, Substitute("Rowset-$0/DeltaMemStore-$1", rs_id_, id_)),
+    allocator_(new MemoryTrackingBufferAllocator(
+        HeapBufferAllocator::Get(), std::move(parent_tracker))),
+    arena_(new ThreadSafeMemoryTrackingArena(
+        kInitialArenaSize, kMaxArenaBufferSize, allocator_)),
+    tree_(arena_),
+    anchorer_(log_anchor_registry,
+              Substitute("Rowset-$0/DeltaMemStore-$1", rs_id_, id_)),
     disambiguator_sequence_number_(0) {
-  if (parent_tracker) {
-    CHECK(MemTracker::FindTracker(Tablet::kDMSMemTrackerId,
-                                  &mem_tracker_,
-                                  parent_tracker));
-  } else {
-    mem_tracker_ = MemTracker::GetRootTracker();
-  }
-  allocator_.reset(new MemoryTrackingBufferAllocator(
-      HeapBufferAllocator::Get(), mem_tracker_));
-  arena_.reset(new ThreadSafeMemoryTrackingArena(
-      kInitialArenaSize, kMaxArenaBufferSize, allocator_));
-  tree_.reset(new DMSTree(arena_));
 }
 
 Status DeltaMemStore::Init() {
@@ -80,7 +87,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
 
   Slice key_slice(buf);
   btree::PreparedMutation<DMSTreeTraits> mutation(key_slice);
-  mutation.Prepare(tree_.get());
+  mutation.Prepare(&tree_);
   if (PREDICT_FALSE(mutation.exists())) {
     // We already have a delta for this row at the same timestamp.
     // Try again with a disambiguating sequence number appended to the key.
@@ -88,7 +95,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
     PutMemcmpableVarint64(&buf, seq);
     key_slice = Slice(buf);
     mutation.Reset(key_slice);
-    mutation.Prepare(tree_.get());
+    mutation.Prepare(&tree_);
     CHECK(!mutation.exists())
       << "Appended a sequence number but still hit a duplicate "
       << "for rowid " << row_idx << " at timestamp " << timestamp;
@@ -106,7 +113,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
                                   gscoped_ptr<DeltaStats>* stats_ret) {
   gscoped_ptr<DeltaStats> stats(new DeltaStats());
 
-  gscoped_ptr<DMSTreeIter> iter(tree_->NewIterator());
+  gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
   iter->SeekToStart();
   while (iter->IsValid()) {
     Slice key_slice, val;
@@ -141,8 +148,8 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 
   bool exact;
 
-  // TODO: can we avoid the allocation here?
-  gscoped_ptr<DMSTreeIter> iter(tree_->NewIterator());
+  // TODO(unknown): can we avoid the allocation here?
+  gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
   if (!iter->SeekAtOrAfter(key_slice, &exact)) {
     return Status::OK();
   }
@@ -168,7 +175,7 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 }
 
 void DeltaMemStore::DebugPrint() const {
-  tree_->DebugPrint();
+  tree_.DebugPrint();
 }
 
 ////////////////////////////////////////////////////////////
@@ -179,7 +186,7 @@ DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore>& dms,
                          const Schema* projection, MvccSnapshot snapshot)
     : dms_(dms),
       mvcc_snapshot_(std::move(snapshot)),
-      iter_(dms->tree_->NewIterator()),
+      iter_(dms->tree_.NewIterator()),
       initted_(false),
       prepared_idx_(0),
       prepared_count_(0),

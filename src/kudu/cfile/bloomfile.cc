@@ -139,10 +139,11 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 ////////////////////////////////////////////////////////////
 
 Status BloomFileReader::Open(gscoped_ptr<ReadableBlock> block,
-                             const ReaderOptions& options,
+                             ReaderOptions options,
                              gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<BloomFileReader> bf_reader;
-  RETURN_NOT_OK(OpenNoInit(std::move(block), options, &bf_reader));
+  RETURN_NOT_OK(OpenNoInit(std::move(block),
+                           std::move(options), &bf_reader));
   RETURN_NOT_OK(bf_reader->Init());
 
   *reader = std::move(bf_reader);
@@ -150,12 +151,13 @@ Status BloomFileReader::Open(gscoped_ptr<ReadableBlock> block,
 }
 
 Status BloomFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
-                                   const ReaderOptions& options,
+                                   ReaderOptions options,
                                    gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block), options, &cf_reader));
+  RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block),
+                                        options, &cf_reader));
   gscoped_ptr<BloomFileReader> bf_reader(new BloomFileReader(
-      std::move(cf_reader), options));
+      std::move(cf_reader), std::move(options)));
   if (!FLAGS_cfile_lazy_open) {
     RETURN_NOT_OK(bf_reader->Init());
   }
@@ -165,9 +167,9 @@ Status BloomFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
 }
 
 BloomFileReader::BloomFileReader(gscoped_ptr<CFileReader> reader,
-                                 const ReaderOptions& options)
+                                 ReaderOptions options)
   : reader_(std::move(reader)),
-    mem_consumption_(options.parent_mem_tracker,
+    mem_consumption_(std::move(options.parent_mem_tracker),
                      memory_footprint_excluding_reader()) {
 }
 

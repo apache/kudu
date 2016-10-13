@@ -16,6 +16,8 @@
 // under the License.
 
 #include <algorithm>
+#include <memory>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -49,31 +51,45 @@ using strings::Substitute;
 // Utilities
 ////////////////////////////////////////////////////////////
 
-static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata,
-                         ColumnId col_id,
+static Status OpenReader(FsManager* fs,
+                         shared_ptr<MemTracker> parent_mem_tracker,
+                         const BlockId& block_id,
                          gscoped_ptr<CFileReader> *new_reader) {
-  FsManager* fs = rowset_metadata->fs_manager();
   gscoped_ptr<ReadableBlock> block;
-  BlockId block_id = rowset_metadata->column_data_block_for_col_id(col_id);
   RETURN_NOT_OK(fs->OpenBlock(block_id, &block));
 
-  // TODO: somehow pass reader options in schema
   ReaderOptions opts;
-  return CFileReader::OpenNoInit(std::move(block), opts, new_reader);
+  opts.parent_mem_tracker = std::move(parent_mem_tracker);
+  return CFileReader::OpenNoInit(std::move(block),
+                                 std::move(opts),
+                                 new_reader);
 }
 
 ////////////////////////////////////////////////////////////
 // CFile Base
 ////////////////////////////////////////////////////////////
 
-CFileSet::CFileSet(shared_ptr<RowSetMetadata> rowset_metadata)
-    : rowset_metadata_(std::move(rowset_metadata)) {}
+CFileSet::CFileSet(shared_ptr<RowSetMetadata> rowset_metadata,
+                   shared_ptr<MemTracker> parent_mem_tracker)
+    : rowset_metadata_(std::move(rowset_metadata)),
+      parent_mem_tracker_(std::move(parent_mem_tracker)) {
+}
 
 CFileSet::~CFileSet() {
 }
 
+Status CFileSet::Open(shared_ptr<RowSetMetadata> rowset_metadata,
+                      shared_ptr<MemTracker> parent_mem_tracker,
+                      shared_ptr<CFileSet>* cfile_set) {
+  shared_ptr<CFileSet> cfs(new CFileSet(std::move(rowset_metadata),
+                                        std::move(parent_mem_tracker)));
+  RETURN_NOT_OK(cfs->DoOpen());
 
-Status CFileSet::Open() {
+  cfile_set->swap(cfs);
+  return Status::OK();
+}
+
+Status CFileSet::DoOpen() {
   RETURN_NOT_OK(OpenBloomReader());
 
   // Lazily open the column data cfiles. Each one will be fully opened
@@ -84,19 +100,25 @@ Status CFileSet::Open() {
     DCHECK(!ContainsKey(readers_by_col_id_, col_id)) << "already open";
 
     gscoped_ptr<CFileReader> reader;
-    RETURN_NOT_OK(OpenReader(rowset_metadata_, col_id, &reader));
+    RETURN_NOT_OK(OpenReader(rowset_metadata_->fs_manager(),
+                             parent_mem_tracker_,
+                             rowset_metadata_->column_data_block_for_col_id(col_id),
+                             &reader));
     readers_by_col_id_[col_id] = shared_ptr<CFileReader>(reader.release());
     VLOG(1) << "Successfully opened cfile for column id " << col_id
             << " in " << rowset_metadata_->ToString();
   }
 
+  if (rowset_metadata_->has_adhoc_index_block()) {
+    RETURN_NOT_OK(OpenReader(rowset_metadata_->fs_manager(),
+                             parent_mem_tracker_,
+                             rowset_metadata_->adhoc_index_block(),
+                             &ad_hoc_idx_reader_));
+  }
+
   // However, the key reader should always be fully opened, so that we
   // can figure out where in the rowset tree we belong.
-  if (rowset_metadata_->has_adhoc_index_block()) {
-    RETURN_NOT_OK(OpenAdHocIndexReader());
-  } else {
-    RETURN_NOT_OK(key_index_reader()->Init());
-  }
+  RETURN_NOT_OK(key_index_reader()->Init());
 
   // Determine the upper and lower key bounds for this CFileSet.
   RETURN_NOT_OK(LoadMinMaxKeys());
@@ -104,31 +126,16 @@ Status CFileSet::Open() {
   return Status::OK();
 }
 
-Status CFileSet::OpenAdHocIndexReader() {
-  if (ad_hoc_idx_reader_ != nullptr) {
-    return Status::OK();
-  }
-
-  FsManager* fs = rowset_metadata_->fs_manager();
-  gscoped_ptr<ReadableBlock> block;
-  RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->adhoc_index_block(), &block));
-
-  ReaderOptions opts;
-  return CFileReader::Open(std::move(block), opts, &ad_hoc_idx_reader_);
-}
-
-
 Status CFileSet::OpenBloomReader() {
-  if (bloom_reader_ != nullptr) {
-    return Status::OK();
-  }
-
   FsManager* fs = rowset_metadata_->fs_manager();
   gscoped_ptr<ReadableBlock> block;
   RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->bloom_block(), &block));
 
   ReaderOptions opts;
-  Status s = BloomFileReader::OpenNoInit(std::move(block), opts, &bloom_reader_);
+  opts.parent_mem_tracker = parent_mem_tracker_;
+  Status s = BloomFileReader::OpenNoInit(std::move(block),
+                                         std::move(opts),
+                                         &bloom_reader_);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open bloom file in " << rowset_metadata_->ToString() << ": "
                  << s.ToString();

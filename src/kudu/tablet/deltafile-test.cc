@@ -15,16 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
 #include <memory>
 
+#include <gflags/gflags.h>
+#include <gtest/gtest.h>
+
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/common/schema.h"
 #include "kudu/fs/fs-test-util.h"
-#include "kudu/tablet/delta_store.h"
-#include "kudu/tablet/deltafile.h"
-#include "kudu/tablet/delta_tracker.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/tablet/delta_store.h"
+#include "kudu/tablet/delta_tracker.h"
+#include "kudu/tablet/deltafile.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(deltafile_default_block_size);
@@ -40,6 +42,7 @@ using std::shared_ptr;
 namespace kudu {
 namespace tablet {
 
+using cfile::ReaderOptions;
 using fs::CountingReadableBlock;
 using fs::ReadableBlock;
 using fs::WritableBlock;
@@ -107,10 +110,9 @@ class TestDeltaFile : public KuduTest {
   Status OpenDeltaFileReader(const BlockId& block_id, shared_ptr<DeltaFileReader>* out) {
     gscoped_ptr<ReadableBlock> block;
     RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block));
-    return DeltaFileReader::Open(std::move(block), block_id, out, REDO);
+    return DeltaFileReader::Open(std::move(block), REDO, ReaderOptions(), out);
   }
 
-  // TODO handle UNDO deltas
   Status OpenDeltaFileIterator(const BlockId& block_id, gscoped_ptr<DeltaIterator>* out) {
     shared_ptr<DeltaFileReader> reader;
     RETURN_NOT_OK(OpenDeltaFileReader(block_id, &reader));
@@ -342,7 +344,7 @@ TEST_F(TestDeltaFile, TestLazyInit) {
   // Lazily opening the delta file should not trigger any reads.
   shared_ptr<DeltaFileReader> reader;
   ASSERT_OK(DeltaFileReader::OpenNoInit(
-      std::move(count_block), test_block_, &reader, REDO));
+      std::move(count_block), REDO, ReaderOptions(), &reader));
   ASSERT_EQ(0, bytes_read);
 
   // But initializing it should (only the first time).
@@ -357,7 +359,8 @@ TEST_F(TestDeltaFile, TestLazyInit) {
   ASSERT_OK(fs_manager_->OpenBlock(test_block_, &block));
   bytes_read = 0;
   count_block.reset(new CountingReadableBlock(std::move(block), &bytes_read));
-  ASSERT_OK(DeltaFileReader::Open(std::move(count_block), test_block_, &reader, REDO));
+  ASSERT_OK(DeltaFileReader::Open(
+      std::move(count_block), REDO, ReaderOptions(), &reader));
   ASSERT_EQ(bytes_read_after_init, bytes_read);
 }
 

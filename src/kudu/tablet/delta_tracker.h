@@ -26,8 +26,9 @@
 #include "kudu/common/rowid.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/cfile_set.h"
+#include "kudu/tablet/delta_store.h"
+#include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/status.h"
 
@@ -41,10 +42,6 @@ class OpId;
 
 namespace log {
 class LogAnchorRegistry;
-}
-
-namespace metadata {
-class RowSetMetadata;
 }
 
 namespace tablet {
@@ -68,9 +65,11 @@ class DeltaTracker {
     NO_FLUSH_METADATA
   };
 
-  DeltaTracker(std::shared_ptr<RowSetMetadata> rowset_metadata,
-               rowid_t num_rows, log::LogAnchorRegistry* log_anchor_registry,
-               std::shared_ptr<MemTracker> parent_tracker);
+  static Status Open(const std::shared_ptr<RowSetMetadata>& rowset_metadata,
+                     rowid_t num_rows,
+                     log::LogAnchorRegistry* log_anchor_registry,
+                     const TabletMemTrackers& mem_trackers,
+                     gscoped_ptr<DeltaTracker>* delta_tracker);
 
   Status WrapIterator(const std::shared_ptr<CFileSet::Iterator> &base,
                       const MvccSnapshot &mvcc_snap,
@@ -112,8 +111,6 @@ class DeltaTracker {
     DeltaType type,
     std::vector<std::shared_ptr<DeltaStore> >* included_stores,
     std::unique_ptr<DeltaIterator>* out) const;
-
-  Status Open();
 
   // Flushes the current DeltaMemStore and replaces it with a new one.
   // Caller selects whether to also have the RowSetMetadata (and consequently
@@ -189,15 +186,17 @@ class DeltaTracker {
   }
 
  private:
-  friend class DiskRowSet;
-
-  DISALLOW_COPY_AND_ASSIGN(DeltaTracker);
-
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
   FRIEND_TEST(TestRowSet, TestMakeDeltaIteratorMergerUnlocked);
   FRIEND_TEST(TestRowSet, TestCompactStores);
   FRIEND_TEST(TestMajorDeltaCompaction, TestCompact);
+
+  DeltaTracker(std::shared_ptr<RowSetMetadata> rowset_metadata,
+               rowid_t num_rows, log::LogAnchorRegistry* log_anchor_registry,
+               const TabletMemTrackers& mem_trackers);
+
+  Status DoOpen();
 
   Status OpenDeltaReaders(const std::vector<BlockId>& blocks,
                           std::vector<std::shared_ptr<DeltaStore> >* stores,
@@ -249,7 +248,7 @@ class DeltaTracker {
 
   log::LogAnchorRegistry* log_anchor_registry_;
 
-  std::shared_ptr<MemTracker> parent_tracker_;
+  TabletMemTrackers mem_trackers_;
 
   // The current DeltaMemStore into which updates should be written.
   std::shared_ptr<DeltaMemStore> dms_;
@@ -279,6 +278,8 @@ class DeltaTracker {
   //
   // TODO(perf): this needs to be more fine grained
   mutable Mutex compact_flush_lock_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeltaTracker);
 };
 
 

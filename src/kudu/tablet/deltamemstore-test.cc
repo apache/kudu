@@ -29,6 +29,7 @@
 #include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/mutation.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -48,9 +49,12 @@ class TestDeltaMemStore : public KuduTest {
   TestDeltaMemStore()
     : op_id_(consensus::MaximumOpId()),
       schema_(CreateSchema()),
-      dms_(new DeltaMemStore(0, 0, new log::LogAnchorRegistry())),
       mvcc_(scoped_refptr<server::Clock>(
           server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
+    CHECK_OK(DeltaMemStore::Create(0, 0,
+                                   new log::LogAnchorRegistry(),
+                                   MemTracker::GetRootTracker(), &dms_));
+    CHECK_OK(dms_->Init());
   }
 
   void SetUp() OVERRIDE {

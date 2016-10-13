@@ -24,6 +24,7 @@
 #include <utility>
 
 #include "kudu/cfile/cfile_reader.h"
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/row_operations.h"
@@ -408,9 +409,9 @@ Status DumpDeltaCFileBlockInternal(FsManager* fs_manager,
   RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &readable_block));
   shared_ptr<DeltaFileReader> delta_reader;
   RETURN_NOT_OK(DeltaFileReader::Open(std::move(readable_block),
-                                      block_id,
-                                      &delta_reader,
-                                      delta_type));
+                                      delta_type,
+                                      ReaderOptions(),
+                                      &delta_reader));
 
   cout << Indent(indent) << "Delta stats: "
        << delta_reader->delta_stats().ToString() << endl;
@@ -450,8 +451,8 @@ Status DumpDeltaCFileBlockInternal(FsManager* fs_manager,
   // information stored in the footer/store additional information in the
   // footer as to make it feasible iterate over all deltas using a
   // DeltaFileIterator alone.
-  shared_ptr<CFileSet> cfileset(new CFileSet(rs_meta));
-  RETURN_NOT_OK(cfileset->Open());
+  shared_ptr<CFileSet> cfileset;
+  RETURN_NOT_OK(CFileSet::Open(rs_meta, MemTracker::GetRootTracker(), &cfileset));
   gscoped_ptr<CFileSet::Iterator> cfileset_iter(cfileset->NewIterator(&schema));
 
   RETURN_NOT_OK(cfileset_iter->Init(NULL));

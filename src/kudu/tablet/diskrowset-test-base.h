@@ -17,13 +17,15 @@
 #ifndef KUDU_TABLET_LAYER_TEST_BASE_H
 #define KUDU_TABLET_LAYER_TEST_BASE_H
 
-#include <glog/logging.h>
-#include <gtest/gtest.h>
+#include <unistd.h>
+
 #include <memory>
 #include <string>
-#include <unistd.h>
 #include <unordered_set>
 #include <vector>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/rowblock.h"
@@ -35,6 +37,7 @@
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/util/env.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/stopwatch.h"
@@ -320,7 +323,10 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   Status OpenTestRowSet(std::shared_ptr<DiskRowSet> *rowset) {
-    return DiskRowSet::Open(rowset_meta_, new log::LogAnchorRegistry(), rowset);
+    return DiskRowSet::Open(rowset_meta_,
+                            new log::LogAnchorRegistry(),
+                            TabletMemTrackers(),
+                            rowset);
   }
 
   void FormatKey(int i, char *buf, size_t buf_len) {

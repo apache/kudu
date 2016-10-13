@@ -60,17 +60,17 @@ class CFileReader {
   //
   // After this call, the reader is safe for use.
   static Status Open(gscoped_ptr<fs::ReadableBlock> block,
-                     const ReaderOptions& options,
+                     ReaderOptions options,
                      gscoped_ptr<CFileReader>* reader);
 
   // Lazily open a cfile using a previously opened block. A lazy open does
   // not incur additional I/O, nor does it validate the contents of the
   // cfile.
   //
-  // Init() must be called before using most methods. Exceptions include
-  // NewIterator() and file_size().
+  // Init() must be called before most methods; the exceptions are documented
+  // below.
   static Status OpenNoInit(gscoped_ptr<fs::ReadableBlock> block,
-                           const ReaderOptions& options,
+                           ReaderOptions options,
                            gscoped_ptr<CFileReader>* reader);
 
   // Fully opens a previously lazily opened cfile, parsing and validating
@@ -84,6 +84,7 @@ class CFileReader {
     DONT_CACHE_BLOCK
   };
 
+  // Can be called before Init().
   Status NewIterator(CFileIterator **iter, CacheControl cache_control);
   Status NewIterator(gscoped_ptr<CFileIterator> *iter,
                      CacheControl cache_control) {
@@ -113,6 +114,11 @@ class CFileReader {
   // Can be called before Init().
   uint64_t file_size() const {
     return file_size_;
+  }
+
+  // Can be called before Init().
+  const BlockId& block_id() const {
+    return block_->id();
   }
 
   const TypeInfo *type_info() const {
@@ -161,13 +167,14 @@ class CFileReader {
     return BlockPointer(footer().validx_info().root_block());
   }
 
+  // Can be called before Init().
   std::string ToString() const { return block_->id().ToString(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileReader);
 
-  CFileReader(const ReaderOptions &options,
-              const uint64_t file_size,
+  CFileReader(ReaderOptions options,
+              uint64_t file_size,
               gscoped_ptr<fs::ReadableBlock> block);
 
   // Callback used in 'init_once_' to initialize this cfile.

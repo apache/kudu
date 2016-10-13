@@ -29,11 +29,12 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/tablet/rowset_metadata.h"
-#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/tablet_mem_trackers.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/semaphore.h"
@@ -375,10 +376,14 @@ class Tablet {
   TabletMetrics* metrics() { return metrics_.get(); }
 
   // Return handle to the metric entity of this tablet.
-  const scoped_refptr<MetricEntity>& GetMetricEntity() const { return metric_entity_; }
+  const scoped_refptr<MetricEntity>& GetMetricEntity() const {
+    return metric_entity_;
+  }
 
   // Returns a reference to this tablet's memory tracker.
-  const std::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
+  const std::shared_ptr<MemTracker>& mem_tracker() const {
+    return mem_trackers_.tablet_tracker;
+  }
 
   // Throttle a RPC with 'bytes' request size.
   // Return true if this RPC is allowed.
@@ -386,7 +391,6 @@ class Tablet {
 
   scoped_refptr<server::Clock> clock() const { return clock_; }
 
-  static const char* kDMSMemTrackerId;
  private:
   friend class Iterator;
   friend class TabletPeerTest;
@@ -544,8 +548,7 @@ class Tablet {
   scoped_refptr<TabletComponents> components_;
 
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
-  std::shared_ptr<MemTracker> mem_tracker_;
-  std::shared_ptr<MemTracker> dms_mem_tracker_;
+  TabletMemTrackers mem_trackers_;
 
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<TabletMetrics> metrics_;

@@ -154,8 +154,6 @@ TabletComponents::TabletComponents(shared_ptr<MemRowSet> mrs,
 // Tablet
 ////////////////////////////////////////////////////////////
 
-const char* Tablet::kDMSMemTrackerId = "DeltaMemStores";
-
 Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                const scoped_refptr<server::Clock>& clock,
                const shared_ptr<MemTracker>& parent_mem_tracker,
@@ -164,11 +162,7 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
   : key_schema_(metadata->schema().CreateKeyProjection()),
     metadata_(metadata),
     log_anchor_registry_(log_anchor_registry),
-    mem_tracker_(MemTracker::CreateTracker(
-        -1, Substitute("tablet-$0", tablet_id()),
-                       parent_mem_tracker)),
-    dms_mem_tracker_(MemTracker::CreateTracker(
-        -1, kDMSMemTrackerId, mem_tracker_)),
+    mem_trackers_(tablet_id(), parent_mem_tracker),
     next_mrs_id_(0),
     clock_(clock),
     mvcc_(clock),
@@ -219,7 +213,10 @@ Status Tablet::Open() {
   // open the tablet row-sets
   for (const shared_ptr<RowSetMetadata>& rowset_meta : metadata_->rowsets()) {
     shared_ptr<DiskRowSet> rowset;
-    Status s = DiskRowSet::Open(rowset_meta, log_anchor_registry_.get(), &rowset, mem_tracker_);
+    Status s = DiskRowSet::Open(rowset_meta,
+                                log_anchor_registry_.get(),
+                                mem_trackers_,
+                                &rowset);
     if (!s.ok()) {
       LOG_WITH_PREFIX(ERROR) << "Failed to open rowset " << rowset_meta->ToString() << ": "
                              << s.ToString();
@@ -232,9 +229,11 @@ Status Tablet::Open() {
   shared_ptr<RowSetTree> new_rowset_tree(new RowSetTree());
   CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
   // now that the current state is loaded, create the new MemRowSet with the next id
-  shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, *schema(),
-                                              log_anchor_registry_.get(),
-                                              mem_tracker_));
+  shared_ptr<MemRowSet> new_mrs;
+  RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema(),
+                                  log_anchor_registry_.get(),
+                                  mem_trackers_.tablet_tracker,
+                                  &new_mrs));
   components_ = new TabletComponents(new_mrs, new_rowset_tree);
 
   state_ = kBootstrapping;
@@ -766,8 +765,11 @@ Status Tablet::ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
   // Add to compaction.
   compaction->AddRowSet(*old_ms, std::move(ms_lock));
 
-  shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, *schema(), log_anchor_registry_.get(),
-                                mem_tracker_));
+  shared_ptr<MemRowSet> new_mrs;
+  RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema(),
+                                  log_anchor_registry_.get(),
+                                  mem_trackers_.tablet_tracker,
+                                  &new_mrs));
   shared_ptr<RowSetTree> new_rst(new RowSetTree());
   ModifyRowSetTree(*components_->rowsets,
                    RowSetVector(), // remove nothing
@@ -903,8 +905,11 @@ Status Tablet::RewindSchemaForBootstrap(const Schema& new_schema,
     shared_ptr<MemRowSet> old_mrs = components_->memrowset;
     shared_ptr<RowSetTree> old_rowsets = components_->rowsets;
     CHECK(old_mrs->empty());
-    shared_ptr<MemRowSet> new_mrs(new MemRowSet(old_mrs->mrs_id(), new_schema,
-                                                log_anchor_registry_.get(), mem_tracker_));
+    shared_ptr<MemRowSet> new_mrs;
+    RETURN_NOT_OK(MemRowSet::Create(old_mrs->mrs_id(), new_schema,
+                                    log_anchor_registry_.get(),
+                                    mem_trackers_.tablet_tracker,
+                                    &new_mrs));
     components_ = new TabletComponents(new_mrs, old_rowsets);
   }
   return Status::OK();
@@ -1113,7 +1118,10 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
     TRACE_EVENT0("tablet", "Opening compaction results");
     for (const shared_ptr<RowSetMetadata>& meta : new_drs_metas) {
       shared_ptr<DiskRowSet> new_rowset;
-      Status s = DiskRowSet::Open(meta, log_anchor_registry_.get(), &new_rowset, mem_tracker_);
+      Status s = DiskRowSet::Open(meta,
+                                  log_anchor_registry_.get(),
+                                  mem_trackers_,
+                                  &new_rowset);
       if (!s.ok()) {
         LOG_WITH_PREFIX(WARNING) << "Unable to open snapshot " << op_name << " results "
                                  << meta->ToString() << ": " << s.ToString();

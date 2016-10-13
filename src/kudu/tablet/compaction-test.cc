@@ -16,10 +16,11 @@
 // under the License.
 
 #include <algorithm>
+#include <memory>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <memory>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -32,6 +33,7 @@
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
@@ -221,7 +223,8 @@ class TestCompaction : public KuduRowSetTest {
       // Re-open the outputs
       for (const shared_ptr<RowSetMetadata>& meta : metas) {
         shared_ptr<DiskRowSet> rs;
-        ASSERT_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(), &rs));
+        ASSERT_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(),
+                                   mem_trackers_, &rs));
         result_rowsets->push_back(rs);
       }
     }
@@ -296,7 +299,9 @@ class TestCompaction : public KuduRowSetTest {
     int delta = 0;
     for (const Schema& schema : schemas) {
       // Create a memrowset with a bunch of rows and updates.
-      shared_ptr<MemRowSet> mrs(new MemRowSet(delta, schema, log_anchor_registry_.get()));
+      shared_ptr<MemRowSet> mrs;
+      CHECK_OK(MemRowSet::Create(delta, schema, log_anchor_registry_.get(),
+                                 mem_trackers_.tablet_tracker, &mrs));
       InsertRows(mrs.get(), 1000, delta);
       UpdateRows(mrs.get(), 1000, delta, 1);
 
@@ -330,7 +335,9 @@ class TestCompaction : public KuduRowSetTest {
       // Create inputs.
       for (int i = 0; i < FLAGS_merge_benchmark_num_rowsets; i++) {
         // Create a memrowset with a bunch of rows and updates.
-        shared_ptr<MemRowSet> mrs(new MemRowSet(i, schema_, log_anchor_registry_.get()));
+        shared_ptr<MemRowSet> mrs;
+        CHECK_OK(MemRowSet::Create(i, schema_, log_anchor_registry_.get(),
+                                   mem_trackers_.tablet_tracker, &mrs));
 
         for (int n = 0; n < FLAGS_merge_benchmark_num_rows_per_rowset; n++) {
 
@@ -361,7 +368,8 @@ class TestCompaction : public KuduRowSetTest {
 
       for (const shared_ptr<RowSetMetadata>& meta : input_meta->rowsets()) {
         shared_ptr<DiskRowSet> rs;
-        CHECK_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(), &rs));
+        CHECK_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(),
+                                  mem_trackers_, &rs));
         rowsets.push_back(rs);
       }
 
@@ -392,11 +400,15 @@ class TestCompaction : public KuduRowSetTest {
   MvccManager mvcc_;
 
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
+
+  TabletMemTrackers mem_trackers_;
 };
 
 TEST_F(TestCompaction, TestMemRowSetInput) {
   // Create a memrowset with 10 rows and several updates.
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs));
   InsertRows(mrs.get(), 10, 0);
   UpdateRows(mrs.get(), 10, 0, 1);
   UpdateRows(mrs.get(), 10, 0, 2);
@@ -421,7 +433,9 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
 TEST_F(TestCompaction, TestFlushMRSWithRolling) {
   // Create a memrowset with enough rows so that, when we flush with a small
   // roll threshold, we'll end up creating multiple DiskRowSets.
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs));
   InsertRows(mrs.get(), 30000, 0);
 
   vector<shared_ptr<DiskRowSet> > rowsets;
@@ -449,7 +463,9 @@ TEST_F(TestCompaction, TestRowSetInput) {
   // Create a memrowset with a bunch of rows, flush and reopen.
   shared_ptr<DiskRowSet> rs;
   {
-    shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
+    shared_ptr<MemRowSet> mrs;
+    ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                                mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
     ASSERT_NO_FATAL_FAILURE();
@@ -492,7 +508,9 @@ TEST_F(TestCompaction, TestRowSetInput) {
 TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
   shared_ptr<DiskRowSet> rs1;
   {
-    shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
+    shared_ptr<MemRowSet> mrs;
+    ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                                mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs1);
     ASSERT_NO_FATAL_FAILURE();
@@ -503,7 +521,9 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
 
   shared_ptr<DiskRowSet> rs2;
   {
-    shared_ptr<MemRowSet> mrs(new MemRowSet(1, schema_, log_anchor_registry_.get()));
+    shared_ptr<MemRowSet> mrs;
+    ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+                                mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 1);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs2);
@@ -513,7 +533,9 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
 
   shared_ptr<DiskRowSet> rs3;
   {
-    shared_ptr<MemRowSet> mrs(new MemRowSet(1, schema_, log_anchor_registry_.get()));
+    shared_ptr<MemRowSet> mrs;
+    ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+                                mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 2);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs3);
@@ -554,7 +576,9 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
 // output rowset (on disk).
 TEST_F(TestCompaction, TestOneToOne) {
   // Create a memrowset with a bunch of rows and updates.
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs));
   InsertRows(mrs.get(), 1000, 0);
   UpdateRows(mrs.get(), 1000, 0, 1);
   MvccSnapshot snap(mvcc_);
@@ -601,13 +625,17 @@ TEST_F(TestCompaction, TestOneToOne) {
 // output of a compaction, and trying to merge two MRS.
 TEST_F(TestCompaction, TestKUDU102) {
   // Create 2 row sets, flush them
-  shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs));
   InsertRows(mrs.get(), 10, 0);
   shared_ptr<DiskRowSet> rs;
   FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
   ASSERT_NO_FATAL_FAILURE();
 
-  shared_ptr<MemRowSet> mrs_b(new MemRowSet(1, schema_, log_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs_b;
+  ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs_b));
   InsertRows(mrs_b.get(), 10, 100);
   MvccSnapshot snap(mvcc_);
   shared_ptr<DiskRowSet> rs_b;
@@ -666,10 +694,14 @@ TEST_F(TestCompaction, TestMergeMultipleSchemas) {
 // used (we never compact in-memory), but this is a regression test for a bug
 // encountered during development where the first row of each MRS got dropped.
 TEST_F(TestCompaction, TestMergeMRS) {
-  shared_ptr<MemRowSet> mrs_a(new MemRowSet(0, schema_, log_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs_a;
+  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs_a));
   InsertRows(mrs_a.get(), 10, 0);
 
-  shared_ptr<MemRowSet> mrs_b(new MemRowSet(1, schema_, log_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs_b;
+  ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs_b));
   InsertRows(mrs_b.get(), 10, 1);
 
   MvccSnapshot snap(mvcc_);

@@ -15,13 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <string>
+#include <vector>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include <string>
-#include <vector>
-
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/common/schema.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/delta_compaction.h"
@@ -48,6 +49,7 @@ using std::vector;
 namespace kudu {
 namespace tablet {
 
+using cfile::ReaderOptions;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 
@@ -79,7 +81,7 @@ class TestDeltaCompaction : public KuduTest {
     gscoped_ptr<ReadableBlock> block;
     RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block));
     shared_ptr<DeltaFileReader> delta_reader;
-    return DeltaFileReader::Open(std::move(block), block_id, dfr, REDO);
+    return DeltaFileReader::Open(std::move(block), REDO, ReaderOptions(), dfr);
   }
 
   virtual void SetUp() OVERRIDE {

@@ -17,20 +17,23 @@
 #ifndef KUDU_TABLET_MEMROWSET_H
 #define KUDU_TABLET_MEMROWSET_H
 
-#include <boost/optional/optional_fwd.hpp>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 
-#include "kudu/common/scan_spec.h"
+#include <boost/optional/optional_fwd.hpp>
+
 #include "kudu/common/rowblock.h"
+#include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/memory/memory.h"
 #include "kudu/util/status.h"
@@ -181,11 +184,11 @@ class MemRowSet : public RowSet,
  public:
   class Iterator;
 
-  MemRowSet(int64_t id,
-            const Schema &schema,
-            log::LogAnchorRegistry* log_anchor_registry,
-            const std::shared_ptr<MemTracker>& parent_tracker =
-            std::shared_ptr<MemTracker>());
+  static Status Create(int64_t id,
+                       const Schema &schema,
+                       log::LogAnchorRegistry* log_anchor_registry,
+                       std::shared_ptr<MemTracker> parent_tracker,
+                       std::shared_ptr<MemRowSet>* mrs);
 
   ~MemRowSet();
 
@@ -341,19 +344,22 @@ class MemRowSet : public RowSet,
  private:
   friend class Iterator;
 
+  MemRowSet(int64_t id,
+            const Schema &schema,
+            log::LogAnchorRegistry* log_anchor_registry,
+            std::shared_ptr<MemTracker> parent_tracker);
+
   // Perform a "Reinsert" -- handle an insertion into a row which was previously
   // inserted and deleted, but still has an entry in the MemRowSet.
   Status Reinsert(Timestamp timestamp,
-                  const ConstContiguousRow& row_data,
-                  MRSRow *row);
+                  const ConstContiguousRow& row,
+                  MRSRow *ms_row);
 
   typedef btree::CBTree<MSBTreeTraits> MSBTree;
 
   int64_t id_;
 
   const Schema schema_;
-  std::shared_ptr<MemTracker> parent_tracker_;
-  std::shared_ptr<MemTracker> mem_tracker_;
   std::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
   std::shared_ptr<ThreadSafeMemoryTrackingArena> arena_;
 

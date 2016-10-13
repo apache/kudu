@@ -29,10 +29,6 @@
 
 namespace kudu {
 
-namespace metadata {
-class RowSetMetadata;
-} // namespace metadata
-
 namespace tablet {
 
 class CFileSet;

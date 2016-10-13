@@ -461,9 +461,11 @@ RollingDiskRowSetWriter::~RollingDiskRowSetWriter() {
 
 Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
                         log::LogAnchorRegistry* log_anchor_registry,
-                        shared_ptr<DiskRowSet> *rowset,
-                        const shared_ptr<MemTracker>& parent_tracker) {
-  shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata, log_anchor_registry, parent_tracker));
+                        const TabletMemTrackers& mem_trackers,
+                        shared_ptr<DiskRowSet> *rowset) {
+  shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata,
+                                           log_anchor_registry,
+                                           mem_trackers));
 
   RETURN_NOT_OK(rs->Open());
 
@@ -473,24 +475,24 @@ Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
 
 DiskRowSet::DiskRowSet(shared_ptr<RowSetMetadata> rowset_metadata,
                        LogAnchorRegistry* log_anchor_registry,
-                       shared_ptr<MemTracker> parent_tracker)
+                       const TabletMemTrackers& mem_trackers)
     : rowset_metadata_(std::move(rowset_metadata)),
       open_(false),
       log_anchor_registry_(log_anchor_registry),
-      parent_tracker_(std::move(parent_tracker)) {}
+      mem_trackers_(mem_trackers) {}
 
 Status DiskRowSet::Open() {
   TRACE_EVENT0("tablet", "DiskRowSet::Open");
-  gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_));
-  RETURN_NOT_OK(new_base->Open());
-  base_data_.reset(new_base.release());
+  RETURN_NOT_OK(CFileSet::Open(rowset_metadata_,
+                               mem_trackers_.tablet_tracker,
+                               &base_data_));
 
   rowid_t num_rows;
   RETURN_NOT_OK(base_data_->CountRows(&num_rows));
-  delta_tracker_.reset(new DeltaTracker(rowset_metadata_, num_rows,
-                                        log_anchor_registry_,
-                                        parent_tracker_));
-  RETURN_NOT_OK(delta_tracker_->Open());
+    RETURN_NOT_OK(DeltaTracker::Open(rowset_metadata_, num_rows,
+                                     log_anchor_registry_,
+                                     mem_trackers_,
+                                     &delta_tracker_));
 
   open_ = true;
 
@@ -537,12 +539,14 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
   RETURN_NOT_OK(rowset_metadata_->Flush());
 
   // Make the new base data and delta files visible.
-  gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_));
-  RETURN_NOT_OK(new_base->Open());
+  shared_ptr<CFileSet> new_base;
+  RETURN_NOT_OK(CFileSet::Open(rowset_metadata_,
+                               mem_trackers_.tablet_tracker,
+                               &new_base));
   {
     std::lock_guard<percpu_rwlock> lock(component_lock_);
     RETURN_NOT_OK(compaction->UpdateDeltaTracker(delta_tracker_.get()));
-    base_data_.reset(new_base.release());
+    base_data_.swap(new_base);
   }
   return Status::OK();
 }

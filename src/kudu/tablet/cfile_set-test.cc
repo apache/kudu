@@ -23,6 +23,7 @@
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/diskrowset-test-base.h"
 #include "kudu/tablet/tablet-test-base.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(cfile_default_block_size);
@@ -131,8 +132,8 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   const int kNumRows = 100000;
   WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
-  ASSERT_OK(fileset->Open());
+  shared_ptr<CFileSet> fileset;
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), &fileset));
 
   gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_));
   ASSERT_OK(iter->Init(nullptr));
@@ -211,8 +212,8 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
   const int kNumRows = 100;
   WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
-  ASSERT_OK(fileset->Open());
+  shared_ptr<CFileSet> fileset;
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), &fileset));
 
   Schema new_schema;
   ASSERT_OK(schema_.CreateProjectionByNames({ "c0", "c2" }, &new_schema));
@@ -244,8 +245,8 @@ TEST_F(TestCFileSet, TestRangeScan) {
   const int kNumRows = 10000;
   WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
-  ASSERT_OK(fileset->Open());
+  shared_ptr<CFileSet> fileset;
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), &fileset));
 
   // Create iterator.
   shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_));
@@ -296,8 +297,8 @@ TEST_F(TestCFileSet, TestRangePredicates2) {
   const int kNumRows = 10000;
   WriteTestRowSet(kNumRows);
 
-  shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
-  ASSERT_OK(fileset->Open());
+  shared_ptr<CFileSet> fileset;
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), &fileset));
 
   // Range scan where rows match on both ends
   DoTestRangeScan(fileset, 2000, 2010);

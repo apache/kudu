@@ -48,11 +48,11 @@ using std::unique_ptr;
 
 namespace kudu {
 
-using cfile::BlockHandle;
-using cfile::BlockPointer;
-using cfile::IndexTreeIterator;
 using cfile::BinaryPlainBlockDecoder;
+using cfile::BlockPointer;
 using cfile::CFileReader;
+using cfile::IndexTreeIterator;
+using cfile::ReaderOptions;
 using fs::ReadableBlock;
 using fs::ScopedWritableBlockCloser;
 using fs::WritableBlock;
@@ -174,12 +174,14 @@ Status DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
 ////////////////////////////////////////////////////////////
 
 Status DeltaFileReader::Open(gscoped_ptr<ReadableBlock> block,
-                             const BlockId& block_id,
-                             shared_ptr<DeltaFileReader>* reader_out,
-                             DeltaType delta_type) {
+                             DeltaType delta_type,
+                             ReaderOptions options,
+                             shared_ptr<DeltaFileReader>* reader_out) {
   shared_ptr<DeltaFileReader> df_reader;
   RETURN_NOT_OK(DeltaFileReader::OpenNoInit(std::move(block),
-                                            block_id, &df_reader, delta_type));
+                                            delta_type,
+                                            std::move(options),
+                                            &df_reader));
   RETURN_NOT_OK(df_reader->Init());
 
   *reader_out = df_reader;
@@ -187,15 +189,15 @@ Status DeltaFileReader::Open(gscoped_ptr<ReadableBlock> block,
 }
 
 Status DeltaFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
-                                   const BlockId& block_id,
-                                   shared_ptr<DeltaFileReader>* reader_out,
-                                   DeltaType delta_type) {
+                                   DeltaType delta_type,
+                                   ReaderOptions options,
+                                   shared_ptr<DeltaFileReader>* reader_out) {
   gscoped_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block),
-                                        cfile::ReaderOptions(), &cf_reader));
-  gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(block_id,
-                                                             cf_reader.release(),
-                                                             delta_type));
+                                        std::move(options),
+                                        &cf_reader));
+  gscoped_ptr<DeltaFileReader> df_reader(
+      new DeltaFileReader(std::move(cf_reader), delta_type));
   if (!FLAGS_cfile_lazy_open) {
     RETURN_NOT_OK(df_reader->Init());
   }
@@ -205,10 +207,9 @@ Status DeltaFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
   return Status::OK();
 }
 
-DeltaFileReader::DeltaFileReader(BlockId block_id, CFileReader *cf_reader,
+DeltaFileReader::DeltaFileReader(gscoped_ptr<CFileReader> cf_reader,
                                  DeltaType delta_type)
-    : reader_(cf_reader),
-      block_id_(std::move(block_id)),
+    : reader_(cf_reader.release()),
       delta_type_(delta_type) {}
 
 Status DeltaFileReader::Init() {

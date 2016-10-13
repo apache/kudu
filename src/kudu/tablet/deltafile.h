@@ -110,20 +110,20 @@ class DeltaFileReader : public DeltaStore,
   // Fully open a delta file using a previously opened block.
   //
   // After this call, the delta reader is safe for use.
-  static Status Open(gscoped_ptr<fs::ReadableBlock> file,
-                     const BlockId& block_id,
-                     std::shared_ptr<DeltaFileReader>* reader_out,
-                     DeltaType delta_type);
+  static Status Open(gscoped_ptr<fs::ReadableBlock> block,
+                     DeltaType delta_type,
+                     cfile::ReaderOptions options,
+                     std::shared_ptr<DeltaFileReader>* reader_out);
 
   // Lazily opens a delta file using a previously opened block. A lazy open
   // does not incur additional I/O, nor does it validate the contents of
   // the delta file.
   //
   // Init() must be called before using the file's stats.
-  static Status OpenNoInit(gscoped_ptr<fs::ReadableBlock> file,
-                           const BlockId& block_id,
-                           std::shared_ptr<DeltaFileReader>* reader_out,
-                           DeltaType delta_type);
+  static Status OpenNoInit(gscoped_ptr<fs::ReadableBlock> block,
+                           DeltaType delta_type,
+                           cfile::ReaderOptions options,
+                           std::shared_ptr<DeltaFileReader>* reader_out);
 
   virtual Status Init() OVERRIDE;
 
@@ -141,7 +141,7 @@ class DeltaFileReader : public DeltaStore,
 
   virtual uint64_t EstimateSize() const OVERRIDE;
 
-  const BlockId& block_id() const { return block_id_; }
+  const BlockId& block_id() const { return reader_->block_id(); }
 
   virtual const DeltaStats& delta_stats() const OVERRIDE {
     DCHECK(init_once_.initted());
@@ -166,7 +166,7 @@ class DeltaFileReader : public DeltaStore,
     return reader_;
   }
 
-  DeltaFileReader(BlockId block_id, cfile::CFileReader *cf_reader,
+  DeltaFileReader(gscoped_ptr<cfile::CFileReader> cf_reader,
                   DeltaType delta_type);
 
   // Callback used in 'init_once_' to initialize this delta file.
@@ -176,8 +176,6 @@ class DeltaFileReader : public DeltaStore,
 
   std::shared_ptr<cfile::CFileReader> reader_;
   gscoped_ptr<DeltaStats> delta_stats_;
-
-  const BlockId block_id_;
 
   // The type of this delta, i.e. UNDO or REDO.
   const DeltaType delta_type_;
