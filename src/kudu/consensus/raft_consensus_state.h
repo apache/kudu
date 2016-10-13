@@ -96,8 +96,7 @@ class ReplicaState {
   typedef IndexToRoundMap::value_type IndexToRoundEntry;
 
   ReplicaState(ConsensusOptions options, std::string peer_uuid,
-               std::unique_ptr<ConsensusMetadata> cmeta,
-               ReplicaTransactionFactory* txn_factory);
+               std::unique_ptr<ConsensusMetadata> cmeta);
 
   Status StartUnlocked(const OpId& last_id_in_wal);
 
@@ -227,8 +226,6 @@ class ReplicaState {
   // The vote must be set; use HasVotedCurrentTermUnlocked() to check.
   const std::string& GetVotedForCurrentTermUnlocked() const;
 
-  ReplicaTransactionFactory* GetReplicaTransactionFactoryUnlocked() const;
-
   // Returns the uuid of the peer to which this replica state belongs.
   // Safe to call with or without locks held.
   const std::string& GetPeerUuid() const;
@@ -324,10 +321,6 @@ class ReplicaState {
   // received a replicate message from the leader but have yet to be committed.
   // The key is the index of the replicate operation.
   IndexToRoundMap pending_txns_;
-
-  // When we receive a message from a remote peer telling us to start a transaction, we use
-  // this factory to start it.
-  ReplicaTransactionFactory* txn_factory_;
 
   // The OpId of the Apply that was last triggered when the last message from the leader
   // was received. Initialized to MinimumOpId().

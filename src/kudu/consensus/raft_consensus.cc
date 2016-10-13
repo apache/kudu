@@ -231,6 +231,7 @@ RaftConsensus::RaftConsensus(
       log_(log),
       clock_(clock),
       peer_proxy_factory_(std::move(peer_proxy_factory)),
+      txn_factory_(txn_factory),
       peer_manager_(std::move(peer_manager)),
       queue_(std::move(queue)),
       rng_(GetRandomSeed32()),
@@ -253,8 +254,7 @@ RaftConsensus::RaftConsensus(
   DCHECK(log_);
   state_.reset(new ReplicaState(options,
                                 peer_uuid,
-                                std::move(cmeta),
-                                DCHECK_NOTNULL(txn_factory)));
+                                std::move(cmeta)));
 }
 
 RaftConsensus::~RaftConsensus() {
@@ -785,8 +785,7 @@ Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting transaction: " << msg->get()->id().ShortDebugString();
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
   ConsensusRound* round_ptr = round.get();
-  RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->
-      StartReplicaTransaction(round));
+  RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round));
   return AddPendingOperationUnlocked(round_ptr);
 }
 

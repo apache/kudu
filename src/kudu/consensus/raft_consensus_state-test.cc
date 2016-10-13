@@ -38,8 +38,7 @@ const char* kTabletId = "TestTablet";
 class RaftConsensusStateTest : public KuduTest {
  public:
   RaftConsensusStateTest()
-    : fs_manager_(env_.get(), GetTestPath("fs_root")),
-      txn_factory_(new MockTransactionFactory()) {
+      : fs_manager_(env_.get(), GetTestPath("fs_root")) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -56,8 +55,7 @@ class RaftConsensusStateTest : public KuduTest {
     unique_ptr<ConsensusMetadata> cmeta;
     ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
                                         config_, kMinimumTerm, &cmeta));
-    state_.reset(new ReplicaState(ConsensusOptions(), fs_manager_.uuid(), std::move(cmeta),
-                                  txn_factory_.get()));
+    state_.reset(new ReplicaState(ConsensusOptions(), fs_manager_.uuid(), std::move(cmeta)));
 
     // Start up the ReplicaState.
     ReplicaState::UniqueLock lock;
@@ -68,7 +66,6 @@ class RaftConsensusStateTest : public KuduTest {
  protected:
   FsManager fs_manager_;
   RaftConfigPB config_;
-  gscoped_ptr<MockTransactionFactory> txn_factory_;
   gscoped_ptr<ReplicaState> state_;
 };
 

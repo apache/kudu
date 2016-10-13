@@ -43,12 +43,10 @@ using strings::SubstituteAndAppend;
 //////////////////////////////////////////////////
 
 ReplicaState::ReplicaState(ConsensusOptions options, string peer_uuid,
-                           unique_ptr<ConsensusMetadata> cmeta,
-                           ReplicaTransactionFactory* txn_factory)
+                           unique_ptr<ConsensusMetadata> cmeta)
     : options_(std::move(options)),
       peer_uuid_(std::move(peer_uuid)),
       cmeta_(std::move(cmeta)),
-      txn_factory_(txn_factory),
       last_committed_op_id_(MinimumOpId()),
       state_(kInitialized) {
   CHECK(cmeta_) << "ConsensusMeta passed as NULL";
@@ -324,10 +322,6 @@ const std::string& ReplicaState::GetVotedForCurrentTermUnlocked() const {
   DCHECK(update_lock_.is_locked());
   DCHECK(cmeta_->has_voted_for());
   return cmeta_->voted_for();
-}
-
-ReplicaTransactionFactory* ReplicaState::GetReplicaTransactionFactoryUnlocked() const {
-  return txn_factory_;
 }
 
 const string& ReplicaState::GetPeerUuid() const {

@@ -631,16 +631,6 @@ class TestDriver {
   Log* log_;
 };
 
-// Fake ReplicaTransactionFactory that allows for instantiating and unit
-// testing RaftConsensusState. Does not actually support running transactions.
-class MockTransactionFactory : public ReplicaTransactionFactory {
- public:
-  virtual Status StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) OVERRIDE {
-    return StartReplicaTransactionMock(round.get());
-  }
-  MOCK_METHOD1(StartReplicaTransactionMock, Status(ConsensusRound* round));
-};
-
 // A transaction factory for tests, usually this is implemented by TabletPeer.
 class TestTransactionFactory : public ReplicaTransactionFactory {
  public:

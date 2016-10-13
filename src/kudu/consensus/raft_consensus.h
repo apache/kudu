@@ -444,6 +444,10 @@ class RaftConsensus : public Consensus,
   scoped_refptr<server::Clock> clock_;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;
 
+  // When we receive a message from a remote peer telling us to start a transaction, we use
+  // this factory to start it.
+  ReplicaTransactionFactory* txn_factory_;
+
   gscoped_ptr<PeerManager> peer_manager_;
 
   // The queue of messages that must be sent to peers.
