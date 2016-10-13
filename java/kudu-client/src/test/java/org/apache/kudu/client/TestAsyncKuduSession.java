@@ -195,7 +195,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
       session.apply(createBasicSchemaInsert(nonReplicatedTable, 1)).join();
 
-      int numClientsBefore = client.ip2client.size();
+      int numClientsBefore = client.getTabletClients().size();
 
       // Restart all the tablet servers.
       killTabletServers();
@@ -206,7 +206,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       session.apply(createBasicSchemaInsert(nonReplicatedTable, 2)).join();
 
       // We should not have leaked an entry in the client2tablets map.
-      int numClientsAfter = client.ip2client.size();
+      int numClientsAfter = client.getTabletClients().size();
       assertEquals(numClientsBefore, numClientsAfter);
     } finally {
       restartTabletServers();

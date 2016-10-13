@@ -37,9 +37,6 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.channel.socket.nio.NioWorkerPool;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;
@@ -51,14 +48,10 @@ import org.apache.kudu.util.AsyncUtil;
 import org.apache.kudu.util.NetUtil;
 import org.apache.kudu.util.Pair;
 import org.apache.kudu.util.Slice;
-import org.jboss.netty.channel.ChannelEvent;
-import org.jboss.netty.channel.ChannelStateEvent;
-import org.jboss.netty.channel.DefaultChannelPipeline;
+import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
-import org.jboss.netty.channel.socket.SocketChannel;
-import org.jboss.netty.channel.socket.SocketChannelConfig;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
-import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
+import org.jboss.netty.channel.socket.nio.NioWorkerPool;
 import org.jboss.netty.util.HashedWheelTimer;
 import org.jboss.netty.util.Timeout;
 import org.jboss.netty.util.TimerTask;
@@ -66,19 +59,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.concurrent.GuardedBy;
-
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -86,7 +73,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -148,33 +134,7 @@ public class AsyncKuduClient implements AutoCloseable {
   private final ConcurrentHashMap<String, TableLocationsCache> tableLocations =
       new ConcurrentHashMap<>();
 
-  /**
-   * Cache that maps a TabletServer address ("ip:port") to the clients
-   * connected to it.
-   * <p>
-   * Access to this map must be synchronized by locking its monitor.
-   * Logging the contents of this map (or calling toString) requires copying it first.
-   * <p>
-   * This isn't a {@link ConcurrentHashMap} because we don't use it frequently
-   * (just when connecting to / disconnecting from TabletClients) and when we
-   * add something to it, we want to do an atomic get-and-put, but
-   * {@code putIfAbsent} isn't a good fit for us since it requires to create
-   * an object that may be "wasted" in case another thread wins the insertion
-   * race, and we don't want to create unnecessary connections.
-   * <p>
-   * Upon disconnection, clients are automatically removed from this map.
-   * We don't use a {@code ChannelGroup} because a {@code ChannelGroup} does
-   * the clean-up on the {@code channelClosed} event, which is actually the
-   * 3rd and last event to be fired when a channel gets disconnected.  The
-   * first one to get fired is, {@code channelDisconnected}.  This matters to
-   * us because we want to purge disconnected clients from the cache as
-   * quickly as possible after the disconnection, to avoid handing out clients
-   * that are going to cause unnecessary errors.
-   * @see TabletClientPipeline#handleDisconnect
-   */
-  @VisibleForTesting
-  @GuardedBy("ip2client")
-  final HashMap<String, TabletClient> ip2client = new HashMap<>();
+  private final ConnectionCache connectionCache;
 
   @GuardedBy("sessions")
   private final Set<AsyncKuduSession> sessions = new HashSet<>();
@@ -241,6 +201,7 @@ public class AsyncKuduClient implements AutoCloseable {
     this.timer = b.timer;
     String clientId = UUID.randomUUID().toString().replace("-", "");
     this.requestTracker = new RequestTracker(clientId);
+    this.connectionCache = new ConnectionCache(this);
   }
 
   /**
@@ -577,6 +538,14 @@ public class AsyncKuduClient implements AutoCloseable {
 
   RequestTracker getRequestTracker() {
     return requestTracker;
+  }
+
+  HashedWheelTimer getTimer() {
+    return timer;
+  }
+
+  ClientSocketChannelFactory getChannelFactory() {
+    return channelFactory;
   }
 
   /**
@@ -958,13 +927,11 @@ public class AsyncKuduClient implements AutoCloseable {
    * but calling certain methods on the returned TabletClients can. For example,
    * it's possible to forcefully shutdown a connection to a tablet server by calling {@link
    * TabletClient#shutdown()}.
-   * @return Copy of the current TabletClients list
+   * @return copy of the current TabletClients list
    */
   @VisibleForTesting
   List<TabletClient> getTabletClients() {
-    synchronized (ip2client) {
-      return new ArrayList<TabletClient>(ip2client.values());
-    }
+    return connectionCache.getTabletClients();
   }
 
   /**
@@ -1476,7 +1443,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @return A live and initialized client for the specified master server.
    */
   TabletClient newMasterClient(HostAndPort masterHostPort) {
-    String ip = getIP(masterHostPort.getHostText());
+    String ip = ConnectionCache.getIP(masterHostPort.getHostText());
     if (ip == null) {
       return null;
     }
@@ -1484,34 +1451,9 @@ public class AsyncKuduClient implements AutoCloseable {
     // communicate with the masters to find out about them, and that's what we're trying to do.
     // The UUID is used for logging, so instead we're passing the "master table name" followed by
     // host and port which is enough to identify the node we're connecting to.
-    return newClient(MASTER_TABLE_NAME_PLACEHOLDER + " - " + masterHostPort.toString(),
+    return connectionCache.newClient(
+        MASTER_TABLE_NAME_PLACEHOLDER + " - " + masterHostPort.toString(),
         ip, masterHostPort.getPort());
-  }
-
-  TabletClient newClient(String uuid, final String host, final int port) {
-    final String hostport = host + ':' + port;
-    TabletClient client;
-    SocketChannel chan;
-    synchronized (ip2client) {
-      client = ip2client.get(hostport);
-      if (client != null && client.isAlive()) {
-        return client;
-      }
-      final TabletClientPipeline pipeline = new TabletClientPipeline();
-      client = pipeline.init(uuid, host, port);
-      chan = channelFactory.newChannel(pipeline);
-      TabletClient oldClient = ip2client.put(hostport, client);
-      assert oldClient == null;
-    }
-    final SocketChannelConfig config = chan.getConfig();
-    config.setConnectTimeoutMillis(5000);
-    config.setTcpNoDelay(true);
-    // Unfortunately there is no way to override the keep-alive timeout in
-    // Java since the JRE doesn't expose any way to call setsockopt() with
-    // TCP_KEEPIDLE.  And of course the default timeout is >2h. Sigh.
-    config.setKeepAlive(true);
-    chan.connect(new InetSocketAddress(host, port));  // Won't block.
-    return client;
   }
 
   /**
@@ -1577,7 +1519,7 @@ public class AsyncKuduClient implements AutoCloseable {
     final class DisconnectCB implements Callback<Deferred<ArrayList<Void>>,
         ArrayList<List<OperationResponse>>> {
       public Deferred<ArrayList<Void>> call(ArrayList<List<OperationResponse>> ignoredResponses) {
-        return disconnectEverything().addCallback(new ReleaseResourcesCB());
+        return connectionCache.disconnectEverything().addCallback(new ReleaseResourcesCB());
       }
       public String toString() {
         return "disconnect callback";
@@ -1614,285 +1556,10 @@ public class AsyncKuduClient implements AutoCloseable {
     return Deferred.group(deferreds);
   }
 
-  /**
-   * Closes every socket, which will also cancel all the RPCs in flight.
-   */
-  private Deferred<ArrayList<Void>> disconnectEverything() {
-    ArrayList<Deferred<Void>> deferreds =
-        new ArrayList<Deferred<Void>>(2);
-    HashMap<String, TabletClient> ip2client_copy;
-    synchronized (ip2client) {
-      // Make a local copy so we can shutdown every Tablet Server clients
-      // without hold the lock while we iterate over the data structure.
-      ip2client_copy = new HashMap<String, TabletClient>(ip2client);
-    }
-
-    for (TabletClient ts : ip2client_copy.values()) {
-      deferreds.add(ts.shutdown());
-    }
-    final int size = deferreds.size();
-    return Deferred.group(deferreds).addCallback(
-        new Callback<ArrayList<Void>, ArrayList<Void>>() {
-          public ArrayList<Void> call(final ArrayList<Void> arg) {
-            // Normally, now that we've shutdown() every client, all our caches should
-            // be empty since each shutdown() generates a DISCONNECTED event, which
-            // causes TabletClientPipeline to call removeClientFromIpCache().
-            HashMap<String, TabletClient> logme = null;
-            synchronized (ip2client) {
-              if (!ip2client.isEmpty()) {
-                logme = new HashMap<String, TabletClient>(ip2client);
-              }
-            }
-            if (logme != null) {
-              // Putting this logging statement inside the synchronized block
-              // can lead to a deadlock, since HashMap.toString() is going to
-              // call TabletClient.toString() on each entry, and this locks the
-              // client briefly.  Other parts of the code lock clients first and
-              // the ip2client HashMap second, so this can easily deadlock.
-              LOG.error("Some clients are left in the client cache and haven't"
-                  + " been cleaned up: " + logme);
-            }
-            return arg;
-          }
-
-          public String toString() {
-            return "wait " + size + " TabletClient.shutdown()";
-          }
-        });
-  }
-
-  /**
-   * Blocking call.
-   * Performs a slow search of the IP used by the given client.
-   * <p>
-   * This is needed when we're trying to find the IP of the client before its
-   * channel has successfully connected, because Netty's API offers no way of
-   * retrieving the IP of the remote peer until we're connected to it.
-   * @param client The client we want the IP of.
-   * @return The IP of the client, or {@code null} if we couldn't find it.
-   */
-  private InetSocketAddress slowSearchClientIP(final TabletClient client) {
-    String hostport = null;
-    synchronized (ip2client) {
-      for (final Map.Entry<String, TabletClient> e : ip2client.entrySet()) {
-        if (e.getValue() == client) {
-          hostport = e.getKey();
-          break;
-        }
-      }
-    }
-
-    if (hostport == null) {
-      HashMap<String, TabletClient> copy;
-      synchronized (ip2client) {
-        copy = new HashMap<String, TabletClient>(ip2client);
-      }
-      LOG.error("WTF?  Should never happen!  Couldn't find " + client
-          + " in " + copy);
-      return null;
-    }
-    final int colon = hostport.indexOf(':', 1);
-    if (colon < 1) {
-      LOG.error("WTF?  Should never happen!  No `:' found in " + hostport);
-      return null;
-    }
-    final String host = getIP(hostport.substring(0, colon));
-    if (host == null) {
-      // getIP will print the reason why, there's nothing else we can do.
-      return null;
-    }
-
-    int port;
-    try {
-      port = parsePortNumber(hostport.substring(colon + 1,
-          hostport.length()));
-    } catch (NumberFormatException e) {
-      LOG.error("WTF?  Should never happen!  Bad port in " + hostport, e);
-      return null;
-    }
-    return new InetSocketAddress(host, port);
-  }
-
-  /**
-   * Removes the given client from the `ip2client` cache.
-   * @param client The client for which we must clear the ip cache
-   * @param remote The address of the remote peer, if known, or null
-   */
-  private void removeClientFromIpCache(final TabletClient client,
-                                       final SocketAddress remote) {
-
-    if (remote == null) {
-      return;  // Can't continue without knowing the remote address.
-    }
-
-    String hostport;
-    if (remote instanceof InetSocketAddress) {
-      final InetSocketAddress sock = (InetSocketAddress) remote;
-      final InetAddress addr = sock.getAddress();
-      if (addr == null) {
-        LOG.error("WTF?  Unresolved IP for " + remote
-            + ".  This shouldn't happen.");
-        return;
-      } else {
-        hostport = addr.getHostAddress() + ':' + sock.getPort();
-      }
-    } else {
-      LOG.error("WTF?  Found a non-InetSocketAddress remote: " + remote
-          + ".  This shouldn't happen.");
-      return;
-    }
-
-    TabletClient old;
-    synchronized (ip2client) {
-      old = ip2client.remove(hostport);
-    }
-
-    LOG.debug("Removed from IP cache: {" + hostport + "} -> {" + client + "}");
-    if (old == null) {
-      // Currently we're seeing this message when masters are disconnected and the hostport we got
-      // above is different than the one the user passes (that we use to populate ip2client). At
-      // worst this doubles the entries for masters, which has an insignificant impact.
-      // TODO When fixed, make this a WARN again.
-      LOG.trace("When expiring " + client + " from the client cache (host:port="
-          + hostport + "), it was found that there was no entry"
-          + " corresponding to " + remote + ".  This shouldn't happen.");
-    }
-  }
-
   private boolean isMasterTable(String tableId) {
     // Checking that it's the same instance so there's absolutely no chance of confusing the master
     // 'table' for a user one.
     return MASTER_TABLE_NAME_PLACEHOLDER == tableId;
-  }
-
-  private final class TabletClientPipeline extends DefaultChannelPipeline {
-
-    private final Logger log = LoggerFactory.getLogger(TabletClientPipeline.class);
-    /**
-     * Have we already disconnected?.
-     * We use this to avoid doing the cleanup work for the same client more
-     * than once, even if we get multiple events indicating that the client
-     * is no longer connected to the TabletServer (e.g. DISCONNECTED, CLOSED).
-     * No synchronization needed as this is always accessed from only one
-     * thread at a time (equivalent to a non-shared state in a Netty handler).
-     */
-    private boolean disconnected = false;
-
-    TabletClient init(String uuid, String host, int port) {
-      final TabletClient client = new TabletClient(AsyncKuduClient.this, uuid, host, port);
-      if (defaultSocketReadTimeoutMs > 0) {
-        super.addLast("timeout-handler",
-            new ReadTimeoutHandler(timer,
-                defaultSocketReadTimeoutMs,
-                TimeUnit.MILLISECONDS));
-      }
-      super.addLast("kudu-handler", client);
-
-      return client;
-    }
-
-    @Override
-    public void sendDownstream(final ChannelEvent event) {
-      if (event instanceof ChannelStateEvent) {
-        handleDisconnect((ChannelStateEvent) event);
-      }
-      super.sendDownstream(event);
-    }
-
-    @Override
-    public void sendUpstream(final ChannelEvent event) {
-      if (event instanceof ChannelStateEvent) {
-        handleDisconnect((ChannelStateEvent) event);
-      }
-      super.sendUpstream(event);
-    }
-
-    private void handleDisconnect(final ChannelStateEvent state_event) {
-      if (disconnected) {
-        return;
-      }
-      switch (state_event.getState()) {
-        case OPEN:
-          if (state_event.getValue() == Boolean.FALSE) {
-            break;  // CLOSED
-          }
-          return;
-        case CONNECTED:
-          if (state_event.getValue() == null) {
-            break;  // DISCONNECTED
-          }
-          return;
-        default:
-          return;  // Not an event we're interested in, ignore it.
-      }
-
-      disconnected = true;  // So we don't clean up the same client twice.
-      try {
-        final TabletClient client = super.get(TabletClient.class);
-        SocketAddress remote = super.getChannel().getRemoteAddress();
-        // At this point Netty gives us no easy way to access the
-        // SocketAddress of the peer we tried to connect to. This
-        // kinda sucks but I couldn't find an easier way.
-        if (remote == null) {
-          remote = slowSearchClientIP(client);
-        }
-
-        synchronized (client) {
-          removeClientFromIpCache(client, remote);
-        }
-      } catch (Exception e) {
-        log.error("Uncaught exception when handling a disconnection of " + getChannel(), e);
-      }
-    }
-
-  }
-
-  /**
-   * Gets a hostname or an IP address and returns the textual representation
-   * of the IP address.
-   * <p>
-   * <strong>This method can block</strong> as there is no API for
-   * asynchronous DNS resolution in the JDK.
-   * @param host The hostname to resolve.
-   * @return The IP address associated with the given hostname,
-   * or {@code null} if the address couldn't be resolved.
-   */
-  private static String getIP(final String host) {
-    final long start = System.nanoTime();
-    try {
-      final String ip = InetAddress.getByName(host).getHostAddress();
-      final long latency = System.nanoTime() - start;
-      if (latency > 500000/*ns*/ && LOG.isDebugEnabled()) {
-        LOG.debug("Resolved IP of `" + host + "' to "
-            + ip + " in " + latency + "ns");
-      } else if (latency >= 3000000/*ns*/) {
-        LOG.warn("Slow DNS lookup!  Resolved IP of `" + host + "' to "
-            + ip + " in " + latency + "ns");
-      }
-      return ip;
-    } catch (UnknownHostException e) {
-      LOG.error("Failed to resolve the IP of `" + host + "' in "
-          + (System.nanoTime() - start) + "ns");
-      return null;
-    }
-  }
-
-  /**
-   * Parses a TCP port number from a string.
-   * @param portnum The string to parse.
-   * @return A strictly positive, validated port number.
-   * @throws NumberFormatException if the string couldn't be parsed as an
-   * integer or if the value was outside of the range allowed for TCP ports.
-   */
-  private static int parsePortNumber(final String portnum)
-      throws NumberFormatException {
-    final int port = Integer.parseInt(portnum);
-    if (port <= 0 || port > 65535) {
-      throw new NumberFormatException(port == 0 ? "port is zero" :
-          (port < 0 ? "port is negative: "
-              : "port is too large: ") + port);
-    }
-    return port;
   }
 
   void newTimeout(final TimerTask task, final long timeout_ms) {
@@ -2005,11 +1672,11 @@ public class AsyncKuduClient implements AutoCloseable {
     @GuardedBy("tabletServers")
     private void addTabletClient(String uuid, String host, int port, boolean isLeader)
         throws UnknownHostException {
-      String ip = getIP(host);
+      String ip = ConnectionCache.getIP(host);
       if (ip == null) {
         throw new UnknownHostException("Failed to resolve the IP of `" + host + "'");
       }
-      TabletClient client = newClient(uuid, ip, port);
+      TabletClient client = connectionCache.newClient(uuid, ip, port);
 
       tabletServers.add(client);
       if (isLeader) {
