@@ -91,10 +91,6 @@ class ReplicaState {
 
   typedef std::map<int64_t, scoped_refptr<ConsensusRound> > IndexToRoundMap;
 
-  typedef std::set<int64_t> OutstandingCommits;
-
-  typedef IndexToRoundMap::value_type IndexToRoundEntry;
-
   ReplicaState(ConsensusOptions options, std::string peer_uuid,
                std::unique_ptr<ConsensusMetadata> cmeta);
 
@@ -232,9 +228,6 @@ class ReplicaState {
 
   const ConsensusOptions& GetOptions() const;
 
-  // Returns the operations that are not consensus committed.
-  void GetUncommittedPendingOperationsUnlocked(std::vector<scoped_refptr<ConsensusRound> >* ops);
-
   // Aborts pending operations after, but not including 'index'. The OpId with 'index'
   // will become our new last received id. If there are pending operations with indexes
   // higher than 'index' those operations are aborted.
@@ -271,11 +264,6 @@ class ReplicaState {
   // that have completed prepare/replicate but are waiting on the LEADER's commit
   // to complete. This does not cancel transactions being applied.
   Status CancelPendingTransactions();
-
-  // Used when, for some reason, an operation that failed before it could be considered
-  // a part of the state machine. Basically restores the id gen to the state it was before
-  // generating 'id'.
-  void CancelPendingOperation(const OpId& id);
 
   // Returns the number of transactions that are currently in the pending state
   // i.e. transactions for which Prepare() is done or under way.

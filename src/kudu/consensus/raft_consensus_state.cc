@@ -361,15 +361,6 @@ Status ReplicaState::CancelPendingTransactions() {
   return Status::OK();
 }
 
-void ReplicaState::GetUncommittedPendingOperationsUnlocked(
-    vector<scoped_refptr<ConsensusRound> >* ops) {
-  for (const IndexToRoundMap::value_type& entry : pending_txns_) {
-    if (entry.first > last_committed_op_id_.index()) {
-      ops->push_back(entry.second);
-    }
-  }
-}
-
 void ReplicaState::AbortOpsAfterUnlocked(int64_t index) {
   DCHECK(update_lock_.is_locked());
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting all transactions after (but not including): "
@@ -508,16 +499,6 @@ OpId ReplicaState::GetLastPendingTransactionOpIdUnlocked() const {
       ? MinimumOpId() : (--pending_txns_.end())->second->id();
 }
 
-
-void ReplicaState::CancelPendingOperation(const OpId& id) {
-  OpId previous = id;
-  previous.set_index(previous.index() - 1);
-  DCHECK(update_lock_.is_locked());
-  CHECK_EQ(GetCurrentTermUnlocked(), id.term());
-
-  scoped_refptr<ConsensusRound> round = EraseKeyReturnValuePtr(&pending_txns_, id.index());
-  DCHECK(round);
-}
 
 string ReplicaState::LogPrefix() {
   ReplicaState::UniqueLock lock;

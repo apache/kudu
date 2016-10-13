@@ -592,22 +592,10 @@ Status RaftConsensus::AppendNewRoundToQueueUnlocked(const scoped_refptr<Consensu
   *round->replicate_msg()->mutable_id() = queue_->GetNextOpId();
   RETURN_NOT_OK(AddPendingOperationUnlocked(round));
 
-  Status s = queue_->AppendOperation(round->replicate_scoped_refptr());
-
-  // Handle Status::ServiceUnavailable(), which means the queue is full.
-  if (PREDICT_FALSE(s.IsServiceUnavailable())) {
-    gscoped_ptr<OpId> id(round->replicate_msg()->release_id());
-    // Cancel the operation that we started.
-    state_->CancelPendingOperation(*id);
-    LOG_WITH_PREFIX_UNLOCKED(WARNING) << ": Could not append replicate request "
-                 << "to the queue. Queue is Full. "
-                 << "Queue metrics: " << queue_->ToString();
-    // TODO(todd) count of number of ops failed due to consensus queue overflow.
-  } else if (PREDICT_FALSE(s.IsIOError())) {
-    // This likely came from the log.
-    LOG(FATAL) << "IO error appending to the queue: " << s.ToString();
-  }
-  RETURN_NOT_OK_PREPEND(s, "Unable to append operation to consensus queue");
+  // The only reasons for a bad status would be if the log itself were shut down,
+  // or if we had an actual IO error, which we currently don't handle.
+  CHECK_OK_PREPEND(queue_->AppendOperation(round->replicate_scoped_refptr()),
+                   Substitute("$0: could not append to queue", LogPrefixUnlocked()));
   return Status::OK();
 }
 
