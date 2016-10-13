@@ -65,8 +65,6 @@ extern const char kConsensusQueueParentTrackerId[];
 // TODO(todd): Right now this class is able to track one outstanding operation
 // per peer. If we want to have more than one outstanding RPC we need to
 // modify it.
-//
-// TODO(todd): make methods non-virtual since they aren't overridden.
 class PeerMessageQueue {
  public:
   struct TrackedPeer {
@@ -135,7 +133,7 @@ class PeerMessageQueue {
                    const std::string& tablet_id);
 
   // Initialize the queue.
-  virtual void Init(const OpId& last_locally_replicated);
+  void Init(const OpId& last_locally_replicated);
 
   // Changes the queue to leader mode, meaning it tracks majority replicated
   // operations and notifies observers when those change.
@@ -147,21 +145,21 @@ class PeerMessageQueue {
   // operation in the current term.
   // 'active_config' is the currently-active Raft config. This must always be
   // a superset of the tracked peers, and that is enforced with runtime CHECKs.
-  virtual void SetLeaderMode(int64_t committed_index,
-                             int64_t current_term,
-                             const RaftConfigPB& active_config);
+  void SetLeaderMode(int64_t committed_index,
+                     int64_t current_term,
+                     const RaftConfigPB& active_config);
 
   // Changes the queue to non-leader mode. Currently tracked peers will still
   // be tracked so that the cache is only evicted when the peers no longer need
   // the operations but the queue will no longer advance the majority replicated
   // index or notify observers of its advancement.
-  virtual void SetNonLeaderMode();
+  void SetNonLeaderMode();
 
   // Makes the queue track this peer.
-  virtual void TrackPeer(const std::string& uuid);
+  void TrackPeer(const std::string& uuid);
 
   // Makes the queue untrack this peer.
-  virtual void UntrackPeer(const std::string& uuid);
+  void UntrackPeer(const std::string& uuid);
 
   // Appends a single message to be replicated to the peers.
   // Returns OK unless the message could not be added to the queue for some
@@ -170,7 +168,7 @@ class PeerMessageQueue {
   //
   // This is thread-safe against all of the read methods, but not thread-safe
   // with concurrent Append calls.
-  virtual Status AppendOperation(const ReplicateRefPtr& msg);
+  Status AppendOperation(const ReplicateRefPtr& msg);
 
   // Appends a vector of messages to be replicated to the peers.
   // Returns OK unless the message could not be added to the queue for some
@@ -180,20 +178,20 @@ class PeerMessageQueue {
   //
   // This is thread-safe against all of the read methods, but not thread-safe
   // with concurrent Append calls.
-  virtual Status AppendOperations(const std::vector<ReplicateRefPtr>& msgs,
-                                  const StatusCallback& log_append_callback);
+  Status AppendOperations(const std::vector<ReplicateRefPtr>& msgs,
+                          const StatusCallback& log_append_callback);
 
   // Truncate all operations coming after 'index'. Following this, the 'last_appended'
   // operation is reset to the OpId with this index, and the log cache will be truncated
   // accordingly.
-  virtual void TruncateOpsAfter(int64_t index);
+  void TruncateOpsAfter(int64_t index);
 
   // Return the last OpId in the log.
   // Note that this can move backwards after a truncation (TruncateOpsAfter).
-  virtual OpId GetLastOpIdInLog() const;
+  OpId GetLastOpIdInLog() const;
 
   // Return the next OpId to be appended to the queue in the current term.
-  virtual OpId GetNextOpId() const;
+  OpId GetNextOpId() const;
 
   // Assembles a request for a peer, adding entries past 'op_id' up to
   // 'consensus_max_batch_size_bytes'.
@@ -210,16 +208,16 @@ class PeerMessageQueue {
   // instance of ConsensusRequestPB to RequestForPeer(): the buffer will
   // replace the old entries with new ones without de-allocating the old
   // ones if they are still required.
-  virtual Status RequestForPeer(const std::string& uuid,
-                                ConsensusRequestPB* request,
-                                std::vector<ReplicateRefPtr>* msg_refs,
-                                bool* needs_tablet_copy);
+  Status RequestForPeer(const std::string& uuid,
+                        ConsensusRequestPB* request,
+                        std::vector<ReplicateRefPtr>* msg_refs,
+                        bool* needs_tablet_copy);
 
   // Fill in a StartTabletCopyRequest for the specified peer.
   // If that peer should not initiate Tablet Copy, returns a non-OK status.
   // On success, also internally resets peer->needs_tablet_copy to false.
-  virtual Status GetTabletCopyRequestForPeer(const std::string& uuid,
-                                                  StartTabletCopyRequestPB* req);
+  Status GetTabletCopyRequestForPeer(const std::string& uuid,
+                                     StartTabletCopyRequestPB* req);
 
   // Update the last successful communication timestamp for the given peer
   // to the current time. This should be called when a non-network related
@@ -229,9 +227,9 @@ class PeerMessageQueue {
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
-  virtual void ResponseFromPeer(const std::string& peer_uuid,
-                                const ConsensusResponsePB& response,
-                                bool* more_pending);
+  void ResponseFromPeer(const std::string& peer_uuid,
+                        const ConsensusResponsePB& response,
+                        bool* more_pending);
 
   // Called by the consensus implementation to update the queue's watermarks
   // based on information provided by the leader. This is used for metrics and
@@ -242,37 +240,37 @@ class PeerMessageQueue {
   // Closes the queue, peers are still allowed to call UntrackPeer() and
   // ResponseFromPeer() but no additional peers can be tracked or messages
   // queued.
-  virtual void Close();
+  void Close();
 
-  virtual int64_t GetQueuedOperationsSizeBytesForTests() const;
+  int64_t GetQueuedOperationsSizeBytesForTests() const;
 
   // Returns the last message replicated by all peers.
-  virtual int64_t GetAllReplicatedIndex() const;
+  int64_t GetAllReplicatedIndex() const;
 
   // Returns the committed index. All operations with index less than or equal to
   // this index have been committed.
-  virtual int64_t GetCommittedIndex() const;
+  int64_t GetCommittedIndex() const;
 
   // Return true if the committed index falls within the current term.
   bool IsCommittedIndexInCurrentTerm() const;
 
   // Returns the current majority replicated index, for tests.
-  virtual int64_t GetMajorityReplicatedIndexForTests() const;
+  int64_t GetMajorityReplicatedIndexForTests() const;
 
   // Returns a copy of the TrackedPeer with 'uuid' or crashes if the peer is
   // not being tracked.
-  virtual TrackedPeer GetTrackedPeerForTests(const std::string& uuid);
+  TrackedPeer GetTrackedPeerForTests(const std::string& uuid);
 
-  virtual std::string ToString() const;
+  std::string ToString() const;
 
   // Dumps the contents of the queue to the provided string vector.
-  virtual void DumpToStrings(std::vector<std::string>* lines) const;
+  void DumpToStrings(std::vector<std::string>* lines) const;
 
-  virtual void DumpToHtml(std::ostream& out) const;
+  void DumpToHtml(std::ostream& out) const;
 
-  virtual void RegisterObserver(PeerMessageQueueObserver* observer);
+  void RegisterObserver(PeerMessageQueueObserver* observer);
 
-  virtual Status UnRegisterObserver(PeerMessageQueueObserver* observer);
+  Status UnRegisterObserver(PeerMessageQueueObserver* observer);
 
   struct Metrics {
     // Keeps track of the number of ops. that are completed by a majority but still need
@@ -284,7 +282,7 @@ class PeerMessageQueue {
     explicit Metrics(const scoped_refptr<MetricEntity>& metric_entity);
   };
 
-  virtual ~PeerMessageQueue();
+  ~PeerMessageQueue();
 
  private:
   FRIEND_TEST(ConsensusQueueTest, TestQueueAdvancesCommittedIndex);
