@@ -304,6 +304,49 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
   }
 
   /**
+   * Implementation of the Xoroshiro128+ PRNG.
+   * Copied under the public domain from SquidLib.
+   */
+  private static class Xoroshiro128PlusRandom {
+    private long state0, state1;
+    public Xoroshiro128PlusRandom() {
+      this((long) (Math.random() * Long.MAX_VALUE));
+    }
+    public Xoroshiro128PlusRandom(long seed) {
+      long state = seed + 0x9E3779B97F4A7C15L,
+           z = state;
+      z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+      z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+      state0 = z ^ (z >>> 31);
+      state += state0 + 0x9E3779B97F4A7C15L;
+      z = state;
+      z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+      z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+      state1 = z ^ (z >>> 31);
+    }
+    public long nextLong() {
+      final long s0 = state0;
+      long s1 = state1;
+      final long result = s0 + s1;
+
+      s1 ^= s0;
+      state0 = Long.rotateLeft(s0, 55) ^ s1 ^ (s1 << 14); // a, b
+      state1 = Long.rotateLeft(s1, 36); // c
+
+      return result;
+    }
+    public void nextBytes(final byte[] bytes) {
+      int i = bytes.length, n = 0;
+      while (i != 0) {
+        n = Math.min(i, 8);
+        for (long bits = nextLong(); n-- != 0; bits >>>= 8) {
+          bytes[--i] = (byte) bits;
+        }
+      }
+    }
+  }
+
+  /**
    * A Map only job that generates random linked list and stores them.
    */
   static class Generator extends Configured implements Tool {
@@ -331,7 +374,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       static class GeneratorRecordReader extends RecordReader<BytesWritable,NullWritable> {
         private long count;
         private long numNodes;
-        private Random rand;
+        private Xoroshiro128PlusRandom rand;
 
         @Override
         public void close() throws IOException {
@@ -359,7 +402,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
             throws IOException, InterruptedException {
           numNodes = context.getConfiguration().getLong(GENERATOR_NUM_ROWS_PER_MAP_KEY, 25000000);
           // Use SecureRandom to avoid issue described in HBASE-13382.
-          rand = new SecureRandom();
+          rand = new Xoroshiro128PlusRandom();
         }
 
         @Override
