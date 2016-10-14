@@ -19,7 +19,11 @@ package org.apache.kudu.client;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+import com.google.protobuf.ByteString;
 import com.sun.security.auth.module.UnixSystem;
+import org.apache.kudu.Common;
+import org.apache.kudu.consensus.Metadata;
+import org.apache.kudu.master.Master;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.management.VMManagement;
@@ -285,5 +289,39 @@ public class TestUtils {
 
     int pid = getPid();
     return "127." + ((pid & 0xff00) >> 8) + "." + (pid & 0xff) + ".1";
+  }
+
+  /**
+   * Get a PartitionPB with empty start and end keys.
+   * @return a fake partition
+   */
+  static Common.PartitionPB.Builder getFakePartitionPB() {
+    Common.PartitionPB.Builder partition = Common.PartitionPB.newBuilder();
+    partition.setPartitionKeyStart(ByteString.EMPTY);
+    partition.setPartitionKeyEnd(ByteString.EMPTY);
+    return partition;
+  }
+
+  /**
+   * Create a ReplicaPB based on the passed information.
+   * @param uuid server's identifier
+   * @param host server's hostname
+   * @param port server's port
+   * @param role server's role in the configuration
+   * @return a fake ReplicaPB
+   */
+  static Master.TabletLocationsPB.ReplicaPB.Builder getFakeTabletReplicaPB(
+      String uuid, String host, int port, Metadata.RaftPeerPB.Role role) {
+    Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
+    Common.HostPortPB.Builder hostBuilder = Common.HostPortPB.newBuilder();
+    hostBuilder.setHost(host);
+    hostBuilder.setPort(port);
+    tsInfoBuilder.addRpcAddresses(hostBuilder);
+    tsInfoBuilder.setPermanentUuid(ByteString.copyFromUtf8(uuid));
+    Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder =
+        Master.TabletLocationsPB.ReplicaPB.newBuilder();
+    replicaBuilder.setTsInfo(tsInfoBuilder);
+    replicaBuilder.setRole(role);
+    return replicaBuilder;
   }
 }

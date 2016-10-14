@@ -583,21 +583,21 @@ public class AsyncKuduClient implements AutoCloseable {
    * @return A deferred row.
    */
   Deferred<AsyncKuduScanner.Response> scanNextRows(final AsyncKuduScanner scanner) {
-    final RemoteTablet tablet = scanner.currentTablet();
+    RemoteTablet tablet = scanner.currentTablet();
     assert (tablet != null);
-    final TabletClient client = tablet.getLeaderConnection();
-    final KuduRpc<AsyncKuduScanner.Response> next_request = scanner.getNextRowsRequest();
-    final Deferred<AsyncKuduScanner.Response> d = next_request.getDeferred();
+    TabletClient client = connectionCache.getClient(tablet.getLeaderUUID());
+    KuduRpc<AsyncKuduScanner.Response> nextRequest = scanner.getNextRowsRequest();
+    Deferred<AsyncKuduScanner.Response> d = nextRequest.getDeferred();
     // Important to increment the attempts before the next if statement since
     // getSleepTimeForRpc() relies on it if the client is null or dead.
-    next_request.attempt++;
+    nextRequest.attempt++;
     if (client == null || !client.isAlive()) {
       // A null client means we either don't know about this tablet anymore (unlikely) or we
       // couldn't find a leader (which could be triggered by a read timeout).
       // We'll first delay the RPC in case things take some time to settle down, then retry.
-      return delayedSendRpcToTablet(next_request, null);
+      return delayedSendRpcToTablet(nextRequest, null);
     }
-    client.sendRpc(next_request);
+    client.sendRpc(nextRequest);
     return d;
   }
 
@@ -614,7 +614,7 @@ public class AsyncKuduClient implements AutoCloseable {
       return Deferred.fromResult(null);
     }
 
-    final TabletClient client = tablet.getLeaderConnection();
+    final TabletClient client = connectionCache.getClient(tablet.getLeaderUUID());
     if (client == null || !client.isAlive()) {
       // Oops, we couldn't find a tablet server that hosts this tablet. Our
       // cache was probably invalidated while the client was scanning. So
@@ -666,43 +666,16 @@ public class AsyncKuduClient implements AutoCloseable {
       request.setPropagatedTimestamp(lastPropagatedTs);
     }
 
-    // If we found a tablet, we'll try to find the TS to talk to. If that TS was previously
-    // disconnected, say because we didn't query that tablet for some seconds, then we'll try to
-    // reconnect based on the old information. If that fails, we'll instead continue with the next
-    // block that queries the master.
+    // If we found a tablet, we'll try to find the TS to talk to.
     if (entry != null) {
       RemoteTablet tablet = entry.getTablet();
-      TabletClient tabletClient = tablet.getLeaderConnection();
-      if (tabletClient != null) {
-        final Deferred<R> d = request.getDeferred();
-        if (tabletClient.isAlive()) {
-          request.setTablet(tablet);
-          tabletClient.sendRpc(request);
-          return d;
-        }
-        try {
-          tablet.reconnectTabletClient(tabletClient);
-        } catch (UnknownHostException e) {
-          LOG.error("Cached tablet server {}'s host cannot be resolved, will query the master",
-              tabletClient.getUuid(), e);
-          // Because of this exception, getLeaderConnection() below won't be able to find a newTabletClient
-          // and we'll delay the RPC.
-        }
-        TabletClient newTabletClient = tablet.getLeaderConnection();
-        assert (tabletClient != newTabletClient);
-
-        if (newTabletClient == null) {
-          // Wait a little bit before hitting the master.
-          return delayedSendRpcToTablet(request, null);
-        }
-
-        if (!newTabletClient.isAlive()) {
-          LOG.debug("Tried reconnecting to tablet server {} but failed, " +
-              "will query the master", tabletClient.getUuid());
-          // Let fall through.
-        } else {
-          request.setTablet(tablet);
-          newTabletClient.sendRpc(request);
+      String uuid = tablet.getLeaderUUID();
+      if (uuid != null) {
+        Deferred<R> d = request.getDeferred();
+        request.setTablet(tablet);
+        TabletClient client = connectionCache.getLiveClient(uuid);
+        if (client != null) {
+          client.sendRpc(request);
           return d;
         }
       }
@@ -924,7 +897,12 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   @VisibleForTesting
   List<TabletClient> getTabletClients() {
-    return connectionCache.getTabletClients();
+    return connectionCache.getImmutableTabletClientsList();
+  }
+
+  @VisibleForTesting
+  TabletClient getTabletClient(String uuid) {
+    return connectionCache.getClient(uuid);
   }
 
   /**
@@ -988,7 +966,7 @@ public class AsyncKuduClient implements AutoCloseable {
       // this will save us a Master lookup.
       TableLocationsCache.Entry entry = getTableLocationEntry(tableId, partitionKey);
       if (entry != null && !entry.isNonCoveredRange()
-          && entry.getTablet().getLeaderConnection() != null) {
+          && entry.getTablet().getLeaderUUID() != null) {
         return Deferred.fromResult(null);  // Looks like no lookup needed.
       }
     }
@@ -1158,7 +1136,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * a RPC, so we need to demote it and retry.
    */
   <R> void handleNotLeader(final KuduRpc<R> rpc, KuduException ex, TabletClient server) {
-    rpc.getTablet().demoteLeader(server);
+    rpc.getTablet().demoteLeader(server.getUuid());
     handleRetryableError(rpc, ex);
   }
 
@@ -1204,8 +1182,8 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   private void invalidateTabletCache(RemoteTablet tablet, TabletClient server) {
     LOG.info("Removing server " + server.getUuid() + " from this tablet's cache " +
-        tablet.getTabletIdAsString());
-    tablet.removeTabletClient(server);
+        tablet.getTabletId());
+    tablet.removeTabletClient(server.getUuid());
   }
 
   /** Callback executed when a master lookup completes.  */
@@ -1295,10 +1273,30 @@ public class AsyncKuduClient implements AutoCloseable {
     // already discovered the tablet, its locations are refreshed.
     List<RemoteTablet> tablets = new ArrayList<>(locations.size());
     for (Master.TabletLocationsPB tabletPb : locations) {
-      RemoteTablet rt = RemoteTablet.createTabletFromPb(tableId, tabletPb, connectionCache);
+
+      String tabletId = tabletPb.getTabletId().toStringUtf8();
+
+      List<UnknownHostException> lookupExceptions = new ArrayList<>(tabletPb.getReplicasCount());
+      for (Master.TabletLocationsPB.ReplicaPB replica : tabletPb.getReplicasList()) {
+        try {
+          connectionCache.connectTS(replica.getTsInfo());
+        } catch (UnknownHostException ex) {
+          lookupExceptions.add(ex);
+        }
+      }
+
+      if (!lookupExceptions.isEmpty() &&
+          lookupExceptions.size() == tabletPb.getReplicasCount()) {
+        Status statusIOE = Status.IOError("Couldn't find any valid locations, exceptions: " +
+            lookupExceptions);
+        throw new NonRecoverableException(statusIOE);
+      }
+
+      Partition partition = ProtobufHelper.pbToPartition(tabletPb.getPartition());
+      RemoteTablet rt = new RemoteTablet(tableId, tabletId, partition, tabletPb);
 
       LOG.info("Learned about tablet {} for table '{}' with partition {}",
-               rt.getTabletIdAsString(), tableName, rt.getPartition());
+               rt.getTabletId(), tableName, rt.getPartition());
       tablets.add(rt);
     }
 
@@ -1310,7 +1308,7 @@ public class AsyncKuduClient implements AutoCloseable {
     // right away. If not, we throw an exception that RetryRpcErrback will understand as needing to
     // sleep before retrying.
     TableLocationsCache.Entry entry = locationsCache.get(requestPartitionKey);
-    if (!entry.isNonCoveredRange() && entry.getTablet().getLeaderConnection() == null) {
+    if (!entry.isNonCoveredRange() && entry.getTablet().getLeaderUUID() == null) {
       throw new NoLeaderFoundException(
           Status.NotFound("Tablet " + entry.toString() + " doesn't have a leader"));
     }

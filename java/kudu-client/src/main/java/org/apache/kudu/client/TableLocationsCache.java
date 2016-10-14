@@ -286,7 +286,7 @@ class TableLocationsCache {
         return MoreObjects.toStringHelper("Tablet")
                           .add("lowerBoundPartitionKey", Bytes.hex(getLowerBoundPartitionKey()))
                           .add("upperBoundPartitionKey", Bytes.hex(getUpperBoundPartitionKey()))
-                          .add("tablet-id", tablet.getTabletIdAsString())
+                          .add("tablet-id", tablet.getTabletId())
                           .add("ttl", ttl())
                           .toString();
       }

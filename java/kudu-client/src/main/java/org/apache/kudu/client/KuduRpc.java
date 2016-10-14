@@ -276,7 +276,7 @@ public abstract class KuduRpc<R> {
     if (tablet == null) {
       buf.append("null");
     } else {
-      buf.append(tablet.getTabletIdAsString());
+      buf.append(tablet.getTabletId());
     }
     buf.append(", attempt=").append(attempt);
     buf.append(", ").append(deadlineTracker);

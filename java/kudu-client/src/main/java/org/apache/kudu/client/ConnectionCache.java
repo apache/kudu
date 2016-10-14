@@ -16,12 +16,13 @@
 // under the License.
 package org.apache.kudu.client;
 
-import com.stumbleupon.async.Callback;
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.Common;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
-import org.jboss.netty.channel.ChannelEvent;
-import org.jboss.netty.channel.ChannelStateEvent;
+import org.apache.kudu.master.Master;
 import org.jboss.netty.channel.DefaultChannelPipeline;
 import org.jboss.netty.channel.socket.SocketChannel;
 import org.jboss.netty.channel.socket.SocketChannelConfig;
@@ -32,19 +33,26 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.concurrent.GuardedBy;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * The ConnectionCache is responsible for managing connections to masters and tablets. There
- * should only be one instance per Kudu client, and can <strong>not</strong> be shared between
+ * The ConnectionCache is responsible for managing connections to masters and tablet servers.
+ * There should only be one instance per Kudu client, and can <strong>not</strong> be shared between
  * clients.
+ * <p>
+ * {@link TabletClient}s are currently never removed from this cache. Since the map is keyed by
+ * UUID, it would require an ever-growing set of unique tablet servers to encounter memory issues.
+ * The reason for keeping disconnected connections in the cache is two-fold: 1) it makes
+ * reconnecting easier since only UUIDs are passed around so we can use the dead TabletClient's
+ * host and port to reconnect (see {@link #getLiveClient(String)}) and 2) having the dead
+ * connection prevents tight looping when hitting "Connection refused"-type of errors.
  * <p>
  * This class is thread-safe.
  */
@@ -55,31 +63,20 @@ class ConnectionCache {
   private static final Logger LOG = LoggerFactory.getLogger(ConnectionCache.class);
 
   /**
-   * Cache that maps a TabletServer address ("ip:port") to the clients
-   * connected to it.
+   * Cache that maps UUIDs to the clients connected to them.
    * <p>
-   * Access to this map must be synchronized by locking its monitor.
-   * Logging the contents of this map (or calling toString) requires copying it first.
-   * <p>
-   * This isn't a {@link ConcurrentHashMap} because we don't use it frequently
-   * (just when connecting to / disconnecting from TabletClients) and when we
-   * add something to it, we want to do an atomic get-and-put, but
-   * {@code putIfAbsent} isn't a good fit for us since it requires to create
+   * This isn't a {@link ConcurrentHashMap} because we want to do an atomic get-and-put,
+   * {@code putIfAbsent} isn't a good fit for us since it requires creating
    * an object that may be "wasted" in case another thread wins the insertion
    * race, and we don't want to create unnecessary connections.
-   * <p>
-   * Upon disconnection, clients are automatically removed from this map.
-   * We don't use a {@code ChannelGroup} because a {@code ChannelGroup} does
-   * the clean-up on the {@code channelClosed} event, which is actually the
-   * 3rd and last event to be fired when a channel gets disconnected. The
-   * first one to get fired is, {@code channelDisconnected}. This matters to
-   * us because we want to purge disconnected clients from the cache as
-   * quickly as possible after the disconnection, to avoid handing out clients
-   * that are going to cause unnecessary errors.
-   * @see TabletClientPipeline#handleDisconnect
    */
-  @GuardedBy("ip2client")
-  private final HashMap<String, TabletClient> ip2client = new HashMap<>();
+  @GuardedBy("lock")
+  private final HashMap<String, TabletClient> uuid2client = new HashMap<>();
+
+  private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+
+  private final Lock readLock = lock.readLock();
+  private final Lock writeLock = lock.readLock();
 
   private final AsyncKuduClient kuduClient;
 
@@ -91,21 +88,48 @@ class ConnectionCache {
     this.kuduClient = client;
   }
 
+  /**
+   * Create a connection to a tablet server based on information provided by the master.
+   * @param tsInfoPB master-provided information for the tablet server
+   * @throws UnknownHostException if we cannot resolve the tablet server's IP address
+   */
+  void connectTS(Master.TSInfoPB tsInfoPB) throws UnknownHostException {
+    List<Common.HostPortPB> addresses = tsInfoPB.getRpcAddressesList();
+    String uuid = tsInfoPB.getPermanentUuid().toStringUtf8();
+    if (addresses.isEmpty()) {
+      LOG.warn("Received a tablet server with no addresses, UUID: {}", uuid);
+      return;
+    }
+
+    // from meta_cache.cc
+    // TODO: if the TS advertises multiple host/ports, pick the right one
+    // based on some kind of policy. For now just use the first always.
+    String ip = getIP(addresses.get(0).getHost());
+    if (ip == null) {
+      throw new UnknownHostException(
+          "Failed to resolve the IP of `" + addresses.get(0).getHost() + "'");
+    }
+    newClient(uuid, ip, addresses.get(0).getPort());
+  }
+
   TabletClient newClient(String uuid, final String host, final int port) {
-    final String hostport = host + ':' + port;
     TabletClient client;
     SocketChannel chan;
-    synchronized (ip2client) {
-      client = ip2client.get(hostport);
+
+    writeLock.lock();
+    try {
+      client = uuid2client.get(uuid);
       if (client != null && client.isAlive()) {
         return client;
       }
       final TabletClientPipeline pipeline = new TabletClientPipeline();
       client = pipeline.init(uuid, host, port);
       chan = this.kuduClient.getChannelFactory().newChannel(pipeline);
-      TabletClient oldClient = ip2client.put(hostport, client);
-      assert oldClient == null;
+      uuid2client.put(uuid, client);
+    } finally {
+      writeLock.unlock();
     }
+
     final SocketChannelConfig config = chan.getConfig();
     config.setConnectTimeoutMillis(5000);
     config.setTcpNoDelay(true);
@@ -118,152 +142,88 @@ class ConnectionCache {
   }
 
   /**
-   * Closes every socket, which will also cancel all the RPCs in flight.
+   * Get a connection to a server for the given UUID. The returned connection can be down and its
+   * state can be queried via {@link TabletClient#isAlive()}. To automatically get a client that's
+   * gonna be re-connected automatically, use {@link #getLiveClient(String)}.
+   * @param uuid server's identifier
+   * @return a connection to a server, or null if the passed UUID isn't known
    */
-  Deferred<ArrayList<Void>> disconnectEverything() {
-    ArrayList<Deferred<Void>> deferreds = new ArrayList<>(2);
-    HashMap<String, TabletClient> ip2client_copy;
-    synchronized (ip2client) {
-      // Make a local copy so we can shutdown every Tablet Server clients
-      // without hold the lock while we iterate over the data structure.
-      ip2client_copy = new HashMap<>(ip2client);
+  TabletClient getClient(String uuid) {
+    readLock.lock();
+    try {
+      return uuid2client.get(uuid);
+    } finally {
+      readLock.unlock();
     }
-
-    for (TabletClient ts : ip2client_copy.values()) {
-      deferreds.add(ts.shutdown());
-    }
-    final int size = deferreds.size();
-    return Deferred.group(deferreds).addCallback(
-        new Callback<ArrayList<Void>, ArrayList<Void>>() {
-          public ArrayList<Void> call(final ArrayList<Void> arg) {
-            // Normally, now that we've shutdown() every client, all our caches should
-            // be empty since each shutdown() generates a DISCONNECTED event, which
-            // causes TabletClientPipeline to call removeClientFromIpCache().
-            HashMap<String, TabletClient> logme = null;
-            synchronized (ip2client) {
-              if (!ip2client.isEmpty()) {
-                logme = new HashMap<>(ip2client);
-              }
-            }
-            if (logme != null) {
-              // Putting this logging statement inside the synchronized block
-              // can lead to a deadlock, since HashMap.toString() is going to
-              // call TabletClient.toString() on each entry, and this locks the
-              // client briefly. Other parts of the code lock clients first and
-              // the ip2client HashMap second, so this can easily deadlock.
-              LOG.error("Some clients are left in the client cache and haven't"
-                  + " been cleaned up: " + logme);
-            }
-            return arg;
-          }
-
-          public String toString() {
-            return "wait " + size + " TabletClient.shutdown()";
-          }
-        });
   }
 
   /**
-   * Modifying the list returned by this method won't affect this cache,
-   * but calling certain methods on the returned TabletClients can. For example,
+   * Get a connection to a server for the given UUID. This method will automatically call
+   * {@link #newClient(String, String, int)} if the cached connection is down.
+   * @param uuid server's identifier
+   * @return a connection to a server, or null if the passed UUID isn't known
+   */
+  TabletClient getLiveClient(String uuid) {
+    TabletClient client = getClient(uuid);
+
+    if (client == null) {
+      return null;
+    } else if (client.isAlive()) {
+      return client;
+    } else {
+      return newClient(uuid, client.getHost(), client.getPort());
+    }
+  }
+
+  /**
+   * Asynchronously closes every socket, which will also cancel all the RPCs in flight.
+   */
+  Deferred<ArrayList<Void>> disconnectEverything() {
+    readLock.lock();
+    try {
+      ArrayList<Deferred<Void>> deferreds = new ArrayList<>(uuid2client.size());
+      for (TabletClient ts : uuid2client.values()) {
+        deferreds.add(ts.shutdown());
+      }
+      return Deferred.group(deferreds);
+    } finally {
+      readLock.unlock();
+    }
+  }
+
+  /**
+   * The list returned by this method can't be modified,
+   * but calling certain methods on the returned TabletClients can have an effect. For example,
    * it's possible to forcefully shutdown a connection to a tablet server by calling {@link
    * TabletClient#shutdown()}.
    * @return copy of the current TabletClients list
    */
-  List<TabletClient> getTabletClients() {
-    synchronized (ip2client) {
-      return new ArrayList<>(ip2client.values());
+  List<TabletClient> getImmutableTabletClientsList() {
+    readLock.lock();
+    try {
+      return ImmutableList.copyOf(uuid2client.values());
+    } finally {
+      readLock.unlock();
     }
   }
 
   /**
-   * Blocking call. Performs a slow search of the IP used by the given client.
-   * <p>
-   * This is needed when we're trying to find the IP of the client before its
-   * channel has successfully connected, because Netty's API offers no way of
-   * retrieving the IP of the remote peer until we're connected to it.
-   * @param client the client we want the IP of
-   * @return the IP of the client, or {@code null} if we couldn't find it
+   * Queries all the cached connections if they are alive.
+   * @return true if all the connections are down, else false
    */
-  private InetSocketAddress slowSearchClientIP(final TabletClient client) {
-    String hostport = null;
-    synchronized (ip2client) {
-      for (final Map.Entry<String, TabletClient> e : ip2client.entrySet()) {
-        if (e.getValue() == client) {
-          hostport = e.getKey();
-          break;
+  @VisibleForTesting
+  boolean allConnectionsAreDead() {
+    readLock.lock();
+    try {
+      for (TabletClient tserver : uuid2client.values()) {
+        if (tserver.isAlive()) {
+          return false;
         }
       }
+    } finally {
+      readLock.unlock();
     }
-
-    if (hostport == null) {
-      HashMap<String, TabletClient> copy;
-      synchronized (ip2client) {
-        copy = new HashMap<>(ip2client);
-      }
-      LOG.error("Couldn't find {} in {}", client, copy);
-      return null;
-    }
-    final int colon = hostport.indexOf(':', 1);
-    if (colon < 1) {
-      LOG.error("No `:' found in {}", hostport);
-      return null;
-    }
-    final String host = getIP(hostport.substring(0, colon));
-    if (host == null) {
-      // getIP will print the reason why, there's nothing else we can do.
-      return null;
-    }
-
-    int port;
-    try {
-      port = parsePortNumber(hostport.substring(colon + 1,
-          hostport.length()));
-    } catch (NumberFormatException e) {
-      LOG.error("Bad port in {}", hostport, e);
-      return null;
-    }
-    return new InetSocketAddress(host, port);
-  }
-
-  /**
-   * Removes the given client from the `ip2client` cache.
-   * @param client the client for which we must clear the ip cache
-   * @param remote the address of the remote peer, if known, or null
-   */
-  private void removeClientFromIpCache(final TabletClient client,
-                                       final SocketAddress remote) {
-
-    if (remote == null) {
-      return;  // Can't continue without knowing the remote address.
-    }
-
-    String hostport;
-    if (remote instanceof InetSocketAddress) {
-      final InetSocketAddress sock = (InetSocketAddress) remote;
-      final InetAddress addr = sock.getAddress();
-      if (addr == null) {
-        LOG.error("Unresolved IP for {}. This shouldn't happen.", remote);
-        return;
-      } else {
-        hostport = addr.getHostAddress() + ':' + sock.getPort();
-      }
-    } else {
-      LOG.error("Found a non-InetSocketAddress remote: {}. This shouldn't happen.", remote);
-      return;
-    }
-
-    TabletClient old;
-    synchronized (ip2client) {
-      old = ip2client.remove(hostport);
-    }
-
-    LOG.debug("Removed from IP cache: {" + hostport + "} -> {" + client + "}");
-    if (old == null) {
-      LOG.trace("When expiring {} from the client cache (host:port={}"
-          + "), it was found that there was no entry"
-          + " corresponding to {}. This shouldn't happen.", client, hostport, remote);
-    }
+    return true;
   }
 
   /**
@@ -293,36 +253,7 @@ class ConnectionCache {
     }
   }
 
-  /**
-   * Parses a TCP port number from a string.
-   * @param portnum the string to parse
-   * @return a strictly positive, validated port number
-   * @throws NumberFormatException if the string couldn't be parsed as an
-   * integer or if the value was outside of the range allowed for TCP ports
-   */
-  private static int parsePortNumber(final String portnum)
-      throws NumberFormatException {
-    final int port = Integer.parseInt(portnum);
-    if (port <= 0 || port > 65535) {
-      throw new NumberFormatException(port == 0 ? "port is zero" :
-          (port < 0 ? "port is negative: "
-              : "port is too large: ") + port);
-    }
-    return port;
-  }
-
   private final class TabletClientPipeline extends DefaultChannelPipeline {
-
-    private final Logger log = LoggerFactory.getLogger(TabletClientPipeline.class);
-    /**
-     * Have we already disconnected?.
-     * We use this to avoid doing the cleanup work for the same client more
-     * than once, even if we get multiple events indicating that the client
-     * is no longer connected to the TabletServer (e.g. DISCONNECTED, CLOSED).
-     * No synchronization needed as this is always accessed from only one
-     * thread at a time (equivalent to a non-shared state in a Netty handler).
-     */
-    private boolean disconnected = false;
 
     TabletClient init(String uuid, String host, int port) {
       AsyncKuduClient kuduClient = ConnectionCache.this.kuduClient;
@@ -336,60 +267,6 @@ class ConnectionCache {
       super.addLast("kudu-handler", client);
 
       return client;
-    }
-
-    @Override
-    public void sendDownstream(final ChannelEvent event) {
-      if (event instanceof ChannelStateEvent) {
-        handleDisconnect((ChannelStateEvent) event);
-      }
-      super.sendDownstream(event);
-    }
-
-    @Override
-    public void sendUpstream(final ChannelEvent event) {
-      if (event instanceof ChannelStateEvent) {
-        handleDisconnect((ChannelStateEvent) event);
-      }
-      super.sendUpstream(event);
-    }
-
-    private void handleDisconnect(final ChannelStateEvent state_event) {
-      if (disconnected) {
-        return;
-      }
-      switch (state_event.getState()) {
-        case OPEN:
-          if (state_event.getValue() == Boolean.FALSE) {
-            break;  // CLOSED
-          }
-          return;
-        case CONNECTED:
-          if (state_event.getValue() == null) {
-            break;  // DISCONNECTED
-          }
-          return;
-        default:
-          return;  // Not an event we're interested in, ignore it.
-      }
-
-      disconnected = true;  // So we don't clean up the same client twice.
-      try {
-        final TabletClient client = super.get(TabletClient.class);
-        SocketAddress remote = super.getChannel().getRemoteAddress();
-        // At this point Netty gives us no easy way to access the
-        // SocketAddress of the peer we tried to connect to. This
-        // kinda sucks but I couldn't find an easier way.
-        if (remote == null) {
-          remote = slowSearchClientIP(client);
-        }
-
-        synchronized (client) {
-          removeClientFromIpCache(client, remote);
-        }
-      } catch (Exception e) {
-        log.error("Uncaught exception when handling a disconnection of " + getChannel(), e);
-      }
     }
   }
 }

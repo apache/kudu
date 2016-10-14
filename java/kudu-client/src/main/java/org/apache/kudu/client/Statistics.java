@@ -46,7 +46,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public class Statistics {
-  private final ConcurrentHashMap<Slice, Statistics.TabletStatistics> stsMap = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Statistics.TabletStatistics> stsMap = new ConcurrentHashMap<>();
 
   /**
    * The statistic enum to pass when querying.
@@ -146,8 +146,8 @@ public class Statistics {
    */
   public Set<String> getTabletSet() {
     Set<String> tablets = Sets.newHashSet();
-    for (Slice tablet : stsMap.keySet()) {
-      tablets.add(tablet.toString(Charset.defaultCharset()));
+    for (String tablet : stsMap.keySet()) {
+      tablets.add(tablet);
     }
     return tablets;
   }
@@ -187,11 +187,11 @@ public class Statistics {
    * @param tabletId the tablet's id
    * @return a TabletStatistics object
    */
-  Statistics.TabletStatistics getTabletStatistics(String tableName, Slice tabletId) {
+  Statistics.TabletStatistics getTabletStatistics(String tableName, String tabletId) {
     Statistics.TabletStatistics tabletStats = stsMap.get(tabletId);
     if (tabletStats == null) {
       Statistics.TabletStatistics newTabletStats = new Statistics.TabletStatistics(tableName,
-          tabletId.toString(Charset.defaultCharset()));
+          tabletId);
       tabletStats = stsMap.putIfAbsent(tabletId, newTabletStats);
       if (tabletStats == null) {
         tabletStats = newTabletStats;

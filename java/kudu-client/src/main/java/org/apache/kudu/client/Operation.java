@@ -176,7 +176,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
 
   @Override
   void updateStatistics(Statistics statistics, OperationResponse response) {
-    Slice tabletId = this.getTablet().getTabletId();
+    String tabletId = this.getTablet().getTabletId();
     String tableName = this.getTable().getName();
     TabletStatistics tabletStatistics = statistics.getTabletStatistics(tableName, tabletId);
     if (response == null) {

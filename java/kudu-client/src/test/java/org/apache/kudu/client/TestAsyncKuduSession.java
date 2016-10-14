@@ -121,8 +121,8 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     session.apply(insert).join(DEFAULT_SLEEP);
     RemoteTablet rt =
         client.getTableLocationEntry(table.getTableId(), insert.partitionKey()).getTablet();
-    String tabletId = rt.getTabletIdAsString();
-    TabletClient tc = rt.getLeaderConnection();
+    String tabletId = rt.getTabletId();
+    TabletClient tc = client.getTabletClient(rt.getLeaderUUID());
     try {
       // Delete table so we get table not found error.
       client.deleteTable(TABLE_NAME).join();

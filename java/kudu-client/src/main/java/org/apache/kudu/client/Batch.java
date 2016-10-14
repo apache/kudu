@@ -154,7 +154,7 @@ class Batch extends KuduRpc<BatchResponse> {
 
   @Override
   void updateStatistics(Statistics statistics, BatchResponse response) {
-    Slice tabletId = this.getTablet().getTabletId();
+    String tabletId = this.getTablet().getTabletId();
     String tableName = this.getTable().getName();
     TabletStatistics tabletStatistics = statistics.getTabletStatistics(tableName, tabletId);
     if (response == null) {

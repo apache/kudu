@@ -620,23 +620,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   /**
    * Tells whether or not this handler should be used.
    * <p>
-   * This method is not synchronized.  You need to synchronize on this
-   * instance if you need a memory visibility guarantee.  You may not need
-   * this guarantee if you're OK with the RPC finding out that the connection
-   * has been reset "the hard way" and you can retry the RPC.  In this case,
-   * you can call this method as a hint.  After getting the initial exception
-   * back, this thread is guaranteed to see this method return {@code false}
-   * without synchronization needed.
-   * @return {@code false} if this handler is known to have been disconnected
-   * from the server and sending an RPC (via {@link #sendRpc} or any other
-   * indirect means such as {@code GetTableLocations()}) will fail immediately
-   * by having the RPC's {@link Deferred} called back immediately with a
-   * {@link RecoverableException}.  This typically means that you got a
-   * stale reference (or that the reference to this instance is just about to
-   * be invalidated) and that you shouldn't use this instance.
+   * @return true if this instance can be used, else false if this handler is known to have been
+   * disconnected from the server and sending an RPC (via {@link #sendRpc(KuduRpc)}) will be
+   * retried in the client right away
    */
   public boolean isAlive() {
-    return !dead;
+    synchronized (this) {
+      return !dead;
+    }
   }
 
   /**

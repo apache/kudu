@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.kudu.util.Pair;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.apache.kudu.Common;
@@ -95,14 +96,26 @@ public class TestAsyncKuduClient extends BaseKuduTest {
       tabletClient.disconnect();
     }
     Stopwatch sw = Stopwatch.createStarted();
+    boolean allDead = false;
     while (sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
+      boolean sleep = false;
       if (!client.getTabletClients().isEmpty()) {
+        for (TabletClient tserver : client.getTabletClients()) {
+          if (tserver.isAlive()) {
+            sleep = true;
+            break;
+          }
+        }
+
+      }
+      if (sleep) {
         Thread.sleep(50);
       } else {
+        allDead = true;
         break;
       }
     }
-    assertTrue(client.getTabletClients().isEmpty());
+    assertTrue(allDead);
   }
 
   @Test
@@ -129,17 +142,8 @@ public class TestAsyncKuduClient extends BaseKuduTest {
       partition.setPartitionKeyEnd(ByteString.copyFrom("b" + i, Charsets.UTF_8.name()));
       tabletPb.setPartition(partition);
       tabletPb.setTabletId(ByteString.copyFromUtf8("some id " + i));
-      Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
-      Common.HostPortPB.Builder hostBuilder = Common.HostPortPB.newBuilder();
-      hostBuilder.setHost(badHostname + i);
-      hostBuilder.setPort(i);
-      tsInfoBuilder.addRpcAddresses(hostBuilder);
-      tsInfoBuilder.setPermanentUuid(ByteString.copyFromUtf8("some uuid"));
-      Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder =
-          Master.TabletLocationsPB.ReplicaPB.newBuilder();
-      replicaBuilder.setTsInfo(tsInfoBuilder);
-      replicaBuilder.setRole(Metadata.RaftPeerPB.Role.FOLLOWER);
-      tabletPb.addReplicas(replicaBuilder);
+      tabletPb.addReplicas(TestUtils.getFakeTabletReplicaPB(
+          "uuid", badHostname + i, i, Metadata.RaftPeerPB.Role.FOLLOWER));
       tabletLocations.add(tabletPb.build());
     }
 
@@ -171,29 +175,54 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     // Fake a master lookup that only returns one follower for the tablet.
     List<Master.TabletLocationsPB> tabletLocations = new ArrayList<>();
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
-    Common.PartitionPB.Builder partition = Common.PartitionPB.newBuilder();
-    partition.setPartitionKeyStart(ByteString.EMPTY);
-    partition.setPartitionKeyEnd(ByteString.EMPTY);
-    tabletPb.setPartition(partition);
+    tabletPb.setPartition(TestUtils.getFakePartitionPB());
     tabletPb.setTabletId(ByteString.copyFrom(tablet.getTabletId()));
-    Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
-    Common.HostPortPB.Builder hostBuilder = Common.HostPortPB.newBuilder();
-    hostBuilder.setHost(leader.getRpcHost());
-    hostBuilder.setPort(leader.getRpcPort());
-    tsInfoBuilder.addRpcAddresses(hostBuilder);
-    tsInfoBuilder.setPermanentUuid(ByteString.copyFromUtf8("some uuid"));
-    Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder =
-        Master.TabletLocationsPB.ReplicaPB.newBuilder();
-    replicaBuilder.setTsInfo(tsInfoBuilder);
-    replicaBuilder.setRole(Metadata.RaftPeerPB.Role.FOLLOWER); // This is a lie
-    tabletPb.addReplicas(replicaBuilder);
+    tabletPb.addReplicas(TestUtils.getFakeTabletReplicaPB(
+        "master", leader.getRpcHost(), leader.getRpcPort(), Metadata.RaftPeerPB.Role.FOLLOWER));
     tabletLocations.add(tabletPb.build());
-
     try {
       client.discoverTablets(table, new byte[0], tabletLocations, 1000);
       fail("discoverTablets should throw an exception if there's no leader");
     } catch (NoLeaderFoundException ex) {
       // Expected.
+    }
+  }
+
+  @Test
+  public void testConnectionRefused() throws Exception {
+    CreateTableOptions options = getBasicCreateTableOptions();
+    KuduTable table = createTable(
+        "testConnectionRefused-" + System.currentTimeMillis(),
+        basicSchema,
+        options);
+
+    // Warm up the caches.
+    assertEquals(0, countRowsInScan(syncClient.newScannerBuilder(table).build()));
+
+    // Make it impossible to use Kudu.
+    killTabletServers();
+
+    // Create a scan with a short timeout.
+    KuduScanner scanner = syncClient.newScannerBuilder(table).scanRequestTimeout(1000).build();
+
+    // Check it fails.
+    try {
+      while (scanner.hasMoreRows()) {
+        scanner.nextRows();
+        fail("The scan should timeout");
+      }
+    } catch (NonRecoverableException ex) {
+      assertTrue(ex.getStatus().isTimedOut());
+    }
+
+    // Try the same thing with an insert.
+    KuduSession session = syncClient.newSession();
+    session.setTimeoutMillis(1000);
+    try {
+      session.apply(createBasicSchemaInsert(table, 1));
+      fail("The insert should timeout");
+    } catch (NonRecoverableException ex) {
+      assertTrue(ex.getStatus().isTimedOut());
     }
   }
 }

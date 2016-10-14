@@ -492,7 +492,7 @@ public final class AsyncKuduScanner {
     }
     if (LOG.isDebugEnabled()) {
       LOG.debug("Done scanning tablet {} for partition {} with scanner id {}",
-                tablet.getTabletIdAsString(), tablet.getPartition(), Bytes.pretty(scannerId));
+                tablet.getTabletId(), tablet.getPartition(), Bytes.pretty(scannerId));
     }
     scannerId = null;
     sequenceId = 0;
@@ -537,7 +537,7 @@ public final class AsyncKuduScanner {
   }
 
   public String toString() {
-    final String tablet = this.tablet == null ? "null" : this.tablet.getTabletIdAsString();
+    final String tablet = this.tablet == null ? "null" : this.tablet.getTabletId();
     final StringBuilder buf = new StringBuilder();
     buf.append("KuduScanner(table=");
     buf.append(table.getName());
@@ -785,7 +785,7 @@ public final class AsyncKuduScanner {
 
     public String toString() {
       return "ScanRequest(scannerId=" + Bytes.pretty(scannerId)
-          + (tablet != null? ", tabletSlice=" + tablet.getTabletIdAsString() : "")
+          + (tablet != null? ", tabletSlice=" + tablet.getTabletId() : "")
           + ", attempt=" + attempt + ')';
     }
 
