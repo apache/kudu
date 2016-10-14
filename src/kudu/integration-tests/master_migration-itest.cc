@@ -130,7 +130,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
           "--fs_data_dirs=" + data_root
       };
       string uuid;
-      ASSERT_OK(Subprocess::Call(args, &uuid));
+      ASSERT_OK(Subprocess::Call(args, "", &uuid));
       StripWhiteSpace(&uuid);
       master_uuids_and_ports.emplace_back(uuid, kMasterRpcPorts[i]);
     }

@@ -128,7 +128,16 @@ TEST_F(SubprocessTest, TestReadFromStdoutAndStderr) {
     "dd if=/dev/urandom of=/dev/stdout bs=512 count=2048 &"
     "dd if=/dev/urandom of=/dev/stderr bs=512 count=2048 &"
     "wait"
-  }, &stdout, &stderr));
+  }, "", &stdout, &stderr));
+}
+
+// Tests writing to the subprocess stdin.
+TEST_F(SubprocessTest, TestCallWithStdin) {
+  string stdout;
+  ASSERT_OK(Subprocess::Call({ "/bin/bash" },
+                             "echo \"quick brown fox\"",
+                             &stdout));
+  EXPECT_EQ("quick brown fox\n", stdout);
 }
 
 // Test KUDU-1674: '/bin/bash -c "echo"' command below is expected to
@@ -139,15 +148,15 @@ TEST_F(SubprocessTest, TestReadSingleFD) {
   string stderr;
   const string str = "ApacheKudu";
   const string cmd_str = Substitute("/bin/echo -n $0 1>&2", str);
-  ASSERT_OK(Subprocess::Call({"/bin/sh", "-c", cmd_str}, nullptr, &stderr));
+  ASSERT_OK(Subprocess::Call({"/bin/sh", "-c", cmd_str}, "", nullptr, &stderr));
   ASSERT_EQ(stderr, str);
 
   // Also sanity check other combinations.
   string stdout;
-  ASSERT_OK(Subprocess::Call({"/bin/ls", "/dev/null"}, &stdout, nullptr));
+  ASSERT_OK(Subprocess::Call({"/bin/ls", "/dev/null"}, "", &stdout, nullptr));
   ASSERT_STR_CONTAINS(stdout, "/dev/null");
 
-  ASSERT_OK(Subprocess::Call({"/bin/ls", "/dev/zero"}, nullptr, nullptr));
+  ASSERT_OK(Subprocess::Call({"/bin/ls", "/dev/zero"}, "", nullptr, nullptr));
 }
 
 TEST_F(SubprocessTest, TestGetExitStatusExitSuccess) {

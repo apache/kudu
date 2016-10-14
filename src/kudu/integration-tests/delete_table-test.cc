@@ -940,7 +940,7 @@ vector<string> ListOpenFiles(pid_t pid) {
   string cmd = strings::Substitute("export PATH=$$PATH:/usr/bin:/usr/sbin; lsof -n -p $0", pid);
   vector<string> argv = { "bash", "-c", cmd };
   string out;
-  CHECK_OK(Subprocess::Call(argv, &out));
+  CHECK_OK(Subprocess::Call(argv, "", &out));
   vector<string> lines = strings::Split(out, "\n");
   return lines;
 }

@@ -107,7 +107,7 @@ class ToolTest : public KuduTest {
 
     string out;
     string err;
-    Status s = Subprocess::Call(args, &out, &err);
+    Status s = Subprocess::Call(args, "", &out, &err);
     if (stdout) {
       *stdout = out;
       StripWhiteSpace(stdout);

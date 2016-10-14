@@ -902,6 +902,12 @@ if (NOT APPLE)
     SHARED_LIB "${DL_LIB_PATH}")
 endif()
 
+## Kerberos
+if (NOT NO_TESTS)
+  ## We rely on the Kerberos KDC binary for testing security.
+  find_package(Kdc)
+endif()
+
 ## Boost
 
 # The boost-cmake project hasn't been maintained for years. Let's make sure we
@@ -1045,22 +1051,23 @@ endif (UNIX)
 # Subdirectories
 ############################################################
 
+add_subdirectory(src/kudu/benchmarks)
+add_subdirectory(src/kudu/cfile)
+add_subdirectory(src/kudu/client)
+add_subdirectory(src/kudu/codegen)
+add_subdirectory(src/kudu/common)
+add_subdirectory(src/kudu/consensus)
+add_subdirectory(src/kudu/experiments)
+add_subdirectory(src/kudu/fs)
 # Google util libraries borrowed from supersonic, tcmalloc, Chromium, etc.
 add_subdirectory(src/kudu/gutil)
-add_subdirectory(src/kudu/util)
-add_subdirectory(src/kudu/common)
-add_subdirectory(src/kudu/cfile)
-add_subdirectory(src/kudu/fs)
+add_subdirectory(src/kudu/integration-tests)
+add_subdirectory(src/kudu/master)
+add_subdirectory(src/kudu/rpc)
+add_subdirectory(src/kudu/security)
 add_subdirectory(src/kudu/server)
 add_subdirectory(src/kudu/tablet)
-add_subdirectory(src/kudu/rpc)
-add_subdirectory(src/kudu/tserver)
-add_subdirectory(src/kudu/consensus)
-add_subdirectory(src/kudu/master)
-add_subdirectory(src/kudu/client)
-add_subdirectory(src/kudu/integration-tests)
-add_subdirectory(src/kudu/experiments)
-add_subdirectory(src/kudu/benchmarks)
-add_subdirectory(src/kudu/twitter-demo)
 add_subdirectory(src/kudu/tools)
-add_subdirectory(src/kudu/codegen)
+add_subdirectory(src/kudu/tserver)
+add_subdirectory(src/kudu/twitter-demo)
+add_subdirectory(src/kudu/util)

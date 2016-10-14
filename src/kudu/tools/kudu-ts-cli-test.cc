@@ -69,7 +69,7 @@ TEST_F(KuduTsCliTest, TestDeleteTablet) {
     cluster_->tablet_server(0)->bound_rpc_addr().ToString(),
     tablet_id,
     "Deleting for kudu-ts-cli-test"
-  }, &out));
+  }, "", &out));
   ASSERT_EQ("", out);
 
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(0, tablet_id, { tablet::TABLET_DATA_TOMBSTONED }));
@@ -107,7 +107,7 @@ TEST_F(KuduTsCliTest, TestDumpTablet) {
     "dump",
     cluster_->tablet_server(0)->bound_rpc_addr().ToString(),
     tablet_id
-  }, &out));
+  }, "", &out));
   ASSERT_EQ("", out);
 
   // Insert very little data and dump_tablet again.
@@ -123,7 +123,7 @@ TEST_F(KuduTsCliTest, TestDumpTablet) {
     "dump",
     cluster_->tablet_server(0)->bound_rpc_addr().ToString(),
     tablet_id
-  }, &out));
+  }, "", &out));
 
   // Split the output into multiple rows and check format of each row,
   // and also check total number of rows are at least kNumRows.

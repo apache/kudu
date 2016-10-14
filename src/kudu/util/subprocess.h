@@ -61,7 +61,7 @@ class Subprocess {
 
   // Start the subprocess. Can only be called once.
   //
-  // Thie returns a bad Status if the fork() fails. However,
+  // This returns a bad Status if the fork() fails. However,
   // note that if the executable path was incorrect such that
   // exec() fails, this will still return Status::OK. You must
   // use Wait() to check for failure.
@@ -103,9 +103,13 @@ class Subprocess {
   // Same as above, but accepts a vector that includes the path to the
   // executable as argv[0] and the arguments to the program in argv[1..n].
   //
+  // Writes the value of 'stdin_in' to the subprocess' stdin. The length of
+  // 'stdin_in' should be limited to 64kib.
+  //
   // Also collects the output from the child process stdout and stderr into
   // 'stdout_out' and 'stderr_out' respectively.
   static Status Call(const std::vector<std::string>& argv,
+                     const std::string& stdin_in = "",
                      std::string* stdout_out = nullptr,
                      std::string* stderr_out = nullptr);
 

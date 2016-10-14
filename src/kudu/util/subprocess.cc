@@ -20,6 +20,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdio.h>
 #if defined(__linux__)
 #include <sys/prctl.h>
 #endif
@@ -308,6 +309,7 @@ static int pipe2(int pipefd[2], int flags) {
 #endif
 
 Status Subprocess::Start() {
+  VLOG(2) << "Invoking command: " << argv_;
   if (state_ != kNotStarted) {
     const string err_str = Substitute("$0: illegal sub-process state", state_);
     LOG(DFATAL) << err_str;
@@ -520,13 +522,13 @@ Status Subprocess::GetExitStatus(int* exit_status, string* info_str) const {
 
 Status Subprocess::Call(const string& arg_str) {
   vector<string> argv = Split(arg_str, " ");
-  return Call(argv, nullptr, nullptr);
+  return Call(argv, "", nullptr, nullptr);
 }
 
 Status Subprocess::Call(const vector<string>& argv,
+                        const string& stdin_in,
                         string* stdout_out,
                         string* stderr_out) {
-  VLOG(2) << "Invoking command: " << argv;
   Subprocess p(argv[0], argv);
 
   if (stdout_out) {
@@ -537,6 +539,12 @@ Status Subprocess::Call(const vector<string>& argv,
   }
   RETURN_NOT_OK_PREPEND(p.Start(),
                         "Unable to fork " + argv[0]);
+
+  if (!stdin_in.empty() &&
+      write(p.to_child_stdin_fd(), stdin_in.data(), stdin_in.size()) < stdin_in.size()) {
+    return Status::IOError("Unable to write to child process stdin", ErrnoToString(errno), errno);
+  }
+
   int err = close(p.ReleaseChildStdinFd());
   if (PREDICT_FALSE(err != 0)) {
     return Status::IOError("Unable to close child process stdin", ErrnoToString(errno), errno);

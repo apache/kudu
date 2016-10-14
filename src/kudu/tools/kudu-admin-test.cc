@@ -199,7 +199,7 @@ TEST_F(AdminCliTest, TestLeaderStepDown) {
   Status s = Subprocess::Call({GetKuduCtlAbsolutePath(),
                                "tablet", "leader_step_down",
                                cluster_->master()->bound_rpc_addr().ToString(),
-                               tablet_id_}, nullptr, &stderr);
+                               tablet_id_}, "", nullptr, &stderr);
   bool not_currently_leader = stderr.find(
       Status::IllegalState("").CodeAsString()) != string::npos;
   ASSERT_TRUE(s.ok() || not_currently_leader);
@@ -238,7 +238,7 @@ TEST_F(AdminCliTest, TestLeaderStepDownWhenNotPresent) {
     "leader_step_down",
     cluster_->master()->bound_rpc_addr().ToString(),
     tablet_id_
-  }, &stdout));
+  }, "", &stdout));
   ASSERT_STR_CONTAINS(stdout,
                       Substitute("No leader replica found for tablet $0",
                                  tablet_id_));
@@ -280,7 +280,7 @@ TEST_F(AdminCliTest, TestListTables) {
     "table",
     "list",
     cluster_->master()->bound_rpc_addr().ToString()
-  }, &stdout, nullptr));
+  }, "", &stdout, nullptr));
 
   vector<string> stdout_lines = strings::Split(stdout, ",",
                                                strings::SkipEmpty());
@@ -318,7 +318,7 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
     "list",
     "--list_tablets",
     cluster_->master()->bound_rpc_addr().ToString()
-  }, &stdout, nullptr));
+  }, "", &stdout, nullptr));
 
   vector<string> stdout_lines = strings::Split(stdout, "\n",
                                                strings::SkipEmpty());

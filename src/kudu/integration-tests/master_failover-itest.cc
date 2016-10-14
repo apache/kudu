@@ -387,7 +387,7 @@ TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
           master::SysCatalogTable::kSysCatalogTabletId
       };
       string output;
-      ASSERT_OK(Subprocess::Call(args, &output));
+      ASSERT_OK(Subprocess::Call(args, "", &output));
       StripWhiteSpace(&output);
       LOG(INFO) << "UUIDS: " << output;
       set<string> uuids = Split(output, " ");
