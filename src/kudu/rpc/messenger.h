@@ -95,7 +95,6 @@ class MessengerBuilder {
   Status Build(std::shared_ptr<Messenger> *msgr);
 
  private:
-  Status Build(Messenger **msgr);
   const std::string name_;
   MonoDelta connection_keepalive_time_;
   int num_reactors_;

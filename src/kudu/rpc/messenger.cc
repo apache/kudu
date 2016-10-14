@@ -100,21 +100,18 @@ MessengerBuilder &MessengerBuilder::set_metric_entity(
   return *this;
 }
 
-Status MessengerBuilder::Build(Messenger **msgr) {
+Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
   RETURN_NOT_OK(SaslInit(kSaslAppName)); // Initialize SASL library before we start making requests
   gscoped_ptr<Messenger> new_msgr(new Messenger(*this));
-  RETURN_NOT_OK(new_msgr.get()->Init());
-  *msgr = new_msgr.release();
-  return Status::OK();
-}
-
-Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
-  Messenger *ptr;
-  RETURN_NOT_OK(Build(&ptr));
+  Status build_status = new_msgr->Init();
+  if (!build_status.ok()) {
+    new_msgr->AllExternalReferencesDropped();
+    return build_status;
+  }
 
   // See docs on Messenger::retain_self_ for info about this odd hack.
   *msgr = shared_ptr<Messenger>(
-    ptr, std::mem_fun(&Messenger::AllExternalReferencesDropped));
+    new_msgr.release(), std::mem_fun(&Messenger::AllExternalReferencesDropped));
   return Status::OK();
 }
 
