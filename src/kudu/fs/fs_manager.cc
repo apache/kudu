@@ -17,36 +17,38 @@
 
 #include "kudu/fs/fs_manager.h"
 
+#include <algorithm>
+#include <cinttypes>
+#include <ctime>
 #include <deque>
 #include <iostream>
 #include <map>
 #include <stack>
 #include <unordered_set>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
-#include <google/protobuf/message.h>
 
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/gutil/strtoint.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env_util.h"
-#include "kudu/util/errno.h"
-#include "kudu/util/flags.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"

@@ -18,53 +18,84 @@
 #include "kudu/tserver/tablet_service.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
-#include "kudu/clock/hybrid_clock.h"
+#include "kudu/clock/clock.h"
+#include "kudu/common/column_predicate.h"
+#include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
 #include "kudu/common/iterator.h"
+#include "kudu/common/iterator_stats.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/gutil/strings/escaping.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
+#include "kudu/server/server_base.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/metadata.pb.h"
-#include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
+#include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/scanners.h"
-#include "kudu/tserver/tablet_copy_service.h"
+#include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/tserver/tserver_service.pb.h"
+#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/mem_tracker.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/process_memory.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
 #include "kudu/util/trace.h"
+#include "kudu/util/trace_metrics.h"
 
 DEFINE_int32(scanner_default_batch_size_bytes, 1024 * 1024,
              "The default size for batches of scan results");
@@ -112,13 +143,13 @@ using kudu::consensus::GetNodeInstanceRequestPB;
 using kudu::consensus::GetNodeInstanceResponsePB;
 using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
-using kudu::consensus::UnsafeChangeConfigRequestPB;
-using kudu::consensus::UnsafeChangeConfigResponsePB;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RunLeaderElectionRequestPB;
 using kudu::consensus::RunLeaderElectionResponsePB;
 using kudu::consensus::StartTabletCopyRequestPB;
 using kudu::consensus::StartTabletCopyResponsePB;
+using kudu::consensus::UnsafeChangeConfigRequestPB;
+using kudu::consensus::UnsafeChangeConfigResponsePB;
 using kudu::consensus::VoteRequestPB;
 using kudu::consensus::VoteResponsePB;
 using kudu::pb_util::SecureDebugString;
@@ -129,7 +160,6 @@ using kudu::server::ServerBase;
 using kudu::tablet::AlterSchemaTransactionState;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
-using kudu::tablet::TabletStatusPB;
 using kudu::tablet::TransactionCompletionCallback;
 using kudu::tablet::WriteTransactionState;
 using std::shared_ptr;
@@ -140,13 +170,12 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
 namespace cfile {
 extern const char* CFILE_CACHE_MISS_BYTES_METRIC_NAME;
 extern const char* CFILE_CACHE_HIT_BYTES_METRIC_NAME;
 }
-}
 
-namespace kudu {
 namespace tserver {
 
 namespace {

@@ -25,7 +25,6 @@
 #define BASE_ONCE_H_
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"

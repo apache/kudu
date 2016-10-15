@@ -15,20 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <memory>
+#include <ostream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
-#include "kudu/common/wire_protocol-test-util.h"
-#include "kudu/fs/fs_manager.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/master/catalog_manager.h"
 #include "kudu/master/master-test-util.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
@@ -38,15 +43,21 @@
 #include "kudu/security/test/test_certs.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/server/webserver_options.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tablet_server_options.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/version_info.h"
 

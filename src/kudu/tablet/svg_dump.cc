@@ -17,18 +17,19 @@
 
 #include "kudu/tablet/svg_dump.h"
 
-#include <glog/logging.h>
-#include <time.h>
-
+#include <ctime>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
-#include "kudu/common/encoded_key.h"
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/tablet/rowset_info.h"

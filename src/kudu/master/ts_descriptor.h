@@ -17,11 +17,16 @@
 #ifndef KUDU_MASTER_TS_DESCRIPTOR_H
 #define KUDU_MASTER_TS_DESCRIPTOR_H
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
 
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"

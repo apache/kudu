@@ -17,20 +17,27 @@
 
 #include "kudu/util/file_cache.h"
 
+#include <unistd.h>
+
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/cache.h"
 #include "kudu/util/env.h"
-#include "kudu/util/metrics.h"
+#include "kudu/util/metrics.h"  // IWYU pragma: keep
 #include "kudu/util/random.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(cache_force_single_shard);

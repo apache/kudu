@@ -18,13 +18,14 @@
 #ifndef KUDU_RPC_SASL_COMMON_H
 #define KUDU_RPC_SASL_COMMON_H
 
-#include <stdint.h> // Required for sasl/sasl.h
-
+#include <cstddef>
+#include <functional>
 #include <string>
 #include <set>
 
 #include <sasl/sasl.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

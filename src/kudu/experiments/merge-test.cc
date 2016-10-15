@@ -15,12 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
-#include <glog/logging.h>
-#include <algorithm>
+#include <cstdlib>
+#include <memory>
+#include <queue>
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
+
+#include "kudu/util/make_shared.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_int32(num_lists, 3, "Number of lists to merge");

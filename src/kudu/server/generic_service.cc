@@ -17,19 +17,26 @@
 
 #include "kudu/server/generic_service.h"
 
-#include <gflags/gflags.h>
 #include <string>
+#include <ostream>
 #include <unordered_set>
+
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/mock_ntp.h"
+#include "kudu/clock/time_service.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/server_base.h"
+#include "kudu/server/server_base.pb.h"
 #include "kudu/util/debug-util.h"
-#include "kudu/util/debug/leak_annotations.h"
+#include "kudu/util/debug/leak_annotations.h" // IWYU pragma: keep
 #include "kudu/util/flag_tags.h"
 
 DECLARE_string(time_source);

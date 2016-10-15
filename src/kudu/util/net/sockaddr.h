@@ -18,7 +18,9 @@
 #define KUDU_UTIL_NET_SOCKADDR_H
 
 #include <netinet/in.h>
-#include <iosfwd>
+
+#include <cstdint>
+#include <functional>
 #include <string>
 
 #include "kudu/util/status.h"

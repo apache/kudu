@@ -17,19 +17,38 @@
 
 #include "kudu/consensus/leader_election.h"
 
+#include <algorithm>
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <type_traits>
+#include <unordered_map>
 #include <vector>
 
-#include "kudu/consensus/consensus_peers.h"
+#include <gtest/gtest.h>
+#include <glog/logging.h>
+
+#include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/countdown_latch.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/threadpool.h"
 
 namespace kudu {
 

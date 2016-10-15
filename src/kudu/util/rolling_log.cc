@@ -18,13 +18,16 @@
 #include "kudu/util/rolling_log.h"
 
 #include <unistd.h>
-#include <sys/types.h>
 
+#include <algorithm>
+#include <ctime>
 #include <iomanip>
 #include <memory>
 #include <ostream>
 #include <string>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <zlib.h>
 
 #include "kudu/gutil/strings/numbers.h"
@@ -33,7 +36,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
-#include "kudu/util/thread_restrictions.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/user.h"
 
 using std::ostringstream;

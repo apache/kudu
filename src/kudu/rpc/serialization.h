@@ -18,8 +18,8 @@
 #ifndef KUDU_RPC_SERIALIZATION_H
 #define KUDU_RPC_SERIALIZATION_H
 
-#include <inttypes.h>
-#include <string.h>
+#include <cstdint>
+#include <cstring>
 
 namespace google {
 namespace protobuf {

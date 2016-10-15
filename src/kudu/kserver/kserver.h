@@ -22,10 +22,10 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/server/server_base.h"
+#include "kudu/util/threadpool.h"
 
 namespace kudu {
 class Status;
-class ThreadPool;
 
 namespace server {
 struct ServerBaseOptions;

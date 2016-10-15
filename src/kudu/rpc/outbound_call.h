@@ -17,11 +17,17 @@
 #ifndef KUDU_RPC_CLIENT_CALL_H
 #define KUDU_RPC_CLIENT_CALL_H
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <ostream>
 #include <set>
 #include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -30,8 +36,8 @@
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_header.pb.h"
-#include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/transfer.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
@@ -51,7 +57,6 @@ namespace rpc {
 class CallResponse;
 class Connection;
 class DumpRunningRpcsRequestPB;
-class InboundTransfer;
 class RpcCallInProgressPB;
 class RpcController;
 class RpcSidecar;

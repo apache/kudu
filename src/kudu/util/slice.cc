@@ -17,6 +17,9 @@
 
 #include "kudu/util/slice.h"
 
+#include <cctype>
+
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/status.h"
 #include "kudu/util/logging.h"

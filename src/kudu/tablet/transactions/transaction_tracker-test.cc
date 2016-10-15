@@ -15,19 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <ostream>
+#include <string>
 #include <memory>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
-#include "kudu/tablet/transactions/transaction.h"
-#include "kudu/tablet/transactions/write_transaction.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
+
+namespace google {
+namespace protobuf {
+class Message;
+}
+}
 
 DECLARE_int64(tablet_transaction_memory_limit_mb);
 

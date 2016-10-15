@@ -15,13 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
+#include <memory>
+#include <ostream>
+#include <string>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 using std::string;
 using std::vector;

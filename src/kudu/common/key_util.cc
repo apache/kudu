@@ -17,19 +17,29 @@
 
 #include "kudu/common/key_util.h"
 
-#include <boost/iterator/counting_iterator.hpp>
 #include <cmath>
+#include <cstring>
 #include <iterator>
 #include <limits>
+#include <ostream>
 #include <string>
 #include <tuple>
 #include <type_traits>
 
+#include <boost/iterator/counting_iterator.hpp>
+#include <boost/iterator/iterator_facade.hpp>
+#include <glog/logging.h>
+
 #include "kudu/common/column_predicate.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/mathlimits.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
 
 using std::nextafter;
 using std::numeric_limits;

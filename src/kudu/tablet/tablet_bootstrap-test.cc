@@ -17,23 +17,65 @@
 
 #include "kudu/consensus/log-test-base.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
+#include <ostream>
+#include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/clock/clock.h"
 #include "kudu/clock/logical_clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
+#include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/result_tracker.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_replica.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/env.h"
 #include "kudu/util/logging_test_util.h"
+#include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 using std::shared_ptr;
 using std::string;
@@ -41,6 +83,9 @@ using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
+
+class MemTracker;
+
 namespace tablet {
 
 using clock::Clock;

@@ -21,9 +21,9 @@
 #include <string>
 
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
-class Status;
 
 namespace consensus {
 

@@ -17,27 +17,27 @@
 
 #include "kudu/security/openssl_util.h"
 
+#include <cerrno>
+#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <mutex>
-#include <sstream>
 #include <string>
 #include <vector>
 
 #include <glog/logging.h>
+#include <openssl/crypto.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
-#include <openssl/ssl.h>
 
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
-#include "kudu/util/thread.h"
 
 using std::ostringstream;
 using std::string;

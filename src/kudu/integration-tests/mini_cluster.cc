@@ -17,8 +17,11 @@
 
 #include "kudu/integration-tests/mini_cluster.h"
 
-#include <stdint.h>
 #include <unistd.h>
+
+#include <cstdint>
+#include <ostream>
+#include <string>
 
 #include <glog/logging.h>
 

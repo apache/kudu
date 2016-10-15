@@ -18,15 +18,16 @@
 #ifndef KUDU_CFILE_INDEX_BLOCK_H
 #define KUDU_CFILE_INDEX_BLOCK_H
 
-#include <glog/logging.h>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
-#include "kudu/common/types.h"
 #include "kudu/cfile/block_pointer.h"
-#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/cfile/cfile.pb.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
-#include "kudu/util/coding-inl.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace cfile {

@@ -15,8 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <cstdint>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "kudu/common/id_mapping.h"
 #include "kudu/util/random.h"

@@ -17,23 +17,33 @@
 #ifndef KUDU_COMMON_MERGE_ITERATOR_H
 #define KUDU_COMMON_MERGE_ITERATOR_H
 
+#include <cstddef>
+#include <cstdint>
 #include <deque>
-#include <gtest/gtest_prod.h>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <tuple>
-#include <unordered_map>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
+#include "kudu/common/column_predicate.h"
 #include "kudu/common/iterator.h"
+#include "kudu/common/iterator_stats.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/object_pool.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
-class Arena;
 class MergeIterState;
+class RowBlock;
 
 // An iterator which merges the results of other iterators, comparing
 // based on keys.

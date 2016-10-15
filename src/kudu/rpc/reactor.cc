@@ -17,22 +17,21 @@
 
 #include "kudu/rpc/reactor.h"
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <stdlib.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
-
+#include <cerrno>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
+#include <utility>
 
+#include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/intrusive/list.hpp>
 #include <boost/optional.hpp>
 #include <ev++.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/bind.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -40,15 +39,13 @@
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/negotiation.h"
-#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/server_negotiation.h"
-#include "kudu/rpc/transfer.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
-#include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"

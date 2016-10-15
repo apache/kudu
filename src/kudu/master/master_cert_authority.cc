@@ -21,15 +21,17 @@
 #include <string>
 #include <utility>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 using boost::optional;

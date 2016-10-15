@@ -17,22 +17,23 @@
 
 #include "kudu/tablet/compaction_policy.h"
 
-#include <glog/logging.h>
-
 #include <algorithm>
-#include <utility>
+#include <ostream>
+#include <queue>
 #include <string>
+#include <unordered_set>
+#include <utility>
 #include <vector>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/mathlimits.h"
-#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_info.h"
-#include "kudu/tablet/rowset_tree.h"
 #include "kudu/tablet/svg_dump.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/knapsack_solver.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 using std::vector;

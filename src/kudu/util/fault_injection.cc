@@ -17,13 +17,16 @@
 
 #include "kudu/util/fault_injection.h"
 
-#include <stdlib.h>
-#include <sys/time.h>
+#include <unistd.h>
 
+#include <ostream>
+
+#include <glog/logging.h>
+
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/once.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/os-util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 

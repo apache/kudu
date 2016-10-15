@@ -27,6 +27,8 @@
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_signing_key.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(tsk_num_rsa_bits);

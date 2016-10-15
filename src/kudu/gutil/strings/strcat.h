@@ -7,6 +7,9 @@
 #ifndef STRINGS_STRCAT_H_
 #define STRINGS_STRCAT_H_
 
+#include <cstring>
+
+#include <algorithm>
 #include <string>
 
 #include "kudu/gutil/integral_types.h"

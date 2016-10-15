@@ -17,21 +17,22 @@
 #ifndef KUDU_TABLET_COMPACTION_POLICY_H
 #define KUDU_TABLET_COMPACTION_POLICY_H
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/util/slice.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 namespace tablet {
 
 class RowSet;
-class RowSetTree;
-
 class RowSetInfo;
+class RowSetTree;
 
 // A Compaction Policy is responsible for picking which files in a tablet
 // should be compacted together.

@@ -18,19 +18,24 @@
 #ifndef KUDU_CFILE_INDEX_BTREE_H
 #define KUDU_CFILE_INDEX_BTREE_H
 
+#include <cstddef>
 #include <memory>
 #include <vector>
 
 #include "kudu/cfile/block_handle.h"
-#include "kudu/cfile/cfile.pb.h"
+#include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace cfile {
 
+class BTreeInfoPB;
 class CFileReader;
 class CFileWriter;
+struct WriterOptions;
 
 class IndexTreeBuilder {
  public:

@@ -17,37 +17,50 @@
 
 #include "kudu/master/master-path-handlers.h"
 
-#include <array>
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <map>
 #include <memory>
-#include <set>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
-#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/webui_util.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/master/master_options.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
+#include "kudu/server/monitored_task.h"
+#include "kudu/server/webui_util.h"
 #include "kudu/util/easy_json.h"
+#include "kudu/util/jsonwriter.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/string_case.h"
 #include "kudu/util/url-coding.h"
+#include "kudu/util/web_callback_registry.h"
 
 namespace kudu {
 

@@ -19,8 +19,11 @@
 #include <functional>
 #include <map>
 #include <utility>
+#include <cstdint>
+#include <unordered_map>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/trace.h"

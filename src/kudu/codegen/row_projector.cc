@@ -23,22 +23,27 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
+#include <llvm/ADT/Twine.h>
+#include <llvm/ADT/ilist_iterator.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Module.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/IR/Type.h>
+#include <llvm/IR/Value.h>
 
 #include "kudu/codegen/jit_wrapper.h"
 #include "kudu/codegen/module_builder.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/strcat.h"
-#include "kudu/util/faststring.h"
 #include "kudu/util/status.h"
 
 namespace llvm {
@@ -51,9 +56,7 @@ using llvm::ConstantInt;
 using llvm::ExecutionEngine;
 using llvm::Function;
 using llvm::FunctionType;
-using llvm::GenericValue;
 using llvm::LLVMContext;
-using llvm::Module;
 using llvm::PointerType;
 using llvm::Type;
 using llvm::Value;
@@ -65,6 +68,9 @@ using std::vector;
 DECLARE_bool(codegen_dump_functions);
 
 namespace kudu {
+
+class faststring;
+
 namespace codegen {
 
 namespace {

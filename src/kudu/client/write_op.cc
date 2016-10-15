@@ -17,10 +17,21 @@
 
 #include "kudu/client/write_op.h"
 
+#include <ostream>
+
+#include <glog/logging.h>
+
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/row.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/util/bitmap.h"
+#include "kudu/util/slice.h"
 
 namespace kudu {
 namespace client {

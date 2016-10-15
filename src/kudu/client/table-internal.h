@@ -19,9 +19,17 @@
 
 #include <string>
 
-#include "kudu/common/partition.h"
 #include "kudu/client/client.h"
+#include "kudu/client/scan_predicate.h"
 #include "kudu/client/scan_predicate-internal.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/schema.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -65,6 +73,7 @@ class KuduTable::Data {
   const KuduSchema schema_;
   const PartitionSchema partition_schema_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
 

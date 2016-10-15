@@ -17,27 +17,28 @@
 #ifndef KUDU_CLIENT_BATCHER_H
 #define KUDU_CLIENT_BATCHER_H
 
+#include <cstdint>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include "kudu/client/client.h"
-#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/async_util.h"
 #include "kudu/util/atomic.h"
-#include "kudu/util/debug-util.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 namespace client {
 
-class KuduClient;
-class KuduSession;
 class KuduStatusCallback;
-class KuduWriteOperation;
 
 namespace internal {
 

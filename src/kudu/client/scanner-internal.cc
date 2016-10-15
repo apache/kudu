@@ -18,20 +18,35 @@
 #include "kudu/client/scanner-internal.h"
 
 #include <algorithm>
-#include <cmath>
+#include <cstdint>
+#include <ostream>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
+
+#include <google/protobuf/descriptor.h>
+#include <google/protobuf/message.h>
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/meta_cache.h"
-#include "kudu/client/row_result.h"
-#include "kudu/client/table-internal.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/connection.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/async_util.h"
+#include "kudu/util/bitmap.h"
 #include "kudu/util/hexdump.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
 
 using google::protobuf::FieldDescriptor;
 using google::protobuf::Reflection;

@@ -19,15 +19,18 @@
 #ifndef KUDU_UTIL_TEST_UTIL_H
 #define KUDU_UTIL_TEST_UTIL_H
 
+#include <sys/types.h>
+
+#include <cstdint>
 #include <functional>
-#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/util/env.h"
+#include <gflags/gflags.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/port.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/test_macros.h"
 
 #define ASSERT_EVENTUALLY(expr) do { \
   AssertEventually(expr); \
@@ -35,6 +38,9 @@
 } while (0)
 
 namespace kudu {
+
+class Env;
+class Status;
 
 extern const char* kInvalidPath;
 

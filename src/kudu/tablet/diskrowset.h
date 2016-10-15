@@ -22,35 +22,52 @@
 #ifndef KUDU_TABLET_DISKROWSET_H_
 #define KUDU_TABLET_DISKROWSET_H_
 
-#include <gtest/gtest_prod.h>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 
-#include "kudu/common/row.h"
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
+#include "kudu/common/common.pb.h"
+#include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
-#include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/delta_tracker.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet_mem_trackers.h"
-#include "kudu/util/atomic.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/bloom_filter.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/mem_tracker.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
-class FsManager;
-class MemTracker;
+class MonoTime;
 class RowBlock;
 class RowChangeList;
+class RowwiseIterator;
+class Timestamp;
 
 namespace cfile {
 class BloomFileWriter;
 class CFileWriter;
+}
+
+namespace consensus {
+class OpId;
 }
 
 namespace log {
@@ -60,12 +77,13 @@ class LogAnchorRegistry;
 namespace tablet {
 
 class CFileSet;
+class CompactionInput;
 class DeltaFileWriter;
 class DeltaStats;
-class DeltaTracker;
 class HistoryGcOpts;
 class MultiColumnWriter;
 class Mutation;
+class MvccSnapshot;
 class OperationResultPB;
 
 class DiskRowSetWriter {
@@ -261,7 +279,6 @@ class RollingDiskRowSetWriter {
 ////////////////////////////////////////////////////////////
 
 class MajorDeltaCompaction;
-class RowSetColumnUpdater;
 
 class DiskRowSet : public RowSet {
  public:

@@ -17,9 +17,9 @@
 #ifndef KUDU_UTIL_SPINLOCK_PROFILING_H
 #define KUDU_UTIL_SPINLOCK_PROFILING_H
 
+#include <cstdint>
 #include <iosfwd>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 
 namespace kudu {

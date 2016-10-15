@@ -18,23 +18,27 @@
 #include "kudu/consensus/leader_election.h"
 
 #include <algorithm>
-#include <boost/bind.hpp>
 #include <mutex>
-#include <utility>
+#include <ostream>
+#include <type_traits>
 
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <glog/logging.h>
+
+#include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/common/wire_protocol.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 

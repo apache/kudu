@@ -18,7 +18,6 @@
 #include "kudu/tserver/tablet_server_test_util.h"
 
 #include "kudu/consensus/consensus.proxy.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"

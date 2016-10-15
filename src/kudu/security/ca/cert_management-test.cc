@@ -24,6 +24,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/security/cert.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/security-test-util.h"
 #include "kudu/security/test/test_certs.h"

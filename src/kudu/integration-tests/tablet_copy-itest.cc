@@ -16,31 +16,61 @@
 // under the License.
 
 #include <atomic>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <ostream>
 #include <set>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus_meta_manager.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
-#include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tablet_copy_client.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/barrier.h"
+#include "kudu/util/env.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DEFINE_int32(test_num_threads, 16,
              "Number of test threads to launch");

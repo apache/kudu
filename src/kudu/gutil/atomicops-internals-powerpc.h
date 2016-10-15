@@ -23,6 +23,7 @@
 // Implementation of atomic operations for PowerPC.  This file should not
 // be included directly.  Clients should instead include
 // "base/atomicops.h".
+// IWYU pragma: private, include "kudu/gutil/atomicops.h"
 
 // *** WARNING EXPERIMENTAL CODE ***
 // This is not tested and may contain bugs.  Until we have bootstrapped

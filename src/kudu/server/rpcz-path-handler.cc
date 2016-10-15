@@ -17,11 +17,12 @@
 
 #include "kudu/server/rpcz-path-handler.h"
 
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
 
-#include <boost/bind.hpp>
+#include <boost/bind.hpp> // IWYU pragma: keep
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -29,6 +30,8 @@
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/rpcz_store.h"
 #include "kudu/server/webserver.h"
+#include "kudu/util/jsonwriter.h"
+#include "kudu/util/web_callback_registry.h"
 
 using kudu::rpc::DumpRunningRpcsRequestPB;
 using kudu::rpc::DumpRunningRpcsResponsePB;

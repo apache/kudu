@@ -15,11 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+
+#include <cstdint>
+#include <ostream>
+#include <vector>
+
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <memory>
 
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/striped64.h"
 #include "kudu/util/test_util.h"

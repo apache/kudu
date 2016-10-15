@@ -18,37 +18,47 @@
 #ifndef KUDU_CFILE_CFILE_WRITER_H
 #define KUDU_CFILE_CFILE_WRITER_H
 
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "kudu/cfile/block_encodings.h"
-#include "kudu/cfile/block_compression.h"
-#include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_util.h"
-#include "kudu/cfile/type_encodings.h"
-#include "kudu/common/key_encoder.h"
-#include "kudu/common/types.h"
+#include "kudu/common/rowid.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/strings/stringpiece.h"
-#include "kudu/util/env.h"
+#include "kudu/util/bitmap.h"
+#include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/rle-encoding.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+namespace google {
+namespace protobuf {
+template <typename Element>
+class RepeatedPtrField; // IWYU pragma: keep
+}
+}
+
 namespace kudu {
-class Arena;
+
+class TypeInfo;
+template <typename Buffer>
+class KeyEncoder;
 
 namespace cfile {
 
+class BlockBuilder;
 class BlockPointer;
-class BTreeInfoPB;
+class CompressedBlockBuilder;
+class FileMetadataPairPB;
 class IndexTreeBuilder;
+class TypeEncodingInfo;
 
 // Magic used in header/footer
 extern const char kMagicStringV1[];

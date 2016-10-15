@@ -18,25 +18,34 @@
 #include "kudu/client/meta_cache.h"
 
 #include <algorithm>
-#include <map>
+#include <cstddef>
 #include <mutex>
+#include <ostream>
 #include <set>
 #include <string>
 #include <vector>
+#include <utility>
 
-#include <boost/bind.hpp>
+#include <boost/bind.hpp> // IWYU pragma: keep
 #include <glog/logging.h>
+#include <google/protobuf/repeated_field.h> // IWYU pragma: keep
 
-#include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
-#include "kudu/common/schema.h"
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/callback.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -44,6 +53,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 
 using std::map;
@@ -54,6 +64,10 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+namespace rpc {
+class Messenger;
+}
 
 using consensus::RaftPeerPB;
 using master::GetTableLocationsRequestPB;

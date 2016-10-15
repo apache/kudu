@@ -17,16 +17,24 @@
 #ifndef KUDU_TSERVER_TABLET_SERVICE_H
 #define KUDU_TSERVER_TABLET_SERVICE_H
 
-#include <memory>
+#include <cstdint>
 #include <string>
-#include <vector>
 
 #include "kudu/consensus/consensus.service.h"
-#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.service.h"
 #include "kudu/tserver/tserver_service.service.h"
 
+namespace google {
+namespace protobuf {
+class Message;
+}
+}
+
 namespace kudu {
+
 class RowwiseIterator;
 class Schema;
 class Status;
@@ -36,14 +44,47 @@ namespace server {
 class ServerBase;
 } // namespace server
 
+namespace consensus {
+class ChangeConfigRequestPB;
+class ChangeConfigResponsePB;
+class ConsensusRequestPB;
+class ConsensusResponsePB;
+class GetConsensusStateRequestPB;
+class GetConsensusStateResponsePB;
+class GetLastOpIdRequestPB;
+class GetLastOpIdResponsePB;
+class GetNodeInstanceRequestPB;
+class GetNodeInstanceResponsePB;
+class LeaderStepDownRequestPB;
+class LeaderStepDownResponsePB;
+class RunLeaderElectionRequestPB;
+class RunLeaderElectionResponsePB;
+class StartTabletCopyRequestPB;
+class StartTabletCopyResponsePB;
+class UnsafeChangeConfigRequestPB;
+class UnsafeChangeConfigResponsePB;
+class VoteRequestPB;
+class VoteResponsePB;
+} // namespace consensus
+
+namespace rpc {
+class RpcContext;
+} // namespace rpc
+
 namespace tablet {
-class Tablet;
 class TabletReplica;
-class TransactionState;
 } // namespace tablet
 
 namespace tserver {
 
+class AlterSchemaRequestPB;
+class AlterSchemaResponsePB;
+class ChecksumRequestPB;
+class ChecksumResponsePB;
+class CreateTabletRequestPB;
+class CreateTabletResponsePB;
+class DeleteTabletRequestPB;
+class DeleteTabletResponsePB;
 class ScanResultCollector;
 class TabletReplicaLookupIf;
 class TabletServer;

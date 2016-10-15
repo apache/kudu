@@ -18,13 +18,20 @@
 #include "kudu/util/mem_tracker.h"
 
 #include <atomic>
+#include <functional>
+#include <memory>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

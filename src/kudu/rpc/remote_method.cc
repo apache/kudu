@@ -15,6 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <ostream>
+
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"

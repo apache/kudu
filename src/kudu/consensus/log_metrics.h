@@ -17,16 +17,10 @@
 #ifndef KUDU_CONSENSUS_LOG_METRICS_H
 #define KUDU_CONSENSUS_LOG_METRICS_H
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/monotime.h"
+#include "kudu/util/metrics.h"
 
 namespace kudu {
-
-class Counter;
-class Histogram;
-class MetricEntity;
-
 namespace log {
 
 struct LogMetrics {

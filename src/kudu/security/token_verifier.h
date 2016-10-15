@@ -16,13 +16,19 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <map>
+#include <memory>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/rw_mutex.h"
 
 namespace kudu {
+
+class Status;
+
 namespace security {
 
 class SignedTokenPB;

@@ -17,11 +17,37 @@
 #ifndef KUDU_UTIL_GROUP_VARINT_INL_H
 #define KUDU_UTIL_GROUP_VARINT_INL_H
 
-#include <boost/utility/binary.hpp>
-#include <glog/logging.h>
-#include <stdint.h>
+#include <emmintrin.h>
+#ifdef __linux__
+#include <endian.h>
+#endif
 #include <smmintrin.h>
+#include <tmmintrin.h>
+#include <xmmintrin.h>
 
+#include <cstdint>
+#include <cstring>
+
+#include <boost/utility/binary.hpp>
+#include <boost/parameter/name.hpp>
+#include <boost/preprocessor/arithmetic/dec.hpp>
+#include <boost/preprocessor/arithmetic/inc.hpp>
+#include <boost/preprocessor/control/iif.hpp>
+#include <boost/preprocessor/control/while.hpp>
+#include <boost/preprocessor/list/fold_left.hpp>
+#include <boost/preprocessor/logical/bitand.hpp>
+#include <boost/preprocessor/logical/bool.hpp>
+#include <boost/preprocessor/logical/compl.hpp>
+#include <boost/preprocessor/seq/elem.hpp>
+#include <boost/preprocessor/seq/fold_left.hpp>
+#include <boost/preprocessor/seq/size.hpp>
+#include <boost/preprocessor/tuple/elem.hpp>
+#include <boost/preprocessor/variadic/elem.hpp>
+#include <glog/logging.h>
+
+#ifndef __linux__
+#include "kudu/gutil/port.h"
+#endif
 #include "kudu/util/faststring.h"
 
 namespace kudu {

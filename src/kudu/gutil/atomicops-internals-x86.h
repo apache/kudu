@@ -19,15 +19,16 @@
 //
 // All Rights Reserved.
 //
-//
 // Implementation of atomic operations for x86.  This file should not
 // be included directly.  Clients should instead include
 // "base/atomicops.h".
+// IWYU pragma: private, include "kudu/gutil/atomicops.h"
 
 #ifndef GUTIL_ATOMICOPS_INTERNALS_X86_H_
 #define GUTIL_ATOMICOPS_INTERNALS_X86_H_
 
-#include <stdint.h>
+#include <cstdint>
+#include <ostream>
 
 #include <glog/logging.h>
 

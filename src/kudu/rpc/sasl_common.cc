@@ -17,15 +17,16 @@
 
 #include "kudu/rpc/sasl_common.h"
 
-#include <string.h>
-
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <limits>
 #include <mutex>
+#include <ostream>
 #include <string>
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <regex.h>
 #include <sasl/sasl.h>
@@ -33,13 +34,11 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/rpc/constants.h"
-#include "kudu/util/flag_tags.h"
+#include "kudu/security/init.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/rw_mutex.h"
-#include "kudu/security/init.h"
 
 using std::set;
 using std::string;

@@ -2,8 +2,11 @@
 
 #include "kudu/gutil/strings/join.h"
 
+#include <cstring>  // IWYU pragma: keep
+#include <ostream>
+
 #include <glog/logging.h>
-#include "kudu/gutil/logging-inl.h"
+
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/escaping.h"

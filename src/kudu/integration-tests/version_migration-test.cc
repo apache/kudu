@@ -15,17 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
+#include <ostream>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/linked_list-test-util.h"
 #include "kudu/integration-tests/log_verifier.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DEFINE_string(test_version_a_bin, "", "Directory to find the binaries for \"Version A\"");
@@ -47,6 +53,11 @@ const char* kTableName = "test_table";
 const int kNumTabletServers = 3;
 
 namespace kudu {
+
+namespace client {
+class KuduClient;
+}
+
 namespace itest {
 
 // A test suite designed to test the ability to migrate between two (or more)

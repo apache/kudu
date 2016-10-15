@@ -17,11 +17,14 @@
 #ifndef KUDU_UTIL_LOCKS_H
 #define KUDU_UTIL_LOCKS_H
 
-#include <algorithm>
-#include <glog/logging.h>
+#include <sched.h>
+
+#include <algorithm>  // IWYU pragma: keep
+#include <cstddef>
 #include <mutex>
 
-#include "kudu/gutil/atomicops.h"
+#include <glog/logging.h>
+
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"

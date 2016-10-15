@@ -7,7 +7,8 @@
 #ifndef STRINGS_STRIP_H_
 #define STRINGS_STRIP_H_
 
-#include <stddef.h>
+#include <cstddef>
+
 #include <string>
 
 #include "kudu/gutil/strings/ascii_ctype.h"

@@ -17,16 +17,22 @@
 //
 // Tests for the client which are true unit tests and don't require a cluster, etc.
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
 #include <boost/bind.hpp>
+#include <boost/function.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/error_collector.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/value.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
 using std::string;
@@ -217,4 +223,3 @@ TEST(ClientUnitTest, TestErrorCollector) {
 
 } // namespace client
 } // namespace kudu
-

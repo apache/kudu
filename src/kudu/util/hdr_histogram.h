@@ -52,12 +52,12 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 
 namespace kudu {
 
-class AbstractHistogramIterator;
 class Status;
-class RecordedValuesIterator;
 
 // This implementation allows you to specify a range and accuracy (significant
 // digits) to support in an instance of a histogram. The class takes care of

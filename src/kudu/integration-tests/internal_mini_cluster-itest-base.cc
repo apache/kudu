@@ -21,6 +21,8 @@
 
 #include "kudu/gutil/stl_util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 namespace kudu {
 

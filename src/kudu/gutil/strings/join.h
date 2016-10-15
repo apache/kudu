@@ -7,23 +7,15 @@
 #ifndef STRINGS_JOIN_H_
 #define STRINGS_JOIN_H_
 
-#include <stdio.h>
-#include <string.h>
-
 #include <iterator>
 #include <map>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/macros.h"
-#include "kudu/gutil/template_util.h"
-#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/strcat.h"    // For backward compatibility.
 #include "kudu/gutil/strings/stringpiece.h"
-#include "kudu/gutil/hash/hash.h"
-
+//
 // ----------------------------------------------------------------------
 // JoinUsing()
 //    This concatenates a vector of strings "components" into a new char[]

@@ -15,7 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
+#include <cstring>
+#include <ostream>
+#include <string>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/stopwatch.h"

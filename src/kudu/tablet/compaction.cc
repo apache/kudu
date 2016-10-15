@@ -17,27 +17,46 @@
 
 #include "kudu/tablet/compaction.h"
 
+#include <cstdint>
 #include <deque>
-#include <glog/logging.h>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/clock/hybrid_clock.h"
-#include "kudu/common/wire_protocol.h"
+#include "kudu/common/generic_iterators.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/row.h"
+#include "kudu/common/row_changelist.h"
+#include "kudu/common/rowid.h"
+#include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/delta_tracker.h"
 #include "kudu/tablet/diskrowset.h"
+#include "kudu/tablet/memrowset.h"
+#include "kudu/tablet/mutation.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.pb.h"
-#include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/memory/arena.h"
 
 using kudu::clock::HybridClock;
 using std::deque;

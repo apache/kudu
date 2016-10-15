@@ -16,15 +16,23 @@
 // under the License.
 
 #include <algorithm>
-#include <gflags/gflags.h>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
+#include <boost/function.hpp>
+#include <gflags/gflags.h>
+#include <google/protobuf/message.h>
+
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/constants.h"
@@ -36,6 +44,7 @@
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
+#include "kudu/util/net/sockaddr.h"
 
 // 100M cycles should be about 50ms on a 2Ghz box. This should be high
 // enough that involuntary context switches don't trigger it, but low enough

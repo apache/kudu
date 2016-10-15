@@ -17,16 +17,24 @@
 
 #include "kudu/util/kernel_stack_watchdog.h"
 
+#include <cstdint>
+#include <cstring>
+#include <mutex>
+#include <ostream>
+#include <string>
+#include <utility>
+
 #include <boost/bind.hpp>
 #include <glog/logging.h>
 #include <gflags/gflags.h>
-#include <string>
 
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/status.h"
 #include "kudu/gutil/map-util.h"

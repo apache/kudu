@@ -18,55 +18,79 @@
 #include "kudu/tablet/tablet.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <iterator>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include "kudu/cfile/cfile_writer.h"
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
+#include "kudu/common/generic_iterators.h"
 #include "kudu/common/iterator.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/rowid.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/consensus/consensus.pb.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/common/types.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/log_anchor_registry.h"
-#include "kudu/consensus/opid_util.h"
-#include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/map-util.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/human_readable.h"
-#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/compaction_policy.h"
-#include "kudu/tablet/delta_compaction.h"
+#include "kudu/tablet/delta_tracker.h"
 #include "kudu/tablet/diskrowset.h"
+#include "kudu/tablet/memrowset.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/rowset_info.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/rowset_tree.h"
 #include "kudu/tablet/svg_dump.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_mm_ops.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/bitmap.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/debug/trace_event.h"
-#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
-#include "kudu/util/mem_tracker.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/scoped_cleanup.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status_callback.h"
+#include "kudu/util/stopwatch.h"  // IWYU pragma: keep
+#include "kudu/util/throttler.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
 
@@ -160,6 +184,10 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+class RowBlock;
+struct IteratorStats;
+
 namespace tablet {
 
 static CompactionPolicy *CreateCompactionPolicy() {

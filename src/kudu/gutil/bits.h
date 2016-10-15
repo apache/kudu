@@ -2,11 +2,7 @@
 //
 // A collection of useful (static) bit-twiddling functions.
 
-#include <glog/logging.h>
-
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/macros.h"
 
 #ifndef _BITS_H_

@@ -15,21 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <sys/resource.h>
+#include <cstddef>
+#include <memory>
+#include <ostream>
+#include <string>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <gperftools/malloc_extension.h>
 
+#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/walltime.h"
-#include "kudu/util/debug/trace_event.h"
+#include "kudu/gutil/walltime.h"          // IWYU pragma: keep
+#include "kudu/util/debug/trace_event.h"  // IWYU pragma: keep
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/mem_tracker.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/mem_tracker.h"        // IWYU pragma: keep
 #include "kudu/util/process_memory.h"
 #include "kudu/util/random.h"
-#include "kudu/util/striped64.h"
+#include "kudu/util/status.h"
 
 DEFINE_int64(memory_limit_hard_bytes, 0,
              "Maximum amount of memory this daemon should use, in bytes. "

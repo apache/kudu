@@ -16,11 +16,11 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/fs/block_id.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/env.h"
 #include "kudu/util/oid_generator.h"
@@ -28,6 +28,8 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class BlockId;
 
 namespace pb_util {
 class WritablePBContainerFile;

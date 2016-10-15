@@ -18,20 +18,23 @@
 
 #include <map>
 #include <memory>
-#include <string.h>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
+
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <glog/logging.h>
 #include <rapidjson/document.h>
-#include <rapidjson/prettywriter.h>
-#include <rapidjson/rapidjson.h>
-#include <rapidjson/stringbuffer.h>
 
 #include "kudu/gutil/strings/escaping.h"
+#include "kudu/server/webserver.h"
 #include "kudu/util/debug/trace_event_impl.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/web_callback_registry.h"
 #include "kudu/util/zlib.h"
 
 using std::map;

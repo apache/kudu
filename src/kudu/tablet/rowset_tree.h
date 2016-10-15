@@ -17,14 +17,16 @@
 #ifndef KUDU_TABLET_ROWSET_MANAGER_H
 #define KUDU_TABLET_ROWSET_MANAGER_H
 
+#include <cstdint>
+#include <functional>
 #include <unordered_map>
 #include <vector>
-#include <utility>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/util/status.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 

@@ -14,14 +14,19 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include <gtest/gtest.h>
-#include <gflags/gflags.h>
+
+#include <cstdint>
 #include <vector>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hdr_histogram.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"

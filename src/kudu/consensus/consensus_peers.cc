@@ -18,28 +18,34 @@
 #include "kudu/consensus/consensus.proxy.h"
 
 #include <algorithm>
-#include <functional>
+#include <cstdlib>
 #include <mutex>
 #include <string>
-#include <utility>
+#include <type_traits>
 #include <vector>
 
+#include <boost/function.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus_queue.h"
-#include "kudu/consensus/log.h"
-#include "kudu/gutil/map-util.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/consensus/opid_util.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"

@@ -16,11 +16,10 @@
 // under the License.
 #include "kudu/cfile/type_encodings.h"
 
-#include <unordered_map>
+#include <cstddef>
 #include <memory>
+#include <unordered_map>
 #include <utility>
-
-#include <glog/logging.h>
 
 #include "kudu/cfile/bshuf_block.h"
 #include "kudu/cfile/plain_bitmap_block.h"
@@ -30,7 +29,11 @@
 #include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/binary_prefix_block.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/singleton.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/slice.h"
+
 
 using std::make_pair;
 using std::pair;

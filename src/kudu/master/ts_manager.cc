@@ -20,9 +20,11 @@
 #include <mutex>
 #include <vector>
 
+#include <glog/logging.h>
+
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/master.pb.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/util/pb_util.h"
 

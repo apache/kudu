@@ -17,25 +17,19 @@
 #ifndef KUDU_FS_BLOCK_ID_H
 #define KUDU_FS_BLOCK_ID_H
 
+#include <cinttypes>
+#include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
-#include <glog/logging.h>
-
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/stringprintf.h"
 
 namespace kudu {
 
 class BlockIdPB;
-
-namespace fs {
-namespace internal {
-class FileBlockLocation;
-} // namespace internal
-} // namespace fs
 
 class BlockId {
  public:

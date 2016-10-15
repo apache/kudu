@@ -17,13 +17,22 @@
 #ifndef KUDU_UTIL_ENV_UTIL_H
 #define KUDU_UTIL_ENV_UTIL_H
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/util/env.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
+
+class Env;
+class RandomAccessFile;
+class SequentialFile;
+class WritableFile;
+struct WritableFileOptions;
+
 namespace env_util {
 
 Status OpenFileForWrite(Env *env, const std::string &path,

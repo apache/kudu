@@ -17,11 +17,15 @@
 #ifndef KUDU_RPC_RPC_CONTEXT_H
 #define KUDU_RPC_RPC_CONTEXT_H
 
+#include <memory>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_header.pb.h"
-#include "kudu/rpc/service_if.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace google {
@@ -32,6 +36,7 @@ class Message;
 
 namespace kudu {
 
+class Slice;
 class Sockaddr;
 class Trace;
 

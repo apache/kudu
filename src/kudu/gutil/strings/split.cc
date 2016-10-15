@@ -4,20 +4,22 @@
 
 #include "kudu/gutil/strings/split.h"
 
-#include <assert.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cassert>
+#include <cstdlib>
+#include <cstring>
 #include <iterator>
 #include <limits>
+#include <memory>
+#include <ostream>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/integral_types.h"
-#include <glog/logging.h>
-#include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/strtoint.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/gutil/hash/hash.h"
+#include "kudu/gutil/strtoint.h"
+#include "kudu/util/make_shared.h"
 
 using std::unordered_map;
 using std::unordered_set;

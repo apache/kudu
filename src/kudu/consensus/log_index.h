@@ -17,10 +17,11 @@
 #ifndef KUDU_CONSENSUS_LOG_INDEX_H
 #define KUDU_CONSENSUS_LOG_INDEX_H
 
+#include <cstdint>
 #include <string>
 #include <map>
 
-#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"

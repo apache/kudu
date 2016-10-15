@@ -18,32 +18,59 @@
 #include "kudu/tserver/tserver-path-handlers.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <glog/logging.h>
+
+#include "kudu/common/column_predicate.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/iterator_stats.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/webui_util.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet.pb.h"
-#include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/easy_json.h"
 #include "kudu/util/maintenance_manager.h"
+#include "kudu/util/maintenance_manager.pb.h"
+#include "kudu/util/mem_tracker.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/url-coding.h"
+#include "kudu/util/web_callback_registry.h"
 
 using kudu::consensus::GetConsensusRole;
 using kudu::consensus::ConsensusStatePB;

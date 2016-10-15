@@ -18,8 +18,11 @@
 #include "kudu/util/semaphore.h"
 
 #include <semaphore.h>
+
 #include <glog/logging.h>
+
 #include "kudu/gutil/walltime.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 

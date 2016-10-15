@@ -16,25 +16,36 @@
 // under the License.
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include <glog/stl_logging.h>
+#include <glog/stl_logging.h> // IWYU pragma: keep
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include "kudu/codegen/code_generator.h"
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/codegen/row_projector.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/bitmap.h"
+#include "kudu/gutil/singleton.h"
 #include "kudu/util/logging_test_util.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

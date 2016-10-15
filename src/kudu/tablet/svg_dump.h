@@ -17,6 +17,7 @@
 #ifndef KUDU_TABLET_COMPACTION_SVG_DUMP_H_
 #define KUDU_TABLET_COMPACTION_SVG_DUMP_H_
 
+#include <cstddef>
 #include <ostream>
 #include <unordered_set>
 #include <vector>

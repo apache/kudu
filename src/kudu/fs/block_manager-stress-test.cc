@@ -15,26 +15,49 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <iterator>
+#include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/error_manager.h"
-#include "kudu/fs/file_block_manager.h"
+#include "kudu/fs/file_block_manager.h" // IWYU pragma: keep
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
+#include "kudu/fs/log_block_manager.h"  // IWYU pragma: keep
 #include "kudu/fs/log_block_manager-test-util.h"
-#include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/countdown_latch.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/file_cache-test-util.h"
-#include "kudu/util/metrics.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
@@ -72,6 +95,9 @@ using strings::Substitute;
 
 namespace kudu {
 namespace fs {
+
+class FileBlockManager;
+class LogBlockManager;
 
 // This test attempts to simulate how a TS might use the block manager:
 //

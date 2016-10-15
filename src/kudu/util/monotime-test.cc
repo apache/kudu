@@ -20,6 +20,11 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <cstdint>
+#include <ctime>
+#include <ostream>
+#include <string>
+
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 

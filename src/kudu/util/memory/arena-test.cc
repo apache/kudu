@@ -15,12 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <string>
+#include <thread>
+#include <vector>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <memory>
-#include <thread>
-#include <vector>
 
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/memory/arena.h"

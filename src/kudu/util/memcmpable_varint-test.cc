@@ -15,13 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
+#include <cstdint>
+#include <ostream>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <gtest/gtest.h>
 
+#include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memcmpable_varint.h"
 #include "kudu/util/random.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/stopwatch.h"  // IWYU pragma: keep
 #include "kudu/util/test_util.h"
 
 // Add operator<< to print pairs, used in a test below.

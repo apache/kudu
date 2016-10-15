@@ -16,17 +16,25 @@
 // under the License.
 #include "kudu/consensus/consensus_meta.h"
 
-#include <memory>
+#include <algorithm>
+#include <mutex>
+#include <ostream>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/env.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"

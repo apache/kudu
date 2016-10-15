@@ -19,23 +19,18 @@
 
 #include "kudu/twitter-demo/twitter_streamer.h"
 
-#include <string>
-
-#include "kudu/client/callbacks.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
-#include "kudu/rpc/rpc_controller.h"
-#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/gutil/port.h"
 #include "kudu/twitter-demo/parser.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace client {
 class KuduClient;
 class KuduTable;
 class KuduSession;
-class KuduStatusCallback;
 } // namespace client
 
 namespace twitter_demo {

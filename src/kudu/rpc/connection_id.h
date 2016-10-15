@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <cstddef>
 #include <string>
 
 #include "kudu/rpc/user_credentials.h"

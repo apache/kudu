@@ -20,10 +20,11 @@
 
 #include "kudu/util/memory/memory.h"
 
-#include <string.h>
+#include <mm_malloc.h>
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 
 #include <gflags/gflags.h>
 

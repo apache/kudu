@@ -17,11 +17,14 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
+#include "kudu/gutil/port.h"
 #include "kudu/client/client.h"
-#include "kudu/gutil/macros.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

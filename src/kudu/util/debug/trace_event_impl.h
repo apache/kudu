@@ -5,25 +5,27 @@
 #ifndef KUDU_UTIL_DEBUG_TRACE_EVENT_IMPL_H_
 #define KUDU_UTIL_DEBUG_TRACE_EVENT_IMPL_H_
 
-#include <gtest/gtest_prod.h>
+#include <cstddef>
+#include <cstdint>
+#include <iosfwd>
 #include <stack>
-#include <sstream>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/ref_counted_memory.h"
-#include "kudu/util/atomic.h"
-#include "kudu/util/condition_variable.h"
-#include "kudu/util/locks.h"
-#include "kudu/util/thread.h"
-#include "kudu/util/threadlocal.h"
+#include "kudu/util/mutex.h"
 
 // Older style trace macros with explicit id and extra data
 // Only these macros result in publishing data to ETW as currently implemented.
@@ -57,6 +59,10 @@ struct hash<kudu::Thread*> {
 #endif
 
 namespace kudu {
+
+class RefCountedString;
+class Thread;
+
 namespace debug {
 
 // For any argument of type TRACE_VALUE_TYPE_CONVERTABLE the provided

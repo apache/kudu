@@ -16,29 +16,46 @@
 // under the License.
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <google/protobuf/util/message_differencer.h>
+#include <gtest/gtest.h>
 
-#include "kudu/fs/data_dirs.h"
-#include "kudu/fs/error_manager.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
+#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/error_manager.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
+#include "kudu/util/env.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 

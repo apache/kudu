@@ -33,10 +33,10 @@
  */
 
 #include "kudu/gutil/spinlock.h"
-#include "kudu/gutil/synchronization_profiling.h"
 #include "kudu/gutil/spinlock_internal.h"
-#include "kudu/gutil/walltime.h"
+#include "kudu/gutil/synchronization_profiling.h"
 #include "kudu/gutil/sysinfo.h"   /* for NumCPUs() */
+#include "kudu/gutil/walltime.h"
 
 namespace base {
 

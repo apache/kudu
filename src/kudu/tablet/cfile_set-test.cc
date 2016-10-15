@@ -15,16 +15,44 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
+
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 
+#include "kudu/common/column_materialization_context.h"
+#include "kudu/common/column_predicate.h"
+#include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/generic_iterators.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/iterator_stats.h"
+#include "kudu/common/row.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/rowid.h"
+#include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/tablet/cfile_set.h"
-#include "kudu/tablet/diskrowset-test-base.h"
-#include "kudu/tablet/tablet-test-base.h"
+#include "kudu/tablet/diskrowset.h"
+#include "kudu/tablet/tablet-test-util.h"
+#include "kudu/util/auto_release_pool.h"
+#include "kudu/util/bloom_filter.h"
 #include "kudu/util/mem_tracker.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 DECLARE_int32(cfile_default_block_size);
 

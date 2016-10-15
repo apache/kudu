@@ -17,38 +17,49 @@
 
 #include "kudu/tools/tool_action.h"
 
+#include <cstdint>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
+#include <unordered_map>
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scanner-internal.h"
-#include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/consensus.proxy.h"
-#include "kudu/consensus/metadata.pb.h"
+#include "kudu/client/schema.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/human_readable.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.pb.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/net/net_util.h"
-#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
 DEFINE_bool(force_copy, false,

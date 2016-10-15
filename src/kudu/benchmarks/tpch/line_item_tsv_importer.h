@@ -17,7 +17,6 @@
 #ifndef KUDU_TPCH_LINE_ITEM_TSV_IMPORTER_H
 #define KUDU_TPCH_LINE_ITEM_TSV_IMPORTER_H
 
-#include <iostream>
 #include <fstream>
 #include <vector>
 #include <string>

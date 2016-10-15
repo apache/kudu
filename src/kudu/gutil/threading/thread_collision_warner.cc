@@ -4,9 +4,18 @@
 
 #include "kudu/gutil/threading/thread_collision_warner.h"
 
-#include <glog/logging.h>
+#ifdef __linux__
+#include <syscall.h>
+#else
+#include <sys/syscall.h>
+#endif
 
-#include "kudu/gutil/linux_syscall_support.h"
+#include <unistd.h>
+
+#include <cstdint>
+#include <ostream>
+
+#include <glog/logging.h>
 
 namespace base {
 

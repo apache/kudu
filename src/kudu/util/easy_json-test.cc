@@ -19,9 +19,9 @@
 
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
+#include <rapidjson/rapidjson.h>
 
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/easy_json.h"
 #include "kudu/util/test_util.h"
 

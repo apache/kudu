@@ -20,12 +20,13 @@
 
 #include <map>
 #include <mutex>
-#include <stdint.h>
 #include <string>
 
 #include "kudu/gutil/map-util.h"
 
 namespace kudu {
+
+class simple_spinlock;
 
 namespace client {
 

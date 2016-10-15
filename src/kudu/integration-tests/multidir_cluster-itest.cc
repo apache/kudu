@@ -15,17 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
-
+#include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/client/client.h"
+#include <gtest/gtest.h>
+
 #include "kudu/gutil/map-util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 namespace kudu {
 

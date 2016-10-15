@@ -17,12 +17,14 @@
 #ifndef KUDU_COMMON_ID_MAPPING_H
 #define KUDU_COMMON_ID_MAPPING_H
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <ostream>
 #include <utility>
 #include <vector>
 
 #include <glog/logging.h>
-
-#include "kudu/gutil/macros.h"
 
 namespace kudu {
 

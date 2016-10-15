@@ -18,11 +18,13 @@
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 
 #include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include <algorithm>
+#include <ctime>
+#include <ostream>
 #include <set>
+
+#include <glog/logging.h>
 
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/strings/join.h"

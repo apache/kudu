@@ -21,10 +21,14 @@
 #include <cstring>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/common/common.pb.h"
+#include "kudu/common/key_encoder.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
-#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/logging.h"

@@ -35,6 +35,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using kudu::pb_util::ReadablePBContainerFile;

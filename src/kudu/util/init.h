@@ -17,7 +17,6 @@
 #ifndef KUDU_UTIL_INIT_H
 #define KUDU_UTIL_INIT_H
 
-#include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

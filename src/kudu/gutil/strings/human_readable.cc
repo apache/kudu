@@ -2,12 +2,12 @@
 
 #include "kudu/gutil/strings/human_readable.h"
 
-#include <stddef.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cinttypes>
+#include <cstdlib>
+#include <cstring>
 
 #include <glog/logging.h>
-#include "kudu/gutil/logging-inl.h"
+
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/strip.h"
 

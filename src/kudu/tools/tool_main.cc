@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <cstdlib>
 #include <deque>
 #include <iostream>
 #include <memory>
@@ -23,7 +24,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"

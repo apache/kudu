@@ -17,25 +17,25 @@
 #ifndef KUDU_COMMON_PARTITION_H
 #define KUDU_COMMON_PARTITION_H
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "kudu/common/common.pb.h"
-#include "kudu/common/key_encoder.h"
-#include "kudu/common/partial_row.h"
-#include "kudu/common/row.h"
+#include <gtest/gtest_prod.h>
+
 #include "kudu/common/schema.h"
-#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/port.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
-class ColumnRangePredicate;
+class Arena;
 class ConstContiguousRow;
 class KuduPartialRow;
 class PartitionSchemaPB;
-class TypeInfo;
+class PartitionPB;
 
 // A Partition describes the set of rows that a Tablet is responsible for
 // serving. Each tablet is assigned a single Partition.

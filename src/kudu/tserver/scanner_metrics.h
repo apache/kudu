@@ -18,12 +18,10 @@
 #define KUDU_TSERVER_SCANNER_METRICS_H
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/metrics.h"
 
 namespace kudu {
 
-class MetricEntity;
-class Counter;
-class Histogram;
 class MonoTime;
 
 namespace tserver {

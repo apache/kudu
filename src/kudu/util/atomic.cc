@@ -17,7 +17,8 @@
 
 #include "kudu/util/atomic.h"
 
-#include <stdint.h>
+#include <cstdint>
+#include <ostream>
 
 #include <glog/logging.h>
 

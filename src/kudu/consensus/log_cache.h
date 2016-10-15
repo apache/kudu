@@ -17,34 +17,34 @@
 #ifndef KUDU_CONSENSUS_LOG_CACHE_H
 #define KUDU_CONSENSUS_LOG_CACHE_H
 
+#include <cstdint>
+#include <iosfwd>
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/opid_util.h"
+#include <gtest/gtest_prod.h>
+
 #include "kudu/consensus/ref_counted_replicate.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/util/async_util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 
 namespace kudu {
 
-class MetricEntity;
 class MemTracker;
 
 namespace log {
 class Log;
-class LogReader;
 } // namespace log
 
 namespace consensus {
 
-class ReplicateMsg;
+class OpId;
 
 // Write-through cache for the log.
 //

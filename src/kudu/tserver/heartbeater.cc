@@ -18,29 +18,46 @@
 #include "kudu/tserver/heartbeater.h"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
+#include <mutex>
+#include <ostream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/cert.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/condition_variable.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
@@ -70,6 +87,11 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+namespace rpc {
+class Messenger;
+}
+
 namespace tserver {
 
 namespace {

@@ -17,12 +17,17 @@
 
 #include "kudu/server/pprof-path-handlers.h"
 
-#include <sys/stat.h>
+#include <unistd.h>
 
+#include <cstdint>
+#include <cstdlib>
 #include <fstream>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gperftools/heap-profiler.h>
 #include <gperftools/malloc_extension.h>
@@ -32,14 +37,16 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/env.h"
-#include "kudu/util/logging.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/spinlock_profiling.h"
 #include "kudu/util/status.h"
+#include "kudu/util/web_callback_registry.h"
 
 DECLARE_bool(enable_process_lifetime_heap_profiling);
 DECLARE_string(heap_profile_path);

@@ -17,18 +17,40 @@
 
 #include "kudu/tablet/transactions/transaction_driver.h"
 
+#include <algorithm>
 #include <functional>
+#include <memory>
 #include <mutex>
+#include <ostream>
+#include <type_traits>
 
+#include <glog/logging.h>
+#include <google/protobuf/descriptor.h>
+#include <google/protobuf/message.h>
+
+#include "kudu/clock/clock.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/consensus/log.h"
 #include "kudu/consensus/time_manager.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/result_tracker.h"
+#include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/transaction_order_verifier.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
-#include "kudu/util/debug-util.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status_callback.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 

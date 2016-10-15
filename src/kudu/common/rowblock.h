@@ -14,15 +14,22 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #ifndef KUDU_COMMON_ROWBLOCK_H
 #define KUDU_COMMON_ROWBLOCK_H
 
+#include <cstdint>
+#include <cstring>
 #include <vector>
+
+#include <glog/logging.h>
+
 #include "kudu/common/columnblock.h"
 #include "kudu/common/schema.h"
-#include "kudu/common/row.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/bitmap.h"
 
 namespace kudu {

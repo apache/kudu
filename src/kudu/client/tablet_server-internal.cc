@@ -17,6 +17,7 @@
 
 #include "kudu/client/tablet_server-internal.h"
 
+#include <algorithm>
 #include <string>
 
 #include "kudu/util/net/net_util.h"

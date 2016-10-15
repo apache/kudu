@@ -18,23 +18,44 @@
 #include "kudu/tablet/transactions/write_transaction.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <ctime>
+#include <new>
+#include <ostream>
+#include <type_traits>
 #include <vector>
 
-#include "kudu/clock/hybrid_clock.h"
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/clock/clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/numbers.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/rpc/rpc_context.h"
+#include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/tablet/lock_manager.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/rw_semaphore.h"
 #include "kudu/util/trace.h"
 
 DEFINE_int32(tablet_inject_latency_on_apply_write_txn_ms, 0,
@@ -43,21 +64,22 @@ DEFINE_int32(tablet_inject_latency_on_apply_write_txn_ms, 0,
 TAG_FLAG(tablet_inject_latency_on_apply_write_txn_ms, unsafe);
 TAG_FLAG(tablet_inject_latency_on_apply_write_txn_ms, runtime);
 
-namespace kudu {
-namespace tablet {
-
-using consensus::ReplicateMsg;
-using consensus::CommitMsg;
-using consensus::DriverType;
-using consensus::WRITE_OP;
-using pb_util::SecureShortDebugString;
-using tserver::TabletServerErrorPB;
-using tserver::WriteRequestPB;
-using tserver::WriteResponsePB;
 using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+namespace tablet {
+
+using pb_util::SecureShortDebugString;
+using consensus::CommitMsg;
+using consensus::DriverType;
+using consensus::ReplicateMsg;
+using consensus::WRITE_OP;
+using tserver::TabletServerErrorPB;
+using tserver::WriteRequestPB;
+using tserver::WriteResponsePB;
 
 WriteTransaction::WriteTransaction(unique_ptr<WriteTransactionState> state, DriverType type)
   : Transaction(state.get(), type, Transaction::WRITE_TXN),

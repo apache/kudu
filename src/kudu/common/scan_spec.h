@@ -20,14 +20,15 @@
 #include <string>
 #include <unordered_map>
 
-#include "kudu/common/schema.h"
-#include "kudu/common/column_predicate.h"
-#include "kudu/common/encoded_key.h"
+#include "kudu/common/column_predicate.h" // IWYU pragma: keep
+#include "kudu/util/slice.h"
 
 namespace kudu {
 
 class AutoReleasePool;
 class Arena;
+class EncodedKey;
+class Schema;
 
 class ScanSpec {
  public:

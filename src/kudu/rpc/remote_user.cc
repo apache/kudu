@@ -17,7 +17,6 @@
 
 #include "kudu/rpc/remote_user.h"
 
-#include <boost/optional.hpp>
 #include <string>
 
 #include "kudu/gutil/strings/substitute.h"

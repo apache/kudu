@@ -16,17 +16,28 @@
 // under the License.
 
 #include <algorithm>
+#include <cstdint>
+#include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/mock_ntp.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 DECLARE_string(time_source);
 

@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/common/timestamp.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"

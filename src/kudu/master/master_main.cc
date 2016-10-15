@@ -15,14 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
 #include <iostream>
+#include <string>
+
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master_options.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 #include "kudu/util/version_info.h"
 
 using kudu::master::Master;

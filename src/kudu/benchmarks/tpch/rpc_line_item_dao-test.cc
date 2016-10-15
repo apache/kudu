@@ -16,25 +16,31 @@
 // under the License.
 
 #include <algorithm>
-#include <boost/bind.hpp>
-#include <gtest/gtest.h>
-#include <gflags/gflags.h>
+#include <cstdint>
 #include <string>
 #include <vector>
 
+#include <boost/bind.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
+#include "kudu/client/row_result.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
 
 using client::KuduRowResult;
-using client::KuduSchema;
 using std::string;
 using std::vector;
 

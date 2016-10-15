@@ -15,19 +15,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/client/client.h"
-#include "kudu/client/client-test-util.h"
-#include "kudu/client/schema-internal.h"
-#include "kudu/common/schema.h"
-#include "kudu/common/wire_protocol-test-util.h"
-#include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+
+#include <cstddef>
+#include <memory>
+#include <ostream>
+
+#include <glog/logging.h>
+
+#include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
+#include "kudu/client/scan_batch.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/tools/data_gen_util.h"
-#include "kudu/util/env.h"
-#include "kudu/util/net/sockaddr.h"
+#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/util/random.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

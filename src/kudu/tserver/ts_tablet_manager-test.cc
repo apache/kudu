@@ -17,20 +17,36 @@
 
 #include "kudu/tserver/ts_tablet_manager.h"
 
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <ostream>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/fs/fs_manager.h"
+#include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet_replica.h"
-#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 #define ASSERT_REPORT_HAS_UPDATED_TABLET(report, tablet_id) \
@@ -43,6 +59,9 @@ using std::string;
 using std::vector;
 
 namespace kudu {
+
+class FsManager;
+
 namespace tserver {
 
 using consensus::kInvalidOpIdIndex;

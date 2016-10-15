@@ -18,10 +18,12 @@
 #include "kudu/fs/block_manager.h"
 
 #include <mutex>
+#include <ostream>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"

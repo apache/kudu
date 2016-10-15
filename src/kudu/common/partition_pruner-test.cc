@@ -18,17 +18,31 @@
 #include "kudu/common/partition_pruner.h"
 
 #include <algorithm>
-#include <boost/optional.hpp>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
-#include <tuple>
+#include <utility>
+#include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/common/column_predicate.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using boost::optional;

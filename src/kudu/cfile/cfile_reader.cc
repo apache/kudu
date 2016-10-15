@@ -17,28 +17,47 @@
 
 #include "kudu/cfile/cfile_reader.h"
 
-#include <glog/logging.h>
-
 #include <algorithm>
+#include <cstring>
 #include <memory>
+#include <ostream>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/block_cache.h"
+#include "kudu/cfile/block_compression.h"
 #include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile.pb.h"
-#include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/index_block.h"
+#include "kudu/cfile/cfile_util.h"
+#include "kudu/cfile/cfile_writer.h" // for kMagicString
 #include "kudu/cfile/index_btree.h"
+#include "kudu/cfile/type_encodings.h"
+#include "kudu/common/column_materialization_context.h"
+#include "kudu/common/column_predicate.h"
+#include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
+#include "kudu/common/key_encoder.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/bitmap.h"
+#include "kudu/util/cache.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/malloc.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/memory/overwrite.h"
 #include "kudu/util/object_pool.h"
 #include "kudu/util/pb_util.h"

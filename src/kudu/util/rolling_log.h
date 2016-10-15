@@ -17,6 +17,7 @@
 #ifndef KUDU_UTIL_ROLLING_LOG_H
 #define KUDU_UTIL_ROLLING_LOG_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
 

@@ -20,24 +20,29 @@
 
 #include <string>
 
-#include "kudu/clock/clock.h"
-#include "kudu/consensus/raft_consensus.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/transactions/transaction.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
 
 namespace kudu {
+class Timestamp;
 class ThreadPool;
+class ThreadPoolToken;
 
 namespace log {
 class Log;
 } // namespace log
 
-namespace rpc {
-class ResultTracker;
+namespace consensus {
+class RaftConsensus;
 }
 
 namespace tablet {

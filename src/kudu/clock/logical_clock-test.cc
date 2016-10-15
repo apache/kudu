@@ -15,11 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
+#include <string>
+
 #include <gtest/gtest.h>
 
 #include "kudu/clock/logical_clock.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

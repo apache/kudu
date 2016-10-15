@@ -15,20 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
-#include <gtest/gtest.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 #include <thread>
 #include <unordered_set>
+#include <vector>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
-#include "kudu/util/memory/memory.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/memory/overwrite.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
-#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

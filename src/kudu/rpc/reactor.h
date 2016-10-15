@@ -19,29 +19,31 @@
 
 #include <cstdint>
 #include <list>
-#include <map>
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 
-#include <boost/function.hpp>
+#include <boost/function.hpp> // IWYU pragma: keep
 #include <boost/intrusive/list.hpp>
-#include <boost/optional.hpp>
+#include <boost/intrusive/list_hook.hpp>
 #include <ev++.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/connection_id.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/rpc/transfer.h"
+#include "kudu/rpc/outbound_call.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
 namespace kudu {
 
+class Sockaddr;
 class Socket;
 
 namespace rpc {
@@ -51,6 +53,7 @@ typedef std::list<scoped_refptr<Connection>> conn_list_t;
 class DumpRunningRpcsRequestPB;
 class DumpRunningRpcsResponsePB;
 class Reactor;
+class ReactorThread;
 enum class CredentialsPolicy;
 
 // Simple metrics information from within a reactor.

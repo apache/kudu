@@ -18,39 +18,47 @@
 #include "kudu/consensus/log.h"
 
 #include <algorithm>
-#include <limits>
+#include <cerrno>
+#include <cstdint>
 #include <memory>
 #include <mutex>
+#include <ostream>
 
 #include <boost/range/adaptor/reversed.hpp>
+#include <gflags/gflags.h>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log_index.h"
 #include "kudu/consensus/log_metrics.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/util/coding.h"
+#include "kudu/util/async_util.h"
+#include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/compression/compression_codec.h"
-#include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
-#include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 

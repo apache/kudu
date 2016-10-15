@@ -17,24 +17,38 @@
 
 #include "kudu/tablet/deltafile.h"
 
-#include <arpa/inet.h>
+#include <algorithm>
 #include <memory>
+#include <ostream>
 #include <string>
 
-#include "kudu/common/wire_protocol.h"
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+
 #include "kudu/cfile/binary_plain_block.h"
-#include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile_reader.h"
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/row_changelist.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/common/types.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
-#include "kudu/util/coding-inl.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/hexdump.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/trace.h"
 
@@ -54,6 +68,8 @@ using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
+
+class MemTracker;
 
 using cfile::BinaryPlainBlockDecoder;
 using cfile::BlockPointer;

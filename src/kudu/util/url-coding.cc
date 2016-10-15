@@ -19,13 +19,18 @@
 #include "kudu/util/url-coding.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstddef>
 #include <exception>
+#include <iterator>
 #include <sstream>
 
-#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/classification.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
+#include <boost/iterator/iterator_facade.hpp>
+#include <boost/function.hpp>
 #include <glog/logging.h>
 
 using std::string;

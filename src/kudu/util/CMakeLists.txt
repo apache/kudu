@@ -462,5 +462,6 @@ endif()
 ADD_KUDU_TEST(compression/compression-test)
 if(NOT NO_TESTS)
   target_link_libraries(compression-test
+    cfile
     kudu_util_compression)
 endif()

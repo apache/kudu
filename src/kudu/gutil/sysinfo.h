@@ -31,6 +31,8 @@
 #ifndef _SYSINFO_H_
 #define _SYSINFO_H_
 
+#include <cstdint>
+
 namespace base {
 
 // Return the number of online CPUs. This is computed and cached the first time this or

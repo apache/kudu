@@ -17,12 +17,18 @@
 
 #include "kudu/tserver/tablet_server_options.h"
 
-#include <glog/logging.h>
-#include <gflags/gflags.h>
+#include <ostream>
+#include <string>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/gutil/macros.h"
 #include "kudu/master/master.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/status.h"
 
 DEFINE_string(tserver_master_addrs, "127.0.0.1:7051",
               "Comma separated addresses of the masters which the "

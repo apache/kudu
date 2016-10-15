@@ -5,6 +5,7 @@
 // Implementation of atomic operations for Mac OS X.  This file should not
 // be included directly.  Clients should instead include
 // "base/atomicops.h".
+// IWYU pragma: private, include "kudu/gutil/atomicops.h"
 
 #ifndef BASE_AUXILIARY_ATOMICOPS_INTERNALS_MACOSX_H_
 #define BASE_AUXILIARY_ATOMICOPS_INTERNALS_MACOSX_H_

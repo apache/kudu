@@ -18,13 +18,14 @@
 #include "kudu/common/schema.h"
 
 #include <algorithm>
-#include <set>
+#include <unordered_set>
 
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/util/malloc.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 #include "kudu/common/row.h"
 

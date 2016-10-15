@@ -20,27 +20,31 @@
 #ifndef KUDU_TOOLS_KSCK_H
 #define KUDU_TOOLS_KSCK_H
 
-#include <boost/optional.hpp>
-#include <gtest/gtest_prod.h>
-#include <iostream>
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <iosfwd>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
 #include "kudu/common/schema.h"
-#include "kudu/consensus/consensus.service.h"
-#include "kudu/tablet/tablet.pb.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.pb.h"  // IWYU pragma: keep
 #include "kudu/tools/color.h"
-#include "kudu/util/countdown_latch.h"
-#include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-class MonoDelta;
 namespace tools {
 
 class KsckTable;
@@ -227,7 +231,7 @@ class ChecksumProgressCallbacks {
 class KsckTabletServer {
  public:
   // Map from tablet id to tablet replicas.
-  typedef std::unordered_map<std::string, tablet::TabletStatusPB > TabletStatusMap;
+  typedef std::unordered_map<std::string, tablet::TabletStatusPB> TabletStatusMap;
 
   // Map from (tserver id, tablet id) to tablet consensus information.
   typedef std::map
@@ -379,11 +383,10 @@ class KsckCluster {
 // Externally facing class to run checks against the provided cluster.
 class Ksck {
  public:
-  explicit Ksck(std::shared_ptr<KsckCluster> cluster, std::ostream* out = &std::cout)
-      : cluster_(std::move(cluster)),
-        out_(out) {}
+  explicit Ksck(std::shared_ptr<KsckCluster> cluster,
+                std::ostream* out = nullptr);
 
-  ~Ksck() {}
+  ~Ksck() = default;
 
   // Set whether ksck should verify that each of the tablet's raft configurations
   // has the same number of replicas that is specified by the tablet metadata.
@@ -501,7 +504,7 @@ class Ksck {
   std::vector<std::string> table_filters_;
   std::vector<std::string> tablet_id_filters_;
 
-  std::ostream* out_;
+  std::ostream* const out_;
 
   DISALLOW_COPY_AND_ASSIGN(Ksck);
 };

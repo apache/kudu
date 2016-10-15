@@ -15,10 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cmath>
+#include <cstdint>
 #include <limits>
 #include <unordered_set>
+#include <vector>
 
-#include <glog/stl_logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/util/random.h"
 #include "kudu/util/test_util.h"

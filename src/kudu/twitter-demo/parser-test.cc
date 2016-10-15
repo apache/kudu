@@ -17,14 +17,18 @@
 
 #include "kudu/twitter-demo/parser.h"
 
+#include <string>
+#include <vector>
+
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/split.h"
 #include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/path_util.h"
-#include "kudu/util/test_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 using std::string;
 using std::vector;

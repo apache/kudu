@@ -15,24 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 using kudu::client::CountTableRows;
 using kudu::client::KuduInsert;
@@ -44,8 +59,8 @@ using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using std::set;
 using std::string;
-using std::vector;
 using std::unordered_map;
+using std::vector;
 
 namespace kudu {
 

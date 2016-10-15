@@ -17,18 +17,32 @@
 
 #pragma once
 
-#include <memory>
+#include <cstdint>
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/client/client.h"
-#include "kudu/common/column_predicate.h"
+#include "kudu/client/schema.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
+
+class ColumnPredicate;
+class KuduPartialRow;
+class Schema;
+
 namespace client {
+
+class KuduPredicate;
 
 // A configuration object which holds Kudu scan options.
 //

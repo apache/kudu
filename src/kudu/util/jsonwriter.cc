@@ -14,8 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/util/jsonwriter.h"
 
+#include <new>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -24,9 +26,11 @@
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/message.h>
+#include <rapidjson/writer.h>
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/rapidjson.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.pb.h"
 

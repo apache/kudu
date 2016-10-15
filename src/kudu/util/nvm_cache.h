@@ -17,6 +17,7 @@
 #ifndef KUDU_UTIL_NVM_CACHE_H_
 #define KUDU_UTIL_NVM_CACHE_H_
 
+#include <cstddef>
 #include <string>
 
 namespace kudu {

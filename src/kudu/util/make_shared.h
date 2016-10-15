@@ -18,6 +18,10 @@
 #ifndef KUDU_UTIL_MAKE_SHARED_H_
 #define KUDU_UTIL_MAKE_SHARED_H_
 
+#ifdef __GLIBCXX__
+#include <ext/alloc_traits.h>  // IWYU pragma: export
+#endif
+
 #include <memory>
 
 // It isn't possible to use std::make_shared() with a class that has private

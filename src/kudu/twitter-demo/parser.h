@@ -17,10 +17,10 @@
 #ifndef KUDU_TWITTER_DEMO_PARSER_H
 #define KUDU_TWITTER_DEMO_PARSER_H
 
+#include <cstdint>
 #include <string>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

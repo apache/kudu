@@ -17,6 +17,9 @@
 
 #include "kudu/util/jsonreader.h"
 
+#include <algorithm>
+
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 
 using rapidjson::Value;

@@ -26,6 +26,10 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <ostream>
+#include <string>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bits.h"

@@ -33,18 +33,22 @@
 #define KUDU_UTIL_MEMORY_MEMORY_H_
 
 #include <algorithm>
-#include <glog/logging.h>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
-#include <stddef.h>
+#include <ostream>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/util/boost_mutex_utils.h"
 #include "kudu/util/memory/overwrite.h"
 #include "kudu/util/mutex.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/logging-inl.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"
 
 namespace kudu {

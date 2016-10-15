@@ -16,17 +16,27 @@
 // under the License.
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
+#include <ostream>
+#include <string>
 #include <vector>
 
-#include <gflags/gflags.h>
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/maintenance_manager.h"
-#include "kudu/util/mem_tracker.h"
+#include "kudu/util/maintenance_manager.pb.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/mutex.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"

@@ -17,15 +17,19 @@
 
 #include "kudu/util/resettable_heartbeater.h"
 
-#include <boost/bind.hpp>
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <ostream>
 #include <string>
+
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

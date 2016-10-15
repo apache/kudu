@@ -15,24 +15,31 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <signal.h>
+#include <unistd.h>
 
-#include <cmath>
-#include <cstdlib>
+#include <csignal>
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/client/callbacks.h"
-#include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
 #include "kudu/codegen/compilation_manager.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -40,23 +47,23 @@
 #include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/errno.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/maintenance_manager.h"
-#include "kudu/util/stopwatch.h"
-#include "kudu/util/test_macros.h"
-#include "kudu/util/test_util.h"
-#include "kudu/util/status.h"
-#include "kudu/util/subprocess.h"
-#include "kudu/util/thread.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
+#include "kudu/util/subprocess.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 DEFINE_bool(skip_scans, false, "Whether to skip the scan part of the test.");
 

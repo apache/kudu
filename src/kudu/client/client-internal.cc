@@ -18,37 +18,48 @@
 #include "kudu/client/client-internal.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/function.hpp>
+#include <glog/logging.h>
+
 #include "kudu/client/master_rpc.h"
 #include "kudu/client/meta_cache.h"
+#include "kudu/client/schema.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/sysinfo.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
-#include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/security/cert.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/thread_restrictions.h"
+#include "kudu/rpc/connection.h"
 
 using std::set;
 using std::shared_ptr;
@@ -58,7 +69,6 @@ using std::vector;
 
 namespace kudu {
 
-using consensus::RaftPeerPB;
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
 using master::CreateTableRequestPB;

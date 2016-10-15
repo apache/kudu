@@ -194,6 +194,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/util/debug/trace_event_impl.h"
 #include "kudu/util/debug/trace_event_memory.h"
+#include "kudu/util/thread.h"
 #include "kudu/gutil/walltime.h"
 
 // By default, const char* argument values are assumed to have long-lived scope

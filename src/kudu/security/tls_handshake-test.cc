@@ -33,6 +33,7 @@
 #include "kudu/security/security-test-util.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

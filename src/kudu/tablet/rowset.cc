@@ -17,16 +17,19 @@
 
 #include "kudu/tablet/rowset.h"
 
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "kudu/common/generic_iterators.h"
-#include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/stringprintf.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
+#include "kudu/util/make_shared.h"
 
 using std::shared_ptr;
 using std::string;

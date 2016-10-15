@@ -17,12 +17,20 @@
 
 #include "kudu/tablet/multi_column_writer.h"
 
-#include <utility>
+#include <algorithm>
+#include <memory>
+#include <ostream>
+#include <string>
 
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/common/columnblock.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 
 namespace kudu {

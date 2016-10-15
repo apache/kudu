@@ -19,9 +19,16 @@
 
 #include "kudu/util/mutex.h"
 
+#include <cerrno>
+#include <cstdint>
+#include <cstring>
+#include <ostream>
+#include <string>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/debug-util.h"

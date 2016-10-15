@@ -17,13 +17,18 @@
 
 #include "kudu/util/kernel_stack_watchdog.h"
 
-#include <gflags/gflags.h>
 #include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

@@ -17,16 +17,38 @@
 
 #include "kudu/rpc/rpc-test-base.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <memory>
+#include <ostream>
 #include <string>
+#include <type_traits>
+#include <vector>
 
-#include <boost/bind.hpp>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/acceptor_pool.h"
+#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/proxy.h"
+#include "kudu/rpc/rpc_service.h"
+#include "kudu/rpc/service_if.h"
+#include "kudu/rpc/service_pool.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/net/socket.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/thread.h"
+
 
 METRIC_DECLARE_counter(rpc_connections_accepted);
 METRIC_DECLARE_counter(rpcs_queue_overflow);

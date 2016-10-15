@@ -17,12 +17,14 @@
 
 #include "kudu/rpc/sasl_helper.h"
 
+#include <cstring>
+#include <ostream>
+#include <set>
 #include <string>
 
 #include <glog/logging.h>
-#include <google/protobuf/message_lite.h>
+#include <sasl/sasl.h>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
@@ -30,15 +32,13 @@
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
-#include "kudu/rpc/serialization.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 using std::string;
 
 namespace kudu {
 namespace rpc {
-
-using google::protobuf::MessageLite;
 
 SaslHelper::SaslHelper(PeerType peer_type)
   : peer_type_(peer_type),

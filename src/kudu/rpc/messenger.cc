@@ -17,47 +17,51 @@
 
 #include "kudu/rpc/messenger.h"
 
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-#include <list>
+#include <algorithm>
+#include <cstdlib>
+#include <functional>
 #include <mutex>
-#include <set>
+#include <ostream>
 #include <string>
+#include <type_traits>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/acceptor_pool.h"
-#include "kudu/rpc/connection.h"
-#include "kudu/rpc/constants.h"
+#include "kudu/rpc/connection_id.h"
+#include "kudu/rpc/inbound_call.h"
+#include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/reactor.h"
+#include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/rpcz_store.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/server_negotiation.h"
-#include "kudu/rpc/transfer.h"
+#include "kudu/rpc/service_if.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/util/env.h"
-#include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
-#include "kudu/util/trace.h"
 
 using std::string;
 using std::shared_ptr;
@@ -115,6 +119,10 @@ TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
 
 DECLARE_string(keytab_file);
 DECLARE_bool(allow_world_readable_credentials);
+
+namespace boost {
+template <typename Signature> class function;
+}
 
 namespace kudu {
 namespace rpc {

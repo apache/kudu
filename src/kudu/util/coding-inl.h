@@ -24,8 +24,11 @@
 #ifndef KUDU_UTIL_CODING_INL_H
 #define KUDU_UTIL_CODING_INL_H
 
-#include <stdint.h>
-#include <string.h>
+#include <cstdint>
+#include <cstring>
+
+#include "kudu/gutil/port.h"  // IWYU pragma: keep
+// IWYU pragma: no_include <endian.h>
 
 namespace kudu {
 

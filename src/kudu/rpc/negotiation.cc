@@ -18,29 +18,36 @@
 #include "kudu/rpc/negotiation.h"
 
 #include <poll.h>
-#include <sys/time.h>
+#include <sys/socket.h>
 
+#include <algorithm>
+#include <cerrno>
+#include <ctime>
 #include <memory>
 #include <ostream>
 #include <string>
 
+#include <boost/optional.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/client_negotiation.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/reactor.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
-#include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/socket.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
 

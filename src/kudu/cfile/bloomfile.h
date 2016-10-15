@@ -17,21 +17,33 @@
 #ifndef KUDU_CFILE_BLOOMFILE_H
 #define KUDU_CFILE_BLOOMFILE_H
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
-#include <string>
-#include <vector>
 
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/once.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+namespace fs {
+class ReadableBlock;
+class ScopedWritableBlockCloser;
+class WritableBlock;
+}
+
 namespace cfile {
+
+class BloomBlockHeaderPB;
+struct ReaderOptions;
 
 class BloomFileWriter {
  public:

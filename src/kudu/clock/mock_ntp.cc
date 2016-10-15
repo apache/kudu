@@ -17,7 +17,11 @@
 
 #include "kudu/clock/mock_ntp.h"
 
-#include "kudu/util/locks.h"
+#include <mutex>
+#include <ostream>
+
+#include <glog/logging.h>
+
 #include "kudu/util/status.h"
 
 namespace kudu {

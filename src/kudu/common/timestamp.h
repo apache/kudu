@@ -18,7 +18,7 @@
 #ifndef KUDU_COMMON_TIMESTAMP_H_
 #define KUDU_COMMON_TIMESTAMP_H_
 
-#include <cinttypes>
+#include <cstdint>
 #include <iosfwd>
 #include <string>
 

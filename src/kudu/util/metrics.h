@@ -223,7 +223,8 @@
 //
 /////////////////////////////////////////////////////
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -234,11 +235,14 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/singleton.h"
 #include "kudu/util/atomic.h"
-#include "kudu/util/jsonwriter.h"
+#include "kudu/util/hdr_histogram.h"
+#include "kudu/util/jsonwriter.h" // IWYU pragma: keep
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -317,6 +321,8 @@
 #define METRIC_DECLARE_gauge_size METRIC_DECLARE_gauge_uint64
 #endif
 
+template <typename Type> class Singleton;
+
 namespace kudu {
 
 class Counter;
@@ -324,9 +330,10 @@ class CounterPrototype;
 
 template<typename T>
 class AtomicGauge;
+template <typename Sig>
+class Callback;
 template<typename T>
 class FunctionGauge;
-class Gauge;
 template<typename T>
 class GaugePrototype;
 
@@ -335,7 +342,6 @@ class MetricEntityPrototype;
 class MetricPrototype;
 class MetricRegistry;
 
-class HdrHistogram;
 class Histogram;
 class HistogramPrototype;
 class HistogramSnapshotPB;

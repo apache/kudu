@@ -4,14 +4,18 @@
 
 #include "kudu/gutil/strings/stringpiece.h"
 
-#include <algorithm>
 #include <climits>
-#include <glog/logging.h>
-#include <string.h>
+#include <cstring>
+
+#include <algorithm>
+#include <deque>
+#include <memory>
+#include <ostream>
 #include <string>
 
-#include "kudu/gutil/hash/hash.h"
-#include "kudu/gutil/logging-inl.h"
+#include <glog/logging.h>
+
+#include "kudu/gutil/hash/legacy_hash.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/memutil.h"
 

@@ -19,9 +19,12 @@
 // part of util.
 #include "kudu/gutil/map-util.h"
 
-#include <gtest/gtest.h>
 #include <map>
 #include <memory>
+#include <string>
+#include <utility>
+
+#include <gtest/gtest.h>
 
 using std::map;
 using std::string;

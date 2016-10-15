@@ -19,11 +19,21 @@
 
 #include <algorithm>
 #include <limits>
+#include <mutex>
+#include <ostream>
+#include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <google/protobuf/message.h>
+
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"

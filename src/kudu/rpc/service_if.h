@@ -17,31 +17,24 @@
 #ifndef KUDU_RPC_SERVICE_IF_H
 #define KUDU_RPC_SERVICE_IF_H
 
-#include <unordered_map>
+#include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
+#include <unordered_map>
 
-#include "kudu/gutil/macros.h"
+#include <google/protobuf/message.h>
+
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/net/sockaddr.h"
-#include "kudu/rpc/result_tracker.h"
-
-namespace google {
-namespace protobuf {
-class Message;
-}
-}
 
 namespace kudu {
-
-class Histogram;
-
 namespace rpc {
 
 class InboundCall;
 class RemoteMethod;
+class ResultTracker;
 class RpcContext;
-class ServiceIf;
 
 // Generated services define an instance of this class for each
 // method that they implement. The generic server code implemented

@@ -18,19 +18,21 @@
 #ifndef KUDU_CODEGEN_COMPILATION_MANAGER_H
 #define KUDU_CODEGEN_COMPILATION_MANAGER_H
 
+#include <cstdint>
+
 #include "kudu/codegen/code_generator.h"
 #include "kudu/codegen/code_cache.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
-class Counter;
 class MetricEntity;
-class MetricRegistry;
+class Schema;
 class ThreadPool;
 
 namespace codegen {

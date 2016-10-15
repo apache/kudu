@@ -24,7 +24,6 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

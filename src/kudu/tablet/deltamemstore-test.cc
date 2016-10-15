@@ -15,21 +15,50 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
-#include <stdlib.h>
+#include <ostream>
+#include <string>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/clock/clock.h"
 #include "kudu/clock/logical_clock.h"
+#include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/row_changelist.h"
 #include "kudu/common/schema.h"
-#include "kudu/consensus/consensus.pb.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/common/types.h"
+#include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/delta_stats.h"
+#include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/mutation.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"

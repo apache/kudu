@@ -17,20 +17,19 @@
 #ifndef KUDU_TABLET_DELTA_STATS_H
 #define KUDU_TABLET_DELTA_STATS_H
 
-#include <glog/logging.h>
-#include <boost/function.hpp>
-
+#include <cstdint>
 #include <set>
-#include <stdint.h>
 #include <string>
 #include <unordered_map>
 
-#include "kudu/gutil/atomicops.h"
+#include "kudu/common/schema.h" // IWYU pragma: keep
+#include "kudu/common/timestamp.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/common/row_changelist.h"
-#include "kudu/tablet/mvcc.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
+
+class RowChangeList;
 
 namespace tablet {
 

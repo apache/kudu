@@ -6,9 +6,10 @@
 #define BASE_MEMORY_REF_COUNTED_H_
 
 #include <cassert>
+#include <cstddef>
 
-#include "kudu/gutil/atomic_refcount.h"
-#include "kudu/gutil/port.h"
+#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
 
 namespace kudu {

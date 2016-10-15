@@ -17,14 +17,21 @@
 
 #include "kudu/tablet/tablet_mm_ops.h"
 
+#include <algorithm>
 #include <mutex>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 
 DEFINE_int32(undo_delta_block_gc_init_budget_millis, 1000,
     "The maximum number of milliseconds we will spend initializing "

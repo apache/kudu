@@ -15,14 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <ostream>
+#include <string>
+#include <vector>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <string>
+#include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 using std::string;
 using std::vector;

@@ -20,17 +20,10 @@
 #include "kudu/util/memory/arena.h"
 
 #include <algorithm>
+#include <memory>
 #include <mutex>
 
-#include "kudu/util/debug-util.h"
-#include "kudu/util/flag_tags.h"
-
-using std::copy;
-using std::max;
 using std::min;
-using std::reverse;
-using std::sort;
-using std::swap;
 using std::unique_ptr;
 
 namespace kudu {

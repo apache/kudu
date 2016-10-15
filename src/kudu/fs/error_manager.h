@@ -22,6 +22,7 @@
 
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback_forward.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/fault_injection.h"

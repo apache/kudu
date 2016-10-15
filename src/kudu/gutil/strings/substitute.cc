@@ -2,12 +2,15 @@
 
 #include "kudu/gutil/strings/substitute.h"
 
+#include <cstdint>
+#include <ostream>
+
 #include <glog/logging.h>
-#include "kudu/gutil/logging-inl.h"
+
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/escaping.h"
-#include "kudu/gutil/stl_util.h"
 
 using std::string;
 

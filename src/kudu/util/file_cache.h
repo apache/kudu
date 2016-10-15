@@ -27,12 +27,12 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/env.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class Env;
 
 namespace internal {
 

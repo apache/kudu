@@ -18,31 +18,34 @@
 #ifndef KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 #define KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 
+#include <cstdint>
 #include <iosfwd>
-#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
-#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_cache.h"
-#include "kudu/consensus/log_util.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/threading/thread_collision_warner.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 
 namespace kudu {
-template<class T>
-class AtomicGauge;
-class MemTracker;
-class MetricEntity;
 class ThreadPoolToken;
 
 namespace log {
@@ -50,8 +53,11 @@ class Log;
 }
 
 namespace consensus {
+class ConsensusRequestPB;
+class ConsensusResponsePB;
 class PeerMessageQueueObserver;
 class TimeManager;
+class StartTabletCopyRequestPB;
 
 // The id for the server-wide consensus queue MemTracker.
 extern const char kConsensusQueueParentTrackerId[];

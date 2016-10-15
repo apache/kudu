@@ -17,6 +17,8 @@
 #ifndef KUDU_TABLET_TRANSACTION_ORDER_VERIFIER_H
 #define KUDU_TABLET_TRANSACTION_ORDER_VERIFIER_H
 
+#include <cstdint>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"

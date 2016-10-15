@@ -15,12 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <gtest/gtest.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
@@ -31,7 +33,11 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using kudu::pb_util::SecureDebugString;

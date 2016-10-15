@@ -18,21 +18,28 @@
 #ifndef KUDU_CONSENSUS_LOG_UTIL_H_
 #define KUDU_CONSENSUS_LOG_UTIL_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <deque>
-#include <gtest/gtest.h>
-#include <iosfwd>
-#include <map>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
 #include "kudu/consensus/log.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 // Used by other classes, now part of the API.
 DECLARE_bool(log_force_fsync_all);
@@ -40,10 +47,6 @@ DECLARE_bool(log_force_fsync_all);
 namespace kudu {
 
 class CompressionCodec;
-
-namespace consensus {
-struct OpIdBiggerThanFunctor;
-} // namespace consensus
 
 namespace log {
 

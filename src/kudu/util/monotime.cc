@@ -17,17 +17,21 @@
 
 #include "kudu/util/monotime.h"
 
-#include <glog/logging.h>
-#include <limits>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/time.h>
-#include <time.h>
 
+#include <ctime>
+#include <limits>
+
+#include <glog/logging.h>
+
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/sysinfo.h"
-#include "kudu/gutil/walltime.h"
 #include "kudu/util/thread_restrictions.h"
+#if defined(__APPLE__)
+#include "kudu/gutil/walltime.h"
+#endif
 
 namespace kudu {
 

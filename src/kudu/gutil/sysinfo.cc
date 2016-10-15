@@ -32,15 +32,10 @@
 # define PLATFORM_WINDOWS 1
 #endif
 
-#include <ctype.h>    // for isspace()
-#include <stdlib.h>   // for getenv()
-#include <stdio.h>    // for snprintf(), sscanf()
-#include <string.h>   // for memmove(), memchr(), etc.
+
 #include <fcntl.h>    // for open()
-#include <errno.h>    // for errno
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>   // for read()
-#endif
+
 #if defined __MACH__          // Mac OS X, almost certainly
 #include <sys/types.h>
 #include <sys/sysctl.h>       // how we figure out numcpu's on OS X
@@ -53,11 +48,21 @@
 #include <shlwapi.h>          // for SHGetValueA()
 #include <tlhelp32.h>         // for Module32First()
 #endif
+
+#include <cerrno>    // for errno
+#include <cstdio>    // for snprintf(), sscanf()
+#include <cstdlib>   // for getenv()
+#include <cstring>   // for memmove(), memchr(), etc.
+#include <ctime>
+#include <ostream>
+
+#include <glog/logging.h>
+
 #include "kudu/gutil/dynamic_annotations.h"   // for RunningOnValgrind
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
-#include <glog/logging.h>
 
 // This isn't in the 'base' namespace in tcmallc. But, tcmalloc
 // exports these functions, so we need to namespace them to avoid

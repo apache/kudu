@@ -18,17 +18,17 @@
 #ifndef KUDU_RPC_SASL_HELPER_H
 #define KUDU_RPC_SASL_HELPER_H
 
+#include <cstdint>
 #include <set>
 #include <string>
 
-#include <sasl/sasl.h>
-
+#include "kudu/gutil/macros.h"
 #include "kudu/rpc/sasl_common.h"
-#include "kudu/util/status.h"
 
 namespace kudu {
 
-class Sockaddr;
+class Slice;
+class Status;
 
 namespace rpc {
 

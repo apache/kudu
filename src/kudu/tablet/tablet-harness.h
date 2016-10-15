@@ -24,9 +24,11 @@
 
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/logical_clock.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/env.h"
 #include "kudu/util/mem_tracker.h"
@@ -50,8 +52,7 @@ static std::pair<PartitionSchema, Partition> CreateDefaultPartition(const Schema
 
   // Create the tablet partitions.
   std::vector<Partition> partitions;
-  CHECK_OK(partition_schema.CreatePartitions(
-      std::vector<KuduPartialRow>(), {}, schema, &partitions));
+  CHECK_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
   CHECK_EQ(1, partitions.size());
   return std::make_pair(partition_schema, partitions[0]);
 }

@@ -16,6 +16,9 @@
 // under the License.
 #include "kudu/util/pb_util-internal.h"
 
+#include <ostream>
+#include <string>
+
 namespace kudu {
 namespace pb_util {
 namespace internal {

@@ -18,11 +18,10 @@
 #ifndef KUDU_CONSENSUS_OPID_UTIL_H_
 #define KUDU_CONSENSUS_OPID_UTIL_H_
 
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <string>
-#include <utility>
 
 namespace kudu {
 namespace consensus {

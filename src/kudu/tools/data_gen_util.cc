@@ -14,12 +14,17 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/tools/data_gen_util.h"
+
+#include <ostream>
+
+#include <glog/logging.h>
 
 #include "kudu/client/schema.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/strings/numbers.h"
-#include "kudu/util/random.h"
+#include "kudu/util/random.h" // IWYU pragma: keep
 #include "kudu/util/status.h"
 
 namespace kudu {

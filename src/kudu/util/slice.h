@@ -7,11 +7,15 @@
 #ifndef KUDU_UTIL_SLICE_H_
 #define KUDU_UTIL_SLICE_H_
 
-#include <assert.h>
-#include <map>
-#include <stddef.h>
+// NOTE: using stdint.h instead of cstdint because this file is supposed
+//       to be processed by a compiler lacking C++11 support.
 #include <stdint.h>
-#include <string.h>
+
+#include <cassert>
+#include <cstddef>
+#include <cstring>
+#include <iosfwd>
+#include <map>
 #include <string>
 
 #ifdef KUDU_HEADERS_USE_RICH_SLICE

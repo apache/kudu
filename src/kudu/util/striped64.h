@@ -18,14 +18,13 @@
 #ifndef KUDU_UTIL_STRIPED64_H_
 #define KUDU_UTIL_STRIPED64_H_
 
+#include <cstdint>
+
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/atomic.h"
-#include "kudu/util/threadlocal.h"
 
 namespace kudu {
-
-class Striped64;
-
 namespace striped64 {
 namespace internal {
 

@@ -16,9 +16,10 @@
 // under the License.
 #pragma once
 
+#include <algorithm>
 #include <string>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 
 namespace kudu {
 namespace rpc {

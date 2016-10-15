@@ -15,21 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <sys/types.h>
-#include <unistd.h>
-
+#include <algorithm>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 METRIC_DECLARE_entity(server);

@@ -5,29 +5,45 @@
 
 #include "kudu/util/debug/trace_event_impl.h"
 
+#include <sched.h>
+#include <unistd.h>
+
 #include <algorithm>
-#include <gflags/gflags.h>
+#include <cinttypes>
+#include <cstdlib>
+#include <cstring>
 #include <list>
+#include <sstream>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
+
 #include "kudu/gutil/bind.h"
-#include "kudu/util/atomic.h"
-#include "kudu/util/debug/trace_event.h"
-#include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/strings/split.h"
-#include "kudu/gutil/strings/util.h"
+#include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted_memory.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/gutil/strings/escaping.h"
+#include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/dynamic_annotations.h"
-
+#include "kudu/gutil/strings/util.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
+
+#include "kudu/util/atomic.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/debug/trace_event_synthetic_delay.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
 DEFINE_string(trace_to_console, "",

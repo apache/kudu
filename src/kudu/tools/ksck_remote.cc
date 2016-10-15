@@ -17,13 +17,39 @@
 
 #include "kudu/tools/ksck_remote.h"
 
+#include <cstdint>
+#include <ostream>
+#include <unordered_map>
+#include <utility>
+
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
+#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/response_callback.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/server/server_base.pb.h"
+#include "kudu/server/server_base.proxy.h"
+#include "kudu/tablet/tablet.pb.h"
+#include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_service.pb.h"
+#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 

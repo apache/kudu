@@ -17,16 +17,19 @@
 #ifndef KUDU_INTEGRATION_TESTS_TEST_WORKLOAD_H
 #define KUDU_INTEGRATION_TESTS_TEST_WORKLOAD_H
 
+#include <cstdint>
+#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
@@ -35,6 +38,7 @@
 namespace kudu {
 
 class MiniCluster;
+class Status;
 
 // Utility class for generating a workload against a test cluster.
 //

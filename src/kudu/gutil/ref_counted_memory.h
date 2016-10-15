@@ -5,12 +5,15 @@
 #ifndef KUDU_GUTIL_REF_COUNTED_MEMORY_H_
 #define KUDU_GUTIL_REF_COUNTED_MEMORY_H_
 
+#include <cstddef>
+
 #include <string>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/threading/thread_collision_warner.h"
 
 #ifndef BASE_EXPORT
 #define BASE_EXPORT

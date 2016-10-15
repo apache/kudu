@@ -15,24 +15,31 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <arpa/inet.h>
-#include <ifaddrs.h>
-#include <netdb.h>
-#include <sys/types.h>
 #include <sys/socket.h>
+#include <ifaddrs.h>
+#include <limits.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/functional/hash.hpp>
+#include <boost/functional/hash/hash.hpp>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
@@ -41,7 +48,6 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/errno.h"
-#include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"

@@ -15,12 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include "kudu/fs/fs_manager.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

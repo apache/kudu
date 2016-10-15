@@ -17,12 +17,24 @@
 
 #include "kudu/util/thread.h"
 
-#include <gtest/gtest.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <ostream>
 #include <string>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/thread_restrictions.h"
 
 using std::string;

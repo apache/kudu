@@ -15,15 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <mutex>
+#include <ostream>
+#include <string>
+#include <thread>
+#include <vector>
+
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <mutex>
-#include <thread>
 
+#include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/logical_clock.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::thread;

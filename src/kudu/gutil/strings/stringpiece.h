@@ -113,19 +113,19 @@
 #define STRINGS_STRINGPIECE_H_
 
 
-#include <assert.h>
+#include <cassert>
+#include <cstddef>
+#include <cstring>
+
 #include <functional>
 #include <iosfwd>
+#include <iterator>
 #include <limits>
-#include <stddef.h>
-#include <string.h>
 #include <string>
 
-#include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/port.h"
-#include "kudu/gutil/type_traits.h"
+#include "kudu/gutil/hash/string_hash.h"
 #include "kudu/gutil/strings/fastmem.h"
-#include "kudu/gutil/hash/hash.h"
+#include "kudu/gutil/type_traits.h"
 
 class StringPiece {
  private:
@@ -335,7 +335,6 @@ inline bool operator<=(StringPiece x, StringPiece y) {
 inline bool operator>=(StringPiece x, StringPiece y) {
   return !(x < y);
 }
-class StringPiece;
 template <class X> struct GoodFastHash;
 
 // ------------------------------------------------------------------

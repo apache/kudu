@@ -17,8 +17,16 @@
 
 #include "kudu/clock/system_ntp.h"
 
+#include <sys/time.h>
 #include <sys/timex.h>
 
+#include <cerrno>
+#include <ostream>
+#include <string>
+
+#include <glog/logging.h>
+
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/logging.h"

@@ -17,8 +17,11 @@
 #ifndef KUDU_CLIENT_RESOURCE_METRICS_H
 #define KUDU_CLIENT_RESOURCE_METRICS_H
 
-#include <map>
+// NOTE: using stdint.h instead of cstdint because this file is supposed
+//       to be processed by a compiler lacking C++11 support.
 #include <stdint.h>
+
+#include <map>
 #include <string>
 
 #include "kudu/util/kudu_export.h"

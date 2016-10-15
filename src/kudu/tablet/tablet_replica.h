@@ -18,30 +18,51 @@
 #ifndef KUDU_TABLET_TABLET_REPLICA_H_
 #define KUDU_TABLET_TABLET_REPLICA_H_
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 
-#include "kudu/consensus/log.h"
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
+#include "kudu/consensus/log.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/callback.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/transaction_order_verifier.h"
+#include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
-#include "kudu/util/metrics.h"
-#include "kudu/util/semaphore.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 class MaintenanceManager;
 class MaintenanceOp;
+class MonoDelta;
 class ThreadPool;
+class ThreadPoolToken;
+template <typename Sig>
+class Callback;
 
 namespace consensus {
 class ConsensusMetadataManager;
+class TransactionStatusPB;
+}
+
+namespace clock {
+class Clock;
 }
 
 namespace log {
@@ -53,16 +74,11 @@ class Messenger;
 class ResultTracker;
 } // namespace rpc
 
-namespace tserver {
-class CatchUpServiceTest;
-} // namespace tserver
-
 namespace tablet {
-class LeaderTransactionDriver;
-class ReplicaTransactionDriver;
-class TabletReplica;
+class AlterSchemaTransactionState;
 class TabletStatusPB;
 class TransactionDriver;
+class WriteTransactionState;
 
 // A replica in a tablet consensus configuration, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated

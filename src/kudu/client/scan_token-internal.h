@@ -24,6 +24,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/client.pb.h"
 #include "kudu/client/scan_configuration.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace client {

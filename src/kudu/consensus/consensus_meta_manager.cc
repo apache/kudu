@@ -16,12 +16,16 @@
 // under the License.
 #include "kudu/consensus/consensus_meta_manager.h"
 
+#include <algorithm>
 #include <mutex>
+
+#include <glog/logging.h>
 
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace consensus {

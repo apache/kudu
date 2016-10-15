@@ -18,7 +18,9 @@
 #include "kudu/twitter-demo/oauth.h"
 
 #include <algorithm>
+#include <ctime>
 #include <vector>
+
 #include <glog/logging.h>
 extern "C" {
 #include <oauth.h>

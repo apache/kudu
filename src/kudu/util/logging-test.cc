@@ -16,20 +16,24 @@
 // under the License.
 
 #include <atomic>
-#include <glog/logging.h>
-#include <gmock/gmock.h>
+#include <ctime>
+#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gmock/gmock-matchers.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/async_logger.h"
 #include "kudu/util/barrier.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/logging_test_util.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"  // IWYU pragma: keep
 #include "kudu/util/test_util.h"
 
 using std::string;

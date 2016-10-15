@@ -15,19 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <signal.h>
-#include <sys/types.h>
 #include <unistd.h>
 
+#include <csignal>
+#include <cstdlib>
+#include <cstring>
+#include <ostream>
 #include <string>
 #include <vector>
 
-#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/minidump.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/env.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

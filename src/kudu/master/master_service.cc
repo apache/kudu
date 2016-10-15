@@ -17,26 +17,34 @@
 
 #include "kudu/master/master_service.h"
 
-#include <gflags/gflags.h>
-#include <google/protobuf/message.h>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_context.h"
-#include "kudu/server/webserver.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/server/server_base.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
-
+#include "kudu/util/status.h"
 
 DEFINE_int32(master_inject_latency_on_tablet_lookups_ms, 0,
              "Number of milliseconds that the master will sleep before responding to "
@@ -56,20 +64,18 @@ DEFINE_bool(master_non_leader_masters_propagate_tsk, false,
             "tests scenarios only and should not be used elsewhere.");
 TAG_FLAG(master_non_leader_masters_propagate_tsk, hidden);
 
+using google::protobuf::Message;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::security::SignedTokenPB;
-using google::protobuf::Message;
+using kudu::server::ServerBase;
+using std::shared_ptr;
 using std::string;
 using std::vector;
-using std::shared_ptr;
+using strings::Substitute;
 
 namespace kudu {
 namespace master {
-
-using server::ServerBase;
-using security::SignedTokenPB;
-using strings::Substitute;
 
 namespace {
 

@@ -17,6 +17,8 @@
 #ifndef KUDU_TSERVER_SCANNERS_H
 #define KUDU_TSERVER_SCANNERS_H
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -24,12 +26,17 @@
 #include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
 #include "kudu/common/iterator_stats.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/condition_variable.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -39,14 +46,11 @@
 
 namespace kudu {
 
-class MetricEntity;
 class RowwiseIterator;
 class ScanSpec;
 class Schema;
 class Status;
 class Thread;
-
-struct IteratorStats;
 
 namespace tserver {
 

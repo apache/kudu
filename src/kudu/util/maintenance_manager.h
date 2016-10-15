@@ -17,26 +17,29 @@
 
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
 
+#include <algorithm>
 #include <functional>
 #include <map>
 #include <memory>
-#include <set>
+#include <mutex>
 #include <string>
-#include <thread>
+#include <unordered_map>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/condition_variable.h"
-#include "kudu/util/countdown_latch.h"
-#include "kudu/util/maintenance_manager.pb.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/random.h"
-#include "kudu/util/thread.h"
-#include "kudu/util/threadpool.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -44,6 +47,10 @@ template<class T>
 class AtomicGauge;
 class Histogram;
 class MaintenanceManager;
+class MaintenanceManagerStatusPB;
+class MaintenanceManagerStatusPB_OpInstancePB;
+class Thread;
+class ThreadPool;
 
 class MaintenanceOpStats {
  public:
@@ -156,17 +163,7 @@ struct OpInstance {
   MonoDelta duration;
   MonoTime start_mono_time;
 
-  MaintenanceManagerStatusPB_OpInstancePB DumpToPB() const {
-    MaintenanceManagerStatusPB_OpInstancePB pb;
-    pb.set_thread_id(thread_id);
-    pb.set_name(name);
-    if (duration.Initialized()) {
-      pb.set_duration_millis(duration.ToMilliseconds());
-    }
-    MonoDelta delta(MonoTime::Now() - start_mono_time);
-    pb.set_millis_since_start(delta.ToMilliseconds());
-    return pb;
-  }
+  MaintenanceManagerStatusPB_OpInstancePB DumpToPB() const;
 };
 
 // MaintenanceOp objects represent background operations that the

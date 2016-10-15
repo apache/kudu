@@ -17,12 +17,12 @@
 #pragma once
 
 #include <memory>
+#include <ostream>
 #include <string>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -34,9 +34,6 @@ class Cert;
 class CertSignRequest;
 class PrivateKey;
 
-namespace ca {
-class CertSigner;
-} // namespace ca
 } // namespace security
 
 namespace rpc {

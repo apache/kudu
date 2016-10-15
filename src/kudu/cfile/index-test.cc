@@ -15,14 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <string>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/index_btree.h"
+#include "kudu/cfile/block_pointer.h"
+#include "kudu/cfile/cfile_util.h"
+#include "kudu/cfile/index_block.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/key_encoder.h"
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 

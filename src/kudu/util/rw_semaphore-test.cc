@@ -15,10 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <cstdint>
 #include <mutex>
 #include <thread>
 #include <vector>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"

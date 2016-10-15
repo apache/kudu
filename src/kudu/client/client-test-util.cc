@@ -18,14 +18,19 @@
 #include "kudu/client/client-test-util.h"
 
 #include <string>
+#include <ostream>
 #include <vector>
 
 #include <glog/logging.h>
+#include <gtest/gtest.h>
 
+#include "kudu/client/row_result.h"
+#include "kudu/client/scan_batch.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/write_op.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
-#include "kudu/util/test_util.h"
 
 using std::string;
 using std::vector;

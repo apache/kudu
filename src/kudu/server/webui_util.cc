@@ -20,11 +20,14 @@
 #include <sstream>
 #include <string>
 
-#include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/map-util.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/monitored_task.h"
+#include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/url-coding.h"
 
 using std::string;

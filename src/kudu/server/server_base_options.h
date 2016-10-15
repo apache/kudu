@@ -17,8 +17,8 @@
 #ifndef KUDU_SERVER_SERVER_BASE_OPTIONS_H
 #define KUDU_SERVER_SERVER_BASE_OPTIONS_H
 
+#include <cstdint>
 #include <string>
-#include <vector>
 
 #include "kudu/fs/fs_manager.h"
 #include "kudu/server/webserver_options.h"

@@ -21,10 +21,13 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <unordered_map>
+#include <vector>
 
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"

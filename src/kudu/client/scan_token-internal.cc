@@ -17,22 +17,42 @@
 
 #include "kudu/client/scan_token-internal.h"
 
-#include <boost/optional.hpp>
-#include <vector>
-#include <string>
+#include <cstdint>
 #include <memory>
+#include <ostream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/replica-internal.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/client/tablet-internal.h"
 #include "kudu/client/tablet_server-internal.h"
+#include "kudu/common/column_predicate.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/partition_pruner.h"
+#include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/pb_util.h"
+#include "kudu/util/async_util.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 using std::string;

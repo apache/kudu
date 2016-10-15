@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include <gtest/gtest_prod.h>
@@ -33,8 +34,8 @@ class Status;
 
 namespace consensus {
 
-class ConsensusMetadataManager;
-class ConsensusMetadataTest;
+class ConsensusMetadataManager; // IWYU pragma: keep
+class ConsensusMetadataTest;    // IWYU pragma: keep
 
 // Provides methods to read, write, and persist consensus-related metadata.
 // This partly corresponds to Raft Figure 2's "Persistent state on all servers".

@@ -14,37 +14,96 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/tserver/tablet_server-test-base.h"
 
+#include <unistd.h>
+
+#include <cstdint>
 #include <memory>
 #include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include <boost/bind.hpp>
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <google/protobuf/util/message_differencer.h>
-#include <zlib.h>
+#include <gtest/gtest.h>
 
+#include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/row_operations.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/log-test-base.h"
+#include "kudu/consensus/log.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/fs/fs.pb.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/master.pb.h"
+#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
-#include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/heartbeater.h"
+#include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/tserver/scanners.h"
+#include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tablet_server_test_util.h"
+#include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
+#include "kudu/tserver/tserver_service.pb.h"
+#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/jsonwriter.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/url-coding.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 #include "kudu/util/zlib.h"
 
 using google::protobuf::util::MessageDifferencer;
-using kudu::rpc::Messenger;
-using kudu::rpc::MessengerBuilder;
-using kudu::rpc::RpcController;
 using kudu::clock::Clock;
 using kudu::clock::HybridClock;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::Messenger;
+using kudu::rpc::MessengerBuilder;
+using kudu::rpc::RpcController;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletSuperBlockPB;
@@ -74,6 +133,11 @@ METRIC_DECLARE_counter(rows_deleted);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 
 namespace kudu {
+
+namespace tablet {
+class RowSet;
+}
+
 namespace tserver {
 
 class TabletServerTest : public TabletServerTestBase {

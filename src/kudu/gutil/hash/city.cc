@@ -18,22 +18,26 @@
 
 #include <sys/types.h>
 #include <algorithm>
+#include <iterator>
+#include <utility>
+#include <vector>
+
+#include <glog/logging.h>
+
+#include "kudu/gutil/endian.h"
+#include "kudu/gutil/int128.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/hash/hash128to64.h"
+#include "kudu/gutil/port.h"
+
 using std::copy;
+using std::make_pair;
 using std::max;
 using std::min;
+using std::pair;
 using std::reverse;
 using std::sort;
 using std::swap;
-#include <utility>
-using std::make_pair;
-using std::pair;
-
-#include "kudu/gutil/int128.h"
-#include "kudu/gutil/integral_types.h"
-#include <glog/logging.h>
-#include "kudu/gutil/logging-inl.h"
-#include "kudu/gutil/hash/hash128to64.h"
-#include "kudu/gutil/endian.h"
 
 namespace util_hash {
 

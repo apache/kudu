@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -24,33 +26,29 @@
 #include <set>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/fs/fs.pb.h"
-#include "kudu/gutil/callback_forward.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/util/atomic.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-template<typename T>
-class AtomicGauge;
 class Env;
-class MetricEntity;
 class ThreadPool;
-class DataDirGroupPB;
 
 namespace fs {
 
 typedef std::unordered_map<uint16_t, std::string> UuidByUuidIndexMap;
 typedef std::unordered_map<std::string, uint16_t> UuidIndexByUuidMap;
 
-class DataDirManager;
 class PathInstanceMetadataFile;
 struct CreateBlockOptions;
 

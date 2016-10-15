@@ -15,15 +15,27 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <cstdlib>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
-#include "kudu/consensus/consensus.proxy.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
-#include "kudu/fs/fs_manager.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -32,15 +44,15 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
-#include "kudu/tserver/tserver_admin.proxy.h"
-#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_leader_failure_detection);

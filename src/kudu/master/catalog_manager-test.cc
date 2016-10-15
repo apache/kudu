@@ -14,11 +14,23 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
+#include <ostream>
+#include <string>
+#include <vector>
+
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/ts_descriptor.h"
+#include "kudu/util/cow_object.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

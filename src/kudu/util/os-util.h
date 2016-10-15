@@ -23,6 +23,7 @@
 #ifndef KUDU_UTIL_OS_UTIL_H
 #define KUDU_UTIL_OS_UTIL_H
 
+#include <cstdint>
 #include <string>
 
 #include "kudu/util/status.h"

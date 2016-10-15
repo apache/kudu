@@ -15,18 +15,43 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/cfile/cfile_util.h"
+#include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/row_changelist.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs-test-util.h"
-#include "kudu/gutil/strings/strcat.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/tablet/delta_key.h"
+#include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
-#include "kudu/tablet/delta_tracker.h"
 #include "kudu/tablet/deltafile.h"
+#include "kudu/tablet/mutation.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(deltafile_default_block_size);

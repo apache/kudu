@@ -17,13 +17,22 @@
 
 #include "kudu/common/encoded_key.h"
 
+#include <cstdint>
+#include <string>
+
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/slice.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/key_encoder.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/strings/substitute.h" // IWYU pragma: keep
+#include "kudu/util/faststring.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/stopwatch.h" // IWYU pragma: keep
 #include "kudu/util/test_util.h"
 #include "kudu/util/test_macros.h"
 

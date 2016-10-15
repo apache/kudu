@@ -17,11 +17,14 @@
 
 #include "kudu/tablet/delta_applier.h"
 
+#include <algorithm>
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/common/column_materialization_context.h"
-#include "kudu/common/iterator.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/util/status.h"
 
@@ -30,6 +33,12 @@ using std::string;
 using std::unique_ptr;
 
 namespace kudu {
+
+class ScanSpec;
+class Schema;
+class SelectionVector;
+struct IteratorStats;
+
 namespace tablet {
 
   // Construct. The base_iter and delta_iter should not be Initted.

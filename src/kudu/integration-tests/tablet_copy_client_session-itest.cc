@@ -15,15 +15,36 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <stdlib.h>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/common/wire_protocol.h"
-#include "kudu/gutil/macros.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.pb.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 using kudu::itest::StartTabletCopy;
 using kudu::itest::TServerDetails;

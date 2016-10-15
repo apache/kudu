@@ -15,11 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <string>
 #include <vector>
 
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/request_tracker.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/test_macros.h"
 
 using std::vector;
 

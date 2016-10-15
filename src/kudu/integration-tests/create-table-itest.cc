@@ -15,22 +15,46 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
-#include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 using std::multimap;
 using std::set;

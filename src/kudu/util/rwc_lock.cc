@@ -22,7 +22,6 @@
 #ifndef NDEBUG
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/debug-util.h"
-#include "kudu/util/env.h"
 #include "kudu/util/thread.h"
 #endif // NDEBUG
 

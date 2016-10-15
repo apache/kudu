@@ -21,22 +21,29 @@
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/integration-tests/mini_cluster.h"
-#include "kudu/util/env.h"
 
 namespace kudu {
 
+class Env;
+class HostPort;
 namespace client {
 class KuduClient;
 class KuduClientBuilder;
 }
 
 namespace master {
+class MasterServiceProxy;
 class MiniMaster;
 class TSDescriptor;
-class TabletLocationsPB;
+}
+
+namespace rpc {
+class Messenger;
 }
 
 namespace tserver {

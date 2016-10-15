@@ -14,20 +14,26 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/consensus/consensus_meta.h"
 
+#include <cstdint>
 #include <memory>
+#include <ostream>
+#include <string>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 

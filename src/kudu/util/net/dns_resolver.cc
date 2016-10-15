@@ -17,15 +17,17 @@
 
 #include "kudu/util/net/dns_resolver.h"
 
-#include <boost/bind.hpp>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <vector>
 
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/gutil/callback.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/status.h"
 
 DEFINE_int32(dns_num_resolver_threads, 1, "The number of threads to use for DNS resolution");
 TAG_FLAG(dns_num_resolver_threads, advanced);

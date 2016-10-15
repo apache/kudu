@@ -24,7 +24,6 @@
 
 namespace kudu {
 class KuduPartialRow;
-class Random;
 
 namespace client {
 class KuduSchema;

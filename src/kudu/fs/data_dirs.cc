@@ -19,32 +19,35 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <ostream>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/block_manager_util.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"

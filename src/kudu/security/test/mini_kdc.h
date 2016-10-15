@@ -17,18 +17,20 @@
 
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
-class Env;
 class Subprocess;
 
 struct MiniKdcOptions {

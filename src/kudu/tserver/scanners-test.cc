@@ -16,14 +16,20 @@
 // under the License.
 #include "kudu/tserver/scanners.h"
 
+#include <memory>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
+
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/scanner_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/monotime.h"
 
 DECLARE_int32(scanner_ttl_ms);
 

@@ -17,10 +17,9 @@
 
 #include "kudu/common/timestamp.h"
 
-#include <ostream>
+#include <ostream> // IWYU pragma: keep
 
 #include "kudu/gutil/mathlimits.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/memcmpable_varint.h"
 

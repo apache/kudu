@@ -8,13 +8,11 @@
 #ifndef KUDU_GUTIL_CALLBACK_INTERNAL_H_
 #define KUDU_GUTIL_CALLBACK_INTERNAL_H_
 
-#include <stddef.h>
+#include <cstddef>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
-
-template <typename T>
-class ScopedVector;
+#include "kudu/gutil/template_util.h"
+#include "kudu/gutil/type_traits.h"
 
 namespace kudu {
 namespace internal {

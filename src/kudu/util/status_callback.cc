@@ -17,6 +17,11 @@
 
 #include "kudu/util/status_callback.h"
 
+#include <ostream>
+
+#include <glog/logging.h>
+
+#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 using std::string;

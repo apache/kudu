@@ -15,25 +15,63 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
-#include <glog/logging.h>
-#include <stdlib.h>
-#include <list>
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <functional>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
 
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/cfile/block_cache.h"
+#include "kudu/cfile/block_handle.h"
+#include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile-test-base.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_reader.h"
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
+#include "kudu/cfile/type_encodings.h"
+#include "kudu/common/column_materialization_context.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/rowid.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs-test-util.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/singleton.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/bitmap.h"
+#include "kudu/util/cache.h"
+#include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/env.h"
+#include "kudu/util/mem_tracker.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DECLARE_string(block_cache_type);
 DECLARE_string(cfile_do_on_finish);

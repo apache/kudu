@@ -17,15 +17,16 @@
 #ifndef KUDU_UTIL_LOGGING_H
 #define KUDU_UTIL_LOGGING_H
 
+#include <cstdint>
+#include <iosfwd>
 #include <string>
-#include <gflags/gflags_declare.h>
+
 #include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/util/flags.h"
 #include "kudu/util/logging_callback.h"
 #include "kudu/util/status.h"
 

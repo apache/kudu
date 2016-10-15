@@ -17,24 +17,29 @@
 #ifndef KUDU_TABLET_DELTA_COMPACTION_H
 #define KUDU_TABLET_DELTA_COMPACTION_H
 
+#include <cstddef>
 #include <memory>
 #include <string>
-#include <unordered_map>
-#include <utility>
 #include <vector>
 
-#include "kudu/cfile/cfile_writer.h"
+#include "kudu/common/schema.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/tablet/compaction.h"
-#include "kudu/tablet/deltafile.h"
+#include "kudu/tablet/delta_store.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
+
+class FsManager;
 
 namespace tablet {
 
 class CFileSet;
-class DeltaMemStore;
-class DeltaKey;
+class DeltaFileWriter;
+class DeltaTracker;
 class MultiColumnWriter;
+class RowSetMetadataUpdate;
 
 // Handles major delta compaction: applying deltas to specific columns
 // of a DiskRowSet, writing out an updated DiskRowSet without re-writing the

@@ -17,6 +17,7 @@
 
 #include "kudu/security/kerberos_util.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
 
 #include <array>
 #include <utility>

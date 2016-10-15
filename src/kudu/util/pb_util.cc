@@ -23,12 +23,13 @@
 
 #include "kudu/util/pb_util.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <deque>
 #include <initializer_list>
 #include <memory>
 #include <mutex>
-#include <ostream>
-#include <sstream>
+#include <ostream>  // IWYU pragma: keep
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -39,16 +40,17 @@
 #include <google/protobuf/descriptor_database.h>
 #include <google/protobuf/dynamic_message.h>
 #include <google/protobuf/io/coded_stream.h>
-#include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 #include <google/protobuf/message.h>
 #include <google/protobuf/message_lite.h>
+#include <google/protobuf/stubs/status.h>
 #include <google/protobuf/text_format.h>
 #include <google/protobuf/util/json_util.h>
 
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/callback.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -59,12 +61,13 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/mutex.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util-internal.h"
 #include "kudu/util/pb_util.pb.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 using google::protobuf::Descriptor;
@@ -427,9 +430,9 @@ void SerializeToString(const MessageLite &msg, faststring *output) {
 }
 
 Status ParseFromSequentialFile(MessageLite *msg, SequentialFile *rfile) {
-  SequentialFileFileInputStream istream(rfile);
-  if (!msg->ParseFromZeroCopyStream(&istream)) {
-    RETURN_NOT_OK(istream.status());
+  SequentialFileFileInputStream input(rfile);
+  if (!msg->ParseFromZeroCopyStream(&input)) {
+    RETURN_NOT_OK(input.status());
 
     // If it's not a file IO error then it's a parsing error.
     // Probably, we read wrong or damaged data here.
@@ -455,9 +458,9 @@ Status WritePBToPath(Env* env, const std::string& path,
   RETURN_NOT_OK(env->NewTempWritableFile(WritableFileOptions(), tmp_template, &tmp_path, &file));
   env_util::ScopedFileDeleter tmp_deleter(env, tmp_path);
 
-  WritableFileOutputStream ostream(file.get());
-  bool res = msg.SerializeToZeroCopyStream(&ostream);
-  if (!res || !ostream.Flush()) {
+  WritableFileOutputStream output(file.get());
+  bool res = msg.SerializeToZeroCopyStream(&output);
+  if (!res || !output.Flush()) {
     return Status::IOError("Unable to serialize PB to file");
   }
 

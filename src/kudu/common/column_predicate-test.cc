@@ -17,14 +17,21 @@
 
 #include "kudu/common/column_predicate.h"
 
+#include <cmath>
+#include <cstdint>
+#include <string>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
-#include <glog/logging.h>
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/test_util.h"
 
 using std::vector;

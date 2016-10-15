@@ -16,10 +16,12 @@
 // under the License.
 
 #include <string>
+#include <ostream>
 
 #include <gtest/gtest.h>
+#include <glog/logging.h>
 
-#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/user.h"
 

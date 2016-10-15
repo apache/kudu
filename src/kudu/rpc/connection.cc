@@ -17,45 +17,43 @@
 
 #include "kudu/rpc/connection.h"
 
-#include <stdint.h>
-
 #include <algorithm>
+#include <cerrno>
+#include <cstddef>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <set>
 #include <string>
-#include <unordered_set>
-#include <vector>
+#include <type_traits>
 
+#include <boost/intrusive/detail/list_iterator.hpp>
 #include <boost/intrusive/list.hpp>
-#include <gflags/gflags.h>
+#include <ev.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
+#include "kudu/util/slice.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/client_negotiation.h"
-#include "kudu/rpc/constants.h"
+#include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/reactor.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/util/debug-util.h"
-#include "kudu/util/flag_tags.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
-#include "kudu/util/trace.h"
 
 using std::function;
 using std::includes;
 using std::set;
 using std::shared_ptr;
 using std::unique_ptr;
-using std::vector;
 using strings::Substitute;
 
 namespace kudu {

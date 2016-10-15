@@ -17,10 +17,12 @@
 #include "kudu/fs/fs_report.h"
 
 #include <iostream>
-#include <map>
 #include <string>
 #include <utility>
+#include <unordered_map>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/strings/join.h"

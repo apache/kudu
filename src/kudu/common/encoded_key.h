@@ -17,15 +17,22 @@
 #ifndef KUDU_COMMON_ENCODED_KEY_H
 #define KUDU_COMMON_ENCODED_KEY_H
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
-#include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
+class Arena;
 class ConstContiguousRow;
+class Schema;
 
 class EncodedKey {
  public:

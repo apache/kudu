@@ -20,31 +20,41 @@
 #include <algorithm>
 #include <map>
 #include <mutex>
-#include <utility>
+#include <ostream>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 
 #include "kudu/cfile/bloomfile.h"
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/type_encodings.h"
 #include "kudu/common/generic_iterators.h"
 #include "kudu/common/iterator.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
-#include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/common/types.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/delta_compaction.h"
+#include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
+#include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/multi_column_writer.h"
+#include "kudu/tablet/mutation.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 DEFINE_int32(tablet_delta_store_minor_compact_max, 1000,
@@ -62,6 +72,11 @@ DEFINE_int32(default_composite_key_index_block_size_bytes, 4096,
 TAG_FLAG(default_composite_key_index_block_size_bytes, experimental);
 
 namespace kudu {
+
+namespace consensus {
+class OpId;
+}
+
 namespace tablet {
 
 using cfile::BloomFileWriter;

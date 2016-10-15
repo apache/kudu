@@ -15,13 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <ostream>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/bind.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/once.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/thread.h"
 

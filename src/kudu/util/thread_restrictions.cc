@@ -15,8 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <ostream>
+#include <string>
+
 #include <glog/logging.h>
-#include <gperftools/heap-checker.h>
 
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/thread.h"

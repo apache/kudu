@@ -15,34 +15,64 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <memory>
-#include <string>
-#include <tuple>
+#include <sys/types.h>
 
-#include <boost/optional.hpp>
-#include <glog/stl_logging.h>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <tuple>  // IWYU pragma: keep
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
+#include "kudu/client/scan_batch.h"
+#include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/master/master.pb.h"
+#include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/pstack_watcher.h"
+#include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 using kudu::client::KuduClient;
 using kudu::client::KuduScanner;

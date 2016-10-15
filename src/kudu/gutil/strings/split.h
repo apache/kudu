@@ -23,7 +23,6 @@
 #include <stddef.h>
 
 #include <algorithm>
-#include <iterator>
 #include <map>
 #include <set>
 #include <string>
@@ -35,9 +34,8 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/strings/charset.h"
-#include "kudu/gutil/strings/split_internal.h"
+#include "kudu/gutil/strings/split_internal.h" // IWYU pragma: export
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/strip.h"
 

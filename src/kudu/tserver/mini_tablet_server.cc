@@ -17,18 +17,30 @@
 
 #include "kudu/tserver/mini_tablet_server.h"
 
+#include <ostream>
 #include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/tablet-test-util.h"
+#include "kudu/server/rpc_server.h"
+#include "kudu/server/webserver_options.h"
+#include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
@@ -36,9 +48,9 @@
 DECLARE_bool(enable_minidumps);
 DECLARE_bool(rpc_server_allow_ephemeral_ports);
 
-using kudu::consensus::RaftConfigPB;
-using kudu::consensus::RaftPeerPB;
 using kudu::tablet::TabletReplica;
+using kudu::consensus::RaftPeerPB;
+using kudu::consensus::RaftConfigPB;
 using std::pair;
 using std::string;
 using std::unique_ptr;

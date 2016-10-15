@@ -21,18 +21,25 @@
 #define KUDU_UTIL_THREAD_H
 
 #include <pthread.h>
+#if defined(__linux__)
+#include <syscall.h>
+#else
 #include <sys/syscall.h>
-#include <sys/types.h>
+#endif
+#include <unistd.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <string>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
+#include <boost/bind.hpp>     // IWYU pragma: keep
+#include <boost/function.hpp> // IWYU pragma: keep
 
-#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/callback.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/async_util.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

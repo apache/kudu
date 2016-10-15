@@ -17,11 +17,16 @@
 
 #include "kudu/util/zlib.h"
 
+#include <zconf.h>
 #include <zlib.h>
 
+#include <cstdint>
+#include <cstring>
 #include <string>
 #include <memory>
+#include <ostream>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"

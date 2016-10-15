@@ -15,10 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
+#include <unordered_set>
+#include <vector>
+
+#include <gtest/gtest.h>
+
+#include "kudu/common/common.pb.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/tablet-test-base.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_mm_ops.h"
-#include "kudu/tablet/tablet-test-base.h"
+#include "kudu/util/maintenance_manager.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/test_macros.h"
 
 namespace kudu {
 namespace tablet {

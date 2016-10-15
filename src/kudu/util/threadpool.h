@@ -23,10 +23,9 @@
 #include <string>
 #include <unordered_set>
 
-#include <boost/function.hpp>
 #include <gtest/gtest_prod.h>
 
-#include "kudu/gutil/callback_forward.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -36,6 +35,11 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
+
+namespace boost {
+template <typename Signature>
+class function;
+} // namespace boost
 
 namespace kudu {
 

@@ -20,16 +20,22 @@
 #include <algorithm>
 #include <memory>
 #include <mutex>
+#include <ostream>
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/rpc/rpc_sidecar.h"
+#include "kudu/rpc/transfer.h"
 
 using std::unique_ptr;
-
 namespace kudu {
+
+class Slice;
+
 namespace rpc {
 
 RpcController::RpcController()

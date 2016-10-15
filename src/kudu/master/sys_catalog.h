@@ -17,29 +17,49 @@
 #ifndef KUDU_MASTER_SYS_CATALOG_H_
 #define KUDU_MASTER_SYS_CATALOG_H_
 
+#include <cstdint>
 #include <functional>
 #include <set>
 #include <string>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/master/master.pb.h"
+#include "kudu/gutil/callback.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
-class Schema;
 class FsManager;
+class MetricRegistry;
+class RowBlockRow;
+
+namespace consensus {
+class ConsensusMetadataManager;
+}
+
+namespace tablet {
+class TabletMetadata;
+}
 
 namespace tserver {
 class WriteRequestPB;
 class WriteResponsePB;
-}
+} // namespace tserver
 
 namespace master {
 
 class Master;
+class SysCertAuthorityEntryPB;
+class SysTablesEntryPB;
+class SysTabletsEntryPB;
+class SysTskEntryPB;
 class TableInfo;
 class TabletInfo;
 struct MasterOptions;

@@ -4,6 +4,7 @@
 
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
+#include "kudu/util/faststring.h"
 
 namespace kudu {
 

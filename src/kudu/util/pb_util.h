@@ -21,22 +21,23 @@
 #ifndef KUDU_UTIL_PB_UTIL_H
 #define KUDU_UTIL_PB_UTIL_H
 
+#include <cstdint>
+#include <iosfwd>
 #include <memory>
 #include <string>
 
+#include <google/protobuf/message.h>
 #include <gtest/gtest_prod.h>
 
-#include "kudu/util/debug/trace_event.h"
-#include "kudu/util/faststring.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/debug/trace_event_impl.h"
 
 namespace google {
 namespace protobuf {
 class DescriptorPool;
 class FileDescriptor;
 class FileDescriptorSet;
-class Message;
-class MessageFactory;
 class MessageLite;
 class SimpleDescriptorDatabase;
 } // namespace protobuf
@@ -50,6 +51,7 @@ class SequentialFile;
 class Slice;
 class Status;
 class RWFile;
+class faststring;
 
 namespace pb_util {
 

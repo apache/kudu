@@ -18,32 +18,36 @@
 #include "kudu/tools/tool_action_common.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <iomanip>
 #include <iostream>
 #include <memory>
 #include <numeric>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
+#include "kudu/client/client-internal.h"  // IWYU pragma: keep
+#include "kudu/gutil/map-util.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/consensus.proxy.h" // IWYU pragma: keep
 #include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
-#include "kudu/master/master.proxy.h"
+#include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -51,9 +55,10 @@
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/tserver/tserver_admin.proxy.h"
-#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
+#include "kudu/tserver/tserver_admin.proxy.h"   // IWYU pragma: keep
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -82,7 +87,20 @@ DEFINE_string(format, "pretty",
               "Format to use for printing list output tables.\n"
               "Possible values: pretty, space, tsv, csv, and json");
 
+namespace boost {
+template <typename Signature>
+class function;
+} // namespace boost
+
 namespace kudu {
+
+namespace master {
+class ListMastersRequestPB;
+class ListMastersResponsePB;
+class ListTabletServersRequestPB;
+class ListTabletServersResponsePB;
+} // namespace master
+
 namespace tools {
 
 using client::KuduClientBuilder;

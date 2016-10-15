@@ -16,17 +16,48 @@
 // under the License.
 #include "kudu/tserver/tablet_copy-test-base.h"
 
-#include <tuple>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
 
+#include <glog/logging.h>
 #include <glog/stl_logging.h>
+#include <gtest/gtest.h>
 
+#include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta_manager.h"
+#include "kudu/consensus/log.h"
+#include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/log_util.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/fastmem.h"
-#include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/messenger.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_replica.h"
+#include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/tserver/tablet_copy_client.h"
+#include "kudu/util/crc.h"
+#include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 using std::shared_ptr;
 using std::string;

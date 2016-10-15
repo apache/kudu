@@ -22,12 +22,9 @@
 #include <string>
 
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/rpc/connection_id.h"
 #include "kudu/rpc/response_callback.h"
-#include "kudu/rpc/rpc_controller.h"
-#include "kudu/rpc/rpc_header.pb.h"
-#include "kudu/util/monotime.h"
-#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
 namespace google {
@@ -37,9 +34,14 @@ class Message;
 } // namespace google
 
 namespace kudu {
+
+class Sockaddr;
+
 namespace rpc {
 
 class Messenger;
+class RpcController;
+class UserCredentials;
 
 // Interface to send calls to a remote service.
 //

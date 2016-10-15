@@ -17,11 +17,11 @@
 
 #include "kudu/util/user.h"
 
-#include <sys/types.h>
-#include <errno.h>
 #include <pwd.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstdlib>
 #include <string>
 
 #include <glog/logging.h>

@@ -17,20 +17,25 @@
 
 #include "kudu/util/net/socket.h"
 
-#include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
-#include <sys/types.h>
+#include <sys/time.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cinttypes>
+#include <cstring>
 #include <limits>
+#include <ostream>
 #include <string>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
@@ -41,7 +46,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
-#include "kudu/util/subprocess.h"
+#include "kudu/util/slice.h"
 
 DEFINE_string(local_ip_for_outbound_sockets, "",
               "IP to bind to when making outgoing socket connections. "

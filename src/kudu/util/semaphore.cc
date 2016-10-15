@@ -18,8 +18,18 @@
 #include "kudu/util/semaphore.h"
 
 #include <semaphore.h>
+
+#include <cerrno>
+#include <cstdint>
+#include <cstdlib>
+#include <ctime>
+#include <ostream>
+
 #include <glog/logging.h>
+
 #include "kudu/gutil/walltime.h"
+#include "kudu/util/monotime.h"
+
 namespace kudu {
 
 Semaphore::Semaphore(int capacity) {

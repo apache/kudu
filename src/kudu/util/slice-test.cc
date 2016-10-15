@@ -17,6 +17,11 @@
 
 #include "kudu/util/slice.h"
 
+#include <cstdint>
+#include <map>
+#include <string>
+#include <utility>
+
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"

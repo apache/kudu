@@ -16,9 +16,11 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <set>
 #include <string>
 
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 

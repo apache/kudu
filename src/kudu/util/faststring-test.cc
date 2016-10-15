@@ -16,6 +16,11 @@
 // under the License.
 
 #include <algorithm>
+#include <cstring>
+#include <memory>
+
+#include <gtest/gtest.h>
+
 #include "kudu/util/faststring.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"

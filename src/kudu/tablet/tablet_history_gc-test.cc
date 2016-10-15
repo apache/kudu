@@ -15,16 +15,46 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <atomic>
-#include <gflags/gflags.h>
 
+#include <cstdint>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
+
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/mock_ntp.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/tablet/compaction.h"
-#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/diskrowset.h"
+#include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/rowset.h"
+#include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_int32(tablet_history_max_age_sec);

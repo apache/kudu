@@ -15,21 +15,50 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
 #include <ctime>
+#include <map>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/cfile/cfile_util.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
-#include "kudu/common/row.h"
-#include "kudu/common/scan_spec.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/tablet/delta_key.h"
+#include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/local_tablet_writer.h"
-#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet-test-base.h"
-#include "kudu/util/slice.h"
+#include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet.pb.h"
+#include "kudu/tablet/tablet_metadata.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/jsonwriter.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 
 DEFINE_int32(testflush_num_inserts, 1000,

@@ -25,10 +25,12 @@
 
 #include <glog/logging.h>
 
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
-#include "kudu/clock/hybrid_clock.h"
+#include "kudu/client/value.h"
+#include "kudu/client/write_op.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"

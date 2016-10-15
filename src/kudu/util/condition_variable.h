@@ -67,13 +67,12 @@
 
 #include <pthread.h>
 
-#include "kudu/util/monotime.h"
-#include "kudu/util/mutex.h"
+#include "kudu/gutil/macros.h"
 
 namespace kudu {
 
-class ConditionVarImpl;
-class TimeDelta;
+class MonoDelta;
+class Mutex;
 
 class ConditionVariable {
  public:

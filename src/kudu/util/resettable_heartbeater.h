@@ -18,8 +18,9 @@
 #ifndef KUDU_UTIL_RESETTABLE_HEARTBEATER_H_
 #define KUDU_UTIL_RESETTABLE_HEARTBEATER_H_
 
-#include <boost/function.hpp>
 #include <string>
+
+#include <boost/function.hpp>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"

@@ -15,7 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <ostream>
+
 #include <glog/logging.h>
+
 #include "kudu/tablet/transaction_order_verifier.h"
 
 namespace kudu {

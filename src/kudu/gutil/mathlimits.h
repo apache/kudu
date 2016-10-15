@@ -31,8 +31,6 @@
 #ifndef UTIL_MATH_MATHLIMITS_H__
 #define UTIL_MATH_MATHLIMITS_H__
 
-#include <math.h>
-#include <string.h>
 #include <cfloat>
 #include <cmath>
 

@@ -29,12 +29,28 @@
 #ifndef KUDU_CFILE_BINARY_PLAIN_BLOCK_H
 #define KUDU_CFILE_BINARY_PLAIN_BLOCK_H
 
+#include <sys/types.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/common/rowid.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
+
+class ColumnDataView;
+class ColumnMaterializationContext;
+class SelectionVectorView;
+
 namespace cfile {
 
 struct WriterOptions;

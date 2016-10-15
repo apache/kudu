@@ -30,14 +30,11 @@
 #include <gtest/gtest.h>
 #include <sasl/sasl.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/client_negotiation.h"
-#include "kudu/rpc/constants.h"
 #include "kudu/rpc/negotiation.h"
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/security/crypto.h"

@@ -18,7 +18,7 @@
 #include "kudu/security/test/mini_kdc.h"
 
 #include <csignal>
-#include <stdlib.h>
+#include <cstdlib>
 
 #include <map>
 #include <memory>
@@ -32,6 +32,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"

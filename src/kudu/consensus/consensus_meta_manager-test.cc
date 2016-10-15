@@ -14,7 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
+#include <cstdint>
+#include <string>
+
 #include <google/protobuf/util/message_differencer.h>
+#include <gtest/gtest.h>
 
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
@@ -22,7 +27,10 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/util/status.h"
 
 using google::protobuf::util::MessageDifferencer;
 

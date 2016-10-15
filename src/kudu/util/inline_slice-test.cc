@@ -15,12 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
 #include <gtest/gtest.h>
-#include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/inline_slice.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
 
 namespace kudu {
 

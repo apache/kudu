@@ -15,14 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <string>
 #include <vector>
+#include <ostream>
 
-#include "kudu/cfile/block_cache.h"
+#include <glog/logging.h>
+
+#include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/index_btree.h"
-#include "kudu/common/key_encoder.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/make_shared.h"
 
 using std::vector;
 

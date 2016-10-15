@@ -17,9 +17,12 @@
 #ifndef KUDU_CONSENSUS_LOG_ANCHOR_REGISTRY_
 #define KUDU_CONSENSUS_LOG_ANCHOR_REGISTRY_
 
-#include <gtest/gtest_prod.h>
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <string>
+
+#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"

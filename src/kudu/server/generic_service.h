@@ -18,12 +18,36 @@
 #define KUDU_SERVER_GENERIC_SERVICE_H
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/server/server_base.service.h"
 
+namespace google {
+namespace protobuf {
+class Message;
+}
+}
+
 namespace kudu {
+
+namespace rpc {
+class RpcContext;
+}
+
 namespace server {
 
+class CheckLeaksRequestPB;
+class CheckLeaksResponsePB;
+class FlushCoverageRequestPB;
+class FlushCoverageResponsePB;
+class GetStatusRequestPB;
+class GetStatusResponsePB;
 class ServerBase;
+class ServerClockRequestPB;
+class ServerClockResponsePB;
+class SetFlagRequestPB;
+class SetFlagResponsePB;
+class SetServerWallClockForTestsRequestPB;
+class SetServerWallClockForTestsResponsePB;
 
 class GenericServiceImpl : public GenericServiceIf {
  public:

@@ -18,23 +18,30 @@
 #include "kudu/tools/ksck.h"
 
 #include <algorithm>
-#include <glog/logging.h>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <mutex>
-#include <sstream>
+
+#include <boost/optional.hpp> // IWYU pragma: keep
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/human_readable.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/threadpool.h"
@@ -68,7 +75,7 @@ using std::right;
 using std::setw;
 using std::shared_ptr;
 using std::string;
-using std::stringstream;
+using std::ostringstream;
 using std::to_string;
 using std::unordered_map;
 using std::vector;
@@ -137,6 +144,11 @@ Status KsckCluster::RetrieveTablesList() {
 
 Status KsckCluster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {
   return master_->RetrieveTabletsList(table);
+}
+
+Ksck::Ksck(shared_ptr<KsckCluster> cluster, ostream* out)
+    : cluster_(std::move(cluster)),
+      out_(out == nullptr ? &std::cout : out) {
 }
 
 Status Ksck::CheckMasterRunning() {
@@ -641,7 +653,7 @@ struct ReplicaInfo {
 
 // Formats the peers known and unknown to 'config' using labels from 'peer_uuid_mapping'.
 string format_peers(const map<string, char>& peer_uuid_mapping, const KsckConsensusState& config) {
-  stringstream voters;
+  ostringstream voters;
   int peer_width = 4;
   for (const auto &entry : peer_uuid_mapping) {
     if (!ContainsKey(config.peer_uuids, entry.first)) {

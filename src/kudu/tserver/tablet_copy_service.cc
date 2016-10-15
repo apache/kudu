@@ -16,25 +16,34 @@
 // under the License.
 #include "kudu/tserver/tablet_copy_service.h"
 
-#include <algorithm>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
+#include <cstdint>
+#include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/log.h"
+#include "kudu/consensus/log.pb.h"
+#include "kudu/consensus/log_util.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/server_base.h"
 #include "kudu/tserver/tablet_copy_source_session.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random_util.h"
 
@@ -71,6 +80,12 @@ TAG_FLAG(tablet_copy_early_session_timeout_prob, unsafe);
 using std::string;
 using std::vector;
 using strings::Substitute;
+
+namespace google {
+namespace protobuf {
+class Message;
+}
+}
 
 namespace kudu {
 

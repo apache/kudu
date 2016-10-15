@@ -15,25 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <curl/curl.h>
-#include <fstream>
+#include <algorithm>
+#include <fstream>  // IWYU pragma: keep
+#include <iostream>
+#include <string>
+#include <type_traits>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <iostream>
-#include <stdint.h>
 
 #include "kudu/client/client.h"
-#include "kudu/gutil/macros.h"
-#include "kudu/gutil/once.h"
-#include "kudu/rpc/messenger.h"
-#include "kudu/master/master.h"
-#include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/twitter-demo/oauth.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/twitter-demo/insert_consumer.h"
 #include "kudu/twitter-demo/twitter_streamer.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -56,7 +55,6 @@ namespace kudu {
 namespace twitter_demo {
 
 using client::sp::shared_ptr;
-using tserver::TabletServerServiceProxy;
 
 // Consumer which simply logs messages to the console.
 class LoggingConsumer : public TwitterConsumer {

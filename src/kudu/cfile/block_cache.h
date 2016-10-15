@@ -18,19 +18,27 @@
 #define KUDU_CFILE_BLOCK_CACHE_H
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/slice.h"
 
 DECLARE_string(block_cache_type);
 
+template <class T> class scoped_refptr;
+
 namespace kudu {
 
-class MetricRegistry;
+class MetricEntity;
 
 namespace cfile {
 

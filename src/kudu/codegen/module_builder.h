@@ -24,8 +24,8 @@
 #include <vector>
 
 #include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Module.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
 namespace llvm {

@@ -31,6 +31,7 @@
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/pb_util.h"

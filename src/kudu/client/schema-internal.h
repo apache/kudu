@@ -20,6 +20,7 @@
 #include <string>
 
 #include "kudu/client/schema.h"
+#include "kudu/client/value.h"
 #include "kudu/common/common.pb.h"
 
 namespace kudu {

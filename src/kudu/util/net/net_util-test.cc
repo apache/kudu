@@ -15,11 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
-
 #include <algorithm>
+#include <cstdint>
+#include <ostream>
 #include <string>
 #include <vector>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/util.h"
@@ -27,6 +30,7 @@
 #include "kudu/util/net/socket.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

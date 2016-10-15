@@ -17,10 +17,15 @@
 
 #include "kudu/client/error-internal.h"
 
+#include <type_traits>
 #include <utility>
 
-namespace kudu {
+#include "kudu/client/write_op.h"   // IWYU pragma: keep
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/util/status.h"
 
+namespace kudu {
 namespace client {
 
 KuduError::Data::Data(gscoped_ptr<KuduWriteOperation> failed_op,

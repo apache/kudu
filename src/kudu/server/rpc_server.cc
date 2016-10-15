@@ -15,17 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <list>
+#include <algorithm>
+#include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/acceptor_pool.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
 #include "kudu/server/rpc_server.h"
@@ -137,10 +143,10 @@ Status RpcServer::Init(const shared_ptr<Messenger>& messenger) {
 Status RpcServer::RegisterService(gscoped_ptr<rpc::ServiceIf> service) {
   CHECK(server_state_ == INITIALIZED ||
         server_state_ == BOUND) << "bad state: " << server_state_;
-  const scoped_refptr<MetricEntity>& metric_entity = messenger_->metric_entity();
   string service_name = service->service_name();
   scoped_refptr<rpc::ServicePool> service_pool =
-    new rpc::ServicePool(std::move(service), metric_entity, options_.service_queue_length);
+    new rpc::ServicePool(std::move(service), messenger_->metric_entity(),
+                         options_.service_queue_length);
   RETURN_NOT_OK(service_pool->Init(options_.num_service_threads));
   RETURN_NOT_OK(messenger_->RegisterService(service_name, service_pool));
   return Status::OK();

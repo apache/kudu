@@ -16,6 +16,8 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
+
 #include "kudu/clock/time_service.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"

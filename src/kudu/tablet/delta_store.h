@@ -17,28 +17,33 @@
 #ifndef KUDU_TABLET_DELTA_STORE_H
 #define KUDU_TABLET_DELTA_STORE_H
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/common/columnblock.h"
-#include "kudu/common/schema.h"
-#include "kudu/util/status.h"
-#include "kudu/tablet/mutation.h"
-#include "kudu/tablet/mvcc.h"
+#include "kudu/common/rowid.h"
 #include "kudu/tablet/delta_key.h"
-#include "kudu/tablet/delta_stats.h"
-#include "kudu/tablet/tablet_metadata.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
+class Arena;
+class ColumnBlock;
 class ScanSpec;
+class Schema;
 class SelectionVector;
+struct ColumnId;
 
 namespace tablet {
 
-class DeltaIterator;
 class DeltaFileWriter;
+class DeltaIterator;
+class DeltaStats;
+class Mutation;
+class MvccSnapshot;
 
 // Interface for the pieces of the system that track deltas/updates.
 // This is implemented by DeltaMemStore and by DeltaFileReader.

@@ -17,12 +17,22 @@
 #ifndef KUDU_CLIENT_SESSION_INTERNAL_H
 #define KUDU_CLIENT_SESSION_INTERNAL_H
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
+#include <gtest/gtest_prod.h>
+
+#include "kudu/client/batcher.h"
 #include "kudu/client/client.h"
+#include "kudu/client/error_collector.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/condition_variable.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -32,10 +42,8 @@ class Messenger;
 
 namespace client {
 
-namespace internal {
-class Batcher;
-class ErrorCollector;
-} // internal
+class KuduStatusCallback;
+class KuduWriteOperation;
 
 // This class contains the code to do the heavy-lifting for the
 // kudu::KuduSession-related operations. Its interface does not assume

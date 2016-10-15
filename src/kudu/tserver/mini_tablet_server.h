@@ -21,13 +21,12 @@
 #include <string>
 #include <vector>
 
-#include "kudu/common/schema.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/util/net/sockaddr.h"
 
 namespace kudu {
-class FsManager;
+class HostPort;
+class Schema;
 class Status;
 
 namespace consensus {

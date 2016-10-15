@@ -17,15 +17,25 @@
 #ifndef KUDU_UTIL_SERVICE_QUEUE_H
 #define KUDU_UTIL_SERVICE_QUEUE_H
 
-#include <boost/optional.hpp>
 #include <memory>
 #include <string>
 #include <set>
 #include <vector>
 
+#include <glog/logging.h>
+
+#include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/util/condition_variable.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
+
+namespace boost {
+template <class T>
+class optional;
+}
 
 namespace kudu {
 namespace rpc {

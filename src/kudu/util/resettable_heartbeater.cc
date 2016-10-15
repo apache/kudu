@@ -17,13 +17,19 @@
 
 #include "kudu/util/resettable_heartbeater.h"
 
-#include <glog/logging.h>
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
 #include <mutex>
+#include <ostream>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"

@@ -16,16 +16,26 @@
 // under the License.
 
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/client/client.h"
+#include <gtest/gtest.h>
+
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/tablet/key_value_test_schema.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using kudu::client::KuduClient;

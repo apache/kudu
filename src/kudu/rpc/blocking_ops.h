@@ -18,9 +18,6 @@
 #ifndef KUDU_RPC_BLOCKING_OPS_H
 #define KUDU_RPC_BLOCKING_OPS_H
 
-#include <set>
-#include <string>
-
 namespace google {
 namespace protobuf {
 class MessageLite;
@@ -32,7 +29,6 @@ namespace kudu {
 class faststring;
 class MonoTime;
 class Slice;
-class Sockaddr;
 class Socket;
 class Status;
 

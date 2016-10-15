@@ -15,15 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdlib>
+#include <functional>
+#include <map>
+#include <ostream>
 #include <string>
+#include <utility>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/flag_validators.h"
-#include "kudu/util/logging.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DEFINE_string(grouped_0, "", "First flag to set.");

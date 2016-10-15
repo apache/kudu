@@ -15,17 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
 #include <atomic>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
-#include <gtest/gtest.h>
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/port.h"
+#include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/service_queue.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 

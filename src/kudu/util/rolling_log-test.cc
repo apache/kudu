@@ -17,15 +17,23 @@
 
 #include "kudu/util/rolling_log.h"
 
-#include <glog/logging.h>
-#include <glog/stl_logging.h>
+#include <unistd.h>
+
+#include <cstdint>
 #include <string>
 #include <vector>
 
+#include <glog/stl_logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

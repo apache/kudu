@@ -17,18 +17,57 @@
 #ifndef KUDU_MASTER_MASTER_SERVICE_H
 #define KUDU_MASTER_MASTER_SERVICE_H
 
+#include <cstdint>
+
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/master/master.service.h"
-#include "kudu/util/metrics.h"
+
+namespace google {
+namespace protobuf {
+class Message;
+}
+}
 
 namespace kudu {
 
-class NodeInstancePB;
+namespace rpc {
+class RpcContext;
+}
 
 namespace master {
 
+class AlterTableRequestPB;
+class AlterTableResponsePB;
+class ConnectToMasterRequestPB;
+class ConnectToMasterResponsePB;
+class CreateTableRequestPB;
+class CreateTableResponsePB;
+class DeleteTableRequestPB;
+class DeleteTableResponsePB;
+class GetMasterRegistrationRequestPB;
+class GetMasterRegistrationResponsePB;
+class GetTableLocationsRequestPB;
+class GetTableLocationsResponsePB;
+class GetTableSchemaRequestPB;
+class GetTableSchemaResponsePB;
+class GetTabletLocationsRequestPB;
+class GetTabletLocationsResponsePB;
+class IsAlterTableDoneRequestPB;
+class IsAlterTableDoneResponsePB;
+class IsCreateTableDoneRequestPB;
+class IsCreateTableDoneResponsePB;
+class ListMastersRequestPB;
+class ListMastersResponsePB;
+class ListTablesRequestPB;
+class ListTablesResponsePB;
+class ListTabletServersRequestPB;
+class ListTabletServersResponsePB;
 class Master;
-class TSDescriptor;
+class PingRequestPB;
+class PingResponsePB;
+class TSHeartbeatRequestPB;
+class TSHeartbeatResponsePB;
 
 // Implementation of the master service. See master.proto for docs
 // on each RPC.

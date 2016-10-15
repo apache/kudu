@@ -19,25 +19,36 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/function.hpp>
-
 #include "kudu/client/client.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_controller.h"
-#include "kudu/security/token.pb.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
+
+namespace boost {
+template <typename Signature>
+class function;
+} // namespace boost
 
 namespace kudu {
 
 class DnsResolver;
-class HostPort;
+class PartitionSchema;
+class Sockaddr;
 
 namespace master {
 class AlterTableRequestPB;
@@ -53,8 +64,13 @@ class RequestTracker;
 
 namespace client {
 
+class KuduSchema;
+
 namespace internal {
 class ConnectToClusterRpc;
+class MetaCache;
+class RemoteTablet;
+class RemoteTabletServer;
 } // namespace internal
 
 class KuduClient::Data {

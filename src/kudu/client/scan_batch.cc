@@ -15,16 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
-#include "kudu/client/scanner-internal.h"
-#include "kudu/client/schema.h"
 
+#include <cstring>
 #include <string>
 
+#include <glog/logging.h>
+
+#include "kudu/client/row_result.h"
+#include "kudu/client/scanner-internal.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/logging.h"
 
 using std::string;
 using strings::Substitute;

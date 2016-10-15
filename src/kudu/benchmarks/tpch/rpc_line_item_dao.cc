@@ -15,23 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/function.hpp>
-#include <glog/logging.h>
+#include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
+
+#include <ostream>
 #include <vector>
 #include <utility>
 
-#include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
+#include <boost/function.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
-#include "kudu/client/meta_cache.h"
+#include "kudu/client/scan_predicate.h"
+#include "kudu/client/schema.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/util/coding.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 DEFINE_bool(tpch_cache_blocks_when_scanning, true,
@@ -41,6 +46,8 @@ using std::string;
 using std::vector;
 
 namespace kudu {
+
+class KuduPartialRow;
 
 using client::KuduInsert;
 using client::KuduClient;

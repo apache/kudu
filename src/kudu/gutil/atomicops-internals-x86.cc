@@ -28,7 +28,7 @@
 #include <string.h>
 
 #include <glog/logging.h>
-#include "kudu/gutil/logging-inl.h"
+
 #include "kudu/gutil/integral_types.h"
 
 // This file only makes sense with atomicops-internals-x86.h -- it

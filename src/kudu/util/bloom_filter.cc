@@ -15,10 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <math.h>
-
 #include "kudu/util/bloom_filter.h"
-#include "kudu/util/bitmap.h"
+
+#include <cmath>
+#include <cstring>
+#include <ostream>
+
+#include <glog/logging.h>
 
 namespace kudu {
 

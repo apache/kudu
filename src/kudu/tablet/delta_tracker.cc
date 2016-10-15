@@ -17,25 +17,47 @@
 
 #include "kudu/tablet/delta_tracker.h"
 
-#include <boost/range/adaptor/reversed.hpp>
-#include <glog/stl_logging.h>
+#include <algorithm>
 #include <mutex>
+#include <ostream>
 #include <set>
-#include <utility>
+#include <string>
 
+#include <boost/range/adaptor/reversed.hpp>
+#include <glog/logging.h>
+#include <glog/stl_logging.h>
+
+#include "kudu/cfile/cfile_util.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_applier.h"
-#include "kudu/tablet/delta_compaction.h"
 #include "kudu/tablet/delta_iterator_merger.h"
+#include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/deltafile.h"
-#include "kudu/tablet/diskrowset.h"
+#include "kudu/tablet/deltamemstore.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tablet/tablet_metadata.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/status.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
+
+class RowChangeList;
+
 namespace tablet {
 
 using cfile::ReaderOptions;

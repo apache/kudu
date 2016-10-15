@@ -17,14 +17,15 @@
 
 #pragma once
 
+#include <algorithm>
 #include <memory>
 #include <string>
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/openssl_util.h"
-#include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

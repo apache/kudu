@@ -21,20 +21,18 @@
 #include "kudu/client/client.h"
 #include "kudu/gutil/macros.h"
 
-
 namespace kudu {
 namespace client {
-
-class KuduTabletServer;
 
 class KuduReplica::Data {
  public:
   Data(bool is_leader, std::unique_ptr<KuduTabletServer> ts);
-  ~Data();
+  ~Data() = default;
 
   const bool is_leader_;
   const std::unique_ptr<KuduTabletServer> ts_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
 

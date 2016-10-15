@@ -20,27 +20,33 @@
 
 #include "kudu/util/nvm_cache.h"
 
-#include <gflags/gflags.h>
-#include <glog/logging.h>
+#include <cstdint>
+#include <cstring>
 #include <iostream>
-#include <libvmem.h>
 #include <memory>
 #include <mutex>
-#include <stdlib.h>
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <libvmem.h>
+
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/atomic_refcount.h"
+#include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
-#include "kudu/util/flags.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/slice.h"
 
 DEFINE_string(nvm_cache_path, "/vmem",
               "The path at which the NVM cache will try to allocate its memory. "
@@ -61,8 +67,6 @@ TAG_FLAG(nvm_cache_simulate_allocation_failure, unsafe);
 
 
 namespace kudu {
-
-class MetricEntity;
 
 namespace {
 

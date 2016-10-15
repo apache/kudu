@@ -17,13 +17,16 @@
 
 #include "kudu/twitter-demo/twitter_streamer.h"
 
+#include <cstdint>
+#include <cstring>
+#include <mutex>
+#include <ostream>
+#include <string>
+#include <thread>
+
 #include <curl/curl.h>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <mutex>
-#include <string.h>
-#include <string>
-#include <thread>
 
 #include "kudu/twitter-demo/oauth.h"
 #include "kudu/gutil/macros.h"

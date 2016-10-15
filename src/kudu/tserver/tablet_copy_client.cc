@@ -17,37 +17,49 @@
 
 #include "kudu/tserver/tablet_copy_client.h"
 
-#include <gflags/gflags.h>
-#include <glog/logging.h>
+#include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <ostream>
 
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+
+#include "kudu/common/partition.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/rpc/messenger.h"
-#include "kudu/rpc/transfer.h"
-#include "kudu/tablet/tablet.pb.h"
-#include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/tserver/tablet_copy.proxy.h"
-#include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/path_util.h"
 
 DEFINE_int32(tablet_copy_begin_session_timeout_ms, 3000,
              "Tablet server RPC client timeout for BeginTabletCopySession calls. "

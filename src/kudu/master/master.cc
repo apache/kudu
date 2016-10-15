@@ -19,30 +19,39 @@
 
 #include <algorithm>
 #include <memory>
+#include <ostream>
+#include <type_traits>
 #include <vector>
 
-#include <boost/bind.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/cfile/block_cache.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
+#include "kudu/master/master-path-handlers.h"
+#include "kudu/master/master.pb.h"
+#include "kudu/master/master.proxy.h"
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/master_service.h"
-#include "kudu/master/master.proxy.h"
-#include "kudu/master/master-path-handlers.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/service_if.h"
-#include "kudu/rpc/service_pool.h"
 #include "kudu/security/token_signer.h"
-#include "kudu/security/token_signing_key.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/server/webserver.h"
 #include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/maintenance_manager.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -74,7 +83,6 @@ using std::vector;
 using kudu::consensus::RaftPeerPB;
 using kudu::rpc::ServiceIf;
 using kudu::security::TokenSigner;
-using kudu::security::TokenSigningPrivateKey;
 using kudu::tserver::ConsensusServiceImpl;
 using kudu::tserver::TabletCopyServiceImpl;
 using strings::Substitute;

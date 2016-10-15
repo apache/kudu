@@ -56,25 +56,33 @@
 // 'N','O',74476040,111701729697.74,106118230307.6,110367043872.5,25.5,38249.1,0,2920374
 // 'R','F',37719753,56568041380.90,53741292684.6,55889619119.8,25.5,38250.9,0.1,1478870
 // ====
-#include <boost/bind.hpp>
-#include <unordered_map>
-#include <stdlib.h>
 
+#include <cstdint>
+#include <cstdlib>
+#include <ostream>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include <boost/bind.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/benchmarks/tpch/tpch-schemas.h"
-#include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/benchmarks/tpch/line_item_tsv_importer.h"
+#include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
+#include "kudu/client/row_result.h"
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
-#include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
@@ -101,9 +109,7 @@ using std::vector;
 
 namespace kudu {
 
-using client::KuduColumnSchema;
 using client::KuduRowResult;
-using client::KuduSchema;
 
 struct Result {
   int32_t l_quantity;

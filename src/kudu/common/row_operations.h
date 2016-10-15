@@ -17,6 +17,7 @@
 #ifndef KUDU_COMMON_ROW_OPERATIONS_H
 #define KUDU_COMMON_ROW_OPERATIONS_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,11 +25,13 @@
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class Arena;
+class ColumnSchema;
 class KuduPartialRow;
 class Schema;
 

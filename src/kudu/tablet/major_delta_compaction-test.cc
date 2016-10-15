@@ -15,23 +15,32 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
+#include <algorithm>
+#include <cstdint>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <unordered_set>
+#include <vector>
+
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <memory>
-#include <unordered_set>
 
-#include "kudu/clock/logical_clock.h"
-#include "kudu/common/generic_iterators.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
-#include "kudu/tablet/cfile_set.h"
-#include "kudu/tablet/delta_compaction.h"
-#include "kudu/tablet/diskrowset-test-base.h"
 #include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/util/test_util.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 using std::shared_ptr;
 using std::string;

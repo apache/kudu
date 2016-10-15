@@ -15,33 +15,62 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <ostream>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/clock/clock.h"
 #include "kudu/clock/logical_clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
+#include "kudu/consensus/consensus_peers.h"
+#include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_index.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/consensus/peer_manager.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/consensus/time_manager.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/rpc_context.h"
-#include "kudu/util/auto_release_pool.h"
+#include "kudu/util/async_util.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/threadpool.h"
@@ -67,11 +96,6 @@ using strings::Substitute;
 using strings::SubstituteAndAppend;
 
 namespace kudu {
-
-namespace rpc {
-class RpcContext;
-}
-
 namespace consensus {
 
 const char* kTestTablet = "TestTablet";

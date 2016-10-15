@@ -20,9 +20,12 @@
 #include <iosfwd>
 
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/monotime.h"
+#include "kudu/gutil/macros.h"
 
 namespace kudu {
+
+class MonoTime;
+
 namespace rpc {
 
 class Connection;

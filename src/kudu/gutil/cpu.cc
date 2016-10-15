@@ -4,13 +4,10 @@
 
 #include "kudu/gutil/cpu.h"
 
-#include <stdlib.h>
-#include <string.h>
-
+#include <cstring>
 #include <algorithm>
 
-#include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/gutil/integral_types.h"
 
 #if defined(__x86_64__)
 #if defined(_MSC_VER)

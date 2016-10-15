@@ -18,25 +18,25 @@
 #ifndef KUDU_TABLET_TRANSACTION_TRACKER_H_
 #define KUDU_TABLET_TRANSACTION_TRACKER_H_
 
+#include <cstdint>
 #include <memory>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/tablet/transactions/transaction.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
-template<class T>
-class AtomicGauge;
-class Counter;
 class MemTracker;
-class MetricEntity;
+class MonoDelta;
 
 namespace tablet {
+
 class TransactionDriver;
 
 // Each TabletReplica has a TransactionTracker which keeps track of pending transactions.

@@ -17,17 +17,18 @@
 
 #include "kudu/tablet/rowset_metadata.h"
 
+#include <algorithm>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include <glog/stl_logging.h>
 
-#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/tablet/metadata.pb.h"
 
 using std::vector;
 using strings::Substitute;

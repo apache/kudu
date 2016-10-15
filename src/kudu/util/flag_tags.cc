@@ -17,14 +17,17 @@
 
 #include "kudu/util/flag_tags.h"
 
-#include "kudu/gutil/map-util.h"
-#include "kudu/gutil/singleton.h"
-
 #include <map>
+#include <ostream>
 #include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include <glog/logging.h>
+
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/singleton.h"
 
 using std::multimap;
 using std::pair;

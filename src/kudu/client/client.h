@@ -26,15 +26,15 @@
 #define KUDU_CLIENT_CLIENT_H
 
 #include <stdint.h>
+
+#include <cstddef>
 #include <string>
 #include <vector>
 
-#include "kudu/client/resource_metrics.h"
 #include "kudu/client/row_result.h"
-#include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #ifdef KUDU_HEADERS_NO_STUBS
 #include <gtest/gtest_prod.h>
 #include "kudu/gutil/macros.h"
@@ -42,15 +42,15 @@
 #else
 #include "kudu/client/stubs.h"
 #endif
-#include "kudu/client/write_op.h"
 #include "kudu/util/kudu_export.h"
-#include "kudu/util/monotime.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class ClientStressTest_TestUniqueClientIds_Test;
-class LinkedListTester;
+class KuduPartialRow;
+class MonoDelta;
 class PartitionSchema;
 class SecurityUnknownTskTest;
 
@@ -60,9 +60,12 @@ class LeaderMasterProxy;
 
 namespace client {
 
+class KuduClient;
+class KuduDelete;
+class KuduInsert;
 class KuduLoggingCallback;
 class KuduPartitioner;
-class KuduScanToken;
+class KuduScanBatch;
 class KuduSession;
 class KuduStatusCallback;
 class KuduTable;
@@ -70,8 +73,11 @@ class KuduTableAlterer;
 class KuduTableCreator;
 class KuduTablet;
 class KuduTabletServer;
+class KuduUpdate;
+class KuduUpsert;
 class KuduValue;
 class KuduWriteOperation;
+class ResourceMetrics;
 
 namespace internal {
 class Batcher;

@@ -21,17 +21,15 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
-#include "kudu/master/master.h"
-#include "kudu/util/env.h"
+#include "kudu/master/master_options.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-
 namespace master {
+
+class Master;
 
 // An in-process Master meant for use in test cases.
 class MiniMaster {

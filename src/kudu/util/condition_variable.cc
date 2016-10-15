@@ -4,12 +4,17 @@
 
 #include "kudu/util/condition_variable.h"
 
-#include <glog/logging.h>
-
-#include <errno.h>
 #include <sys/time.h>
 
+#include <cerrno>
+#include <ctime>
+#include <ostream>
+
+#include <glog/logging.h>
+
+#include "kudu/gutil/integral_types.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/thread_restrictions.h"
 
 namespace kudu {

@@ -17,20 +17,23 @@
 #ifndef KUDU_TABLET_MULTI_COLUMN_WRITER_H
 #define KUDU_TABLET_MULTI_COLUMN_WRITER_H
 
+#include <cstddef>
 #include <map>
 #include <string>
 #include <vector>
 
 #include <glog/logging.h>
 
-#include "kudu/common/schema.h"
-#include "kudu/fs/fs_manager.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
+class FsManager;
 class RowBlock;
 class Schema;
+struct ColumnId;
 
 namespace cfile {
 class CFileWriter;

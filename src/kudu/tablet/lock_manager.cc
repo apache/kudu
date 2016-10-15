@@ -17,17 +17,23 @@
 
 #include "kudu/tablet/lock_manager.h"
 
-#include <glog/logging.h>
+#include <cstdint>
 #include <mutex>
-#include <semaphore.h>
+#include <ostream>
 #include <string>
 
+#include <glog/logging.h>
+
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/trace.h"
 

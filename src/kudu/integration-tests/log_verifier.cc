@@ -17,23 +17,32 @@
 
 #include "kudu/integration-tests/log_verifier.h"
 
-#include <boost/optional.hpp>
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include <glog/stl_logging.h>
+#include <boost/optional.hpp>
+#include <glog/logging.h>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_index.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/util/env.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 

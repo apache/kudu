@@ -18,29 +18,36 @@
 #include "kudu/tools/tool_action.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
+#include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet_metadata.h"
-#include "kudu/tools/tool_action_common.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 DECLARE_bool(print_meta);

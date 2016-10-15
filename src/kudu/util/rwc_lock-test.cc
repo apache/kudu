@@ -20,10 +20,14 @@
 #include <thread>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/gutil/atomicops.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/rwc_lock.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/locks.h"
 
 namespace kudu {
 

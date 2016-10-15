@@ -19,23 +19,42 @@
 // of PK subsets, etc).
 
 #include <algorithm>
-#include <glog/stl_logging.h>
-#include <map>
+#include <cstdint>
 #include <memory>
+#include <ostream>
+#include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/scan_predicate.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/value.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/master/master.pb.h"
+#include "kudu/master/master.proxy.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/tools/data_gen_util.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/gutil/strings/escaping.h"
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;

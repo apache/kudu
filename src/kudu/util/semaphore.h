@@ -25,9 +25,10 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
-#include "kudu/util/monotime.h"
 
 namespace kudu {
+
+class MonoDelta;
 
 // Wrapper for POSIX semaphores.
 class Semaphore {

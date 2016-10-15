@@ -19,12 +19,10 @@
 
 #ifdef KUDU_HEADERS_NO_STUBS
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #else
 #include "kudu/client/stubs.h"
 #endif
 
-#include "kudu/client/schema.h"
 #include "kudu/util/kudu_export.h"
 
 namespace kudu {

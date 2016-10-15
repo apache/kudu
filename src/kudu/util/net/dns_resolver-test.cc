@@ -17,14 +17,18 @@
 
 #include "kudu/util/net/dns_resolver.h"
 
-#include <boost/bind.hpp>
-#include <gtest/gtest.h>
+#include <ostream>
+#include <string>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/gutil/strings/util.h"
-#include "kudu/util/countdown_latch.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::vector;

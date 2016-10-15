@@ -4,6 +4,7 @@
 
 // This file is an internal atomic implementation for compiler-based
 // ThreadSanitizer. Use base/atomicops.h instead.
+// IWYU pragma: private, include "kudu/gutil/atomicops.h"
 
 #ifndef BASE_ATOMICOPS_INTERNALS_TSAN_H_
 #define BASE_ATOMICOPS_INTERNALS_TSAN_H_

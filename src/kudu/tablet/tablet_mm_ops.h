@@ -18,15 +18,19 @@
 #ifndef KUDU_TABLET_TABLET_MM_OPS_H_
 #define KUDU_TABLET_TABLET_MM_OPS_H_
 
+#include <cstdint>
 #include <string>
 
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/maintenance_manager.h"
 
 namespace kudu {
 
 class Histogram;
-template<class T>
+template <class T>
 class AtomicGauge;
 
 namespace tablet {

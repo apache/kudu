@@ -21,10 +21,13 @@
 #include <iostream>
 #include <memory>
 #include <string>
-#include <utility>
+#include <unordered_map>
 #include <vector>
 
+#include <gflags/gflags.h>
+
 #include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"

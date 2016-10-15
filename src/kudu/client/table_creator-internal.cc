@@ -17,9 +17,6 @@
 
 #include "kudu/client/table_creator-internal.h"
 
-
-#include "kudu/gutil/stl_util.h"
-
 namespace kudu {
 
 namespace client {

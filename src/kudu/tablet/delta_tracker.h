@@ -17,27 +17,42 @@
 #ifndef KUDU_TABLET_DELTATRACKER_H
 #define KUDU_TABLET_DELTATRACKER_H
 
-#include <gtest/gtest_prod.h>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/common/iterator.h"
+#include <gtest/gtest_prod.h>
+
 #include "kudu/common/rowid.h"
-#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/cfile_set.h"
+#include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
-class MemTracker;
+class BlockId;
+class ColumnwiseIterator;
+class MonoTime;
+class RowChangeList;
+class Schema;
+class Timestamp;
+struct ColumnId;
 
 namespace consensus {
 class OpId;
+}
+
+namespace fs {
+class WritableBlock;
 }
 
 namespace log {
@@ -46,10 +61,12 @@ class LogAnchorRegistry;
 
 namespace tablet {
 
-class DeltaMemStore;
 class DeltaFileReader;
+class DeltaMemStore;
+class MvccSnapshot;
 class OperationResultPB;
-class MemStoreTargetPB;
+class RowSetMetadata;
+class RowSetMetadataUpdate;
 struct ProbeStats;
 
 // The DeltaTracker is the part of a DiskRowSet which is responsible for

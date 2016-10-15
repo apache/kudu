@@ -17,12 +17,21 @@
 
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional_fwd.hpp>
+#include <openssl/asn1.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/security/openssl_util.h"
+
+typedef struct X509_name_st X509_NAME;
+
+namespace boost {
+template <class T>
+class optional;
+}
 
 namespace kudu {
 

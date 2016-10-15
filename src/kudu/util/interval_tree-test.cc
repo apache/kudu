@@ -17,13 +17,18 @@
 
 // All rights reserved.
 
-#include <stdlib.h>
-
 #include <algorithm>
-#include <tuple>
+#include <cstdlib>
+#include <map>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <tuple>  // IWYU pragma: keep
+#include <utility>
+#include <vector>
 
-#include <boost/optional.hpp>
-#include <glog/stl_logging.h>
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/stringprintf.h"

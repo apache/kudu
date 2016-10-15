@@ -17,16 +17,29 @@
 
 #include "kudu/client/schema.h"
 
-#include <boost/optional.hpp>
-#include <glog/logging.h>
+#include <algorithm>
+#include <cstdint>
+#include <memory>
+#include <ostream>
 #include <unordered_map>
+
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 
 #include "kudu/client/schema-internal.h"
 #include "kudu/client/value-internal.h"
+#include "kudu/client/value.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/slice.h"
 
 MAKE_ENUM_LIMITS(kudu::client::KuduColumnStorageAttributes::EncodingType,
                  kudu::client::KuduColumnStorageAttributes::AUTO_ENCODING,

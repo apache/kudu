@@ -15,7 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/util/test_util.h"
+#include <cstdint>
+
+#include <gtest/gtest.h>
 
 #include "kudu/util/hash_util.h"
 

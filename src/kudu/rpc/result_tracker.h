@@ -16,14 +16,19 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <google/protobuf/message.h>
+
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/countdown_latch.h"
@@ -31,15 +36,12 @@
 #include "kudu/util/malloc.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/thread.h"
-
-namespace google {
-namespace protobuf {
-class Message;
-} // protobuf
-} // google
 
 namespace kudu {
+
+class Status;
+class Thread;
+
 namespace rpc {
 class RpcContext;
 

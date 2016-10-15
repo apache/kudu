@@ -18,24 +18,27 @@
 #ifndef KUDU_RPC_CONNECTION_H
 #define KUDU_RPC_CONNECTION_H
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include <boost/intrusive/list.hpp>
 #include <ev++.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/rpc/inbound_call.h"
-#include "kudu/rpc/outbound_call.h"
-#include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/transfer.h"
+#include "kudu/rpc/user_credentials.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
@@ -43,10 +46,12 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+
 namespace rpc {
 
 class DumpRunningRpcsRequestPB;
-class ErrorStatusPB;
+class InboundCall;
+class OutboundCall;
 class RpcConnectionPB;
 class ReactorThread;
 class RpczStore;

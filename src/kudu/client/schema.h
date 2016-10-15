@@ -18,11 +18,22 @@
 #ifndef KUDU_CLIENT_SCHEMA_H
 #define KUDU_CLIENT_SCHEMA_H
 
+// NOTE: using stdint.h instead of cstdint because this file is supposed
+//       to be processed by a compiler lacking C++11 support.
+#include <stdint.h>
+
+#include <cstddef>
 #include <string>
 #include <vector>
 
-#include "kudu/client/value.h"
+#ifdef KUDU_HEADERS_NO_STUBS
+#include "kudu/gutil/port.h"
+#else
+#include "kudu/client/stubs.h"
+#endif
+
 #include "kudu/util/kudu_export.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -30,7 +41,7 @@ class ColumnSchema;
 struct ColumnSchemaDelta;
 class KuduPartialRow;
 class Schema;
-class TestWorkload;
+class Slice;
 
 namespace tools {
 class RemoteKsckMaster;
@@ -38,7 +49,6 @@ class ReplicaDumper;
 }
 
 namespace client {
-class ClientTest;
 
 namespace internal {
 class GetTableSchemaRpc;
@@ -47,10 +57,8 @@ class MetaCacheEntry;
 class WriteRpc;
 } // namespace internal
 
-class KuduClient;
 class KuduSchema;
-class KuduSchemaBuilder;
-class KuduWriteOperation;
+class KuduValue;
 
 /// @brief Representation of column storage attributes.
 class KUDU_EXPORT KuduColumnStorageAttributes {

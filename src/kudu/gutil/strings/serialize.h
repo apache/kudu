@@ -7,8 +7,7 @@
 #ifndef STRINGS_SERIALIZE_H_
 #define STRINGS_SERIALIZE_H_
 
-#include <string.h>
-
+#include <cstring>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -18,7 +17,6 @@
 
 #include "kudu/gutil/int128.h"
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/type_traits.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/endian.h"

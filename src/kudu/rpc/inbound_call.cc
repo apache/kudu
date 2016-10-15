@@ -17,9 +17,16 @@
 
 #include "kudu/rpc/inbound_call.h"
 
-#include <glog/stl_logging.h>
+#include <cstdint>
 #include <memory>
+#include <ostream>
 
+#include <glog/logging.h>
+#include <google/protobuf/message.h>
+#include <google/protobuf/message_lite.h>
+
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
@@ -27,12 +34,20 @@
 #include "kudu/rpc/rpcz_store.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/rpc/service_if.h"
+#include "kudu/rpc/transfer.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/trace.h"
 
+namespace google {
+namespace protobuf {
+class FieldDescriptor;
+}
+}
+
 using google::protobuf::FieldDescriptor;
-using google::protobuf::io::CodedOutputStream;
+using google::protobuf::Message;
 using google::protobuf::MessageLite;
 using std::string;
 using std::unique_ptr;

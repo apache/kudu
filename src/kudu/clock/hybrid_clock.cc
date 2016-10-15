@@ -18,24 +18,29 @@
 #include "kudu/clock/hybrid_clock.h"
 
 #include <algorithm>
-#include <boost/algorithm/string/predicate.hpp>
-#include <glog/logging.h>
 #include <mutex>
+#include <ostream>
 #include <string>
+
+#include <boost/algorithm/string/predicate.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/clock/mock_ntp.h"
 #include "kudu/clock/system_ntp.h"
-#include "kudu/clock/system_unsync_time.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/walltime.h"
 #include "kudu/util/debug/trace_event.h"
-#include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/locks.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+
+#ifdef __APPLE__
+#include "kudu/clock/system_unsync_time.h"
+#endif
 
 using kudu::Status;
 using std::string;

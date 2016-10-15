@@ -18,27 +18,46 @@
 #include "kudu/consensus/raft_consensus.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <unordered_set>
+#include <type_traits>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 
-#include "kudu/clock/clock.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/leader_election.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/peer_manager.h"
+#include "kudu/consensus/pending_rounds.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/failure_detector.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
@@ -46,6 +65,8 @@
 #include "kudu/util/process_memory.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"

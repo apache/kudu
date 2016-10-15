@@ -17,22 +17,14 @@
 #pragma once
 
 #include <memory>
-#include <string>
-#include <vector>
 
-#include "kudu/common/schema.h"
-#include "kudu/consensus/log.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/tablet/tablet_replica.h"
-#include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
+class MemTracker;
 class MetricRegistry;
-class Partition;
-class PartitionSchema;
 
 namespace log {
 class Log;
@@ -40,8 +32,8 @@ class LogAnchorRegistry;
 }
 
 namespace consensus {
+class RaftConfigPB;
 struct ConsensusBootstrapInfo;
-class ConsensusMetadataManager;
 } // namespace consensus
 
 namespace rpc {
@@ -55,6 +47,7 @@ class Clock;
 namespace tablet {
 class Tablet;
 class TabletMetadata;
+class TabletReplica;
 
 extern const char* kLogRecoveryDir;
 

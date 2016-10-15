@@ -17,7 +17,6 @@
 #ifndef KUDU_SERVER_GLOG_METRICS_H
 #define KUDU_SERVER_GLOG_METRICS_H
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 

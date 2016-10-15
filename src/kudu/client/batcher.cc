@@ -18,15 +18,17 @@
 #include "kudu/client/batcher.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
 #include <glog/logging.h>
 
 #include "kudu/client/callbacks.h"
@@ -34,25 +36,32 @@
 #include "kudu/client/client.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
+#include "kudu/client/schema.h"
 #include "kudu/client/session-internal.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op-internal.h"
 #include "kudu/client/write_op.h"
-#include "kudu/common/encoded_key.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/atomic_refcount.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/human_readable.h"
-#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/messenger.h"
-#include "kudu/rpc/request_tracker.h"
+#include "kudu/rpc/connection.h"
+#include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/retriable_rpc.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/util/debug-util.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 
@@ -66,6 +75,14 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+class KuduPartialRow;
+class Schema;
+
+namespace rpc {
+class Messenger;
+class RequestTracker;
+}
 
 using pb_util::SecureDebugString;
 using pb_util::SecureShortDebugString;

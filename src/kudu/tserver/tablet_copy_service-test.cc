@@ -16,26 +16,44 @@
 // under the License.
 #include "kudu/tserver/tablet_copy-test-base.h"
 
-#include <gflags/gflags.h>
+#include <cstdint>
 #include <limits>
+#include <memory>
+#include <string>
 #include <thread>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log.h"
-#include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/log.pb.h"
+#include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
-#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/fs.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
-#include "kudu/rpc/transfer.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet_replica.h"
+#include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_copy.pb.h"
-#include "kudu/tserver/tserver_service.pb.h"
-#include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/util/crc.h"
+#include "kudu/tserver/tablet_copy.proxy.h"
+#include "kudu/tserver/tablet_server.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/stopwatch.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 #define ASSERT_REMOTE_ERROR(status, err, code, str) \
     ASSERT_NO_FATAL_FAILURE(AssertRemoteError(status, err, code, str))

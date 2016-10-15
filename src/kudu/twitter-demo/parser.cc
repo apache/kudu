@@ -17,11 +17,11 @@
 
 #include "kudu/twitter-demo/parser.h"
 
-#include <time.h>
+#include <cstring>
+#include <ctime>
 
 #include <glog/logging.h>
 #include <rapidjson/document.h>
-#include <rapidjson/rapidjson.h>
 
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/jsonreader.h"

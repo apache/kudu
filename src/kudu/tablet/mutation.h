@@ -18,17 +18,25 @@
 #ifndef KUDU_TABLET_MUTATION_H
 #define KUDU_TABLET_MUTATION_H
 
+#include <cstdint>
+#include <cstring>
+#include <new>
+#include <ostream>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/common/row_changelist.h"
-#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
-#include "kudu/tablet/mvcc.h"
 
 namespace kudu {
+
+class Schema;
+
 namespace tablet {
 
 // A single mutation associated with a row.

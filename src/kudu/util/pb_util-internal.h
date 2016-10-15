@@ -20,12 +20,18 @@
 #ifndef KUDU_UTIL_PB_UTIL_INTERNAL_H
 #define KUDU_UTIL_PB_UTIL_INTERNAL_H
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
 #include <glog/logging.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/env.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace pb_util {

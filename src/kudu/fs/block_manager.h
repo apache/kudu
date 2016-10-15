@@ -23,13 +23,13 @@
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
-
-DECLARE_bool(block_coalesce_close);
 
 namespace kudu {
 

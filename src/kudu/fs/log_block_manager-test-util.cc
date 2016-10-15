@@ -18,24 +18,27 @@
 #include "kudu/fs/log_block_manager-test-util.h"
 
 #include <algorithm>
-#include <iterator>
+#include <cstring>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
+#include "kudu/fs/block_id.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 DECLARE_uint64(log_container_max_size);

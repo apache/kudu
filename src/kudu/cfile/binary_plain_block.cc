@@ -18,13 +18,22 @@
 #include "kudu/cfile/binary_plain_block.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <ostream>
+#include <string>
+
 #include <glog/logging.h>
 
 #include "kudu/cfile/cfile_util.h"
-#include "kudu/cfile/cfile_writer.h"
+#include "kudu/common/column_materialization_context.h"
+#include "kudu/common/column_predicate.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/group_varint-inl.h"

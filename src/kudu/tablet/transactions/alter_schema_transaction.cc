@@ -15,15 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
-
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 
+#include <algorithm>
+#include <memory>
+
+#include <glog/logging.h>
+
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/rpc/rpc_context.h"
+#include "kudu/consensus/log.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/pb_util.h"
@@ -32,7 +38,6 @@
 namespace kudu {
 namespace tablet {
 
-using boost::bind;
 using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::ALTER_SCHEMA_OP;

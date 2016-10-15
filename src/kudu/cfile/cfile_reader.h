@@ -18,42 +18,49 @@
 #ifndef KUDU_CFILE_CFILE_READER_H
 #define KUDU_CFILE_CFILE_READER_H
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/common/columnblock.h"
-#include "kudu/common/types.h"
-#include "kudu/cfile/block_cache.h"
+#include <glog/logging.h>
+
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/block_handle.h"
-#include "kudu/cfile/block_compression.h"
-#include "kudu/cfile/cfile_util.h"
-#include "kudu/cfile/index_btree.h"
-#include "kudu/cfile/type_encodings.h"
+#include "kudu/cfile/block_pointer.h"
+#include "kudu/cfile/cfile.pb.h"
+#include "kudu/common/iterator_stats.h"
+#include "kudu/common/rowid.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/object_pool.h"
 #include "kudu/util/once.h"
 #include "kudu/util/rle-encoding.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-#include "kudu/common/iterator_stats.h"
-#include "kudu/common/key_encoder.h"
 
 namespace kudu {
+
+class ColumnMaterializationContext;
+class CompressionCodec;
+class EncodedKey;
+class SelectionVector;
+class TypeInfo;
+
 namespace cfile {
 
-class BlockCache;
-class BlockDecoder;
-class BlockPointer;
-class CFileHeaderPB;
-class CFileFooterPB;
-class CFileIterator;
 class BinaryPlainBlockDecoder;
+class CFileIterator;
+class IndexTreeIterator;
+class TypeEncodingInfo;
+struct ReaderOptions;
 
 class CFileReader {
  public:

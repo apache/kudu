@@ -18,9 +18,7 @@
 #pragma once
 
 #include <ostream>
-#include <string>
 
-#include "kudu/util/env.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -28,7 +26,6 @@ namespace security {
 
 class Cert;
 class PrivateKey;
-class PublicKey;
 class TlsContext;
 
 Status GenerateSelfSignedCAForTests(PrivateKey* ca_key, Cert* ca_cert);

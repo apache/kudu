@@ -18,32 +18,42 @@
 #ifndef KUDU_TABLET_WRITE_TRANSACTION_H_
 #define KUDU_TABLET_WRITE_TRANSACTION_H_
 
+#include <cstddef>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 
-#include "kudu/common/schema.h"
+#include <glog/logging.h>
+
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/tablet/lock_manager.h"
-#include "kudu/tablet/mvcc.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/transactions/transaction.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
-struct DecodedRowOperation;
-class ConstContiguousRow;
-class RowwiseRowBlockPB;
 
-namespace tserver {
-class WriteRequestPB;
-class WriteResponsePB;
+class Schema;
+class rw_semaphore;
+struct DecodedRowOperation;
+
+namespace rpc {
+class RequestIdPB;
 }
 
 namespace tablet {
+
+class ScopedTransaction;
+class TabletReplica;
+class TxResultPB;
 struct RowOp;
-class RowSetKeyProbe;
 struct TabletComponents;
 
 // A TransactionState for a batch of inserts/mutates. This class holds and

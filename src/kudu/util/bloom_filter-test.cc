@@ -15,10 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
+#include <cstdlib>
+#include <ostream>
+
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <stdlib.h>
+
 #include "kudu/util/bloom_filter.h"
+#include "kudu/util/slice.h"
 
 namespace kudu {
 

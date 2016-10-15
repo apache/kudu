@@ -22,9 +22,16 @@
 #include <unordered_map>
 #include <vector>
 
+#include <gtest/gtest.h>
+
+#include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/gutil/stl_util.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/util/pstack_watcher.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

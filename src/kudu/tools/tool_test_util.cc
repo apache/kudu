@@ -19,6 +19,10 @@
 
 #include "kudu/tools/tool_test_util.h"
 
+#include <ostream>
+
+#include <glog/logging.h>
+
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"

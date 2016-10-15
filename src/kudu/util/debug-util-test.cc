@@ -15,15 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/stl_logging.h>
-#include <signal.h>
+#include <unistd.h>
+
+#include <csignal>
 #include <string>
 #include <vector>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 

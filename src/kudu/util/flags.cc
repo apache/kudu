@@ -17,21 +17,32 @@
 
 #include "kudu/util/flags.h"
 
+#include <unistd.h>
+
+#include <cstdlib>
+#include <functional>
 #include <iostream>
-#include <map>
-#include <sstream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <sys/stat.h>
-#include <sys/types.h>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#ifdef TCMALLOC_ENABLED
 #include <gperftools/heap-profiler.h>
+#endif
 
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
@@ -48,7 +59,7 @@ using google::CommandLineFlagInfo;
 using std::cout;
 using std::endl;
 using std::string;
-using std::stringstream;
+using std::ostringstream;
 using std::unordered_set;
 using std::vector;
 
@@ -352,7 +363,7 @@ void DumpFlagsXML() {
       EscapeForHtmlToString(google::ProgramUsage())) << endl;
 
   for (const CommandLineFlagInfo& flag : flags) {
-    cout << DescribeOneFlagInXML(flag) << std::endl;
+    cout << DescribeOneFlagInXML(flag) << endl;
   }
 
   cout << "</AllFlags>" << endl;
@@ -516,7 +527,7 @@ string CommandlineFlagsIntoString(EscapeMode mode) {
 }
 
 string GetNonDefaultFlags(const GFlagsMap& default_flags) {
-  stringstream args;
+  ostringstream args;
   vector<CommandLineFlagInfo> flags;
   GetAllFlags(&flags);
   for (const auto& flag : flags) {

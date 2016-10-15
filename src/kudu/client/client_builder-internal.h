@@ -21,6 +21,8 @@
 #include <vector>
 
 #include "kudu/client/client.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 

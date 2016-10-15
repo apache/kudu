@@ -19,20 +19,18 @@
 
 #include <iosfwd>
 #include <string>
-#include <vector>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/server/webserver.h"
-#include "kudu/util/easy_json.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
-class Schema;
+class EasyJson;
 class ServerRegistrationPB;
 
 namespace master {
 
 class Master;
-struct TabletReplica;
 class TSDescriptor;
 
 // Web page support for the master.

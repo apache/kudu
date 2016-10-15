@@ -15,16 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <memory>
 #include <thread>
+#include <vector>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
-#include "kudu/clock/logical_clock.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/time_manager.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/util/countdown_latch.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 namespace kudu {
 namespace consensus {

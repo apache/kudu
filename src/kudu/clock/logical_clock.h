@@ -16,15 +16,22 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "kudu/clock/clock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-class MonoDelta;
+
 class MonoTime;
+
 namespace clock {
 
 // An implementation of Clock that behaves as a plain Lamport Clock.

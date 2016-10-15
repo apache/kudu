@@ -19,23 +19,26 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <vector>
 #include <string>
 
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/net/net_util.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 
 namespace kudu {
 
-namespace master {
-class ConnectToMasterResponsePB;
-} // namespace master
-class HostPort;
+class Status;
+
+namespace rpc {
+class Messenger;
+}
 
 namespace client {
 namespace internal {

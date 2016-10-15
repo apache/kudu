@@ -39,8 +39,10 @@
 #include "kudu/security/token_verifier.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_int64(authn_token_validity_seconds);

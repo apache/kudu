@@ -17,36 +17,38 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_copy.pb.h"
-#include "kudu/util/env_util.h"
-#include "kudu/util/locks.h"
+#include "kudu/util/env.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class FsManager;
+class Slice;
 
 namespace tablet {
 class TabletReplica;
 } // namespace tablet
 
 namespace tserver {
-
-class TabletReplicaLookupIf;
 
 // Caches file size and holds a shared_ptr reference to a RandomAccessFile.
 // Assumes that the file underlying the RandomAccessFile is immutable.

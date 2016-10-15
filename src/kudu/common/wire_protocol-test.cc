@@ -15,19 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
+#include <cstdint>
+#include <string>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
+
 #include "kudu/common/column_predicate.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/util/pb_util.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/util/bitmap.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/pb_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/stopwatch.h"  // IWYU pragma: keep
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 

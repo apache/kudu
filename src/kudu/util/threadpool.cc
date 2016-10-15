@@ -18,28 +18,30 @@
 #include "kudu/util/threadpool.h"
 
 #include <algorithm>
-#include <iostream>
+#include <cstdint>
+#include <deque>
 #include <limits>
 #include <memory>
+#include <ostream>
 #include <string>
 
-#include <boost/function.hpp>
-#include <gflags/gflags.h>
+#include <boost/function.hpp> // IWYU pragma: keep
 #include <glog/logging.h>
 
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/trace.h"
+#include "kudu/util/trace_metrics.h"
 
 namespace kudu {
 
+using std::deque;
 using std::shared_ptr;
 using std::unique_ptr;
 using strings::Substitute;

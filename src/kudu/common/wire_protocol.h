@@ -19,27 +19,43 @@
 #ifndef KUDU_COMMON_WIRE_PROTOCOL_H
 #define KUDU_COMMON_WIRE_PROTOCOL_H
 
-#include <boost/optional.hpp>
+#include <cstdint>
 #include <vector>
 
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/util/status.h"
+
+namespace boost {
+template <class T>
+class optional;
+}
+
+namespace google {
+namespace protobuf {
+template <typename Element> class RepeatedPtrField;
+}
+}
 
 namespace kudu {
 
 class Arena;
 class ColumnPredicate;
 class ColumnSchema;
-struct ColumnSchemaDelta;
-class ConstContiguousRow;
 class faststring;
 class HostPort;
 class RowBlock;
-class RowBlockRow;
-class RowChangeList;
 class Schema;
 class Slice;
 class Sockaddr;
+struct ColumnSchemaDelta;
+
+class AppStatusPB;
+class ColumnPredicatePB;
+class ColumnSchemaDeltaPB;
+class ColumnSchemaPB;
+class HostPortPB;
+class RowwiseRowBlockPB;
+class SchemaPB;
+class ServerEntryPB;
 
 // Convert the given C++ Status object into the equivalent Protobuf.
 void StatusToPB(const Status& status, AppStatusPB* pb);

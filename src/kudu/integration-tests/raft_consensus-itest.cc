@@ -15,38 +15,78 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
-#include "kudu/common/schema.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/log_verifier.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
+#include "kudu/master/master.pb.h"
+#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.pb.h"
+#include "kudu/server/server_base.proxy.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tserver/tablet_server-test-base.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/atomic.h"
+#include "kudu/util/countdown_latch.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/random.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 DEFINE_int32(num_client_threads, 8,
              "Number of client threads to launch");

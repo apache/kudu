@@ -17,12 +17,14 @@
 
 #include "kudu/server/webserver_options.h"
 
-#include <cstring>
 #include <cstdlib>
+#include <ostream>
 #include <string>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"

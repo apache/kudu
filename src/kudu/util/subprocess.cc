@@ -20,17 +20,19 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <signal.h>
-#include <stdio.h>
 #if defined(__linux__)
 #include <sys/prctl.h>
 #endif
-#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cerrno>
+#include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <memory>
-#include <sstream>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,14 +41,14 @@
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 
-#include "kudu/gutil/once.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/debug-util.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/signal.h"

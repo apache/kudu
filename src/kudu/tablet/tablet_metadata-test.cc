@@ -15,15 +15,27 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
+#include <cstdint>
+#include <memory>
+#include <ostream>
+#include <string>
 
-#include "kudu/common/schema.h"
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol-test-util.h"
-#include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 namespace kudu {
 namespace tablet {

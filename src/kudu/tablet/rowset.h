@@ -17,25 +17,36 @@
 #ifndef KUDU_TABLET_ROWSET_H
 #define KUDU_TABLET_ROWSET_H
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <vector>
 
-#include "kudu/cfile/cfile_util.h"
-#include "kudu/common/iterator.h"
+#include <glog/logging.h>
+
+#include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
+#include "kudu/common/row.h"
 #include "kudu/common/rowid.h"
-#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/tablet/mvcc.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/bloom_filter.h"
-#include "kudu/util/faststring.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+// IWYU pragma: no_include "kudu/util/monotime.h"
 
 namespace kudu {
 
+class MonoTime; // IWYU pragma: keep
 class RowChangeList;
+class RowwiseIterator;
+class Schema;
+class Slice;
 
 namespace consensus {
 class OpId;

@@ -17,18 +17,31 @@
 
 #include "kudu/common/scan_spec.h"
 
-#include <glog/logging.h>
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/common/column_predicate.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
-#include "kudu/util/test_macros.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
 using std::vector;

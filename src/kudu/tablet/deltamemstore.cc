@@ -15,17 +15,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstring>
+#include <ostream>
 #include <utility>
 
-#include "kudu/consensus/consensus.pb.h"
+#include <glog/logging.h>
+
+#include "kudu/common/columnblock.h"
+#include "kudu/common/row.h"
+#include "kudu/common/row_changelist.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/common/types.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/deltamemstore.h"
-#include "kudu/tablet/delta_tracker.h"
+#include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
-#include "kudu/tablet/tablet.h"
-#include "kudu/util/hexdump.h"
-#include "kudu/util/mem_tracker.h"
+#include "kudu/util/debug-util.h"
+#include "kudu/util/memcmpable_varint.h"
+#include "kudu/util/memory/memory.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

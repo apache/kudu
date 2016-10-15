@@ -17,8 +17,9 @@
 
 #include "kudu/common/iterator_stats.h"
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/status.h"
 
 namespace kudu {
 

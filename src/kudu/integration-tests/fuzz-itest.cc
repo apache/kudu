@@ -15,33 +15,56 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/optional.hpp>
-#include <boost/optional/optional_io.hpp>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
-#include <glog/stl_logging.h>
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <cstdlib>
+#include <functional>
 #include <list>
+#include <map>
+#include <memory>
+#include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include <boost/optional/optional.hpp> // IWYU pragma: keep
+#include <boost/optional/optional_io.hpp> // IWYU pragma: keep
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
-#include "kudu/client/row_result.h"
+#include "kudu/client/scan_batch.h"
+#include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/value.h"
+#include "kudu/client/write_op.h"
+#include "kudu/clock/clock.h"
 #include "kudu/clock/logical_clock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/tablet/key_value_test_schema.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DEFINE_int32(keyspace_size, 2,  "number of distinct primary keys to test with");

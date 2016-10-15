@@ -15,15 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <ostream>
+#include <string>
 #include <thread>
+#include <vector>
 
-#include "kudu/client/client-test-util.h"
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/integration-tests/cluster_verifier.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/util/env.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using kudu::client::KuduClient;

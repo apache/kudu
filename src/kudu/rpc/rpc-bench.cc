@@ -15,17 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
 #include <functional>
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <thread>
+#include <vector>
+
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/rpc/rpc-test-base.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rtest.pb.h"
 #include "kudu/rpc/rtest.proxy.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
 using std::bind;
@@ -58,6 +71,8 @@ DEFINE_bool(enable_encryption, false, "Whether to enable TLS encryption for rpc-
 
 namespace kudu {
 namespace rpc {
+
+class Messenger;
 
 class RpcBench : public RpcTestBase {
  public:

@@ -23,6 +23,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/server/webserver.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 

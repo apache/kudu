@@ -17,21 +17,33 @@
 #ifndef KUDU_COMMON_SCHEMA_H
 #define KUDU_COMMON_SCHEMA_H
 
-#include <boost/optional.hpp>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
-#include <glog/logging.h>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/id_mapping.h"
 #include "kudu/common/key_encoder.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 // Check that two schemas are equal, yielding a useful error message in the case that
@@ -50,6 +62,8 @@
   } while (0);
 
 namespace kudu {
+
+class Arena;
 
 // The ID of a column. Each column in a table has a unique ID.
 struct ColumnId {
@@ -337,8 +351,6 @@ class ColumnSchema {
   std::shared_ptr<Variant> write_default_;
   ColumnStorageAttributes attributes_;
 };
-
-class ContiguousRow;
 
 // The schema for a set of rows.
 //

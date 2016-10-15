@@ -17,10 +17,16 @@
 
 #include "kudu/consensus/log_anchor_registry.h"
 
-#include <glog/logging.h>
+#include <cstdint>
+#include <string>
+
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

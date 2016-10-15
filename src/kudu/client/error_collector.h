@@ -16,20 +16,22 @@
 // under the License.
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/status.h"
 
 namespace kudu {
+
+class Status;
+
 namespace client {
 
 class ClientUnitTest_TestErrorCollector_Test;
 class KuduError;
-class KuduInsert;
 
 namespace internal {
 

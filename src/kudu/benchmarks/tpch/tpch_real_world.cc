@@ -40,26 +40,46 @@
 // TODO Make the inserts multi-threaded. See Kudu-629 for the technique.
 
 #include <stdlib.h>
-#include <sys/types.h>
 #include <sys/stat.h>
+
+#include <algorithm>
+#include <cerrno>
+#include <cinttypes>
 #include <csignal>
+#include <cstdint>
+#include <iostream>
+#include <string>
+#include <type_traits>
+#include <vector>
 
 #include <boost/bind.hpp>
+#include <boost/function.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/benchmarks/tpch/line_item_tsv_importer.h"
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
+#include "kudu/client/row_result.h"
+#include "kudu/client/schema.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/thread.h"

@@ -20,18 +20,19 @@
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
+#include <ostream>
 #include <set>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <boost/bind.hpp>
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 
-#include "kudu/client/batcher.h"
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client-internal.h"
+#include "kudu/client/client.pb.h"
 #include "kudu/client/client_builder-internal.h"
 #include "kudu/client/error-internal.h"
 #include "kudu/client/error_collector.h"
@@ -39,22 +40,36 @@
 #include "kudu/client/partitioner-internal.h"
 #include "kudu/client/replica-internal.h"
 #include "kudu/client/row_result.h"
+#include "kudu/client/scan_batch.h"
+#include "kudu/client/scan_configuration.h"
 #include "kudu/client/scan_predicate-internal.h"
 #include "kudu/client/scan_token-internal.h"
 #include "kudu/client/scanner-internal.h"
-#include "kudu/client/schema-internal.h"
 #include "kudu/client/session-internal.h"
 #include "kudu/client/table-internal.h"
 #include "kudu/client/table_alterer-internal.h"
 #include "kudu/client/table_creator-internal.h"
 #include "kudu/client/tablet-internal.h"
 #include "kudu/client/tablet_server-internal.h"
+#include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
+#include "kudu/common/partition_pruner.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/gutil/map-util.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -62,13 +77,21 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/security/token.pb.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/debug-util.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/logging_callback.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/dns_resolver.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/version_info.h"
@@ -119,11 +142,13 @@ MAKE_ENUM_LIMITS(kudu::client::KuduScanner::OrderMode,
                  kudu::client::KuduScanner::UNORDERED,
                  kudu::client::KuduScanner::ORDERED);
 
+struct tm;
+
 namespace kudu {
 namespace client {
 
-using internal::Batcher;
-using internal::ErrorCollector;
+class ResourceMetrics;
+
 using internal::MetaCache;
 using sp::shared_ptr;
 

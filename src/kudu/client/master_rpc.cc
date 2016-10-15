@@ -21,19 +21,24 @@
 
 #include <algorithm>
 #include <mutex>
+#include <ostream>
 
 #include <boost/bind.hpp>
+#include <glog/logging.h>
 
 #include "kudu/common/wire_protocol.h"
-#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
-#include "kudu/util/net/net_util.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/scoped_cleanup.h"
-
+#include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 
 using std::shared_ptr;
 using std::string;

@@ -15,13 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <ostream>
+#include <string>
+
 #include <gflags/gflags.h>
 
 #include "kudu/cfile/block_cache.h"
-#include "kudu/gutil/port.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/string_case.h"
 
@@ -34,6 +35,8 @@ DEFINE_string(block_cache_type, "DRAM",
               "caches data in regular memory. 'NVM' caches data "
               "in a memory-mapped file using the NVML library.");
 TAG_FLAG(block_cache_type, experimental);
+
+template <class T> class scoped_refptr;
 
 namespace kudu {
 

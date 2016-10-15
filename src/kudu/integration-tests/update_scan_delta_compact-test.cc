@@ -15,20 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
+#include <cstdlib>
+#include <ostream>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"

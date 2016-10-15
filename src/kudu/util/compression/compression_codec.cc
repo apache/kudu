@@ -17,6 +17,8 @@
 
 #include "kudu/util/compression/compression_codec.h"
 
+#include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -26,9 +28,10 @@
 #include <snappy.h>
 #include <zlib.h>
 
-
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/string_case.h"
 

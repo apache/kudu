@@ -15,18 +15,31 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
+#include <memory>
+#include <unordered_map>
 #include <vector>
 
-#include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/substitute.h"
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags_declare.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DECLARE_int64(fs_wal_dir_reserved_bytes);
 

@@ -15,16 +15,40 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <functional>
+#include <cstdint>
+#include <ostream>
+#include <string>
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/strings/substitute.h"
+#include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
-#include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/client/scan_batch.h"
+#include "kudu/client/schema-internal.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/type_traits.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/ts_itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/util/bitmap.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DEFINE_int32(num_rows_per_tablet, 100, "The number of rows to be inserted into each tablet");
 

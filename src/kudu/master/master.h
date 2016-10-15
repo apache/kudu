@@ -18,31 +18,25 @@
 #define KUDU_MASTER_MASTER_H
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/kserver/kserver.h"
-#include "kudu/master/master.pb.h"
 #include "kudu/master/master_options.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class MaintenanceManager;
-class RpcServer;
-struct RpcServerOptions;
+class MonoDelta;
 class ThreadPool;
-
-namespace rpc {
-class Messenger;
-class ServicePool;
-} // namespace rpc
 
 namespace security {
 class TokenSigner;
@@ -50,7 +44,6 @@ class TokenSigner;
 
 namespace master {
 
-class AuthnTokenManager;
 class CatalogManager;
 class MasterCertAuthority;
 class MasterPathHandlers;

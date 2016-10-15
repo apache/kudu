@@ -14,18 +14,28 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/fs/block_manager_util.h"
 
+#include <algorithm>
+#include <memory>
+#include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
+#include <glog/logging.h>
 #include <google/protobuf/repeated_field.h>
 #include <gtest/gtest.h>
 
+#include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/fs.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

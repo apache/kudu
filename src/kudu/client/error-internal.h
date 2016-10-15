@@ -19,10 +19,14 @@
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
 namespace client {
+
+class KuduWriteOperation;
 
 class KuduError::Data {
  public:

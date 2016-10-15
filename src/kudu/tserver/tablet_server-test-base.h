@@ -38,6 +38,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet.h"
@@ -54,6 +55,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/test_graph.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DEFINE_int32(rpc_timeout, 1000, "Timeout for RPC calls, in seconds");

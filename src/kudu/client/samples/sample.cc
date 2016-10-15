@@ -24,7 +24,9 @@
 #include "kudu/client/row_result.h"
 #include "kudu/client/stubs.h"
 #include "kudu/client/value.h"
+#include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/util/monotime.h"
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;

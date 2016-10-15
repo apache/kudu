@@ -19,16 +19,22 @@
 
 #include <algorithm>
 #include <mutex>
+#include <ostream>
 
+#include <glog/logging.h>
+
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_index.h"
-#include "kudu/consensus/opid_util.h"
-#include "kudu/gutil/map-util.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/coding.h"
-#include "kudu/util/env_util.h"
-#include "kudu/util/hexdump.h"
+#include "kudu/gutil/strings/util.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"

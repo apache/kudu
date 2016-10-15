@@ -15,17 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <cstdlib>
+#include <ostream>
 #include <thread>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/atomicops.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
-#include "kudu/util/pstack_watcher.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/minidump.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/pstack_watcher.h"
 #include "kudu/util/signal.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"

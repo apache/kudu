@@ -18,22 +18,20 @@
 #ifndef KUDU_UTIL_FAILURE_DETECTOR_H_
 #define KUDU_UTIL_FAILURE_DETECTOR_H_
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 
 #include "kudu/gutil/callback.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
-#include "kudu/util/status_callback.h"
 
 namespace kudu {
-class MonoDelta;
-class MonoTime;
 class Status;
 class Thread;
 

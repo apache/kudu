@@ -15,12 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/jsonwriter_test.pb.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/test_util.h"
 
 using jsonwriter_test::TestAllTypes;

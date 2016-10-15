@@ -18,29 +18,27 @@
 #include "kudu/codegen/code_generator.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cctype>
 #include <sstream>
 #include <string>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/IR/Instructions.h>
-#include <llvm/IR/Module.h>
 #include <llvm/MC/MCContext.h>
 #include <llvm/MC/MCDisassembler/MCDisassembler.h>
 #include <llvm/MC/MCInst.h>
 #include <llvm/MC/MCInstPrinter.h>
+#include <llvm/MC/MCSubtargetInfo.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
-#include <llvm/Target/TargetInstrInfo.h>
 #include <llvm/Target/TargetMachine.h>
-#include <llvm/Target/TargetRegisterInfo.h>
-#include <llvm/Target/TargetSubtargetInfo.h>
 
-#include "kudu/codegen/jit_wrapper.h"
-#include "kudu/codegen/module_builder.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -62,10 +60,10 @@ namespace llvm {
 class MCAsmInfo;
 class MCInstrInfo;
 class MCRegisterInfo;
+class Triple;
 } // namespace llvm
 
 using llvm::ArrayRef;
-using llvm::ExecutionEngine;
 using llvm::MCAsmInfo;
 using llvm::MCContext;
 using llvm::MCDisassembler;
@@ -74,7 +72,6 @@ using llvm::MCInstPrinter;
 using llvm::MCInstrInfo;
 using llvm::MCRegisterInfo;
 using llvm::MCSubtargetInfo;
-using llvm::Module;
 using llvm::raw_os_ostream;
 using llvm::StringRef;
 using llvm::Target;

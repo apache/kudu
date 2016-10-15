@@ -17,14 +17,21 @@
 
 #include "kudu/cfile/cfile_util.h"
 
-#include <glog/logging.h>
 #include <algorithm>
+#include <cstdint>
 #include <string>
+
+#include <glog/logging.h>
 
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/common/column_materialization_context.h"
-#include "kudu/util/env.h"
+#include "kudu/common/columnblock.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/port.h"
+#include "kudu/util/bitmap.h"
 #include "kudu/util/mem_tracker.h"
+#include "kudu/util/memory/arena.h"
 
 namespace kudu {
 namespace cfile {

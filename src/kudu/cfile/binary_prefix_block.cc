@@ -18,17 +18,28 @@
 #include "kudu/cfile/binary_prefix_block.h"
 
 #include <algorithm>
+#include <cstring>
+#include <cstdint>
+#include <ostream>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/cfile/cfile_util.h"
-#include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {

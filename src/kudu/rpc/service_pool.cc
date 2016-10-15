@@ -17,21 +17,31 @@
 
 #include "kudu/rpc/service_pool.h"
 
-#include <glog/logging.h>
+#include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/inbound_call.h"
-#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/remote_method.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_queue.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/trace.h"

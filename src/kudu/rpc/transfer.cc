@@ -17,21 +17,22 @@
 
 #include "kudu/rpc/transfer.h"
 
-#include <stdint.h>
+#include <sys/uio.h>
 
+#include <cstdint>
 #include <iostream>
-#include <sstream>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"
-#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/outbound_call.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/memory/memory.h"
-#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/memory/overwrite.h"
 #include "kudu/util/net/socket.h"
 
 DEFINE_int32(rpc_max_message_size, (50 * 1024 * 1024),

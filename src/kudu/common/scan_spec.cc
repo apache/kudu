@@ -18,15 +18,27 @@
 #include "kudu/common/scan_spec.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <iterator>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+
+#include "kudu/common/column_predicate.h"
+#include "kudu/common/encoded_key.h"
 #include "kudu/common/key_util.h"
 #include "kudu/common/row.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/memory/arena.h"
 
 using std::any_of;
 using std::max;

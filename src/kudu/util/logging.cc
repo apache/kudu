@@ -16,33 +16,35 @@
 // under the License.
 #include "kudu/util/logging.h"
 
-#include <stdio.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
-#include <iostream>
 #include <mutex>
-#include <sstream>
-#include <utility>
-#include <vector>
+#include <type_traits> // IWYU pragma: keep
 
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/random_generator.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/callback.h"
+#include "kudu/gutil/callback.h"  // IWYU pragma: keep
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/async_logger.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
-#include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging_callback.h"
 #include "kudu/util/minidump.h"
 #include "kudu/util/signal.h"
 #include "kudu/util/status.h"
+
+struct tm;
 
 DEFINE_string(log_filename, "",
     "Prefix of log filename - "

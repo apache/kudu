@@ -15,30 +15,58 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
+#include <glog/logging.h>
 #include <glog/stl_logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log-test-base.h"
+#include "kudu/consensus/log.h"
+#include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.pb.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/atomic.h"
+#include "kudu/util/env.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 using std::string;
 using std::unique_ptr;

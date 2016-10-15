@@ -14,9 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+#include "kudu/common/rowblock.h"
 
 #include <glog/logging.h>
-#include "kudu/common/rowblock.h"
+
+#include "kudu/gutil/bits.h"
 #include "kudu/util/bitmap.h"
 
 namespace kudu {

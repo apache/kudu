@@ -15,10 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/rpc/reactor.h"
+#include <memory>
 
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/function.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/thread.h"
 
 using std::shared_ptr;
 

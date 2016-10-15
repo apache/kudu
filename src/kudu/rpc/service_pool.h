@@ -18,16 +18,17 @@
 #ifndef KUDU_SERVICE_POOL_H
 #define KUDU_SERVICE_POOL_H
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/service_queue.h"
 #include "kudu/util/mutex.h"
-#include "kudu/util/thread.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -35,12 +36,15 @@ namespace kudu {
 class Counter;
 class Histogram;
 class MetricEntity;
-class Socket;
+class Thread;
 
 namespace rpc {
 
-class Messenger;
+class InboundCall;
+class RemoteMethod;
 class ServiceIf;
+
+struct RpcMethodInfo;
 
 // A pool of threads that handle new incoming RPC calls.
 // Also includes a queue that calls get pushed onto for handling by the pool.

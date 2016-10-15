@@ -17,15 +17,18 @@
 
 #include "kudu/util/failure_detector.h"
 
-#include <glog/logging.h>
+#include <cstddef>
 #include <mutex>
+#include <ostream>
 #include <unordered_map>
 
+#include <glog/logging.h>
+
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/locks.h"
-#include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 

@@ -17,13 +17,23 @@
 
 #include "kudu/consensus/pending_rounds.h"
 
+#include <ostream>
+#include <utility>
+
+#include <glog/logging.h>
+
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/debug-util.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/thread_restrictions.h"
 
 using kudu::pb_util::SecureShortDebugString;
 using std::string;

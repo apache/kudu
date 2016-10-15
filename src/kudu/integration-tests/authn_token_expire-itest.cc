@@ -15,8 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -24,26 +27,18 @@
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
-#include "kudu/clock/hybrid_clock.h"
+#include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
-#include "kudu/master/catalog_manager.h"
-#include "kudu/master/master.h"
-#include "kudu/master/master.pb.h"
-#include "kudu/master/mini_master.h"
 #include "kudu/tablet/key_value_test_schema.h"
-#include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_replica.h"
-#include "kudu/tserver/mini_tablet_server.h"
-#include "kudu/tserver/tablet_server.h"
-#include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(rpc_reopen_outbound_connections);

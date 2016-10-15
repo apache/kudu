@@ -24,6 +24,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::shared_ptr;

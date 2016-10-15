@@ -17,29 +17,40 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 
 #include <algorithm>
-#include <boost/optional.hpp>
-#include <glog/stl_logging.h>
-#include <limits>
+#include <ostream>
 
-#include "kudu/client/client.h"
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+#include <glog/stl_logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/client/schema.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
-#include "kudu/server/server_base.proxy.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tablet_server_test_util.h"
+#include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
-#include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
 namespace kudu {

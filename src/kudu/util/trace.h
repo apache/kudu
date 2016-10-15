@@ -32,6 +32,10 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/trace_metrics.h"
 
+namespace kudu {
+class Trace;
+}
+
 // Adopt a Trace on the current thread for the duration of the current
 // scope. The old current Trace is restored when the scope is exited.
 //

@@ -17,33 +17,52 @@
 #ifndef KUDU_TABLET_MEMROWSET_H
 #define KUDU_TABLET_MEMROWSET_H
 
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional_fwd.hpp>
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 
-#include "kudu/common/rowblock.h"
-#include "kudu/common/scan_spec.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/row.h"
+#include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/concurrent_btree.h"
-#include "kudu/tablet/mutation.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
-#include "kudu/tablet/tablet.pb.h"
-#include "kudu/util/mem_tracker.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
-#include "kudu/util/memory/memory.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class MemTracker;
+class MemoryTrackingBufferAllocator;
+class RowBlock;
+class RowBlockRow;
+class RowChangeList;
+class ScanSpec;
+struct IteratorStats;
+
+namespace consensus {
+class OpId;
+}
 
 namespace tablet {
-
 //
 // Implementation notes:
 // --------------------------
@@ -59,7 +78,10 @@ namespace tablet {
 // NOTE: all allocations done by the MemRowSet are done inside its associated
 // thread-safe arena, and then freed in bulk when the MemRowSet is destructed.
 
+class CompactionInput;
 class MemRowSet;
+class Mutation;
+class OperationResultPB;
 
 // The value stored in the CBTree for a single row.
 class MRSRow {

@@ -17,18 +17,23 @@
 #ifndef KUDU_TABLET_MVCC_H
 #define KUDU_TABLET_MVCC_H
 
-#include <gtest/gtest_prod.h>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include "kudu/clock/clock.h"
-#include "kudu/gutil/gscoped_ptr.h"
+#include <gtest/gtest_prod.h>
+
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 class CountDownLatch;
+class MonoTime;
+
 namespace tablet {
 class MvccManager;
 

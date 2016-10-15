@@ -29,20 +29,27 @@
 #include "kudu/consensus/log_index.h"
 
 #include <fcntl.h>
-#include <mutex>
-#include <string>
 #include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
+
+#include <cerrno>
+#include <cinttypes>
+#include <cstdint>
+#include <cstring>
+#include <mutex>
+#include <ostream>
+#include <string>
+#include <utility>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
-#include "kudu/util/locks.h"
 
 using std::string;
 using std::vector;

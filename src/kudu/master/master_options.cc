@@ -17,11 +17,17 @@
 
 #include "kudu/master/master_options.h"
 
-#include <glog/logging.h>
-#include <gflags/gflags.h>
+#include <ostream>
+#include <string>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/gutil/macros.h"
 #include "kudu/master/master.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/status.h"
 
 DEFINE_string(master_addresses, "",
               "Comma-separated list of the RPC addresses belonging to all "

@@ -15,18 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
-#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/sys_catalog.h"
@@ -34,20 +37,27 @@
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
-#include "kudu/server/rpc_server.h"
-#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using std::string;
-using std::shared_ptr;
-using std::vector;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::security::Cert;
 using kudu::security::DataFormat;
 using kudu::security::PrivateKey;
+using std::shared_ptr;
+using std::string;
+using std::vector;
+
+namespace google {
+namespace protobuf {
+class Message;
+}
+}
 
 namespace kudu {
 namespace master {

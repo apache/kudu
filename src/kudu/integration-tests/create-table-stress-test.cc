@@ -15,26 +15,46 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdlib>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
-#include <memory>
-#include <thread>
 
 #include "kudu/client/client.h"
-#include "kudu/common/schema.h"
-#include "kudu/common/wire_protocol.h"
-#include "kudu/fs/fs_manager.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/master/catalog_manager.h"
 #include "kudu/master/master-test-util.h"
+#include "kudu/master/master.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/tserver/mini_tablet_server.h"
-#include "kudu/tserver/tablet_server.h"
+#include "kudu/util/atomic.h"
+#include "kudu/util/cow_object.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using kudu::client::KuduClient;
@@ -48,7 +68,6 @@ using kudu::itest::TabletServerMap;
 using kudu::master::MasterServiceProxy;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
-using kudu::rpc::RpcController;
 
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(log_preallocate_segments);

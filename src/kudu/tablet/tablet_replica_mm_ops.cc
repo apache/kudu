@@ -17,17 +17,21 @@
 
 #include "kudu/tablet/tablet_replica_mm_ops.h"
 
-#include <algorithm>
-#include <gflags/gflags.h>
 #include <map>
 #include <mutex>
+#include <ostream>
 #include <string>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/status.h"
 
 DEFINE_int32(flush_threshold_mb, 1024,
              "Size at which MemRowSet flushes are triggered. "

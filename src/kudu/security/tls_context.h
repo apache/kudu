@@ -17,15 +17,16 @@
 
 #pragma once
 
-#include <functional>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 
-#include "kudu/security/cert.h"
+#include "kudu/gutil/port.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_handshake.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
@@ -34,6 +35,7 @@ namespace kudu {
 namespace security {
 
 class Cert;
+class CertSignRequest;
 class PrivateKey;
 
 // TlsContext wraps data required by the OpenSSL library for creating and

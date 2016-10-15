@@ -15,19 +15,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <vector>
-
+#include "kudu/common/common.pb.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/transactions/alter_schema_transaction.h"
+#include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet-test-base.h"
+#include "kudu/tablet/tablet_metadata.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
-#include "kudu/util/test_util.h"
 
 using std::pair;
 using std::string;

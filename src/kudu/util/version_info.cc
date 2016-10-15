@@ -17,6 +17,7 @@
 
 #include "kudu/util/version_info.h"
 
+#include <cstring>
 #include <string>
 
 #include "kudu/generated/version_defines.h"

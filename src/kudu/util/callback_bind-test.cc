@@ -15,11 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/callback.h"
-#include "kudu/gutil/macros.h"
+#include <algorithm>
+#include <ostream>
+#include <string>
+#include <type_traits>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
+
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/callback.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/ref_counted.h"
 
 namespace kudu {
 

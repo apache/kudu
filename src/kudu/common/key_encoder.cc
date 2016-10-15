@@ -15,21 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
-#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/singleton.h"
-#include "kudu/util/faststring.h"
 
 using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
+
+class faststring;
 
 // A resolver for Encoders
 template <typename Buffer>
@@ -66,7 +65,7 @@ class EncoderResolver {
     encoders_[Type].reset(new KeyEncoder<Buffer>(traits));
   }
 
-  friend class Singleton<EncoderResolver<Buffer> >;
+  friend class Singleton<EncoderResolver<Buffer>>;
   // We use a vector instead of a map here since this shows up in some hot paths
   // and we know that the valid data types all have low enough IDs that the
   // vector will be small.
@@ -75,12 +74,12 @@ class EncoderResolver {
 
 template <typename Buffer>
 const KeyEncoder<Buffer>& GetKeyEncoder(const TypeInfo* typeinfo) {
-  return Singleton<EncoderResolver<Buffer> >::get()->GetKeyEncoder(typeinfo->physical_type());
+  return Singleton<EncoderResolver<Buffer>>::get()->GetKeyEncoder(typeinfo->physical_type());
 }
 
 // Returns true if the type is allowed in keys.
 const bool IsTypeAllowableInKey(const TypeInfo* typeinfo) {
-  return Singleton<EncoderResolver<faststring> >::get()->HasKeyEncoderForType(
+  return Singleton<EncoderResolver<faststring>>::get()->HasKeyEncoderForType(
       typeinfo->physical_type());
 }
 

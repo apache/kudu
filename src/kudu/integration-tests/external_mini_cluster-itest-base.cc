@@ -17,18 +17,21 @@
 
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 
+#include <algorithm>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/util/status.h"
 #include "kudu/util/pstack_watcher.h"
+#include "kudu/util/test_macros.h"
 
 namespace kudu {
 

@@ -18,31 +18,42 @@
 #define KUDU_TABLET_TABLET_METADATA_H
 
 #include <atomic>
-#include <boost/optional/optional_fwd.hpp>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/common/partition.h"
-#include "kudu/common/schema.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/block_id.h"
-#include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/callback.h"
-#include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
 
+namespace boost {
+template <class T>
+class optional;
+}
+
 namespace kudu {
+
+class BlockIdPB;
+class FsManager;
+class Schema;
+
 namespace tablet {
 
 class RowSetMetadata;
-class RowSetMetadataUpdate;
 
 typedef std::vector<std::shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::unordered_set<int64_t> RowSetMetadataIds;

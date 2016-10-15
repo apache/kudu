@@ -94,11 +94,11 @@
 //      7      2**48-1      14.4
 //      8      2**56-1      16.8
 //      9      2**64-1      19.2
-//
+
+#include <cstddef>
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/endian.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memcmpable_varint.h"
 #include "kudu/util/slice.h"

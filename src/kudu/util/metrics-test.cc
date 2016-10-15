@@ -15,18 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
-#include <rapidjson/document.h>
+#include <cstdint>
+#include <ostream>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+#include <rapidjson/document.h>
+
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

@@ -18,6 +18,7 @@
 #ifndef KUDU_CONSENSUS_LEADER_ELECTION_H
 #define KUDU_CONSENSUS_LEADER_ELECTION_H
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <string>
@@ -25,24 +26,20 @@
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
-class Status;
-
-namespace rpc {
-class Messenger;
-class RpcController;
-}
-
 namespace consensus {
-class PeerProxy;
-class PeerProxyFactory;
+
+class RaftConfigPB;
 
 // The vote a peer has given.
 enum ElectionVote {

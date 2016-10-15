@@ -15,14 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/cfile/block_compression.h"
+
+#include <cstring>
+
 #include <glog/logging.h>
-#include <algorithm>
 #include <gflags/gflags.h>
 
-#include "kudu/cfile/block_compression.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/coding-inl.h"
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"

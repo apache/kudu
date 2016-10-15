@@ -16,14 +16,15 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
+#include <map>
+#include <mutex>
+#include <string>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
-
-#include <map>
-#include <mutex>
-#include <string>
 
 namespace kudu {
 

@@ -17,17 +17,23 @@
 
 #include "kudu/master/mini_master.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.h"
+#include "kudu/master/master_options.h"
 #include "kudu/server/rpc_server.h"
-#include "kudu/server/webserver.h"
+#include "kudu/server/webserver_options.h"
+#include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"

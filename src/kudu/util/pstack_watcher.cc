@@ -17,18 +17,23 @@
 
 #include "kudu/util/pstack_watcher.h"
 
-#include <memory>
-#include <stdio.h>
-#include <string>
-#include <sys/types.h>
 #include <unistd.h>
+
+#include <cerrno>
+#include <cstdio>
+#include <memory>
+#include <string>
 #include <vector>
+
+#include <boost/bind.hpp>
+#include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
+#include "kudu/util/thread.h"
 
 namespace kudu {
 

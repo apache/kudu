@@ -18,23 +18,23 @@
 #include "kudu/consensus/log_util.h"
 
 #include <algorithm>
+#include <cstring>
 #include <iostream>
-#include <limits>
-#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/map-util.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
@@ -42,8 +42,8 @@
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/scoped_cleanup.h"
 
 DEFINE_int32(log_segment_size_mb, 8,
              "The default size for log segments, in MB");

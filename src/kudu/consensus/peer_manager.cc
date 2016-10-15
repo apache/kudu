@@ -19,14 +19,21 @@
 
 #include <memory>
 #include <mutex>
+#include <ostream>
+#include <type_traits>
+#include <utility>
+
+#include <glog/logging.h>
 
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/threadpool.h"
 
 using kudu::log::Log;
 using kudu::pb_util::SecureShortDebugString;

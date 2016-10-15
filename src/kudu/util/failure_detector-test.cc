@@ -15,17 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
-#include <gtest/gtest.h>
+#include <algorithm>
+#include <ostream>
 #include <string>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/failure_detector.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

@@ -19,8 +19,15 @@
 #ifndef KUDU_UTIL_BITMAP_H
 #define KUDU_UTIL_BITMAP_H
 
+#include <cstddef>
+#include <cstdint>
+#include <ostream>
 #include <string>
+
+#include <glog/logging.h>
+
 #include "kudu/gutil/bits.h"
+#include "kudu/gutil/port.h"
 
 namespace kudu {
 

@@ -17,7 +17,10 @@
 #ifndef KUDU_UTIL_MONOTIME_H
 #define KUDU_UTIL_MONOTIME_H
 
+// NOTE: using stdint.h instead of cstdint because this file is supposed
+//       to be processed by a compiler lacking C++11 support.
 #include <stdint.h>
+
 #include <string>
 
 #ifdef KUDU_HEADERS_NO_STUBS
@@ -32,11 +35,9 @@
 
 #include "kudu/util/kudu_export.h"
 
-struct timeval;
-struct timespec;
+struct timeval;   // IWYU pragma: keep
 
 namespace kudu {
-class MonoTime;
 
 /// @brief A representation of a time interval.
 ///

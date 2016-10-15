@@ -18,9 +18,9 @@
 
 #include "kudu/gutil/hash/jenkins.h"
 
-#include "kudu/gutil/integral_types.h"
 #include <glog/logging.h>
-#include "kudu/gutil/logging-inl.h"
+
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/hash/jenkins_lookup2.h"
 
 static inline uint32 char2unsigned(char c) {

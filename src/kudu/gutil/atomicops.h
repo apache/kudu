@@ -51,7 +51,7 @@
 #ifndef THREAD_ATOMICOPS_H_
 #define THREAD_ATOMICOPS_H_
 
-#include <stdint.h>
+#include <cstdint>
 
 // ------------------------------------------------------------------------
 // Include the platform specific implementations of the types
@@ -71,19 +71,19 @@
 
 // ThreadSanitizer provides own implementation of atomicops.
 #if defined(THREAD_SANITIZER)
-#include "kudu/gutil/atomicops-internals-tsan.h"
+#include "kudu/gutil/atomicops-internals-tsan.h" // IWYU pragma: export
 #elif defined(__APPLE__)
-#include "kudu/gutil/atomicops-internals-macosx.h"
+#include "kudu/gutil/atomicops-internals-macosx.h" // IWYU pragma: export
 #elif defined(__GNUC__) && defined(ARMV6)
-#include "kudu/gutil/atomicops-internals-arm-v6plus.h"
+#include "kudu/gutil/atomicops-internals-arm-v6plus.h" // IWYU pragma: export
 #elif defined(ARMV3)
-#include "kudu/gutil/atomicops-internals-arm-generic.h"
+#include "kudu/gutil/atomicops-internals-arm-generic.h" // IWYU pragma: export
 #elif defined(__GNUC__) && (defined(__i386) || defined(__x86_64__))
-#include "kudu/gutil/atomicops-internals-x86.h"
+#include "kudu/gutil/atomicops-internals-x86.h" // IWYU pragma: export
 #elif defined(__GNUC__) && defined(ARCH_POWERPC64)
-#include "kudu/gutil/atomicops-internals-powerpc.h"
+#include "kudu/gutil/atomicops-internals-powerpc.h" // IWYU pragma: export
 #elif defined(OS_WINDOWS)
-#include "kudu/gutil/atomicops-internals-windows.h"
+#include "kudu/gutil/atomicops-internals-windows.h" // IWYU pragma: export
 #else
 #error You need to implement atomic operations for this architecture
 #endif

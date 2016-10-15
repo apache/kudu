@@ -17,6 +17,12 @@
 #ifndef KUDU_CLIENT_SCAN_BATCH_H
 #define KUDU_CLIENT_SCAN_BATCH_H
 
+// NOTE: using stdint.h instead of cstdint because this file is supposed
+//       to be processed by a compiler lacking C++11 support.
+#include <stdint.h>
+
+#include <cstddef>
+#include <iterator>
 #include <string>
 
 #ifdef KUDU_HEADERS_NO_STUBS
@@ -28,6 +34,7 @@
 
 #include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 class Schema;

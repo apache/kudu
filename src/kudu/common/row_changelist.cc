@@ -15,17 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <ostream>
 #include <string>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/memory/arena.h"
 
 using std::string;
 using strings::Substitute;

@@ -17,6 +17,7 @@
 #ifndef KUDU_ERRNO_H
 #define KUDU_ERRNO_H
 
+#include <cstddef>
 #include <string>
 
 namespace kudu {

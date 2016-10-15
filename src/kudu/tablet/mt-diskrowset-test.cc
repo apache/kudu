@@ -15,10 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <memory>
 #include <thread>
+#include <unordered_set>
+#include <vector>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/tablet/diskrowset-test-base.h"
+#include "kudu/tablet/diskrowset.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DEFINE_int32(num_threads, 2, "Number of threads to test");
 

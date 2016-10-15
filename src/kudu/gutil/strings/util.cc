@@ -7,30 +7,34 @@
 
 #include "kudu/gutil/strings/util.h"
 
-#include <assert.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-#include <time.h>           // for FastTimeToBuffer()
+#include <cassert>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <ctime>           // for FastTimeToBuffer()
+
 #include <algorithm>
-using std::copy;
-using std::max;
-using std::min;
-using std::reverse;
-using std::sort;
-using std::swap;
+#include <deque>
+#include <ostream>
 #include <string>
-using std::string;
 #include <vector>
-using std::vector;
 
 #include <glog/logging.h>
-#include "kudu/gutil/logging-inl.h"
+
 #include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/stl_util.h"  // for string_as_array, STLAppendToString
 #include "kudu/gutil/utf/utf.h"
+
+using std::copy;
+using std::max;
+using std::min;
+using std::reverse;
+using std::sort;
+using std::string;
+using std::swap;
+using std::vector;
 
 #ifdef OS_WINDOWS
 #ifdef min  // windows.h defines this to something silly

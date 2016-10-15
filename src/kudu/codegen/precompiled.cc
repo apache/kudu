@@ -33,10 +33,11 @@
 // NOTE: This file is NOT compiled with ASAN annotations, even if Kudu
 // is being built with ASAN.
 
-#include <cstdlib>
+#include <cstdint>
 #include <cstring>
 
 #include "kudu/common/rowblock.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/memory/arena.h"
 
@@ -63,6 +64,8 @@ extern "C" void *__dso_handle __attribute__((__visibility__("hidden"))) = NULL;
 #endif
 
 namespace kudu {
+
+class Slice;
 
 // Returns whether copy was successful (fails iff slice relocation fails,
 // which can only occur if is_string is true).

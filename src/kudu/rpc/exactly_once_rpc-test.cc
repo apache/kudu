@@ -15,10 +15,42 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <unistd.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
+
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/callback.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/request_tracker.h"
+#include "kudu/rpc/response_callback.h"
+#include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/retriable_rpc.h"
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/rpc.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/rpc/rtest.pb.h"
+#include "kudu/rpc/rtest.proxy.h"
+#include "kudu/util/countdown_latch.h"
+#include "kudu/util/mem_tracker.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 DECLARE_int64(remember_clients_ttl_ms);
 DECLARE_int64(remember_responses_ttl_ms);
@@ -33,6 +65,8 @@ using std::vector;
 
 namespace kudu {
 namespace rpc {
+
+class Messenger;
 
 namespace {
 

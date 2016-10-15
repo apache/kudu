@@ -19,16 +19,21 @@
 
 #include <sys/types.h>
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
-#include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
@@ -41,13 +46,24 @@ namespace kudu {
 class ExternalDaemon;
 class ExternalMaster;
 class ExternalTabletServer;
-class HostPort;
-class MetricPrototype;
 class MetricEntityPrototype;
+class MetricPrototype;
 class NodeInstancePB;
-class ScopedSubprocess;
 class Sockaddr;
 class Subprocess;
+
+namespace client {
+class KuduClient;
+class KuduClientBuilder;
+} // namespace client
+
+namespace master {
+class MasterServiceProxy;
+} // namespace master
+
+namespace rpc {
+class Messenger;
+} // namespace rpc
 
 namespace server {
 class ServerStatusPB;

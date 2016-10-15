@@ -17,11 +17,16 @@
 
 #include "kudu/rpc/serialization.h"
 
+#include <ostream>
+#include <string>
+
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/message_lite.h>
 #include <google/protobuf/io/coded_stream.h>
 
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"

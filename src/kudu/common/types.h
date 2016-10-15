@@ -18,18 +18,26 @@
 #ifndef KUDU_COMMON_TYPES_H
 #define KUDU_COMMON_TYPES_H
 
-#include <glog/logging.h>
 
 #include <cmath>
-#include <stdint.h>
+#include <cstdio>
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <cstdlib>
+#include <ostream>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/common/common.pb.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/slice.h"
+// IWYU pragma: no_include "kudu/util/status.h"
 
 namespace kudu {
 

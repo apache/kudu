@@ -18,15 +18,16 @@
 #include "kudu/util/net/sockaddr.h"
 
 #include <arpa/inet.h>
-#include <errno.h>
 #include <netdb.h>
-#include <stdio.h>
-#include <string.h>
+#include <sys/socket.h>
+
+#include <cerrno>
+#include <cstring>
 #include <string>
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/hash/builtin_type_hash.h"
-#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/net/net_util.h"

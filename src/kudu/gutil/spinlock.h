@@ -40,8 +40,9 @@
 #define BASE_SPINLOCK_H_
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/thread_annotations.h"
 
 // This isn't originally in the base:: namespace in tcmalloc,

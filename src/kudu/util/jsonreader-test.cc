@@ -15,14 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
 
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/jsonreader.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
 using rapidjson::Value;

@@ -10,14 +10,17 @@
 #ifndef STORAGE_LEVELDB_UTIL_CODING_H_
 #define STORAGE_LEVELDB_UTIL_CODING_H_
 
-#include <stdint.h>
-#include <string.h>
-#include <string>
+#include <cstdint>
+#include <cstring>
 
 #include "kudu/util/slice.h"
-#include "kudu/util/faststring.h"
+#include "kudu/gutil/port.h"  // IWYU pragma: keep
+// IWYU pragma: no_include <endian.h>
 
 namespace kudu {
+
+class faststring;
+
 extern void PutFixed32(faststring* dst, uint32_t value);
 extern void PutFixed64(faststring* dst, uint64_t value);
 extern void PutVarint32(faststring* dst, uint32_t value);

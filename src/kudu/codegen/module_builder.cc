@@ -17,35 +17,45 @@
 
 #include "kudu/codegen/module_builder.h"
 
-#include <cstdlib>
+#include <algorithm>
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
+
+// NOTE: among the headers below, the MCJIT.h header file is needed
+//       for successful run-time operation of the code generator.
 #include <glog/logging.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Analysis/Passes.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/MCJIT.h>
+#include <llvm/ExecutionEngine/MCJIT.h> // IWYU pragma: keep
+#include <llvm/IR/Constant.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/GlobalValue.h>
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IRReader/IRReader.h>
+#include <llvm/Pass.h>
+#include <llvm/Support/CodeGen.h>
+#include <llvm/Support/Host.h>
 #include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/raw_os_ostream.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Target/TargetMachine.h>
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/IPO/AlwaysInliner.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #include "kudu/codegen/precompiled.ll.h"
-#include "kudu/gutil/macros.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"

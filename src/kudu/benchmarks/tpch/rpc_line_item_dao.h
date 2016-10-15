@@ -17,20 +17,31 @@
 #ifndef KUDU_TPCH_RPC_LINE_ITEM_DAO_H
 #define KUDU_TPCH_RPC_LINE_ITEM_DAO_H
 
-#include <boost/function.hpp>
-#include <set>
+#include <cstdint>
 #include <string>
-#include <utility>
 #include <vector>
 
-#include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/client/row_result.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/semaphore.h"
 
+namespace boost {
+template <typename Signature>
+class function;
+} // namespace boost
+
 namespace kudu {
+
+namespace client {
+class KuduPredicate;
+}
+
+class KuduPartialRow;
+class Slice;
 
 class RpcLineItemDAO {
  public:

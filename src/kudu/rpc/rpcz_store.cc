@@ -17,23 +17,32 @@
 
 #include "kudu/rpc/rpcz_store.h"
 
-#include <algorithm>
+#include <algorithm>  // IWYU pragma: keep
 #include <array>
-#include <glog/stl_logging.h>
+#include <cstdint>
 #include <mutex> // for unique_lock
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <google/protobuf/message.h>
+
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/inbound_call.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/trace.h"
-
+#include "kudu/util/trace_metrics.h"
 
 DEFINE_bool(rpc_dump_all_traces, false,
             "If true, dump all RPC traces at INFO level");

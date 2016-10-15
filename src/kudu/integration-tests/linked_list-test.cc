@@ -30,28 +30,34 @@
 // To verify, the table is scanned, and we ensure that every key is linked to
 // either zero or one times, and no link_to refers to a missing key.
 
+#include <cstdint>
+#include <ostream>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include <boost/bind.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client.h"
-#include "kudu/client/row_result.h"
-#include "kudu/gutil/map-util.h"
-#include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/split.h"
-#include "kudu/gutil/walltime.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/linked_list-test-util.h"
+#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/integration-tests/ts_itest-base.h"
-#include "kudu/util/random.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/tserver/tablet_server-test-base.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/hdr_histogram.h"
 
 using kudu::client::KuduClient;
-using kudu::client::KuduClientBuilder;
-using kudu::client::KuduSchema;
 using kudu::client::sp::shared_ptr;
 using kudu::itest::TServerDetails;
 using std::string;
@@ -70,6 +76,10 @@ DEFINE_bool(stress_wal_gc, false,
             "Set WAL segment size small so that logs will be GCed during the test");
 
 namespace kudu {
+
+namespace client {
+class KuduClient;
+}
 
 class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
  public:

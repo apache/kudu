@@ -25,8 +25,6 @@
 namespace kudu {
 namespace client {
 
-class KuduReplica;
-
 class KuduTablet::Data {
  public:
   Data(std::string id, std::vector<const KuduReplica*> replicas);

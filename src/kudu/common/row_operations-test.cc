@@ -15,14 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <cstdlib>
+#include <ostream>
 #include <memory>
 #include <string>
+#include <vector>
 
+#include <gtest/gtest.h>
+#include <glog/logging.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::shared_ptr;

@@ -16,22 +16,39 @@
 // under the License.
 
 #include <sys/stat.h>
-#include <sys/types.h>
 
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/client/client.h"
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/security/test/mini_kdc.h"
+#include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/util/env.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"

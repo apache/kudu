@@ -17,21 +17,22 @@
 
 #include "kudu/rpc/blocking_ops.h"
 
-#include <stdint.h>
-#include <string.h>
+#include <cstdint>
+#include <cstring>
+#include <ostream>
 
 #include <glog/logging.h>
 #include <google/protobuf/message_lite.h>
 
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/monotime.h"
-#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

@@ -17,23 +17,33 @@
 
 #include "kudu/tools/tool_action.h"
 
-#include <gflags/gflags.h>
-#include <google/protobuf/message.h>
-#include <google/protobuf/util/json_util.h>
-
-#include <fstream>
+#include <algorithm>
+#include <cstdlib>
+#include <exception>
+#include <fstream>  // IWYU pragma: keep
 #include <iostream>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <google/protobuf/message.h>
+#include <google/protobuf/stubs/status.h>
+#include <google/protobuf/stubs/stringpiece.h>
+#include <google/protobuf/util/json_util.h>
+
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 

@@ -17,16 +17,28 @@
 
 #include "kudu/common/schema.h"
 
-#include <glog/logging.h>
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <tuple>  // IWYU pragma: keep
 #include <unordered_map>
 #include <vector>
 
+#include <glog/logging.h> // IWYU pragma: keep
+#include <gtest/gtest.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/row.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"  // IWYU pragma: keep
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 

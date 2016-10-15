@@ -17,9 +17,8 @@
 #ifndef KUDU_UTIL_THROTTLER_H
 #define KUDU_UTIL_THROTTLER_H
 
-#include <algorithm>
+#include <cstdint>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 

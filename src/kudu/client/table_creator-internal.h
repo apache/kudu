@@ -17,18 +17,23 @@
 #ifndef KUDU_CLIENT_TABLE_CREATOR_INTERNAL_H
 #define KUDU_CLIENT_TABLE_CREATOR_INTERNAL_H
 
-#include <boost/optional.hpp>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
+
+#include <boost/optional/optional.hpp>
 
 #include "kudu/client/client.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 
 namespace client {
+
+class KuduSchema;
 
 class KuduTableCreator::Data {
  public:
@@ -60,6 +65,7 @@ class KuduTableCreator::Data {
 
   bool wait_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
 

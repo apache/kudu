@@ -18,19 +18,19 @@
 #include "kudu/tablet/mvcc.h"
 
 #include <algorithm>
-#include <glog/logging.h>
 #include <mutex>
+#include <ostream>
+#include <utility>
 
-#include "kudu/clock/logical_clock.h"
+#include <glog/logging.h>
+
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 namespace tablet {

@@ -16,6 +16,7 @@
 // under the License.
 //
 // Some portions Copyright 2013 The Chromium Authors. All rights reserved.
+
 #include "kudu/gutil/strings/util.h"
 
 #include <gtest/gtest.h>

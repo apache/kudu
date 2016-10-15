@@ -18,25 +18,27 @@
 #ifndef KUDU_FS_FS_MANAGER_H
 #define KUDU_FS_FS_MANAGER_H
 
-#include <boost/none.hpp>
-#include <boost/optional/optional.hpp>
-#include <gtest/gtest_prod.h>
+#include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <set>
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
 #include "kudu/fs/error_manager.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
 
-namespace google {
-namespace protobuf {
-class Message;
-} // namespace protobuf
-} // namespace google
+DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
 

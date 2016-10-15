@@ -16,24 +16,21 @@
 // under the License.
 #include "kudu/util/metrics.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
-#include <sstream>
 #include <map>
-#include <set>
+#include <utility>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
-#include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/singleton.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/histogram.pb.h"
-#include "kudu/util/jsonwriter.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 DEFINE_int32(metrics_retirement_age_ms, 120 * 1000,

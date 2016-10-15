@@ -17,14 +17,16 @@
 #ifndef KUDU_COMMON_PARTIAL_ROW_H
 #define KUDU_COMMON_PARTIAL_ROW_H
 
+// NOTE: using stdint.h instead of cstdint because this file is supposed
+//       to be processed by a compiler lacking C++11 support.
 #include <stdint.h>
+
 #include <string>
-#include <vector>
 
 #ifdef KUDU_HEADERS_NO_STUBS
-#include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include <gtest/gtest_prod.h>
+
+#include "kudu/gutil/port.h"
 #else
 // This is a poor module interdependency, but the stubs are header-only and
 // it's only for exported header builds, so we'll make an exception.
@@ -32,6 +34,7 @@
 #endif
 
 #include "kudu/util/kudu_export.h"
+#include "kudu/util/status.h"
 #include "kudu/util/slice.h"
 
 /// @cond
@@ -39,19 +42,18 @@ namespace kudu {
 class ColumnSchema;
 namespace client {
 class KuduWriteOperation;
-template<typename KeyTypeWrapper> struct SliceKeysTestSetup;
-template<typename KeyTypeWrapper> struct IntKeysTestSetup;
+template<typename KeyTypeWrapper> struct SliceKeysTestSetup;// IWYU pragma: keep
+template<typename KeyTypeWrapper> struct IntKeysTestSetup;  // IWYU pragma: keep
 } // namespace client
 
 namespace tablet {
-  template<typename KeyTypeWrapper> struct SliceTypeRowOps;
-  template<typename KeyTypeWrapper> struct NumTypeRowOps;
+  template<typename KeyTypeWrapper> struct SliceTypeRowOps; // IWYU pragma: keep
+  template<typename KeyTypeWrapper> struct NumTypeRowOps;   // IWYU pragma: keep
 } // namespace tablet
 
 /// @endcond
 
 class Schema;
-class PartialRowPB;
 
 /// @brief A row which may only contain values for a subset of the columns.
 ///

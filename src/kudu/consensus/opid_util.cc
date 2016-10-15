@@ -17,11 +17,13 @@
 
 #include "kudu/consensus/opid_util.h"
 
-#include <algorithm>
-#include <glog/logging.h>
 #include <limits>
+#include <utility>
+
+#include <glog/logging.h>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 

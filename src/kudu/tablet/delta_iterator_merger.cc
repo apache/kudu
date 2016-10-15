@@ -19,13 +19,21 @@
 
 #include <algorithm>
 
-#include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/deltafile.h"
+#include "kudu/tablet/delta_key.h"
 
 namespace kudu {
+
+class Arena;
+class ColumnBlock;
+class Schema;
+class SelectionVector;
+struct ColumnId;
+
 namespace tablet {
+
+class Mutation;
+class MvccSnapshot;
 
 using std::shared_ptr;
 using std::string;

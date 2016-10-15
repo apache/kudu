@@ -53,10 +53,8 @@
 #ifndef STRINGS_MEMUTIL_H_
 #define STRINGS_MEMUTIL_H_
 
-#include <stddef.h>
-#include <string.h>      // to get the POSIX mem*() routines
-
-#include "kudu/gutil/port.h"   // disable some warnings on Windows
+#include <cstddef>
+#include <cstring>      // to get the POSIX mem*() routines
 
 inline char *memcat(char *dest, size_t destlen,
                     const char *src, size_t srclen) {

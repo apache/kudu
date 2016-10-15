@@ -16,23 +16,49 @@
 // under the License.
 
 #include <algorithm>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <glog/stl_logging.h>
+#include <gtest/gtest.h>
 
-#include "kudu/consensus/consensus-test-util.h"
+#include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log-test-base.h"
+#include "kudu/consensus/log.h"
+#include "kudu/consensus/log.pb.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_index.h"
+#include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/mvcc.h"
+#include "kudu/util/async_util.h"
+#include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/env.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DEFINE_int32(num_batches, 10000,
              "Number of batches to write to/read from the Log in TestWriteManyBatches");

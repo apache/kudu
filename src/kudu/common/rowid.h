@@ -17,7 +17,9 @@
 #ifndef KUDU_COMMON_ROWID_H
 #define KUDU_COMMON_ROWID_H
 
-#include <inttypes.h>
+#include <cinttypes>
+
+#include <glog/logging.h>
 
 #include "kudu/util/memcmpable_varint.h"
 #include "kudu/util/faststring.h"

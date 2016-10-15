@@ -19,16 +19,20 @@
 
 #include <string>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/common/row_operations.h"
-#include "kudu/tablet/rowset.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/tablet/lock_manager.h"
 
 namespace kudu {
 
 class Schema;
+class Status;
 
 namespace tablet {
+
+class OperationResultPB;
+class RowSet;
+class RowSetKeyProbe;
 
 // Structure tracking the progress of a single row operation within a WriteTransaction.
 struct RowOp {
@@ -98,11 +102,9 @@ struct RowOp {
 
   // The result of the operation, after Apply.
   gscoped_ptr<OperationResultPB> result;
-
 };
 
 
 } // namespace tablet
 } // namespace kudu
 #endif /* KUDU_TABLET_ROW_OP_H */
-

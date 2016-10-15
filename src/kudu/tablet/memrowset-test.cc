@@ -15,19 +15,44 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
+#include <cstdio>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/clock/clock.h"
 #include "kudu/clock/logical_clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
-#include "kudu/common/scan_spec.h"
+#include "kudu/common/row_changelist.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/memrowset.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet.pb.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/mem_tracker.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DEFINE_int32(roundtrip_num_rows, 10000,
              "Number of rows to use for the round-trip test");

@@ -17,12 +17,18 @@
 
 #include "kudu/codegen/code_cache.h"
 
+#include <cstring>
+
+#include <glog/logging.h>
+
 #include "kudu/codegen/jit_wrapper.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace codegen {

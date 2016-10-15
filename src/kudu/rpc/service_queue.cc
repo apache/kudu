@@ -18,8 +18,11 @@
 #include "kudu/rpc/service_queue.h"
 
 #include <mutex>
+#include <ostream>
 
-#include "kudu/util/logging.h"
+#include <boost/optional/optional.hpp>
+
+#include "kudu/gutil/port.h"
 
 namespace kudu {
 namespace rpc {

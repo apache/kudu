@@ -16,8 +16,6 @@
 // under the License.
 #pragma once
 
-#include "kudu/gutil/macros.h"
-
 #include <set>
 #include <string>
 

@@ -17,8 +17,12 @@
 
 #include "kudu/util/rw_mutex.h"
 
-#include <glog/logging.h>
+#include <cerrno>
+#include <cstring>
 #include <mutex>
+#include <ostream>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/env.h"

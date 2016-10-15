@@ -17,9 +17,11 @@
 
 #include "kudu/rpc/user_credentials.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <string>
 
-#include <boost/functional/hash.hpp>
+#include <boost/functional/hash/hash.hpp>
 
 #include "kudu/gutil/strings/substitute.h"
 

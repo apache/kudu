@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <deque>
 #include <map>
 #include <memory>
@@ -26,31 +27,27 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
-#include <gtest/gtest_prod.h>
+#include <boost/optional/optional.hpp>  // IWYU pragma: keep
 #include <sparsehash/sparse_hash_map>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
-#include "kudu/fs/fs.pb.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/file_cache.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/oid_generator.h"
-#include "kudu/util/random.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
-class Env;
-class MetricEntity;
-class RWFile;
-class ThreadPool;
-class FsManager;
 
-namespace pb_util {
-class WritablePBContainerFile;
-} // namespace pb_util
+class BlockRecordPB;
+class Env;
+class RWFile;
 
 namespace fs {
 class FsErrorManager;

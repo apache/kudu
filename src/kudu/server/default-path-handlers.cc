@@ -19,7 +19,10 @@
 
 #include <sys/stat.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -27,11 +30,17 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gperftools/malloc_extension.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/human_readable.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/pprof-path-handlers.h"
@@ -39,12 +48,13 @@
 #include "kudu/util/easy_json.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flags.h"
-#include "kudu/util/histogram.pb.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/process_memory.h"
+#include "kudu/util/status.h"
+#include "kudu/util/web_callback_registry.h"
 
 using std::ifstream;
 using std::string;

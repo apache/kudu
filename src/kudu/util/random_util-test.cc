@@ -17,9 +17,11 @@
 
 #include "kudu/util/random_util.h"
 
-#include <algorithm>
-#include <cmath>
 #include <cstring>
+#include <ostream>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/util/random.h"
 #include "kudu/util/test_util.h"

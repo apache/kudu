@@ -23,19 +23,24 @@
 #ifndef KUDU_UTIL_MEMORY_ARENA_H_
 #define KUDU_UTIL_MEMORY_ARENA_H_
 
-#include <boost/signals2/dummy_mutex.hpp>
-#include <glog/logging.h>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
-#include <mutex>
 #include <new>
-#include <stddef.h>
-#include <string.h>
+#include <ostream>
 #include <vector>
 
+#include <boost/signals2/dummy_mutex.hpp>
+#include <glog/logging.h>
+
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/alignment.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/memory/memory.h"

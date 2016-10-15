@@ -17,10 +17,9 @@
 
 #include "kudu/util/throttler.h"
 
-#include <algorithm>
-#include <cmath>
-#include <cstring>
+#include <gtest/gtest.h>
 
+#include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

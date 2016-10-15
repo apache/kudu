@@ -6,27 +6,31 @@
 
 #include "kudu/gutil/strings/numbers.h"
 
-#include <assert.h>
-#include <ctype.h>
-#include <errno.h>
-#include <float.h>          // for DBL_DIG and FLT_DIG
-#include <math.h>           // for HUGE_VAL
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <sys/types.h>
+
+#include <cassert>
+#include <cctype>
+#include <cerrno>
+#include <cfloat>          // for DBL_DIG and FLT_DIG
+#include <cmath>           // for HUGE_VAL
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
-using std::numeric_limits;
+#include <ostream>
 #include <string>
-using std::string;
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/int128.h"
 #include "kudu/gutil/integral_types.h"
-#include <glog/logging.h>
-#include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strtoint.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
+
+using std::numeric_limits;
+using std::string;
 
 // Reads a <double> in *text, which may not be whitespace-initiated.
 // *len is the length, or -1 if text is '\0'-terminated, which is more

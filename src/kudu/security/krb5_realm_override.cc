@@ -34,9 +34,10 @@
 // referenced.
 
 #include <dlfcn.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
 
 #include <krb5/krb5.h>
 #include <glog/logging.h>

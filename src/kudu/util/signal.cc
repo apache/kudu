@@ -17,7 +17,7 @@
 
 #include "kudu/util/signal.h"
 
-#include "kudu/util/logging.h"
+#include <glog/logging.h>
 
 namespace kudu {
 

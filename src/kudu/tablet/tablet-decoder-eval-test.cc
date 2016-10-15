@@ -15,14 +15,41 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cinttypes>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <unordered_map>
+
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/strings/substitute.h"
-#include <kudu/util/flags.h>
-
+#include "kudu/common/column_predicate.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/row.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/tablet/tablet-test-base.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/util/auto_release_pool.h"
+#include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DEFINE_int32(decoder_eval_test_nrepeats, 1, "Number of times to repeat per tablet");
 DEFINE_int32(decoder_eval_test_lower, 0, "Lower bound on the predicate [lower, upper)");

@@ -15,8 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <ostream>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/cfile/bloomfile-test-base.h"
+#include "kudu/cfile/bloomfile.h"
+#include "kudu/cfile/cfile_util.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs-test-util.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/endian.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/util/bloom_filter.h"
+#include "kudu/util/mem_tracker.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/test_macros.h"
 
 using std::shared_ptr;
 

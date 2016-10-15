@@ -16,14 +16,15 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/security/crypto.h"
-#include "kudu/security/openssl_util.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/status.h"
 

@@ -18,12 +18,17 @@
 #include "kudu/common/column_predicate.h"
 
 #include <algorithm>
-#include <utility>
+#include <cstring>
 
+#include <boost/optional/optional.hpp>
+
+#include "kudu/common/columnblock.h"
 #include "kudu/common/key_util.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/bitmap.h"
 #include "kudu/util/memory/arena.h"
 
 using std::move;

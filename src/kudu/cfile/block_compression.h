@@ -17,8 +17,12 @@
 #ifndef KUDU_CFILE_BLOCK_COMPRESSION_H
 #define KUDU_CFILE_BLOCK_COMPRESSION_H
 
-#include <memory>
+#include <cstddef>
+#include <cstdint>
+#include <ostream>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/faststring.h"
@@ -51,7 +55,6 @@ namespace cfile {
 //    then the block is assumed to be uncompressed, and the codec should
 //    not be executed.
 // <compressed data>
-
 
 // Builder for writing compressed blocks.
 // Always writes v2 format.

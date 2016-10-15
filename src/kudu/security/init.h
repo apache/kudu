@@ -18,7 +18,10 @@
 
 #include <string>
 
-#include <boost/optional/optional_fwd.hpp>
+namespace boost {
+template <class T>
+class optional;
+}
 
 namespace kudu {
 

@@ -15,11 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
-#include "kudu/consensus/quorum_util.h"
+#include <string>
 
-#include "kudu/consensus/opid_util.h"
-#include "kudu/util/test_util.h"
+#include <gtest/gtest.h>
+
+#include "kudu/common/common.pb.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/quorum_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 namespace kudu {
 namespace consensus {

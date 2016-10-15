@@ -22,8 +22,6 @@
 #include <string>
 
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/locks.h"
-#include "kudu/util/thread.h"
 
 namespace google_breakpad {
 class ExceptionHandler;
@@ -33,6 +31,7 @@ namespace kudu {
 
 class Env;
 class Status;
+class Thread;
 
 // While an instance of this class is in scope, a Breakpad minidump handler
 // will generate a minidump for the current program if it crashes or if it

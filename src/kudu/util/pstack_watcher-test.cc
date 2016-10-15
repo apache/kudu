@@ -17,17 +17,22 @@
 
 #include "kudu/util/pstack_watcher.h"
 
-#include <gtest/gtest.h>
-#include <memory>
-#include <poll.h>
-#include <stdio.h>
 #include <unistd.h>
-#include <vector>
+
+#include <cerrno>
+#include <memory>
+#include <cstdio>
+#include <string>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/bitmap.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
 using std::shared_ptr;

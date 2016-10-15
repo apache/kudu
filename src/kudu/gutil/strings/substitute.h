@@ -1,12 +1,10 @@
 // Copyright 2008 Google Inc.  All rights reserved.
 
-#include <string.h>
+#include <cstring>
 #include <string>
 
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/stringpiece.h"
-
 
 #ifndef STRINGS_SUBSTITUTE_H_
 #define STRINGS_SUBSTITUTE_H_

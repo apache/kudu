@@ -15,20 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <string>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/function.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
-#include "kudu/util/jsonwriter.h"
+#include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 

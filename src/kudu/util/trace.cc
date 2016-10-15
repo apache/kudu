@@ -17,15 +17,18 @@
 
 #include "kudu/util/trace.h"
 
+#include <cstdint>
+#include <cstring>
+#include <ctime>
 #include <iomanip>
-#include <ios>
 #include <iostream>
 #include <map>
 #include <mutex>
 #include <string>
-#include <sstream>
 #include <utility>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"

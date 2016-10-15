@@ -18,21 +18,28 @@
 #include "kudu/util/spinlock_profiling.h"
 
 #include <sstream>
+#include <string>
 
 #include <glog/logging.h>
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/once.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/sysinfo.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/striped64.h"
 #include "kudu/util/trace.h"
+#include "kudu/util/trace_metrics.h"
 
 DEFINE_int32(lock_contention_trace_threshold_cycles,
              2000000, // 2M cycles should be about 1ms

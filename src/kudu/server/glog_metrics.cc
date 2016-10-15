@@ -16,9 +16,10 @@
 // under the License.
 #include "kudu/server/glog_metrics.h"
 
+#include <cstddef>
 #include <glog/logging.h>
 
-#include "kudu/gutil/once.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/metrics.h"
 
 METRIC_DEFINE_counter(server, glog_info_messages,
@@ -32,6 +33,8 @@ METRIC_DEFINE_counter(server, glog_warning_messages,
 METRIC_DEFINE_counter(server, glog_error_messages,
                       "ERROR-level Log Messages", kudu::MetricUnit::kMessages,
                       "Number of ERROR-level log messages emitted by the application.");
+
+struct tm;
 
 namespace kudu {
 

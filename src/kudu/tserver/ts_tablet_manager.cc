@@ -18,45 +18,56 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 
 #include <algorithm>
-#include <boost/bind.hpp>
-#include <boost/optional.hpp>
-#include <glog/logging.h>
+#include <cstdint>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/clock/clock.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/casts.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/metadata.pb.h"
-#include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/tablet_server.h"
-#include "kudu/tserver/tablet_service.h"
 #include "kudu/util/debug/trace_event.h"
-#include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/pb_util.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
 DEFINE_int32(num_tablets_to_copy_simultaneously, 10,
@@ -101,8 +112,16 @@ DEFINE_double(fault_crash_after_tc_files_fetched, 0.0,
               "(For testing only!)");
 TAG_FLAG(fault_crash_after_tc_files_fetched, unsafe);
 
+using std::shared_ptr;
+using std::string;
+using std::vector;
+using strings::Substitute;
+
 namespace kudu {
-namespace tserver {
+
+namespace tablet {
+class Tablet;
+}
 
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
@@ -114,10 +133,6 @@ using fs::DataDirManager;
 using log::Log;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
-using std::shared_ptr;
-using std::string;
-using std::vector;
-using strings::Substitute;
 using tablet::Tablet;
 using tablet::TABLET_DATA_COPYING;
 using tablet::TABLET_DATA_DELETED;
@@ -127,6 +142,8 @@ using tablet::TabletDataState;
 using tablet::TabletMetadata;
 using tablet::TabletReplica;
 using tserver::TabletCopyClient;
+
+namespace tserver {
 
 TSTabletManager::TSTabletManager(TabletServer* server)
   : fs_manager_(server->fs_manager()),

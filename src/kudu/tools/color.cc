@@ -17,10 +17,14 @@
 
 #include "kudu/tools/color.h"
 
-#include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <unistd.h>
 
+#include <ostream>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
 

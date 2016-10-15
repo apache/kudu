@@ -34,6 +34,7 @@ class KuduTabletServer::Data {
   const std::string uuid_;
   const HostPort hp_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
 

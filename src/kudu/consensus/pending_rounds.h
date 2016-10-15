@@ -17,11 +17,11 @@
 
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <string>
 
 #include "kudu/consensus/opid.pb.h"
-#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 

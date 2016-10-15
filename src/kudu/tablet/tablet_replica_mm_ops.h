@@ -18,16 +18,21 @@
 #ifndef KUDU_TABLET_TABLET_REPLICA_MM_OPS_H_
 #define KUDU_TABLET_TABLET_REPLICA_MM_OPS_H_
 
+#include <cstdint>
+#include <string>
+
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stringprintf.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/maintenance_manager.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/semaphore.h"
 #include "kudu/util/stopwatch.h"
 
 namespace kudu {
-
-class Histogram;
-template<class T>
-class AtomicGauge;
-
 namespace tablet {
 
 class FlushOpPerfImprovementPolicy {

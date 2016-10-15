@@ -15,19 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
 
+#include <boost/core/ref.hpp>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/tools/data_gen_util.h"
+#include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
+#include "kudu/util/atomic.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/random.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 DECLARE_int32(heartbeat_interval_ms);
 

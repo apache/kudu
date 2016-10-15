@@ -16,12 +16,15 @@
 // under the License.
 
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/client/row_result.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
@@ -29,6 +32,8 @@
 #include "kudu/integration-tests/log_verifier.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

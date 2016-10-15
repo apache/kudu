@@ -18,6 +18,8 @@
 #pragma once
 
 #include <pthread.h>
+#include <sys/types.h>
+
 #include <unordered_set>
 
 #include "kudu/gutil/macros.h"

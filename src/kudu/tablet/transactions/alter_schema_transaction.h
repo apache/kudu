@@ -18,22 +18,28 @@
 #ifndef KUDU_TABLET_ALTER_SCHEMA_TRANSACTION_H_
 #define KUDU_TABLET_ALTER_SCHEMA_TRANSACTION_H_
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/transactions/transaction.h"
-#include "kudu/util/locks.h"
+#include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
 class Schema;
-
-namespace consensus {
-class Consensus;
-}
+class rw_semaphore;
 
 namespace tablet {
+
+class TabletReplica;
 
 // Transaction Context for the AlterSchema operation.
 // Keeps track of the Transaction states (request, result, ...)

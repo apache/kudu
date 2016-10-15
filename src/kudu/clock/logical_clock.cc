@@ -17,11 +17,16 @@
 
 #include "kudu/clock/logical_clock.h"
 
+#include <ostream>
+#include <string>
+
+#include <glog/logging.h>
+
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -65,13 +70,13 @@ Status LogicalClock::Update(const Timestamp& to_update) {
 }
 
 Status LogicalClock::WaitUntilAfter(const Timestamp& then,
-                                    const MonoTime& deadline) {
+                                    const MonoTime& /* deadline */) {
   return Status::ServiceUnavailable(
       "Logical clock does not support WaitUntilAfter()");
 }
 
 Status LogicalClock::WaitUntilAfterLocally(const Timestamp& then,
-                                           const MonoTime& deadline) {
+                                           const MonoTime& /* deadline */) {
   if (IsAfter(then)) return Status::OK();
   return Status::ServiceUnavailable(
       "Logical clock does not support WaitUntilAfterLocally()");

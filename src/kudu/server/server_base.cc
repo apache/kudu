@@ -14,32 +14,41 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/server/server_base.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
+#include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/logical_clock.h"
 #include "kudu/codegen/compilation_manager.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
-#include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/remote_user.h"
+#include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/rpc/service_if.h"
 #include "kudu/security/init.h"
-#include "kudu/security/kerberos_util.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/generic_service.h"
 #include "kudu/server/glog_metrics.h"
@@ -63,6 +72,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/rolling_log.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/spinlock_profiling.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/user.h"
@@ -108,6 +118,9 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+class HostPortPB;
+
 namespace server {
 
 namespace {

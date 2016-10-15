@@ -15,16 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+
+#include <sched.h>
+
+#include <cinttypes>
+#include <cstdint>
+#include <cstdio>
+#include <iostream>
+#include <mutex>
+#include <thread>
+#include <vector>
+
 #include <boost/smart_ptr/detail/spinlock.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <iostream>
-#include <mutex>
-#include <stdio.h>
-#include <thread>
-#include <unistd.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/locks.h"

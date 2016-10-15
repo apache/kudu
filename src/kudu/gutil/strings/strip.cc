@@ -6,20 +6,24 @@
 
 #include "kudu/gutil/strings/strip.h"
 
-#include <assert.h>
-#include <string.h>
+#include <cassert>
+#include <cstring>
+
 #include <algorithm>
+#include <iterator>
+#include <string>
+#include <vector>
+
+#include "kudu/gutil/strings/ascii_ctype.h"
+#include "kudu/gutil/strings/stringpiece.h"
+
 using std::copy;
 using std::max;
 using std::min;
 using std::reverse;
 using std::sort;
-using std::swap;
-#include <string>
 using std::string;
-
-#include "kudu/gutil/strings/ascii_ctype.h"
-#include "kudu/gutil/strings/stringpiece.h"
+using std::swap;
 
 string StripPrefixString(StringPiece str, const StringPiece& prefix) {
   if (str.starts_with(prefix))

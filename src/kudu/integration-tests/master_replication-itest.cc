@@ -15,29 +15,46 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
-
+#include <cstdint>
+#include <memory>
+#include <ostream>
+#include <string>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/client/client.h"
-#include "kudu/common/schema.h"
-#include "kudu/gutil/strings/substitute.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 using std::string;
 using std::vector;
 
 namespace kudu {
 namespace master {
+
+class TSDescriptor;
 
 using client::KuduClient;
 using client::KuduClientBuilder;

@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include "kudu/client/value.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/slice.h"

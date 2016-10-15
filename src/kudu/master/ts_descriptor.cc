@@ -17,18 +17,24 @@
 
 #include "kudu/master/ts_descriptor.h"
 
-#include <math.h>
+#include <algorithm>
+#include <cmath>
 #include <mutex>
+#include <ostream>
 #include <unordered_set>
 #include <vector>
 
+#include <gflags/gflags.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/master.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 
 DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,

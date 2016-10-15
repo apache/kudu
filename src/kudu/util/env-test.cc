@@ -15,30 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <fcntl.h>
-#include <sys/types.h>
-
-#include <memory>
-#include <string>
-
-#include <glog/logging.h>
-#include <glog/stl_logging.h>
-#include <gtest/gtest.h>
-
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/strings/human_readable.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
-#include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
-#include "kudu/util/malloc.h"
-#include "kudu/util/path_util.h"
-#include "kudu/util/random.h"
-#include "kudu/util/random_util.h"
-#include "kudu/util/status.h"
-#include "kudu/util/stopwatch.h"
-#include "kudu/util/test_util.h"
-
 #if !defined(__APPLE__)
 #include <linux/falloc.h>
 #endif  // !defined(__APPLE__)
@@ -50,6 +26,45 @@
 #ifndef FALLOC_FL_PUNCH_HOLE
 #define FALLOC_FL_PUNCH_HOLE  0x02 /* de-allocates range */
 #endif
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <cerrno>
+#include <cstdio>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <glog/stl_logging.h> // IWYU pragma: keep
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/human_readable.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
+#include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DECLARE_bool(never_fsync);
 DECLARE_bool(suicide_on_eio);

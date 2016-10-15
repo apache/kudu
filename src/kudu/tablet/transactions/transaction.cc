@@ -17,6 +17,8 @@
 
 #include "kudu/tablet/transactions/transaction.h"
 
+#include "kudu/rpc/result_tracker.h"
+
 namespace kudu {
 namespace tablet {
 

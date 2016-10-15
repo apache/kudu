@@ -18,19 +18,26 @@
 #ifndef KUDU_COMMON_KEYENCODER_H
 #define KUDU_COMMON_KEYENCODER_H
 
-#include <arpa/inet.h>
-#include <climits>
-#include <nmmintrin.h>
-#include <string.h>
+#include <emmintrin.h>
+#include <smmintrin.h>
 
+#include <climits>
+#include <cstdint>
+#include <cstring>
+#include <ostream>
+
+#include <glog/logging.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/mathlimits.h"
-#include "kudu/gutil/strings/memutil.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/type_traits.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 // The SSE-based encoding is not yet working. Don't define this!

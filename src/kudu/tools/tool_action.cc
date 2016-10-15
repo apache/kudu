@@ -18,15 +18,19 @@
 #include "kudu/tools/tool_action.h"
 
 #include <algorithm>
-#include <iomanip>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <boost/optional.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/url-coding.h"
 

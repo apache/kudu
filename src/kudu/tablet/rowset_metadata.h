@@ -17,29 +17,32 @@
 #ifndef KUDU_TABLET_ROWSET_METADATA_H
 #define KUDU_TABLET_ROWSET_METADATA_H
 
+#include <cstdint>
 #include <map>
 #include <mutex>
 #include <string>
 #include <vector>
 
 #include <boost/container/flat_map.hpp>
+#include <boost/container/vector.hpp>
+#include <glog/logging.h>
 
 #include "kudu/common/schema.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/tablet/tablet_metadata.h"
-#include "kudu/util/debug-util.h"
-#include "kudu/util/env.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
 namespace tablet {
 
+class RowSetDataPB;
 class RowSetMetadataUpdate;
-class TabletMetadata;
 
 // Keeps track of the RowSet data blocks.
 //

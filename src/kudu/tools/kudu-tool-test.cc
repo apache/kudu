@@ -15,29 +15,44 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <sys/stat.h>
+
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <iterator>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
-#include <gtest/gtest.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <glog/stl_logging.h>
+#include <gmock/gmock-matchers.h>
+#include <gtest/gtest.h>
 
 #include "kudu/cfile/cfile-test-base.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
-#include "kudu/common/wire_protocol.h"
+#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
-#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
@@ -46,34 +61,48 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet-harness.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
-#include "kudu/tablet/tablet.h"
-#include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -82,6 +111,10 @@
 DECLARE_string(block_manager);
 
 namespace kudu {
+
+namespace tserver {
+class TabletServerServiceProxy;
+}
 
 namespace tools {
 

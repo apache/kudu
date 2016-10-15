@@ -15,15 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
-#include <glog/logging.h>
+#include <memory>
+#include <string>
 
-#include "kudu/tablet/tablet.h"
+#include <gflags/gflags_declare.h>
+#include <gtest/gtest.h>
+
+#include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/util/test_macros.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/util/monotime.h"
 
 DECLARE_int64(tablet_throttler_rpc_per_sec);
-
 DECLARE_int64(tablet_throttler_bytes_per_sec);
 
 namespace kudu {

@@ -2,23 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/atomic_refcount.h"
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/bits.h"
 #include "kudu/gutil/hash/city.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/alignment.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
 #include "kudu/util/flag_tags.h"
@@ -40,8 +44,6 @@ using std::string;
 using std::vector;
 
 namespace kudu {
-
-class MetricEntity;
 
 Cache::~Cache() {
 }

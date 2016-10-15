@@ -22,6 +22,8 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
+
 #include "kudu/common/iterator.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/strings/join.h"
@@ -31,6 +33,7 @@
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

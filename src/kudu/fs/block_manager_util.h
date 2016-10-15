@@ -67,9 +67,7 @@ class PathInstanceMetadataFile {
   // Unlocks the instance metadata file. Must have been locked to begin with.
   Status Unlock();
 
-  void SetMetadataForTests(gscoped_ptr<PathInstanceMetadataPB> metadata) {
-    metadata_ = std::move(metadata);
-  }
+  void SetMetadataForTests(gscoped_ptr<PathInstanceMetadataPB> metadata);
 
   std::string path() const { return DirName(filename_); }
   PathInstanceMetadataPB* const metadata() const { return metadata_.get(); }

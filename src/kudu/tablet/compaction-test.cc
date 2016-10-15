@@ -16,25 +16,63 @@
 // under the License.
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
+#include <numeric>
+#include <ostream>
+#include <string>
+#include <vector>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/clock/logical_clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/row.h"
+#include "kudu/common/row_changelist.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/rowid.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
 #include "kudu/tablet/compaction.h"
+#include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/memrowset.h"
+#include "kudu/tablet/mutation.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
+#include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_mem_trackers.h"
+#include "kudu/tablet/tablet_metadata.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DEFINE_string(merge_benchmark_input_dir, "",

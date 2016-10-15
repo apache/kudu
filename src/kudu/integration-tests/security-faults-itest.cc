@@ -16,18 +16,31 @@
 // under the License.
 
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
-#include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/security/test/mini_kdc.h"
 #include "kudu/tablet/key_value_test_schema.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(rpc_reopen_outbound_connections);

@@ -15,11 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/bind.hpp>
+#include <boost/bind.hpp> // IWYU pragma: keep
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 

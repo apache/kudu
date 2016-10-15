@@ -26,13 +26,9 @@
 #ifndef STRINGS_UTIL_H_
 #define STRINGS_UTIL_H_
 
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#ifndef _MSC_VER
-#include <strings.h>  // for strcasecmp, but msvc does not have this header
-#endif
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
 
 #include <functional>
 #include <string>

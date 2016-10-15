@@ -6,7 +6,10 @@
 
 #include <memory>
 
+#include <glog/logging.h>
+
 #include "kudu/util/faststring.h"
+#include "kudu/util/slice.h"
 
 using std::unique_ptr;
 

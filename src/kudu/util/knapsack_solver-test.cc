@@ -15,13 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
-#include <gtest/gtest.h>
+#include <cstdlib>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "kudu/util/knapsack_solver.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/stopwatch.h"  // IWYU pragma: keep
 #include "kudu/util/test_util.h"
 
 using std::string;

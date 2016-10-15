@@ -16,22 +16,50 @@
 // under the License.
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
 #include <deque>
+#include <iterator>
+#include <ostream>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/master/master.pb.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/util/pb_util.h"
+#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/tools/tool_test_util.h"
+#include "kudu/tserver/tablet_server-test-base.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

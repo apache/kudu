@@ -15,13 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstring>
+#include <ostream>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/key_util.h"
 #include "kudu/common/row.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/memory/arena.h"
 
 namespace kudu {
 

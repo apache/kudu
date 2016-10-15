@@ -73,21 +73,15 @@
 #ifndef UTIL_HASH_HASH_H_
 #define UTIL_HASH_HASH_H_
 
-#include <stddef.h>
-#include <stdint.h>     // for uintptr_t
-#include <string.h>
-#include <algorithm>
-#include <unordered_map>
-#include <unordered_set>
+#include <cstddef>
+#include <cstring>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
-#include "kudu/gutil/casts.h"
 #include "kudu/gutil/int128.h"
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
-#include "kudu/gutil/hash/city.h"
+#include "kudu/gutil/hash/builtin_type_hash.h"
 #include "kudu/gutil/hash/hash128to64.h"
 #include "kudu/gutil/hash/jenkins.h"
 #include "kudu/gutil/hash/jenkins_lookup2.h"

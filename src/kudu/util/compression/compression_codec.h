@@ -17,11 +17,14 @@
 #ifndef KUDU_CFILE_COMPRESSION_CODEC_H
 #define KUDU_CFILE_COMPRESSION_CODEC_H
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
+#include <snappy-stubs-public.h>
+
 #include "kudu/util/compression/compression.pb.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 

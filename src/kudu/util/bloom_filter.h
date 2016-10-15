@@ -17,8 +17,12 @@
 #ifndef KUDU_UTIL_BLOOM_FILTER_H
 #define KUDU_UTIL_BLOOM_FILTER_H
 
+#include <cstddef>
+#include <cstdint>
+
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/slice.h"

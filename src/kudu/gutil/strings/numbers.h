@@ -6,10 +6,9 @@
 #ifndef STRINGS_NUMBERS_H_
 #define STRINGS_NUMBERS_H_
 
-#include <stddef.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
+#include <cstddef>
+#include <cinttypes>
+#include <ctime>
 #include <functional>
 #include <limits>
 #include <string>
@@ -19,7 +18,6 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
-
 
 // START DOXYGEN NumbersFunctions grouping
 /* @defgroup NumbersFunctions

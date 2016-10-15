@@ -21,6 +21,8 @@
 #include <algorithm>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -29,6 +31,7 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

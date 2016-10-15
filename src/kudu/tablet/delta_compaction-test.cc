@@ -15,6 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -23,19 +27,27 @@
 #include <gtest/gtest.h>
 
 #include "kudu/cfile/cfile_util.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/row_changelist.h"
 #include "kudu/common/schema.h"
-#include "kudu/tablet/deltafile.h"
-#include "kudu/tablet/delta_compaction.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/common/types.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/delta_iterator_merger.h"
-#include "kudu/gutil/strings/util.h"
-#include "kudu/util/test_macros.h"
-#include "kudu/util/stopwatch.h"
-#include "kudu/util/test_util.h"
-#include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
-#include "kudu/util/path_util.h"
+#include "kudu/tablet/delta_key.h"
+#include "kudu/tablet/delta_stats.h"
+#include "kudu/tablet/delta_store.h"
+#include "kudu/tablet/deltafile.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-#include "kudu/util/auto_release_pool.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DEFINE_int32(num_rows, 2100, "the first row to update");
 DEFINE_int32(num_delta_files, 3, "number of delta files");

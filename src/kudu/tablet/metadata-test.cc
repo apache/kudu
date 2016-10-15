@@ -15,16 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
-#include "kudu/common/schema.h"
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/fs/block_id.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet_metadata.h"
-#include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::vector;

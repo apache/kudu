@@ -17,20 +17,35 @@
 #include "kudu/tserver/tablet_copy_source_session.h"
 
 #include <algorithm>
-#include <mutex>
+#include <cstdint>
+#include <cstring>
+#include <ostream>
+#include <vector>
+
+#include <gflags/gflags.h>
 
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs.pb.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/type_traits.h"
 #include "kudu/rpc/transfer.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
 

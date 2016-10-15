@@ -17,11 +17,13 @@
 #ifndef KUDU_UTIL_FLAGS_H
 #define KUDU_UTIL_FLAGS_H
 
-#include <gflags/gflags.h>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 
-#include "kudu/gutil/macros.h"
+namespace google {
+  struct CommandLineFlagInfo;
+}
 
 namespace kudu {
 

@@ -18,18 +18,29 @@
 #include "kudu/common/partition.h"
 
 #include <algorithm>
+#include <cstring>
+#include <memory>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+
+#include "kudu/common/common.pb.h"
+#include "kudu/common/key_encoder.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/common/row.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/endian.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/bitmap.h"
 #include "kudu/util/hash_util.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/url-coding.h"
 
@@ -43,6 +54,8 @@ using strings::Substitute;
 using strings::SubstituteAndAppend;
 
 namespace kudu {
+
+class faststring;
 
 // The encoded size of a hash bucket in a partition key.
 static const size_t kEncodedBucketSize = sizeof(uint32_t);

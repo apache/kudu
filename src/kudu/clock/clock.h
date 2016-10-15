@@ -18,6 +18,8 @@
 
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/common/common.pb.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/ref_counted.h"
@@ -25,10 +27,10 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
-class faststring;
+
 class MetricEntity;
-class Slice;
 class Status;
+
 namespace clock {
 
 // An interface for a clock that can be used to assign timestamps to

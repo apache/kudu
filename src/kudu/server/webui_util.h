@@ -21,8 +21,8 @@
 #include <string>
 #include <vector>
 
-#include "kudu/common/schema.h"
-#include "kudu/gutil/ref_counted.h"
+template <class T>
+class scoped_refptr;
 
 namespace kudu {
 

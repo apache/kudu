@@ -19,29 +19,32 @@
 // This will eventually be replaced by a proper shell -- just a quick
 // hack for easy demo purposes.
 
+#include <iostream>
+#include <string>
+#include <vector>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <iostream>
-#include <vector>
 
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/benchmarks/ycsb-schema.h"
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/split.h"
-#include "kudu/tserver/tserver.pb.h"
-#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/twitter-demo/twitter-schema.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/status.h"
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
-using kudu::rpc::RpcController;
 using std::string;
 using std::vector;
 

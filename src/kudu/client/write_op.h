@@ -17,11 +17,20 @@
 #ifndef KUDU_CLIENT_WRITE_OP_H
 #define KUDU_CLIENT_WRITE_OP_H
 
+#include <stdint.h>
+
 #include <string>
 
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/partial_row.h"
 #include "kudu/util/kudu_export.h"
+
+#ifdef KUDU_HEADERS_NO_STUBS
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#else
+#include "kudu/client/stubs.h"
+#endif
 
 namespace kudu {
 

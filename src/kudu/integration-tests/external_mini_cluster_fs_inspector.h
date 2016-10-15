@@ -18,6 +18,7 @@
 #ifndef KUDU_INTEGRATION_TESTS_CLUSTER_EXTERNAL_MINI_CLUSTER_FS_INSPECTOR_H_
 #define KUDU_INTEGRATION_TESTS_CLUSTER_EXTERNAL_MINI_CLUSTER_FS_INSPECTOR_H_
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -33,10 +34,6 @@ class Status;
 
 namespace consensus {
 class ConsensusMetadataPB;
-}
-
-namespace tablet {
-class TabletSuperBlockPB;
 }
 
 namespace itest {

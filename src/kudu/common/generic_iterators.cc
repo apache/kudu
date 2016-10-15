@@ -15,19 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <unistd.h>
+
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/common/column_materialization_context.h"
 #include "kudu/common/column_predicate.h"
+#include "kudu/common/columnblock.h"
 #include "kudu/common/generic_iterators.h"
+#include "kudu/common/iterator_stats.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"

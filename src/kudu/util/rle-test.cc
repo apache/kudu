@@ -14,20 +14,29 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include <stdlib.h>
-#include <stdio.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <ostream>
+#include <string>
+#include <vector>
 
 // Must come before gtest.h.
 #include "kudu/gutil/mathlimits.h"
 
 #include <boost/utility/binary.hpp>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <string>
-#include <vector>
 
-#include "kudu/util/rle-encoding.h"
 #include "kudu/util/bit-stream-utils.h"
+#include "kudu/util/bit-stream-utils.inline.h"
+#include "kudu/util/bit-util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
+#include "kudu/util/rle-encoding.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

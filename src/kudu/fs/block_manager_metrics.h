@@ -17,17 +17,12 @@
 #ifndef KUDU_FS_BLOCK_MANAGER_METRICS_H
 #define KUDU_FS_BLOCK_MANAGER_METRICS_H
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/metrics.h"
 
 namespace kudu {
-
-class Counter;
-template<class T>
-class AtomicGauge;
-class MetricEntity;
-
 namespace fs {
 namespace internal {
 

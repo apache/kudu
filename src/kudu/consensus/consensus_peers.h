@@ -18,42 +18,38 @@
 #ifndef KUDU_CONSENSUS_CONSENSUS_PEERS_H_
 #define KUDU_CONSENSUS_CONSENSUS_PEERS_H_
 
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
-#include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
-#include "kudu/util/semaphore.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 class HostPort;
 class ThreadPoolToken;
 
-namespace log {
-class Log;
-}
-
 namespace rpc {
 class Messenger;
-class RpcController;
 }
 
 namespace consensus {
 class ConsensusServiceProxy;
-class OpId;
 class PeerProxy;
-class PeerProxyFactory;
 class PeerMessageQueue;
-class VoteRequestPB;
-class VoteResponsePB;
 
 // A remote peer in consensus.
 //

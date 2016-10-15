@@ -3,20 +3,21 @@
 
 #include "kudu/gutil/strings/escaping.h"
 
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
+#include <cassert>
+#include <cstdio>
+#include <cstring>
 
 #include <limits>
+#include <ostream>
 #include <vector>
 
+#include "kudu/gutil/charmap.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/utf/utf.h"  // for runetochar
-#include "kudu/gutil/charmap.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/utf/utf.h"  // for runetochar
 
 using std::numeric_limits;
 using std::string;

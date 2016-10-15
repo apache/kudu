@@ -27,10 +27,12 @@
 #ifndef KUDU_UTIL_MEMCMPABLE_VARINT_H
 #define KUDU_UTIL_MEMCMPABLE_VARINT_H
 
-#include "kudu/util/faststring.h"
-#include "kudu/util/slice.h"
+#include <cstdint>
 
 namespace kudu {
+
+class Slice;
+class faststring;
 
 void PutMemcmpableVarint64(faststring *dst, uint64_t value);
 

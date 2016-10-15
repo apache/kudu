@@ -17,14 +17,16 @@
 
 #include "kudu/security/security-test-util.h"
 
-#include <glog/logging.h>
+#include <cstdint>
+#include <string>
+
+#include <boost/optional/optional.hpp>
 
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/security/tls_context.h"
-#include "kudu/util/path_util.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

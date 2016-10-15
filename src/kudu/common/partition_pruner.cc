@@ -18,8 +18,9 @@
 #include "kudu/common/partition_pruner.h"
 
 #include <algorithm>
-#include <boost/optional.hpp>
 #include <cstring>
+#include <cstdint>
+#include <iterator>
 #include <memory>
 #include <numeric>
 #include <string>
@@ -27,16 +28,25 @@
 #include <unordered_map>
 #include <vector>
 
+#include <glog/logging.h>
+
+#include "kudu/common/column_predicate.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/key_util.h"
 #include "kudu/common/partition.h"
+#include "kudu/common/row.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
 
-using boost::optional;
 using std::distance;
 using std::find;
 using std::get;

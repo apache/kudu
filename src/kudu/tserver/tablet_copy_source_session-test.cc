@@ -16,30 +16,65 @@
 // under the License.
 #include "kudu/tablet/tablet-test-util.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
+
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <memory>
 
+#include "kudu/clock/clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/result_tracker.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/transactions/transaction.h"
+#include "kudu/tablet/transactions/write_transaction.h"
+#include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/tserver/tablet_copy_source_session.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/crc.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/threadpool.h"
 
 METRIC_DECLARE_entity(tablet);
@@ -50,6 +85,9 @@ using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
+
+class BlockIdPB;
+
 namespace tserver {
 
 using consensus::ConsensusMetadata;

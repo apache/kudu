@@ -17,24 +17,37 @@
 
 #include "kudu/tablet/delta_compaction.h"
 
-#include <algorithm>
 #include <map>
+#include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/common/generic_iterators.h"
-#include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/join.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/row.h"
+#include "kudu/common/row_changelist.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/rowid.h"
+#include "kudu/common/scan_spec.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/strcat.h"
-#include "kudu/common/columnblock.h"
-#include "kudu/cfile/cfile_reader.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/delta_key.h"
-#include "kudu/tablet/deltamemstore.h"
+#include "kudu/tablet/delta_stats.h"
+#include "kudu/tablet/delta_tracker.h"
+#include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/multi_column_writer.h"
+#include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset_metadata.h"
+#include "kudu/util/memory/arena.h"
 
 using std::shared_ptr;
 

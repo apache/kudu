@@ -15,25 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <stdint.h>
-
 #include <algorithm>
-#include <iterator>
+#include <cstdint>
+#include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include <boost/optional.hpp>
-#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
-#include "kudu/common/row.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/hash_util.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using boost::optional;

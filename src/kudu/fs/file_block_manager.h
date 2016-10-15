@@ -18,26 +18,27 @@
 #ifndef KUDU_FS_FILE_BLOCK_MANAGER_H
 #define KUDU_FS_FILE_BLOCK_MANAGER_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
-#include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/file_cache.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/random.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
+class BlockId;
 class Env;
 class MemTracker;
-class MetricEntity;
 class RandomAccessFile;
-class WritableFile;
 
 namespace fs {
 class FsErrorManager;

@@ -20,7 +20,10 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <cstdlib>
 #include <string>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/cpu.h"
 #include "kudu/gutil/strings/substitute.h"

@@ -18,15 +18,11 @@
 #ifndef KUDU_CODEGEN_CODE_GENERATOR_H
 #define KUDU_CODEGEN_CODE_GENERATOR_H
 
-#include "kudu/codegen/row_projector.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
 
-namespace llvm {
-class LLVMContext;
-} // namespace llvm
+template <class T>
+class scoped_refptr;
 
 namespace kudu {
 

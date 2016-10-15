@@ -15,21 +15,41 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/optional.hpp>
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
-#include "kudu/common/wire_protocol.h"
+#include <boost/bind.hpp>
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
+#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/countdown_latch.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::TServerDetails;

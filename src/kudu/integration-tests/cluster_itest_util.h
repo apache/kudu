@@ -27,47 +27,50 @@
 #ifndef KUDU_INTEGRATION_TESTS_CLUSTER_ITEST_UTIL_H_
 #define KUDU_INTEGRATION_TESTS_CLUSTER_ITEST_UTIL_H_
 
-#include <boost/optional/optional_fwd.hpp>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/ref_counted.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
-#include "kudu/master/master.pb.h"
-#include "kudu/master/master.proxy.h"
-#include "kudu/server/server_base.pb.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/server/server_base.proxy.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+
+namespace boost {
+template <class T>
+class optional;
+}
 
 namespace kudu {
 class HostPort;
 class MonoDelta;
-class Schema;
-class Sockaddr;
 class Status;
 
 namespace client {
-class KuduClient;
 class KuduSchema;
-class KuduTable;
 }
 
 namespace consensus {
 class OpId;
 }
 
+namespace master {
+class GetTableLocationsResponsePB;
+class ListTabletServersResponsePB_Entry;
+class MasterServiceProxy;
+class TabletLocationsPB;
+} // namespace master
+
 namespace rpc {
 class Messenger;
-}
-
-namespace tserver {
-class ListTabletsResponsePB_StatusAndSchemaPB;
-class TabletServerErrorPB;
 }
 
 namespace itest {

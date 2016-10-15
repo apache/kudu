@@ -19,37 +19,38 @@
 #ifndef KUDU_CLIENT_META_CACHE_H
 #define KUDU_CLIENT_META_CACHE_H
 
-#include <boost/function.hpp>
+#include <algorithm>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
-#include <memory>
 #include <unordered_map>
 #include <vector>
+
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/common/partition.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc.h"
-#include "kudu/util/async_util.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 
 namespace kudu {
 
-class KuduPartialRow;
+class Sockaddr;
 
 namespace tserver {
 class TabletServerServiceProxy;
 } // namespace tserver
 
 namespace master {
-class MasterServiceProxy;
 class TabletLocationsPB_ReplicaPB;
 class TSInfoPB;
 } // namespace master

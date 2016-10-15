@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -25,29 +27,38 @@
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
+#include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_configuration.h"
+#include "kudu/client/scan_predicate.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/client/value.h"
+#include "kudu/client/write_op.h"
+#include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/mock_ntp.h"
+#include "kudu/clock/time_service.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/mini_master.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/scoped_cleanup.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(max_clock_sync_error_usec);

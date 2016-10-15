@@ -17,6 +17,7 @@
 #ifndef KUDU_TABLET_DELTA_APPLIER_H
 #define KUDU_TABLET_DELTA_APPLIER_H
 
+#include <cstddef>
 #include <string>
 #include <memory>
 #include <vector>
@@ -24,12 +25,19 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/iterator.h"
-#include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/util/status.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/cfile_set.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
+
+class ColumnMaterializationContext;
+class ScanSpec;
+class Schema;
+class SelectionVector;
+struct IteratorStats;
+
 namespace tablet {
 
 class DeltaIterator;

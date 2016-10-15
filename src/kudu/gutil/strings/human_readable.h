@@ -9,7 +9,6 @@
 #include <functional>
 #include <string>
 
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 

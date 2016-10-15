@@ -18,26 +18,34 @@
 #include "kudu/tools/tool_action.h"
 
 #include <algorithm>
-#include <boost/optional.hpp>
-#include <fstream>
+#include <cstdint>
+#include <fstream>  // IWYU pragma: keep
 #include <iostream>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_controller.h"
-#include "kudu/server/server_base.pb.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"

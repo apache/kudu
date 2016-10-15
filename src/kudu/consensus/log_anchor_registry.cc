@@ -16,11 +16,16 @@
 // under the License.
 
 #include "kudu/consensus/log_anchor_registry.h"
-#include "kudu/consensus/opid_util.h"
 
 #include <mutex>
+#include <ostream>
 #include <string>
+#include <utility>
 
+#include <glog/logging.h>
+
+#include "kudu/consensus/opid_util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 
 namespace kudu {

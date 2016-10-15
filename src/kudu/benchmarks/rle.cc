@@ -21,12 +21,17 @@
 // micro benchmark (rle-benchmark.cc).
 //
 
-#include <glog/logging.h>
+#include <cstddef>
+#include <ostream>
+
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/util/bit-stream-utils.h"
+#include "kudu/util/bit-stream-utils.inline.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/stopwatch.h"

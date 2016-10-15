@@ -16,15 +16,17 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "kudu/client/shared_ptr.h"
-#include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
-class Status;
+
+class HostPort;
 
 namespace client {
 class KuduClient;

@@ -25,17 +25,20 @@
 #include "kudu/util/os-util.h"
 
 #include <fcntl.h>
-#include <fstream>
-#include <sstream>
-#include <string>
 #include <sys/resource.h>
-#include <vector>
 #include <unistd.h>
 
+#include <glog/logging.h>
+
+#include <cstddef>
+#include <fstream>
+#include <string>
+#include <vector>
+
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/errno.h"
 
 using std::ifstream;
 using std::istreambuf_iterator;

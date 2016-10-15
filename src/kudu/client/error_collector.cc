@@ -23,6 +23,8 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/error-internal.h"
+#include "kudu/client/write_op.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"

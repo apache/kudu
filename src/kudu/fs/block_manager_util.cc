@@ -16,14 +16,19 @@
 // under the License.
 #include "kudu/fs/block_manager_util.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <ostream>
 #include <set>
+#include <type_traits>
 #include <unordered_map>
-#include <utility>
 
-#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
@@ -123,6 +128,11 @@ Status PathInstanceMetadataFile::Unlock() {
   RETURN_NOT_OK_PREPEND(env_->UnlockFile(lock_.release()),
                         Substitute("Could not unlock $0", filename_));
   return Status::OK();
+}
+
+void PathInstanceMetadataFile::SetMetadataForTests(
+    gscoped_ptr<PathInstanceMetadataPB> metadata) {
+  metadata_ = std::move(metadata);
 }
 
 Status PathInstanceMetadataFile::CheckIntegrity(

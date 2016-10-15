@@ -17,12 +17,18 @@
 
 #include "kudu/client/table_alterer-internal.h"
 
+#include <algorithm>
+#include <ostream>
 #include <string>
 
-#include "kudu/client/schema.h"
+#include <glog/logging.h>
+
 #include "kudu/client/schema-internal.h"
+#include "kudu/client/schema.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/master/master.pb.h"
 
 using std::string;
@@ -31,7 +37,6 @@ namespace kudu {
 namespace client {
 
 using master::AlterTableRequestPB;
-using master::AlterTableRequestPB_AlterColumn;
 
 KuduTableAlterer::Data::Data(KuduClient* client, string name)
     : client_(client),

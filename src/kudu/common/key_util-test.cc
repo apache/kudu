@@ -17,13 +17,21 @@
 
 #include "kudu/common/key_util.h"
 
+#include <cstdint>
+#include <limits>
+#include <string>
+
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/mathlimits.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/test_macros.h"
 
 namespace kudu {
 

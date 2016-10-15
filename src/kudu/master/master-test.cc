@@ -15,34 +15,61 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
-#include <rapidjson/document.h>
-
-#include <algorithm>
+#include <cstdint>
+#include <map>
 #include <memory>
-#include <utility>
+#include <ostream>
+#include <set>
+#include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+#include <rapidjson/document.h>
+#include <rapidjson/rapidjson.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/generated/version_defines.h"
-#include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
-#include "kudu/master/master-test-util.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/security/token_verifier.h"
-#include "kudu/server/rpc_server.h"
+#include "kudu/util/atomic.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/curl_util.h"
-#include "kudu/util/path_util.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/version_info.h"
 

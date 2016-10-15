@@ -17,20 +17,34 @@
 #ifndef KUDU_TABLET_COMPACTION_H
 #define KUDU_TABLET_COMPACTION_H
 
+#include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 
-#include "kudu/common/generic_iterators.h"
-#include "kudu/common/iterator.h"
-#include "kudu/tablet/diskrowset.h"
-#include "kudu/tablet/memrowset.h"
+#include <glog/logging.h>
+
+#include "kudu/common/rowblock.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/tablet/rowset.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
+
+class Arena;
+class Schema;
+
 namespace tablet {
+
+class DiskRowSet;
+class MemRowSet;
+class Mutation;
+class MvccSnapshot;
+class RollingDiskRowSetWriter;
 struct CompactionInputRow;
-class WriteTransactionState;
 
 // Options related to tablet history garbage collection.
 class HistoryGcOpts {

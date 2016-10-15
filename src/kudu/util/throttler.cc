@@ -17,6 +17,7 @@
 
 #include "kudu/util/throttler.h"
 
+#include <algorithm>
 #include <mutex>
 
 namespace kudu {

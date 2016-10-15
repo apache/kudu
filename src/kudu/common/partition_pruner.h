@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -26,8 +27,6 @@
 
 namespace kudu {
 
-class Partition;
-class PartitionSchema;
 class ScanSpec;
 class Schema;
 

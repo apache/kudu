@@ -17,6 +17,8 @@
 #ifndef KUDU_MEMORY_OVERWRITE_H
 #define KUDU_MEMORY_OVERWRITE_H
 
+#include <cstddef>
+
 #include "kudu/gutil/strings/stringpiece.h"
 
 namespace kudu {

@@ -17,13 +17,13 @@
 #ifndef KUDU_TABLET_LOCK_MANAGER_H
 #define KUDU_TABLET_LOCK_MANAGER_H
 
+#include <cstddef>
+
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/move.h"
 #include "kudu/util/slice.h"
 
 namespace kudu { namespace tablet {
 
-class LockManager;
 class LockTable;
 class LockEntry;
 class TransactionState;

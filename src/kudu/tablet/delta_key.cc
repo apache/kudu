@@ -15,9 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tablet/delta_key.h"
+#include <ostream>
 
 #include <glog/logging.h>
+
+#include "kudu/tablet/delta_key.h"
+#include "kudu/util/logging.h"
 
 namespace kudu {
 namespace tablet {

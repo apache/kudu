@@ -17,19 +17,18 @@
 #ifndef CFILE_UTIL_H_
 #define CFILE_UTIL_H_
 
-#include <algorithm>
+#include <cstddef>
 #include <iostream>
-
-#include "kudu/cfile/cfile.pb.h"
+#include <memory>
 
 #include "kudu/common/schema.h"
-#include "kudu/common/row.h"
-#include "kudu/common/encoded_key.h"
-#include "kudu/util/bloom_filter.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class MemTracker;
+
 namespace cfile {
 
 class CFileReader;

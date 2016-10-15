@@ -17,17 +17,31 @@
 
 #include "kudu/common/wire_protocol.h"
 
-#include <boost/optional.hpp>
+#include <cinttypes>
+#include <cstring>
+#include <cstdint>
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+
+#include "kudu/common/columnblock.h"
 #include "kudu/common/column_predicate.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/bitmap.h"
+#include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/net/net_util.h"

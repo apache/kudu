@@ -17,13 +17,18 @@
 
 #include "kudu/util/maintenance_manager.h"
 
-#include <gflags/gflags.h>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
-#include <stdint.h>
+#include <mutex>
+#include <sstream>
 #include <string>
-#include <thread>
 #include <utility>
 
+#include <boost/bind.hpp>
+#include <gflags/gflags.h>
+
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -31,12 +36,15 @@
 #include "kudu/util/debug/trace_logging.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/maintenance_manager.pb.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/process_memory.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
 using std::pair;
@@ -112,6 +120,18 @@ MaintenanceOp::~MaintenanceOp() {
 void MaintenanceOp::Unregister() {
   CHECK(manager_.get()) << "Op " << name_ << " was never registered.";
   manager_->UnregisterOp(this);
+}
+
+MaintenanceManagerStatusPB_OpInstancePB OpInstance::DumpToPB() const {
+  MaintenanceManagerStatusPB_OpInstancePB pb;
+  pb.set_thread_id(thread_id);
+  pb.set_name(name);
+  if (duration.Initialized()) {
+    pb.set_duration_millis(duration.ToMilliseconds());
+  }
+  MonoDelta delta(MonoTime::Now() - start_mono_time);
+  pb.set_millis_since_start(delta.ToMilliseconds());
+  return pb;
 }
 
 const MaintenanceManager::Options MaintenanceManager::kDefaultOptions = {

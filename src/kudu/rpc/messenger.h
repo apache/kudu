@@ -17,27 +17,31 @@
 #ifndef KUDU_RPC_MESSENGER_H
 #define KUDU_RPC_MESSENGER_H
 
-#include <stdint.h>
-
-#include <list>
+#include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/connection.h"
-#include "kudu/rpc/response_callback.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
+
+namespace boost {
+template <typename Signature>
+class function;
+}
 
 namespace kudu {
 
@@ -58,7 +62,6 @@ class InboundCall;
 class Messenger;
 class OutboundCall;
 class Reactor;
-class ReactorThread;
 class RpcService;
 class RpczStore;
 

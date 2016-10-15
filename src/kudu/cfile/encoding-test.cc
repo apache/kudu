@@ -15,29 +15,46 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
-#include <gtest/gtest.h>
-#include <memory>
+#include <sys/types.h>
+
+#include <algorithm>
+#include <climits>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
-#include <stdlib.h>
+#include <memory>
+#include <ostream>
+#include <string>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/cfile/binary_plain_block.h"
+#include "kudu/cfile/binary_prefix_block.h"
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/bshuf_block.h"
-#include "kudu/cfile/cfile_writer.h"
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/plain_bitmap_block.h"
 #include "kudu/cfile/plain_block.h"
 #include "kudu/cfile/rle_block.h"
-#include "kudu/cfile/binary_plain_block.h"
-#include "kudu/cfile/binary_prefix_block.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -47,7 +64,6 @@ using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
-
 namespace cfile {
 
 class TestEncoding : public KuduTest {

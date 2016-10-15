@@ -18,8 +18,10 @@
 #ifndef KUDU_UTIL_OID_GENERATOR_H
 #define KUDU_UTIL_OID_GENERATOR_H
 
-#include <boost/uuid/uuid_generators.hpp>
 #include <string>
+
+#include <boost/uuid/random_generator.hpp>
+#include <boost/uuid/string_generator.hpp>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/locks.h"

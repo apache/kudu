@@ -17,11 +17,11 @@
 
 #include "kudu/util/errno.h"
 
-#include <errno.h>
-#include <string.h>
+#include <cstring>
+#include <glog/logging.h>
 
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/util/logging.h"
+// IWYU pragma: no_include <features.h>
 
 namespace kudu {
 

@@ -18,30 +18,43 @@
 #ifndef KUDU_CONSENSUS_LOG_H_
 #define KUDU_CONSENSUS_LOG_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
 #include "kudu/common/schema.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_util.h"
-#include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/spinlock.h"
-#include "kudu/util/async_util.h"
 #include "kudu/util/blocking_queue.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/rw_mutex.h"
 #include "kudu/util/promise.h"
+#include "kudu/util/rw_mutex.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 
 namespace kudu {
 
+class CompressionCodec;
 class FsManager;
 class MetricEntity;
 class ThreadPool;
+class WritableFile;
+struct WritableFileOptions;
 
 namespace log {
 

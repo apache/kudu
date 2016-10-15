@@ -17,22 +17,26 @@
 #ifndef KUDU_UTIL_WEBSERVER_H
 #define KUDU_UTIL_WEBSERVER_H
 
+#include <algorithm>
 #include <iosfwd>
 #include <map>
 #include <string>
 #include <vector>
 
+#include "kudu/gutil/port.h"
 #include "kudu/server/webserver_options.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 #include "kudu/util/web_callback_registry.h"
 
-struct sq_connection;
-struct sq_request_info;
-struct sq_context;
+struct sq_connection; // IWYU pragma: keep
+struct sq_request_info; // IWYU pragma: keep
+struct sq_context; // IWYU pragma: keep
 
 namespace kudu {
+
+class EasyJson;
 
 // Wrapper class for the Mongoose web server library. Clients may register callback
 // methods which produce output for a given URL path

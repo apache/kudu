@@ -44,6 +44,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 // Like CHECK_OK(), but dumps the contents of the cache before failing.

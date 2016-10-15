@@ -18,22 +18,25 @@
 #include "kudu/tablet/rowset_info.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <memory>
-#include <unordered_map>
+#include <ostream>
 #include <string>
+#include <type_traits>
+#include <unordered_map>
 #include <utility>
 
 #include <glog/logging.h>
-#include <inttypes.h>
 
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/endian.h"
-#include "kudu/gutil/map-util.h"
-#include "kudu/gutil/strings/util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_tree.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 using std::shared_ptr;
 using std::string;

@@ -14,18 +14,27 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/util/test_util.h"
 
+#include <unistd.h>
+
+#include <cstdlib>
+#include <cstring>
+#include <ostream>
 #include <limits>
+#include <memory>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <glog/stl_logging.h>
 #include <gtest/gtest-spi.h>
 
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
@@ -34,9 +43,10 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
-#include "kudu/util/random.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/spinlock_profiling.h"
+#include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 
 DEFINE_string(test_leave_files, "on_failure",

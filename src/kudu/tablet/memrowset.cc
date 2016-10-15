@@ -19,6 +19,8 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -26,22 +28,29 @@
 
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/codegen/row_projector.h"
+#include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
-#include "kudu/common/generic_iterators.h"
+#include "kudu/common/encoded_key.h"
 #include "kudu/common/row.h"
-#include "kudu/consensus/consensus.pb.h"
+#include "kudu/common/row_changelist.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/scan_spec.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/compaction.h"
+#include "kudu/tablet/mutation.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mem_tracker.h"
-#include "kudu/util/memory/overwrite.h"
+#include "kudu/util/memory/memory.h"
 
 DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
             "generation for iteration");
 TAG_FLAG(mrs_use_codegen, hidden);
 
-using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::vector;

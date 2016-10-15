@@ -18,22 +18,32 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <cstdint>
+#include <iostream>
 #include <memory>
+#include <string>
 #include <unordered_set>
+#include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/flags.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/oid_generator.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 

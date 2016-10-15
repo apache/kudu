@@ -25,6 +25,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

@@ -17,13 +17,19 @@
 #ifndef KUDU_RPC_RPC_SIDECAR_H
 #define KUDU_RPC_RPC_SIDECAR_H
 
-#include <google/protobuf/repeated_field.h>
+#include <cstdint>
 #include <memory>
 
-#include "kudu/util/faststring.h"
+#include <google/protobuf/repeated_field.h> // IWYU pragma: keep
+
+#include "kudu/gutil/integral_types.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {
+
+class Status;
+class faststring;
+
 namespace rpc {
 
 // An RpcSidecar is a mechanism which allows replies to RPCs to reference blocks of data

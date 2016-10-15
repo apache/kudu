@@ -17,13 +17,15 @@
 #ifndef KUDU_COMMON_ROW_H
 #define KUDU_COMMON_ROW_H
 
-#include <glog/logging.h>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "kudu/common/types.h"
+#include <glog/logging.h>
+
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/memory/arena.h"

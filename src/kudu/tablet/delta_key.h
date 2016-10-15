@@ -20,13 +20,16 @@
 #include <string>
 
 #include "kudu/common/rowid.h"
-#include "kudu/gutil/endian.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/mvcc.h"
-#include "kudu/util/logging.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class faststring;
+
 namespace tablet {
 
 // The type of the delta.

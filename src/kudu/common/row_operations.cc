@@ -17,13 +17,24 @@
 
 #include "kudu/common/row_operations.h"
 
+#include <cstring>
+#include <ostream>
+#include <string>
+
+#include <glog/logging.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/safe_math.h"
 #include "kudu/util/slice.h"
 

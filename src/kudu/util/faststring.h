@@ -17,10 +17,13 @@
 #ifndef KUDU_UTIL_FASTSTRING_H
 #define KUDU_UTIL_FASTSTRING_H
 
+#include <cstdint>
+#include <cstring>
 #include <string>
 
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/fastmem.h"
 
 namespace kudu {

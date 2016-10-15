@@ -17,6 +17,8 @@
 #ifndef KUDU_UTIL_NET_NET_UTIL_H
 #define KUDU_UTIL_NET_NET_UTIL_H
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 

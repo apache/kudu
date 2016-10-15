@@ -27,7 +27,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/charset.h"
 #include "kudu/gutil/strings/stringpiece.h"

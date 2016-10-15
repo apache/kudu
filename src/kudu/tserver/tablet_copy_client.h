@@ -17,19 +17,20 @@
 #ifndef KUDU_TSERVER_TABLET_COPY_CLIENT_H
 #define KUDU_TSERVER_TABLET_COPY_CLIENT_H
 
+#include <cstdint>
 #include <string>
 #include <memory>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
 
-#include "kudu/fs/block_id.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
+class BlockId;
 class BlockIdPB;
 class FsManager;
 class HostPort;
@@ -38,12 +39,9 @@ namespace consensus {
 class ConsensusMetadata;
 class ConsensusMetadataManager;
 class ConsensusStatePB;
-class RaftConfigPB;
-class RaftPeerPB;
 } // namespace consensus
 
 namespace rpc {
-class ErrorStatusPB;
 class Messenger;
 class RpcController;
 } // namespace rpc

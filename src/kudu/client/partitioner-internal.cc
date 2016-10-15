@@ -17,7 +17,6 @@
 
 #include "kudu/client/partitioner-internal.h"
 
-#include <glog/logging.h>
 #include <map>
 #include <memory>
 #include <string>
@@ -26,8 +25,10 @@
 #include "kudu/client/client.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/table-internal.h"
+#include "kudu/common/partition.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/strings/util.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/status.h"
 
 using std::string;

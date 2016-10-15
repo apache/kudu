@@ -18,14 +18,13 @@
 #include "kudu/util/easy_json.h"
 
 #include <string>
-#include <utility>
+#include <ostream>
 
 #include <glog/logging.h>
 #include <rapidjson/document.h>
+#include <rapidjson/rapidjson.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
-
-#include "kudu/gutil/strings/substitute.h"
 
 using rapidjson::SizeType;
 using rapidjson::Value;

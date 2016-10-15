@@ -21,13 +21,12 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/tools/ksck.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 
 class ExternalMiniCluster;
-class MonoDelta;
 
 // Utility class for integration tests to verify that the cluster is in a good state.
 class ClusterVerifier {

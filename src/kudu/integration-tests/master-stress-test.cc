@@ -15,27 +15,41 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
-#include <gtest/gtest.h>
+#include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <mutex>
+#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gflags/gflags.h>
+#include <gtest/gtest.h>
+
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DEFINE_int32(num_create_table_threads, 4,

@@ -16,20 +16,29 @@
 // under the License.
 
 #include <algorithm>
-#include <cmath>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
-#include "kudu/gutil/stringprintf.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/scan_batch.h"
+#include "kudu/client/scan_predicate.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/value.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::count_if;

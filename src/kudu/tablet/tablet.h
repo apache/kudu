@@ -17,7 +17,8 @@
 #ifndef KUDU_TABLET_TABLET_H
 #define KUDU_TABLET_TABLET_H
 
-#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <map>
 #include <memory>
@@ -25,37 +26,41 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
+#include "kudu/clock/clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/util/bloom_filter.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/rw_semaphore.h"
 #include "kudu/util/semaphore.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-#include "kudu/util/throttler.h"
 
 namespace kudu {
 
+class ConstContiguousRow;
 class MaintenanceManager;
 class MaintenanceOp;
 class MaintenanceOpStats;
 class MemTracker;
-class MetricEntity;
-class RowChangeList;
-class UnionIterator;
-
-namespace clock {
-class Clock;
-}
+class MonoDelta;
+class RowBlock;
+class ScanSpec;
+class Throttler;
+class Timestamp;
+struct IteratorStats;
 
 namespace log {
 class LogAnchorRegistry;
@@ -67,7 +72,6 @@ class AlterSchemaTransactionState;
 class CompactionPolicy;
 class HistoryGcOpts;
 class MemRowSet;
-class MvccSnapshot;
 struct RowOp;
 class RowSetsInCompaction;
 class RowSetTree;

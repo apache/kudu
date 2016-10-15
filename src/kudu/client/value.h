@@ -17,9 +17,10 @@
 #ifndef KUDU_CLIENT_VALUE_H
 #define KUDU_CLIENT_VALUE_H
 
+#include <stdint.h>
+
 #ifdef KUDU_HEADERS_NO_STUBS
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #else
 #include "kudu/client/stubs.h"
 #endif
@@ -69,6 +70,7 @@ class KUDU_EXPORT KuduValue {
   // Owned.
   Data* data_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(KuduValue);
 };
 

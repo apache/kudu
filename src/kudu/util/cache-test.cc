@@ -2,16 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <cassert>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include <glog/logging.h>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
-#include <memory>
 
-#include <vector>
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 #if defined(__linux__)

@@ -18,10 +18,11 @@
 #define KUDU_SERVER_TRACING_PATH_HANDLERS_H
 
 #include "kudu/gutil/macros.h"
-#include "kudu/server/webserver.h"
-#include "kudu/util/status.h"
 
 namespace kudu {
+
+class Webserver;
+
 namespace server {
 
 // Web handlers for Chromium tracing.

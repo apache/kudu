@@ -17,8 +17,11 @@
 
 #include "kudu/util/string_case.h"
 
+#include <cctype>
+#include <cstdint>
+#include <ostream>
+
 #include <glog/logging.h>
-#include <ctype.h>
 
 namespace kudu {
 

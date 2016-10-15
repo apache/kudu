@@ -17,17 +17,14 @@
 #ifndef KUDU_TABLET_TABLET_METRICS_H
 #define KUDU_TABLET_TABLET_METRICS_H
 
-#include "kudu/gutil/macros.h"
-#include "kudu/tablet/rowset.h"
+#include <cstdint>
+
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/util/metrics.h"
 
 namespace kudu {
 
 class Arena;
-class Counter;
-template<class T>
-class AtomicGauge;
-class Histogram;
-class MetricEntity;
 
 namespace tablet {
 

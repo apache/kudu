@@ -17,25 +17,27 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
 
-#include <boost/function.hpp>
-
 #include "kudu/client/shared_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
 
-namespace kudu {
+namespace boost {
+template <typename Signature>
+class function;
+} // namespace boost
 
-class MonoTime;
+namespace kudu {
 
 namespace client {
 class KuduClient;
 } // namespace client
-
 
 namespace master {
 class MasterServiceProxy;

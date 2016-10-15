@@ -16,12 +16,30 @@
 // under the License.
 #include "kudu/tserver/tablet_server-test-base.h"
 
+#include <cstdint>
+#include <ostream>
+#include <string>
+#include <vector>
 #include <thread>
 
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/jsonwriter.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/process_memory.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 DEFINE_int32(runtime_secs, 10,
              "Maximum number of seconds to run. If the threads have not completed "

@@ -32,9 +32,13 @@
 #ifndef KUDU_UTIL_DEBUG_TRACE_EVENT_SYNTHETIC_DELAY_H_
 #define KUDU_UTIL_DEBUG_TRACE_EVENT_SYNTHETIC_DELAY_H_
 
+#include <string>
+
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/mutex.h"
 
 // Apply a named delay in the current scope.
 #define TRACE_EVENT_SYNTHETIC_DELAY(name)                                     \

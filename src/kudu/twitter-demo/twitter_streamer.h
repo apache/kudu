@@ -17,9 +17,11 @@
 #ifndef KUDU_TWITTER_DEMO_TWITTER_STREAMER_H
 #define KUDU_TWITTER_DEMO_TWITTER_STREAMER_H
 
+#include <cstddef>
 #include <mutex>
 #include <thread>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"

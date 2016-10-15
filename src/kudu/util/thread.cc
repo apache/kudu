@@ -19,32 +19,39 @@
 
 #include "kudu/util/thread.h"
 
-#include <sys/resource.h>
-#include <sys/syscall.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-#include <algorithm>
-#include <map>
-#include <memory>
-#include <set>
-#include <sstream>
-#include <vector>
-
 #if defined(__linux__)
 #include <sys/prctl.h>
 #endif // defined(__linux__)
+#include <sys/resource.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <cerrno>
+#include <cstring>
+#include <map>
+#include <memory>
+#include <sstream>
+#include <vector>
+#include <utility>
+
+#include <boost/bind.hpp>
+#include <boost/smart_ptr/shared_ptr.hpp>
+#include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/errno.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/kernel_stack_watchdog.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/os-util.h"

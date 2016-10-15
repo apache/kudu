@@ -34,6 +34,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/random.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::atomic;

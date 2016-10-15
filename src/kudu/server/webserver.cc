@@ -14,33 +14,36 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/server/webserver.h"
 
-#include <cstdio>
-#include <signal.h>
-
 #include <algorithm>
+#include <csignal>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <mustache.h>
 #include <squeasel.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
-#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/easy_json.h"
@@ -48,10 +51,11 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/path_util.h"
-#include "kudu/util/subprocess.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
+
+struct sockaddr_in;
 
 #if defined(__APPLE__)
 typedef sig_t sighandler_t;

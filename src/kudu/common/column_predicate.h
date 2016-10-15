@@ -17,19 +17,23 @@
 
 #pragma once
 
-#include <boost/optional.hpp>
+#include <algorithm>
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 
 namespace kudu {
 
 class Arena;
 class ColumnBlock;
-class ColumnSchema;
 class SelectionVector;
-class TypeInfo;
 
 enum class PredicateType {
   // A predicate which always evaluates to false.

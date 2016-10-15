@@ -14,11 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
+#include <cstdint>
+
 #include <gtest/gtest.h>
 
 #include "kudu/util/hdr_histogram.h"
-#include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/test_macros.h"
 
 namespace kudu {
 

@@ -53,18 +53,22 @@
 #ifndef KUDU_UTIL_KERNEL_STACK_WATCHDOG_H
 #define KUDU_UTIL_KERNEL_STACK_WATCHDOG_H
 
+#include <ctime>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include <glog/logging.h>
+
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/threadlocal.h"
 

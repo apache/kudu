@@ -13,9 +13,12 @@
 #ifndef KUDU_UTIL_STATUS_H_
 #define KUDU_UTIL_STATUS_H_
 
+// NOTE: using stdint.h instead of cstdint and errno.h instead of errno because
+// this file is supposed to be processed by a compiler lacking C++11 support.
 #include <errno.h>
 #include <stdint.h>
 
+#include <cstddef>
 #include <string>
 
 #ifdef KUDU_HEADERS_NO_STUBS

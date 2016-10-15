@@ -2,9 +2,8 @@
 
 #include "kudu/gutil/strings/serialize.h"
 
-#include <stddef.h>
-#include <stdlib.h>
-
+#include <cinttypes>
+#include <cstdlib>
 #include <string>
 #include <utility>
 #include <unordered_map>
@@ -13,10 +12,9 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/gutil/strtoint.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
-#include "kudu/gutil/hash/hash.h"
+#include "kudu/gutil/strtoint.h"
 
 using std::unordered_map;
 using std::make_pair;

@@ -14,10 +14,15 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include <stdlib.h>
-#include <stdio.h>
+
+#include <cstring>
+#include <cstdint>
 #include <iostream>
+#include <string>
+#include <vector>
+
 #include <gtest/gtest.h>
+
 #include "kudu/util/url-coding.h"
 
 using namespace std; // NOLINT(*)

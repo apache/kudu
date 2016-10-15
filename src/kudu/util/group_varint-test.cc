@@ -15,12 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#ifdef NDEBUG
 #include <vector>
+#endif
 
+#include <gtest/gtest.h>
+
+#include "kudu/util/faststring.h"
 #include "kudu/util/group_varint-inl.h"
+#ifdef NDEBUG
 #include "kudu/util/stopwatch.h"
+#endif
 
 namespace kudu {
 namespace coding {

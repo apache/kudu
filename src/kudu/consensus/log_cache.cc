@@ -17,26 +17,33 @@
 
 #include "kudu/consensus/log_cache.h"
 
-#include <algorithm>
-#include <gflags/gflags.h>
-#include <google/protobuf/wire_format_lite.h>
-#include <google/protobuf/wire_format_lite_inl.h>
 #include <map>
 #include <mutex>
 #include <vector>
+#include <ostream>
+#include <utility>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <google/protobuf/wire_format_lite.h>
+#include <google/protobuf/wire_format_lite_inl.h>
+
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/debug-util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"

@@ -5,11 +5,9 @@
 #ifndef BASE_THREADING_THREAD_COLLISION_WARNER_H_
 #define BASE_THREADING_THREAD_COLLISION_WARNER_H_
 
-#include <memory>
-
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
  
 #ifndef BASE_EXPORT
 #define BASE_EXPORT

@@ -17,11 +17,14 @@
 #ifndef KUDU_UTIL_NET_SOCKET_H
 #define KUDU_UTIL_NET_SOCKET_H
 
-#include <sys/uio.h>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
+
+struct iovec;
 
 namespace kudu {
 

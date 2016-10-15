@@ -15,18 +15,37 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
-#include <glog/stl_logging.h>
+#include <cctype>
+#include <cstdint>
+#include <cstring>
+#include <map>
+#include <ostream>
 #include <string>
+#include <vector>
+
+#include <gtest/gtest.h>
+#include <glog/logging.h>
 #include <rapidjson/document.h>
 #include <rapidjson/rapidjson.h>
 
-#include "kudu/util/trace.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/walltime.h"
+#include "kudu/util/atomic.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/debug/trace_event_impl.h"
 #include "kudu/util/debug/trace_event_synthetic_delay.h"
 #include "kudu/util/debug/trace_logging.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
+#include "kudu/util/trace_metrics.h"
+#include "kudu/util/trace.h"
 
 using kudu::debug::TraceLog;
 using kudu::debug::TraceResultBuffer;
@@ -83,10 +102,10 @@ TEST_F(TraceTest, TestAttach) {
   EXPECT_TRUE(Trace::CurrentTrace() == nullptr);
   TRACE("this goes nowhere");
 
-  EXPECT_EQ(XOutDigits(traceA->DumpToString(Trace::NO_FLAGS)),
-            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceA\n");
-  EXPECT_EQ(XOutDigits(traceB->DumpToString(Trace::NO_FLAGS)),
-            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceB\n");
+  EXPECT_EQ("XXXX XX:XX:XX.XXXXXX trace-test.cc:XXX] hello from traceA\n",
+            XOutDigits(traceA->DumpToString(Trace::NO_FLAGS)));
+  EXPECT_EQ("XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceB\n",
+            XOutDigits(traceB->DumpToString(Trace::NO_FLAGS)));
 }
 
 TEST_F(TraceTest, TestChildTrace) {
@@ -99,10 +118,10 @@ TEST_F(TraceTest, TestChildTrace) {
     ADOPT_TRACE(traceB.get());
     TRACE("hello from traceB");
   }
-  EXPECT_EQ(XOutDigits(traceA->DumpToString(Trace::NO_FLAGS)),
-            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceA\n"
+  EXPECT_EQ("XXXX XX:XX:XX.XXXXXX trace-test.cc:XXX] hello from traceA\n"
             "Related trace 'child':\n"
-            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XXX] hello from traceB\n");
+            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XXX] hello from traceB\n",
+            XOutDigits(traceA->DumpToString(Trace::NO_FLAGS)));
 }
 
 static void GenerateTraceEvents(int thread_id,

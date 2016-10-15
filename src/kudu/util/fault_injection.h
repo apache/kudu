@@ -18,6 +18,7 @@
 #define KUDU_UTIL_FAULT_INJECTION_H
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 // Macros for injecting various kinds of faults with varying probability. If

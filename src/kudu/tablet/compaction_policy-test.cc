@@ -15,21 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <unordered_set>
+#include <vector>
+
+#include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
-#include <memory>
-#include <unordered_set>
-#include <string>
 
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/stopwatch.h"
-#include "kudu/util/test_util.h"
+#include "kudu/tablet/compaction_policy.h"
 #include "kudu/tablet/mock-rowsets.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_tree.h"
-#include "kudu/tablet/compaction_policy.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 
 using std::shared_ptr;
 using std::unordered_set;

@@ -17,21 +17,32 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/security/test/test_pass.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/webserver.h"
+#include "kudu/server/webserver_options.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

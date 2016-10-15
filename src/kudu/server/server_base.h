@@ -17,6 +17,7 @@
 #ifndef KUDU_SERVER_SERVER_BASE_H
 #define KUDU_SERVER_SERVER_BASE_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -24,14 +25,13 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/rpc/service_if.h"
 #include "kudu/security/simple_acl.h"
 #include "kudu/server/server_base_options.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
-class Env;
 class FsManager;
 class MemTracker;
 class MetricEntity;
@@ -49,7 +49,9 @@ class Clock;
 } // namespace clock
 
 namespace rpc {
+class ResultTracker;
 class RpcContext;
+class ServiceIf;
 } // namespace rpc
 
 namespace security {
@@ -58,7 +60,6 @@ class TokenVerifier;
 } // namespace security
 
 namespace server {
-struct ServerBaseOptions;
 class ServerStatusPB;
 
 // Base class for tablet server and master.

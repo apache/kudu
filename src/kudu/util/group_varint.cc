@@ -15,8 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <stdint.h>
-#include <string.h>
+#include <cstdint>
+#include <cstring>
+#include <ostream>
+#include <string>
+
 #include <boost/utility/binary.hpp>
 #include <glog/logging.h>
 

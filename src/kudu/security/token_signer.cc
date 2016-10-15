@@ -18,6 +18,7 @@
 #include "kudu/security/token_signer.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -26,10 +27,12 @@
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/security/openssl_util.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signing_key.h"
 #include "kudu/security/token_verifier.h"

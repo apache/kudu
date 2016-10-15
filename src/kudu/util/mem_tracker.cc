@@ -18,18 +18,20 @@
 #include "kudu/util/mem_tracker.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <deque>
 #include <limits>
 #include <list>
 #include <memory>
-#include <mutex>
+#include <ostream>
 
-#include "kudu/gutil/map-util.h"
+#include <gperftools/malloc_extension.h>  // IWYU pragma: keep
+
 #include "kudu/gutil/once.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/process_memory.h"
-#include "kudu/util/status.h"
 
 namespace kudu {
 

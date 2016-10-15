@@ -17,35 +17,45 @@
 
 #pragma once
 
-#include <boost/optional/optional_fwd.hpp>
-#include <gtest/gtest_prod.h>
-#include <memory>
+#include <functional>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
-#include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
-#include "kudu/util/threadpool.h"
+
+namespace boost {
+template <class T>
+class optional;
+}
 
 namespace kudu {
 
-class PartitionSchema;
 class FsManager;
-class HostPort;
+class MetricRegistry;
+class NodeInstancePB;
 class Partition;
+class PartitionSchema;
 class Schema;
+class ThreadPool;
 
 namespace consensus {
 class ConsensusMetadataManager;
-class RaftConfigPB;
+class OpId;
+class StartTabletCopyRequestPB;
 } // namespace consensus
 
 namespace master {
@@ -53,14 +63,9 @@ class ReportedTabletPB;
 class TabletReportPB;
 } // namespace master
 
-namespace rpc {
-class ResultTracker;
-} // namespace rpc
-
 namespace tablet {
 class TabletMetadata;
 class TabletReplica;
-class TabletStatusPB;
 }
 
 namespace tserver {

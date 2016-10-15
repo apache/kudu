@@ -17,13 +17,20 @@
 
 #include "kudu/client/scan_configuration.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "kudu/client/client.h"
-#include "kudu/client/scan_predicate.h"
 #include "kudu/client/scan_predicate-internal.h"
+#include "kudu/client/scan_predicate.h"
+#include "kudu/common/column_predicate.h"
+#include "kudu/common/encoded_key.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/strings/substitute.h"
 
 using std::unique_ptr;
 using std::string;

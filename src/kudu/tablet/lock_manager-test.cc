@@ -16,15 +16,25 @@
 // under the License.
 
 #include <algorithm>
-#include <glog/logging.h>
-#include <gtest/gtest.h>
+#include <cstdint>
 #include <memory>
 #include <mutex>
+#include <ostream>
+#include <string>
 #include <vector>
 
-#include "kudu/gutil/gscoped_ptr.h"
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/util/env.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
@@ -38,6 +48,9 @@ DEFINE_int32(num_iterations, 1000, "number of iterations per client thread");
 
 namespace kudu {
 namespace tablet {
+
+class LockEntry;
+class TransactionState;
 
 static const TransactionState* kFakeTransaction =
   reinterpret_cast<TransactionState*>(0xdeadbeef);

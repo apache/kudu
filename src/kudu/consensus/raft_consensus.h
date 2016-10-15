@@ -17,62 +17,67 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <utility>
 #include <vector>
 
-#include <boost/optional/optional_fwd.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_meta.h"  // IWYU pragma: keep
 #include "kudu/consensus/consensus_queue.h"
-#include "kudu/consensus/peer_manager.h"
-#include "kudu/consensus/pending_rounds.h"
+#include "kudu/consensus/log.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/consensus/time_manager.h"
+#include "kudu/gutil/callback.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/atomic.h"
-#include "kudu/util/failure_detector.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status_callback.h"
+
+namespace boost {
+template <class T>
+class optional;
+}
 
 namespace kudu {
 
-class Counter;
 class FailureDetector;
-class HostPort;
-class MonoDelta;
+class RandomizedFailureMonitor;
+
+typedef std::lock_guard<simple_spinlock> Lock;
+typedef gscoped_ptr<Lock> ScopedLock;
+
 class ThreadPool;
 class ThreadPoolToken;
 class Status;
 
-namespace log {
-class Log;
-struct RetentionIndexes;
-}
-
-namespace rpc {
-class Messenger;
-}
-
-namespace server {
-class Clock;
-}
-
-namespace tserver {
-class TabletServerErrorPB;
-}
+template <typename Sig>
+class Callback;
 
 namespace consensus {
 
 class ConsensusMetadata;
+class ConsensusMetadataManager;
 class ConsensusRound;
-class Peer;
 class PeerProxyFactory;
 class PeerManager;
+class PendingRounds;
 class ReplicaTransactionFactory;
-class TimeManager;
 
 struct ConsensusBootstrapInfo;
 struct ElectionResult;

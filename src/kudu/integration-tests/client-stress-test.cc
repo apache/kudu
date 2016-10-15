@@ -15,21 +15,40 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <unistd.h>
 
-#include <memory>
+#include <cstdint>
+#include <ostream>
+#include <set>
+#include <string>
+#include <utility>
 #include <vector>
+
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
-#include "kudu/gutil/mathlimits.h"
+#include "kudu/client/client.h"
+#include "kudu/client/scan_predicate.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/value.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/random.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(leader_memory_pressure_rejections);

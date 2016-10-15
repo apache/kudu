@@ -15,29 +15,43 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <unistd.h>
+
+#include <algorithm>
 #include <atomic>
+#include <cstdint>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <boost/bind.hpp>
+#include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/smart_ptr/shared_ptr.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/random.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/threadpool.h"

@@ -17,24 +17,31 @@
 
 #include "kudu/client/scan_predicate.h"
 
-#include <boost/optional.hpp>
 #include <utility>
 #include <vector>
+
+#include <boost/optional/optional.hpp>
 
 #include "kudu/client/scan_predicate-internal.h"
 #include "kudu/client/value-internal.h"
 #include "kudu/client/value.h"
+#include "kudu/common/column_predicate.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/status.h"
 
+using boost::optional;
 using std::move;
 using std::vector;
-using boost::optional;
+using strings::Substitute;
 
 namespace kudu {
 
-using strings::Substitute;
+class Arena;
 
 namespace client {
 

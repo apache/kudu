@@ -18,24 +18,40 @@
 #ifndef KUDU_TOOLS_KSCK_REMOTE_H
 #define KUDU_TOOLS_KSCK_REMOTE_H
 
+#include <algorithm>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
-#include "kudu/client/client.h"
-#include "kudu/consensus/consensus.proxy.h"
-#include "kudu/rpc/messenger.h"
-#include "kudu/server/server_base.h"
-#include "kudu/server/server_base.proxy.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tools/ksck.h"
-#include "kudu/tserver/tablet_server.h"
-#include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
 class Schema;
+
+namespace client {
+class KuduClient;
+}
+
+namespace consensus {
+class ConsensusServiceProxy;
+}
+
+namespace rpc {
+class Messenger;
+}
+
+namespace server {
+class GenericServiceProxy;
+}
+
+namespace tserver {
+class TabletServerServiceProxy;
+}
 
 namespace tools {
 

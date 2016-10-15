@@ -18,14 +18,17 @@
 // Tests that log rolling and excess logfile cleanup logic works correctly.
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/util/env.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 

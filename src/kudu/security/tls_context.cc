@@ -17,17 +17,22 @@
 
 #include "kudu/security/tls_context.h"
 
+#include <algorithm>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"

@@ -17,29 +17,50 @@
 #ifndef KUDU_TABLET_LAYER_BASEDATA_H
 #define KUDU_TABLET_LAYER_BASEDATA_H
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <boost/container/flat_map.hpp>
-#include <boost/optional.hpp>
+#include <boost/container/vector.hpp>
+#include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
-#include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/common/iterator.h"
+#include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/tablet/memrowset.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/rowset_metadata.h"
-#include "kudu/util/env.h"
-#include "kudu/util/memory/arena.h"
-#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+
+namespace boost {
+template <class T>
+class optional;
+}
 
 namespace kudu {
 
+class ColumnMaterializationContext;
+class MemTracker;
+class ScanSpec;
+class SelectionVector;
+struct IteratorStats;
+
+namespace cfile {
+class BloomFileReader;
+}
+
 namespace tablet {
+
+class RowSetKeyProbe;
+struct ProbeStats;
 
 // Set of CFiles which make up the base data for a single rowset
 //

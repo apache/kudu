@@ -18,48 +18,72 @@
 #include "kudu/master/sys_catalog.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <functional>
-#include <iomanip>
 #include <iterator>
 #include <memory>
+#include <ostream>
 #include <set>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/util/message_differencer.h>
 
+#include "kudu/clock/clock.h"
+#include "kudu/common/column_predicate.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/iterator.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/consensus_peers.h"
+#include "kudu/consensus/log.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/casts.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/rpc/rpc_context.h"
-#include "kudu/tablet/mvcc.h"
+#include "kudu/master/master_options.h"
+#include "kudu/rpc/result_tracker.h"
+#include "kudu/security/token.pb.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/countdown_latch.h"
+#include "kudu/util/cow_object.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/threadpool.h"
+#include "kudu/util/slice.h"
 
 DEFINE_double(sys_catalog_fail_during_write, 0.0,
               "Fraction of the time when system table writes will fail");
@@ -85,6 +109,13 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+
+namespace google {
+namespace protobuf {
+class Message;
+}
+}
 
 namespace kudu {
 namespace master {

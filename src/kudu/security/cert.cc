@@ -17,20 +17,21 @@
 
 #include "kudu/security/cert.h"
 
+#include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 #include <openssl/evp.h>
-#include <openssl/pem.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
-#include <boost/optional.hpp>
-
+#include "kudu/gutil/macros.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/openssl_util_bio.h"
-#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 
 using std::string;

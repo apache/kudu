@@ -17,8 +17,9 @@
 #ifndef KUDU_UTIL_JSONWRITER_H
 #define KUDU_UTIL_JSONWRITER_H
 
-#include <inttypes.h>
-
+#include <cstddef>
+#include <cstdint>
+#include <iosfwd>
 #include <memory>
 #include <string>
 

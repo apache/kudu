@@ -20,13 +20,13 @@
 
 #include <memory>
 
-#include "kudu/gutil/casts.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
+// IWYU pragma: no_include <llvm/ExecutionEngine/ExecutionEngine.h>
 
 namespace llvm {
-class ExecutionEngine;
+class ExecutionEngine;  // IWYU pragma: keep
 } // namespace llvm
 
 namespace kudu {

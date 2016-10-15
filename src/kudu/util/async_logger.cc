@@ -17,11 +17,9 @@
 
 #include "kudu/util/async_logger.h"
 
-#include <algorithm>
 #include <string>
 #include <thread>
 
-#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 
 using std::string;

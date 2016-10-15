@@ -13,7 +13,7 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_ENV_H_
 #define STORAGE_LEVELDB_INCLUDE_ENV_H_
 
-#include <cstdarg>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "kudu/gutil/callback_forward.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

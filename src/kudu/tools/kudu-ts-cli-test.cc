@@ -15,17 +15,27 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/map-util.h"
-#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/tool_test_util.h"
-#include "kudu/util/path_util.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 

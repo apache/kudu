@@ -15,10 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/client/value.h"
-#include "kudu/client/value-internal.h"
-#include "kudu/gutil/strings/substitute.h"
+#include <cstring>
+#include <ostream>
 #include <string>
+
+#include <glog/logging.h>
+
+#include "kudu/client/value-internal.h"
+#include "kudu/client/value.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/status.h"
 
 using std::string;
 using strings::Substitute;

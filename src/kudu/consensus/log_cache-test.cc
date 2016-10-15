@@ -15,20 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <vector>
 
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_cache.h"
+#include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::shared_ptr;

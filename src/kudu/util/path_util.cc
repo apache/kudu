@@ -20,15 +20,19 @@
 // Use the POSIX version of dirname(3).
 #include <libgen.h>
 
-#include <glog/logging.h>
-#include <string>
-
-#include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/strings/split.h"
-
+#include <cstring>
 #if defined(__APPLE__)
 #include <mutex>
 #endif // defined(__APPLE__)
+#include <ostream>
+#include <string>
+
+#include <glog/logging.h>
+
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
+
 
 using std::string;
 using std::vector;

@@ -17,17 +17,20 @@
 
 #include "kudu/rpc/rpc_context.h"
 
+#include <algorithm>
 #include <memory>
 #include <ostream>
-#include <sstream>
+
+#include <glog/logging.h>
+#include <google/protobuf/message.h>
 
 #include "kudu/rpc/inbound_call.h"
+#include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_sidecar.h"
-#include "kudu/rpc/service_if.h"
-#include "kudu/util/hdr_histogram.h"
-#include "kudu/util/metrics.h"
+#include "kudu/util/debug/trace_event.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/trace.h"
 
@@ -37,6 +40,9 @@ using std::string;
 using std::unique_ptr;
 
 namespace kudu {
+
+class Slice;
+
 namespace rpc {
 
 RpcContext::RpcContext(InboundCall *call,

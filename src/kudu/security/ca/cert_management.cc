@@ -17,14 +17,11 @@
 
 #include "kudu/security/ca/cert_management.h"
 
+#include <algorithm>
 #include <cstdio>
-#include <cstdlib>
-#include <functional>
-#include <iostream>
 #include <memory>
-#include <sstream>
+#include <mutex>
 #include <string>
-#include <type_traits>
 
 #include <glog/logging.h>
 #include <openssl/conf.h>
@@ -37,14 +34,14 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/cert.h"
-#include "kudu/security/init.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
+#include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 
 using std::lock_guard;
 using std::move;
-using std::ostringstream;
 using std::string;
 using strings::Substitute;
 

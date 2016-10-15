@@ -27,6 +27,7 @@
 #include "kudu/fs/data_dirs.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/gutil/map-util.h"
 

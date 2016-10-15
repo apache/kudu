@@ -18,11 +18,16 @@
 #include "kudu/util/trace_metrics.h"
 
 #include <algorithm>
-#include <ctype.h>
-#include <glog/stl_logging.h>
+#include <cctype>
+#include <cstring>
 #include <map>
 #include <mutex>
+#include <ostream>
 #include <string>
+#include <utility>
+
+#include <glog/logging.h>
+#include <glog/stl_logging.h>
 
 #include "kudu/util/debug/leakcheck_disabler.h"
 

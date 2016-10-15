@@ -18,6 +18,7 @@
 #ifndef KUDU_UTIL_CACHE_H_
 #define KUDU_UTIL_CACHE_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -29,7 +30,6 @@
 namespace kudu {
 
 class Cache;
-struct CacheMetrics;
 class MetricEntity;
 
 enum CacheType {

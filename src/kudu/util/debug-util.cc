@@ -17,20 +17,29 @@
 
 #include "kudu/util/debug-util.h"
 
-#include <execinfo.h>
 #include <dirent.h>
-#include <glog/logging.h>
-#include <signal.h>
-#include <string>
+#include <sched.h>
+#ifdef __linux__
+#include <syscall.h>
+#else
 #include <sys/syscall.h>
+#endif
+#include <unistd.h>
 
+#include <cerrno>
+#include <csignal>
+#include <ostream>
+#include <string>
+
+#include <glog/logging.h>
+
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
-#include "kudu/util/env.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"

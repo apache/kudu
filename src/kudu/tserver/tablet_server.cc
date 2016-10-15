@@ -17,14 +17,20 @@
 
 #include "kudu/tserver/tablet_server.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <ostream>
+#include <type_traits>
+
 #include <glog/logging.h>
 
 #include "kudu/cfile/block_cache.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/service_if.h"
-#include "kudu/server/rpc_server.h"
-#include "kudu/server/webserver.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_copy_service.h"
@@ -33,7 +39,6 @@
 #include "kudu/tserver/tserver-path-handlers.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
 using std::string;

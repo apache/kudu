@@ -42,34 +42,50 @@
 #include "kudu/master/catalog_manager.h"
 
 #include <algorithm>
-#include <condition_variable>
+#include <cstdint>
+#include <cstdlib>
 #include <functional>
+#include <iterator>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/bind.hpp>
+#include <boost/function.hpp>
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/cfile/type_encodings.h"
-#include "kudu/common/key_util.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/key_encoder.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/escaping.h"
-#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/utf/utf.h"
@@ -82,24 +98,31 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_signing_key.h"
+#include "kudu/server/monitored_task.h"
+#include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/transactions/transaction_tracker.h"
+#include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
+#include "kudu/util/condition_variable.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
-#include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
@@ -215,6 +238,7 @@ using std::set;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 
 namespace kudu {

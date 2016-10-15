@@ -16,14 +16,19 @@
 // under the License.
 #pragma once
 
-#include "kudu/client/client.h"
-#include "kudu/common/partition.h"
-#include "kudu/util/status.h"
-
+#include <algorithm>
 #include <map>
 #include <string>
 
+#include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+
 namespace kudu {
+
+class KuduPartialRow;
+
 namespace client {
 
 class KuduPartitionerBuilder::Data {

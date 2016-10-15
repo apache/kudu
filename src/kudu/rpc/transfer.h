@@ -19,24 +19,22 @@
 #define KUDU_RPC_TRANSFER_H
 
 #include <array>
-#include <boost/intrusive/list.hpp>
-#include <gflags/gflags.h>
-#include <set>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
-#include <vector>
 
+#include <boost/intrusive/list_hook.hpp>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+
+#include "kudu/gutil/macros.h"
 #include "kudu/rpc/constants.h"
-#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 DECLARE_int32(rpc_max_message_size);
-
-namespace google {
-namespace protobuf {
-class Message;
-} // namespace protobuf
-} // namespace google
 
 namespace kudu {
 
@@ -44,7 +42,6 @@ class Socket;
 
 namespace rpc {
 
-class Messenger;
 class OutboundCall;
 struct TransferCallbacks;
 

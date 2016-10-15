@@ -15,14 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/common/wire_protocol.h"
 #include "kudu/tablet/row_op.h"
+
+#include <algorithm>
+#include <type_traits>
+
+#include <glog/logging.h>
+
+#include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/move.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/pb_util.h"
 
 using kudu::pb_util::SecureDebugString;
 
 namespace kudu {
+
+class Status;
+
 namespace tablet {
 
 RowOp::RowOp(DecodedRowOperation decoded_op)

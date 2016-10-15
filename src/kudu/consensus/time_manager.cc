@@ -15,12 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
 #include <mutex>
+#include <ostream>
+
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/time_manager.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/flag_tags.h"
 
 DEFINE_bool(safe_time_advancement_without_writes, true,

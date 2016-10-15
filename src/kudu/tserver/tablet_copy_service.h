@@ -20,31 +20,38 @@
 #include <string>
 #include <unordered_map>
 
-#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/tserver/tablet_copy.service.h"
+#include "kudu/tserver/tablet_copy_source_session.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/locks.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
+namespace google {
+namespace protobuf {
+class Message;
+}
+}
+
 namespace kudu {
+
 class FsManager;
 
 namespace server {
 class ServerBase;
 } // namespace server
 
-namespace log {
-class ReadableLogSegment;
-} // namespace log
+namespace rpc {
+class RpcContext;
+} // namespace rpc
 
 namespace tserver {
 
-class TabletCopySourceSession;
 class TabletReplicaLookupIf;
 
 class TabletCopyServiceImpl : public TabletCopyServiceIf {

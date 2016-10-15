@@ -25,6 +25,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/rw_mutex.h"
 
 namespace kudu {
@@ -32,10 +33,8 @@ class Status;
 
 namespace security {
 class SignedTokenPB;
-class TokenSigner;
 class TokenSigningPrivateKey;
 class TokenSigningPrivateKeyPB;
-class TokenSigningPublicKeyPB;
 class TokenVerifier;
 
 // Class responsible for managing Token Signing Keys (TSKs) and signing tokens.

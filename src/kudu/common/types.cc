@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <utility>
 
 #include "kudu/gutil/singleton.h"
 #include "kudu/util/logging.h"

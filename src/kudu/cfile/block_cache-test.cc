@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstring>
+
 #include <gtest/gtest.h>
 
 #include "kudu/cfile/block_cache.h"

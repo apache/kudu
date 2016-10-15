@@ -15,17 +15,40 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <cstdlib>
 #include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/codegen/compilation_manager.h"
-#include "kudu/gutil/macros.h"
+#include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/rowid.h"
+#include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-test-base.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_graph.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
 DECLARE_int32(tablet_history_max_age_sec);

@@ -15,8 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <cstdint>
+#include <cstring>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/util/bitmap.h"

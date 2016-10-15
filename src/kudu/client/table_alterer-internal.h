@@ -17,20 +17,23 @@
 #ifndef KUDU_CLIENT_TABLE_ALTERER_INTERNAL_H
 #define KUDU_CLIENT_TABLE_ALTERER_INTERNAL_H
 
-#include <boost/optional.hpp>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+
 #include "kudu/client/client.h"
-#include "kudu/common/schema.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-namespace master {
-class AlterTableRequestPB_AlterColumn;
-} // namespace master
+
+class Schema;
+
 namespace client {
 
 class KuduColumnSpec;

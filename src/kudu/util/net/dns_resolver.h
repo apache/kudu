@@ -21,8 +21,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/util/async_util.h"
-#include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 
 namespace kudu {
 

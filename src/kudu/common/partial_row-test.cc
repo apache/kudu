@@ -15,13 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <functional>
+#include <string>
 
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/common/row.h"
 #include "kudu/common/schema.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

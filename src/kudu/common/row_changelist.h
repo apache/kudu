@@ -20,22 +20,26 @@
 #ifndef KUDU_COMMON_ROW_CHANGELIST_H
 #define KUDU_COMMON_ROW_CHANGELIST_H
 
-#include <gtest/gtest_prod.h>
+#include <cstddef>
 #include <string>
 #include <vector>
 
-#include "kudu/common/row.h"
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
+
+#include "kudu/common/schema.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/util/bitmap.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
-class faststring;
-
 class Arena;
 class ColumnBlock;
+class DeltaProjector;
 class RowBlockRow;
-class Schema;
 
 // A RowChangeList is a wrapper around a Slice which contains a "changelist".
 //

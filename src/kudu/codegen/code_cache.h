@@ -18,15 +18,17 @@
 #ifndef KUDU_CODEGEN_CODE_CACHE_H
 #define KUDU_CODEGEN_CODE_CACHE_H
 
-#include "kudu/codegen/row_projector.h"
+#include <cstddef>
+
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/faststring.h"
 
 namespace kudu {
 
 class Cache;
-class Schema;
+class Slice;
+class Status;
 
 namespace codegen {
 

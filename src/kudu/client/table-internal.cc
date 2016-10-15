@@ -17,6 +17,7 @@
 
 #include "kudu/client/table-internal.h"
 
+#include <algorithm>
 #include <string>
 
 using std::string;

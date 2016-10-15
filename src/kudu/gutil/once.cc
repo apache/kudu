@@ -1,9 +1,14 @@
 // Copyright 2008 Google Inc. All Rights Reserved.
 
+#include <ostream>
+
 #include <glog/logging.h>
+
+#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/once.h"
-#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/spinlock_internal.h"
 
 // All modifications to a GoogleOnceType occur inside GoogleOnceInternalInit.

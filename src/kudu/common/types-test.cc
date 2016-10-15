@@ -15,16 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <cmath>
 #include <string>
-#include <tuple>
+#include <tuple>  // IWYU pragma: keep
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/test_util.h"
 
 using std::get;

@@ -17,19 +17,28 @@
 
 #include "kudu/cfile/cfile_writer.h"
 
-#include <glog/logging.h>
 #include <numeric>
 #include <string>
+#include <ostream>
 #include <utility>
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/cfile/block_compression.h"
+#include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/block_pointer.h"
+#include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_util.h"
-#include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/cfile/type_encodings.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
-#include "kudu/gutil/endian.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/coding-inl.h"
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"

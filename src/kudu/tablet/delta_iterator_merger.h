@@ -17,17 +17,29 @@
 #ifndef KUDU_TABLET_DELTA_ITERATOR_MERGER_H
 #define KUDU_TABLET_DELTA_ITERATOR_MERGER_H
 
+#include <cstddef>
 #include <string>
 #include <memory>
 #include <vector>
 
+#include "kudu/common/rowid.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/delta_store.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
+class Arena;
+class ColumnBlock;
 class ScanSpec;
+class Schema;
+class SelectionVector;
+struct ColumnId;
 
 namespace tablet {
+
+class Mutation;
+class MvccSnapshot;
 
 // DeltaIterator that simply combines together other DeltaIterators,
 // applying deltas from each in order.

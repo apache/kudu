@@ -86,31 +86,40 @@
 
 #include "kudu/tools/tool_action.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
-#include <ctime>
-
-#include <algorithm>
-#include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <sstream>
+#include <numeric>
+#include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include <gflags/gflags.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/row_result.h"
+#include "kudu/client/scan_batch.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 
 using kudu::ColumnSchema;

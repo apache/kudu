@@ -15,36 +15,62 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
+#include <memory>
+#include <ostream>
+#include <string>
+
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/clock/clock.h"
-#include "kudu/clock/logical_clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/common/timestamp.h"
-#include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/row_operations.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/tablet_replica_mm_ops.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
+#include "kudu/tablet/transactions/transaction_tracker.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
-#include "kudu/util/test_util.h"
 #include "kudu/util/threadpool.h"
 
 METRIC_DECLARE_entity(tablet);

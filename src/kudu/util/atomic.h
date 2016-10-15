@@ -18,7 +18,9 @@
 #ifndef KUDU_UTIL_ATOMIC_H
 #define KUDU_UTIL_ATOMIC_H
 
-#include <algorithm>
+#include <algorithm>  // IWYU pragma: keep
+#include <cstdint>
+#include <cstdlib>
 #include <type_traits>
 
 #include "kudu/gutil/atomicops.h"

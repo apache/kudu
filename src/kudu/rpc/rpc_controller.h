@@ -17,14 +17,12 @@
 #ifndef KUDU_RPC_RPC_CONTROLLER_H
 #define KUDU_RPC_RPC_CONTROLLER_H
 
+#include <cstdint>
 #include <memory>
 #include <unordered_set>
 #include <vector>
 
-#include <glog/logging.h>
-
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -36,6 +34,8 @@ class Message;
 } // namespace google
 
 namespace kudu {
+
+class Slice;
 
 namespace rpc {
 

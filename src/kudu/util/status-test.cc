@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <glog/logging.h>
+#include <algorithm>
+#include <cerrno>
+#include <string>
+
 #include <gtest/gtest.h>
 
-#include <errno.h>
-#include <vector>
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/test_macros.h"
 
 using std::string;
 

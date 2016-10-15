@@ -15,14 +15,34 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <vector>
 
+#include <gflags/gflags.h>
+#include <gtest/gtest.h>
+
+#include "kudu/common/common.pb.h"
+#include "kudu/common/iterator.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/walltime.h"
-#include "kudu/util/thread.h"
 #include "kudu/tablet/diskrowset-test-base.h"
+#include "kudu/tablet/diskrowset.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/tablet.pb.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 enum {
   kDefaultNumSecondsPerThread = 1,

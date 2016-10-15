@@ -18,14 +18,14 @@
 #define KUDU_UTIL_SUBPROCESS_H
 
 #include <signal.h>
+#include <unistd.h>
 
 #include <map>
 #include <string>
 #include <vector>
 
-#include <glog/logging.h>
-
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

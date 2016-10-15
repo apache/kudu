@@ -17,18 +17,15 @@
 #ifndef KUDU_TSERVER_TABLET_SERVER_H
 #define KUDU_TSERVER_TABLET_SERVER_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
-#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/kserver/kserver.h"
 #include "kudu/tserver/tablet_server_options.h"
-#include "kudu/tserver/tserver.pb.h"
-#include "kudu/util/net/net_util.h"
-#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

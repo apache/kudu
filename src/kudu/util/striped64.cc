@@ -17,9 +17,17 @@
 
 #include "kudu/util/striped64.h"
 
+#include <mm_malloc.h>
+#include <unistd.h>
+
+#include <cstdlib>
+#include <new>
+#include <ostream>
+#include <glog/logging.h>
+
+#include "kudu/gutil/atomicops.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
-#include "kudu/util/threadlocal.h"
 
 using kudu::striped64::internal::Cell;
 

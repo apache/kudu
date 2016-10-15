@@ -17,13 +17,18 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/strings/substitute.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
-#include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/mini_master.h"
@@ -32,7 +37,10 @@
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/user.h"
 

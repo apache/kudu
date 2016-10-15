@@ -17,6 +17,7 @@
 
 #include "kudu/util/atomic.h"
 
+#include <cstdint>
 #include <limits>
 #include <vector>
 

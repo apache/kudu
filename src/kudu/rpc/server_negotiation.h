@@ -17,13 +17,18 @@
 
 #pragma once
 
+#include <algorithm>
 #include <memory>
 #include <set>
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 #include <sasl/sasl.h>
 
+#include "kudu/gutil/port.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/negotiation.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -36,7 +41,8 @@
 
 namespace kudu {
 
-class Slice;
+class Sockaddr;
+class faststring;
 
 namespace security {
 class TlsContext;

@@ -17,37 +17,61 @@
 #ifndef KUDU_TABLET_DELTAFILE_H
 #define KUDU_TABLET_DELTAFILE_H
 
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
+
+#include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/block_handle.h"
+#include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_btree.h"
-#include "kudu/common/columnblock.h"
-#include "kudu/common/schema.h"
-#include "kudu/fs/block_id.h"
+#include "kudu/common/rowid.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/tablet/deltamemstore.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
-#include "kudu/tablet/tablet.pb.h"
+#include "kudu/tablet/delta_stats.h"
+#include "kudu/tablet/delta_store.h"
+#include "kudu/tablet/mvcc.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/once.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
+class Arena;
+class BlockId;
+class ColumnBlock;
+class FsManager;
+class MemTracker;
+class RowChangeList;
 class ScanSpec;
+class Schema;
+class SelectionVector;
+struct ColumnId;
 
 namespace cfile {
-class BinaryPlainBlockDecoder;
+struct ReaderOptions;
 } // namespace cfile
+
+namespace fs {
+class ReadableBlock;
+class ScopedWritableBlockCloser;
+class WritableBlock;
+} // namespace fs
 
 namespace tablet {
 
-class DeltaFileIterator;
-class DeltaKey;
+class Mutation;
 template<DeltaType Type>
 struct ApplyingVisitor;
 template<DeltaType Type>

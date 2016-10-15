@@ -17,17 +17,14 @@
 
 #include "kudu/rpc/acceptor_pool.h"
 
-#include <pthread.h>
-
-#include <cinttypes>
-#include <cstdint>
-#include <iostream>
 #include <string>
+#include <ostream>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
@@ -38,6 +35,14 @@
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
+
+namespace google {
+namespace protobuf {
+
+class Message;
+
+}
+}
 
 using google::protobuf::Message;
 using std::string;

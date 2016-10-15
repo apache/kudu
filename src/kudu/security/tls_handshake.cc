@@ -20,7 +20,6 @@
 #include <memory>
 #include <string>
 
-#include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
@@ -28,7 +27,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/tls_socket.h"
-#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
 

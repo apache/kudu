@@ -18,13 +18,17 @@
 #include "kudu/util/file_cache.h"
 
 #include <atomic>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
@@ -35,9 +39,10 @@
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/malloc.h"
-#include "kudu/util/metrics.h"
+#include "kudu/util/metrics.h"  // IWYU pragma: keep
+#include "kudu/util/monotime.h"
 #include "kudu/util/once.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 

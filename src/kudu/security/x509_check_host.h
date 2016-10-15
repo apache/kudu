@@ -13,8 +13,10 @@
 #define X509_CHECK_HOST_H
 
 #include <stdlib.h>
+// IWYU pragma: no_include <openssl/x509.h>
+// IWYU pragma: no_include "openssl/x509.h"
 
-#include <openssl/x509.h>
+typedef struct x509_st X509;
 
 /* Flags for X509_check_* functions */
 

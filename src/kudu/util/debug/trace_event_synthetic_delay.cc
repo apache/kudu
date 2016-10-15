@@ -2,8 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "kudu/gutil/singleton.h"
 #include "kudu/util/debug/trace_event_synthetic_delay.h"
+
+#include <cstring>
+#include <ostream>
+
+#include <glog/logging.h>
+
+#include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/singleton.h"
 
 namespace {
 const int kMaxSyntheticDelays = 32;

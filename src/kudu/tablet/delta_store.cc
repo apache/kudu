@@ -18,10 +18,20 @@
 #include "kudu/tablet/delta_store.h"
 
 #include <algorithm>
+#include <cstdlib>
 
+#include <glog/logging.h>
+
+#include "kudu/common/row_changelist.h"
+#include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/deltafile.h"
+#include "kudu/util/memory/arena.h"
 
 namespace kudu {
 namespace tablet {

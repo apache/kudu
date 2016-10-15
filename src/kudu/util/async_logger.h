@@ -18,6 +18,9 @@
 
 #include "kudu/gutil/macros.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <ctime>
 #include <memory>
 #include <string>
 #include <thread>
@@ -25,7 +28,9 @@
 
 #include <glog/logging.h>
 
-#include "kudu/util/locks.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/util/condition_variable.h"
+#include "kudu/util/mutex.h"
 
 namespace kudu {
 

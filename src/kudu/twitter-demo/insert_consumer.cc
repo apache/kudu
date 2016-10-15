@@ -17,21 +17,18 @@
 
 #include "kudu/twitter-demo/insert_consumer.h"
 
-#include <ctime>
-#include <mutex>
+#include <algorithm>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
-#include "kudu/common/wire_protocol.h"
-#include "kudu/common/row.h"
-#include "kudu/common/schema.h"
-#include "kudu/gutil/bind.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/tserver/tserver.pb.h"
-#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/twitter-demo/parser.h"
 #include "kudu/twitter-demo/twitter-schema.h"
 #include "kudu/util/status.h"

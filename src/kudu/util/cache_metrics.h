@@ -17,17 +17,12 @@
 #ifndef KUDU_UTIL_CACHE_METRICS_H
 #define KUDU_UTIL_CACHE_METRICS_H
 
-#include <stdint.h>
+#include <cstdint>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/metrics.h"
 
 namespace kudu {
-
-template<class T>
-class AtomicGauge;
-class Counter;
-class MetricEntity;
 
 struct CacheMetrics {
   explicit CacheMetrics(const scoped_refptr<MetricEntity>& metric_entity);

@@ -17,6 +17,8 @@
 #ifndef KUDU_UTIL_RWC_LOCK_H
 #define KUDU_UTIL_RWC_LOCK_H
 
+#include <cstdint>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/mutex.h"

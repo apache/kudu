@@ -17,6 +17,10 @@
 
 #include "kudu/clock/system_unsync_time.h"
 
+#include <ostream>
+
+#include <glog/logging.h>
+
 #include "kudu/gutil/walltime.h"
 
 namespace kudu {

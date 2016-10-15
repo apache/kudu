@@ -17,6 +17,7 @@
 
 #include "kudu/client/replica-internal.h"
 
+#include <algorithm>
 #include <memory>
 
 #include "kudu/client/client.h"
@@ -29,9 +30,6 @@ using std::unique_ptr;
 KuduReplica::Data::Data(bool is_leader, unique_ptr<KuduTabletServer> ts)
     : is_leader_(is_leader),
       ts_(std::move(ts)) {
-}
-
-KuduReplica::Data::~Data() {
 }
 
 } // namespace client

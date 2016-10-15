@@ -18,25 +18,32 @@
 #include "kudu/tablet/tablet_metadata.h"
 
 #include <algorithm>
-#include <boost/optional.hpp>
-#include <gflags/gflags.h>
 #include <mutex>
+#include <ostream>
 #include <string>
+#include <type_traits>
 
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
+
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/fs/block_manager.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/fs.pb.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
-#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"

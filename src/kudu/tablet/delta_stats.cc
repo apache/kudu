@@ -16,13 +16,18 @@
 // under the License.
 #include "kudu/tablet/delta_stats.h"
 
+#include <cstdint>
+#include <ostream>
 #include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+
+#include "kudu/common/row_changelist.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet.pb.h"
-#include "kudu/util/bitmap.h"
 
 using strings::Substitute;
 

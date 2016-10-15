@@ -4,8 +4,10 @@
 
 #include "kudu/util/status.h"
 
-#include <stdio.h>
-#include <stdint.h>
+#include <cstdio>
+#include <cstring>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/util/malloc.h"

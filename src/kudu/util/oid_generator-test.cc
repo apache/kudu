@@ -17,10 +17,12 @@
 
 #include "kudu/util/oid_generator.h"
 
-#include <gtest/gtest.h>
 #include <string>
 
-#include "kudu/util/test_util.h"
+#include <gtest/gtest.h>
+
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 using std::string;
 

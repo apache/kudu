@@ -17,9 +17,9 @@
 
 #include "kudu/codegen/jit_wrapper.h"
 
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <algorithm>
 
-#include "kudu/util/faststring.h"
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
 
 using llvm::ExecutionEngine;
 using std::unique_ptr;

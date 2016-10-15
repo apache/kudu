@@ -18,10 +18,11 @@
 #include "kudu/kserver/kserver.h"
 
 #include <limits>
+#include <memory>
 #include <string>
 #include <utility>
 
-#include "kudu/server/server_base_options.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"

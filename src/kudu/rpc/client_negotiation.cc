@@ -17,25 +17,23 @@
 
 #include "kudu/rpc/client_negotiation.h"
 
-#include <string.h>
-
+#include <cstring>
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <set>
 #include <string>
-#include <utility>
 
-#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <sasl/sasl.h>
 
-#include "kudu/gutil/casts.h"
-#include "kudu/gutil/endian.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/messenger.h"
@@ -46,11 +44,10 @@
 #include "kudu/security/cert.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/tls_handshake.h"
-#include "kudu/security/tls_socket.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
-#include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/trace.h"
 
 using std::map;

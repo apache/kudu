@@ -16,18 +16,26 @@
 // under the License.
 #include "kudu/tserver/scanners.h"
 
+#include <cstdint>
 #include <mutex>
+#include <ostream>
 
 #include <gflags/gflags.h>
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/hash/string_hash.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tserver/scanner_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
 DEFINE_int32(scanner_ttl_ms, 60000,

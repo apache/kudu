@@ -17,7 +17,10 @@
 
 #include "kudu/rpc/connection_id.h"
 
-#include <boost/functional/hash.hpp>
+#include <algorithm>
+#include <cstddef>
+
+#include <boost/functional/hash/hash.hpp>
 
 #include "kudu/gutil/strings/substitute.h"
 

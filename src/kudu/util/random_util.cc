@@ -17,11 +17,10 @@
 
 #include "kudu/util/random_util.h"
 
-#include <cmath>
+#include <unistd.h>
+
 #include <cstdlib>
 #include <cstring>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include "kudu/util/env.h"
 #include "kudu/util/random.h"

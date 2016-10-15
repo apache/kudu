@@ -17,8 +17,7 @@
 #ifndef UTIL_URL_CODING_H
 #define UTIL_URL_CODING_H
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <iosfwd>
 #include <string>
 #include <vector>

@@ -18,8 +18,6 @@
 #ifndef KUDU_SERVER_DEFAULT_PATH_HANDLERS_H
 #define KUDU_SERVER_DEFAULT_PATH_HANDLERS_H
 
-#include <string>
-
 namespace kudu {
 
 class MetricRegistry;

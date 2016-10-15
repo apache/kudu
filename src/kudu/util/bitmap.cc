@@ -14,11 +14,15 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include <glog/logging.h>
+
+#include "kudu/util/bitmap.h"
+
+#include <cstring>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/util/bitmap.h"
 
 namespace kudu {
 

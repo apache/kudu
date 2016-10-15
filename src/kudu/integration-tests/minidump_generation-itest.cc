@@ -15,15 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <csignal>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <gtest/gtest.h>
 
-#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/subprocess.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_string(minidump_path);

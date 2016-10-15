@@ -36,24 +36,39 @@
 #ifndef KUDU_CFILE_BINARY_DICT_BLOCK_H
 #define KUDU_CFILE_BINARY_DICT_BLOCK_H
 
-#include <string>
-#include <vector>
+#include <sys/types.h>
+
+#include <cstddef>
+#include <cstdint>
 
 #include <sparsehash/dense_hash_map>
 
-#include "kudu/cfile/binary_plain_block.h"
+#include "kudu/common/rowid.h"
 #include "kudu/cfile/block_encodings.h"
-#include "kudu/cfile/block_pointer.h"
-#include "kudu/cfile/cfile.pb.h"
+#include "kudu/cfile/binary_plain_block.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+
+template <class X>
+struct GoodFastHash;
 
 namespace kudu {
-class Arena;
+
+class ColumnDataView;
+class ColumnMaterializationContext;
+class SelectionVectorView;
+
 namespace cfile {
+
+class CFileFooterPB;
+class CFileWriter;
 
 struct WriterOptions;
 
@@ -180,7 +195,8 @@ class BinaryDictBlockDecoder final : public BlockDecoder {
 } // namespace kudu
 
 // Defined for tight_enum_test_cast<> -- has to be defined outside of any namespace.
-MAKE_ENUM_LIMITS(kudu::cfile::DictEncodingMode, kudu::cfile::DictEncodingMode_min,
+MAKE_ENUM_LIMITS(kudu::cfile::DictEncodingMode,
+                 kudu::cfile::DictEncodingMode_min,
                  kudu::cfile::DictEncodingMode_max);
 
 #endif // KUDU_CFILE_BINARY_DICT_BLOCK_H

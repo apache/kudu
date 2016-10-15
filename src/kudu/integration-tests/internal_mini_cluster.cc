@@ -17,8 +17,14 @@
 
 #include "kudu/integration-tests/internal_mini_cluster.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <ostream>
+#include <unordered_set>
+
 #include "kudu/client/client.h"
-#include "kudu/gutil/strings/join.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
@@ -29,6 +35,11 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tablet_server_options.h"
+#include "kudu/util/env.h"
+#include "kudu/util/make_shared.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"

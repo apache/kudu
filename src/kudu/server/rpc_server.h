@@ -17,13 +17,15 @@
 #ifndef KUDU_RPC_SERVER_H
 #define KUDU_RPC_SERVER_H
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/rpc/service_pool.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
@@ -33,6 +35,7 @@ namespace rpc {
 class AcceptorPool;
 class Messenger;
 class ServiceIf;
+class ServicePool;
 } // namespace rpc
 
 struct RpcServerOptions {

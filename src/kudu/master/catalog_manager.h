@@ -17,7 +17,9 @@
 #ifndef KUDU_MASTER_CATALOG_MANAGER_H
 #define KUDU_MASTER_CATALOG_MANAGER_H
 
+#include <cstdint>
 #include <functional>
+#include <iosfwd>
 #include <map>
 #include <memory>
 #include <set>
@@ -26,35 +28,46 @@
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional_fwd.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
-#include "kudu/common/partition.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_manager.h"
-#include "kudu/server/monitored_task.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"
-#include "kudu/util/promise.h"
 #include "kudu/util/random.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 
+namespace boost {
+template <class T>
+class optional;
+}
+
 namespace kudu {
 
+class CreateTableStressTest_TestConcurrentCreateTableAndReloadMetadata_Test;
+class MonitoredTask;
+class NodeInstancePB;
+class PartitionPB;
+class PartitionSchema;
 class Schema;
 class ThreadPool;
+struct ColumnId;
 
 // Working around FRIEND_TEST() ugliness.
 namespace client {
 class ServiceUnavailableRetryClientTest_CreateTable_Test;
 } // namespace client
-
-class CreateTableStressTest_TestConcurrentCreateTableAndReloadMetadata_Test;
 
 namespace rpc {
 class RpcContext;
@@ -63,9 +76,15 @@ class RpcContext;
 namespace security {
 class Cert;
 class PrivateKey;
-class TokenSigner;
-class TokenSigningPrivateKey;
 } // namespace security
+
+namespace consensus {
+class StartTabletCopyRequestPB;
+}
+
+namespace tablet {
+class TabletReplica;
+}
 
 namespace master {
 

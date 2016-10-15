@@ -17,27 +17,42 @@
 
 #include <algorithm>
 #include <memory>
+#include <ostream>
+#include <utility>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_util.h"
-#include "kudu/cfile/cfile_writer.h"
-#include "kudu/common/scan_spec.h"
 #include "kudu/common/column_materialization_context.h"
+#include "kudu/common/columnblock.h"
+#include "kudu/common/encoded_key.h"
+#include "kudu/common/iterator_stats.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/scan_spec.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/cfile_set.h"
+#include "kudu/tablet/diskrowset.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/slice.h"
 
 DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on row presence checks");
 TAG_FLAG(consult_bloom_filters, hidden);
 
 namespace kudu {
+
+class BlockId;
+class MemTracker;
+
 namespace tablet {
 
 using cfile::BloomFileReader;

@@ -15,21 +15,50 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/consensus/log-test-base.h"
-
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <thread>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/clock/clock.h"
+#include "kudu/common/timestamp.h"
+#include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/log-test-base.h"
+#include "kudu/consensus/log.h"
 #include "kudu/consensus/log_index.h"
+#include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/log_util.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/ref_counted_replicate.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
+#include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
+#include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
 DEFINE_int32(num_writer_threads, 4, "Number of threads writing to the log");

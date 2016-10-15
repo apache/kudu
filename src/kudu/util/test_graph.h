@@ -17,6 +17,7 @@
 #ifndef KUDU_TEST_GRAPH_COLLECTOR_H
 #define KUDU_TEST_GRAPH_COLLECTOR_H
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -25,11 +26,13 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/thread.h"
+#include "kudu/util/mutex.h"
 
 namespace kudu {
+
+class Thread;
+class faststring;
 
 class TimeSeries {
  public:

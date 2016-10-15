@@ -17,13 +17,17 @@
 
 #include "kudu/util/test_graph.h"
 
-#include <glog/logging.h>
 #include <mutex>
+#include <ostream>
+#include <utility>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/util/locks.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 

@@ -17,10 +17,13 @@
 
 #include "kudu/util/os-util.h"
 
+#include <unistd.h>
+
+#include <string>
+
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/errno.h"
 #include "kudu/util/test_macros.h"
 
 using std::string;

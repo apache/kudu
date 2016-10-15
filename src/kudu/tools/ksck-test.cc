@@ -15,16 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <map>
 #include <memory>
+#include <sstream>
+#include <string>
+#include <type_traits>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
-#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/schema.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_string(color);

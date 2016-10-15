@@ -18,6 +18,8 @@
 #include "kudu/util/hexdump.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <string>
 
 #include "kudu/gutil/stringprintf.h"

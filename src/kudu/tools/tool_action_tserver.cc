@@ -24,13 +24,15 @@
 #include <utility>
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_server.h"

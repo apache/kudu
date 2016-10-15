@@ -17,15 +17,27 @@
 
 #include "kudu/fs/file_block_manager.h"
 
+#include <cstddef>
 #include <memory>
+#include <mutex>
 #include <numeric>
+#include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+
+#include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs_report.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
@@ -33,10 +45,12 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/file_cache.h"
 #include "kudu/util/malloc.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 using std::accumulate;
@@ -46,8 +60,9 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
-DECLARE_bool(enable_data_block_fsync);
+DECLARE_bool(block_coalesce_close);
 DECLARE_bool(block_manager_lock_dirs);
+DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
 namespace fs {

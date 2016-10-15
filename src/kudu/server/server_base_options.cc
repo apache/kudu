@@ -19,7 +19,9 @@
 
 #include <gflags/gflags.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/env.h"
 
 DEFINE_string(server_dump_info_path, "",
               "Path into which the server information will be "

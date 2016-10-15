@@ -22,6 +22,9 @@
 #include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"

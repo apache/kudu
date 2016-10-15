@@ -21,7 +21,7 @@
 
 #include <sys/time.h>
 
-#include <glog/logging.h>
+#include <ctime>
 #include <string>
 
 #if defined(__APPLE__)
@@ -29,8 +29,10 @@
 #include <mach/mach.h>
 #include <mach/mach_time.h>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/once.h"
-#endif  // defined(__APPLE__)
+#endif  // #if defined(__APPLE__)
 
 #include "kudu/gutil/integral_types.h"
 
@@ -174,5 +176,6 @@ class CycleClock {
   CycleClock();
 };
 
-#include "kudu/gutil/cycleclock-inl.h"  // inline method bodies
+// inline method bodies
+#include "kudu/gutil/cycleclock-inl.h"  // IWYU pragma: export
 #endif  // GUTIL_WALLTIME_H_

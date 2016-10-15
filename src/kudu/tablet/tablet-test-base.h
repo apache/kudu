@@ -18,13 +18,14 @@
 #define KUDU_TABLET_TABLET_TEST_BASE_H
 
 #include <algorithm>
-#include <boost/optional.hpp>
-#include <glog/logging.h>
-#include <gtest/gtest.h>
 #include <limits>
 #include <string>
 #include <unordered_set>
 #include <vector>
+
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"

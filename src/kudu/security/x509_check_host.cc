@@ -11,14 +11,12 @@
 // of the functions are for the most part the same except where mentioned in special
 // comments. Explicit casts were also added to bypass compilation errors.
 
-#include <stdio.h>
-#include <ctype.h>
 #include <string.h>
-#include <strings.h>
 
-#include <openssl/bn.h>
-#include <openssl/conf.h>
-#include <openssl/err.h>
+#include <openssl/asn1.h>
+#include <openssl/crypto.h>
+#include <openssl/obj_mac.h>
+#include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
 #include "kudu/security/x509_check_host.h"

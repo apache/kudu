@@ -18,12 +18,23 @@
 #include "kudu/fs/log_block_manager.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
+#include <ostream>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
@@ -31,9 +42,13 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
@@ -47,21 +62,22 @@
 #include "kudu/util/file_cache.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/mutex.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
-#include "kudu/util/stopwatch.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/test_util_prod.h"
-#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
-DECLARE_bool(enable_data_block_fsync);
 DECLARE_bool(block_manager_lock_dirs);
+DECLARE_bool(block_coalesce_close);
+DECLARE_bool(enable_data_block_fsync);
 
 // TODO(unknown): How should this be configured? Should provide some guidance.
 DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,

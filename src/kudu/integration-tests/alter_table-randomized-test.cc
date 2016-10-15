@@ -16,21 +16,37 @@
 // under the License.
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <iterator>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/value.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
-#include "kudu/util/random_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {

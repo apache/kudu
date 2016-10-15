@@ -17,24 +17,27 @@
 
 #include "kudu/codegen/compilation_manager.h"
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
 #include <cstdlib>
+#include <memory>
+#include <ostream>
+#include <string>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <memory>
 
 #include "kudu/codegen/code_cache.h"
 #include "kudu/codegen/code_generator.h"
 #include "kudu/codegen/jit_wrapper.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
