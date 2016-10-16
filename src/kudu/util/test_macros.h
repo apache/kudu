@@ -58,6 +58,14 @@
   } \
 } while (0);
 
+#define ASSERT_STR_NOT_CONTAINS(str, substr) do { \
+  const std::string& _s = (str); \
+  if (_s.find((substr)) != std::string::npos) { \
+    FAIL() << "Expected not to find substring '" << (substr) \
+    << "'. Got: '" << _s << "'"; \
+  } \
+} while (0);
+
 // Substring regular expressions in extended regex (POSIX) syntax.
 #define ASSERT_STR_MATCHES(str, pattern) \
   ASSERT_THAT(str, testing::ContainsRegex(pattern))

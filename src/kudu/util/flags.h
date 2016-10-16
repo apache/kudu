@@ -17,6 +17,10 @@
 #ifndef KUDU_UTIL_FLAGS_H
 #define KUDU_UTIL_FLAGS_H
 
+#include <gflags/gflags.h>
+#include <string>
+#include <unordered_map>
+
 #include "kudu/gutil/macros.h"
 
 namespace kudu {
@@ -41,6 +45,14 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags);
 // Requires that flags have already been parsed using
 // google::ParseCommandLineNonHelpFlags().
 void HandleCommonFlags();
+
+typedef std::unordered_map<std::string, google::CommandLineFlagInfo> GFlagsMap;
+
+// Get all the flags different from their defaults. The output is a nicely
+// formatted string with --flag=value pairs per line.
+std::string GetNonDefaultFlags(const GFlagsMap& default_flags);
+
+GFlagsMap GetFlagsMap();
 
 } // namespace kudu
 #endif /* KUDU_UTIL_FLAGS_H */

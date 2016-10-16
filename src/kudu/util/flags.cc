@@ -18,6 +18,7 @@
 #include "kudu/util/flags.h"
 
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -38,6 +39,7 @@ using google::CommandLineFlagInfo;
 using std::cout;
 using std::endl;
 using std::string;
+using std::stringstream;
 using std::unordered_set;
 
 // Because every binary initializes its flags here, we use it as a convenient place
@@ -353,6 +355,40 @@ void HandleCommonFlags() {
     HeapProfilerStart(FLAGS_heap_profile_path.c_str());
   }
 #endif
+}
+
+string GetNonDefaultFlags(const GFlagsMap& default_flags) {
+  stringstream args;
+  vector<CommandLineFlagInfo> flags;
+  GetAllFlags(&flags);
+  for (const auto& flag : flags) {
+    if (!flag.is_default) {
+      // This only means that the flag has been rewritten. It doesn't
+      // mean that this has been done in the command line, or even
+      // that it's truly different from the default value.
+      // Next, we try to check both.
+      const auto& default_flag = default_flags.find(flag.name);
+      // it's very unlikely, but still possible that we don't have the flag in defaults
+      if (default_flag == default_flags.end() ||
+          flag.current_value != default_flag->second.current_value) {
+        if (!args.str().empty()) {
+          args << '\n';
+        }
+        args << "--" << flag.name << '=' << flag.current_value;
+      }
+    }
+  }
+  return args.str();
+}
+
+GFlagsMap GetFlagsMap() {
+  vector<CommandLineFlagInfo> default_flags;
+  GetAllFlags(&default_flags);
+  GFlagsMap flags_by_name;
+  for (auto& flag : default_flags) {
+    flags_by_name.emplace(flag.name, std::move(flag));
+  }
+  return flags_by_name;
 }
 
 } // namespace kudu

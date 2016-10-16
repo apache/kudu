@@ -23,6 +23,7 @@
 #include "kudu/util/flags.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/version_info.h"
 
 using kudu::master::Master;
 
@@ -46,12 +47,20 @@ static int MasterMain(int argc, char** argv) {
   // the desired replication factor. (It's not turtles all the way down!)
   FLAGS_evict_failed_followers = false;
 
+  GFlagsMap default_flags = GetFlagsMap();
+
   ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;
     return 1;
   }
+  std::string nondefault_flags = GetNonDefaultFlags(default_flags);
   InitGoogleLoggingSafe(argv[0]);
+
+  LOG(INFO) << "Master server non-default flags:\n"
+            << nondefault_flags << '\n'
+            << "Master server version:\n"
+            << VersionInfo::GetAllVersionInfo();
 
   MasterOptions opts;
   Master server(opts);
