@@ -40,6 +40,7 @@
 #include "kudu/rpc/sasl_server.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
@@ -50,6 +51,14 @@ using std::set;
 using std::shared_ptr;
 using std::vector;
 using strings::Substitute;
+
+DEFINE_bool(server_require_kerberos, false,
+            "Whether to force all inbound RPC connections to authenticate "
+            "with Kerberos");
+// TODO(todd): this flag is too coarse-grained, since secure servers still
+// need to allow non-kerberized connections authenticated by tokens. But
+// it's a useful stop-gap.
+TAG_FLAG(server_require_kerberos, experimental);
 
 namespace kudu {
 namespace rpc {
@@ -619,6 +628,14 @@ std::string Connection::ToString() const {
 }
 
 Status Connection::InitSaslClient() {
+  // Note that remote_.host() is an IP address here: we've already lost
+  // whatever DNS name the client was attempting to use. Unless krb5
+  // is configured with 'rdns = false', it will automatically take care
+  // of reversing this address to its canonical hostname to determine
+  // the expected server principal.
+  sasl_client().set_server_fqdn(remote_.host());
+  RETURN_NOT_OK(sasl_client().EnableGSSAPI());
+  // TODO(todd): we dont seem to ever use ANONYMOUS. Should we remove it?
   RETURN_NOT_OK(sasl_client().EnableAnonymous());
   RETURN_NOT_OK(sasl_client().EnablePlain(user_credentials().real_user(), ""));
   RETURN_NOT_OK(sasl_client().Init(kSaslProtoName));
@@ -626,7 +643,14 @@ Status Connection::InitSaslClient() {
 }
 
 Status Connection::InitSaslServer() {
-  RETURN_NOT_OK(sasl_server().EnablePlain());
+  if (FLAGS_server_require_kerberos) {
+    // TODO(todd): should we use krb5 APIs directly to verify that we have a valid
+    // keytab when we start up, rather than starting up and then rejecting
+    // connections?
+    RETURN_NOT_OK(sasl_server().EnableGSSAPI());
+  } else {
+    RETURN_NOT_OK(sasl_server().EnablePlain());
+  }
   RETURN_NOT_OK(sasl_server().Init(kSaslProtoName));
   return Status::OK();
 }

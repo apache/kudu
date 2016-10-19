@@ -84,6 +84,10 @@ class MiniKdc {
   // Kinit a user to the mini KDC.
   Status Kinit(const std::string& username) WARN_UNUSED_RESULT;
 
+  // Destroy any credentials in the current ticket cache.
+  // Equivalent to 'kdestroy -A'.
+  Status Kdestroy() WARN_UNUSED_RESULT;
+
   // Call the 'klist' utility.  This is useful for logging the local ticket
   // cache state.
   Status Klist(std::string* output) WARN_UNUSED_RESULT;
@@ -97,9 +101,11 @@ class MiniKdc {
   // configuration associated with this KDC.
   Status SetKrb5Environment() const;
 
- private:
-  // Returns a map of the necessary Kerberos environment variables.
+  // Returns a map of the Kerberos environment variables which configure
+  // a process to use this KDC.
   std::map<std::string, std::string> GetEnvVars() const;
+
+ private:
 
   // Prepends required Kerberos environment variables to the process arguments.
   std::vector<std::string> MakeArgv(const std::vector<std::string>& in_argv);

@@ -131,6 +131,20 @@ TEST_F(SubprocessTest, TestReadFromStdoutAndStderr) {
   }, "", &stdout, &stderr));
 }
 
+// Test that environment variables can be passed to the subprocess.
+TEST_F(SubprocessTest, TestEnvVars) {
+  Subprocess p("bash", {"/bin/bash", "-c", "echo $FOO"});
+  p.SetEnvVars({{"FOO", "bar"}});
+  p.ShareParentStdout(false);
+  ASSERT_OK(p.Start());
+  FILE* in = fdopen(p.from_child_stdout_fd(), "r");
+  PCHECK(in);
+  char buf[1024];
+  ASSERT_EQ(buf, fgets(buf, sizeof(buf), in));
+  ASSERT_STREQ("bar\n", &buf[0]);
+  ASSERT_OK(p.Wait());
+}
+
 // Tests writing to the subprocess stdin.
 TEST_F(SubprocessTest, TestCallWithStdin) {
   string stdout;

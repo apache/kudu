@@ -345,7 +345,7 @@ Status Subprocess::Start() {
     PCHECK(pipe2(child_stderr, O_CLOEXEC) == 0);
   }
   // The synchronization pipe: this trick is to make sure the parent returns
-  // control only after the child process has invoked execve().
+  // control only after the child process has invoked execvp().
   int sync_pipe[2];
   PCHECK(pipe2(sync_pipe, O_CLOEXEC) == 0);
 
@@ -401,6 +401,14 @@ Status Subprocess::Start() {
 
     CloseNonStandardFDs(fd_dir);
 
+    // Set the environment for the subprocess. This is more portable than
+    // using execvpe(), which doesn't exist on OS X. We rely on the 'p'
+    // variant of exec to do $PATH searching if the executable specified
+    // by the caller isn't an absolute path.
+    for (const auto& env : env_) {
+      ignore_result(setenv(env.first.c_str(), env.second.c_str(), 1 /* overwrite */));
+    }
+
     execvp(program_.c_str(), &argv_ptrs[0]);
     int err = errno;
     PLOG(ERROR) << "Couldn't exec " << program_;
@@ -417,7 +425,7 @@ Status Subprocess::Start() {
     child_fds_[STDOUT_FILENO] = child_stdout[0];
     child_fds_[STDERR_FILENO] = child_stderr[0];
 
-    // Wait for the child process to invoke execve(). The trick involves
+    // Wait for the child process to invoke execvp(). The trick involves
     // a pipe with O_CLOEXEC option for its descriptors. The parent process
     // performs blocking read from the pipe while the write side of the pipe
     // is kept open by the child (it does not write any data, though). The write
@@ -619,6 +627,10 @@ Status Subprocess::DoWait(int* wait_status, WaitMode mode) {
     *wait_status = status;
   }
   return Status::OK();
+}
+
+void Subprocess::SetEnvVars(std::map<std::string, std::string> env) {
+  env_ = std::move(env);
 }
 
 void Subprocess::SetFdShared(int stdfd, bool share) {

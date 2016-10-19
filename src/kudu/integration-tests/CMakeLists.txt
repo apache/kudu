@@ -34,7 +34,8 @@ target_link_libraries(integration-tests
   kudu_client
   kudu_client_test_util
   kudu_fs
-  kudu_test_util)
+  kudu_test_util
+  security-test)
 add_dependencies(integration-tests
   kudu-tserver
   kudu-master)

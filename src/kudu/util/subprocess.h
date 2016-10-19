@@ -17,6 +17,7 @@
 #ifndef KUDU_UTIL_SUBPROCESS_H
 #define KUDU_UTIL_SUBPROCESS_H
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -58,6 +59,16 @@ class Subprocess {
   void ShareParentStdin(bool  share = true) { SetFdShared(STDIN_FILENO,  share); }
   void ShareParentStdout(bool share = true) { SetFdShared(STDOUT_FILENO, share); }
   void ShareParentStderr(bool share = true) { SetFdShared(STDERR_FILENO, share); }
+
+  // Add environment variables to be set before executing the subprocess.
+  //
+  // These environment variables are merged into the existing environment
+  // of the parent process. In other words, there is no need to prime this
+  // map with the current environment; instead, just specify any variables
+  // that should be overridden.
+  //
+  // Repeated calls to this function replace earlier calls.
+  void SetEnvVars(std::map<std::string, std::string> env);
 
   // Start the subprocess. Can only be called once.
   //
@@ -145,6 +156,7 @@ class Subprocess {
 
   std::string program_;
   std::vector<std::string> argv_;
+  std::map<std::string, std::string> env_;
   State state_;
   int child_pid_;
   enum StreamMode fd_state_[3];

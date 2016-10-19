@@ -188,7 +188,7 @@ TEST_F(TestSaslRpc, TestRestrictiveServer_NonRestrictiveClient) {
 
   // Create the server principal and keytab.
   string kt_path;
-  ASSERT_OK(kdc.CreateServiceKeytab("kudu/localhost", &kt_path));
+  ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
 
   // Create and kinit as a client user.
@@ -277,7 +277,7 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
 
   // Create the server principal and keytab.
   string kt_path;
-  ASSERT_OK(kdc.CreateServiceKeytab("kudu/localhost", &kt_path));
+  ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
 
   // Try to negotiate with no krb5 credentials on the client. It should fail on both
@@ -320,7 +320,7 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
   // Change the server's keytab file so that it has inappropriate
   // credentials.
   // Authentication should now fail.
-  ASSERT_OK(kdc.CreateServiceKeytab("kudu/other-host", &kt_path));
+  ASSERT_OK(kdc.CreateServiceKeytab("otherservice/127.0.0.1", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
 
   RunNegotiationTest(
@@ -328,13 +328,13 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
                 [](const Status& s, SaslServer& server) {
                   CHECK(s.IsNotAuthorized());
                   ASSERT_STR_CONTAINS(s.ToString(),
-                                      "No key table entry found matching kudu/localhost");
+                                      "No key table entry found matching kudu/127.0.0.1");
                 }),
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
                 [](const Status& s, SaslClient& client) {
                   CHECK(s.IsNotAuthorized());
                   ASSERT_STR_CONTAINS(s.ToString(),
-                                      "No key table entry found matching kudu/localhost");
+                                      "No key table entry found matching kudu/127.0.0.1");
                 }));
 
 }

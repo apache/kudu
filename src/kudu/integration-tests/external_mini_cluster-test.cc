@@ -27,6 +27,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/security/mini_kdc.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/test_util.h"
@@ -39,8 +40,20 @@ namespace kudu {
 using std::string;
 using strings::Substitute;
 
-TEST_F(KuduTest, TestBasicOperation) {
+enum KerberosMode {
+  WITHOUT_KERBEROS, WITH_KERBEROS
+};
+
+class ExternalMiniClusterTest : public KuduTest,
+                                public testing::WithParamInterface<KerberosMode> {};
+
+INSTANTIATE_TEST_CASE_P(KerberosOnAndOff,
+                        ExternalMiniClusterTest,
+                        ::testing::Values(WITHOUT_KERBEROS, WITH_KERBEROS));
+
+TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   ExternalMiniClusterOptions opts;
+  opts.enable_kerberos = GetParam() == WITH_KERBEROS;
 
   // Hard-coded RPC ports for the masters. This is safe, as this unit test
   // runs under a resource lock (see CMakeLists.txt in this directory).
@@ -94,6 +107,9 @@ TEST_F(KuduTest, TestBasicOperation) {
     EXPECT_GT(value, 0);
   }
 
+  // Ensure that all of the tablet servers can register with the masters.
+  ASSERT_OK(cluster.WaitForTabletServerCount(opts.num_tablet_servers, MonoDelta::FromSeconds(30)));
+
   // Restart a master and a tablet server. Make sure they come back up with the same ports.
   ExternalMaster* master = cluster.master(0);
   HostPort master_rpc = master->bound_rpc_hostport();
@@ -116,6 +132,13 @@ TEST_F(KuduTest, TestBasicOperation) {
   ASSERT_EQ(ts_rpc.ToString(), ts->bound_rpc_hostport().ToString());
   ASSERT_EQ(ts_http.ToString(), ts->bound_http_hostport().ToString());
 
+  // Verify that, in a Kerberized cluster, if we drop our Kerberos environment,
+  // we can't make RPCs to a server.
+  if (opts.enable_kerberos) {
+    ASSERT_OK(cluster.kdc()->Kdestroy());
+    Status s = cluster.SetFlag(ts, "foo", "bar");
+    ASSERT_STR_MATCHES(s.ToString(), "Not authorized.*No Kerberos credentials");
+  }
   cluster.Shutdown();
 }
 

@@ -32,6 +32,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master_rpc.h"
+#include "kudu/security/mini_kdc.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
@@ -82,7 +83,8 @@ static bool kBindToUniqueLoopbackAddress = true;
 ExternalMiniClusterOptions::ExternalMiniClusterOptions()
     : num_masters(1),
       num_tablet_servers(1),
-      bind_to_unique_loopback_addresses(kBindToUniqueLoopbackAddress) {
+      bind_to_unique_loopback_addresses(kBindToUniqueLoopbackAddress),
+      enable_kerberos(false) {
 }
 
 ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
@@ -134,6 +136,17 @@ Status ExternalMiniCluster::Start() {
   Status s = Env::Default()->CreateDir(data_root_);
   if (!s.ok() && !s.IsAlreadyPresent()) {
     RETURN_NOT_OK_PREPEND(s, "Could not create root dir " + data_root_);
+  }
+
+  if (opts_.enable_kerberos) {
+    kdc_.reset(new MiniKdc());
+    RETURN_NOT_OK(kdc_->Start());
+    RETURN_NOT_OK_PREPEND(kdc_->CreateUserPrincipal("testuser"),
+                          "could not create client principal");
+    RETURN_NOT_OK_PREPEND(kdc_->Kinit("testuser"),
+                          "could not kinit as client");
+    RETURN_NOT_OK_PREPEND(kdc_->SetKrb5Environment(),
+                          "could not set krb5 client env");
   }
 
   if (opts_.num_masters != 1) {
@@ -228,9 +241,16 @@ vector<string> SubstituteInFlags(const vector<string>& orig_flags,
 
 Status ExternalMiniCluster::StartSingleMaster() {
   string exe = GetBinaryPath(kMasterBinaryName);
+  vector<string> flags = SubstituteInFlags(opts_.extra_master_flags, 0);
+
   scoped_refptr<ExternalMaster> master =
-    new ExternalMaster(messenger_, exe, GetDataPath("master-0"),
-                       SubstituteInFlags(opts_.extra_master_flags, 0));
+      new ExternalMaster(messenger_, exe, GetDataPath("master-0"), flags);
+
+  if (opts_.enable_kerberos) {
+    RETURN_NOT_OK_PREPEND(master->EnableKerberos(kdc_.get()),
+                          "could not enable Kerberos");
+  }
+
   RETURN_NOT_OK(master->Start());
   masters_.push_back(master);
   return Status::OK();
@@ -261,6 +281,10 @@ Status ExternalMiniCluster::StartDistributedMasters() {
                            GetDataPath(Substitute("master-$0", i)),
                            peer_addrs[i],
                            SubstituteInFlags(flags, i));
+    if (opts_.enable_kerberos) {
+      RETURN_NOT_OK_PREPEND(peer->EnableKerberos(kdc_.get()),
+                            "could not enable Kerberos");
+    }
     RETURN_NOT_OK_PREPEND(peer->Start(),
                           Substitute("Unable to start Master at index $0", i));
     masters_.push_back(peer);
@@ -296,6 +320,11 @@ Status ExternalMiniCluster::AddTabletServer() {
                              GetBindIpForTabletServer(idx),
                              master_hostports,
                              SubstituteInFlags(opts_.extra_tserver_flags, idx));
+  if (opts_.enable_kerberos) {
+    RETURN_NOT_OK_PREPEND(ts->EnableKerberos(kdc_.get()),
+                          "could not enable Kerberos");
+  }
+
   RETURN_NOT_OK(ts->Start());
   tablet_servers_.push_back(ts);
   return Status::OK();
@@ -547,6 +576,19 @@ ExternalDaemon::ExternalDaemon(std::shared_ptr<rpc::Messenger> messenger,
 ExternalDaemon::~ExternalDaemon() {
 }
 
+Status ExternalDaemon::EnableKerberos(MiniKdc* kdc) {
+  string ktpath;
+  RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab("kudu/127.0.0.1", &ktpath),
+                        "could not create keytab");
+  extra_env_ = kdc->GetEnvVars();
+  extra_env_["KRB5_KTNAME"] = ktpath;
+  extra_env_["KRB5_CLIENT_KTNAME"] = ktpath;
+  // Have the daemons use an in-memory ticket cache, so they don't accidentally
+  // pick up credentials from the test case itself or from any other daemon.
+  extra_env_["KRB5CCNAME"] = "MEMORY:foo";
+  extra_flags_.push_back("--server_require_kerberos");
+  return Status::OK();
+}
 
 Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   CHECK(!process_);
@@ -593,7 +635,11 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
 
   gscoped_ptr<Subprocess> p(new Subprocess(exe_, argv));
   p->ShareParentStdout(false);
-  LOG(INFO) << "Running " << exe_ << "\n" << JoinStrings(argv, "\n");
+  p->SetEnvVars(extra_env_);
+  string env_str;
+  JoinMapKeysAndValues(extra_env_, "=", ",", &env_str);
+  LOG(INFO) << "Running " << exe_ << "\n" << JoinStrings(argv, "\n")
+            << " with env {" << env_str << "}";
   RETURN_NOT_OK_PREPEND(p->Start(),
                         Substitute("Failed to start subprocess $0", exe_));
 

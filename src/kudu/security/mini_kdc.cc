@@ -223,6 +223,15 @@ Status MiniKdc::CreateKrb5Conf() const {
     renew_lifetime = 7d
     ticket_lifetime = 24h
 
+    # In miniclusters, we start daemons on local loopback IPs that
+    # have no reverse DNS entries. So, disable reverse DNS.
+    rdns = false
+
+    # The server side will start its GSSAPI server using the local FQDN.
+    # However, in tests, we connect to it via a non-matching loopback IP.
+    # This enables us to connect despite that mismatch.
+    ignore_acceptor_hostname = true
+
     # The KDC is configured to only use TCP, so the client should not prefer UDP.
     udp_preference_limit = 0
 
@@ -316,6 +325,12 @@ Status MiniKdc::Kinit(const string& username) {
   RETURN_NOT_OK(GetBinaryPath("kinit", &kinit));
   Subprocess::Call(MakeArgv({ kinit, username }), username);
   return Status::OK();
+}
+
+Status MiniKdc::Kdestroy() {
+  string kdestroy;
+  RETURN_NOT_OK(GetBinaryPath("kdestroy", &kdestroy));
+  return Subprocess::Call(MakeArgv({ kdestroy, "-A" }));
 }
 
 Status MiniKdc::Klist(string* output) {

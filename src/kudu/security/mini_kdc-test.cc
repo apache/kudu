@@ -47,6 +47,11 @@ TEST(MiniKdcTest, TestBasicOperation) {
   ASSERT_STR_CONTAINS(klist, "bob@KRBTEST.COM");
   ASSERT_STR_CONTAINS(klist, "krbtgt/KRBTEST.COM@KRBTEST.COM");
 
+  // Drop 'bob' credentials. We'll get a RuntimeError because klist
+  // exits with a non-zero exit code if there are no cached credentials.
+  ASSERT_OK(kdc.Kdestroy());
+  ASSERT_TRUE(kdc.Klist(&klist).IsRuntimeError());
+
   // Test keytab creation.
   string kt_path;
   ASSERT_OK(kdc.CreateServiceKeytab("kudu/foo.example.com", &kt_path));

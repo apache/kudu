@@ -17,6 +17,7 @@
 #ifndef KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_H
 #define KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_H
 
+#include <map>
 #include <memory>
 #include <string>
 #include <sys/types.h>
@@ -39,6 +40,7 @@ class ExternalTabletServer;
 class HostPort;
 class MetricPrototype;
 class MetricEntityPrototype;
+class MiniKdc;
 class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
@@ -111,6 +113,14 @@ struct ExternalMiniClusterOptions {
   // masters in a consensus configuration. Port at index 0 is used for the leader
   // master.
   std::vector<uint16_t> master_rpc_ports;
+
+  // If true, set up a KDC as part of this MiniCluster, generate keytabs for
+  // the servers, and require Kerberos authentication from clients.
+  //
+  // Additionally, when the cluster is started, the environment of the
+  // test process will be modified to include Kerberos credentials for
+  // a principal named 'testuser'.
+  bool enable_kerberos;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons
@@ -194,6 +204,10 @@ class ExternalMiniCluster : public MiniClusterBase {
 
   // Return all tablet servers and masters.
   std::vector<ExternalDaemon*> daemons() const;
+
+  MiniKdc* kdc() const {
+    return CHECK_NOTNULL(kdc_.get());
+  }
 
   int num_tablet_servers() const override {
     return tablet_servers_.size();
@@ -283,6 +297,7 @@ class ExternalMiniCluster : public MiniClusterBase {
 
   std::vector<scoped_refptr<ExternalMaster> > masters_;
   std::vector<scoped_refptr<ExternalTabletServer> > tablet_servers_;
+  std::unique_ptr<MiniKdc> kdc_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
 
@@ -308,6 +323,13 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Overrides the exe path specified in the constructor.
   // The daemon must be shut down before calling this method.
   void SetExePath(std::string exe);
+
+  // Enable Kerberos for this daemon. This creates a Kerberos principal
+  // and keytab, and sets the appropriate environment variables in the
+  // subprocess such that the server will use Kerberos authentication.
+  //
+  // Must be called before 'StartProcess()'.
+  Status EnableKerberos(MiniKdc* kdc);
 
   // Sends a SIGSTOP signal to the daemon.
   Status Pause();
@@ -354,7 +376,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   friend class RefCountedThreadSafe<ExternalDaemon>;
   virtual ~ExternalDaemon();
 
-  Status StartProcess(const std::vector<std::string>& flags);
+  Status StartProcess(const std::vector<std::string>& user_flags);
 
   // In a code-coverage build, try to flush the coverage data to disk.
   // In a non-coverage build, this does nothing.
@@ -364,6 +386,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   const std::string data_dir_;
   std::string exe_;
   std::vector<std::string> extra_flags_;
+  std::map<std::string, std::string> extra_env_;
 
   gscoped_ptr<Subprocess> process_;
 
