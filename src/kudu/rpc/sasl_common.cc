@@ -28,6 +28,7 @@
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/net/sockaddr.h"
 
 using std::set;
@@ -120,6 +121,25 @@ static sasl_callback_t callbacks[] = {
   { SASL_CB_LIST_END, nullptr, nullptr }
 };
 
+
+// SASL requires mutexes for thread safety, but doesn't implement
+// them itself. So, we have to hook them up to our mutex implementation.
+static void* SaslMutexAlloc() {
+  return static_cast<void*>(new Mutex());
+}
+static void SaslMutexFree(void* m) {
+  delete static_cast<Mutex*>(m);
+}
+static int SaslMutexLock(void* m) {
+  static_cast<Mutex*>(m)->lock();
+  return 0; // indicates success.
+}
+static int SaslMutexUnlock(void* m) {
+  static_cast<Mutex*>(m)->unlock();
+  return 0; // indicates success.
+}
+
+
 // Determine whether initialization was ever called
 struct InitializationData {
   Status status;
@@ -134,6 +154,9 @@ static void DoSaslInit(void* app_name_char_array) {
   // We were getting Clang 3.4 UBSAN errors when letting GoogleOnce cast.
   const char* const app_name = reinterpret_cast<const char* const>(app_name_char_array);
   VLOG(3) << "Initializing SASL library";
+
+  // Make SASL thread-safe.
+  sasl_set_mutex(&SaslMutexAlloc, &SaslMutexLock, &SaslMutexUnlock, &SaslMutexFree);
 
   sasl_init_data = new InitializationData();
   sasl_init_data->app_name = app_name;
