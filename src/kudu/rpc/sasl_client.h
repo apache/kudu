@@ -146,6 +146,8 @@ class SaslClient {
   string app_name_;
   Socket sock_;
   std::vector<sasl_callback_t> callbacks_;
+  // The SASL connection object. This is initialized in Init() and
+  // freed after Negotiate() completes (regardless whether it was successful).
   gscoped_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
 

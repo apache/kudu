@@ -38,6 +38,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/trace.h"
 
 namespace kudu {
@@ -171,6 +172,15 @@ Status SaslClient::Init(const string& service_type) {
 }
 
 Status SaslClient::Negotiate() {
+  // After negotiation, we no longer need the SASL library object, so
+  // may as well free its memory since the connection may be long-lived.
+  // Additionally, this works around a SEGV seen at process shutdown time:
+  // if we still have SASL objects retained by Reactor when the process
+  // is exiting, the SASL libraries may start destructing global state
+  // and cause a crash when we sasl_dispose the connection.
+  auto cleanup = MakeScopedCleanup([&]() {
+      sasl_conn_.reset();
+    });
   TRACE("Called SaslClient::Negotiate()");
 
   // Ensure we called exactly once, and in the right order.

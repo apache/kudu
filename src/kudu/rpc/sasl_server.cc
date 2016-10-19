@@ -28,12 +28,13 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/split.h"
-#include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/auth_store.h"
+#include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/trace.h"
 
 namespace kudu {
@@ -146,6 +147,11 @@ Status SaslServer::Init(const string& service_type) {
 }
 
 Status SaslServer::Negotiate() {
+  // After negotiation, we no longer need the SASL library object, so
+  // may as well free its memory since the connection may be long-lived.
+  auto cleanup = MakeScopedCleanup([&]() {
+      sasl_conn_.reset();
+    });
   DVLOG(4) << "Called SaslServer::Negotiate()";
 
   // Ensure we are called exactly once, and in the right order.
