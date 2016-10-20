@@ -424,7 +424,7 @@ struct DataTypeTraits<UNIXTIME_MICROS> : public DerivedTypeTraits<INT64>{
   static const int US_TO_S = 1000L * 1000L;
 
   static const char* name() {
-    return "timestamp";
+    return "unixtime_micros";
   }
 
   static void AppendDebugStringForValue(const void* val, string* str) {
