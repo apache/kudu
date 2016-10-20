@@ -83,9 +83,9 @@ static Status StatusFromRpcError(const ErrorStatusPB& error) {
   }
 }
 
-SaslClient::SaslClient(string app_name, int fd)
+SaslClient::SaslClient(string app_name, Socket* socket)
     : app_name_(std::move(app_name)),
-      sock_(fd),
+      sock_(socket),
       helper_(SaslHelper::CLIENT),
       client_state_(SaslNegotiationState::NEW),
       negotiated_mech_(SaslMechanism::INVALID),
@@ -97,10 +97,6 @@ SaslClient::SaslClient(string app_name, int fd)
   callbacks_.push_back(SaslBuildCallback(SASL_CB_PASS,
       reinterpret_cast<int (*)()>(&SaslClientSecretCb), this));
   callbacks_.push_back(SaslBuildCallback(SASL_CB_LIST_END, nullptr, nullptr));
-}
-
-SaslClient::~SaslClient() {
-  sock_.Release();  // Do not close the underlying socket when this object is destroyed.
 }
 
 Status SaslClient::EnableAnonymous() {
@@ -199,7 +195,7 @@ Status SaslClient::Negotiate() {
   }
 
   // Ensure we can use blocking calls on the socket during negotiation.
-  RETURN_NOT_OK(EnsureBlockingMode(&sock_));
+  RETURN_NOT_OK(EnsureBlockingMode(sock_));
 
   // Start by asking the server for a list of available auth mechanisms.
   RETURN_NOT_OK(SendNegotiateMessage());
@@ -213,7 +209,7 @@ Status SaslClient::Negotiate() {
   while (!nego_ok_ || nego_response_expected_) {
     ResponseHeader header;
     Slice param_buf;
-    RETURN_NOT_OK(ReceiveFramedMessageBlocking(&sock_, &recv_buf, &header, &param_buf, deadline_));
+    RETURN_NOT_OK(ReceiveFramedMessageBlocking(sock_, &recv_buf, &header, &param_buf, deadline_));
     nego_response_expected_ = false;
 
     SaslMessagePB response;
@@ -257,7 +253,7 @@ Status SaslClient::SendSaslMessage(const SaslMessagePB& msg) {
   // Create header with SASL-specific callId
   RequestHeader header;
   header.set_call_id(kSaslCallId);
-  return helper_.SendSaslMessage(&sock_, header, msg, deadline_);
+  return helper_.SendSaslMessage(sock_, header, msg, deadline_);
 }
 
 Status SaslClient::ParseSaslMsgResponse(const ResponseHeader& header, const Slice& param_buf,

@@ -80,7 +80,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // remote: the address of the remote end
   // socket: the socket to take ownership of.
   // direction: whether we are the client or server side
-  Connection(ReactorThread *reactor_thread, Sockaddr remote, int socket,
+  Connection(ReactorThread *reactor_thread, Sockaddr remote, Socket* socket,
              Direction direction);
 
   // Set underlying socket to non-blocking (or blocking) mode.
@@ -141,13 +141,16 @@ class Connection : public RefCountedThreadSafe<Connection> {
 
   Direction direction() const { return direction_; }
 
-  Socket *socket() { return &socket_; }
+  Socket* socket() { return socket_.get(); }
 
   // Return SASL client instance for this connection.
   SaslClient &sasl_client() { return sasl_client_; }
 
   // Return SASL server instance for this connection.
   SaslServer &sasl_server() { return sasl_server_; }
+
+  // Initialize underlying SSLSocket if SSL is enabled.
+  Status InitSSLIfNecessary();
 
   // Initialize SASL client before negotiation begins.
   Status InitSaslClient();
@@ -225,11 +228,11 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // The reactor thread that created this connection.
   ReactorThread * const reactor_thread_;
 
-  // The socket we're communicating on.
-  Socket socket_;
-
   // The remote address we're talking to.
   const Sockaddr remote_;
+
+  // The socket we're communicating on.
+  std::unique_ptr<Socket> socket_;
 
   // The credentials of the user operating on this connection (if a client user).
   UserCredentials user_credentials_;

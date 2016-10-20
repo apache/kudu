@@ -47,6 +47,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/net/ssl_factory.h"
 #include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -55,9 +56,23 @@ using std::string;
 using std::shared_ptr;
 using strings::Substitute;
 
+
+DEFINE_string(rpc_ssl_server_certificate, "", "Path to the SSL certificate to be used for the RPC "
+    "layer.");
+DEFINE_string(rpc_ssl_private_key, "",
+    "Path to the private key to be used to complement the public key present in "
+    "--ssl_server_certificate");
+DEFINE_string(rpc_ssl_certificate_authority, "",
+    "Path to the certificate authority to be used by the client side of the connection to verify "
+    "the validity of the certificate presented by the server.");
+
 DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
              "If an RPC connection from a client is idle for this amount of time, the server "
              "will disconnect the client.");
+
+TAG_FLAG(rpc_ssl_server_certificate, experimental);
+TAG_FLAG(rpc_ssl_private_key, experimental);
+TAG_FLAG(rpc_ssl_certificate_authority, experimental);
 TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
 
 DEFINE_bool(server_require_kerberos, false,
@@ -162,6 +177,7 @@ void Messenger::Shutdown() {
   for (Reactor* reactor : reactors_) {
     reactor->Shutdown();
   }
+  ssl_factory_.reset();
 }
 
 Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
@@ -276,6 +292,15 @@ Reactor* Messenger::RemoteToReactor(const Sockaddr &remote) {
 
 Status Messenger::Init() {
   Status status;
+  ssl_enabled_ = !FLAGS_rpc_ssl_server_certificate.empty() || !FLAGS_rpc_ssl_private_key.empty()
+                   || !FLAGS_rpc_ssl_certificate_authority.empty();
+  if (ssl_enabled_) {
+    ssl_factory_.reset(new SSLFactory());
+    RETURN_NOT_OK(ssl_factory_->Init());
+    RETURN_NOT_OK(ssl_factory_->LoadCertificate(FLAGS_rpc_ssl_server_certificate));
+    RETURN_NOT_OK(ssl_factory_->LoadPrivateKey(FLAGS_rpc_ssl_private_key));
+    RETURN_NOT_OK(ssl_factory_->LoadCertificateAuthority(FLAGS_rpc_ssl_certificate_authority));
+  }
   for (Reactor* r : reactors_) {
     RETURN_NOT_OK(r->Init());
   }

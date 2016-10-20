@@ -39,6 +39,7 @@
 namespace kudu {
 
 class Socket;
+class SSLFactory;
 class ThreadPool;
 
 namespace rpc {
@@ -176,6 +177,8 @@ class Messenger {
   void ScheduleOnReactor(const boost::function<void(const Status&)>& func,
                          MonoDelta when);
 
+  SSLFactory* ssl_factory() const { return ssl_factory_.get(); }
+
   ThreadPool* negotiation_pool() const { return negotiation_pool_.get(); }
 
   RpczStore* rpcz_store() { return rpcz_store_.get(); }
@@ -185,6 +188,8 @@ class Messenger {
   std::string name() const {
     return name_;
   }
+
+  bool ssl_enabled() const { return ssl_enabled_; }
 
   bool closing() const {
     shared_lock<rw_spinlock> l(lock_.get_lock());
@@ -216,6 +221,8 @@ class Messenger {
 
   bool closing_;
 
+  bool ssl_enabled_;
+
   // Pools which are listening on behalf of this messenger.
   // Note that the user may have called Shutdown() on one of these
   // pools, so even though we retain the reference, it may no longer
@@ -228,6 +235,8 @@ class Messenger {
   std::vector<Reactor*> reactors_;
 
   gscoped_ptr<ThreadPool> negotiation_pool_;
+
+  gscoped_ptr<SSLFactory> ssl_factory_;
 
   std::unique_ptr<RpczStore> rpcz_store_;
 

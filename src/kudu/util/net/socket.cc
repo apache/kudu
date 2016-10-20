@@ -169,6 +169,19 @@ Status Socket::SetNoDelay(bool enabled) {
   return Status::OK();
 }
 
+Status Socket::SetTcpCork(bool enabled) {
+#if defined(__linux__)
+  int flag = enabled ? 1 : 0;
+  if (setsockopt(fd_, IPPROTO_TCP, TCP_CORK, &flag, sizeof(flag)) == -1) {
+    int err = errno;
+    return Status::NetworkError(std::string("failed to set TCP_CORK: ") +
+                                ErrnoToString(err), Slice(), err);
+  }
+#endif // defined(__linux__)
+  // TODO: Use TCP_NOPUSH for OSX if perf becomes an issue.
+  return Status::OK();
+}
+
 Status Socket::SetNonBlocking(bool enabled) {
   int curflags = ::fcntl(fd_, F_GETFL, 0);
   if (curflags == -1) {

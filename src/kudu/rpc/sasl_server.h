@@ -43,9 +43,8 @@ using std::string;
 // Operations on this class are NOT thread-safe.
 class SaslServer {
  public:
-  // Does not take ownership of the socket indicated by the fd.
-  SaslServer(string app_name, int fd);
-  ~SaslServer();
+  // Does not take ownership of 'socket'.
+  SaslServer(string app_name, Socket* socket);
 
   // Enable ANONYMOUS authentication.
   // Must be called after Init().
@@ -150,7 +149,7 @@ class SaslServer {
   Status HandleResponseRequest(const SaslMessagePB& request);
 
   string app_name_;
-  Socket sock_;
+  Socket* sock_;
   std::vector<sasl_callback_t> callbacks_;
   // The SASL connection object. This is initialized in Init() and
   // freed after Negotiate() completes (regardless whether it was successful).

@@ -43,6 +43,8 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/net/ssl_factory.h"
+#include "kudu/util/net/ssl_socket.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
 
@@ -62,33 +64,34 @@ namespace rpc {
 /// Connection
 ///
 Connection::Connection(ReactorThread *reactor_thread, Sockaddr remote,
-                       int socket, Direction direction)
+                       Socket* socket, Direction direction)
     : reactor_thread_(reactor_thread),
-      socket_(socket),
       remote_(std::move(remote)),
+      socket_(socket),
       direction_(direction),
       last_activity_time_(MonoTime::Now()),
       is_epoll_registered_(false),
       next_call_id_(1),
       sasl_client_(kSaslAppName, socket),
       sasl_server_(kSaslAppName, socket),
-      negotiation_complete_(false) {}
+      negotiation_complete_(false) {
+}
 
 Status Connection::SetNonBlocking(bool enabled) {
-  return socket_.SetNonBlocking(enabled);
+  return socket_->SetNonBlocking(enabled);
 }
 
 void Connection::EpollRegister(ev::loop_ref& loop) {
   DCHECK(reactor_thread_->IsCurrentThread());
   DVLOG(4) << "Registering connection for epoll: " << ToString();
   write_io_.set(loop);
-  write_io_.set(socket_.GetFd(), ev::WRITE);
+  write_io_.set(socket_->GetFd(), ev::WRITE);
   write_io_.set<Connection, &Connection::WriteHandler>(this);
   if (direction_ == CLIENT && negotiation_complete_) {
     write_io_.start();
   }
   read_io_.set(loop);
-  read_io_.set(socket_.GetFd(), ev::READ);
+  read_io_.set(socket_->GetFd(), ev::READ);
   read_io_.set<Connection, &Connection::ReadHandler>(this);
   read_io_.start();
   is_epoll_registered_ = true;
@@ -167,7 +170,7 @@ void Connection::Shutdown(const Status &status) {
   read_io_.stop();
   write_io_.stop();
   is_epoll_registered_ = false;
-  WARN_NOT_OK(socket_.Close(), "Error closing socket");
+  WARN_NOT_OK(socket_->Close(), "Error closing socket");
 }
 
 void Connection::QueueOutbound(gscoped_ptr<OutboundTransfer> transfer) {
@@ -453,7 +456,7 @@ void Connection::ReadHandler(ev::io &watcher, int revents) {
     if (!inbound_) {
       inbound_.reset(new InboundTransfer());
     }
-    Status status = inbound_->ReceiveBuffer(socket_);
+    Status status = inbound_->ReceiveBuffer(*socket_);
     if (PREDICT_FALSE(!status.ok())) {
       if (status.posix_code() == ESHUTDOWN) {
         VLOG(1) << ToString() << " shut down by remote end.";
@@ -591,7 +594,7 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
     }
 
     last_activity_time_ = reactor_thread_->cur_time();
-    Status status = transfer->SendBuffer(socket_);
+    Status status = transfer->SendBuffer(*socket_);
     if (PREDICT_FALSE(!status.ok())) {
       LOG(WARNING) << ToString() << " send error: " << status.ToString();
       reactor_thread_->DestroyConnection(this, status);
@@ -620,6 +623,13 @@ std::string Connection::ToString() const {
     "$0 $1",
     direction_ == SERVER ? "server connection from" : "client connection to",
     remote_.ToString());
+}
+
+Status Connection::InitSSLIfNecessary() {
+  if (!reactor_thread_->reactor()->messenger()->ssl_enabled()) return Status::OK();
+  SSLSocket* ssl_socket = down_cast<SSLSocket*>(socket_.get());
+  RETURN_NOT_OK(ssl_socket->DoHandshake());
+  return Status::OK();
 }
 
 Status Connection::InitSaslClient() {

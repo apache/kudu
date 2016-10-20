@@ -44,12 +44,14 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/trace.h"
-#include "kudu/util/status.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/net/ssl_factory.h"
+#include "kudu/util/net/ssl_socket.h"
 
 // When compiling on Mac OS X, use 'kqueue' instead of the default, 'select', for the event loop.
 // Otherwise we run into problems because 'select' can't handle connections when more than 1024
@@ -335,8 +337,15 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
   bool connect_in_progress;
   RETURN_NOT_OK(StartConnect(&sock, conn_id.remote(), &connect_in_progress));
 
+  std::unique_ptr<Socket> new_socket;
+  if (reactor()->messenger()->ssl_enabled()) {
+    new_socket = reactor()->messenger()->ssl_factory()->CreateSocket(sock.Release(), false);
+  } else {
+    new_socket.reset(new Socket(sock.Release()));
+  }
+
   // Register the new connection in our map.
-  *conn = new Connection(this, conn_id.remote(), sock.Release(), Connection::CLIENT);
+  *conn = new Connection(this, conn_id.remote(), new_socket.release(), Connection::CLIENT);
   (*conn)->set_user_credentials(conn_id.user_credentials());
 
   // Kick off blocking client connection negotiation.
@@ -594,8 +603,14 @@ class RegisterConnectionTask : public ReactorTask {
 
 void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr &remote) {
   VLOG(3) << name_ << ": new inbound connection to " << remote.ToString();
+  std::unique_ptr<Socket> new_socket;
+  if (messenger()->ssl_enabled()) {
+    new_socket = messenger()->ssl_factory()->CreateSocket(socket->Release(), true);
+  } else {
+    new_socket.reset(new Socket(socket->Release()));
+  }
   scoped_refptr<Connection> conn(
-    new Connection(&thread_, remote, socket->Release(), Connection::SERVER));
+    new Connection(&thread_, remote, new_socket.release(), Connection::SERVER));
   auto task = new RegisterConnectionTask(conn);
   ScheduleReactorTask(task);
 }

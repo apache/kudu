@@ -46,8 +46,7 @@ class SaslMessagePB_SaslAuth;
 class SaslClient {
  public:
   // Does not take ownership of the socket indicated by the fd.
-  SaslClient(string app_name, int fd);
-  ~SaslClient();
+  SaslClient(string app_name, Socket* socket);
 
   // Enable ANONYMOUS authentication.
   // Must be called after Init().
@@ -149,7 +148,7 @@ class SaslClient {
   Status ParseError(const Slice& err_data);
 
   string app_name_;
-  Socket sock_;
+  Socket* sock_;
   std::vector<sasl_callback_t> callbacks_;
   // The SASL connection object. This is initialized in Init() and
   // freed after Negotiate() completes (regardless whether it was successful).
