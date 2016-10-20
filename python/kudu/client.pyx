@@ -26,7 +26,7 @@ cimport cpython
 from cython.operator cimport dereference as deref
 
 from libkudu_client cimport *
-from kudu.compat import tobytes, frombytes
+from kudu.compat import tobytes, frombytes, dict_iter
 from kudu.schema cimport Schema, ColumnSchema
 from kudu.errors cimport check_status
 from kudu.util import to_unixtime_micros, from_unixtime_micros, from_hybridtime
@@ -648,45 +648,77 @@ cdef class Table:
     def drop(self):
         raise NotImplementedError
 
-    def new_insert(self):
+    def new_insert(self, record=None):
         """
         Create a new Insert operation. Pass the completed Insert to a Session.
+        If a record is provided, a PartialRow will be initialized with values
+        from the input record. The record can be in the form of a tuple, dict,
+        or list. Dictionary keys can be either column names, indexes, or a
+        mix of both names and indexes.
+
+        Parameters
+        ----------
+        record : tuple/list/dict
 
         Returns
         -------
         insert : Insert
         """
-        return Insert(self)
+        return Insert(self, record)
 
-    def new_upsert(self):
+    def new_upsert(self, record=None):
         """
         Create a new Upsert operation. Pass the completed Upsert to a Session.
+        If a record is provided, a PartialRow will be initialized with values
+        from the input record. The record can be in the form of a tuple, dict,
+        or list. Dictionary keys can be either column names, indexes, or a
+        mix of both names and indexes.
+
+        Parameters
+        ----------
+        record : tuple/list/dict
 
         Returns
         -------
         upsert : Upsert
         """
-        return Upsert(self)
+        return Upsert(self, record)
 
-    def new_update(self):
+    def new_update(self, record=None):
         """
         Create a new Update operation. Pass the completed Update to a Session.
+        If a record is provided, a PartialRow will be initialized with values
+        from the input record. The record can be in the form of a tuple, dict,
+        or list. Dictionary keys can be either column names, indexes, or a
+        mix of both names and indexes.
+
+        Parameters
+        ----------
+        record : tuple/list/dict
 
         Returns
         -------
         update : Update
         """
-        return Update(self)
+        return Update(self, record)
 
-    def new_delete(self):
+    def new_delete(self, record=None):
         """
         Create a new Delete operation. Pass the completed Update to a Session.
+        If a record is provided, a PartialRow will be initialized with values
+        from the input record. The record can be in the form of a tuple, dict,
+        or list. Dictionary keys can be either column names, indexes, or a
+        mix of both names and indexes.
+
+        Parameters
+        ----------
+        record : tuple/list/dict
 
         Returns
         -------
         delete : Delete
         """
-        return Delete(self)
+        return Delete(self, record)
 
     def scanner(self):
         """
@@ -962,8 +994,6 @@ cdef class Session:
     Wrapper for a client KuduSession to build up write operations to interact
     with the cluster.
     """
-    cdef:
-        shared_ptr[KuduSession] s
 
     def __cinit__(self):
         pass
@@ -1405,37 +1435,61 @@ cdef class Scanner:
 
     def new_bound(self):
         """
-        Returns a new instance of a ScanBound (subclass of PartialRow) to be
-        later set with add_lower_bound()/add_exclusive_upper_bound().
+        Returns a new instance of a PartialRow to be later set with
+        add_lower_bound()/add_exclusive_upper_bound().
 
         Returns
         -------
-        bound : ScanBound
+        bound : PartialRow
         """
-        return ScanBound(self.table)
+        return self.table.schema.new_row()
 
-    def add_lower_bound(self, ScanBound bound):
+    def add_lower_bound(self, bound):
         """
         Sets the (inclusive) lower bound of the scan.
         Returns a reference to itself to facilitate chaining.
 
+        Parameters
+        ----------
+        bound : PartialRow/tuple/list/dictionary
+
         Returns
         -------
         self : Scanner
         """
-        check_status(self.scanner.AddLowerBound(deref(bound.row)))
+        cdef:
+            PartialRow row
+        # Convert record to bound
+        if not isinstance(bound, PartialRow):
+            row = self.table.schema.new_row(bound)
+        else:
+            row = bound
+
+        check_status(self.scanner.AddLowerBound(deref(row.row)))
         return self
 
-    def add_exclusive_upper_bound(self, ScanBound bound):
+    def add_exclusive_upper_bound(self, bound):
         """
         Sets the (exclusive) upper bound of the scan.
         Returns a reference to itself to facilitate chaining.
 
+        Parameters
+        ----------
+        bound : PartialRow/tuple/list/dictionary
+
         Returns
         -------
         self : Scanner
         """
-        check_status(self.scanner.AddExclusiveUpperBound(deref(bound.row)))
+        cdef:
+            PartialRow row
+        # Convert record to bound
+        if not isinstance(bound, PartialRow):
+            row = self.table.schema.new_row(bound)
+        else:
+            row = bound
+
+        check_status(self.scanner.AddExclusiveUpperBound(deref(row.row)))
         return self
 
     def get_projection_schema(self):
@@ -1817,45 +1871,61 @@ cdef class ScanTokenBuilder:
 
     def new_bound(self):
         """
-        Returns a new instance of a ScanBound (subclass of PartialRow) to be
-        later set with add_lower_bound()/add_upper_bound().
+        Returns a new instance of a PartialRow to be later set with
+        add_lower_bound()/add_upper_bound().
 
         Returns
         -------
-        bound : ScanBound
+        bound : PartialRow
         """
-        return ScanBound(self._table)
+        return self._table.schema.new_row()
 
-    def add_lower_bound(self, ScanBound bound):
+    def add_lower_bound(self, bound):
         """
         Sets the lower bound of the scan.
         Returns a reference to itself to facilitate chaining.
 
         Parameters
         ----------
-        bound : ScanBound
+        bound : PartialRow/list/tuple/dict
 
         Returns
         -------
         self : ScanTokenBuilder
         """
-        check_status(self._builder.AddLowerBound(deref(bound.row)))
+        cdef:
+            PartialRow row
+        # Convert record to bound
+        if not isinstance(bound, PartialRow):
+            row = self._table.schema.new_row(bound)
+        else:
+            row = bound
+
+        check_status(self._builder.AddLowerBound(deref(row.row)))
         return self
 
-    def add_upper_bound(self, ScanBound bound):
+    def add_upper_bound(self, bound):
         """
         Sets the upper bound of the scan.
         Returns a reference to itself to facilitate chaining.
 
         Parameters
         ----------
-        bound : ScanBound
+        bound : PartialRow/list/tuple/dict
 
         Returns
         -------
         self : ScanTokenBuilder
         """
-        check_status(self._builder.AddUpperBound(deref(bound.row)))
+        cdef:
+            PartialRow row
+        # Convert record to bound
+        if not isinstance(bound, PartialRow):
+            row = self._table.schema.new_row(bound)
+        else:
+            row = bound
+
+        check_status(self._builder.AddUpperBound(deref(row.row)))
         return self
 
     def set_cache_blocks(self, cache_blocks):
@@ -1973,13 +2043,15 @@ cdef class KuduError:
 
 
 cdef class PartialRow:
-    cdef:
-        Table table
-        KuduPartialRow* row
 
-    def __cinit__(self, Table table):
+    def __cinit__(self, Schema schema):
         # This gets called before any subclass cinit methods
-        self.table = table
+        self.schema = schema
+        self._own = 1
+
+    def __dealloc__(self):
+        if self._own and self.row != NULL:
+            del self.row
 
     def __setitem__(self, key, value):
         if isinstance(key, basestring):
@@ -1987,15 +2059,42 @@ cdef class PartialRow:
         else:
             self.set_loc(key, value)
 
+    def from_record(self, record):
+        """
+        Initializes PartialRow with values from an input record. The record
+        can be in the form of a tuple, dict, or list. Dictionary keys can
+        be either column names or indexes.
+
+        Parameters
+        ----------
+        record : tuple/list/dict
+
+        Returns
+        -------
+        self : PartialRow
+        """
+        if isinstance(record, (tuple, list)):
+            for indx, val in enumerate(record):
+                self[indx] = val
+        elif isinstance(record, dict):
+            for key, val in dict_iter(record):
+                self[key] = val
+        else:
+            raise TypeError("Invalid record type <{0}> for " +
+                            "PartialRow.from_record."
+                            .format(type(record).__name__))
+
+        return self
+
     cpdef set_field(self, key, value):
         cdef:
-            int i = self.table.schema.get_loc(key)
+            int i = self.schema.get_loc(key)
 
         self.set_loc(i, value)
 
     cpdef set_loc(self, int i, value):
         cdef:
-            DataType t = self.table.schema.loc_type(i)
+            DataType t = self.schema.loc_type(i)
             cdef Slice* slc
 
         if value is None:
@@ -2044,22 +2143,19 @@ cdef class PartialRow:
     cdef add_to_session(self, Session s):
         pass
 
-cdef class ScanBound(PartialRow):
-    def __cinit__(self, Table table):
-        self.row = self.table.schema.new_row()
 
-    def __dealloc__(self):
-        del self.row
-
-cdef class WriteOperation(PartialRow):
+cdef class WriteOperation:
     cdef:
         # Whether the WriteOperation has been applied.
         # Set by subclasses.
         bint applied
         KuduWriteOperation* op
+        PartialRow py_row
 
-    def __cinit__(self, Table table):
+    def __cinit__(self, Table table, record=None):
         self.applied = 0
+        self.py_row = PartialRow(table.schema)
+        self.py_row._own = 0
 
     cdef add_to_session(self, Session s):
         if self.applied:
@@ -2069,38 +2165,51 @@ cdef class WriteOperation(PartialRow):
         self.op = NULL
         self.applied = 1
 
+    def __setitem__(self, key, value):
+        # Since the write operation is no longer a sub-class of the PartialRow
+        # we need to explicitly retain the item setting functionality and API
+        # style.
+        self.py_row[key] = value
+
 
 cdef class Insert(WriteOperation):
-    def __cinit__(self, Table table):
-        self.op = self.table.ptr().NewInsert()
-        self.row = self.op.mutable_row()
+    def __cinit__(self, Table table, record=None):
+        self.op = table.ptr().NewInsert()
+        self.py_row.row = self.op.mutable_row()
+        if record:
+            self.py_row.from_record(record)
 
     def __dealloc__(self):
         del self.op
 
 
 cdef class Upsert(WriteOperation):
-    def __cinit__(self, Table table):
+    def __cinit__(self, Table table, record=None):
         self.op = table.ptr().NewUpsert()
-        self.row = self.op.mutable_row()
-
+        self.py_row.row = self.op.mutable_row()
+        if record:
+            self.py_row.from_record(record)
     def __dealloc__(self):
         del self.op
 
 
 cdef class Update(WriteOperation):
-    def __cinit__(self, Table table):
+    def __cinit__(self, Table table, record=None):
         self.op = table.ptr().NewUpdate()
-        self.row = self.op.mutable_row()
+        self.py_row.row = self.op.mutable_row()
+        if record:
+            self.py_row.from_record(record)
 
     def __dealloc__(self):
         del self.op
 
 
 cdef class Delete(WriteOperation):
-    def __cinit__(self, Table table):
+    def __cinit__(self, Table table, record=None):
         self.op = table.ptr().NewDelete()
-        self.row = self.op.mutable_row()
+        self.py_row.row = self.op.mutable_row()
+        if record:
+            self.py_row.from_record(record)
 
     def __dealloc__(self):
         del self.op

@@ -69,6 +69,10 @@ if PY2:
 
     def frombytes(o):
         return o
+
+    def dict_iter(o):
+        return o.items()
+
 else:
     unicode_type = str
     def lzip(*x):
@@ -88,6 +92,9 @@ else:
 
     def frombytes(o):
         return o.decode('utf8')
+
+    def dict_iter(o):
+        return list(o.items())
 
 
 integer_types = six.integer_types

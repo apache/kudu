@@ -92,9 +92,7 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
         ]
         session = self.client.new_session()
         for row in self.type_test_rows:
-            op = self.type_table.new_insert()
-            for idx, val in enumerate(row):
-                op[idx] = val
+            op = self.type_table.new_insert(row)
             session.apply(op)
         session.flush()
 

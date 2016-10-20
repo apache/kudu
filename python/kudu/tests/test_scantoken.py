@@ -97,13 +97,9 @@ class TestScanToken(TestScanBase):
         in parallel with seperate clients.
         """
         builder = self.table.scan_token_builder()
-        lower_bound = builder.new_bound()
-        lower_bound['key'] = 50
-        upper_bound = builder.new_bound()
-        upper_bound['key'] = 55
         builder.set_fault_tolerant()\
-            .add_lower_bound(lower_bound)\
-            .add_upper_bound(upper_bound)
+            .add_lower_bound([50])\
+            .add_upper_bound([55])
 
         # Serialize execute and verify
         self._subtest_serialize_thread_and_verify(builder.build(),

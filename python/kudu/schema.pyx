@@ -23,6 +23,7 @@ from cython.operator cimport dereference as deref
 from kudu.compat import tobytes, frombytes
 from kudu.schema cimport *
 from kudu.errors cimport check_status
+from kudu.client cimport PartialRow
 
 import six
 
@@ -536,6 +537,30 @@ cdef class Schema:
                              .format(i))
 
         result.schema = new KuduColumnSchema(self.schema.Column(i))
+
+        return result
+
+    def new_row(self, record=None):
+        """
+        Create a new row corresponding to this schema. If a record is provided,
+        a PartialRow will be initialized with values from the input record.
+        The record can be in the form of a tuple, dict, or list. Dictionary
+        keys can be either column names, indexes, or a mix of both names and
+        indexes.
+
+        Parameters
+        ----------
+        record : tuple/list/dict
+
+        Returns
+        -------
+        row : PartialRow
+        """
+        result = PartialRow(self)
+        result.row = self.schema.NewRow()
+
+        if record:
+            result.from_record(record)
 
         return result
 

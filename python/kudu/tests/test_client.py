@@ -150,10 +150,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
         table = self.client.table(self.ex_table)
         session = self.client.new_session()
         for i in range(nrows):
-            op = table.new_insert()
-            op['key'] = i
-            op['int_val'] = i * 2
-            op['string_val'] = 'hello_%d' % i
+            op = table.new_insert((i, i*2, 'hello_%d' % i))
             session.apply(op)
 
         # Cannot apply the same insert twice, C++ client does not indicate an
@@ -173,10 +170,9 @@ class TestClient(KuduTestBase, unittest.TestCase):
         op['unixtime_micros_val'] = datetime.datetime(2016, 10, 30, 10, 12)
         session.apply(op)
 
-        op = table.new_upsert()
-        op['key'] = 2
-        op['int_val'] = 222
-        op['string_val'] = 'upserted'
+        op = table.new_upsert({0: 2,
+                               1: 222,
+                               2: 'upserted'})
         session.apply(op)
         session.flush()
 
@@ -190,8 +186,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
 
         # Delete the rows we just wrote
         for i in range(nrows):
-            op = table.new_delete()
-            op['key'] = i
+            op = table.new_delete({'key': i})
             session.apply(op)
         session.flush()
 

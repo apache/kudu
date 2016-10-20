@@ -121,13 +121,9 @@ class TestScanner(TestScanBase):
 
     def test_scan_with_bounds(self):
         scanner = self.table.scanner()
-        scanner.set_fault_tolerant()
-        lower_bound = scanner.new_bound()
-        lower_bound['key'] = 50
-        scanner.add_lower_bound(lower_bound)
-        upper_bound = scanner.new_bound()
-        upper_bound['key'] = 55
-        scanner.add_exclusive_upper_bound(upper_bound)
+        scanner.set_fault_tolerant()\
+            .add_lower_bound({'key': 50})\
+            .add_exclusive_upper_bound({'key': 55})
         scanner.open()
 
         tuples = scanner.read_all_tuples()

@@ -16,44 +16,27 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from libcpp.map cimport map
-
 from libkudu_client cimport *
+from kudu.schema cimport Schema
 
 
-cdef class KuduType(object):
-    cdef readonly:
-        DataType type
-
-
-cdef class ColumnSchema:
-    """
-    Wraps a Kudu client ColumnSchema object
-    """
+cdef class Session:
     cdef:
-        KuduColumnSchema* schema
-        KuduType _type
+        shared_ptr[KuduSession] s
 
 
-cdef class ColumnSpec:
+cdef class PartialRow:
     cdef:
-        KuduColumnSpec* spec
+        KuduPartialRow* row
+        Schema schema
+        public bint _own
 
+    cpdef set_field(self, key, value)
 
-cdef class SchemaBuilder:
-    cdef:
-        KuduSchemaBuilder builder
+    cpdef set_loc(self, int i, value)
 
+    cpdef set_field_null(self, key)
 
-cdef class Schema:
-    cdef:
-        const KuduSchema* schema
-        object parent
-        bint own_schema
-        map[string, int] _col_mapping
-        bint _mapping_initialized
+    cpdef set_loc_null(self, int i)
 
-    cdef int get_loc(self, name) except -1
-
-    cdef inline DataType loc_type(self, int i):
-        return self.schema.Column(i).type()
+    cdef add_to_session(self, Session s)
