@@ -348,7 +348,7 @@ void GeneratorThread(
   shared_ptr<KuduSession> session(client->NewSession());
   uint64_t idx = 0;
 
-  auto generator = [&]() {
+  auto generator = [&]() -> Status {
     RETURN_NOT_OK(session->SetMutationBufferFlushWatermark(
                      FLAGS_buffer_flush_watermark_pct));
     RETURN_NOT_OK(session->SetMutationBufferSpace(
