@@ -158,18 +158,19 @@ Status SaslClient::Init(const string& service_type) {
   unsigned secflags = 0;
 
   sasl_conn_t* sasl_conn = nullptr;
-  int result = sasl_client_new(
-      service_type.c_str(),         // Registered name of the service using SASL. Required.
-      helper_.server_fqdn(),        // The fully qualified domain name of the remote server.
-      helper_.local_addr_string(),  // Local and remote IP address strings. (NULL disables
-      helper_.remote_addr_string(), //   mechanisms which require this info.)
-      &callbacks_[0],               // Connection-specific callbacks.
-      secflags,                     // Security flags.
-      &sasl_conn);
-
-  if (PREDICT_FALSE(result != SASL_OK)) {
+  Status s = WrapSaslCall(nullptr /* no conn */, [&]() {
+      return sasl_client_new(
+          service_type.c_str(),         // Registered name of the service using SASL. Required.
+          helper_.server_fqdn(),        // The fully qualified domain name of the remote server.
+          helper_.local_addr_string(),  // Local and remote IP address strings. (NULL disables
+          helper_.remote_addr_string(), //   mechanisms which require this info.)
+          &callbacks_[0],               // Connection-specific callbacks.
+          secflags,                     // Security flags.
+          &sasl_conn);
+    });
+  if (!s.ok()) {
     return Status::RuntimeError("Unable to create new SASL client",
-        SaslErrDesc(result, sasl_conn));
+                                s.message());
   }
   sasl_conn_.reset(sasl_conn);
 
@@ -306,22 +307,15 @@ Status SaslClient::SendResponseMessage(const char* resp_msg, unsigned resp_msg_l
   return Status::OK();
 }
 
-Status SaslClient::DoSaslStep(const string& in, const char** out, unsigned* out_len, int* result) {
+Status SaslClient::DoSaslStep(const string& in, const char** out, unsigned* out_len) {
   TRACE("SASL Client: Calling sasl_client_step()");
-  int res = sasl_client_step(sasl_conn_.get(), in.c_str(), in.length(), nullptr, out, out_len);
-  *result = res;
-  if (res == SASL_OK) {
+  Status s = WrapSaslCall(sasl_conn_.get(), [&]() {
+      return sasl_client_step(sasl_conn_.get(), in.c_str(), in.length(), nullptr, out, out_len);
+    });
+  if (s.ok()) {
     nego_ok_ = true;
   }
-  if (PREDICT_FALSE(res != SASL_OK && res != SASL_CONTINUE)) {
-    // TODO(todd): currently we just disconnect here without sending any message
-    // to the server as to why we failed. This results in a trace being logged
-    // on the server. It would be nicer to send a message before disconnecting
-    // so that the server can log the failed authentication attempt.
-    return Status::NotAuthorized("Unable to negotiate SASL connection",
-        SaslErrDesc(res, sasl_conn_.get()));
-  }
-  return Status::OK();
+  return s;
 }
 
 Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
@@ -369,19 +363,20 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
    *  SASL_INTERACT -- user interaction needed to fill in prompt_need list
    */
   TRACE("SASL Client: Calling sasl_client_start()");
-  int result = sasl_client_start(
-      sasl_conn_.get(),     // The SASL connection context created by init()
-      mech_list.c_str(),    // The list of mechanisms from the server.
-      nullptr,              // Disables INTERACT return if NULL.
-      &init_msg,            // Filled in on success.
-      &init_msg_len,        // Filled in on success.
-      &negotiated_mech);    // Filled in on success.
+  Status s = WrapSaslCall(sasl_conn_.get(), [&]() {
+      return sasl_client_start(
+          sasl_conn_.get(),     // The SASL connection context created by init()
+          mech_list.c_str(),    // The list of mechanisms from the server.
+          nullptr,              // Disables INTERACT return if NULL.
+          &init_msg,            // Filled in on success.
+          &init_msg_len,        // Filled in on success.
+          &negotiated_mech);    // Filled in on success.
+    });
 
-  if (PREDICT_FALSE(result == SASL_OK)) {
+  if (s.ok()) {
     nego_ok_ = true;
-  } else if (PREDICT_FALSE(result != SASL_CONTINUE)) {
-    return Status::NotAuthorized("Unable to negotiate SASL connection",
-        SaslErrDesc(result, sasl_conn_.get()));
+  } else if (!s.IsIncomplete()) {
+    return s;
   }
 
   // The server matched one of our mechanisms.
@@ -396,7 +391,7 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
     if (PREDICT_FALSE(nego_ok_)) {
       LOG(DFATAL) << "Server sent challenge after sasl_client_start() returned SASL_OK";
     }
-    RETURN_NOT_OK(DoSaslStep(auth->challenge(), &init_msg, &init_msg_len, &result));
+    RETURN_NOT_OK(DoSaslStep(auth->challenge(), &init_msg, &init_msg_len));
   }
 
   RETURN_NOT_OK(SendInitiateMessage(*auth, init_msg, init_msg_len));
@@ -415,9 +410,10 @@ Status SaslClient::HandleChallengeResponse(const SaslMessagePB& response) {
 
   const char* out = nullptr;
   unsigned out_len = 0;
-  int result = 0;
-  RETURN_NOT_OK(DoSaslStep(response.token(), &out, &out_len, &result));
-
+  Status s = DoSaslStep(response.token(), &out, &out_len);
+  if (!s.ok() && !s.IsIncomplete()) {
+    return s;
+  }
   RETURN_NOT_OK(SendResponseMessage(out, out_len));
   return Status::OK();
 }
@@ -427,18 +423,18 @@ Status SaslClient::HandleSuccessResponse(const SaslMessagePB& response) {
   if (!nego_ok_) {
     const char* out = nullptr;
     unsigned out_len = 0;
-    int result = 0;
-    RETURN_NOT_OK(DoSaslStep(response.token(), &out, &out_len, &result));
+    Status s = DoSaslStep(response.token(), &out, &out_len);
+    if (s.IsIncomplete()) {
+      return Status::IllegalState("Server indicated successful authentication, but client "
+                                  "was not complete");
+    }
+    RETURN_NOT_OK(s);
     if (out_len > 0) {
       return Status::IllegalState("SASL client library generated spurious token after SUCCESS",
           string(out, out_len));
     }
-    if (PREDICT_FALSE(result != SASL_OK)) {
-      return Status::NotAuthorized("Unable to negotiate SASL connection",
-          SaslErrDesc(result, sasl_conn_.get()));
-    }
+    CHECK(nego_ok_);
   }
-  nego_ok_ = true;
   return Status::OK();
 }
 

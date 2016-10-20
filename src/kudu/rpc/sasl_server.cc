@@ -130,19 +130,28 @@ Status SaslServer::Init(const string& service_type) {
   unsigned secflags = 0;
 
   sasl_conn_t* sasl_conn = nullptr;
-  int result = sasl_server_new(
-      service_type.c_str(),         // Registered name of the service using SASL. Required.
-      helper_.server_fqdn(),        // The fully qualified domain name of this server.
-      nullptr,                      // Permits multiple user realms on server. NULL == use default.
-      helper_.local_addr_string(),  // Local and remote IP address strings. (NULL disables
-      helper_.remote_addr_string(), //   mechanisms which require this info.)
-      &callbacks_[0],               // Connection-specific callbacks.
-      secflags,                     // Security flags.
-      &sasl_conn);
+  Status s = WrapSaslCall(nullptr /* no conn */, [&]() {
+      return sasl_server_new(
+          // Registered name of the service using SASL. Required.
+          service_type.c_str(),
+          // The fully qualified domain name of this server.
+          helper_.server_fqdn(),
+          // Permits multiple user realms on server. NULL == use default.
+          nullptr,
+          // Local and remote IP address strings. (NULL disables
+          // mechanisms which require this info.)
+          helper_.local_addr_string(),
+          helper_.remote_addr_string(),
+          // Connection-specific callbacks.
+          &callbacks_[0],
+          // Security flags.
+          secflags,
+          &sasl_conn);
+    });
 
-  if (PREDICT_FALSE(result != SASL_OK)) {
+  if (PREDICT_FALSE(!s.ok())) {
     return Status::RuntimeError("Unable to create new SASL server",
-        SaslErrDesc(result, sasl_conn_.get()));
+                                s.message());
   }
   sasl_conn_.reset(sasl_conn);
 
@@ -360,27 +369,27 @@ Status SaslServer::HandleInitiateRequest(const SaslMessagePB& request) {
   const char* server_out = nullptr;
   uint32_t server_out_len = 0;
   TRACE("SASL Server: Calling sasl_server_start()");
-  int result = sasl_server_start(
-      sasl_conn_.get(),         // The SASL connection context created by init()
-      auth.mechanism().c_str(), // The mechanism requested by the client.
-      request.token().c_str(),  // Optional string the client gave us.
-      request.token().length(), // Client string len.
-      &server_out,              // The output of the SASL library, might not be NULL terminated
-      &server_out_len);         // Output len.
 
-  if (PREDICT_FALSE(result != SASL_OK && result != SASL_CONTINUE)) {
-    Status s = Status::NotAuthorized("Unable to negotiate SASL connection",
-        SaslErrDesc(result, sasl_conn_.get()));
+  Status s = WrapSaslCall(sasl_conn_.get(), [&]() {
+      return sasl_server_start(
+          sasl_conn_.get(),         // The SASL connection context created by init()
+          auth.mechanism().c_str(), // The mechanism requested by the client.
+          request.token().c_str(),  // Optional string the client gave us.
+          request.token().length(), // Client string len.
+          &server_out,              // The output of the SASL library, might not be NULL terminated
+          &server_out_len);         // Output len.
+    });
+  if (PREDICT_FALSE(!s.ok() && !s.IsIncomplete())) {
     RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
     return s;
   }
   negotiated_mech_ = SaslMechanism::value_of(auth.mechanism());
 
   // We have a valid mechanism match
-  if (result == SASL_OK) {
+  if (s.ok()) {
     nego_ok_ = true;
     RETURN_NOT_OK(SendSuccessResponse(server_out, server_out_len));
-  } else { // result == SASL_CONTINUE
+  } else { // s.IsComplete() (equivalent to SASL_CONTINUE)
     RETURN_NOT_OK(SendChallengeResponse(server_out, server_out_len));
   }
   return Status::OK();
@@ -425,25 +434,23 @@ Status SaslServer::HandleResponseRequest(const SaslMessagePB& request) {
   const char* server_out = nullptr;
   uint32_t server_out_len = 0;
   TRACE("SASL Server: Calling sasl_server_step()");
-  int result = sasl_server_step(
-      sasl_conn_.get(),         // The SASL connection context created by init()
-      request.token().c_str(),  // Optional string the client gave us
-      request.token().length(), // Client string len
-      &server_out,              // The output of the SASL library, might not be NULL terminated
-      &server_out_len);         // Output len
-
-  if (result != SASL_OK && result != SASL_CONTINUE) {
-    Status s = Status::NotAuthorized("Unable to negotiate SASL connection",
-        SaslErrDesc(result, sasl_conn_.get()));
+  Status s = WrapSaslCall(sasl_conn_.get(), [&]() {
+      return sasl_server_step(
+          sasl_conn_.get(),         // The SASL connection context created by init()
+          request.token().c_str(),  // Optional string the client gave us
+          request.token().length(), // Client string len
+          &server_out,              // The output of the SASL library, might not be NULL terminated
+          &server_out_len);         // Output len
+    });
+  if (!s.ok() && !s.IsIncomplete()) {
     RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
     return s;
   }
 
-  SaslMessagePB msg;
-  if (result == SASL_OK) {
+  if (s.ok()) {
     nego_ok_ = true;
     RETURN_NOT_OK(SendSuccessResponse(server_out, server_out_len));
-  } else { // result == SASL_CONTINUE
+  } else { // s.IsIncomplete() (equivalent to SASL_CONTINUE)
     RETURN_NOT_OK(SendChallengeResponse(server_out, server_out_len));
   }
   return Status::OK();

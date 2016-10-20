@@ -17,11 +17,13 @@
 
 #include "kudu/rpc/sasl_common.h"
 
-#include <string>
 #include <boost/algorithm/string/predicate.hpp>
+#include <mutex>
+#include <string>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <regex.h>
 #include <sasl/sasl.h>
 
 #include "kudu/gutil/macros.h"
@@ -40,6 +42,9 @@ const char* const kSaslMechAnonymous = "ANONYMOUS";
 const char* const kSaslMechPlain = "PLAIN";
 const char* const kSaslMechGSSAPI = "GSSAPI";
 
+// See WrapSaslCall().
+static __thread string* g_auth_failure_capture = nullptr;
+
 // Output Sasl messages.
 // context: not used.
 // level: logging level.
@@ -53,7 +58,6 @@ static int SaslLogCallback(void* context, int level, const char* message) {
       break;
 
     case SASL_LOG_ERR:
-    case SASL_LOG_FAIL:
       LOG(ERROR) << "SASL: " << message;
       break;
 
@@ -63,6 +67,15 @@ static int SaslLogCallback(void* context, int level, const char* message) {
 
     case SASL_LOG_NOTE:
       LOG(INFO) << "SASL: " << message;
+      break;
+
+    case SASL_LOG_FAIL:
+      // Capture authentication failures in a thread-local to be picked up
+      // by WrapSaslCall() below.
+      VLOG(1) << "SASL: " << message;
+      if (g_auth_failure_capture) {
+        *g_auth_failure_capture = message;
+      }
       break;
 
     case SASL_LOG_DEBUG:
@@ -182,10 +195,9 @@ static void DoSaslInit(void* app_name_char_array) {
   sasl_init_data->status = Status::OK();
 }
 
-// Only execute SASL initialization once
-static GoogleOnceType once = GOOGLE_ONCE_INIT;
-
-Status SaslInit(const char* const app_name) {
+Status SaslInit(const char* app_name) {
+  // Only execute SASL initialization once
+  static GoogleOnceType once = GOOGLE_ONCE_INIT;
   GoogleOnceInitArg(&once,
                     &DoSaslInit,
                     // This is a bit ugly, but Clang 3.4 UBSAN complains otherwise.
@@ -197,13 +209,72 @@ Status SaslInit(const char* const app_name) {
   return sasl_init_data->status;
 }
 
-string SaslErrDesc(int status, sasl_conn_t* conn) {
-  if (conn != nullptr) {
-    return StringPrintf("SASL result code: %s, error: %s",
-        sasl_errstring(status, nullptr, nullptr),
-        sasl_errdetail(conn));
+static string CleanSaslError(const string& err) {
+  // In the case of GSS failures, we often get the actual error message
+  // buried inside a bunch of generic cruft. Use a regexp to extract it
+  // out. Note that we avoid std::regex because it appears to be broken
+  // with older libstdcxx.
+  static regex_t re;
+  static std::once_flag once;
+  std::call_once(once, []{
+      CHECK_EQ(0, regcomp(&re,
+                          "Unspecified GSS failure. +"
+                          "Minor code may provide more information +"
+                          "\\((.+)\\)", REG_EXTENDED));
+    });
+  regmatch_t matches[2];
+  if (regexec(&re, err.c_str(), arraysize(matches), matches, 0) == 0) {
+    return err.substr(matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
   }
-  return StringPrintf("SASL result code: %s", sasl_errstring(status, nullptr, nullptr));
+  return err;
+}
+
+static string SaslErrDesc(int status, sasl_conn_t* conn) {
+  string err;
+  if (conn != nullptr) {
+    err = sasl_errdetail(conn);
+  } else {
+    err = sasl_errstring(status, nullptr, nullptr);
+  }
+
+  return CleanSaslError(err);
+}
+
+Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) {
+  // In many cases, the GSSAPI SASL plugin will generate a nice error
+  // message as a message logged at SASL_LOG_FAIL logging level, but then
+  // return a useless one in sasl_errstring(). So, we set a global thread-local
+  // variable to capture any auth failure log message while we make the
+  // call into the library.
+  //
+  // The thread-local thing is a bit of a hack, but the logging callback
+  // is set globally rather than on a per-connection basis.
+  string err;
+  g_auth_failure_capture = &err;
+  int rc = call();
+  g_auth_failure_capture = nullptr;
+
+  switch (rc) {
+    case SASL_OK:
+      return Status::OK();
+    case SASL_CONTINUE:
+      return Status::Incomplete("");
+    case SASL_FAIL:      // Generic failure (encompasses missing krb5 credentials).
+    case SASL_BADAUTH:   // Authentication failure.
+    case SASL_NOAUTHZ:   // Authorization failure.
+    case SASL_NOUSER:    // User not found.
+    case SASL_WRONGMECH: // Server doesn't support requested mechanism.
+    case SASL_BADSERV: { // Server failed mutual authentication.
+      if (err.empty()) {
+        err = SaslErrDesc(rc, conn);
+      } else {
+        err = CleanSaslError(err);
+      }
+      return Status::NotAuthorized(err);
+    }
+    default:
+      return Status::RuntimeError(SaslErrDesc(rc, conn));
+  }
 }
 
 string SaslIpPortString(const Sockaddr& addr) {

@@ -241,7 +241,9 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
   }
   TRACE("Negotiation complete: $0", s.ToString());
 
-  bool is_bad = !s.ok() && !(s.IsNetworkError() && s.posix_code() == ECONNREFUSED);
+  bool is_bad = !s.ok() && !(
+      (s.IsNetworkError() && s.posix_code() == ECONNREFUSED) ||
+      s.IsNotAuthorized());
 
   if (is_bad || FLAGS_rpc_trace_negotiation) {
     string msg = Trace::CurrentTrace()->DumpToString();

@@ -222,7 +222,7 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
                 [](const Status& s, SaslClient& client) {
                   CHECK(s.IsNotAuthorized());
-                  CHECK_GT(s.ToString().find("No Kerberos credentials available"), 0);
+                  CHECK_EQ(s.message(), "No Kerberos credentials available");
                 }));
 
 
