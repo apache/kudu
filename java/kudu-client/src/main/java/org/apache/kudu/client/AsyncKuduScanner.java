@@ -789,7 +789,7 @@ public final class AsyncKuduScanner {
     public String toString() {
       return "ScanRequest(scannerId=" + Bytes.pretty(scannerId)
           + (tablet != null? ", tabletSlice=" + tablet.getTabletId() : "")
-          + ", attempt=" + attempt + ')';
+          + ", attempt=" + attempt + ", " + super.toString() + ")";
     }
 
     @Override

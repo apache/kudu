@@ -587,8 +587,8 @@ public class AsyncKuduClient implements AutoCloseable {
     RemoteTablet tablet = scanner.currentTablet();
     assert (tablet != null);
     KuduRpc<AsyncKuduScanner.Response> nextRequest = scanner.getNextRowsRequest();
-    TabletClient client =
-        connectionCache.getClient(tablet.getReplicaSelectedUUID(nextRequest.getReplicaSelection()));
+    String uuid = tablet.getReplicaSelectedUUID(nextRequest.getReplicaSelection());
+    TabletClient client = connectionCache.getClient(uuid);
     Deferred<AsyncKuduScanner.Response> d = nextRequest.getDeferred();
     // Important to increment the attempts before the next if statement since
     // getSleepTimeForRpc() relies on it if the client is null or dead.
@@ -597,7 +597,9 @@ public class AsyncKuduClient implements AutoCloseable {
       // A null client means we either don't know about this tablet anymore (unlikely) or we
       // couldn't find a leader (which could be triggered by a read timeout).
       // We'll first delay the RPC in case things take some time to settle down, then retry.
-      return delayedSendRpcToTablet(nextRequest, null);
+      Status statusRemoteError = Status.RemoteError("Not connected to server " + uuid
+          + " will retry after a delay");
+      return delayedSendRpcToTablet(nextRequest, new RecoverableException(statusRemoteError));
     }
     client.sendRpc(nextRequest);
     return d;
@@ -685,6 +687,12 @@ public class AsyncKuduClient implements AutoCloseable {
       }
     }
 
+    request.addTrace(
+        new RpcTraceFrame.RpcTraceFrameBuilder(
+            request.method(),
+            RpcTraceFrame.Action.QUERY_MASTER)
+            .build());
+
     // We fall through to here in two cases:
     //
     // 1) This client has not yet discovered the tablet which is responsible for
@@ -702,7 +710,7 @@ public class AsyncKuduClient implements AutoCloseable {
     Callback<Deferred<R>, Master.GetTableLocationsResponsePB> cb = new RetryRpcCB<>(request);
     Callback<Deferred<R>, Exception> eb = new RetryRpcErrback<>(request);
     Deferred<Master.GetTableLocationsResponsePB> returnedD =
-        locateTablet(request.getTable(), partitionKey);
+        locateTablet(request.getTable(), partitionKey, request);
     return AsyncUtil.addCallbacksDeferring(returnedD, cb, eb);
   }
 
@@ -712,7 +720,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * <p>
    * Use {@code AsyncUtil.addCallbacksDeferring} to add this as the callback and
    * {@link AsyncKuduClient.RetryRpcErrback} as the "errback" to the {@code Deferred}
-   * returned by {@link #locateTablet(KuduTable, byte[])}.
+   * returned by {@link #locateTablet(KuduTable, byte[], KuduRpc)}.
    * @param <R> RPC's return type.
    * @param <D> Previous query's return type, which we don't use, but need to specify in order to
    *           tie it all together.
@@ -739,7 +747,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * <p>
    * Use {@code AsyncUtil.addCallbacksDeferring} to add this as the "errback" and
    * {@link RetryRpcCB} as the callback to the {@code Deferred} returned by
-   * {@link #locateTablet(KuduTable, byte[])}.
+   * {@link #locateTablet(KuduTable, byte[], KuduRpc)}.
    * @see #delayedSendRpcToTablet(KuduRpc, KuduException)
    * @param <R> The type of the original RPC.
    */
@@ -818,10 +826,12 @@ public class AsyncKuduClient implements AutoCloseable {
             }
           }
         }
-        IsCreateTableDoneRequest rpc = new IsCreateTableDoneRequest(masterTable, tableId);
-        rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+        IsCreateTableDoneRequest isCreateTableDoneRequest =
+            new IsCreateTableDoneRequest(masterTable, tableId);
+        isCreateTableDoneRequest.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+        isCreateTableDoneRequest.setParentRpc(rpc);
         final Deferred<Master.IsCreateTableDoneResponsePB> d =
-            sendRpcToTablet(rpc).addCallback(new IsCreateTableDoneCB(tableId));
+            sendRpcToTablet(isCreateTableDoneRequest).addCallback(new IsCreateTableDoneCB(tableId));
         if (has_permit) {
           // The errback is needed here to release the lookup permit
           d.addCallbacks(new ReleaseMasterLookupPermit<Master.IsCreateTableDoneResponsePB>(),
@@ -958,13 +968,15 @@ public class AsyncKuduClient implements AutoCloseable {
    * Sends a getTableLocations RPC to the master to find the table's tablets.
    * @param table table to lookup
    * @param partitionKey can be null, if not we'll find the exact tablet that contains it
+   * @param parentRpc RPC that prompted a master lookup, can be null
    * @return Deferred to track the progress
    */
   private Deferred<Master.GetTableLocationsResponsePB> locateTablet(KuduTable table,
-                                                                    byte[] partitionKey) {
-    final boolean has_permit = acquireMasterLookupPermit();
+                                                                    byte[] partitionKey,
+                                                                    KuduRpc<?> parentRpc) {
+    boolean hasPermit = acquireMasterLookupPermit();
     String tableId = table.getTableId();
-    if (!has_permit) {
+    if (!hasPermit) {
       // If we failed to acquire a permit, it's worth checking if someone
       // looked up the tablet we're interested in.  Every once in a while
       // this will save us a Master lookup.
@@ -974,22 +986,27 @@ public class AsyncKuduClient implements AutoCloseable {
         return Deferred.fromResult(null);  // Looks like no lookup needed.
       }
     }
-    // Leave the end of the partition key range empty in order to pre-fetch tablet locations.
-    GetTableLocationsRequest rpc =
-        new GetTableLocationsRequest(masterTable, partitionKey, null, tableId);
-    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
-    final Deferred<Master.GetTableLocationsResponsePB> d;
 
     // If we know this is going to the master, check the master consensus
     // configuration (as specified by 'masterAddresses' field) to determine and
     // cache the current leader.
+    Deferred<Master.GetTableLocationsResponsePB> d;
     if (isMasterTable(tableId)) {
-      d = getMasterTableLocationsPB();
+      d = getMasterTableLocationsPB(parentRpc);
     } else {
+      // Leave the end of the partition key range empty in order to pre-fetch tablet locations.
+      GetTableLocationsRequest rpc =
+          new GetTableLocationsRequest(masterTable, partitionKey, null, tableId);
+      if (parentRpc != null) {
+        rpc.setTimeoutMillis(parentRpc.deadlineTracker.getMillisBeforeDeadline());
+        rpc.setParentRpc(parentRpc);
+      } else {
+        rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+      }
       d = sendRpcToTablet(rpc);
     }
     d.addCallback(new MasterLookupCB(table, partitionKey));
-    if (has_permit) {
+    if (hasPermit) {
       d.addBoth(new ReleaseMasterLookupPermit<Master.GetTableLocationsResponsePB>());
     }
     return d;
@@ -1000,7 +1017,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * fill a {@link Master.GetTabletLocationsResponsePB} object.
    * @return An initialized Deferred object to hold the response.
    */
-  Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB() {
+  Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB(KuduRpc<?> parentRpc) {
     final Deferred<Master.GetTableLocationsResponsePB> responseD = new Deferred<>();
     final GetMasterRegistrationReceived received =
         new GetMasterRegistrationReceived(masterAddresses, responseD);
@@ -1017,7 +1034,7 @@ public class AsyncKuduClient implements AutoCloseable {
         Status statusIOE = Status.IOError(message);
         d = Deferred.fromError(new NonRecoverableException(statusIOE));
       } else {
-        d = getMasterRegistration(clientForHostAndPort);
+        d = getMasterRegistration(clientForHostAndPort, parentRpc);
       }
       d.addCallbacks(received.callbackForNode(hostAndPort), received.errbackForNode(hostAndPort));
     }
@@ -1088,7 +1105,7 @@ public class AsyncKuduClient implements AutoCloseable {
       // When lookup completes, the tablet (or non-covered range) for the next
       // partition key will be located and added to the client's cache.
       final byte[] lookupKey = partitionKey;
-      return locateTablet(table, key).addCallbackDeferring(
+      return locateTablet(table, key, null).addCallbackDeferring(
           new Callback<Deferred<List<LocatedTablet>>, GetTableLocationsResponsePB>() {
             @Override
             public Deferred<List<LocatedTablet>> call(GetTableLocationsResponsePB resp) {
@@ -1156,7 +1173,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * {@link #getSleepTimeForRpc(KuduRpc)}. If the RPC is out of time/retries, its errback will
    * be immediately called.
    * @param rpc the RPC to retry later
-   * @param ex the reason why we need to retry, might be null
+   * @param ex the reason why we need to retry
    * @return a Deferred object to use if this method is called inline with the user's original
    * attempt to send the RPC. Can be ignored in any other context that doesn't need to return a
    * Deferred back to the user.
@@ -1171,6 +1188,15 @@ public class AsyncKuduClient implements AutoCloseable {
         sendRpcToTablet(rpc);
       }
     }
+    assert (ex != null);
+    Status reasonForRetry = ex.getStatus();
+    rpc.addTrace(
+        new RpcTraceFrame.RpcTraceFrameBuilder(
+            rpc.method(),
+            RpcTraceFrame.Action.SLEEP_THEN_RETRY)
+            .callStatus(reasonForRetry)
+            .build());
+
     long sleepTime = getSleepTimeForRpc(rpc);
     if (cannotRetryRequest(rpc) || rpc.deadlineTracker.wouldSleepingTimeout(sleepTime)) {
       // Don't let it retry.
@@ -1389,14 +1415,21 @@ public class AsyncKuduClient implements AutoCloseable {
   /**
    * Retrieve the master registration (see {@link GetMasterRegistrationResponse}
    * for a replica.
-   * @param masterClient An initialized client for the master replica.
-   * @return A Deferred object for the master replica's current registration.
+   * @param masterClient an initialized client for the master replica
+   * @param parentRpc RPC that prompted a master lookup, can be null
+   * @return a Deferred object for the master replica's current registration
    */
-  Deferred<GetMasterRegistrationResponse> getMasterRegistration(TabletClient masterClient) {
+  Deferred<GetMasterRegistrationResponse> getMasterRegistration(
+      TabletClient masterClient, KuduRpc<?> parentRpc) {
     // TODO: Handle the situation when multiple in-flight RPCs all want to query the masters,
     // basically reuse in some way the master permits.
     GetMasterRegistrationRequest rpc = new GetMasterRegistrationRequest(masterTable);
-    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+    if (parentRpc != null) {
+      rpc.setTimeoutMillis(parentRpc.deadlineTracker.getMillisBeforeDeadline());
+      rpc.setParentRpc(parentRpc);
+    } else {
+      rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+    }
     Deferred<GetMasterRegistrationResponse> d = rpc.getDeferred();
     rpc.attempt++;
     masterClient.sendRpc(rpc);

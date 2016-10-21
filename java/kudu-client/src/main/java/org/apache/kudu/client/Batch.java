@@ -178,6 +178,7 @@ class Batch extends KuduRpc<BatchResponse> {
                       .add("operations", operations.size())
                       .add("tablet", tablet)
                       .add("ignoreAllDuplicateRows", ignoreAllDuplicateRows)
+                      .add("rpc", super.toString())
                       .toString();
   }
 

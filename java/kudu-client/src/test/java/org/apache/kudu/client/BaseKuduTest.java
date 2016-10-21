@@ -380,7 +380,8 @@ public class BaseKuduTest {
     Stopwatch sw = Stopwatch.createStarted();
     int leaderPort = -1;
     while (leaderPort == -1 && sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
-      Deferred<Master.GetTableLocationsResponsePB> masterLocD = client.getMasterTableLocationsPB();
+      Deferred<Master.GetTableLocationsResponsePB> masterLocD =
+          client.getMasterTableLocationsPB(null);
       Master.GetTableLocationsResponsePB r = masterLocD.join(DEFAULT_SLEEP);
       leaderPort = r.getTabletLocations(0)
           .getReplicas(0)

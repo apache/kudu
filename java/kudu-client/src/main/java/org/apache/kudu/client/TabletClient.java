@@ -153,6 +153,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   }
 
   <R> void sendRpc(KuduRpc<R> rpc) {
+    rpc.addTrace(
+        new RpcTraceFrame.RpcTraceFrameBuilder(
+            rpc.method(),
+            RpcTraceFrame.Action.SEND_TO_SERVER)
+            .serverInfo(serverInfo)
+            .build());
+
     if (!rpc.deadlineTracker.hasDeadline()) {
       LOG.warn(getPeerUuidLoggingString() + " sending an rpc without a timeout " + rpc);
     }
@@ -420,6 +427,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       throw new NonRecoverableException(statusIllegalState);
     }
 
+    // Start building the trace, we'll finish it as we parse the response.
+    RpcTraceFrame.RpcTraceFrameBuilder traceBuilder =
+        new RpcTraceFrame.RpcTraceFrameBuilder(
+            rpc.method(),
+            RpcTraceFrame.Action.RECEIVE_FROM_SERVER)
+            .serverInfo(serverInfo);
+
     Pair<Object, Object> decoded = null;
     KuduException exception = null;
     Status retryableHeaderError = Status.OK();
@@ -463,6 +477,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
     // This check is specifically for the ERROR_SERVER_TOO_BUSY case above.
     if (!retryableHeaderError.ok()) {
+      rpc.addTrace(traceBuilder.callStatus(retryableHeaderError).build());
       kuduClient.handleRetryableError(rpc, new RecoverableException(retryableHeaderError));
       return null;
     }
@@ -473,7 +488,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (decoded != null) {
       if (decoded.getSecond() instanceof Tserver.TabletServerErrorPB) {
         Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded.getSecond();
-        exception = dispatchTSErrorOrReturnException(rpc, error);
+        exception = dispatchTSErrorOrReturnException(rpc, error, traceBuilder);
         if (exception == null) {
           // It was taken care of.
           return null;
@@ -484,7 +499,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
       } else if (decoded.getSecond() instanceof Master.MasterErrorPB) {
         Master.MasterErrorPB error = (Master.MasterErrorPB) decoded.getSecond();
-        exception = dispatchMasterErrorOrReturnException(rpc, error);
+        exception = dispatchMasterErrorOrReturnException(rpc, error, traceBuilder);
         if (exception == null) {
           // Exception was taken care of.
           return null;
@@ -500,11 +515,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         if (kuduClient.isStatisticsEnabled()) {
           rpc.updateStatistics(kuduClient.getStatistics(), decoded.getFirst());
         }
+        rpc.addTrace(traceBuilder.callStatus(Status.OK()).build());
         rpc.callback(decoded.getFirst());
       } else {
         if (kuduClient.isStatisticsEnabled()) {
           rpc.updateStatistics(kuduClient.getStatistics(), null);
         }
+        rpc.addTrace(traceBuilder.callStatus(exception.getStatus()).build());
         rpc.errback(exception);
       }
     } catch (Exception e) {
@@ -525,8 +542,9 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * @param error the error the TS sent
    * @return an exception if we couldn't dispatch the error, or null
    */
-  private KuduException dispatchTSErrorOrReturnException(KuduRpc rpc,
-                                                         Tserver.TabletServerErrorPB error) {
+  private KuduException dispatchTSErrorOrReturnException(
+      KuduRpc rpc, Tserver.TabletServerErrorPB error,
+      RpcTraceFrame.RpcTraceFrameBuilder traceBuilder) {
     WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
     Status status = Status.fromTabletServerErrorPB(error);
     if (error.getCode() == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND) {
@@ -541,6 +559,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     } else {
       return new NonRecoverableException(status);
     }
+    rpc.addTrace(traceBuilder.callStatus(status).build());
     return null;
   }
 
@@ -551,8 +570,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * @param error the error the master sent
    * @return an exception if we couldn't dispatch the error, or null
    */
-  private KuduException dispatchMasterErrorOrReturnException(KuduRpc rpc,
-                                                             Master.MasterErrorPB error) {
+  private KuduException dispatchMasterErrorOrReturnException(
+      KuduRpc rpc, Master.MasterErrorPB error, RpcTraceFrame.RpcTraceFrameBuilder traceBuilder) {
     WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
     Status status = Status.fromMasterErrorPB(error);
     if (error.getCode() == Master.MasterErrorPB.Code.NOT_THE_LEADER) {
@@ -571,6 +590,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     } else {
       return new NonRecoverableException(status);
     }
+    rpc.addTrace(traceBuilder.callStatus(status).build());
     return null;
   }
 
@@ -735,6 +755,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    */
   private void failOrRetryRpc(final KuduRpc<?> rpc,
                               final RecoverableException exception) {
+    rpc.addTrace(
+        new RpcTraceFrame.RpcTraceFrameBuilder(
+            rpc.method(),
+            RpcTraceFrame.Action.RECEIVE_FROM_SERVER)
+            .serverInfo(serverInfo)
+            .callStatus(exception.getStatus())
+            .build());
+
     RemoteTablet tablet = rpc.getTablet();
     // Note As of the time of writing (03/11/16), a null tablet doesn't make sense, if we see a null
     // tablet it's because we didn't set it properly before calling sendRpc().

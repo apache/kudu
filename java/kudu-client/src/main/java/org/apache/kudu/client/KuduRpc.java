@@ -25,6 +25,7 @@
  */
 package org.apache.kudu.client;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -39,7 +40,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
@@ -61,11 +65,19 @@ import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 @InterfaceAudience.Private
 public abstract class KuduRpc<R> {
 
+  @VisibleForTesting
+  public static final int MAX_TRACES_SIZE = 100;
+
   // Service names.
   protected static final String MASTER_SERVICE_NAME = "kudu.master.MasterService";
   protected static final String TABLET_SERVER_SERVICE_NAME = "kudu.tserver.TabletServerService";
 
   private static final Logger LOG = LoggerFactory.getLogger(KuduRpc.class);
+
+  private final List<RpcTraceFrame> traces =
+      Collections.synchronizedList(new ArrayList<RpcTraceFrame>());
+
+  private KuduRpc<?> parentRpc;
 
   /**
    * Returns the partition key this RPC is for, or {@code null} if the RPC is
@@ -203,7 +215,43 @@ public abstract class KuduRpc<R> {
       sequenceId = RequestTracker.NO_SEQ_NO;
     }
     deadlineTracker.reset();
+    traces.clear();
+    parentRpc = null;
     d.callback(result);
+  }
+
+  /**
+   * Add the provided trace to this RPC's collection of traces. If this RPC has a parent RPC, it
+   * will also receive that trace. If this RPC has reached the limit of traces it can track then
+   * the trace will just be discarded.
+   * @param rpcTraceFrame trace to add
+   */
+  void addTrace(RpcTraceFrame rpcTraceFrame) {
+    if (parentRpc != null) {
+      parentRpc.addTrace(rpcTraceFrame);
+    }
+
+    if (traces.size() == MAX_TRACES_SIZE) {
+      // Add a last trace that indicates that we've reached the max size.
+      traces.add(
+          new RpcTraceFrame.RpcTraceFrameBuilder(
+              this.method(),
+              RpcTraceFrame.Action.TRACE_TRUNCATED)
+              .build());
+    } else if (traces.size() < MAX_TRACES_SIZE) {
+      traces.add(rpcTraceFrame);
+    }
+  }
+
+  /**
+   * Sets this RPC to receive traces from the provided parent RPC. An RPC can only have one and
+   * only one parent RPC.
+   * @param parentRpc RPC that will also receive traces from this RPC
+   */
+  void setParentRpc(KuduRpc<?> parentRpc) {
+    assert (this.parentRpc == null);
+    assert (this.parentRpc != this);
+    this.parentRpc = parentRpc;
   }
 
   /**
@@ -267,6 +315,14 @@ public abstract class KuduRpc<R> {
     return ReplicaSelection.LEADER_ONLY;
   }
 
+  /**
+   * Get an immutable copy of the traces.
+   * @return list of traces
+   */
+  List<RpcTraceFrame> getImmutableTraces() {
+    return ImmutableList.copyOf(traces);
+  }
+
   void setSequenceId(long sequenceId) {
     assert (this.sequenceId == RequestTracker.NO_SEQ_NO);
     this.sequenceId = sequenceId;
@@ -289,6 +345,7 @@ public abstract class KuduRpc<R> {
     // this method if DEBUG is enabled.
     if (LOG.isDebugEnabled()) {
       buf.append(", ").append(deferred);
+      buf.append(", ").append(traces);
     }
     buf.append(')');
     return buf.toString();
