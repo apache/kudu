@@ -102,16 +102,17 @@ MessengerBuilder &MessengerBuilder::set_metric_entity(
 
 Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
   RETURN_NOT_OK(SaslInit(kSaslAppName)); // Initialize SASL library before we start making requests
-  gscoped_ptr<Messenger> new_msgr(new Messenger(*this));
+  Messenger* new_msgr(new Messenger(*this));
   Status build_status = new_msgr->Init();
   if (!build_status.ok()) {
+    // 'new_msgr' will be freed when 'retain_self_' is reset, so no need to explicitly free it.
     new_msgr->AllExternalReferencesDropped();
     return build_status;
   }
 
   // See docs on Messenger::retain_self_ for info about this odd hack.
   *msgr = shared_ptr<Messenger>(
-    new_msgr.release(), std::mem_fun(&Messenger::AllExternalReferencesDropped));
+    new_msgr, std::mem_fun(&Messenger::AllExternalReferencesDropped));
   return Status::OK();
 }
 
