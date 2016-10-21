@@ -53,6 +53,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.concurrent.GuardedBy;
+import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -1405,8 +1406,8 @@ public class AsyncKuduClient implements AutoCloseable {
    * @return A live and initialized client for the specified master server.
    */
   TabletClient newMasterClient(HostAndPort masterHostPort) {
-    String ip = ConnectionCache.getIP(masterHostPort.getHostText());
-    if (ip == null) {
+    InetAddress inetAddress = NetUtil.getInetAddress((masterHostPort.getHostText()));
+    if (inetAddress == null) {
       return null;
     }
     // We should pass a UUID here but we have a chicken and egg problem, we first need to
@@ -1415,7 +1416,7 @@ public class AsyncKuduClient implements AutoCloseable {
     // host and port which is enough to identify the node we're connecting to.
     return connectionCache.newClient(
         MASTER_TABLE_NAME_PLACEHOLDER + " - " + masterHostPort.toString(),
-        ip, masterHostPort.getPort());
+        inetAddress, masterHostPort.getPort());
   }
 
   /**

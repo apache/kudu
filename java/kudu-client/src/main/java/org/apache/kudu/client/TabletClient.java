@@ -149,13 +149,16 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   // differently by also clearing the caches.
   private volatile boolean gotUncaughtException = false;
 
-  public TabletClient(AsyncKuduClient client, String uuid, String host, int port) {
+  private final boolean local;
+
+  public TabletClient(AsyncKuduClient client, String uuid, String host, int port, boolean local) {
     this.kuduClient = client;
     this.uuid = uuid;
     this.socketReadTimeoutMs = client.getDefaultSocketReadTimeoutMs();
     this.host = host;
     this.port = port;
     this.requestTracker = client.getRequestTracker();
+    this.local = local;
   }
 
   <R> void sendRpc(KuduRpc<R> rpc) {
@@ -838,6 +841,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    */
   String getUuid() {
     return uuid;
+  }
+
+  /**
+   * Returns if this server is on this client's host.
+   * @return true if the server is local, else false
+   */
+  boolean isLocal() {
+    return local;
   }
 
   /**

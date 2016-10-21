@@ -23,6 +23,7 @@ import org.apache.kudu.Common;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.master.Master;
+import org.apache.kudu.util.NetUtil;
 import org.jboss.netty.channel.DefaultChannelPipeline;
 import org.jboss.netty.channel.socket.SocketChannel;
 import org.jboss.netty.channel.socket.SocketChannelConfig;
@@ -104,15 +105,21 @@ class ConnectionCache {
     // from meta_cache.cc
     // TODO: if the TS advertises multiple host/ports, pick the right one
     // based on some kind of policy. For now just use the first always.
-    String ip = getIP(addresses.get(0).getHost());
-    if (ip == null) {
+    InetAddress inetAddress = NetUtil.getInetAddress(addresses.get(0).getHost());
+    if (inetAddress == null) {
       throw new UnknownHostException(
           "Failed to resolve the IP of `" + addresses.get(0).getHost() + "'");
     }
-    newClient(uuid, ip, addresses.get(0).getPort());
+    newClient(uuid, inetAddress, addresses.get(0).getPort());
   }
 
-  TabletClient newClient(String uuid, final String host, final int port) {
+  TabletClient newClient(String uuid, InetAddress inetAddress, int port) {
+    String host = inetAddress.getHostAddress();
+    boolean isLocal = NetUtil.isLocalAddress(inetAddress);
+    return newClient(uuid, host, port, isLocal);
+  }
+
+  TabletClient newClient(String uuid, String host, int port, boolean isLocal) {
     TabletClient client;
     SocketChannel chan;
 
@@ -123,7 +130,7 @@ class ConnectionCache {
         return client;
       }
       final TabletClientPipeline pipeline = new TabletClientPipeline();
-      client = pipeline.init(uuid, host, port);
+      client = pipeline.init(uuid, host, port, isLocal);
       chan = this.kuduClient.getChannelFactory().newChannel(pipeline);
       uuid2client.put(uuid, client);
     } finally {
@@ -159,7 +166,7 @@ class ConnectionCache {
 
   /**
    * Get a connection to a server for the given UUID. This method will automatically call
-   * {@link #newClient(String, String, int)} if the cached connection is down.
+   * {@link #newClient(String, InetAddress, int)} if the cached connection is down.
    * @param uuid server's identifier
    * @return a connection to a server, or null if the passed UUID isn't known
    */
@@ -171,7 +178,7 @@ class ConnectionCache {
     } else if (client.isAlive()) {
       return client;
     } else {
-      return newClient(uuid, client.getHost(), client.getPort());
+      return newClient(uuid, client.getHost(), client.getPort(), client.isLocal());
     }
   }
 
@@ -226,38 +233,11 @@ class ConnectionCache {
     return true;
   }
 
-  /**
-   * Gets a hostname or an IP address and returns the textual representation
-   * of the IP address.
-   * <p>
-   * <strong>This method can block</strong> as there is no API for
-   * asynchronous DNS resolution in the JDK.
-   * @param host the hostname to resolve
-   * @return the IP address associated with the given hostname,
-   * or {@code null} if the address couldn't be resolved
-   */
-  static String getIP(final String host) {
-    final long start = System.nanoTime();
-    try {
-      final String ip = InetAddress.getByName(host).getHostAddress();
-      final long latency = System.nanoTime() - start;
-      if (latency > 500000/*ns*/ && LOG.isDebugEnabled()) {
-        LOG.debug("Resolved IP of `{}' to {} in {}ns", host, ip, latency);
-      } else if (latency >= 3000000/*ns*/) {
-        LOG.warn("Slow DNS lookup! Resolved IP of `{}' to {} in {}ns", host, ip, latency);
-      }
-      return ip;
-    } catch (UnknownHostException e) {
-      LOG.error("Failed to resolve the IP of `{}' in {}ns", host, (System.nanoTime() - start));
-      return null;
-    }
-  }
-
   private final class TabletClientPipeline extends DefaultChannelPipeline {
 
-    TabletClient init(String uuid, String host, int port) {
+    TabletClient init(String uuid, String host, int port, boolean isLocal) {
       AsyncKuduClient kuduClient = ConnectionCache.this.kuduClient;
-      final TabletClient client = new TabletClient(kuduClient, uuid, host, port);
+      final TabletClient client = new TabletClient(kuduClient, uuid, host, port, isLocal);
       if (kuduClient.getDefaultSocketReadTimeoutMs() > 0) {
         super.addLast("timeout-handler",
             new ReadTimeoutHandler(kuduClient.getTimer(),

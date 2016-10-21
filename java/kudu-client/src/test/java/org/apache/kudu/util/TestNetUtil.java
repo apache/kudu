@@ -19,11 +19,11 @@ package org.apache.kudu.util;
 import com.google.common.net.HostAndPort;
 import org.junit.Test;
 
+import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.*;
 
 /**
  * Test for {@link NetUtil}.
@@ -69,5 +69,13 @@ public class TestNetUtil {
         HostAndPort.fromParts("1.2.3.4.5", 0)
     );
     assertEquals(NetUtil.hostsAndPortsToString(hostsAndPorts), "127.0.0.1:1111,1.2.3.4.5:0");
+  }
+
+  @Test
+  public void testLocal() throws Exception {
+    assertTrue(NetUtil.isLocalAddress(NetUtil.getInetAddress("localhost")));
+    assertTrue(NetUtil.isLocalAddress(NetUtil.getInetAddress("127.0.0.1")));
+    assertTrue(NetUtil.isLocalAddress(InetAddress.getLocalHost()));
+    assertFalse(NetUtil.isLocalAddress(NetUtil.getInetAddress("kudu.apache.org")));
   }
 }
