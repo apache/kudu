@@ -631,6 +631,17 @@ void RemoveAncientUndos(const HistoryGcOpts& history_gc_opts, CompactionInputRow
   }
 }
 
+namespace {
+// Makes the current UNDO head point to the 'new_head', if it's not null, and
+// makes 'new_head' the new UNDO head.
+void SetUndoHead(Mutation** current_head, Mutation* new_head) {
+  if (*current_head != nullptr) {
+    new_head->set_next(*current_head);
+  }
+  *current_head = new_head;
+}
+} // anonymous namespace
+
 Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       const CompactionInputRow& src_row,
                                       const HistoryGcOpts& history_gc_opts,
@@ -644,8 +655,6 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   // In most cases, we don't want to remove all traces of this row after
   // compaction.
   *is_garbage_collected = false;
-
-  const Schema* dst_schema = dst_row->schema();
 
   // At the time of writing, REINSERT is never encoded as an UNDO and the base
   // data can never be in a deleted state (see KUDU-237).
@@ -683,67 +692,70 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
              << redo_mut->changelist().ToString(*base_schema);
 
     RowChangeListDecoder redo_decoder(redo_mut->changelist());
-    Status s = redo_decoder.Init();
-    if (PREDICT_FALSE(!s.ok())) {
-      LOG(ERROR) << "Unable to decode changelist. " << ERROR_LOG_CONTEXT;
-      return s;
-    }
+    RETURN_NOT_OK_LOG(redo_decoder.Init(), ERROR,
+                      "Unable to decode changelist. " + ERROR_LOG_CONTEXT);
 
-    if (redo_decoder.is_update()) {
-      DCHECK(!is_deleted) << "Got UPDATE for deleted row. " << ERROR_LOG_CONTEXT;
+    switch (redo_decoder.get_type()) {
+      case RowChangeList::kUpdate: {
+        DCHECK(!is_deleted) << "Got UPDATE for deleted row. " << ERROR_LOG_CONTEXT;
 
-      s = redo_decoder.ApplyRowUpdate(dst_row,
-                                      static_cast<Arena *>(nullptr), &undo_encoder);
-      if (PREDICT_FALSE(!s.ok())) {
-        LOG(ERROR) << "Unable to apply update/create undo: " << s.ToString()
-                   << "\n" << ERROR_LOG_CONTEXT;
-        return s;
+        undo_encoder.SetToUpdate();
+        RETURN_NOT_OK_LOG(redo_decoder.MutateRowAndCaptureChanges(
+            dst_row, static_cast<Arena*>(nullptr), &undo_encoder), ERROR,
+                          "Unable to apply update undo. \n " + ERROR_LOG_CONTEXT);
+
+        // If all of the updates were for columns that we aren't projecting, we don't
+        // need to push them into the UNDO file.
+        if (undo_encoder.is_empty()) {
+          continue;
+        }
+
+        if (history_gc_opts.IsAncientHistory(redo_mut->timestamp())) {
+          // Don't generate an undo for this.
+          continue;
+        }
+
+        // create the UNDO mutation in the provided arena.
+        current_undo = Mutation::CreateInArena(arena, redo_mut->timestamp(),
+                                               undo_encoder.as_changelist());
+
+        SetUndoHead(&undo_head, current_undo);
+        break;
       }
+      case RowChangeList::kDelete: {
+        redo_decoder.TwiddleDeleteStatus(&is_deleted);
+        // Delete mutations are left as redos. Encode the DELETE as a redo.
+        undo_encoder.SetToDelete();
+        redo_head = Mutation::CreateInArena(arena,
+                                            redo_mut->timestamp(),
+                                            undo_encoder.as_changelist());
 
-      // If all of the updates were for columns that we aren't projecting, we don't
-      // need to push them into the UNDO file.
-      if (undo_encoder.is_empty()) {
-        continue;
+        if (history_gc_opts.IsAncientHistory(redo_mut->timestamp())) {
+          // This row was deleted prior to the ancient history mark. Remove all
+          // traces of this row. This flag is set to false once again if there
+          // is a subsequent reinsert (see above).
+          *is_garbage_collected = true;
+        }
+        break;
       }
-
-      if (history_gc_opts.IsAncientHistory(redo_mut->timestamp())) {
-        // Don't generate an undo for this.
-        continue;
-      }
-
-      // create the UNDO mutation in the provided arena.
-      current_undo = Mutation::CreateInArena(arena, redo_mut->timestamp(),
-                                             undo_encoder.as_changelist());
-
-      // In the case where the previous undo was a nullptr just make this one
-      // the head.
-      if (undo_head == nullptr) {
-        undo_head = current_undo;
-      } else {
-        current_undo->set_next(undo_head);
-        undo_head = current_undo;
-      }
-
-
-    } else if (redo_decoder.is_delete() || redo_decoder.is_reinsert()) {
-      redo_decoder.TwiddleDeleteStatus(&is_deleted);
-
-      if (redo_decoder.is_reinsert()) {
+      case RowChangeList::kReinsert: {
+        redo_decoder.TwiddleDeleteStatus(&is_deleted);
         *is_garbage_collected = false;
 
         // Right now when a REINSERT mutation is found it is treated as a new insert and it
-        // clears the whole row history before it.
+        // clears the whole row history before it. We apply the reinsert to the new
+        // row but disregard the undo reinsert that is created.
+        //
+        // TODO(dralves) KUDU-237 Actually store the REINSERT
+        undo_encoder.SetToReinsert();
+        RETURN_NOT_OK_LOG(redo_decoder.MutateRowAndCaptureChanges(
+            dst_row, static_cast<Arena*>(nullptr), &undo_encoder), ERROR,
+                          "Unable to apply reinsert undo. \n " + ERROR_LOG_CONTEXT);
 
-        // Copy the reinserted row over.
-        Slice reinserted_slice;
-        RETURN_NOT_OK(redo_decoder.GetReinsertedRowSlice(*dst_schema, &reinserted_slice));
-        ConstContiguousRow reinserted(dst_schema, reinserted_slice.data());
-        // No need to copy into an arena -- can refer to the mutation's arena.
-        Arena* null_arena = nullptr;
-        RETURN_NOT_OK(CopyRow(reinserted, dst_row, null_arena));
-
-        // Create an undo for the REINSERT
+        // Discard the REINSERT and store a DELETE instead.
+        undo_encoder.Reset();
         undo_encoder.SetToDelete();
+
         // Reset the UNDO head, losing all previous undos.
         undo_head = Mutation::CreateInArena(arena,
                                             redo_mut->timestamp(),
@@ -760,27 +772,11 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 
         if (PREDICT_FALSE(VLOG_IS_ON(2))) {
           VLOG(2) << "Found REINSERT REDO, cannot create UNDO for it, resetting row history "
-                     "under snapshot: " << snap.ToString() << ERROR_LOG_CONTEXT;
+              "under snapshot: " << snap.ToString() << ERROR_LOG_CONTEXT;
         }
-
-      // Is a delete.
-      } else {
-        // Delete mutations are left as redos. Encode the DELETE as a redo.
-        undo_encoder.SetToDelete();
-        redo_head = Mutation::CreateInArena(arena,
-                                            redo_mut->timestamp(),
-                                            undo_encoder.as_changelist());
-
-        if (history_gc_opts.IsAncientHistory(redo_mut->timestamp())) {
-          // This row was deleted prior to the ancient history mark. Remove all
-          // traces of this row. This flag is set to false once again if there
-          // is a subsequent reinsert (see above).
-          *is_garbage_collected = true;
-        }
-
+        break;
       }
-    } else {
-      LOG(FATAL) << "Unknown mutation type!" << ERROR_LOG_CONTEXT;
+      default: LOG(FATAL) << "Unknown mutation type!" << ERROR_LOG_CONTEXT;
     }
   }
 

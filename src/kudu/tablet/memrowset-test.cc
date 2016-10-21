@@ -405,8 +405,7 @@ TEST_F(TestMemRowSet, TestDelete) {
   ASSERT_OK(mrs->DebugDump(&rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ("@1: row (string key=hello world, uint32 val=1) mutations="
-            "[@2(DELETE), "
-            "@5(REINSERT (string key=hello world, uint32 val=2))]",
+            "[@2(DELETE), @5(REINSERT val=2)]",
             rows[0]);
 
   // Verify that iterating the rowset at the first snapshot shows the row.

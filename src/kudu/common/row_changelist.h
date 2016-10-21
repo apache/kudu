@@ -152,15 +152,21 @@ class RowChangeListEncoder {
     SetType(RowChangeList::kDelete);
   }
 
-  // TODO: This doesn't currently copy the indirected data, so
-  // REINSERT deltas can't possibly work anywhere but in memory.
-  // For now, there is an assertion in the DeltaFile flush code
-  // that prevents us from accidentally depending on this anywhere
-  // but in-memory.
-  void SetToReinsert(const Slice &row_data) {
-    SetType(RowChangeList::kReinsert);
-    dst_->append(row_data.data(), row_data.size());
+
+  // Marks the type of the row change as an update but doesn't
+  // actually add a mutation.
+  void SetToUpdate() {
+    SetType(RowChangeList::kUpdate);
   }
+
+  void SetToReinsert() {
+    SetType(RowChangeList::kReinsert);
+  }
+
+  // Encodes a REINSERT for 'src_row'.
+  // Both direct and indirect data from 'src_row' will be copied and encoded.
+  template<class RowType>
+  void SetToReinsert(const RowType& src_row);
 
   // Add a column update, given knowledge of the schema.
   //
@@ -184,8 +190,13 @@ class RowChangeListEncoder {
     return type_ != RowChangeList::kUninitialized;
   }
 
+  // Returns whether this encoder has an empty RowChangeList.
+  // Returns true if no type was set, or if the type was set to REINSERT or UPDATE but no
+  // actual changes were encoded.
   bool is_empty() {
-    return dst_->size() == 0;
+    if (dst_->size() == 0) return true;
+    return dst_->size() == 1 &&
+        (type_ == RowChangeList::kReinsert || type_ == RowChangeList::kUpdate);
   }
 
  private:
@@ -193,13 +204,26 @@ class RowChangeListEncoder {
   FRIEND_TEST(TestRowChangeList, TestInvalid_SetWrongSizeForIntColumn);
   friend class RowChangeListDecoder;
 
+  // Sets the type of the changelist to 'type' if it's not set.
+  // If a type *is* set then, in debug, this checks that the new
+  // type is the same as the current type.
   void SetType(RowChangeList::ChangeType type) {
-    DCHECK_EQ(type_, RowChangeList::kUninitialized);
-    type_ = type;
-    dst_->push_back(type);
+    if (!is_initialized()) {
+      DCHECK(is_empty());
+      type_ = type;
+      dst_->push_back(type);
+      return;
+    }
+    DCHECK_EQ(type_, type);
   }
 
-  // Add a column update by a raw value. This allows copying RCLs
+  // Internal version of AddColumnUpdate which does not set type, allowing
+  // it to work for both REINSERT and UPDATE.
+  void EncodeColumnMutation(const ColumnSchema& col_schema,
+                            int col_id,
+                            const void* cell_ptr);
+
+  // Add a column mutation by a raw value. This allows copying RCLs
   // from one file to another without having any awareness of schema.
   //
   // If 'is_null' is set, then encodes a SET [col_id]=NULL update.
@@ -208,12 +232,31 @@ class RowChangeListEncoder {
   // 'new_val' is the encoded form of the new value. In the case of
   // a STRING, this is the actual user-provided STRING. Otherwise,
   // it is the fixed-length representation of the type.
-  void AddRawColumnUpdate(int col_id, bool is_null, Slice new_val);
-
+  void EncodeColumnMutationRaw(int col_id, bool is_null, Slice new_val);
 
   RowChangeList::ChangeType type_;
   faststring *dst_;
 };
+
+template<class RowType>
+void RowChangeListEncoder::SetToReinsert(const RowType& src_row) {
+  DCHECK_EQ(RowChangeList::kUninitialized, type_);
+  SetType(RowChangeList::kReinsert);
+  const Schema* schema = src_row.schema();
+  for (int i = 0; i < schema->num_columns(); ++i) {
+    // Reinserts don't need to store the keys.
+    if (schema->is_key_column(i)) continue;
+    ColumnId col_id = schema->column_id(i);
+    const ColumnSchema& col_schema = schema->column(i);
+    if (col_schema.is_nullable() && src_row.is_null(i)) {
+      EncodeColumnMutationRaw(col_id, true /* null */, Slice());
+      continue;
+    }
+
+    const void* cell_ptr = DCHECK_NOTNULL(src_row.cell_ptr(i));
+    EncodeColumnMutation(col_schema, col_id, cell_ptr);
+  }
+}
 
 
 class RowChangeListDecoder {
@@ -259,10 +302,6 @@ class RowChangeListDecoder {
     return type_ == RowChangeList::kReinsert;
   }
 
-  // If this RCL is a REINSERT, then returns the reinserted row in
-  // the contiguous in-memory row format.
-  Status GetReinsertedRowSlice(const Schema& schema, Slice* s) const;
-
   const RowChangeList::ChangeType get_type() const {
     return type_;
   }
@@ -282,15 +321,21 @@ class RowChangeListDecoder {
   }
 
   // Applies changes in this decoder to the specified row and saves the old
-  // state of the row into the undo_encoder.
-  Status ApplyRowUpdate(RowBlockRow *dst_row,
-                        Arena *arena, RowChangeListEncoder* undo_encoder);
+  // state of the row into 'out'. Does not set a type in 'out', which must be pre-set.
+  //
+  // If the Schema of 'dst_row' does not include any of the columns in the encoded RowChangeList
+  // out->is_empty() will return true.
+  //
+  // REQUIRES: is_update() or is_reinsert()
+  Status MutateRowAndCaptureChanges(RowBlockRow* dst_row,
+                                    Arena* arena,
+                                    RowChangeListEncoder* out);
 
-  // Apply this UPDATE RowChangeList to row number 'row_idx' in 'dst_col', but only
-  // any updates that correspond to column 'col_idx' of 'dst_schema'.
+  // Apply this UPDATE or REINSERT RowChangeList to row number 'row_idx' in 'dst_col',
+  // but only any updates that correspond to column 'col_idx' of 'dst_schema'.
   // Any indirect data is copied into 'arena' if non-NULL.
   //
-  // REQUIRES: is_update()
+  // REQUIRES: is_update() or is_reinsert()
   Status ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_col,
                           const Schema& dst_schema, int col_idx, Arena *arena);
 
@@ -311,19 +356,18 @@ class RowChangeListDecoder {
 
   // Project the 'src' RowChangeList using the delta 'projector'
   // The projected RowChangeList will be encoded to specified 'buf'.
-  // The buffer will be cleared before adding the result.
-  static Status ProjectUpdate(const DeltaProjector& projector,
-                              const RowChangeList& src,
-                              faststring *buf);
+  // The buffer will be cleared before adding the result and will be empty if the projection
+  // ends up producing an empty RowChangeList.
+  static Status ProjectChangeList(const DeltaProjector& projector,
+                                  const RowChangeList& src,
+                                  faststring* buf);
 
-  // If 'src' is an update, then only add changes for columns NOT
-  // specified by 'column_indexes' to 'out'. Delete and Re-insert
-  // changes are added to 'out' as-is. If an update only contained
-  // changes for 'column_indexes', then out->is_initialized() will
+  // If 'src' is an UPDATE or REINSERT, then only add changes for columns NOT specified by
+  // 'column_indexes' to 'out'. Delete changes are added to 'out' as-is. If an update only
+  // contained changes for 'column_indexes', then out->is_initialized() will
   // return false.
-  // 'column_ids' must be sorted; 'out' must be
-  // valid for the duration of this method, but not have been
-  // previously initialized.
+  // 'column_ids' must be sorted; 'out' must be valid for the duration of this method, but not
+  // have been previously initialized.
   static Status RemoveColumnIdsFromChangeList(const RowChangeList& src,
                                               const std::vector<ColumnId>& column_ids,
                                               RowChangeListEncoder* out);
@@ -367,12 +411,13 @@ class RowChangeListDecoder {
   // The update->raw_value slice points to memory within the buffer
   // being decoded by this object. No copies are made.
   //
-  // REQUIRES: is_update()
+  // REQUIRES: is_update() or is_reinsert()
   Status DecodeNext(DecodedUpdate* update);
 
  private:
   FRIEND_TEST(TestRowChangeList, TestEncodeDecodeUpdates);
   friend class RowChangeList;
+  friend class RowChangeListEncoder;
 
   // Data remaining in the source buffer.
   // This slice is advanced forward as entries are decoded.

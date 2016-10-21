@@ -189,19 +189,10 @@ Status MemRowSet::Insert(Timestamp timestamp,
 Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, MRSRow *ms_row) {
   DCHECK_SCHEMA_EQ(schema_, *row.schema());
 
-  // TODO(perf): This path makes some unnecessary copies that could be reduced,
-  // but let's assume that REINSERT is really rare and code for clarity over speed
-  // here.
-
-  // Make a copy of the row, and relocate any of its indirected data into
-  // our Arena.
-  DEFINE_MRSROW_ON_STACK(this, row_copy, row_copy_slice);
-  RETURN_NOT_OK(row_copy.CopyRow(row, arena_.get()));
-
-  // Encode the REINSERT mutation from the relocated row copy.
+  // Encode the REINSERT mutation
   faststring buf;
   RowChangeListEncoder encoder(&buf);
-  encoder.SetToReinsert(row_copy.row_slice());
+  encoder.SetToReinsert(row);
 
   // Move the REINSERT mutation itself into our Arena.
   Mutation *mut = Mutation::CreateInArena(arena_.get(), timestamp, encoder.as_changelist());
@@ -556,19 +547,13 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
     RETURN_NOT_OK(decoder.Init());
     if (decoder.is_delete()) {
       decoder.TwiddleDeleteStatus(&is_deleted);
-    } else if (decoder.is_reinsert()) {
-      decoder.TwiddleDeleteStatus(&is_deleted);
-
-      Slice reinserted_slice;
-      RETURN_NOT_OK(decoder.GetReinsertedRowSlice(memrowset_->schema_nonvirtual(),
-                                                  &reinserted_slice));
-      ConstContiguousRow reinserted(&memrowset_->schema_nonvirtual(),
-                                    reinserted_slice);
-      RETURN_NOT_OK(projector_->ProjectRowForRead(reinserted, dst_row, dst_arena));
     } else {
-      DCHECK(decoder.is_update());
+      DCHECK(decoder.is_update() || decoder.is_reinsert());
+      if (decoder.is_reinsert()) {
+        decoder.TwiddleDeleteStatus(&is_deleted);
+      }
 
-      // TODO: this is slow, since it makes multiple passes through the rowchangelist.
+      // TODO(todd): this is slow, since it makes multiple passes through the rowchangelist.
       // Instead, we should keep the backwards mapping of columns.
       for (const RowProjector::ProjectionIdxMapping& mapping : projector_->base_cols_mapping()) {
         RowChangeListDecoder decoder(mut->changelist());
@@ -614,9 +599,9 @@ Status MemRowSet::Iterator::GetCurrentRow(RowBlockRow* dst_row,
     for (const Mutation *mut = src_row.redo_head();
          mut != nullptr;
          mut = mut->acquire_next()) {
-      RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_,
-                                                        mut->changelist(),
-                                                        &delta_buf_));
+      RETURN_NOT_OK(RowChangeListDecoder::ProjectChangeList(delta_projector_,
+                                                            mut->changelist(),
+                                                            &delta_buf_));
 
       // The projection resulted in an empty mutation (e.g. update of a removed column)
       if (delta_buf_.size() == 0) continue;

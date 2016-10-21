@@ -21,6 +21,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/row.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
@@ -128,31 +129,56 @@ TEST_F(TestRowChangeList, TestDeletes) {
 }
 
 TEST_F(TestRowChangeList, TestReinserts) {
-  RowBuilder rb(schema_);
-  rb.AddString(Slice("hello"));
-  rb.AddString(Slice("world"));
-  rb.AddUint32(12345);
-  rb.AddNull();
 
   // Construct a REINSERT.
   faststring buf;
-  RowChangeListEncoder rcl(&buf);
-  rcl.SetToReinsert(rb.data());
+  RowChangeListEncoder reinsert_1_enc(&buf);
+
+  {
+    // Reinserts include indirect data, so it should be ok to make the RowBuilder a scoped var.
+    RowBuilder rb(schema_);
+    rb.AddString(Slice("hello"));
+    rb.AddString(Slice("world"));
+    rb.AddUint32(12345);
+    rb.AddNull();
+    reinsert_1_enc.SetToReinsert(rb.row());
+  }
 
   LOG(INFO) << "Encoded: " << HexDump(buf);
 
   // Read it back.
-  EXPECT_EQ(string("REINSERT (string col1=hello, string col2=world, "
-                   "uint32 col3=12345, uint32 col4=NULL)"),
+  // Note that col1 (hello) is not present in the output string as it's part of the primary
+  // key which not encoded in the REINSERT mutation.
+  EXPECT_EQ(string("REINSERT col2=world, col3=12345, col4=NULL"),
             RowChangeList(Slice(buf)).ToString(schema_));
 
-  RowChangeListDecoder decoder((RowChangeList(buf)));
-  ASSERT_OK(decoder.Init());
-  ASSERT_TRUE(decoder.is_reinsert());
+  RowChangeListDecoder reinsert_1_dec((RowChangeList(buf)));
+  ASSERT_OK(reinsert_1_dec.Init());
+  ASSERT_TRUE(reinsert_1_dec.is_reinsert());
 
-  Slice s;
-  ASSERT_OK(decoder.GetReinsertedRowSlice(schema_, &s));
-  ASSERT_EQ(s, rb.data());
+  faststring buf2;
+  RowChangeListEncoder reinsert_2_enc(&buf2);
+  {
+    RowBlock block(schema_, 1, nullptr);
+    RowBlockRow dst_row = block.row(0);
+    RowBuilder rb(schema_);
+    rb.AddString(Slice("hello"));
+    rb.AddString(Slice("mundo"));
+    rb.AddUint32(54321);
+    rb.AddUint32(1);
+    CopyRow(rb.row(), &dst_row, static_cast<Arena*>(nullptr));
+    reinsert_2_enc.SetToReinsert();
+    CHECK_OK(reinsert_1_dec.MutateRowAndCaptureChanges(&dst_row,
+                                                       static_cast<Arena*>(nullptr),
+                                                       &reinsert_2_enc));
+    // The row should now match reinsert 1
+    ASSERT_STR_CONTAINS(schema_.DebugRow(dst_row),
+    "(string col1=hello, string col2=world, uint32 col3=12345, uint32 col4=NULL)");
+  }
+
+  // And reinsert 2 should contain the original state of the row.
+  EXPECT_EQ(string("REINSERT col2=mundo, col3=54321, col4=1"),
+            RowChangeList(Slice(buf2)).ToString(schema_));
 }
 
 TEST_F(TestRowChangeList, TestInvalid_EmptySlice) {
@@ -175,17 +201,17 @@ TEST_F(TestRowChangeList, TestInvalid_TooLongDelete) {
 
 TEST_F(TestRowChangeList, TestInvalid_TooShortReinsert) {
   RowChangeListDecoder decoder(RowChangeList(Slice("\x03")));
-  ASSERT_OK(decoder.Init());
-  Slice s;
-  ASSERT_STR_CONTAINS(decoder.GetReinsertedRowSlice(schema_, &s).ToString(),
-                      "Corruption: REINSERT changelist wrong length");
+  ASSERT_STR_CONTAINS(decoder.Init().ToString(),
+                      "Corruption: empty changelist - expected column updates");
 }
 
 TEST_F(TestRowChangeList, TestInvalid_SetNullForNonNullableColumn) {
   faststring buf;
   RowChangeListEncoder rcl(&buf);
+
   // Set column 0 = NULL
-  rcl.AddRawColumnUpdate(schema_.column_id(0), true, Slice());
+  rcl.SetToUpdate();
+  rcl.EncodeColumnMutationRaw(schema_.column_id(0), true, Slice());
 
   ASSERT_EQ("[invalid update: Corruption: decoded set-to-NULL "
             "for non-nullable column: col1[string NOT NULL], "
@@ -198,7 +224,8 @@ TEST_F(TestRowChangeList, TestInvalid_SetWrongSizeForIntColumn) {
   RowChangeListEncoder rcl(&buf);
   // Set column id 2 = \xff
   // (column id 2 is UINT32, so should be 4 bytes)
-  rcl.AddRawColumnUpdate(schema_.column_id(2), false, Slice("\xff"));
+  rcl.SetToUpdate();
+  rcl.EncodeColumnMutationRaw(schema_.column_id(2), false, Slice("\xff"));
 
   ASSERT_EQ("[invalid update: Corruption: invalid value \\xff "
             "for column col3[uint32 NOT NULL], "
