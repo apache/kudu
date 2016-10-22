@@ -176,15 +176,15 @@ class SysCatalogTable {
   void InitLocalRaftPeerPB();
 
   // Add an operation to a write adding/updating/deleting a table or tablet.
-  Status ReqAddTable(tserver::WriteRequestPB* req, const TableInfo* table);
-  Status ReqUpdateTable(tserver::WriteRequestPB* req, const TableInfo* table);
-  Status ReqDeleteTable(tserver::WriteRequestPB* req, const TableInfo* table);
-  Status ReqAddTablets(tserver::WriteRequestPB* req,
-                       const std::vector<TabletInfo*>& tablets);
-  Status ReqUpdateTablets(tserver::WriteRequestPB* req,
-                          const std::vector<TabletInfo*>& tablets);
-  Status ReqDeleteTablets(tserver::WriteRequestPB* req,
-                          const std::vector<TabletInfo*>& tablets);
+  void ReqAddTable(tserver::WriteRequestPB* req, const TableInfo* table);
+  void ReqUpdateTable(tserver::WriteRequestPB* req, const TableInfo* table);
+  void ReqDeleteTable(tserver::WriteRequestPB* req, const TableInfo* table);
+  void ReqAddTablets(tserver::WriteRequestPB* req,
+                     const std::vector<TabletInfo*>& tablets);
+  void ReqUpdateTablets(tserver::WriteRequestPB* req,
+                        const std::vector<TabletInfo*>& tablets);
+  void ReqDeleteTablets(tserver::WriteRequestPB* req,
+                        const std::vector<TabletInfo*>& tablets);
 
   // Special string injected into SyncWrite() random failures (if enabled).
   //

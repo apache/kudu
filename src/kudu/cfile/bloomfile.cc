@@ -113,7 +113,7 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
   hdr.set_num_hash_functions(bloom_builder_.n_hashes());
   faststring hdr_str;
   PutFixed32(&hdr_str, hdr.ByteSize());
-  CHECK(pb_util::AppendToString(hdr, &hdr_str));
+  pb_util::AppendToString(hdr, &hdr_str);
 
   // The data is the concatenation of the header and the bloom itself.
   vector<Slice> slices;

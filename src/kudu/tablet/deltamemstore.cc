@@ -125,7 +125,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
     stats->UpdateStats(key.timestamp(), rcl);
     iter->Next();
   }
-  RETURN_NOT_OK(dfw->WriteDeltaStats(*stats));
+  dfw->WriteDeltaStats(*stats);
 
   stats_ret->swap(stats);
   return Status::OK();

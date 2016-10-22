@@ -412,18 +412,18 @@ Status SysCatalogTable::Write(const Actions& actions) {
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   if (actions.table_to_add) {
-    RETURN_NOT_OK(ReqAddTable(&req, actions.table_to_add));
+    ReqAddTable(&req, actions.table_to_add);
   }
   if (actions.table_to_update) {
-    RETURN_NOT_OK(ReqUpdateTable(&req, actions.table_to_update));
+    ReqUpdateTable(&req, actions.table_to_update);
   }
   if (actions.table_to_delete) {
-    RETURN_NOT_OK(ReqDeleteTable(&req, actions.table_to_delete));
+    ReqDeleteTable(&req, actions.table_to_delete);
   }
 
-  RETURN_NOT_OK(ReqAddTablets(&req, actions.tablets_to_add));
-  RETURN_NOT_OK(ReqUpdateTablets(&req, actions.tablets_to_update));
-  RETURN_NOT_OK(ReqDeleteTablets(&req, actions.tablets_to_delete));
+  ReqAddTablets(&req, actions.tablets_to_add);
+  ReqUpdateTablets(&req, actions.tablets_to_update);
+  ReqDeleteTablets(&req, actions.tablets_to_delete);
 
   RETURN_NOT_OK(SyncWrite(&req, &resp));
   return Status::OK();
@@ -433,12 +433,9 @@ Status SysCatalogTable::Write(const Actions& actions) {
 // Table related methods
 // ==================================================================
 
-Status SysCatalogTable::ReqAddTable(WriteRequestPB* req, const TableInfo* table) {
+void SysCatalogTable::ReqAddTable(WriteRequestPB* req, const TableInfo* table) {
   faststring metadata_buf;
-  if (!pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf)) {
-    return Status::Corruption("Unable to serialize SysCatalogTablesEntryPB for tablet",
-                              table->metadata().dirty().name());
-  }
+  pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf);
 
   KuduPartialRow row(&schema_);
   CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLES_ENTRY));
@@ -446,15 +443,11 @@ Status SysCatalogTable::ReqAddTable(WriteRequestPB* req, const TableInfo* table)
   CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT, row);
-  return Status::OK();
 }
 
-Status SysCatalogTable::ReqUpdateTable(WriteRequestPB* req, const TableInfo* table) {
+void SysCatalogTable::ReqUpdateTable(WriteRequestPB* req, const TableInfo* table) {
   faststring metadata_buf;
-  if (!pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf)) {
-    return Status::Corruption("Unable to serialize SysCatalogTablesEntryPB for tablet",
-                              table->id());
-  }
+  pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf);
 
   KuduPartialRow row(&schema_);
   CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLES_ENTRY));
@@ -462,16 +455,14 @@ Status SysCatalogTable::ReqUpdateTable(WriteRequestPB* req, const TableInfo* tab
   CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   enc.Add(RowOperationsPB::UPDATE, row);
-  return Status::OK();
 }
 
-Status SysCatalogTable::ReqDeleteTable(WriteRequestPB* req, const TableInfo* table) {
+void SysCatalogTable::ReqDeleteTable(WriteRequestPB* req, const TableInfo* table) {
   KuduPartialRow row(&schema_);
   CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLES_ENTRY));
   CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, table->id()));
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   enc.Add(RowOperationsPB::DELETE, row);
-  return Status::OK();
 }
 
 Status SysCatalogTable::VisitTables(TableVisitor* visitor) {
@@ -523,48 +514,36 @@ Status SysCatalogTable::VisitTableFromRow(const RowBlockRow& row,
 // Tablet related methods
 // ==================================================================
 
-Status SysCatalogTable::ReqAddTablets(WriteRequestPB* req,
-                                      const vector<TabletInfo*>& tablets) {
+void SysCatalogTable::ReqAddTablets(WriteRequestPB* req,
+                                    const vector<TabletInfo*>& tablets) {
   faststring metadata_buf;
   KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   for (auto tablet : tablets) {
-    if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
-      return Status::Corruption("Unable to serialize SysCatalogTabletsEntryPB for tablet",
-                                tablet->tablet_id());
-    }
-
+    pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf);
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
     enc.Add(RowOperationsPB::INSERT, row);
   }
-
-  return Status::OK();
 }
 
-Status SysCatalogTable::ReqUpdateTablets(WriteRequestPB* req,
-                                         const vector<TabletInfo*>& tablets) {
+void SysCatalogTable::ReqUpdateTablets(WriteRequestPB* req,
+                                       const vector<TabletInfo*>& tablets) {
   faststring metadata_buf;
   KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   for (auto tablet : tablets) {
-    if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
-      return Status::Corruption("Unable to serialize SysCatalogTabletsEntryPB for tablet",
-                                tablet->tablet_id());
-    }
-
+    pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf);
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
     enc.Add(RowOperationsPB::UPDATE, row);
   }
-
-  return Status::OK();
 }
 
-Status SysCatalogTable::ReqDeleteTablets(WriteRequestPB* req,
-                                         const vector<TabletInfo*>& tablets) {
+void SysCatalogTable::ReqDeleteTablets(WriteRequestPB* req,
+                                       const vector<TabletInfo*>& tablets) {
   KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   for (auto tablet : tablets) {
@@ -572,8 +551,6 @@ Status SysCatalogTable::ReqDeleteTablets(WriteRequestPB* req,
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
     enc.Add(RowOperationsPB::DELETE, row);
   }
-
-  return Status::OK();
 }
 
 Status SysCatalogTable::VisitTabletFromRow(const RowBlockRow& row, TabletVisitor *visitor) {

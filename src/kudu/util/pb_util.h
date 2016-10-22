@@ -71,17 +71,16 @@ enum class FileState {
 extern const int kPBContainerMinimumValidLength;
 
 // See MessageLite::AppendToString
-bool AppendToString(const MessageLite &msg, faststring *output);
+void AppendToString(const MessageLite &msg, faststring *output);
 
 // See MessageLite::AppendPartialToString
-bool AppendPartialToString(const MessageLite &msg, faststring *output);
+void AppendPartialToString(const MessageLite &msg, faststring *output);
 
 // See MessageLite::SerializeToString.
-bool SerializeToString(const MessageLite &msg, faststring *output);
+void SerializeToString(const MessageLite &msg, faststring *output);
 
 // See MessageLite::ParseFromZeroCopyStream
-// TODO: change this to return Status - differentiate IO error from bad PB
-bool ParseFromSequentialFile(MessageLite *msg, SequentialFile *rfile);
+Status ParseFromSequentialFile(MessageLite *msg, SequentialFile *rfile);
 
 // Similar to MessageLite::ParseFromArray, with the difference that it returns
 // Status::Corruption() if the message could not be parsed.

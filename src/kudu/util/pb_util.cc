@@ -412,33 +412,41 @@ Status ReadSupplementalHeader(ReadableFileType* reader, int version, uint64_t* o
 
 } // anonymous namespace
 
-bool AppendToString(const MessageLite &msg, faststring *output) {
+void AppendToString(const MessageLite &msg, faststring *output) {
   DCHECK(msg.IsInitialized()) << InitializationErrorMessage("serialize", msg);
-  return AppendPartialToString(msg, output);
+  AppendPartialToString(msg, output);
 }
 
-bool AppendPartialToString(const MessageLite &msg, faststring* output) {
-  int old_size = output->size();
+void AppendPartialToString(const MessageLite &msg, faststring* output) {
+  size_t old_size = output->size();
   int byte_size = msg.ByteSize();
+  // Messages >2G cannot be serialized due to overflow computing ByteSize.
+  DCHECK_GE(byte_size, 0) << "Error computing ByteSize";
 
-  output->resize(old_size + byte_size);
+  output->resize(old_size + static_cast<size_t>(byte_size));
 
   uint8* start = &((*output)[old_size]);
   uint8* end = msg.SerializeWithCachedSizesToArray(start);
   if (end - start != byte_size) {
     ByteSizeConsistencyError(byte_size, msg.ByteSize(), end - start);
   }
-  return true;
 }
 
-bool SerializeToString(const MessageLite &msg, faststring *output) {
+void SerializeToString(const MessageLite &msg, faststring *output) {
   output->clear();
-  return AppendToString(msg, output);
+  AppendToString(msg, output);
 }
 
-bool ParseFromSequentialFile(MessageLite *msg, SequentialFile *rfile) {
+Status ParseFromSequentialFile(MessageLite *msg, SequentialFile *rfile) {
   SequentialFileFileInputStream istream(rfile);
-  return msg->ParseFromZeroCopyStream(&istream);
+  if (!msg->ParseFromZeroCopyStream(&istream)) {
+    RETURN_NOT_OK(istream.status());
+
+    // If it's not a file IO error then it's a parsing error.
+    // Probably, we read wrong or damaged data here.
+    return Status::Corruption("Error parsing msg", InitializationErrorMessage("parse", *msg));
+  }
+  return Status::OK();
 }
 
 Status ParseFromArray(MessageLite* msg, const uint8_t* data, uint32_t length) {
@@ -479,9 +487,7 @@ Status WritePBToPath(Env* env, const std::string& path,
 Status ReadPBFromPath(Env* env, const std::string& path, MessageLite* msg) {
   shared_ptr<SequentialFile> rfile;
   RETURN_NOT_OK(env_util::OpenFileForSequential(env, path, &rfile));
-  if (!ParseFromSequentialFile(msg, rfile.get())) {
-    return Status::IOError("Unable to parse PB from path", path);
-  }
+  RETURN_NOT_OK(ParseFromSequentialFile(msg, rfile.get()));
   return Status::OK();
 }
 
@@ -651,7 +657,8 @@ Status WritablePBContainerFile::Close() {
 Status WritablePBContainerFile::AppendMsgToBuffer(const Message& msg, faststring* buf) {
   DCHECK(msg.IsInitialized()) << InitializationErrorMessage("serialize", msg);
   int data_len = msg.ByteSize();
-  DCHECK_GE(data_len, 0); // ByteSize() returns an int, but it should never be negative.
+  // Messages >2G cannot be serialized due to overflow computing ByteSize.
+  DCHECK_GE(data_len, 0) << "Error computing ByteSize";
   uint64_t record_buflen =  sizeof(uint32_t) + data_len + sizeof(uint32_t);
   if (version_ >= 2) {
     record_buflen += sizeof(uint32_t); // Additional checksum just for the length.

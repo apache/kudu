@@ -168,10 +168,7 @@ Status CFileWriter::Start() {
   buf.append(kMagicString);
   // Then Length-prefixed header.
   PutFixed32(&buf, pb_size);
-  if (!pb_util::AppendToString(header, &buf)) {
-    return Status::Corruption("unable to encode header");
-  }
-
+  pb_util::AppendToString(header, &buf);
   RETURN_NOT_OK_PREPEND(block_->Append(Slice(buf)), "Couldn't write header");
   off_ += buf.size();
 
@@ -237,9 +234,7 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   FlushMetadataToPB(footer.mutable_metadata());
 
   faststring footer_str;
-  if (!pb_util::SerializeToString(footer, &footer_str)) {
-    return Status::Corruption("unable to serialize footer");
-  }
+  pb_util::SerializeToString(footer, &footer_str);
 
   footer_str.append(kMagicString);
   PutFixed32(&footer_str, footer.GetCachedSize());

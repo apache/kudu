@@ -92,7 +92,7 @@ class TestDeltaFile : public KuduTest {
         ASSERT_OK_FAST(stats.UpdateStats(key.timestamp(), rcl));
       }
     }
-    ASSERT_OK(dfw.WriteDeltaStats(stats));
+    dfw.WriteDeltaStats(stats);
     ASSERT_OK(dfw.Finish());
   }
 

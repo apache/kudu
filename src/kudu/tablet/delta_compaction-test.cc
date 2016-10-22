@@ -173,7 +173,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       row_id++;
     }
 
-    ASSERT_OK(dfw->WriteDeltaStats(stats));
+    dfw->WriteDeltaStats(stats);
     ASSERT_OK(dfw->Finish());
     shared_ptr<DeltaFileReader> dfr;
     ASSERT_OK(GetDeltaFileReader(block_id, &dfr));

@@ -435,20 +435,18 @@ Status Log::Reserve(LogEntryTypePB type,
   return Status::OK();
 }
 
-Status Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callback) {
+void Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callback) {
   TRACE_EVENT0("log", "Log::AsyncAppend");
   {
     shared_lock<rw_spinlock> l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
   }
 
-  RETURN_NOT_OK(entry_batch->Serialize());
+  entry_batch->Serialize();
   entry_batch->set_callback(callback);
   TRACE("Serialized $0 byte log entry", entry_batch->total_size_bytes());
   TRACE_EVENT_FLOW_BEGIN0("log", "Batch", entry_batch);
   entry_batch->MarkReady();
-
-  return Status::OK();
 }
 
 Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& replicates,
@@ -463,7 +461,7 @@ Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& replicates,
   // replicate while we're appending.
   reserved_entry_batch->SetReplicates(replicates);
 
-  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
+  AsyncAppend(reserved_entry_batch, callback);
   return Status::OK();
 }
 
@@ -479,7 +477,7 @@ Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
   LogEntryBatch* reserved_entry_batch;
   RETURN_NOT_OK(Reserve(COMMIT, std::move(batch), &reserved_entry_batch));
 
-  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, callback));
+  AsyncAppend(reserved_entry_batch, callback);
   return Status::OK();
 }
 
@@ -669,13 +667,11 @@ Status Log::Append(LogEntryPB* entry) {
   entry_batch_pb->mutable_entry()->AddAllocated(entry);
   LogEntryBatch entry_batch(entry->type(), std::move(entry_batch_pb), 1);
   entry_batch.state_ = LogEntryBatch::kEntryReserved;
-  Status s = entry_batch.Serialize();
+  entry_batch.Serialize();
+  entry_batch.state_ = LogEntryBatch::kEntryReady;
+  Status s = DoAppend(&entry_batch);
   if (s.ok()) {
-    entry_batch.state_ = LogEntryBatch::kEntryReady;
-    s = DoAppend(&entry_batch);
-    if (s.ok()) {
-      s = Sync();
-    }
+    s = Sync();
   }
   entry_batch.entry_batch_pb_->mutable_entry()->ExtractSubrange(0, 1, nullptr);
   return s;
@@ -689,7 +685,7 @@ Status Log::WaitUntilAllFlushed() {
   LogEntryBatch* reserved_entry_batch;
   RETURN_NOT_OK(Reserve(FLUSH_MARKER, std::move(entry_batch), &reserved_entry_batch));
   Synchronizer s;
-  RETURN_NOT_OK(AsyncAppend(reserved_entry_batch, s.AsStatusCallback()));
+  AsyncAppend(reserved_entry_batch, s.AsStatusCallback());
   return s.Wait();
 }
 
@@ -1005,23 +1001,17 @@ void LogEntryBatch::MarkReserved() {
   state_ = kEntryReserved;
 }
 
-Status LogEntryBatch::Serialize() {
+void LogEntryBatch::Serialize() {
   DCHECK_EQ(state_, kEntryReserved);
   buffer_.clear();
   // FLUSH_MARKER LogEntries are markers and are not serialized.
   if (PREDICT_FALSE(count() == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER)) {
     state_ = kEntrySerialized;
-    return Status::OK();
+    return;
   }
   buffer_.reserve(total_size_bytes_);
-
-  if (!pb_util::AppendToString(*entry_batch_pb_, &buffer_)) {
-    return Status::IOError(Substitute("unable to serialize the entry batch, contents: $1",
-                                      entry_batch_pb_->DebugString()));
-  }
-
+  pb_util::AppendToString(*entry_batch_pb_, &buffer_);
   state_ = kEntrySerialized;
-  return Status::OK();
 }
 
 void LogEntryBatch::MarkReady() {

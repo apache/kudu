@@ -118,7 +118,7 @@ Status WriteDeltaIteratorToFile(DeltaIterator* iter,
 
     i += n;
   }
-  RETURN_NOT_OK(out->WriteDeltaStats(stats));
+  out->WriteDeltaStats(stats);
   return Status::OK();
 }
 

@@ -114,8 +114,8 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Asynchronously appends 'entry_batch' to the log. Once the append
   // completes and is synced, 'callback' will be invoked.
-  Status AsyncAppend(LogEntryBatch* entry_batch,
-                     const StatusCallback& callback);
+  void AsyncAppend(LogEntryBatch* entry_batch,
+                   const StatusCallback& callback);
 
   // Synchronously append a new entry to the log.
   // Log does not take ownership of the passed 'entry'.
@@ -463,7 +463,7 @@ class LogEntryBatch {
                 gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count);
 
   // Serializes contents of the entry to an internal buffer.
-  Status Serialize();
+  void Serialize();
 
   // Sets the callback that will be invoked after the entry is
   // appended and synced to disk

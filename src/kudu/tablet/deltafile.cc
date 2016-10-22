@@ -155,17 +155,13 @@ Status DeltaFileWriter::AppendDelta<UNDO>(
   return DoAppendDelta(key, delta);
 }
 
-Status DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
+void DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
   DeltaStatsPB delta_stats_pb;
   stats.ToPB(&delta_stats_pb);
 
   faststring buf;
-  if (!pb_util::SerializeToString(delta_stats_pb, &buf)) {
-    return Status::IOError("Unable to serialize DeltaStatsPB", delta_stats_pb.DebugString());
-  }
-
+  pb_util::SerializeToString(delta_stats_pb, &buf);
   writer_->AddMetadataPair(DeltaFileReader::kDeltaStatsEntryName, buf.ToString());
-  return Status::OK();
 }
 
 

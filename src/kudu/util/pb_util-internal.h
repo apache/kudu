@@ -56,6 +56,10 @@ class SequentialFileFileInputStream : public google::protobuf::io::ZeroCopyInput
     return total_read_;
   }
 
+  Status status() const {
+    return status_;
+  }
+
  private:
   static const size_t kDefaultBufferSize = 8192;
 

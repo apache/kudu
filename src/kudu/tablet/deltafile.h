@@ -80,7 +80,7 @@ class DeltaFileWriter {
   template<DeltaType Type>
   Status AppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
-  Status WriteDeltaStats(const DeltaStats& stats);
+  void WriteDeltaStats(const DeltaStats& stats);
 
  private:
   Status DoAppendDelta(const DeltaKey &key, const RowChangeList &delta);

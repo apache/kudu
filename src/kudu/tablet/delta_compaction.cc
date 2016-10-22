@@ -218,12 +218,12 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
   RETURN_NOT_OK(base_data_writer_->Finish());
 
   if (redo_delta_mutations_written_ > 0) {
-    RETURN_NOT_OK(new_redo_delta_writer_->WriteDeltaStats(redo_stats));
+    new_redo_delta_writer_->WriteDeltaStats(redo_stats);
     RETURN_NOT_OK(new_redo_delta_writer_->Finish());
   }
 
   if (undo_delta_mutations_written_ > 0) {
-    RETURN_NOT_OK(new_undo_delta_writer_->WriteDeltaStats(undo_stats));
+    new_undo_delta_writer_->WriteDeltaStats(undo_stats);
     RETURN_NOT_OK(new_undo_delta_writer_->Finish());
   }
 
