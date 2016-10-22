@@ -26,7 +26,9 @@ from kudu.client import (Client, Table, Scanner, Session,  # noqa
                          FLUSH_AUTO_SYNC,
                          FLUSH_MANUAL,
                          READ_LATEST,
-                         READ_AT_SNAPSHOT)
+                         READ_AT_SNAPSHOT,
+                         EXCLUSIVE_BOUND,
+                         INCLUSIVE_BOUND)
 
 from kudu.errors import (KuduException, KuduBadStatus, KuduNotFound,  # noqa
                          KuduNotSupported,

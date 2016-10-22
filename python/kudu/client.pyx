@@ -67,6 +67,33 @@ cdef dict _type_names = {
     KUDU_UNIXTIME_MICROS : "KUDU_UNIXTIME_MICROS"
 }
 
+# Range Partition Bound Type enums
+EXCLUSIVE_BOUND = PartitionType_Exclusive
+INCLUSIVE_BOUND = PartitionType_Inclusive
+
+cdef dict _partition_bound_types = {
+    'exclusive': PartitionType_Exclusive,
+    'inclusive': PartitionType_Inclusive
+}
+
+def _check_convert_range_bound_type(bound):
+    # Convert bounds types to constants and raise exception if invalid.
+    def invalid_bound_type(bound_type):
+        raise ValueError('Invalid range partition bound type: {0}'
+                         .format(bound_type))
+
+    if isinstance(bound, int):
+        if bound >= len(_partition_bound_types) \
+                or bound < 0:
+            invalid_bound_type(bound)
+        else:
+            return bound
+    else:
+        try:
+            return _partition_bound_types[bound.lower()]
+        except KeyError:
+            invalid_bound_type(bound)
+
 
 cdef class TimeDelta:
     """
@@ -304,7 +331,7 @@ cdef class Client:
         try:
             c.table_name(tobytes(table_name))
             c.schema(schema.schema)
-            self._apply_partitioning(c, partitioning)
+            self._apply_partitioning(c, partitioning, schema)
             if n_replicas:
                 c.num_replicas(n_replicas)
             s = c.Create()
@@ -312,10 +339,13 @@ cdef class Client:
         finally:
             del c
 
-    cdef _apply_partitioning(self, KuduTableCreator* c, part):
+    cdef _apply_partitioning(self, KuduTableCreator* c, part, Schema schema):
         cdef:
             vector[string] v
-            PartialRow py_row
+            PartialRow lower_bound
+            PartialRow upper_bound
+            PartialRow split_row
+
         # Apply hash partitioning.
         for col_names, num_buckets, seed in part._hash_partitions:
             v.clear()
@@ -331,6 +361,32 @@ cdef class Client:
             for n in part._range_partition_cols:
                 v.push_back(tobytes(n))
             c.set_range_partition_columns(v)
+            if part._range_partitions:
+                for partition in part._range_partitions:
+                    if not isinstance(partition[0], PartialRow):
+                        lower_bound = schema.new_row(partition[0])
+                    else:
+                        lower_bound = partition[0]
+                    lower_bound._own = 0
+                    if not isinstance(partition[1], PartialRow):
+                        upper_bound = schema.new_row(partition[1])
+                    else:
+                        upper_bound = partition[1]
+                    upper_bound._own = 0
+                    c.add_range_partition(
+                        lower_bound.row,
+                        upper_bound.row,
+                        _check_convert_range_bound_type(partition[2]),
+                        _check_convert_range_bound_type(partition[3])
+                    )
+            if part._range_partition_splits:
+                for split in part._range_partition_splits:
+                    if not isinstance(split, PartialRow):
+                        split_row = schema.new_row(split)
+                    else:
+                        split_row = split
+                    split_row._own = 0
+                    c.add_range_partition_split(split_row.row)
 
     def delete_table(self, table_name):
         """
@@ -944,6 +1000,8 @@ class Partitioning(object):
     def __init__(self):
         self._hash_partitions = []
         self._range_partition_cols = None
+        self._range_partitions = []
+        self._range_partition_splits = []
 
     def add_hash_partitions(self, column_names, num_buckets, seed=None):
         """
@@ -994,9 +1052,62 @@ class Partitioning(object):
         self._range_partition_cols = column_names
         return self
 
-    # TODO: implement split_rows.
-    # This is slightly tricky since currently the PartialRow constructor requires a
-    # Table object, which doesn't exist yet. Should we use tuples instead?
+    def add_range_partition(self, lower_bound=None,
+                                  upper_bound=None,
+                                  lower_bound_type='inclusive',
+                                  upper_bound_type='exclusive'):
+        """
+        Add a range partition to the table.
+
+        Multiple range partitions may be added, but they must not overlap.
+        All range splits specified by add_range_partition_split must fall
+        in a range partition. The lower bound must be less than or equal
+        to the upper bound.
+
+        If this method is not called, the table's range will be unbounded.
+
+        Parameters
+        ----------
+        lower_bound : PartialRow/list/tuple/dict
+        upper_bound : PartialRow/list/tuple/dict
+        lower_bound_type : {'inclusive', 'exclusive'} or constants
+          kudu.EXCLUSIVE_BOUND and kudu.INCLUSIVE_BOUND
+        upper_bound_type : {'inclusive', 'exclusive'} or constants
+          kudu.EXCLUSIVE_BOUND and kudu.INCLUSIVE_BOUND
+
+        Returns
+        -------
+        self : Partitioning
+        """
+        if self._range_partition_cols:
+            self._range_partitions.append(
+                (lower_bound, upper_bound, lower_bound_type, upper_bound_type)
+            )
+        else:
+            raise ValueError("Range Partition Columns must be set before " +
+                             "adding a range partition.")
+
+        return self
+
+    def add_range_partition_split(self, split_row):
+        """
+        Add a range partition split at the provided row.
+
+        Parameters
+        ----------
+        split_row : PartialRow/list/tuple/dict
+
+        Returns
+        -------
+        self : Partitioning
+        """
+        if self._range_partition_cols:
+            self._range_partition_splits.append(split_row)
+        else:
+            raise ValueError("Range Partition Columns must be set before " +
+                             "adding a range partition split.")
+
+        return self
 
 
 cdef class Predicate:
@@ -2244,7 +2355,11 @@ cdef class PartialRow:
         if isinstance(key, basestring):
             self.set_field(key, value)
         else:
-            self.set_loc(key, value)
+            if 0 <= key < len(self.schema):
+                self.set_loc(key, value)
+            else:
+                raise IndexError("Column index {0} is out of bounds."
+                                 .format(key))
 
     def from_record(self, record):
         """

@@ -65,7 +65,7 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
         table_name = 'type-test'
         # Create schema, partitioning and then table
         builder = kudu.schema_builder()
-        builder.add_column('key').type(kudu.int64).nullable(False).primary_key()
+        builder.add_column('key').type(kudu.int64).nullable(False)
         builder.add_column('unixtime_micros_val', type_=kudu.unixtime_micros, nullable=False)
         builder.add_column('string_val', type_=kudu.string, compression=kudu.COMPRESSION_LZ4, encoding='prefix')
         builder.add_column('bool_val', type_=kudu.bool)
@@ -73,13 +73,26 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
         builder.add_column('int8_val', type_=kudu.int8)
         builder.add_column('binary_val', type_='binary', compression=kudu.COMPRESSION_SNAPPY, encoding='prefix')
         builder.add_column('float_val', type_=kudu.float)
+        builder.set_primary_keys(['key', 'unixtime_micros_val'])
         schema = builder.build()
 
         self.projected_names_w_o_float = [
             col for col in schema.names if col != 'float_val'
         ]
 
-        partitioning = Partitioning().add_hash_partitions(column_names=['key'], num_buckets=3)
+        partitioning = Partitioning() \
+            .add_hash_partitions(column_names=['key'], num_buckets=3)\
+            .set_range_partition_columns(['unixtime_micros_val'])\
+            .add_range_partition(
+                upper_bound={'unixtime_micros_val': ("2016-01-01", "%Y-%m-%d")},
+                upper_bound_type=kudu.EXCLUSIVE_BOUND
+            )\
+            .add_range_partition(
+                lower_bound={'unixtime_micros_val': datetime.datetime(2016, 1, 1)},
+                lower_bound_type='INCLUSIVE',
+                upper_bound={'unixtime_micros_val': datetime.datetime(9999, 12, 31)}
+            )
+
 
         self.client.create_table(table_name, schema, partitioning)
         self.type_table = self.client.table(table_name)

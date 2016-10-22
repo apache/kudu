@@ -464,6 +464,10 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         ReadMode_Latest " kudu::client::KuduScanner::READ_LATEST"
         ReadMode_Snapshot " kudu::client::KuduScanner::READ_AT_SNAPSHOT"
 
+    enum RangePartitionBound" kudu::client::KuduTableCreator::RangePartitionBound":
+        PartitionType_Exclusive " kudu::client::KuduTableCreator::EXCLUSIVE_BOUND"
+        PartitionType_Inclusive " kudu::client::KuduTableCreator::INCLUSIVE_BOUND"
+
     cdef cppclass KuduClient:
 
         Status DeleteTable(const string& table_name)
@@ -518,6 +522,11 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
                                               int num_buckets,
                                               int seed)
         KuduTableCreator& set_range_partition_columns(vector[string]& columns)
+        KuduTableCreator& add_range_partition(KuduPartialRow* lower_bound,
+                                              KuduPartialRow* upper_bound,
+                                              RangePartitionBound lower_bound_type,
+                                              RangePartitionBound upper_bound_type)
+        KuduTableCreator& add_range_partition_split(KuduPartialRow* split_row)
         KuduTableCreator& split_rows(vector[const KuduPartialRow*]& split_rows)
         KuduTableCreator& num_replicas(int n_replicas)
         KuduTableCreator& wait(c_bool wait)
