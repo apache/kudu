@@ -30,6 +30,7 @@
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
@@ -44,7 +45,6 @@ class MetricEntity;
 class ThreadPool;
 
 namespace fs {
-class PathInstanceMetadataFile;
 
 namespace internal {
 class LogBlock;
@@ -155,14 +155,14 @@ class FullDiskCache {
  public:
   // Returns true if the given 'root_path' has been marked full and the
   // associated cache entry has not expired.
-  bool IsRootFull(const std::string& root_path, MonoTime* expires_out = nullptr) const;
+  bool IsRootFull(const DataDir* root_path, MonoTime* expires_out = nullptr) const;
 
   // Marks the given 'root_path' as "full".
-  void MarkRootFull(const std::string& root_path);
+  void MarkRootFull(const DataDir* root_path);
 
  private:
   mutable percpu_rwlock lock_;
-  std::unordered_map<std::string, MonoTime> cache_;
+  std::unordered_map<const DataDir*, MonoTime> cache_;
 };
 
 // The log-backed block manager.
@@ -238,7 +238,7 @@ class LogBlockManager : public BlockManager {
   // 'full_root_paths' is a blacklist containing root paths that are full.
   // Containers with root paths in this list will not be returned.
   internal::LogBlockContainer* GetAvailableContainer(
-      const std::unordered_set<std::string>& full_root_paths);
+      const std::unordered_set<const DataDir*>& full_root_paths);
 
   // Indicate that this container is no longer in use and can be handed out
   // to other writers.
@@ -280,16 +280,10 @@ class LogBlockManager : public BlockManager {
                           internal::LogBlockContainer* container,
                           UntrackedBlockMap* block_map);
 
-  // Open a particular root path belonging to the block manager.
+  // Open a particular data directory belonging to the block manager.
   //
-  // Success or failure is set in 'result_status'. On success, also sets
-  // 'result_metadata' with an allocated metadata file.
-  void OpenRootPath(const std::string& root_path,
-                    Status* result_status,
-                    PathInstanceMetadataFile** result_metadata);
-
-  // Test for hole punching support at 'path'.
-  Status CheckHolePunch(const std::string& path);
+  // Success or failure is set in 'result_status'.
+  void OpenDataDir(DataDir* dir, Status* result_status);
 
   // Perform basic initialization.
   Status Init();
@@ -309,6 +303,9 @@ class LogBlockManager : public BlockManager {
 
   // Protects the block map, container structures, and 'dirty_dirs'.
   mutable simple_spinlock lock_;
+
+  // Manages and owns all of the block manager's data directories.
+  DataDirManager dd_manager_;
 
   // Maps block IDs to blocks that are now readable, either because they
   // already existed on disk when the block manager was opened, or because
@@ -349,21 +346,6 @@ class LogBlockManager : public BlockManager {
 
   // If true, only read operations are allowed.
   const bool read_only_;
-
-  // Filesystem paths where all block directories are found.
-  const std::vector<std::string> root_paths_;
-
-  // Index of 'root_paths_' for the next created block.
-  AtomicInt<int32> root_paths_idx_;
-
-  // Maps root paths to instance metadata files found in each root path.
-  typedef std::unordered_map<std::string, PathInstanceMetadataFile*> InstanceMap;
-  InstanceMap instances_by_root_path_;
-
-  // Maps root paths to thread pools. Each pool runs at most one thread, and
-  // so serves as a "work queue" for that particular disk.
-  typedef std::unordered_map<std::string, ThreadPool*> ThreadPoolMap;
-  ThreadPoolMap thread_pools_by_root_path_;
 
   // A cache of which root paths are full as of the last time they were
   // checked. This cache expires its entries after some period of time.

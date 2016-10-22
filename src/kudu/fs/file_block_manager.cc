@@ -17,16 +17,10 @@
 
 #include "kudu/fs/file_block_manager.h"
 
-#include <deque>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include "kudu/fs/block_manager_metrics.h"
-#include "kudu/fs/block_manager_util.h"
-#include "kudu/fs/fs.pb.h"
-#include "kudu/gutil/map-util.h"
-#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
@@ -34,15 +28,12 @@
 #include "kudu/util/malloc.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
 
-using kudu::env_util::ScopedFileDeleter;
 using std::shared_ptr;
 using std::string;
-using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -496,167 +487,57 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
 
 bool FileBlockManager::FindBlockPath(const BlockId& block_id,
                                      string* path) const {
-  PathInstanceMetadataFile* metadata_file = FindPtrOrNull(
-      root_paths_by_idx_, internal::FileBlockLocation::GetRootPathIdx(block_id));
-  if (metadata_file) {
+  DataDir* dir = dd_manager_.FindDataDirByUuidIndex(
+      internal::FileBlockLocation::GetRootPathIdx(block_id));
+  if (dir) {
     *path = internal::FileBlockLocation::FromBlockId(
-        metadata_file->path(), block_id).GetFullPath();
+        dir->dir(), block_id).GetFullPath();
   }
-  return metadata_file != nullptr;
+  return dir != nullptr;
 }
 
 FileBlockManager::FileBlockManager(Env* env, const BlockManagerOptions& opts)
   : env_(DCHECK_NOTNULL(env)),
     read_only_(opts.read_only),
-    root_paths_(opts.root_paths),
+    dd_manager_(env, kBlockManagerType, opts.root_paths),
     rand_(GetRandomSeed32()),
     next_block_id_(rand_.Next64()),
     mem_tracker_(MemTracker::CreateTracker(-1,
                                            "file_block_manager",
                                            opts.parent_mem_tracker)) {
-  DCHECK_GT(root_paths_.size(), 0);
   if (opts.metric_entity) {
     metrics_.reset(new internal::BlockManagerMetrics(opts.metric_entity));
   }
 }
 
 FileBlockManager::~FileBlockManager() {
-  STLDeleteValues(&root_paths_by_idx_);
 }
 
 Status FileBlockManager::Create() {
   CHECK(!read_only_);
-
-  deque<ScopedFileDeleter*> delete_on_failure;
-  ElementDeleter d(&delete_on_failure);
-
-  if (root_paths_.size() > kMaxPaths) {
-    return Status::NotSupported(
-        Substitute("File block manager supports a maximum of $0 paths", kMaxPaths));
-  }
-
-  // The UUIDs and indices will be included in every instance file.
-  ObjectIdGenerator oid_generator;
-  vector<string> all_uuids(root_paths_.size());
-  for (string& u : all_uuids) {
-    u = oid_generator.Next();
-  }
-  int idx = 0;
-
-  // Ensure the data paths exist and create the instance files.
-  unordered_set<string> to_sync;
-  for (const string& root_path : root_paths_) {
-    bool created;
-    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_path, &created),
-                          Substitute("Could not create directory $0", root_path));
-    if (created) {
-      delete_on_failure.push_front(new ScopedFileDeleter(env_, root_path));
-      to_sync.insert(DirName(root_path));
-    }
-
-    string instance_filename = JoinPathSegments(
-        root_path, kInstanceMetadataFileName);
-    PathInstanceMetadataFile metadata(env_, kBlockManagerType,
-                                      instance_filename);
-    RETURN_NOT_OK_PREPEND(metadata.Create(all_uuids[idx], all_uuids),
-                          Substitute("Could not create $0", instance_filename));
-    delete_on_failure.push_front(new ScopedFileDeleter(env_, instance_filename));
-    idx++;
-  }
-
-  // Ensure newly created directories are synchronized to disk.
-  if (FLAGS_enable_data_block_fsync) {
-    for (const string& dir : to_sync) {
-      RETURN_NOT_OK_PREPEND(env_->SyncDir(dir),
-                            Substitute("Unable to synchronize directory $0", dir));
-    }
-  }
-
-  // Success: don't delete any files.
-  for (ScopedFileDeleter* deleter : delete_on_failure) {
-    deleter->Cancel();
-  }
-  return Status::OK();
+  return dd_manager_.Create(
+      FLAGS_enable_data_block_fsync ? DataDirManager::FLAG_CREATE_FSYNC : 0);
 }
 
 Status FileBlockManager::Open() {
-  vector<PathInstanceMetadataFile*> instances;
-  ElementDeleter deleter(&instances);
-  instances.reserve(root_paths_.size());
-
-  for (const string& root_path : root_paths_) {
-    if (!env_->FileExists(root_path)) {
-      return Status::NotFound(Substitute(
-          "FileBlockManager at $0 not found", root_path));
-    }
-    string instance_filename = JoinPathSegments(
-        root_path, kInstanceMetadataFileName);
-    gscoped_ptr<PathInstanceMetadataFile> metadata(
-        new PathInstanceMetadataFile(env_, kBlockManagerType,
-                                     instance_filename));
-    RETURN_NOT_OK_PREPEND(metadata->LoadFromDisk(),
-                          Substitute("Could not open $0", instance_filename));
-    if (FLAGS_block_manager_lock_dirs) {
-      Status s = metadata->Lock();
-      if (!s.ok()) {
-        Status new_status = s.CloneAndPrepend(Substitute(
-            "Could not lock $0", instance_filename));
-        if (read_only_) {
-          // Not fatal in read-only mode.
-          LOG(WARNING) << new_status.ToString();
-          LOG(WARNING) << "Proceeding without lock";
-        } else {
-          return new_status;
-        }
-      }
-    }
-
-    instances.push_back(metadata.release());
+  DataDirManager::LockMode mode;
+  if (!FLAGS_block_manager_lock_dirs) {
+    mode = DataDirManager::LockMode::NONE;
+  } else if (read_only_) {
+    mode = DataDirManager::LockMode::OPTIONAL;
+  } else {
+    mode = DataDirManager::LockMode::MANDATORY;
   }
-
-  RETURN_NOT_OK_PREPEND(PathInstanceMetadataFile::CheckIntegrity(instances),
-                        Substitute("Could not verify integrity of files: $0",
-                                   JoinStrings(root_paths_, ",")));
-
-  PathMap instances_by_idx;
-  for (PathInstanceMetadataFile* instance : instances) {
-    const PathSetPB& path_set = instance->metadata()->path_set();
-    uint32_t idx = -1;
-    for (int i = 0; i < path_set.all_uuids_size(); i++) {
-      if (path_set.uuid() == path_set.all_uuids(i)) {
-        idx = i;
-        break;
-      }
-    }
-    DCHECK_NE(idx, -1); // Guaranteed by CheckIntegrity().
-    if (idx > kMaxPaths) {
-      return Status::NotSupported(
-          Substitute("File block manager supports a maximum of $0 paths", kMaxPaths));
-    }
-    InsertOrDie(&instances_by_idx, idx, instance);
-  }
-  instances.clear();
-  instances_by_idx.swap(root_paths_by_idx_);
-  next_root_path_ = root_paths_by_idx_.begin();
-  return Status::OK();
+  return dd_manager_.Open(kMaxPaths, mode);
 }
 
 Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
                                      gscoped_ptr<WritableBlock>* block) {
   CHECK(!read_only_);
 
-  // Pick a root path using a simple round-robin block placement strategy.
-  uint16_t root_path_idx;
-  string root_path;
-  {
-    std::lock_guard<simple_spinlock> l(lock_);
-    root_path_idx = next_root_path_->first;
-    root_path = next_root_path_->second->path();
-    next_root_path_++;
-    if (next_root_path_ == root_paths_by_idx_.end()) {
-      next_root_path_ = root_paths_by_idx_.begin();
-    }
-  }
+  DataDir* dir = dd_manager_.GetNextDataDir();
+  uint16_t uuid_idx;
+  CHECK(dd_manager_.FindUuidIndexByDataDir(dir, &uuid_idx));
 
   string path;
   vector<string> created_dirs;
@@ -682,8 +563,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
       id.SetId(next_block_id_.Increment());
     } while (id.IsNull());
 
-    location = internal::FileBlockLocation::FromParts(
-        root_path, root_path_idx, id);
+    location = internal::FileBlockLocation::FromParts(dir->dir(), uuid_idx, id);
     path = location.GetFullPath();
     RETURN_NOT_OK_PREPEND(location.CreateBlockDir(env_, &created_dirs), path);
     WritableFileOptions wr_opts;

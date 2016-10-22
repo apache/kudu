@@ -22,7 +22,10 @@
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
+#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/callback.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
@@ -103,18 +106,18 @@ METRIC_DEFINE_counter(server, log_block_manager_unavailable_containers,
                       "Number of non-full log block containers that are under root paths "
                       "whose disks are full");
 
-using kudu::env_util::ScopedFileDeleter;
-using kudu::fs::internal::LogBlock;
-using kudu::fs::internal::LogBlockContainer;
-using kudu::pb_util::ReadablePBContainerFile;
-using kudu::pb_util::WritablePBContainerFile;
-using std::unordered_map;
-using std::unordered_set;
-using strings::Substitute;
 
 namespace kudu {
 
 namespace fs {
+
+using internal::LogBlock;
+using internal::LogBlockContainer;
+using pb_util::ReadablePBContainerFile;
+using pb_util::WritablePBContainerFile;
+using std::unordered_set;
+using strings::Substitute;
+
 namespace internal {
 
 ////////////////////////////////////////////////////////////
@@ -170,21 +173,20 @@ class LogBlockContainer {
 
   // Creates a new block container in 'dir'.
   static Status Create(LogBlockManager* block_manager,
-                       PathInstanceMetadataPB* instance,
-                       const std::string& dir,
+                       DataDir* dir,
                        gscoped_ptr<LogBlockContainer>* container);
 
   // Opens an existing block container in 'dir'.
   //
   // Every container is comprised of two files: "<dir>/<id>.data" and
-  // "<dir>/<id>.metadata". Together, 'dir' and 'id' fully describe both files.
+  // "<dir>/<id>.metadata". Together, 'dir' and 'id' fully describe both
+  // files.
   //
   // Returns Status::Aborted() in the case that the metadata and data files
   // both appear to have no data (e.g. due to a crash just after creating
   // one of them but before writing any records).
   static Status Open(LogBlockManager* block_manager,
-                     PathInstanceMetadataPB* instance,
-                     const std::string& dir,
+                     DataDir* dir,
                      const std::string& id,
                      gscoped_ptr<LogBlockContainer>* container);
 
@@ -265,14 +267,13 @@ class LogBlockContainer {
   // This function is thread unsafe.
   void UpdateBytesWritten(int64_t more_bytes);
 
-  // Run a task on this container's root path thread pool.
+  // Run a task on this container's data directory thread pool.
   //
   // Normally the task is performed asynchronously. However, if submission to
   // the pool fails, it runs synchronously on the current thread.
   void ExecClosure(const Closure& task);
 
   // Simple accessors.
-  std::string dir() const { return DirName(path_); }
   const std::string& ToString() const { return path_; }
   LogBlockManager* block_manager() const { return block_manager_; }
   int64_t total_bytes_written() const { return total_bytes_written_; }
@@ -280,12 +281,12 @@ class LogBlockContainer {
     return total_bytes_written_ >= FLAGS_log_container_max_size;
   }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
-  const PathInstanceMetadataPB* instance() const { return instance_; }
-  const std::string& root_path() const { return root_path_; }
+  const DataDir* data_dir() const { return data_dir_; }
+  const PathInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
 
  private:
-  LogBlockContainer(LogBlockManager* block_manager, PathInstanceMetadataPB* instance,
-                    std::string root_path, std::string path,
+  LogBlockContainer(LogBlockManager* block_manager, DataDir* data_dir,
+                    std::string path,
                     gscoped_ptr<WritablePBContainerFile> metadata_writer,
                     gscoped_ptr<RWFile> data_file);
 
@@ -296,9 +297,8 @@ class LogBlockContainer {
   // The owning block manager. Must outlive the container itself.
   LogBlockManager* const block_manager_;
 
-  // The path to the container's root path. This is the root directory under
-  // which the container lives.
-  const std::string root_path_;
+  // The data directory where the container lives.
+  DataDir* data_dir_;
 
   // The path to the container's files. Equivalent to "<dir>/<id>" (see the
   // container constructor).
@@ -324,26 +324,25 @@ class LogBlockContainer {
   // as the block manager.
   const LogBlockManagerMetrics* metrics_;
 
-  const PathInstanceMetadataPB* instance_;
-
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainer);
 };
 
 LogBlockContainer::LogBlockContainer(
-    LogBlockManager* block_manager, PathInstanceMetadataPB* instance,
-    string root_path, string path, gscoped_ptr<WritablePBContainerFile> metadata_writer,
+    LogBlockManager* block_manager,
+    DataDir* data_dir,
+    string path,
+    gscoped_ptr<WritablePBContainerFile> metadata_writer,
     gscoped_ptr<RWFile> data_file)
     : block_manager_(block_manager),
-      root_path_(std::move(root_path)),
+      data_dir_(data_dir),
       path_(std::move(path)),
       metadata_pb_writer_(std::move(metadata_writer)),
       data_file_(std::move(data_file)),
-      metrics_(block_manager->metrics()),
-      instance_(instance) {}
+      metrics_(block_manager->metrics()) {
+}
 
 Status LogBlockContainer::Create(LogBlockManager* block_manager,
-                                 PathInstanceMetadataPB* instance,
-                                 const string& root_path,
+                                 DataDir* dir,
                                  gscoped_ptr<LogBlockContainer>* container) {
   string common_path;
   string metadata_path;
@@ -362,7 +361,8 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
     if (metadata_writer) {
       block_manager->env()->DeleteFile(metadata_path);
     }
-    common_path = JoinPathSegments(root_path, block_manager->oid_generator()->Next());
+    common_path = JoinPathSegments(dir->dir(),
+                                   block_manager->oid_generator()->Next());
     metadata_path = StrCat(common_path, LogBlockManager::kContainerMetadataFileSuffix);
     metadata_status = block_manager->env()->NewRWFile(wr_opts,
                                                       metadata_path,
@@ -383,8 +383,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
         new WritablePBContainerFile(std::move(metadata_writer)));
     RETURN_NOT_OK(metadata_pb_writer->Init(BlockRecordPB()));
     container->reset(new LogBlockContainer(block_manager,
-                                           instance,
-                                           root_path,
+                                           dir,
                                            common_path,
                                            std::move(metadata_pb_writer),
                                            std::move(data_file)));
@@ -396,11 +395,11 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
 }
 
 Status LogBlockContainer::Open(LogBlockManager* block_manager,
-                               PathInstanceMetadataPB* instance,
-                               const string& root_path, const string& id,
+                               DataDir* dir,
+                               const string& id,
                                gscoped_ptr<LogBlockContainer>* container) {
   Env* env = block_manager->env();
-  string common_path = JoinPathSegments(root_path, id);
+  string common_path = JoinPathSegments(dir->dir(), id);
   string metadata_path = StrCat(common_path, LogBlockManager::kContainerMetadataFileSuffix);
   string data_path = StrCat(common_path, LogBlockManager::kContainerDataFileSuffix);
 
@@ -455,13 +454,12 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
 
   // Create the in-memory container and populate it.
   gscoped_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
-                                                                      instance,
-                                                                      root_path,
+                                                                      dir,
                                                                       common_path,
                                                                       std::move(metadata_pb_writer),
                                                                       std::move(data_file)));
   VLOG(1) << "Opened log block container " << open_container->ToString();
-  container->reset(open_container.release());
+  container->swap(open_container);
   return Status::OK();
 }
 
@@ -668,14 +666,7 @@ void LogBlockContainer::UpdateBytesWritten(int64_t more_bytes) {
 }
 
 void LogBlockContainer::ExecClosure(const Closure& task) {
-  ThreadPool* pool = FindOrDie(block_manager()->thread_pools_by_root_path_,
-                               dir());
-  Status s = pool->SubmitClosure(task);
-  if (!s.ok()) {
-    WARN_NOT_OK(
-        s, "Could not submit task to thread pool, running it synchronously");
-    task.Run();
-  }
+  data_dir_->ExecClosure(task);
 }
 
 ////////////////////////////////////////////////////////////
@@ -1102,15 +1093,13 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
   : mem_tracker_(MemTracker::CreateTracker(-1,
                                            "log_block_manager",
                                            opts.parent_mem_tracker)),
-    // TODO: C++11 provides a single-arg constructor
+    dd_manager_(env, kBlockManagerType, opts.root_paths),
     blocks_by_block_id_(10,
                         BlockMap::hasher(),
                         BlockMap::key_equal(),
                         BlockAllocator(mem_tracker_)),
     env_(DCHECK_NOTNULL(env)),
     read_only_(opts.read_only),
-    root_paths_(opts.root_paths),
-    root_paths_idx_(0),
     next_block_id_(1) {
 
   // HACK: when running in a test environment, we often instantiate many
@@ -1125,7 +1114,6 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
     next_block_id_.Store(r.Next64());
   }
 
-  DCHECK_GT(root_paths_.size(), 0);
   if (opts.metric_entity) {
     metrics_.reset(new internal::LogBlockManagerMetrics(opts.metric_entity));
   }
@@ -1143,122 +1131,55 @@ LogBlockManager::~LogBlockManager() {
   // destroyed before their containers.
   blocks_by_block_id_.clear();
 
-  // As LogBlock destructors run, some blocks may be deleted, so we might be
-  // waiting here for a little while.
-  LOG_SLOW_EXECUTION(INFO, 1000,
-                     Substitute("waiting on $0 log block manager thread pools",
-                                thread_pools_by_root_path_.size())) {
-    for (const ThreadPoolMap::value_type& e :
-                  thread_pools_by_root_path_) {
-      ThreadPool* p = e.second;
-      p->Wait();
-      p->Shutdown();
-    }
-  }
+  // Containers may have outstanding tasks running on data directories; shut
+  // them down before destroying the containers.
+  dd_manager_.Shutdown();
 
   STLDeleteElements(&all_containers_);
-  STLDeleteValues(&thread_pools_by_root_path_);
-  STLDeleteValues(&instances_by_root_path_);
 }
-
-static const char kHolePunchErrorMsg[] =
-    "Error during hole punch test. The log block manager requires a "
-    "filesystem with hole punching support such as ext4 or xfs. On el6, "
-    "kernel version 2.6.32-358 or newer is required. To run without hole "
-    "punching (at the cost of some efficiency and scalability), reconfigure "
-    "Kudu with --block_manager=file. Refer to the Kudu documentation for more "
-    "details. Raw error message follows";
 
 Status LogBlockManager::Create() {
   CHECK(!read_only_);
-
-  RETURN_NOT_OK(Init());
-
-  deque<ScopedFileDeleter*> delete_on_failure;
-  ElementDeleter d(&delete_on_failure);
-
-  // The UUIDs and indices will be included in every instance file.
-  vector<string> all_uuids(root_paths_.size());
-  for (string& u : all_uuids) {
-    u = oid_generator()->Next();
-  }
-  int idx = 0;
-
-  // Ensure the data paths exist and create the instance files.
-  unordered_set<string> to_sync;
-  for (const string& root_path : root_paths_) {
-    bool created;
-    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_path, &created),
-                          Substitute("Could not create directory $0", root_path));
-    if (created) {
-      delete_on_failure.push_front(new ScopedFileDeleter(env_, root_path));
-      to_sync.insert(DirName(root_path));
-    }
-
-    if (FLAGS_log_block_manager_test_hole_punching) {
-      RETURN_NOT_OK_PREPEND(CheckHolePunch(root_path), kHolePunchErrorMsg);
-    }
-
-    string instance_filename = JoinPathSegments(
-        root_path, kInstanceMetadataFileName);
-    PathInstanceMetadataFile metadata(env_, kBlockManagerType,
-                                      instance_filename);
-    RETURN_NOT_OK_PREPEND(metadata.Create(all_uuids[idx], all_uuids), instance_filename);
-    delete_on_failure.push_front(new ScopedFileDeleter(env_, instance_filename));
-    idx++;
-  }
-
-  // Ensure newly created directories are synchronized to disk.
-  if (FLAGS_enable_data_block_fsync) {
-    for (const string& dir : to_sync) {
-      RETURN_NOT_OK_PREPEND(env_->SyncDir(dir),
-                            Substitute("Unable to synchronize directory $0", dir));
-    }
-  }
-
-  // Success: don't delete any files.
-  for (ScopedFileDeleter* deleter : delete_on_failure) {
-    deleter->Cancel();
-  }
-  return Status::OK();
+  return dd_manager_.Create(FLAGS_enable_data_block_fsync ?
+      DataDirManager::FLAG_CREATE_TEST_HOLE_PUNCH | DataDirManager::FLAG_CREATE_FSYNC :
+      DataDirManager::FLAG_CREATE_TEST_HOLE_PUNCH);
 }
 
 Status LogBlockManager::Open() {
-  RETURN_NOT_OK(Init());
-
-  vector<Status> statuses(root_paths_.size());
-  unordered_map<string, PathInstanceMetadataFile*> metadata_files;
-  ValueDeleter deleter(&metadata_files);
-  for (const string& root_path : root_paths_) {
-    InsertOrDie(&metadata_files, root_path, nullptr);
+  DataDirManager::LockMode mode;
+  if (!FLAGS_block_manager_lock_dirs) {
+    mode = DataDirManager::LockMode::NONE;
+  } else if (read_only_) {
+    mode = DataDirManager::LockMode::OPTIONAL;
+  } else {
+    mode = DataDirManager::LockMode::MANDATORY;
   }
+  RETURN_NOT_OK(dd_manager_.Open(kuint32max, mode));
 
-  // Submit each open to its own thread pool and wait for them to complete.
+  vector<Status> statuses(dd_manager_.data_dirs().size());
   int i = 0;
-  for (const string& root_path : root_paths_) {
-    ThreadPool* pool = FindOrDie(thread_pools_by_root_path_, root_path);
-    RETURN_NOT_OK_PREPEND(pool->SubmitClosure(
-        Bind(&LogBlockManager::OpenRootPath,
+  for (const auto& dd : dd_manager_.data_dirs()) {
+    // Open the data dir asynchronously.
+    dd->ExecClosure(
+        Bind(&LogBlockManager::OpenDataDir,
              Unretained(this),
-             root_path,
-             &statuses[i],
-             &FindOrDie(metadata_files, root_path))),
-                          Substitute("Could not open root path $0", root_path));
+             dd.get(),
+             &statuses[i]));
     i++;
   }
-  for (const ThreadPoolMap::value_type& e :
-                thread_pools_by_root_path_) {
-    e.second->Wait();
+
+  // Wait for the opens to complete.
+  for (const auto& dd : dd_manager_.data_dirs()) {
+    dd->WaitOnClosures();
   }
 
-  // Ensure that no tasks failed.
-  for (const Status& s : statuses) {
+  // Ensure that no open failed.
+  for (const auto& s : statuses) {
     if (!s.ok()) {
       return s;
     }
   }
 
-  instances_by_root_path_.swap(metadata_files);
   return Status::OK();
 }
 
@@ -1269,10 +1190,10 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
   // Root paths that are below their reserved space threshold. Initialize the
   // paths from the FullDiskCache. This function-local cache is necessary for
   // correctness in case the FullDiskCache expiration time is set to 0.
-  unordered_set<string> full_root_paths(root_paths_.size());
-  for (int i = 0; i < root_paths_.size(); i++) {
-    if (full_disk_cache_.IsRootFull(root_paths_[i])) {
-      InsertOrDie(&full_root_paths, root_paths_[i]);
+  unordered_set<const DataDir*> full_root_paths(dd_manager_.data_dirs().size());
+  for (const auto& dd : dd_manager_.data_dirs()) {
+    if (full_disk_cache_.IsRootFull(dd.get())) {
+      InsertOrDie(&full_root_paths, dd.get());
     }
   }
 
@@ -1287,41 +1208,31 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
     container = GetAvailableContainer(full_root_paths);
     if (!container) {
       // If all root paths are full, we cannot allocate a block.
-      if (full_root_paths.size() == root_paths_.size()) {
+      if (full_root_paths.size() == dd_manager_.data_dirs().size()) {
         return Status::IOError("Unable to allocate block: All data directories are full. "
                                "Please free some disk space or consider changing the "
                                "fs_data_dirs_reserved_bytes configuration parameter",
                                "", ENOSPC);
       }
-      // Round robin through the root paths to select where the next
-      // container should live.
-      // TODO: Consider a more random scheme for block placement.
-      int32 cur_idx;
-      int32 next_idx;
+
+      DataDir* dir;
       do {
-        cur_idx = root_paths_idx_.Load();
-        next_idx = (cur_idx + 1) % root_paths_.size();
-      } while (!root_paths_idx_.CompareAndSet(cur_idx, next_idx) ||
-               ContainsKey(full_root_paths, root_paths_[cur_idx]));
-      string root_path = root_paths_[cur_idx];
-      if (full_disk_cache_.IsRootFull(root_path)) {
-        InsertOrDie(&full_root_paths, root_path);
+        dir = dd_manager_.GetNextDataDir();
+      } while (ContainsKey(full_root_paths, dir));
+      if (full_disk_cache_.IsRootFull(dir)) {
+        InsertOrDie(&full_root_paths, dir);
         continue;
       }
 
-      // Guaranteed by LogBlockManager::Open().
-      PathInstanceMetadataFile* instance = FindOrDie(instances_by_root_path_, root_path);
-
       gscoped_ptr<LogBlockContainer> new_container;
       RETURN_NOT_OK_PREPEND(LogBlockContainer::Create(this,
-                                                      instance->metadata(),
-                                                      root_path,
+                                                      dir,
                                                       &new_container),
-                            "Could not create new log block container at " + root_path);
+                            "Could not create new log block container at " + dir->dir());
       container = new_container.release();
       {
         std::lock_guard<simple_spinlock> l(lock_);
-        dirty_dirs_.insert(root_path);
+        dirty_dirs_.insert(dir->dir());
         AddNewContainerUnlocked(container);
       }
     }
@@ -1341,11 +1252,11 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
       if (PREDICT_FALSE(s.IsIOError() && s.posix_code() == ENOSPC)) {
         LOG(ERROR) << Substitute("Log block manager: Insufficient disk space under path $0: "
                                  "Creation of new data blocks under this path can be retried after "
-                                 "$1 seconds: $2", container->root_path(),
+                                 "$1 seconds: $2", container->data_dir()->dir(),
                                  FLAGS_log_block_manager_full_disk_cache_seconds, s.ToString());
         // Blacklist this root globally and locally.
-        full_disk_cache_.MarkRootFull(container->root_path());
-        InsertOrDie(&full_root_paths, container->root_path());
+        full_disk_cache_.MarkRootFull(container->data_dir());
+        InsertOrDie(&full_root_paths, container->data_dir());
         MakeContainerAvailable(container);
         container = nullptr;
         continue;
@@ -1456,7 +1367,7 @@ void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {
 }
 
 LogBlockContainer* LogBlockManager::GetAvailableContainer(
-    const unordered_set<string>& full_root_paths) {
+    const unordered_set<const DataDir*>& full_root_paths) {
   LogBlockContainer* container = nullptr;
   int64_t disk_full_containers_delta = 0;
   MonoTime now = MonoTime::Now();
@@ -1478,8 +1389,8 @@ LogBlockContainer* LogBlockManager::GetAvailableContainer(
       MonoTime expires;
       // Note: We must check 'full_disk_cache_' before 'full_root_paths' in
       // order to correctly use the expiry time provided by 'full_disk_cache_'.
-      if (full_disk_cache_.IsRootFull(container->root_path(), &expires) ||
-          ContainsKey(full_root_paths, container->root_path())) {
+      if (full_disk_cache_.IsRootFull(container->data_dir(), &expires) ||
+          ContainsKey(full_root_paths, container->data_dir())) {
         if (!expires.Initialized()) {
           // It's no longer in the cache but we still consider it unusable.
           // It will be moved back into 'available_containers_' on the next call.
@@ -1519,11 +1430,11 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
   bool to_sync = false;
   {
     std::lock_guard<simple_spinlock> l(lock_);
-    to_sync = dirty_dirs_.erase(container.dir());
+    to_sync = dirty_dirs_.erase(container.data_dir()->dir());
   }
 
   if (to_sync && FLAGS_enable_data_block_fsync) {
-    s = env_->SyncDir(container.dir());
+    s = env_->SyncDir(container.data_dir()->dir());
 
     // If SyncDir fails, the container directory must be restored to
     // dirty_dirs_. Otherwise a future successful LogWritableBlock::Close()
@@ -1534,7 +1445,7 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
     // we'll sync it again needlessly.
     if (!s.ok()) {
       std::lock_guard<simple_spinlock> l(lock_);
-      dirty_dirs_.insert(container.dir());
+      dirty_dirs_.insert(container.data_dir()->dir());
     }
   }
   return s;
@@ -1596,49 +1507,14 @@ scoped_refptr<LogBlock> LogBlockManager::RemoveLogBlock(const BlockId& block_id)
   return result;
 }
 
-void LogBlockManager::OpenRootPath(const string& root_path,
-                                   Status* result_status,
-                                   PathInstanceMetadataFile** result_metadata) {
-  if (!env_->FileExists(root_path)) {
-    *result_status = Status::NotFound(Substitute(
-        "LogBlockManager at $0 not found", root_path));
-    return;
-  }
-
-  // Open and lock the metadata instance file.
-  string instance_filename = JoinPathSegments(
-      root_path, kInstanceMetadataFileName);
-  gscoped_ptr<PathInstanceMetadataFile> metadata(
-      new PathInstanceMetadataFile(env_, kBlockManagerType,
-                                   instance_filename));
-  Status s = metadata->LoadFromDisk();
-  if (!s.ok()) {
-    *result_status = s.CloneAndPrepend(Substitute(
-        "Could not open $0", instance_filename));
-    return;
-  }
-  if (FLAGS_block_manager_lock_dirs) {
-    s = metadata->Lock();
-    if (!s.ok()) {
-      Status new_status = s.CloneAndPrepend(Substitute(
-          "Could not lock $0", instance_filename));
-      if (read_only_) {
-        // Not fatal in read-only mode.
-        LOG(WARNING) << new_status.ToString();
-        LOG(WARNING) << "Proceeding without lock";
-      } else {
-        *result_status = new_status;
-        return;
-      }
-    }
-  }
-
+void LogBlockManager::OpenDataDir(DataDir* dir,
+                                  Status* result_status) {
   // Find all containers and open them.
   vector<string> children;
-  s = env_->GetChildren(root_path, &children);
+  Status s = env_->GetChildren(dir->dir(), &children);
   if (!s.ok()) {
     *result_status = s.CloneAndPrepend(Substitute(
-        "Could not list children of $0", root_path));
+        "Could not list children of $0", dir->dir()));
     return;
   }
   for (const string& child : children) {
@@ -1647,8 +1523,7 @@ void LogBlockManager::OpenRootPath(const string& root_path,
       continue;
     }
     gscoped_ptr<LogBlockContainer> container;
-    s = LogBlockContainer::Open(this, metadata->metadata(),
-                                root_path, id, &container);
+    s = LogBlockContainer::Open(this, dir, id, &container);
     if (s.IsAborted()) {
       // Skip the container. Open() already handled logging for us.
       continue;
@@ -1713,7 +1588,6 @@ void LogBlockManager::OpenRootPath(const string& root_path,
   }
 
   *result_status = Status::OK();
-  *result_metadata = metadata.release();
 }
 
 void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
@@ -1760,67 +1634,11 @@ void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
   }
 }
 
-Status LogBlockManager::CheckHolePunch(const string& path) {
-  // Arbitrary constants.
-  static uint64_t kFileSize = 4096 * 4;
-  static uint64_t kHoleOffset = 4096;
-  static uint64_t kHoleSize = 8192;
-  static uint64_t kPunchedFileSize = kFileSize - kHoleSize;
-
-  // Open the test file.
-  string filename = JoinPathSegments(path, "hole_punch_test_file");
-  gscoped_ptr<RWFile> file;
-  RWFileOptions opts;
-  RETURN_NOT_OK(env_->NewRWFile(opts, filename, &file));
-
-  // The file has been created; delete it on exit no matter what happens.
-  ScopedFileDeleter file_deleter(env_, filename);
-
-  // Preallocate it, making sure the file's size is what we'd expect.
-  uint64_t sz;
-  RETURN_NOT_OK(file->PreAllocate(0, kFileSize));
-  RETURN_NOT_OK(env_->GetFileSizeOnDisk(filename, &sz));
-  if (sz != kFileSize) {
-    return Status::IOError(Substitute(
-        "Unexpected pre-punch file size for $0: expected $1 but got $2",
-        filename, kFileSize, sz));
-  }
-
-  // Punch the hole, testing the file's size again.
-  RETURN_NOT_OK(file->PunchHole(kHoleOffset, kHoleSize));
-  RETURN_NOT_OK(env_->GetFileSizeOnDisk(filename, &sz));
-  if (sz != kPunchedFileSize) {
-    return Status::IOError(Substitute(
-        "Unexpected post-punch file size for $0: expected $1 but got $2",
-        filename, kPunchedFileSize, sz));
-  }
-
-  return Status::OK();
-}
-
-Status LogBlockManager::Init() {
-  // Initialize thread pools.
-  ThreadPoolMap pools;
-  ValueDeleter d(&pools);
-  int i = 0;
-  for (const string& root : root_paths_) {
-    gscoped_ptr<ThreadPool> p;
-    RETURN_NOT_OK_PREPEND(ThreadPoolBuilder(Substitute("lbm root $0", i++))
-                          .set_max_threads(1)
-                          .Build(&p),
-                          "Could not build thread pool");
-    InsertOrDie(&pools, root, p.release());
-  }
-  thread_pools_by_root_path_.swap(pools);
-
-  return Status::OK();
-}
-
 std::string LogBlockManager::ContainerPathForTests(internal::LogBlockContainer* container) {
   return container->ToString();
 }
 
-bool FullDiskCache::IsRootFull(const std::string& root_path, MonoTime* expires_out) const {
+bool FullDiskCache::IsRootFull(const DataDir* root_path, MonoTime* expires_out) const {
   const MonoTime* expires;
   {
     shared_lock<rw_spinlock> l(lock_.get_lock());
@@ -1834,7 +1652,7 @@ bool FullDiskCache::IsRootFull(const std::string& root_path, MonoTime* expires_o
   return true; // Root is still full according to the cache.
 }
 
-void FullDiskCache::MarkRootFull(const string& root_path) {
+void FullDiskCache::MarkRootFull(const DataDir* root_path) {
   MonoTime expires = MonoTime::Now() +
       MonoDelta::FromSeconds(FLAGS_log_block_manager_full_disk_cache_seconds);
   std::lock_guard<percpu_rwlock> l(lock_);

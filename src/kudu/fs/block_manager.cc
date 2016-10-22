@@ -31,8 +31,6 @@ TAG_FLAG(block_manager_lock_dirs, unsafe);
 namespace kudu {
 namespace fs {
 
-const char* BlockManager::kInstanceMetadataFileName = "block_manager_instance";
-
 BlockManagerOptions::BlockManagerOptions()
   : read_only(false) {
 }

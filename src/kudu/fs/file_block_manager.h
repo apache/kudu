@@ -18,7 +18,6 @@
 #ifndef KUDU_FS_FILE_BLOCK_MANAGER_H
 #define KUDU_FS_FILE_BLOCK_MANAGER_H
 
-#include <map>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -26,6 +25,7 @@
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/random.h"
@@ -38,7 +38,6 @@ class MetricEntity;
 class WritableFile;
 
 namespace fs {
-class PathInstanceMetadataFile;
 
 namespace internal {
 class FileBlockLocation;
@@ -103,8 +102,7 @@ class FileBlockManager : public BlockManager {
   // Looks up the path of the file backing a particular block ID.
   //
   // On success, overwrites 'path' with the file's path.
-  bool FindBlockPath(const BlockId& block_id,
-                     std::string* root_path) const;
+  bool FindBlockPath(const BlockId& block_id, std::string* path) const;
 
   Env* env() const { return env_; }
 
@@ -114,29 +112,19 @@ class FileBlockManager : public BlockManager {
   // If true, only read operations are allowed.
   const bool read_only_;
 
-  // Filesystem paths where all block directories are found.
-  const std::vector<std::string> root_paths_;
-
-  // Maps path indices their instance files.
-  //
-  // There's no need to synchronize access to the map as it is only written
-  // to during Create() and Open(); all subsequent accesses are reads.
-  typedef std::map<uint16_t, PathInstanceMetadataFile*> PathMap;
-  PathMap root_paths_by_idx_;
+  // Manages and owns all of the block manager's data directories.
+  DataDirManager dd_manager_;
 
   // For generating block IDs.
   ThreadSafeRandom rand_;
   AtomicInt<int64_t> next_block_id_;
 
-  // Protects 'dirty_dirs_' and 'next_root_path_'.
+  // Protects 'dirty_dirs_'.
   mutable simple_spinlock lock_;
 
   // Tracks the block directories which are dirty from block creation. This
   // lets us perform some simple coalescing when synchronizing metadata.
   std::unordered_set<std::string> dirty_dirs_;
-
-  // Points to the filesystem path to be used when creating the next block.
-  PathMap::iterator next_root_path_;
 
   // Metric container for the block manager.
   // May be null if instantiated without metrics.

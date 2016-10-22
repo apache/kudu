@@ -231,9 +231,6 @@ class BlockManager {
   //
   // On success, guarantees that outstanding data is durable.
   virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) = 0;
-
- protected:
-  static const char* kInstanceMetadataFileName;
 };
 
 // Closes a group of blocks.

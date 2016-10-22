@@ -30,6 +30,7 @@ add_library(kudu_fs
   block_manager.cc
   block_manager_metrics.cc
   block_manager_util.cc
+  data_dirs.cc
   file_block_manager.cc
   fs_manager.cc
   log_block_manager.cc)
