@@ -50,15 +50,19 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
             op['int_val'] = tup[1]
             if i % 2 == 0:
                 op['string_val'] = tup[2]
-            elif i % 3 == 0:
-                op['string_val'] = None
             op['unixtime_micros_val'] = tup[3]
             session.apply(op)
             tuples.append(tup)
         session.flush()
 
         self.table = table
-        self.tuples = tuples
+        self.tuples = []
+
+        # Replace missing values w/ defaults to test default values.
+        for tuple in tuples:
+            if tuple[2] == None:
+                tuple = (tuple[0], tuple[1], 'nothing', tuple[3])
+            self.tuples.append(tuple)
 
         # Create table to test all types
         # for various predicate tests

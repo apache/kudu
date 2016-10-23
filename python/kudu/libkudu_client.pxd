@@ -170,7 +170,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
 
     cdef cppclass KuduColumnSpec:
 
-         KuduColumnSpec* Default(KuduValue* value)
+         KuduColumnSpec* Default(C_KuduValue* value)
          KuduColumnSpec* RemoveDefault()
 
          KuduColumnSpec* Compression(CompressionType compression)
@@ -436,21 +436,21 @@ cdef extern from "kudu/client/scan_predicate.h" namespace "kudu::client" nogil:
 
 cdef extern from "kudu/client/value.h" namespace "kudu::client" nogil:
 
-    cdef cppclass KuduValue:
+    cdef cppclass C_KuduValue "kudu::client::KuduValue":
         @staticmethod
-        KuduValue* FromInt(int64_t val);
+        C_KuduValue* FromInt(int64_t val);
 
         @staticmethod
-        KuduValue* FromFloat(float val);
+        C_KuduValue* FromFloat(float val);
 
         @staticmethod
-        KuduValue* FromDouble(double val);
+        C_KuduValue* FromDouble(double val);
 
         @staticmethod
-        KuduValue* FromBool(c_bool val);
+        C_KuduValue* FromBool(c_bool val);
 
         @staticmethod
-        KuduValue* CopyString(const Slice& s);
+        C_KuduValue* CopyString(const Slice& s);
 
 
 cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
@@ -571,9 +571,9 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         KuduPredicate* NewComparisonPredicate(const Slice& col_name,
                                               ComparisonOp op,
-                                              KuduValue* value);
+                                              C_KuduValue* value);
         KuduPredicate* NewInListPredicate(const Slice& col_name,
-                                          vector[KuduValue*]* values)
+                                          vector[C_KuduValue*]* values)
 
         KuduClient* client()
         # const PartitionSchema& partition_schema()

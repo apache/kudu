@@ -27,7 +27,7 @@ from cython.operator cimport dereference as deref
 
 from libkudu_client cimport *
 from kudu.compat import tobytes, frombytes, dict_iter
-from kudu.schema cimport Schema, ColumnSchema
+from kudu.schema cimport Schema, ColumnSchema, KuduValue, KuduType
 from kudu.errors cimport check_status
 from kudu.util import to_unixtime_micros, from_unixtime_micros, from_hybridtime
 from errors import KuduException
@@ -888,38 +888,10 @@ cdef class Column:
                           self.spec.type.name))
         return result
 
-    cdef KuduValue* box_value(self, object obj) except NULL:
-        cdef:
-            KuduValue* val
-            Slice slc
-
-        if (self.spec.type.name[:3] == 'int'):
-            val = KuduValue.FromInt(obj)
-        elif (self.spec.type.name in ['string', 'binary']):
-            if isinstance(obj, unicode):
-                obj = obj.encode('utf8')
-
-            slc = Slice(<char*> obj, len(obj))
-            val = KuduValue.CopyString(slc)
-        elif (self.spec.type.name == 'bool'):
-            val = KuduValue.FromBool(obj)
-        elif (self.spec.type.name == 'float'):
-            val = KuduValue.FromFloat(obj)
-        elif (self.spec.type.name == 'double'):
-            val = KuduValue.FromDouble(obj)
-        elif (self.spec.type.name == 'unixtime_micros'):
-            obj = to_unixtime_micros(obj)
-            val = KuduValue.FromInt(obj)
-        else:
-            raise TypeError("Cannot add predicate for kudu type <{0}>"
-                            .format(self.spec.type.name))
-
-        return val
-
     def __richcmp__(Column self, value, int op):
         cdef:
             KuduPredicate* pred
-            KuduValue* val
+            KuduValue val
             Slice col_name_slice
             ComparisonOp cmp_op
             Predicate result
@@ -939,10 +911,10 @@ cdef class Column:
         else:
             raise NotImplementedError
 
-        val = self.box_value(value)
+        val = self.spec.type.new_value(value)
         pred = (self.parent.ptr()
                 .NewComparisonPredicate(col_name_slice,
-                                        cmp_op, val))
+                                        cmp_op, val._value))
 
         result = Predicate()
         result.init(pred)
@@ -968,7 +940,8 @@ cdef class Column:
         """
         cdef:
             KuduPredicate* pred
-            vector[KuduValue*] vals
+            KuduValue kval
+            vector[C_KuduValue*] vals
             Slice col_name_slice
             Predicate result
             object _name = tobytes(self.name)
@@ -977,7 +950,8 @@ cdef class Column:
 
         try:
             for val in values:
-                vals.push_back(self.box_value(val))
+                kval = self.spec.type.new_value(val)
+                vals.push_back(kval._value)
         except TypeError:
             while not vals.empty():
                 _val = vals.back()

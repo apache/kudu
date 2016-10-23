@@ -24,6 +24,7 @@ from kudu.compat import tobytes, frombytes
 from kudu.schema cimport *
 from kudu.errors cimport check_status
 from kudu.client cimport PartialRow
+from kudu.util import to_unixtime_micros
 
 import six
 
@@ -100,6 +101,9 @@ cdef class KuduType(object):
 
     def __repr__(self):
         return 'KuduType({0})'.format(self.name)
+
+    def new_value(self, value):
+        return KuduValue(self, value)
 
 
 int8 = KuduType(KUDU_INT8)
@@ -204,14 +208,24 @@ cdef class ColumnSpec:
     """
 
     def type(self, type_):
-        self.spec.Type(to_data_type(type_).type)
+        self._type = to_data_type(type_)
+        self.spec.Type(self._type.type)
         return self
 
     def default(self, value):
         """
         Set a default value for the column
         """
-        raise NotImplementedError
+        cdef:
+            KuduValue kval
+
+        if not self._type:
+            raise ValueError("You must set the Column type before setting " +
+                             "the default value.")
+        else:
+            kval = self._type.new_value(value)
+            self.spec.Default(kval._value)
+        return self
 
     def clear_default(self):
         """
@@ -370,7 +384,8 @@ cdef class SchemaBuilder:
                                colschema.nullable)
 
     def add_column(self, name, type_=None, nullable=None, compression=None,
-                   encoding=None, primary_key=False, block_size=None):
+                   encoding=None, primary_key=False, block_size=None,
+                   default= None):
         """
         Add a new column to the schema. Returns a ColumnSpec object for further
         configuration and use in a fluid programming style.
@@ -393,6 +408,8 @@ cdef class SchemaBuilder:
           Use this column as the table primary key
         block_size : int, optional
           Block size (in bytes) to use for the target column.
+        default : obj
+          Use this to set the column default value
 
         Examples
         --------
@@ -427,6 +444,9 @@ cdef class SchemaBuilder:
 
         if block_size:
             result.block_size(block_size)
+
+        if default:
+            result.default(default)
 
         return result
 
@@ -621,3 +641,35 @@ cdef class Schema:
         """
         indices = self.primary_key_indices()
         return [self.at(i).name for i in indices]
+
+
+cdef class KuduValue:
+
+    def __cinit__(self, KuduType type_, value):
+        cdef:
+            Slice slc
+
+        if (type_.name[:3] == 'int'):
+            self._value = C_KuduValue.FromInt(value)
+        elif (type_.name in ['string', 'binary']):
+            if isinstance(value, unicode):
+                value = value.encode('utf8')
+
+            slc = Slice(<char*> value, len(value))
+            self._value = C_KuduValue.CopyString(slc)
+        elif (type_.name == 'bool'):
+            self._value = C_KuduValue.FromBool(value)
+        elif (type_.name == 'float'):
+            self._value = C_KuduValue.FromFloat(value)
+        elif (type_.name == 'double'):
+            self._value = C_KuduValue.FromDouble(value)
+        elif (type_.name == 'unixtime_micros'):
+            value = to_unixtime_micros(value)
+            self._value = C_KuduValue.FromInt(value)
+        else:
+            raise TypeError("Cannot initialize KuduValue for kudu type <{0}>"
+                            .format(type_.name))
+
+    def __dealloc__(self):
+        # We don't own this.
+        pass
