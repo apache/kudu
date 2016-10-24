@@ -21,6 +21,9 @@ import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
 import org.junit.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.Assert.*;
 
 public class TestRemoteTablet {
@@ -83,17 +86,39 @@ public class TestRemoteTablet {
     assertTrue(tablet.removeTabletClient("2"));
   }
 
+  @Test
+  public void testLocalReplica() {
+    RemoteTablet tablet = getTablet(0, 0);
+
+    assertEquals("0", tablet.getClosestUUID());
+  }
+
+  @Test
+  public void testNoLocalReplica() {
+    RemoteTablet tablet = getTablet(0, -1);
+
+    // We just care about getting one back.
+    assertNotNull(tablet.getClosestUUID());
+  }
+
   private RemoteTablet getTablet(int leaderIndex) {
+    return getTablet(leaderIndex, -1);
+  }
+
+  private RemoteTablet getTablet(int leaderIndex, int localReplicaIndex) {
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
 
     tabletPb.setPartition(TestUtils.getFakePartitionPB());
     tabletPb.setTabletId(ByteString.copyFromUtf8("fake tablet"));
+    List<ServerInfo> servers = new ArrayList<>();
     for (int i = 0; i < 3; i++) {
+      String uuid = i + "";
+      servers.add(new ServerInfo(uuid, "host", i, i == localReplicaIndex));
       tabletPb.addReplicas(TestUtils.getFakeTabletReplicaPB(
-          i + "", "host", i,
+          uuid, "host", i,
           leaderIndex == i ? Metadata.RaftPeerPB.Role.LEADER : Metadata.RaftPeerPB.Role.FOLLOWER));
     }
 
-    return new RemoteTablet("fake table", "fake tablet", null, tabletPb.build());
+    return new RemoteTablet("fake table", tabletPb.build(), servers);
   }
 }

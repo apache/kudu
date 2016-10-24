@@ -1137,7 +1137,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * a RPC, so we need to demote it and retry.
    */
   <R> void handleNotLeader(final KuduRpc<R> rpc, KuduException ex, TabletClient server) {
-    rpc.getTablet().demoteLeader(server.getUuid());
+    rpc.getTablet().demoteLeader(server.getServerInfo().getUuid());
     handleRetryableError(rpc, ex);
   }
 
@@ -1182,9 +1182,9 @@ public class AsyncKuduClient implements AutoCloseable {
    * the tablet itself from the caches.
    */
   private void invalidateTabletCache(RemoteTablet tablet, TabletClient server) {
-    LOG.info("Removing server " + server.getUuid() + " from this tablet's cache " +
-        tablet.getTabletId());
-    tablet.removeTabletClient(server.getUuid());
+    String uuid = server.getServerInfo().getUuid();
+    LOG.info("Removing server {} from this tablet's cache {}", uuid, tablet.getTabletId());
+    tablet.removeTabletClient(uuid);
   }
 
   /** Callback executed when a master lookup completes.  */
@@ -1275,12 +1275,14 @@ public class AsyncKuduClient implements AutoCloseable {
     List<RemoteTablet> tablets = new ArrayList<>(locations.size());
     for (Master.TabletLocationsPB tabletPb : locations) {
 
-      String tabletId = tabletPb.getTabletId().toStringUtf8();
-
       List<UnknownHostException> lookupExceptions = new ArrayList<>(tabletPb.getReplicasCount());
+      List<ServerInfo> servers = new ArrayList<>(tabletPb.getReplicasCount());
       for (Master.TabletLocationsPB.ReplicaPB replica : tabletPb.getReplicasList()) {
         try {
-          connectionCache.connectTS(replica.getTsInfo());
+          ServerInfo serverInfo = connectionCache.connectTS(replica.getTsInfo());
+          if (serverInfo != null) {
+            servers.add(serverInfo);
+          }
         } catch (UnknownHostException ex) {
           lookupExceptions.add(ex);
         }
@@ -1293,8 +1295,7 @@ public class AsyncKuduClient implements AutoCloseable {
         throw new NonRecoverableException(statusIOE);
       }
 
-      Partition partition = ProtobufHelper.pbToPartition(tabletPb.getPartition());
-      RemoteTablet rt = new RemoteTablet(tableId, tabletId, partition, tabletPb);
+      RemoteTablet rt = new RemoteTablet(tableId, tabletPb, servers);
 
       LOG.info("Learned about tablet {} for table '{}' with partition {}",
                rt.getTabletId(), tableName, rt.getPartition());

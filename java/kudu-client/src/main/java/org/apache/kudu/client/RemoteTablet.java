@@ -27,16 +27,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.concurrent.GuardedBy;
-import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * This class encapsulates the information regarding a tablet and its locations.
  * <p>
- * RemoteTablet's main function, once it is init()'d, is to keep track of where the leader for this
+ * RemoteTablet's main function is to keep track of where the leader for this
  * tablet is. For example, an RPC might call {@link #getLeaderUUID()}, contact that TS, find
  * it's not the leader anymore, and then call {@link #demoteLeader(String)}.
  * <p>
@@ -53,7 +52,7 @@ class RemoteTablet implements Comparable<RemoteTablet> {
   private final String tableId;
   private final String tabletId;
   @GuardedBy("tabletServers")
-  private final Set<String> tabletServers = new HashSet<>();
+  private final Map<String, ServerInfo> tabletServers;
   private final AtomicReference<List<LocatedTablet.Replica>> replicas =
       new AtomicReference(ImmutableList.of());
   private final Partition partition;
@@ -61,15 +60,22 @@ class RemoteTablet implements Comparable<RemoteTablet> {
   @GuardedBy("tabletServers")
   private String leaderUuid;
 
-  RemoteTablet(String tableId, String tabletId,
-               Partition partition, Master.TabletLocationsPB tabletLocations) {
-    this.tabletId = tabletId;
+  RemoteTablet(String tableId,
+               Master.TabletLocationsPB tabletLocations,
+               List<ServerInfo> serverInfos) {
+    this.tabletId = tabletLocations.getTabletId().toStringUtf8();
     this.tableId = tableId;
-    this.partition = partition;
+    this.partition = ProtobufHelper.pbToPartition(tabletLocations.getPartition());
+    this.tabletServers = new HashMap<>(serverInfos.size());
 
+    for (ServerInfo serverInfo : serverInfos) {
+      this.tabletServers.put(serverInfo.getUuid(), serverInfo);
+    }
+
+    ImmutableList.Builder<LocatedTablet.Replica> replicasBuilder = new ImmutableList.Builder<>();
     for (Master.TabletLocationsPB.ReplicaPB replica : tabletLocations.getReplicasList()) {
       String uuid = replica.getTsInfo().getPermanentUuid().toStringUtf8();
-      tabletServers.add(uuid);
+      replicasBuilder.add(new LocatedTablet.Replica(replica));
       if (replica.getRole().equals(Metadata.RaftPeerPB.Role.LEADER)) {
         leaderUuid = uuid;
       }
@@ -77,11 +83,6 @@ class RemoteTablet implements Comparable<RemoteTablet> {
 
     if (leaderUuid == null) {
       LOG.warn("No leader provided for tablet {}", getTabletId());
-    }
-
-    ImmutableList.Builder<LocatedTablet.Replica> replicasBuilder = new ImmutableList.Builder<>();
-    for (Master.TabletLocationsPB.ReplicaPB replica : tabletLocations.getReplicasList()) {
-      replicasBuilder.add(new LocatedTablet.Replica(replica));
     }
     replicas.set(replicasBuilder.build());
   }
@@ -101,7 +102,7 @@ class RemoteTablet implements Comparable<RemoteTablet> {
       if (leaderUuid != null && leaderUuid.equals(uuid)) {
         leaderUuid = null;
       }
-      if (tabletServers.remove(uuid)) {
+      if (tabletServers.remove(uuid) != null) {
         return true;
       }
       LOG.debug("tablet {} already removed ts {}, size left is {}",
@@ -135,12 +136,31 @@ class RemoteTablet implements Comparable<RemoteTablet> {
   }
 
   /**
-   * Get the UUID of the tablet server that we think holds the leader replica for this tablet.
+   * Gets the UUID of the tablet server that we think holds the leader replica for this tablet.
    * @return a UUID of a tablet server that we think has the leader, else null
    */
   String getLeaderUUID() {
     synchronized (tabletServers) {
       return leaderUuid;
+    }
+  }
+
+  /**
+   * Gets the UUID of the closest server. If none is closer than the others, returns a random
+   * server UUID.
+   * @return the UUID of the closest server, which might be any if none is closer, or null if this
+   *         cache doesn't know of any servers
+   */
+  String getClosestUUID() {
+    synchronized (tabletServers) {
+      String lastUuid = null;
+      for (ServerInfo serverInfo : tabletServers.values()) {
+        lastUuid = serverInfo.getUuid();
+        if (serverInfo.isLocal()) {
+          return serverInfo.getUuid();
+        }
+      }
+      return lastUuid;
     }
   }
 

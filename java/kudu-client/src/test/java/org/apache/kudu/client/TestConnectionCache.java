@@ -39,7 +39,8 @@ public class TestConnectionCache {
       ConnectionCache cache = new ConnectionCache(client);
       int i = 0;
       for (HostAndPort hp : addresses) {
-        TabletClient conn = cache.newClient(i + "", hp.getHostText(), hp.getPort(), false);
+        TabletClient conn =
+            cache.newClient(new ServerInfo(i + "", hp.getHostText(), hp.getPort(), false));
         // Ping the process so we go through the whole connection process.
         pingConnection(conn);
         i++;

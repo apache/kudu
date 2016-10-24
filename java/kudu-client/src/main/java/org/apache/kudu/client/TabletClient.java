@@ -133,32 +133,23 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   private final AsyncKuduClient kuduClient;
 
-  private final String uuid;
-
-  private final String host;
-
-  private final int port;
-
   private final long socketReadTimeoutMs;
 
   private SecureRpcHelper secureRpcHelper;
 
   private final RequestTracker requestTracker;
 
+  private final ServerInfo serverInfo;
+
   // If an uncaught exception forced us to shutdown this TabletClient, we'll handle the retry
   // differently by also clearing the caches.
   private volatile boolean gotUncaughtException = false;
 
-  private final boolean local;
-
-  public TabletClient(AsyncKuduClient client, String uuid, String host, int port, boolean local) {
+  public TabletClient(AsyncKuduClient client, ServerInfo serverInfo) {
     this.kuduClient = client;
-    this.uuid = uuid;
     this.socketReadTimeoutMs = client.getDefaultSocketReadTimeoutMs();
-    this.host = host;
-    this.port = port;
     this.requestTracker = client.getRequestTracker();
-    this.local = local;
+    this.serverInfo = serverInfo;
   }
 
   <R> void sendRpc(KuduRpc<R> rpc) {
@@ -449,7 +440,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       }
     } else {
       try {
-        decoded = rpc.deserialize(response, this.uuid);
+        decoded = rpc.deserialize(response, this.serverInfo.getUuid());
       } catch (Exception ex) {
         exception = ex;
       }
@@ -832,40 +823,11 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   }
 
   private String getPeerUuidLoggingString() {
-    return "[Peer " + uuid + "] ";
+    return "[Peer " + serverInfo.getUuid() + "] ";
   }
 
-  /**
-   * Returns this tablet server's uuid.
-   * @return a string that contains this tablet server's uuid
-   */
-  String getUuid() {
-    return uuid;
-  }
-
-  /**
-   * Returns if this server is on this client's host.
-   * @return true if the server is local, else false
-   */
-  boolean isLocal() {
-    return local;
-  }
-
-  /**
-   * Returns this tablet server's port.
-   * @return a port number that this tablet server is bound to
-   */
-  int getPort() {
-    return port;
-  }
-
-  /**
-   * Returns this tablet server's hostname. We might get many hostnames from the master for a single
-   * TS, and this is the one we picked to connect to originally.
-   * @returna string that contains this tablet server's hostname
-   */
-  String getHost() {
-    return host;
+  ServerInfo getServerInfo() {
+    return serverInfo;
   }
 
   public String toString() {
@@ -875,7 +837,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         .append("(chan=")                   // = 6
         .append(chan)                       // ~64 (up to 66 when using IPv4)
         .append(", uuid=")                  // = 7
-        .append(uuid)                       // = 32
+        .append(serverInfo.getUuid())       // = 32
         .append(", #pending_rpcs=");        // =16
     int npending_rpcs;
     synchronized (this) {

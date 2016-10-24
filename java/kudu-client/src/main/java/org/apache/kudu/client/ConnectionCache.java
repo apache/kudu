@@ -92,14 +92,15 @@ class ConnectionCache {
   /**
    * Create a connection to a tablet server based on information provided by the master.
    * @param tsInfoPB master-provided information for the tablet server
+   * @return an object that contains all the server's information
    * @throws UnknownHostException if we cannot resolve the tablet server's IP address
    */
-  void connectTS(Master.TSInfoPB tsInfoPB) throws UnknownHostException {
+  ServerInfo connectTS(Master.TSInfoPB tsInfoPB) throws UnknownHostException {
     List<Common.HostPortPB> addresses = tsInfoPB.getRpcAddressesList();
     String uuid = tsInfoPB.getPermanentUuid().toStringUtf8();
     if (addresses.isEmpty()) {
       LOG.warn("Received a tablet server with no addresses, UUID: {}", uuid);
-      return;
+      return null;
     }
 
     // from meta_cache.cc
@@ -110,29 +111,30 @@ class ConnectionCache {
       throw new UnknownHostException(
           "Failed to resolve the IP of `" + addresses.get(0).getHost() + "'");
     }
-    newClient(uuid, inetAddress, addresses.get(0).getPort());
+    return newClient(uuid, inetAddress, addresses.get(0).getPort()).getServerInfo();
   }
 
   TabletClient newClient(String uuid, InetAddress inetAddress, int port) {
     String host = inetAddress.getHostAddress();
     boolean isLocal = NetUtil.isLocalAddress(inetAddress);
-    return newClient(uuid, host, port, isLocal);
+    ServerInfo serverInfo = new ServerInfo(uuid, host, port, isLocal);
+    return newClient(serverInfo);
   }
 
-  TabletClient newClient(String uuid, String host, int port, boolean isLocal) {
+  TabletClient newClient(ServerInfo serverInfo) {
     TabletClient client;
     SocketChannel chan;
 
     writeLock.lock();
     try {
-      client = uuid2client.get(uuid);
+      client = uuid2client.get(serverInfo.getUuid());
       if (client != null && client.isAlive()) {
         return client;
       }
       final TabletClientPipeline pipeline = new TabletClientPipeline();
-      client = pipeline.init(uuid, host, port, isLocal);
+      client = pipeline.init(serverInfo);
       chan = this.kuduClient.getChannelFactory().newChannel(pipeline);
-      uuid2client.put(uuid, client);
+      uuid2client.put(serverInfo.getUuid(), client);
     } finally {
       writeLock.unlock();
     }
@@ -144,7 +146,8 @@ class ConnectionCache {
     // Java since the JRE doesn't expose any way to call setsockopt() with
     // TCP_KEEPIDLE. And of course the default timeout is >2h. Sigh.
     config.setKeepAlive(true);
-    chan.connect(new InetSocketAddress(host, port));  // Won't block.
+    chan.connect(
+        new InetSocketAddress(serverInfo.getHostname(), serverInfo.getPort()));  // Won't block.
     return client;
   }
 
@@ -178,7 +181,7 @@ class ConnectionCache {
     } else if (client.isAlive()) {
       return client;
     } else {
-      return newClient(uuid, client.getHost(), client.getPort(), client.isLocal());
+      return newClient(client.getServerInfo());
     }
   }
 
@@ -235,9 +238,9 @@ class ConnectionCache {
 
   private final class TabletClientPipeline extends DefaultChannelPipeline {
 
-    TabletClient init(String uuid, String host, int port, boolean isLocal) {
+    TabletClient init(ServerInfo serverInfo) {
       AsyncKuduClient kuduClient = ConnectionCache.this.kuduClient;
-      final TabletClient client = new TabletClient(kuduClient, uuid, host, port, isLocal);
+      final TabletClient client = new TabletClient(kuduClient, serverInfo);
       if (kuduClient.getDefaultSocketReadTimeoutMs() > 0) {
         super.addLast("timeout-handler",
             new ReadTimeoutHandler(kuduClient.getTimer(),
