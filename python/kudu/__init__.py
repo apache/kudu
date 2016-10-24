@@ -47,8 +47,9 @@ from kudu.schema import (int8, int16, int32, int64, string_ as string,  # noqa
                          ENCODING_AUTO,
                          ENCODING_PLAIN,
                          ENCODING_PREFIX,
-                         ENCODING_GROUP_VARINT,
-                         ENCODING_RLE)
+                         ENCODING_BIT_SHUFFLE,
+                         ENCODING_RLE,
+                         ENCODING_DICT)
 
 
 def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None):

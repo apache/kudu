@@ -124,8 +124,9 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         EncodingType_AUTO " kudu::client::KuduColumnStorageAttributes::AUTO_ENCODING"
         EncodingType_PLAIN " kudu::client::KuduColumnStorageAttributes::PLAIN_ENCODING"
         EncodingType_PREFIX " kudu::client::KuduColumnStorageAttributes::PREFIX_ENCODING"
-        EncodingType_GROUP_VARINT " kudu::client::KuduColumnStorageAttributes::GROUP_VARINT"
+        EncodingType_BIT_SHUFFLE " kudu::client::KuduColumnStorageAttributes::BIT_SHUFFLE"
         EncodingType_RLE " kudu::client::KuduColumnStorageAttributes::RLE"
+        EncodingType_DICT " kudu::client::KuduColumnStorageAttributes::DICT_ENCODING"
 
     enum CompressionType" kudu::client::KuduColumnStorageAttributes::CompressionType":
         CompressionType_DEFAULT " kudu::client::KuduColumnStorageAttributes::DEFAULT_COMPRESSION"

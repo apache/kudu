@@ -71,15 +71,17 @@ cdef dict _compression_type_to_name = _reverse_dict(_compression_types)
 ENCODING_AUTO = EncodingType_AUTO
 ENCODING_PLAIN = EncodingType_PLAIN
 ENCODING_PREFIX = EncodingType_PREFIX
-ENCODING_GROUP_VARINT = EncodingType_GROUP_VARINT
+ENCODING_BIT_SHUFFLE = EncodingType_BIT_SHUFFLE
 ENCODING_RLE = EncodingType_RLE
+ENCODING_DICT = EncodingType_DICT
 
 cdef dict _encoding_types = {
     'auto': ENCODING_AUTO,
     'plain': ENCODING_PLAIN,
     'prefix': ENCODING_PREFIX,
-    'group_varint': ENCODING_GROUP_VARINT,
+    'bitshuffle': ENCODING_BIT_SHUFFLE,
     'rle': ENCODING_RLE,
+    'dict': ENCODING_DICT,
 }
 
 cdef dict _encoding_type_to_name = _reverse_dict(_encoding_types)
@@ -272,7 +274,7 @@ cdef class ColumnSpec:
         Parameters
         ----------
         encoding : string or int
-          One of {'auto', 'plain', 'prefix', 'group_varint', 'rle'}
+          One of {'auto', 'plain', 'prefix', 'bitshuffle', 'rle', 'dict'}
           Or see kudu.ENCODING_* constants
 
         Returns
@@ -401,7 +403,7 @@ cdef class SchemaBuilder:
           One of {'default', 'none', 'snappy', 'lz4', 'zlib'}
           Or see kudu.COMPRESSION_* constants
         encoding : string or int
-          One of {'auto', 'plain', 'prefix', 'group_varint', 'rle'}
+          One of {'auto', 'plain', 'prefix', 'bitshuffle', 'rle', 'dict'}
           Or see kudu.ENCODING_* constants
         primary_key : boolean, default False
           Use this column as the table primary key

@@ -124,8 +124,12 @@ class TestSchema(unittest.TestCase):
         builder = kudu.schema_builder()
         builder.add_column('key', 'int64', nullable=False)
 
-        foo = builder.add_column('foo', 'string').encoding('rle')
-        assert foo is not None
+        available_encodings = ['auto', 'plain', 'prefix', 'bitshuffle',
+                               'rle', 'dict', kudu.ENCODING_DICT]
+        for enc in available_encodings:
+            foo = builder.add_column('foo_%s' % enc, 'string').encoding(enc)
+            assert foo is not None
+            del foo
 
         bar = builder.add_column('bar', 'string')
         bar.encoding(kudu.ENCODING_PLAIN)
