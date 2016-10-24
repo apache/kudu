@@ -38,6 +38,18 @@ class BitUtil {
     int n = 64 - num_bits;
     return (v << n) >> n;
   }
+
+  static inline uint64_t ShiftLeftZeroOnOverflow(uint64_t v, int num_bits) {
+    if (num_bits >= 64) return 0;
+    return v << num_bits;
+  }
+
+  static inline uint64_t ShiftRightZeroOnOverflow(uint64_t v, int num_bits) {
+    if (num_bits >= 64) return 0;
+    return v >> num_bits;
+  }
+
+
 };
 
 } // namespace kudu

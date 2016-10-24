@@ -19,17 +19,18 @@
 
 #include <algorithm>
 
+#include "glog/logging.h"
 #include "kudu/util/bit-stream-utils.h"
 #include "kudu/util/alignment.h"
 
 namespace kudu {
 
 inline void BitWriter::PutValue(uint64_t v, int num_bits) {
-  // TODO: revisit this limit if necessary (can be raised to 64 by fixing some edge cases)
-  DCHECK_LE(num_bits, 32);
+  DCHECK_LE(num_bits, 64);
   // Truncate the higher-order bits. This is necessary to
   // support signed values.
-  v &= (1ULL << num_bits) - 1;
+  v &= ~0ULL >> (64 - num_bits);
+
 
   buffered_values_ |= v << bit_offset_;
   bit_offset_ += num_bits;
@@ -43,7 +44,7 @@ inline void BitWriter::PutValue(uint64_t v, int num_bits) {
     buffered_values_ = 0;
     byte_offset_ += 8;
     bit_offset_ -= 64;
-    buffered_values_ = v >> (num_bits - bit_offset_);
+    buffered_values_ = BitUtil::ShiftRightZeroOnOverflow(v, (num_bits - bit_offset_));
   }
   DCHECK_LT(bit_offset_, 64);
 }
@@ -109,8 +110,7 @@ inline void BitReader::BufferValues() {
 
 template<typename T>
 inline bool BitReader::GetValue(int num_bits, T* v) {
-  // TODO: revisit this limit if necessary
-  DCHECK_LE(num_bits, 32);
+  DCHECK_LE(num_bits, 64);
   DCHECK_LE(num_bits, sizeof(T) * 8);
 
   if (PREDICT_FALSE(byte_offset_ * 8 + bit_offset_ + num_bits > max_bytes_ * 8)) return false;
@@ -123,8 +123,9 @@ inline bool BitReader::GetValue(int num_bits, T* v) {
     bit_offset_ -= 64;
     BufferValues();
     // Read bits of v that crossed into new buffered_values_
-    *v |= BitUtil::TrailingBits(buffered_values_, bit_offset_)
-          << (num_bits - bit_offset_);
+    *v |= BitUtil::ShiftLeftZeroOnOverflow(
+        BitUtil::TrailingBits(buffered_values_, bit_offset_),
+        (num_bits - bit_offset_));
   }
   DCHECK_LE(bit_offset_, 64);
   return true;

@@ -35,7 +35,7 @@ using std::vector;
 
 namespace kudu {
 
-const int MAX_WIDTH = 32;
+const int MAX_WIDTH = 64;
 
 class TestRle : public KuduTest {};
 
@@ -205,7 +205,7 @@ void ValidateRle(const vector<T>& values, int bit_width,
 TEST(Rle, SpecificSequences) {
   const int kTestLen = 1024;
   uint8_t expected_buffer[kTestLen];
-  vector<int> values;
+  vector<uint64_t> values;
 
   // Test 50 0' followed by 50 1's
   values.resize(100);
@@ -251,10 +251,10 @@ TEST(Rle, SpecificSequences) {
 // ValidateRle on 'num_vals' values with width 'bit_width'. If 'value' != -1, that value
 // is used, otherwise alternating values are used.
 void TestRleValues(int bit_width, int num_vals, int value = -1) {
-  const uint64_t mod = (bit_width == 64) ? 1 : 1LL << bit_width;
-  vector<int> values;
-  for (int v = 0; v < num_vals; ++v) {
-    values.push_back((value != -1) ? value : (v % mod));
+  const uint64_t mod = bit_width == 64 ? 1ULL : 1ULL << bit_width;
+  vector<uint64_t> values;
+  for (uint64_t v = 0; v < num_vals; ++v) {
+    values.push_back((value != -1) ? value : (bit_width == 64 ? v : (v % mod)));
   }
   ValidateRle(values, bit_width, nullptr, -1);
 }
@@ -301,14 +301,14 @@ TEST_F(BitRle, Flush) {
   ValidateRle(values, 1, nullptr, -1);
 }
 
-// Test some random sequences.
-TEST_F(BitRle, Random) {
+// Test some random bool sequences.
+TEST_F(BitRle, RandomBools) {
   int iters = 0;
   const int n_iters = AllowSlowTests() ? 1000 : 20;
   while (iters < n_iters) {
     srand(iters++);
     if (iters % 10000 == 0) LOG(ERROR) << "Seed: " << iters;
-    vector<int> values;
+    vector<uint64_t > values;
     bool parity = 0;
     for (int i = 0; i < 1000; ++i) {
       int group_size = rand() % 20 + 1; // NOLINT(*)
@@ -321,6 +321,29 @@ TEST_F(BitRle, Random) {
       parity = !parity;
     }
     ValidateRle(values, (iters % MAX_WIDTH) + 1, nullptr, -1);
+  }
+}
+
+// Test some random 64-bit sequences.
+TEST_F(BitRle, Random64Bit) {
+  int iters = 0;
+  const int n_iters = AllowSlowTests() ? 1000 : 20;
+  while (iters < n_iters) {
+    srand(iters++);
+    if (iters % 10000 == 0) LOG(ERROR) << "Seed: " << iters;
+    vector<uint64_t > values;
+    for (int i = 0; i < 1000; ++i) {
+      int group_size = rand() % 20 + 1; // NOLINT(*)
+      uint64_t cur_value = (static_cast<uint64_t>(rand()) << 32) + static_cast<uint64_t>(rand());
+      if (group_size > 16) {
+        group_size = 1;
+      }
+      for (int i = 0; i < group_size; ++i) {
+        values.push_back(cur_value);
+      }
+
+    }
+    ValidateRle(values, 64, nullptr, -1);
   }
 }
 
