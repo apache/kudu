@@ -27,7 +27,7 @@ from cython.operator cimport dereference as deref
 
 from libkudu_client cimport *
 from kudu.compat import tobytes, frombytes, dict_iter
-from kudu.schema cimport Schema, ColumnSchema, KuduValue, KuduType
+from kudu.schema cimport Schema, ColumnSchema, ColumnSpec, KuduValue, KuduType
 from kudu.errors cimport check_status
 from kudu.util import to_unixtime_micros, from_unixtime_micros, from_hybridtime
 from errors import KuduException
@@ -235,13 +235,6 @@ cdef class Client:
     or more Kudu master servers. Do not instantiate this class directly; use
     kudu.connect instead.
     """
-
-    cdef:
-        shared_ptr[KuduClient] client
-        KuduClient* cp
-
-    cdef readonly:
-        list master_addrs
 
     def __cinit__(self, addr_or_addrs, admin_timeout_ms=None,
                   rpc_timeout_ms=None):
@@ -530,6 +523,32 @@ cdef class Client:
 
         return result
 
+    def new_table_alterer(self, Table table):
+        """
+        Create a TableAlterer object that can be used to apply a set of steps
+        to alter a table.
+
+        Parameters
+        ----------
+        table : Table
+          Table to alter. NOTE: The TableAlterer.alter() method will return
+          a new Table object with the updated information.
+
+        Examples
+        --------
+        table = client.table('example')
+        alterer = client.new_table_alterer(table)
+        table = alterer.rename('example2').alter()
+
+        Returns
+        -------
+        alterer : TableAlterer
+        """
+        cdef:
+            TableAlterer alterer = TableAlterer(table)
+
+        alterer._init(self.cp.NewTableAlterer(tobytes(table.name)))
+        return alterer
 
 
 #----------------------------------------------------------------------
@@ -686,15 +705,6 @@ cdef class Table:
     Represents a Kudu table, containing the schema and other tools. Create by
     using the kudu.Client.table method after connecting to a cluster.
     """
-
-    cdef:
-        shared_ptr[KuduTable] table
-
-    cdef readonly:
-        object _name
-        Schema schema
-        Client parent
-        int num_replicas
 
     def __cinit__(self, name, Client client):
         self._name = name
@@ -853,9 +863,6 @@ cdef class Table:
         builder : ScanTokenBuilder
         """
         return ScanTokenBuilder(self)
-
-    cdef inline KuduTable* ptr(self):
-        return self.table.get()
 
 
 cdef class Column:
@@ -2546,3 +2553,236 @@ cdef inline cast_pyvalue(DataType t, object o):
         return StringVal(o)
     else:
         raise TypeError("Cannot cast kudu type <{0}>".format(_type_names[t]))
+
+
+cdef class TableAlterer:
+    """
+    Alters an existing table based on the provided steps.
+    """
+
+    def __cinit__(self, Table table):
+        self._table = table
+        self._new_name = None
+
+    def __dealloc__(self):
+        if self._alterer != NULL:
+            del self._alterer
+
+    cdef _init(self, KuduTableAlterer* alterer):
+        self._alterer = alterer
+
+    def rename(self, table_name):
+        """
+        Rename the table. Returns a reference to itself to facilitate chaining.
+
+        Parameters
+        ----------
+        table_name : str
+          The new name for the table.
+
+        Return
+        ------
+        self : TableAlterer
+        """
+        self._alterer.RenameTo(tobytes(table_name))
+        self._new_name = table_name
+        return self
+
+    def add_column(self, name, type_=None, nullable=None, compression=None,
+                   encoding=None, default=None):
+        """
+        Add a new column to the table.
+
+        When adding a column, you must specify the default value of the new
+        column using ColumnSpec.default(...) or the default parameter in this
+        method.
+
+        Parameters
+        ----------
+        name : string
+        type_ : string or KuduType
+          Data type e.g. 'int32' or kudu.int32
+        nullable : boolean, default None
+          New columns are nullable by default. Set boolean value for explicit
+          nullable / not-nullable
+        compression : string or int
+          One of kudu.COMPRESSION_* constants or their string equivalent.
+        encoding : string or int
+          One of kudu.ENCODING_* constants or their string equivalent.
+        default : obj
+          Use this to set the column default value
+
+        Returns
+        -------
+        spec : ColumnSpec
+        """
+        cdef:
+            ColumnSpec result = ColumnSpec()
+
+        result.spec = self._alterer.AddColumn(tobytes(name))
+
+        if type_ is not None:
+            result.type(type_)
+
+        if nullable is not None:
+            result.nullable(nullable)
+
+        if compression is not None:
+            result.compression(compression)
+
+        if encoding is not None:
+            result.encoding(encoding)
+
+        if default:
+            result.default(default)
+
+        return result
+
+    def alter_column(self, name, rename_to=None):
+        """
+        Alter an existing column.
+
+        Parameters
+        ----------
+        name : string
+        rename_to : str
+          If set, the column will be renamed to this
+
+        Returns
+        -------
+        spec : ColumnSpec
+        """
+        cdef:
+            ColumnSpec result = ColumnSpec()
+
+        result.spec = self._alterer.AlterColumn(tobytes(name))
+
+        if rename_to:
+            result.rename(tobytes(rename_to))
+
+        return result
+
+    def drop_column(self, name):
+        """
+        Drops an existing column from the table.
+
+        Parameters
+        ----------
+        name : str
+          The name of the column to drop.
+
+        Returns
+        -------
+        self : TableAlterer
+        """
+        self._alterer.DropColumn(tobytes(name))
+        return self
+
+    def add_range_partition(self, lower_bound=None,
+                            upper_bound=None,
+                            lower_bound_type='inclusive',
+                            upper_bound_type='exclusive'):
+        """
+        Add a range partition to the table with the specified lower bound and
+        upper bound.
+
+        Multiple range partitions may be added as part of a single alter table
+        transaction by calling this method multiple times on the table alterer.
+
+        This client may immediately write and scan the new tablets when Alter()
+        returns success, however other existing clients may have to wait for a
+        timeout period to elapse before the tablets become visible. This period
+        is configured by the master's 'table_locations_ttl_ms' flag, and
+        defaults to one hour.
+
+        Parameters
+        ----------
+        lower_bound : PartialRow/list/tuple/dict
+        upper_bound : PartialRow/list/tuple/dict
+        lower_bound_type : {'inclusive', 'exclusive'} or constants
+          kudu.EXCLUSIVE_BOUND and kudu.INCLUSIVE_BOUND
+        upper_bound_type : {'inclusive', 'exclusive'} or constants
+          kudu.EXCLUSIVE_BOUND and kudu.INCLUSIVE_BOUND
+
+        Returns
+        -------
+        self : TableAlterer
+        """
+        cdef:
+            PartialRow lbound
+            PartialRow ubound
+
+        if not isinstance(lower_bound, PartialRow):
+            lbound = self._table.schema.new_row(lower_bound)
+        else:
+            lbound = lower_bound
+        lbound._own = 0
+        if not isinstance(upper_bound, PartialRow):
+            ubound = self._table.schema.new_row(upper_bound)
+        else:
+            ubound = upper_bound
+        ubound._own = 0
+        self._alterer.AddRangePartition(
+            lbound.row,
+            ubound.row,
+            _check_convert_range_bound_type(lower_bound_type),
+            _check_convert_range_bound_type(upper_bound_type)
+        )
+
+    def drop_range_partition(self, lower_bound=None,
+                             upper_bound=None,
+                             lower_bound_type='inclusive',
+                             upper_bound_type='exclusive'):
+        """
+        Drop the range partition from the table with the specified lower bound
+        and upper bound. The bounds must match an existing range partition
+        exactly, and may not span multiple range partitions.
+
+        Multiple range partitions may be dropped as part of a single alter
+        table transaction by calling this method multiple times on the
+        table alterer.
+
+        Parameters
+        ----------
+        lower_bound : PartialRow/list/tuple/dict
+        upper_bound : PartialRow/list/tuple/dict
+        lower_bound_type : {'inclusive', 'exclusive'} or constants
+          kudu.EXCLUSIVE_BOUND and kudu.INCLUSIVE_BOUND
+        upper_bound_type : {'inclusive', 'exclusive'} or constants
+          kudu.EXCLUSIVE_BOUND and kudu.INCLUSIVE_BOUND
+
+        Returns
+        -------
+        self : TableAlterer
+        """
+        cdef:
+            PartialRow lbound
+            PartialRow ubound
+
+        if not isinstance(lower_bound, PartialRow):
+            lbound = self._table.schema.new_row(lower_bound)
+        else:
+            lbound = lower_bound
+        lbound._own = 0
+        if not isinstance(upper_bound, PartialRow):
+            ubound = self._table.schema.new_row(upper_bound)
+        else:
+            ubound = upper_bound
+        ubound._own = 0
+        self._alterer.DropRangePartition(
+            lbound.row,
+            ubound.row,
+            _check_convert_range_bound_type(lower_bound_type),
+            _check_convert_range_bound_type(upper_bound_type)
+        )
+
+    def alter(self):
+        """
+        Alter table. Returns a new table object upon completion of the alter.
+
+        Returns
+        -------
+        table :Table
+        """
+        check_status(self._alterer.Alter())
+        return self._table.parent.table(self._new_name or self._table.name)

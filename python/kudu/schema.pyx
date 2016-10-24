@@ -227,11 +227,12 @@ cdef class ColumnSpec:
             self.spec.Default(kval._value)
         return self
 
-    def clear_default(self):
+    def remove_default(self):
         """
         Remove a default value set.
         """
-        raise NotImplementedError
+        self.spec.RemoveDefault()
+        return self
 
     def compression(self, compression):
         """
@@ -326,8 +327,6 @@ cdef class ColumnSpec:
     def rename(self, new_name):
         """
         Change the column name.
-
-        TODO: Not implemented for table creation
         """
         self.spec.RenameTo(new_name)
         return self

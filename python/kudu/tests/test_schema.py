@@ -138,6 +138,16 @@ class TestSchema(unittest.TestCase):
         # TODO(wesm): The C++ client does not give us an API to see the storage
         # attributes of a column
 
+    def test_unsupported_col_spec_methods_for_create_table(self):
+        builder = kudu.schema_builder()
+        builder.add_column('test', 'int64').rename('test')
+        with self.assertRaises(kudu.KuduNotSupported):
+            builder.build()
+
+        builder.add_column('test', 'int64').remove_default()
+        with self.assertRaises(kudu.KuduNotSupported):
+            builder.build()
+
     def test_set_column_spec_pk(self):
         builder = kudu.schema_builder()
         key = (builder.add_column('key', 'int64', nullable=False)

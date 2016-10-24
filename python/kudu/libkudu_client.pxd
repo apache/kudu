@@ -182,7 +182,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
          KuduColumnSpec* Nullable()
          KuduColumnSpec* Type(DataType type_)
 
-         KuduColumnSpec* RenameTo(string& new_name)
+         KuduColumnSpec* RenameTo(const string& new_name)
 
 
     cdef cppclass KuduSchemaBuilder:
@@ -488,7 +488,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         Status TableExists(const string& table_name, c_bool* exists)
 
-        KuduTableAlterer* NewTableAlterer()
+        KuduTableAlterer* NewTableAlterer(const string& table_name)
         Status IsAlterTableInProgress(const string& table_name,
                                       c_bool* alter_in_progress)
         uint64_t GetLatestObservedTimestamp()
@@ -534,22 +534,18 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status Create()
 
     cdef cppclass KuduTableAlterer:
-        # The name of the existing table to alter
-        KuduTableAlterer& table_name(string& name)
-
-        KuduTableAlterer& rename_table(string& name)
-
-        KuduTableAlterer& add_column(string& name, DataType type,
-                                     const void *default_value)
-        KuduTableAlterer& add_column(string& name, DataType type,
-                                     const void *default_value,
-                                     KuduColumnStorageAttributes attr)
-
-        KuduTableAlterer& add_nullable_column(string& name, DataType type)
-
-        KuduTableAlterer& drop_column(string& name)
-
-        KuduTableAlterer& rename_column(string& old_name, string& new_name)
+        KuduTableAlterer& RenameTo(const string& new_name)
+        KuduColumnSpec* AddColumn(const string& name)
+        KuduColumnSpec* AlterColumn(const string& name)
+        KuduTableAlterer& DropColumn(const string& name)
+        KuduTableAlterer& AddRangePartition(KuduPartialRow* lower_bound,
+                                            KuduPartialRow* upper_bound,
+                                            RangePartitionBound lower_bound_type,
+                                            RangePartitionBound upper_bound_type)
+        KuduTableAlterer& DropRangePartition(KuduPartialRow* lower_bound,
+                                             KuduPartialRow* upper_bound,
+                                             RangePartitionBound lower_bound_type,
+                                             RangePartitionBound upper_bound_type)
 
         KuduTableAlterer& wait(c_bool wait)
 

@@ -20,6 +20,20 @@ from libkudu_client cimport *
 from kudu.schema cimport Schema
 
 
+cdef class Client:
+
+    cdef:
+        shared_ptr[KuduClient] client
+        KuduClient* cp
+
+    cdef readonly:
+        list master_addrs
+
+    cpdef close(self)
+
+    cdef _apply_partitioning(self, KuduTableCreator* c, part, Schema schema)
+
+
 cdef class Session:
     cdef:
         shared_ptr[KuduSession] s
@@ -40,3 +54,30 @@ cdef class PartialRow:
     cpdef set_loc_null(self, int i)
 
     cdef add_to_session(self, Session s)
+
+
+cdef class Table:
+
+    cdef:
+        shared_ptr[KuduTable] table
+
+    cdef readonly:
+        object _name
+        Schema schema
+        Client parent
+        int num_replicas
+
+    cdef init(self)
+
+    cdef inline KuduTable* ptr(self):
+        return self.table.get()
+
+
+cdef class TableAlterer:
+
+    cdef:
+        KuduTableAlterer* _alterer
+        Table _table
+        object _new_name
+
+    cdef _init(self, KuduTableAlterer* alterer)

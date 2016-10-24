@@ -294,6 +294,71 @@ class TestClient(KuduTestBase, unittest.TestCase):
         with self.assertRaises(TypeError):
             op['int_val'] = 'incorrect'
 
+    def test_alter_table_rename(self):
+        try:
+            self.client.create_table('alter-rename',
+                                     self.schema,
+                                     self.partitioning)
+            table = self.client.table('alter-rename')
+            alterer = self.client.new_table_alterer(table)
+            table = alterer.rename('alter-newname').alter()
+            self.assertEqual(table.name, 'alter-newname')
+        finally:
+            self.client.delete_table('alter-newname')
+
+    def test_alter_column(self):
+        try:
+            self.client.create_table('alter-column',
+                                     self.schema,
+                                     self.partitioning)
+            table = self.client.table('alter-column')
+            alterer = self.client.new_table_alterer(table)
+            alterer.alter_column('string_val',rename_to='string_val_renamed')
+            table = alterer.alter()
+
+            # Confirm column rename
+            col = table['string_val_renamed']
+
+        finally:
+            self.client.delete_table('alter-column')
+
+    def test_alter_table_add_drop_column(self):
+        table = self.client.table(self.ex_table)
+        alterer = self.client.new_table_alterer(table)
+        alterer.add_column('added-column', type_='int64', default=0)
+        table = alterer.alter()
+
+        # Confirm column was added
+        expected_repr = 'Column(added-column, parent={0}, type=int64)'\
+            .format(self.ex_table)
+        self.assertEqual(expected_repr, repr(table['added-column']))
+
+        alterer = self.client.new_table_alterer(table)
+        alterer.drop_column('added-column')
+        table = alterer.alter()
+
+        # Confirm column has been dropped.
+        with self.assertRaises(KeyError):
+            col = table['added-column']
+
+    def test_alter_table_add_drop_partition(self):
+        # Add Range Partition
+        table = self.client.table(self.ex_table)
+        alterer = self.client.new_table_alterer(table)
+        alterer.add_range_partition(
+            lower_bound={'key': 0},
+            upper_bound={'key': 100}
+        )
+        table = alterer.alter()
+        # TODO(jtbirdsell): Once C++ client can list partition schema
+        # then this test should confirm that the partition was added.
+        alterer = self.client.new_table_alterer(table)
+        alterer.drop_range_partition(
+            lower_bound={'key': 0},
+            upper_bound={'key': 100}
+        )
+        table = alterer.alter()
+
 
 class TestMonoDelta(unittest.TestCase):
 
