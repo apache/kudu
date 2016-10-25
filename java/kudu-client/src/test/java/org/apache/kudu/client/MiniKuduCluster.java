@@ -21,6 +21,7 @@ import com.google.common.base.Stopwatch;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
+
 import org.apache.commons.io.FileUtils;
 import org.apache.kudu.util.NetUtil;
 import org.slf4j.Logger;
@@ -431,7 +432,7 @@ public class MiniKuduCluster implements AutoCloseable {
   /**
    * Helper runnable that receives stdout and logs it along with the process' identifier.
    */
-  private static class ProcessInputStreamLogPrinterRunnable implements Runnable {
+  public static class ProcessInputStreamLogPrinterRunnable implements Runnable {
 
     private final InputStream is;
 

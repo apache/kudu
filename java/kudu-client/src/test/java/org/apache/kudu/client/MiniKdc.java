@@ -25,9 +25,11 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.io.CharStreams;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.kudu.annotations.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
@@ -39,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.concurrent.NotThreadSafe;
 
 /**
  * A managed Kerberos Key Distribution Center.
@@ -48,6 +51,8 @@ import java.util.Map;
  *
  * The KDC is managed as an external process, using the krb5 binaries installed on the system.
  */
+@InterfaceAudience.Private
+@NotThreadSafe
 public class MiniKdc implements Closeable {
 
   // The KDC port will be assigned starting from this value.
@@ -57,7 +62,9 @@ public class MiniKdc implements Closeable {
 
   private final Options options;
 
-  Process kdcProcess;
+  private Process kdcProcess;
+
+  private Thread kdcProcessLogRedirector;
 
   /**
    * Options for the MiniKdc.
@@ -145,11 +152,18 @@ public class MiniKdc implements Closeable {
               "-s", // Stash the master password.
               "-P", "masterpw", // Set a password.
               "-W" // Use weak entropy (since we don't need real security).
-          ), "kdb5_util");
+          ), "kdb5_util", true);
     }
 
     kdcProcess = startProcessWithKrbEnv(getBinaryPath("krb5kdc"),
                                         "-n"); // Do not daemonize.
+
+    // Redirect the KDC output to SLF4J.
+    kdcProcessLogRedirector = new Thread(
+        new MiniKuduCluster.ProcessInputStreamLogPrinterRunnable(kdcProcess.getInputStream()),
+        "krb5kdc:" + options.port);
+    kdcProcessLogRedirector.setDaemon(true);
+    kdcProcessLogRedirector.start();
 
     // The C++ MiniKdc defaults to binding the KDC to an ephemeral port, which
     // it then finds using lsof at this point. Java is unable to do that since
@@ -169,7 +183,7 @@ public class MiniKdc implements Closeable {
             getBinaryPath("kadmin.local"),
             "-q",
             String.format("add_principal -pw %s %s", username, username)
-        ), "kadmin.local");
+        ), "kadmin.local", true);
   }
 
   /**
@@ -180,7 +194,7 @@ public class MiniKdc implements Closeable {
     Process proc = startProcessWithKrbEnv(getBinaryPath("kinit"), username);
     proc.getOutputStream().write(username.getBytes());
     proc.getOutputStream().close();
-    checkReturnCode(proc, "kinit");
+    checkReturnCode(proc, "kinit", true);
   }
 
   /**
@@ -188,9 +202,8 @@ public class MiniKdc implements Closeable {
    * local ticket cache state.
    */
   String klist() throws IOException {
-    Process proc = buildProcessWithKrbEnv(getBinaryPath("klist"), "-A")
-                      .redirectOutput(ProcessBuilder.Redirect.PIPE).start();
-    checkReturnCode(proc, "klist");
+    Process proc = startProcessWithKrbEnv(getBinaryPath("klist"), "-A");
+    checkReturnCode(proc, "klist", false);
     return CharStreams.toString(new InputStreamReader(proc.getInputStream()));
   }
 
@@ -207,12 +220,12 @@ public class MiniKdc implements Closeable {
     checkReturnCode(startProcessWithKrbEnv(kadmin,
                                            "-q",
                                            String.format("add_principal -randkey %s", spn)),
-                    "kadmin.local");
+                    "kadmin.local", true);
 
     checkReturnCode(startProcessWithKrbEnv(kadmin,
                                            "-q",
                                            String.format("ktadd -k %s %s", kt_path, spn)),
-                    "kadmin.local");
+                    "kadmin.local", true);
     return kt_path;
   }
 
@@ -268,10 +281,12 @@ public class MiniKdc implements Closeable {
     try {
       kdcProcess.destroy();
       kdcProcess.waitFor();
+      kdcProcessLogRedirector.join();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     } finally {
       kdcProcess = null;
+      kdcProcessLogRedirector = null;
     }
   }
 
@@ -305,11 +320,7 @@ public class MiniKdc implements Closeable {
     );
   }
 
-  private static String getBinaryPath(String executable) throws IOException {
-    return getBinaryPath(executable, KRB5_BINARY_PATHS);
-  }
-
-  private ProcessBuilder buildProcessWithKrbEnv(String... argv) throws IOException {
+  private Process startProcessWithKrbEnv(String... argv) throws IOException {
     List<String> args = new ArrayList<>();
     args.add("env");
     for (Map.Entry<String, String> entry : getEnvVars().entrySet()) {
@@ -317,21 +328,36 @@ public class MiniKdc implements Closeable {
     }
     args.addAll(Arrays.asList(argv));
 
-    LOG.trace("executing {}: {}", Paths.get(argv[0]).getFileName(), Joiner.on(' ').join(args));
+    LOG.debug("executing {}: {}", Paths.get(argv[0]).getFileName(), Joiner.on(' ').join(args));
 
-    return new ProcessBuilder(args).redirectOutput(ProcessBuilder.Redirect.INHERIT)
-                                   .redirectError(ProcessBuilder.Redirect.INHERIT)
-                                   .redirectInput(ProcessBuilder.Redirect.PIPE);
+    return new ProcessBuilder(args).redirectOutput(ProcessBuilder.Redirect.PIPE)
+                                   .redirectErrorStream(true)
+                                   .redirectInput(ProcessBuilder.Redirect.PIPE)
+                                   .start();
   }
 
-  private Process startProcessWithKrbEnv(String... argv) throws IOException {
-    return buildProcessWithKrbEnv(argv).start();
-  }
-
-  private static void checkReturnCode(Process process, String name) throws IOException {
+  /**
+   * Waits for the process to exit, checking the return code. Any output to the
+   * process' stdout is optionally logged to SLF4J.
+   * @param process the process to check
+   * @param name the name of the process
+   * @param log whether to log the process' stdout.
+   */
+  private static void checkReturnCode(Process process, String name, boolean log) throws IOException {
     int ret;
     try {
       ret = process.waitFor();
+      if (log) {
+        // Reading the output *after* waiting for the process to close can deadlock
+        // if the process overwhelms the output buffer, however none of the krb5
+        // utilities are known to do that.
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+          String line;
+          while ((line = in.readLine()) != null) {
+            LOG.debug(line);
+          }
+        }
+      }
     } catch (InterruptedException e) {
       Thread.interrupted();
       throw new IOException(String.format("process '%s' interrupted", name));
@@ -339,6 +365,10 @@ public class MiniKdc implements Closeable {
     if (ret != 0) {
       throw new IOException(String.format("process '%s' failed: %s", name, ret));
     }
+  }
+
+  private static String getBinaryPath(String executable) throws IOException {
+    return getBinaryPath(executable, KRB5_BINARY_PATHS);
   }
 
   private static String getBinaryPath(String executable,
@@ -351,7 +381,7 @@ public class MiniKdc implements Closeable {
     }
 
     Process which = new ProcessBuilder().command("which", executable).start();
-    checkReturnCode(which, "which");
+    checkReturnCode(which, "which", false);
     return CharStreams.toString(new InputStreamReader(which.getInputStream())).trim();
   }
 }
