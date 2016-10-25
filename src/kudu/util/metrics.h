@@ -379,6 +379,7 @@ struct MetricUnit {
     kTasks,
     kMessages,
     kContextSwitches,
+    kDataDirectories,
   };
   static const char* Name(Type unit);
 };

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "kudu/fs/block_manager_metrics.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
@@ -499,7 +500,7 @@ bool FileBlockManager::FindBlockPath(const BlockId& block_id,
 FileBlockManager::FileBlockManager(Env* env, const BlockManagerOptions& opts)
   : env_(DCHECK_NOTNULL(env)),
     read_only_(opts.read_only),
-    dd_manager_(env, kBlockManagerType, opts.root_paths),
+    dd_manager_(env, opts.metric_entity, kBlockManagerType, opts.root_paths),
     rand_(GetRandomSeed32()),
     next_block_id_(rand_.Next64()),
     mem_tracker_(MemTracker::CreateTracker(-1,
@@ -535,7 +536,8 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
                                      gscoped_ptr<WritableBlock>* block) {
   CHECK(!read_only_);
 
-  DataDir* dir = dd_manager_.GetNextDataDir();
+  DataDir* dir;
+  RETURN_NOT_OK(dd_manager_.GetNextDataDir(&dir));
   uint16_t uuid_idx;
   CHECK(dd_manager_.FindUuidIndexByDataDir(dir, &uuid_idx));
 

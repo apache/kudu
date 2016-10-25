@@ -42,13 +42,32 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
+
+DEFINE_int64(fs_data_dirs_reserved_bytes, 0,
+             "Number of bytes to reserve on each data directory filesystem for non-Kudu usage. "
+             "Only works when --log_container_preallocate_bytes is non-zero.");
+TAG_FLAG(fs_data_dirs_reserved_bytes, runtime);
+TAG_FLAG(fs_data_dirs_reserved_bytes, evolving);
+
+DEFINE_int32(fs_data_dirs_full_disk_cache_seconds, 30,
+             "Number of seconds we cache the full-disk status in the block manager. "
+             "During this time, writes to the corresponding root path will not be attempted.");
+TAG_FLAG(fs_data_dirs_full_disk_cache_seconds, advanced);
+TAG_FLAG(fs_data_dirs_full_disk_cache_seconds, evolving);
+
+METRIC_DEFINE_gauge_uint64(server, data_dirs_full,
+                           "Data Directories Full",
+                           kudu::MetricUnit::kDataDirectories,
+                           "Number of data directories whose disks are currently full");
 
 namespace kudu {
 
@@ -114,15 +133,25 @@ Status CheckHolePunch(Env* env, const string& path) {
 
 } // anonymous namespace
 
+#define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
+DataDirMetrics::DataDirMetrics(const scoped_refptr<MetricEntity>& entity)
+  : GINIT(data_dirs_full)  {
+}
+#undef GINIT
+
+
 DataDir::DataDir(Env* env,
+                 DataDirMetrics* metrics,
                  string dir,
                  unique_ptr<PathInstanceMetadataFile> metadata_file,
                  unique_ptr<ThreadPool> pool)
     : env_(env),
+      metrics_(metrics),
       dir_(std::move(dir)),
       metadata_file_(std::move(metadata_file)),
       pool_(std::move(pool)),
-      is_shutdown_(false) {
+      is_shutdown_(false),
+      is_full_(false) {
 }
 
 DataDir::~DataDir() {
@@ -152,7 +181,51 @@ void DataDir::WaitOnClosures() {
   pool_->Wait();
 }
 
+Status DataDir::RefreshIsFull(RefreshMode mode) {
+  switch (mode) {
+    case RefreshMode::EXPIRED_ONLY: {
+      std::lock_guard<simple_spinlock> l(lock_);
+      DCHECK(last_check_is_full_.Initialized());
+      MonoTime expiry = last_check_is_full_ + MonoDelta::FromSeconds(
+          FLAGS_fs_data_dirs_full_disk_cache_seconds);
+      if (!is_full_ || MonoTime::Now() < expiry) {
+        break;
+      }
+      FALLTHROUGH_INTENDED; // Root was previously full, check again.
+    }
+    case RefreshMode::ALWAYS: {
+      Status s = env_util::VerifySufficientDiskSpace(
+          env_, dir_, 0, FLAGS_fs_data_dirs_reserved_bytes);
+      bool is_full_new;
+      if (PREDICT_FALSE(s.IsIOError() && s.posix_code() == ENOSPC)) {
+        LOG(WARNING) << Substitute(
+            "Insufficient disk space under path $0: creation of new data "
+            "blocks under this path can be retried after $1 seconds: $2",
+            dir_, FLAGS_fs_data_dirs_full_disk_cache_seconds, s.ToString());
+        s = Status::OK();
+        is_full_new = true;
+      } else {
+        is_full_new = false;
+      }
+      RETURN_NOT_OK(s); // Catch other types of IOErrors, etc.
+      {
+        std::lock_guard<simple_spinlock> l(lock_);
+        if (metrics_ && is_full_ != is_full_new) {
+          metrics_->data_dirs_full->IncrementBy(is_full_new ? 1 : -1);
+        }
+        is_full_ = is_full_new;
+        last_check_is_full_ = MonoTime::Now();
+      }
+      break;
+    }
+    default:
+      LOG(FATAL) << "Unknown check mode";
+  }
+  return Status::OK();
+}
+
 DataDirManager::DataDirManager(Env* env,
+                               scoped_refptr<MetricEntity> metric_entity,
                                string block_manager_type,
                                vector<string> paths)
     : env_(env),
@@ -160,6 +233,10 @@ DataDirManager::DataDirManager(Env* env,
       paths_(std::move(paths)),
       data_dirs_next_(0) {
   DCHECK_GT(paths_.size(), 0);
+
+  if (metric_entity) {
+    metrics_.reset(new DataDirMetrics(metric_entity));
+  }
 }
 
 DataDirManager::~DataDirManager() {
@@ -264,9 +341,12 @@ Status DataDirManager::Open(int max_data_dirs, LockMode mode) {
 
     // Create the data directory in-memory structure itself.
     unique_ptr<DataDir> dd(new DataDir(
-        env_, p,
+        env_, metrics_.get(), p,
         unique_ptr<PathInstanceMetadataFile>(instance.release()),
         unique_ptr<ThreadPool>(pool.release())));
+
+    // Initialize the 'fullness' status of the data directory.
+    RETURN_NOT_OK(dd->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
 
     dds.emplace_back(std::move(dd));
     i++;
@@ -303,16 +383,34 @@ Status DataDirManager::Open(int max_data_dirs, LockMode mode) {
   return Status::OK();
 }
 
-DataDir* DataDirManager::GetNextDataDir() {
-  // Round robin through the data dirs.
-  int32_t cur_idx;
-  int32_t next_idx;
-  do {
-    cur_idx = data_dirs_next_.Load();
-    next_idx = (cur_idx + 1) % data_dirs_.size();
-  } while (!data_dirs_next_.CompareAndSet(cur_idx, next_idx));
+Status DataDirManager::GetNextDataDir(DataDir** dir) {
+  // Round robin through the data dirs, ignoring ones that are full.
+  unordered_set<DataDir*> full_dds;
+  while (true) {
+    int32_t cur_idx;
+    int32_t next_idx;
+    do {
+      cur_idx = data_dirs_next_.Load();
+      next_idx = (cur_idx + 1) % data_dirs_.size();
+    } while (!data_dirs_next_.CompareAndSet(cur_idx, next_idx));
 
-  return data_dirs_[cur_idx].get();
+    DataDir* candidate = data_dirs_[cur_idx].get();
+    RETURN_NOT_OK(candidate->RefreshIsFull(
+        DataDir::RefreshMode::EXPIRED_ONLY));
+    if (!candidate->is_full()) {
+      *dir = candidate;
+      return Status::OK();
+    }
+
+    // This data dir was full. If all are full, we can't satisfy the request.
+    full_dds.insert(candidate);
+    if (full_dds.size() == data_dirs_.size()) {
+      return Status::IOError(
+          "All data directories are full. Please free some disk space or "
+          "consider changing the fs_data_dirs_reserved_bytes configuration "
+          "parameter", "", ENOSPC);
+    }
+  }
 }
 
 DataDir* DataDirManager::FindDataDirByUuidIndex(uint16_t uuid_idx) const {

@@ -18,27 +18,40 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "kudu/gutil/callback_forward.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+template<typename T>
+class AtomicGauge;
 class Env;
+class MetricEntity;
 class ThreadPool;
 
 namespace fs {
 class PathInstanceMetadataFile;
 
+struct DataDirMetrics {
+  explicit DataDirMetrics(const scoped_refptr<MetricEntity>& entity);
+
+  scoped_refptr<AtomicGauge<uint64_t>> data_dirs_full;
+};
+
 // Representation of a data directory in use by the block manager.
 class DataDir {
  public:
   DataDir(Env* env,
+          DataDirMetrics* metrics,
           std::string dir,
           std::unique_ptr<PathInstanceMetadataFile> metadata_file,
           std::unique_ptr<ThreadPool> pool);
@@ -57,19 +70,45 @@ class DataDir {
   // Waits for any outstanding closures submitted via ExecClosure() to finish.
   void WaitOnClosures();
 
+  // Tests whether the data directory is full by comparing the free space of
+  // its underlying filesystem with a predefined "reserved" space value.
+  //
+  // If 'mode' is EXPIRED_ONLY, performs the test only if the dir was last
+  // determined to be full some time ago. If 'mode' is ALWAYS, the test is
+  // performed regardless.
+  //
+  // Only returns a bad Status in the event of a real error; fullness is
+  // reflected via is_full().
+  enum class RefreshMode {
+    EXPIRED_ONLY,
+    ALWAYS,
+  };
+  Status RefreshIsFull(RefreshMode mode);
+
   const std::string& dir() const { return dir_; }
 
   const PathInstanceMetadataFile* instance() const {
     return metadata_file_.get();
   }
 
+  bool is_full() const {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return is_full_;
+  }
+
  private:
   Env* env_;
+  DataDirMetrics* metrics_;
   const std::string dir_;
   const std::unique_ptr<PathInstanceMetadataFile> metadata_file_;
   const std::unique_ptr<ThreadPool> pool_;
 
   bool is_shutdown_;
+
+  // Protects 'last_check_is_full_' and 'is_full_'.
+  mutable simple_spinlock lock_;
+  MonoTime last_check_is_full_;
+  bool is_full_;
 
   DISALLOW_COPY_AND_ASSIGN(DataDir);
 };
@@ -89,6 +128,7 @@ class DataDirManager {
   };
 
   DataDirManager(Env* env,
+                 scoped_refptr<MetricEntity> metric_entity,
                  std::string block_manager_type,
                  std::vector<std::string> paths);
   ~DataDirManager();
@@ -107,9 +147,12 @@ class DataDirManager {
   // 'max_data_dirs', or if 'mode' is MANDATORY and locks could not be taken.
   Status Open(int max_data_dirs, LockMode mode);
 
-  // Retrieves the next data directory. Directories are rotated
-  // via round-robin.
-  DataDir* GetNextDataDir();
+  // Retrieves the next data directory that isn't full. Directories are rotated
+  // via round-robin. Full directories are skipped.
+  //
+  // Returns an error if all data directories are full, or upon filesystem
+  // error. On success, 'dir' is guaranteed to be set.
+  Status GetNextDataDir(DataDir** dir);
 
   // Finds a data directory by uuid index, returning nullptr if it can't be
   // found.
@@ -130,6 +173,8 @@ class DataDirManager {
   Env* env_;
   const std::string block_manager_type_;
   const std::vector<std::string> paths_;
+
+  std::unique_ptr<DataDirMetrics> metrics_;
 
   std::vector<std::unique_ptr<DataDir>> data_dirs_;
 

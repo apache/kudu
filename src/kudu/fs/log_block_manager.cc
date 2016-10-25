@@ -67,19 +67,6 @@ DEFINE_bool(log_block_manager_test_hole_punching, true,
 TAG_FLAG(log_block_manager_test_hole_punching, advanced);
 TAG_FLAG(log_block_manager_test_hole_punching, unsafe);
 
-DEFINE_int32(log_block_manager_full_disk_cache_seconds, 30,
-             "Number of seconds we cache the full-disk status in the block manager. "
-             "During this time, writes to the corresponding root path will not be attempted.");
-TAG_FLAG(log_block_manager_full_disk_cache_seconds, advanced);
-TAG_FLAG(log_block_manager_full_disk_cache_seconds, evolving);
-
-DEFINE_int64(fs_data_dirs_reserved_bytes, 0,
-             "Number of bytes to reserve on each data directory filesystem for non-Kudu usage. "
-             "Only works with the log block manager and when --log_container_preallocate_bytes "
-             "is non-zero.");
-TAG_FLAG(fs_data_dirs_reserved_bytes, runtime);
-TAG_FLAG(fs_data_dirs_reserved_bytes, evolving);
-
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_bytes_under_management,
                            "Bytes Under Management",
                            kudu::MetricUnit::kBytes,
@@ -105,7 +92,6 @@ METRIC_DEFINE_counter(server, log_block_manager_unavailable_containers,
                       kudu::MetricUnit::kLogBlockContainers,
                       "Number of non-full log block containers that are under root paths "
                       "whose disks are full");
-
 
 namespace kudu {
 
@@ -139,7 +125,6 @@ struct LogBlockManagerMetrics {
 
   scoped_refptr<Counter> containers;
   scoped_refptr<Counter> full_containers;
-  scoped_refptr<Counter> unavailable_containers;
 };
 
 #define MINIT(x) x(METRIC_log_block_manager_##x.Instantiate(metric_entity))
@@ -149,8 +134,7 @@ LogBlockManagerMetrics::LogBlockManagerMetrics(const scoped_refptr<MetricEntity>
     GINIT(bytes_under_management),
     GINIT(blocks_under_management),
     MINIT(containers),
-    MINIT(full_containers),
-    MINIT(unavailable_containers) {
+    MINIT(full_containers) {
 }
 #undef GINIT
 #undef MINIT
@@ -282,6 +266,7 @@ class LogBlockContainer {
   }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   const DataDir* data_dir() const { return data_dir_; }
+  DataDir* mutable_data_dir() const { return data_dir_; }
   const PathInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
 
  private:
@@ -1093,7 +1078,7 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
   : mem_tracker_(MemTracker::CreateTracker(-1,
                                            "log_block_manager",
                                            opts.parent_mem_tracker)),
-    dd_manager_(env, kBlockManagerType, opts.root_paths),
+    dd_manager_(env, opts.metric_entity, kBlockManagerType, opts.root_paths),
     blocks_by_block_id_(10,
                         BlockMap::hasher(),
                         BlockMap::key_equal(),
@@ -1187,83 +1172,19 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
                                     gscoped_ptr<WritableBlock>* block) {
   CHECK(!read_only_);
 
-  // Root paths that are below their reserved space threshold. Initialize the
-  // paths from the FullDiskCache. This function-local cache is necessary for
-  // correctness in case the FullDiskCache expiration time is set to 0.
-  unordered_set<const DataDir*> full_root_paths(dd_manager_.data_dirs().size());
-  for (const auto& dd : dd_manager_.data_dirs()) {
-    if (full_disk_cache_.IsRootFull(dd.get())) {
-      InsertOrDie(&full_root_paths, dd.get());
-    }
-  }
-
   // Find a free container. If one cannot be found, create a new one.
-  // In case one or more root paths have hit their reserved space limit, we
-  // retry until we have exhausted all root paths.
   //
-  // TODO: should we cap the number of outstanding containers and force
-  // callers to block if we've reached it?
-  LogBlockContainer* container = nullptr;
-  while (!container) {
-    container = GetAvailableContainer(full_root_paths);
-    if (!container) {
-      // If all root paths are full, we cannot allocate a block.
-      if (full_root_paths.size() == dd_manager_.data_dirs().size()) {
-        return Status::IOError("Unable to allocate block: All data directories are full. "
-                               "Please free some disk space or consider changing the "
-                               "fs_data_dirs_reserved_bytes configuration parameter",
-                               "", ENOSPC);
-      }
+  // TODO(unknown): should we cap the number of outstanding containers and
+  // force callers to block if we've reached it?
+  LogBlockContainer* container;
+  RETURN_NOT_OK(GetOrCreateContainer(&container));
+  if (FLAGS_log_container_preallocate_bytes) {
+    RETURN_NOT_OK(container->Preallocate(FLAGS_log_container_preallocate_bytes));
 
-      DataDir* dir;
-      do {
-        dir = dd_manager_.GetNextDataDir();
-      } while (ContainsKey(full_root_paths, dir));
-      if (full_disk_cache_.IsRootFull(dir)) {
-        InsertOrDie(&full_root_paths, dir);
-        continue;
-      }
-
-      gscoped_ptr<LogBlockContainer> new_container;
-      RETURN_NOT_OK_PREPEND(LogBlockContainer::Create(this,
-                                                      dir,
-                                                      &new_container),
-                            "Could not create new log block container at " + dir->dir());
-      container = new_container.release();
-      {
-        std::lock_guard<simple_spinlock> l(lock_);
-        dirty_dirs_.insert(dir->dir());
-        AddNewContainerUnlocked(container);
-      }
-    }
-
-    // By preallocating with each CreateBlock(), we're effectively
-    // maintaining a rolling buffer of preallocated data just ahead of where
-    // the next write will fall.
-    if (FLAGS_log_container_preallocate_bytes) {
-      // TODO: The use of FLAGS_log_container_preallocate_bytes may be a poor
-      // estimate for the number of bytes we are about to consume for a block.
-      // In the future, we may also want to implement some type of "hard" limit
-      // to ensure that a giant block doesn't blow through the configured
-      // reserved disk space.
-      Status s = env_util::VerifySufficientDiskSpace(env_, container->DataFilePath(),
-                                                     FLAGS_log_container_preallocate_bytes,
-                                                     FLAGS_fs_data_dirs_reserved_bytes);
-      if (PREDICT_FALSE(s.IsIOError() && s.posix_code() == ENOSPC)) {
-        LOG(ERROR) << Substitute("Log block manager: Insufficient disk space under path $0: "
-                                 "Creation of new data blocks under this path can be retried after "
-                                 "$1 seconds: $2", container->data_dir()->dir(),
-                                 FLAGS_log_block_manager_full_disk_cache_seconds, s.ToString());
-        // Blacklist this root globally and locally.
-        full_disk_cache_.MarkRootFull(container->data_dir());
-        InsertOrDie(&full_root_paths, container->data_dir());
-        MakeContainerAvailable(container);
-        container = nullptr;
-        continue;
-      }
-      RETURN_NOT_OK(s); // Catch other types of IOErrors, etc.
-      RETURN_NOT_OK(container->Preallocate(FLAGS_log_container_preallocate_bytes));
-    }
+    // Preallocation succeeded and the container has grown; recheck its data
+    // directory fullness.
+    RETURN_NOT_OK(container->mutable_data_dir()->RefreshIsFull(
+        DataDir::RefreshMode::ALWAYS));
   }
 
   // Generate a free block ID.
@@ -1366,50 +1287,33 @@ void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {
   }
 }
 
-LogBlockContainer* LogBlockManager::GetAvailableContainer(
-    const unordered_set<const DataDir*>& full_root_paths) {
-  LogBlockContainer* container = nullptr;
-  int64_t disk_full_containers_delta = 0;
-  MonoTime now = MonoTime::Now();
+Status LogBlockManager::GetOrCreateContainer(LogBlockContainer** container) {
+  DataDir* dir;
+  RETURN_NOT_OK(dd_manager_.GetNextDataDir(&dir));
+
   {
     std::lock_guard<simple_spinlock> l(lock_);
-    // Move containers from disk_full -> available.
-    while (!disk_full_containers_.empty() &&
-           disk_full_containers_.top().second < now) {
-      available_containers_.push_back(disk_full_containers_.top().first);
-      disk_full_containers_.pop();
-      disk_full_containers_delta -= 1;
-    }
-
-    // Return the first currently-available non-full-disk container (according to
-    // our full-disk cache).
-    while (!container && !available_containers_.empty()) {
-      container = available_containers_.front();
-      available_containers_.pop_front();
-      MonoTime expires;
-      // Note: We must check 'full_disk_cache_' before 'full_root_paths' in
-      // order to correctly use the expiry time provided by 'full_disk_cache_'.
-      if (full_disk_cache_.IsRootFull(container->data_dir(), &expires) ||
-          ContainsKey(full_root_paths, container->data_dir())) {
-        if (!expires.Initialized()) {
-          // It's no longer in the cache but we still consider it unusable.
-          // It will be moved back into 'available_containers_' on the next call.
-          expires = now;
-        }
-        disk_full_containers_.emplace(container, expires);
-        disk_full_containers_delta += 1;
-        container = nullptr;
-      }
+    auto& d = available_containers_by_data_dir_[DCHECK_NOTNULL(dir)];
+    if (!d.empty()) {
+      *container = d.front();
+      d.pop_front();
+      return Status::OK();
     }
   }
 
-  // Update the metrics in a batch.
-  if (metrics()) {
-    metrics()->unavailable_containers->IncrementBy(disk_full_containers_delta);
+  // All containers are in use; create a new one.
+  gscoped_ptr<LogBlockContainer> new_container;
+  RETURN_NOT_OK_PREPEND(LogBlockContainer::Create(this,
+                                                  dir,
+                                                  &new_container),
+                        "Could not create new log block container at " + dir->dir());
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    dirty_dirs_.insert(dir->dir());
+    AddNewContainerUnlocked(new_container.get());
   }
-
-  // Return the container we found, or null if we don't have anything available.
-  return container;
+  *container = new_container.release();
+  return Status::OK();
 }
 
 void LogBlockManager::MakeContainerAvailable(LogBlockContainer* container) {
@@ -1422,7 +1326,7 @@ void LogBlockManager::MakeContainerAvailableUnlocked(LogBlockContainer* containe
   if (container->full()) {
     return;
   }
-  available_containers_.push_back(container);
+  available_containers_by_data_dir_[container->data_dir()].push_back(container);
 }
 
 Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
@@ -1636,27 +1540,6 @@ void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
 
 std::string LogBlockManager::ContainerPathForTests(internal::LogBlockContainer* container) {
   return container->ToString();
-}
-
-bool FullDiskCache::IsRootFull(const DataDir* root_path, MonoTime* expires_out) const {
-  const MonoTime* expires;
-  {
-    shared_lock<rw_spinlock> l(lock_.get_lock());
-    expires = FindOrNull(cache_, root_path);
-  }
-  if (expires == nullptr) return false; // No entry exists.
-  if (*expires < MonoTime::Now()) return false; // Expired.
-  if (expires_out != nullptr) {
-    *expires_out = *expires;
-  }
-  return true; // Root is still full according to the cache.
-}
-
-void FullDiskCache::MarkRootFull(const DataDir* root_path) {
-  MonoTime expires = MonoTime::Now() +
-      MonoDelta::FromSeconds(FLAGS_log_block_manager_full_disk_cache_seconds);
-  std::lock_guard<percpu_rwlock> l(lock_);
-  InsertOrUpdate(&cache_, root_path, expires); // Last one wins.
 }
 
 } // namespace fs

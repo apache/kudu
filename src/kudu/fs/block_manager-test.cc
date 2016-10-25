@@ -53,7 +53,7 @@ DECLARE_uint64(log_container_max_size);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
 
-DECLARE_int32(log_block_manager_full_disk_cache_seconds);
+DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
 DECLARE_string(block_manager);
 
 // Generic block manager metrics.
@@ -69,6 +69,9 @@ METRIC_DECLARE_gauge_uint64(log_block_manager_bytes_under_management);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 METRIC_DECLARE_counter(log_block_manager_containers);
 METRIC_DECLARE_counter(log_block_manager_full_containers);
+
+// Data directory metrics.
+METRIC_DECLARE_gauge_uint64(data_dirs_full);
 
 // The LogBlockManager is only supported on Linux, since it requires hole punching.
 #define RETURN_NOT_LOG_BLOCK_MANAGER() \
@@ -753,7 +756,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
     ASSERT_OK(writer->Close());
   }
 
-  ASSERT_EQ(4, bm_->available_containers_.size());
+  ASSERT_EQ(4, bm_->all_containers_.size());
 
   // Delete the original blocks.
   for (const BlockId& b : block_ids) {
@@ -818,7 +821,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 
   // Start corrupting the metadata file in different ways.
 
-  string path = LogBlockManager::ContainerPathForTests(bm_->available_containers_.front());
+  string path = LogBlockManager::ContainerPathForTests(bm_->all_containers_.front());
   string metadata_path = path + LogBlockManager::kContainerMetadataFileSuffix;
   string data_path = path + LogBlockManager::kContainerDataFileSuffix;
 
@@ -926,7 +929,8 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 
   // Ensure that we only ever created a single container.
   ASSERT_EQ(1, bm_->all_containers_.size());
-  ASSERT_EQ(1, bm_->available_containers_.size());
+  ASSERT_EQ(1, bm_->available_containers_by_data_dir_.size());
+  ASSERT_EQ(1, bm_->available_containers_by_data_dir_.begin()->second.size());
 
   // Find location of 2nd record in metadata file and corrupt it.
   // This is an unrecoverable error because it's in the middle of the file.
@@ -979,26 +983,61 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 TEST_F(LogBlockManagerTest, TestDiskSpaceCheck) {
   RETURN_NOT_LOG_BLOCK_MANAGER();
 
-  FLAGS_log_block_manager_full_disk_cache_seconds = 0; // Don't cache device fullness.
+  // Reopen the block manager with metrics enabled.
+  MetricRegistry registry;
+  scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
+  ASSERT_OK(this->ReopenBlockManager(entity,
+                                     shared_ptr<MemTracker>(),
+                                     { GetTestDataDirectory() },
+                                     false));
 
+  FLAGS_fs_data_dirs_full_disk_cache_seconds = 0; // Don't cache device fullness.
   FLAGS_fs_data_dirs_reserved_bytes = 1; // Keep at least 1 byte reserved in the FS.
-  FLAGS_disk_reserved_bytes_free_for_testing = 0;
-  FLAGS_log_container_preallocate_bytes = 100;
 
-  vector<BlockId> created_blocks;
-  gscoped_ptr<WritableBlock> writer;
-  Status s = bm_->CreateBlock(&writer);
-  ASSERT_TRUE(s.IsIOError());
-  ASSERT_STR_CONTAINS(s.ToString(), "All data directories are full");
+  // Normally, a data dir is checked for fullness only after a block is closed;
+  // if it's now full, the next attempt at block creation will fail. Only when
+  // a data dir was last observed as full is it also checked before block creation.
+  //
+  // This behavior enforces a "soft" limit on disk space consumption but
+  // complicates testing somewhat.
+  bool data_dir_observed_full = false;
 
-  FLAGS_disk_reserved_bytes_free_for_testing = 101;
-  ASSERT_OK(bm_->CreateBlock(&writer));
+  int i = 0;
+  for (int free_space : { 0, 2, 0 }) {
+    FLAGS_disk_reserved_bytes_free_for_testing = free_space;
 
-  FLAGS_disk_reserved_bytes_free_for_testing = 0;
-  s = bm_->CreateBlock(&writer);
-  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    for (int attempt = 0; attempt < 3; attempt++) {
+      gscoped_ptr<WritableBlock> writer;
+      LOG(INFO) << "Attempt #" << ++i;
+      Status s = bm_->CreateBlock(&writer);
+      if (FLAGS_disk_reserved_bytes_free_for_testing < FLAGS_fs_data_dirs_reserved_bytes) {
+        if (data_dir_observed_full) {
+          // The dir was previously observed as full, so CreateBlock() checked
+          // fullness again and failed.
+          ASSERT_TRUE(s.IsIOError());
+          ASSERT_STR_CONTAINS(s.ToString(), "All data directories are full");
+        } else {
+          ASSERT_OK(s);
+          ASSERT_OK(writer->Close());
 
-  ASSERT_OK(writer->Close());
+          // The dir was not previously full so CreateBlock() did not check for
+          // fullness, but given the parameters of the test, we know that the
+          // dir was observed as full at Close().
+          data_dir_observed_full = true;
+        }
+        ASSERT_EQ(1, down_cast<AtomicGauge<uint64_t>*>(
+            entity->FindOrNull(METRIC_data_dirs_full).get())->value());
+      } else {
+        // CreateBlock() succeeded regardless of the previously fullness state,
+        // and the new state is definitely not full.
+        ASSERT_OK(s);
+        ASSERT_OK(writer->Close());
+        data_dir_observed_full = false;
+        ASSERT_EQ(0, down_cast<AtomicGauge<uint64_t>*>(
+            entity->FindOrNull(METRIC_data_dirs_full).get())->value());
+      }
+    }
+  }
 }
 
 } // namespace fs
