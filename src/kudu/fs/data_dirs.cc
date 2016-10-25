@@ -53,8 +53,7 @@
 #include "kudu/util/threadpool.h"
 
 DEFINE_int64(fs_data_dirs_reserved_bytes, 0,
-             "Number of bytes to reserve on each data directory filesystem for non-Kudu usage. "
-             "Only works when --log_container_preallocate_bytes is non-zero.");
+             "Number of bytes to reserve on each data directory filesystem for non-Kudu usage.");
 TAG_FLAG(fs_data_dirs_reserved_bytes, runtime);
 TAG_FLAG(fs_data_dirs_reserved_bytes, evolving);
 

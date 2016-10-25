@@ -980,9 +980,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
                                      false));
 }
 
-TEST_F(LogBlockManagerTest, TestDiskSpaceCheck) {
-  RETURN_NOT_LOG_BLOCK_MANAGER();
-
+TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
   // Reopen the block manager with metrics enabled.
   MetricRegistry registry;
   scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
@@ -1009,7 +1007,7 @@ TEST_F(LogBlockManagerTest, TestDiskSpaceCheck) {
     for (int attempt = 0; attempt < 3; attempt++) {
       gscoped_ptr<WritableBlock> writer;
       LOG(INFO) << "Attempt #" << ++i;
-      Status s = bm_->CreateBlock(&writer);
+      Status s = this->bm_->CreateBlock(&writer);
       if (FLAGS_disk_reserved_bytes_free_for_testing < FLAGS_fs_data_dirs_reserved_bytes) {
         if (data_dir_observed_full) {
           // The dir was previously observed as full, so CreateBlock() checked
@@ -1018,6 +1016,7 @@ TEST_F(LogBlockManagerTest, TestDiskSpaceCheck) {
           ASSERT_STR_CONTAINS(s.ToString(), "All data directories are full");
         } else {
           ASSERT_OK(s);
+          ASSERT_OK(writer->Append("test data"));
           ASSERT_OK(writer->Close());
 
           // The dir was not previously full so CreateBlock() did not check for
@@ -1031,6 +1030,7 @@ TEST_F(LogBlockManagerTest, TestDiskSpaceCheck) {
         // CreateBlock() succeeded regardless of the previously fullness state,
         // and the new state is definitely not full.
         ASSERT_OK(s);
+        ASSERT_OK(writer->Append("test data"));
         ASSERT_OK(writer->Close());
         data_dir_observed_full = false;
         ASSERT_EQ(0, down_cast<AtomicGauge<uint64_t>*>(

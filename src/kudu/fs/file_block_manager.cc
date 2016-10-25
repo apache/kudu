@@ -54,10 +54,10 @@ namespace internal {
 //
 // A block ID uniquely locates a block. Every ID is a uint64_t, broken down
 // into multiple logical components:
-// 1. Bytes 0 (MSB) and 1 identify the block's root path by path set index. See
+// 1. Bytes 0 (MSB) and 1 identify the block's data dir by path set index. See
 //    fs.proto for more details on path sets.
-// 2. Bytes 2-7 (LSB) uniquely identify the block within the root path. As more
-//    and more blocks are created in a root path, the likelihood of a collision
+// 2. Bytes 2-7 (LSB) uniquely identify the block within the data dir. As more
+//    and more blocks are created in a data dir, the likelihood of a collision
 //    becomes greater. In the event of a collision, the block manager will
 //    retry(see CreateBlock()).
 //
@@ -71,16 +71,16 @@ class FileBlockLocation {
   }
 
   // Construct a location from its constituent parts.
-  static FileBlockLocation FromParts(const string& root_path,
-                                     uint16_t root_path_idx,
+  static FileBlockLocation FromParts(DataDir* data_dir,
+                                     uint16_t data_dir_idx,
                                      const BlockId& block_id);
 
   // Construct a location from a full block ID.
-  static FileBlockLocation FromBlockId(const string& root_path,
+  static FileBlockLocation FromBlockId(DataDir* data_dir,
                                        const BlockId& block_id);
 
-  // Get the root path index of a given block ID.
-  static uint16_t GetRootPathIdx(const BlockId& block_id) {
+  // Get the data dir index of a given block ID.
+  static uint16_t GetDataDirIdx(const BlockId& block_id) {
     return block_id.id() >> 48;
   }
 
@@ -101,12 +101,12 @@ class FileBlockLocation {
   void GetAllParentDirs(vector<string>* parent_dirs) const;
 
   // Simple accessors.
-  const string& root_path() const { return root_path_; }
+  DataDir* data_dir() const { return data_dir_; }
   const BlockId& block_id() const { return block_id_; }
 
  private:
-  FileBlockLocation(string root_path, BlockId block_id)
-      : root_path_(std::move(root_path)), block_id_(std::move(block_id)) {}
+  FileBlockLocation(DataDir* data_dir, BlockId block_id)
+      : data_dir_(data_dir), block_id_(block_id) {}
 
   // These per-byte accessors yield subdirectories in which blocks are grouped.
   string byte2() const {
@@ -122,27 +122,27 @@ class FileBlockLocation {
                         (block_id_.id() & 0x00000000FF000000ULL) >> 24);
   }
 
-  string root_path_;
+  DataDir* data_dir_;
   BlockId block_id_;
 };
 
-FileBlockLocation FileBlockLocation::FromParts(const string& root_path,
-                                               uint16_t root_path_idx,
+FileBlockLocation FileBlockLocation::FromParts(DataDir* data_dir,
+                                               uint16_t data_dir_idx,
                                                const BlockId& block_id) {
-  // The combined ID consists of 'root_path_idx' (top 2 bytes) and 'block_id'
+  // The combined ID consists of 'data_dir_idx' (top 2 bytes) and 'block_id'
   // (bottom 6 bytes). The top 2 bytes of 'block_id' are dropped.
-  uint64_t combined_id = static_cast<uint64_t>(root_path_idx) << 48;
+  uint64_t combined_id = static_cast<uint64_t>(data_dir_idx) << 48;
   combined_id |= block_id.id() & ((1ULL << 48) - 1);
-  return FileBlockLocation(root_path, BlockId(combined_id));
+  return FileBlockLocation(data_dir, BlockId(combined_id));
 }
 
-FileBlockLocation FileBlockLocation::FromBlockId(const string& root_path,
+FileBlockLocation FileBlockLocation::FromBlockId(DataDir* data_dir,
                                                  const BlockId& block_id) {
-  return FileBlockLocation(root_path, block_id);
+  return FileBlockLocation(data_dir, block_id);
 }
 
 string FileBlockLocation::GetFullPath() const {
-  string p = root_path_;
+  string p = data_dir_->dir();
   p = JoinPathSegments(p, byte2());
   p = JoinPathSegments(p, byte3());
   p = JoinPathSegments(p, byte4());
@@ -152,10 +152,10 @@ string FileBlockLocation::GetFullPath() const {
 
 Status FileBlockLocation::CreateBlockDir(Env* env,
                                          vector<string>* created_dirs) {
-  DCHECK(env->FileExists(root_path_));
+  DCHECK(env->FileExists(data_dir_->dir()));
 
   bool path0_created;
-  string path0 = JoinPathSegments(root_path_, byte2());
+  string path0 = JoinPathSegments(data_dir_->dir(), byte2());
   RETURN_NOT_OK(env_util::CreateDirIfMissing(env, path0, &path0_created));
 
   bool path1_created;
@@ -173,13 +173,13 @@ Status FileBlockLocation::CreateBlockDir(Env* env,
     created_dirs->push_back(path0);
   }
   if (path0_created) {
-    created_dirs->push_back(root_path_);
+    created_dirs->push_back(data_dir_->dir());
   }
   return Status::OK();
 }
 
 void FileBlockLocation::GetAllParentDirs(vector<string>* parent_dirs) const {
-  string path0 = JoinPathSegments(root_path_, byte2());
+  string path0 = JoinPathSegments(data_dir_->dir(), byte2());
   string path1 = JoinPathSegments(path0, byte3());
   string path2 = JoinPathSegments(path1, byte4());
 
@@ -188,7 +188,7 @@ void FileBlockLocation::GetAllParentDirs(vector<string>* parent_dirs) const {
   parent_dirs->push_back(path2);
   parent_dirs->push_back(path1);
   parent_dirs->push_back(path0);
-  parent_dirs->push_back(root_path_);
+  parent_dirs->push_back(data_dir_->dir());
 }
 
 ////////////////////////////////////////////////////////////
@@ -296,6 +296,8 @@ Status FileWritableBlock::Append(const Slice& data) {
       << "Invalid state: " << state_;
 
   RETURN_NOT_OK(writer_->Append(data));
+  RETURN_NOT_OK(location_.data_dir()->RefreshIsFull(
+      DataDir::RefreshMode::ALWAYS));
   state_ = DIRTY;
   bytes_appended_ += data.size();
   return Status::OK();
@@ -401,7 +403,7 @@ FileReadableBlock::FileReadableBlock(const FileBlockManager* block_manager,
                                      BlockId block_id,
                                      shared_ptr<RandomAccessFile> reader)
     : block_manager_(block_manager),
-      block_id_(std::move(block_id)),
+      block_id_(block_id),
       reader_(std::move(reader)),
       closed_(false) {
   if (block_manager_->metrics_) {
@@ -489,10 +491,10 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
 bool FileBlockManager::FindBlockPath(const BlockId& block_id,
                                      string* path) const {
   DataDir* dir = dd_manager_.FindDataDirByUuidIndex(
-      internal::FileBlockLocation::GetRootPathIdx(block_id));
+      internal::FileBlockLocation::GetDataDirIdx(block_id));
   if (dir) {
     *path = internal::FileBlockLocation::FromBlockId(
-        dir->dir(), block_id).GetFullPath();
+        dir, block_id).GetFullPath();
   }
   return dir != nullptr;
 }
@@ -565,7 +567,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
       id.SetId(next_block_id_.Increment());
     } while (id.IsNull());
 
-    location = internal::FileBlockLocation::FromParts(dir->dir(), uuid_idx, id);
+    location = internal::FileBlockLocation::FromParts(dir, uuid_idx, id);
     path = location.GetFullPath();
     RETURN_NOT_OK_PREPEND(location.CreateBlockDir(env_, &created_dirs), path);
     WritableFileOptions wr_opts;

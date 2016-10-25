@@ -26,11 +26,8 @@
 using std::string;
 using strings::Substitute;
 
-DECLARE_string(block_manager);
-
 METRIC_DECLARE_entity(server);
 METRIC_DECLARE_gauge_uint64(data_dirs_full);
-METRIC_DECLARE_counter(log_block_manager_containers);
 
 namespace kudu {
 
@@ -52,11 +49,6 @@ class DiskReservationITest : public ExternalMiniClusterITestBase {
 // use other disks for data blocks until all disks are full, at which time we
 // crash. This functionality is only implemented in the log block manager.
 TEST_F(DiskReservationITest, TestFillMultipleDisks) {
-  if (FLAGS_block_manager != "log") {
-    LOG(INFO) << "This platform does not use the log block manager by default. Skipping test.";
-    return;
-  }
-
   vector<string> ts_flags;
   // Don't preallocate very many bytes so we run the "full disk" check often.
   ts_flags.push_back("--log_container_preallocate_bytes=100000");
@@ -85,17 +77,6 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
   workload.set_write_timeout_millis(500);
   workload.Setup();
   workload.Start();
-
-  // Wait until we have 2 active containers.
-  while (true) {
-    int64_t num_containers;
-    ASSERT_OK(GetTsCounterValue(cluster_->tablet_server(0), &METRIC_log_block_manager_containers,
-                                &num_containers));
-    if (num_containers >= 2) break;
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-
-  LOG(INFO) << "Two log block containers are active";
 
   // Simulate that /a has 0 bytes free.
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),

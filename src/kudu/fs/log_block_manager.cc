@@ -580,9 +580,16 @@ Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
 
 Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
   DCHECK_GE(offset, 0);
+  {
+    std::lock_guard<Mutex> l(data_writer_lock_);
+    return data_file_->Write(offset, data);
+  }
 
-  std::lock_guard<Mutex> l(data_writer_lock_);
-  return data_file_->Write(offset, data);
+  if (PREDICT_FALSE(!FLAGS_log_container_preallocate_bytes)) {
+    // Without preallocation, every call grows the container.
+    RETURN_NOT_OK(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
+  }
+  return Status::OK();
 }
 
 Status LogBlockContainer::ReadData(int64_t offset, size_t length,
@@ -631,6 +638,11 @@ Status LogBlockContainer::SyncMetadata() {
 Status LogBlockContainer::Preallocate(size_t length) {
   RETURN_NOT_OK(data_file_->PreAllocate(total_bytes_written(), length));
   preallocated_offset_ = total_bytes_written() + length;
+
+  // Preallocation succeeded and the container has grown; recheck its data
+  // directory fullness.
+  RETURN_NOT_OK(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
+
   return Status::OK();
 }
 
@@ -707,7 +719,7 @@ class LogBlock : public RefCountedThreadSafe<LogBlock> {
 LogBlock::LogBlock(LogBlockContainer* container, BlockId block_id,
                    int64_t offset, int64_t length)
     : container_(container),
-      block_id_(std::move(block_id)),
+      block_id_(block_id),
       offset_(offset),
       length_(length),
       deleted_(false) {
@@ -808,7 +820,7 @@ class LogWritableBlock : public WritableBlock {
 LogWritableBlock::LogWritableBlock(LogBlockContainer* container,
                                    BlockId block_id, int64_t block_offset)
     : container_(container),
-      block_id_(std::move(block_id)),
+      block_id_(block_id),
       block_offset_(block_offset),
       block_length_(0),
       state_(CLEAN) {
@@ -1180,11 +1192,6 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
   RETURN_NOT_OK(GetOrCreateContainer(&container));
   if (FLAGS_log_container_preallocate_bytes) {
     RETURN_NOT_OK(container->Preallocate(FLAGS_log_container_preallocate_bytes));
-
-    // Preallocation succeeded and the container has grown; recheck its data
-    // directory fullness.
-    RETURN_NOT_OK(container->mutable_data_dir()->RefreshIsFull(
-        DataDir::RefreshMode::ALWAYS));
   }
 
   // Generate a free block ID.
