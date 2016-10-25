@@ -48,4 +48,10 @@ TEST(MiniKdcTest, TestBasicOperation) {
   ASSERT_STR_CONTAINS(klist, "krbtgt/KRBTEST.COM@KRBTEST.COM");
 }
 
+// Regression test to ensure that dropping a stopped MiniKdc doesn't panic.
+TEST(MiniKdcTest, TestStopDrop) {
+  MiniKdcOptions options;
+  MiniKdc kdc(options);
+}
+
 } // namespace kudu

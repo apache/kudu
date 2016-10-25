@@ -45,4 +45,10 @@ public class TestMiniKdc {
       assertTrue(klist.contains("krbtgt/KRBTEST.COM@KRBTEST.COM"));
     }
   }
+
+  @Test
+  public void testStopClose() throws Exception {
+    // Test that closing a stopped KDC does not throw.
+    MiniKdc.withDefaults().close();
+  }
 }

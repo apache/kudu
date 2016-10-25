@@ -60,7 +60,9 @@ MiniKdc::MiniKdc(const MiniKdcOptions& options)
 }
 
 MiniKdc::~MiniKdc() {
-  WARN_NOT_OK(Stop(), "Unable to stop MiniKdc");
+  if (kdc_process_) {
+    WARN_NOT_OK(Stop(), "Unable to stop MiniKdc");
+  }
 }
 
 vector<string> MiniKdc::MakeArgv(const vector<string>& in_argv) {
