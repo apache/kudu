@@ -178,6 +178,8 @@ public final class AsyncKuduScanner {
 
   private final long htTimestamp;
 
+  private final ReplicaSelection replicaSelection;
+
   /////////////////////
   // Runtime variables.
   /////////////////////
@@ -212,8 +214,6 @@ public final class AsyncKuduScanner {
 
   private Deferred<RowResultIterator> prefetcherDeferred;
 
-  private boolean inFirstTablet = true;
-
   final long scanRequestTimeout;
 
   AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedNames,
@@ -222,7 +222,8 @@ public final class AsyncKuduScanner {
                    Map<String, KuduPredicate> predicates, long limit,
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
-                   long htTimestamp, int batchSizeBytes, PartitionPruner pruner) {
+                   long htTimestamp, int batchSizeBytes, PartitionPruner pruner,
+                   ReplicaSelection replicaSelection) {
     checkArgument(batchSizeBytes > 0, "Need a strictly positive number of bytes, " +
         "got %s", batchSizeBytes);
     checkArgument(limit > 0, "Need a strictly positive number for the limit, " +
@@ -280,6 +281,8 @@ public final class AsyncKuduScanner {
       this.hasMore = false;
       this.closed = true;
     }
+
+    this.replicaSelection = replicaSelection;
   }
 
   /**
@@ -586,11 +589,6 @@ public final class AsyncKuduScanner {
    */
   KuduRpc<Response> getOpenRequest() {
     checkScanningNotStarted();
-    // This is the only point where we know we haven't started scanning and where the scanner
-    // should be fully configured
-    if (this.inFirstTablet) {
-      this.inFirstTablet = false;
-    }
     return new ScanRequest(table, State.OPENING);
   }
 
@@ -682,6 +680,11 @@ public final class AsyncKuduScanner {
       } else {
         return ImmutableList.of(Tserver.TabletServerFeatures.COLUMN_PREDICATES_VALUE);
       }
+    }
+
+    @Override
+    ReplicaSelection getReplicaSelection() {
+      return replicaSelection;
     }
 
     /** Serializes this request.  */
@@ -818,7 +821,7 @@ public final class AsyncKuduScanner {
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, orderMode,
           scanRequestTimeout, predicates, limit, cacheBlocks,
           prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
-          htTimestamp, batchSizeBytes, PartitionPruner.create(this));
+          htTimestamp, batchSizeBytes, PartitionPruner.create(this), replicaSelection);
     }
   }
 }

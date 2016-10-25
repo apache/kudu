@@ -101,6 +101,14 @@ public class TestRemoteTablet {
     assertNotNull(tablet.getClosestUUID());
   }
 
+  @Test
+  public void testReplicaSelection() {
+    RemoteTablet tablet = getTablet(0, 1);
+
+    assertEquals("0", tablet.getReplicaSelectedUUID(ReplicaSelection.LEADER_ONLY));
+    assertEquals("1", tablet.getReplicaSelectedUUID(ReplicaSelection.CLOSEST_REPLICA));
+  }
+
   private RemoteTablet getTablet(int leaderIndex) {
     return getTablet(leaderIndex, -1);
   }

@@ -142,7 +142,7 @@ public class KuduScanner {
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, orderMode,
           scanRequestTimeout, predicates, limit, cacheBlocks,
           prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
-          htTimestamp, batchSizeBytes, PartitionPruner.create(this)));
+          htTimestamp, batchSizeBytes, PartitionPruner.create(this), replicaSelection));
     }
   }
 }

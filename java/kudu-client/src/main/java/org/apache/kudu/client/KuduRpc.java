@@ -262,6 +262,10 @@ public abstract class KuduRpc<R> {
     return sequenceId;
   }
 
+  ReplicaSelection getReplicaSelection() {
+    return ReplicaSelection.LEADER_ONLY;
+  }
+
   void setSequenceId(long sequenceId) {
     assert (this.sequenceId == RequestTracker.NO_SEQ_NO);
     this.sequenceId = sequenceId;

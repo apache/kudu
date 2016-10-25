@@ -54,6 +54,7 @@ public abstract class AbstractKuduScannerBuilder
   List<String> projectedColumnNames = null;
   List<Integer> projectedColumnIndexes = null;
   long scanRequestTimeout;
+  ReplicaSelection replicaSelection = ReplicaSelection.LEADER_ONLY;
 
   AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
     this.client = client;
@@ -309,6 +310,17 @@ public abstract class AbstractKuduScannerBuilder
         Bytes.memcmp(endPrimaryKey, upperBoundPrimaryKey) < 0) {
       this.upperBoundPrimaryKey = endPrimaryKey;
     }
+    return (S) this;
+  }
+
+  /**
+   * Sets the replica selection mechanism for this scanner. The default is to read from the
+   * currently known leader.
+   * @param replicaSelection replication selection mechanism to use
+   * @return this instance
+   */
+  public S replicaSelection(ReplicaSelection replicaSelection) {
+    this.replicaSelection = replicaSelection;
     return (S) this;
   }
 

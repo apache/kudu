@@ -176,6 +176,21 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     buildScannerAndCheckColumnsCount(builder, 2);
   }
 
+  @Test(timeout = 100000)
+  public void testReplicaSelections() throws Exception {
+    AsyncKuduScanner scanner = client.newScannerBuilder(table)
+        .replicaSelection(ReplicaSelection.LEADER_ONLY)
+        .build();
+
+    assertEquals(9, countRowsInScan(scanner));
+
+    scanner = client.newScannerBuilder(table)
+        .replicaSelection(ReplicaSelection.CLOSEST_REPLICA)
+        .build();
+
+    assertEquals(9, countRowsInScan(scanner));
+  }
+
   private AsyncKuduScanner getScanner(String lowerBoundKeyOne,
                                       String lowerBoundKeyTwo,
                                       String exclusiveUpperBoundKeyOne,

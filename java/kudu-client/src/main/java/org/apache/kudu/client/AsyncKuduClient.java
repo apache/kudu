@@ -586,8 +586,9 @@ public class AsyncKuduClient implements AutoCloseable {
   Deferred<AsyncKuduScanner.Response> scanNextRows(final AsyncKuduScanner scanner) {
     RemoteTablet tablet = scanner.currentTablet();
     assert (tablet != null);
-    TabletClient client = connectionCache.getClient(tablet.getLeaderUUID());
     KuduRpc<AsyncKuduScanner.Response> nextRequest = scanner.getNextRowsRequest();
+    TabletClient client =
+        connectionCache.getClient(tablet.getReplicaSelectedUUID(nextRequest.getReplicaSelection()));
     Deferred<AsyncKuduScanner.Response> d = nextRequest.getDeferred();
     // Important to increment the attempts before the next if statement since
     // getSleepTimeForRpc() relies on it if the client is null or dead.
@@ -615,7 +616,9 @@ public class AsyncKuduClient implements AutoCloseable {
       return Deferred.fromResult(null);
     }
 
-    final TabletClient client = connectionCache.getClient(tablet.getLeaderUUID());
+    final KuduRpc<AsyncKuduScanner.Response>  closeRequest = scanner.getCloseRequest();
+    final TabletClient client = connectionCache.getClient(
+        tablet.getReplicaSelectedUUID(closeRequest.getReplicaSelection()));
     if (client == null || !client.isAlive()) {
       // Oops, we couldn't find a tablet server that hosts this tablet. Our
       // cache was probably invalidated while the client was scanning. So
@@ -623,10 +626,10 @@ public class AsyncKuduClient implements AutoCloseable {
       LOG.warn("Cannot close {} properly, no connection open for {}", scanner, tablet);
       return Deferred.fromResult(null);
     }
-    final KuduRpc<AsyncKuduScanner.Response>  close_request = scanner.getCloseRequest();
-    final Deferred<AsyncKuduScanner.Response> d = close_request.getDeferred();
-    close_request.attempt++;
-    client.sendRpc(close_request);
+
+    final Deferred<AsyncKuduScanner.Response> d = closeRequest.getDeferred();
+    closeRequest.attempt++;
+    client.sendRpc(closeRequest);
     return d;
   }
 
@@ -670,7 +673,7 @@ public class AsyncKuduClient implements AutoCloseable {
     // If we found a tablet, we'll try to find the TS to talk to.
     if (entry != null) {
       RemoteTablet tablet = entry.getTablet();
-      String uuid = tablet.getLeaderUUID();
+      String uuid = tablet.getReplicaSelectedUUID(request.getReplicaSelection());
       if (uuid != null) {
         Deferred<R> d = request.getDeferred();
         request.setTablet(tablet);

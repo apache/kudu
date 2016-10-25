@@ -165,6 +165,23 @@ class RemoteTablet implements Comparable<RemoteTablet> {
   }
 
   /**
+   * Helper function to centralize the calling of methods based on the passed replica selection
+   * mechanism.
+   * @param replicaSelection replica selection mechanism to use
+   * @return a UUID for the server that matches the selection, can be null
+   */
+  String getReplicaSelectedUUID(ReplicaSelection replicaSelection) {
+    switch (replicaSelection) {
+      case LEADER_ONLY:
+        return getLeaderUUID();
+      case CLOSEST_REPLICA:
+        return getClosestUUID();
+      default:
+        throw new RuntimeException("Unknown replica selection mechanism " + replicaSelection);
+    }
+  }
+
+  /**
    * Gets the replicas of this tablet. The returned list may not be mutated.
    * @return the replicas of the tablet
    */
