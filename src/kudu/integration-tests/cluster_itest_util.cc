@@ -39,6 +39,7 @@
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/test_macros.h"
 
 namespace kudu {
 namespace itest {
@@ -76,6 +77,7 @@ using std::string;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
+using tablet::TabletDataState;
 using tserver::CreateTsClientProxies;
 using tserver::ListTabletsResponsePB;
 using tserver::DeleteTabletRequestPB;
@@ -222,8 +224,8 @@ Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
     replicas_str += "{ " + replica->ToString() + " }";
   }
   return Status::TimedOut(Substitute("Index $0 not available on all replicas after $1. "
-                                              "Replicas: [ $2 ]",
-                                              log_index, passed.ToString()));
+                                     "Replicas: [ $2 ]",
+                                     log_index, passed.ToString(), replicas_str));
 }
 
 Status CreateTabletServerMap(MasterServiceProxy* master_proxy,
@@ -741,7 +743,7 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
 
 Status DeleteTablet(const TServerDetails* ts,
                     const std::string& tablet_id,
-                    const tablet::TabletDataState delete_type,
+                    const TabletDataState delete_type,
                     const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
                     const MonoDelta& timeout,
                     tserver::TabletServerErrorPB::Code* error_code) {
@@ -765,6 +767,25 @@ Status DeleteTablet(const TServerDetails* ts,
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();
+}
+
+void DeleteTabletWithRetries(const TServerDetails* ts,
+                             const string& tablet_id,
+                             TabletDataState delete_type,
+                             const boost::optional<int64_t>& config_opid_index,
+                             const MonoDelta& timeout) {
+  MonoTime start(MonoTime::Now());
+  MonoTime deadline = start + timeout;
+  Status s;
+  while (true) {
+    s = DeleteTablet(ts, tablet_id, delete_type, config_opid_index, timeout);
+    if (s.ok()) return;
+    if (deadline < MonoTime::Now()) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  ASSERT_OK(s);
 }
 
 Status StartTabletCopy(const TServerDetails* ts,

@@ -288,6 +288,14 @@ Status DeleteTablet(const TServerDetails* ts,
                     const MonoDelta& timeout,
                     tserver::TabletServerErrorPB::Code* error_code = NULL);
 
+// Repeatedly try to delete the tablet, retrying on failure up to the
+// specified timeout. Deletion can fail when other operations, such as
+// bootstrap or tablet copy, are running.
+void DeleteTabletWithRetries(const TServerDetails* ts, const std::string& tablet_id,
+                             tablet::TabletDataState delete_type,
+                             const boost::optional<int64_t>& config_opid_index,
+                             const MonoDelta& timeout);
+
 // Cause the remote to initiate tablet copy using the specified host as a
 // source.
 Status StartTabletCopy(const TServerDetails* ts,

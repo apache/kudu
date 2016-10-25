@@ -29,6 +29,8 @@
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
@@ -47,6 +49,8 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
+DEFINE_bool(force_copy, false,
+            "Force the copy when the destination tablet server has this replica");
 DECLARE_int64(timeout_ms); // defined in ksck
 
 namespace kudu {
@@ -55,6 +59,9 @@ namespace tools {
 using client::KuduRowResult;
 using client::KuduScanBatch;
 using client::KuduSchema;
+using consensus::ConsensusServiceProxy;
+using consensus::StartTabletCopyRequestPB;
+using consensus::StartTabletCopyResponsePB;
 using rpc::RpcController;
 using server::ServerStatusPB;
 using std::cerr;
@@ -71,6 +78,8 @@ using tserver::ListTabletsResponsePB;
 using tserver::NewScanRequestPB;
 using tserver::ScanRequestPB;
 using tserver::ScanResponsePB;
+using tserver::TabletServer;
+using tserver::TabletServerErrorPB;
 using tserver::TabletServerAdminServiceProxy;
 using tserver::TabletServerServiceProxy;
 
@@ -140,6 +149,8 @@ const char* const kTServerAddressArg = "tserver_address";
 const char* const kTServerAddressDesc = "Address of a Kudu Tablet Server of "
     "form 'hostname:port'. Port may be omitted if the Tablet Server is bound "
     "to the default port.";
+const char* const kSrcAddressArg = "src_address";
+const char* const kDstAddressArg = "dst_address";
 
 Status GetReplicas(TabletServerServiceProxy* proxy,
                    vector<ListTabletsResponsePB::StatusAndSchemaPB>* replicas) {
@@ -280,6 +291,49 @@ Status ListReplicas(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status CopyReplica(const RunnerContext& context) {
+  const string& src_address = FindOrDie(context.required_args, kSrcAddressArg);
+  const string& dst_address = FindOrDie(context.required_args, kDstAddressArg);
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+
+  ServerStatusPB dst_status;
+  RETURN_NOT_OK(GetServerStatus(dst_address, TabletServer::kDefaultPort,
+                                &dst_status));
+  ServerStatusPB src_status;
+  RETURN_NOT_OK(GetServerStatus(src_address, TabletServer::kDefaultPort,
+                                &src_status));
+
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(dst_address, TabletServer::kDefaultPort, &proxy));
+
+  StartTabletCopyRequestPB req;
+  StartTabletCopyResponsePB resp;
+  RpcController rpc;
+  req.set_dest_uuid(dst_status.node_instance().permanent_uuid());
+  req.set_tablet_id(tablet_id);
+  req.set_copy_peer_uuid(src_status.node_instance().permanent_uuid());
+  *req.mutable_copy_peer_addr() = src_status.bound_rpc_addresses(0);
+  // Provide a force option if the destination tablet server has the
+  // replica otherwise tablet-copy will fail.
+  if (FLAGS_force_copy) {
+    req.set_caller_term(std::numeric_limits<int64_t>::max());
+  }
+
+  LOG(INFO) << "Sending copy replica request:\n" << req.DebugString();
+  LOG(WARNING) << "NOTE: this copy may happen asynchronously "
+               << "and may timeout if the tablet size is large. Watch the logs on "
+               << "the target tablet server for indication of progress.";
+
+  RETURN_NOT_OK(proxy->StartTabletCopy(req, &resp, &rpc));
+  if (resp.has_error()) {
+    RETURN_NOT_OK_PREPEND(
+        StatusFromPB(resp.error().status()),
+        strings::Substitute("Remote server returned error code $0",
+                            TabletServerErrorPB::Code_Name(resp.error().code())));
+  }
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildRemoteReplicaMode() {
@@ -287,6 +341,14 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       ActionBuilder("check", &CheckReplicas)
       .Description("Check if all replicas on a Kudu Tablet Server are running")
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
+      .Build();
+
+  unique_ptr<Action> copy_replica =
+      ActionBuilder("copy", &CopyReplica)
+      .Description("Copy a replica from one Kudu Tablet Server to another")
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .AddRequiredParameter({ kSrcAddressArg, kTServerAddressDesc })
+      .AddRequiredParameter({ kDstAddressArg, kTServerAddressDesc })
       .Build();
 
   unique_ptr<Action> delete_replica =
@@ -313,6 +375,7 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
   return ModeBuilder("remote_replica")
       .Description("Operate on replicas on a Kudu Tablet Server")
       .AddAction(std::move(check_replicas))
+      .AddAction(std::move(copy_replica))
       .AddAction(std::move(delete_replica))
       .AddAction(std::move(dump_replica))
       .AddAction(std::move(list))

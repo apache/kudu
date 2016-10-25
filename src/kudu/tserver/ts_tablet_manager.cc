@@ -559,8 +559,9 @@ Status TSTabletManager::DeleteTablet(
   return Status::OK();
 }
 
-string TSTabletManager::LogPrefix(const string& tablet_id) const {
-  return "T " + tablet_id + " P " + fs_manager_->uuid() + ": ";
+string TSTabletManager::LogPrefix(const string& tablet_id, FsManager *fs_manager) {
+  DCHECK(fs_manager != nullptr);
+  return Substitute("T $0 P $1: ", tablet_id, fs_manager->uuid());
 }
 
 Status TSTabletManager::CheckRunningUnlocked(
@@ -920,7 +921,8 @@ Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& me
                                          TabletDataState data_state,
                                          const boost::optional<OpId>& last_logged_opid) {
   const string& tablet_id = meta->tablet_id();
-  LOG(INFO) << LogPrefix(tablet_id) << "Deleting tablet data with delete state "
+  LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager())
+            << "Deleting tablet data with delete state "
             << TabletDataState_Name(data_state);
   CHECK(data_state == TABLET_DATA_DELETED ||
         data_state == TABLET_DATA_TOMBSTONED)
@@ -930,7 +932,8 @@ Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& me
   // Note: Passing an unset 'last_logged_opid' will retain the last_logged_opid
   // that was previously in the metadata.
   RETURN_NOT_OK(meta->DeleteTabletData(data_state, last_logged_opid));
-  LOG(INFO) << LogPrefix(tablet_id) << "Tablet deleted. Last logged OpId: "
+  LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager())
+            << "Tablet deleted. Last logged OpId: "
             << meta->tombstone_last_logged_opid();
   MAYBE_FAULT(FLAGS_fault_crash_after_blocks_deleted);
 
@@ -953,14 +956,13 @@ void TSTabletManager::LogAndTombstone(const scoped_refptr<TabletPeer>& peer,
                                       const std::string& msg,
                                       const Status& s) {
   const string& tablet_id = peer->tablet_id();
-  const string kLogPrefix = "T " + tablet_id + " P " + fs_manager_->uuid() + ": ";
-  LOG(WARNING) << kLogPrefix << msg << ": " << s.ToString();
+  LOG(WARNING) << LogPrefix(tablet_id) << msg << ": " << s.ToString();
 
   Status delete_status = DeleteTabletData(
       peer->tablet_metadata(), TABLET_DATA_TOMBSTONED, boost::optional<OpId>());
   if (PREDICT_FALSE(!delete_status.ok())) {
     // This failure should only either indicate a bug or an IO error.
-    LOG(FATAL) << kLogPrefix << "Failed to tombstone tablet after tablet copy: "
+    LOG(FATAL) << LogPrefix(tablet_id) << "Failed to tombstone tablet after tablet copy: "
                << delete_status.ToString();
   }
   peer->StatusMessage(Substitute("Tombstoned tablet: $0 ($1)", msg, s.ToString()));

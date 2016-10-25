@@ -175,6 +175,11 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   Status RunAllLogGC();
 
+  // Delete the tablet using the specified delete_type as the final metadata
+  // state. Deletes the on-disk data, metadata, as well as all WAL segments.
+  static Status DeleteTabletData(const scoped_refptr<tablet::TabletMetadata>& meta,
+                                 tablet::TabletDataState delete_type,
+                                 const boost::optional<consensus::OpId>& last_logged_opid);
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
 
@@ -185,7 +190,10 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   };
 
   // Standard log prefix, given a tablet id.
-  std::string LogPrefix(const std::string& tablet_id) const;
+  static std::string LogPrefix(const string& tablet_id, FsManager *fs_manager);
+  std::string LogPrefix(const std::string& tablet_id) const {
+    return LogPrefix(tablet_id, fs_manager_);
+  }
 
   // Returns Status::OK() iff state_ == MANAGER_RUNNING.
   Status CheckRunningUnlocked(boost::optional<TabletServerErrorPB::Code>* error_code) const;
@@ -251,12 +259,6 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Handle the case on startup where we find a tablet that is not in
   // TABLET_DATA_READY state. Generally, we tombstone the replica.
   Status HandleNonReadyTabletOnStartup(const scoped_refptr<tablet::TabletMetadata>& meta);
-
-  // Delete the tablet using the specified delete_type as the final metadata
-  // state. Deletes the on-disk data, as well as all WAL segments.
-  Status DeleteTabletData(const scoped_refptr<tablet::TabletMetadata>& meta,
-                          tablet::TabletDataState delete_type,
-                          const boost::optional<consensus::OpId>& last_logged_opid);
 
   // Return Status::IllegalState if leader_term < last_logged_term.
   // Helper function for use with tablet copy.

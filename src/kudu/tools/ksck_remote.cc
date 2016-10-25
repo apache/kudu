@@ -27,8 +27,8 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 
+DECLARE_int64(timeout_ms); // defined in tool_action_common
 DEFINE_bool(checksum_cache_blocks, false, "Should the checksum scanners cache the read blocks");
-DEFINE_int64(timeout_ms, 1000 * 60, "RPC timeout in milliseconds");
 
 namespace kudu {
 namespace tools {

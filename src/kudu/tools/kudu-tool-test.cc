@@ -37,6 +37,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
@@ -46,12 +47,23 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/test_workload.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_test_util.h"
+#include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
@@ -74,8 +86,11 @@ using consensus::OpId;
 using consensus::ReplicateRefPtr;
 using consensus::ReplicateMsg;
 using fs::WritableBlock;
+using itest::ExternalMiniClusterFsInspector;
+using itest::TServerDetails;
 using log::Log;
 using log::LogOptions;
+using rpc::RpcController;
 using std::back_inserter;
 using std::copy;
 using std::ostringstream;
@@ -84,15 +99,34 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::LocalTabletWriter;
+using tablet::Tablet;
+using tablet::TabletDataState;
 using tablet::TabletHarness;
 using tablet::TabletMetadata;
+using tablet::TabletPeer;
 using tablet::TabletSuperBlockPB;
+using tserver::DeleteTabletRequestPB;
+using tserver::DeleteTabletResponsePB;
+using tserver::MiniTabletServer;
 using tserver::WriteRequestPB;
+using tserver::ListTabletsRequestPB;
+using tserver::ListTabletsResponsePB;
+using tserver::TabletServerServiceProxy;
 
 class ToolTest : public KuduTest {
  public:
   ToolTest()
       : tool_path_(GetKuduCtlAbsolutePath()) {
+  }
+
+  ~ToolTest() {
+    STLDeleteValues(&ts_map_);
+  }
+
+  virtual void TearDown() OVERRIDE {
+    if (cluster_) cluster_->Shutdown();
+    if (mini_cluster_) mini_cluster_->Shutdown();
+    KuduTest::TearDown();
   }
 
   Status RunTool(const string& arg_str,
@@ -127,21 +161,27 @@ class ToolTest : public KuduTest {
 
   void RunActionStdoutNone(const string& arg_str) const {
     string stdout;
-    Status s = RunTool(arg_str, &stdout, nullptr, nullptr, nullptr);
+    string stderr;
+    Status s = RunTool(arg_str, &stdout, &stderr, nullptr, nullptr);
     SCOPED_TRACE(stdout);
+    SCOPED_TRACE(stderr);
     ASSERT_OK(s);
     ASSERT_TRUE(stdout.empty());
   }
 
   void RunActionStdoutString(const string& arg_str, string* stdout) const {
-    Status s = RunTool(arg_str, stdout, nullptr, nullptr, nullptr);
+    string stderr;
+    Status s = RunTool(arg_str, stdout, &stderr, nullptr, nullptr);
     SCOPED_TRACE(*stdout);
+    SCOPED_TRACE(stderr);
     ASSERT_OK(s);
   }
 
   void RunActionStdoutLines(const string& arg_str, vector<string>* stdout_lines) const {
-    Status s = RunTool(arg_str, nullptr, nullptr, stdout_lines, nullptr);
+    string stderr;
+    Status s = RunTool(arg_str, nullptr, &stderr, stdout_lines, nullptr);
     SCOPED_TRACE(*stdout_lines);
+    SCOPED_TRACE(stderr);
     ASSERT_OK(s);
   }
 
@@ -175,9 +215,44 @@ class ToolTest : public KuduTest {
     }
   }
 
- private:
+ protected:
+  void RunLoadgen(int num_tservers = 1,
+                  const vector<string>& tool_args = {},
+                  const string& table_name = "");
+  void StartExternalMiniCluster(const vector<string>& extra_master_flags = {},
+                                const vector<string>& extra_tserver_flags = {},
+                                int num_tablet_servers = 1);
+  void StartMiniCluster(int num_masters = 1,
+                        int num_tablet_servers = 1);
+  unique_ptr<ExternalMiniCluster> cluster_;
+  unique_ptr<ExternalMiniClusterFsInspector> inspect_;
+  unordered_map<string, TServerDetails*> ts_map_;
+  unique_ptr<MiniCluster> mini_cluster_;
   string tool_path_;
 };
+
+void ToolTest::StartExternalMiniCluster(const vector<string>& extra_master_flags,
+                                        const vector<string>& extra_tserver_flags,
+                                        int num_tablet_servers) {
+  ExternalMiniClusterOptions opts;
+  opts.extra_master_flags = extra_master_flags;
+  opts.extra_tserver_flags = extra_tserver_flags;
+  opts.num_tablet_servers = num_tablet_servers;
+  cluster_.reset(new ExternalMiniCluster(opts));
+  ASSERT_OK(cluster_->Start());
+  inspect_.reset(new ExternalMiniClusterFsInspector(cluster_.get()));
+  ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy().get(),
+                                  cluster_->messenger(), &ts_map_));
+}
+
+void ToolTest::StartMiniCluster(int num_masters,
+                                int num_tablet_servers) {
+  MiniClusterOptions opts;
+  opts.num_masters = num_masters;
+  opts.num_tablet_servers = num_tablet_servers;
+  mini_cluster_.reset(new MiniCluster(env_.get(), opts));
+  ASSERT_OK(mini_cluster_->Start());
+}
 
 TEST_F(ToolTest, TestTopLevelHelp) {
   const vector<string> kTopLevelRegexes = {
@@ -223,6 +298,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "cmeta.*Operate on a local Kudu replica's consensus",
         "dump.*Dump a Kudu filesystem",
         "copy_from_remote.*Copy a replica",
+        "delete.*Delete Kudu replica from the local filesystem",
         "list.*Show list of Kudu replicas"
     };
     NO_FATALS(RunTestHelp("local_replica", kLocalReplicaModeRegexes));
@@ -267,6 +343,7 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kRemoteReplicaModeRegexes = {
         "check.*Check if all replicas",
+        "copy.*Copy a replica from one Kudu Tablet Server to another",
         "delete.*Delete a replica",
         "dump.*Dump the data of a replica",
         "list.*List all replicas"
@@ -762,16 +839,11 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 
 // Create and start Kudu mini cluster, optionally creating a table in the DB,
 // and then run 'kudu test loadgen ...' utility against it.
-void RunLoadgen(size_t num_tservers = 1,
-                const vector<string>& tool_args = {},
-                const string& table_name = "") {
-  kudu::ExternalMiniClusterOptions opts;
-  opts.num_tablet_servers = num_tservers;
+void ToolTest::RunLoadgen(int num_tservers,
+                          const vector<string>& tool_args,
+                          const string& table_name) {
   // fsync causes flakiness on EC2
-  opts.extra_tserver_flags.push_back("--never_fsync");
-
-  unique_ptr<ExternalMiniCluster> cluster(new ExternalMiniCluster(opts));
-  ASSERT_OK(cluster->Start());
+  NO_FATALS(StartExternalMiniCluster({}, {"--never_fsync"}, num_tservers));
   if (!table_name.empty()) {
     static const string kKeyColumnName = "key";
     static const Schema kSchema = Schema(
@@ -790,21 +862,21 @@ void RunLoadgen(size_t num_tservers = 1,
       }, 1);
 
     shared_ptr<client::KuduClient> client;
-    ASSERT_OK(cluster->CreateClient(nullptr, &client));
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
     client::KuduSchema client_schema(client::KuduSchemaFromSchema(kSchema));
     unique_ptr<client::KuduTableCreator> table_creator(
         client->NewTableCreator());
     ASSERT_OK(table_creator->table_name(table_name)
               .schema(&client_schema)
               .add_hash_partitions({kKeyColumnName}, 2)
-              .num_replicas(cluster->num_tablet_servers())
+              .num_replicas(cluster_->num_tablet_servers())
               .Create());
   }
   vector<string> args = {
     GetKuduCtlAbsolutePath(),
     "test",
     "loadgen",
-    cluster->master()->bound_rpc_addr().ToString(),
+    cluster_->master()->bound_rpc_addr().ToString(),
   };
   if (!table_name.empty()) {
     args.push_back(Substitute("-table_name=$0", table_name));
@@ -864,6 +936,214 @@ TEST_F(ToolTest, TestLoadgenManualFlush) {
         "--string_len=16",
       },
       "bench_manual_flush"));
+}
+
+// Test 'kudu remote_replica copy' tool when the destination tablet server is online.
+// 1. Test the copy tool when the destination replica is healthy
+// 2. Test the copy tool when the destination replica is tombstoned
+// 3. Test the copy tool when the destination replica is deleted
+TEST_F(ToolTest, TestRemoteReplicaCopy) {
+  const string kTestDir = GetTestPath("test");
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kSrcTsIndex = 0;
+  const int kDstTsIndex = 1;
+  const int kNumTservers = 3;
+  const int kNumTablets = 3;
+  NO_FATALS(StartExternalMiniCluster(
+      {"--catalog_manager_wait_for_new_tablets_to_elect_leader=false"},
+      {"--enable_leader_failure_detection=false"}, kNumTservers));
+
+  // TestWorkLoad.Setup() internally generates a table.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_replicas(3);
+  workload.Setup();
+
+  // Choose source and destination tablet servers for tablet_copy.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  TServerDetails* src_ts = ts_map_[cluster_->tablet_server(kSrcTsIndex)->uuid()];
+  ASSERT_OK(WaitForNumTabletsOnTS(src_ts, kNumTablets, kTimeout, &tablets));
+  TServerDetails* dst_ts = ts_map_[cluster_->tablet_server(kDstTsIndex)->uuid()];
+  ASSERT_OK(WaitForNumTabletsOnTS(dst_ts, kNumTablets, kTimeout, &tablets));
+
+  // Test 1: Test when the destination replica is healthy with and without --force_copy flag.
+  // This is an 'online tablet copy'. i.e, when the tool initiates a copy,
+  // the internal machinery of tablet-copy deletes the existing healthy
+  // replica on destination and copies the replica if --force_copy is specified.
+  // Without --force_copy flag, the test fails to copy since there is a healthy
+  // replica already present on the destination tserver.
+  string stderr;
+  const string& src_ts_addr = cluster_->tablet_server(kSrcTsIndex)->bound_rpc_addr().ToString();
+  const string& dst_ts_addr = cluster_->tablet_server(kDstTsIndex)->bound_rpc_addr().ToString();
+  const string& healthy_tablet_id = tablets[0].tablet_status().tablet_id();
+  Status s = RunTool(
+      Substitute("remote_replica copy $0 $1 $2",
+                 healthy_tablet_id, src_ts_addr, dst_ts_addr),
+                 nullptr, &stderr, nullptr, nullptr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  SCOPED_TRACE(stderr);
+  ASSERT_STR_CONTAINS(stderr, "Rejecting tablet copy request");
+
+  NO_FATALS(RunActionStdoutNone(Substitute("remote_replica copy $0 $1 $2 --force_copy",
+                                           healthy_tablet_id, src_ts_addr, dst_ts_addr)));
+  ASSERT_OK(WaitUntilTabletInState(dst_ts, healthy_tablet_id,
+                                   tablet::RUNNING, kTimeout));
+
+  // Test 2 and 3: Test when the destination replica is tombstoned or deleted
+  DeleteTabletRequestPB req;
+  DeleteTabletResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(kTimeout);
+  req.set_dest_uuid(dst_ts->uuid());
+  const string& tombstoned_tablet_id = tablets[2].tablet_status().tablet_id();
+  req.set_tablet_id(tombstoned_tablet_id);
+  req.set_delete_type(TabletDataState::TABLET_DATA_TOMBSTONED);
+  ASSERT_OK(dst_ts->tserver_admin_proxy->DeleteTablet(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error());
+
+  // Shut down the destination server and delete one tablet from
+  // local fs on destination tserver while it is offline.
+  cluster_->tablet_server(kDstTsIndex)->Shutdown();
+  const string& tserver_dir = cluster_->tablet_server(kDstTsIndex)->data_dir();
+  const string& deleted_tablet_id = tablets[1].tablet_status().tablet_id();
+  NO_FATALS(RunActionStdoutNone(Substitute("local_replica delete $0 --fs_wal_dir=$1 "
+                                           "--fs_data_dirs=$1 --clean_unsafe",
+                                           deleted_tablet_id, tserver_dir)));
+
+  // At this point, we expect only 2 tablets to show up on destination when
+  // we restart the destination tserver. deleted_tablet_id should not be found on
+  // destination tserver until we do a copy from the tool again.
+  ASSERT_OK(cluster_->tablet_server(kDstTsIndex)->Restart());
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> dst_tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(dst_ts, kNumTablets-1, kTimeout, &dst_tablets));
+  bool found_tombstoned_tablet = false;
+  for (const auto& t : dst_tablets) {
+    if (t.tablet_status().tablet_id() == tombstoned_tablet_id) {
+      found_tombstoned_tablet = true;
+    }
+    ASSERT_NE(t.tablet_status().tablet_id(), deleted_tablet_id);
+  }
+  ASSERT_TRUE(found_tombstoned_tablet);
+  // Wait until destination tserver has tombstoned_tablet_id in tombstoned state.
+  NO_FATALS(inspect_->WaitForTabletDataStateOnTS(kDstTsIndex, tombstoned_tablet_id,
+                                                 { TabletDataState::TABLET_DATA_TOMBSTONED },
+                                                 kTimeout));
+  // Copy tombstoned_tablet_id from source to destination.
+  NO_FATALS(RunActionStdoutNone(Substitute("remote_replica copy $0 $1 $2 --force_copy",
+                                           tombstoned_tablet_id, src_ts_addr, dst_ts_addr)));
+  ASSERT_OK(WaitUntilTabletInState(dst_ts, tombstoned_tablet_id,
+                                   tablet::RUNNING, kTimeout));
+  // Copy deleted_tablet_id from source to destination.
+  NO_FATALS(RunActionStdoutNone(Substitute("remote_replica copy $0 $1 $2",
+                                           deleted_tablet_id, src_ts_addr, dst_ts_addr)));
+  ASSERT_OK(WaitUntilTabletInState(dst_ts, deleted_tablet_id,
+                                   tablet::RUNNING, kTimeout));
+}
+
+// Test 'kudu local_replica delete' tool when the tablet server is offline.
+TEST_F(ToolTest, TestLocalReplicaDelete) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  NO_FATALS(StartMiniCluster());
+
+  // TestWorkLoad.Setup() internally generates a table.
+  TestWorkload workload(mini_cluster_.get());
+  workload.set_num_replicas(1);
+  workload.Setup();
+  workload.Start();
+
+  // There is only one tserver in the minicluster.
+  ASSERT_OK(mini_cluster_->WaitForTabletServerCount(1));
+  MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
+
+  // Grab the tablet_id to delete
+  ListTabletsRequestPB req;
+  ListTabletsResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(kTimeout);
+  {
+    unique_ptr<TabletServerServiceProxy> ts_proxy;
+    ASSERT_OK(BuildProxy(ts->bound_rpc_addr().ToString(),
+                         tserver::TabletServer::kDefaultPort, &ts_proxy));
+    ASSERT_OK(ts_proxy->ListTablets(req, &resp, &rpc));
+  }
+  ASSERT_FALSE(resp.has_error());
+  ASSERT_EQ(resp.status_and_schema_size(), 1);
+  const string& tablet_id = resp.status_and_schema(0).tablet_status().tablet_id();
+
+  // Generate some workload followed by a flush to grow the size of the tablet on disk.
+  while (workload.rows_inserted() < 10000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  // Make sure the tablet data is flushed to disk. This is needed
+  // so that we can compare the size of the data on disk before and
+  // after the deletion of local_replica to check if the size-on-disk is reduced at all.
+  {
+    scoped_refptr<TabletPeer> tablet_peer;
+    ASSERT_TRUE(ts->server()->tablet_manager()->LookupTablet(tablet_id, &tablet_peer));
+    Tablet* tablet = tablet_peer->tablet();
+    ASSERT_OK(tablet->Flush());
+  }
+  const string& tserver_dir = ts->options()->fs_opts.wal_path;
+
+  // Using the delete tool with tablet server running fails.
+  string stderr;
+  Status s = RunTool(
+      Substitute("local_replica delete $0 --fs_wal_dir=$1 --fs_data_dirs=$1 "
+                 "--clean_unsafe", tablet_id, tserver_dir),
+                 nullptr, &stderr, nullptr, nullptr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  SCOPED_TRACE(stderr);
+  ASSERT_STR_CONTAINS(stderr, "Resource temporarily unavailable");
+
+  // Shut down tablet server and use the delete tool again.
+  ts->Shutdown();
+
+  // Run the tool without --clean_unsafe flag first.
+  s = RunTool(Substitute("local_replica delete $0 --fs_wal_dir=$1 --fs_data_dirs=$1",
+                         tablet_id, tserver_dir),
+              nullptr, &stderr, nullptr, nullptr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  SCOPED_TRACE(stderr);
+  ASSERT_STR_CONTAINS(stderr, "currently not supported without --clean_unsafe flag");
+
+  const string& data_dir = JoinPathSegments(tserver_dir, "data");
+  uint64_t size_before_delete;
+  ASSERT_OK(env_->GetFileSizeOnDiskRecursively(data_dir, &size_before_delete));
+  NO_FATALS(RunActionStdoutNone(Substitute("local_replica delete $0 --fs_wal_dir=$1 "
+                                           "--fs_data_dirs=$1 --clean_unsafe",
+                                           tablet_id, tserver_dir)));
+  // Verify metadata and WAL segments for the tablet_id are gone.
+  const string& wal_dir = JoinPathSegments(tserver_dir,
+                                           Substitute("wals/$0", tablet_id));
+  ASSERT_FALSE(env_->FileExists(wal_dir));
+  const string& meta_dir = JoinPathSegments(tserver_dir,
+                                            Substitute("tablet-meta/$0", tablet_id));
+  ASSERT_FALSE(env_->FileExists(meta_dir));
+
+  // Verify that the total size of the data on disk after 'delete' action
+  // is less than before. Although this doesn't necessarily check
+  // for orphan data blocks left behind for the given tablet, it certainly
+  // indicates that some data has been deleted from disk.
+  uint64_t size_after_delete;
+  ASSERT_OK(env_->GetFileSizeOnDiskRecursively(data_dir, &size_after_delete));
+  ASSERT_LT(size_after_delete, size_before_delete);
+
+  // Since there was only one tablet on the node which was deleted by tool,
+  // we can expect the tablet server to have nothing after it comes up.
+  ASSERT_OK(ts->Start());
+  ASSERT_OK(ts->WaitStarted());
+  rpc.Reset();
+  rpc.set_timeout(kTimeout);
+  {
+    unique_ptr<TabletServerServiceProxy> ts_proxy;
+    ASSERT_OK(BuildProxy(ts->bound_rpc_addr().ToString(),
+                         tserver::TabletServer::kDefaultPort, &ts_proxy));
+    ASSERT_OK(ts_proxy->ListTablets(req, &resp, &rpc));
+  }
+  ASSERT_FALSE(resp.has_error());
+  ASSERT_EQ(resp.status_and_schema_size(), 0);
 }
 
 } // namespace tools

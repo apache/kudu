@@ -50,10 +50,12 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/deltafile.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_copy_client.h"
+#include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -75,6 +77,11 @@ DEFINE_bool(list_detail, false,
 DEFINE_int64(rowset_index, -1,
              "Index of the rowset in local replica, default value(-1) "
              "will dump all the rowsets of the local replica");
+DEFINE_bool(clean_unsafe, false,
+            "Delete the local replica completely, not leaving a tombstone. "
+            "This is not guaranteed to be safe because it also removes the "
+            "consensus metadata (including Raft voting record) for the "
+            "specified tablet, which violates the Raft vote durability requirements.");
 
 namespace kudu {
 namespace tools {
@@ -110,10 +117,10 @@ using tablet::DeltaKeyAndUpdate;
 using tablet::DeltaType;
 using tablet::MvccSnapshot;
 using tablet::RowSetMetadata;
-using tablet::Tablet;
 using tablet::TabletMetadata;
+using tablet::TabletDataState;
 using tserver::TabletCopyClient;
-using tserver::WriteRequestPB;
+using tserver::TSTabletManager;
 
 namespace {
 
@@ -255,6 +262,27 @@ Status CopyFromRemote(const RunnerContext& context) {
   RETURN_NOT_OK(client.Start(hp, nullptr));
   RETURN_NOT_OK(client.FetchAll(nullptr));
   return client.Finish();
+}
+
+Status DeleteLocalReplica(const RunnerContext& context) {
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  if (!FLAGS_clean_unsafe) {
+    return Status::NotSupported(Substitute("Deletion of local replica $0 is "
+        "currently not supported without --clean_unsafe flag", tablet_id));
+  }
+  FsManager fs_manager(Env::Default(), FsManagerOpts());
+  RETURN_NOT_OK(fs_manager.Open());
+
+  // This action cleans up metadata/data/WAL for a tablet on this node when
+  // the tablet server is offline. i.e, this tool is an alternative to
+  // actions like 'rm -rf <tablet-meta>' which could orphan the
+  // tablet data blocks with no means to clean them up later.
+  scoped_refptr<TabletMetadata> meta;
+  RETURN_NOT_OK(TabletMetadata::Load(&fs_manager, tablet_id, &meta));
+
+  RETURN_NOT_OK(TSTabletManager::DeleteTabletData(
+      meta, TabletDataState::TABLET_DATA_DELETED, boost::none));
+  return Status::OK();
 }
 
 Status DumpWals(const RunnerContext& context) {
@@ -712,10 +740,20 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddOptionalParameter("list_detail")
       .Build();
 
+  unique_ptr<Action> delete_local_replica =
+      ActionBuilder("delete", &DeleteLocalReplica)
+      .Description("Delete Kudu replica from the local filesystem")
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("clean_unsafe")
+      .Build();
+
   return ModeBuilder("local_replica")
       .Description("Operate on local Kudu replicas via the local filesystem")
       .AddMode(std::move(cmeta))
       .AddAction(std::move(copy_from_remote))
+      .AddAction(std::move(delete_local_replica))
       .AddAction(std::move(list))
       .AddMode(BuildDumpMode())
       .Build();

@@ -32,6 +32,7 @@ set(LINK_LIBS
 add_library(kudu_tools_util
   color.cc
   data_gen_util.cc
+  tool_action_common.cc
 )
 target_link_libraries(kudu_tools_util
   ${LINK_LIBS})
@@ -57,7 +58,6 @@ target_link_libraries(ksck
 add_executable(kudu
   tool_action.cc
   tool_action_cluster.cc
-  tool_action_common.cc
   tool_action_fs.cc
   tool_action_local_replica.cc
   tool_action_master.cc

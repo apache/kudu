@@ -50,8 +50,6 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
-DECLARE_int64(timeout_ms); // defined in ksck
-
 DEFINE_bool(force, false, "If true, allows the set_flag command to set a flag "
             "which is not explicitly marked as runtime-settable. Such flag "
             "changes may be simply ignored on the server, or may cause the "
@@ -63,6 +61,7 @@ DEFINE_string(print_entries, "decoded",
               "  true|1|yes|decoded = print them decoded\n"
               "  pb = print the raw protobuf\n"
               "  id = print only their ids");
+DEFINE_int64(timeout_ms, 1000 * 60, "RPC timeout in milliseconds");
 DEFINE_int32(truncate_data, 100,
              "Truncate the data fields to the given number of bytes "
              "before printing. Set to 0 to disable");
