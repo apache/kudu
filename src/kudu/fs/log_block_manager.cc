@@ -234,12 +234,6 @@ class LogBlockContainer {
   // beginning from the position where the last written block ended.
   Status Preallocate(size_t length);
 
-  // Returns the path to the metadata file.
-  string MetadataFilePath() const;
-
-  // Returns the path to the data file.
-  string DataFilePath() const;
-
   // Reads the container's metadata from disk, sanity checking and
   // returning the records.
   Status ReadContainerRecords(deque<BlockRecordPB>* records) const;
@@ -257,8 +251,10 @@ class LogBlockContainer {
   // the pool fails, it runs synchronously on the current thread.
   void ExecClosure(const Closure& task);
 
+  // Produces a debug-friendly string representation of this container.
+  string ToString() const;
+
   // Simple accessors.
-  const std::string& ToString() const { return path_; }
   LogBlockManager* block_manager() const { return block_manager_; }
   int64_t total_bytes_written() const { return total_bytes_written_; }
   bool full() const {
@@ -271,8 +267,7 @@ class LogBlockContainer {
 
  private:
   LogBlockContainer(LogBlockManager* block_manager, DataDir* data_dir,
-                    std::string path,
-                    gscoped_ptr<WritablePBContainerFile> metadata_writer,
+                    gscoped_ptr<WritablePBContainerFile> metadata_file,
                     gscoped_ptr<RWFile> data_file);
 
   // Performs sanity checks on a block record.
@@ -285,10 +280,6 @@ class LogBlockContainer {
   // The data directory where the container lives.
   DataDir* data_dir_;
 
-  // The path to the container's files. Equivalent to "<dir>/<id>" (see the
-  // container constructor).
-  const std::string path_;
-
   // Offset up to which we have preallocated bytes.
   int64_t preallocated_offset_ = 0;
 
@@ -297,10 +288,10 @@ class LogBlockContainer {
   // RWFile is not thread safe so access to each writer must be
   // serialized through a (sleeping) mutex. We use different mutexes to
   // avoid contention in cases where only one writer is needed.
-  gscoped_ptr<WritablePBContainerFile> metadata_pb_writer_;
-  Mutex metadata_pb_writer_lock_;
-  Mutex data_writer_lock_;
+  gscoped_ptr<WritablePBContainerFile> metadata_file_;
+  Mutex metadata_file_lock_;
   gscoped_ptr<RWFile> data_file_;
+  Mutex data_file_lock_;
 
   // The amount of data written thus far in the container.
   int64_t total_bytes_written_ = 0;
@@ -315,13 +306,11 @@ class LogBlockContainer {
 LogBlockContainer::LogBlockContainer(
     LogBlockManager* block_manager,
     DataDir* data_dir,
-    string path,
-    gscoped_ptr<WritablePBContainerFile> metadata_writer,
+    gscoped_ptr<WritablePBContainerFile> metadata_file,
     gscoped_ptr<RWFile> data_file)
     : block_manager_(block_manager),
       data_dir_(data_dir),
-      path_(std::move(path)),
-      metadata_pb_writer_(std::move(metadata_writer)),
+      metadata_file_(std::move(metadata_file)),
       data_file_(std::move(data_file)),
       metrics_(block_manager->metrics()) {
 }
@@ -364,13 +353,12 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   } while (PREDICT_FALSE(metadata_status.IsAlreadyPresent() ||
                          data_status.IsAlreadyPresent()));
   if (metadata_status.ok() && data_status.ok()) {
-    gscoped_ptr<WritablePBContainerFile> metadata_pb_writer(
+    gscoped_ptr<WritablePBContainerFile> metadata_file(
         new WritablePBContainerFile(std::move(metadata_writer)));
-    RETURN_NOT_OK(metadata_pb_writer->Init(BlockRecordPB()));
+    RETURN_NOT_OK(metadata_file->Init(BlockRecordPB()));
     container->reset(new LogBlockContainer(block_manager,
                                            dir,
-                                           common_path,
-                                           std::move(metadata_pb_writer),
+                                           std::move(metadata_file),
                                            std::move(data_file)));
     VLOG(1) << "Created log block container " << (*container)->ToString();
   }
@@ -440,7 +428,6 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   // Create the in-memory container and populate it.
   gscoped_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
                                                                       dir,
-                                                                      common_path,
                                                                       std::move(metadata_pb_writer),
                                                                       std::move(data_file)));
   VLOG(1) << "Opened log block container " << open_container->ToString();
@@ -448,16 +435,8 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   return Status::OK();
 }
 
-string LogBlockContainer::MetadataFilePath() const {
-  return StrCat(path_, LogBlockManager::kContainerMetadataFileSuffix);
-}
-
-string LogBlockContainer::DataFilePath() const {
-  return StrCat(path_, LogBlockManager::kContainerDataFileSuffix);
-}
-
 Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) const {
-  string metadata_path = MetadataFilePath();
+  string metadata_path = metadata_file_->filename();
   gscoped_ptr<RandomAccessFile> metadata_reader;
   RETURN_NOT_OK(block_manager()->env()->NewRandomAccessFile(metadata_path, &metadata_reader));
   ReadablePBContainerFile pb_reader(std::move(metadata_reader));
@@ -509,7 +488,7 @@ Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) co
     RETURN_NOT_OK(file->Close());
     // Reopen the PB writer so that it will refresh its metadata about the
     // underlying file and resume appending to the new end of the file.
-    RETURN_NOT_OK(metadata_pb_writer_->Reopen());
+    RETURN_NOT_OK(metadata_file_->Reopen());
     records->swap(local_records);
     return Status::OK();
   }
@@ -566,7 +545,7 @@ Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
 
   // It is invalid to punch a zero-size hole.
   if (length) {
-    std::lock_guard<Mutex> l(data_writer_lock_);
+    std::lock_guard<Mutex> l(data_file_lock_);
     // Round up to the nearest filesystem block so that the kernel will
     // actually reclaim disk space.
     //
@@ -581,7 +560,7 @@ Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
 Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
   DCHECK_GE(offset, 0);
   {
-    std::lock_guard<Mutex> l(data_writer_lock_);
+    std::lock_guard<Mutex> l(data_file_lock_);
     return data_file_->Write(offset, data);
   }
 
@@ -602,26 +581,26 @@ Status LogBlockContainer::ReadData(int64_t offset, size_t length,
 Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
   // Note: We don't check for sufficient disk space for metadata writes in
   // order to allow for block deletion on full disks.
-  std::lock_guard<Mutex> l(metadata_pb_writer_lock_);
-  return metadata_pb_writer_->Append(pb);
+  std::lock_guard<Mutex> l(metadata_file_lock_);
+  return metadata_file_->Append(pb);
 }
 
 Status LogBlockContainer::FlushData(int64_t offset, int64_t length) {
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
 
-  std::lock_guard<Mutex> l(data_writer_lock_);
+  std::lock_guard<Mutex> l(data_file_lock_);
   return data_file_->Flush(RWFile::FLUSH_ASYNC, offset, length);
 }
 
 Status LogBlockContainer::FlushMetadata() {
-  std::lock_guard<Mutex> l(metadata_pb_writer_lock_);
-  return metadata_pb_writer_->Flush();
+  std::lock_guard<Mutex> l(metadata_file_lock_);
+  return metadata_file_->Flush();
 }
 
 Status LogBlockContainer::SyncData() {
   if (FLAGS_enable_data_block_fsync) {
-    std::lock_guard<Mutex> l(data_writer_lock_);
+    std::lock_guard<Mutex> l(data_file_lock_);
     return data_file_->Sync();
   }
   return Status::OK();
@@ -629,8 +608,8 @@ Status LogBlockContainer::SyncData() {
 
 Status LogBlockContainer::SyncMetadata() {
   if (FLAGS_enable_data_block_fsync) {
-    std::lock_guard<Mutex> l(metadata_pb_writer_lock_);
-    return metadata_pb_writer_->Sync();
+    std::lock_guard<Mutex> l(metadata_file_lock_);
+    return metadata_file_->Sync();
   }
   return Status::OK();
 }
@@ -664,6 +643,13 @@ void LogBlockContainer::UpdateBytesWritten(int64_t more_bytes) {
 
 void LogBlockContainer::ExecClosure(const Closure& task) {
   data_dir_->ExecClosure(task);
+}
+
+string LogBlockContainer::ToString() const {
+  string s;
+  CHECK(TryStripSuffixString(data_file_->filename(),
+                             LogBlockManager::kContainerDataFileSuffix, &s));
+  return s;
 }
 
 ////////////////////////////////////////////////////////////

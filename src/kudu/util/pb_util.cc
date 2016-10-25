@@ -654,6 +654,10 @@ Status WritablePBContainerFile::Close() {
   return Status::OK();
 }
 
+const string& WritablePBContainerFile::filename() const {
+  return writer_->filename();
+}
+
 Status WritablePBContainerFile::AppendMsgToBuffer(const Message& msg, faststring* buf) {
   DCHECK(msg.IsInitialized()) << InitializationErrorMessage("serialize", msg);
   int data_len = msg.ByteSize();
