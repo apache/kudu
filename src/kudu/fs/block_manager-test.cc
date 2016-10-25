@@ -121,6 +121,24 @@ class BlockManagerTest : public KuduTest {
     return bm_->Open();
   }
 
+  void GetOnlyContainerDataFile(string* data_file) {
+    // The expected directory contents are dot, dotdot, test metadata, instance
+    // file, and one container file pair.
+    string container_data_filename;
+    vector<string> children;
+    ASSERT_OK(env_->GetChildren(GetTestDataDirectory(), &children));
+    ASSERT_EQ(6, children.size());
+    for (const string& child : children) {
+      if (HasSuffixString(child, ".data")) {
+        ASSERT_TRUE(container_data_filename.empty());
+        container_data_filename = JoinPathSegments(GetTestDataDirectory(), child);
+        break;
+      }
+    }
+    ASSERT_FALSE(container_data_filename.empty());
+    *data_file = container_data_filename;
+  }
+
   void RunMultipathTest(const vector<string>& paths);
 
   void RunLogMetricsTest();
@@ -294,44 +312,53 @@ void BlockManagerTest<FileBlockManager>::RunLogContainerPreallocationTest() {
 
 template <>
 void BlockManagerTest<LogBlockManager>::RunLogContainerPreallocationTest() {
+  string kTestData = "test data";
+
+  // For this test to work properly, the preallocation window has to be at
+  // least three times the size of the test data.
+  ASSERT_GE(FLAGS_log_container_preallocate_bytes, kTestData.size() * 3);
+
   // Create a block with some test data. This should also trigger
   // preallocation of the container, provided it's supported by the kernel.
   gscoped_ptr<WritableBlock> written_block;
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
+  ASSERT_OK(written_block->Append(kTestData));
   ASSERT_OK(written_block->Close());
 
-  // Now reopen the block manager and create another block. More
-  // preallocation, but it should be from the end of the previous block,
-  // not from the end of the file.
+  // We expect the container size to either be equal to the test data size (if
+  // preallocation isn't supported) or equal to the preallocation amount, which
+  // we know is greater than the test data size.
+  string container_data_filename;
+  NO_FATALS(GetOnlyContainerDataFile(&container_data_filename));
+  uint64_t size;
+  ASSERT_OK(this->env_->GetFileSizeOnDisk(container_data_filename, &size));
+  ASSERT_TRUE(size == kTestData.size() ||
+              size == FLAGS_log_container_preallocate_bytes);
+
+  // Upon writing a second block, we'd expect the container to either double in
+  // size (without preallocation) or remain the same size (with preallocation).
+  ASSERT_OK(this->bm_->CreateBlock(&written_block));
+  ASSERT_OK(written_block->Append(kTestData));
+  ASSERT_OK(written_block->Close());
+  NO_FATALS(GetOnlyContainerDataFile(&container_data_filename));
+  ASSERT_OK(this->env_->GetFileSizeOnDisk(container_data_filename, &size));
+  ASSERT_TRUE(size == kTestData.size() * 2 ||
+              size == FLAGS_log_container_preallocate_bytes);
+
+
+  // Now reopen the block manager and create another block. The block manager
+  // should be smart enough to reuse the previously preallocated amount.
   ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
                                      shared_ptr<MemTracker>(),
                                      { GetTestDataDirectory() },
                                      false));
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
+  ASSERT_OK(written_block->Append(kTestData));
   ASSERT_OK(written_block->Close());
-
-  // dot, dotdot, test metadata, instance file, and one container file pair.
-  vector<string> children;
-  ASSERT_OK(this->env_->GetChildren(GetTestDataDirectory(), &children));
-  ASSERT_EQ(6, children.size());
-
-  // If preallocation was done from the end of the file (rather than the
-  // end of the previous block), the file's size would be twice the
-  // preallocation amount. That would be wrong.
-  //
-  // Instead, we expect the size to either be 0 (preallocation isn't
-  // supported) or equal to the preallocation amount.
-  bool found = false;
-  for (const string& child : children) {
-    if (HasSuffixString(child, ".data")) {
-      found = true;
-      uint64_t size;
-      ASSERT_OK(this->env_->GetFileSizeOnDisk(
-          JoinPathSegments(GetTestDataDirectory(), child), &size));
-      ASSERT_TRUE(size == 0 || size == FLAGS_log_container_preallocate_bytes);
-    }
-  }
-  ASSERT_TRUE(found);
+  NO_FATALS(GetOnlyContainerDataFile(&container_data_filename));
+  ASSERT_OK(this->env_->GetFileSizeOnDisk(container_data_filename, &size));
+  ASSERT_TRUE(size == kTestData.size() * 3 ||
+              size == FLAGS_log_container_preallocate_bytes);
 }
 
 template <>
@@ -991,6 +1018,7 @@ TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
 
   FLAGS_fs_data_dirs_full_disk_cache_seconds = 0; // Don't cache device fullness.
   FLAGS_fs_data_dirs_reserved_bytes = 1; // Keep at least 1 byte reserved in the FS.
+  FLAGS_log_container_preallocate_bytes = 0; // Disable preallocation.
 
   // Normally, a data dir is checked for fullness only after a block is closed;
   // if it's now full, the next attempt at block creation will fail. Only when

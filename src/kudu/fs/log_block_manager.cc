@@ -52,7 +52,7 @@
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_bool(block_manager_lock_dirs);
 
-// TODO: How should this be configured? Should provide some guidance.
+// TODO(unknown): How should this be configured? Should provide some guidance.
 DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,
               "Maximum size (soft) of a log container");
 TAG_FLAG(log_container_max_size, advanced);
@@ -191,10 +191,10 @@ class LogBlockContainer {
   // The on-disk effects of this call are made durable only after SyncData().
   Status DeleteBlock(int64_t offset, int64_t length);
 
-  // Writes 'data' to this container's data file at offset 'offset'.
+  // Appends 'data' to this container's data file.
   //
   // The on-disk effects of this call are made durable only after SyncData().
-  Status WriteData(int64_t offset, const Slice& data);
+  Status AppendData(const Slice& data);
 
   // See RWFile::Read().
   Status ReadData(int64_t offset, size_t length,
@@ -215,24 +215,20 @@ class LogBlockContainer {
   //
   // Does not guarantee metadata durability; use SyncMetadata() for that.
   //
-  // TODO: Add support to just flush a range.
+  // TODO(unknown): Add support to just flush a range.
   Status FlushMetadata();
 
   // Synchronize this container's data file with the disk. On success,
   // guarantees that the data is made durable.
   //
-  // TODO: Add support to synchronize just a range.
+  // TODO(unknown): Add support to synchronize just a range.
   Status SyncData();
 
   // Synchronize this container's metadata file with the disk. On success,
   // guarantees that the metadata is made durable.
   //
-  // TODO: Add support to synchronize just a range.
+  // TODO(unknown): Add support to synchronize just a range.
   Status SyncMetadata();
-
-  // Ensure that 'length' bytes are preallocated in this container,
-  // beginning from the position where the last written block ended.
-  Status Preallocate(size_t length);
 
   // Reads the container's metadata from disk, sanity checking and
   // returning the records.
@@ -273,6 +269,12 @@ class LogBlockContainer {
   // Performs sanity checks on a block record.
   void CheckBlockRecord(const BlockRecordPB& record,
                         uint64_t data_file_size) const;
+
+  // Preallocate enough space to ensure that an append of 'next_append_bytes'
+  // can be satisfied by this container.
+  //
+  // Does nothing if preallocation is disabled.
+  Status EnsurePreallocated(size_t next_append_bytes);
 
   // The owning block manager. Must outlive the container itself.
   LogBlockManager* const block_manager_;
@@ -424,12 +426,15 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   RETURN_NOT_OK(env->NewRWFile(rw_opts,
                                data_path,
                                &data_file));
+  uint64_t data_file_size;
+  RETURN_NOT_OK(data_file->Size(&data_file_size));
 
   // Create the in-memory container and populate it.
   gscoped_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
                                                                       dir,
                                                                       std::move(metadata_pb_writer),
                                                                       std::move(data_file)));
+  open_container->preallocated_offset_ = data_file_size;
   VLOG(1) << "Opened log block container " << open_container->ToString();
   container->swap(open_container);
   return Status::OK();
@@ -512,8 +517,9 @@ void LogBlockContainer::CheckBlockRecord(const BlockRecordPB& record,
 
 Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
   auto cleanup = MakeScopedCleanup([&]() {
-      block_manager_->MakeContainerAvailable(this);
-    });
+    block_manager_->MakeContainerAvailable(this);
+  });
+
   if (!s.ok()) {
     // Early return; 'cleanup' makes the container available again.
     return s;
@@ -527,9 +533,14 @@ Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
   // will have written some garbage that can be expunged during a GC.
   RETURN_NOT_OK(block_manager()->SyncContainer(*this));
 
+  // Each call to AppendData() updated 'total_bytes_written_' to reflect the
+  // new block. Nevertheless, we must call UpdateBytesWritten() whenever a
+  // block is finished in order to prepare for the next block.
   CHECK(block_manager()->AddLogBlock(this, block->id(),
-                                     total_bytes_written(), block->BytesAppended()));
-  UpdateBytesWritten(block->BytesAppended());
+                                     total_bytes_written_ - block->BytesAppended(),
+                                     block->BytesAppended()));
+  UpdateBytesWritten(0);
+
   if (full() && block_manager()->metrics()) {
     block_manager()->metrics()->full_containers->Increment();
   }
@@ -557,12 +568,13 @@ Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
   return Status::OK();
 }
 
-Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
-  DCHECK_GE(offset, 0);
+Status LogBlockContainer::AppendData(const Slice& data) {
+  RETURN_NOT_OK(EnsurePreallocated(data.size()));
   {
     std::lock_guard<Mutex> l(data_file_lock_);
-    return data_file_->Write(offset, data);
+    RETURN_NOT_OK(data_file_->Write(total_bytes_written_, data));
   }
+  total_bytes_written_ += data.size();
 
   if (PREDICT_FALSE(!FLAGS_log_container_preallocate_bytes)) {
     // Without preallocation, every call grows the container.
@@ -614,13 +626,27 @@ Status LogBlockContainer::SyncMetadata() {
   return Status::OK();
 }
 
-Status LogBlockContainer::Preallocate(size_t length) {
-  RETURN_NOT_OK(data_file_->PreAllocate(total_bytes_written(), length));
-  preallocated_offset_ = total_bytes_written() + length;
+Status LogBlockContainer::EnsurePreallocated(size_t next_append_bytes) {
+  if (!FLAGS_log_container_preallocate_bytes) {
+    return Status::OK();
+  }
+  DCHECK_GE(preallocated_offset_, total_bytes_written_);
 
-  // Preallocation succeeded and the container has grown; recheck its data
-  // directory fullness.
-  RETURN_NOT_OK(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
+  // If the next write exceeds the remaining preallocated window, we need to
+  // preallocate another chunk.
+  if (next_append_bytes > preallocated_offset_ - total_bytes_written_) {
+    int64_t off = preallocated_offset_;
+    int64_t len = FLAGS_log_container_preallocate_bytes;
+    {
+      std::lock_guard<Mutex> l(data_file_lock_);
+      RETURN_NOT_OK(data_file_->PreAllocate(off, len));
+    }
+    RETURN_NOT_OK(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
+    VLOG(2) << Substitute("Preallocated $0 bytes at offset $1 in container $2",
+                          len, off, ToString());
+
+    preallocated_offset_ += len;
+  }
 
   return Status::OK();
 }
@@ -628,16 +654,18 @@ Status LogBlockContainer::Preallocate(size_t length) {
 void LogBlockContainer::UpdateBytesWritten(int64_t more_bytes) {
   DCHECK_GE(more_bytes, 0);
 
+  total_bytes_written_ += more_bytes;
+
   // The number of bytes is rounded up to the nearest filesystem block so
   // that each Kudu block is guaranteed to be on a filesystem block
   // boundary. This guarantees that the disk space can be reclaimed when
   // the block is deleted.
-  total_bytes_written_ += KUDU_ALIGN_UP(more_bytes,
-                                        instance()->filesystem_block_size_bytes());
+  total_bytes_written_ = KUDU_ALIGN_UP(total_bytes_written_,
+                                       instance()->filesystem_block_size_bytes());
   if (full()) {
-    VLOG(1) << "Container " << ToString() << " with size "
-            << total_bytes_written_ << " is now full, max size is "
-            << FLAGS_log_container_max_size;
+    VLOG(1) << Substitute(
+        "Container $0 with size $1 is now full, max size is $2",
+        ToString(), total_bytes_written_, FLAGS_log_container_max_size);
   }
 }
 
@@ -854,7 +882,7 @@ Status LogWritableBlock::Append(const Slice& data) {
   // length is still in flux.
 
   MicrosecondsInt64 start_time = GetMonoTimeMicros();
-  RETURN_NOT_OK(container_->WriteData(block_offset_ + block_length_, data));
+  RETURN_NOT_OK(container_->AppendData(data));
   MicrosecondsInt64 end_time = GetMonoTimeMicros();
 
   int64_t dur = end_time - start_time;
@@ -876,7 +904,7 @@ Status LogWritableBlock::FlushDataAsync() {
 
     RETURN_NOT_OK_PREPEND(AppendMetadata(), "Unable to append block metadata");
 
-    // TODO: Flush just the range we care about.
+    // TODO(unknown): Flush just the range we care about.
     RETURN_NOT_OK(container_->FlushMetadata());
   }
 
@@ -927,11 +955,11 @@ Status LogWritableBlock::DoClose(SyncMode mode) {
         (state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING)) {
       VLOG(3) << "Syncing block " << id();
 
-      // TODO: Sync just this block's dirty data.
+      // TODO(unknown): Sync just this block's dirty data.
       s = container_->SyncData();
       RETURN_NOT_OK(s);
 
-      // TODO: Sync just this block's dirty metadata.
+      // TODO(unknown): Sync just this block's dirty metadata.
       s = container_->SyncMetadata();
       RETURN_NOT_OK(s);
     }
@@ -1176,9 +1204,6 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
   // force callers to block if we've reached it?
   LogBlockContainer* container;
   RETURN_NOT_OK(GetOrCreateContainer(&container));
-  if (FLAGS_log_container_preallocate_bytes) {
-    RETURN_NOT_OK(container->Preallocate(FLAGS_log_container_preallocate_bytes));
-  }
 
   // Generate a free block ID.
   // We have to loop here because earlier versions used non-sequential block IDs,
@@ -1230,7 +1255,7 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
 
   // Record the on-disk deletion.
   //
-  // TODO: what if this fails? Should we restore the in-memory block?
+  // TODO(unknown): what if this fails? Should we restore the in-memory block?
   BlockRecordPB record;
   block_id.CopyToPB(record.mutable_block_id());
   record.set_op_type(DELETE);
@@ -1241,7 +1266,9 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
   // We don't bother fsyncing the metadata append for deletes in order to avoid
   // the disk overhead. Even if we did fsync it, we'd still need to account for
   // garbage at startup time (in the event that we crashed just before the
-  // fsync). TODO: Implement GC of orphaned blocks. See KUDU-829.
+  // fsync).
+  //
+  // TODO(KUDU-829): Implement GC of orphaned blocks.
 
   return Status::OK();
 }
@@ -1378,6 +1405,9 @@ bool LogBlockManager::AddLogBlockUnlocked(const scoped_refptr<LogBlock>& lb) {
     return false;
   }
 
+  VLOG(2) << Substitute("Added block: offset $0, length $1",
+                        lb->offset(), lb->length());
+
   // There may already be an entry in open_block_ids_ (e.g. we just finished
   // writing out a block).
   open_block_ids_.erase(lb->block_id());
@@ -1393,6 +1423,9 @@ scoped_refptr<LogBlock> LogBlockManager::RemoveLogBlock(const BlockId& block_id)
   scoped_refptr<LogBlock> result =
       EraseKeyReturnValuePtr(&blocks_by_block_id_, block_id);
   if (result) {
+    VLOG(2) << Substitute("Removed block: offset $0, length $1",
+                          result->offset(), result->length());
+
     mem_tracker_->Release(kudu_malloc_usable_size(result.get()));
 
     if (metrics()) {
