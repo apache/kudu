@@ -19,7 +19,7 @@ System Requirements
 - Java 7
 - Maven 3
 - protobuf 2.6.1 (it needs to be the exact version)
-
+- MIT Kerberos (krb5)
 
 Building the Client
 ------------------------------------------------------------
@@ -27,7 +27,6 @@ Building the Client
 $ mvn package -DskipTests
 
 The client jar will can then be found at kudu-client/target.
-
 
 Running the Tests
 ------------------------------------------------------------

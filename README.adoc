@@ -197,7 +197,6 @@ or
 $ build-support/run-test.sh build/tsan/bin/foo-test [--test-arguments-here]
 ----
 
-
 ...and then view the logs in _build/tsan/test-logs/_
 
 ====
