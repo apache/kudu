@@ -85,7 +85,13 @@ public abstract class KuduException extends IOException {
     if (e instanceof KuduException) {
       return (KuduException) e;
     } else if (e instanceof DeferredGroupException) {
-      // TODO anything we can do to improve on that kind of exception?
+      // The cause of a DeferredGroupException is the first exception it sees, we're just going to
+      // use it as our main exception. DGE doesn't let us see the other exceptions anyways.
+      Throwable cause = e.getCause();
+      if (cause instanceof Exception) {
+        return transformException((Exception) cause);
+      }
+      // Else fall down into a generic exception at the end.
     } else if (e instanceof TimeoutException) {
       Status statusTimeout = Status.TimedOut(message);
       return new NonRecoverableException(statusTimeout, e);

@@ -272,9 +272,9 @@ public class KuduClient implements AutoCloseable {
   }
 
   // Helper method to handle joining and transforming the Exception we receive.
-  private <R> R joinAndHandleException(Deferred<R> deferred) throws KuduException {
+  static <R> R joinAndHandleException(Deferred<R> deferred) throws KuduException {
     try {
-      return deferred.join(getDefaultAdminOperationTimeoutMs());
+      return deferred.join();
     } catch (Exception e) {
       throw KuduException.transformException(e);
     }

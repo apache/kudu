@@ -54,12 +54,7 @@ public class KuduScanner {
    * @throws KuduException if anything went wrong
    */
   public RowResultIterator nextRows() throws KuduException {
-    Deferred<RowResultIterator> d = asyncScanner.nextRows();
-    try {
-      return d.join(asyncScanner.scanRequestTimeout);
-    } catch (Exception e) {
-      throw KuduException.transformException(e);
-    }
+    return KuduClient.joinAndHandleException(asyncScanner.nextRows());
   }
 
   /**
@@ -70,12 +65,7 @@ public class KuduScanner {
    * @throws KuduException if anything went wrong
    */
   public RowResultIterator close() throws KuduException {
-    Deferred<RowResultIterator> d = asyncScanner.close();
-    try {
-      return d.join(asyncScanner.scanRequestTimeout);
-    } catch (Exception e) {
-      throw KuduException.transformException(e);
-    }
+    return KuduClient.joinAndHandleException(asyncScanner.close());
   }
 
   /**

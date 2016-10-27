@@ -31,10 +31,6 @@ import org.slf4j.LoggerFactory;
  * Offers the same API but with blocking methods.<p>
  *
  * This class is <b>not</b> thread-safe.<p>
- *
- * A major difference with {@link AsyncKuduSession} is that the time spent waiting on operations is
- * defined by {@link #setTimeoutMillis(long)} which defaults to getting it from
- * {@link KuduClient#getDefaultOperationTimeoutMs()}.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
@@ -73,12 +69,12 @@ public class KuduSession implements SessionConfiguration {
       try {
         Deferred<OperationResponse> d = session.apply(operation);
         if (getFlushMode() == FlushMode.AUTO_FLUSH_SYNC) {
-          return d.join(getTimeoutMillis());
+          return d.join();
         }
         break;
       } catch (PleaseThrottleException ex) {
         try {
-          ex.getDeferred().join(getTimeoutMillis());
+          ex.getDeferred().join();
         } catch (Exception e) {
           // This is the error response from the buffer that was flushing,
           // we can't do much with it at this point.
@@ -98,11 +94,7 @@ public class KuduSession implements SessionConfiguration {
    * @throws KuduException if anything went wrong
    */
   public List<OperationResponse> flush() throws KuduException {
-    try {
-      return session.flush().join(getTimeoutMillis());
-    } catch (Exception e) {
-      throw KuduException.transformException(e);
-    }
+    return KuduClient.joinAndHandleException(session.flush());
   }
 
   /**
@@ -111,11 +103,7 @@ public class KuduSession implements SessionConfiguration {
    * @throws KuduException if anything went wrong
    */
   public List<OperationResponse> close() throws KuduException {
-    try {
-      return session.close().join(getTimeoutMillis());
-    } catch (Exception e) {
-      throw KuduException.transformException(e);
-    }
+    return KuduClient.joinAndHandleException(session.close());
   }
 
   @Override

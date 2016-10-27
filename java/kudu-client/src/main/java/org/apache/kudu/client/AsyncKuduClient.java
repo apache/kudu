@@ -1424,13 +1424,13 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Invokes {@link #shutdown()} and waits for the configured admin timeout. This method returns
+   * Invokes {@link #shutdown()} and waits. This method returns
    * void, so consider invoking shutdown directly if there's a need to handle dangling RPCs.
    * @throws Exception if an error happens while closing the connections
    */
   @Override
   public void close() throws Exception {
-    shutdown().join(defaultAdminOperationTimeoutMs);
+    shutdown().join();
   }
 
   /**
