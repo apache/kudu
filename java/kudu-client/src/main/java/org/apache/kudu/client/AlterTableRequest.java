@@ -66,7 +66,7 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
 
   @Override
   Pair<AlterTableResponse, Object> deserialize(final CallResponse callResponse,
-                                                String tsUUID) throws Exception {
+                                                String tsUUID) throws KuduException {
     final AlterTableResponsePB.Builder respBuilder = AlterTableResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
     AlterTableResponse response = new AlterTableResponse(

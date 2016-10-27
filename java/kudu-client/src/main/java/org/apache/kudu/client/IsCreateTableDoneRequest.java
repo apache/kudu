@@ -46,7 +46,7 @@ class IsCreateTableDoneRequest extends KuduRpc<Master.IsCreateTableDoneResponseP
 
   @Override
   Pair<Master.IsCreateTableDoneResponsePB, Object> deserialize(
-      final CallResponse callResponse, String tsUUID) throws Exception {
+      final CallResponse callResponse, String tsUUID) throws KuduException {
     Master.IsCreateTableDoneResponsePB.Builder builder = Master.IsCreateTableDoneResponsePB
         .newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);

@@ -751,7 +751,7 @@ public final class AsyncKuduScanner {
 
     @Override
     Pair<Response, Object> deserialize(final CallResponse callResponse,
-                                       String tsUUID) throws Exception {
+                                       String tsUUID) throws KuduException {
       ScanResponsePB.Builder builder = ScanResponsePB.newBuilder();
       readProtobuf(callResponse.getPBMessage(), builder);
       ScanResponsePB resp = builder.build();

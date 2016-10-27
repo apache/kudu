@@ -420,7 +420,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
       @Override
       Pair<KuduTable, Object> deserialize(CallResponse callResponse, String tsUUID)
-          throws Exception { return null; }
+          throws KuduException { return null; }
     };
     fakeRpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
 

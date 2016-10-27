@@ -56,7 +56,7 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
 
   @Override
   Pair<ListTablesResponse, Object> deserialize(CallResponse callResponse,
-                                               String tsUUID) throws Exception {
+                                               String tsUUID) throws KuduException {
     final Master.ListTablesResponsePB.Builder respBuilder =
         Master.ListTablesResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);

@@ -32,7 +32,6 @@ import org.apache.kudu.client.Statistics.Statistic;
 import org.apache.kudu.client.Statistics.TabletStatistics;
 import org.apache.kudu.tserver.Tserver;
 import org.apache.kudu.util.Pair;
-import org.apache.kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.nio.ByteBuffer;
@@ -139,7 +138,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
 
   @Override
   Pair<OperationResponse, Object> deserialize(CallResponse callResponse,
-                                              String tsUUID) throws Exception {
+                                              String tsUUID) throws KuduException {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
     Tserver.WriteResponsePB.PerRowErrorPB error = null;

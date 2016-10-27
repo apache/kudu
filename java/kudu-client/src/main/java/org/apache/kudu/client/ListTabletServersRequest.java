@@ -50,7 +50,7 @@ public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse>
 
   @Override
   Pair<ListTabletServersResponse, Object> deserialize(CallResponse callResponse,
-                                                      String tsUUID) throws Exception {
+                                                      String tsUUID) throws KuduException {
     final ListTabletServersResponsePB.Builder respBuilder =
         ListTabletServersResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);

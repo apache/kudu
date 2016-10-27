@@ -33,7 +33,6 @@ import org.apache.kudu.client.Statistics.TabletStatistics;
 import org.apache.kudu.tserver.Tserver;
 import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
 import org.apache.kudu.util.Pair;
-import org.apache.kudu.util.Slice;
 
 /**
  * Used internally to group Operations for a single tablet together before sending to the tablet
@@ -108,7 +107,7 @@ class Batch extends KuduRpc<BatchResponse> {
 
   @Override
   Pair<BatchResponse, Object> deserialize(CallResponse callResponse,
-                                          String tsUUID) throws Exception {
+                                          String tsUUID) throws KuduException {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
 

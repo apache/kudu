@@ -53,7 +53,7 @@ public class GetMasterRegistrationRequest extends KuduRpc<GetMasterRegistrationR
 
   @Override
   Pair<GetMasterRegistrationResponse, Object> deserialize(CallResponse callResponse,
-                                                          String tsUUID) throws Exception {
+                                                          String tsUUID) throws KuduException {
     final GetMasterRegistrationResponsePB.Builder respBuilder =
         GetMasterRegistrationResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);

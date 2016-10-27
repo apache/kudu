@@ -421,7 +421,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
 
     Pair<Object, Object> decoded = null;
-    Exception exception = null;
+    KuduException exception = null;
     Status retryableHeaderError = Status.OK();
     if (header.hasIsError() && header.getIsError()) {
       RpcHeader.ErrorStatusPB.Builder errorBuilder = RpcHeader.ErrorStatusPB.newBuilder();
@@ -441,7 +441,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     } else {
       try {
         decoded = rpc.deserialize(response, this.serverInfo.getUuid());
-      } catch (Exception ex) {
+      } catch (KuduException ex) {
         exception = ex;
       }
     }
@@ -521,12 +521,12 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   /**
    * Takes care of a few kinds of TS errors that we handle differently, like tablets or leaders
    * moving. Builds and returns an exception if we don't know what to do with it.
-   * @param rpc The original RPC call that triggered the error.
-   * @param error The error the TS sent.
-   * @return An exception if we couldn't dispatch the error, or null.
+   * @param rpc the original RPC call that triggered the error
+   * @param error the error the TS sent
+   * @return an exception if we couldn't dispatch the error, or null
    */
-  private Exception dispatchTSErrorOrReturnException(KuduRpc rpc,
-                                                     Tserver.TabletServerErrorPB error) {
+  private KuduException dispatchTSErrorOrReturnException(KuduRpc rpc,
+                                                         Tserver.TabletServerErrorPB error) {
     WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
     Status status = Status.fromTabletServerErrorPB(error);
     if (error.getCode() == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND) {
@@ -547,12 +547,12 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   /**
    * Provides different handling for various kinds of master errors: re-uses the
    * mechanisms already in place for handling tablet server errors as much as possible.
-   * @param rpc The original RPC call that triggered the error.
-   * @param error The error the master sent.
-   * @return An exception if we couldn't dispatch the error, or null.
+   * @param rpc the original RPC call that triggered the error
+   * @param error the error the master sent
+   * @return an exception if we couldn't dispatch the error, or null
    */
-  private Exception dispatchMasterErrorOrReturnException(KuduRpc rpc,
-                                                         Master.MasterErrorPB error) {
+  private KuduException dispatchMasterErrorOrReturnException(KuduRpc rpc,
+                                                             Master.MasterErrorPB error) {
     WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
     Status status = Status.fromMasterErrorPB(error);
     if (error.getCode() == Master.MasterErrorPB.Code.NOT_THE_LEADER) {

@@ -57,7 +57,7 @@ class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
 
   @Override
   Pair<DeleteTableResponse, Object> deserialize(CallResponse callResponse,
-                                                String tsUUID) throws Exception {
+                                                String tsUUID) throws KuduException {
     final Master.DeleteTableResponsePB.Builder builder = Master.DeleteTableResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
     DeleteTableResponse response =

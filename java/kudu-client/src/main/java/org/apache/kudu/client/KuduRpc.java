@@ -149,14 +149,15 @@ public abstract class KuduRpc<R> {
    * Notice that this method is package-private, so only classes within this
    * package can use this as a base class.
    *
-   * @param callResponse The call response from which to deserialize.
-   * @param tsUUID A string that contains the UUID of the server that answered the RPC.
-   * @return An Object of type R that will be sent to callback and an Object that will be an Error
+   * @param callResponse the call response from which to deserialize
+   * @param tsUUID a string that contains the UUID of the server that answered the RPC
+   * @return an Object of type R that will be sent to callback and an Object that will be an Error
    * of type TabletServerErrorPB or MasterErrorPB that will be converted into an exception and
-   * sent to errback.
-   * @throws Exception An exception that will be sent to errback.
+   * sent to errback
+   * @throws KuduException an exception that will be sent to errback
    */
-  abstract Pair<R, Object> deserialize(CallResponse callResponse, String tsUUID) throws Exception;
+  abstract Pair<R, Object> deserialize(CallResponse callResponse, String tsUUID)
+      throws KuduException;
 
   /**
    * Update the statistics information before this rpc is called back. This method should not throw

@@ -58,7 +58,7 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
 
   @Override
   Pair<GetTableSchemaResponse, Object> deserialize(CallResponse callResponse,
-                                                   String tsUUID) throws Exception {
+                                                   String tsUUID) throws KuduException {
     final GetTableSchemaResponsePB.Builder respBuilder = GetTableSchemaResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
     Schema schema = ProtobufHelper.pbToSchema(respBuilder.getSchema());

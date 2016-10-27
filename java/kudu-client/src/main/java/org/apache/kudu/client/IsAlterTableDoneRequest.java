@@ -58,7 +58,7 @@ class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponse> {
 
   @Override
   Pair<IsAlterTableDoneResponse, Object> deserialize(final CallResponse callResponse,
-                                                       String tsUUID) throws Exception {
+                                                       String tsUUID) throws KuduException {
     final IsAlterTableDoneResponsePB.Builder respBuilder = IsAlterTableDoneResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
     IsAlterTableDoneResponse resp = new IsAlterTableDoneResponse(deadlineTracker.getElapsedMillis(),

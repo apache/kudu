@@ -18,9 +18,7 @@ package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
 import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.tablet.Tablet;
 import org.apache.kudu.tserver.Tserver;
-import org.apache.kudu.tserver.TserverService;
 import org.apache.kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
@@ -52,7 +50,7 @@ class ListTabletsRequest extends KuduRpc<ListTabletsResponse> {
 
   @Override
   Pair<ListTabletsResponse, Object> deserialize(CallResponse callResponse,
-                                               String tsUUID) throws Exception {
+                                               String tsUUID) throws KuduException {
     final Tserver.ListTabletsResponsePB.Builder respBuilder =
         Tserver.ListTabletsResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);

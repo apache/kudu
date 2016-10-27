@@ -64,7 +64,7 @@ class PingRequest extends KuduRpc<PingResponse> {
   }
 
   @Override
-  Pair<PingResponse, Object> deserialize(CallResponse callResponse, String tsUUID) throws Exception {
+  Pair<PingResponse, Object> deserialize(CallResponse callResponse, String tsUUID) throws KuduException {
     final Master.PingResponsePB.Builder respBuilder =
         Master.PingResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
