@@ -626,8 +626,8 @@ Status Connection::InitSaslClient() {
 }
 
 Status Connection::InitSaslServer() {
-  RETURN_NOT_OK(sasl_server().Init(kSaslProtoName));
   RETURN_NOT_OK(sasl_server().EnablePlain());
+  RETURN_NOT_OK(sasl_server().Init(kSaslProtoName));
   return Status::OK();
 }
 

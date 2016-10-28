@@ -55,8 +55,10 @@ class TestSaslRpc : public RpcTestBase {
 // Test basic initialization of the objects.
 TEST_F(TestSaslRpc, TestBasicInit) {
   SaslServer server(kSaslAppName, -1);
+  server.EnableAnonymous();
   ASSERT_OK(server.Init(kSaslAppName));
   SaslClient client(kSaslAppName, -1);
+  client.EnableAnonymous();
   ASSERT_OK(client.Init(kSaslAppName));
 }
 
@@ -105,8 +107,8 @@ static void RunNegotiationTest(const SocketCallable& server_runner,
 
 static void RunAnonNegotiationServer(Socket* conn) {
   SaslServer sasl_server(kSaslAppName, conn->GetFd());
-  CHECK_OK(sasl_server.Init(kSaslAppName));
   CHECK_OK(sasl_server.EnableAnonymous());
+  CHECK_OK(sasl_server.Init(kSaslAppName));
   CHECK_OK(sasl_server.Negotiate());
 }
 
@@ -126,8 +128,8 @@ TEST_F(TestSaslRpc, TestAnonNegotiation) {
 
 static void RunPlainNegotiationServer(Socket* conn) {
   SaslServer sasl_server(kSaslAppName, conn->GetFd());
-  CHECK_OK(sasl_server.Init(kSaslAppName));
   CHECK_OK(sasl_server.EnablePlain());
+  CHECK_OK(sasl_server.Init(kSaslAppName));
   CHECK_OK(sasl_server.Negotiate());
   CHECK(ContainsKey(sasl_server.client_features(), APPLICATION_FEATURE_FLAGS));
   CHECK_EQ("my-username", sasl_server.authenticated_user());
@@ -159,8 +161,8 @@ static void RunGSSAPINegotiationServer(
     const CheckerFunction<SaslServer>& post_check) {
   SaslServer sasl_server(kSaslAppName, conn->GetFd());
   sasl_server.set_server_fqdn("127.0.0.1");
-  CHECK_OK(sasl_server.Init(kSaslAppName));
   CHECK_OK(sasl_server.EnableGSSAPI());
+  CHECK_OK(sasl_server.Init(kSaslAppName));
   post_check(sasl_server.Negotiate(), sasl_server);
 }
 
@@ -174,6 +176,78 @@ static void RunGSSAPINegotiationClient(
   CHECK_OK(sasl_client.EnableGSSAPI());
   CHECK_OK(sasl_client.Init(kSaslAppName));
   post_check(sasl_client.Negotiate(), sasl_client);
+}
+
+// Test configuring a client to allow but not require Kerberos/GSSAPI,
+// and connect to a server which requires Kerberos/GSSAPI.
+//
+// They should negotiate to use Kerberos/GSSAPI.
+TEST_F(TestSaslRpc, TestRestrictiveServer_NonRestrictiveClient) {
+  MiniKdc kdc;
+  ASSERT_OK(kdc.Start());
+
+  // Create the server principal and keytab.
+  string kt_path;
+  ASSERT_OK(kdc.CreateServiceKeytab("kudu/localhost", &kt_path));
+  CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+
+  // Create and kinit as a client user.
+  ASSERT_OK(kdc.CreateUserPrincipal("testuser"));
+  ASSERT_OK(kdc.Kinit("testuser"));
+  ASSERT_OK(kdc.SetKrb5Environment());
+
+  // Authentication should now succeed on both sides.
+  RunNegotiationTest(
+      std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
+                [](const Status& s, SaslServer& server) {
+                  CHECK_OK(s);
+                  CHECK_EQ(SaslMechanism::GSSAPI, server.negotiated_mechanism());
+                  CHECK_EQ("testuser", server.authenticated_user());
+                }),
+      [](Socket* conn) {
+        SaslClient sasl_client(kSaslAppName, conn->GetFd());
+        sasl_client.set_server_fqdn("127.0.0.1");
+        // The client enables both PLAIN and GSSAPI.
+        CHECK_OK(sasl_client.EnablePlain("foo", "bar"));
+        CHECK_OK(sasl_client.EnableGSSAPI());
+        CHECK_OK(sasl_client.Init(kSaslAppName));
+        CHECK_OK(sasl_client.Negotiate());
+        CHECK_EQ(SaslMechanism::GSSAPI, sasl_client.negotiated_mechanism());
+      });
+}
+
+// Test configuring a client to only support PLAIN, and a server which
+// only supports GSSAPI. This would happen, for example, if an old Kudu
+// client tries to talk to a secure-only cluster.
+TEST_F(TestSaslRpc, TestNoMatchingMechanisms) {
+  MiniKdc kdc;
+  ASSERT_OK(kdc.Start());
+
+  // Create the server principal and keytab.
+  string kt_path;
+  ASSERT_OK(kdc.CreateServiceKeytab("kudu/localhost", &kt_path));
+  CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+
+
+  RunNegotiationTest(
+      std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
+                [](const Status& s, SaslServer& server) {
+                  // The client fails to find a matching mechanism and
+                  // doesn't send any failure message to the server.
+                  // Instead, it just disconnects.
+                  //
+                  // TODO(todd): this could produce a better message!
+                  ASSERT_STR_CONTAINS(s.ToString(), "got EOF from remote");
+                }),
+      [](Socket* conn) {
+        SaslClient sasl_client(kSaslAppName, conn->GetFd());
+        sasl_client.set_server_fqdn("127.0.0.1");
+        // The client enables both PLAIN and GSSAPI.
+        CHECK_OK(sasl_client.EnablePlain("foo", "bar"));
+        CHECK_OK(sasl_client.Init(kSaslAppName));
+        Status s = sasl_client.Negotiate();
+        ASSERT_STR_CONTAINS(s.ToString(), "no mechanism available: No worthy mechs found");
+      });
 }
 
 // Test SASL negotiation using the GSSAPI (kerberos) mechanism over a socket.
@@ -269,8 +343,8 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
 
 static void RunTimeoutExpectingServer(Socket* conn) {
   SaslServer sasl_server(kSaslAppName, conn->GetFd());
-  CHECK_OK(sasl_server.Init(kSaslAppName));
   CHECK_OK(sasl_server.EnableAnonymous());
+  CHECK_OK(sasl_server.Init(kSaslAppName));
   Status s = sasl_server.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected client to time out and close the connection. Got: "
       << s.ToString();
@@ -296,8 +370,8 @@ TEST_F(TestSaslRpc, TestClientTimeout) {
 
 static void RunTimeoutNegotiationServer(Socket* sock) {
   SaslServer sasl_server(kSaslAppName, sock->GetFd());
-  CHECK_OK(sasl_server.Init(kSaslAppName));
   CHECK_OK(sasl_server.EnableAnonymous());
+  CHECK_OK(sasl_server.Init(kSaslAppName));
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   sasl_server.set_deadline(deadline);
   Status s = sasl_server.Negotiate();

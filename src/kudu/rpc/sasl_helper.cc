@@ -93,7 +93,7 @@ const std::set<std::string>& SaslHelper::LocalMechs() const {
 
 const char* SaslHelper::LocalMechListString() const {
   JoinStrings(mechs_, " ", &mech_list_);
-  return mech_list_.empty() ? nullptr : mech_list_.c_str();
+  return mech_list_.c_str();
 }
 
 
@@ -119,7 +119,7 @@ int SaslHelper::GetOptionCb(const char* plugin_name, const char* option,
     if (cb_name == option) {
       *result = LocalMechListString();
       if (len != nullptr) *len = strlen(*result);
-      DVLOG(3) << tag_ << ": Enabled mech list: " << (*result == nullptr ? "NULL" : *result);
+      VLOG(4) << tag_ << ": Enabled mech list: " << *result;
       return SASL_OK;
     }
     VLOG(4) << tag_ << ": GetOptionCb: Unknown library option: " << option;

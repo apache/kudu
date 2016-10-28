@@ -70,18 +70,18 @@ SaslServer::~SaslServer() {
 }
 
 Status SaslServer::EnableAnonymous() {
-  DCHECK_EQ(server_state_, SaslNegotiationState::INITIALIZED);
+  DCHECK_EQ(server_state_, SaslNegotiationState::NEW);
   return helper_.EnableAnonymous();
 }
 
 Status SaslServer::EnablePlain() {
-  DCHECK_EQ(server_state_, SaslNegotiationState::INITIALIZED);
+  DCHECK_EQ(server_state_, SaslNegotiationState::NEW);
   RETURN_NOT_OK(helper_.EnablePlain());
   return Status::OK();
 }
 
 Status SaslServer::EnableGSSAPI() {
-  DCHECK_EQ(server_state_, SaslNegotiationState::INITIALIZED);
+  DCHECK_EQ(server_state_, SaslNegotiationState::NEW);
   return helper_.EnableGSSAPI();
 }
 
