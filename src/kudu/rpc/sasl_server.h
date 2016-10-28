@@ -39,8 +39,6 @@ namespace rpc {
 
 using std::string;
 
-class AuthStore;
-
 // Class for doing SASL negotiation with a SaslClient over a bidirectional socket.
 // Operations on this class are NOT thread-safe.
 class SaslServer {
@@ -53,9 +51,11 @@ class SaslServer {
   // Must be called after Init().
   Status EnableAnonymous();
 
-  // Enable PLAIN authentication. TODO: Support impersonation.
+  // Enable PLAIN authentication.
+  // Despite PLAIN authentication taking a username and password, we disregard
+  // the password and use this as a "unauthenticated" mode.
   // Must be called after Init().
-  Status EnablePlain(gscoped_ptr<AuthStore> authstore);
+  Status EnablePlain();
 
   // Enable GSSAPI (Kerberos) authentication.
   // Call after Init().
@@ -152,9 +152,6 @@ class SaslServer {
   // freed after Negotiate() completes (regardless whether it was successful).
   gscoped_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
-
-  // Authentication store used for PLAIN authentication.
-  gscoped_ptr<AuthStore> authstore_;
 
   // The set of features that the client supports. Filled in
   // after we receive the NEGOTIATE request from the client.

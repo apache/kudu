@@ -104,6 +104,7 @@ struct SaslMechanism {
     GSSAPI
   };
   static Type value_of(const std::string& mech);
+  static const char* name_of(Type val);
 };
 
 } // namespace rpc

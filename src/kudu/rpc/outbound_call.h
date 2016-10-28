@@ -61,21 +61,10 @@ class UserCredentials {
  public:
    UserCredentials();
 
-  // Effective user, in cases where impersonation is supported.
-  // If impersonation is not supported, this should be left empty.
-  bool has_effective_user() const;
-  void set_effective_user(const std::string& eff_user);
-  const std::string& effective_user() const { return eff_user_; }
-
   // Real user.
   bool has_real_user() const;
   void set_real_user(const std::string& real_user);
   const std::string& real_user() const { return real_user_; }
-
-  // The real user's password.
-  bool has_password() const;
-  void set_password(const std::string& password);
-  const std::string& password() const { return password_; }
 
   // Copy state from another object to this one.
   void CopyFrom(const UserCredentials& other);
@@ -88,9 +77,7 @@ class UserCredentials {
 
  private:
   // Remember to update HashCode() and Equals() when new fields are added.
-  std::string eff_user_;
   std::string real_user_;
-  std::string password_;
 
   DISALLOW_COPY_AND_ASSIGN(UserCredentials);
 };

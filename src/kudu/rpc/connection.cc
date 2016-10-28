@@ -30,7 +30,6 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/auth_store.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/messenger.h"
@@ -621,18 +620,14 @@ std::string Connection::ToString() const {
 
 Status Connection::InitSaslClient() {
   RETURN_NOT_OK(sasl_client().EnableAnonymous());
-  RETURN_NOT_OK(sasl_client().EnablePlain(user_credentials().real_user(),
-                                          user_credentials().password()));
+  RETURN_NOT_OK(sasl_client().EnablePlain(user_credentials().real_user(), ""));
   RETURN_NOT_OK(sasl_client().Init(kSaslProtoName));
   return Status::OK();
 }
 
 Status Connection::InitSaslServer() {
-  // TODO: Do necessary configuration plumbing to enable user authentication.
-  // Right now we just enable PLAIN with a "dummy" auth store, which allows everyone in.
   RETURN_NOT_OK(sasl_server().Init(kSaslProtoName));
-  gscoped_ptr<AuthStore> auth_store(new DummyAuthStore());
-  RETURN_NOT_OK(sasl_server().EnablePlain(std::move(auth_store)));
+  RETURN_NOT_OK(sasl_server().EnablePlain());
   return Status::OK();
 }
 

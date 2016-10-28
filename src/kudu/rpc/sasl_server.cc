@@ -28,7 +28,6 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/split.h"
-#include "kudu/rpc/auth_store.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/serialization.h"
@@ -75,10 +74,9 @@ Status SaslServer::EnableAnonymous() {
   return helper_.EnableAnonymous();
 }
 
-Status SaslServer::EnablePlain(gscoped_ptr<AuthStore> authstore) {
+Status SaslServer::EnablePlain() {
   DCHECK_EQ(server_state_, SaslNegotiationState::INITIALIZED);
   RETURN_NOT_OK(helper_.EnablePlain());
-  authstore_.swap(authstore);
   return Status::OK();
 }
 
@@ -461,23 +459,14 @@ int SaslServer::GetOptionCb(const char* plugin_name, const char* option,
   return helper_.GetOptionCb(plugin_name, option, result, len);
 }
 
-int SaslServer::PlainAuthCb(sasl_conn_t *conn, const char *user, const char *pass,
-                            unsigned passlen, struct propctx *propctx) {
-  TRACE("SASL Server: Checking PLAIN auth credentials");
+int SaslServer::PlainAuthCb(sasl_conn_t * /*conn*/, const char * /*user*/, const char * /*pass*/,
+                            unsigned /*passlen*/, struct propctx * /*propctx*/) {
+  TRACE("SASL Server: Received PLAIN auth.");
   if (PREDICT_FALSE(!helper_.IsPlainEnabled())) {
     LOG(DFATAL) << "Password authentication callback called while PLAIN auth disabled";
     return SASL_BADPARAM;
   }
-  if (PREDICT_FALSE(!authstore_)) {
-    LOG(DFATAL) << "AuthStore not initialized";
-    return SASL_FAIL;
-  }
-  Status s = authstore_->Authenticate(user, string(pass, passlen));
-  TRACE("SASL Server: PLAIN user authentication status: $0", s.ToString());
-  if (!s.ok()) {
-    LOG(INFO) << "Failed login for user: " << user;
-    return SASL_FAIL;
-  }
+  // We always allow PLAIN authentication to succeed.
   return SASL_OK;
 }
 

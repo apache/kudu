@@ -220,11 +220,10 @@ class CalculatorService : public CalculatorServiceIf {
     context->RespondSuccess();
   }
 
-  void WhoAmI(const WhoAmIRequestPB* req, WhoAmIResponsePB* resp, RpcContext* context) override {
+  void WhoAmI(const WhoAmIRequestPB* /*req*/,
+              WhoAmIResponsePB* resp,
+              RpcContext* context) override {
     const UserCredentials& creds = context->user_credentials();
-    if (creds.has_effective_user()) {
-      resp->mutable_credentials()->set_effective_user(creds.effective_user());
-    }
     resp->mutable_credentials()->set_real_user(creds.real_user());
     resp->set_address(context->remote_address().ToString());
     context->RespondSuccess();

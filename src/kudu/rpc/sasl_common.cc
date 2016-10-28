@@ -319,5 +319,15 @@ SaslMechanism::Type SaslMechanism::value_of(const string& mech) {
   return INVALID;
 }
 
+const char* SaslMechanism::name_of(SaslMechanism::Type val) {
+  switch (val) {
+    case ANONYMOUS: return "ANONYMOUS";
+    case PLAIN: return "PLAIN";
+    case GSSAPI: return "GSSAPI";
+    default:
+      return "INVALID";
+  }
+}
+
 } // namespace rpc
 } // namespace kudu

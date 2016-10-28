@@ -46,7 +46,12 @@ message UserInformationPB {
 message ConnectionContextPB {
   // UserInfo beyond what is determined as part of security handshake
   // at connection time (kerberos, tokens etc).
-  optional UserInformationPB user_info = 2;
+  //
+  // DEPRECATED: No longer used in Kudu 1.1 and later.
+  // The 'real_user' should be taken from the SASL negotiation.
+  // Impersonation (effective user) was never supported, so we'll have
+  // to add that back at some point later.
+  optional UserInformationPB DEPRECATED_user_info = 2;
 }
 
 // Features supported by the RPC system itself.

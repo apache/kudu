@@ -320,14 +320,6 @@ void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
 
 UserCredentials::UserCredentials() {}
 
-bool UserCredentials::has_effective_user() const {
-  return !eff_user_.empty();
-}
-
-void UserCredentials::set_effective_user(const string& eff_user) {
-  eff_user_ = eff_user;
-}
-
 bool UserCredentials::has_real_user() const {
   return !real_user_.empty();
 }
@@ -336,43 +328,25 @@ void UserCredentials::set_real_user(const string& real_user) {
   real_user_ = real_user;
 }
 
-bool UserCredentials::has_password() const {
-  return !password_.empty();
-}
-
-void UserCredentials::set_password(const string& password) {
-  password_ = password;
-}
-
 void UserCredentials::CopyFrom(const UserCredentials& other) {
-  eff_user_ = other.eff_user_;
   real_user_ = other.real_user_;
-  password_ = other.password_;
 }
 
 string UserCredentials::ToString() const {
   // Does not print the password.
-  return StringPrintf("{real_user=%s, eff_user=%s}", real_user_.c_str(), eff_user_.c_str());
+  return StringPrintf("{real_user=%s}", real_user_.c_str());
 }
 
 size_t UserCredentials::HashCode() const {
   size_t seed = 0;
-  if (has_effective_user()) {
-    boost::hash_combine(seed, effective_user());
-  }
   if (has_real_user()) {
     boost::hash_combine(seed, real_user());
-  }
-  if (has_password()) {
-    boost::hash_combine(seed, password());
   }
   return seed;
 }
 
 bool UserCredentials::Equals(const UserCredentials& other) const {
-  return (effective_user() == other.effective_user()
-       && real_user() == other.real_user()
-       && password() == other.password());
+  return real_user() == other.real_user();
 }
 
 ///

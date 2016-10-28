@@ -812,10 +812,12 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   private ChannelBuffer header() {
     RpcHeader.ConnectionContextPB.Builder builder = RpcHeader.ConnectionContextPB.newBuilder();
+
+    // The UserInformationPB is deprecated, but used by servers prior to Kudu 1.1.
     RpcHeader.UserInformationPB.Builder userBuilder = RpcHeader.UserInformationPB.newBuilder();
-    userBuilder.setEffectiveUser(SecureRpcHelper.USER_AND_PASSWORD); // TODO set real user
+    userBuilder.setEffectiveUser(SecureRpcHelper.USER_AND_PASSWORD);
     userBuilder.setRealUser(SecureRpcHelper.USER_AND_PASSWORD);
-    builder.setUserInfo(userBuilder.build());
+    builder.setDEPRECATEDUserInfo(userBuilder.build());
     RpcHeader.ConnectionContextPB pb = builder.build();
     RpcHeader.RequestHeader header = RpcHeader.RequestHeader.newBuilder().setCallId
         (CONNECTION_CTX_CALL_ID).build();

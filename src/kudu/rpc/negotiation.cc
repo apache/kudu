@@ -63,9 +63,10 @@ static Status SendConnectionContext(Connection* conn, const MonoTime& deadline) 
   header.set_call_id(kConnectionContextCallId);
 
   ConnectionContextPB conn_context;
-  conn_context.mutable_user_info()->set_effective_user(conn->user_credentials().effective_user());
-  conn_context.mutable_user_info()->set_real_user(conn->user_credentials().real_user());
-
+  // This field is deprecated but used by servers <Kudu 1.1. Newer server versions ignore
+  // this and use the SASL-provided username instead.
+  conn_context.mutable_deprecated_user_info()->set_real_user(
+      conn->user_credentials().real_user());
   return SendFramedMessageBlocking(conn->socket(), header, conn_context, deadline);
 }
 
@@ -89,29 +90,15 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
   ConnectionContextPB conn_context;
   if (!conn_context.ParseFromArray(param_buf.data(), param_buf.size())) {
     return Status::InvalidArgument("Invalid ConnectionContextPB message, missing fields",
-        conn_context.InitializationErrorString());
+                                   conn_context.InitializationErrorString());
   }
 
-  // Update the fields of our Connection object from the ConnectionContextPB.
-  if (conn_context.has_user_info()) {
-    // Validate real user against SASL impl.
-    if (conn->sasl_server().negotiated_mechanism() == SaslMechanism::PLAIN) {
-      if (conn->sasl_server().authenticated_user() != conn_context.user_info().real_user()) {
-        return Status::NotAuthorized(
-            "ConnectionContextPB specified different real user than sent in SASL negotiation",
-            StringPrintf("\"%s\" vs. \"%s\"",
-                conn_context.user_info().real_user().c_str(),
-                conn->sasl_server().authenticated_user().c_str()));
-      }
-    }
-    conn->mutable_user_credentials()->set_real_user(conn_context.user_info().real_user());
-
-    // TODO: Validate effective user when we implement impersonation.
-    if (conn_context.user_info().has_effective_user()) {
-      conn->mutable_user_credentials()->set_effective_user(
-        conn_context.user_info().effective_user());
-    }
+  if (conn->sasl_server().authenticated_user().empty()) {
+    return Status::NotAuthorized("No user was authenticated");
   }
+
+  conn->mutable_user_credentials()->set_real_user(conn->sasl_server().authenticated_user());
+
   return Status::OK();
 }
 
@@ -252,6 +239,10 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
     } else {
       LOG(INFO) << "RPC negotiation tracing enabled. Trace:\n" << msg;
     }
+  }
+
+  if (conn->direction() == Connection::SERVER && s.IsNotAuthorized()) {
+    LOG(WARNING) << "Unauthorized connection attempt: " << s.message().ToString();
   }
   conn->CompleteNegotiation(s);
 }

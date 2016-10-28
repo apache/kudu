@@ -42,7 +42,6 @@ ADD_EXPORTABLE_LIBRARY(rpc_introspection_proto
 ### RPC library
 set(KRPC_SRCS
     acceptor_pool.cc
-    auth_store.cc
     blocking_ops.cc
     outbound_call.cc
     connection.cc
