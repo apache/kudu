@@ -62,6 +62,15 @@
     return _s; \
   } while (0);
 
+/// @brief If the given status is not OK, log it and 'msg' at 'level' and return the status.
+#define KUDU_RETURN_NOT_OK_LOG(s, level, msg) do { \
+    const ::kudu::Status& _s = (s);             \
+    if (PREDICT_FALSE(!_s.ok())) { \
+      KUDU_LOG(level) << "Status: " << _s.ToString() << " " << (msg); \
+      return _s;     \
+    } \
+  } while (0);
+
 /// @brief If @c to_call returns a bad status, CHECK immediately with
 ///   a logged message of @c msg followed by the status.
 #define KUDU_CHECK_OK_PREPEND(to_call, msg) do { \
@@ -92,6 +101,7 @@
 #define RETURN_NOT_OK_RET     KUDU_RETURN_NOT_OK_RET
 #define WARN_NOT_OK           KUDU_WARN_NOT_OK
 #define LOG_AND_RETURN        KUDU_LOG_AND_RETURN
+#define RETURN_NOT_OK_LOG     KUDU_RETURN_NOT_OK_LOG
 #define CHECK_OK_PREPEND      KUDU_CHECK_OK_PREPEND
 #define CHECK_OK              KUDU_CHECK_OK
 
