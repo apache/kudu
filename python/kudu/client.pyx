@@ -312,11 +312,14 @@ cdef class Client:
             vector[string] v
             PartialRow py_row
         # Apply hash partitioning.
-        for col_names, num_buckets in part._hash_partitions:
+        for col_names, num_buckets, seed in part._hash_partitions:
             v.clear()
             for n in col_names:
                 v.push_back(tobytes(n))
-            c.add_hash_partitions(v, num_buckets)
+            if seed:
+                c.add_hash_partitions(v, num_buckets, seed)
+            else:
+                c.add_hash_partitions(v, num_buckets)
         # Apply range partitioning
         if part._range_partition_cols is not None:
             v.clear()
@@ -919,7 +922,7 @@ class Partitioning(object):
         self._hash_partitions = []
         self._range_partition_cols = None
 
-    def add_hash_partitions(self, column_names, num_buckets):
+    def add_hash_partitions(self, column_names, num_buckets, seed=None):
         """
         Adds a set of hash partitions to the table.
 
@@ -927,12 +930,17 @@ class Partitioning(object):
         table partitions is multiplied by the number of buckets. For example, if a
         table is created with 3 split rows, and two hash partitions with 4 and 5
         buckets respectively, the total number of table partitions will be 80
-        (4 range partitions * 4 hash buckets * 5 hash buckets).
+        (4 range partitions * 4 hash buckets * 5 hash buckets). Optionally, a
+        seed can be used to randomize the mapping of rows to hash buckets.
+        Setting the seed may provide some amount of protection against denial
+        of service attacks when the hashed columns contain user provided values.
 
         Parameters
         ----------
         column_names : list of string column names on which to partition
         num_buckets : the number of buckets to create
+        seed : int - optional
+          Hash: seed for mapping rows to hash buckets.
 
         Returns
         -------
@@ -940,7 +948,7 @@ class Partitioning(object):
         """
         if isinstance(column_names, str):
             column_names = [column_names]
-        self._hash_partitions.append( (column_names, num_buckets) )
+        self._hash_partitions.append( (column_names, num_buckets, seed) )
         return self
 
     def set_range_partition_columns(self, column_names):

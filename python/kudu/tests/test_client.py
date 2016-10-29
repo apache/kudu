@@ -134,6 +134,13 @@ class TestClient(KuduTestBase, unittest.TestCase):
                 partitioning=Partitioning().set_range_partition_columns([]))
             self.client.delete_table(name)
 
+            self.client.create_table(
+                name, self.schema,
+                partitioning=Partitioning().add_hash_partitions(['key'],
+                                                                2,
+                                                                seed=342310))
+            self.client.delete_table(name)
+
         finally:
             try:
                 self.client.delete_table(name)

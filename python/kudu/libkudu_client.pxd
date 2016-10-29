@@ -509,7 +509,11 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
     cdef cppclass KuduTableCreator:
         KuduTableCreator& table_name(string& name)
         KuduTableCreator& schema(KuduSchema* schema)
-        KuduTableCreator& add_hash_partitions(vector[string]& columns, int num_buckets)
+        KuduTableCreator& add_hash_partitions(vector[string]& columns,
+                                              int num_buckets)
+        KuduTableCreator& add_hash_partitions(vector[string]& columns,
+                                              int num_buckets,
+                                              int seed)
         KuduTableCreator& set_range_partition_columns(vector[string]& columns)
         KuduTableCreator& split_rows(vector[const KuduPartialRow*]& split_rows)
         KuduTableCreator& num_replicas(int n_replicas)
