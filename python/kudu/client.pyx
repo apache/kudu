@@ -2308,7 +2308,29 @@ cdef class KuduError:
             del self.error
 
     def failed_op(self):
-        raise NotImplementedError
+        """
+        Get debug string representation of the failed operation.
+
+        Returns
+        -------
+        op : str
+        """
+        return frombytes(self.error.failed_op().ToString())
+
+    def was_possibly_successful(self):
+        """
+        Check if there is a chance that the requested operation was successful.
+
+        In some cases, it is possible that the server did receive and
+        successfully perform the requested operation, but the client can't
+        tell whether or not it was successful. For example, if the call times
+        out, the server may still succeed in processing at a later time.
+
+        Returns
+        -------
+        result : bool
+        """
+        return self.error.was_possibly_successful()
 
     def __repr__(self):
         return "KuduError('%s')" % (self.error.status().ToString())

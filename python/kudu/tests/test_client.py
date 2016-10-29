@@ -206,6 +206,31 @@ class TestClient(KuduTestBase, unittest.TestCase):
         scanner = table.scanner().open()
         assert len(scanner.read_all_tuples()) == 0
 
+    def test_failed_write_op(self):
+        # Insert row
+        table = self.client.table(self.ex_table)
+        session = self.client.new_session()
+        session.apply(table.new_insert({'key': 1}))
+        session.flush()
+
+        # Attempt to insert row again
+        session.apply(table.new_insert({'key': 1}))
+        self.assertRaises(kudu.KuduBadStatus, session.flush)
+
+        # Check errors
+        errors, overflowed = session.get_pending_errors()
+        self.assertFalse(overflowed)
+        self.assertEqual(len(errors), 1)
+        error = errors[0]
+        # This test passes because we currently always return
+        # True.
+        self.assertTrue(error.was_possibly_successful())
+        self.assertEqual(error.failed_op(), 'INSERT int32 key=1')
+
+        # Delete inserted row
+        session.apply(table.new_delete({'key': 1}))
+        session.flush()
+
     def test_session_auto_open(self):
         table = self.client.table(self.ex_table)
         scanner = table.scanner()
