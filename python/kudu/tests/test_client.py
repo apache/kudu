@@ -83,7 +83,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
             self.client.delete_table(name)
 
     def test_is_multimaster(self):
-        assert not self.client.is_multimaster
+        assert self.client.is_multimaster
 
     def test_delete_table(self):
         name = "peekaboo"
@@ -226,7 +226,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
 
     def test_connect_timeouts(self):
         # it works! any other way to check
-        kudu.connect(self.master_host, self.master_port,
+        kudu.connect(self.master_hosts, self.master_ports,
                      admin_timeout_ms=100,
                      rpc_timeout_ms=100)
 

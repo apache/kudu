@@ -229,6 +229,11 @@ cdef class Client:
         elif not isinstance(addr_or_addrs, list):
             addr_or_addrs = list(addr_or_addrs)
 
+        # Raise exception for empty iters, otherwise the connection call
+        # will hang
+        if not addr_or_addrs:
+            raise ValueError("Empty iterator for addr_or_addrs.")
+
         self.master_addrs = addr_or_addrs
         for addr in addr_or_addrs:
             c_addrs.push_back(tobytes(addr))

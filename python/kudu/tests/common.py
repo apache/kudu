@@ -25,6 +25,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import socket
 
 import kudu
 from kudu.client import Partitioning
@@ -39,6 +40,7 @@ class KuduTestBase(object):
     BASE_PORT = 37000
     NUM_TABLET_SERVERS = 3
     TSERVER_START_TIMEOUT_SECS = 10
+    NUM_MASTER_SERVERS = 3
 
     @classmethod
     def start_cluster(cls):
@@ -48,47 +50,50 @@ class KuduTestBase(object):
             kudu_build = os.path.join(os.getenv("KUDU_HOME"), "build", "latest")
         bin_path = "{0}/bin".format(kudu_build)
 
-        os.makedirs("{0}/master/".format(local_path))
-        os.makedirs("{0}/master/data".format(local_path))
-        os.makedirs("{0}/master/logs".format(local_path))
+        master_hosts = []
+        master_ports = []
 
-        path = [
-            "{0}/kudu-master".format(bin_path),
-            "-unlock_unsafe_flags",
-            "-unlock_experimental_flags",
-            "-rpc_server_allow_ephemeral_ports",
-            "-rpc_bind_addresses=0.0.0.0:0",
-            "-fs_wal_dir={0}/master/data".format(local_path),
-            "-fs_data_dirs={0}/master/data".format(local_path),
-            "-log_dir={0}/master/logs".format(local_path),
-            "-logtostderr",
-            "-webserver_port=0",
-            # Only make one replica so that our tests don't need to worry about
-            # setting consistency modes.
-            "-default_num_replicas=1",
-            "-server_dump_info_path={0}/master/config.json".format(local_path)
-        ]
+        # We need to get the port numbers for the masters before starting them
+        # so that we can appropriately configure a multi-master.
+        for m in range(cls.NUM_MASTER_SERVERS):
+            master_hosts.append('127.0.0.1')
+            # This introduces a race
+            s = socket.socket()
+            s.bind(('', 0))
+            master_ports.append(s.getsockname()[1])
+            s.close()
 
-        p = subprocess.Popen(path, shell=False)
-        fid = open("{0}/master/kudu-master.pid".format(local_path), "w+")
-        fid.write("{0}".format(p.pid))
-        fid.close()
+        multi_master_string = ','.join('{0}:{1}'.format(host, port)
+                                       for host, port
+                                       in zip(master_hosts, master_ports))
 
-        # We have to wait for the master to settle before the config file
-        # appears
-        config_file = "{0}/master/config.json".format(local_path)
-        for i in range(30):
-            if os.path.exists(config_file):
-                break
-            time.sleep(0.1 * (i + 1))
-        else:
-            raise Exception("Could not find kudu-master config file")
+        for m in range(cls.NUM_MASTER_SERVERS):
+            os.makedirs("{0}/master/{1}".format(local_path, m))
+            os.makedirs("{0}/master/{1}/data".format(local_path, m))
+            os.makedirs("{0}/master/{1}/logs".format(local_path, m))
 
-        # If the server was started get the bind port from the config dump
-        master_config = json.load(open("{0}/master/config.json"
-                                       .format(local_path), "r"))
-        # One master bound on local host
-        master_port = master_config["bound_rpc_addresses"][0]["port"]
+
+            path = [
+                "{0}/kudu-master".format(bin_path),
+                "-unlock_unsafe_flags",
+                "-unlock_experimental_flags",
+                "-rpc_server_allow_ephemeral_ports",
+                "-rpc_bind_addresses=0.0.0.0:{0}".format(master_ports[m]),
+                "-fs_wal_dir={0}/master/{1}/data".format(local_path, m),
+                "-fs_data_dirs={0}/master/{1}/data".format(local_path, m),
+                "-log_dir={0}/master/{1}/logs".format(local_path, m),
+                "-logtostderr",
+                "-webserver_port=0",
+                "-master_addresses={0}".format(multi_master_string),
+                # Only make one replica so that our tests don't need to worry about
+                # setting consistency modes.
+                "-default_num_replicas=1"
+            ]
+
+            p = subprocess.Popen(path, shell=False)
+            fid = open("{0}/master/{1}/kudu-master.pid".format(local_path, m), "w+")
+            fid.write("{0}".format(p.pid))
+            fid.close()
 
         for m in range(cls.NUM_TABLET_SERVERS):
             os.makedirs("{0}/ts/{1}".format(local_path, m))
@@ -100,9 +105,9 @@ class KuduTestBase(object):
                 "-unlock_experimental_flags",
                 "-rpc_server_allow_ephemeral_ports",
                 "-rpc_bind_addresses=0.0.0.0:0",
-                "-tserver_master_addrs=127.0.0.1:{0}".format(master_port),
+                "-tserver_master_addrs={0}".format(multi_master_string),
                 "-webserver_port=0",
-                "-log_dir={0}/master/logs".format(local_path),
+                "-log_dir={0}/ts/{1}/logs".format(local_path, m),
                 "-logtostderr",
                 "-fs_data_dirs={0}/ts/{1}/data".format(local_path, m),
                 "-fs_wal_dir={0}/ts/{1}/data".format(local_path, m),
@@ -113,7 +118,7 @@ class KuduTestBase(object):
             fid.write("{0}".format(p.pid))
             fid.close()
 
-        return local_path, master_port
+        return local_path, master_hosts, master_ports
 
     @classmethod
     def stop_cluster(cls, path):
@@ -128,13 +133,10 @@ class KuduTestBase(object):
 
     @classmethod
     def setUpClass(cls):
-        cls.cluster_path, master_port = cls.start_cluster()
+        cls.cluster_path, cls.master_hosts, cls.master_ports = cls.start_cluster()
         time.sleep(1)
 
-        cls.master_host = '127.0.0.1'
-        cls.master_port = master_port
-
-        cls.client = kudu.connect(cls.master_host, cls.master_port)
+        cls.client = kudu.connect(cls.master_hosts, cls.master_ports)
 
         # Wait for all tablet servers to start with the configured timeout
         timeout = time.time() + cls.TSERVER_START_TIMEOUT_SECS

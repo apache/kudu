@@ -49,16 +49,17 @@ from kudu.schema import (int8, int16, int32, int64, string_ as string,  # noqa
                          ENCODING_RLE)
 
 
-def connect(host, port, admin_timeout_ms=None, rpc_timeout_ms=None):
+def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None):
     """
     Connect to a Kudu master server
 
     Parameters
     ----------
-    host : string
-      Server address of master
-    port : int
-      Server port
+    host : string/list
+      Server address of master or a list of addresses
+    port : int/list, optional, default 7051
+      Server port or list of ports. If a list of addresses is provided and
+      only a single port, that port will be used for all master addresses.
     admin_timeout_ms : int, optional
       Admin timeout in milliseconds
     rpc_timeout_ms : int, optional
@@ -68,8 +69,24 @@ def connect(host, port, admin_timeout_ms=None, rpc_timeout_ms=None):
     -------
     client : kudu.Client
     """
-    addr = '{0}:{1}'.format(host, port)
-    return Client(addr, admin_timeout_ms=admin_timeout_ms,
+    addresses = []
+    if isinstance(host, list):
+        if isinstance(port, list):
+            if len(host) == len(port):
+                for h, p in zip(host, port):
+                    addresses.append('{0}:{1}'.format(h, p))
+            else:
+                raise ValueError("Host and port lists are not of equal length.")
+        else:
+            for h in host:
+                addresses.append('{0}:{1}'.format(h, port))
+    else:
+        if isinstance(port, list):
+            raise ValueError("List of ports provided but only a single host.")
+        else:
+            addresses.append('{0}:{1}'.format(host, port))
+
+    return Client(addresses, admin_timeout_ms=admin_timeout_ms,
                   rpc_timeout_ms=rpc_timeout_ms)
 
 

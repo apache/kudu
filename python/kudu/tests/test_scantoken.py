@@ -24,7 +24,7 @@ from multiprocessing import Pool
 import datetime
 
 def _get_scan_token_results(input):
-    client = kudu.Client("{0}:{1}".format(input[1], input[2]))
+    client = kudu.connect(input[1], input[2])
     scanner = client.deserialize_token_into_scanner(input[0])
     scanner.open()
     return scanner.read_all_tuples()
@@ -43,7 +43,7 @@ class TestScanToken(TestScanBase):
         Given the input serialized tokens, spawn new threads,
         execute them and validate the results
         """
-        input =  [(token.serialize(), self.master_host, self.master_port)
+        input =  [(token.serialize(), self.master_hosts, self.master_ports)
                 for token in tokens]
 
         # Begin process pool
