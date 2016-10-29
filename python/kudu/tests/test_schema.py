@@ -93,6 +93,7 @@ class TestSchema(unittest.TestCase):
         (builder.add_column('key')
          .type('int32')
          .primary_key()
+         .block_size(1048576)
          .nullable(False))
         schema = builder.build()
 

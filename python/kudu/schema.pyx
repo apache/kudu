@@ -318,6 +318,29 @@ cdef class ColumnSpec:
         self.spec.RenameTo(new_name)
         return self
 
+    def block_size(self, block_size):
+        """
+        Set the target block size for the column.
+
+        This is the number of bytes of user data packed per block on disk, and
+        represents the unit of IO when reading the column. Larger values may
+        improve scan performance, particularly on spinning media. Smaller
+        values may improve random access performance, particularly for
+        workloads that have high cache hit rates or operate on fast storage
+        such as SSD.
+
+        Parameters
+        ----------
+        block_size : int
+          Block size (in bytes) to use.
+
+        Returns
+        -------
+        self : ColumnSpec
+        """
+        self.spec.BlockSize(block_size)
+        return self
+
 
 cdef class SchemaBuilder:
 
@@ -347,7 +370,7 @@ cdef class SchemaBuilder:
                                colschema.nullable)
 
     def add_column(self, name, type_=None, nullable=None, compression=None,
-                   encoding=None, primary_key=False):
+                   encoding=None, primary_key=False, block_size=None):
         """
         Add a new column to the schema. Returns a ColumnSpec object for further
         configuration and use in a fluid programming style.
@@ -368,6 +391,8 @@ cdef class SchemaBuilder:
           Or see kudu.ENCODING_* constants
         primary_key : boolean, default False
           Use this column as the table primary key
+        block_size : int, optional
+          Block size (in bytes) to use for the target column.
 
         Examples
         --------
@@ -399,6 +424,9 @@ cdef class SchemaBuilder:
 
         if primary_key:
             result.primary_key()
+
+        if block_size:
+            result.block_size(block_size)
 
         return result
 
