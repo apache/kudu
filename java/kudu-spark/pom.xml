@@ -20,14 +20,16 @@
         <version>1.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>kudu-spark_${scala.binary.version}</artifactId>
+    <artifactId>kudu-${spark.version.label}_${scala.binary.version}</artifactId>
     <name>Kudu Spark Bindings</name>
 
     <properties>
         <spark.version>1.6.1</spark.version>
+        <spark.version.label>spark</spark.version.label>
         <scala.version>2.10.4</scala.version>
         <scala.binary.version>2.10</scala.binary.version>
         <top.dir>${project.basedir}/..</top.dir>
+        <compat.src>src/main/spark1</compat.src>
     </properties>
 
     <dependencies>
@@ -161,6 +163,35 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- http://stackoverflow.com/questions/270445 -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${compat.src}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>spark2_2.11</id>
+            <properties>
+                <spark.version>2.0.1</spark.version>
+                <compat.src>src/main/spark2</compat.src>
+                <spark.version.label>spark2</spark.version.label>
+                <scala.version>2.11.6</scala.version>
+                <scala.binary.version>2.11</scala.binary.version>
+            </properties>
+        </profile>
+    </profiles>
 </project>
