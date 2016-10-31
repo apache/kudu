@@ -22,12 +22,16 @@ from kudu.tests.common import KuduTestBase
 import kudu
 from multiprocessing import Pool
 import datetime
+import time
 
 def _get_scan_token_results(input):
     client = kudu.connect(input[1], input[2])
     scanner = client.deserialize_token_into_scanner(input[0])
     scanner.open()
-    return scanner.read_all_tuples()
+    tuples = scanner.read_all_tuples()
+    # Test explicit closing of scanner
+    scanner.close()
+    return tuples
 
 class TestScanToken(TestScanBase):
 
@@ -115,6 +119,16 @@ class TestScanToken(TestScanBase):
         with self.assertRaises(TypeError):
             builder.add_predicates([sv >= 1])
 
+    def _subtest_open_and_confirm_leader_tserver(self, token):
+        for replica in token.tablet().replicas():
+            if replica.is_leader():
+                leader_tserver = replica.ts()
+
+        scanner = token.into_kudu_scanner()
+        scanner.open()
+        self.assertEqual(scanner.get_current_server(), leader_tserver)
+        return scanner
+
     def test_scan_token_batch_by_batch_with_local_scanner(self):
         builder = self.table.scan_token_builder()
         lower_bound = builder.new_bound()
@@ -128,8 +142,7 @@ class TestScanToken(TestScanBase):
 
         tuples = []
         for token in tokens:
-            scanner = token.into_kudu_scanner()
-            scanner.open()
+            scanner = self._subtest_open_and_confirm_leader_tserver(token)
 
             while scanner.has_more_rows():
                 batch = scanner.next_batch()
@@ -150,10 +163,10 @@ class TestScanToken(TestScanBase):
 
         tuples = []
         for token in tokens:
-            scanner = token.into_kudu_scanner()
-            scanner.open()
+            scanner = self._subtest_open_and_confirm_leader_tserver(token)
 
             while scanner.has_more_rows():
+                scanner.keep_alive()
                 batch = scanner.next_batch()
                 tuples.extend(batch.as_tuples())
 
@@ -192,7 +205,7 @@ class TestScanToken(TestScanBase):
 
         tuples = []
         for token in tokens:
-            scanner = token.into_kudu_scanner().open()
+            scanner = self._subtest_open_and_confirm_leader_tserver(token)
             tuples.extend(scanner.read_all_tuples())
 
         self.assertEqual(sorted(self.tuples[1:]), sorted(tuples))
@@ -204,7 +217,7 @@ class TestScanToken(TestScanBase):
 
         tuples = []
         for token in tokens:
-            scanner = token.into_kudu_scanner().open()
+            scanner = self._subtest_open_and_confirm_leader_tserver(token)
             tuples.extend(scanner.read_all_tuples())
 
         self.assertEqual(sorted(self.tuples), sorted(tuples))
@@ -260,8 +273,7 @@ class TestScanToken(TestScanBase):
 
             tuples = []
             for token in tokens:
-                scanner = token.into_kudu_scanner()
-                scanner.open()
+                scanner = self._subtest_open_and_confirm_leader_tserver(token)
                 tuples.extend(scanner.read_all_tuples())
 
             self.assertEqual(sorted(tuples),

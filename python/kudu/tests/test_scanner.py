@@ -211,14 +211,15 @@ class TestScanner(TestScanBase):
             # Avoid tight looping
             time.sleep(0.05)
 
-    def test_resource_metrics(self):
+    def test_resource_metrics_and_cache_blocks(self):
         """
-        Test getting the resource metrics after scanning.
+        Test getting the resource metrics after scanning and
+        setting the scanner to not cache blocks.
         """
 
         # Build scanner and read through all batches and retrieve metrics.
         scanner = self.table.scanner()
-        scanner.set_fault_tolerant().open()
+        scanner.set_fault_tolerant().set_cache_blocks(False).open()
         scanner.read_all_tuples()
         metrics = scanner.get_resource_metrics()
 

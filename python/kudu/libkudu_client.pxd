@@ -627,9 +627,8 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         c_bool HasMoreRows()
         Status NextBatch(KuduScanBatch* batch)
         Status SetBatchSizeBytes(uint32_t batch_size)
-
         Status SetSelection(ReplicaSelection selection)
-
+        Status SetCacheBlocks(c_bool cache_blocks)
         Status SetReadMode(ReadMode read_mode)
         Status SetSnapshotMicros(uint64_t snapshot_timestamp_micros)
         Status SetTimeoutMillis(int millis)
@@ -638,6 +637,8 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status SetFaultTolerant()
         Status AddLowerBound(const KuduPartialRow& key)
         Status AddExclusiveUpperBound(const KuduPartialRow& key)
+        Status KeepAlive()
+        Status GetCurrentServer(KuduTabletServer** server)
 
         KuduSchema GetProjectionSchema()
         const ResourceMetrics& GetResourceMetrics()

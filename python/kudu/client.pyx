@@ -447,6 +447,7 @@ cdef class Client:
         result = []
         for i in range(tservers.size()):
             ts = TabletServer()
+            ts._own = 1
             result.append(ts._init(tservers[i]))
         return result
 
@@ -592,14 +593,26 @@ cdef class TabletServer:
 
     cdef:
         const KuduTabletServer* _tserver
+        public bint _own
 
     cdef _init(self, const KuduTabletServer* tserver):
         self._tserver = tserver
+        self._own = 0
         return self
 
     def __dealloc__(self):
-        if self._tserver != NULL:
+        if self._tserver != NULL and self._own:
             del self._tserver
+
+    def __richcmp__(TabletServer self, TabletServer other, int op):
+        if op == 2: # ==
+            return ((self.uuid(), self.hostname(), self.port()) ==
+                    (other.uuid(), other.hostname(), other.port()))
+        elif op == 3: # !=
+            return ((self.uuid(), self.hostname(), self.port()) !=
+                    (other.uuid(), other.hostname(), other.port()))
+        else:
+            raise NotImplementedError
 
     def uuid(self):
         return frombytes(self._tserver.uuid())
@@ -1649,6 +1662,77 @@ cdef class Scanner:
         check_status(self.scanner.NextBatch(&batch.batch))
         return batch
 
+    def set_cache_blocks(self, cache_blocks):
+        """
+        Sets the block caching policy.
+        Returns a reference to itself to facilitate chaining.
+
+        Parameters
+        ----------
+        cache_blocks : bool
+
+        Returns
+        -------
+        self : Scanner
+        """
+        check_status(self.scanner.SetCacheBlocks(cache_blocks))
+        return self
+
+    def keep_alive(self):
+        """
+        Keep the current remote scanner alive.
+
+        Keep the current remote scanner alive on the Tablet server for an
+        additional time-to-live (set by a configuration flag on the tablet
+        server). This is useful if the interval in between NextBatch() calls is
+        big enough that the remote scanner might be garbage collected (default
+        ttl is set to 60 secs.). This does not invalidate any previously
+        fetched results.
+
+        Returns
+        -------
+        self : Scanner
+        """
+        check_status(self.scanner.KeepAlive())
+        return self
+
+    def get_current_server(self):
+        """
+        Get the TabletServer that is currently handling the scan.
+
+        More concretely, this is the server that handled the most recent open()
+        or next_batch() RPC made by the server.
+
+        Returns
+        -------
+        tserver : TabletServer
+        """
+        cdef:
+            TabletServer tserver = TabletServer()
+            KuduTabletServer* tserver_p = NULL
+
+        check_status(self.scanner.GetCurrentServer(&tserver_p))
+        tserver._own = 1
+        tserver._init(tserver_p)
+        return tserver
+
+    def close(self):
+        """
+        Close the scanner.
+
+        Closing the scanner releases resources on the server. This call does
+        not block, and will not ever fail, even if the server cannot be
+        contacted.
+
+        Note: The scanner is reset to its initial state by this function.
+        You'll have to re-add any projection, predicates, etc if you want to
+        reuse this object.
+        Note: When the Scanner object is garbage collected, this method is run.
+        This method call is only needed if you want to explicitly release the
+        resources on the server.
+        """
+        self.scanner.Close()
+
 
 cdef class ScanToken:
     """
@@ -2112,10 +2196,6 @@ cdef class Replica:
     cdef _init(self, const KuduReplica* replica):
         self._replica = replica
         return self
-
-    def __dealloc__(self):
-        if self._replica != NULL:
-            del self._replica
 
     def is_leader(self):
         return self._replica.is_leader()
