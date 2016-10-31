@@ -34,6 +34,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
 
         self.assertEqual(table.name, self.ex_table)
         self.assertEqual(table.num_columns, len(self.schema))
+        self.assertIsNotNone(table.id)
 
     def test_table_column(self):
         table = self.client.table(self.ex_table)

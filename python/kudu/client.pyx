@@ -650,13 +650,18 @@ cdef class Table:
         return Column(self, spec)
 
     property name:
-
+        """Name of the table."""
         def __get__(self):
             return frombytes(self.ptr().name())
 
+    property id:
+        """Identifier string for the table."""
+        def __get__(self):
+            return frombytes(self.ptr().id())
+
     # XXX: don't love this name
     property num_columns:
-
+        """Number of columns in the table's schema."""
         def __get__(self):
             return len(self.schema)
 

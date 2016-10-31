@@ -551,6 +551,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
     cdef cppclass KuduTable:
 
         string& name()
+        string& id()
         KuduSchema& schema()
         int num_replicas()
 
