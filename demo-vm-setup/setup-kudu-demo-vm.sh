@@ -9,7 +9,8 @@ dir_resolve()
 }
 
 : ${VIRTUALBOX_NAME:=cloudera-quickstart-vm-5.8.0-kudu-virtualbox}
-: ${VIRTUALBOX_URL:=http://cloudera-kudu-beta.s3.amazonaws.com/${VIRTUALBOX_NAME}.ova}
+OVF=${VIRTUALBOX_NAME}.ova
+: ${VIRTUALBOX_URL:=http://cloudera-kudu-beta.s3.amazonaws.com/${OVF}}
 
 # VM Settings default.
 : ${VM_NAME:=kudu-demo}
@@ -22,13 +23,15 @@ if ! which VBoxManage >/dev/null ; then
   exit 1
 fi
 
-# Download quickstart VM
-OVF=${VIRTUALBOX_NAME}.ova
-if [ -e ${VIRTUALBOX_NAME}.ova ]; then
+# Download quickstart VM appliance
+if [ -e ${OVF} ]; then
   echo Using previously downloaded image
 else
   echo "Downloading Virtualbox Image file: ${VIRTUALBOX_URL}"
-  curl -O ${VIRTUALBOX_URL}
+  if ! curl -fLSs ${VIRTUALBOX_URL} --output ${OVF}; then
+    echo "Failed to download VirtuaBox appliance from ${VIRTUALBOX_URL}"
+    exit 1
+  fi
 fi
 
 # Set up the VM for the first time if it doesn't already exist.
