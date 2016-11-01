@@ -254,7 +254,7 @@ Status MiniKdc::WaitForKdcPorts() {
   // bind to the ports.
 
   string lsof;
-  RETURN_NOT_OK(GetBinaryPath("lsof", {"/sbin"}, &lsof));
+  RETURN_NOT_OK(GetBinaryPath("lsof", {"/sbin", "/usr/sbin"}, &lsof));
 
   vector<string> cmd = {
     lsof, "-wbn", "-Fn",
