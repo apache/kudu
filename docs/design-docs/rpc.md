@@ -166,7 +166,7 @@ Example:
 ```
 service CalculatorService {
   rpc AddExactlyOnce(ExactlyOnceRequestPB) returns (ExactlyOnceResponsePB) {
-    option (kudu.track_rpc_result) = true;
+    option (kudu.rpc.track_rpc_result) = true;
   }
 }
 ```
@@ -183,6 +183,54 @@ Note that enabling the option only guarantees exactly once semantics for
 the lifetime of the server, making sure that responses survive crashes
 and are also available in replicas (for replicated RPCs, like writes) needs
 that actions be taken outside of the RPC subsystem.
+
+## Authorization
+
+The RPC system supports basic hooks for authorization. The authorization
+method can be specified on either a per-service level, or on a per-method
+level (overriding any service-wide default, if set). Similar to above,
+we use custom protobuf 'options' to specify the authorization method:
+
+```
+  service MyService (
+    option (kudu.rpc.default_authz_method) = "MyAuthorization";
+    rpc SomeCall(ReqPB) returns (RespPB) {
+      option (kudu.rpc.authz_method) = "CustomAuthorization";
+    }
+  }
+```
+
+When authorization methods are specified, this enables the generation of pure
+virtual functions in the service interface:
+
+```
+  virtual bool MyAuthorization(const google::protobuf::Message* req,
+     google::protobuf::Message* resp, ::kudu::rpc::RpcContext *context) = 0;
+  virtual bool CustomAuthorization(const google::protobuf::Message* req,
+     google::protobuf::Message* resp, ::kudu::rpc::RpcContext *context) = 0;
+```
+
+You must implement these functions in your service class. The method should implement
+the desired authorization policy, and then return 'true' if the request is
+authorized. If the request should be rejected, it should call the relevant
+RpcContext method to respond with an error, and then return 'false', indicating
+that no further processing is required.
+
+The authorization methods are run on the same threadpool as the actual request,
+and are functionally equivalent to running the same method as the first
+line of your RPC method implementation. The benefit of declaring the authorization
+methods in the protobuf file versus inserting explicit function calls is that
+it is easier to apply authorization service-wide, and easier to verify that
+no methods were accidentally overlooked for authorization checks.
+
+For services where some methods have looser authorization checks than others,
+it's recommended that the most restrictive policy be applied on the service level,
+and then loosened on a per-method basis.
+
+NOTE: if a policy is provided both as a service-level 'default_authz_method'
+option and also as a method-level 'authz_method' option, the method-level
+option _overrides_ the service-level option. They are _not_ combined with
+a boolean 'AND' or 'OR' condition.
 
 ## RPC Sidecars
 

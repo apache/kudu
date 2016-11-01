@@ -106,6 +106,11 @@ void GeneratedServiceIf::Handle(InboundCall *call) {
                                    req.release(),
                                    resp,
                                    track_result ? result_tracker_ : nullptr);
+  if (!method_info->authz_method(ctx->request_pb(), resp, ctx)) {
+    // The authz_method itself should have responded to the RPC.
+    return;
+  }
+
   if (track_result) {
     RequestIdPB request_id(call->header().request_id());
     ResultTracker::RpcState state = ctx->result_tracker()->TrackRpc(
@@ -114,7 +119,7 @@ void GeneratedServiceIf::Handle(InboundCall *call) {
         ctx);
     switch (state) {
       case ResultTracker::NEW:
-        method_info->func(ctx->request_pb(), resp, ctx);
+        // Fall out of the 'if' statement to the normal path.
         break;
       case ResultTracker::COMPLETED:
       case ResultTracker::IN_PROGRESS:
@@ -125,9 +130,8 @@ void GeneratedServiceIf::Handle(InboundCall *call) {
       default:
         LOG(FATAL) << "Unknown state: " << state;
     }
-  } else {
-    method_info->func(ctx->request_pb(), resp, ctx);
   }
+  method_info->func(ctx->request_pb(), resp, ctx);
 }
 
 

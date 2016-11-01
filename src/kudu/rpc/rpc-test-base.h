@@ -288,6 +288,26 @@ class CalculatorService : public CalculatorServiceIf {
     context->RespondSuccess();
   }
 
+  bool AuthorizeDisallowAlice(const google::protobuf::Message* /*req*/,
+                              google::protobuf::Message* /*resp*/,
+                              RpcContext* context) override {
+    if (context->user_credentials().real_user() == "alice") {
+      context->RespondFailure(Status::NotAuthorized("alice is not allowed to call this method"));
+      return false;
+    }
+    return true;
+  }
+
+  bool AuthorizeDisallowBob(const google::protobuf::Message* /*req*/,
+                            google::protobuf::Message* /*resp*/,
+                            RpcContext* context) override {
+    if (context->user_credentials().real_user() == "bob") {
+      context->RespondFailure(Status::NotAuthorized("bob is not allowed to call this method"));
+      return false;
+    }
+    return true;
+  }
+
  private:
   void DoSleep(const SleepRequestPB *req,
                RpcContext *context) {

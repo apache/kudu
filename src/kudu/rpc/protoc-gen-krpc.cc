@@ -21,6 +21,14 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <ctype.h>
+
+#include <iostream>
+#include <map>
+#include <memory>
+#include <sstream>
+#include <string>
+
+#include <boost/optional.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/compiler/code_generator.h>
 #include <google/protobuf/compiler/plugin.h>
@@ -29,35 +37,50 @@
 #include <google/protobuf/io/printer.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/stubs/common.h>
-#include <iostream>
-#include <map>
-#include <memory>
-#include <sstream>
-#include <string>
 
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
-#include "kudu/gutil/strings/strip.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
 
+using boost::optional;
 using google::protobuf::FileDescriptor;
 using google::protobuf::io::Printer;
 using google::protobuf::MethodDescriptor;
 using google::protobuf::ServiceDescriptor;
 using std::map;
 using std::shared_ptr;
+using std::set;
 using std::string;
 using std::vector;
 
 namespace kudu {
 namespace rpc {
+
+namespace {
+
+// Return the name of the authorization method specified for this
+// RPC method, or boost::none if none is specified.
+//
+// This handles fallback to the service-wide default.
+optional<string> GetAuthzMethod(const MethodDescriptor& method) {
+  if (method.options().HasExtension(authz_method)) {
+    return method.options().GetExtension(authz_method);
+  }
+  if (method.service()->options().HasExtension(default_authz_method)) {
+    return method.service()->options().GetExtension(default_authz_method);
+  }
+  return boost::none;
+}
+
+} // anonymous namespace
 
 class Substituter {
  public:
@@ -185,6 +208,7 @@ class MethodSubstitutions : public Substituter {
     (*map)["metric_enum_key"] = strings::Substitute("kMetricIndex$0", method_->name());
     bool track_result = static_cast<bool>(method_->options().GetExtension(track_rpc_result));
     (*map)["track_result"] = track_result ? " true" : "false";
+    (*map)["authz_method"] = GetAuthzMethod(*method_).get_value_or("AuthorizeAllowAll");
   }
 
   // Strips the package from method arguments if they are in the same package as
@@ -367,6 +391,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "\n"
         );
 
+      set<string> authz_methods;
       for (int method_idx = 0; method_idx < service->method_count();
            ++method_idx) {
         const MethodDescriptor *method = service->method(method_idx);
@@ -376,8 +401,22 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "  virtual void $rpc_name$(const $request$ *req,\n"
         "     $response$ *resp, ::kudu::rpc::RpcContext *context) = 0;\n"
         );
-
         subs->Pop();
+        if (auto m = GetAuthzMethod(*method)) {
+          authz_methods.insert(m.get());
+        }
+      }
+
+      if (!authz_methods.empty()) {
+        printer->Print(
+        "\n\n"
+        "  // Authorization methods\n"
+        "  // ---------------------\n\n");
+      }
+      for (const string& m : authz_methods) {
+        printer->Print({ {"m", m} },
+        "  virtual bool $m$(const google::protobuf::Message* req,\n"
+        "     google::protobuf::Message* resp, ::kudu::rpc::RpcContext *context) = 0;\n");
       }
 
       Print(printer, *subs,
@@ -454,7 +493,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       Print(printer, *subs,
         "$service_name$If::$service_name$If(const scoped_refptr<MetricEntity>& entity,"
             " const scoped_refptr<ResultTracker>& result_tracker) {\n"
-            "result_tracker_ = result_tracker;"
+            "result_tracker_ = result_tracker;\n"
       );
       for (int method_idx = 0; method_idx < service->method_count();
            ++method_idx) {
@@ -466,6 +505,12 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
               "    scoped_refptr<RpcMethodInfo> mi(new RpcMethodInfo());\n"
               "    mi->req_prototype.reset(new $request$());\n"
               "    mi->resp_prototype.reset(new $response$());\n"
+              "    mi->authz_method = [this](const Message* req, Message* resp,\n"
+              "                              RpcContext* ctx) {\n"
+              "      return this->$authz_method$(static_cast<const $request$*>(req),\n"
+              "                           static_cast<$response$*>(resp),\n"
+              "                           ctx);\n"
+              "    };\n"
               "    mi->track_result = $track_result$;\n"
               "    mi->handler_latency_histogram =\n"
               "        METRIC_handler_latency_$rpc_full_name_plainchars$.Instantiate(entity);\n"

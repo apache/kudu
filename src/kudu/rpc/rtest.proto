@@ -118,8 +118,12 @@ message ExactlyOnceResponsePB {
 }
 
 service CalculatorService {
+  option (kudu.rpc.default_authz_method) = "AuthorizeDisallowAlice";
+
   rpc Add(AddRequestPB) returns(AddResponsePB);
-  rpc Sleep(SleepRequestPB) returns(SleepResponsePB);
+  rpc Sleep(SleepRequestPB) returns(SleepResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeDisallowBob";
+  };
   rpc Echo(EchoRequestPB) returns(EchoResponsePB);
   rpc WhoAmI(WhoAmIRequestPB) returns (WhoAmIResponsePB);
   rpc TestArgumentsInDiffPackage(kudu.rpc_test_diff_package.ReqDiffPackagePB)

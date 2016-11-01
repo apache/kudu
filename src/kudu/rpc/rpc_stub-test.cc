@@ -169,6 +169,52 @@ TEST_F(RpcStubTest, TestCustomCredentialsPropagated) {
   ASSERT_FALSE(resp.credentials().has_effective_user());
 }
 
+TEST_F(RpcStubTest, TestAuthorization) {
+  // First test calling WhoAmI() as user "alice", who is disallowed.
+  {
+    CalculatorServiceProxy p(client_messenger_, server_addr_);
+    UserCredentials creds;
+    creds.set_real_user("alice");
+    p.set_user_credentials(creds);
+
+    // Alice is disallowed by all RPCs.
+    RpcController controller;
+    WhoAmIRequestPB req;
+    WhoAmIResponsePB resp;
+    Status s = p.WhoAmI(req, &resp, &controller);
+    ASSERT_FALSE(s.ok());
+    ASSERT_EQ(s.ToString(),
+              "Remote error: Not authorized: alice is not allowed to call this method");
+  }
+
+  // Try some calls as "bob".
+  {
+    CalculatorServiceProxy p(client_messenger_, server_addr_);
+    UserCredentials creds;
+    creds.set_real_user("bob");
+    p.set_user_credentials(creds);
+
+    // "bob" is allowed to call WhoAmI().
+    {
+      RpcController controller;
+      WhoAmIRequestPB req;
+      WhoAmIResponsePB resp;
+      ASSERT_OK(p.WhoAmI(req, &resp, &controller));
+    }
+
+    // "bob" is not allowed to call "Sleep".
+    {
+      RpcController controller;
+      SleepRequestPB req;
+      req.set_sleep_micros(10);
+      SleepResponsePB resp;
+      Status s = p.Sleep(req, &resp, &controller);
+      ASSERT_EQ(s.ToString(),
+                "Remote error: Not authorized: bob is not allowed to call this method");
+    }
+  }
+}
+
 // Test that the user's remote address is accessible to the server.
 TEST_F(RpcStubTest, TestRemoteAddress) {
   CalculatorServiceProxy p(client_messenger_, server_addr_);

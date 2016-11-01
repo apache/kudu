@@ -41,6 +41,7 @@ namespace rpc {
 class InboundCall;
 class RemoteMethod;
 class RpcContext;
+class ServiceIf;
 
 // Generated services define an instance of this class for each
 // method that they implement. The generic server code implemented
@@ -57,6 +58,13 @@ struct RpcMethodInfo : public RefCountedThreadSafe<RpcMethodInfo> {
 
   // Whether we should track this method's result, using ResultTracker.
   bool track_result;
+
+  // The authorization function for this RPC. If this function
+  // returns false, the RPC has already been handled (i.e. rejected)
+  // by the authorization function.
+  std::function<bool(const google::protobuf::Message* req,
+                     google::protobuf::Message* resp,
+                     RpcContext* ctx)> authz_method;
 
   // The actual function to be called.
   std::function<void(const google::protobuf::Message* req,
@@ -82,6 +90,16 @@ class ServiceIf {
   // metrics collection will not be performed for this call.
   virtual RpcMethodInfo* LookupMethod(const RemoteMethod& method) {
     return nullptr;
+  }
+
+  // Default authorization method, which just allows all RPCs.
+  //
+  // See docs/design-docs/rpc.md for details on how to add custom
+  // authorization checks to a service.
+  bool AuthorizeAllowAll(const google::protobuf::Message* /*req*/,
+                         google::protobuf::Message* /*resp*/,
+                         RpcContext* /*ctx*/) {
+    return true;
   }
 
  protected:
