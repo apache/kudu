@@ -393,3 +393,8 @@ on writing code, though it may affect your ability to build from within Eclipse.
 
 1. https://cmake.org/pipermail/cmake-developers/2011-November/014153.html
 2. http://public.kitware.com/Bug/view.php?id=15102
+
+= Export Control Notice
+
+This distribution uses cryptographic software and may be subject to export controls.
+Please refer to docs/export_control.adoc for more information.
