@@ -246,7 +246,7 @@ TEST_F(TestSaslRpc, TestNoMatchingMechanisms) {
         CHECK_OK(sasl_client.EnablePlain("foo", "bar"));
         CHECK_OK(sasl_client.Init(kSaslAppName));
         Status s = sasl_client.Negotiate();
-        ASSERT_STR_CONTAINS(s.ToString(), "no mechanism available: No worthy mechs found");
+        ASSERT_STR_CONTAINS(s.ToString(), "client was missing the required SASL module");
       });
 }
 

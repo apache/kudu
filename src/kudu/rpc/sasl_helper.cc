@@ -153,8 +153,7 @@ Status SaslHelper::EnableGSSAPI() {
 
 Status SaslHelper::EnableMechanism(const string& mech) {
   if (PREDICT_FALSE(!ContainsKey(GlobalMechs(), mech))) {
-    LOG(DFATAL) << tag_ << ": Unable to find SASL plugin: " << mech;
-    return Status::InvalidArgument("Unable to find SASL plugin", mech);
+    return Status::InvalidArgument("unable to find SASL plugin", mech);
   }
   AddToLocalMechList(mech);
   return Status::OK();

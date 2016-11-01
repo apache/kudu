@@ -30,6 +30,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -376,6 +377,16 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
   if (s.ok()) {
     nego_ok_ = true;
   } else if (!s.IsIncomplete()) {
+    // If we failed to negotiate because we didn't share any mechanisms,
+    // the most likely case is that the client is missing the GSSAPI SASL
+    // module, and the server is configured to only allow Kerberos connections.
+    // Return a more usable error message in this case.
+    if (MatchPattern(s.ToString(), "*No worthy mechs found") &&
+        ContainsKey(mech_auth_map, kSaslMechGSSAPI) &&
+        !ContainsKey(helper_.LocalMechs(), kSaslMechGSSAPI)) {
+      return Status::NotAuthorized("server requires GSSAPI (Kerberos) authentication and "
+                                   "client was missing the required SASL module");
+    }
     return s;
   }
 

@@ -41,6 +41,7 @@
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
@@ -634,7 +635,21 @@ Status Connection::InitSaslClient() {
   // of reversing this address to its canonical hostname to determine
   // the expected server principal.
   sasl_client().set_server_fqdn(remote_.host());
-  RETURN_NOT_OK(sasl_client().EnableGSSAPI());
+  Status gssapi_status = sasl_client().EnableGSSAPI();
+  if (!gssapi_status.ok()) {
+    // If we can't enable GSSAPI, it's likely the client is just missing the
+    // appropriate SASL plugin. We don't want to require it to be installed
+    // if the user doesn't care about connecting to servers using Kerberos
+    // authentication. So, we'll just VLOG this here. If we try to connect
+    // to a server which requires Kerberos, we'll get a negotiation error
+    // at that point.
+    if (VLOG_IS_ON(1)) {
+      KLOG_FIRST_N(INFO, 1) << "Couldn't enable GSSAPI (Kerberos) SASL plugin: "
+                            << gssapi_status.message().ToString()
+                            << ". This process will be unable to connect to "
+                            << "servers requiring Kerberos authentication.";
+    }
+  }
   // TODO(todd): we dont seem to ever use ANONYMOUS. Should we remove it?
   RETURN_NOT_OK(sasl_client().EnableAnonymous());
   RETURN_NOT_OK(sasl_client().EnablePlain(user_credentials().real_user(), ""));
