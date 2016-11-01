@@ -203,7 +203,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
     if (failRpc) {
       Status statusNetworkError =
-          Status.NetworkError(getPeerUuidLoggingString() + "Connection reset on " + chan);
+          Status.NetworkError(getPeerUuidLoggingString() + "Connection reset");
       failOrRetryRpc(rpc, new RecoverableException(statusNetworkError));
     } else if (tryAgain) {
       // This recursion will not lead to a loop because we only get here if we
@@ -710,7 +710,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       pending_rpcs = null;
     }
     Status statusNetworkError =
-        Status.NetworkError(getPeerUuidLoggingString() + "Connection reset on " + chan);
+        Status.NetworkError(getPeerUuidLoggingString() + "Connection reset");
     RecoverableException exception = new RecoverableException(statusNetworkError);
 
     failOrRetryRpcs(rpcs, exception);
