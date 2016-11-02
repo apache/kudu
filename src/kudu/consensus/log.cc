@@ -829,12 +829,18 @@ Status Log::Close() {
   }
 }
 
+bool Log::HasOnDiskData(FsManager* fs_manager, const string& tablet_id) {
+  string wal_dir = fs_manager->GetTabletWalDir(tablet_id);
+  return fs_manager->env()->FileExists(wal_dir);
+}
+
 Status Log::DeleteOnDiskData(FsManager* fs_manager, const string& tablet_id) {
   string wal_dir = fs_manager->GetTabletWalDir(tablet_id);
   Env* env = fs_manager->env();
   if (!env->FileExists(wal_dir)) {
     return Status::OK();
   }
+  LOG(INFO) << "T " << tablet_id << " Deleting WAL directory";
   RETURN_NOT_OK_PREPEND(env->DeleteRecursively(wal_dir),
                         "Unable to recursively delete WAL dir for tablet " + tablet_id);
   return Status::OK();

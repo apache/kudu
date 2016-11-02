@@ -185,6 +185,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   Status DeleteTabletData(TabletDataState delete_type,
                           const boost::optional<consensus::OpId>& last_logged_opid);
 
+  // Return true if this metadata references no blocks (either live or orphaned) and is
+  // already marked as tombstoned. If this is the case, then calling DeleteTabletData
+  // would be a no-op.
+  bool IsTombstonedWithNoBlocks() const;
+
   // Permanently deletes the superblock from the disk.
   // DeleteTabletData() must first be called and the tablet data state must be
   // TABLET_DATA_DELETED.

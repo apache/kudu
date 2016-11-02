@@ -1196,7 +1196,6 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
   LOG(INFO) << "Waiting for second tablet to be tombstoned...";
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
-
   // The tombstoned tablets will still show up in ListTablets(),
   // just with their data state set as TOMBSTONED. They should also be listed
   // as NOT_STARTED because we restarted the server.
@@ -1206,6 +1205,16 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
     ASSERT_EQ(TABLET_DATA_TOMBSTONED, t.tablet_status().tablet_data_state())
         << t.tablet_status().tablet_id() << " not tombstoned";
   }
+
+  // Check that, upon restart of the tablet server with a tombstoned tablet,
+  // we don't unnecessary "roll forward" and rewrite the tablet metadata file
+  // when it is already fully deleted.
+  int64_t orig_mtime = inspect_->GetTabletSuperBlockMTimeOrDie(kTsIndex, tablet_id);
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
+  int64_t new_mtime = inspect_->GetTabletSuperBlockMTimeOrDie(kTsIndex, tablet_id);
+  ASSERT_EQ(orig_mtime, new_mtime)
+      << "Tablet superblock should not have been re-flushed unnecessarily";
 
   // Finally, delete all tablets on the TS, and wait for all data to be gone.
   LOG(INFO) << "Deleting all tablets...";

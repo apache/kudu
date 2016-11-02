@@ -148,6 +148,9 @@ class Log : public RefCountedThreadSafe<Log> {
   // Syncs all state and closes the log.
   Status Close();
 
+  // Return true if there is any on-disk data for the given tablet.
+  static bool HasOnDiskData(FsManager* fs_manager, const std::string& tablet_id);
+
   // Delete all WAL data from the log associated with this tablet.
   // REQUIRES: The Log must be closed.
   static Status DeleteOnDiskData(FsManager* fs_manager, const std::string& tablet_id);

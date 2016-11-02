@@ -887,17 +887,24 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
       << "Unexpected TabletDataState in tablet " << tablet_id << ": "
       << TabletDataState_Name(data_state) << " (" << data_state << ")";
 
-  // Roll forward deletions, as needed.
-  LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Manager startup: Rolling forward tablet deletion "
-               << "of type " << TabletDataState_Name(data_state);
+  // If the tablet is already fully tombstoned with no remaining data or WAL,
+  // then no need to roll anything forward.
+  bool skip_deletion = meta->IsTombstonedWithNoBlocks() &&
+      !Log::HasOnDiskData(meta->fs_manager(), tablet_id);
+
+  LOG_IF(WARNING, !skip_deletion)
+      << LogPrefix(tablet_id) << "Tablet Manager startup: Rolling forward tablet deletion "
+      << "of type " << TabletDataState_Name(data_state);
 
   if (data_state == TABLET_DATA_COPYING) {
     // We tombstone tablets that failed to copy.
     data_state = TABLET_DATA_TOMBSTONED;
   }
 
-  // Passing no OpId will retain the last_logged_opid that was previously in the metadata.
-  RETURN_NOT_OK(DeleteTabletData(meta, data_state, boost::none));
+  if (!skip_deletion) {
+    // Passing no OpId will retain the last_logged_opid that was previously in the metadata.
+    RETURN_NOT_OK(DeleteTabletData(meta, data_state, boost::none));
+  }
 
   // Register TOMBSTONED tablets so that they get reported to the Master, which
   // allows us to permanently delete replica tombstones when a table gets

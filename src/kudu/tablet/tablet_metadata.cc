@@ -187,6 +187,13 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
   return Flush();
 }
 
+bool TabletMetadata::IsTombstonedWithNoBlocks() const {
+  std::lock_guard<LockType> l(data_lock_);
+  return tablet_data_state_ == TABLET_DATA_TOMBSTONED &&
+      rowsets_.empty() &&
+      orphaned_blocks_.empty();
+}
+
 Status TabletMetadata::DeleteSuperBlock() {
   std::lock_guard<LockType> l(data_lock_);
   if (!orphaned_blocks_.empty()) {
