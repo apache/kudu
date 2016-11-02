@@ -17,8 +17,11 @@
 
 package org.apache.kudu.client;
 
+import java.util.ArrayList;
 import java.util.List;
 
+import com.google.common.base.Predicates;
+import com.google.common.collect.Iterators;
 import com.stumbleupon.async.Deferred;
 
 import org.apache.kudu.Schema;
@@ -200,5 +203,29 @@ public class KuduTable {
                                                  byte[] endKey,
                                                  long deadline) throws Exception {
     return client.syncLocateTable(this, startKey, endKey, deadline);
+  }
+
+  /**
+   * Retrieves a formatted representation of this table's range partitions. The
+   * range partitions will be returned in sorted order by value, and will
+   * contain no duplicates.
+   *
+   * @param deadline the deadline of the operation
+   * @return a list of the formatted range partitions
+   */
+  @InterfaceAudience.LimitedPrivate("Impala")
+  @InterfaceStability.Unstable
+  public List<String> getFormattedRangePartitions(long deadline) throws Exception {
+    List<String> rangePartitions = new ArrayList<>();
+    for (LocatedTablet tablet : getTabletsLocations(deadline)) {
+      Partition partition = tablet.getPartition();
+      // Filter duplicate range partitions by taking only the tablets whose hash
+      // partitions are all 0s.
+      if (!Iterators.all(partition.getHashBuckets().iterator(), Predicates.equalTo(0))) {
+        continue;
+      }
+      rangePartitions.add(partition.formatRangePartition(this));
+    }
+    return rangePartitions;
   }
 }

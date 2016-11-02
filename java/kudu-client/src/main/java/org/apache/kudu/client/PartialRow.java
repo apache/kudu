@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
+import java.util.ListIterator;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -31,6 +32,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.util.StringUtil;
 
 /**
  * Class used to represent parts of a row along with its schema.<p>
@@ -541,7 +543,7 @@ public class PartialRow {
   /**
    * Appends a debug string for the provided columns in the row.
    *
-   * @param idxs the column indexes.
+   * @param idxs the column indexes
    * @param sb the string builder to append to
    */
   void appendDebugString(List<Integer> idxs, StringBuilder sb) {
@@ -560,54 +562,85 @@ public class PartialRow {
       sb.append(col.getName());
       sb.append('=');
 
-      Preconditions.checkState(columnsBitSet.get(idx), "Column %s is not set", col.getName());
+      appendCellValueDebugString(idx, sb);
+    }
+  }
 
-      if (nullsBitSet != null && nullsBitSet.get(idx)) {
-        sb.append("NULL");
-        continue;
+  /**
+   * Appends a short debug string for the provided columns in the row.
+   *
+   * @param idxs the column indexes
+   * @param sb the string builder to append to
+   */
+  void appendShortDebugString(List<Integer> idxs, StringBuilder sb) {
+    boolean first = true;
+    for (int idx : idxs) {
+      if (first) {
+        first = false;
+      } else {
+        sb.append(", ");
       }
+      appendCellValueDebugString(idx, sb);
+    }
+  }
 
-      switch (col.getType()) {
-        case BOOL:
-          sb.append(Bytes.getBoolean(rowAlloc, schema.getColumnOffset(idx)));
-          break;
-        case INT8:
-          sb.append(Bytes.getByte(rowAlloc, schema.getColumnOffset(idx)));
-          break;
-        case INT16:
-          sb.append(Bytes.getShort(rowAlloc, schema.getColumnOffset(idx)));
-          break;
-        case INT32:
-          sb.append(Bytes.getInt(rowAlloc, schema.getColumnOffset(idx)));
-          break;
-        case INT64:
-          sb.append(Bytes.getLong(rowAlloc, schema.getColumnOffset(idx)));
-          break;
-        case UNIXTIME_MICROS:
-          sb.append(RowResult.timestampToString(
-              Bytes.getLong(rowAlloc, schema.getColumnOffset(idx))));
-          break;
-        case FLOAT:
-          sb.append(Bytes.getFloat(rowAlloc, schema.getColumnOffset(idx)));
-          break;
-        case DOUBLE:
-          sb.append(Bytes.getDouble(rowAlloc, schema.getColumnOffset(idx)));
-          break;
-        case BINARY:
-        case STRING:
-          ByteBuffer value = getVarLengthData().get(idx).duplicate();
-          value.reset(); // Make sure we start at the beginning.
-          byte[] data = new byte[value.limit()];
-          value.get(data);
-          if (col.getType() == Type.STRING) {
-            sb.append(Bytes.getString(data));
-          } else {
-            sb.append(Bytes.pretty(data));
-          }
-          break;
-        default:
-          throw new RuntimeException("unreachable");
-      }
+  /**
+   * Appends a debug string for the provided cell value in the row.
+   *
+   * @param idx the column index
+   * @param sb the string builder to append to
+   */
+  void appendCellValueDebugString(Integer idx, StringBuilder sb) {
+    ColumnSchema col = schema.getColumnByIndex(idx);
+    Preconditions.checkState(columnsBitSet.get(idx), "Column %s is not set", col.getName());
+
+    if (nullsBitSet != null && nullsBitSet.get(idx)) {
+      sb.append("NULL");
+      return;
+    }
+
+    switch (col.getType()) {
+      case BOOL:
+        sb.append(Bytes.getBoolean(rowAlloc, schema.getColumnOffset(idx)));
+        return;
+      case INT8:
+        sb.append(Bytes.getByte(rowAlloc, schema.getColumnOffset(idx)));
+        return;
+      case INT16:
+        sb.append(Bytes.getShort(rowAlloc, schema.getColumnOffset(idx)));
+        return;
+      case INT32:
+        sb.append(Bytes.getInt(rowAlloc, schema.getColumnOffset(idx)));
+        return;
+      case INT64:
+        sb.append(Bytes.getLong(rowAlloc, schema.getColumnOffset(idx)));
+        return;
+      case UNIXTIME_MICROS:
+        sb.append(RowResult.timestampToString(
+            Bytes.getLong(rowAlloc, schema.getColumnOffset(idx))));
+        return;
+      case FLOAT:
+        sb.append(Bytes.getFloat(rowAlloc, schema.getColumnOffset(idx)));
+        return;
+      case DOUBLE:
+        sb.append(Bytes.getDouble(rowAlloc, schema.getColumnOffset(idx)));
+        return;
+      case BINARY:
+      case STRING:
+        ByteBuffer value = getVarLengthData().get(idx).duplicate();
+        value.reset(); // Make sure we start at the beginning.
+        byte[] data = new byte[value.limit()];
+        value.get(data);
+        if (col.getType() == Type.STRING) {
+          sb.append('"');
+          StringUtil.appendEscapedSQLString(Bytes.getString(data), sb);
+          sb.append('"');
+        } else {
+          sb.append(Bytes.pretty(data));
+        }
+        return;
+      default:
+        throw new RuntimeException("unreachable");
     }
   }
 
@@ -693,7 +726,7 @@ public class PartialRow {
   boolean incrementColumn(int index) {
     Type type = schema.getColumnByIndex(index).getType();
     Preconditions.checkState(isSet(index));
-    int offset = getPositionInRowAllocAndSetBitSet(index);
+    int offset = schema.getColumnOffset(index);
     switch (type) {
       case BOOL: {
         boolean isFalse = rowAlloc[offset] == 0;
@@ -754,10 +787,179 @@ public class PartialRow {
       case STRING:
       case BINARY: {
         ByteBuffer data = varLengthData.get(index);
+        data.reset();
         int len = data.limit() - data.position();
         byte[] incremented = new byte[len + 1];
         System.arraycopy(data.array(), data.arrayOffset() + data.position(), incremented, 0, len);
         addVarLengthData(index, incremented);
+        return true;
+      }
+      default:
+        throw new RuntimeException("unreachable");
+    }
+  }
+
+  /**
+   * Returns {@code true} if the upper row is equal to the incremented lower
+   * row. Neither row is modified.
+   * @param lower the lower row
+   * @param upper the upper, possibly incremented, row
+   * @param indexes the columns in key order
+   * @return whether the upper row is equal to the incremented lower row
+   */
+  static boolean isIncremented(PartialRow lower, PartialRow upper, List<Integer> indexes) {
+    boolean equals = false;
+    ListIterator<Integer> iter = indexes.listIterator(indexes.size());
+    while (iter.hasPrevious()) {
+      int index = iter.previous();
+      if (equals) {
+        if (isCellEqual(lower, upper, index)) {
+          continue;
+        }
+        return false;
+      }
+
+      if (!lower.isSet(index) && !upper.isSet(index)) {
+        continue;
+      }
+      if (!isCellIncremented(lower, upper, index)) {
+        return false;
+      }
+      equals = true;
+    }
+    return equals;
+  }
+
+  /**
+   * Checks if the specified cell is equal in both rows.
+   * @param a a row
+   * @param b a row
+   * @param index the column index
+   * @return {@code true} if the cell values for the given column are equal
+   */
+  private static boolean isCellEqual(PartialRow a, PartialRow b, int index) {
+    // These checks are perhaps overly restrictive, but right now we only use
+    // this method for checking fully-set keys.
+    Preconditions.checkArgument(a.getSchema().equals(b.getSchema()));
+    Preconditions.checkArgument(a.getSchema().getColumnByIndex(index).isKey());
+    Preconditions.checkArgument(a.isSet(index));
+    Preconditions.checkArgument(b.isSet(index));
+
+    Type type = a.getSchema().getColumnByIndex(index).getType();
+    int offset = a.getSchema().getColumnOffset(index);
+
+    switch (type) {
+      case BOOL:
+        return a.rowAlloc[offset] == b.rowAlloc[offset];
+      case INT8:
+        return a.rowAlloc[offset] == b.rowAlloc[offset];
+      case INT16:
+        return Bytes.getShort(a.rowAlloc, offset) == Bytes.getShort(b.rowAlloc, offset);
+      case INT32:
+        return Bytes.getInt(a.rowAlloc, offset) == Bytes.getInt(b.rowAlloc, offset);
+      case INT64:
+      case UNIXTIME_MICROS:
+        return Bytes.getLong(a.rowAlloc, offset) == Bytes.getLong(b.rowAlloc, offset);
+      case FLOAT:
+        return Bytes.getFloat(a.rowAlloc, offset) == Bytes.getFloat(b.rowAlloc, offset);
+      case DOUBLE:
+        return Bytes.getDouble(a.rowAlloc, offset) == Bytes.getDouble(b.rowAlloc, offset);
+      case STRING:
+      case BINARY: {
+        ByteBuffer aData = a.varLengthData.get(index).duplicate();
+        ByteBuffer bData = b.varLengthData.get(index).duplicate();
+        aData.reset();
+        bData.reset();
+        int aLen = aData.limit() - aData.position();
+        int bLen = bData.limit() - bData.position();
+
+        if (aLen != bLen) {
+          return false;
+        }
+        for (int i = 0; i < aLen; i++) {
+          if (aData.get(aData.position() + i) != bData.get(bData.position() + i)) {
+            return false;
+          }
+        }
+        return true;
+      }
+      default:
+        throw new RuntimeException("unreachable");
+    }
+  }
+
+  /**
+   * Checks if the specified cell is in the upper row is an incremented version
+   * of the cell in the lower row.
+   * @param lower the lower row
+   * @param upper the possibly incremented upper row
+   * @param index the index of the column to check
+   * @return {@code true} if the column cell value in the upper row is equal to
+   *         the value in the lower row, incremented by one.
+   */
+  private static boolean isCellIncremented(PartialRow lower, PartialRow upper, int index) {
+    // These checks are perhaps overly restrictive, but right now we only use
+    // this method for checking fully-set keys.
+    Preconditions.checkArgument(lower.getSchema().equals(upper.getSchema()));
+    Preconditions.checkArgument(lower.getSchema().getColumnByIndex(index).isKey());
+    Preconditions.checkArgument(lower.isSet(index));
+    Preconditions.checkArgument(upper.isSet(index));
+
+    Type type = lower.getSchema().getColumnByIndex(index).getType();
+    int offset = lower.getSchema().getColumnOffset(index);
+
+    switch (type) {
+      case BOOL: return lower.rowAlloc[offset] + 1 == upper.rowAlloc[offset];
+      case INT8: {
+        byte val = lower.rowAlloc[offset];
+        return val != Byte.MAX_VALUE && val + 1 == upper.rowAlloc[offset];
+      }
+      case INT16: {
+        short val = Bytes.getShort(lower.rowAlloc, offset);
+        return val != Short.MAX_VALUE && val + 1 == Bytes.getShort(upper.rowAlloc, offset);
+      }
+      case INT32: {
+        int val = Bytes.getInt(lower.rowAlloc, offset);
+        return val != Integer.MAX_VALUE && val + 1 == Bytes.getInt(upper.rowAlloc, offset);
+      }
+      case INT64:
+      case UNIXTIME_MICROS: {
+        long val = Bytes.getLong(lower.rowAlloc, offset);
+        return val != Long.MAX_VALUE && val + 1 == Bytes.getLong(upper.rowAlloc, offset);
+      }
+      case FLOAT: {
+        float val = Bytes.getFloat(lower.rowAlloc, offset);
+        return val != Float.POSITIVE_INFINITY &&
+               Math.nextAfter(val, Float.POSITIVE_INFINITY) ==
+                   Bytes.getFloat(upper.rowAlloc, offset);
+      }
+      case DOUBLE: {
+        double val = Bytes.getDouble(lower.rowAlloc, offset);
+        return val != Double.POSITIVE_INFINITY &&
+               Math.nextAfter(val, Double.POSITIVE_INFINITY) ==
+                   Bytes.getDouble(upper.rowAlloc, offset);
+      }
+      case STRING:
+      case BINARY: {
+        // Check that b is 1 byte bigger than a, the extra byte is 0, and the other bytes are equal.
+        ByteBuffer aData = lower.varLengthData.get(index).duplicate();
+        ByteBuffer bData = upper.varLengthData.get(index).duplicate();
+        aData.reset();
+        bData.reset();
+        int aLen = aData.limit() - aData.position();
+        int bLen = bData.limit() - bData.position();
+
+        if (aLen == Integer.MAX_VALUE ||
+            aLen + 1 != bLen ||
+            bData.get(bData.limit() - 1) != 0) {
+          return false;
+        }
+
+        for (int i = 0; i < aLen; i++) {
+          if (aData.get(aData.position() + i) != bData.get(bData.position() + i)) {
+            return false;
+          }
+        }
         return true;
       }
       default:

@@ -16,16 +16,13 @@
 // under the License.
 package org.apache.kudu.client;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
@@ -321,6 +318,168 @@ public class TestKuduTable extends BaseKuduTest {
     OperationResponse response = session.apply(insert);
     assertTrue(response.hasRowError());
     assertTrue(response.getRowError().getErrorStatus().isNotFound());
+  }
+
+  @Test(timeout = 100000)
+  public void testFormatRangePartitions() throws Exception {
+    String tableName = name.getMethodName() + System.currentTimeMillis();
+    CreateTableOptions builder = getBasicCreateTableOptions();
+    List<String> expected = Lists.newArrayList();
+
+    {
+      expected.add("VALUES < -300");
+      PartialRow upper = basicSchema.newPartialRow();
+      upper.addInt(0, -300);
+      builder.addRangePartition(basicSchema.newPartialRow(), upper);
+    }
+    {
+      expected.add("-100 <= VALUES < 0");
+      PartialRow lower = basicSchema.newPartialRow();
+      lower.addInt(0, -100);
+      PartialRow upper = basicSchema.newPartialRow();
+      upper.addInt(0, 0);
+      builder.addRangePartition(lower, upper);
+    }
+    {
+      expected.add("0 <= VALUES < 100");
+      PartialRow lower = basicSchema.newPartialRow();
+      lower.addInt(0, -1);
+      PartialRow upper = basicSchema.newPartialRow();
+      upper.addInt(0, 99);
+      builder.addRangePartition(lower, upper,
+                                RangePartitionBound.EXCLUSIVE_BOUND,
+                                RangePartitionBound.INCLUSIVE_BOUND);
+    }
+    {
+      expected.add("VALUES = 300");
+      PartialRow lower = basicSchema.newPartialRow();
+      lower.addInt(0, 300);
+      PartialRow upper = basicSchema.newPartialRow();
+      upper.addInt(0, 300);
+      builder.addRangePartition(lower, upper,
+                                RangePartitionBound.INCLUSIVE_BOUND,
+                                RangePartitionBound.INCLUSIVE_BOUND);
+    }
+    {
+      expected.add("VALUES >= 400");
+      PartialRow lower = basicSchema.newPartialRow();
+      lower.addInt(0, 400);
+      builder.addRangePartition(lower, basicSchema.newPartialRow());
+    }
+
+    syncClient.createTable(tableName, basicSchema, builder);
+    assertEquals(
+        expected,
+        syncClient.openTable(tableName).getFormattedRangePartitions(10000));
+  }
+
+  @Test(timeout = 100000)
+  public void testFormatRangePartitionsCompoundColumns() throws Exception {
+    String tableName = name.getMethodName() + System.currentTimeMillis();
+
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("a", Type.STRING).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("b", Type.INT8).key(true).build());
+    Schema schema = new Schema(columns);
+
+    CreateTableOptions builder = new CreateTableOptions();
+    builder.addHashPartitions(ImmutableList.of("a"), 2);
+    builder.addHashPartitions(ImmutableList.of("b"), 2);
+    builder.setRangePartitionColumns(ImmutableList.of("a", "b"));
+    List<String> expected = Lists.newArrayList();
+
+    {
+      expected.add("VALUES < (\"\", -100)");
+      PartialRow upper = schema.newPartialRow();
+      upper.addString(0, "");
+      upper.addByte(1, (byte) -100);
+      builder.addRangePartition(schema.newPartialRow(), upper);
+    }
+    {
+      expected.add("VALUES = (\"abc\", 0)");
+      PartialRow lower = schema.newPartialRow();
+      lower.addString(0, "abc");
+      lower.addByte(1, (byte) 0);
+      PartialRow upper = schema.newPartialRow();
+      upper.addString(0, "abc");
+      upper.addByte(1, (byte) 1);
+      builder.addRangePartition(lower, upper);
+    }
+    {
+      expected.add("(\"def\", 0) <= VALUES < (\"ghi\", 100)");
+      PartialRow lower = schema.newPartialRow();
+      lower.addString(0, "def");
+      lower.addByte(1, (byte) -1);
+      PartialRow upper = schema.newPartialRow();
+      upper.addString(0, "ghi");
+      upper.addByte(1, (byte) 99);
+      builder.addRangePartition(lower, upper,
+                                RangePartitionBound.EXCLUSIVE_BOUND,
+                                RangePartitionBound.INCLUSIVE_BOUND);
+    }
+
+    syncClient.createTable(tableName, schema, builder);
+    assertEquals(
+        expected,
+        syncClient.openTable(tableName).getFormattedRangePartitions(10000));
+  }
+
+  @Test(timeout = 100000)
+  public void testFormatRangePartitionsStringColumn() throws Exception {
+    String tableName = name.getMethodName() + System.currentTimeMillis();
+
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("a", Type.STRING).key(true).build());
+    Schema schema = new Schema(columns);
+
+    CreateTableOptions builder = new CreateTableOptions();
+    builder.setRangePartitionColumns(ImmutableList.of("a"));
+    List<String> expected = Lists.newArrayList();
+
+    {
+      expected.add("VALUES < \"\\0\"");
+      PartialRow upper = schema.newPartialRow();
+      upper.addString(0, "\0");
+      builder.addRangePartition(schema.newPartialRow(), upper);
+    }
+    {
+      expected.add("VALUES = \"abc\"");
+      PartialRow lower = schema.newPartialRow();
+      lower.addString(0, "abc");
+      PartialRow upper = schema.newPartialRow();
+      upper.addString(0, "abc\0");
+      builder.addRangePartition(lower, upper);
+    }
+    {
+      expected.add("\"def\" <= VALUES < \"ghi\"");
+      PartialRow lower = schema.newPartialRow();
+      lower.addString(0, "def");
+      PartialRow upper = schema.newPartialRow();
+      upper.addString(0, "ghi");
+      builder.addRangePartition(lower, upper);
+    }
+    {
+      expected.add("VALUES >= \"z\"");
+      PartialRow lower = schema.newPartialRow();
+      lower.addString(0, "z");
+      builder.addRangePartition(lower, schema.newPartialRow());
+    }
+
+    syncClient.createTable(tableName, schema, builder);
+    assertEquals(
+        expected,
+        syncClient.openTable(tableName).getFormattedRangePartitions(10000));
+  }
+
+  @Test(timeout = 100000)
+  public void testFormatRangePartitionsUnbounded() throws Exception {
+    String tableName = name.getMethodName() + System.currentTimeMillis();
+    CreateTableOptions builder = getBasicCreateTableOptions();
+    syncClient.createTable(tableName, basicSchema, builder);
+
+    assertEquals(
+        ImmutableList.of("UNBOUNDED"),
+        syncClient.openTable(tableName).getFormattedRangePartitions(10000));
   }
 
   public KuduTable createTableWithSplitsAndTest(int splitsCount) throws Exception {

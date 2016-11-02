@@ -17,11 +17,13 @@
 
 package org.apache.kudu.client;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 import com.google.common.base.Objects;
 
+import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 
@@ -184,5 +186,88 @@ public class Partition implements Comparable<Partition> {
     return String.format("[%s, %s)",
                          partitionKeyStart.length == 0 ? "<start>" : Bytes.hex(partitionKeyStart),
                          partitionKeyEnd.length == 0 ? "<end>" : Bytes.hex(partitionKeyEnd));
+  }
+
+  /**
+   * Formats the range partition into a string suitable for debug printing.
+   *
+   * @param table that this partition belongs to
+   * @return a string containing a formatted representation of the range partition
+   */
+  String formatRangePartition(KuduTable table) {
+    Schema schema = table.getSchema();
+    PartitionSchema partitionSchema = table.getPartitionSchema();
+    PartitionSchema.RangeSchema rangeSchema = partitionSchema.getRangeSchema();
+
+    if (rangeSchema.getColumns().isEmpty()) {
+      return "";
+    }
+    if (rangeKeyStart.length == 0 && rangeKeyEnd.length == 0) {
+      return "UNBOUNDED";
+    }
+
+    List<Integer> idxs = new ArrayList<>();
+    for (int id : partitionSchema.getRangeSchema().getColumns()) {
+      idxs.add(schema.getColumnIndex(id));
+    }
+
+    int numColumns = rangeSchema.getColumns().size();
+    StringBuilder sb = new StringBuilder();
+
+    if (rangeKeyEnd.length == 0) {
+      sb.append("VALUES >= ");
+      if (numColumns > 1) {
+        sb.append('(');
+      }
+      KeyEncoder.decodeRangePartitionKey(schema, partitionSchema, rangeKeyStart)
+                .appendShortDebugString(idxs, sb);
+      if (numColumns > 1) {
+        sb.append(')');
+      }
+    } else if (rangeKeyStart.length == 0) {
+      sb.append("VALUES < ");
+      if (numColumns > 1) {
+        sb.append('(');
+      }
+      KeyEncoder.decodeRangePartitionKey(schema, partitionSchema, rangeKeyEnd)
+                .appendShortDebugString(idxs, sb);
+      if (numColumns > 1) {
+        sb.append(')');
+      }
+    } else {
+      PartialRow lowerBound =
+          KeyEncoder.decodeRangePartitionKey(schema, partitionSchema, rangeKeyStart);
+      PartialRow upperBound =
+          KeyEncoder.decodeRangePartitionKey(schema, partitionSchema, rangeKeyEnd);
+
+      if (PartialRow.isIncremented(lowerBound, upperBound, idxs)) {
+        sb.append("VALUES = ");
+        if (numColumns > 1) {
+          sb.append('(');
+        }
+        lowerBound.appendShortDebugString(idxs, sb);
+        if (numColumns > 1) {
+          sb.append(')');
+        }
+      } else {
+        if (numColumns > 1) {
+          sb.append('(');
+        }
+        lowerBound.appendShortDebugString(idxs, sb);
+        if (numColumns > 1) {
+          sb.append(')');
+        }
+        sb.append(" <= VALUES < ");
+        if (numColumns > 1) {
+          sb.append('(');
+        }
+        upperBound.appendShortDebugString(idxs, sb);
+        if (numColumns > 1) {
+          sb.append(')');
+        }
+      }
+    }
+
+    return sb.toString();
   }
 }

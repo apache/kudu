@@ -247,7 +247,6 @@ class KeyEncoder {
     buf.order(ByteOrder.BIG_ENDIAN);
 
     List<Integer> buckets = new ArrayList<>();
-    PartialRow row = schema.newPartialRow();
 
     for (HashBucketSchema hashSchema : partitionSchema.getHashBucketSchemas()) {
       if (buf.hasRemaining()) {
@@ -257,6 +256,37 @@ class KeyEncoder {
       }
     }
 
+    return new Pair<>(buckets, decodeRangePartitionKey(schema, partitionSchema, buf));
+  }
+
+  /**
+   * Decodes a range partition key into a partial row.
+   *
+   * @param schema the schema of the table
+   * @param partitionSchema the partition schema of the table
+   * @param key the encoded range partition key
+   * @return the decoded range key
+   */
+  public static PartialRow decodeRangePartitionKey(Schema schema,
+                                                   PartitionSchema partitionSchema,
+                                                   byte[] key) {
+    ByteBuffer buf = ByteBuffer.wrap(key);
+    buf.order(ByteOrder.BIG_ENDIAN);
+    return decodeRangePartitionKey(schema, partitionSchema, buf);
+  }
+
+  /**
+   * Decodes a range partition key into a partial row.
+   *
+   * @param schema the schema of the table
+   * @param partitionSchema the partition schema of the table
+   * @param buf the encoded range partition key
+   * @return the decoded range key
+   */
+  private static PartialRow decodeRangePartitionKey(Schema schema,
+                                                    PartitionSchema partitionSchema,
+                                                    ByteBuffer buf) {
+    PartialRow row = schema.newPartialRow();
     Iterator<Integer> rangeIds = partitionSchema.getRangeSchema().getColumns().iterator();
     while (rangeIds.hasNext()) {
       int idx = schema.getColumnIndex(rangeIds.next());
@@ -270,8 +300,7 @@ class KeyEncoder {
     if (buf.hasRemaining()) {
       throw new IllegalArgumentException("Unable to decode all partition key bytes");
     }
-
-    return new Pair<>(buckets, row);
+    return row;
   }
 
   /**
