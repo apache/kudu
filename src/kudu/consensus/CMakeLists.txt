@@ -135,7 +135,6 @@ ADD_KUDU_TEST(log_index-test)
 ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(quorum_util-test)
 ADD_KUDU_TEST(raft_consensus_quorum-test)
-ADD_KUDU_TEST(raft_consensus_state-test)
 
 # Our current version of gmock overrides virtual functions without adding
 # the 'override' keyword which, since our move to c++11, make the compiler

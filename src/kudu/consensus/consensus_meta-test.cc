@@ -202,6 +202,7 @@ TEST_F(ConsensusMetadataTest, TestToConsensusStatePB) {
 
   uuids.push_back(peer_uuid);
   RaftConfigPB pending_config = BuildConfig(uuids);
+  pending_config.set_opid_index(2);
 
   // Set the pending configuration to be one containing the current leader (who is not
   // in the committed configuration). Ensure that the leader shows up when we ask for

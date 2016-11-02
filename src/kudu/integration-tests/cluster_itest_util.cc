@@ -671,6 +671,11 @@ Status WaitForNumTabletsOnTS(TServerDetails* ts,
                              int count,
                              const MonoDelta& timeout,
                              vector<ListTabletsResponsePB::StatusAndSchemaPB>* tablets) {
+  // If the user doesn't care about collecting the resulting tablets, collect into a local
+  // vector.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets_local;
+  if (tablets == nullptr) tablets = &tablets_local;
+
   Status s;
   MonoTime deadline = MonoTime::Now() + timeout;
   while (true) {

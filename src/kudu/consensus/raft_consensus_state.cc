@@ -222,13 +222,10 @@ Status ReplicaState::SetCommittedConfigUnlocked(const RaftConfigPB& committed_co
                         "Invalid config to set as committed");
 
   // Compare committed with pending configuration, ensure they are the same.
-  // Pending will not have an opid_index, so ignore that field.
   DCHECK(cmeta_->has_pending_config());
-  RaftConfigPB config_no_opid = committed_config;
-  config_no_opid.clear_opid_index();
   const RaftConfigPB& pending_config = GetPendingConfigUnlocked();
   // Quorums must be exactly equal, even w.r.t. peer ordering.
-  CHECK_EQ(GetPendingConfigUnlocked().SerializeAsString(), config_no_opid.SerializeAsString())
+  CHECK_EQ(GetPendingConfigUnlocked().SerializeAsString(), committed_config.SerializeAsString())
       << Substitute("New committed config must equal pending config, but does not. "
                     "Pending config: $0, committed config: $1",
                     pending_config.ShortDebugString(), committed_config.ShortDebugString());

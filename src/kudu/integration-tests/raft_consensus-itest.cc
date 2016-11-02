@@ -2565,6 +2565,54 @@ TEST_F(RaftConsensusITest, TestChangeConfigRejectedUnlessNoopReplicated) {
   ASSERT_STR_CONTAINS(s.ToString(), "Leader has not yet committed an operation in its own term");
 }
 
+// Regression test for KUDU-1735, a crash in the case where a pending
+// config change operation is aborted during tablet deletion when that config change
+// was in fact already persisted to disk.
+TEST_F(RaftConsensusITest, Test_KUDU_1735) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  vector<string> ts_flags = { "--enable_leader_failure_detection=false" };
+  vector<string> master_flags = { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false" };
+  NO_FATALS(BuildAndStart(ts_flags, master_flags));
+
+  vector<TServerDetails*> tservers;
+  vector<ExternalTabletServer*> external_tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  for (TServerDetails* ts : tservers) {
+    external_tservers.push_back(cluster_->tablet_server_by_uuid(ts->uuid()));
+  }
+
+  // Elect server 0 as leader and wait for log index 1 to propagate to all servers.
+  TServerDetails* leader_tserver = tservers[0];
+  ASSERT_OK(StartElection(leader_tserver, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilLeader(leader_tserver, tablet_id_, kTimeout));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_,
+                                  tablet_id_, 1));
+
+  // Make follower tablet servers crash before writing a commit message.
+  for (int i = 1; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(cluster_->SetFlag(external_tservers[i], "fault_crash_before_append_commit", "1.0"));
+  }
+
+  // Run a config change. This will cause the other servers to crash with pending config
+  // change operations due to the above fault injection.
+  ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tservers[1], boost::none, kTimeout));
+  for (int i = 1; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(external_tservers[i]->WaitForCrash(kTimeout));
+  }
+
+  // Delete the table, so that when we restart the crashed servers, they'll get RPCs to
+  // delete tablets while config changes are pending.
+  ASSERT_OK(client_->DeleteTable(kTableId));
+
+  // Restart the crashed tservers and wait for them to delete their replicas.
+  for (int i = 1; i < cluster_->num_tablet_servers(); i++) {
+    auto* ts = external_tservers[i];
+    ts->Shutdown();
+    ASSERT_OK(ts->Restart());
+    ASSERT_OK(WaitForNumTabletsOnTS(tservers[i], 0, kTimeout, nullptr));
+  }
+}
+
 // Test that if for some reason none of the transactions can be prepared, that it will come
 // back as an error in UpdateConsensus().
 TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
