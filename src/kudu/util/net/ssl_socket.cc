@@ -22,6 +22,7 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/strings/split.h"
