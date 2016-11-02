@@ -18,6 +18,7 @@
 #include "kudu/rpc/rpc-test-base.h"
 
 #include <stdlib.h>
+#include <sys/stat.h>
 
 #include <functional>
 #include <memory>
@@ -337,6 +338,36 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
                                       "No key table entry found matching kudu/127.0.0.1");
                 }));
 
+}
+
+// Test that the pre-flight check for servers requiring Kerberos provides
+// nice error messages for missing or bad keytabs.
+TEST_F(TestSaslRpc, TestPreflight) {
+  // Try pre-flight with no keytab.
+  Status s = SaslServer::PreflightCheckGSSAPI(kSaslAppName);
+  ASSERT_STR_MATCHES(s.ToString(), "Key table file.*not found");
+
+  // Try with a valid krb5 environment and keytab.
+  MiniKdc kdc;
+  ASSERT_OK(kdc.Start());
+  ASSERT_OK(kdc.SetKrb5Environment());
+  string kt_path;
+  ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
+  CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+
+  ASSERT_OK(SaslServer::PreflightCheckGSSAPI(kSaslAppName));
+
+  // Try with an inaccessible keytab.
+  CHECK_ERR(chmod(kt_path.c_str(), 0000));
+  s = SaslServer::PreflightCheckGSSAPI(kSaslAppName);
+  ASSERT_STR_MATCHES(s.ToString(), "error accessing keytab: Permission denied");
+  CHECK_ERR(unlink(kt_path.c_str()));
+
+  // Try with a keytab that has the wrong credentials.
+  ASSERT_OK(kdc.CreateServiceKeytab("wrong-service/127.0.0.1", &kt_path));
+  CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+  s = SaslServer::PreflightCheckGSSAPI(kSaslAppName);
+  ASSERT_STR_MATCHES(s.ToString(), "No key table entry found matching kudu/.*");
 }
 
 ////////////////////////////////////////////////////////////////////////////////

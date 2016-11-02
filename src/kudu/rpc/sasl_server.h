@@ -112,6 +112,10 @@ class SaslServer {
   int PlainAuthCb(sasl_conn_t* conn, const char* user, const char* pass,
                   unsigned passlen, struct propctx* propctx);
 
+  // Perform a "pre-flight check" that everything required to act as a Kerberos
+  // server is properly set up.
+  static Status PreflightCheckGSSAPI(const std::string& app_name);
+
  private:
   // Parse and validate connection header.
   Status ValidateConnectionHeader(faststring* recv_buf);

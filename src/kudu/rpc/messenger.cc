@@ -60,6 +60,14 @@ DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
              "will disconnect the client.");
 TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
 
+DEFINE_bool(server_require_kerberos, false,
+            "Whether to force all inbound RPC connections to authenticate "
+            "with Kerberos");
+// TODO(todd): this flag is too coarse-grained, since secure servers still
+// need to allow non-kerberized connections authenticated by tokens. But
+// it's a useful stop-gap.
+TAG_FLAG(server_require_kerberos, experimental);
+
 namespace kudu {
 namespace rpc {
 
@@ -158,6 +166,14 @@ void Messenger::Shutdown() {
 
 Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
                                   shared_ptr<AcceptorPool>* pool) {
+  // Before listening, if we expect to require Kerberos, we want to verify
+  // that everything is set up correctly. This way we'll generate errors on
+  // startup rather than later on when we first receive a client connection.
+  if (FLAGS_server_require_kerberos) {
+    RETURN_NOT_OK_PREPEND(SaslServer::PreflightCheckGSSAPI(kSaslAppName),
+                          "GSSAPI/Kerberos not properly configured");
+  }
+
   Socket sock;
   RETURN_NOT_OK(sock.Init(0));
   RETURN_NOT_OK(sock.SetReuseAddr(true));

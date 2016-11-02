@@ -139,6 +139,10 @@ class Messenger {
   //
   // NOTE: the returned pool is not initially started. You must call
   // pool->Start(...) to begin accepting connections.
+  //
+  // If Kerberos is enabled, this also runs a pre-flight check that makes
+  // sure the environment is appropriately configured to authenticate
+  // clients via Kerberos. If not, this returns a RuntimeError.
   Status AddAcceptorPool(const Sockaddr &accept_addr,
                          std::shared_ptr<AcceptorPool>* pool);
 

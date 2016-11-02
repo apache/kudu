@@ -53,13 +53,7 @@ using std::shared_ptr;
 using std::vector;
 using strings::Substitute;
 
-DEFINE_bool(server_require_kerberos, false,
-            "Whether to force all inbound RPC connections to authenticate "
-            "with Kerberos");
-// TODO(todd): this flag is too coarse-grained, since secure servers still
-// need to allow non-kerberized connections authenticated by tokens. But
-// it's a useful stop-gap.
-TAG_FLAG(server_require_kerberos, experimental);
+DECLARE_bool(server_require_kerberos);
 
 namespace kudu {
 namespace rpc {
@@ -659,9 +653,6 @@ Status Connection::InitSaslClient() {
 
 Status Connection::InitSaslServer() {
   if (FLAGS_server_require_kerberos) {
-    // TODO(todd): should we use krb5 APIs directly to verify that we have a valid
-    // keytab when we start up, rather than starting up and then rejecting
-    // connections?
     RETURN_NOT_OK(sasl_server().EnableGSSAPI());
   } else {
     RETURN_NOT_OK(sasl_server().EnablePlain());
