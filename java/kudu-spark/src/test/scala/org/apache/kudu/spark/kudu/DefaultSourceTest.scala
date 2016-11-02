@@ -30,6 +30,7 @@ import org.scalatest.{BeforeAndAfter, FunSuite}
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
+import scala.util.control.NonFatal;
 
 @RunWith(classOf[JUnitRunner])
 class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
@@ -206,27 +207,27 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
   }
 
   test("table scan with projection and predicate double") {
-    assertEquals(rows.count { case (key, i, s, ts) => i != null && i > 5 },
+    assertEquals(rows.count { case (key, i, s, ts) => i > 5 },
                  sqlContext.sql(s"""SELECT key, c3_double FROM $tableName where c3_double > "5.0"""").count())
   }
 
   test("table scan with projection and predicate long") {
-    assertEquals(rows.count { case (key, i, s, ts) => i != null && i > 5 },
+    assertEquals(rows.count { case (key, i, s, ts) => i > 5 },
                  sqlContext.sql(s"""SELECT key, c4_long FROM $tableName where c4_long > "5"""").count())
 
   }
   test("table scan with projection and predicate bool") {
-    assertEquals(rows.count { case (key, i, s, ts) => i != null && i%2==0 },
+    assertEquals(rows.count { case (key, i, s, ts) => i % 2==0 },
                  sqlContext.sql(s"""SELECT key, c5_bool FROM $tableName where c5_bool = true""").count())
 
   }
   test("table scan with projection and predicate short") {
-    assertEquals(rows.count { case (key, i, s, ts) => i != null && i > 5},
+    assertEquals(rows.count { case (key, i, s, ts) => i > 5},
                  sqlContext.sql(s"""SELECT key, c6_short FROM $tableName where c6_short > 5""").count())
 
   }
   test("table scan with projection and predicate float") {
-    assertEquals(rows.count { case (key, i, s, ts) => i != null && i > 5},
+    assertEquals(rows.count { case (key, i, s, ts) => i > 5},
                  sqlContext.sql(s"""SELECT key, c7_float FROM $tableName where c7_float > 5""").count())
 
   }
@@ -336,7 +337,7 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
       fail()
     } catch {
       case _: UnsupportedOperationException => // good
-      case _ => fail()
+      case NonFatal(_) => fail()
     }
   }
 

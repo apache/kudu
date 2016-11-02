@@ -28,12 +28,12 @@ import scala.collection.JavaConverters._
   * A Resilient Distributed Dataset backed by a Kudu table.
   */
 class KuduRDD(val kuduMaster: String,
-              @transient batchSize: Integer,
-              @transient projectedCols: Array[String],
-              @transient predicates: Array[client.KuduPredicate],
-              @transient table: KuduTable,
-              @transient kc: KuduContext,
-              @transient sc: SparkContext) extends RDD[Row](sc, Nil) {
+              @transient val batchSize: Integer,
+              @transient val projectedCols: Array[String],
+              @transient val predicates: Array[client.KuduPredicate],
+              @transient val table: KuduTable,
+              @transient val kc: KuduContext,
+              @transient val sc: SparkContext) extends RDD[Row](sc, Nil) {
 
   /**
     * The [[KuduContext]] for this `KuduRDD`.
