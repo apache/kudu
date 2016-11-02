@@ -218,11 +218,8 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     // Try the same thing with an insert.
     KuduSession session = syncClient.newSession();
     session.setTimeoutMillis(1000);
-    try {
-      session.apply(createBasicSchemaInsert(table, 1));
-      fail("The insert should timeout");
-    } catch (NonRecoverableException ex) {
-      assertTrue(ex.getStatus().isTimedOut());
-    }
+    OperationResponse response = session.apply(createBasicSchemaInsert(table, 1));
+    assertTrue(response.hasRowError());
+    assertTrue(response.getRowError().getErrorStatus().isTimedOut());
   }
 }

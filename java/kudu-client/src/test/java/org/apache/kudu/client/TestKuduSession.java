@@ -270,12 +270,9 @@ public class TestKuduSession extends BaseKuduTest {
 
     List<Integer> nonCoveredKeys = ImmutableList.of(350, 300, 199, 150, 100, -1, -50);
     for (int key : nonCoveredKeys) {
-      try {
-        session.apply(createBasicSchemaInsert(table, key));
-        fail("apply should have thrown");
-      } catch (KuduException e) {
-        assertTrue(e.getStatus().isNotFound());
-      }
+      OperationResponse response = session.apply(createBasicSchemaInsert(table, key));
+      assertTrue(response.hasRowError());
+      assertTrue(response.getRowError().getErrorStatus().isNotFound());
     }
   }
 

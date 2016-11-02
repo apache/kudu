@@ -50,12 +50,10 @@ public class TestTimeouts extends BaseKuduTest {
 
     KuduSession lowTimeoutSession = lowTimeoutsClient.newSession();
 
-    try {
-      lowTimeoutSession.apply(createBasicSchemaInsert(table, 1));
-      fail("Should have timed out");
-    } catch (KuduException ex) {
-      assertTrue(ex.getStatus().isTimedOut());
-    }
+
+    OperationResponse response = lowTimeoutSession.apply(createBasicSchemaInsert(table, 1));
+    assertTrue(response.hasRowError());
+    assertTrue(response.getRowError().getErrorStatus().isTimedOut());
 
     KuduScanner lowTimeoutScanner = lowTimeoutsClient.newScannerBuilder(table).build();
     try {

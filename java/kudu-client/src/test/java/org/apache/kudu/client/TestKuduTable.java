@@ -312,12 +312,9 @@ public class TestKuduTable extends BaseKuduTest {
     syncClient.alterTable(tableName, ato);
 
     insert = createBasicSchemaInsert(table, 202);
-    try {
-      session.apply(insert);
-      fail("Should get a non-recoverable");
-    } catch (NonCoveredRangeException e) {
-      // Expected.
-    }
+    OperationResponse response = session.apply(insert);
+    assertTrue(response.hasRowError());
+    assertTrue(response.getRowError().getErrorStatus().isNotFound());
   }
 
   public KuduTable createTableWithSplitsAndTest(int splitsCount) throws Exception {

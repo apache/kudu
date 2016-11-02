@@ -502,7 +502,8 @@ public class AsyncKuduSession implements SessionConfiguration {
       }
       operation.setExternalConsistencyMode(this.consistencyMode);
       operation.setIgnoreAllDuplicateRows(ignoreAllDuplicateRows);
-      return client.sendRpcToTablet(operation);
+      return client.sendRpcToTablet(operation)
+          .addErrback(new SingleOperationErrCallback(operation));
     }
 
     // Kick off a location lookup.
@@ -657,10 +658,13 @@ public class AsyncKuduSession implements SessionConfiguration {
 
         // Send individualized responses to all the operations in this batch.
         for (OperationResponse operationResponse : response.getIndividualResponses()) {
-          operationResponse.getOperation().callback(operationResponse);
           if (flushMode == FlushMode.AUTO_FLUSH_BACKGROUND && operationResponse.hasRowError()) {
             errorCollector.addError(operationResponse.getRowError());
           }
+
+          // Fire the callback after collecting the error so that the error is visible should the
+          // callback interrogate the error collector.
+          operationResponse.getOperation().callback(operationResponse);
         }
 
         return response;
@@ -672,14 +676,37 @@ public class AsyncKuduSession implements SessionConfiguration {
       }
     }
 
-    final class BatchErrCallback implements Callback<Exception, Exception> {
+    final class BatchErrCallback implements Callback<Object, Exception> {
       @Override
-      public Exception call(Exception e) {
-        // Send the same exception to all the operations.
-        for (Operation operation : request.operations) {
-          operation.errback(e);
+      public Object call(Exception e) {
+        // If the exception we receive is a KuduException we're going to build OperationResponses.
+        Status status = null;
+        List<OperationResponse> responses = null;
+        boolean handleKuduException = e instanceof KuduException;
+        if (handleKuduException) {
+          status = ((KuduException) e).getStatus();
+          responses = new ArrayList<>(request.operations.size());
         }
-        return e;
+
+        for (Operation operation : request.operations) {
+          // Same comment as in BatchCallback regarding the ordering of when to callback.
+          if (handleKuduException) {
+            RowError rowError = new RowError(status, operation);
+            OperationResponse response = new OperationResponse(0, null, 0, operation, rowError);
+            errorCollector.addError(rowError);
+            responses.add(response);
+
+            operation.callback(response);
+          } else {
+            // We have no idea what the exception is so we'll just send it up.
+            operation.errback(e);
+          }
+        }
+
+        // Note that returning an object that's not an exception will make us leave the
+        // errback chain. Effectively, the BatchResponse below will end up as part of the list
+        // passed to ConvertBatchToListOfResponsesCB.
+        return handleKuduException ? new BatchResponse(responses) : e;
       }
       @Override
       public String toString() {
@@ -688,6 +715,29 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
 
     request.getDeferred().addCallbacks(new BatchCallback(), new BatchErrCallback());
+  }
+
+  /**
+   * Analogous to BatchErrCallback above but for AUTO_FLUSH_SYNC which doesn't handle lists of
+   * operations and responses.
+   */
+  private final class SingleOperationErrCallback implements Callback<Object, Exception> {
+
+    private final Operation operation;
+
+    private SingleOperationErrCallback(Operation operation) {
+      this.operation = operation;
+    }
+
+    @Override
+    public Object call(Exception e) throws Exception {
+      if (e instanceof KuduException) {
+        Status status = ((KuduException) e).getStatus();
+        RowError rowError = new RowError(status, operation);
+        return new OperationResponse(0, null, 0, operation, rowError);
+      }
+      return e;
+    }
   }
 
   /**

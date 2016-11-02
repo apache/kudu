@@ -22,8 +22,6 @@ import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import com.stumbleupon.async.DeferredGroupException;
-import com.stumbleupon.async.TimeoutException;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -59,6 +57,30 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     table = createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
   }
 
+
+  @Test(timeout = 100000)
+  public void testBackgroundErrors() throws Exception {
+    try {
+      AsyncKuduSession session = client.newSession();
+      session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+      session.setFlushInterval(10);
+      Batch.injectTabletServerErrorAndLatency(makeTabletServerError(), 0);
+
+      try {
+        OperationResponse resp = session.apply(createInsert(1)).join(DEFAULT_SLEEP);
+        assertTrue(resp.hasRowError());
+        assertTrue(
+            resp.getRowError().getErrorStatus()
+                .getMessage().contains(getTabletServerErrorMessage()));
+      } catch (Exception e) {
+        fail("Should not throw");
+      }
+      assertEquals(1, session.countPendingErrors());
+    } finally {
+      Batch.injectTabletServerErrorAndLatency(null, 0);
+    }
+  }
+
   /**
    * Regression test for case where an error in the previous batch could cause the next
    * batch to hang in flush()
@@ -69,41 +91,37 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       AsyncKuduSession session = client.newSession();
       session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
       session.setFlushInterval(100);
-      TabletServerErrorPB error = TabletServerErrorPB.newBuilder()
-          .setCode(TabletServerErrorPB.Code.UNKNOWN_ERROR)
-          .setStatus(AppStatusPB.newBuilder()
-              .setCode(AppStatusPB.ErrorCode.UNKNOWN_ERROR)
-              .setMessage("injected error for test")
-              .build())
-          .build();
-      Batch.injectTabletServerErrorAndLatency(error, 200);
+      Batch.injectTabletServerErrorAndLatency(makeTabletServerError(), 200);
       // 0ms: insert first row, which will be the first batch.
       Deferred<OperationResponse> resp1 = session.apply(createInsert(1));
       Thread.sleep(120);
       // 100ms: start to send first batch.
       // 100ms+: first batch got response from ts,
-      //         will wait 200s and throw erorr.
+      //         will wait 200s and throw error.
       // 120ms: insert another row, which will be the second batch.
       Deferred<OperationResponse> resp2 = session.apply(createInsert(2));
       // 220ms: start to send the second batch, but first batch is inflight,
       //        so add callback to retry after first batch finishes.
       // 300ms: first batch's callback handles error, retry second batch.
       try {
-        resp1.join(2000);
-      } catch (TimeoutException e) {
-        fail("First batch should not timeout in case of tablet server error");
-      } catch (KuduException e) {
-        // Expected.
-        assertTrue(e.getMessage().contains("injected error for test"));
+        OperationResponse resp = resp1.join(DEFAULT_SLEEP);
+        assertTrue(resp.hasRowError());
+        assertTrue(
+            resp.getRowError().getErrorStatus()
+                .getMessage().contains(getTabletServerErrorMessage()));
+      } catch (Exception e) {
+        fail("Should not throw");
       }
       try {
-        resp2.join(2000);
-      } catch (TimeoutException e) {
-        fail("Second batch should not timeout in case of tablet server error");
-      } catch (KuduException e) {
-        // expected
-        assertTrue(e.getMessage().contains("injected error for test"));
+        OperationResponse resp = resp2.join(DEFAULT_SLEEP);
+        assertTrue(resp.hasRowError());
+        assertTrue(
+            resp.getRowError().getErrorStatus()
+                .getMessage().contains(getTabletServerErrorMessage()));
+      } catch (Exception e) {
+        fail("Should not throw");
       }
+      assertFalse(session.hasPendingOperations());
     } finally {
       Batch.injectTabletServerErrorAndLatency(null, 0);
     }
@@ -136,14 +154,10 @@ public class TestAsyncKuduSession extends BaseKuduTest {
         }
         Thread.sleep(100);
       }
-      try {
-        session.apply(createInsert(1)).join(DEFAULT_SLEEP);
-        fail("Insert should not succeed");
-      } catch (KuduException e) {
-        assertTrue(e.getStatus().isNotFound());
-      } catch (Throwable e) {
-        fail("Should not throw other error: " + e);
-      }
+
+      OperationResponse response = session.apply(createInsert(1)).join(DEFAULT_SLEEP);
+      assertTrue(response.hasRowError());
+      assertTrue(response.getRowError().getErrorStatus().isNotFound());
     } finally {
       table = createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
     }
@@ -156,16 +170,16 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     try {
       AsyncKuduSession session = client.newSession();
       session.setTimeoutMillis(1);
+      OperationResponse response = session.apply(createInsert(1)).join();
+      assertTrue(response.hasRowError());
+      assertTrue(response.getRowError().getErrorStatus().isTimedOut());
+
       session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
       Insert insert = createInsert(1);
       session.apply(insert);
-      try {
-        session.flush().join();
-        fail("expected exception");
-      } catch (DeferredGroupException e) {
-        assertEquals(1, e.results().size());
-        assertTrue(e.results().get(0).toString().contains("timeout"));
-      }
+      List<OperationResponse> responses = session.flush().join();
+      assertEquals(1, responses.size());
+      assertTrue(responses.get(0).getRowError().getErrorStatus().isTimedOut());
     } finally {
       restartTabletServers();
     }
@@ -553,5 +567,19 @@ public class TestAsyncKuduSession extends BaseKuduTest {
         .setProjectedColumnNames(columnNames)
         .build();
     return scanner;
+  }
+
+  private TabletServerErrorPB makeTabletServerError() {
+    return TabletServerErrorPB.newBuilder()
+        .setCode(TabletServerErrorPB.Code.UNKNOWN_ERROR)
+        .setStatus(AppStatusPB.newBuilder()
+            .setCode(AppStatusPB.ErrorCode.UNKNOWN_ERROR)
+            .setMessage(getTabletServerErrorMessage())
+            .build())
+        .build();
+  }
+
+  private String getTabletServerErrorMessage() {
+    return "injected error for test";
   }
 }
