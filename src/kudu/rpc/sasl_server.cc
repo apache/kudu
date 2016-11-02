@@ -467,12 +467,12 @@ int SaslServer::PlainAuthCb(sasl_conn_t * /*conn*/, const char * /*user*/, const
 }
 
 Status SaslServer::PreflightCheckGSSAPI(const string& app_name) {
-  // Initialize a SaslServer with a bogus socket fd, and enable
+  // Initialize a SaslServer with a null socket, and enable
   // only GSSAPI.
   //
   // We aren't going to actually send/receive any messages, but
   // this makes it easier to reuse the initialization code.
-  SaslServer server(app_name, -1);
+  SaslServer server(app_name, nullptr);
   Status s = server.EnableGSSAPI();
   if (!s.ok()) {
     return Status::RuntimeError(s.message());
