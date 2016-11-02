@@ -257,7 +257,7 @@ Status MiniKdc::WaitForKdcPorts() {
   RETURN_NOT_OK(GetBinaryPath("lsof", {"/sbin", "/usr/sbin"}, &lsof));
 
   vector<string> cmd = {
-    lsof, "-wbn", "-Fn",
+    lsof, "-wbn", "-Ffn",
     "-p", std::to_string(kdc_process_->pid()),
     "-a", "-i", "4TCP"};
 
@@ -276,16 +276,18 @@ Status MiniKdc::WaitForKdcPorts() {
     SleepFor(MonoDelta::FromMilliseconds(i * i));
   }
 
-  // The '-Fn' flag gets lsof to output something like:
+  // The '-Ffn' flag gets lsof to output something like:
   //   p19730
+  //   f123
   //   n*:41254
-  // The first line is the pid, which we already know. The second has the
-  // bind address and port.
+  // The first line is the pid. We ignore it.
+  // The second line is the file descriptor number. We ignore it.
+  // The third line has the bind address and port.
   vector<string> lines = strings::Split(lsof_out, "\n");
   int32_t port = -1;
-  if (lines.size() != 2 ||
-      lines[1].substr(0, 3) != "n*:" ||
-      !safe_strto32(lines[1].substr(3), &port) ||
+  if (lines.size() != 3 ||
+      lines[2].substr(0, 3) != "n*:" ||
+      !safe_strto32(lines[2].substr(3), &port) ||
       port <= 0) {
     return Status::RuntimeError("unexpected lsof output", lsof_out);
   }
