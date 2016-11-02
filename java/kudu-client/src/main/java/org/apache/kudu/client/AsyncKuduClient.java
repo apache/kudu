@@ -949,8 +949,8 @@ public class AsyncKuduClient implements AutoCloseable {
     }
     Status statusTimedOut = Status.TimedOut(message + request);
     final Exception e = new NonRecoverableException(statusTimedOut, cause);
-    request.errback(e);
     LOG.debug("Cannot continue with this RPC: {} because of: {}", request, message, e);
+    request.errback(e);
     return Deferred.fromError(e);
   }
 
