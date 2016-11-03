@@ -168,15 +168,13 @@ Status RowChangeListDecoder::Init() {
 
 Status RowChangeListDecoder::ProjectChangeList(const DeltaProjector& projector,
                                                const RowChangeList& src,
-                                               faststring* buf) {
+                                               RowChangeListEncoder* out) {
   RowChangeListDecoder decoder(src);
   RETURN_NOT_OK(decoder.Init());
-
-  buf->clear();
-  RowChangeListEncoder encoder(buf);
+  CHECK_EQ(DCHECK_NOTNULL(out)->type_, RowChangeList::kUninitialized);
 
   if (decoder.is_delete()) {
-    encoder.SetToDelete();
+    out->SetToDelete();
     return Status::OK();
   }
 
@@ -193,8 +191,8 @@ Status RowChangeListDecoder::ProjectChangeList(const DeltaProjector& projector,
       continue;
     }
 
-    encoder.SetType(decoder.type_);
-    encoder.EncodeColumnMutationRaw(dec.col_id, dec.null, dec.raw_value);
+    out->SetType(decoder.type_);
+    out->EncodeColumnMutationRaw(dec.col_id, dec.null, dec.raw_value);
   }
 
   return Status::OK();

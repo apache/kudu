@@ -599,12 +599,15 @@ Status MemRowSet::Iterator::GetCurrentRow(RowBlockRow* dst_row,
     for (const Mutation *mut = src_row.redo_head();
          mut != nullptr;
          mut = mut->acquire_next()) {
+
+      delta_buf_.clear();
+      RowChangeListEncoder enc(&delta_buf_);
       RETURN_NOT_OK(RowChangeListDecoder::ProjectChangeList(delta_projector_,
                                                             mut->changelist(),
-                                                            &delta_buf_));
+                                                            &enc));
 
       // The projection resulted in an empty mutation (e.g. update of a removed column)
-      if (delta_buf_.size() == 0) continue;
+      if (enc.is_empty()) continue;
 
       Mutation *mutation = Mutation::CreateInArena(mutation_arena,
                                                    mut->timestamp(),

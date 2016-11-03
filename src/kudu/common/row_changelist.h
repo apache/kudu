@@ -355,12 +355,11 @@ class RowChangeListDecoder {
   }
 
   // Project the 'src' RowChangeList using the delta 'projector'
-  // The projected RowChangeList will be encoded to specified 'buf'.
-  // The buffer will be cleared before adding the result and will be empty if the projection
-  // ends up producing an empty RowChangeList.
+  // The projected RowChangeList will be encoded in 'out'.
+  // Requires that 'out' is non-null and that it's uninitialized.
   static Status ProjectChangeList(const DeltaProjector& projector,
                                   const RowChangeList& src,
-                                  faststring* buf);
+                                  RowChangeListEncoder* out);
 
   // If 'src' is an UPDATE or REINSERT, then only add changes for columns NOT specified by
   // 'column_indexes' to 'out'. Delete changes are added to 'out' as-is. If an update only
