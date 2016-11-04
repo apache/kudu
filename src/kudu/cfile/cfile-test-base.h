@@ -213,6 +213,25 @@ class Int32DataGenerator : public DataGenerator<INT32, HAS_NULLS> {
   }
 };
 
+template<bool HAS_NULLS>
+class UInt64DataGenerator : public DataGenerator<UINT64, HAS_NULLS> {
+ public:
+  UInt64DataGenerator() {}
+  uint64_t BuildTestValue(size_t /*block_index*/, size_t value) OVERRIDE {
+    return value * 0x123456789abcdefULL;
+  }
+};
+
+template<bool HAS_NULLS>
+class Int64DataGenerator : public DataGenerator<INT64, HAS_NULLS> {
+ public:
+  Int64DataGenerator() {}
+  int64_t BuildTestValue(size_t /*block_index*/, size_t value) OVERRIDE {
+    int64_t r = (value * 0x123456789abcdefULL) & 0x7fffffffffffffffULL;
+    return value % 2 == 0 ? r : -r;
+  }
+};
+
 // Floating-point data generator.
 // This works for both floats and doubles.
 template<DataType DATA_TYPE, bool HAS_NULLS>
@@ -473,6 +492,16 @@ void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_
     case INT32:
     {
       TimeReadFileForDataType<INT32, int64_t>(iter, count);
+      break;
+    }
+    case UINT64:
+    {
+      TimeReadFileForDataType<UINT64, uint64_t>(iter, count);
+      break;
+    }
+    case INT64:
+    {
+      TimeReadFileForDataType<INT64, uint64_t>(iter, count);
       break;
     }
     case FLOAT:

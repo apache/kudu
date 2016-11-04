@@ -235,10 +235,6 @@ class TypeEncodingResolver {
   // Add the encoding mappings
   // the first encoder/decoder to be
   // added to the mapping becomes the default
-  //
-  // TODO: Fix/work around the issue with RLE/BitWriter which
-  //       (currently) makes it impossible to use RLE with
-  //       64-bit int types.
  private:
   TypeEncodingResolver() {
     AddMapping<UINT8, PLAIN_ENCODING>();
@@ -260,8 +256,10 @@ class TypeEncodingResolver {
     AddMapping<INT32, RLE>();
     AddMapping<INT32, BIT_SHUFFLE>();
     AddMapping<UINT64, PLAIN_ENCODING>();
+    AddMapping<UINT64, RLE>();
     AddMapping<UINT64, BIT_SHUFFLE>();
     AddMapping<INT64, PLAIN_ENCODING>();
+    AddMapping<INT64, RLE>();
     AddMapping<INT64, BIT_SHUFFLE>();
     AddMapping<FLOAT, PLAIN_ENCODING>();
     AddMapping<FLOAT, BIT_SHUFFLE>();

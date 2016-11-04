@@ -36,7 +36,9 @@
 #include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/random.h"
 #include "kudu/util/test_macros.h"
+#include <kudu/util/test_util.h>
 #include "kudu/util/stopwatch.h"
 
 using std::unique_ptr;
@@ -463,8 +465,9 @@ class TestEncoding : public ::testing::Test {
     srand(123);
 
     std::vector<CppType> to_insert;
+    Random rd(SeedRandom());
     for (int i = 0; i < 10003; i++) {
-      auto val = random() % std::numeric_limits<CppType>::max();
+      int64_t val = rd.Next64() % std::numeric_limits<CppType>::max();
 
       // For signed types, randomly use both negative and positive values.
       if (std::numeric_limits<CppType>::is_signed && (random() % 2) == 1) {

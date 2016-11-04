@@ -40,12 +40,12 @@ class BitUtil {
   }
 
   static inline uint64_t ShiftLeftZeroOnOverflow(uint64_t v, int num_bits) {
-    if (num_bits >= 64) return 0;
+    if (PREDICT_FALSE(num_bits >= 64)) return 0;
     return v << num_bits;
   }
 
   static inline uint64_t ShiftRightZeroOnOverflow(uint64_t v, int num_bits) {
-    if (num_bits >= 64) return 0;
+    if (PREDICT_FALSE(num_bits >= 64)) return 0;
     return v >> num_bits;
   }
 

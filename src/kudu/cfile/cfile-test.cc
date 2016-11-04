@@ -454,6 +454,18 @@ TEST_P(TestCFileBothCacheTypes, TestReadWriteInt32) {
   }
 }
 
+TEST_P(TestCFileBothCacheTypes, TestReadWriteUInt64) {
+  for (auto enc : { PLAIN_ENCODING, RLE, BIT_SHUFFLE }) {
+    TestReadWriteFixedSizeTypes<UInt64DataGenerator<false>>(enc);
+  }
+}
+
+TEST_P(TestCFileBothCacheTypes, TestReadWriteInt64) {
+  for (auto enc : { PLAIN_ENCODING, RLE, BIT_SHUFFLE }) {
+    TestReadWriteFixedSizeTypes<Int64DataGenerator<false>>(enc);
+  }
+}
+
 TEST_P(TestCFileBothCacheTypes, TestFixedSizeReadWritePlainEncodingFloat) {
   TestReadWriteFixedSizeTypes<FPDataGenerator<FLOAT, false> >(PLAIN_ENCODING);
 }
