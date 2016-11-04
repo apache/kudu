@@ -82,7 +82,4 @@ Status ReadFileToString(Env* env, const std::string& fname, faststring* data) {
   return s;
 }
 
-EnvWrapper::~EnvWrapper() {
-}
-
 }  // namespace kudu

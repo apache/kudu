@@ -294,8 +294,7 @@ void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
       offset = entry.offset_in_segment + kEntryHeaderSize + 1;
       break;
   }
-  ASSERT_OK(CorruptLogFile(
-      env_.get(), log_->ActiveSegmentPathForTests(), type, offset));
+  ASSERT_OK(CorruptLogFile(env_, log_->ActiveSegmentPathForTests(), type, offset));
 
   // Open a new reader -- we don't reuse the existing LogReader from log_
   // because it has a cached header.

@@ -86,7 +86,7 @@ class CreateTableStressTest : public KuduTest {
     KuduTest::SetUp();
     MiniClusterOptions opts;
     opts.num_tablet_servers = 3;
-    cluster_.reset(new MiniCluster(env_.get(), opts));
+    cluster_.reset(new MiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());
 
     ASSERT_OK(KuduClientBuilder()

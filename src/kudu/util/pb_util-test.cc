@@ -108,7 +108,7 @@ Status TestPBUtil::CreateKnownGoodContainerFile(CreateMode create, SyncMode sync
   ProtoContainerTestPB test_pb;
   test_pb.set_name(kTestKeyvalName);
   test_pb.set_value(kTestKeyvalValue);
-  return WritePBContainerToPath(env_.get(), path_, test_pb, create, sync);
+  return WritePBContainerToPath(env_, path_, test_pb, create, sync);
 }
 
 Status TestPBUtil::NewPBCWriter(int version, RWFileOptions opts,
@@ -179,7 +179,7 @@ Status TestPBUtil::TruncateFile(const string& path, uint64_t size) {
 TEST_F(TestPBUtil, TestWritableFileOutputStream) {
   shared_ptr<WritableFile> file;
   string path = GetTestPath("test.out");
-  ASSERT_OK(env_util::OpenFileForWrite(env_.get(), path, &file));
+  ASSERT_OK(env_util::OpenFileForWrite(env_, path, &file));
 
   WritableFileOutputStream stream(file.get(), 4096);
 
@@ -233,7 +233,7 @@ TEST_F(TestPBUtil, TestPBContainerSimple) {
 
     // Read it back, should validate and contain the expected values.
     ProtoContainerTestPB test_pb;
-    ASSERT_OK(ReadPBContainerFromPath(env_.get(), path_, &test_pb));
+    ASSERT_OK(ReadPBContainerFromPath(env_, path_, &test_pb));
     ASSERT_EQ(kTestKeyvalName, test_pb.name());
     ASSERT_EQ(kTestKeyvalValue, test_pb.value());
 
@@ -246,7 +246,7 @@ TEST_F(TestPBUtil, TestPBContainerSimple) {
 TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test that we indicate when the file does not exist.
   ProtoContainerTestPB test_pb;
-  Status s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
+  Status s = ReadPBContainerFromPath(env_, path_, &test_pb);
   ASSERT_TRUE(s.IsNotFound()) << "Should not be found: " << path_ << ": " << s.ToString();
 
   // Test that an empty file looks like corruption.
@@ -256,7 +256,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
     ASSERT_OK(env_->NewWritableFile(path_, &file));
     ASSERT_OK(file->Close());
   }
-  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb);
   ASSERT_TRUE(s.IsIncomplete()) << "Should be zero length: " << path_ << ": " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "File size not large enough to be valid");
 
@@ -265,7 +265,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   uint64_t known_good_size = 0;
   ASSERT_OK(env_->GetFileSize(path_, &known_good_size));
   ASSERT_OK(TruncateFile(path_, known_good_size - 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb);
   if (version_ == 1) {
     ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect size: " << path_ << ": " << s.ToString();
   } else {
@@ -276,14 +276,14 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test corrupted magic.
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ASSERT_OK(BitFlipFileByteRange(path_, 0, 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should have invalid magic: " << path_ << ": " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Invalid magic number");
 
   // Test corrupted version.
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ASSERT_OK(BitFlipFileByteRange(path_, 8, 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb);
   ASSERT_TRUE(s.IsNotSupported()) << "Should have unsupported version number: " << path_ << ": "
                                   << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), " Protobuf container has unsupported version");
@@ -292,7 +292,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   if (version_ >= 2) {
     ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
     ASSERT_OK(BitFlipFileByteRange(path_, 12, 2));
-    s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
+    s = ReadPBContainerFromPath(env_, path_, &test_pb);
     ASSERT_TRUE(s.IsCorruption()) << "Should have corrupted file header checksum: " << path_ << ": "
                                     << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "File header checksum does not match");
@@ -304,7 +304,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test corrupted data length.
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ASSERT_OK(BitFlipFileByteRange(path_, kFirstRecordOffset, 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb);
   if (version_ == 1) {
     ASSERT_TRUE(s.IsCorruption()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "File size not large enough to be valid");
@@ -317,7 +317,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test corrupted data (looks like bad checksum).
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ASSERT_OK(BitFlipFileByteRange(path_, kFirstRecordOffset + 4, 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect checksum: " << path_ << ": "
                                 << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Incorrect checksum");
@@ -325,7 +325,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test corrupted checksum.
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ASSERT_OK(BitFlipFileByteRange(path_, known_good_size - 4, 2));
-  s = ReadPBContainerFromPath(env_.get(), path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect checksum: " << path_ << ": "
                                 << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Incorrect checksum");
@@ -406,7 +406,7 @@ TEST_P(TestPBContainerVersions, TestAppendAfterPartialWrite) {
 TEST_P(TestPBContainerVersions, TestSingleMessage) {
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ProtoContainerTestPB test_pb;
-  ASSERT_OK(ReadPBContainerFromPath(env_.get(), path_, &test_pb));
+  ASSERT_OK(ReadPBContainerFromPath(env_, path_, &test_pb));
   ASSERT_EQ(kTestKeyvalName, test_pb.name());
   ASSERT_EQ(kTestKeyvalValue, test_pb.value());
 }

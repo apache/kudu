@@ -84,7 +84,7 @@ class RemoteKsckTest : public KuduTest {
 
     opts.num_masters = opts.master_rpc_ports.size();
     opts.num_tablet_servers = 3;
-    mini_cluster_.reset(new MiniCluster(env_.get(), opts));
+    mini_cluster_.reset(new MiniCluster(env_, opts));
     ASSERT_OK(mini_cluster_->Start());
 
     // Connect to the cluster.

@@ -976,8 +976,7 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   string log_path = tablet_peer_->log()->ActiveSegmentPathForTests();
   ShutdownTablet();
 
-  ASSERT_OK(log::CorruptLogFile(env_.get(), log_path,
-                                       log::FLIP_BYTE, 300));
+  ASSERT_OK(log::CorruptLogFile(env_, log_path, log::FLIP_BYTE, 300));
 
   ASSERT_FALSE(ShutdownAndRebuildTablet().ok());
 

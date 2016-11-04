@@ -114,7 +114,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
 
   void InitCluster() {
     // Start mini-cluster with 1 tserver.
-    cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
+    cluster_.reset(new MiniCluster(env_, MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
     KuduClientBuilder client_builder;
     client_builder.add_master_server_addr(

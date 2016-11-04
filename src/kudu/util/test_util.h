@@ -36,9 +36,6 @@ class KuduTest : public ::testing::Test {
  public:
   KuduTest();
 
-  // Env passed in from subclass, for tests that run in-memory.
-  explicit KuduTest(Env *env);
-
   virtual ~KuduTest();
 
   virtual void SetUp() OVERRIDE;
@@ -55,7 +52,7 @@ class KuduTest : public ::testing::Test {
   // the test ends.
   std::string GetTestPath(const std::string& relative_path);
 
-  gscoped_ptr<Env> env_;
+  Env* env_;
   google::FlagSaver flag_saver_;  // Reset flags on every test.
 
  private:

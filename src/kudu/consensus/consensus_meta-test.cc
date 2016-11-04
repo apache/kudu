@@ -46,7 +46,7 @@ const int64_t kInitialTerm = 3;
 class ConsensusMetadataTest : public KuduTest {
  public:
   ConsensusMetadataTest()
-    : fs_manager_(env_.get(), GetTestPath("fs_root")) {
+    : fs_manager_(env_, GetTestPath("fs_root")) {
   }
 
   virtual void SetUp() OVERRIDE {

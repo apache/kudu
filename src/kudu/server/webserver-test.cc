@@ -148,7 +148,7 @@ TEST_F(WebserverTest, TestStaticFiles) {
   ASSERT_EQ("Remote error: HTTP 404", s.ToString());
 
   // Create the file and fetch again. This time it should succeed.
-  ASSERT_OK(WriteStringToFile(env_.get(), "hello world",
+  ASSERT_OK(WriteStringToFile(env_, "hello world",
                               strings::Substitute("$0/foo.txt", static_dir_)));
   ASSERT_OK(curl_.FetchURL(strings::Substitute("http://$0/foo.txt", addr_.ToString()),
                            &buf_));

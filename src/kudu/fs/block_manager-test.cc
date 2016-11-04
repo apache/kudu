@@ -107,7 +107,7 @@ class BlockManagerTest : public KuduTest {
     opts.metric_entity = metric_entity;
     opts.parent_mem_tracker = parent_mem_tracker;
     opts.root_paths = paths;
-    return new T(env_.get(), opts);
+    return new T(env_, opts);
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
@@ -169,7 +169,7 @@ void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& 
         continue;
       }
       PathInstanceMetadataPB instance;
-      ASSERT_OK(pb_util::ReadPBContainerFromPath(env_.get(),
+      ASSERT_OK(pb_util::ReadPBContainerFromPath(env_,
                                                  JoinPathSegments(path, child),
                                                  &instance));
     }

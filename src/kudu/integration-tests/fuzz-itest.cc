@@ -142,7 +142,7 @@ class FuzzTest : public KuduTest {
     KuduTest::SetUp();
 
     MiniClusterOptions opts;
-    cluster_.reset(new MiniCluster(env_.get(), opts));
+    cluster_.reset(new MiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());
     CHECK_OK(KuduClientBuilder()
              .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr_str())

@@ -63,7 +63,7 @@ class RegistrationTest : public KuduTest {
 
     KuduTest::SetUp();
 
-    cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
+    cluster_.reset(new MiniCluster(env_, MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
   }
 

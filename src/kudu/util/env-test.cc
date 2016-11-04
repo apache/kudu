@@ -139,7 +139,7 @@ class TestEnv : public KuduTest {
                         bool fast, bool pre_allocate, const WritableFileOptions& opts) {
     const string kTestPath = GetTestPath("test_env_appendvec_read_append");
     shared_ptr<WritableFile> file;
-    ASSERT_OK(env_util::OpenFileForWrite(opts, env_.get(), kTestPath, &file));
+    ASSERT_OK(env_util::OpenFileForWrite(opts, env_, kTestPath, &file));
 
     if (pre_allocate) {
       ASSERT_OK(file->PreAllocate(num_slices * slice_size * iterations));
@@ -154,7 +154,7 @@ class TestEnv : public KuduTest {
     shared_ptr<RandomAccessFile> raf;
 
     if (!fast) {
-      ASSERT_OK(env_util::OpenFileForRandom(env_.get(), kTestPath, &raf));
+      ASSERT_OK(env_util::OpenFileForRandom(env_, kTestPath, &raf));
     }
 
     srand(123);
@@ -184,7 +184,7 @@ class TestEnv : public KuduTest {
     ASSERT_OK(file->Close());
 
     if (fast) {
-      ASSERT_OK(env_util::OpenFileForRandom(env_.get(), kTestPath, &raf));
+      ASSERT_OK(env_util::OpenFileForRandom(env_, kTestPath, &raf));
     }
     for (int i = 0; i < iterations; i++) {
       ASSERT_NO_FATAL_FAILURE(ReadAndVerifyTestData(raf.get(), num_slices * slice_size * i,
@@ -207,8 +207,7 @@ TEST_F(TestEnv, TestPreallocate) {
   LOG(INFO) << "Testing PreAllocate()";
   string test_path = GetTestPath("test_env_wf");
   shared_ptr<WritableFile> file;
-  ASSERT_OK(env_util::OpenFileForWrite(WritableFileOptions(),
-                                       env_.get(), test_path, &file));
+  ASSERT_OK(env_util::OpenFileForWrite(env_, test_path, &file));
 
   // pre-allocate 1 MB
   ASSERT_OK(file->PreAllocate(kOneMb));
@@ -247,8 +246,7 @@ TEST_F(TestEnv, TestConsecutivePreallocate) {
   LOG(INFO) << "Testing consecutive PreAllocate()";
   string test_path = GetTestPath("test_env_wf");
   shared_ptr<WritableFile> file;
-  ASSERT_OK(env_util::OpenFileForWrite(
-      WritableFileOptions(), env_.get(), test_path, &file));
+  ASSERT_OK(env_util::OpenFileForWrite(env_, test_path, &file));
 
   // pre-allocate 64 MB
   ASSERT_OK(file->PreAllocate(64 * kOneMb));
@@ -489,16 +487,16 @@ TEST_F(TestEnv, TestOverwrite) {
 
   // File does not exist, create it.
   shared_ptr<WritableFile> writer;
-  ASSERT_OK(env_util::OpenFileForWrite(env_.get(), test_path, &writer));
+  ASSERT_OK(env_util::OpenFileForWrite(env_, test_path, &writer));
 
   // File exists, overwrite it.
-  ASSERT_OK(env_util::OpenFileForWrite(env_.get(), test_path, &writer));
+  ASSERT_OK(env_util::OpenFileForWrite(env_, test_path, &writer));
 
   // File exists, try to overwrite (and fail).
   WritableFileOptions opts;
   opts.mode = Env::CREATE_NON_EXISTING;
   Status s = env_util::OpenFileForWrite(opts,
-                                        env_.get(), test_path, &writer);
+                                        env_, test_path, &writer);
   ASSERT_TRUE(s.IsAlreadyPresent());
 }
 
@@ -511,7 +509,7 @@ TEST_F(TestEnv, TestReopen) {
   // Create the file and write to it.
   shared_ptr<WritableFile> writer;
   ASSERT_OK(env_util::OpenFileForWrite(WritableFileOptions(),
-                                       env_.get(), test_path, &writer));
+                                       env_, test_path, &writer));
   ASSERT_OK(writer->Append(first));
   ASSERT_EQ(first.length(), writer->Size());
   ASSERT_OK(writer->Close());
@@ -520,7 +518,7 @@ TEST_F(TestEnv, TestReopen) {
   WritableFileOptions reopen_opts;
   reopen_opts.mode = Env::OPEN_EXISTING;
   ASSERT_OK(env_util::OpenFileForWrite(reopen_opts,
-                                       env_.get(), test_path, &writer));
+                                       env_, test_path, &writer));
   ASSERT_EQ(first.length(), writer->Size());
   ASSERT_OK(writer->Append(second));
   ASSERT_EQ(first.length() + second.length(), writer->Size());
@@ -528,7 +526,7 @@ TEST_F(TestEnv, TestReopen) {
 
   // Check that the file has both strings.
   shared_ptr<RandomAccessFile> reader;
-  ASSERT_OK(env_util::OpenFileForRandom(env_.get(), test_path, &reader));
+  ASSERT_OK(env_util::OpenFileForRandom(env_, test_path, &reader));
   uint64_t size;
   ASSERT_OK(reader->Size(&size));
   ASSERT_EQ(first.length() + second.length(), size);
@@ -592,18 +590,18 @@ TEST_F(TestEnv, TestWalk) {
   string file_one = "file_1";
   string file_two = "file_2";
   vector<string> expected;
-  ASSERT_OK(CreateDir(env_.get(), root, &expected));
-  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(root, file_one), &expected));
-  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(root, file_two), &expected));
-  ASSERT_OK(CreateDir(env_.get(), subdir_a, &expected));
-  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_a, file_one), &expected));
-  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_a, file_two), &expected));
-  ASSERT_OK(CreateDir(env_.get(), subdir_b, &expected));
-  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_b, file_one), &expected));
-  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_b, file_two), &expected));
-  ASSERT_OK(CreateDir(env_.get(), subdir_c, &expected));
-  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_c, file_one), &expected));
-  ASSERT_OK(CreateFile(env_.get(), JoinPathSegments(subdir_c, file_two), &expected));
+  ASSERT_OK(CreateDir(env_, root, &expected));
+  ASSERT_OK(CreateFile(env_, JoinPathSegments(root, file_one), &expected));
+  ASSERT_OK(CreateFile(env_, JoinPathSegments(root, file_two), &expected));
+  ASSERT_OK(CreateDir(env_, subdir_a, &expected));
+  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_a, file_one), &expected));
+  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_a, file_two), &expected));
+  ASSERT_OK(CreateDir(env_, subdir_b, &expected));
+  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_b, file_one), &expected));
+  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_b, file_two), &expected));
+  ASSERT_OK(CreateDir(env_, subdir_c, &expected));
+  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_c, file_one), &expected));
+  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_c, file_two), &expected));
 
   // Do the walk.
   //
@@ -766,7 +764,7 @@ TEST_F(TestEnv, TestGetBytesFree) {
       ASSERT_OK(env_->DeleteFile(kTestFilePath));
     }
     ASSERT_OK(env_->GetBytesFree(kDataDir, &orig_bytes_free));
-    NO_FATALS(WriteTestFile(env_.get(), kTestFilePath, kFileSizeBytes));
+    NO_FATALS(WriteTestFile(env_, kTestFilePath, kFileSizeBytes));
     ASSERT_OK(env_->GetBytesFree(kDataDir, &cur_bytes_free));
     if (orig_bytes_free - cur_bytes_free >= kFileSizeBytes) break;
   }

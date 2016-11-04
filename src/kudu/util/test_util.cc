@@ -57,13 +57,7 @@ bool g_is_gtest = true;
 ///////////////////////////////////////////////////
 
 KuduTest::KuduTest()
-  : env_(new EnvWrapper(Env::Default())),
-    test_dir_(GetTestDataDirectory()) {
-}
-
-// env passed in from subclass, for tests that run in-memory
-KuduTest::KuduTest(Env *env)
-  : env_(env),
+  : env_(Env::Default()),
     test_dir_(GetTestDataDirectory()) {
 }
 

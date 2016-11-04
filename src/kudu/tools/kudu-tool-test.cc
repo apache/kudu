@@ -250,7 +250,7 @@ void ToolTest::StartMiniCluster(int num_masters,
   MiniClusterOptions opts;
   opts.num_masters = num_masters;
   opts.num_tablet_servers = num_tablet_servers;
-  mini_cluster_.reset(new MiniCluster(env_.get(), opts));
+  mini_cluster_.reset(new MiniCluster(env_, opts));
   ASSERT_OK(mini_cluster_->Start());
 }
 
@@ -408,7 +408,7 @@ TEST_F(ToolTest, TestActionHelp) {
 TEST_F(ToolTest, TestFsFormat) {
   const string kTestDir = GetTestPath("test");
   NO_FATALS(RunActionStdoutNone(Substitute("fs format --fs_wal_dir=$0", kTestDir)));
-  FsManager fs(env_.get(), kTestDir);
+  FsManager fs(env_, kTestDir);
   ASSERT_OK(fs.Open());
 
   ObjectIdGenerator generator;
@@ -423,7 +423,7 @@ TEST_F(ToolTest, TestFsFormatWithUuid) {
   string original_uuid = generator.Next();
   NO_FATALS(RunActionStdoutNone(Substitute(
       "fs format --fs_wal_dir=$0 --uuid=$1", kTestDir, original_uuid)));
-  FsManager fs(env_.get(), kTestDir);
+  FsManager fs(env_, kTestDir);
   ASSERT_OK(fs.Open());
 
   string canonicalized_uuid;
@@ -436,7 +436,7 @@ TEST_F(ToolTest, TestFsDumpUuid) {
   const string kTestDir = GetTestPath("test");
   string uuid;
   {
-    FsManager fs(env_.get(), kTestDir);
+    FsManager fs(env_, kTestDir);
     ASSERT_OK(fs.CreateInitialFileSystemLayout());
     ASSERT_OK(fs.Open());
     uuid = fs.uuid();
@@ -454,7 +454,7 @@ TEST_F(ToolTest, TestPbcDump) {
   string instance_path;
   {
     ObjectIdGenerator generator;
-    FsManager fs(env_.get(), kTestDir);
+    FsManager fs(env_, kTestDir);
     ASSERT_OK(fs.CreateInitialFileSystemLayout(generator.Next()));
     ASSERT_OK(fs.Open());
     uuid = fs.uuid();
@@ -484,7 +484,7 @@ TEST_F(ToolTest, TestPbcDump) {
 TEST_F(ToolTest, TestFsDumpCFile) {
   const int kNumEntries = 8192;
   const string kTestDir = GetTestPath("test");
-  FsManager fs(env_.get(), kTestDir);
+  FsManager fs(env_, kTestDir);
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
 
@@ -540,7 +540,7 @@ TEST_F(ToolTest, TestWalDump) {
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
 
-  FsManager fs(env_.get(), kTestDir);
+  FsManager fs(env_, kTestDir);
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
 
@@ -658,7 +658,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
 
-  FsManager fs(env_.get(), kTestDir);
+  FsManager fs(env_, kTestDir);
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
 
@@ -703,7 +703,7 @@ TEST_F(ToolTest, TestFsDumpTree) {
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
 
-  FsManager fs(env_.get(), kTestDir);
+  FsManager fs(env_, kTestDir);
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
 

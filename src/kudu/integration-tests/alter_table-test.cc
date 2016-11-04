@@ -106,7 +106,7 @@ class AlterTableTest : public KuduTest {
 
     MiniClusterOptions opts;
     opts.num_tablet_servers = num_replicas();
-    cluster_.reset(new MiniCluster(env_.get(), opts));
+    cluster_.reset(new MiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());
 
     CHECK_OK(KuduClientBuilder()

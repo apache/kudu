@@ -43,14 +43,14 @@ TEST_F(KuduTest, Lifecycle) {
 
   // Test that the metadata file was created.
   {
-    PathInstanceMetadataFile file(env_.get(), kType, kFileName);
+    PathInstanceMetadataFile file(env_, kType, kFileName);
     ASSERT_OK(file.Create(kUuid, { kUuid }));
   }
   ASSERT_TRUE(env_->FileExists(kFileName));
 
   // Test that we could open and parse it.
   {
-    PathInstanceMetadataFile file(env_.get(), kType, kFileName);
+    PathInstanceMetadataFile file(env_, kType, kFileName);
     ASSERT_OK(file.LoadFromDisk());
     PathInstanceMetadataPB* md = file.metadata();
     ASSERT_EQ(kType, md->block_manager_type());
@@ -62,7 +62,7 @@ TEST_F(KuduTest, Lifecycle) {
 
   // Test that expecting a different type of block manager fails.
   {
-    PathInstanceMetadataFile file(env_.get(), "other type", kFileName);
+    PathInstanceMetadataFile file(env_, "other type", kFileName);
     PathInstanceMetadataPB pb;
     ASSERT_TRUE(file.LoadFromDisk().IsIOError());
   }
@@ -73,22 +73,22 @@ TEST_F(KuduTest, Locking) {
   string kFileName = JoinPathSegments(GetTestDataDirectory(), "foo");
   string kUuid = "a_uuid";
 
-  PathInstanceMetadataFile file(env_.get(), kType, kFileName);
+  PathInstanceMetadataFile file(env_, kType, kFileName);
   ASSERT_OK(file.Create(kUuid, { kUuid }));
 
-  PathInstanceMetadataFile first(env_.get(), kType, kFileName);
+  PathInstanceMetadataFile first(env_, kType, kFileName);
   ASSERT_OK(first.LoadFromDisk());
   ASSERT_OK(first.Lock());
 
   ASSERT_DEATH({
-    PathInstanceMetadataFile second(env_.get(), kType, kFileName);
+    PathInstanceMetadataFile second(env_, kType, kFileName);
     CHECK_OK(second.LoadFromDisk());
     CHECK_OK(second.Lock());
   }, "Could not lock");
 
   ASSERT_OK(first.Unlock());
   ASSERT_DEATH({
-    PathInstanceMetadataFile second(env_.get(), kType, kFileName);
+    PathInstanceMetadataFile second(env_, kType, kFileName);
     CHECK_OK(second.LoadFromDisk());
     Status s = second.Lock();
     if (s.ok()) {
@@ -136,14 +136,14 @@ TEST_F(KuduTest, CheckIntegrity) {
 
   {
     // Test consistent path sets.
-    EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(env_.get(), path_sets, "OK"));
+    EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(env_, path_sets, "OK"));
   }
   {
     // Test where two path sets claim the same UUID.
     vector<PathSetPB> path_sets_copy(path_sets);
     path_sets_copy[1].set_uuid(path_sets_copy[0].uuid());
     EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(
-        env_.get(), path_sets_copy,
+        env_, path_sets_copy,
         "IO error: File 1 claimed uuid fee already claimed by file 0"));
   }
   {
@@ -153,7 +153,7 @@ TEST_F(KuduTest, CheckIntegrity) {
       ps.add_all_uuids("fee");
     }
     EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(
-        env_.get(), path_sets_copy,
+        env_, path_sets_copy,
         "IO error: File 0 has duplicate uuids: fee,fi,fo,fum,fee"));
   }
   {
@@ -161,7 +161,7 @@ TEST_F(KuduTest, CheckIntegrity) {
     vector<PathSetPB> path_sets_copy(path_sets);
     path_sets_copy[1].set_uuid("something_else");
     EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(
-        env_.get(), path_sets_copy,
+        env_, path_sets_copy,
         "IO error: File 1 claimed uuid something_else which is not in "
         "all_uuids (fee,fi,fo,fum)"));
   }
@@ -170,7 +170,7 @@ TEST_F(KuduTest, CheckIntegrity) {
     vector<PathSetPB> path_sets_copy(path_sets);
     path_sets_copy[1].add_all_uuids("another_uuid");
     EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(
-        env_.get(), path_sets_copy,
+        env_, path_sets_copy,
         "IO error: File 1 claimed all_uuids fee,fi,fo,fum,another_uuid but "
         "file 0 claimed all_uuids fee,fi,fo,fum"));
   }

@@ -50,7 +50,7 @@ class MiniClusterITestBase : public KuduTest {
 void MiniClusterITestBase::StartCluster(int num_tablet_servers) {
   MiniClusterOptions opts;
   opts.num_tablet_servers = num_tablet_servers;
-  cluster_.reset(new MiniCluster(env_.get(), opts));
+  cluster_.reset(new MiniCluster(env_, opts));
   ASSERT_OK(cluster_->Start());
   ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
 }

@@ -52,7 +52,7 @@ class FsManagerTestBase : public KuduTest {
     FsManagerOpts opts;
     opts.wal_path = wal_path;
     opts.data_paths = data_paths;
-    fs_manager_.reset(new FsManager(env_.get(), opts));
+    fs_manager_.reset(new FsManager(env_, opts));
   }
 
   void TestReadWriteDataFile(const Slice& data) {

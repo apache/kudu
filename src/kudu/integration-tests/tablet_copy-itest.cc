@@ -376,7 +376,7 @@ TEST_F(TabletCopyITest, TestDeleteTabletDuringTabletCopy) {
   ASSERT_OK(env_->CreateDir(testbase));
   opts.wal_path = JoinPathSegments(testbase, "wals");
   opts.data_paths.push_back(JoinPathSegments(testbase, "data-0"));
-  gscoped_ptr<FsManager> fs_manager(new FsManager(env_.get(), opts));
+  gscoped_ptr<FsManager> fs_manager(new FsManager(env_, opts));
   ASSERT_OK(fs_manager->CreateInitialFileSystemLayout());
   ASSERT_OK(fs_manager->Open());
 

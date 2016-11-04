@@ -66,7 +66,7 @@ class MasterReplicationTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    cluster_.reset(new MiniCluster(env_.get(), opts_));
+    cluster_.reset(new MiniCluster(env_, opts_));
     ASSERT_OK(cluster_->Start());
   }
 

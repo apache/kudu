@@ -59,7 +59,7 @@ class TableLocationsTest : public KuduTest {
     MiniClusterOptions opts;
     opts.num_tablet_servers = kNumTabletServers;
 
-    cluster_.reset(new MiniCluster(env_.get(), opts));
+    cluster_.reset(new MiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());
 
     // Create a client proxy to the master.
