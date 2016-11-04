@@ -53,9 +53,9 @@ Linux::
       link:troubleshooting.html#req_hole_punching[troubleshooting hole punching] for more
       information.
     - ntp.
-OS X::
-    - OS X 10.10 Yosemite or OS X 10.11 El Capitan.
-    - Prebuilt OS X packages are not provided.
+macOS::
+    - OS X 10.10 Yosemite, OS X 10.11 El Capitan, or macOS Sierra.
+    - Prebuilt macOS packages are not provided.
 Windows::
     - Microsoft Windows is unsupported.
 
@@ -510,23 +510,23 @@ make -j4
 ====
 
 [[osx_from_source]]
-=== OS X
+=== macOS
 The link:https://developer.apple.com/xcode/[Xcode] package is necessary for
 compiling Kudu. Some of the instructions below use link:http://brew.sh/[Homebrew]
 to install dependencies, but manual dependency installation is possible.
 
 [WARNING]
-.OS X Known Issues
+.macOS Known Issues
 ====
-Kudu support for OS X is experimental, and should only be used for development.
-See link:https://issues.cloudera.org/browse/KUDU-1219[OS X Limitations & Known Issues]
+Kudu support for macOS is experimental, and should only be used for development.
+See link:https://issues.cloudera.org/browse/KUDU-1219[macOS Limitations & Known Issues]
 for more information.
 ====
 
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ brew install autoconf automake cmake libtool pkg-config pstree
+$ brew install autoconf automake cmake libtool openssl pkg-config pstree
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -569,13 +569,16 @@ anywhere in your filesystem except for the `kudu` directory itself.
 ----
 mkdir -p build/release
 cd build/release
-../../thirdparty/installed/common/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
+../../thirdparty/installed/common/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl \
+  ../..
 make -j4
 ----
 
-.OSX Build Script
+.macOS Build Script
 ====
-This script provides an overview of the procedure to build Kudu on OSX, and can
+This script provides an overview of the procedure to build Kudu on macOS, and can
 be used as the basis for an automated deployment scenario. It assumes Xcode and Homebrew
 are installed.
 
@@ -588,7 +591,10 @@ cd kudu
 thirdparty/build-if-necessary.sh
 mkdir -p build/release
 cd build/release
-../../thirdparty/installed/common/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
+../../thirdparty/installed/common/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl \
+  ../..
 make -j4
 ----
 ====
@@ -712,4 +718,3 @@ $ sudo service kudu-tserver start
 == Next Steps
 - link:configuration.html[Configuring Kudu]
 - link:administration.html[Kudu Administration]
-
