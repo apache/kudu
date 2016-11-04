@@ -16,7 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 import org.junit.Test;
 
@@ -40,7 +40,7 @@ public class TestMiniKdc {
 
       String klist = kdc.klist();
 
-      assertTrue(klist.contains("alice@KRBTEST.COM"));
+      assertFalse(klist.contains("alice@KRBTEST.COM"));
       assertTrue(klist.contains("bob@KRBTEST.COM"));
       assertTrue(klist.contains("krbtgt/KRBTEST.COM@KRBTEST.COM"));
     }

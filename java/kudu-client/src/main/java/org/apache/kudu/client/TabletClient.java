@@ -32,6 +32,7 @@ import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.security.auth.Subject;
 import javax.security.sasl.SaslException;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -844,8 +845,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     userBuilder.setRealUser(SecureRpcHelper.USER_AND_PASSWORD);
     builder.setDEPRECATEDUserInfo(userBuilder.build());
     RpcHeader.ConnectionContextPB pb = builder.build();
-    RpcHeader.RequestHeader header = RpcHeader.RequestHeader.newBuilder()
-        .setCallId(CONNECTION_CTX_CALL_ID).build();
+    RpcHeader.RequestHeader header =
+        RpcHeader.RequestHeader.newBuilder().setCallId(CONNECTION_CTX_CALL_ID).build();
     return KuduRpc.toChannelBuffer(header, pb);
   }
 
@@ -855,6 +856,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   ServerInfo getServerInfo() {
     return serverInfo;
+  }
+
+  /**
+   * @return the subject containing security credentials, or null if no subject is available.
+   */
+  Subject getSubject() {
+    return kuduClient.getSubject();
   }
 
   public String toString() {

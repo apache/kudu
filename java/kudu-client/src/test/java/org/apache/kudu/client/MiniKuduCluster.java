@@ -11,19 +11,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
+
 package org.apache.kudu.client;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.file.Path;
+import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import javax.security.auth.Subject;
+import javax.security.auth.login.AppConfigurationEntry;
+import javax.security.auth.login.Configuration;
+import javax.security.auth.login.LoginContext;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
@@ -61,7 +70,7 @@ public class MiniKuduCluster implements AutoCloseable {
   private final Map<Integer, Process> tserverProcesses = new ConcurrentHashMap<>();
 
   // Map of ports to process command lines. Never removed from. Used to restart processes.
-  private final Map<Integer, String[]> commandLines = new ConcurrentHashMap<>();
+  private final Map<Integer, List<String>> commandLines = new ConcurrentHashMap<>();
 
   private final List<String> pathsToDelete = new ArrayList<>();
   private final List<HostAndPort> masterHostPorts = new ArrayList<>();
@@ -73,15 +82,76 @@ public class MiniKuduCluster implements AutoCloseable {
 
   private String masterAddresses;
 
-  private MiniKuduCluster(int numMasters, int numTservers, int defaultTimeoutMs) throws Exception {
+  private final String bindHost = TestUtils.getUniqueLocalhost();
+  private final Path keytab;
+  private final MiniKdc miniKdc;
+  private final Subject subject;
+
+  private MiniKuduCluster(int numMasters,
+                          int numTservers,
+                          final int defaultTimeoutMs,
+                          boolean enableKerberos) throws Exception {
     this.defaultTimeoutMs = defaultTimeoutMs;
+
+    if (enableKerberos) {
+      miniKdc = MiniKdc.withDefaults();
+      miniKdc.start();
+
+      keytab = miniKdc.createServiceKeytab("kudu/" + bindHost);
+
+      miniKdc.createUserPrincipal("testuser");
+      miniKdc.kinit("testuser");
+      System.setProperty("java.security.krb5.conf", miniKdc.getEnvVars().get("KRB5_CONFIG"));
+
+      Configuration conf = new Configuration() {
+        @Override
+        public AppConfigurationEntry[] getAppConfigurationEntry(String name) {
+          Map<String, String> options = new HashMap<>();
+          options.put("useKeyTab", "true");
+          options.put("useTicketCache", "true");
+          options.put("ticketCache", miniKdc.getEnvVars().get("KRB5CCNAME"));
+          options.put("principal", "testuser");
+          options.put("doNotPrompt", "true");
+          options.put("renewTGT", "true");
+          options.put("debug", "true");
+
+          return new AppConfigurationEntry[] {
+            new AppConfigurationEntry("com.sun.security.auth.module.Krb5LoginModule",
+                                      AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
+                                      options)
+          };
+        }
+      };
+
+      LoginContext context = new LoginContext("com.sun.security.auth.module.Krb5LoginModule",
+                                              new Subject(), null, conf);
+      context.login();
+      context.getSubject();
+      subject = context.getSubject();
+    } else {
+      miniKdc = null;
+      keytab = null;
+      subject = null;
+    }
 
     startCluster(numMasters, numTservers);
 
-    syncClient = new KuduClient.KuduClientBuilder(getMasterAddresses())
-        .defaultAdminOperationTimeoutMs(defaultTimeoutMs)
-        .defaultOperationTimeoutMs(defaultTimeoutMs)
-        .build();
+    PrivilegedAction<KuduClient> createClient = new PrivilegedAction<KuduClient>() {
+      @Override
+      public KuduClient run() {
+        KuduClient.KuduClientBuilder kuduClientBuilder =
+            new KuduClient.KuduClientBuilder(getMasterAddresses());
+        kuduClientBuilder.defaultAdminOperationTimeoutMs(defaultTimeoutMs);
+        kuduClientBuilder.defaultOperationTimeoutMs(defaultTimeoutMs);
+        return kuduClientBuilder.build();
+      }
+    };
+
+    if (subject != null) {
+      syncClient = Subject.doAs(subject, createClient);
+    } else {
+      syncClient = createClient.run();
+    }
   }
 
   /**
@@ -104,18 +174,15 @@ public class MiniKuduCluster implements AutoCloseable {
    * Starts a Kudu cluster composed of the provided masters and tablet servers.
    * @param numMasters how many masters to start
    * @param numTservers how many tablet servers to start
-   * @throws Exception
    */
   private void startCluster(int numMasters, int numTservers) throws Exception {
     Preconditions.checkArgument(numMasters > 0, "Need at least one master");
-    Preconditions.checkArgument(numTservers > 0, "Need at least one tablet server");
     // The following props are set via kudu-client's pom.
     String baseDirPath = TestUtils.getBaseDir();
-    String localhost = TestUtils.getUniqueLocalhost();
 
     long now = System.currentTimeMillis();
     LOG.info("Starting {} masters...", numMasters);
-    int startPort = startMasters(PORT_START, numMasters, baseDirPath);
+    int startPort = startMasters(PORT_START, numMasters, baseDirPath, bindHost);
     LOG.info("Starting {} tablet servers...", numTservers);
     List<Integer> ports = TestUtils.findFreePorts(startPort, numTservers * 2);
     for (int i = 0; i < numTservers; i++) {
@@ -123,19 +190,27 @@ public class MiniKuduCluster implements AutoCloseable {
       tserverPorts.add(rpcPort);
       String dataDirPath = baseDirPath + "/ts-" + i + "-" + now;
       String flagsPath = TestUtils.getFlagsPath();
-      String[] tsCmdLine = {
+
+      List<String> commandLine = Lists.newArrayList(
           TestUtils.findBinary("kudu-tserver"),
           "--flagfile=" + flagsPath,
           "--fs_wal_dir=" + dataDirPath,
           "--fs_data_dirs=" + dataDirPath,
           "--flush_threshold_mb=1",
           "--tserver_master_addrs=" + masterAddresses,
-          "--webserver_interface=" + localhost,
-          "--local_ip_for_outbound_sockets=" + localhost,
+          "--webserver_interface=" + bindHost,
+          "--local_ip_for_outbound_sockets=" + bindHost,
           "--webserver_port=" + (rpcPort + 1),
-          "--rpc_bind_addresses=" + localhost + ":" + rpcPort};
-      tserverProcesses.put(rpcPort, configureAndStartProcess(rpcPort, tsCmdLine));
-      commandLines.put(rpcPort, tsCmdLine);
+          "--rpc_bind_addresses=" + bindHost + ":" + rpcPort);
+
+      if (miniKdc != null) {
+        commandLine.add("--keytab=" + keytab);
+        commandLine.add("--kerberos_principal=kudu/" + bindHost);
+        commandLine.add("--server_require_kerberos");
+      }
+
+      tserverProcesses.put(rpcPort, configureAndStartProcess(rpcPort, commandLine));
+      commandLines.put(rpcPort, commandLine);
 
       if (flagsPath.startsWith(baseDirPath)) {
         // We made a temporary copy of the flags; delete them later.
@@ -155,13 +230,14 @@ public class MiniKuduCluster implements AutoCloseable {
    * @return the next free port
    * @throws Exception if we are unable to start the masters
    */
-  private int startMasters(int masterStartPort, int numMasters,
-                          String baseDirPath) throws Exception {
+  private int startMasters(int masterStartPort,
+                           int numMasters,
+                           String baseDirPath,
+                           String bindHost) throws Exception {
     LOG.info("Starting {} masters...", numMasters);
     // Get the list of web and RPC ports to use for the master consensus configuration:
     // request NUM_MASTERS * 2 free ports as we want to also reserve the web
     // ports for the consensus configuration.
-    String localhost = TestUtils.getUniqueLocalhost();
     List<Integer> ports = TestUtils.findFreePorts(masterStartPort, numMasters * 2);
     int lastFreePort = ports.get(ports.size() - 1);
     List<Integer> masterRpcPorts = Lists.newArrayListWithCapacity(numMasters);
@@ -169,7 +245,7 @@ public class MiniKuduCluster implements AutoCloseable {
     for (int i = 0; i < numMasters * 2; i++) {
       if (i % 2 == 0) {
         masterRpcPorts.add(ports.get(i));
-        masterHostPorts.add(HostAndPort.fromParts(localhost, ports.get(i)));
+        masterHostPorts.add(HostAndPort.fromParts(bindHost, ports.get(i)));
       } else {
         masterWebPorts.add(ports.get(i));
       }
@@ -187,20 +263,26 @@ public class MiniKuduCluster implements AutoCloseable {
       // 3) master 1 happens to bind to port b for the web port, as master 2 hasn't been
       // started yet and findFreePort(s) is "check-time-of-use" (it does not reserve the
       // ports, only checks that when it was last called, these ports could be used).
-      List<String> masterCmdLine = Lists.newArrayList(
+      List<String> commandLine = Lists.newArrayList(
           TestUtils.findBinary("kudu-master"),
           "--flagfile=" + flagsPath,
           "--fs_wal_dir=" + dataDirPath,
           "--fs_data_dirs=" + dataDirPath,
-          "--webserver_interface=" + localhost,
-          "--local_ip_for_outbound_sockets=" + localhost,
-          "--rpc_bind_addresses=" + localhost + ":" + port,
+          "--webserver_interface=" + bindHost,
+          "--local_ip_for_outbound_sockets=" + bindHost,
+          "--rpc_bind_addresses=" + bindHost + ":" + port,
           "--webserver_port=" + masterWebPorts.get(i),
           "--raft_heartbeat_interval_ms=200"); // make leader elections faster for faster tests
       if (numMasters > 1) {
-        masterCmdLine.add("--master_addresses=" + masterAddresses);
+        commandLine.add("--master_addresses=" + masterAddresses);
       }
-      String[] commandLine = masterCmdLine.toArray(new String[masterCmdLine.size()]);
+
+      if (miniKdc != null) {
+        commandLine.add("--keytab=" + keytab);
+        commandLine.add("--kerberos_principal=kudu/" + bindHost);
+        commandLine.add("--server_require_kerberos");
+      }
+
       masterProcesses.put(port, configureAndStartProcess(port, commandLine));
       commandLines.put(port, commandLine);
 
@@ -224,24 +306,26 @@ public class MiniKuduCluster implements AutoCloseable {
    * or if we were able to start the process but noticed that it was then killed (in which case
    * we'll log the exit value).
    */
-  private Process configureAndStartProcess(int port, String[] command) throws Exception {
-    LOG.info("Starting process: {}", Joiner.on(" ").join(command));
+  private Process configureAndStartProcess(int port, List<String> command) throws Exception {
     ProcessBuilder processBuilder = new ProcessBuilder(command);
     processBuilder.redirectErrorStream(true);
+    if (miniKdc != null) {
+      processBuilder.environment().putAll(miniKdc.getEnvVars());
+    }
     Process proc = processBuilder.start();
     ProcessInputStreamLogPrinterRunnable printer =
         new ProcessInputStreamLogPrinterRunnable(proc.getInputStream());
     Thread thread = new Thread(printer);
     thread.setDaemon(true);
-    thread.setName(Iterables.getLast(Splitter.on(File.separatorChar).split(command[0])) + ":" + port);
+    thread.setName(Iterables.getLast(Splitter.on(File.separatorChar).split(command.get(0))) + ":" + port);
     PROCESS_INPUT_PRINTERS.add(thread);
     thread.start();
 
     Thread.sleep(300);
     try {
       int ev = proc.exitValue();
-      throw new Exception("We tried starting a process (" + command[0] + ") but it exited with " +
-          "value=" + ev);
+      throw new Exception(String.format(
+          "We tried starting a process (%s) but it exited with value=%s", command.get(0), ev));
     } catch (IllegalThreadStateException ex) {
       // This means the process is still alive, it's like reverse psychology.
     }
@@ -279,8 +363,7 @@ public class MiniKuduCluster implements AutoCloseable {
       throw new RuntimeException(message);
     }
 
-    String[] commandLine = commandLines.get(port);
-    map.put(port, configureAndStartProcess(port, commandLine));
+    map.put(port, configureAndStartProcess(port, commandLines.get(port)));
   }
 
   /**
@@ -385,7 +468,15 @@ public class MiniKuduCluster implements AutoCloseable {
           f.delete();
         }
       } catch (Exception e) {
-        LOG.warn("Could not delete path {}", path, e);
+        LOG.warn(String.format("Could not delete path %s", path), e);
+      }
+    }
+
+    if (miniKdc != null) {
+      try {
+        miniKdc.close();
+      } catch (IOException e) {
+        LOG.warn("Unable to close MiniKdc", e);
       }
     }
   }
@@ -430,6 +521,14 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
+   * @return authenticated user credentials for this cluster,
+   *         or {@code null} if it is not a secure cluster.
+   */
+  public Subject getLoggedInSubject() {
+    return subject;
+  }
+
+  /**
    * Helper runnable that receives stdout and logs it along with the process' identifier.
    */
   public static class ProcessInputStreamLogPrinterRunnable implements Runnable {
@@ -463,6 +562,7 @@ public class MiniKuduCluster implements AutoCloseable {
     private int numMasters = 1;
     private int numTservers = 3;
     private int defaultTimeoutMs = 50000;
+    private boolean enableKerberos = false;
 
     public MiniKuduClusterBuilder numMasters(int numMasters) {
       this.numMasters = numMasters;
@@ -485,9 +585,17 @@ public class MiniKuduCluster implements AutoCloseable {
       return this;
     }
 
+    /**
+     * Enables Kerberos on the mini cluster and acquire client credentials for this process.
+     * @return this instance
+     */
+    public MiniKuduClusterBuilder enableKerberos() {
+      enableKerberos = true;
+      return this;
+    }
+
     public MiniKuduCluster build() throws Exception {
-      return new MiniKuduCluster(numMasters, numTservers, defaultTimeoutMs);
+      return new MiniKuduCluster(numMasters, numTservers, defaultTimeoutMs, enableKerberos);
     }
   }
-
 }

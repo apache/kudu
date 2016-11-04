@@ -403,7 +403,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   DISALLOW_COPY_AND_ASSIGN(ExternalDaemon);
 };
 
-// Resumes a daemon that was stopped with ExteranlDaemon::Pause() upon
+// Resumes a daemon that was stopped with ExternalDaemon::Pause() upon
 // exiting a scope.
 class ScopedResumeExternalDaemon {
  public:

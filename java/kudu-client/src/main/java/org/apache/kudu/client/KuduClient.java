@@ -410,6 +410,5 @@ public class KuduClient implements AutoCloseable {
       AsyncKuduClient client = clientBuilder.build();
       return new KuduClient(client);
     }
-
   }
 }

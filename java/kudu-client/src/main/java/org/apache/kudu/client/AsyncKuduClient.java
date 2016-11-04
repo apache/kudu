@@ -27,10 +27,13 @@
 package org.apache.kudu.client;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
+
 import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.security.AccessControlContext;
+import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -44,6 +47,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import javax.annotation.concurrent.GuardedBy;
+import javax.security.auth.Subject;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -180,6 +184,8 @@ public class AsyncKuduClient implements AutoCloseable {
 
   private final RequestTracker requestTracker;
 
+  private final Subject subject;
+
   private volatile boolean closed;
 
   private AsyncKuduClient(AsyncKuduClientBuilder b) {
@@ -195,6 +201,7 @@ public class AsyncKuduClient implements AutoCloseable {
     this.timer = b.timer;
     String clientId = UUID.randomUUID().toString().replace("-", "");
     this.requestTracker = new RequestTracker(clientId);
+    this.subject = b.subject;
     this.connectionCache = new ConnectionCache(this);
   }
 
@@ -938,6 +945,17 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
+   * Gets the subject who created the Kudu client.
+   *
+   * The subject contains credentials necessary to authenticate to Kerberized Kudu clusters.
+   *
+   * @return the subject who created the Kudu client, or null if no login context was active.
+   */
+  Subject getSubject() {
+    return subject;
+  }
+
+  /**
    * Clears {@link #tableLocations} of the table's entries.
    *
    * This method makes the maps momentarily inconsistent, and should only be
@@ -1623,6 +1641,7 @@ public class AsyncKuduClient implements AutoCloseable {
     private int bossCount = DEFAULT_BOSS_COUNT;
     private int workerCount = DEFAULT_WORKER_COUNT;
     private boolean statisticsDisabled = false;
+    private Subject subject;
 
     /**
      * Creates a new builder for a client that will connect to the specified masters.
@@ -1779,6 +1798,8 @@ public class AsyncKuduClient implements AutoCloseable {
      * @return a new asynchronous Kudu client
      */
     public AsyncKuduClient build() {
+      AccessControlContext context = AccessController.getContext();
+      subject = Subject.getSubject(context);
       return new AsyncKuduClient(this);
     }
   }

@@ -26,23 +26,23 @@
 
 package org.apache.kudu.client;
 
+import java.security.PrivilegedExceptionAction;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
+import javax.security.auth.Subject;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.NameCallback;
 import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
-import javax.security.sasl.RealmCallback;
-import javax.security.sasl.RealmChoiceCallback;
+import javax.security.auth.kerberos.KerberosPrincipal;
 import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslClient;
 import javax.security.sasl.SaslException;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
@@ -57,12 +57,17 @@ import org.apache.kudu.rpc.RpcHeader;
 @InterfaceAudience.Private
 public class SecureRpcHelper {
 
-  public static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);
+  private static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);
+
+  private static final Map<String, String> SASL_PROPS = ImmutableMap.of();
+  private static final SaslClientCallbackHandler SASL_CALLBACK = new SaslClientCallbackHandler();
+  private static final String[] MECHS = new String[] { "GSSAPI", "PLAIN" };
+  private static final String[] INSECURE_MECHS = new String[] { "PLAIN" };
+
+  static final String USER_AND_PASSWORD = "java_client";
 
   private final TabletClient client;
   private SaslClient saslClient;
-  public static final String SASL_DEFAULT_REALM = "default";
-  public static final Map<String, String> SASL_PROPS = new TreeMap<>();
   private static final int SASL_CALL_ID = -33;
   private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
       ImmutableSet.of(RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS);
@@ -70,19 +75,22 @@ public class SecureRpcHelper {
   private boolean useWrap = false; // no QOP at the moment
   private Set<RpcHeader.RpcFeatureFlag> serverFeatures;
 
-  public static final String USER_AND_PASSWORD = "java_client";
-
-  public SecureRpcHelper(TabletClient client) {
+  public SecureRpcHelper(final TabletClient client) {
     this.client = client;
+
+    Subject subject = client.getSubject();
+    boolean tryKerberos = subject != null &&
+                          !subject.getPrincipals(KerberosPrincipal.class).isEmpty();
+    String[] mechanisms = tryKerberos ? MECHS : INSECURE_MECHS;
+
     try {
-      saslClient = Sasl.createSaslClient(new String[]{"PLAIN"},
+      saslClient = Sasl.createSaslClient(mechanisms,
                                          null,
-                                         null,
-                                         SASL_DEFAULT_REALM,
+                                         "kudu",
+                                         client.getServerInfo().getHostname(),
                                          SASL_PROPS,
-                                         new SaslClientCallbackHandler(USER_AND_PASSWORD,
-                                                                       USER_AND_PASSWORD));
-    } catch (SaslException e) {
+                                         SASL_CALLBACK);
+    } catch (Exception e) {
       throw new RuntimeException("Could not create the SASL client", e);
     }
   }
@@ -129,10 +137,10 @@ public class SecureRpcHelper {
           handleChallengeResponse(chan, response);
           break;
         case SUCCESS:
-          handleSuccessResponse(chan, response);
+          handleSuccessResponse(chan);
           break;
         default:
-          System.out.println("Wrong sasl state");
+          LOG.error(String.format("Wrong SASL state: %s", response.getState()));
       }
       return null;
     }
@@ -229,8 +237,7 @@ public class SecureRpcHelper {
 
   private void handleChallengeResponse(Channel chan, RpcHeader.SaslMessagePB response) throws
       SaslException {
-    ByteString bs = response.getToken();
-    byte[] saslToken = saslClient.evaluateChallenge(bs.toByteArray());
+    byte[] saslToken = saslClient.evaluateChallenge(response.getToken().toByteArray());
     if (saslToken == null) {
       throw new IllegalStateException("Not expecting an empty token");
     }
@@ -240,48 +247,23 @@ public class SecureRpcHelper {
     sendSaslMessage(chan, builder.build());
   }
 
-  private void handleSuccessResponse(Channel chan, RpcHeader.SaslMessagePB response) {
+  private void handleSuccessResponse(Channel chan) {
     LOG.debug("nego finished");
     negoUnderway = false;
     client.sendContext(chan);
   }
 
   private static class SaslClientCallbackHandler implements CallbackHandler {
-    private final String userName;
-    private final char[] userPassword;
-
-    public SaslClientCallbackHandler(String user, String password) {
-      this.userName = user;
-      this.userPassword = password.toCharArray();
-    }
-
-    public void handle(Callback[] callbacks)
-        throws UnsupportedCallbackException {
-      NameCallback nc = null;
-      PasswordCallback pc = null;
-      RealmCallback rc = null;
+    public void handle(Callback[] callbacks) throws UnsupportedCallbackException {
       for (Callback callback : callbacks) {
-        if (callback instanceof RealmChoiceCallback) {
-          continue;
-        } else if (callback instanceof NameCallback) {
-          nc = (NameCallback) callback;
+        if (callback instanceof NameCallback) {
+          ((NameCallback) callback).setName(USER_AND_PASSWORD);
         } else if (callback instanceof PasswordCallback) {
-          pc = (PasswordCallback) callback;
-        } else if (callback instanceof RealmCallback) {
-          rc = (RealmCallback) callback;
+          ((PasswordCallback) callback).setPassword(USER_AND_PASSWORD.toCharArray());
         } else {
           throw new UnsupportedCallbackException(callback,
-              "Unrecognized SASL client callback");
+                                                 "Unrecognized SASL client callback");
         }
-      }
-      if (nc != null) {
-        nc.setName(userName);
-      }
-      if (pc != null) {
-        pc.setPassword(userPassword);
-      }
-      if (rc != null) {
-        rc.setText(rc.getDefaultText());
       }
     }
   }

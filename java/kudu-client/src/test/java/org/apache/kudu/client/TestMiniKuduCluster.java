@@ -13,15 +13,11 @@
  */
 package org.apache.kudu.client;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 
 import java.io.IOException;
 import java.net.Socket;
 
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 
 public class TestMiniKuduCluster {
@@ -29,62 +25,63 @@ public class TestMiniKuduCluster {
   private static final int NUM_TABLET_SERVERS = 3;
   private static final int DEFAULT_NUM_MASTERS = 1;
 
-  private MiniKuduCluster cluster;
+  @Test(timeout = 50000)
+  public void test() throws Exception {
+    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+                                                      .numMasters(DEFAULT_NUM_MASTERS)
+                                                      .numTservers(NUM_TABLET_SERVERS)
+                                                      .build()) {
+      assertTrue(cluster.waitForTabletServers(NUM_TABLET_SERVERS));
+      assertEquals(DEFAULT_NUM_MASTERS, cluster.getMasterProcesses().size());
+      assertEquals(NUM_TABLET_SERVERS, cluster.getTabletServerProcesses().size());
 
-  @Before
-  public void before() throws Exception {
-    cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-        .numMasters(DEFAULT_NUM_MASTERS)
-        .numTservers(NUM_TABLET_SERVERS)
-        .build();
-    assertTrue(cluster.waitForTabletServers(NUM_TABLET_SERVERS));
-  }
+      {
+        // Kill the master.
+        int masterPort = cluster.getMasterProcesses().keySet().iterator().next();
+        testPort(masterPort, true, 1000);
+        cluster.killMasterOnPort(masterPort);
 
-  @After
-  public void after() {
-    if (cluster != null) {
-      cluster.shutdown();
+        testPort(masterPort, false, 2000);
+
+        // Restart the master.
+        cluster.restartDeadMasterOnPort(masterPort);
+
+        // Test we can reach it.
+        testPort(masterPort, true, 3000);
+      }
+
+      {
+        // Kill the first TS.
+        int tsPort = cluster.getTabletServerProcesses().keySet().iterator().next();
+        testPort(tsPort, true, 1000);
+        cluster.killTabletServerOnPort(tsPort);
+
+        testPort(tsPort, false, 2000);
+
+        // Restart it.
+        cluster.restartDeadTabletServerOnPort(tsPort);
+
+        testPort(tsPort, true, 3000);
+      }
+
+      assertEquals(DEFAULT_NUM_MASTERS, cluster.getMasterProcesses().size());
+      assertEquals(NUM_TABLET_SERVERS, cluster.getTabletServerProcesses().size());
     }
   }
 
   @Test(timeout = 50000)
-  public void test() throws Exception {
-
-    assertEquals(DEFAULT_NUM_MASTERS, cluster.getMasterProcesses().size());
-    assertEquals(NUM_TABLET_SERVERS, cluster.getTabletServerProcesses().size());
-
-    {
-      // Kill the master.
-      int masterPort = cluster.getMasterProcesses().keySet().iterator().next();
-      testPort(masterPort, true, 1000);
-      cluster.killMasterOnPort(masterPort);
-
-      testPort(masterPort, false, 2000);
-
-      // Restart the master.
-      cluster.restartDeadMasterOnPort(masterPort);
-
-      // Test we can reach it.
-      testPort(masterPort, true, 3000);
+  public void testKerberos() throws Exception {
+    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+                                                      .numMasters(DEFAULT_NUM_MASTERS)
+                                                      .numTservers(NUM_TABLET_SERVERS)
+                                                      .enableKerberos()
+                                                      .build()) {
+      try {
+        assertTrue(cluster.waitForTabletServers(NUM_TABLET_SERVERS));
+      } catch (RuntimeException e) {
+        assertTrue(e.getMessage().contains("incompatible RPC?"));
+      }
     }
-
-
-    {
-      // Kill the first TS.
-      int tsPort = cluster.getTabletServerProcesses().keySet().iterator().next();
-      testPort(tsPort, true, 1000);
-      cluster.killTabletServerOnPort(tsPort);
-
-      testPort(tsPort, false, 2000);
-
-      // Restart it.
-      cluster.restartDeadTabletServerOnPort(tsPort);
-
-      testPort(tsPort, true, 3000);
-    }
-
-    assertEquals(DEFAULT_NUM_MASTERS, cluster.getMasterProcesses().size());
-    assertEquals(NUM_TABLET_SERVERS, cluster.getTabletServerProcesses().size());
   }
 
   /**
@@ -93,9 +90,10 @@ public class TestMiniKuduCluster {
    * @param port the port to test
    * @param testIsOpen true if we should want it to be open, false if we want it closed
    * @param timeout how long we're willing to wait before it happens
-   * @throws InterruptedException
    */
-  private void testPort(int port, boolean testIsOpen, long timeout) throws InterruptedException {
+  private static void testPort(int port,
+                               boolean testIsOpen,
+                               long timeout) throws InterruptedException {
     DeadlineTracker tracker = new DeadlineTracker();
     while (tracker.getElapsedMillis() < timeout) {
       try {

@@ -383,19 +383,13 @@ Status SaslServer::HandleInitiateRequest(const SaslMessagePB& request) {
   if (s.ok()) {
     nego_ok_ = true;
     RETURN_NOT_OK(SendSuccessResponse(server_out, server_out_len));
-  } else { // s.IsComplete() (equivalent to SASL_CONTINUE)
+  } else { // s.IsIncomplete() (equivalent to SASL_CONTINUE)
     RETURN_NOT_OK(SendChallengeResponse(server_out, server_out_len));
   }
   return Status::OK();
 }
 
 Status SaslServer::SendChallengeResponse(const char* challenge, unsigned clen) {
-  if (clen < 1) {
-    Status s = Status::NotAuthorized("SASL library did not provide challenge token!");
-    RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
-    return s;
-  }
-
   SaslMessagePB response;
   response.set_state(SaslMessagePB::CHALLENGE);
   response.mutable_token()->assign(challenge, clen);

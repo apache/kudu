@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import java.io.BufferedReader;
@@ -24,8 +25,6 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import javax.annotation.concurrent.NotThreadSafe;
@@ -50,6 +49,9 @@ import org.apache.kudu.annotations.InterfaceAudience;
  * to the KDC.
  *
  * The KDC is managed as an external process, using the krb5 binaries installed on the system.
+ *
+ * For debugging Kerberos client issues, it can be helpful to add
+ * {@code -Dsun.security.krb5.debug=true} to the JVM properties.
  */
 @InterfaceAudience.Private
 @NotThreadSafe
@@ -118,7 +120,7 @@ public class MiniKdc implements Closeable {
     return new MiniKdc(
         new Options("KRBTEST.COM",
                     Paths.get(TestUtils.getBaseDir(), "krb5kdc-" + System.currentTimeMillis()),
-                    TestUtils.findFreePort(PORT_START)));
+                    TestUtils.findFreeUdpPort(PORT_START)));
   }
 
   /**
@@ -133,12 +135,6 @@ public class MiniKdc implements Closeable {
       if (!dataRootDir.mkdir()) {
         throw new RuntimeException(String.format("unable to create krb5 state directory: %s",
                                                  dataRootDir));
-      }
-
-      File credentialCacheDir = options.dataRoot.resolve("krb5cc").toFile();
-      if (!credentialCacheDir.mkdir()) {
-        throw new RuntimeException(String.format("unable to create credential cache directory: %s",
-                                                 credentialCacheDir));
       }
 
       createKdcConf();
@@ -235,7 +231,6 @@ public class MiniKdc implements Closeable {
         "   kdc = STDERR",
 
         "[libdefaults]",
-        "   default_ccache_name = " + "DIR:" + options.dataRoot.resolve("krb5cc"),
         "   default_realm = " + options.realm,
         "   dns_lookup_kdc = false",
         "   dns_lookup_realm = false",
@@ -243,8 +238,16 @@ public class MiniKdc implements Closeable {
         "   renew_lifetime = 7d",
         "   ticket_lifetime = 24h",
 
-        // The KDC is configured to only use TCP, so the client should not prefer UDP.
-        "   udp_preference_limit = 0",
+        // Disable aes256, since Java does not support it without JCE, see
+        // https://docs.oracle.com/javase/8/docs/technotes/guides/security/jgss/jgss-features.html
+        "   default_tkt_enctypes = aes128-cts des3-cbc-sha1",
+        "   default_tgs_enctypes = aes128-cts des3-cbc-sha1",
+        "   permitted_enctypes = aes128-cts des3-cbc-sha1",
+
+        // In miniclusters, we start daemons on local loopback IPs that
+        // have no reverse DNS entries. So, disable reverse DNS.
+        "   rdns = false",
+        "   ignore_acceptor_hostname = true",
 
         "[realms]",
         options.realm + " = {",
@@ -257,8 +260,7 @@ public class MiniKdc implements Closeable {
   private void createKdcConf() throws IOException {
     List<String> contents = ImmutableList.of(
         "[kdcdefaults]",
-        "   kdc_ports = \"\"",
-        "   kdc_tcp_ports = " + options.port,
+        "   kdc_ports = " + options.port,
 
         "[realms]",
         options.realm + " = {",
@@ -312,28 +314,22 @@ public class MiniKdc implements Closeable {
       "/usr/sbin" // Linux
   );
 
-  private Map<String, String> getEnvVars() {
+  public Map<String, String> getEnvVars() {
     return ImmutableMap.of(
         "KRB5_CONFIG", options.dataRoot.resolve("krb5.conf").toString(),
         "KRB5_KDC_PROFILE", options.dataRoot.resolve("kdc.conf").toString(),
-        "KRB5CCNAME", "DIR:" + options.dataRoot.resolve("krb5cc").toString()
+        "KRB5CCNAME", options.dataRoot.resolve("krb5cc").toString()
     );
   }
 
   private Process startProcessWithKrbEnv(String... argv) throws IOException {
-    List<String> args = new ArrayList<>();
-    args.add("env");
-    for (Map.Entry<String, String> entry : getEnvVars().entrySet()) {
-      args.add(String.format("%s=%s", entry.getKey(), entry.getValue()));
-    }
-    args.addAll(Arrays.asList(argv));
 
-    LOG.debug("executing {}: {}", Paths.get(argv[0]).getFileName(), Joiner.on(' ').join(args));
-
-    return new ProcessBuilder(args).redirectOutput(ProcessBuilder.Redirect.PIPE)
-                                   .redirectErrorStream(true)
-                                   .redirectInput(ProcessBuilder.Redirect.PIPE)
-                                   .start();
+    ProcessBuilder procBuilder = new ProcessBuilder(argv);
+    procBuilder.environment().putAll(getEnvVars());
+    LOG.debug("executing '{}', env: '{}'",
+              Joiner.on(" ").join(procBuilder.command()),
+              Joiner.on(", ").withKeyValueSeparator("=").join(procBuilder.environment()));
+    return procBuilder.redirectErrorStream(true).start();
   }
 
   /**
