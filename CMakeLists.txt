@@ -911,8 +911,8 @@ endif()
 
 ## Kerberos
 if (NOT NO_TESTS)
-  ## We rely on the Kerberos KDC binary for testing security.
-  find_package(Kdc)
+  ## We rely on the Kerberos binaries for testing security.
+  find_package(Kerberos)
 endif()
 
 ## Boost

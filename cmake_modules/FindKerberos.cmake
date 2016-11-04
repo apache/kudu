@@ -15,22 +15,24 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# - Find Kerberos KDC
-# This module defines
-# KDC_BIN - the Kerberos KDC binary
-# KDC_BIN_FOUND- set to true if the Kerberos KDC binary is found
-
-find_program(KDC_BIN krb5kdc
-             PATHS
-             # Linux install location.
-             /usr/sbin
-             # Homebrew install location.
-             /usr/local/opt/krb5/sbin
-             # Macports install location.
-             /opt/local/sbin
-             # SLES
-             /usr/lib/mit/sbin)
+# - Find Kerberos
+# This module ensures that the Kerberos binaries depended on by tests are
+# present on the system.
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(Kdc REQUIRED_VARS KDC_BIN
-  FAIL_MESSAGE "Kerberos not found: security tests will fail")
+set(bins kadmin.local kdb5_util kdestroy kinit klist krb5kdc)
+
+foreach(bin ${bins})
+  find_program(${bin} ${bin} PATHS
+               # Linux install location.
+               /usr/sbin
+               # Homebrew install location.
+               /usr/local/opt/krb5/sbin
+               # Macports install location.
+               /opt/local/sbin
+               # SLES
+               /usr/lib/mit/sbin)
+endforeach(bin)
+
+find_package_handle_standard_args(Kerberos REQUIRED_VARS ${bins}
+  FAIL_MESSAGE "Kerberos binaries not found: security tests will fail")
