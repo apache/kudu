@@ -19,6 +19,8 @@ package org.apache.kudu.client;
 import com.google.common.base.MoreObjects;
 import org.apache.kudu.annotations.InterfaceAudience;
 
+import java.util.List;
+
 /**
  * Container class for traces. Most of its properties can be null, when they aren't set via the
  * builder. The timestamp is set automatically.
@@ -27,16 +29,43 @@ import org.apache.kudu.annotations.InterfaceAudience;
 class RpcTraceFrame {
   enum Action {
     // Just before putting the RPC on the wire.
-    SEND_TO_SERVER,
+    SEND_TO_SERVER {
+      void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
+        sb.append("sending RPC to server ");
+        sb.append(trace.getServer().getUuid());
+      }
+    },
     // Just after parsing the response from the server.
-    RECEIVE_FROM_SERVER,
+    RECEIVE_FROM_SERVER {
+      void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
+        sb.append("received from server ");
+        sb.append(trace.getServer().getUuid());
+        sb.append(" response ");
+        sb.append(trace.getStatus());
+      }
+    },
     // Just before sleeping and then retrying.
-    SLEEP_THEN_RETRY,
+    SLEEP_THEN_RETRY {
+      void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
+        sb.append("delaying RPC due to ");
+        sb.append(trace.getStatus());
+      }
+    },
     // After having figured out that we don't know where the RPC is going,
     // before querying the master.
-    QUERY_MASTER,
+    QUERY_MASTER {
+      void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
+        sb.append("querying master");
+      }
+    },
     // Once the trace becomes too large, will be the last trace object in the list.
-    TRACE_TRUNCATED
+    TRACE_TRUNCATED {
+      void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
+        sb.append("trace too long, truncated");
+      }
+    };
+
+    abstract void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb);
   }
 
   private final String rpcMethod;
@@ -72,6 +101,39 @@ class RpcTraceFrame {
 
   public Status getStatus() {
     return callStatus;
+  }
+
+  public static String getHumanReadableStringForTraces(List<RpcTraceFrame> traces) {
+    String rootMethod;
+    long baseTimestamp;
+    if (traces.isEmpty()) {
+      return "No traces";
+    } else {
+      RpcTraceFrame firstTrace = traces.get(0);
+      rootMethod = firstTrace.getRpcMethod();
+      baseTimestamp = firstTrace.getTimestampMs();
+    }
+
+    StringBuilder sb = new StringBuilder("Traces: ");
+    for (int i = 0; i < traces.size(); i++) {
+      RpcTraceFrame trace = traces.get(i);
+      sb.append('[');
+      sb.append(trace.getTimestampMs() - baseTimestamp);
+      sb.append("ms] ");
+
+      if (!rootMethod.equals(trace.getRpcMethod())) {
+        sb.append("Sub rpc: ");
+        sb.append(trace.getRpcMethod());
+        sb.append(" ");
+      }
+
+      trace.getAction().appendToStringBuilder(trace, sb);
+
+      if (i < traces.size() - 1) {
+        sb.append(", ");
+      }
+    }
+    return sb.toString();
   }
 
   @Override
