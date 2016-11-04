@@ -38,7 +38,7 @@ using strings::Substitute;
 
 TEST_F(KuduTest, Lifecycle) {
   string kType = "asdf";
-  string kFileName = JoinPathSegments(GetTestDataDirectory(), "foo");
+  string kFileName = GetTestPath("foo");
   string kUuid = "a_uuid";
 
   // Test that the metadata file was created.
@@ -70,7 +70,7 @@ TEST_F(KuduTest, Lifecycle) {
 
 TEST_F(KuduTest, Locking) {
   string kType = "asdf";
-  string kFileName = JoinPathSegments(GetTestDataDirectory(), "foo");
+  string kFileName = GetTestPath("foo");
   string kUuid = "a_uuid";
 
   PathInstanceMetadataFile file(env_, kType, kFileName);

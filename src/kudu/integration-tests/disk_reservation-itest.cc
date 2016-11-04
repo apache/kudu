@@ -59,12 +59,11 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
   // Reserve one byte so that when we simulate 0 bytes free below, we'll start
   // failing requests.
   ts_flags.push_back("--fs_data_dirs_reserved_bytes=1");
-  ts_flags.push_back(Substitute("--fs_data_dirs=$0/a,$0/b",
-                                GetTestDataDirectory()));
+  ts_flags.push_back(Substitute("--fs_data_dirs=$0/a,$0/b", test_dir_));
   ts_flags.push_back(Substitute("--disk_reserved_override_prefix_1_path_for_testing=$0/a",
-                                GetTestDataDirectory()));
+                                test_dir_));
   ts_flags.push_back(Substitute("--disk_reserved_override_prefix_2_path_for_testing=$0/b",
-                                GetTestDataDirectory()));
+                                test_dir_));
 
   NO_FATALS(StartCluster(ts_flags, {}, 1));
 

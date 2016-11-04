@@ -109,7 +109,7 @@ class BlockManagerStressTest : public KuduTest {
   BlockManager* CreateBlockManager() {
     BlockManagerOptions opts;
     if (FLAGS_block_manager_paths.empty()) {
-      opts.root_paths.push_back(GetTestDataDirectory());
+      opts.root_paths.push_back(test_dir_);
     } else {
       opts.root_paths = strings::Split(FLAGS_block_manager_paths, ",",
                                        strings::SkipEmpty());

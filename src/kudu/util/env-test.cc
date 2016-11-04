@@ -473,7 +473,7 @@ TEST_F(TestEnv, TestGetExecutablePath) {
 
 TEST_F(TestEnv, TestOpenEmptyRandomAccessFile) {
   Env* env = Env::Default();
-  string test_file = JoinPathSegments(GetTestDataDirectory(), "test_file");
+  string test_file = GetTestPath("test_file");
   ASSERT_NO_FATAL_FAILURE(WriteTestFile(env, test_file, 0));
   gscoped_ptr<RandomAccessFile> readable_file;
   ASSERT_OK(env->NewRandomAccessFile(test_file, &readable_file));
@@ -701,7 +701,7 @@ TEST_F(TestEnv, TestCanonicalize) {
   for (const string& synonym : synonyms) {
     string result;
     ASSERT_OK(env_->Canonicalize(synonym, &result));
-    ASSERT_EQ(GetTestDataDirectory(), result);
+    ASSERT_EQ(test_dir_, result);
   }
 
   string dir = GetTestPath("some_dir");

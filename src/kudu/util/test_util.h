@@ -54,8 +54,6 @@ class KuduTest : public ::testing::Test {
 
   Env* env_;
   google::FlagSaver flag_saver_;  // Reset flags on every test.
-
- private:
   std::string test_dir_;
 };
 
@@ -83,7 +81,8 @@ int SeedRandom();
 // Return a per-test directory in which to store test data. Guaranteed to
 // return the same directory every time for a given unit test.
 //
-// May only be called from within a gtest unit test.
+// May only be called from within a gtest unit test. Prefer KuduTest::test_dir_
+// if a KuduTest instance is available.
 std::string GetTestDataDirectory();
 
 // Wait until 'f()' succeeds without adding any GTest 'fatal failures'.

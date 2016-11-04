@@ -85,7 +85,6 @@ void KuduTest::SetUp() {
 }
 
 string KuduTest::GetTestPath(const string& relative_path) {
-  CHECK(!test_dir_.empty()) << "Call SetUp() first";
   return JoinPathSegments(test_dir_, relative_path);
 }
 

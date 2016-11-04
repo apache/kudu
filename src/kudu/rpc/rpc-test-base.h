@@ -415,8 +415,8 @@ class RpcTestBase : public KuduTest {
                                              int n_reactors = 1,
                                              bool enable_ssl = false) {
     if (enable_ssl) {
-      std::string server_cert_path = JoinPathSegments(GetTestDataDirectory(), "server-cert.pem");
-      std::string private_key_path = JoinPathSegments(GetTestDataDirectory(), "server-key.pem");
+      std::string server_cert_path = GetTestPath("server-cert.pem");
+      std::string private_key_path = GetTestPath("server-key.pem");
       CHECK_OK(CreateSSLServerCert(server_cert_path));
       CHECK_OK(CreateSSLPrivateKey(private_key_path));
       FLAGS_rpc_ssl_server_certificate = server_cert_path;

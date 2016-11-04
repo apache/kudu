@@ -36,18 +36,17 @@ class EnvUtilTest: public KuduTest {
 
 TEST_F(EnvUtilTest, TestDiskSpaceCheck) {
   Env* env = Env::Default();
-  const string kTestPath = GetTestDataDirectory();
 
   const int64_t kRequestedBytes = 0;
   int64_t reserved_bytes = 0;
-  ASSERT_OK(env_util::VerifySufficientDiskSpace(env, kTestPath, kRequestedBytes, reserved_bytes));
+  ASSERT_OK(env_util::VerifySufficientDiskSpace(env, test_dir_, kRequestedBytes, reserved_bytes));
 
   // Make it seem as if the disk is full and specify that we should have
   // reserved 200 bytes. Even asking for 0 bytes should return an error
   // indicating we are out of space.
   FLAGS_disk_reserved_bytes_free_for_testing = 0;
   reserved_bytes = 200;
-  Status s = env_util::VerifySufficientDiskSpace(env, kTestPath, kRequestedBytes, reserved_bytes);
+  Status s = env_util::VerifySufficientDiskSpace(env, test_dir_, kRequestedBytes, reserved_bytes);
   ASSERT_TRUE(s.IsIOError());
   ASSERT_EQ(ENOSPC, s.posix_code());
   ASSERT_STR_CONTAINS(s.ToString(), "Insufficient disk space");

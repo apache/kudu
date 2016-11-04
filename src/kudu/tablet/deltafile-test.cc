@@ -58,7 +58,7 @@ class TestDeltaFile : public KuduTest {
 
  public:
   void SetUp() OVERRIDE {
-    fs_manager_.reset(new FsManager(env_, GetTestDataDirectory() + "/fs"));
+    fs_manager_.reset(new FsManager(env_, GetTestPath("fs")));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
   }

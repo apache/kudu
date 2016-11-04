@@ -327,7 +327,7 @@ TEST_F(RpcStubTest, TestRpcPanic) {
   } else {
     // Before forcing the panic, explicitly remove the test directory. This
     // should be safe; this test doesn't generate any data.
-    CHECK_OK(env_->DeleteRecursively(GetTestDataDirectory()));
+    CHECK_OK(env_->DeleteRecursively(test_dir_));
 
     // Make an RPC which causes the server to abort.
     CalculatorServiceProxy p(client_messenger_, server_addr_);
