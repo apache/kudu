@@ -75,13 +75,21 @@ SSLFactory::~SSLFactory() {
 
 Status SSLFactory::Init() {
   CHECK(!ctx_.get());
-  ctx_.reset(SSL_CTX_new(TLSv1_2_method()));
-  if (ctx_ == nullptr) {
+  // NOTE: 'SSLv23 method' sounds like it would enable only SSLv2 and SSLv3, but in fact
+  // this is a sort of wildcard which enables all methods (including TLSv1 and later).
+  // We explicitly disable SSLv2 and SSLv3 below so that only TLS methods remain.
+  // See the discussion on https://trac.torproject.org/projects/tor/ticket/11598 for more
+  // info.
+  ctx_.reset(SSL_CTX_new(SSLv23_method()));
+  if (!ctx_) {
     return Status::RuntimeError("Could not create SSL context");
   }
   SSL_CTX_set_mode(ctx_.get(), SSL_MODE_AUTO_RETRY);
-  SSL_CTX_set_options(ctx_.get(),
-      SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1);
+
+  // Disable SSLv2 and SSLv3 which are vulnerable to various issues such as POODLE.
+  // We support versions back to TLSv1.0 since OpenSSL on RHEL 6.4 and earlier does not
+  // not support TLSv1.1 or later.
+  SSL_CTX_set_options(ctx_.get(), SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
   SSL_CTX_set_verify(ctx_.get(),
       SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE, nullptr);
   return Status::OK();
