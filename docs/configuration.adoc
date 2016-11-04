@@ -40,7 +40,7 @@ To configure the behavior of each Kudu process, you can pass command-line flags 
 you start it, or read those options from configuration files by passing them using
 one or more `--flagfile=<file>` options. You can even include the
 `--flagfile` option within your configuration file to include other files. Learn more about gflags
-by reading link:http://google-gflags.googlecode.com/svn/trunk/doc/gflags.html[its documentation].
+by reading link:https://gflags.github.io/gflags/[its documentation].
 
 You can place options for masters and tablet servers into the same configuration
 file, and each will ignore options that do not apply.
