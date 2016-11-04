@@ -89,7 +89,13 @@ Status SSLFactory::Init() {
   // Disable SSLv2 and SSLv3 which are vulnerable to various issues such as POODLE.
   // We support versions back to TLSv1.0 since OpenSSL on RHEL 6.4 and earlier does not
   // not support TLSv1.1 or later.
-  SSL_CTX_set_options(ctx_.get(), SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
+  //
+  // Disable SSL/TLS compression to free up CPU resources and be less prone
+  // to attacks exploiting the compression feature:
+  //   https://tools.ietf.org/html/rfc7525#section-3.3
+  SSL_CTX_set_options(ctx_.get(),
+                      SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
+                      SSL_OP_NO_COMPRESSION);
   SSL_CTX_set_verify(ctx_.get(),
       SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE, nullptr);
   return Status::OK();
