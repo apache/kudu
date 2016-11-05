@@ -28,6 +28,7 @@
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
@@ -514,12 +515,11 @@ class PosixRWFile : public RWFile {
       : filename_(std::move(fname)),
         fd_(fd),
         sync_on_close_(sync_on_close),
-        pending_sync_(false) {}
+        pending_sync_(false),
+        closed_(false) {}
 
   ~PosixRWFile() {
-    if (fd_ >= 0) {
-      WARN_NOT_OK(Close(), "Failed to close " + filename_);
-    }
+    WARN_NOT_OK(Close(), "Failed to close " + filename_);
   }
 
   virtual Status Read(uint64_t offset, size_t length,
@@ -567,7 +567,7 @@ class PosixRWFile : public RWFile {
                      data.size(), written));
     }
 
-    pending_sync_ = true;
+    pending_sync_.Store(true);
     return Status::OK();
   }
 
@@ -633,18 +633,23 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Sync() OVERRIDE {
+    if (!pending_sync_.CompareAndSwap(true, false)) {
+      return Status::OK();
+    }
+
     TRACE_EVENT1("io", "PosixRWFile::Sync", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
     LOG_SLOW_EXECUTION(WARNING, 1000, Substitute("sync call for $0", filename())) {
-      if (pending_sync_) {
-        pending_sync_ = false;
-        RETURN_NOT_OK(DoSync(fd_, filename_));
-      }
+      RETURN_NOT_OK(DoSync(fd_, filename_));
     }
     return Status::OK();
   }
 
   virtual Status Close() OVERRIDE {
+    if (closed_) {
+      return Status::OK();
+    }
+
     TRACE_EVENT1("io", "PosixRWFile::Close", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
     Status s;
@@ -662,7 +667,7 @@ class PosixRWFile : public RWFile {
       }
     }
 
-    fd_ = -1;
+    closed_ = true;
     return s;
   }
 
@@ -683,12 +688,14 @@ class PosixRWFile : public RWFile {
 
  private:
   const std::string filename_;
-  int fd_;
-  bool sync_on_close_;
-  bool pending_sync_;
+  const int fd_;
+  const bool sync_on_close_;
+
+  AtomicBool pending_sync_;
+  bool closed_;
 };
 
-static int LockOrUnlock(int fd, bool lock) {
+int LockOrUnlock(int fd, bool lock) {
   ThreadRestrictions::AssertIOAllowed();
   errno = 0;
   struct flock f;

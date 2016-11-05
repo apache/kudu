@@ -28,6 +28,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/mutex.h"
 
 namespace google {
 namespace protobuf {
@@ -243,11 +244,10 @@ void TruncateFields(google::protobuf::Message* message, int max_len);
 // https://www.usenix.org/system/files/conference/osdi14/osdi14-paper-pillai.pdf
 // https://www.usenix.org/legacy/event/fast08/tech/full_papers/bairavasundaram/bairavasundaram.pdf
 
-// Protobuf container file opened for writing.
+// Protobuf container file opened for writing. Can be built around an existing
+// file or a completely new file.
 //
-// Can be built around an existing file or a completely new file.
-//
-// Not thread-safe.
+// Every function is thread-safe unless indicated otherwise.
 class WritablePBContainerFile {
  public:
 
@@ -263,6 +263,8 @@ class WritablePBContainerFile {
   //
   // 'msg' need not be populated; its type is used to "lock" the container
   // to a particular protobuf message type in Append().
+  //
+  // Not thread-safe.
   Status Init(const google::protobuf::Message& msg);
 
   // Reopen a protobuf container file for append. The file must already have a
@@ -302,6 +304,8 @@ class WritablePBContainerFile {
   Status Sync();
 
   // Closes the container.
+  //
+  // Not thread-safe.
   Status Close();
 
   // Returns the path to the container's underlying file handle.
@@ -330,12 +334,19 @@ class WritablePBContainerFile {
   // Append bytes to the file.
   Status AppendBytes(const Slice& data);
 
+  // State of the file.
   FileState state_;
+
+  // Protects offset_.
+  Mutex offset_lock_;
 
   // Current write offset into the file.
   uint64_t offset_;
+
+  // Protobuf container file version.
   int version_;
 
+  // File writer.
   gscoped_ptr<RWFile> writer_;
 };
 

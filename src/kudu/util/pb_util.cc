@@ -26,6 +26,7 @@
 #include <deque>
 #include <initializer_list>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -57,6 +58,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util-internal.h"
 #include "kudu/util/pb_util.pb.h"
@@ -601,16 +603,20 @@ Status WritablePBContainerFile::Init(const Message& msg) {
 
 Status WritablePBContainerFile::Reopen() {
   DCHECK(state_ == FileState::NOT_INITIALIZED || state_ == FileState::OPEN) << state_;
-  offset_ = 0;
-  RETURN_NOT_OK(ParsePBFileHeader(writer_.get(), &offset_, &version_));
-  ContainerSupHeaderPB sup_header;
-  RETURN_NOT_OK(ReadSupplementalHeader(writer_.get(), version_, &offset_, &sup_header));
-  RETURN_NOT_OK(writer_->Size(&offset_)); // Reset the write offset to the end of the file.
+  {
+    std::lock_guard<Mutex> l(offset_lock_);
+    offset_ = 0;
+    RETURN_NOT_OK(ParsePBFileHeader(writer_.get(), &offset_, &version_));
+    ContainerSupHeaderPB sup_header;
+    RETURN_NOT_OK(ReadSupplementalHeader(writer_.get(), version_, &offset_, &sup_header));
+    RETURN_NOT_OK(writer_->Size(&offset_)); // Reset the write offset to the end of the file.
+  }
   state_ = FileState::OPEN;
   return Status::OK();
 }
 
 Status WritablePBContainerFile::AppendBytes(const Slice& data) {
+  std::lock_guard<Mutex> l(offset_lock_);
   RETURN_NOT_OK(writer_->Write(offset_, data));
   offset_ += data.size();
   return Status::OK();

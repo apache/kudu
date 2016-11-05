@@ -423,8 +423,10 @@ struct RWFileOptions {
 // file offset is ever used; instead, all operations must provide an
 // explicit offset.
 //
-// All "read" operations are safe for concurrent use by multiple threads,
-// but "write" operations must be externally synchronized.
+// All operations are safe for concurrent use by multiple threads (unless
+// noted otherwise) bearing in mind the usual filesystem coherency guarantees
+// (e.g. two threads that write concurrently to the same file offset will
+// probably yield garbage).
 class RWFile {
  public:
   enum FlushMode {
@@ -495,6 +497,8 @@ class RWFile {
 
   // Closes the file, optionally calling Sync() on it if the file was
   // created with the sync_on_close option enabled.
+  //
+  // Not thread-safe.
   virtual Status Close() = 0;
 
   // Retrieves the file's size.

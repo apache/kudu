@@ -286,14 +286,8 @@ class LogBlockContainer {
   int64_t preallocated_offset_ = 0;
 
   // Opened file handles to the container's files.
-  //
-  // RWFile is not thread safe so access to each writer must be
-  // serialized through a (sleeping) mutex. We use different mutexes to
-  // avoid contention in cases where only one writer is needed.
   gscoped_ptr<WritablePBContainerFile> metadata_file_;
-  Mutex metadata_file_lock_;
   gscoped_ptr<RWFile> data_file_;
-  Mutex data_file_lock_;
 
   // The amount of data written thus far in the container.
   int64_t total_bytes_written_ = 0;
@@ -556,7 +550,6 @@ Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
 
   // It is invalid to punch a zero-size hole.
   if (length) {
-    std::lock_guard<Mutex> l(data_file_lock_);
     // Round up to the nearest filesystem block so that the kernel will
     // actually reclaim disk space.
     //
@@ -570,10 +563,7 @@ Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
 
 Status LogBlockContainer::AppendData(const Slice& data) {
   RETURN_NOT_OK(EnsurePreallocated(data.size()));
-  {
-    std::lock_guard<Mutex> l(data_file_lock_);
-    RETURN_NOT_OK(data_file_->Write(total_bytes_written_, data));
-  }
+  RETURN_NOT_OK(data_file_->Write(total_bytes_written_, data));
   total_bytes_written_ += data.size();
 
   // This append may have changed the container size if:
@@ -595,26 +585,21 @@ Status LogBlockContainer::ReadData(int64_t offset, size_t length,
 Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
   // Note: We don't check for sufficient disk space for metadata writes in
   // order to allow for block deletion on full disks.
-  std::lock_guard<Mutex> l(metadata_file_lock_);
   return metadata_file_->Append(pb);
 }
 
 Status LogBlockContainer::FlushData(int64_t offset, int64_t length) {
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
-
-  std::lock_guard<Mutex> l(data_file_lock_);
   return data_file_->Flush(RWFile::FLUSH_ASYNC, offset, length);
 }
 
 Status LogBlockContainer::FlushMetadata() {
-  std::lock_guard<Mutex> l(metadata_file_lock_);
   return metadata_file_->Flush();
 }
 
 Status LogBlockContainer::SyncData() {
   if (FLAGS_enable_data_block_fsync) {
-    std::lock_guard<Mutex> l(data_file_lock_);
     return data_file_->Sync();
   }
   return Status::OK();
@@ -622,7 +607,6 @@ Status LogBlockContainer::SyncData() {
 
 Status LogBlockContainer::SyncMetadata() {
   if (FLAGS_enable_data_block_fsync) {
-    std::lock_guard<Mutex> l(metadata_file_lock_);
     return metadata_file_->Sync();
   }
   return Status::OK();
@@ -639,10 +623,7 @@ Status LogBlockContainer::EnsurePreallocated(size_t next_append_bytes) {
       next_append_bytes > preallocated_offset_ - total_bytes_written_) {
     int64_t off = std::max(preallocated_offset_, total_bytes_written_);
     int64_t len = FLAGS_log_container_preallocate_bytes;
-    {
-      std::lock_guard<Mutex> l(data_file_lock_);
-      RETURN_NOT_OK(data_file_->PreAllocate(off, len));
-    }
+    RETURN_NOT_OK(data_file_->PreAllocate(off, len));
     RETURN_NOT_OK(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
     VLOG(2) << Substitute("Preallocated $0 bytes at offset $1 in container $2",
                           len, off, ToString());
