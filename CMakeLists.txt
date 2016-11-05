@@ -830,7 +830,20 @@ include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(squeasel
   STATIC_LIB "${SQUEASEL_STATIC_LIB}")
 
-find_package(OpenSSL REQUIRED)
+## OpenSSL
+##
+## Version 1.0.0 or higher is required because we are using the following
+## features introduced started OpenSSL 1.0.0:
+##   * CRYPTO_THREADID and associated functions
+##   * The new breed of functions to work with the X509_EXTENSION stack
+##
+## If having multiple OpenSSL libraries installed on the system,
+## use the OPENSSL_ROOT_DIR cmake flag to specify where to look for the proper
+## version of the OpenSSL framework/library, e.g.
+##
+##   cmake -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl ...
+##
+find_package(OpenSSL 1.0.0 REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(openssl_ssl
   SHARED_LIB "${OPENSSL_SSL_LIBRARY}")
