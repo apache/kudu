@@ -34,7 +34,7 @@
 #include "kudu/rpc/sasl_client.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_server.h"
-#include "kudu/security/mini_kdc.h"
+#include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"

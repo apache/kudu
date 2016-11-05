@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/security/mini_kdc.h"
+#include "kudu/security/test/mini_kdc.h"
 
 #include <csignal>
 #include <stdlib.h>

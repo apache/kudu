@@ -19,7 +19,7 @@
 
 #include <gtest/gtest.h>
 
-#include "kudu/security/mini_kdc.h"
+#include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/env.h"
 #include "kudu/util/test_util.h"
 

@@ -32,7 +32,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master_rpc.h"
-#include "kudu/security/mini_kdc.h"
+#include "kudu/security/test/mini_kdc.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
