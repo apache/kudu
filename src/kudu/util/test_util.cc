@@ -16,8 +16,12 @@
 // under the License.
 #include "kudu/util/test_util.h"
 
+#include <string>
+#include <vector>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <gtest/gtest-spi.h>
 
 #include "kudu/gutil/strings/strcat.h"
@@ -36,6 +40,7 @@ DEFINE_string(test_leave_files, "on_failure",
 DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -229,6 +234,29 @@ void AssertEventually(const std::function<void(void)>& f,
   if (testing::Test::HasFatalFailure()) {
     ADD_FAILURE() << "Timed out waiting for assertion to pass.";
   }
+}
+
+int CountOpenFds(Env* env) {
+  static const char* kProcSelfFd =
+#if defined(__APPLE__)
+    "/dev/fd";
+#else
+    "/proc/self/fd";
+#endif // defined(__APPLE__)
+
+  vector<string> children;
+  CHECK_OK(env->GetChildren(kProcSelfFd, &children));
+  int num_fds = 0;
+  for (const auto& c : children) {
+    // Skip '.' and '..'.
+    if (c == "." || c == "..") {
+      continue;
+    }
+    num_fds++;
+  }
+
+  // Exclude the fd opened to iterate over kProcSelfFd.
+  return num_fds - 1;
 }
 
 } // namespace kudu

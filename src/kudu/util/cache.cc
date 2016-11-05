@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <glog/logging.h>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
-#include <stdlib.h>
 #include <string>
 #include <vector>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/atomic_refcount.h"
 #include "kudu/gutil/bits.h"
@@ -19,6 +21,7 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -26,6 +29,11 @@
 #if !defined(__APPLE__)
 #include "kudu/util/nvm_cache.h"
 #endif
+
+// Useful in tests that require accurate cache capacity accounting.
+DEFINE_bool(cache_force_single_shard, false,
+            "Override all cache implementations to use just one shard");
+TAG_FLAG(cache_force_single_shard, hidden);
 
 namespace kudu {
 
@@ -373,7 +381,8 @@ void LRUCache::Erase(const Slice& key, uint32_t hash) {
 // Determine the number of bits of the hash that should be used to determine
 // the cache shard. This, in turn, determines the number of shards.
 int DetermineShardBits() {
-  int bits = Bits::Log2Ceiling(base::NumCPUs());
+  int bits = PREDICT_FALSE(FLAGS_cache_force_single_shard) ?
+      0 : Bits::Log2Ceiling(base::NumCPUs());
   VLOG(1) << "Will use " << (1 << bits) << " shards for LRU cache.";
   return bits;
 }

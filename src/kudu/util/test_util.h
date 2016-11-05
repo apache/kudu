@@ -97,5 +97,8 @@ std::string GetTestDataDirectory();
 void AssertEventually(const std::function<void(void)>& f,
                       const MonoDelta& timeout = MonoDelta::FromSeconds(30));
 
+// Count the number of open file descriptors in use by this process.
+int CountOpenFds(Env* env);
+
 } // namespace kudu
 #endif

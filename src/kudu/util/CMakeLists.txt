@@ -127,6 +127,7 @@ set(UTIL_SRCS
   faststring.cc
   failure_detector.cc
   fault_injection.cc
+  file_cache.cc
   flags.cc
   flag_tags.cc
   group_varint.cc
@@ -302,6 +303,8 @@ ADD_KUDU_TEST(env-test LABELS no_tsan)
 ADD_KUDU_TEST(env_util-test)
 ADD_KUDU_TEST(errno-test)
 ADD_KUDU_TEST(failure_detector-test)
+ADD_KUDU_TEST(file_cache-test)
+ADD_KUDU_TEST(file_cache-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(flag_tags-test)
 ADD_KUDU_TEST(flags-test)
 ADD_KUDU_TEST(group_varint-test)

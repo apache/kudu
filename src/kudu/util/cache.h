@@ -18,7 +18,8 @@
 #ifndef KUDU_UTIL_CACHE_H_
 #define KUDU_UTIL_CACHE_H_
 
-#include <stdint.h>
+#include <cstdint>
+#include <memory>
 #include <string>
 
 #include "kudu/gutil/macros.h"
@@ -58,6 +59,42 @@ class Cache {
 
   // Opaque handle to an entry stored in the cache.
   struct Handle { };
+
+  // Custom handle "deleter", primarily intended for use with std::unique_ptr.
+  //
+  // Sample usage:
+  //
+  //   Cache* cache = NewLRUCache(...);
+  //   ...
+  //   {
+  //     unique_ptr<Cache::Handle, Cache::HandleDeleter> h(
+  //       cache->Lookup(...), Cache::HandleDeleter(cache));
+  //     ...
+  //   } // 'h' is automatically released here
+  //
+  // Or:
+  //
+  //   Cache* cache = NewLRUCache(...);
+  //   ...
+  //   {
+  //     Cache::UniqueHandle h(cache->Lookup(...), Cache::HandleDeleter(cache));
+  //     ...
+  //   } // 'h' is automatically released here
+  //
+  class HandleDeleter {
+   public:
+    explicit HandleDeleter(Cache* c)
+        : c_(c) {
+    }
+
+    void operator()(Cache::Handle* h) const {
+      c_->Release(h);
+    }
+
+   private:
+    Cache* c_;
+  };
+  typedef std::unique_ptr<Handle, HandleDeleter> UniqueHandle;
 
   // Passing EXPECT_IN_CACHE will increment the hit/miss metrics that track the number of times
   // blocks were requested that the users were hoping to get the block from the cache, along with
