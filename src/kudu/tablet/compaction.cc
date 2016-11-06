@@ -521,6 +521,17 @@ class MergeCompactionInput : public CompactionInput {
 
 } // anonymous namespace
 
+string RowToString(const RowBlockRow& row, const Mutation* redo_head, const Mutation* undo_head) {
+  return Substitute("RowIdxInBlock: $0; Base: $1; Undo Mutations: $2; Redo Mutations: $3;",
+                    row.row_index(), row.schema()->DebugRow(row),
+                    Mutation::StringifyMutationList(*row.schema(), undo_head),
+                    Mutation::StringifyMutationList(*row.schema(), redo_head));
+}
+
+string CompactionInputRowToString(const CompactionInputRow& input_row) {
+  return RowToString(input_row.row, input_row.redo_head, input_row.undo_head);
+}
+
 ////////////////////////////////////////////////////////////
 
 Status CompactionInput::Create(const DiskRowSet &rowset,
@@ -641,12 +652,9 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   bool is_deleted = false;
 
   #define ERROR_LOG_CONTEXT \
-    "Source Row: " << dst_schema->DebugRow(src_row.row) << \
-    " Redo Mutations: " << Mutation::StringifyMutationList(*base_schema, src_row.redo_head) << \
-    " Undo Mutations: " << Mutation::StringifyMutationList(*base_schema, src_row.undo_head) << \
-    "\nDest Row: " << dst_schema->DebugRow(*dst_row) << \
-    " Redo Mutations: " << Mutation::StringifyMutationList(*dst_schema, redo_head) << \
-    " Undo Mutations: " << Mutation::StringifyMutationList(*dst_schema, undo_head)
+    Substitute("Source Row: $0\nDest Row: $1", \
+                CompactionInputRowToString(src_row), \
+                RowToString(*dst_row, undo_head, redo_head))
 
   faststring dst;
   RowChangeListEncoder undo_encoder(&dst);
@@ -812,10 +820,7 @@ Status FlushCompactionInput(CompactionInput* input,
       RowBlockRow dst_row = block.row(n);
       RETURN_NOT_OK(CopyRow(input_row->row, &dst_row, static_cast<Arena*>(nullptr)));
 
-      DVLOG(3) << "Input Row: " << dst_row.schema()->DebugRow(dst_row) <<
-        " RowIndex: " << input_row->row.row_index() <<
-        " Undo Mutations: " << Mutation::StringifyMutationList(*schema, input_row->undo_head) <<
-        " Redo Mutations: " << Mutation::StringifyMutationList(*schema, input_row->redo_head);
+      DVLOG(4) << "Input Row: " << CompactionInputRowToString(*input_row);
 
       // Collect the new UNDO/REDO mutations.
       Mutation* new_undos_head = nullptr;
@@ -835,10 +840,7 @@ Status FlushCompactionInput(CompactionInput* input,
                                                    &is_garbage_collected,
                                                    &num_rows_history_truncated));
 
-      DVLOG(4) << "Output Row: " << dst_row.schema()->DebugRow(dst_row) <<
-          "; RowIndex: " << dst_row.row_index() <<
-          "; Undo Mutations: " << Mutation::StringifyMutationList(*schema, new_undos_head) <<
-          "; Redo Mutations: " << Mutation::StringifyMutationList(*schema, new_redos_head) <<
+      DVLOG(4) << "Output Row: " << RowToString(dst_row, new_redos_head, new_undos_head) <<
           "; Was garbage collected? " << is_garbage_collected <<
           "; Was history truncated? " <<
               (num_rows_history_truncated > prev_num_rows_history_truncated);
@@ -859,7 +861,7 @@ Status FlushCompactionInput(CompactionInput* input,
         out->AppendRedoDeltas(dst_row.row_index(), new_redos_head, &index_in_current_drs);
       }
 
-      DVLOG(5) << "Output Row: " << dst_row.schema()->DebugRow(dst_row)
+      DVLOG(4) << "Output Row: " << dst_row.schema()->DebugRow(dst_row)
                << "; RowId: " << index_in_current_drs;
 
       n++;
@@ -929,9 +931,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     for (const CompactionInputRow &row : rows) {
-      DVLOG(4) << "Revisiting row: " << schema->DebugRow(row.row) <<
-          " Redo Mutations: " << Mutation::StringifyMutationList(*schema, row.redo_head) <<
-          " Undo Mutations: " << Mutation::StringifyMutationList(*schema, row.undo_head);
+      DVLOG(4) << "Revisiting row: " << CompactionInputRowToString(row);
 
       bool is_garbage_collected = false;
       for (const Mutation *mut = row.redo_head;

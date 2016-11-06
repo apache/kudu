@@ -231,6 +231,10 @@ Status ReupdateMissedDeltas(const string &tablet_name,
 // This consumes all of the input in the compaction input.
 Status DebugDumpCompactionInput(CompactionInput *input, vector<string> *lines);
 
+// Helper methods to print a row with full history.
+string RowToString(const RowBlockRow& row, const Mutation* redo_head, const Mutation* undo_head);
+string CompactionInputRowToString(const CompactionInputRow& input_row);
+
 } // namespace tablet
 } // namespace kudu
 

@@ -148,11 +148,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
       // later at step 5.
       Mutation* new_redos_head = nullptr;
 
-      DVLOG(3) << "MDC: Input Row: " << dst_row.schema()->DebugRow(dst_row)
-               << " RowIndex: " << input_row->row.row_index()
-               << " Undo Mutations: (not shown)"
-               << " Redo Mutations: "
-               << Mutation::StringifyMutationList(base_schema_, input_row->redo_head);
+      DVLOG(3) << "MDC: Input Row: " << CompactionInputRowToString(*input_row);
 
       bool is_garbage_collected;
 
@@ -168,12 +164,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
                                                    &is_garbage_collected,
                                                    &num_rows_history_truncated));
 
-      DVLOG(3) << "MDC: Output Row: " << dst_row.schema()->DebugRow(dst_row)
-               << " RowIndex: " << input_row->row.row_index()
-               << " Generated Undo Mutations: "
-               << Mutation::StringifyMutationList(partial_schema_, new_undos_head)
-               << " Updated Redo Mutations: "
-               << Mutation::StringifyMutationList(partial_schema_, new_redos_head);
+      DVLOG(3) << "MDC: Output Row: " << RowToString(dst_row, new_undos_head, new_redos_head);
 
       // We only create a new undo delta file if we need to.
       if (new_undos_head != nullptr && !new_undo_delta_writer_) {
