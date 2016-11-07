@@ -38,12 +38,17 @@ TEST(MiniKdcTest, TestBasicOperation) {
   ASSERT_OK(kdc.Stop());
   ASSERT_OK(kdc.Start());
 
-  ASSERT_OK(kdc.CreateUserPrincipal("bob"));
-  ASSERT_OK(kdc.Kinit("bob"));
-
+  // Check that alice is kinit'd.
   string klist;
   ASSERT_OK(kdc.Klist(&klist));
   ASSERT_STR_CONTAINS(klist, "alice@KRBTEST.COM");
+
+  ASSERT_OK(kdc.CreateUserPrincipal("bob"));
+  ASSERT_OK(kdc.Kinit("bob"));
+
+  // Check that bob has replaced alice as the kinit'd principal.
+  ASSERT_OK(kdc.Klist(&klist));
+  ASSERT_STR_NOT_CONTAINS(klist, "alice@KRBTEST.COM");
   ASSERT_STR_CONTAINS(klist, "bob@KRBTEST.COM");
   ASSERT_STR_CONTAINS(klist, "krbtgt/KRBTEST.COM@KRBTEST.COM");
 

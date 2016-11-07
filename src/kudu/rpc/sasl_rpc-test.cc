@@ -30,6 +30,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/sasl_client.h"
 #include "kudu/rpc/sasl_common.h"
@@ -281,6 +282,14 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
   ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
 
+#if defined(__APPLE__)
+  string kErrorMsg = strings::Substitute("get-pricipal open($0): "
+                                         "No such file or directory (negative cache)",
+                                         kInvalidPath);
+#else
+  string kErrorMsg = "No Kerberos credentials available";
+#endif
+
   // Try to negotiate with no krb5 credentials on the client. It should fail on both
   // sides.
   RunNegotiationTest(
@@ -292,11 +301,10 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
                   CHECK(s.IsNetworkError());
                 }),
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
-                [](const Status& s, SaslClient& client) {
+                [kErrorMsg](const Status& s, SaslClient& client) {
                   CHECK(s.IsNotAuthorized());
-                  CHECK_EQ(s.message(), "No Kerberos credentials available");
+                  CHECK_EQ(s.message().ToString(), kErrorMsg);
                 }));
-
 
   // Create and kinit as a client user.
   ASSERT_OK(kdc.CreateUserPrincipal("testuser"));
@@ -316,7 +324,6 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
                   CHECK_OK(s);
                   CHECK_EQ(SaslMechanism::GSSAPI, client.negotiated_mechanism());
                 }));
-
 
   // Change the server's keytab file so that it has inappropriate
   // credentials.

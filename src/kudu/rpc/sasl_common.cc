@@ -216,12 +216,16 @@ static string CleanSaslError(const string& err) {
   // with older libstdcxx.
   static regex_t re;
   static std::once_flag once;
-  std::call_once(once, []{
-      CHECK_EQ(0, regcomp(&re,
-                          "Unspecified GSS failure. +"
-                          "Minor code may provide more information +"
-                          "\\((.+)\\)", REG_EXTENDED));
-    });
+
+#if defined(__APPLE__)
+  static const char* kGssapiPattern = "GSSAPI Error:  Miscellaneous failure \\(see text \\((.+)\\)";
+#else
+  static const char* kGssapiPattern = "Unspecified GSS failure. +"
+                                      "Minor code may provide more information +"
+                                      "\\((.+)\\)";
+#endif
+
+  std::call_once(once, []{ CHECK_EQ(0, regcomp(&re, kGssapiPattern, REG_EXTENDED)); });
   regmatch_t matches[2];
   if (regexec(&re, err.c_str(), arraysize(matches), matches, 0) == 0) {
     return err.substr(matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);

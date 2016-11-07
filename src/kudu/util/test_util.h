@@ -30,6 +30,8 @@
 
 namespace kudu {
 
+extern const char* kInvalidPath;
+
 class KuduTest : public ::testing::Test {
  public:
   KuduTest();

@@ -73,7 +73,7 @@ map<string, string> MiniKdc::GetEnvVars() const {
   return {
     {"KRB5_CONFIG", JoinPathSegments(options_.data_root, "krb5.conf")},
     {"KRB5_KDC_PROFILE", JoinPathSegments(options_.data_root, "kdc.conf")},
-    {"KRB5CCNAME", "DIR:" + JoinPathSegments(options_.data_root, "krb5cc")}
+    {"KRB5CCNAME", JoinPathSegments(options_.data_root, "krb5cc")}
   };
 }
 
@@ -191,8 +191,7 @@ Status MiniKdc::Stop() {
 Status MiniKdc::CreateKdcConf() const {
   static const string kFileTemplate = R"(
 [kdcdefaults]
-kdc_ports = ""
-kdc_tcp_ports = $2
+kdc_ports = $2
 
 [realms]
 $1 = {
@@ -232,9 +231,6 @@ Status MiniKdc::CreateKrb5Conf() const {
     # This enables us to connect despite that mismatch.
     ignore_acceptor_hostname = true
 
-    # The KDC is configured to only use TCP, so the client should not prefer UDP.
-    udp_preference_limit = 0
-
 [realms]
     $1 = {
         kdc = 127.0.0.1:$0
@@ -259,7 +255,7 @@ Status MiniKdc::WaitForKdcPorts() {
   vector<string> cmd = {
     lsof, "-wbn", "-Ffn",
     "-p", std::to_string(kdc_process_->pid()),
-    "-a", "-i", "4TCP"};
+    "-a", "-i", "4UDP"};
 
   string lsof_out;
   for (int i = 1; ; i++) {

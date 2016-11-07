@@ -40,6 +40,7 @@ using strings::Substitute;
 
 namespace kudu {
 
+const char* kInvalidPath = "/dev/invalid-path-for-kudu-tests";
 static const char* const kSlowTestsEnvVariable = "KUDU_ALLOW_SLOW_TESTS";
 
 static const uint64 kTestBeganAtMicros = Env::Default()->NowMicros();
@@ -104,7 +105,6 @@ void KuduTest::OverrideKrb5Environment() {
   //
   // NOTE: we don't simply *unset* the variables, because then we'd still pick up
   // the user's /etc/krb5.conf and other default locations.
-  const char* kInvalidPath = "/dev/invalid-path-for-kudu-tests";
   setenv("KRB5_CONFIG", kInvalidPath, 1);
   setenv("KRB5_KTNAME", kInvalidPath, 1);
   setenv("KRB5CCNAME", kInvalidPath, 1);
