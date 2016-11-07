@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/tserver/tablet_copy_session.h"
+#include "kudu/tserver/tablet_copy_source_session.h"
 
 #include <algorithm>
 #include <mutex>

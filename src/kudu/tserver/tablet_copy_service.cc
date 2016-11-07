@@ -28,7 +28,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/rpc/rpc_context.h"
-#include "kudu/tserver/tablet_copy_session.h"
+#include "kudu/tserver/tablet_copy_source_session.h"
 #include "kudu/tserver/tablet_peer_lookup.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/crc.h"

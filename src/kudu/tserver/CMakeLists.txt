@@ -109,7 +109,7 @@ set(TSERVER_SRCS
   scanners.cc
   tablet_copy_client.cc
   tablet_copy_service.cc
-  tablet_copy_session.cc
+  tablet_copy_source_session.cc
   tablet_server.cc
   tablet_server_options.cc
   tablet_service.cc
@@ -166,7 +166,7 @@ set(KUDU_TEST_LINK_LIBS
   tserver_test_util
   ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(tablet_copy_client-test)
-ADD_KUDU_TEST(tablet_copy_session-test)
+ADD_KUDU_TEST(tablet_copy_source_session-test)
 ADD_KUDU_TEST(tablet_copy_service-test)
 ADD_KUDU_TEST(tablet_server-test)
 ADD_KUDU_TEST(tablet_server-stress-test RUN_SERIAL true)

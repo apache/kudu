@@ -33,7 +33,7 @@
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/tserver/tablet_copy_session.h"
+#include "kudu/tserver/tablet_copy_source_session.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/metrics.h"
