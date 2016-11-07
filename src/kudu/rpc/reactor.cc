@@ -65,7 +65,10 @@ static const int kDefaultLibEvFlags = ev::AUTO;
 using std::string;
 using std::shared_ptr;
 
-DEFINE_int64(rpc_negotiation_timeout_ms, 3000,
+// TODO(KUDU-1580). This timeout has been bumped from 3 seconds up to
+// 15 seconds to workaround a bug. We should drop it back down when
+// KUDU-1580 is fixed.
+DEFINE_int64(rpc_negotiation_timeout_ms, 15000,
              "Timeout for negotiating an RPC connection.");
 TAG_FLAG(rpc_negotiation_timeout_ms, advanced);
 TAG_FLAG(rpc_negotiation_timeout_ms, runtime);
