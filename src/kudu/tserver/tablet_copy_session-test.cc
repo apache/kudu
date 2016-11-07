@@ -179,12 +179,12 @@ class TabletCopyTest : public KuduTabletTest {
   }
 
   void InitSession() {
-    session_.reset(new TabletCopySession(tablet_peer_.get(), "TestSession", "FakeUUID",
+    session_.reset(new TabletCopySourceSession(tablet_peer_.get(), "TestSession", "FakeUUID",
                    fs_manager()));
     ASSERT_OK(session_->Init());
   }
 
-  // Read the specified BlockId, via the TabletCopySession, into a file.
+  // Read the specified BlockId, via the TabletCopySourceSession, into a file.
   // 'path' will be populated with the name of the file used.
   // 'file' will be set to point to the SequentialFile containing the data.
   void FetchBlockToFile(const BlockId& block_id,
@@ -213,10 +213,10 @@ class TabletCopyTest : public KuduTabletTest {
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
   gscoped_ptr<ThreadPool> apply_pool_;
   scoped_refptr<TabletPeer> tablet_peer_;
-  scoped_refptr<TabletCopySession> session_;
+  scoped_refptr<TabletCopySourceSession> session_;
 };
 
-// Ensure that the serialized SuperBlock included in the TabletCopySession is
+// Ensure that the serialized SuperBlock included in the TabletCopySourceSession is
 // equal to the serialized live superblock (on a quiesced tablet).
 TEST_F(TabletCopyTest, TestSuperBlocksEqual) {
   // Compare content of superblocks.

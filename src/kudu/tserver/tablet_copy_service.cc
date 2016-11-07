@@ -117,7 +117,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
                     TabletCopyErrorPB::TABLET_NOT_FOUND,
                     Substitute("Unable to find specified tablet: $0", tablet_id));
 
-  scoped_refptr<TabletCopySession> session;
+  scoped_refptr<TabletCopySourceSession> session;
   {
     MutexLock l(sessions_lock_);
     if (!FindCopy(sessions_, session_id, &session)) {
@@ -125,7 +125,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
           "Beginning new tablet copy session on tablet $0 from peer $1"
           " at $2: session id = $3",
           tablet_id, requestor_uuid, context->requestor_string(), session_id);
-      session.reset(new TabletCopySession(tablet_peer, session_id,
+      session.reset(new TabletCopySourceSession(tablet_peer, session_id,
                                                requestor_uuid, fs_manager_));
       RPC_RETURN_NOT_OK(session->Init(),
                         TabletCopyErrorPB::UNKNOWN_ERROR,
@@ -161,7 +161,7 @@ void TabletCopyServiceImpl::CheckSessionActive(
   const string& session_id = req->session_id();
 
   // Look up and validate tablet copy session.
-  scoped_refptr<TabletCopySession> session;
+  scoped_refptr<TabletCopySourceSession> session;
   MutexLock l(sessions_lock_);
   TabletCopyErrorPB::Code app_error;
   Status status = FindSessionUnlocked(session_id, &app_error, &session);
@@ -188,7 +188,7 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
   const string& session_id = req->session_id();
 
   // Look up and validate tablet copy session.
-  scoped_refptr<TabletCopySession> session;
+  scoped_refptr<TabletCopySourceSession> session;
   {
     MutexLock l(sessions_lock_);
     TabletCopyErrorPB::Code app_error;
@@ -268,7 +268,7 @@ void TabletCopyServiceImpl::Shutdown() {
 Status TabletCopyServiceImpl::FindSessionUnlocked(
         const string& session_id,
         TabletCopyErrorPB::Code* app_error,
-        scoped_refptr<TabletCopySession>* session) const {
+        scoped_refptr<TabletCopySourceSession>* session) const {
   if (!FindCopy(sessions_, session_id, session)) {
     *app_error = TabletCopyErrorPB::NO_SESSION;
     return Status::NotFound(
@@ -280,7 +280,7 @@ Status TabletCopyServiceImpl::FindSessionUnlocked(
 Status TabletCopyServiceImpl::ValidateFetchRequestDataId(
         const DataIdPB& data_id,
         TabletCopyErrorPB::Code* app_error,
-        const scoped_refptr<TabletCopySession>& session) const {
+        const scoped_refptr<TabletCopySourceSession>& session) const {
   if (PREDICT_FALSE(data_id.has_block_id() && data_id.has_wal_segment_seqno())) {
     *app_error = TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST;
     return Status::InvalidArgument(
@@ -318,7 +318,7 @@ void TabletCopyServiceImpl::ResetSessionExpirationUnlocked(const std::string& se
 Status TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(
         const std::string& session_id,
         TabletCopyErrorPB::Code* app_error) {
-  scoped_refptr<TabletCopySession> session;
+  scoped_refptr<TabletCopySourceSession> session;
   RETURN_NOT_OK(FindSessionUnlocked(session_id, app_error, &session));
   // Remove the session from the map.
   // It will get destroyed once there are no outstanding refs.

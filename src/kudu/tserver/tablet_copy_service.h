@@ -39,7 +39,7 @@ class ReadableLogSegment;
 
 namespace tserver {
 
-class TabletCopySession;
+class TabletCopySourceSession;
 class TabletPeerLookupIf;
 
 class TabletCopyServiceImpl : public TabletCopyServiceIf {
@@ -68,18 +68,18 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
   virtual void Shutdown() OVERRIDE;
 
  private:
-  typedef std::unordered_map<std::string, scoped_refptr<TabletCopySession> > SessionMap;
+  typedef std::unordered_map<std::string, scoped_refptr<TabletCopySourceSession> > SessionMap;
   typedef std::unordered_map<std::string, MonoTime> MonoTimeMap;
 
   // Look up session in session map.
   Status FindSessionUnlocked(const std::string& session_id,
                              TabletCopyErrorPB::Code* app_error,
-                             scoped_refptr<TabletCopySession>* session) const;
+                             scoped_refptr<TabletCopySourceSession>* session) const;
 
   // Validate the data identifier in a FetchData request.
   Status ValidateFetchRequestDataId(const DataIdPB& data_id,
                                     TabletCopyErrorPB::Code* app_error,
-                                    const scoped_refptr<TabletCopySession>& session) const;
+                                    const scoped_refptr<TabletCopySourceSession>& session) const;
 
   // Take note of session activity; Re-update the session timeout deadline.
   void ResetSessionExpirationUnlocked(const std::string& session_id);

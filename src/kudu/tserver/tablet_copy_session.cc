@@ -55,7 +55,7 @@ using tablet::TabletMetadata;
 using tablet::TabletPeer;
 using tablet::TabletSuperBlockPB;
 
-TabletCopySession::TabletCopySession(
+TabletCopySourceSession::TabletCopySourceSession(
     const scoped_refptr<TabletPeer>& tablet_peer, std::string session_id,
     std::string requestor_uuid, FsManager* fs_manager)
     : tablet_peer_(tablet_peer),
@@ -65,12 +65,12 @@ TabletCopySession::TabletCopySession(
       blocks_deleter_(&blocks_),
       logs_deleter_(&logs_) {}
 
-TabletCopySession::~TabletCopySession() {
+TabletCopySourceSession::~TabletCopySourceSession() {
   // No lock taken in the destructor, should only be 1 thread with access now.
   CHECK_OK(UnregisterAnchorIfNeededUnlocked());
 }
 
-Status TabletCopySession::Init() {
+Status TabletCopySourceSession::Init() {
   MutexLock l(session_lock_);
   CHECK(!initted_);
 
@@ -146,12 +146,12 @@ Status TabletCopySession::Init() {
   return Status::OK();
 }
 
-const std::string& TabletCopySession::tablet_id() const {
+const std::string& TabletCopySourceSession::tablet_id() const {
   DCHECK(initted_);
   return tablet_peer_->tablet_id();
 }
 
-const std::string& TabletCopySession::requestor_uuid() const {
+const std::string& TabletCopySourceSession::requestor_uuid() const {
   DCHECK(initted_);
   return requestor_uuid_;
 }
@@ -240,7 +240,7 @@ static Status ReadFileChunkToBuf(const Info* info,
   return Status::OK();
 }
 
-Status TabletCopySession::GetBlockPiece(const BlockId& block_id,
+Status TabletCopySourceSession::GetBlockPiece(const BlockId& block_id,
                                              uint64_t offset, int64_t client_maxlen,
                                              string* data, int64_t* block_file_size,
                                              TabletCopyErrorPB::Code* error_code) {
@@ -259,7 +259,7 @@ Status TabletCopySession::GetBlockPiece(const BlockId& block_id,
   return Status::OK();
 }
 
-Status TabletCopySession::GetLogSegmentPiece(uint64_t segment_seqno,
+Status TabletCopySourceSession::GetLogSegmentPiece(uint64_t segment_seqno,
                                                   uint64_t offset, int64_t client_maxlen,
                                                   std::string* data, int64_t* block_file_size,
                                                   TabletCopyErrorPB::Code* error_code) {
@@ -275,7 +275,7 @@ Status TabletCopySession::GetLogSegmentPiece(uint64_t segment_seqno,
   return Status::OK();
 }
 
-bool TabletCopySession::IsBlockOpenForTests(const BlockId& block_id) const {
+bool TabletCopySourceSession::IsBlockOpenForTests(const BlockId& block_id) const {
   MutexLock l(session_lock_);
   return ContainsKey(blocks_, block_id);
 }
@@ -300,7 +300,7 @@ static Status AddImmutableFileToMap(Collection* const cache,
   return Status::OK();
 }
 
-Status TabletCopySession::OpenBlockUnlocked(const BlockId& block_id) {
+Status TabletCopySourceSession::OpenBlockUnlocked(const BlockId& block_id) {
   session_lock_.AssertAcquired();
 
   gscoped_ptr<ReadableBlock> block;
@@ -328,7 +328,7 @@ Status TabletCopySession::OpenBlockUnlocked(const BlockId& block_id) {
   return s;
 }
 
-Status TabletCopySession::FindBlock(const BlockId& block_id,
+Status TabletCopySourceSession::FindBlock(const BlockId& block_id,
                                          ImmutableReadableBlockInfo** block_info,
                                          TabletCopyErrorPB::Code* error_code) {
   Status s;
@@ -340,7 +340,7 @@ Status TabletCopySession::FindBlock(const BlockId& block_id,
   return s;
 }
 
-Status TabletCopySession::OpenLogSegmentUnlocked(uint64_t segment_seqno) {
+Status TabletCopySourceSession::OpenLogSegmentUnlocked(uint64_t segment_seqno) {
   session_lock_.AssertAcquired();
 
   scoped_refptr<log::ReadableLogSegment> log_segment;
@@ -366,7 +366,7 @@ Status TabletCopySession::OpenLogSegmentUnlocked(uint64_t segment_seqno) {
   return s;
 }
 
-Status TabletCopySession::FindLogSegment(uint64_t segment_seqno,
+Status TabletCopySourceSession::FindLogSegment(uint64_t segment_seqno,
                                               ImmutableRandomAccessFileInfo** file_info,
                                               TabletCopyErrorPB::Code* error_code) {
   MutexLock l(session_lock_);
@@ -378,7 +378,7 @@ Status TabletCopySession::FindLogSegment(uint64_t segment_seqno,
   return Status::OK();
 }
 
-Status TabletCopySession::UnregisterAnchorIfNeededUnlocked() {
+Status TabletCopySourceSession::UnregisterAnchorIfNeededUnlocked() {
   return tablet_peer_->log_anchor_registry()->UnregisterIfAnchored(&log_anchor_);
 }
 

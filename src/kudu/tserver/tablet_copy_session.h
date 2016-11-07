@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_TABLET_COPY_SESSION_H_
-#define KUDU_TSERVER_TABLET_COPY_SESSION_H_
+
+#pragma once
 
 #include <memory>
 #include <string>
@@ -80,13 +80,13 @@ struct ImmutableReadableBlockInfo {
   }
 };
 
-// A potential Learner must establish a TabletCopySession with the leader in order
+// A potential Learner must establish a TabletCopySourceSession with the leader in order
 // to fetch the needed superblock, blocks, and log segments.
 // This class is refcounted to make it easy to remove it from the session map
 // on expiration while it is in use by another thread.
-class TabletCopySession : public RefCountedThreadSafe<TabletCopySession> {
+class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSession> {
  public:
-  TabletCopySession(const scoped_refptr<tablet::TabletPeer>& tablet_peer,
+  TabletCopySourceSession(const scoped_refptr<tablet::TabletPeer>& tablet_peer,
                          std::string session_id, std::string requestor_uuid,
                          FsManager* fs_manager);
 
@@ -142,12 +142,12 @@ class TabletCopySession : public RefCountedThreadSafe<TabletCopySession> {
   bool IsBlockOpenForTests(const BlockId& block_id) const;
 
  private:
-  friend class RefCountedThreadSafe<TabletCopySession>;
+  friend class RefCountedThreadSafe<TabletCopySourceSession>;
 
   typedef std::unordered_map<BlockId, ImmutableReadableBlockInfo*, BlockIdHash> BlockMap;
   typedef std::unordered_map<uint64_t, ImmutableRandomAccessFileInfo*> LogMap;
 
-  ~TabletCopySession();
+  ~TabletCopySourceSession();
 
   // Open the block and add it to the block map.
   Status OpenBlockUnlocked(const BlockId& block_id);
@@ -190,10 +190,8 @@ class TabletCopySession : public RefCountedThreadSafe<TabletCopySession> {
 
   log::LogAnchor log_anchor_;
 
-  DISALLOW_COPY_AND_ASSIGN(TabletCopySession);
+  DISALLOW_COPY_AND_ASSIGN(TabletCopySourceSession);
 };
 
 } // namespace tserver
 } // namespace kudu
-
-#endif // KUDU_TSERVER_TABLET_COPY_SESSION_H_
