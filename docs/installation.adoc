@@ -254,8 +254,9 @@ on a version older than 7.0, the Red Hat Developer Toolset must be installed
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ sudo yum install gcc gcc-c++ autoconf automake libtool cyrus-sasl-devel \
-  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb unzip redhat-lsb-core git
+$ sudo yum install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
+  cyrus-sasl-plain gcc gcc-c++ gdb git krb5-server krb5-workstation libtool \
+  make openssl-devel patch pkgconfig redhat-lsb-core rsync unzip vim-common
 ----
 
 . If building on RHEL or CentOS older than 7.0, install the Red Hat Developer
@@ -333,13 +334,15 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 ----
 #!/bin/bash
 
-sudo yum -y install gcc gcc-c++ autoconf automake libtool cyrus-sasl-devel \
-  cyrus-sasl-plain patch pkgconfig make rsync vim-common gdb unzip redhat-lsb-core git
+sudo yum -y install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
+  cyrus-sasl-plain gcc gcc-c++ gdb git krb5-server krb5-workstation libtool \
+  make openssl-devel patch pkgconfig redhat-lsb-core rsync unzip vim-common
 DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64.noarch.rpm
 DTLS_RPM_URL=https://www.softwarecollections.org/en/scls/rhscl/devtoolset-3/epel-6-x86_64/download/${DTLS_RPM}
 wget ${DTLS_RPM_URL} -O ${DTLS_RPM}
 sudo yum install -y scl-utils ${DTLS_RPM}
 sudo yum install -y devtoolset-3-toolchain
+git clone https://github.com/apache/kudu
 cd kudu
 build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 mkdir -p build/release
@@ -358,9 +361,10 @@ make -j4
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ sudo apt-get install git autoconf automake \
-  curl gcc g++ libsasl2-dev libsasl2-modules \
-  libtool ntp patch pkg-config make rsync unzip vim-common gdb python lsb-release
+$ sudo apt-get install autoconf automake curl g++ gcc gdb git \
+  krb5-admin-server krb5-kdc krb5-user libsasl2-dev libsasl2-modules \
+  libsasl2-modules-gssapi-mit libssl-dev libtool lsb-release make ntp openssl \
+  patch pkg-config python rsync unzip vim-common
 ----
 
 . Optional: Install additional packages to build the documentation
@@ -422,9 +426,10 @@ the steps marked *Optional* above.
 ----
 #!/bin/bash
 
-sudo apt-get -y install git autoconf automake \
-  curl gcc g++ libsasl2-dev libsasl2-modules \
-  libtool ntp patch pkg-config make rsync unzip vim-common gdb python lsb-release
+sudo apt-get -y install autoconf automake curl g++ gcc gdb git \
+  krb5-admin-server krb5-kdc krb5-user libsasl2-dev libsasl2-modules \
+  libsasl2-modules-gssapi-mit libssl-dev libtool lsb-release make ntp openssl \
+  patch pkg-config python rsync unzip vim-common
 git clone https://github.com/apache/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
@@ -443,8 +448,9 @@ make -j4
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
-  gdb git libtool make ntp patch pkg-config python rsync unzip vim lsb-release
+$ sudo zypper install autoconf automake curl cyrus-sasl-devel \
+  cyrus-sasl-gssapi gcc gcc-c++ gdb git libtool lsb-release make ntp \
+  openssl-devel patch pkg-config python rsync unzip vim
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -495,8 +501,9 @@ the steps marked *Optional* above.
 ----
 #!/bin/bash
 
-sudo zypper install autoconf automake curl cyrus-sasl-devel gcc gcc-c++ \
-  gdb git libtool make ntp patch pkg-config python rsync unzip vim lsb-release
+sudo zypper install -y autoconf automake curl cyrus-sasl-devel \
+  cyrus-sasl-gssapi gcc gcc-c++ gdb git libtool lsb-release make ntp \
+  openssl-devel patch pkg-config python rsync unzip vim
 git clone https://github.com/apache/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
@@ -526,7 +533,7 @@ for more information.
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ brew install autoconf automake cmake libtool openssl pkg-config pstree
+$ brew install autoconf automake cmake krb5 libtool openssl pkg-config pstree
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -585,7 +592,7 @@ are installed.
 ----
 #!/bin/bash
 
-brew install autoconf automake cmake libtool pkg-config pstree
+brew install autoconf automake cmake krb5 libtool openssl pkg-config pstree
 git clone https://github.com/apache/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
