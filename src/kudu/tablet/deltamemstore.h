@@ -257,11 +257,7 @@ class DMSIterator : public DeltaIterator {
   };
   typedef std::deque<ColumnUpdate> UpdatesForColumn;
   std::vector<UpdatesForColumn> updates_by_col_;
-  struct DeleteOrReinsert {
-    rowid_t row_id;
-    bool exists;
-  };
-  std::deque<DeleteOrReinsert> deletes_and_reinserts_;
+  std::deque<rowid_t> deleted_;
 
   // State when prepared_for_ == PREPARED_FOR_COLLECT
   // ------------------------------------------------------------

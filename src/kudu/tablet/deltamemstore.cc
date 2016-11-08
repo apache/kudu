@@ -236,7 +236,7 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   for (UpdatesForColumn& ufc : updates_by_col_) {
     ufc.clear();
   }
-  deletes_and_reinserts_.clear();
+  deleted_.clear();
   prepared_deltas_.clear();
 
   while (iter_->IsValid()) {
@@ -257,11 +257,9 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
     if (flag == PREPARE_FOR_APPLY) {
       RowChangeListDecoder decoder((RowChangeList(val)));
       decoder.InitNoSafetyChecks();
-      if (decoder.is_delete() || decoder.is_reinsert()) {
-        DeleteOrReinsert dor;
-        dor.row_id = key.row_idx();
-        dor.exists = decoder.is_reinsert();
-        deletes_and_reinserts_.push_back(dor);
+      DCHECK(!decoder.is_reinsert()) << "Reinserts are not supported in the DeltaMemStore.";
+      if (decoder.is_delete()) {
+        deleted_.push_back(key.row_idx());
       } else {
         DCHECK(decoder.is_update());
         while (decoder.HasNext()) {
@@ -332,11 +330,9 @@ Status DMSIterator::ApplyDeletes(SelectionVector *sel_vec) {
   DCHECK_EQ(prepared_for_, PREPARED_FOR_APPLY);
   DCHECK_EQ(prepared_count_, sel_vec->nrows());
 
-  for (const DeleteOrReinsert& dor : deletes_and_reinserts_) {
-    uint32_t idx_in_block = dor.row_id - prepared_idx_;
-    if (!dor.exists) {
-      sel_vec->SetRowUnselected(idx_in_block);
-    }
+  for (auto& row_id : deleted_) {
+    uint32_t idx_in_block = row_id - prepared_idx_;
+    sel_vec->SetRowUnselected(idx_in_block);
   }
 
   return Status::OK();
@@ -371,7 +367,7 @@ bool DMSIterator::HasNext() {
 }
 
 bool DMSIterator::MayHaveDeltas() {
-  if (!deletes_and_reinserts_.empty()) {
+  if (!deleted_.empty()) {
     return true;
   }
   for (auto& col: updates_by_col_) {
