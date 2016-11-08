@@ -18,6 +18,7 @@
 #include "kudu/rpc/blocking_ops.h"
 
 #include <stdint.h>
+#include <string.h>
 
 #include <glog/logging.h>
 #include <google/protobuf/message_lite.h>
@@ -100,7 +101,7 @@ Status ReceiveFramedMessageBlocking(Socket* sock, faststring* recv_buf,
   if (PREDICT_FALSE(payload_len > FLAGS_rpc_max_message_size)) {
     // A common user mistake is to try to speak the Kudu RPC protocol to an
     // HTTP endpoint, or vice versa.
-    if (memcmp(recv_buf->data(), kHTTPHeader, arraysize(kHTTPHeader)) == 0) {
+    if (memcmp(recv_buf->data(), kHTTPHeader, strlen(kHTTPHeader)) == 0) {
       return Status::IOError(
           "received invalid RPC message which appears to be an HTTP response. "
           "Verify that you have specified a valid RPC port and not an HTTP port.");
