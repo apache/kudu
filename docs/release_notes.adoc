@@ -51,9 +51,21 @@
   match on a set of column values. Support for Spark, Map Reduce and Impala queries utilizing
   IN LIST pushdown is not yet complete.
 
+* The Java client now features client-side request tracing in order to help troubleshoot timeouts.
+  Error messages are now augmented with traces that show which servers were contacted before the
+  timeout occured instead of just the last error. The traces also contain RPCs that were
+  required to fulfill the client's request, such as contacting the master to discover a tablet's
+  location. Note that the traces are not available for successful requests and are not
+  programatically queryable.
+
 == Optimizations and improvements
 
-XXX
+* Kudu now publishes JAR files for Spark 2.0 compiled with Scala 2.11 along with the
+  existing Spark 1.6 JAR compiled with Scala 2.10.
+
+* The Java client now allows configuring scanners to read from the closest replica instead of
+  the known leader replica. The default remains the latter. Use the relevant `ReplicaSelection`
+  enum with the scanner's builder to change this behavior.
 
 === Command line tools
 
@@ -88,6 +100,13 @@ XXX
 * The Java client's `OperationResponse.getWriteTimestamp` method was renamed to `getWriteTimestampRaw`
   to emphasize that it doesn't return milliseconds, unlike what its Javadoc indicated. The renamed
   method was also hidden from the public APIs and should not be used.
+
+* The Java client's sync API (`KuduClient`, `KuduSession`, `KuduScanner`) used to throw either
+  a `NonRecoverableException` or a `TimeoutException` for a timeout, and now it's only possible for the
+  client to throw the former.
+
+* The Java client's handling of errors in `KuduSession` was modified so that subclasses of
+  `KuduException` are converted into RowErrors instead of being thrown.
 
 [[known_issues_and_limitations]]
 == Known Issues and Limitations
