@@ -31,8 +31,8 @@ import os
 if Cython.__version__ < '0.21.0':
     raise Exception('Please upgrade to Cython 0.21.0 or newer')
 
-MAJOR = 0
-MINOR = 4
+MAJOR = 1
+MINOR = 1
 MICRO = 0
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 ISRELEASED = True
@@ -127,7 +127,7 @@ LONG_DESCRIPTION = open(os.path.join(setup_dir, "README.md")).read()
 DESCRIPTION = "Python interface to the Apache Kudu C++ Client API"
 
 CLASSIFIERS = [
-    'Development Status :: 4 - Beta',
+    'Development Status :: 5 - Production/Stable',
     'Intended Audience :: Developers',
     'License :: OSI Approved :: Apache Software License',
     'Topic :: Database :: Front-Ends',
