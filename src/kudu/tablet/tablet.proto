@@ -64,6 +64,10 @@ message DeltaStatsPB {
   // Number of deletes (deletes result in deletion of an entire row)
   required int64 delete_count = 1;
 
+  // Number of reinserts.
+  // Optional for data format compatibility.
+  optional int64 reinsert_count = 6 [ default = 0];
+
   // REMOVED: replaced by column_stats, which maps by column ID,
   // whereas this older version mapped by index.
   // repeated int64 per_column_update_count = 2;
