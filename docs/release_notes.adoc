@@ -64,14 +64,21 @@ XXX
 
 === Client APIs ({cpp}/Java/Python)
 
-- The {cpp} client library no longer requires the
+* The {cpp} client no longer requires the
   link:https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html[old gcc5 ABI].
   Which ABI is actually used depends on the compiler configuration. Some new distros
   (e.g. Ubuntu 16.04) will use the new ABI. Your application must use the same ABI as is
   used by the client library; an easy way to guarantee this is to use the same compiler
   to build both.
 
-- The Java client's `OperationResponse.getWriteTimestamp` method was renamed to `getWriteTimestampRaw`
+* The {cpp} client's `KuduSession::CountBufferedOperations()` method is
+  deprecated. Its behavior is inconsistent unless the session runs in the
+  `MANUAL_FLUSH` mode. Instead, to get number of buffered operations, count
+  invocations of the `KuduSession::Apply()` method since last
+  `KuduSession::Flush()` call or, if using asynchronous flushing, since last
+  invocation of the callback passed into `KuduSession::FlushAsync()`.
+
+* The Java client's `OperationResponse.getWriteTimestamp` method was renamed to `getWriteTimestampRaw`
   to emphasize that it doesn't return milliseconds, unlike what its Javadoc indicated. The renamed
   method was also hidden from the public APIs and should not be used.
 
