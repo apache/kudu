@@ -75,6 +75,10 @@ DEFINE_int32(scanner_batch_size_rows, 100,
 TAG_FLAG(scanner_batch_size_rows, advanced);
 TAG_FLAG(scanner_batch_size_rows, runtime);
 
+DEFINE_bool(scanner_allow_snapshot_scans_with_logical_timestamps, false,
+            "If set, the server will support snapshot scans with logical timestamps.");
+TAG_FLAG(scanner_allow_snapshot_scans_with_logical_timestamps, unsafe);
+
 // Fault injection flags.
 DEFINE_int32(scanner_inject_latency_on_each_batch_ms, 0,
              "If set, the scanner will pause the specified number of milliesconds "
@@ -1747,13 +1751,18 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   // ... else we use the client provided one, but make sure it is not too far
   // in the future as to be invalid.
   } else {
-    tmp_snap_timestamp.FromUint64(scan_pb.snap_timestamp());
+
     Timestamp max_allowed_ts;
     Status s = server_->clock()->GetGlobalLatest(&max_allowed_ts);
-    if (!s.ok()) {
+    if (s.IsNotSupported() &&
+        PREDICT_TRUE(!FLAGS_scanner_allow_snapshot_scans_with_logical_timestamps)) {
       return Status::NotSupported("Snapshot scans not supported on this server",
                                   s.ToString());
     }
+    tmp_snap_timestamp.FromUint64(scan_pb.snap_timestamp());
+
+    // Note: if 'max_allowed_ts' is not obtained from clock_->GetGlobalLatest() it's guaranteed
+    // to be higher than 'tmp_snap_timestamp'.
     if (tmp_snap_timestamp > max_allowed_ts) {
       return Status::InvalidArgument(
           Substitute("Snapshot time $0 in the future. Max allowed timestamp is $1",

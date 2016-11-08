@@ -21,10 +21,11 @@
 #pragma once
 
 #include <boost/optional.hpp>
-#include <boost/optional/optional_io.hpp>
 #include <iostream>
+#include <string>
 
 #include "kudu/common/schema.h"
+#include "kudu/gutil/strings/substitute.h"
 
 namespace kudu {
 
@@ -40,6 +41,16 @@ struct ExpectedKeyValueRow {
   bool operator==(const ExpectedKeyValueRow& other) const {
     return key == other.key && val == other.val;
   }
+
+  string ToString() const {
+    string ret = strings::Substitute("{$0,", key);
+    if (val == boost::none) {
+      ret.append("NULL}");
+    } else {
+      ret.append(strings::Substitute("$0}", *val));
+    }
+    return ret;
+  }
 };
 
 inline Schema CreateKeyValueTestSchema() {
@@ -48,13 +59,7 @@ inline Schema CreateKeyValueTestSchema() {
 }
 
 inline std::ostream& operator<<(std::ostream& o, const ExpectedKeyValueRow& t) {
-  o << "{" << t.key << ", ";
-  if (t.val == boost::none) {
-    o << "NULL";
-  } else {
-    o << *t.val;
-  }
-  return o << "}";
+  return o << t.ToString();
 }
 
 } // namespace kudu
