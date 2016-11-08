@@ -192,12 +192,6 @@ class Tablet {
   Status NewRowIterator(const Schema &projection,
                         gscoped_ptr<RowwiseIterator> *iter) const;
 
-  // Whether the iterator should return results in order.
-  enum OrderMode {
-    UNORDERED = 0,
-    ORDERED = 1
-  };
-
   // Create a new row iterator for some historical snapshot.
   Status NewRowIterator(const Schema &projection,
                         const MvccSnapshot &snap,
@@ -437,6 +431,7 @@ class Tablet {
   Status CaptureConsistentIterators(const Schema *projection,
                                     const MvccSnapshot &snap,
                                     const ScanSpec *spec,
+                                    OrderMode order,
                                     vector<std::shared_ptr<RowwiseIterator> > *iters) const;
 
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,

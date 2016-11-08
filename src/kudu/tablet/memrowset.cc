@@ -298,6 +298,7 @@ MemRowSet::Iterator *MemRowSet::NewIterator() const {
 
 Status MemRowSet::NewRowIterator(const Schema *projection,
                                  const MvccSnapshot &snap,
+                                 OrderMode /*order*/,
                                  gscoped_ptr<RowwiseIterator>* out) const {
   out->reset(NewIterator(projection, snap));
   return Status::OK();

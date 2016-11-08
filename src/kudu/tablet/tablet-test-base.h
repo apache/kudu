@@ -411,7 +411,7 @@ class TabletTestBase : public KuduTabletTest {
   }
 
   void VerifyTestRowsWithVerifier(int32_t first_row, uint64_t expected_count,
-                                  boost::optional<TestRowVerifier> verifier) {
+                                  const boost::optional<TestRowVerifier>& verifier) {
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
     VerifyTestRowsWithRowIteratorAndVerifier(first_row, expected_count, std::move(iter), verifier);
@@ -419,16 +419,15 @@ class TabletTestBase : public KuduTabletTest {
 
   void VerifyTestRowsWithTimestampAndVerifier(int32_t first_row, uint64_t expected_count,
                                               Timestamp timestamp,
-                                              boost::optional<TestRowVerifier> verifier) {
+                                              const boost::optional<TestRowVerifier>& verifier) {
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet()->NewRowIterator(client_schema_, MvccSnapshot(timestamp), Tablet::UNORDERED,
-                                       &iter));
+    ASSERT_OK(tablet()->NewRowIterator(client_schema_, MvccSnapshot(timestamp), UNORDERED, &iter));
     VerifyTestRowsWithRowIteratorAndVerifier(first_row, expected_count, std::move(iter), verifier);
   }
 
   void VerifyTestRowsWithRowIteratorAndVerifier(int32_t first_row, uint64_t expected_row_count,
                                                 gscoped_ptr<RowwiseIterator> iter,
-                                                boost::optional<TestRowVerifier> verifier) {
+                                                const boost::optional<TestRowVerifier>& verifier) {
     ASSERT_OK(iter->Init(NULL));
     int batch_size = std::max<size_t>(1, std::min<size_t>(expected_row_count / 10,
                                                           4L * 1024 * 1024 / schema_.byte_size()));

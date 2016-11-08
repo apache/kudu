@@ -399,6 +399,22 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   ASSERT_FALSE(iter->HasNext());
 }
 
+// Hook implementation which runs a lambda function during the 'duplicating'
+// phase of compaction.
+template<class HookFunc>
+class RunDuringDuplicatingRowSetPhase : public Tablet::FlushCompactCommonHooks {
+ public:
+  explicit RunDuringDuplicatingRowSetPhase(HookFunc hook)
+      : hook_(std::move(hook)) {}
+
+  Status PostSwapInDuplicatingRowSet() override {
+    hook_();
+    return Status::OK();
+  }
+ private:
+  const HookFunc hook_;
+};
+
 TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
   // Create interleaved keys in each rowset, so they are clearly not in order
   const int kNumRows = 128;
@@ -415,43 +431,65 @@ TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
     }
   }
 
-  MvccSnapshot snap(*this->tablet()->mvcc_manager());
-  // Iterate through with a few different block sizes.
-  for (int numBlocks = 1; numBlocks < 5; numBlocks*=2) {
-    const int rowsPerBlock = kNumRows / numBlocks;
-    // Make a new ordered iterator for the current snapshot.
-    gscoped_ptr<RowwiseIterator> iter;
+  // We'll test ordered scans a few times, covering before, during, and
+  // after a compaction.
+  auto RunScans = [this, kNumRows]() {
+    MvccSnapshot snap(*this->tablet()->mvcc_manager());
+    // Iterate through with a few different block sizes.
+    for (int numBlocks = 1; numBlocks < 5; numBlocks*=2) {
+      const int rowsPerBlock = kNumRows / numBlocks;
+      // Make a new ordered iterator for the current snapshot.
+      gscoped_ptr<RowwiseIterator> iter;
 
-    ASSERT_OK(this->tablet()->NewRowIterator(this->client_schema_, snap, Tablet::ORDERED, &iter));
-    ASSERT_OK(iter->Init(nullptr));
+      ASSERT_OK(this->tablet()->NewRowIterator(this->client_schema_, snap, ORDERED, &iter));
+      ASSERT_OK(iter->Init(nullptr));
 
-    // Iterate the tablet collecting rows.
-    vector<shared_ptr<faststring> > rows;
-    for (int i = 0; i < numBlocks; i++) {
-      RowBlock block(this->schema_, rowsPerBlock, &this->arena_);
-      ASSERT_TRUE(iter->HasNext());
-      ASSERT_OK(iter->NextBlock(&block));
-      ASSERT_EQ(rowsPerBlock, block.nrows()) << "unexpected number of rows returned";
-      for (int j = 0; j < rowsPerBlock; j++) {
-        RowBlockRow row = block.row(j);
-        shared_ptr<faststring> encoded(new faststring());
-        this->client_schema_.EncodeComparableKey(row, encoded.get());
-        rows.push_back(encoded);
+      // Iterate the tablet collecting rows.
+      vector<shared_ptr<faststring> > rows;
+      for (int i = 0; i < numBlocks; i++) {
+        RowBlock block(this->schema_, rowsPerBlock, &this->arena_);
+        ASSERT_TRUE(iter->HasNext());
+        ASSERT_OK(iter->NextBlock(&block));
+        ASSERT_EQ(rowsPerBlock, block.nrows()) << "unexpected number of rows returned";
+        for (int j = 0; j < rowsPerBlock; j++) {
+          RowBlockRow row = block.row(j);
+          shared_ptr<faststring> encoded(new faststring());
+          this->client_schema_.EncodeComparableKey(row, encoded.get());
+          rows.push_back(encoded);
+        }
       }
+      // Verify the collected rows, checking that they are sorted.
+      for (int j = 1; j < rows.size(); j++) {
+        // Use the schema for comparison, since this test is run with different schemas.
+        ASSERT_LT((*rows[j-1]).ToString(), (*rows[j]).ToString());
+      }
+      ASSERT_FALSE(iter->HasNext());
+      ASSERT_EQ(kNumRows, rows.size());
     }
-    // Verify the collected rows, checking that they are sorted.
-    for (int j = 1; j < rows.size(); j++) {
-      // Use the schema for comparison, since this test is run with different schemas.
-      ASSERT_LT((*rows[j-1]).ToString(), (*rows[j]).ToString());
-    }
-    ASSERT_FALSE(iter->HasNext());
-    ASSERT_EQ(kNumRows, rows.size());
+  };
+
+  {
+    SCOPED_TRACE("With no compaction");
+    NO_FATALS(RunScans());
+  }
+
+  {
+    SCOPED_TRACE("With duplicating rowset");
+    shared_ptr<Tablet::FlushCompactCommonHooks> hooks_shared(
+        new RunDuringDuplicatingRowSetPhase<decltype(RunScans)>(RunScans));
+    this->tablet()->SetFlushCompactCommonHooksForTests(hooks_shared);
+    ASSERT_OK(this->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
+    NO_FATALS();
+  }
+
+  {
+    SCOPED_TRACE("After compaction");
+    NO_FATALS(RunScans());
   }
 }
 
-
 template<class SETUP>
-bool TestSetupExpectsNulls(int32_t key_idx) {
+bool TestSetupExpectsNulls(int32_t /*key_idx*/) {
   return false;
 }
 

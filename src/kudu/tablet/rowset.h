@@ -86,6 +86,7 @@ class RowSet {
   // The returned iterator is not Initted.
   virtual Status NewRowIterator(const Schema *projection,
                                 const MvccSnapshot &snap,
+                                OrderMode order,
                                 gscoped_ptr<RowwiseIterator>* out) const = 0;
 
   // Create the input to be used for a compaction.
@@ -263,6 +264,7 @@ class DuplicatingRowSet : public RowSet {
 
   virtual Status NewRowIterator(const Schema *projection,
                                 const MvccSnapshot &snap,
+                                OrderMode order,
                                 gscoped_ptr<RowwiseIterator>* out) const OVERRIDE;
 
   virtual Status NewCompactionInput(const Schema* projection,

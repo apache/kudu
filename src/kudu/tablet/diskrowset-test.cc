@@ -361,7 +361,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(rs->NewRowIterator(&schema_, snaps[i], &iter));
+    ASSERT_OK(rs->NewRowIterator(&schema_, snaps[i], UNORDERED, &iter));
     string data = InitAndDumpIterator(std::move(iter));
     EXPECT_EQ(StringPrintf("(string key=row, uint32 val=%d)", i + 1), data);
   }
@@ -373,7 +373,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(rs->NewRowIterator(&schema_, snaps[i], &iter));
+    ASSERT_OK(rs->NewRowIterator(&schema_, snaps[i], UNORDERED, &iter));
     string data = InitAndDumpIterator(std::move(iter));
     EXPECT_EQ(StringPrintf("(string key=row, uint32 val=%d)", i + 1), data);
   }

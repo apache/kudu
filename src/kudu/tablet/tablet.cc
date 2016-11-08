@@ -274,7 +274,7 @@ Status Tablet::NewRowIterator(const Schema &projection,
                               gscoped_ptr<RowwiseIterator> *iter) const {
   // Yield current rows.
   MvccSnapshot snap(mvcc_);
-  return NewRowIterator(projection, snap, Tablet::UNORDERED, iter);
+  return NewRowIterator(projection, snap, UNORDERED, iter);
 }
 
 
@@ -1347,6 +1347,7 @@ Status Tablet::CaptureConsistentIterators(
   const Schema *projection,
   const MvccSnapshot &snap,
   const ScanSpec *spec,
+  OrderMode order,
   vector<shared_ptr<RowwiseIterator> > *iters) const {
   shared_lock<rw_spinlock> l(component_lock_);
 
@@ -1356,7 +1357,7 @@ Status Tablet::CaptureConsistentIterators(
 
   // Grab the memrowset iterator.
   gscoped_ptr<RowwiseIterator> ms_iter;
-  RETURN_NOT_OK(components_->memrowset->NewRowIterator(projection, snap, &ms_iter));
+  RETURN_NOT_OK(components_->memrowset->NewRowIterator(projection, snap, order, &ms_iter));
   ret.push_back(shared_ptr<RowwiseIterator>(ms_iter.release()));
 
   // Cull row-sets in the case of key-range queries.
@@ -1372,7 +1373,7 @@ Status Tablet::CaptureConsistentIterators(
         &interval_sets);
     for (const RowSet *rs : interval_sets) {
       gscoped_ptr<RowwiseIterator> row_it;
-      RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, &row_it),
+      RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, order, &row_it),
                             Substitute("Could not create iterator for rowset $0",
                                        rs->ToString()));
       ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
@@ -1385,7 +1386,7 @@ Status Tablet::CaptureConsistentIterators(
   // fall back to grabbing all rowset iterators
   for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
     gscoped_ptr<RowwiseIterator> row_it;
-    RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, &row_it),
+    RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, order, &row_it),
                           Substitute("Could not create iterator for rowset $0",
                                      rs->ToString()));
     ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
@@ -1682,7 +1683,7 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   vector<shared_ptr<RowwiseIterator>> iters;
 
-  RETURN_NOT_OK(tablet_->CaptureConsistentIterators(&projection_, snap_, spec, &iters));
+  RETURN_NOT_OK(tablet_->CaptureConsistentIterators(&projection_, snap_, spec, order_, &iters));
 
   switch (order_) {
     case ORDERED:

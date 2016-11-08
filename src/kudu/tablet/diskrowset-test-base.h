@@ -216,7 +216,7 @@ class TestRowSet : public KuduRowSetTest {
     Schema proj_val = CreateProjection(schema_, { "val" });
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter;
-    CHECK_OK(rs.NewRowIterator(&proj_val, snap, &row_iter));
+    CHECK_OK(rs.NewRowIterator(&proj_val, snap, UNORDERED, &row_iter));
     CHECK_OK(row_iter->Init(NULL));
     Arena arena(1024, 1024*1024);
     int batch_size = 10000;
@@ -263,7 +263,7 @@ class TestRowSet : public KuduRowSetTest {
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter;
-    CHECK_OK(rs.NewRowIterator(&schema_, snap, &row_iter));
+    CHECK_OK(rs.NewRowIterator(&schema_, snap, UNORDERED, &row_iter));
     CHECK_OK(row_iter->Init(&spec));
     vector<string> rows;
     IterateToStringList(row_iter.get(), &rows);
@@ -277,7 +277,7 @@ class TestRowSet : public KuduRowSetTest {
                                 int expected_rows, bool do_log = true) {
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter;
-    CHECK_OK(rs.NewRowIterator(&schema, snap, &row_iter));
+    CHECK_OK(rs.NewRowIterator(&schema, snap, UNORDERED, &row_iter));
     CHECK_OK(row_iter->Init(NULL));
 
     int batch_size = 1000;

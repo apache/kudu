@@ -192,10 +192,7 @@ static inline void CollectRowsForSnapshots(Tablet* tablet,
   for (const MvccSnapshot& snapshot : snaps) {
     DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet->NewRowIterator(schema,
-                                            snapshot,
-                                            Tablet::UNORDERED,
-                                            &iter));
+    ASSERT_OK(tablet->NewRowIterator(schema, snapshot, UNORDERED, &iter));
     ASSERT_OK(iter->Init(NULL));
     auto collector = new vector<string>();
     ASSERT_OK(IterateToStringList(iter.get(), collector));
@@ -219,7 +216,7 @@ static inline void VerifySnapshotsHaveSameResult(Tablet* tablet,
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet->NewRowIterator(schema,
                                             snapshot,
-                                            Tablet::UNORDERED,
+                                            UNORDERED,
                                             &iter));
     ASSERT_OK(iter->Init(NULL));
     vector<string> collector;
@@ -244,7 +241,7 @@ static inline Status DumpRowSet(const RowSet &rs,
                                 vector<string> *out,
                                 int limit = INT_MAX) {
   gscoped_ptr<RowwiseIterator> iter;
-  RETURN_NOT_OK(rs.NewRowIterator(&projection, snap, &iter));
+  RETURN_NOT_OK(rs.NewRowIterator(&projection, snap, UNORDERED, &iter));
   RETURN_NOT_OK(iter->Init(NULL));
   RETURN_NOT_OK(IterateToStringList(iter.get(), out, limit));
   return Status::OK();

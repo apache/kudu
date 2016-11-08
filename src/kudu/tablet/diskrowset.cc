@@ -580,6 +580,7 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
 
 Status DiskRowSet::NewRowIterator(const Schema *projection,
                                   const MvccSnapshot &mvcc_snap,
+                                  OrderMode /*order*/,
                                   gscoped_ptr<RowwiseIterator>* out) const {
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_.get_lock());

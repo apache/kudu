@@ -277,6 +277,7 @@ class MemRowSet : public RowSet,
   // Alias to conform to DiskRowSet interface
   virtual Status NewRowIterator(const Schema* projection,
                                 const MvccSnapshot& snap,
+                                OrderMode order,
                                 gscoped_ptr<RowwiseIterator>* out) const OVERRIDE;
 
   // Create compaction input.

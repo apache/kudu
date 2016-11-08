@@ -1791,13 +1791,10 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   tablet->metrics()->snapshot_read_inflight_wait_duration->Increment(duration_usec);
   TRACE("All operations in snapshot committed. Waited for $0 microseconds", duration_usec);
 
-  tablet::Tablet::OrderMode order;
-  switch (scan_pb.order_mode()) {
-    case UNORDERED: order = tablet::Tablet::UNORDERED; break;
-    case ORDERED: order = tablet::Tablet::ORDERED; break;
-    default: LOG(FATAL) << "Unexpected order mode.";
+  if (scan_pb.order_mode() == UNKNOWN_ORDER_MODE) {
+    return Status::InvalidArgument("Unknown order mode specified");
   }
-  RETURN_NOT_OK(tablet->NewRowIterator(projection, snap, order, iter));
+  RETURN_NOT_OK(tablet->NewRowIterator(projection, snap, scan_pb.order_mode(), iter));
   *snap_timestamp = tmp_snap_timestamp;
   return Status::OK();
 }

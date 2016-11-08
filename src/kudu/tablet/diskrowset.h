@@ -313,7 +313,8 @@ class DiskRowSet : public RowSet {
   // Read functions.
   ////////////////////
   virtual Status NewRowIterator(const Schema *projection,
-                                const MvccSnapshot &snap,
+                                const MvccSnapshot &mvcc_snap,
+                                OrderMode order,
                                 gscoped_ptr<RowwiseIterator>* out) const OVERRIDE;
 
   virtual Status NewCompactionInput(const Schema* projection,
