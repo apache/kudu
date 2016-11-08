@@ -219,6 +219,69 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   ASSERT_EQ(1, this->TabletCount());
 }
 
+// Tests that we are able to handle reinserts properly.
+//
+// Namely tests that:
+// - We're able to perform multiple reinserts in a MRS, flush them
+//   and that all versions of the row are still visible.
+// - After we've flushed the reinserts above, we can perform a
+//   new reinsert in a new MRS, flush that MRS and compact the row
+//   DRS together, all while preserving the full row history.
+TYPED_TEST(TestTablet, TestReinserts) {
+  LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
+
+  vector<MvccSnapshot> snaps;
+  // In the first snap there's no row.
+  snaps.push_back(MvccSnapshot(*this->tablet()->mvcc_manager()));
+
+  // Insert one row.
+  ASSERT_OK(this->InsertTestRow(&writer, 1, 0));
+
+  // In the second snap the row exists and has value 0.
+  snaps.push_back(MvccSnapshot(*this->tablet()->mvcc_manager()));
+
+  // Now delete the test row.
+  ASSERT_OK(this->DeleteTestRow(&writer, 1));
+
+  // In the third snap the row doesn't exist.
+  snaps.push_back(MvccSnapshot(*this->tablet()->mvcc_manager()));
+
+  // Reinsert the row.
+  ASSERT_OK(this->InsertTestRow(&writer, 1, 1));
+
+  // In the fourth snap the row exists again and has value 1.
+  snaps.push_back(MvccSnapshot(*this->tablet()->mvcc_manager()));
+
+  // .. and delete the row again.
+  ASSERT_OK(this->DeleteTestRow(&writer, 1));
+
+  // In the fifth snap the row has been deleted.
+  snaps.push_back(MvccSnapshot(*this->tablet()->mvcc_manager()));
+
+  // Now flush the MRS all versions of the tablet should be visible,
+  // depending on the chosen snapshot.
+  ASSERT_OK(this->tablet()->Flush());
+
+  vector<vector<string>* > expected_rows;
+  CollectRowsForSnapshots(this->tablet().get(), this->client_schema_,
+                          snaps, &expected_rows);
+
+  ASSERT_EQ(expected_rows.size(), 5);
+  ASSERT_EQ(expected_rows[0]->size(), 0) << "Got the wrong result from snap: "
+                                         << snaps[0].ToString();
+  ASSERT_EQ(expected_rows[1]->size(), 1) << "Got the wrong result from snap: "
+                                         << snaps[1].ToString();
+  ASSERT_STR_CONTAINS((*expected_rows[1])[0], "int32 key_idx=1, int32 val=0)");
+  ASSERT_EQ(expected_rows[2]->size(), 0) << "Got the wrong result from snap: "
+                                         << snaps[2].ToString();
+  ASSERT_EQ(expected_rows[3]->size(), 1) << "Got the wrong result from snap: "
+                                         << snaps[3].ToString();
+  ASSERT_STR_CONTAINS((*expected_rows[3])[0], "int32 key_idx=1, int32 val=1)");
+  ASSERT_EQ(expected_rows[4]->size(), 0) << "Got the wrong result from snap: "
+                                         << snaps[4].ToString();
+
+  STLDeleteElements(&expected_rows);
+}
 
 // Test flushes and compactions dealing with deleted rows.
 TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {

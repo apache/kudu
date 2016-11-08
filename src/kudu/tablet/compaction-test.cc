@@ -70,6 +70,7 @@ class TestCompaction : public KuduRowSetTest {
     : KuduRowSetTest(CreateSchema()),
       op_id_(consensus::MaximumOpId()),
       row_builder_(schema_),
+      arena_(32*1024, 128*1024),
       clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
       mvcc_(clock_),
       log_anchor_registry_(new log::LogAnchorRegistry()) {
@@ -423,12 +424,19 @@ class TestCompaction : public KuduRowSetTest {
     }
   }
 
+  // Helpers for building an expected row history.
+  void AddExpectedDelete(Mutation** current_head, Timestamp ts = Timestamp::kInvalidTimestamp);
+  void AddExpectedUpdate(Mutation** current_head, int32_t val);
+  void AddExpectedReinsert(Mutation** current_head, int32_t val);
+  void AddUpdateAndDelete(RowSet* rs, CompactionInputRow* row, int row_id, int32_t val);
+
  protected:
   OpId op_id_;
 
   RowBuilder row_builder_;
   char key_buf_[256];
-  scoped_refptr<server::Clock> clock_;
+  Arena arena_;
+  scoped_refptr<server::LogicalClock> clock_;
   MvccManager mvcc_;
 
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
@@ -530,8 +538,9 @@ TEST_F(TestCompaction, TestRowSetInput) {
 }
 
 // Tests that the same rows, duplicated in three DRSs, ghost in two of them
-// appears only once on the compaction output
-TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
+// appears only once on the compaction output but that the resulting row
+// includes reinserts for the ghost and all its mutations.
+TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
   shared_ptr<DiskRowSet> rs1;
   {
     shared_ptr<MemRowSet> mrs;
@@ -591,10 +600,190 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
   ASSERT_EQ(out.size(), 10);
   EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=hello 00000000, int32 val=2, "
                 "int32 nullable_val=NULL); Undo Mutations: [@61(SET val=0, nullable_val=0), "
-                "@51(DELETE)]; Redo Mutations: [];", out[0]);
+                "@51(DELETE), @41(REINSERT val=1, nullable_val=1), @31(SET val=0, nullable_val=0), "
+                "@21(DELETE), @11(REINSERT val=0, nullable_val=0), @1(DELETE)]; "
+                "Redo Mutations: [];", out[0]);
   EXPECT_EQ("RowIdxInBlock: 9; Base: (string key=hello 00000090, int32 val=2, "
                 "int32 nullable_val=NULL); Undo Mutations: [@70(SET val=9, nullable_val=NULL), "
-                "@60(DELETE)]; Redo Mutations: [];", out[9]);
+                "@60(DELETE), @50(REINSERT val=1, nullable_val=1), @40(SET val=9, "
+                "nullable_val=NULL), @30(DELETE), @20(REINSERT val=9, nullable_val=NULL), "
+                "@10(DELETE)]; Redo Mutations: [];", out[9]);
+}
+
+void TestCompaction::AddExpectedDelete(Mutation** current_head, Timestamp ts) {
+  faststring buf;
+  RowChangeListEncoder enc(&buf);
+  enc.SetToDelete();
+  if (ts == Timestamp::kInvalidTimestamp) ts = Timestamp(clock_->GetCurrentTime());
+  Mutation* mutation = Mutation::CreateInArena(&arena_,
+                                               ts,
+                                               enc.as_changelist());
+  mutation->set_next(*current_head);
+  *current_head = mutation;
+}
+
+void TestCompaction::AddExpectedUpdate(Mutation** current_head, int32_t val) {
+  faststring buf;
+  RowChangeListEncoder enc(&buf);
+  enc.SetToUpdate();
+  enc.AddColumnUpdate(schema_.column(1), schema_.column_id(1), &val);
+  if (val % 2 == 0) {
+    enc.AddColumnUpdate(schema_.column(2), schema_.column_id(2), &val);
+  } else {
+    enc.AddColumnUpdate(schema_.column(2), schema_.column_id(2), nullptr);
+  }
+  Mutation* mutation = Mutation::CreateInArena(&arena_,
+                                               Timestamp(clock_->GetCurrentTime()),
+                                               enc.as_changelist());
+  mutation->set_next(*current_head);
+  *current_head = mutation;
+}
+
+void TestCompaction::AddExpectedReinsert(Mutation** current_head, int32_t val) {
+  faststring buf;
+  RowChangeListEncoder enc(&buf);
+  enc.SetToReinsert();
+  enc.EncodeColumnMutation(schema_.column(1), schema_.column_id(1), &val);
+  if (val % 2 == 1) {
+    enc.EncodeColumnMutation(schema_.column(2), schema_.column_id(2), &val);
+  } else {
+    enc.EncodeColumnMutation(schema_.column(2), schema_.column_id(2), nullptr);
+  }
+  Mutation* mutation = Mutation::CreateInArena(&arena_, Timestamp(clock_->GetCurrentTime()),
+                                               enc.as_changelist());
+  mutation->set_next(*current_head);
+  *current_head = mutation;
+}
+
+void TestCompaction::AddUpdateAndDelete(RowSet* rs, CompactionInputRow* row, int row_id,
+                                        int32_t val) {
+  UpdateRow(rs, row_id, val);
+  // Expect an UNDO update for the update.
+  AddExpectedUpdate(&row->undo_head, row_id);
+
+  DeleteRow(rs, row_id);
+  // Expect an UNDO reinsert for the delete.
+  AddExpectedReinsert(&row->undo_head, val);
+}
+
+// Build several layers of overlapping rowsets with many ghost rows.
+// Repeatedly merge all the generated RowSets until we are left with a single RowSet, then make
+// sure that its history matches our expected history.
+//
+// There are 'kBaseNumRowSets' layers of overlapping rowsets, each level has one less rowset and
+// thus less rows. This is meant to exercise a normal-ish path where there are both duplicated and
+// unique rows per merge while at the same time making sure that some of the rows are duplicated
+// many times.
+//
+// The verification is performed against a vector of expected CompactionInputRow that we build
+// as we insert/update/delete.
+TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
+  const int kBaseNumRowSets = 10;
+  const int kNumRowsPerRowSet = 10;
+
+  int total_num_rows = kBaseNumRowSets * kNumRowsPerRowSet;
+
+  MvccSnapshot all_snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+
+  vector<CompactionInputRow> expected_rows(total_num_rows);
+  vector<shared_ptr<DiskRowSet>> row_sets;
+
+  // Create a vector of ids for rows and fill it for the first layer.
+  vector<int> row_ids(total_num_rows);
+  std::iota(row_ids.begin(), row_ids.end(), 0);
+
+  SeedRandom();
+  int rs_id = 0;
+  for (int i = 0; i < kBaseNumRowSets; ++i) {
+    int num_rowsets_in_layer = kBaseNumRowSets - i;
+    size_t row_idx = 0;
+    for (int j = 0; j < num_rowsets_in_layer; ++j) {
+      shared_ptr<MemRowSet> mrs;
+      ASSERT_OK(MemRowSet::Create(rs_id, schema_, log_anchor_registry_.get(),
+                                  mem_trackers_.tablet_tracker, &mrs));
+
+      // For even rows, insert, update and delete them in the mrs.
+      for (int k = 0; k < kNumRowsPerRowSet; ++k) {
+        int row_id = row_ids[row_idx + k];
+        CompactionInputRow* row = &expected_rows[row_id];
+        InsertRow(mrs.get(), row_id, row_id);
+        // Expect an UNDO delete for the insert.
+        AddExpectedDelete(&row->undo_head);
+        if (row_id % 2 == 0) AddUpdateAndDelete(mrs.get(), row, row_id, row_id + i + 1);
+      }
+      shared_ptr<DiskRowSet> drs;
+      FlushMRSAndReopenNoRoll(*mrs, schema_, &drs);
+      // For odd rows, update them and delete them in the drs.
+      for (int k = 0; k < kNumRowsPerRowSet; ++k) {
+        int row_id = row_ids[row_idx];
+        CompactionInputRow* row = &expected_rows[row_id];
+        if (row_id % 2 == 1) AddUpdateAndDelete(drs.get(), row, row_id, row_id + i + 1);
+        row_idx++;
+      }
+      row_sets.push_back(drs);
+      rs_id++;
+    }
+    // For the next layer remove one rowset worth of rows at random.
+    for (int j = 0; j < kNumRowsPerRowSet; ++j) {
+      int to_remove = rand() % row_ids.size();
+      row_ids.erase(row_ids.begin() + to_remove);
+    }
+
+  }
+
+  RowBlock block(schema_, kBaseNumRowSets * kNumRowsPerRowSet, &arena_);
+  // Go through the expected compaction input rows, flip the last undo into a redo and
+  // build the base. This will give us the final version that we'll expect the result
+  // of the real compaction to match.
+  for (int i = 0; i < expected_rows.size(); ++i) {
+    CompactionInputRow* row = &expected_rows[i];
+    Mutation* reinsert = row->undo_head;
+    row->undo_head = reinsert->next();
+    row->row = block.row(i);
+    BuildRow(i, i);
+    CopyRow(row_builder_.row(), &row->row, &arena_);
+    RowChangeListDecoder redo_decoder(reinsert->changelist());
+    CHECK_OK(redo_decoder.Init());
+    faststring buf;
+    RowChangeListEncoder dummy(&buf);
+    dummy.SetToUpdate();
+    redo_decoder.MutateRowAndCaptureChanges(&row->row, &arena_, &dummy);
+    AddExpectedDelete(&row->redo_head, reinsert->timestamp());
+  }
+
+  vector<shared_ptr<CompactionInput>> inputs;
+  for (auto& row_set : row_sets) {
+    gscoped_ptr<CompactionInput> ci;
+    CHECK_OK(row_set->NewCompactionInput(&schema_, all_snap, &ci));
+    inputs.push_back(shared_ptr<CompactionInput>(ci.release()));
+  }
+
+  // Compact the row sets by picking a few at random until we're left with just one.
+  while (row_sets.size() > 1) {
+    std::random_shuffle(row_sets.begin(), row_sets.end());
+    // Merge between 2 and 4 row sets.
+    int num_rowsets_to_merge = std::min(rand() % 3 + 2, static_cast<int>(row_sets.size()));
+    vector<shared_ptr<DiskRowSet>> to_merge;
+    for (int i = 0; i < num_rowsets_to_merge; ++i) {
+      to_merge.push_back(row_sets.back());
+      row_sets.pop_back();
+    }
+    shared_ptr<DiskRowSet> result;
+    CompactAndReopenNoRoll(to_merge, schema_, &result);
+    row_sets.push_back(result);
+  }
+
+  vector<string> out;
+  gscoped_ptr<CompactionInput> ci;
+  CHECK_OK(row_sets[0]->NewCompactionInput(&schema_, all_snap, &ci));
+  IterateInput(ci.get(), &out);
+
+  // Finally go through the final compaction input and through the expected one and make sure
+  // they match.
+  ASSERT_EQ(expected_rows.size(), out.size());
+  for (int i = 0; i < expected_rows.size(); ++i) {
+    EXPECT_EQ(CompactionInputRowToString(expected_rows[i]), out[i]);
+  }
 }
 
 // Test case that inserts and deletes a row in the same transaction and makes sure

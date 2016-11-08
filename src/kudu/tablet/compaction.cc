@@ -251,6 +251,87 @@ class DiskRowSetCompactionInput : public CompactionInput {
   };
 };
 
+// Compares two duplicate rows before compaction (and before the REDO->UNDO transformation).
+// Returns -1 if 'left' is less recent than 'right', 1 otherwise. Never returns 0.
+int CompareDuplicatedRows(const CompactionInputRow& left,
+                          const CompactionInputRow& right) {
+  const Mutation* left_last = left.redo_head;
+  const Mutation* right_last = right.redo_head;
+  AdvanceToLastInList(&left_last);
+  AdvanceToLastInList(&right_last);
+
+  if (left.redo_head == nullptr) {
+    // left must still be alive, meaning right must have at least a DELETE redo.
+    DCHECK(right_last != nullptr);
+    DCHECK(right_last->changelist().is_delete());
+    return 1;
+  }
+  if (right.redo_head == nullptr) {
+    // right must still be alive, meaning left must have at least a DELETE redo.
+    DCHECK(left_last != nullptr);
+    DCHECK(left_last->changelist().is_delete());
+    return -1;
+  }
+
+  // Duplicated rows usually have disjoint redo histories, meaning the first mutation
+  // should be enough for the sake of determining the most recent row in most cases.
+  int ret = left.redo_head->timestamp().CompareTo(right.redo_head->timestamp());
+
+  if (ret > 0) {
+    return ret;
+  }
+
+  if (PREDICT_TRUE(ret < 0)) {
+    return ret;
+  }
+
+  // In case the histories aren't disjoint it must be because one row was deleted in the
+  // the same operation that inserted the other one, which was then mutated.
+  // For instance this is a valid history with non-disjoint REDO histories:
+  // -- Row 'a' lives in DRS1
+  // Update row 'a' @ 10
+  // Delete row 'a' @ 10
+  // Insert row 'a' @ 10
+  // -- Row 'a' lives in the MRS
+  // Update row 'a' @ 10
+  // -- Flush the MRS into DRS2
+  // -- Compact DRS1 and DRS2
+  //
+  // We can't have the case here where both 'left' and 'right' have a DELETE as the last
+  // mutation at the same timestamp. This would be troublesome as we would possibly have
+  // no way to decide which version is the most up-to-date (one or both version's undos
+  // might have been garbage collected). See MemRowSetCompactionInput::PrepareBlock().
+
+  // At least one of the rows must have a DELETE REDO as its last redo.
+  CHECK(left_last->changelist().is_delete() || right_last->changelist().is_delete());
+  // We made sure that rows that are inserted and deleted in the same operation can never
+  // be part of a compaction input so they can't both be deletes.
+  CHECK(!(left_last->changelist().is_delete() && right_last->changelist().is_delete()));
+
+  // If 'left' doesn't have a delete then it's the latest version.
+  if (!left_last->changelist().is_delete() && right_last->changelist().is_delete()) {
+    return 1;
+  }
+
+  // ...otherwise it's 'right'.
+  return -1;
+}
+
+void CopyMutations(Mutation* from, Mutation** to, Arena* arena) {
+  Mutation* previous = nullptr;
+  for (const Mutation* cur = from; cur != nullptr; cur = cur->acquire_next()) {
+    Mutation* copy = Mutation::CreateInArena(arena,
+                                             cur->timestamp(),
+                                             cur->changelist());
+    if (previous != nullptr) {
+      previous->set_next(copy);
+    } else {
+      *to = copy;
+    }
+    previous = copy;
+  }
+}
+
 class MergeCompactionInput : public CompactionInput {
  private:
   // State kept for each of the inputs.
@@ -267,8 +348,12 @@ class MergeCompactionInput : public CompactionInput {
       return pending_idx >= pending.size();
     }
 
-    const CompactionInputRow &next() const {
-      return pending[pending_idx];
+    CompactionInputRow* next() {
+      return &pending[pending_idx];
+    }
+
+    const CompactionInputRow* next() const {
+      return &pending[pending_idx];
     }
 
     void pop_front() {
@@ -289,7 +374,7 @@ class MergeCompactionInput : public CompactionInput {
       DCHECK(!empty());
       DCHECK(!other.empty());
 
-      return schema.Compare(pending.back().row, other.next().row) < 0;
+      return schema.Compare(pending.back().row, (*other.next()).row) < 0;
     }
 
     shared_ptr<CompactionInput> input;
@@ -302,7 +387,8 @@ class MergeCompactionInput : public CompactionInput {
  public:
   MergeCompactionInput(const vector<shared_ptr<CompactionInput> > &inputs,
                        const Schema* schema)
-    : schema_(schema) {
+    : schema_(schema),
+      num_dup_rows_(0) {
     for (const shared_ptr<CompactionInput> &input : inputs) {
       gscoped_ptr<MergeState> state(new MergeState);
       state->input = input;
@@ -344,7 +430,7 @@ class MergeCompactionInput : public CompactionInput {
 
     while (true) {
       int smallest_idx = -1;
-      CompactionInputRow smallest;
+      CompactionInputRow* smallest;
 
       // Iterate over the inputs to find the one with the smallest next row.
       // It may seem like an O(n lg k) merge using a heap would be more efficient,
@@ -367,40 +453,38 @@ class MergeCompactionInput : public CompactionInput {
           smallest = state->next();
           continue;
         }
-        int row_comp = schema_->Compare(state->next().row, smallest.row);
+        int row_comp = schema_->Compare(state->next()->row, smallest->row);
         if (row_comp < 0) {
           smallest_idx = i;
           smallest = state->next();
           continue;
         }
-        // If we found two duplicated rows, we want the row with the highest
-        // live version. If they're equal, that can only be because they're both
-        // dead, in which case it doesn't matter.
-        // TODO: this is going to change with historical REINSERT handling.
+        // If we found two rows with the same key, we want to make the newer one point to the older
+        // one, which must be a ghost.
         if (PREDICT_FALSE(row_comp == 0)) {
-          int mutation_comp = CompareLatestLiveVersion(state->next(), smallest);
+          int mutation_comp = CompareDuplicatedRows(*state->next(), *smallest);
+          CHECK_NE(mutation_comp, 0);
           if (mutation_comp > 0) {
             // If the previous smallest row has a highest version that is lower
-            // than this one, discard it.
+            // than this one, clone it as the previous version and discard the original.
+            RETURN_NOT_OK(SetPreviousGhost(state->next(), smallest, true /* clone */,
+                                           state->input->PreparedBlockArena()));
             states_[smallest_idx]->pop_front();
             smallest_idx = i;
             smallest = state->next();
             continue;
-          } else {
-            // .. otherwise pop the other one.
-            //
-            // NOTE: If they're equal, then currently that means that both versions are
-            // ghosts. Once we handle REINSERTS, we'll have to figure out which one "comes
-            // first" and deal with this properly. For now, we can just pick arbitrarily.
-            states_[i]->pop_front();
-            continue;
           }
+          // .. otherwise copy and pop the other one.
+          RETURN_NOT_OK(SetPreviousGhost(smallest, state->next(), true /* clone */,
+                                         smallest->row.row_block()->arena()));
+          states_[i]->pop_front();
+          continue;
         }
       }
       DCHECK_GE(smallest_idx, 0);
 
       states_[smallest_idx]->pop_front();
-      block->push_back(smallest);
+      block->push_back(*smallest);
     }
 
     return Status::OK();
@@ -502,53 +586,193 @@ class MergeCompactionInput : public CompactionInput {
     }
   }
 
-  // Compare the mutations of two duplicated rows.
-  // Returns -1 if latest_version(left) < latest_version(right)
-  static int CompareLatestLiveVersion(const CompactionInputRow& left,
-                                      const CompactionInputRow& right) {
-    if (left.redo_head == nullptr) {
-      // left must still be alive
-      DCHECK(right.redo_head != nullptr);
-      return 1;
+  // (Deep) clones a compaction input row, copying both the row data, all undo/redo mutations and
+  // all previous ghosts to 'arena'.
+  Status CloneCompactionInputRow(const CompactionInputRow* src,
+                                 CompactionInputRow** dst,
+                                 Arena* arena) {
+    CompactionInputRow* copy = arena->NewObject<CompactionInputRow>();
+    copy->row = NewRow();
+    // Copy the row to the arena.
+    RETURN_NOT_OK(CopyRow(src->row, &copy->row, arena));
+    // ... along with the redos and undos.
+    CopyMutations(src->redo_head, &copy->redo_head, arena);
+    CopyMutations(src->undo_head, &copy->undo_head, arena);
+    // Copy previous versions recursively.
+    if (src->previous_ghost != nullptr) {
+      CompactionInputRow* child;
+      RETURN_NOT_OK(CloneCompactionInputRow(src->previous_ghost, &child, arena));
+      copy->previous_ghost = child;
     }
-    if (right.redo_head == nullptr) {
-      DCHECK(left.redo_head != nullptr);
-      return -1;
-    }
-
-    // Duplicated rows have disjoint histories, we don't need to get the latest
-    // mutation, the first one should be enough for the sake of determining the most recent
-    // row, but in debug mode do get the latest to make sure one of the rows is a ghost.
-    const Mutation* left_latest = left.redo_head;
-    const Mutation* right_latest = right.redo_head;
-    int ret = left_latest->timestamp().CompareTo(right_latest->timestamp());
-#ifndef NDEBUG
-    AdvanceToLastInList(&left_latest);
-    AdvanceToLastInList(&right_latest);
-    int debug_ret = left_latest->timestamp().CompareTo(right_latest->timestamp());
-    if (debug_ret != 0) {
-      // If in fact both rows were deleted at the same time, this is OK -- we could
-      // have a case like TestRandomAccess.TestFuzz3, in which a single batch
-      // DELETED from the DRS, INSERTed into MRS, and DELETED from MRS. In that case,
-      // the timestamp of the last REDO will be the same and we can pick whichever
-      // we like.
-      CHECK_EQ(ret, debug_ret);
-    }
-#endif
-    return ret;
+    *dst = copy;
+    return Status::OK();
   }
 
-  static void AdvanceToLastInList(const Mutation** m) {
-    const Mutation* next;
-    while ((next = (*m)->acquire_next()) != nullptr) {
-      *m = next;
+  // Sets the previous ghost row for a CompactionInputRow.
+  // 'must_copy' indicates whether there must be a deep copy (using CloneCompactionInputRow()).
+  Status SetPreviousGhost(CompactionInputRow* older,
+                          CompactionInputRow* newer,
+                          bool must_copy,
+                          Arena* arena) {
+    CHECK(arena != nullptr) << "Arena can't be null";
+    // Check if we already had a previous version and, if yes, whether 'newer' is more or less
+    // recent.
+    if (older->previous_ghost != nullptr) {
+      if (CompareDuplicatedRows(*older->previous_ghost, *newer) > 0) {
+        // 'older' was more recent.
+        return SetPreviousGhost(older->previous_ghost, newer, must_copy /* clone */, arena);
+      }
+      // 'newer' was more recent.
+      if (must_copy) {
+        CompactionInputRow* newer_copy;
+        RETURN_NOT_OK(CloneCompactionInputRow(newer, &newer_copy, arena));
+        newer = newer_copy;
+      }
+      // 'older->previous_ghost' is already in 'arena' so avoid the copy.
+      RETURN_NOT_OK(SetPreviousGhost(newer,
+                                     older->previous_ghost,
+                                     false /* don't clone */,
+                                     arena));
+      older->previous_ghost = newer;
+      return Status::OK();
     }
+
+    if (must_copy) {
+      CompactionInputRow* newer_copy;
+      RETURN_NOT_OK(CloneCompactionInputRow(newer, &newer_copy, arena));
+      newer = newer_copy;
+    }
+    older->previous_ghost = newer;
+    return Status::OK();
+  }
+
+  // Duplicates are rare and allocating for the worst case (all the rows in all but one of
+  // the inputs are duplicates) is expensive, so we create RowBlocks on demand with just
+  // space for a few rows. If a row block is exhausted a new one is allocated.
+  RowBlockRow NewRow() {
+    rowid_t row_idx = num_dup_rows_ % kDuplicatedRowsPerBlock;
+    num_dup_rows_++;
+    if (row_idx == 0) {
+      duplicated_rows_.push_back(std::unique_ptr<RowBlock>(
+          new RowBlock(*schema_, kDuplicatedRowsPerBlock, static_cast<Arena*>(nullptr))));
+    }
+    return duplicated_rows_.back()->row(row_idx);
   }
 
   const Schema* schema_;
   vector<MergeState *> states_;
   Arena* prepared_block_arena_;
+
+  // Vector to keep blocks that store duplicated row data.
+  // This needs to be stored internally as row data for ghosts might have been deleted
+  // by the the time the most recent version row is processed.
+  vector<std::unique_ptr<RowBlock>> duplicated_rows_;
+  int num_dup_rows_;
+
+  enum {
+    kDuplicatedRowsPerBlock = 10
+  };
+
 };
+
+// Advances 'head' while the timestamp of the 'next' mutation is bigger than or equal to 'ts'
+// and 'next' is not null.
+void AdvanceWhileNextEqualToOrBiggerThan(Mutation** head, Timestamp ts) {
+  while ((*head)->next() != nullptr && (*head)->next()->timestamp() >= ts) {
+    *head = (*head)->next();
+  }
+}
+
+// Merges two undo histories into one with decreasing timestamp order and returns the new head.
+Mutation* MergeUndoHistories(Mutation* left, Mutation* right) {
+
+  if (PREDICT_FALSE(left == nullptr)) {
+    return right;
+  }
+  if (PREDICT_FALSE(right == nullptr)) {
+    return left;
+  }
+
+  Mutation* head;
+  if (left->timestamp() >= right->timestamp()) {
+    head = left;
+  } else {
+    head = right;
+  }
+
+  while (left != nullptr && right != nullptr) {
+    if (left->timestamp() >= right->timestamp()) {
+      AdvanceWhileNextEqualToOrBiggerThan(&left, right->timestamp());
+      Mutation* next = left->next();
+      left->set_next(right);
+      left = next;
+      continue;
+    }
+    AdvanceWhileNextEqualToOrBiggerThan(&right, left->timestamp());
+    Mutation* next = right->next();
+    right->set_next(left);
+    right = next;
+  }
+  return head;
+}
+
+// If 'old_row' has previous versions, this transforms prior version in undos and adds them
+// to 'new_undo_head'.
+Status MergeDuplicatedRowHistory(CompactionInputRow* old_row,
+                                 Mutation** new_undo_head,
+                                 Arena* arena) {
+  if (PREDICT_TRUE(old_row->previous_ghost == nullptr)) return Status::OK();
+
+  // Use an all inclusive snapshot as all of the previous version's undos and redos
+  // are guaranteed to be committed, otherwise the compaction wouldn't be able to
+  // see the new row.
+  MvccSnapshot all_snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+
+  faststring dst;
+
+  CompactionInputRow* previous_ghost = old_row->previous_ghost;
+  while (previous_ghost != nullptr) {
+
+    // First step is to transform the old rows REDO's into undos, if there are any.
+    // This simplifies this for several reasons:
+    // - will be left with most up-to-date version of the old row
+    // - only have one REDO left to deal with (the delete)
+    // - can reuse ApplyMutationsAndGenerateUndos()
+    Mutation* pv_new_undos_head = nullptr;
+    Mutation* pv_delete_redo = nullptr;
+
+    RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(all_snap,
+                                                 *previous_ghost,
+                                                 &pv_new_undos_head,
+                                                 &pv_delete_redo,
+                                                 arena,
+                                                 &previous_ghost->row));
+
+    // We should be left with only one redo, the delete.
+    CHECK(pv_delete_redo != nullptr);
+    CHECK(pv_delete_redo->changelist().is_delete());
+    CHECK(pv_delete_redo->next() == nullptr);
+
+    // Now transform the redo delete into an undo (reinsert), which will contain the previous
+    // ghost. The reinsert will have the timestamp of the delete.
+    dst.clear();
+    RowChangeListEncoder undo_encoder(&dst);
+    undo_encoder.SetToReinsert(previous_ghost->row);
+    Mutation* pv_reinsert = Mutation::CreateInArena(arena,
+                                                    pv_delete_redo->timestamp(),
+                                                    undo_encoder.as_changelist());
+
+    // Make the reinsert point to the rest of the undos.
+    pv_reinsert->set_next(pv_new_undos_head);
+
+    // Merge the UNDO lists.
+    *new_undo_head = MergeUndoHistories(*new_undo_head, pv_reinsert);
+
+    // ... handle a previous ghost if there is any.
+    previous_ghost = previous_ghost->previous_ghost;
+  }
+  return Status::OK();
+}
 
 // Makes the current head point to the 'new_head', if it's not null, and
 // makes 'new_head' the new head.
@@ -569,7 +793,19 @@ string RowToString(const RowBlockRow& row, const Mutation* redo_head, const Muta
 }
 
 string CompactionInputRowToString(const CompactionInputRow& input_row) {
-  return RowToString(input_row.row, input_row.redo_head, input_row.undo_head);
+  if (input_row.previous_ghost == nullptr) {
+    return RowToString(input_row.row, input_row.redo_head, input_row.undo_head);
+  }
+  string ret = RowToString(input_row.row, input_row.redo_head, input_row.undo_head);
+  const CompactionInputRow* previous_ghost = input_row.previous_ghost;
+  while (previous_ghost != nullptr) {
+    ret.append(" Previous Ghost: ");
+    ret.append(RowToString(previous_ghost->row,
+                           previous_ghost->redo_head,
+                           previous_ghost->undo_head));
+    previous_ghost = previous_ghost->previous_ghost;
+  }
+  return ret;
 }
 
 ////////////////////////////////////////////////////////////
@@ -693,9 +929,6 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       Mutation** new_redo_head,
                                       Arena* arena,
                                       RowBlockRow* dst_row) {
-
-  // At the time of writing, REINSERT is never encoded as an UNDO and the base
-  // data can never be in a deleted state (see KUDU-237).
   bool is_deleted = false;
 
   #define ERROR_LOG_CONTEXT \
@@ -764,40 +997,44 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                               undo_encoder.as_changelist());
         break;
       }
+      // When we see a reinsert REDO we do the following:
+      // 1 - Reset the REDO head, which contained a DELETE REDO.
+      // 2 - Apply the REINSERT to the row, passing an undo_encoder that encodes the state of
+      //     the row prior to to the REINSERT.
+      // 3 - Create a mutation for the REINSERT above and add it to the UNDOs, this mutation
+      //     will have the timestamp of the DELETE REDO.
+      // 4 - Create a new delete UNDO. This mutation will have the timestamp of the REINSERT REDO.
       case RowChangeList::kReinsert: {
         DCHECK(is_deleted) << "Got REINSERT for a non-deleted row. " << ERROR_LOG_CONTEXT;
         CHECK(redo_delete != nullptr)  << "Got REINSERT without a redo DELETE. "
-                                        << ERROR_LOG_CONTEXT;
+                                       << ERROR_LOG_CONTEXT;
         redo_decoder.TwiddleDeleteStatus(&is_deleted);
+        Timestamp delete_ts = redo_delete->timestamp();
 
+        // 1 - Reset the delete REDO.
+        redo_delete = nullptr;
 
-        // Right now when a REINSERT mutation is found it is treated as a new insert and it
-        // clears the whole row history before it. We apply the reinsert to the new
-        // row but disregard the undo reinsert that is created.
-        //
-        // TODO(dralves) KUDU-237 Actually store the REINSERT
+        // 2 - Apply the changes of the reinsert to the latest version of the row
+        // capturing the old row while we're at it.
+        // TODO(dralves) Make Reinserts set defaults on the dest row. See KUDU-1760.
         undo_encoder.SetToReinsert();
         RETURN_NOT_OK_LOG(redo_decoder.MutateRowAndCaptureChanges(
             dst_row, static_cast<Arena*>(nullptr), &undo_encoder), ERROR,
-                          "Unable to apply reinsert undo. \n " + ERROR_LOG_CONTEXT);
+                          "Unable to apply reinsert undo. \n" + ERROR_LOG_CONTEXT);
 
-        // Discard the REINSERT and store a DELETE instead.
+        // 3 - Create a mutation for the REINSERT above and add it to the UNDOs.
+        current_undo = Mutation::CreateInArena(arena,
+                                               delete_ts,
+                                               undo_encoder.as_changelist());
+        SetHead(&undo_head, current_undo);
+
+        // 4 - Create a DELETE mutation and add it to the UNDOs.
         undo_encoder.Reset();
         undo_encoder.SetToDelete();
-
-        // Reset the UNDO head, losing all previous undos.
-        undo_head = Mutation::CreateInArena(arena,
-                                            redo_mut->timestamp(),
-                                            undo_encoder.as_changelist());
-
-        // Also reset the previous redo head since it stored the delete which was nullified
-        // by this reinsert
-        redo_delete = nullptr;
-
-        if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-          VLOG(2) << "Found REINSERT REDO, cannot create UNDO for it, resetting row history "
-              "under snapshot: " << snap.ToString() << ERROR_LOG_CONTEXT;
-        }
+        current_undo = Mutation::CreateInArena(arena,
+                                               redo_mut->timestamp(),
+                                               undo_encoder.as_changelist());
+        SetHead(&undo_head, current_undo);
         break;
       }
       default: LOG(FATAL) << "Unknown mutation type!" << ERROR_LOG_CONTEXT;
@@ -851,12 +1088,17 @@ Status FlushCompactionInput(CompactionInput* input,
                                                    input->PreparedBlockArena(),
                                                    &dst_row));
 
+      // Merge the histories of 'input_row' with previous ghosts, if there are any.
+      RETURN_NOT_OK(MergeDuplicatedRowHistory(input_row,
+                                              &new_undos_head,
+                                              input->PreparedBlockArena()));
+
       // Remove ancient UNDOS and check whether the row should be garbage collected.
       bool is_garbage_collected;
       RemoveAncientUndos(history_gc_opts,
-                                &new_undos_head,
-                                new_redos_head,
-                                &is_garbage_collected);
+                         &new_undos_head,
+                         new_redos_head,
+                         &is_garbage_collected);
 
       DVLOG(4) << "Output Row: " << RowToString(dst_row, new_redos_head, new_undos_head) <<
           "; Was garbage collected? " << is_garbage_collected;

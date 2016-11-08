@@ -38,7 +38,6 @@ string DeltaKeyAndUpdate::Stringify(DeltaType type, const Schema& schema, bool p
                                                    atoi(key.timestamp().ToString().c_str()))
                                     : Substitute("$0@tx$1", key.row_idx(),
                                                  key.timestamp().ToString()))));
-
 }
 
 Status DebugDumpDeltaIterator(DeltaType type,

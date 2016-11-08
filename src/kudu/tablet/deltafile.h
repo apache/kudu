@@ -53,7 +53,7 @@ struct ApplyingVisitor;
 template<DeltaType Type>
 struct CollectingVisitor;
 template<DeltaType Type>
-struct DeletingVisitor;
+struct LivenessVisitor;
 
 class DeltaFileWriter {
  public:
@@ -208,8 +208,8 @@ class DeltaFileIterator : public DeltaIterator {
   friend struct ApplyingVisitor<UNDO>;
   friend struct CollectingVisitor<REDO>;
   friend struct CollectingVisitor<UNDO>;
-  friend struct DeletingVisitor<REDO>;
-  friend struct DeletingVisitor<UNDO>;
+  friend struct LivenessVisitor<REDO>;
+  friend struct LivenessVisitor<UNDO>;
   friend struct FilterAndAppendVisitor;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileIterator);

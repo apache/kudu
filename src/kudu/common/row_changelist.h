@@ -199,6 +199,13 @@ class RowChangeListEncoder {
         (type_ == RowChangeList::kReinsert || type_ == RowChangeList::kUpdate);
   }
 
+  // Internal version of AddColumnUpdate which does not set type, allowing
+  // it to work for both REINSERT and UPDATE.
+  // Exposed for tests.
+  void EncodeColumnMutation(const ColumnSchema& col_schema,
+                            int col_id,
+                            const void* cell_ptr);
+
  private:
   FRIEND_TEST(TestRowChangeList, TestInvalid_SetNullForNonNullableColumn);
   FRIEND_TEST(TestRowChangeList, TestInvalid_SetWrongSizeForIntColumn);
@@ -216,12 +223,6 @@ class RowChangeListEncoder {
     }
     DCHECK_EQ(type_, type);
   }
-
-  // Internal version of AddColumnUpdate which does not set type, allowing
-  // it to work for both REINSERT and UPDATE.
-  void EncodeColumnMutation(const ColumnSchema& col_schema,
-                            int col_id,
-                            const void* cell_ptr);
 
   // Add a column mutation by a raw value. This allows copying RCLs
   // from one file to another without having any awareness of schema.
@@ -306,12 +307,11 @@ class RowChangeListDecoder {
     return type_;
   }
 
-  // Append an entry to *column_ids for each column that is updated
-  // in this RCL.
+  // Append an entry to *column_ids for each column that is mutated in this RCL.
   // This 'consumes' the remainder of the encoded RowChangeList.
   Status GetIncludedColumnIds(std::vector<ColumnId>* column_ids) {
+    DCHECK(is_update() || is_reinsert());
     column_ids->clear();
-    DCHECK(is_update());
     while (HasNext()) {
       DecodedUpdate dec;
       RETURN_NOT_OK(DecodeNext(&dec));

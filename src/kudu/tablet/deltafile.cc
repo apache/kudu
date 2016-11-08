@@ -100,12 +100,6 @@ Status DeltaFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer)
 Status DeltaFileWriter::DoAppendDelta(const DeltaKey &key,
                                       const RowChangeList &delta) {
   Slice delta_slice(delta.slice());
-
-  // See TODO in RowChangeListEncoder::SetToReinsert
-  CHECK(!delta.is_reinsert())
-    << "TODO: REINSERT deltas cannot currently be written to disk "
-    << "since they don't have a standalone encoded form.";
-
   tmp_buf_.clear();
 
   // Write the encoded form of the key to the file.
@@ -639,14 +633,12 @@ struct ApplyingVisitor {
     const Schema* schema = dfi->projection_;
     RowChangeListDecoder decoder((RowChangeList(deltas)));
     RETURN_NOT_OK(decoder.Init());
-    if (decoder.is_update()) {
+    if (decoder.is_update() || decoder.is_reinsert()) {
       return decoder.ApplyToOneColumn(rel_idx, dst, *schema, col_to_apply, dst->arena());
-    } else if (decoder.is_delete()) {
-      // If it's a DELETE, then it will be processed by DeletingVisitor.
-      return Status::OK();
-    } else {
-      dfi->FatalUnexpectedDelta(key, deltas, "Expect only UPDATE or DELETE deltas on disk");
     }
+
+    DCHECK(decoder.is_delete());
+    // If it's a DELETE, then it will be processed by LivenessVisitor.
     return Status::OK();
   }
 
@@ -686,16 +678,15 @@ Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
     DVLOG(3) << "Applying REDO mutations to " << col_to_apply;
     ApplyingVisitor<REDO> visitor = {this, col_to_apply, dst};
     return VisitMutations(&visitor);
-  } else {
-    DVLOG(3) << "Applying UNDO mutations to " << col_to_apply;
-    ApplyingVisitor<UNDO> visitor = {this, col_to_apply, dst};
-    return VisitMutations(&visitor);
   }
+  DVLOG(3) << "Applying UNDO mutations to " << col_to_apply;
+  ApplyingVisitor<UNDO> visitor = {this, col_to_apply, dst};
+  return VisitMutations(&visitor);
 }
 
-// Visitor which applies deletes to the selection vector.
+// Visitor which establishes the liveness of a row by applying deletes and reinserts.
 template<DeltaType Type>
-struct DeletingVisitor {
+struct LivenessVisitor {
 
   Status Visit(const DeltaKey &key, const Slice &deltas, bool* continue_visit);
 
@@ -710,12 +701,19 @@ struct DeletingVisitor {
       // If this is an update the row must be selected.
       DCHECK(sel_vec->IsRowSelected(rel_idx));
       return Status::OK();
-    } else if (decoder.is_delete()) {
+    }
+
+    if (decoder.is_delete()) {
       DVLOG(3) << "Row deleted";
       sel_vec->SetRowUnselected(rel_idx);
-    } else {
-      dfi->FatalUnexpectedDelta(key, deltas, "Expect only UPDATE or DELETE deltas on disk");
+      return Status::OK();
     }
+
+    DCHECK(decoder.is_reinsert());
+    DVLOG(3) << "Re-selected the row (reinsert)";
+    // If this is a reinsert the row must be unselected.
+    DCHECK(!sel_vec->IsRowSelected(rel_idx));
+    sel_vec->SetRowSelected(rel_idx);
     return Status::OK();
   }
 
@@ -724,7 +722,7 @@ struct DeletingVisitor {
 };
 
 template<>
-inline Status DeletingVisitor<REDO>::Visit(const DeltaKey& key,
+inline Status LivenessVisitor<REDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas,
                                            bool* continue_visit) {
   if (IsRedoRelevant(dfi->mvcc_snap_, key.timestamp(), continue_visit)) {
@@ -734,7 +732,7 @@ inline Status DeletingVisitor<REDO>::Visit(const DeltaKey& key,
 }
 
 template<>
-inline Status DeletingVisitor<UNDO>::Visit(const DeltaKey& key,
+inline Status LivenessVisitor<UNDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas, bool*
                                            continue_visit) {
   if (IsUndoRelevant(dfi->mvcc_snap_, key.timestamp(), continue_visit)) {
@@ -748,13 +746,12 @@ Status DeltaFileIterator::ApplyDeletes(SelectionVector *sel_vec) {
   DCHECK_LE(prepared_count_, sel_vec->nrows());
   if (delta_type_ == REDO) {
     DVLOG(3) << "Applying REDO deletes";
-    DeletingVisitor<REDO> visitor = { this, sel_vec};
-    return VisitMutations(&visitor);
-  } else {
-    DVLOG(3) << "Applying UNDO deletes";
-    DeletingVisitor<UNDO> visitor = { this, sel_vec};
+    LivenessVisitor<REDO> visitor = { this, sel_vec };
     return VisitMutations(&visitor);
   }
+  DVLOG(3) << "Applying UNDO deletes";
+  LivenessVisitor<UNDO> visitor = { this, sel_vec };
+  return VisitMutations(&visitor);
 }
 
 // Visitor which, for each mutation, adds it into a ColumnBlock of

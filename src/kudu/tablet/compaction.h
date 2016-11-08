@@ -109,7 +109,8 @@ class CompactionInput {
   // Returns the arena for this compaction input corresponding to the last
   // prepared block. This must be called *after* PrepareBlock() as if this
   // is a MergeCompactionInput only then will the right arena be selected.
-  virtual Arena*  PreparedBlockArena() = 0;
+  virtual Arena* PreparedBlockArena() = 0;
+
   virtual Status FinishBlock() = 0;
 
   virtual bool HasMoreBlocks() = 0;
@@ -162,6 +163,15 @@ struct CompactionInputRow {
   Mutation* redo_head;
   // The current undo head for this row, may be null if all undos were garbage collected.
   Mutation* undo_head;
+
+  // When the same row is found in multiple rowsets because of ghost rows, this points
+  // to one that older in terms of row history.
+  CompactionInputRow* previous_ghost;
+
+  CompactionInputRow() :
+      redo_head(nullptr),
+      undo_head(nullptr),
+      previous_ghost(nullptr) {}
 };
 
 // Function shared by flushes and compactions. Removes UNDO Mutations
