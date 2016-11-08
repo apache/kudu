@@ -18,17 +18,21 @@
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
+#include <unistd.h>
+#include <unordered_set>
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::shared_ptr;
+using std::unordered_set;
 using strings::Substitute;
 
 namespace kudu {
@@ -191,6 +195,84 @@ TEST_F(FsManagerTestBase, TestFormatWithSpecificUUID) {
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout(uuid));
   ASSERT_OK(fs_manager()->Open());
   ASSERT_EQ(uuid, fs_manager()->uuid());
+}
+
+Status CountTmpFiles(Env* env, const string& path, const vector<string>& children,
+                     unordered_set<string>* checked_dirs, size_t* count) {
+  vector<string> sub_objects;
+  for (const string& name : children) {
+    if (name == "." || name == "..") continue;
+
+    string sub_path;
+    RETURN_NOT_OK(env->Canonicalize(JoinPathSegments(path, name), &sub_path));
+    bool is_directory;
+    RETURN_NOT_OK(env->IsDirectory(sub_path, &is_directory));
+    if (is_directory) {
+      if (!ContainsKey(*checked_dirs, sub_path)) {
+        checked_dirs->insert(sub_path);
+        RETURN_NOT_OK(env->GetChildren(sub_path, &sub_objects));
+        RETURN_NOT_OK(CountTmpFiles(env, sub_path, sub_objects, checked_dirs, count));
+      }
+    } else if (name.find(FsManager::kTmpInfix) != string::npos) {
+      (*count)++;
+    }
+  }
+  return Status::OK();
+}
+
+Status CountTmpFiles(Env* env, const vector<string>& roots, size_t* count) {
+  unordered_set<string> checked_dirs;
+  for (const string& root : roots) {
+    vector<string> children;
+    RETURN_NOT_OK(env->GetChildren(root, &children));
+    RETURN_NOT_OK(CountTmpFiles(env, root, children, &checked_dirs, count));
+  }
+  return Status::OK();
+}
+
+TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
+  string wal_path = GetTestPath("wals");
+  vector<string> data_paths = { GetTestPath("data1"), GetTestPath("data2"), GetTestPath("data3") };
+  ReinitFsManager(wal_path, data_paths);
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+
+  // Create a few tmp files here
+  shared_ptr<WritableFile> tmp_writer;
+
+  string tmp_path = JoinPathSegments(fs_manager()->GetWalsRootDir(), "wal.tmp.file");
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+
+  tmp_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[0], "data1.tmp.file");
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+
+  // Not a misprint here: checking for just ".tmp" as well
+  tmp_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[1], "data2.tmp");
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+
+  // Try with nested directory
+  string nested_dir_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[2], "data4");
+  ASSERT_OK(env_util::CreateDirIfMissing(fs_manager()->env(), nested_dir_path));
+  tmp_path = JoinPathSegments(nested_dir_path, "data4.tmp.file");
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+
+  // Add a loop using symlink
+  string data3_link = JoinPathSegments(nested_dir_path, "data3-link");
+  int symlink_error = symlink(fs_manager()->GetDataRootDirs()[2].c_str(), data3_link.c_str());
+  ASSERT_EQ(0, symlink_error);
+
+  vector<string> lookup_dirs = fs_manager()->GetDataRootDirs();
+  lookup_dirs.push_back(fs_manager()->GetWalsRootDir());
+
+  size_t n_tmp_files = 0;
+  ASSERT_OK(CountTmpFiles(fs_manager()->env(), lookup_dirs, &n_tmp_files));
+  ASSERT_EQ(4, n_tmp_files);
+
+  // Opening fs_manager should remove tmp files
+  ASSERT_OK(fs_manager()->Open());
+
+  n_tmp_files = 0;
+  ASSERT_OK(CountTmpFiles(fs_manager()->env(), lookup_dirs, &n_tmp_files));
+  ASSERT_EQ(0, n_tmp_files);
 }
 
 } // namespace kudu

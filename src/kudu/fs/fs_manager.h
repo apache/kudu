@@ -96,6 +96,7 @@ class FsManager {
  public:
   static const char *kWalFileNamePrefix;
   static const char *kWalsRecoveryDirSuffix;
+  static const char *kTmpInfix;
 
   // Only for unit tests.
   FsManager(Env* env, const std::string& root_path);
@@ -237,6 +238,10 @@ class FsManager {
                           const std::string& prefix,
                           const std::string& path,
                           const std::vector<std::string>& objects);
+
+  // Deletes temporary files left from previous execution (e.g., after a crash).
+  // Logs warnings in case of errors.
+  void CleanTmpFiles();
 
   static const char *kDataDirName;
   static const char *kTabletMetadataDirName;

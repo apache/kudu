@@ -20,6 +20,7 @@
 #include <deque>
 #include <iostream>
 #include <map>
+#include <stack>
 #include <unordered_set>
 
 #include <boost/optional.hpp>
@@ -81,7 +82,10 @@ using kudu::fs::LogBlockManager;
 using kudu::fs::ReadableBlock;
 using kudu::fs::WritableBlock;
 using std::map;
+using std::stack;
+using std::string;
 using std::unordered_set;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -98,7 +102,7 @@ const char *FsManager::kCorruptedSuffix = ".corrupted";
 const char *FsManager::kInstanceMetadataFileName = "instance";
 const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 
-static const char* const kTmpInfix = ".tmp";
+const char *FsManager::kTmpInfix = ".tmp";
 
 FsManagerOpts::FsManagerOpts()
   : wal_path(FLAGS_fs_wal_dir),
@@ -226,6 +230,12 @@ void FsManager::InitBlockManager() {
 
 Status FsManager::Open() {
   RETURN_NOT_OK(Init());
+
+  // Remove leftover tmp files
+  if (!read_only_) {
+    CleanTmpFiles();
+  }
+
   for (const string& root : canonicalized_all_fs_roots_) {
     gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
     RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root),
@@ -381,7 +391,7 @@ const string& FsManager::uuid() const {
 
 vector<string> FsManager::GetDataRootDirs() const {
   // Add the data subdirectory to each data root.
-  std::vector<std::string> data_paths;
+  vector<string> data_paths;
   for (const string& data_fs_root : canonicalized_data_fs_roots_) {
     data_paths.push_back(JoinPathSegments(data_fs_root, kDataDirName));
   }
@@ -399,8 +409,8 @@ string FsManager::GetTabletMetadataPath(const string& tablet_id) const {
 
 namespace {
 // Return true if 'fname' is a valid tablet ID.
-bool IsValidTabletId(const std::string& fname) {
-  if (fname.find(kTmpInfix) != string::npos) {
+bool IsValidTabletId(const string& fname) {
+  if (fname.find(FsManager::kTmpInfix) != string::npos) {
     LOG(WARNING) << "Ignoring tmp file in tablet metadata dir: " << fname;
     return false;
   }
@@ -449,6 +459,57 @@ string FsManager::GetWalSegmentFileName(const string& tablet_id,
                                               StringPrintf("%09" PRIu64, sequence_number)));
 }
 
+void FsManager::CleanTmpFiles() {
+  DCHECK(!read_only_);
+  string canonized_path;
+  vector<string> children;
+  unordered_set<string> checked_dirs;
+  stack<string> paths;
+  for (const string& root : canonicalized_all_fs_roots_) {
+    paths.push(root);
+  }
+
+  while (!paths.empty()) {
+    string path = paths.top();
+    paths.pop();
+
+    Status s = env_->GetChildren(path, &children);
+    if (s.ok()) {
+      for (const string& child : children) {
+        if (child == "." || child == "..") continue;
+
+        // Canonicalize in case of symlinks
+        s = env_->Canonicalize(JoinPathSegments(path, child), &canonized_path);
+        if (!s.ok()) {
+          LOG(WARNING) << "Unable to get the real path: " << s.ToString();
+          continue;
+        }
+
+        bool is_directory;
+        s = env_->IsDirectory(canonized_path, &is_directory);
+        if (!s.ok()) {
+          LOG(WARNING) << "Unable to get information about file: " << s.ToString();
+          continue;
+        }
+
+        if (is_directory) {
+          // Check if we didn't handle this path yet
+          if (!ContainsKey(checked_dirs, canonized_path)) {
+            checked_dirs.insert(canonized_path);
+            paths.push(canonized_path);
+          }
+        } else if (child.find(kTmpInfix) != string::npos) {
+          s = env_->DeleteFile(canonized_path);
+          if (!s.ok()) {
+            LOG(WARNING) << "Unable to delete tmp file: " << s.ToString();
+          }
+        }
+      }
+    } else {
+      LOG(WARNING) << "Unable to read directory: " << s.ToString();
+    }
+  }
+}
 
 // ==========================================================================
 //  Dump/Debug utils
@@ -460,7 +521,7 @@ void FsManager::DumpFileSystemTree(ostream& out) {
   for (const string& root : canonicalized_all_fs_roots_) {
     out << "File-System Root: " << root << std::endl;
 
-    std::vector<string> objects;
+    vector<string> objects;
     Status s = env_->GetChildren(root, &objects);
     if (!s.ok()) {
       LOG(ERROR) << "Unable to list the fs-tree: " << s.ToString();
@@ -476,7 +537,7 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
   for (const string& name : objects) {
     if (name == "." || name == "..") continue;
 
-    std::vector<string> sub_objects;
+    vector<string> sub_objects;
     string sub_path = JoinPathSegments(path, name);
     Status s = env_->GetChildren(sub_path, &sub_objects);
     if (s.ok()) {
