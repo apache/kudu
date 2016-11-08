@@ -17,17 +17,24 @@
 
 #include <string>
 
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
+#include "kudu/security/init.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/env.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
 
+DECLARE_string(keytab);
+DECLARE_string(kerberos_principal);
+
 namespace kudu {
 
-TEST(MiniKdcTest, TestBasicOperation) {
+class MiniKdcTest : public KuduTest {};
+
+TEST_F(MiniKdcTest, TestBasicOperation) {
   MiniKdcOptions options;
   MiniKdc kdc(options);
   ASSERT_OK(kdc.Start());
@@ -58,15 +65,22 @@ TEST(MiniKdcTest, TestBasicOperation) {
   ASSERT_TRUE(kdc.Klist(&klist).IsRuntimeError());
 
   // Test keytab creation.
+  const string kSPN = "kudu/foo.example.com";
   string kt_path;
-  ASSERT_OK(kdc.CreateServiceKeytab("kudu/foo.example.com", &kt_path));
+  ASSERT_OK(kdc.CreateServiceKeytab(kSPN, &kt_path));
   SCOPED_TRACE(kt_path);
   ASSERT_OK(kdc.KlistKeytab(kt_path, &klist));
   ASSERT_STR_CONTAINS(klist, "kudu/foo.example.com@KRBTEST.COM");
+
+  // Test programmatic keytab login.
+  kdc.SetKrb5Environment();
+  FLAGS_keytab = kt_path;
+  FLAGS_kerberos_principal = kSPN;
+  ASSERT_OK(security::InitKerberosForServer());
 }
 
 // Regression test to ensure that dropping a stopped MiniKdc doesn't panic.
-TEST(MiniKdcTest, TestStopDrop) {
+TEST_F(MiniKdcTest, TestStopDrop) {
   MiniKdcOptions options;
   MiniKdc kdc(options);
 }

@@ -328,8 +328,11 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // and keytab, and sets the appropriate environment variables in the
   // subprocess such that the server will use Kerberos authentication.
   //
+  // 'bind_host' is the hostname that will be used to generate the Kerberos
+  // service principal.
+  //
   // Must be called before 'StartProcess()'.
-  Status EnableKerberos(MiniKdc* kdc);
+  Status EnableKerberos(MiniKdc* kdc, const std::string& bind_host);
 
   // Sends a SIGSTOP signal to the daemon.
   Status Pause();

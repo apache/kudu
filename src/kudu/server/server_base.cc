@@ -30,6 +30,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/security/init.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/generic_service.h"
 #include "kudu/server/glog_metrics.h"
@@ -167,6 +168,8 @@ Status ServerBase::Init() {
   // so we're less likely to get into a partially initialized state on disk during startup
   // if we're having clock problems.
   RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
+
+  RETURN_NOT_OK(security::InitKerberosForServer());
 
   Status s = fs_manager_->Open();
   if (s.IsNotFound()) {

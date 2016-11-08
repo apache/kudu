@@ -858,6 +858,12 @@ ADD_THIRDPARTY_LIB(openssl_ssl
 ADD_THIRDPARTY_LIB(openssl_crypto
   SHARED_LIB "${OPENSSL_CRYPTO_LIBRARY}")
 
+## Kerberos
+find_package(Kerberos REQUIRED)
+include_directories(${KERBEROS_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(krb5
+  SHARED_LIB "${KERBEROS_LIBRARY}")
+
 ## Google PerfTools
 ##
 ## Disabled with TSAN/ASAN as well as with gold+dynamic linking (see comment
@@ -930,10 +936,10 @@ if (NOT APPLE)
     SHARED_LIB "${DL_LIB_PATH}")
 endif()
 
-## Kerberos
+## Kerberos binaries (kinit, kadmin, etc).
 if (NOT NO_TESTS)
   ## We rely on the Kerberos binaries for testing security.
-  find_package(Kerberos)
+  find_package(KerberosPrograms)
 endif()
 
 ## Boost

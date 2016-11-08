@@ -137,7 +137,10 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   if (opts.enable_kerberos) {
     ASSERT_OK(cluster.kdc()->Kdestroy());
     Status s = cluster.SetFlag(ts, "foo", "bar");
-    ASSERT_STR_MATCHES(s.ToString(), "Not authorized.*No Kerberos credentials");
+    // The error differs depending on the version of Kerberos, so we match
+    // either message.
+    ASSERT_STR_MATCHES(s.ToString(), "Not authorized.*"
+                       "(Credentials cache file.*not found|No Kerberos credentials)");
   }
   cluster.Shutdown();
 }

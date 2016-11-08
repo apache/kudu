@@ -34,6 +34,13 @@ DEFINE_int32(stress_cpu_threads, 0,
              "Number of threads to start that burn CPU in an attempt to "
              "stimulate race conditions");
 
+// Force linking of krb5_realm_override.cc. Without using any of its
+// symbols explicitly, the compilation unit would be skipped.
+extern "C" {
+extern int krb5_realm_override_loaded;
+int force_load_krb5_workaround = krb5_realm_override_loaded;
+}
+
 namespace kudu {
 
 // Start thread that kills the process if --test_timeout_after is exceeded before

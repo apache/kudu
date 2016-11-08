@@ -266,7 +266,9 @@ target_link_libraries(kudu_test_main
   glog
   gmock
   kudu_util
-  kudu_test_util)
+  kudu_test_util
+  # See the comment in kudu/security/test/krb5_realm_override.cc for details.
+  krb5_realm_override_static)
 
 if(NOT APPLE)
   target_link_libraries(kudu_test_main

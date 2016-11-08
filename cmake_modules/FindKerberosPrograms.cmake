@@ -15,16 +15,24 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Find the native Kerberos includes and library
-#
-#  KERBEROS_INCLUDE_DIR  - Where to find krb5.h, etc.
-#  KERBEROS_LIBRARY      - List of libraries when using krb5.
-#  KERBEROS_FOUND        - True if krb5 found.
+# - Find Kerberos Binaries
+# This module ensures that the Kerberos binaries depended on by tests are
+# present on the system.
 
-find_path(KERBEROS_INCLUDE_DIR krb5.h)
-find_library(KERBEROS_LIBRARY NAMES krb5)
-
-# handle the QUIETLY and REQUIRED arguments and set KERBEROS_FOUND to TRUE if
-# all listed variables are TRUE
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(KERBEROS DEFAULT_MSG KERBEROS_LIBRARY KERBEROS_INCLUDE_DIR)
+set(bins kadmin.local kdb5_util kdestroy kinit klist krb5kdc)
+
+foreach(bin ${bins})
+  find_program(${bin} ${bin} PATHS
+               # Linux install location.
+               /usr/sbin
+               # Homebrew install location.
+               /usr/local/opt/krb5/sbin
+               # Macports install location.
+               /opt/local/sbin
+               # SLES
+               /usr/lib/mit/sbin)
+endforeach(bin)
+
+find_package_handle_standard_args(Kerberos REQUIRED_VARS ${bins}
+  FAIL_MESSAGE "Kerberos binaries not found: security tests will fail")

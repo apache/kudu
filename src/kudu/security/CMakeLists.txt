@@ -15,6 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
+add_library(security
+  init.cc)
+target_link_libraries(security
+  gutil
+  kudu_util
+  krb5)
+
 set(SECURITY_TEST_SRCS
   test/mini_kdc.cc
 )
@@ -25,8 +32,15 @@ target_link_libraries(security-test
   kudu_test_util
   kudu_util)
 
+# See the comment in krb5_realm_override.cc for details on this library's usage.
+add_library(krb5_realm_override SHARED test/krb5_realm_override.cc)
+add_library(krb5_realm_override_static STATIC test/krb5_realm_override.cc)
+target_link_libraries(krb5_realm_override glog)
+target_link_libraries(krb5_realm_override_static glog)
+
 # Tests
 set(KUDU_TEST_LINK_LIBS
+  security
   security-test
   ${KUDU_MIN_TEST_LIBS})
 

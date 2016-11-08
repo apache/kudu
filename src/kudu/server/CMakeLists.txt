@@ -31,7 +31,8 @@ target_link_libraries(server_common
   gutil
   kudu_fs
   kudu_util
-  consensus_metadata_proto)
+  consensus_metadata_proto
+  security)
 
 #########################################
 # server_common tests

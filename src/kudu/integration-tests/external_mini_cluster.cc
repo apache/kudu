@@ -247,7 +247,7 @@ Status ExternalMiniCluster::StartSingleMaster() {
       new ExternalMaster(messenger_, exe, GetDataPath("master-0"), flags);
 
   if (opts_.enable_kerberos) {
-    RETURN_NOT_OK_PREPEND(master->EnableKerberos(kdc_.get()),
+    RETURN_NOT_OK_PREPEND(master->EnableKerberos(kdc_.get(), "127.0.0.1"),
                           "could not enable Kerberos");
   }
 
@@ -282,7 +282,7 @@ Status ExternalMiniCluster::StartDistributedMasters() {
                            peer_addrs[i],
                            SubstituteInFlags(flags, i));
     if (opts_.enable_kerberos) {
-      RETURN_NOT_OK_PREPEND(peer->EnableKerberos(kdc_.get()),
+      RETURN_NOT_OK_PREPEND(peer->EnableKerberos(kdc_.get(), "127.0.0.1"),
                             "could not enable Kerberos");
     }
     RETURN_NOT_OK_PREPEND(peer->Start(),
@@ -314,14 +314,14 @@ Status ExternalMiniCluster::AddTabletServer() {
   for (int i = 0; i < num_masters(); i++) {
     master_hostports.push_back(DCHECK_NOTNULL(master(i))->bound_rpc_hostport());
   }
-
+  string bind_host = GetBindIpForTabletServer(idx);
   scoped_refptr<ExternalTabletServer> ts =
     new ExternalTabletServer(messenger_, exe, GetDataPath(Substitute("ts-$0", idx)),
-                             GetBindIpForTabletServer(idx),
+                             bind_host,
                              master_hostports,
                              SubstituteInFlags(opts_.extra_tserver_flags, idx));
   if (opts_.enable_kerberos) {
-    RETURN_NOT_OK_PREPEND(ts->EnableKerberos(kdc_.get()),
+    RETURN_NOT_OK_PREPEND(ts->EnableKerberos(kdc_.get(), bind_host),
                           "could not enable Kerberos");
   }
 
@@ -576,16 +576,20 @@ ExternalDaemon::ExternalDaemon(std::shared_ptr<rpc::Messenger> messenger,
 ExternalDaemon::~ExternalDaemon() {
 }
 
-Status ExternalDaemon::EnableKerberos(MiniKdc* kdc) {
+Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
+  string spn = "kudu/" + bind_host;
   string ktpath;
-  RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab("kudu/127.0.0.1", &ktpath),
+  RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab(spn, &ktpath),
                         "could not create keytab");
   extra_env_ = kdc->GetEnvVars();
-  extra_env_["KRB5_KTNAME"] = ktpath;
-  extra_env_["KRB5_CLIENT_KTNAME"] = ktpath;
-  // Have the daemons use an in-memory ticket cache, so they don't accidentally
-  // pick up credentials from the test case itself or from any other daemon.
-  extra_env_["KRB5CCNAME"] = "MEMORY:foo";
+
+  // Add workaround for krb5 1.10 bug. See krb5_realm_override.cc for details.
+  extra_env_["LD_PRELOAD"] = "libkrb5_realm_override.so";
+  if (getenv("LD_PRELOAD") != nullptr) {
+    extra_env_["LD_PRELOAD"] += ":" + string(getenv("LD_PRELOAD"));
+  }
+  extra_flags_.push_back(Substitute("--keytab=$0", ktpath));
+  extra_flags_.push_back(Substitute("--kerberos_principal=$0", spn));
   extra_flags_.push_back("--server_require_kerberos");
   return Status::OK();
 }
