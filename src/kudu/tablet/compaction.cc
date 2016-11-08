@@ -50,6 +50,15 @@ namespace tablet {
 
 namespace {
 
+// Advances to the last mutation in a mutation list.
+void AdvanceToLastInList(const Mutation** m) {
+  if (*m == nullptr) return;
+  const Mutation* next;
+  while ((next = (*m)->acquire_next()) != nullptr) {
+    *m = next;
+  }
+}
+
 // CompactionInput yielding rows and mutations from a MemRowSet.
 class MemRowSetCompactionInput : public CompactionInput {
  public:
@@ -83,10 +92,11 @@ class MemRowSetCompactionInput : public CompactionInput {
 
     arena_.Reset();
     RowChangeListEncoder undo_encoder(&buffer_);
-    for (int i = 0; i < num_in_block; i++) {
-      // TODO: A copy is performed to make all CompactionInputRow have the same schema
-      CompactionInputRow &input_row = block->at(i);
-      input_row.row.Reset(row_block_.get(), i);
+    int next_row_index = 0;
+    for (int i = 0; i < num_in_block; ++i) {
+      // TODO(todd): A copy is performed to make all CompactionInputRow have the same schema
+      CompactionInputRow& input_row = block->at(next_row_index);
+      input_row.row.Reset(row_block_.get(), next_row_index);
       Timestamp insertion_timestamp;
       RETURN_NOT_OK(iter_->GetCurrentRow(&input_row.row,
                                          static_cast<Arena*>(nullptr),
@@ -94,13 +104,34 @@ class MemRowSetCompactionInput : public CompactionInput {
                                          &arena_,
                                          &insertion_timestamp));
 
+      // Handle the rare case where a row was inserted and deleted in the same operation.
+      // This row can never be observed and should not be compacted/flushed. This saves
+      // us some trouble later on on compactions.
+      // See: MergeCompactionInput::CompareAndMergeDuplicatedRows().
+      if (PREDICT_FALSE(input_row.redo_head != nullptr &&
+          input_row.redo_head->timestamp() == insertion_timestamp)) {
+        // Get the latest mutation.
+        const Mutation* latest = input_row.redo_head;
+        AdvanceToLastInList(&latest);
+        if (latest->changelist().is_delete() &&
+            latest->timestamp() == insertion_timestamp) {
+          iter_->Next();
+          continue;
+        }
+      }
+
       // Materialize MRSRow undo insert (delete)
       undo_encoder.SetToDelete();
       input_row.undo_head = Mutation::CreateInArena(&arena_,
                                                     insertion_timestamp,
                                                     undo_encoder.as_changelist());
       undo_encoder.Reset();
+      ++next_row_index;
       iter_->Next();
+    }
+
+    if (PREDICT_FALSE(next_row_index < num_in_block)) {
+      block->resize(next_row_index);
     }
 
     has_more_blocks_ = iter_->HasNext();
