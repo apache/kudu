@@ -17,19 +17,20 @@
 
 package org.apache.kudu.client;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSortedSet;
-import org.junit.Assert;
-import org.junit.Test;
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Schema;
-import org.apache.kudu.Type;
-import org.apache.kudu.client.KuduPredicate.ComparisonOp;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NavigableSet;
 import java.util.TreeSet;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSortedSet;
+import org.junit.Assert;
+import org.junit.Test;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.client.KuduPredicate.ComparisonOp;
 
 public class TestScanPredicate extends BaseKuduTest {
 

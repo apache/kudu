@@ -17,6 +17,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.kudu.client;
 
 import java.util.List;
@@ -85,7 +86,9 @@ public class LocatedTablet {
    */
   private Replica getOneOfRoleOrNull(Role role) {
     for (Replica r : replicas) {
-      if (r.getRole() == role.toString()) return r;
+      if (r.getRole() == role.toString()) {
+        return r;
+      }
     }
     return null;
   }

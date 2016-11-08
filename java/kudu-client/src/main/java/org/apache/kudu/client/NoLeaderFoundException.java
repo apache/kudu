@@ -14,12 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
-
-import java.util.List;
 
 /**
  * Indicates that the request failed because we couldn't find a leader. It is retried as long
@@ -32,6 +31,7 @@ final class NoLeaderFoundException extends RecoverableException {
   NoLeaderFoundException(Status status) {
     super(status);
   }
+
   NoLeaderFoundException(Status status, Exception cause) {
     super(status, cause);
   }

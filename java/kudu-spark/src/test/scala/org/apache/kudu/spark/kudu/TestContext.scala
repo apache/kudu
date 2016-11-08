@@ -18,17 +18,18 @@ package org.apache.kudu.spark.kudu
 
 import java.util.Date
 
+import scala.collection.JavaConverters._
+import scala.collection.immutable.IndexedSeq
+
 import com.google.common.collect.ImmutableList
 import org.apache.spark.{SparkConf, SparkContext}
+import org.scalatest.{BeforeAndAfterAll, Suite}
+
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.client.KuduClient.KuduClientBuilder
 import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder
 import org.apache.kudu.client.{CreateTableOptions, KuduClient, KuduTable, MiniKuduCluster}
 import org.apache.kudu.{Schema, Type}
-import org.scalatest.{BeforeAndAfterAll, Suite}
-
-import scala.collection.JavaConverters._
-import scala.collection.immutable.IndexedSeq
 
 trait TestContext extends BeforeAndAfterAll { self: Suite =>
 

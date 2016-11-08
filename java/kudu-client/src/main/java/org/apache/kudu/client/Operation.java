@@ -14,12 +14,19 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
@@ -32,12 +39,6 @@ import org.apache.kudu.client.Statistics.Statistic;
 import org.apache.kudu.client.Statistics.TabletStatistics;
 import org.apache.kudu.tserver.Tserver;
 import org.apache.kudu.util.Pair;
-import org.jboss.netty.buffer.ChannelBuffer;
-
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Base class for the RPCs that related to WriteRequestPB. It contains almost all the logic
@@ -60,8 +61,10 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     UPSERT((byte)RowOperationsPB.Type.UPSERT.getNumber()),
     RANGE_LOWER_BOUND((byte) RowOperationsPB.Type.RANGE_LOWER_BOUND.getNumber()),
     RANGE_UPPER_BOUND((byte) RowOperationsPB.Type.RANGE_UPPER_BOUND.getNumber()),
-    EXCLUSIVE_RANGE_LOWER_BOUND((byte) RowOperationsPB.Type.EXCLUSIVE_RANGE_LOWER_BOUND.getNumber()),
-    INCLUSIVE_RANGE_UPPER_BOUND((byte) RowOperationsPB.Type.INCLUSIVE_RANGE_UPPER_BOUND.getNumber());
+    EXCLUSIVE_RANGE_LOWER_BOUND(
+        (byte) RowOperationsPB.Type.EXCLUSIVE_RANGE_LOWER_BOUND.getNumber()),
+    INCLUSIVE_RANGE_UPPER_BOUND(
+        (byte) RowOperationsPB.Type.INCLUSIVE_RANGE_UPPER_BOUND.getNumber());
 
     ChangeType(byte encodedByte) {
       this.encodedByte = encodedByte;
@@ -115,7 +118,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
   }
 
   @Override
-  String serviceName() { return TABLET_SERVER_SERVICE_NAME; }
+  String serviceName() {
+    return TABLET_SERVER_SERVICE_NAME;
+  }
 
   @Override
   String method() {
@@ -126,8 +131,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
   ChannelBuffer serialize(Message header) {
     final Tserver.WriteRequestPB.Builder builder =
         createAndFillWriteRequestPB(ImmutableList.of(this));
-    this.rowOperationSizeBytes = builder.getRowOperations().getRows().size()
-        + builder.getRowOperations().getIndirectData().size();
+    this.rowOperationSizeBytes = builder.getRowOperations().getRows().size() +
+        builder.getRowOperations().getIndirectData().size();
     builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
     builder.setExternalConsistencyMode(this.externalConsistencyMode.pbVersion());
     if (this.propagatedTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
@@ -209,10 +214,14 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
    *         null if no rows were passed.
    */
   static Tserver.WriteRequestPB.Builder createAndFillWriteRequestPB(List<Operation> operations) {
-    if (operations == null || operations.isEmpty()) return null;
+    if (operations == null || operations.isEmpty()) {
+      return null;
+    }
     Schema schema = operations.get(0).table.getSchema();
     RowOperationsPB rowOps = new OperationsEncoder().encodeOperations(operations);
-    if (rowOps == null) return null;
+    if (rowOps == null) {
+      return null;
+    }
 
     Tserver.WriteRequestPB.Builder requestBuilder = Tserver.WriteRequestPB.newBuilder();
     requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema));
@@ -313,7 +322,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     }
 
     public RowOperationsPB encodeOperations(List<Operation> operations) {
-      if (operations == null || operations.isEmpty()) return null;
+      if (operations == null || operations.isEmpty()) {
+        return null;
+      }
       init(operations.get(0).table.getSchema(), operations.size());
       for (Operation operation : operations) {
         encodeRow(operation.row, operation.getChangeType());

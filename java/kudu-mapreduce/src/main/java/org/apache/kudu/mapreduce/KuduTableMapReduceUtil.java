@@ -12,6 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
+
 package org.apache.kudu.mapreduce;
 
 import java.io.ByteArrayOutputStream;
@@ -38,6 +39,7 @@ import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.TaskInputOutputContext;
 import org.apache.hadoop.util.StringUtils;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.AsyncKuduClient;
@@ -65,7 +67,7 @@ public class KuduTableMapReduceUtil {
   /**
    * Base class for MR I/O formats, contains the common configurations.
    */
-  private static abstract class AbstractMapReduceConfigurator<S> {
+  private abstract static class AbstractMapReduceConfigurator<S> {
     protected final Job job;
     protected final String table;
 
@@ -106,7 +108,7 @@ public class KuduTableMapReduceUtil {
    * <p>
    * Use either child classes when configuring the table output format.
    */
-  private static abstract class AbstractTableOutputFormatConfigurator
+  private abstract static class AbstractTableOutputFormatConfigurator
       <S extends AbstractTableOutputFormatConfigurator<? super S>>
       extends AbstractMapReduceConfigurator<S> {
 
@@ -144,7 +146,7 @@ public class KuduTableMapReduceUtil {
    * <p>
    * Use either child classes when configuring the table input format.
    */
-  private static abstract class AbstractTableInputFormatConfigurator
+  private abstract static class AbstractTableInputFormatConfigurator
       <S extends AbstractTableInputFormatConfigurator<? super S>>
       extends AbstractMapReduceConfigurator<S> {
 
@@ -403,7 +405,9 @@ public class KuduTableMapReduceUtil {
 
     // Add jars containing the specified classes
     for (Class<?> clazz : classes) {
-      if (clazz == null) continue;
+      if (clazz == null) {
+        continue;
+      }
 
       Path path = findOrCreateJar(clazz, localFs, packagedClasses);
       if (path == null) {
@@ -412,13 +416,14 @@ public class KuduTableMapReduceUtil {
         continue;
       }
       if (!localFs.exists(path)) {
-        LOG.warn("Could not validate jar file " + path + " for class "
-            + clazz);
+        LOG.warn("Could not validate jar file " + path + " for class " + clazz);
         continue;
       }
       jars.add(path.toString());
     }
-    if (jars.isEmpty()) return;
+    if (jars.isEmpty()) {
+      return;
+    }
 
     conf.set("tmpjars", StringUtils.arrayToString(jars.toArray(new String[jars.size()])));
   }
@@ -451,20 +456,20 @@ public class KuduTableMapReduceUtil {
    * created, it is created in the system temporary directory. Otherwise,
    * returns an existing jar that contains a class of the same name. Maintains
    * a mapping from jar contents to the tmp jar created.
-   * @param my_class the class to find.
+   * @param myClass the class to find.
    * @param fs the FileSystem with which to qualify the returned path.
    * @param packagedClasses a map of class name to path.
    * @return a jar file that contains the class.
    * @throws IOException
    */
   @SuppressWarnings("deprecation")
-  private static Path findOrCreateJar(Class<?> my_class, FileSystem fs,
+  private static Path findOrCreateJar(Class<?> myClass, FileSystem fs,
                                       Map<String, String> packagedClasses)
       throws IOException {
     // attempt to locate an existing jar for the class.
-    String jar = findContainingJar(my_class, packagedClasses);
+    String jar = findContainingJar(myClass, packagedClasses);
     if (null == jar || jar.isEmpty()) {
-      jar = JarFinder.getJar(my_class);
+      jar = JarFinder.getJar(myClass);
       updateMap(jar, packagedClasses);
     }
 
@@ -472,7 +477,7 @@ public class KuduTableMapReduceUtil {
       return null;
     }
 
-    LOG.debug(String.format("For class %s, using jar %s", my_class.getName(), jar));
+    LOG.debug(String.format("For class %s, using jar %s", myClass.getName(), jar));
     return new Path(jar).makeQualified(fs);
   }
 
@@ -481,17 +486,17 @@ public class KuduTableMapReduceUtil {
    * a jar file, even if that is not the first thing on the class path that
    * has a class with the same name. Looks first on the classpath and then in
    * the <code>packagedClasses</code> map.
-   * @param my_class the class to find.
+   * @param myClass the class to find.
    * @return a jar file that contains the class, or null.
    * @throws IOException
    */
-  private static String findContainingJar(Class<?> my_class, Map<String, String> packagedClasses)
+  private static String findContainingJar(Class<?> myClass, Map<String, String> packagedClasses)
       throws IOException {
-    ClassLoader loader = my_class.getClassLoader();
-    String class_file = my_class.getName().replaceAll("\\.", "/") + ".class";
+    ClassLoader loader = myClass.getClassLoader();
+    String classFile = myClass.getName().replaceAll("\\.", "/") + ".class";
 
     // first search the classpath
-    for (Enumeration<URL> itr = loader.getResources(class_file); itr.hasMoreElements();) {
+    for (Enumeration<URL> itr = loader.getResources(classFile); itr.hasMoreElements();) {
       URL url = itr.nextElement();
       if ("jar".equals(url.getProtocol())) {
         String toReturn = url.getPath();
@@ -512,7 +517,7 @@ public class KuduTableMapReduceUtil {
 
     // now look in any jars we've packaged using JarFinder. Returns null when
     // no jar is found.
-    return packagedClasses.get(class_file);
+    return packagedClasses.get(classFile);
   }
 
   /**
@@ -521,7 +526,8 @@ public class KuduTableMapReduceUtil {
    * @param jar The jar who's content to list.
    * @param packagedClasses map[class -> jar]
    */
-  private static void updateMap(String jar, Map<String, String> packagedClasses) throws IOException {
+  private static void updateMap(String jar, Map<String, String> packagedClasses)
+      throws IOException {
     if (null == jar || jar.isEmpty()) {
       return;
     }
@@ -535,7 +541,9 @@ public class KuduTableMapReduceUtil {
         }
       }
     } finally {
-      if (null != zip) zip.close();
+      if (null != zip) {
+        zip.close();
+      }
     }
   }
 }

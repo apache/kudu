@@ -14,9 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
 
-import com.stumbleupon.async.Deferred;
+package org.apache.kudu.client;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;

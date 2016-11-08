@@ -16,14 +16,16 @@
 // under the License.
 package org.apache.kudu.util;
 
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
-import static org.junit.Assert.*;
+import org.junit.Test;
 
 public class TestByteVec {
   private static final Random RAND = new Random();

@@ -12,17 +12,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
+
 package org.apache.kudu.mapreduce.tools;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.Bytes;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Column-separated values parser that gives access to the different columns inside each line of

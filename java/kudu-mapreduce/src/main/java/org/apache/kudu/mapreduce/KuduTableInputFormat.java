@@ -12,12 +12,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
-package org.apache.kudu.mapreduce;
 
-import com.google.common.base.Objects;
-import com.google.common.base.Splitter;
-import com.google.common.collect.Lists;
-import com.google.common.primitives.UnsignedBytes;
+package org.apache.kudu.mapreduce;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInput;
@@ -33,6 +29,10 @@ import java.util.List;
 import java.util.Map;
 import javax.naming.NamingException;
 
+import com.google.common.base.Objects;
+import com.google.common.base.Splitter;
+import com.google.common.collect.Lists;
+import com.google.common.primitives.UnsignedBytes;
 import org.apache.commons.net.util.Base64;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
@@ -44,6 +44,9 @@ import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.net.DNS;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;
@@ -52,14 +55,12 @@ import org.apache.kudu.client.AsyncKuduClient;
 import org.apache.kudu.client.Bytes;
 import org.apache.kudu.client.KuduClient;
 import org.apache.kudu.client.KuduPredicate;
+import org.apache.kudu.client.KuduScanToken;
 import org.apache.kudu.client.KuduScanner;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.LocatedTablet;
 import org.apache.kudu.client.RowResult;
 import org.apache.kudu.client.RowResultIterator;
-import org.apache.kudu.client.KuduScanToken;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * <p>
@@ -207,12 +208,12 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     String masterAddresses = conf.get(MASTER_ADDRESSES_KEY);
     this.operationTimeoutMs = conf.getLong(OPERATION_TIMEOUT_MS_KEY,
                                            AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS);
-    this.nameServer = conf.get(NAME_SERVER_KEY);
-    this.cacheBlocks = conf.getBoolean(SCAN_CACHE_BLOCKS, false);
-
     this.client = new KuduClient.KuduClientBuilder(masterAddresses)
                                 .defaultOperationTimeoutMs(operationTimeoutMs)
                                 .build();
+    this.nameServer = conf.get(NAME_SERVER_KEY);
+    this.cacheBlocks = conf.getBoolean(SCAN_CACHE_BLOCKS, false);
+
     try {
       this.table = client.openTable(tableName);
     } catch (Exception ex) {
@@ -261,8 +262,9 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
    *
    */
   private static String domainNamePointerToHostName(String dnPtr) {
-    if (dnPtr == null)
+    if (dnPtr == null) {
       return null;
+    }
     return dnPtr.endsWith(".") ? dnPtr.substring(0, dnPtr.length() - 1) : dnPtr;
   }
 
@@ -344,8 +346,12 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
     @Override
     public boolean equals(Object o) {
-      if (this == o) return true;
-      if (o == null || getClass() != o.getClass()) return false;
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
 
       TableSplit that = (TableSplit) o;
 
@@ -370,7 +376,8 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     private TableSplit split;
 
     @Override
-    public void initialize(InputSplit inputSplit, TaskAttemptContext taskAttemptContext) throws IOException, InterruptedException {
+    public void initialize(InputSplit inputSplit, TaskAttemptContext taskAttemptContext)
+        throws IOException, InterruptedException {
       if (!(inputSplit instanceof TableSplit)) {
         throw new IllegalArgumentException("TableSplit is the only accepted input split");
       }

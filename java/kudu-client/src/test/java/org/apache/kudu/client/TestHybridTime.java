@@ -16,25 +16,28 @@
 // under the License.
 package org.apache.kudu.client;
 
-import com.google.common.collect.ImmutableList;
-import com.stumbleupon.async.Deferred;
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Schema;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.apache.kudu.Type.STRING;
+import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
+import static org.apache.kudu.util.HybridTimeUtil.HTTimestampToPhysicalAndLogical;
+import static org.apache.kudu.util.HybridTimeUtil.clockTimestampToHTTimestamp;
+import static org.apache.kudu.util.HybridTimeUtil.physicalAndLogicalToHTTimestamp;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static org.apache.kudu.Type.STRING;
-import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
-import static org.apache.kudu.util.HybridTimeUtil.*;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import com.google.common.collect.ImmutableList;
+import com.stumbleupon.async.Deferred;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
 
 /**
  * This only tests client propagation since it's the only thing that is client-specific.

@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu;
 
 import org.apache.kudu.Common.CompressionType;
@@ -63,7 +64,7 @@ public class ColumnSchema {
     public EncodingType getInternalPbType() {
       return internalPbType;
     }
-  };
+  }
 
   /**
    * Specifies the compression algorithm of data for a column on disk.
@@ -86,7 +87,7 @@ public class ColumnSchema {
     public CompressionType getInternalPbType() {
       return internalPbType;
     }
-  };
+  }
 
   private ColumnSchema(String name, Type type, boolean key, boolean nullable,
                        Object defaultValue, int desiredBlockSize, Encoding encoding,
@@ -168,14 +169,24 @@ public class ColumnSchema {
 
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (o == null || getClass() != o.getClass()) return false;
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
 
     ColumnSchema that = (ColumnSchema) o;
 
-    if (key != that.key) return false;
-    if (!name.equals(that.name)) return false;
-    if (!type.equals(that.type)) return false;
+    if (key != that.key) {
+      return false;
+    }
+    if (!name.equals(that.name)) {
+      return false;
+    }
+    if (!type.equals(that.type)) {
+      return false;
+    }
 
     return true;
   }

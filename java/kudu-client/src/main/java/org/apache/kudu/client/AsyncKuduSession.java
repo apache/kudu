@@ -14,26 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Range;
-import com.stumbleupon.async.Callback;
-import com.stumbleupon.async.Deferred;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
-import org.apache.kudu.util.AsyncUtil;
-import org.apache.kudu.util.Slice;
-import org.jboss.netty.util.Timeout;
-import org.jboss.netty.util.TimerTask;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
-import javax.annotation.concurrent.GuardedBy;
-import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -43,8 +28,25 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.annotation.concurrent.GuardedBy;
+import javax.annotation.concurrent.NotThreadSafe;
 
-import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.MoreObjects;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Range;
+import com.stumbleupon.async.Callback;
+import com.stumbleupon.async.Deferred;
+import org.jboss.netty.util.Timeout;
+import org.jboss.netty.util.TimerTask;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.util.AsyncUtil;
+import org.apache.kudu.util.Slice;
 
 /**
  * A AsyncKuduSession belongs to a specific AsyncKuduClient, and represents a context in
@@ -190,8 +192,8 @@ public class AsyncKuduSession implements SessionConfiguration {
   @Override
   public void setExternalConsistencyMode(ExternalConsistencyMode consistencyMode) {
     if (hasPendingOperations()) {
-      throw new IllegalArgumentException("Cannot change consistency mode "
-          + "when writes are buffered");
+      throw new IllegalArgumentException("Cannot change consistency mode " +
+          "when writes are buffered");
     }
     this.consistencyMode = consistencyMode;
   }
@@ -311,8 +313,10 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
 
     @Override
-    public Void call(Object _void) throws Exception {
-      if (lookupsOutstanding.decrementAndGet() != 0) return null;
+    public Void call(Object unused) throws Exception {
+      if (lookupsOutstanding.decrementAndGet() != 0) {
+        return null;
+      }
 
       // The final tablet lookup is complete. Batch all of the buffered
       // operations into their respective tablet, and then send the batches.
@@ -407,12 +411,12 @@ public class AsyncKuduSession implements SessionConfiguration {
         doFlush(buffer);
 
     return AsyncUtil.addBothDeferring(nonActiveBufferFlush,
-                                      new Callback<Deferred<List<OperationResponse>>, Object>() {
-                                        @Override
-                                        public Deferred<List<OperationResponse>> call(Object arg) {
-                                          return activeBufferFlush;
-                                        }
-                                      });
+        new Callback<Deferred<List<OperationResponse>>, Object>() {
+          @Override
+          public Deferred<List<OperationResponse>> call(Object arg) {
+            return activeBufferFlush;
+          }
+        });
   }
 
   /**
@@ -447,6 +451,7 @@ public class AsyncKuduSession implements SessionConfiguration {
                                                                            List<BatchResponse>> {
     private static final ConvertBatchToListOfResponsesCB INSTANCE =
         new ConvertBatchToListOfResponsesCB();
+
     @Override
     public List<OperationResponse> call(List<BatchResponse> batchResponses) throws Exception {
       // First compute the size of the union of all the lists so that we don't trigger expensive
@@ -463,10 +468,12 @@ public class AsyncKuduSession implements SessionConfiguration {
 
       return responses;
     }
+
     @Override
     public String toString() {
       return "ConvertBatchToListOfResponsesCB";
     }
+
     public static ConvertBatchToListOfResponsesCB getInstance() {
       return INSTANCE;
     }
@@ -633,7 +640,7 @@ public class AsyncKuduSession implements SessionConfiguration {
       // Both buffers are either flushing or inactive.
       return AsyncUtil.addBothDeferring(notificationA, new Callback<Deferred<Void>, Object>() {
         @Override
-        public Deferred<Void> call(Object _obj) throws Exception {
+        public Deferred<Void> call(Object obj) throws Exception {
           return notificationB;
         }
       });
@@ -708,6 +715,7 @@ public class AsyncKuduSession implements SessionConfiguration {
         // passed to ConvertBatchToListOfResponsesCB.
         return handleKuduException ? new BatchResponse(responses) : e;
       }
+
       @Override
       public String toString() {
         return "apply batch error response";

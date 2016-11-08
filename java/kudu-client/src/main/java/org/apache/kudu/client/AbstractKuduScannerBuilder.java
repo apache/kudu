@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import java.util.HashMap;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
+
 import org.apache.kudu.Common;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
@@ -42,7 +44,7 @@ public abstract class AbstractKuduScannerBuilder
 
   AsyncKuduScanner.ReadMode readMode = AsyncKuduScanner.ReadMode.READ_LATEST;
   Common.OrderMode orderMode = Common.OrderMode.UNORDERED;
-  int batchSizeBytes = 1024*1024;
+  int batchSizeBytes = 1024 * 1024;
   long limit = Long.MAX_VALUE;
   boolean prefetching = false;
   boolean cacheBlocks = true;
@@ -274,7 +276,8 @@ public abstract class AbstractKuduScannerBuilder
   }
 
   /**
-   * Like lowerBoundPrimaryKey() but the encoded primary key is an opaque byte array obtained elsewhere.
+   * Like lowerBoundPrimaryKey() but the encoded primary key is an opaque byte
+   * array obtained elsewhere.
    * @param startPrimaryKey bytes containing an encoded start key
    * @return this instance
    * @deprecated use {@link #lowerBound(PartialRow)}
@@ -299,7 +302,8 @@ public abstract class AbstractKuduScannerBuilder
   }
 
   /**
-   * Like exclusiveUpperBound() but the encoded primary key is an opaque byte array obtained elsewhere.
+   * Like exclusiveUpperBound() but the encoded primary key is an opaque byte
+   * array obtained elsewhere.
    * @param endPrimaryKey bytes containing an encoded end key
    * @return this instance
    * @deprecated use {@link #exclusiveUpperBound(PartialRow)}
@@ -344,7 +348,8 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   S exclusiveUpperBoundPartitionKeyRaw(byte[] partitionKey) {
-    if (upperBoundPartitionKey.length == 0 || Bytes.memcmp(partitionKey, upperBoundPartitionKey) < 0) {
+    if (upperBoundPartitionKey.length == 0 ||
+        Bytes.memcmp(partitionKey, upperBoundPartitionKey) < 0) {
       this.upperBoundPartitionKey = partitionKey;
     }
     return (S) this;

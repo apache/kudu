@@ -16,10 +16,11 @@
 // under the License.
 package org.apache.kudu.client;
 
-import org.junit.Test;
-import org.apache.kudu.client.Status;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
-import static org.junit.Assert.*;
+import org.junit.Test;
 
 public class TestStatus {
 

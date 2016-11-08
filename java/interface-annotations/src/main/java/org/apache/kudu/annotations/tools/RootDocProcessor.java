@@ -16,7 +16,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.kudu.annotations.tools;
+
+import java.lang.reflect.Array;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 import com.sun.javadoc.AnnotationDesc;
 import com.sun.javadoc.AnnotationTypeDoc;
@@ -28,16 +39,6 @@ import com.sun.javadoc.MethodDoc;
 import com.sun.javadoc.PackageDoc;
 import com.sun.javadoc.ProgramElementDoc;
 import com.sun.javadoc.RootDoc;
-
-import java.lang.reflect.Array;
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.WeakHashMap;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
@@ -78,8 +79,7 @@ class RootDocProcessor {
     return obj;
   }
 
-  private static Map<Object, Object> proxies =
-    new WeakHashMap<Object, Object>();
+  private static Map<Object, Object> proxies = new WeakHashMap<Object, Object>();
 
   private static Object getProxy(Object obj) {
     Object proxy = proxies.get(obj);
@@ -160,9 +160,8 @@ class RootDocProcessor {
       }
 
       if (args != null) {
-        if (methodName.equals("compareTo") || methodName.equals("equals")
-            || methodName.equals("overrides")
-            || methodName.equals("subclassOf")) {
+        if (methodName.equals("compareTo") || methodName.equals("equals") ||
+            methodName.equals("overrides") || methodName.equals("subclassOf")) {
           args[0] = unwrap(args[0]);
         }
       }
@@ -184,9 +183,9 @@ class RootDocProcessor {
         for (AnnotationDesc annotation : annotations) {
           String qualifiedTypeName = annotation.annotationType().qualifiedTypeName();
           if (qualifiedTypeName.equals(
-              InterfaceAudience.Private.class.getCanonicalName())
-              || qualifiedTypeName.equals(
-              InterfaceAudience.LimitedPrivate.class.getCanonicalName())) {
+              InterfaceAudience.Private.class.getCanonicalName()) ||
+              qualifiedTypeName.equals(
+                  InterfaceAudience.LimitedPrivate.class.getCanonicalName())) {
             return true;
           }
           if (stability.equals(StabilityOptions.EVOLVING_OPTION)) {
@@ -197,8 +196,8 @@ class RootDocProcessor {
           }
           if (stability.equals(StabilityOptions.STABLE_OPTION)) {
             if (qualifiedTypeName.equals(
-                InterfaceStability.Unstable.class.getCanonicalName())
-                || qualifiedTypeName.equals(
+                InterfaceStability.Unstable.class.getCanonicalName()) ||
+                qualifiedTypeName.equals(
                 InterfaceStability.Evolving.class.getCanonicalName())) {
               return true;
             }
@@ -234,8 +233,9 @@ class RootDocProcessor {
     }
 
     private Object unwrap(Object proxy) {
-      if (proxy instanceof Proxy)
+      if (proxy instanceof Proxy) {
         return ((ExcludeHandler) Proxy.getInvocationHandler(proxy)).target;
+      }
       return proxy;
     }
 

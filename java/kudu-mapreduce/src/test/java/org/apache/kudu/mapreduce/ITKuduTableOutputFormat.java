@@ -16,14 +16,21 @@
 // under the License.
 package org.apache.kudu.mapreduce;
 
-import org.apache.kudu.client.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.RecordWriter;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import static org.junit.Assert.*;
+import org.apache.kudu.client.AsyncKuduScanner;
+import org.apache.kudu.client.BaseKuduTest;
+import org.apache.kudu.client.Insert;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.Operation;
+import org.apache.kudu.client.PartialRow;
 
 public class ITKuduTableOutputFormat extends BaseKuduTest {
 

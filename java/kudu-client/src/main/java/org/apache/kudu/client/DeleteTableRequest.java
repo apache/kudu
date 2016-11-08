@@ -14,13 +14,15 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
+import org.jboss.netty.buffer.ChannelBuffer;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
  * RPC to delete tables
@@ -42,13 +44,15 @@ class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
     assert header.isInitialized();
     final Master.DeleteTableRequestPB.Builder builder = Master.DeleteTableRequestPB.newBuilder();
     Master.TableIdentifierPB tableID =
-       Master.TableIdentifierPB.newBuilder().setTableName(name).build();
+        Master.TableIdentifierPB.newBuilder().setTableName(name).build();
     builder.setTable(tableID);
     return toChannelBuffer(header, builder.build());
   }
 
   @Override
-  String serviceName() { return MASTER_SERVICE_NAME; }
+  String serviceName() {
+    return MASTER_SERVICE_NAME;
+  }
 
   @Override
   String method() {

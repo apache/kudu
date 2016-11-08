@@ -23,20 +23,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-package org.apache.kudu.client;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ZeroCopyLiteralByteString;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
-import org.jboss.netty.channel.Channel;
-import org.jboss.netty.channel.Channels;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.rpc.RpcHeader;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+package org.apache.kudu.client;
 
 import java.util.Map;
 import java.util.Set;
@@ -51,6 +39,20 @@ import javax.security.sasl.RealmChoiceCallback;
 import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslClient;
 import javax.security.sasl.SaslException;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableSet;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.ZeroCopyLiteralByteString;
+import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.buffer.ChannelBuffers;
+import org.jboss.netty.channel.Channel;
+import org.jboss.netty.channel.Channels;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.rpc.RpcHeader;
 
 @InterfaceAudience.Private
 public class SecureRpcHelper {
@@ -143,7 +145,7 @@ public class SecureRpcHelper {
    * buffer payload.
    */
   public ChannelBuffer unwrap(ChannelBuffer payload) {
-    if(!useWrap) {
+    if (!useWrap) {
       return payload;
     }
     int len = payload.readInt();
@@ -162,7 +164,7 @@ public class SecureRpcHelper {
    * into the proper payload (ie encryption, signature, etc)
    */
   public ChannelBuffer wrap(ChannelBuffer content) {
-    if(!useWrap) {
+    if (!useWrap) {
       return content;
     }
     try {
@@ -174,7 +176,7 @@ public class SecureRpcHelper {
       ret.writeInt(wrapped.length);
       ret.writeBytes(wrapped);
       if (LOG.isDebugEnabled()) {
-        LOG.debug("Wrapped payload: "+Bytes.pretty(ret));
+        LOG.debug("Wrapped payload: " + Bytes.pretty(ret));
       }
       return ret;
     } catch (SaslException e) {
@@ -212,8 +214,9 @@ public class SecureRpcHelper {
     serverFeatures = features.build();
 
     byte[] saslToken = new byte[0];
-    if (saslClient.hasInitialResponse())
+    if (saslClient.hasInitialResponse()) {
       saslToken = saslClient.evaluateChallenge(saslToken);
+    }
 
     RpcHeader.SaslMessagePB.Builder builder = RpcHeader.SaslMessagePB.newBuilder();
     if (saslToken != null) {

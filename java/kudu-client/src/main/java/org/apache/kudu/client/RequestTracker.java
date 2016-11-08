@@ -14,13 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
 
-import org.apache.kudu.annotations.InterfaceAudience;
+package org.apache.kudu.client;
 
 import java.util.Queue;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
+
+import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
  * This is the same class as src/kudu/rpc/request_tracker.h.

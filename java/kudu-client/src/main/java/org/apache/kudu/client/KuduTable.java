@@ -14,15 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
+
+import java.util.List;
+
+import com.stumbleupon.async.Deferred;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
-
-import com.stumbleupon.async.Deferred;
-
-import java.util.List;
 
 /**
  * A KuduTable represents a table on a particular cluster. It holds the current
@@ -137,6 +138,37 @@ public class KuduTable {
   }
 
   /**
+   * Asynchronously get all the tablets for this table.
+   * @param deadline max time spent in milliseconds for the deferred result of this method to
+   *         get called back, if deadline is reached, the deferred result will get erred back
+   * @return a {@link Deferred} object that yields a list containing the metadata and
+   * locations for each of the tablets in the table
+   * @deprecated use the {@link KuduScanToken} API
+   */
+  @Deprecated
+  public Deferred<List<LocatedTablet>> asyncGetTabletsLocations(long deadline) {
+    return asyncGetTabletsLocations(null, null, deadline);
+  }
+
+  /**
+   * Asynchronously get all or some tablets for this table.
+   * @param startKey where to start in the table, pass null to start at the beginning
+   * @param endKey where to stop in the table (exclusive), pass null to get all the tablets until
+   *               the end of the table
+   * @param deadline max time spent in milliseconds for the deferred result of this method to
+   *         get called back, if deadline is reached, the deferred result will get erred back
+   * @return a {@link Deferred} object that yields a list containing the metadata and locations
+   *           for each of the tablets in the table
+   * @deprecated use the {@link KuduScanToken} API
+   */
+  @Deprecated
+  public Deferred<List<LocatedTablet>> asyncGetTabletsLocations(byte[] startKey,
+                                                                byte[] endKey,
+                                                                long deadline) {
+    return client.locateTable(this, startKey, endKey, deadline);
+  }
+
+  /**
    * Get all the tablets for this table. This may query the master multiple times if there
    * are a lot of tablets.
    * @param deadline deadline in milliseconds for this method to finish
@@ -148,19 +180,6 @@ public class KuduTable {
   @Deprecated
   public List<LocatedTablet> getTabletsLocations(long deadline) throws Exception {
     return getTabletsLocations(null, null, deadline);
-  }
-
-  /**
-   * Asynchronously get all the tablets for this table.
-   * @param deadline max time spent in milliseconds for the deferred result of this method to
-   *         get called back, if deadline is reached, the deferred result will get erred back
-   * @return a {@link Deferred} object that yields a list containing the metadata and
-   * locations for each of the tablets in the table
-   * @deprecated use the {@link KuduScanToken} API
-   */
-  @Deprecated
-  public Deferred<List<LocatedTablet>> asyncGetTabletsLocations(long deadline) {
-    return asyncGetTabletsLocations(null, null, deadline);
   }
 
   /**
@@ -181,23 +200,5 @@ public class KuduTable {
                                                  byte[] endKey,
                                                  long deadline) throws Exception {
     return client.syncLocateTable(this, startKey, endKey, deadline);
-  }
-
-  /**
-   * Asynchronously get all or some tablets for this table.
-   * @param startKey where to start in the table, pass null to start at the beginning
-   * @param endKey where to stop in the table (exclusive), pass null to get all the tablets until
-   *               the end of the table
-   * @param deadline max time spent in milliseconds for the deferred result of this method to
-   *         get called back, if deadline is reached, the deferred result will get erred back
-   * @return a {@link Deferred} object that yields a list containing the metadata and locations
-   *           for each of the tablets in the table
-   * @deprecated use the {@link KuduScanToken} API
-   */
-  @Deprecated
-  public Deferred<List<LocatedTablet>> asyncGetTabletsLocations(byte[] startKey,
-                                                                byte[] endKey,
-                                                                long deadline) {
-    return client.locateTable(this, startKey, endKey, deadline);
   }
 }

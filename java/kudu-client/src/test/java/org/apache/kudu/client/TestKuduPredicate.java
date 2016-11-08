@@ -17,22 +17,22 @@
 
 package org.apache.kudu.client;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-
-import org.junit.Assert;
-import org.junit.Test;
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Type;
-
-import java.util.Arrays;
-
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.EQUAL;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
 import static org.apache.kudu.client.KuduPredicate.PredicateType.RANGE;
+
+import java.util.Arrays;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+import org.junit.Assert;
+import org.junit.Test;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Type;
 
 public class TestKuduPredicate {
 

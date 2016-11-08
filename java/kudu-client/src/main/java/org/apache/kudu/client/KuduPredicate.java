@@ -17,6 +17,14 @@
 
 package org.apache.kudu.client;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
+import java.util.SortedSet;
+import java.util.TreeSet;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
@@ -30,14 +38,6 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.List;
-import java.util.SortedSet;
-import java.util.TreeSet;
 
 /**
  * A predicate which can be used to filter rows based on the value of a column.
@@ -198,15 +198,20 @@ public class KuduPredicate {
         bytes = Bytes.fromLong(value);
         break;
       }
-      default: throw new RuntimeException("already checked");
+      default:
+        throw new RuntimeException("already checked");
     }
     switch (op) {
       case GREATER:
-      case GREATER_EQUAL: return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
-      case EQUAL: return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
+      case GREATER_EQUAL:
+        return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
+      case EQUAL:
+        return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
       case LESS:
-      case LESS_EQUAL: return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
-      default: throw new RuntimeException("unknown comparison op");
+      case LESS_EQUAL:
+        return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
+      default:
+        throw new RuntimeException("unknown comparison op");
     }
   }
 
@@ -235,11 +240,15 @@ public class KuduPredicate {
     byte[] bytes = Bytes.fromFloat(value);
     switch (op) {
       case GREATER:
-      case GREATER_EQUAL: return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
-      case EQUAL: return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
+      case GREATER_EQUAL:
+        return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
+      case EQUAL:
+        return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
       case LESS:
-      case LESS_EQUAL: return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
-      default: throw new RuntimeException("unknown comparison op");
+      case LESS_EQUAL:
+        return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
+      default:
+        throw new RuntimeException("unknown comparison op");
     }
   }
 
@@ -268,11 +277,15 @@ public class KuduPredicate {
     byte[] bytes = Bytes.fromDouble(value);
     switch (op) {
       case GREATER:
-      case GREATER_EQUAL: return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
-      case EQUAL: return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
+      case GREATER_EQUAL:
+        return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
+      case EQUAL:
+        return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
       case LESS:
-      case LESS_EQUAL: return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
-      default: throw new RuntimeException("unknown comparison op");
+      case LESS_EQUAL:
+        return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
+      default:
+        throw new RuntimeException("unknown comparison op");
     }
   }
 
@@ -294,11 +307,15 @@ public class KuduPredicate {
 
     switch (op) {
       case GREATER:
-      case GREATER_EQUAL: return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
-      case EQUAL: return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
+      case GREATER_EQUAL:
+        return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
+      case EQUAL:
+        return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
       case LESS:
-      case LESS_EQUAL: return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
-      default: throw new RuntimeException("unknown comparison op");
+      case LESS_EQUAL:
+        return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
+      default:
+        throw new RuntimeException("unknown comparison op");
     }
   }
 
@@ -319,11 +336,15 @@ public class KuduPredicate {
 
     switch (op) {
       case GREATER:
-      case GREATER_EQUAL: return new KuduPredicate(PredicateType.RANGE, column, value, null);
-      case EQUAL: return new KuduPredicate(PredicateType.EQUALITY, column, value, null);
+      case GREATER_EQUAL:
+        return new KuduPredicate(PredicateType.RANGE, column, value, null);
+      case EQUAL:
+        return new KuduPredicate(PredicateType.EQUALITY, column, value, null);
       case LESS:
-      case LESS_EQUAL: return new KuduPredicate(PredicateType.RANGE, column, null, value);
-      default: throw new RuntimeException("unknown comparison op");
+      case LESS_EQUAL:
+        return new KuduPredicate(PredicateType.RANGE, column, null, value);
+      default:
+        throw new RuntimeException("unknown comparison op");
     }
   }
 
@@ -338,7 +359,9 @@ public class KuduPredicate {
    * @return an IN list predicate
    */
   public static <T> KuduPredicate newInListPredicate(final ColumnSchema column, List<T> values) {
-    if (values.isEmpty()) return none(column);
+    if (values.isEmpty()) {
+      return none(column);
+    }
     T t = values.get(0);
 
     SortedSet<byte[]> vals = new TreeSet<>(new Comparator<byte[]>() {
@@ -469,12 +492,16 @@ public class KuduPredicate {
                                 "predicates from different columns may not be merged");
 
     // NONE predicates dominate.
-    if (other.type == PredicateType.NONE) return other;
+    if (other.type == PredicateType.NONE) {
+      return other;
+    }
 
     // NOT NULL is dominated by all other predicates.
     // Note: this will no longer be true when an IS NULL predicate type is
     // added.
-    if (other.type == PredicateType.IS_NOT_NULL) return this;
+    if (other.type == PredicateType.IS_NOT_NULL) {
+      return this;
+    }
 
     switch (type) {
       case NONE: return this;
@@ -755,9 +782,13 @@ public class KuduPredicate {
       }
       case STRING:
       case BINARY: {
-        if (a.length + 1 != b.length || b[a.length] != 0) return false;
+        if (a.length + 1 != b.length || b[a.length] != 0) {
+          return false;
+        }
         for (int i = 0; i < a.length; i++) {
-          if (a[i] != b[i]) return false;
+          if (a[i] != b[i]) {
+            return false;
+          }
         }
         return true;
       }
@@ -795,12 +826,17 @@ public class KuduPredicate {
   @VisibleForTesting
   static long maxIntValue(Type type) {
     switch (type) {
-      case INT8: return Byte.MAX_VALUE;
-      case INT16: return Short.MAX_VALUE;
-      case INT32: return Integer.MAX_VALUE;
+      case INT8:
+        return Byte.MAX_VALUE;
+      case INT16:
+        return Short.MAX_VALUE;
+      case INT32:
+        return Integer.MAX_VALUE;
       case UNIXTIME_MICROS:
-      case INT64: return Long.MAX_VALUE;
-      default: throw new IllegalArgumentException("type must be an integer type");
+      case INT64:
+        return Long.MAX_VALUE;
+      default:
+        throw new IllegalArgumentException("type must be an integer type");
     }
   }
 
@@ -812,12 +848,17 @@ public class KuduPredicate {
   @VisibleForTesting
   static long minIntValue(Type type) {
     switch (type) {
-      case INT8: return Byte.MIN_VALUE;
-      case INT16: return Short.MIN_VALUE;
-      case INT32: return Integer.MIN_VALUE;
+      case INT8:
+        return Byte.MIN_VALUE;
+      case INT16:
+        return Short.MIN_VALUE;
+      case INT32:
+        return Integer.MIN_VALUE;
       case UNIXTIME_MICROS:
-      case INT64: return Long.MIN_VALUE;
-      default: throw new IllegalArgumentException("type must be an integer type");
+      case INT64:
+        return Long.MIN_VALUE;
+      default:
+        throw new IllegalArgumentException("type must be an integer type");
     }
   }
 
@@ -828,7 +869,9 @@ public class KuduPredicate {
    */
   private static void checkColumn(ColumnSchema column, Type... passedTypes) {
     for (Type type : passedTypes) {
-      if (column.getType().equals(type)) return;
+      if (column.getType().equals(type)) {
+        return;
+      }
     }
     throw new IllegalArgumentException(String.format("%s's type isn't %s, it's %s",
                                                      column.getName(), Arrays.toString(passedTypes),
@@ -894,8 +937,12 @@ public class KuduPredicate {
 
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (o == null || getClass() != o.getClass()) return false;
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
     KuduPredicate that = (KuduPredicate) o;
     return type == that.type &&
         column.equals(that.column) &&

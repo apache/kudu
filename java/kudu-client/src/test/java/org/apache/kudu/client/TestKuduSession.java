@@ -16,16 +16,18 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.util.List;
 
-import org.junit.Before;
+import com.google.common.collect.ImmutableList;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TestName;
-
-import static org.junit.Assert.*;
-
-import com.google.common.collect.ImmutableList;
 
 public class TestKuduSession extends BaseKuduTest {
   @Rule

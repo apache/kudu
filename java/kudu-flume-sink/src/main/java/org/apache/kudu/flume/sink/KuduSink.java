@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.kudu.flume.sink;
 
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.BATCH_SIZE;
@@ -24,6 +25,8 @@ import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.MASTER_A
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TABLE_NAME;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TIMEOUT_MILLIS;
+
+import java.util.List;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -37,6 +40,9 @@ import org.apache.flume.Transaction;
 import org.apache.flume.conf.Configurable;
 import org.apache.flume.instrumentation.SinkCounter;
 import org.apache.flume.sink.AbstractSink;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.AsyncKuduClient;
@@ -46,27 +52,33 @@ import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.OperationResponse;
 import org.apache.kudu.client.SessionConfiguration;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.List;
 
 /**
- * <p>A Flume sink that reads events from a channel and writes them to a Kudu table.
+ * A Flume sink that reads events from a channel and writes them to a Kudu table.
  *
  * <p><strong>Flume Kudu Sink configuration parameters</strong>
  *
  * <table cellpadding=3 cellspacing=0 border=1>
  * <tr><th>Property Name</th><th>Default</th><th>Required?</th><th>Description</th></tr>
- * <tr><td>channel</td><td></td><td>Yes</td><td>The name of the Flume channel to read from.</td></tr>
- * <tr><td>type</td><td></td><td>Yes</td><td>Component name. Must be {@code org.apache.kudu.flume.sink.KuduSink}</td></tr>
- * <tr><td>masterAddresses</td><td></td><td>Yes</td><td>Comma-separated list of "host:port" Kudu master addresses. The port is optional.</td></tr>
- * <tr><td>tableName</td><td></td><td>Yes</td><td>The name of the Kudu table to write to.</td></tr>
- * <tr><td>batchSize</td><td>100</td><td>No</td><td>The maximum number of events the sink will attempt to take from the channel per transaction.</td></tr>
- * <tr><td>ignoreDuplicateRows</td><td>true</td><td>No</td><td>Whether to ignore duplicate primary key errors caused by inserts.</td></tr>
- * <tr><td>timeoutMillis</td><td>10000</td><td>No</td><td>Timeout period for Kudu write operations, in milliseconds.</td></tr>
- * <tr><td>producer</td><td>{@link SimpleKuduOperationsProducer}</td><td>No</td><td>The fully qualified class name of the {@link KuduOperationsProducer} the sink should use.</td></tr>
- * <tr><td>producer.*</td><td></td><td>(Varies by operations producer)</td><td>Configuration properties to pass to the operations producer implementation.</td></tr>
+ * <tr><td>channel</td><td></td><td>Yes</td><td>The name of the Flume channel to read.</td></tr>
+ * <tr><td>type</td><td></td><td>Yes</td>
+ *     <td>Component name. Must be {@code org.apache.kudu.flume.sink.KuduSink}</td></tr>
+ * <tr><td>masterAddresses</td><td></td><td>Yes</td>
+ *     <td>Comma-separated list of "host:port" Kudu master addresses.
+ *     The port is optional.</td></tr>
+ * <tr><td>tableName</td><td></td><td>Yes</td>
+ *     <td>The name of the Kudu table to write to.</td></tr>
+ * <tr><td>batchSize</td><td>100</td><td>No</td>
+ * <td>The maximum number of events the sink takes from the channel per transaction.</td></tr>
+ * <tr><td>ignoreDuplicateRows</td><td>true</td>
+ *     <td>No</td><td>Whether to ignore duplicate primary key errors caused by inserts.</td></tr>
+ * <tr><td>timeoutMillis</td><td>10000</td><td>No</td>
+ *     <td>Timeout period for Kudu write operations, in milliseconds.</td></tr>
+ * <tr><td>producer</td><td>{@link SimpleKuduOperationsProducer}</td><td>No</td>
+ *     <td>The fully-qualified class name of the {@link KuduOperationsProducer}
+ *     the sink should use.</td></tr>
+ * <tr><td>producer.*</td><td></td><td>(Varies by operations producer)</td>
+ *     <td>Configuration properties to pass to the operations producer implementation.</td></tr>
  * </table>
  *
  * <p><strong>Installation</strong>
@@ -126,11 +138,11 @@ public class KuduSink extends AbstractSink implements Configurable {
 
     try {
       table = client.openTable(tableName);
-    } catch (Exception e) {
+    } catch (Exception ex) {
       sinkCounter.incrementConnectionFailedCount();
       String msg = String.format("Could not open Kudu table '%s'", tableName);
-      logger.error(msg, e);
-      throw new FlumeException(msg, e);
+      logger.error(msg, ex);
+      throw new FlumeException(msg, ex);
     }
     operationsProducer.initialize(table);
 

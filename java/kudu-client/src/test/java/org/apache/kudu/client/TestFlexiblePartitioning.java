@@ -16,19 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.ComparisonChain;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Sets;
-
-import org.junit.Before;
-import org.junit.Test;
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Schema;
-import org.apache.kudu.Type;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.junit.Assert.assertEquals;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -36,7 +24,19 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-import static org.junit.Assert.assertEquals;
+import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
+import com.google.common.collect.ComparisonChain;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Sets;
+import org.junit.Before;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
 
 public class TestFlexiblePartitioning extends BaseKuduTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);

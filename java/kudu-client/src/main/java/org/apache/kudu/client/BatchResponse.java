@@ -14,13 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
 
-import com.google.common.collect.ImmutableList;
+package org.apache.kudu.client;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+
+import com.google.common.collect.ImmutableList;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.tserver.Tserver;

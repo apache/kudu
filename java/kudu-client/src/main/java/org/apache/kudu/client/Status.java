@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import org.apache.kudu.WireProtocol;
@@ -91,7 +92,7 @@ public class Status {
   static Status fromPB(WireProtocol.AppStatusPB pb) {
     return new Status(pb);
   }
-
+  // CHECKSTYLE:OFF
   public static Status OK() {
     return STATIC_OK;
   }
@@ -221,63 +222,81 @@ public class Status {
   public static Status EndOfFile(String msg, int posixCode) {
     return new Status(WireProtocol.AppStatusPB.ErrorCode.END_OF_FILE, msg, posixCode);
   }
-
+  // CHECKSTYLE:ON
   // Boolean status checks.
 
   public boolean ok() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.OK;
   }
+
   public boolean isCorruption() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.CORRUPTION;
   }
+
   public boolean isNotFound() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.NOT_FOUND;
   }
+
   public boolean isNotSupported() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.NOT_SUPPORTED;
   }
+
   public boolean isInvalidArgument() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.INVALID_ARGUMENT;
   }
+
   public boolean isIOError() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.IO_ERROR;
   }
+
   public boolean isAlreadyPresent() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.ALREADY_PRESENT;
   }
+
   public boolean isRuntimeError() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.RUNTIME_ERROR;
   }
+
   public boolean isNetworkError() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.NETWORK_ERROR;
   }
+
   public boolean isIllegalState() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.ILLEGAL_STATE;
   }
+
   public boolean isNotAuthorized() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.NOT_AUTHORIZED;
   }
+
   public boolean isAborted() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.ABORTED;
   }
+
   public boolean isRemoteError() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.REMOTE_ERROR;
   }
+
   public boolean isServiceUnavailable() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE;
   }
+
   public boolean isTimedOut() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.TIMED_OUT;
   }
+
   public boolean isUninitialized() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.UNINITIALIZED;
   }
+
   public boolean isConfigurationError() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.CONFIGURATION_ERROR;
   }
+
   public boolean isIncomplete() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.INCOMPLETE;
   }
+
   public boolean isEndOfFile() {
     return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.END_OF_FILE;
   }

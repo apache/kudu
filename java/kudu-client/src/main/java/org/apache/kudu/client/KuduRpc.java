@@ -23,7 +23,16 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
 package org.apache.kudu.client;
+
+import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
@@ -33,19 +42,12 @@ import com.google.protobuf.Message;
 import com.stumbleupon.async.Deferred;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.util.Pair;
-import org.apache.kudu.util.Slice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-
-import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.util.Pair;
+import org.apache.kudu.util.Slice;
 
 /**
  * Abstract base class for all RPC requests going out to Kudu.
@@ -370,7 +372,7 @@ public abstract class KuduRpc<R> {
 
   static ChannelBuffer toChannelBuffer(Message header, Message pb) {
     int totalSize = IPCUtil.getTotalSizeWhenWrittenDelimited(header, pb);
-    byte[] buf = new byte[totalSize+4];
+    byte[] buf = new byte[totalSize + 4];
     ChannelBuffer chanBuf = ChannelBuffers.wrappedBuffer(buf);
     chanBuf.clear();
     chanBuf.writeInt(totalSize);
@@ -413,12 +415,12 @@ public abstract class KuduRpc<R> {
     // either too large, or is negative (if the most-significant bit is set).
     if ((length & MAX_BYTE_ARRAY_MASK) != 0) {
       if (length < 0) {
-        throw new IllegalArgumentException("Read negative byte array length: "
-            + length + " in buf=" + buf + '=' + Bytes.pretty(buf));
+        throw new IllegalArgumentException("Read negative byte array length: " +
+            length + " in buf=" + buf + '=' + Bytes.pretty(buf));
       } else {
-        throw new IllegalArgumentException("Read byte array length that's too"
-            + " large: " + length + " > " + ~MAX_BYTE_ARRAY_MASK + " in buf="
-            + buf + '=' + Bytes.pretty(buf));
+        throw new IllegalArgumentException("Read byte array length that's too" +
+            " large: " + length + " > " + ~MAX_BYTE_ARRAY_MASK + " in buf=" +
+            buf + '=' + Bytes.pretty(buf));
       }
     }
   }

@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import java.nio.ByteBuffer;
@@ -24,12 +25,12 @@ import java.util.List;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
-import org.apache.kudu.util.ByteVec;
 
 /**
  * Class used to represent parts of a row along with its schema.<p>
@@ -218,8 +219,8 @@ public class PartialRow {
   /**
    * Add an long for the specified column.
    *
-   * If this is a UNIXTIME_MICROS column, the long value provided should be the number of microseconds
-   * between a given time and January 1, 1970 UTC.
+   * If this is a UNIXTIME_MICROS column, the long value provided should be the number of
+   * microseconds between a given time and January 1, 1970 UTC.
    * For example, to encode the current time, use setLong(System.currentTimeMillis() * 1000);
    *
    * @param columnName Name of the column
@@ -451,8 +452,10 @@ public class PartialRow {
   private void checkColumn(ColumnSchema column, Type... types) {
     checkNotFrozen();
     checkColumnExists(column);
-    for(Type type : types) {
-      if (column.getType().equals(type)) return;
+    for (Type type : types) {
+      if (column.getType().equals(type)) {
+        return;
+      }
     }
     throw new IllegalArgumentException(String.format("%s isn't %s, it's %s", column.getName(),
         Arrays.toString(types), column.getType().getName()));
@@ -463,8 +466,9 @@ public class PartialRow {
    * @throws IllegalArgumentException if the column doesn't exist
    */
   private void checkColumnExists(ColumnSchema column) {
-    if (column == null)
+    if (column == null) {
       throw new IllegalArgumentException("Column name isn't present in the table's schema");
+    }
   }
 
   /**
@@ -600,6 +604,9 @@ public class PartialRow {
           } else {
             sb.append(Bytes.pretty(data));
           }
+          break;
+        default:
+          throw new RuntimeException("unreachable");
       }
     }
   }
@@ -611,16 +618,36 @@ public class PartialRow {
   void setMin(int index) {
     Type type = schema.getColumnByIndex(index).getType();
     switch (type) {
-      case BOOL: addBoolean(index, false); break;
-      case INT8: addByte(index, Byte.MIN_VALUE); break;
-      case INT16: addShort(index, Short.MIN_VALUE); break;
-      case INT32: addInt(index, Integer.MIN_VALUE); break;
+      case BOOL:
+        addBoolean(index, false);
+        break;
+      case INT8:
+        addByte(index, Byte.MIN_VALUE);
+        break;
+      case INT16:
+        addShort(index, Short.MIN_VALUE);
+        break;
+      case INT32:
+        addInt(index, Integer.MIN_VALUE);
+        break;
       case INT64:
-      case UNIXTIME_MICROS: addLong(index, Integer.MIN_VALUE); break;
-      case FLOAT: addFloat(index, -Float.MAX_VALUE); break;
-      case DOUBLE: addDouble(index, -Double.MAX_VALUE); break;
-      case STRING: addStringUtf8(index, AsyncKuduClient.EMPTY_ARRAY); break;
-      case BINARY: addBinary(index, AsyncKuduClient.EMPTY_ARRAY); break;
+      case UNIXTIME_MICROS:
+        addLong(index, Integer.MIN_VALUE);
+        break;
+      case FLOAT:
+        addFloat(index, -Float.MAX_VALUE);
+        break;
+      case DOUBLE:
+        addDouble(index, -Double.MAX_VALUE);
+        break;
+      case STRING:
+        addStringUtf8(index, AsyncKuduClient.EMPTY_ARRAY);
+        break;
+      case BINARY:
+        addBinary(index, AsyncKuduClient.EMPTY_ARRAY);
+        break;
+      default:
+        throw new RuntimeException("unreachable");
     }
   }
 
@@ -641,7 +668,8 @@ public class PartialRow {
       case FLOAT:
       case DOUBLE: {
         Preconditions.checkArgument(value.length == type.getSize());
-        System.arraycopy(value, 0, rowAlloc, getPositionInRowAllocAndSetBitSet(index), value.length);
+        System.arraycopy(value, 0, rowAlloc,
+            getPositionInRowAllocAndSetBitSet(index), value.length);
         break;
       }
       case STRING:
@@ -649,6 +677,8 @@ public class PartialRow {
         addVarLengthData(index, value);
         break;
       }
+      default:
+        throw new RuntimeException("unreachable");
     }
   }
 
@@ -670,42 +700,54 @@ public class PartialRow {
         rowAlloc[offset] = 1;
         return isFalse;
       }
-      case INT8:{
+      case INT8: {
         byte existing = rowAlloc[offset];
-        if (existing == Byte.MAX_VALUE) return false;
+        if (existing == Byte.MAX_VALUE) {
+          return false;
+        }
         rowAlloc[offset] = (byte) (existing + 1);
         return true;
       }
       case INT16: {
         short existing = Bytes.getShort(rowAlloc, offset);
-        if (existing == Short.MAX_VALUE) return false;
+        if (existing == Short.MAX_VALUE) {
+          return false;
+        }
         Bytes.setShort(rowAlloc, (short) (existing + 1), offset);
         return true;
       }
       case INT32: {
         int existing = Bytes.getInt(rowAlloc, offset);
-        if (existing == Integer.MAX_VALUE) return false;
+        if (existing == Integer.MAX_VALUE) {
+          return false;
+        }
         Bytes.setInt(rowAlloc, existing + 1, offset);
         return true;
       }
       case INT64:
       case UNIXTIME_MICROS: {
         long existing = Bytes.getLong(rowAlloc, offset);
-        if (existing == Long.MAX_VALUE) return false;
+        if (existing == Long.MAX_VALUE) {
+          return false;
+        }
         Bytes.setLong(rowAlloc, existing + 1, offset);
         return true;
       }
       case FLOAT: {
         float existing = Bytes.getFloat(rowAlloc, offset);
         float incremented = Math.nextAfter(existing, Float.POSITIVE_INFINITY);
-        if (existing == incremented) return false;
+        if (existing == incremented) {
+          return false;
+        }
         Bytes.setFloat(rowAlloc, incremented, offset);
         return true;
       }
       case DOUBLE: {
         double existing = Bytes.getFloat(rowAlloc, offset);
         double incremented = Math.nextAfter(existing, Double.POSITIVE_INFINITY);
-        if (existing == incremented) return false;
+        if (existing == incremented) {
+          return false;
+        }
         Bytes.setDouble(rowAlloc, incremented, offset);
         return true;
       }
@@ -718,8 +760,9 @@ public class PartialRow {
         addVarLengthData(index, incremented);
         return true;
       }
+      default:
+        throw new RuntimeException("unreachable");
     }
-    throw new RuntimeException("unreachable");
   }
 
   /**

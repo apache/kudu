@@ -14,11 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
-import com.google.common.base.Stopwatch;
-
 import java.util.concurrent.TimeUnit;
+
+import com.google.common.base.Stopwatch;
 
 /**
  * This is a wrapper class around {@link com.google.common.base.Stopwatch} used to track a relative

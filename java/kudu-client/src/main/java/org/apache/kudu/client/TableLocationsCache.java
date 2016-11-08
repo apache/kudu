@@ -14,15 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.primitives.UnsignedBytes;
-
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -34,6 +27,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
+
+import com.google.common.base.MoreObjects;
+import com.google.common.base.Preconditions;
+import com.google.common.primitives.UnsignedBytes;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
  * A cache of the tablet locations in a table, keyed by partition key. Entries
@@ -141,7 +142,8 @@ class TableLocationsCache {
       if (Bytes.memcmp(requestPartitionKey, firstLowerBound) < 0) {
         // If the first tablet is past the requested partition key, then the
         // partition key falls in an initial non-covered range, such as A.
-        newEntries.add(Entry.nonCoveredRange(AsyncKuduClient.EMPTY_ARRAY, firstLowerBound, deadline));
+        newEntries.add(
+            Entry.nonCoveredRange(AsyncKuduClient.EMPTY_ARRAY, firstLowerBound, deadline));
       }
 
       // lastUpperBound tracks the upper bound of the previously processed
@@ -167,7 +169,8 @@ class TableLocationsCache {
           tablets.size() < AsyncKuduClient.MAX_RETURNED_TABLE_LOCATIONS) {
         // There is a non-covered range between the last tablet and the end of the
         // partition key space, such as F.
-        newEntries.add(Entry.nonCoveredRange(lastUpperBound, AsyncKuduClient.EMPTY_ARRAY, deadline));
+        newEntries.add(
+            Entry.nonCoveredRange(lastUpperBound, AsyncKuduClient.EMPTY_ARRAY, deadline));
       }
     }
 

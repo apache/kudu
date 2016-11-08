@@ -23,14 +23,16 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
 package org.apache.kudu.client;
+
+import java.io.IOException;
 
 import com.stumbleupon.async.DeferredGroupException;
 import com.stumbleupon.async.TimeoutException;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
-
-import java.io.IOException;
 
 /**
  * The parent class of all exceptions sent by the Kudu client. This is the only exception you will

@@ -14,14 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
+import org.jboss.netty.buffer.ChannelBuffer;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
  * Ping request only used for tests to test connections.
@@ -64,7 +66,8 @@ class PingRequest extends KuduRpc<PingResponse> {
   }
 
   @Override
-  Pair<PingResponse, Object> deserialize(CallResponse callResponse, String tsUUID) throws KuduException {
+  Pair<PingResponse, Object> deserialize(CallResponse callResponse, String tsUUID)
+      throws KuduException {
     final Master.PingResponsePB.Builder respBuilder =
         Master.PingResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);

@@ -16,14 +16,17 @@
 // under the License.
 package org.apache.kudu.util;
 
-import com.google.common.net.HostAndPort;
-import org.junit.Test;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.Assert.*;
+import com.google.common.net.HostAndPort;
+import org.junit.Test;
 
 /**
  * Test for {@link NetUtil}.

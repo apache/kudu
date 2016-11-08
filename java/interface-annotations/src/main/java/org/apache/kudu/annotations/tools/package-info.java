@@ -17,6 +17,7 @@
  * limitations under the License.
  */
 @InterfaceAudience.Private
+
 package org.apache.kudu.annotations.tools;
 
 import org.apache.kudu.annotations.InterfaceAudience;

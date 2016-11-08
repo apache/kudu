@@ -16,7 +16,13 @@
 // under the License.
 package org.apache.kudu.mapreduce;
 
-import org.apache.kudu.client.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
@@ -29,11 +35,12 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-
-import static org.junit.Assert.*;
+import org.apache.kudu.client.AsyncKuduScanner;
+import org.apache.kudu.client.BaseKuduTest;
+import org.apache.kudu.client.Insert;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.Operation;
+import org.apache.kudu.client.PartialRow;
 
 public class ITOutputFormatJob extends BaseKuduTest {
 

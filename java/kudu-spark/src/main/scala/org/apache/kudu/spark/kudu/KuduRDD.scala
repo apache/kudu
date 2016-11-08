@@ -16,13 +16,14 @@
  */
 package org.apache.kudu.spark.kudu
 
+import scala.collection.JavaConverters._
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
 import org.apache.spark.{Partition, SparkContext, TaskContext}
+
 import org.apache.kudu.client._
 import org.apache.kudu.{Type, client}
-
-import scala.collection.JavaConverters._
 
 /**
   * A Resilient Distributed Dataset backed by a Kudu table.

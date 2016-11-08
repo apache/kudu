@@ -23,7 +23,19 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
 package org.apache.kudu.client;
+
+import static com.google.common.base.Preconditions.checkArgument;
+import static org.apache.kudu.tserver.Tserver.NewScanRequestPB;
+import static org.apache.kudu.tserver.Tserver.ScanRequestPB;
+import static org.apache.kudu.tserver.Tserver.ScanResponsePB;
+import static org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Message;
@@ -31,6 +43,9 @@ import com.google.protobuf.ZeroCopyLiteralByteString;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.jboss.netty.buffer.ChannelBuffer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
@@ -38,19 +53,6 @@ import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.tserver.Tserver;
 import org.apache.kudu.util.Pair;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static org.apache.kudu.tserver.Tserver.NewScanRequestPB;
-import static org.apache.kudu.tserver.Tserver.ScanRequestPB;
-import static org.apache.kudu.tserver.Tserver.ScanResponsePB;
-import static org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
 
 /**
  * Creates a scanner to read data from Kudu.
@@ -371,11 +373,11 @@ public final class AsyncKuduScanner {
           new Callback<Deferred<RowResultIterator>, Response>() {
         @Override
         public Deferred<RowResultIterator> call(Response resp) throws Exception {
-          if (!resp.more || resp.scanner_id == null) {
+          if (!resp.more || resp.scannerId == null) {
             scanFinished();
             return Deferred.fromResult(resp.data); // there might be data to return
           }
-          scannerId = resp.scanner_id;
+          scannerId = resp.scannerId;
           sequenceId++;
           hasMore = resp.more;
           if (LOG.isDebugEnabled()) {
@@ -383,6 +385,7 @@ public final class AsyncKuduScanner {
           }
           return Deferred.fromResult(resp.data);
         }
+
         public String toString() {
           return "scanner opened";
         }
@@ -412,6 +415,7 @@ public final class AsyncKuduScanner {
             return Deferred.fromError(e); // Let the error propogate.
           }
         }
+
         public String toString() {
           return "open scanner errback";
         }
@@ -425,7 +429,7 @@ public final class AsyncKuduScanner {
       return prefetcherDeferred;
     }
     final Deferred<RowResultIterator> d =
-        client.scanNextRows(this).addCallbacks(got_next_row, nextRowErrback());
+        client.scanNextRows(this).addCallbacks(gotNextRow, nextRowErrback());
     if (prefetching) {
       d.chain(new Deferred<RowResultIterator>().addCallback(prefetch));
     }
@@ -437,8 +441,8 @@ public final class AsyncKuduScanner {
     @Override
     public RowResultIterator call(RowResultIterator arg) throws Exception {
       if (hasMoreRows()) {
-        prefetcherDeferred = client.scanNextRows(AsyncKuduScanner.this).addCallbacks
-            (got_next_row, nextRowErrback());
+        prefetcherDeferred = client.scanNextRows(AsyncKuduScanner.this)
+            .addCallbacks(gotNextRow, nextRowErrback());
       }
       return null;
     }
@@ -449,7 +453,7 @@ public final class AsyncKuduScanner {
    * This returns an {@code ArrayList<ArrayList<KeyValue>>} (possibly inside a
    * deferred one).
    */
-  private final Callback<RowResultIterator, Response> got_next_row =
+  private final Callback<RowResultIterator, Response> gotNextRow =
       new Callback<RowResultIterator, Response>() {
         public RowResultIterator call(final Response resp) {
           if (!resp.more) {  // We're done scanning this tablet.
@@ -461,6 +465,7 @@ public final class AsyncKuduScanner {
           //LOG.info("Scan.next is returning rows: " + resp.data.getNumRows());
           return resp.data;
         }
+
         public String toString() {
           return "get nextRows response";
         }
@@ -478,6 +483,7 @@ public final class AsyncKuduScanner {
         invalidate();  // If there was an error, don't assume we're still OK.
         return error;  // Let the error propagate.
       }
+
       public String toString() {
         return "NextRow errback";
       }
@@ -516,7 +522,7 @@ public final class AsyncKuduScanner {
       return Deferred.fromResult(null);
     }
     final Deferred<RowResultIterator> d =
-       client.closeScanner(this).addCallback(closedCallback()); // TODO errBack ?
+        client.closeScanner(this).addCallback(closedCallback()); // TODO errBack ?
     return d;
   }
 
@@ -526,13 +532,14 @@ public final class AsyncKuduScanner {
       public RowResultIterator call(Response response) {
         closed = true;
         if (LOG.isDebugEnabled()) {
-          LOG.debug("Scanner " + Bytes.pretty(scannerId) + " closed on "
-              + tablet);
+          LOG.debug("Scanner " + Bytes.pretty(scannerId) + " closed on " +
+              tablet);
         }
         tablet = null;
         scannerId = "client debug closed".getBytes();   // Make debugging easier.
         return response == null ? null : response.data;
       }
+
       public String toString() {
         return "scanner closed";
       }
@@ -621,7 +628,7 @@ public final class AsyncKuduScanner {
    */
   static final class Response {
     /** The ID associated with the scanner that issued the request.  */
-    private final byte[] scanner_id;
+    private final byte[] scannerId;
     /** The actual payload of the response.  */
     private final RowResultIterator data;
 
@@ -632,17 +639,17 @@ public final class AsyncKuduScanner {
      */
     private final boolean more;
 
-    Response(final byte[] scanner_id,
+    Response(final byte[] scannerId,
              final RowResultIterator data,
              final boolean more) {
-      this.scanner_id = scanner_id;
+      this.scannerId = scannerId;
       this.data = data;
       this.more = more;
     }
 
     public String toString() {
-      return "AsyncKuduScanner$Response(scannerId=" + Bytes.pretty(scanner_id)
-          + ", data=" + data + ", more=" + more +  ") ";
+      return "AsyncKuduScanner$Response(scannerId=" + Bytes.pretty(scannerId) +
+          ", data=" + data + ", more=" + more +  ") ";
     }
   }
 
@@ -666,7 +673,9 @@ public final class AsyncKuduScanner {
     }
 
     @Override
-    String serviceName() { return TABLET_SERVER_SERVICE_NAME; }
+    String serviceName() {
+      return TABLET_SERVER_SERVICE_NAME;
+    }
 
     @Override
     String method() {
@@ -710,7 +719,7 @@ public final class AsyncKuduScanner {
 
           // if the mode is set to read on snapshot sent the snapshot timestamp
           if (AsyncKuduScanner.this.getReadMode() == ReadMode.READ_AT_SNAPSHOT &&
-            AsyncKuduScanner.this.getSnapshotTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
+              AsyncKuduScanner.this.getSnapshotTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
             newBuilder.setSnapTimestamp(AsyncKuduScanner.this.getSnapshotTimestamp());
           }
 
@@ -739,6 +748,9 @@ public final class AsyncKuduScanner {
           builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
                  .setBatchSizeBytes(0)
                  .setCloseScanner(true);
+          break;
+        default:
+          throw new RuntimeException("unreachable!");
       }
 
       ScanRequestPB request = builder.build();
@@ -774,9 +786,9 @@ public final class AsyncKuduScanner {
 
       boolean hasMore = resp.getHasMoreResults();
       if (id.length  != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {
-        Status statusIllegalState = Status.IllegalState("Scan RPC response was for scanner"
-            + " ID " + Bytes.pretty(id) + " but we expected "
-            + Bytes.pretty(scannerId));
+        Status statusIllegalState = Status.IllegalState("Scan RPC response was for scanner" +
+            " ID " + Bytes.pretty(id) + " but we expected " +
+            Bytes.pretty(scannerId));
         throw new NonRecoverableException(statusIllegalState);
       }
       Response response = new Response(id, iterator, hasMore);
@@ -787,9 +799,9 @@ public final class AsyncKuduScanner {
     }
 
     public String toString() {
-      return "ScanRequest(scannerId=" + Bytes.pretty(scannerId)
-          + (tablet != null? ", tabletSlice=" + tablet.getTabletId() : "")
-          + ", attempt=" + attempt + ", " + super.toString() + ")";
+      return "ScanRequest(scannerId=" + Bytes.pretty(scannerId) +
+          (tablet != null ? ", tabletSlice=" + tablet.getTabletId() : "") +
+          ", attempt=" + attempt + ", " + super.toString() + ")";
     }
 
     @Override

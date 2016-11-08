@@ -16,21 +16,24 @@
 // under the License.
 package org.apache.kudu.client;
 
-import org.apache.kudu.Schema;
-import org.apache.kudu.WireProtocol.AppStatusPB;
-import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.util.Collections;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.List;
-
-import static org.junit.Assert.*;
+import org.apache.kudu.Schema;
+import org.apache.kudu.WireProtocol.AppStatusPB;
+import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
 
 /**
  * This class can either start its own cluster or rely on an existing one.

@@ -20,17 +20,18 @@ import java.sql.Timestamp
 import java.text.SimpleDateFormat
 import java.util.TimeZone
 
+import scala.collection.JavaConverters._
+import scala.collection.immutable.IndexedSeq
+import scala.util.control.NonFatal
+
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions._
 import org.junit.Assert._
 import org.junit.runner.RunWith
-import org.apache.kudu.client.CreateTableOptions
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfter, FunSuite}
 
-import scala.collection.JavaConverters._
-import scala.collection.immutable.IndexedSeq
-import scala.util.control.NonFatal;
+import org.apache.kudu.client.CreateTableOptions;
 
 @RunWith(classOf[JUnitRunner])
 class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {

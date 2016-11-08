@@ -16,18 +16,18 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.junit.Assert.assertEquals;
+
+import java.util.ArrayList;
+import java.util.List;
+
 import com.google.common.collect.ImmutableList;
+import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.KuduPredicate.ComparisonOp;
-import org.junit.Test;
-
-import java.util.ArrayList;
-import java.util.List;
-
-import static org.junit.Assert.*;
 
 public class TestPartitionPruner extends BaseKuduTest {
 

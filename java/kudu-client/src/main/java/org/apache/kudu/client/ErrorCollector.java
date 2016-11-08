@@ -14,14 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
 
-import com.google.common.base.Preconditions;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
+package org.apache.kudu.client;
 
 import java.util.ArrayDeque;
 import java.util.Queue;
+
+import com.google.common.base.Preconditions;
+
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * Class that helps tracking row errors. All methods are thread-safe.

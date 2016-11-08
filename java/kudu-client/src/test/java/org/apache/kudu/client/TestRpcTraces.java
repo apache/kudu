@@ -16,11 +16,13 @@
 // under the License.
 package org.apache.kudu.client;
 
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 
-import static org.junit.Assert.*;
+import org.junit.Test;
 
 public class TestRpcTraces {
 

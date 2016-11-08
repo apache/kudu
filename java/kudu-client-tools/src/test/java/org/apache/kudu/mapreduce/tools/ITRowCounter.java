@@ -16,9 +16,9 @@
 // under the License.
 package org.apache.kudu.mapreduce.tools;
 
-import org.apache.kudu.mapreduce.CommandLineParser;
-import org.apache.kudu.mapreduce.HadoopTestingUtility;
-import org.apache.kudu.client.BaseKuduTest;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
@@ -26,8 +26,9 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import org.apache.kudu.client.BaseKuduTest;
+import org.apache.kudu.mapreduce.CommandLineParser;
+import org.apache.kudu.mapreduce.HadoopTestingUtility;
 
 public class ITRowCounter extends BaseKuduTest {
 

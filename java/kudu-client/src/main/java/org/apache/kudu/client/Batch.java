@@ -14,18 +14,19 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.protobuf.Message;
-import com.google.protobuf.ZeroCopyLiteralByteString;
+package org.apache.kudu.client;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.MoreObjects;
+import com.google.protobuf.Message;
+import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.jboss.netty.buffer.ChannelBuffer;
+
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.client.Statistics.Statistic;
@@ -87,7 +88,8 @@ class Batch extends KuduRpc<BatchResponse> {
 
   @Override
   ChannelBuffer serialize(Message header) {
-    final Tserver.WriteRequestPB.Builder builder = Operation.createAndFillWriteRequestPB(operations);
+    final Tserver.WriteRequestPB.Builder builder =
+        Operation.createAndFillWriteRequestPB(operations);
     rowOperationsSizeBytes = builder.getRowOperations().getRows().size() +
                              builder.getRowOperations().getIndirectData().size();
     builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
@@ -133,12 +135,14 @@ class Batch extends KuduRpc<BatchResponse> {
         try {
           Thread.sleep(injectedlatencyMs);
         } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
         }
       }
       return new Pair<BatchResponse, Object>(response, injectedError);
     }
 
-    return new Pair<BatchResponse, Object>(response, builder.hasError() ? builder.getError() : null);
+    return new Pair<BatchResponse, Object>(response,
+        builder.hasError() ? builder.getError() : null);
   }
 
   @Override

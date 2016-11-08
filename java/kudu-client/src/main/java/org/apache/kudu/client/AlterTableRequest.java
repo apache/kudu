@@ -14,18 +14,23 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
-import com.google.common.collect.ImmutableList;
-import com.google.protobuf.Message;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.util.Pair;
-import org.jboss.netty.buffer.ChannelBuffer;
-
-import static org.apache.kudu.master.Master.*;
+import static org.apache.kudu.master.Master.AlterTableRequestPB;
+import static org.apache.kudu.master.Master.AlterTableResponsePB;
+import static org.apache.kudu.master.Master.MasterFeatures;
+import static org.apache.kudu.master.Master.TableIdentifierPB;
 
 import java.util.Collection;
 import java.util.List;
+
+import com.google.common.collect.ImmutableList;
+import com.google.protobuf.Message;
+import org.jboss.netty.buffer.ChannelBuffer;
+
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.util.Pair;
 
 /**
  * RPC used to alter a table. When it returns it doesn't mean that the table is altered,
@@ -57,7 +62,9 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
   }
 
   @Override
-  String serviceName() { return MASTER_SERVICE_NAME; }
+  String serviceName() {
+    return MASTER_SERVICE_NAME;
+  }
 
   @Override
   String method() {

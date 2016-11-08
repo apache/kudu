@@ -12,12 +12,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
+
 package org.apache.kudu.mapreduce.tools;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
-import org.apache.kudu.mapreduce.CommandLineParser;
-import org.apache.kudu.mapreduce.KuduTableMapReduceUtil;
+import java.io.IOException;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
@@ -27,7 +26,10 @@ import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
-import java.io.IOException;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.mapreduce.CommandLineParser;
+import org.apache.kudu.mapreduce.KuduTableMapReduceUtil;
 
 /**
  * Map-only job that reads CSV files and inserts them into a single Kudu table.
@@ -36,7 +38,7 @@ import java.io.IOException;
 @InterfaceStability.Unstable
 public class ImportCsv extends Configured implements Tool {
 
-  public static enum Counters { BAD_LINES };
+  public static enum Counters { BAD_LINES }
 
   static final String NAME = "importcsv";
   static final String DEFAULT_SEPARATOR = "\t";

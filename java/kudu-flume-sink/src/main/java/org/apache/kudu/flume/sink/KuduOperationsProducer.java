@@ -16,16 +16,18 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.kudu.flume.sink;
+
+import java.util.List;
 
 import org.apache.flume.Event;
 import org.apache.flume.conf.Configurable;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
-
-import java.util.List;
 
 /**
  * Interface for an operations producer that produces Kudu Operations from
@@ -42,8 +44,7 @@ public interface KuduOperationsProducer extends Configurable, AutoCloseable {
   void initialize(KuduTable table);
 
   /**
-   * Returns the operations that should be written to Kudu as a result of this
-   * event.
+   * Returns the operations that should be written to Kudu as a result of this event.
    * @return List of {@link org.apache.kudu.client.Operation} that
    * should be written to Kudu
    */

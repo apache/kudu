@@ -13,20 +13,6 @@
  */
 package org.apache.kudu.client;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Splitter;
-import com.google.common.base.Stopwatch;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.common.net.HostAndPort;
-
-import org.apache.commons.io.FileUtils;
-import org.apache.kudu.util.NetUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStream;
@@ -38,6 +24,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
+import com.google.common.base.Splitter;
+import com.google.common.base.Stopwatch;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.net.HostAndPort;
+import org.apache.commons.io.FileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.util.NetUtil;
 
 /**
  * Utility class to start and manipulate Kudu clusters. Relies on being IN the Kudu source code with

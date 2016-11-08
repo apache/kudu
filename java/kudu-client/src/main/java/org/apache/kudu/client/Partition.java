@@ -14,14 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
 
-import com.google.common.base.Objects;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
+package org.apache.kudu.client;
 
 import java.util.Arrays;
 import java.util.List;
+
+import com.google.common.base.Objects;
+
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * A Partition describes the set of rows that a Tablet is responsible for
@@ -125,11 +127,15 @@ public class Partition implements Comparable<Partition> {
    */
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (o == null || getClass() != o.getClass()) return false;
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
     Partition partition = (Partition) o;
-    return Arrays.equals(partitionKeyStart, partition.partitionKeyStart)
-        && Arrays.equals(partitionKeyEnd, partition.partitionKeyEnd);
+    return Arrays.equals(partitionKeyStart, partition.partitionKeyStart) &&
+        Arrays.equals(partitionKeyEnd, partition.partitionKeyEnd);
   }
 
   /**

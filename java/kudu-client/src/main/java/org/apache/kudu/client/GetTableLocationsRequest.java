@@ -14,15 +14,17 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+import org.jboss.netty.buffer.ChannelBuffer;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
  * Package-private RPC that can only go to a master.
@@ -37,8 +39,8 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
   GetTableLocationsRequest(KuduTable table, byte[] startPartitionKey,
                            byte[] endPartitionKey, String tableId) {
     super(table);
-    if (startPartitionKey != null && endPartitionKey != null
-        && Bytes.memcmp(startPartitionKey, endPartitionKey) > 0) {
+    if (startPartitionKey != null && endPartitionKey != null &&
+        Bytes.memcmp(startPartitionKey, endPartitionKey) > 0) {
       throw new IllegalArgumentException(
           "The start partition key must be smaller or equal to the end partition key");
     }
@@ -48,7 +50,9 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
   }
 
   @Override
-  String serviceName() { return MASTER_SERVICE_NAME; }
+  String serviceName() {
+    return MASTER_SERVICE_NAME;
+  }
 
   @Override
   String method() {
@@ -71,8 +75,8 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
   ChannelBuffer serialize(Message header) {
     final Master.GetTableLocationsRequestPB.Builder builder = Master
         .GetTableLocationsRequestPB.newBuilder();
-    builder.setTable(Master.TableIdentifierPB.newBuilder().
-        setTableId(ByteString.copyFromUtf8(tableId)));
+    builder.setTable(Master.TableIdentifierPB.newBuilder()
+        .setTableId(ByteString.copyFromUtf8(tableId)));
     if (startPartitionKey != null) {
       builder.setPartitionKeyStart(ZeroCopyLiteralByteString.wrap(startPartitionKey));
     }

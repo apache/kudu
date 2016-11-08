@@ -16,13 +16,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kudu.annotations.tools;
 
-import com.sun.javadoc.DocErrorReporter;
+package org.apache.kudu.annotations.tools;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+
+import com.sun.javadoc.DocErrorReporter;
 
 class StabilityOptions {
   public static final String STABLE_OPTION = "-stable";
@@ -31,9 +32,11 @@ class StabilityOptions {
 
   public static Integer optionLength(String option) {
     String opt = option.toLowerCase(Locale.ENGLISH);
-    if (opt.equals(UNSTABLE_OPTION)) return 1;
-    if (opt.equals(EVOLVING_OPTION)) return 1;
-    if (opt.equals(STABLE_OPTION)) return 1;
+    if (opt.equals(UNSTABLE_OPTION) ||
+        opt.equals(EVOLVING_OPTION) ||
+        opt.equals(STABLE_OPTION)) {
+      return 1;
+    }
     return null;
   }
 
@@ -50,13 +53,13 @@ class StabilityOptions {
       }
     }
   }
-  
+
   public static String[][] filterOptions(String[][] options) {
     List<String[]> optionsList = new ArrayList<String[]>();
     for (int i = 0; i < options.length; i++) {
-      if (!options[i][0].equalsIgnoreCase(UNSTABLE_OPTION)
-          && !options[i][0].equalsIgnoreCase(EVOLVING_OPTION)
-          && !options[i][0].equalsIgnoreCase(STABLE_OPTION)) {
+      if (!options[i][0].equalsIgnoreCase(UNSTABLE_OPTION) &&
+          !options[i][0].equalsIgnoreCase(EVOLVING_OPTION) &&
+          !options[i][0].equalsIgnoreCase(STABLE_OPTION)) {
         optionsList.add(options[i]);
       }
     }

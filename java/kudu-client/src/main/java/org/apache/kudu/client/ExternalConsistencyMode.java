@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import org.apache.kudu.Common;
@@ -35,6 +36,7 @@ public enum ExternalConsistencyMode {
   private ExternalConsistencyMode(Common.ExternalConsistencyMode pbVersion) {
     this.pbVersion = pbVersion;
   }
+
   @InterfaceAudience.Private
   public Common.ExternalConsistencyMode pbVersion() {
     return pbVersion;

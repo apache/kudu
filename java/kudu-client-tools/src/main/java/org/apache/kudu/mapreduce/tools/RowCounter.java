@@ -14,13 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.mapreduce.tools;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
-import org.apache.kudu.mapreduce.CommandLineParser;
-import org.apache.kudu.mapreduce.KuduTableMapReduceUtil;
-import org.apache.kudu.client.RowResult;
+import java.io.IOException;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.io.NullWritable;
@@ -30,7 +28,11 @@ import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
-import java.io.IOException;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.RowResult;
+import org.apache.kudu.mapreduce.CommandLineParser;
+import org.apache.kudu.mapreduce.KuduTableMapReduceUtil;
 
 /**
  * Map-only job that counts all the rows in the provided table.
@@ -69,18 +71,15 @@ public class RowCounter extends Configured implements Tool {
   @SuppressWarnings("deprecation")
   public static Job createSubmittableJob(Configuration conf, String[] args)
       throws IOException, ClassNotFoundException {
-
-    String columnProjection = conf.get(COLUMN_PROJECTION_KEY);
-
-    Class<RowCounterMapper> mapperClass = RowCounterMapper.class;
     String tableName = args[0];
-
     String jobName = NAME + "_" + tableName;
     Job job = new Job(conf, jobName);
+    Class<RowCounterMapper> mapperClass = RowCounterMapper.class;
     job.setJarByClass(mapperClass);
     job.setMapperClass(mapperClass);
     job.setNumReduceTasks(0);
     job.setOutputFormatClass(NullOutputFormat.class);
+    String columnProjection = conf.get(COLUMN_PROJECTION_KEY);
     new KuduTableMapReduceUtil.TableInputFormatConfiguratorWithCommandLineParser(
         job,
         tableName,

@@ -14,7 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.util;
+
+import java.util.Arrays;
+import java.util.List;
+import javax.annotation.concurrent.NotThreadSafe;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -22,10 +27,6 @@ import com.google.common.io.BaseEncoding;
 import com.google.common.primitives.Bytes;
 
 import org.apache.kudu.annotations.InterfaceAudience;
-
-import java.util.Arrays;
-import java.util.List;
-import javax.annotation.concurrent.NotThreadSafe;
 
 /**
  * A vector of primitive bytes.
@@ -115,7 +116,9 @@ public final class ByteVec {
    */
   public void reserveAdditional(int additional) {
     Preconditions.checkArgument(additional >= 0, "negative additional");
-    if (data.length - len >= additional) return;
+    if (data.length - len >= additional) {
+      return;
+    }
     // Use a 1.5x growth factor. According to
     // https://stackoverflow.com/questions/1100311/what-is-the-ideal-growth-rate-for-a-dynamically-allocated-array
     // this is close to the ideal ratio, although it isn't clear if that holds
@@ -134,7 +137,9 @@ public final class ByteVec {
    */
   public void reserveExact(int additional) {
     Preconditions.checkArgument(additional >= 0, "negative additional");
-    if (data.length - len >= additional) return;
+    if (data.length - len >= additional) {
+      return;
+    }
     data = Arrays.copyOf(data, len + additional);
   }
 
@@ -142,7 +147,9 @@ public final class ByteVec {
    * Shrink the capacity of the vector to match the length.
    */
   public void shrinkToFit() {
-    if (len < data.length) data = Arrays.copyOf(data, len);
+    if (len < data.length) {
+      data = Arrays.copyOf(data, len);
+    }
   }
 
   /**
@@ -234,7 +241,9 @@ public final class ByteVec {
    */
   public List<Byte> asList() {
     List<Byte> list = Bytes.asList(data);
-    if (len < data.length) return list.subList(0, len);
+    if (len < data.length) {
+      return list.subList(0, len);
+    }
     return list;
   }
 
@@ -262,11 +271,21 @@ public final class ByteVec {
   /** {@inheritDoc} */
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (o == null || getClass() != o.getClass()) return false;
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
     ByteVec other = (ByteVec) o;
-    if (len != other.len) return false;
-    for (int i = 0; i < len; i++) if (data[i] != other.data[i]) return false;
+    if (len != other.len) {
+      return false;
+    }
+    for (int i = 0; i < len; i++) {
+      if (data[i] != other.data[i]) {
+        return false;
+      }
+    }
     return true;
   }
 
@@ -274,7 +293,9 @@ public final class ByteVec {
   @Override
   public int hashCode() {
     int result = len;
-    for (int i = 0; i < len; i++) result = 31 * result + data[i];
+    for (int i = 0; i < len; i++) {
+      result = 31 * result + data[i];
+    }
     return result;
   }
 

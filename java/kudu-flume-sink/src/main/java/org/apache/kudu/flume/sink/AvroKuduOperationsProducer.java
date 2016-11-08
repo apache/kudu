@@ -19,11 +19,6 @@
 
 package org.apache.kudu.flume.sink;
 
-import com.google.common.base.Preconditions;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
-import com.google.common.util.concurrent.UncheckedExecutionException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -33,6 +28,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+
+import com.google.common.base.Preconditions;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericRecord;
@@ -45,14 +46,16 @@ import org.apache.flume.FlumeException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.PartialRow;
 
 /**
- * <p>An Avro serializer that generates one operation per event by deserializing the event
+ * An Avro serializer that generates one operation per event by deserializing the event
  * body as an Avro record and mapping its fields to columns in a Kudu table.
+ *
  * <p><strong>Avro Kudu Operations Producer configuration parameters</strong>
  * <table cellpadding=3 cellspacing=0 border=1>
  * <tr><th>Property Name</th>
@@ -87,7 +90,7 @@ public class AvroKuduOperationsProducer implements KuduOperationsProducer {
   private String operation;
   private GenericRecord reuse;
   private KuduTable table;
-  private String defaultSchemaURL;
+  private String defaultSchemaUrl;
 
   /**
    * The binary decoder to reuse for event parsing.
@@ -157,7 +160,7 @@ public class AvroKuduOperationsProducer implements KuduOperationsProducer {
 
     String schemaPath = context.getString(SCHEMA_PROP);
     if (schemaPath != null) {
-      defaultSchemaURL = schemaPath;
+      defaultSchemaUrl = schemaPath;
     }
   }
 
@@ -250,26 +253,26 @@ public class AvroKuduOperationsProducer implements KuduOperationsProducer {
 
   private Schema getSchema(Event event) throws FlumeException {
     Map<String, String> headers = event.getHeaders();
-    String schemaURL = headers.get(SCHEMA_URL_HEADER);
+    String schemaUrl = headers.get(SCHEMA_URL_HEADER);
     String schemaLiteral = headers.get(SCHEMA_LITERAL_HEADER);
     try {
-      if (schemaURL != null) {
-        return schemasFromURL.get(schemaURL);
+      if (schemaUrl != null) {
+        return schemasFromURL.get(schemaUrl);
       } else if (schemaLiteral != null) {
         return schemasFromLiteral.get(schemaLiteral);
-      } else if (defaultSchemaURL != null) {
-        return schemasFromURL.get(defaultSchemaURL);
+      } else if (defaultSchemaUrl != null) {
+        return schemasFromURL.get(defaultSchemaUrl);
       } else {
         throw new FlumeException(
             String.format("No schema for event. " +
-                  "Specify configuration property '%s' or event header '%s'",
+                "Specify configuration property '%s' or event header '%s'",
                 SCHEMA_PROP,
                 SCHEMA_URL_HEADER));
       }
-    } catch (ExecutionException ex) {
-      throw new FlumeException("Cannot get schema", ex);
-    } catch (UncheckedExecutionException ex) {
-      throw new FlumeException("Cannot parse schema", ex);
+    } catch (ExecutionException e) {
+      throw new FlumeException("Cannot get schema", e);
+    } catch (UncheckedExecutionException e) {
+      throw new FlumeException("Cannot parse schema", e);
     }
   }
 

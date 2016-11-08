@@ -14,12 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.mapreduce;
+
+import org.apache.hadoop.conf.Configuration;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.AsyncKuduClient;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.kudu.client.KuduClient;
 
 /**
@@ -131,11 +133,11 @@ public class CommandLineParser {
   public static String getHelpSnippet() {
     return "\nAdditionally, the following options are available:" +
       "  -D" + OPERATION_TIMEOUT_MS_KEY + "=TIME - timeout for read and write " +
-          "operations, defaults to " + OPERATION_TIMEOUT_MS_DEFAULT + " \n"+
+          "operations, defaults to " + OPERATION_TIMEOUT_MS_DEFAULT + " \n" +
       "  -D" + ADMIN_OPERATION_TIMEOUT_MS_KEY + "=TIME - timeout for admin operations " +
-        ", defaults to " + OPERATION_TIMEOUT_MS_DEFAULT + " \n"+
+        ", defaults to " + OPERATION_TIMEOUT_MS_DEFAULT + " \n" +
       "  -D" + SOCKET_READ_TIMEOUT_MS_KEY + "=TIME - timeout for socket reads " +
-        ", defaults to " + SOCKET_READ_TIMEOUT_MS_DEFAULT + " \n"+
+        ", defaults to " + SOCKET_READ_TIMEOUT_MS_DEFAULT + " \n" +
       "  -D" + MASTER_ADDRESSES_KEY + "=ADDRESSES - addresses to reach the Masters, " +
         "defaults to " + MASTER_ADDRESSES_DEFAULT + " which is usually wrong.\n" +
       "  -D " + NUM_REPLICAS_KEY + "=NUM - number of replicas to use when configuring a new " +

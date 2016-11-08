@@ -14,22 +14,23 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.annotations.InterfaceAudience;
-
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.List;
 
 @InterfaceAudience.Private
 public class ProtobufHelper {
@@ -60,8 +61,8 @@ public class ProtobufHelper {
     return columnToPb(Common.ColumnSchemaPB.newBuilder(), column);
   }
 
-  public static Common.ColumnSchemaPB
-  columnToPb(Common.ColumnSchemaPB.Builder schemaBuilder, ColumnSchema column) {
+  public static Common.ColumnSchemaPB columnToPb(Common.ColumnSchemaPB.Builder schemaBuilder,
+                                                 ColumnSchema column) {
     schemaBuilder
         .setName(column.getName())
         .setType(column.getType().getDataType())
@@ -74,8 +75,10 @@ public class ProtobufHelper {
     if (column.getCompressionAlgorithm() != null) {
       schemaBuilder.setCompression(column.getCompressionAlgorithm().getInternalPbType());
     }
-    if (column.getDefaultValue() != null) schemaBuilder.setReadDefaultValue
-        (ZeroCopyLiteralByteString.wrap(objectToWireFormat(column, column.getDefaultValue())));
+    if (column.getDefaultValue() != null) {
+      schemaBuilder.setReadDefaultValue(ZeroCopyLiteralByteString.wrap(
+          objectToWireFormat(column, column.getDefaultValue())));
+    }
     return schemaBuilder.build();
   }
 
@@ -171,6 +174,8 @@ public class ProtobufHelper {
               String.format("Expected column ID from master: %s", column));
         case IDENTIFIER_NOT_SET:
           throw new IllegalArgumentException("Unknown column: " + column);
+        default:
+          throw new IllegalArgumentException("Unknown identifier type!");
       }
     }
     return columnIds.build();
@@ -231,7 +236,8 @@ public class ProtobufHelper {
   }
 
   /**
-   * Convert a {@link com.google.common.net.HostAndPort} to {@link org.apache.kudu.Common.HostPortPB}
+   * Convert a {@link com.google.common.net.HostAndPort} to
+   *     {@link org.apache.kudu.Common.HostPortPB}
    * protobuf message for serialization.
    * @param hostAndPort The host and port object. Both host and port must be specified.
    * @return An initialized HostPortPB object.
@@ -244,7 +250,8 @@ public class ProtobufHelper {
   }
 
   /**
-   * Convert a {@link org.apache.kudu.Common.HostPortPB} to {@link com.google.common.net.HostAndPort}.
+   * Convert a {@link org.apache.kudu.Common.HostPortPB} to
+   *     {@link com.google.common.net.HostAndPort}.
    * @param hostPortPB The fully initialized HostPortPB object. Must have both host and port
    *                   specified.
    * @return An initialized initialized HostAndPort object.

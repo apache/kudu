@@ -16,14 +16,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kudu.client;
 
-import com.google.protobuf.CodedOutputStream;
-import com.google.protobuf.Message;
-import org.apache.kudu.annotations.InterfaceAudience;
+package org.apache.kudu.client;
 
 import java.io.IOException;
 import java.io.OutputStream;
+
+import com.google.protobuf.CodedOutputStream;
+import com.google.protobuf.Message;
+
+import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
  * Helper methods for RPCs.
@@ -53,7 +55,9 @@ public class IPCUtil {
     // I confirmed toBytes does same as say DataOutputStream#writeInt.
     dos.write(toBytes(totalSize));
     header.writeDelimitedTo(dos);
-    if (param != null) param.writeDelimitedTo(dos);
+    if (param != null) {
+      param.writeDelimitedTo(dos);
+    }
     dos.flush();
     return totalSize;
   }
@@ -64,7 +68,9 @@ public class IPCUtil {
   public static int getTotalSizeWhenWrittenDelimited(Message ... messages) {
     int totalSize = 0;
     for (Message m: messages) {
-      if (m == null) continue;
+      if (m == null) {
+        continue;
+      }
       totalSize += m.getSerializedSize();
       totalSize += CodedOutputStream.computeRawVarint32Size(m.getSerializedSize());
     }
@@ -73,7 +79,7 @@ public class IPCUtil {
 
   public static byte[] toBytes(int val) {
     byte [] b = new byte[4];
-    for(int i = 3; i > 0; i--) {
+    for (int i = 3; i > 0; i--) {
       b[i] = (byte) val;
       val >>>= 8;
     }

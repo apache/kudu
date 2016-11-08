@@ -16,25 +16,27 @@
 // under the License.
 package org.apache.kudu.client;
 
-import com.google.common.base.Charsets;
-import com.google.common.base.Stopwatch;
-import com.google.protobuf.ByteString;
-import com.stumbleupon.async.Deferred;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.kudu.util.Pair;
+import com.google.common.base.Charsets;
+import com.google.common.base.Stopwatch;
+import com.google.protobuf.ByteString;
+import com.stumbleupon.async.Deferred;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.apache.kudu.Common;
-import org.apache.kudu.consensus.Metadata;
-import org.apache.kudu.master.Master;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.junit.Assert.*;
+import org.apache.kudu.Common;
+import org.apache.kudu.consensus.Metadata;
+import org.apache.kudu.master.Master;
 
 public class TestAsyncKuduClient extends BaseKuduTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestAsyncKuduClient.class);

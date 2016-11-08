@@ -19,10 +19,10 @@ package org.apache.kudu.spark.kudu
 import java.sql.Timestamp
 
 import org.apache.spark.sql.SQLContext
-import org.junit.runner.RunWith
-import org.scalatest.{FunSuite, Matchers}
-import org.scalatest.junit.JUnitRunner
 import org.apache.spark.sql.functions.decode
+import org.junit.runner.RunWith
+import org.scalatest.junit.JUnitRunner
+import org.scalatest.{FunSuite, Matchers}
 
 @RunWith(classOf[JUnitRunner])
 class KuduContextTest extends FunSuite with TestContext with Matchers {

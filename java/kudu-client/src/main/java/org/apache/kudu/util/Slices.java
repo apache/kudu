@@ -19,10 +19,8 @@
  * Copyright 2011 Dain Sundstrom <dain@iq80.com>
  * Copyright 2011 FuseSource Corp. http://fusesource.com
  */
-package org.apache.kudu.util;
 
-import com.google.common.base.Preconditions;
-import org.apache.kudu.annotations.InterfaceAudience;
+package org.apache.kudu.util;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -36,20 +34,20 @@ import java.nio.charset.CodingErrorAction;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
+import com.google.common.base.Preconditions;
+
+import org.apache.kudu.annotations.InterfaceAudience;
+
 @InterfaceAudience.Private
-public final class Slices
-{
+public final class Slices {
   /**
    * A buffer whose capacity is {@code 0}.
    */
   public static final Slice EMPTY_SLICE = new Slice(0);
 
-  private Slices()
-  {
-  }
+  private Slices() {}
 
-  public static Slice ensureSize(Slice existingSlice, int minWritableBytes)
-  {
+  public static Slice ensureSize(Slice existingSlice, int minWritableBytes) {
     if (existingSlice == null) {
       existingSlice = EMPTY_SLICE;
     }
@@ -61,8 +59,7 @@ public final class Slices
     int newCapacity;
     if (existingSlice.length() == 0) {
       newCapacity = 1;
-    }
-    else {
+    } else {
       newCapacity = existingSlice.length();
     }
     int minNewCapacity = existingSlice.length() + minWritableBytes;
@@ -75,47 +72,42 @@ public final class Slices
     return newSlice;
   }
 
-  public static Slice allocate(int capacity)
-  {
+  public static Slice allocate(int capacity) {
     if (capacity == 0) {
       return EMPTY_SLICE;
     }
     return new Slice(capacity);
   }
 
-  public static Slice wrappedBuffer(byte[] array)
-  {
+  public static Slice wrappedBuffer(byte[] array) {
     if (array.length == 0) {
       return EMPTY_SLICE;
     }
     return new Slice(array);
   }
 
-  public static Slice copiedBuffer(ByteBuffer source, int sourceOffset, int length)
-  {
+  public static Slice copiedBuffer(ByteBuffer source, int sourceOffset, int length) {
     Preconditions.checkNotNull(source, "source is null");
     int newPosition = source.position() + sourceOffset;
-    return copiedBuffer((ByteBuffer) source.duplicate().order(ByteOrder.LITTLE_ENDIAN).clear().limit(newPosition + length).position(newPosition));
+    return copiedBuffer((ByteBuffer) source.duplicate().order(ByteOrder.LITTLE_ENDIAN).clear()
+        .limit(newPosition + length).position(newPosition));
   }
 
-  public static Slice copiedBuffer(ByteBuffer source)
-  {
+  public static Slice copiedBuffer(ByteBuffer source) {
     Preconditions.checkNotNull(source, "source is null");
     Slice copy = allocate(source.limit() - source.position());
     copy.setBytes(0, source.duplicate().order(ByteOrder.LITTLE_ENDIAN));
     return copy;
   }
 
-  public static Slice copiedBuffer(String string, Charset charset)
-  {
+  public static Slice copiedBuffer(String string, Charset charset) {
     Preconditions.checkNotNull(string, "string is null");
     Preconditions.checkNotNull(charset, "charset is null");
 
     return wrappedBuffer(string.getBytes(charset));
   }
 
-  public static ByteBuffer encodeString(CharBuffer src, Charset charset)
-  {
+  public static ByteBuffer encodeString(CharBuffer src, Charset charset) {
     final CharsetEncoder encoder = getEncoder(charset);
     final ByteBuffer dst = ByteBuffer.allocate(
         (int) ((double) src.remaining() * encoder.maxBytesPerChar()));
@@ -128,16 +120,14 @@ public final class Slices
       if (!cr.isUnderflow()) {
         cr.throwException();
       }
-    }
-    catch (CharacterCodingException x) {
+    } catch (CharacterCodingException x) {
       throw new IllegalStateException(x);
     }
     dst.flip();
     return dst;
   }
 
-  public static String decodeString(ByteBuffer src, Charset charset)
-  {
+  public static String decodeString(ByteBuffer src, Charset charset) {
     final CharsetDecoder decoder = getDecoder(charset);
     final CharBuffer dst = CharBuffer.allocate(
         (int) ((double) src.remaining() * decoder.maxCharsPerByte()));
@@ -150,8 +140,7 @@ public final class Slices
       if (!cr.isUnderflow()) {
         cr.throwException();
       }
-    }
-    catch (CharacterCodingException x) {
+    } catch (CharacterCodingException x) {
       throw new IllegalStateException(x);
     }
     return dst.flip().toString();
@@ -160,16 +149,14 @@ public final class Slices
   /**
    * Toggles the endianness of the specified 16-bit short integer.
    */
-  public static short swapShort(short value)
-  {
+  public static short swapShort(short value) {
     return (short) (value << 8 | value >>> 8 & 0xff);
   }
 
   /**
    * Toggles the endianness of the specified 32-bit integer.
    */
-  public static int swapInt(int value)
-  {
+  public static int swapInt(int value) {
     return swapShort((short) value) << 16 |
         swapShort((short) (value >>> 16)) & 0xffff;
   }
@@ -177,28 +164,23 @@ public final class Slices
   /**
    * Toggles the endianness of the specified 64-bit long integer.
    */
-  public static long swapLong(long value)
-  {
+  public static long swapLong(long value) {
     return (long) swapInt((int) value) << 32 |
         swapInt((int) (value >>> 32)) & 0xffffffffL;
   }
 
   private static final ThreadLocal<Map<Charset, CharsetEncoder>> encoders =
-      new ThreadLocal<Map<Charset, CharsetEncoder>>()
-      {
+      new ThreadLocal<Map<Charset, CharsetEncoder>>() {
         @Override
-        protected Map<Charset, CharsetEncoder> initialValue()
-        {
+        protected Map<Charset, CharsetEncoder> initialValue() {
           return new IdentityHashMap<Charset, CharsetEncoder>();
         }
       };
 
   private static final ThreadLocal<Map<Charset, CharsetDecoder>> decoders =
-      new ThreadLocal<Map<Charset, CharsetDecoder>>()
-      {
+      new ThreadLocal<Map<Charset, CharsetDecoder>>() {
         @Override
-        protected Map<Charset, CharsetDecoder> initialValue()
-        {
+        protected Map<Charset, CharsetDecoder> initialValue() {
           return new IdentityHashMap<Charset, CharsetDecoder>();
         }
       };
@@ -207,8 +189,7 @@ public final class Slices
    * Returns a cached thread-local {@link CharsetEncoder} for the specified
    * <tt>charset</tt>.
    */
-  private static CharsetEncoder getEncoder(Charset charset)
-  {
+  private static CharsetEncoder getEncoder(Charset charset) {
     if (charset == null) {
       throw new NullPointerException("charset");
     }
@@ -234,8 +215,7 @@ public final class Slices
    * Returns a cached thread-local {@link CharsetDecoder} for the specified
    * <tt>charset</tt>.
    */
-  private static CharsetDecoder getDecoder(Charset charset)
-  {
+  private static CharsetDecoder getDecoder(Charset charset) {
     if (charset == null) {
       throw new NullPointerException("charset");
     }

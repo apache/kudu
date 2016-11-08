@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.util;
 
 import com.stumbleupon.async.Callback;
@@ -42,9 +43,9 @@ public class AsyncUtil {
    */
   @SuppressWarnings("unchecked")
   public static <T, R, D extends Deferred<R>, E>
-  Deferred<R> addCallbacksDeferring(final Deferred<T> d,
-                                    final Callback<D, T> cb,
-                                    final Callback<D, E> eb) {
+      Deferred<R> addCallbacksDeferring(final Deferred<T> d,
+                                        final Callback<D, T> cb,
+                                        final Callback<D, E> eb) {
     return d.addCallbacks((Callback<R, T>) cb, eb);
   }
 

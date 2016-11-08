@@ -14,7 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.util;
+
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.net.UnknownHostException;
+import java.util.List;
 
 import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
@@ -22,15 +29,10 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.net.SocketException;
-import java.net.UnknownHostException;
-import java.util.List;
+import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
  * Networking related methods.
@@ -125,6 +127,7 @@ public class NetUtil {
       try {
         local = NetworkInterface.getByInetAddress(addr) != null;
       } catch (SocketException e) {
+        // Pass.
       }
     }
     return local;

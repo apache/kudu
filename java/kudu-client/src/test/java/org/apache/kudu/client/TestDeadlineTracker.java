@@ -16,13 +16,15 @@
 // under the License.
 package org.apache.kudu.client;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.base.Ticker;
 import org.junit.Test;
-
-import java.util.concurrent.atomic.AtomicLong;
 
 public class TestDeadlineTracker {
 

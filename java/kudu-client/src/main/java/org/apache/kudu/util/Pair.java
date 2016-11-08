@@ -14,9 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.util;
 
 import com.google.common.base.Objects;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 
 @InterfaceAudience.Private
@@ -39,13 +41,21 @@ public class Pair<A, B> {
 
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (o == null || getClass() != o.getClass()) return false;
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
 
     Pair<?, ?> pair = (Pair<?, ?>) o;
 
-    if (first != null ? !first.equals(pair.first) : pair.first != null) return false;
-    if (second != null ? !second.equals(pair.second) : pair.second != null) return false;
+    if (first != null ? !first.equals(pair.first) : pair.first != null) {
+      return false;
+    }
+    if (second != null ? !second.equals(pair.second) : pair.second != null) {
+      return false;
+    }
 
     return true;
   }

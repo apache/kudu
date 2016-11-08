@@ -14,18 +14,20 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
 
-import com.google.protobuf.InvalidProtocolBufferException;
-import com.google.protobuf.ZeroCopyLiteralByteString;
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Type;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.tserver.Tserver;
+package org.apache.kudu.client;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+
+import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.ZeroCopyLiteralByteString;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Type;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.tserver.Tserver;
 
 /**
  * A range predicate on one of the columns in the underlying data.
@@ -71,18 +73,29 @@ public class ColumnRangePredicate {
   private static KuduPredicate toKuduPredicate(ColumnSchema column,
                                                KuduPredicate.ComparisonOp op,
                                                byte[] bound) {
-    if (bound == null) { return null; }
+    if (bound == null) {
+      return null;
+    }
     switch (column.getType().getDataType()) {
-      case BOOL: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getBoolean(bound));
-      case INT8: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getByte(bound));
-      case INT16: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getShort(bound));
-      case INT32: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getInt(bound));
+      case BOOL:
+        return KuduPredicate.newComparisonPredicate(column, op, Bytes.getBoolean(bound));
+      case INT8:
+        return KuduPredicate.newComparisonPredicate(column, op, Bytes.getByte(bound));
+      case INT16:
+        return KuduPredicate.newComparisonPredicate(column, op, Bytes.getShort(bound));
+      case INT32:
+        return KuduPredicate.newComparisonPredicate(column, op, Bytes.getInt(bound));
       case INT64:
-      case UNIXTIME_MICROS: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getLong(bound));
-      case FLOAT: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getFloat(bound));
-      case DOUBLE: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getDouble(bound));
-      case STRING: return KuduPredicate.newComparisonPredicate(column, op, Bytes.getString(bound));
-      case BINARY: return KuduPredicate.newComparisonPredicate(column, op, bound);
+      case UNIXTIME_MICROS:
+        return KuduPredicate.newComparisonPredicate(column, op, Bytes.getLong(bound));
+      case FLOAT:
+        return KuduPredicate.newComparisonPredicate(column, op, Bytes.getFloat(bound));
+      case DOUBLE:
+        return KuduPredicate.newComparisonPredicate(column, op, Bytes.getDouble(bound));
+      case STRING:
+        return KuduPredicate.newComparisonPredicate(column, op, Bytes.getString(bound));
+      case BINARY:
+        return KuduPredicate.newComparisonPredicate(column, op, bound);
       default:
         throw new IllegalStateException(String.format("unknown column type %s", column.getType()));
     }
@@ -372,14 +385,16 @@ public class ColumnRangePredicate {
     } catch (InvalidProtocolBufferException e) {
       // We shade our pb dependency so we can't send out the exception above since other modules
       // won't know what to expect.
-      throw new IllegalArgumentException("Encountered an invalid column range predicate list: "
-          + Bytes.pretty(listBytes), e);
+      throw new IllegalArgumentException("Encountered an invalid column range predicate list: " +
+          Bytes.pretty(listBytes), e);
     }
   }
 
   private void checkColumn(Type... passedTypes) {
     for (Type type : passedTypes) {
-      if (this.column.getType().equals(type)) return;
+      if (this.column.getType().equals(type)) {
+        return;
+      }
     }
     throw new IllegalArgumentException(String.format("%s's type isn't %s, it's %s",
         column.getName(), Arrays.toString(passedTypes), column.getType().getName()));

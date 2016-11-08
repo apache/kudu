@@ -19,7 +19,6 @@ package org.apache.kudu.client;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import com.stumbleupon.async.TimeoutException;
 import org.junit.Test;
 
 public class TestTimeouts extends BaseKuduTest {

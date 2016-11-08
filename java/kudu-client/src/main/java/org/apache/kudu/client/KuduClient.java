@@ -14,19 +14,20 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
-
-import com.stumbleupon.async.Deferred;
-import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
+
+import com.stumbleupon.async.Deferred;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.Schema;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * A synchronous and thread-safe client for Kudu.
@@ -285,7 +286,7 @@ public class KuduClient implements AutoCloseable {
    */
   @InterfaceAudience.Public
   @InterfaceStability.Evolving
-  public final static class KuduClientBuilder {
+  public static final class KuduClientBuilder {
     private AsyncKuduClient.AsyncKuduClientBuilder clientBuilder;
 
     /**

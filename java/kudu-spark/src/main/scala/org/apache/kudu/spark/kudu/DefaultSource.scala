@@ -19,16 +19,17 @@ package org.apache.kudu.spark.kudu
 
 import java.sql.Timestamp
 
+import scala.collection.JavaConverters._
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SaveMode, SQLContext}
+import org.apache.spark.sql.{DataFrame, Row, SQLContext, SaveMode}
+
 import org.apache.kudu.Type
 import org.apache.kudu.annotations.InterfaceStability
-import org.apache.kudu.client._
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
-
-import scala.collection.JavaConverters._
+import org.apache.kudu.client._
 
 /**
   * Data source for integration with Spark's [[DataFrame]] API.

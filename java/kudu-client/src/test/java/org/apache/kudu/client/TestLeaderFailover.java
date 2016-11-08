@@ -16,10 +16,11 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
+
 import org.junit.BeforeClass;
 import org.junit.Test;
-
-import static org.junit.Assert.*;
 
 public class TestLeaderFailover extends BaseKuduTest {
 

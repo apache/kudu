@@ -14,15 +14,17 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.mapreduce;
+
+import org.apache.hadoop.mapreduce.Reducer;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.Operation;
-import org.apache.hadoop.mapreduce.Reducer;
 
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public abstract class TableReducer<KEYIN, VALUEIN, KEYOUT>
-    extends Reducer<KEYIN, VALUEIN, KEYOUT, Operation> {
+public abstract class TableReducer<KeyinT, ValueinT, KeyoutT>
+    extends Reducer<KeyinT, ValueinT, KeyoutT, Operation> {
 }

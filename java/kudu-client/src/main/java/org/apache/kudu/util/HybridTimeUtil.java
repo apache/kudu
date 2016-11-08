@@ -14,11 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.util;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-
 import java.util.concurrent.TimeUnit;
+
+import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
  * Set of common utility methods to handle HybridTime and related timestamps.
@@ -51,7 +52,9 @@ public class HybridTimeUtil {
    * @param htTimestamp the encoded HT timestamp
    * @return a pair of {physical, logical} long values in an array
    */
+  //CHECKSTYLE:OFF
   public static long[] HTTimestampToPhysicalAndLogical(long htTimestamp) {
+    //CHECKSTYLE:ON
     long timestampInMicros = htTimestamp >> hybridTimeNumBitsToShift;
     long logicalValues = htTimestamp & hybridTimeLogicalBitsMask;
     return new long[] {timestampInMicros, logicalValues};

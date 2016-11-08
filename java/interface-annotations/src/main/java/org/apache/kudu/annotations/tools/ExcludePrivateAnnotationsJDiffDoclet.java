@@ -16,13 +16,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.kudu.annotations.tools;
 
 import com.sun.javadoc.DocErrorReporter;
 import com.sun.javadoc.LanguageVersion;
 import com.sun.javadoc.RootDoc;
-
 import jdiff.JDiff;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
@@ -33,17 +34,17 @@ import org.apache.kudu.annotations.InterfaceAudience;
  * It delegates to the JDiff Doclet, and takes the same options.
  */
 public class ExcludePrivateAnnotationsJDiffDoclet {
-  
+
   public static LanguageVersion languageVersion() {
     return LanguageVersion.JAVA_1_5;
   }
-  
+
   public static boolean start(RootDoc root) {
     System.out.println(
         ExcludePrivateAnnotationsJDiffDoclet.class.getSimpleName());
     return JDiff.start(RootDocProcessor.process(root));
   }
-  
+
   public static int optionLength(String option) {
     Integer length = StabilityOptions.optionLength(option);
     if (length != null) {
@@ -51,7 +52,7 @@ public class ExcludePrivateAnnotationsJDiffDoclet {
     }
     return JDiff.optionLength(option);
   }
-  
+
   public static boolean validOptions(String[][] options,
       DocErrorReporter reporter) {
     StabilityOptions.validOptions(options, reporter);

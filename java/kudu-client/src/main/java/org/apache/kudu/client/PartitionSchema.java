@@ -14,13 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
+
+import java.util.List;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
-
-import java.util.List;
 
 /**
  * A partition schema describes how the rows of a table are distributed among
@@ -60,8 +61,8 @@ public class PartitionSchema {
     this.rangeSchema = rangeSchema;
     this.hashBucketSchemas = hashBucketSchemas;
 
-    boolean isSimple = hashBucketSchemas.isEmpty()
-        && rangeSchema.columns.size() == schema.getPrimaryKeyColumnCount();
+    boolean isSimple = hashBucketSchemas.isEmpty() &&
+        rangeSchema.columns.size() == schema.getPrimaryKeyColumnCount();
     if (isSimple) {
       int i = 0;
       for (Integer id : rangeSchema.columns) {

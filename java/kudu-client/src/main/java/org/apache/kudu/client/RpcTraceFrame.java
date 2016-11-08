@@ -14,12 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
-import com.google.common.base.MoreObjects;
-import org.apache.kudu.annotations.InterfaceAudience;
-
 import java.util.List;
+
+import com.google.common.base.MoreObjects;
+
+import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
  * Container class for traces. Most of its properties can be null, when they aren't set via the

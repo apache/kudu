@@ -14,14 +14,15 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.tserver.Tserver;
-
-import java.util.ArrayList;
-import java.util.List;
 
 @InterfaceAudience.Public
 @InterfaceStability.Evolving

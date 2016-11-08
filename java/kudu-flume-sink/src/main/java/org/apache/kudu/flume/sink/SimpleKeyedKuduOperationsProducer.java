@@ -19,20 +19,21 @@
 
 package org.apache.kudu.flume.sink;
 
-import org.apache.flume.Context;
-import org.apache.flume.Event;
-import org.apache.flume.FlumeException;
-import org.apache.kudu.client.Insert;
-import org.apache.kudu.client.Upsert;
-import org.apache.kudu.client.KuduTable;
-import org.apache.kudu.client.Operation;
-import org.apache.kudu.client.PartialRow;
-
 import java.util.Collections;
 import java.util.List;
 
+import org.apache.flume.Context;
+import org.apache.flume.Event;
+import org.apache.flume.FlumeException;
+
+import org.apache.kudu.client.Insert;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.Operation;
+import org.apache.kudu.client.PartialRow;
+import org.apache.kudu.client.Upsert;
+
 /**
- * <p>A simple serializer that generates one {@link Insert} or {@link Upsert}
+ * A simple serializer that generates one {@link Insert} or {@link Upsert}
  * per {@link Event} by writing the event body into a BINARY column. The pair
  * (key column name, key column value) should be a header in the {@link Event};
  * the column name is configurable but the column type must be STRING. Multiple
@@ -121,7 +122,7 @@ public class SimpleKeyedKuduOperationsProducer implements KuduOperationsProducer
       row.addBinary(payloadColumn, event.getBody());
 
       return Collections.singletonList(op);
-    } catch (Exception e){
+    } catch (Exception e) {
       throw new FlumeException("Failed to create Kudu Operation object", e);
     }
   }

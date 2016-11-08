@@ -16,18 +16,6 @@
 // under the License.
 package org.apache.kudu.client;
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
-import com.google.protobuf.ByteString;
-import com.sun.security.auth.module.UnixSystem;
-import org.apache.kudu.Common;
-import org.apache.kudu.consensus.Metadata;
-import org.apache.kudu.master.Master;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import sun.management.VMManagement;
-
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -47,6 +35,19 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Set;
+
+import com.google.common.base.Joiner;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
+import com.google.protobuf.ByteString;
+import com.sun.security.auth.module.UnixSystem;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import sun.management.VMManagement;
+
+import org.apache.kudu.Common;
+import org.apache.kudu.consensus.Metadata;
+import org.apache.kudu.master.Master;
 
 /**
  * A grouping of methods that help unit testing.

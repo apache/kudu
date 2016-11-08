@@ -14,18 +14,20 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu;
 
-import com.google.common.collect.ImmutableList;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
-import org.apache.kudu.client.Bytes;
-import org.apache.kudu.client.PartialRow;
+package org.apache.kudu;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import com.google.common.collect.ImmutableList;
+
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.Bytes;
+import org.apache.kudu.client.PartialRow;
 
 /**
  * Represents table's schema which is essentially a list of columns.
@@ -158,6 +160,24 @@ public class Schema {
   }
 
   /**
+   * Gives the size in bytes for a single row given the specified schema
+   * @param columns the row's columns
+   * @return row size in bytes
+   */
+  private static int getRowSize(List<ColumnSchema> columns) {
+    int totalSize = 0;
+    boolean hasNullables = false;
+    for (ColumnSchema column : columns) {
+      totalSize += column.getType().getSize();
+      hasNullables |= column.isNullable();
+    }
+    if (hasNullables) {
+      totalSize += Bytes.getBitSetSize(columns.size());
+    }
+    return totalSize;
+  }
+
+  /**
    * Get the index at which this column can be found in the backing byte array
    * @param idx column's index
    * @return column's offset
@@ -181,26 +201,30 @@ public class Schema {
   }
 
   /**
-   * Get the column at the specified index in the original list
-   * @param idx column's index
-   * @return the column
-   */
-  public ColumnSchema getColumnByIndex(int idx) {
-    return this.columnsByIndex.get(idx);
-  }
-
-  /**
    * Get the column index of the column with the provided ID.
    * This method is not part of the stable API.
    * @param columnId the column id of the column
    * @return the column index of the column.
    */
   public int getColumnIndex(int columnId) {
-    if (!hasColumnIds()) throw new IllegalStateException("Schema does not have Column IDs");
+    if (!hasColumnIds()) {
+      throw new IllegalStateException("Schema does not have Column IDs");
+    }
     Integer index = this.columnsById.get(columnId);
-    if (index == null) throw new IllegalArgumentException(
-        String.format("Unknown column id: %s", columnId));
+    if (index == null) {
+      throw new IllegalArgumentException(
+          String.format("Unknown column id: %s", columnId));
+    }
     return index;
+  }
+
+  /**
+   * Get the column at the specified index in the original list
+   * @param idx column's index
+   * @return the column
+   */
+  public ColumnSchema getColumnByIndex(int idx) {
+    return this.columnsByIndex.get(idx);
   }
 
   /**
@@ -261,24 +285,6 @@ public class Schema {
    */
   public boolean hasColumnIds() {
     return columnsById != null;
-  }
-
-  /**
-   * Gives the size in bytes for a single row given the specified schema
-   * @param columns the row's columns
-   * @return row size in bytes
-   */
-  private static int getRowSize(List<ColumnSchema> columns) {
-    int totalSize = 0;
-    boolean hasNullables = false;
-    for (ColumnSchema column : columns) {
-      totalSize += column.getType().getSize();
-      hasNullables |= column.isNullable();
-    }
-    if (hasNullables) {
-      totalSize += Bytes.getBitSetSize(columns.size());
-    }
-    return totalSize;
   }
 
   /**

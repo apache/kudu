@@ -23,15 +23,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-package org.apache.kudu.client;
 
-import com.google.common.io.BaseEncoding;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ZeroCopyLiteralByteString;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.util.Slice;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.util.CharsetUtil;
+package org.apache.kudu.client;
 
 import java.io.DataInput;
 import java.io.DataOutput;
@@ -44,6 +37,15 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Comparator;
+
+import com.google.common.io.BaseEncoding;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.ZeroCopyLiteralByteString;
+import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.util.CharsetUtil;
+
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.util.Slice;
 
 /**
  * Helper functions to manipulate byte arrays.
@@ -288,10 +290,10 @@ public final class Bytes {
    * @throws IndexOutOfBoundsException if the byte array is too small.
    */
   public static int getInt(final byte[] b, final int offset) {
-    return (b[offset + 0] & 0xFF) << 0
-        | (b[offset + 1] & 0xFF) << 8
-        | (b[offset + 2] & 0xFF) << 16
-        | (b[offset + 3] & 0xFF) << 24;
+    return (b[offset + 0] & 0xFF) << 0 |
+        (b[offset + 1] & 0xFF) << 8 |
+        (b[offset + 2] & 0xFF) << 16 |
+        (b[offset + 3] & 0xFF) << 24;
   }
 
   /**
@@ -366,27 +368,27 @@ public final class Bytes {
   }
 
   public static void putVarInt32(final ByteBuffer b, final int v) {
-    int B = 128;
-    if (v < (1<<7)) {
+    int bee = 128;
+    if (v < (1 << 7)) {
       b.put((byte)v);
-    } else if (v < (1<<14)) {
-      b.put((byte)(v | B));
-      b.put((byte)((v>>7) | B));
-    } else if (v < (1<<21)) {
-      b.put((byte)(v | B));
-      b.put((byte)((v>>7) | B));
-      b.put((byte)(v>>14));
-    } else if (v < (1<<28)) {
-      b.put((byte)(v | B));
-      b.put((byte)((v>>7) | B));
-      b.put((byte)((v>>14) | B));
-      b.put((byte)(v>>21));
+    } else if (v < (1 << 14)) {
+      b.put((byte)(v | bee));
+      b.put((byte)((v >> 7) | bee));
+    } else if (v < (1 << 21)) {
+      b.put((byte)(v | bee));
+      b.put((byte)((v >> 7) | bee));
+      b.put((byte)(v >> 14));
+    } else if (v < (1 << 28)) {
+      b.put((byte)(v | bee));
+      b.put((byte)((v >> 7) | bee));
+      b.put((byte)((v >> 14) | bee));
+      b.put((byte)(v >> 21));
     } else {
-      b.put((byte)(v | B));
-      b.put((byte)((v>>7) | B));
-      b.put((byte)((v>>14) | B));
-      b.put((byte)((v>>21) | B));
-      b.put((byte)(v>>28));
+      b.put((byte)(v | bee));
+      b.put((byte)((v >> 7) | bee));
+      b.put((byte)((v >> 14) | bee));
+      b.put((byte)((v >> 21) | bee));
+      b.put((byte)(v >> 28));
     }
   }
 
@@ -421,14 +423,14 @@ public final class Bytes {
     if (b >= 0) {
       return result;
     }
-    throw new IllegalArgumentException("Not a 32 bit varint: " + result
-        + " (5th byte: " + b + ")");
+    throw new IllegalArgumentException("Not a 32 bit varint: " + result +
+        " (5th byte: " + b + ")");
   }
 
   public static byte[] fromBoolean(final boolean n) {
-     final byte[] b = new byte[1];
-     b[0] = (byte) (n ? 1 : 0);
-     return b;
+    final byte[] b = new byte[1];
+    b[0] = (byte) (n ? 1 : 0);
+    return b;
   }
 
   /**
@@ -472,7 +474,7 @@ public final class Bytes {
    */
   public static BigInteger getUnsignedLong(final byte[] b, final int offset) {
     long l = getLong(b, offset);
-    BigInteger bi = new BigInteger(l+"");
+    BigInteger bi = new BigInteger(l + "");
     if (bi.compareTo(BigInteger.ZERO) < 0) {
       bi = bi.add(TWO_COMPL_REF);
     }
@@ -497,14 +499,14 @@ public final class Bytes {
    * @throws IndexOutOfBoundsException if the byte array is too small.
    */
   public static long getLong(final byte[] b, final int offset) {
-    return (b[offset + 0] & 0xFFL) << 0
-        | (b[offset + 1] & 0xFFL) << 8
-        | (b[offset + 2] & 0xFFL) << 16
-        | (b[offset + 3] & 0xFFL) << 24
-        | (b[offset + 4] & 0xFFL) << 32
-        | (b[offset + 5] & 0xFFL) << 40
-        | (b[offset + 6] & 0xFFL) << 48
-        | (b[offset + 7] & 0xFFL) << 56;
+    return (b[offset + 0] & 0xFFL) << 0 |
+        (b[offset + 1] & 0xFFL) << 8 |
+        (b[offset + 2] & 0xFFL) << 16 |
+        (b[offset + 3] & 0xFFL) << 24 |
+        (b[offset + 4] & 0xFFL) << 32 |
+        (b[offset + 5] & 0xFFL) << 40 |
+        (b[offset + 6] & 0xFFL) << 48 |
+        (b[offset + 7] & 0xFFL) << 56;
   }
 
   /**
@@ -693,7 +695,7 @@ public final class Bytes {
   public static byte[] get(final ByteString buf) {
     return ZeroCopyLiteralByteString.zeroCopyGetBytes(buf);
   }
-
+  // CHECKSTYLE:OFF
   /** Transforms a string into an UTF-8 encoded byte array.  */
   public static byte[] UTF8(final String s) {
     return s.getBytes(CharsetUtil.UTF_8);
@@ -703,7 +705,7 @@ public final class Bytes {
   public static byte[] ISO88591(final String s) {
     return s.getBytes(CharsetUtil.ISO_8859_1);
   }
-
+  // CHECKSTYLE:ON
   // ---------------------------- //
   // Pretty-printing byte arrays. //
   // ---------------------------- //
@@ -792,6 +794,36 @@ public final class Bytes {
   }
 
   /**
+   * Pretty-prints all the bytes of a buffer into a human-readable string.
+   * @param buf The (possibly {@code null}) buffer to pretty-print.
+   * @return The buffer in a pretty-printed string.
+   */
+  public static String pretty(final ChannelBuffer buf) {
+    if (buf == null) {
+      return "null";
+    }
+    byte[] array;
+    try {
+      if (buf.getClass() != ReplayingDecoderBuffer) {
+        array = buf.array();
+      } else if (RDB_buf != null) {  // Netty 3.5.1 and above.
+        array = ((ChannelBuffer) RDB_buf.invoke(buf)).array();
+      } else {  // Netty 3.5.0 and before.
+        final ChannelBuffer wrapped_buf = (ChannelBuffer) RDB_buffer.get(buf);
+        array = wrapped_buf.array();
+      }
+    } catch (UnsupportedOperationException e) {
+      return "(failed to extract content of buffer of type " +
+          buf.getClass().getName() + ')';
+    } catch (IllegalAccessException e) {
+      throw new AssertionError("Should not happen: " + e);
+    } catch (InvocationTargetException e) {
+      throw new AssertionError("Should not happen: " + e);
+    }
+    return pretty(array);
+  }
+
+  /**
    * Convert a byte array to a hex encoded string.
    * @param bytes the bytes to encode
    * @return the hex encoded bytes
@@ -826,10 +858,11 @@ public final class Bytes {
   private static final Class<?> ReplayingDecoderBuffer;
   private static final Field RDB_buffer;  // For Netty 3.5.0 and before.
   private static final Method RDB_buf;    // For Netty 3.5.1 and above.
+
   static {
     try {
-      ReplayingDecoderBuffer = Class.forName("org.jboss.netty.handler.codec."
-          + "replay.ReplayingDecoderBuffer");
+      ReplayingDecoderBuffer = Class.forName("org.jboss.netty.handler.codec." +
+          "replay.ReplayingDecoderBuffer");
       Field field = null;
       try {
         field = ReplayingDecoderBuffer.getDeclaredField("buffer");
@@ -847,36 +880,6 @@ public final class Bytes {
     } catch (Exception e) {
       throw new RuntimeException("static initializer failed", e);
     }
-  }
-
-  /**
-   * Pretty-prints all the bytes of a buffer into a human-readable string.
-   * @param buf The (possibly {@code null}) buffer to pretty-print.
-   * @return The buffer in a pretty-printed string.
-   */
-  public static String pretty(final ChannelBuffer buf) {
-    if (buf == null) {
-      return "null";
-    }
-    byte[] array;
-    try {
-      if (buf.getClass() != ReplayingDecoderBuffer) {
-        array = buf.array();
-      } else if (RDB_buf != null) {  // Netty 3.5.1 and above.
-        array = ((ChannelBuffer) RDB_buf.invoke(buf)).array();
-      } else {  // Netty 3.5.0 and before.
-        final ChannelBuffer wrapped_buf = (ChannelBuffer) RDB_buffer.get(buf);
-        array = wrapped_buf.array();
-      }
-    } catch (UnsupportedOperationException e) {
-      return "(failed to extract content of buffer of type "
-          + buf.getClass().getName() + ')';
-    } catch (IllegalAccessException e) {
-      throw new AssertionError("Should not happen: " + e);
-    } catch (InvocationTargetException e) {
-      throw new AssertionError("Should not happen: " + e);
-    }
-    return pretty(array);
   }
 
   // ---------------------- //

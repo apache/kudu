@@ -14,15 +14,17 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu;
+
+import static org.apache.kudu.Common.DataType;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.common.primitives.Shorts;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
-
-import static org.apache.kudu.Common.DataType;
 
 /**
  * Describes all the types available to build table schemas.
@@ -31,16 +33,16 @@ import static org.apache.kudu.Common.DataType;
 @InterfaceStability.Evolving
 public enum Type {
 
-  INT8 (DataType.INT8, "int8"),
-  INT16 (DataType.INT16, "int16"),
-  INT32 (DataType.INT32, "int32"),
-  INT64 (DataType.INT64, "int64"),
-  BINARY (DataType.BINARY, "binary"),
-  STRING (DataType.STRING, "string"),
-  BOOL (DataType.BOOL, "bool"),
-  FLOAT (DataType.FLOAT, "float"),
-  DOUBLE (DataType.DOUBLE, "double"),
-  UNIXTIME_MICROS (DataType.UNIXTIME_MICROS, "unixtime_micros");
+  INT8(DataType.INT8, "int8"),
+  INT16(DataType.INT16, "int16"),
+  INT32(DataType.INT32, "int32"),
+  INT64(DataType.INT64, "int64"),
+  BINARY(DataType.BINARY, "binary"),
+  STRING(DataType.STRING, "string"),
+  BOOL(DataType.BOOL, "bool"),
+  FLOAT(DataType.FLOAT, "float"),
+  DOUBLE(DataType.DOUBLE, "double"),
+  UNIXTIME_MICROS(DataType.UNIXTIME_MICROS, "unixtime_micros");
 
   private final DataType dataType;
   private final String name;
@@ -94,15 +96,20 @@ public enum Type {
   static int getTypeSize(DataType type) {
     switch (type) {
       case STRING:
-      case BINARY: return 8 + 8; // offset then string length
+      case BINARY:
+        return 8 + 8; // offset then string length
       case BOOL:
-      case INT8: return 1;
-      case INT16: return Shorts.BYTES;
+      case INT8:
+        return 1;
+      case INT16:
+        return Shorts.BYTES;
       case INT32:
-      case FLOAT: return Ints.BYTES;
+      case FLOAT:
+        return Ints.BYTES;
       case INT64:
       case DOUBLE:
-      case UNIXTIME_MICROS: return Longs.BYTES;
+      case UNIXTIME_MICROS:
+        return Longs.BYTES;
       default: throw new IllegalArgumentException("The provided data type doesn't map" +
           " to know any known one.");
     }

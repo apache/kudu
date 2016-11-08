@@ -12,19 +12,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
+
 package org.apache.kudu.mapreduce.tools;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Schema;
-import org.apache.kudu.Type;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
-import org.apache.kudu.client.*;
-import org.apache.kudu.mapreduce.CommandLineParser;
-import org.apache.kudu.mapreduce.KuduTableMapReduceUtil;
-import org.apache.kudu.util.Pair;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.GnuParser;
 import org.apache.commons.cli.HelpFormatter;
@@ -60,18 +63,27 @@ import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
-import java.math.BigInteger;
-import java.security.SecureRandom;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Random;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.AbstractKuduScannerBuilder;
+import org.apache.kudu.client.Bytes;
+import org.apache.kudu.client.CreateTableOptions;
+import org.apache.kudu.client.KuduClient;
+import org.apache.kudu.client.KuduScanner;
+import org.apache.kudu.client.KuduSession;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.Operation;
+import org.apache.kudu.client.PartialRow;
+import org.apache.kudu.client.RowResult;
+import org.apache.kudu.client.RowResultIterator;
+import org.apache.kudu.client.SessionConfiguration;
+import org.apache.kudu.client.Update;
+import org.apache.kudu.mapreduce.CommandLineParser;
+import org.apache.kudu.mapreduce.KuduTableMapReduceUtil;
+import org.apache.kudu.util.Pair;
 
 /**
  * <p>
@@ -308,13 +320,16 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
    * Copied under the public domain from SquidLib.
    */
   private static class Xoroshiro128PlusRandom {
-    private long state0, state1;
+    private long state0;
+    private long state1;
+
     public Xoroshiro128PlusRandom() {
       this((long) (Math.random() * Long.MAX_VALUE));
     }
+
     public Xoroshiro128PlusRandom(long seed) {
-      long state = seed + 0x9E3779B97F4A7C15L,
-           z = state;
+      long state = seed + 0x9E3779B97F4A7C15L;
+      long z = state;
       z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
       z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
       state0 = z ^ (z >>> 31);
@@ -324,6 +339,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
       state1 = z ^ (z >>> 31);
     }
+
     public long nextLong() {
       final long s0 = state0;
       long s1 = state1;
@@ -335,8 +351,10 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       return result;
     }
+
     public void nextBytes(final byte[] bytes) {
-      int i = bytes.length, n = 0;
+      int i = bytes.length;
+      int n = 0;
       while (i != 0) {
         n = Math.min(i, 8);
         for (long bits = nextLong(); n-- != 0; bits >>>= 8) {
@@ -354,18 +372,22 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     private static final Log LOG = LogFactory.getLog(Generator.class);
 
     static class GeneratorInputFormat extends InputFormat<BytesWritable,NullWritable> {
+
       static class GeneratorInputSplit extends InputSplit implements Writable {
         @Override
         public long getLength() throws IOException, InterruptedException {
           return 1;
         }
+
         @Override
         public String[] getLocations() throws IOException, InterruptedException {
           return new String[0];
         }
+
         @Override
         public void readFields(DataInput arg0) throws IOException {
         }
+
         @Override
         public void write(DataOutput arg0) throws IOException {
         }
@@ -567,8 +589,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       private static <T> void circularLeftShift(T[] first) {
         T ez = first[0];
-        for (int i = 0; i < first.length - 1; i++)
+        for (int i = 0; i < first.length - 1; i++) {
           first[i] = first[i + 1];
+        }
         first[first.length - 1] = ez;
       }
 
@@ -635,6 +658,15 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       return run(numMappers, numNodes, numTablets, tmpOutput, width, wrapMultiplier);
     }
 
+    public int run(int numMappers, long numNodes, int numTablets, Path tmpOutput,
+                   Integer width, Integer wrapMultiplier) throws Exception {
+      int ret = runRandomInputGenerator(numMappers, numNodes, tmpOutput, width, wrapMultiplier);
+      if (ret > 0) {
+        return ret;
+      }
+      return runGenerator(numMappers, numNodes, numTablets, tmpOutput, width, wrapMultiplier);
+    }
+
     protected void createTables(int numTablets) throws Exception {
 
       createSchema(getTableName(getConf()), getTableSchema(), numTablets);
@@ -659,8 +691,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         if (numTablets > 1) {
           BigInteger min = BigInteger.valueOf(Long.MIN_VALUE);
           BigInteger max = BigInteger.valueOf(Long.MAX_VALUE);
-          BigInteger step = max.multiply(BigInteger.valueOf(2)).divide(BigInteger.valueOf
-              (numTablets));
+          BigInteger step = max.multiply(BigInteger.valueOf(2))
+              .divide(BigInteger.valueOf(numTablets));
           LOG.info(min.longValue());
           LOG.info(max.longValue());
           LOG.info(step.longValue());
@@ -683,8 +715,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     public int runRandomInputGenerator(int numMappers, long numNodes, Path tmpOutput,
                                        Integer width, Integer wrapMultiplier) throws Exception {
-      LOG.info("Running RandomInputGenerator with numMappers=" + numMappers
-          + ", numNodes=" + numNodes);
+      LOG.info("Running RandomInputGenerator with numMappers=" + numMappers +
+          ", numNodes=" + numNodes);
       Job job = new Job(getConf());
 
       job.setJobName("Random Input Generator");
@@ -709,7 +741,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     public int runGenerator(int numMappers, long numNodes, int numTablets, Path tmpOutput,
                             Integer width, Integer wrapMultiplier) throws Exception {
-      LOG.info("Running Generator with numMappers=" + numMappers +", numNodes=" + numNodes);
+      LOG.info("Running Generator with numMappers=" + numMappers + ", numNodes=" + numNodes);
       createTables(numTablets);
 
       Job job = new Job(getConf());
@@ -719,7 +751,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       job.setJarByClass(getClass());
 
       FileInputFormat.setInputPaths(job, tmpOutput);
-      job.setInputFormatClass(OneFilePerMapperSFIF.class);
+      job.setInputFormatClass(org.apache.kudu.mapreduce.tools.IntegrationTestBigLinkedList
+          .Generator.OneFilePerMapperSFIF.class);
       job.setOutputKeyClass(NullWritable.class);
       job.setOutputValueClass(NullWritable.class);
 
@@ -741,15 +774,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       boolean success = job.waitForCompletion(true);
 
       return success ? 0 : 1;
-    }
-
-    public int run(int numMappers, long numNodes, int numTablets, Path tmpOutput,
-                   Integer width, Integer wrapMultiplier) throws Exception {
-      int ret = runRandomInputGenerator(numMappers, numNodes, tmpOutput, width, wrapMultiplier);
-      if (ret > 0) {
-        return ret;
-      }
-      return runGenerator(numMappers, numNodes, numTablets, tmpOutput, width, wrapMultiplier);
     }
   }
 
@@ -861,7 +885,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     public int run(String[] args) throws Exception {
 
       if (args.length != 2) {
-        System.out.println("Usage : " + Verify.class.getSimpleName() + " <output dir> <num reducers>");
+        System.out.println("Usage : " + Verify.class.getSimpleName() +
+            " <output dir> <num reducers>");
         return 0;
       }
 
@@ -876,7 +901,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
 
     public int run(Path outputDir, int numReducers) throws Exception {
-      LOG.info("Running Verify with outputDir=" + outputDir +", numReducers=" + numReducers);
+      LOG.info("Running Verify with outputDir=" + outputDir + ", numReducers=" + numReducers);
 
       job = new Job(getConf());
 
@@ -927,8 +952,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       if (unreferenced.getValue() > 0) {
         boolean couldBeMultiRef = (multiref.getValue() == unreferenced.getValue());
-        LOG.error("Unreferenced nodes were not expected. Unreferenced count=" + unreferenced.getValue()
-            + (couldBeMultiRef ? "; could be due to duplicate random numbers" : ""));
+        LOG.error("Unreferenced nodes were not expected. Unreferenced count=" +
+            unreferenced.getValue() +
+            (couldBeMultiRef ? "; could be due to duplicate random numbers" : ""));
         success = false;
       }
 
@@ -975,8 +1001,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     FileSystem fs;
 
-    protected void runGenerator(int numMappers, long numNodes, int numTablets,
-                                String outputDir, Integer width, Integer wrapMultiplier) throws Exception {
+    protected void runGenerator(int numMappers, long numNodes,
+                                int numTablets, String outputDir,
+                                Integer width, Integer wrapMultiplier) throws Exception {
       Path outputPath = new Path(outputDir);
       UUID uuid = UUID.randomUUID(); //create a random UUID.
       Path generatorOutput = new Path(outputPath, uuid.toString());
@@ -1184,7 +1211,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
        * Schema we use when getting rows from the linked list, we only need the reference and
        * its update count.
        */
-      private final List<String> SCAN_COLUMN_NAMES = ImmutableList.of(
+      private static final List<String> SCAN_COLUMN_NAMES = ImmutableList.of(
           COLUMN_PREV_ONE, COLUMN_PREV_TWO, COLUMN_UPDATE_COUNT, COLUMN_CLIENT);
 
       private long numUpdatesPerMapper;
@@ -1308,7 +1335,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
        */
       private RowResult nextNode(long prevKeyOne, long prevKeyTwo) throws IOException {
         KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table)
-          .setProjectedColumnNames(SCAN_COLUMN_NAMES);
+            .setProjectedColumnNames(SCAN_COLUMN_NAMES);
 
         configureScannerForRandomRead(builder, table, prevKeyOne, prevKeyTwo);
 
@@ -1676,9 +1703,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       tool = new Updater();
     } else if (toRun.equals("Walker")) {
       tool = new Walker();
-    } /*else if (toRun.equals("Delete")) {
-      tool = new Delete();
-    }*/ else {
+    } else {
       usage();
       throw new RuntimeException("Unknown arg");
     }

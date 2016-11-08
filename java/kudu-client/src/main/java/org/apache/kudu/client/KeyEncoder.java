@@ -14,7 +14,15 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.UnsignedLongs;
@@ -27,13 +35,6 @@ import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 import org.apache.kudu.util.ByteVec;
 import org.apache.kudu.util.Pair;
-
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
 
 /**
  * Utility class for encoding rows into primary and partition keys.
@@ -102,7 +103,8 @@ class KeyEncoder {
    * @param rangeSchema the range partition schema
    * @return the encoded range partition key
    */
-  public static byte[] encodeRangePartitionKey(PartialRow row, PartitionSchema.RangeSchema rangeSchema) {
+  public static byte[] encodeRangePartitionKey(PartialRow row,
+                                               PartitionSchema.RangeSchema rangeSchema) {
     ByteVec buf = ByteVec.create();
     encodeColumns(row, rangeSchema.getColumns(), buf);
     return buf.toArray();
@@ -283,11 +285,19 @@ class KeyEncoder {
   private static void decodeColumn(ByteBuffer buf, PartialRow row, int idx, boolean isLast) {
     Schema schema = row.getSchema();
     switch (schema.getColumnByIndex(idx).getType()) {
-      case INT8: row.addByte(idx, (byte) (buf.get() ^ Byte.MIN_VALUE)); break;
-      case INT16: row.addShort(idx, (short) (buf.getShort() ^ Short.MIN_VALUE)); break;
-      case INT32: row.addInt(idx, buf.getInt() ^ Integer.MIN_VALUE); break;
+      case INT8:
+        row.addByte(idx, (byte) (buf.get() ^ Byte.MIN_VALUE));
+        break;
+      case INT16:
+        row.addShort(idx, (short) (buf.getShort() ^ Short.MIN_VALUE));
+        break;
+      case INT32:
+        row.addInt(idx, buf.getInt() ^ Integer.MIN_VALUE);
+        break;
       case INT64:
-      case UNIXTIME_MICROS: row.addLong(idx, buf.getLong() ^ Long.MIN_VALUE); break;
+      case UNIXTIME_MICROS:
+        row.addLong(idx, buf.getLong() ^ Long.MIN_VALUE);
+        break;
       case BINARY: {
         byte[] binary = decodeBinaryColumn(buf, isLast);
         row.addBinary(idx, binary);

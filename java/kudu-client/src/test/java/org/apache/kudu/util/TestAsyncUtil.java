@@ -16,13 +16,13 @@
 // under the License.
 package org.apache.kudu.util;
 
+import static org.junit.Assert.assertEquals;
+
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
-
-import static org.junit.Assert.assertEquals;
 
 /**
  * Test for {@link AsyncUtil}.

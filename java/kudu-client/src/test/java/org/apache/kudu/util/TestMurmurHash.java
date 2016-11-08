@@ -16,11 +16,11 @@
 // under the License.
 package org.apache.kudu.util;
 
+import static org.junit.Assert.assertEquals;
+
 import com.google.common.primitives.UnsignedLongs;
 import com.sangupta.murmur.Murmur2;
 import org.junit.Test;
-
-import static org.junit.Assert.assertEquals;
 
 /**
  * Test Murmur2 Hash64 returns the expected values for inputs.

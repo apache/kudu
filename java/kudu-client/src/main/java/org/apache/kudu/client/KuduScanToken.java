@@ -17,22 +17,23 @@
 
 package org.apache.kudu.client;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.Client.ScanTokenPB;
 import org.apache.kudu.util.Pair;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * A scan token describes a partial scan of a Kudu table limited to a single
@@ -100,7 +101,8 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
    * @param client a Kudu client for the cluster
    * @return a scanner for the serialized scan token
    */
-  public static KuduScanner deserializeIntoScanner(byte[] buf, KuduClient client) throws IOException {
+  public static KuduScanner deserializeIntoScanner(byte[] buf, KuduClient client)
+      throws IOException {
     return pbIntoScanner(ScanTokenPB.parseFrom(CodedInputStream.newInstance(buf)), client);
   }
 
@@ -134,8 +136,10 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
 
     helper.addValue(KeyEncoder.formatPartitionKeyRange(table.getSchema(),
                                                        table.getPartitionSchema(),
-                                                       token.getLowerBoundPartitionKey().toByteArray(),
-                                                       token.getUpperBoundPartitionKey().toByteArray()));
+                                                       token.getLowerBoundPartitionKey()
+                                                           .toByteArray(),
+                                                       token.getUpperBoundPartitionKey()
+                                                           .toByteArray()));
 
     return helper.toString();
   }
@@ -349,4 +353,4 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       }
     }
   }
- }
+}

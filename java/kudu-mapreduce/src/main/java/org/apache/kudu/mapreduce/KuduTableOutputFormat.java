@@ -14,11 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.mapreduce;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
-import org.apache.kudu.client.*;
+import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
@@ -30,10 +33,16 @@ import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.client.AsyncKuduClient;
+import org.apache.kudu.client.AsyncKuduSession;
+import org.apache.kudu.client.KuduClient;
+import org.apache.kudu.client.KuduSession;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.Operation;
+import org.apache.kudu.client.OperationResponse;
+import org.apache.kudu.client.RowError;
 
 /**
  * <p>
@@ -106,7 +115,6 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     String tableName = this.conf.get(OUTPUT_TABLE_KEY);
     this.operationTimeoutMs = this.conf.getLong(OPERATION_TIMEOUT_MS_KEY,
         AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS);
-    int bufferSpace = this.conf.getInt(BUFFER_ROW_COUNT_KEY, 1000);
 
     this.client = new KuduClient.KuduClientBuilder(masterAddress)
         .defaultOperationTimeoutMs(operationTimeoutMs)
@@ -120,10 +128,10 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     }
     this.session = client.newSession();
     this.session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
-    this.session.setMutationBufferSpace(bufferSpace);
+    this.session.setMutationBufferSpace(this.conf.getInt(BUFFER_ROW_COUNT_KEY, 1000));
     this.session.setIgnoreAllDuplicateRows(true);
     String multitonKey = String.valueOf(Thread.currentThread().getId());
-    assert(MULTITON.get(multitonKey) == null);
+    assert MULTITON.get(multitonKey) == null;
     MULTITON.put(multitonKey, this);
     entries.set(MULTITON_KEY, multitonKey);
   }
@@ -150,7 +158,8 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
   }
 
   @Override
-  public RecordWriter<NullWritable, Operation> getRecordWriter(TaskAttemptContext taskAttemptContext)
+  public RecordWriter<NullWritable, Operation>
+      getRecordWriter(TaskAttemptContext taskAttemptContext)
       throws IOException, InterruptedException {
     return new TableRecordWriter(this.session);
   }

@@ -14,9 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.mapreduce;
 
-import com.google.common.base.Preconditions;
+package org.apache.kudu.mapreduce;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -33,6 +32,8 @@ import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+
+import com.google.common.base.Preconditions;
 
 /**
  * Finds the Jar for a class. If the class is in a directory in the
@@ -65,7 +66,7 @@ public class JarFinder {
   }
 
   public static void jarDir(File dir, String relativePath, ZipOutputStream zos)
-    throws IOException {
+      throws IOException {
     Preconditions.checkNotNull(relativePath, "relativePath");
     Preconditions.checkNotNull(zos, "zos");
 
@@ -100,8 +101,7 @@ public class JarFinder {
           String filePath = f.getPath();
           File file = new File(filePath);
           zipDir(file, relativePath + f.getName() + "/", zos, false);
-        }
-        else {
+        } else {
           String path = relativePath + f.getName();
           if (!path.equals(JarFile.MANIFEST_NAME)) {
             ZipEntry anEntry = new ZipEntry(path);
@@ -138,9 +138,9 @@ public class JarFinder {
     Preconditions.checkNotNull(klass, "klass");
     ClassLoader loader = klass.getClassLoader();
     if (loader != null) {
-      String class_file = klass.getName().replaceAll("\\.", "/") + ".class";
+      String classFile = klass.getName().replaceAll("\\.", "/") + ".class";
       try {
-        for (Enumeration itr = loader.getResources(class_file);
+        for (Enumeration itr = loader.getResources(classFile);
              itr.hasMoreElements(); ) {
           URL url = (URL) itr.nextElement();
           String path = url.getPath();
@@ -151,17 +151,16 @@ public class JarFinder {
           if ("jar".equals(url.getProtocol())) {
             path = URLDecoder.decode(path, "UTF-8");
             return path.replaceAll("!.*$", "");
-          }
-          else if ("file".equals(url.getProtocol())) {
+          } else if ("file".equals(url.getProtocol())) {
             String klassName = klass.getName();
             klassName = klassName.replace(".", "/") + ".class";
             path = path.substring(0, path.length() - klassName.length());
-            File baseDir = new File(path);
             File testDir = new File(System.getProperty("test.build.dir", "target/test-dir"));
             testDir = testDir.getAbsoluteFile();
             if (!testDir.exists()) {
               testDir.mkdirs();
             }
+            File baseDir = new File(path);
             File tempJar = File.createTempFile("hadoop-", "", testDir);
             tempJar = new File(tempJar.getAbsolutePath() + ".jar");
             tempJar.deleteOnExit();
@@ -169,8 +168,7 @@ public class JarFinder {
             return tempJar.getAbsolutePath();
           }
         }
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
         throw new RuntimeException(e);
       }
     }

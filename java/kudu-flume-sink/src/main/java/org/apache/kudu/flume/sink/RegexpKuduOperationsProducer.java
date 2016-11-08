@@ -19,26 +19,31 @@
 
 package org.apache.kudu.flume.sink;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
 import java.nio.charset.Charset;
-import org.apache.flume.Context;
-import org.apache.flume.Event;
-import org.apache.flume.FlumeException;
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Schema;
-import org.apache.kudu.Type;
-import org.apache.kudu.client.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import org.apache.flume.Context;
+import org.apache.flume.Event;
+import org.apache.flume.FlumeException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.client.Insert;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.Operation;
+import org.apache.kudu.client.PartialRow;
+import org.apache.kudu.client.Upsert;
+
 /**
- * <p>A regular expression serializer that generates one {@link Insert} or
+ * A regular expression serializer that generates one {@link Insert} or
  * {@link Upsert} per {@link Event} by parsing the payload into values using a
  * regular expression. Values are coerced to the proper column types.
  *
@@ -47,7 +52,7 @@ import java.util.regex.PatternSyntaxException;
  * key INT32
  * name STRING
  *
- * and producer.pattern is '(?<key>\\d+),(?<name>\w+)', then the
+ * and producer.pattern is '(?&lt;key&gt;\\d+),(?&lt;name&gt;\w+)', then the
  * RegexpKuduOperationsProducer will parse the string
  *
  * |12345,Mike||54321,Todd|
@@ -57,7 +62,7 @@ import java.util.regex.PatternSyntaxException;
  * Note: this class relies on JDK7 named capturing groups, which are documented
  * in {@link Pattern}.
  *
- * <p><strong>Regular Expression Kudu Operations Producer configuration parameters</strong>
+ * <p><strong>Regular Expression Kudu Operations Producer configuration parameters</strong></p>
  *
  * <table cellpadding=3 cellspacing=0 border=1>
  * <tr>
@@ -195,22 +200,22 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
         default:
           throw new FlumeException(
               String.format("Unrecognized operation type '%s' in getOperations: " +
-              "this should never happen!", operation));
+                  "this should never happen!", operation));
       }
       PartialRow row = op.getRow();
       for (ColumnSchema col : schema.getColumns()) {
         try {
-          CoerceAndSet(m.group(col.getName()), col.getName(), col.getType(), row);
+          coerceAndSet(m.group(col.getName()), col.getName(), col.getType(), row);
         } catch (NumberFormatException e) {
           String msg = String.format(
               "Raw value '%s' couldn't be parsed to type %s for column '%s'",
               raw, col.getType(), col.getName());
-          LogOrThrow(skipBadColumnValue, msg, e);
+          logOrThrow(skipBadColumnValue, msg, e);
         } catch (IllegalArgumentException e) {
           String msg = String.format(
               "Column '%s' has no matching group in '%s'",
               col.getName(), raw);
-          LogOrThrow(skipMissingColumn, msg, e);
+          logOrThrow(skipMissingColumn, msg, e);
         } catch (Exception e) {
           throw new FlumeException("Failed to create Kudu operation", e);
         }
@@ -233,7 +238,7 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
    * @param row the row to set the value in
    * @throws NumberFormatException if `rawVal` cannot be cast as `type`.
    */
-  private void CoerceAndSet(String rawVal, String colName, Type type, PartialRow row)
+  private void coerceAndSet(String rawVal, String colName, Type type, PartialRow row)
       throws NumberFormatException {
     switch (type) {
       case INT8:
@@ -272,7 +277,7 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
     }
   }
 
-  private void LogOrThrow(boolean log, String msg, Exception e)
+  private void logOrThrow(boolean log, String msg, Exception e)
       throws FlumeException {
     if (log) {
       logger.warn(msg, e);

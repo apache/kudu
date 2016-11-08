@@ -19,19 +19,20 @@
 
 package org.apache.kudu.flume.sink;
 
+import java.util.Collections;
+import java.util.List;
+
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.FlumeException;
+
 import org.apache.kudu.client.Insert;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.PartialRow;
 
-import java.util.Collections;
-import java.util.List;
-
 /**
- * <p>A simple serializer that generates one {@link Insert} per {@link Event}
+ * A simple serializer that generates one {@link Insert} per {@link Event}
  * by writing the event body into a BINARY column. The headers are discarded.
  *
  * <p><strong>Simple Kudu Event Producer configuration parameters</strong>
@@ -58,7 +59,7 @@ public class SimpleKuduOperationsProducer implements KuduOperationsProducer {
   private KuduTable table;
   private String payloadColumn;
 
-  public SimpleKuduOperationsProducer(){
+  public SimpleKuduOperationsProducer() {
   }
 
   @Override
@@ -79,7 +80,7 @@ public class SimpleKuduOperationsProducer implements KuduOperationsProducer {
       row.addBinary(payloadColumn, event.getBody());
 
       return Collections.singletonList((Operation) insert);
-    } catch (Exception e){
+    } catch (Exception e) {
       throw new FlumeException("Failed to create Kudu Insert object", e);
     }
   }

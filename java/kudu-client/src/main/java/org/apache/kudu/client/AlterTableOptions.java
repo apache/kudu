@@ -14,7 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
+
+import static org.apache.kudu.master.Master.AlterTableRequestPB;
 
 import com.google.common.base.Preconditions;
 
@@ -22,8 +25,6 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
-
-import static org.apache.kudu.master.Master.AlterTableRequestPB;
 
 /**
  * This builder must be used to alter a table. At least one change must be specified.
@@ -168,8 +169,8 @@ public class AlterTableOptions {
     AlterTableRequestPB.AddRangePartition.Builder builder =
         AlterTableRequestPB.AddRangePartition.newBuilder();
     builder.setRangeBounds(
-        new Operation.OperationsEncoder().encodeLowerAndUpperBounds(lowerBound, upperBound,
-                                                                    lowerBoundType, upperBoundType));
+        new Operation.OperationsEncoder()
+            .encodeLowerAndUpperBounds(lowerBound, upperBound, lowerBoundType, upperBoundType));
     step.setAddRangePartition(builder);
     if (!pb.hasSchema()) {
       pb.setSchema(ProtobufHelper.schemaToPb(lowerBound.getSchema()));

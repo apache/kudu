@@ -14,14 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
 
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Schema;
-import org.apache.kudu.Type;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
-import org.apache.kudu.util.Slice;
+package org.apache.kudu.client;
 
 import java.nio.ByteBuffer;
 import java.text.DateFormat;
@@ -30,6 +24,13 @@ import java.text.SimpleDateFormat;
 import java.util.BitSet;
 import java.util.Date;
 import java.util.TimeZone;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.util.Slice;
 
 /**
  * RowResult represents one row from a scanner. Do not reuse or store the objects.
@@ -41,7 +42,7 @@ public class RowResult {
   private static final int INDEX_RESET_LOCATION = -1;
 
   // Thread local DateFormat since they're not thread-safe.
-  private static final ThreadLocal<DateFormat> DATE_FORMAT = new ThreadLocal<DateFormat>(){
+  private static final ThreadLocal<DateFormat> DATE_FORMAT = new ThreadLocal<DateFormat>() {
     @Override
     protected DateFormat initialValue() {
       SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
@@ -110,8 +111,8 @@ public class RowResult {
     if (schema.hasNullableColumns() && this.index != INDEX_RESET_LOCATION) {
       this.nullsBitSet = Bytes.toBitSet(
           this.rowData.getRawArray(),
-          this.rowData.getRawOffset()
-          + getCurrentRowDataOffsetForColumn(schema.getColumnCount()),
+          this.rowData.getRawOffset() +
+              getCurrentRowDataOffsetForColumn(schema.getColumnCount()),
           schema.getColumnCount());
     }
   }
@@ -192,8 +193,8 @@ public class RowResult {
     checkNull(columnIndex);
     checkType(columnIndex, Type.BOOL);
     byte b = Bytes.getByte(this.rowData.getRawArray(),
-                         this.rowData.getRawOffset()
-                         + getCurrentRowDataOffsetForColumn(columnIndex));
+                         this.rowData.getRawOffset() +
+                             getCurrentRowDataOffsetForColumn(columnIndex));
     return b == 1;
   }
 
@@ -253,8 +254,8 @@ public class RowResult {
     checkNull(columnIndex);
     // Can't check type because this could be a long, string, or Timestamp
     return Bytes.getLong(this.rowData.getRawArray(),
-                         this.rowData.getRawOffset()
-                         + getCurrentRowDataOffsetForColumn(columnIndex));
+                         this.rowData.getRawOffset() +
+                             getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -276,8 +277,8 @@ public class RowResult {
     checkNull(columnIndex);
     checkType(columnIndex, Type.FLOAT);
     return Bytes.getFloat(this.rowData.getRawArray(),
-                          this.rowData.getRawOffset()
-                          + getCurrentRowDataOffsetForColumn(columnIndex));
+                          this.rowData.getRawOffset() +
+                              getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -300,8 +301,8 @@ public class RowResult {
     checkNull(columnIndex);
     checkType(columnIndex, Type.DOUBLE);
     return Bytes.getDouble(this.rowData.getRawArray(),
-                           this.rowData.getRawOffset()
-                           + getCurrentRowDataOffsetForColumn(columnIndex));
+                           this.rowData.getRawOffset() +
+                               getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -439,8 +440,8 @@ public class RowResult {
     if (nullsBitSet == null) {
       return false;
     }
-    return schema.getColumnByIndex(columnIndex).isNullable()
-        && nullsBitSet.get(columnIndex);
+    return schema.getColumnByIndex(columnIndex).isNullable() &&
+        nullsBitSet.get(columnIndex);
   }
 
   /**
@@ -499,7 +500,7 @@ public class RowResult {
     Type columnType = columnSchema.getType();
     if (!columnType.equals(expectedType)) {
       throw new IllegalArgumentException("Column (name: " + columnSchema.getName() +
-          ", index: " + columnIndex +") is of type " +
+          ", index: " + columnIndex + ") is of type " +
           columnType.getName() + " but was requested as a type " + expectedType.getName());
     }
   }
@@ -542,20 +543,39 @@ public class RowResult {
         buf.append("NULL");
       } else {
         switch (col.getType()) {
-          case INT8: buf.append(getByte(i)); break;
-          case INT16: buf.append(getShort(i));
+          case INT8:
+            buf.append(getByte(i));
             break;
-          case INT32: buf.append(getInt(i)); break;
-          case INT64: buf.append(getLong(i)); break;
+          case INT16:
+            buf.append(getShort(i));
+            break;
+          case INT32:
+            buf.append(getInt(i));
+            break;
+          case INT64:
+            buf.append(getLong(i));
+            break;
           case UNIXTIME_MICROS: {
             buf.append(timestampToString(getLong(i)));
           } break;
-          case STRING: buf.append(getString(i)); break;
-          case BINARY: buf.append(Bytes.pretty(getBinaryCopy(i))); break;
-          case FLOAT: buf.append(getFloat(i)); break;
-          case DOUBLE: buf.append(getDouble(i)); break;
-          case BOOL: buf.append(getBoolean(i)); break;
-          default: buf.append("<unknown type!>"); break;
+          case STRING:
+            buf.append(getString(i));
+            break;
+          case BINARY:
+            buf.append(Bytes.pretty(getBinaryCopy(i)));
+            break;
+          case FLOAT:
+            buf.append(getFloat(i));
+            break;
+          case DOUBLE:
+            buf.append(getDouble(i));
+            break;
+          case BOOL:
+            buf.append(getBoolean(i));
+            break;
+          default:
+            buf.append("<unknown type!>");
+            break;
         }
       }
     }

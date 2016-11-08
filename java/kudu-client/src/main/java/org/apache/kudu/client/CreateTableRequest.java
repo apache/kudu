@@ -14,18 +14,19 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
 
-import com.google.protobuf.Message;
+package org.apache.kudu.client;
 
 import java.util.Collection;
 import java.util.List;
+
+import com.google.protobuf.Message;
+import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
  * RPC to create new tables
@@ -58,7 +59,9 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
   }
 
   @Override
-  String serviceName() { return MASTER_SERVICE_NAME; }
+  String serviceName() {
+    return MASTER_SERVICE_NAME;
+  }
 
   @Override
   String method() {

@@ -19,9 +19,13 @@ package org.apache.kudu.client;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import org.junit.Test;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder;
 import org.apache.kudu.Common;
@@ -29,9 +33,6 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 import org.apache.kudu.client.PartitionSchema.RangeSchema;
-
-import java.util.ArrayList;
-import java.util.List;
 
 public class TestKeyEncoding {
 

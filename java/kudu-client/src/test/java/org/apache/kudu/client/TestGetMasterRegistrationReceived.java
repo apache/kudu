@@ -17,21 +17,22 @@
 
 package org.apache.kudu.client;
 
+import static org.apache.kudu.consensus.Metadata.RaftPeerPB.Role.FOLLOWER;
+import static org.apache.kudu.consensus.Metadata.RaftPeerPB.Role.LEADER;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
+
+import java.util.List;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.junit.Test;
+
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
-
-import java.util.List;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
-import static org.apache.kudu.consensus.Metadata.RaftPeerPB.Role.FOLLOWER;
-import static org.apache.kudu.consensus.Metadata.RaftPeerPB.Role.LEADER;
 
 public class TestGetMasterRegistrationReceived {
 

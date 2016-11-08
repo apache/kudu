@@ -16,11 +16,6 @@
 // under the License.
 package org.apache.kudu.mapreduce;
 
-import org.apache.commons.logging.LogFactory;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -34,6 +29,10 @@ import java.util.Properties;
 import java.util.jar.JarInputStream;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
+
+import org.apache.commons.logging.LogFactory;
+import org.junit.Assert;
+import org.junit.Test;
 
 /**
  * This file was forked from hbase/branches/master@4ce6f48.

@@ -14,13 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
 
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.util.ByteVec;
-import org.apache.kudu.util.Pair;
+package org.apache.kudu.client;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -31,6 +26,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import javax.annotation.concurrent.NotThreadSafe;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.util.ByteVec;
+import org.apache.kudu.util.Pair;
 
 @InterfaceAudience.Private
 @NotThreadSafe
@@ -143,8 +144,8 @@ public class PartitionPruner {
     // Step 1: Build the range portion of the partition key. If the range partition
     // columns match the primary key columns, then we can substitute the primary
     // key bounds, if they are tighter.
-    byte[] rangeLowerBound = pushPredicatesIntoLowerBoundRangeKey(schema, rangeSchema, predicates);
-    byte[] rangeUpperBound = pushPredicatesIntoUpperBoundRangeKey(schema, rangeSchema, predicates);
+    byte[] rangeLowerBound = pushPredsIntoLowerBoundRangeKey(schema, rangeSchema, predicates);
+    byte[] rangeUpperBound = pushPredsIntoUpperBoundRangeKey(schema, rangeSchema, predicates);
     if (partitionSchema.isSimpleRangePartitioning()) {
       if (Bytes.memcmp(rangeLowerBound, scanner.lowerBoundPrimaryKey) < 0) {
         rangeLowerBound = scanner.lowerBoundPrimaryKey;
@@ -239,7 +240,8 @@ public class PartitionPruner {
     }
 
     // Step 4: Filter ranges that fall outside the scan's upper and lower bound partition keys.
-    Deque<Pair<byte[], byte[]>> partitionKeyRangeBytes = new ArrayDeque<>(partitionKeyRanges.size());
+    Deque<Pair<byte[], byte[]>> partitionKeyRangeBytes =
+        new ArrayDeque<>(partitionKeyRanges.size());
     for (Pair<ByteVec, ByteVec> range : partitionKeyRanges) {
       byte[] lower = range.getFirst().toArray();
       byte[] upper = range.getSecond().toArray();
@@ -290,7 +292,9 @@ public class PartitionPruner {
 
     while (!rangePartitions.isEmpty()) {
       Pair<byte[], byte[]> range = rangePartitions.getFirst();
-      if (Bytes.memcmp(upperBound, range.getFirst()) <= 0) break;
+      if (Bytes.memcmp(upperBound, range.getFirst()) <= 0) {
+        break;
+      }
       rangePartitions.removeFirst();
       if (range.getSecond().length == 0 || Bytes.memcmp(upperBound, range.getSecond()) < 0) {
         // The upper bound falls in the middle of this range, so add it back
@@ -338,7 +342,9 @@ public class PartitionPruner {
 
   private static boolean incrementKey(PartialRow row, List<Integer> keyIndexes) {
     for (int i = keyIndexes.size() - 1; i >= 0; i--) {
-      if (row.incrementColumn(keyIndexes.get(i))) return true;
+      if (row.incrementColumn(keyIndexes.get(i))) {
+        return true;
+      }
     }
     return false;
   }
@@ -350,9 +356,9 @@ public class PartitionPruner {
    * @param predicates the predicates
    * @return a lower bound range partition key
    */
-  private static byte[] pushPredicatesIntoLowerBoundRangeKey(Schema schema,
-                                                             PartitionSchema.RangeSchema rangeSchema,
-                                                             Map<String, KuduPredicate> predicates) {
+  private static byte[] pushPredsIntoLowerBoundRangeKey(Schema schema,
+                                                        PartitionSchema.RangeSchema rangeSchema,
+                                                        Map<String, KuduPredicate> predicates) {
     PartialRow row = schema.newPartialRow();
     int pushedPredicates = 0;
 
@@ -363,11 +369,15 @@ public class PartitionPruner {
     loop: for (int idx : rangePartitionColumnIdxs) {
       ColumnSchema column = schema.getColumnByIndex(idx);
       KuduPredicate predicate = predicates.get(column.getName());
-      if (predicate == null) break;
+      if (predicate == null) {
+        break;
+      }
 
       switch (predicate.getType()) {
         case RANGE:
-          if (predicate.getLower() == null) break loop;
+          if (predicate.getLower() == null) {
+            break loop;
+          }
           // fall through
         case EQUALITY:
           row.setRaw(idx, predicate.getLower());
@@ -386,7 +396,9 @@ public class PartitionPruner {
     }
 
     // If no predicates were pushed, no need to do any more work.
-    if (pushedPredicates == 0) return AsyncKuduClient.EMPTY_ARRAY;
+    if (pushedPredicates == 0) {
+      return AsyncKuduClient.EMPTY_ARRAY;
+    }
 
     // For each remaining column in the partition key, fill it with the minimum value.
     Iterator<Integer> remainingIdxs = rangePartitionColumnIdxs.listIterator(pushedPredicates);
@@ -404,9 +416,9 @@ public class PartitionPruner {
    * @param predicates the predicates
    * @return an upper bound range partition key
    */
-  private static byte[] pushPredicatesIntoUpperBoundRangeKey(Schema schema,
-                                                             PartitionSchema.RangeSchema rangeSchema,
-                                                             Map<String, KuduPredicate> predicates) {
+  private static byte[] pushPredsIntoUpperBoundRangeKey(Schema schema,
+                                                        PartitionSchema.RangeSchema rangeSchema,
+                                                        Map<String, KuduPredicate> predicates) {
     PartialRow row = schema.newPartialRow();
     int pushedPredicates = 0;
     KuduPredicate finalPredicate = null;
@@ -418,7 +430,9 @@ public class PartitionPruner {
     loop: for (int idx : rangePartitionColumnIdxs) {
       ColumnSchema column = schema.getColumnByIndex(idx);
       KuduPredicate predicate = predicates.get(column.getName());
-      if (predicate == null) break;
+      if (predicate == null) {
+        break;
+      }
 
       switch (predicate.getType()) {
         case EQUALITY:
@@ -454,7 +468,9 @@ public class PartitionPruner {
     }
 
     // If no predicates were pushed, no need to do any more work.
-    if (pushedPredicates == 0) return AsyncKuduClient.EMPTY_ARRAY;
+    if (pushedPredicates == 0) {
+      return AsyncKuduClient.EMPTY_ARRAY;
+    }
 
     // Step 2: If the final predicate is an equality or IN-list predicate, increment the
     // key to convert it to an exclusive upper bound.

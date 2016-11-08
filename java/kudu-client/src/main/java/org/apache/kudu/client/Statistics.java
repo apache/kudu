@@ -14,7 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
+
+import java.nio.charset.Charset;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLongArray;
 
 import com.google.common.collect.Sets;
 
@@ -22,12 +28,6 @@ import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.util.Slice;
 import org.apache.kudu.util.Slices;
-
-import java.nio.charset.Charset;
-import java.util.Collections;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLongArray;
 
 
 /**
@@ -46,7 +46,8 @@ import java.util.concurrent.atomic.AtomicLongArray;
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public class Statistics {
-  private final ConcurrentHashMap<String, Statistics.TabletStatistics> stsMap = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Statistics.TabletStatistics> stsMap =
+      new ConcurrentHashMap<>();
 
   /**
    * The statistic enum to pass when querying.
@@ -90,7 +91,7 @@ public class Statistics {
     }
 
     private final int idx;
-  };
+  }
 
   /**
    * Get the statistic count of this tablet.
@@ -218,9 +219,9 @@ public class Statistics {
   }
 
   static class TabletStatistics {
-    final private AtomicLongArray statistics;
-    final private String tableName;
-    final private String tabletId;
+    private final AtomicLongArray statistics;
+    private final String tableName;
+    private final String tabletId;
 
     TabletStatistics(String tableName, String tabletId) {
       this.tableName = tableName;

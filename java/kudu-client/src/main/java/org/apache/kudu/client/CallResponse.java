@@ -14,15 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import java.util.List;
 
+import org.jboss.netty.buffer.ChannelBuffer;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.rpc.RpcHeader;
 import org.apache.kudu.util.Slice;
-
-import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
  * This class handles information received from an RPC response, providing
@@ -74,7 +75,9 @@ final class CallResponse {
   /**
    * @return the total response size
    */
-  public int getTotalResponseSize() { return this.totalResponseSize; }
+  public int getTotalResponseSize() {
+    return this.totalResponseSize;
+  }
 
   /**
    * @return A slice pointing to the section of the packet reserved for the main
@@ -90,9 +93,9 @@ final class CallResponse {
     final int mainLength = this.header.getSidecarOffsetsCount() == 0 ?
         this.message.length() : this.header.getSidecarOffsets(0);
     if (mainLength < 0 || mainLength > this.message.length()) {
-      throw new IllegalStateException("Main protobuf message invalid. "
-          + "Length is " + mainLength + " while the size of the message "
-          + "excluding the header is " + this.message.length());
+      throw new IllegalStateException("Main protobuf message invalid. " +
+          "Length is " + mainLength + " while the size of the message " +
+          "excluding the header is " + this.message.length());
     }
     return subslice(this.message, 0, mainLength);
   }
@@ -113,8 +116,8 @@ final class CallResponse {
 
     List<Integer> sidecarList = this.header.getSidecarOffsetsList();
     if (sidecar < 0 || sidecar > sidecarList.size()) {
-      throw new IllegalArgumentException("Sidecar " + sidecar
-          + " not valid, response has " + sidecarList.size() + " sidecars");
+      throw new IllegalArgumentException("Sidecar " + sidecar +
+          " not valid, response has " + sidecarList.size() + " sidecars");
     }
 
     final int prevOffset = sidecarList.get(sidecar);
@@ -123,9 +126,9 @@ final class CallResponse {
     final int length = nextOffset - prevOffset;
 
     if (prevOffset < 0 || length < 0 || prevOffset + length > this.message.length()) {
-      throw new IllegalStateException("Sidecar " + sidecar + " invalid "
-          + "(offset = " + prevOffset + ", length = " + length + "). The size "
-          + "of the message " + "excluding the header is " + this.message.length());
+      throw new IllegalStateException("Sidecar " + sidecar + " invalid " +
+          "(offset = " + prevOffset + ", length = " + length + "). The size " +
+          "of the message " + "excluding the header is " + this.message.length());
     }
 
     return subslice(this.message, prevOffset, length);
@@ -133,7 +136,9 @@ final class CallResponse {
 
   // Reads the message after the header if not read yet
   private void cacheMessage() {
-    if (this.message != null) return;
+    if (this.message != null) {
+      return;
+    }
     final int length = Bytes.readVarInt32(buf);
     this.message = nextBytes(buf, length);
   }

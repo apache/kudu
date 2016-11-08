@@ -14,15 +14,19 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
+import static org.apache.kudu.consensus.Metadata.RaftPeerPB;
+import static org.apache.kudu.master.Master.GetMasterRegistrationRequestPB;
+import static org.apache.kudu.master.Master.GetMasterRegistrationResponsePB;
+import static org.apache.kudu.master.Master.MasterErrorPB;
+
 import com.google.protobuf.Message;
-import static org.apache.kudu.consensus.Metadata.*;
-import static org.apache.kudu.master.Master.*;
+import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.util.Pair;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
  * Package-private RPC that can only go to master.
@@ -44,7 +48,9 @@ public class GetMasterRegistrationRequest extends KuduRpc<GetMasterRegistrationR
   }
 
   @Override
-  String serviceName() { return MASTER_SERVICE_NAME; }
+  String serviceName() {
+    return MASTER_SERVICE_NAME;
+  }
 
   @Override
   String method() {

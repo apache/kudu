@@ -16,6 +16,13 @@
 // under the License.
 package org.apache.kudu.mapreduce;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
 import com.google.common.collect.Lists;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
@@ -25,17 +32,12 @@ import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.apache.kudu.client.BaseKuduTest;
-import org.apache.kudu.client.KuduPredicate;
-import org.apache.kudu.client.RowResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-
-import static org.junit.Assert.*;
+import org.apache.kudu.client.BaseKuduTest;
+import org.apache.kudu.client.KuduPredicate;
+import org.apache.kudu.client.RowResult;
 
 public class ITInputFormatJob extends BaseKuduTest {
   private static final Logger LOG = LoggerFactory.getLogger(ITInputFormatJob.class);

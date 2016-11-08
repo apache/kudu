@@ -26,33 +26,9 @@
 
 package org.apache.kudu.client;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.google.protobuf.Message;
-import com.stumbleupon.async.Callback;
-import com.stumbleupon.async.Deferred;
-import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
-import org.apache.kudu.master.Master;
-import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
-import org.apache.kudu.util.AsyncUtil;
-import org.apache.kudu.util.NetUtil;
-import org.apache.kudu.util.Pair;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
-import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
-import org.jboss.netty.channel.socket.nio.NioWorkerPool;
-import org.jboss.netty.util.HashedWheelTimer;
-import org.jboss.netty.util.Timeout;
-import org.jboss.netty.util.TimerTask;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
-import javax.annotation.concurrent.GuardedBy;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -67,9 +43,34 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import javax.annotation.concurrent.GuardedBy;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.google.protobuf.Message;
+import com.stumbleupon.async.Callback;
+import com.stumbleupon.async.Deferred;
+import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
+import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
+import org.jboss.netty.channel.socket.nio.NioWorkerPool;
+import org.jboss.netty.util.HashedWheelTimer;
+import org.jboss.netty.util.Timeout;
+import org.jboss.netty.util.TimerTask;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.Schema;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.kudu.master.Master;
+import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
+import org.apache.kudu.util.AsyncUtil;
+import org.apache.kudu.util.NetUtil;
+import org.apache.kudu.util.Pair;
 
 /**
  * A fully asynchronous and thread-safe client for Kudu.
@@ -207,7 +208,7 @@ public class AsyncKuduClient implements AutoCloseable {
   @VisibleForTesting
   public synchronized void updateLastPropagatedTimestamp(long lastPropagatedTimestamp) {
     if (this.lastPropagatedTimestamp == -1 ||
-      this.lastPropagatedTimestamp < lastPropagatedTimestamp) {
+        this.lastPropagatedTimestamp < lastPropagatedTimestamp) {
       this.lastPropagatedTimestamp = lastPropagatedTimestamp;
     }
   }
@@ -252,11 +253,12 @@ public class AsyncKuduClient implements AutoCloseable {
     create.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(create).addCallbackDeferring(
         new Callback<Deferred<KuduTable>, CreateTableResponse>() {
-      @Override
-      public Deferred<KuduTable> call(CreateTableResponse createTableResponse) throws Exception {
-        return openTable(name);
-      }
-    });
+          @Override
+          public Deferred<KuduTable> call(CreateTableResponse createTableResponse)
+              throws Exception {
+            return openTable(name);
+          }
+        });
   }
 
   /**
@@ -301,6 +303,7 @@ public class AsyncKuduClient implements AutoCloseable {
           }
           return resp;
         }
+
         @Override
         public String toString() {
           return "ClearTableLocationsCacheCB";
@@ -313,6 +316,7 @@ public class AsyncKuduClient implements AutoCloseable {
           tableLocations.clear();
           return e;
         }
+
         @Override
         public String toString() {
           return "ClearTableLocationsCacheEB";
@@ -408,10 +412,14 @@ public class AsyncKuduClient implements AutoCloseable {
     // timeouts and use its Deferred.
     final KuduRpc<KuduTable> fakeRpc = new KuduRpc<KuduTable>(null) {
       @Override
-      ChannelBuffer serialize(Message header) { return null; }
+      ChannelBuffer serialize(Message header) {
+        return null;
+      }
 
       @Override
-      String serviceName() { return null; }
+      String serviceName() {
+        return null;
+      }
 
       @Override
       String method() {
@@ -420,7 +428,9 @@ public class AsyncKuduClient implements AutoCloseable {
 
       @Override
       Pair<KuduTable, Object> deserialize(CallResponse callResponse, String tsUUID)
-          throws KuduException { return null; }
+          throws KuduException {
+        return null;
+      }
     };
     fakeRpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
 
@@ -589,7 +599,6 @@ public class AsyncKuduClient implements AutoCloseable {
     KuduRpc<AsyncKuduScanner.Response> nextRequest = scanner.getNextRowsRequest();
     String uuid = tablet.getReplicaSelectedUUID(nextRequest.getReplicaSelection());
     TabletClient client = connectionCache.getClient(uuid);
-    Deferred<AsyncKuduScanner.Response> d = nextRequest.getDeferred();
     // Important to increment the attempts before the next if statement since
     // getSleepTimeForRpc() relies on it if the client is null or dead.
     nextRequest.attempt++;
@@ -597,12 +606,12 @@ public class AsyncKuduClient implements AutoCloseable {
       // A null client means we either don't know about this tablet anymore (unlikely) or we
       // couldn't find a leader (which could be triggered by a read timeout).
       // We'll first delay the RPC in case things take some time to settle down, then retry.
-      Status statusRemoteError = Status.RemoteError("Not connected to server " + uuid
-          + " will retry after a delay");
+      Status statusRemoteError = Status.RemoteError("Not connected to server " + uuid +
+          " will retry after a delay");
       return delayedSendRpcToTablet(nextRequest, new RecoverableException(statusRemoteError));
     }
     client.sendRpc(nextRequest);
-    return d;
+    return nextRequest.getDeferred();
   }
 
   /**
@@ -668,7 +677,7 @@ public class AsyncKuduClient implements AutoCloseable {
     // the server the message includes the last propagated timestamp.
     long lastPropagatedTs = getLastPropagatedTimestamp();
     if (request.getExternalConsistencyMode() == CLIENT_PROPAGATED &&
-      lastPropagatedTs != NO_TIMESTAMP) {
+        lastPropagatedTs != NO_TIMESTAMP) {
       request.setPropagatedTimestamp(lastPropagatedTs);
     }
 
@@ -727,13 +736,16 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   final class RetryRpcCB<R, D> implements Callback<Deferred<R>, D> {
     private final KuduRpc<R> request;
+
     RetryRpcCB(KuduRpc<R> request) {
       this.request = request;
     }
+
     public Deferred<R> call(final D arg) {
       LOG.debug("Retrying sending RPC {} after lookup", request);
       return sendRpcToTablet(request);  // Retry the RPC.
     }
+
     public String toString() {
       return "retry RPC";
     }
@@ -840,6 +852,7 @@ public class AsyncKuduClient implements AutoCloseable {
         d.addCallbacks(retryCB, errback);
       }
     }
+
     long sleepTime = getSleepTimeForRpc(rpc);
     if (rpc.deadlineTracker.wouldSleepingTimeout(sleepTime)) {
       return tooManyAttemptsOrTimeout(rpc, null);
@@ -854,6 +867,7 @@ public class AsyncKuduClient implements AutoCloseable {
       releaseMasterLookupPermit();
       return arg;
     }
+
     public String toString() {
       return "release master lookup permit";
     }
@@ -863,10 +877,14 @@ public class AsyncKuduClient implements AutoCloseable {
   private final class IsCreateTableDoneCB implements Callback<Master.IsCreateTableDoneResponsePB,
       Master.IsCreateTableDoneResponsePB> {
     final String tableName;
+
     IsCreateTableDoneCB(String tableName) {
       this.tableName = tableName;
+
     }
-    public Master.IsCreateTableDoneResponsePB call(final Master.IsCreateTableDoneResponsePB response) {
+
+    public Master.IsCreateTableDoneResponsePB
+        call(final Master.IsCreateTableDoneResponsePB response) {
       if (response.getDone()) {
         LOG.debug("Table {} was created", tableName);
         tablesNotServed.remove(tableName);
@@ -875,6 +893,7 @@ public class AsyncKuduClient implements AutoCloseable {
       }
       return response;
     }
+
     public String toString() {
       return "ask the master if " + tableName + " was created";
     }
@@ -883,7 +902,6 @@ public class AsyncKuduClient implements AutoCloseable {
   boolean isTableNotServed(String tableId) {
     return tablesNotServed.contains(tableId);
   }
-
 
   long getSleepTimeForRpc(KuduRpc<?> rpc) {
     byte attemptCount = rpc.attempt;
@@ -894,8 +912,8 @@ public class AsyncKuduClient implements AutoCloseable {
       attemptCount = 1;
     }
     // Randomized exponential backoff, truncated at 4096ms.
-    long sleepTime = (long)(Math.pow(2.0, Math.min(attemptCount, 12))
-        * sleepRandomizer.nextDouble());
+    long sleepTime = (long)(Math.pow(2.0, Math.min(attemptCount, 12)) *
+        sleepRandomizer.nextDouble());
     if (LOG.isDebugEnabled()) {
       LOG.debug("Going to sleep for " + sleepTime + " at retry " + rpc.attempt);
     }
@@ -981,8 +999,8 @@ public class AsyncKuduClient implements AutoCloseable {
       // looked up the tablet we're interested in.  Every once in a while
       // this will save us a Master lookup.
       TableLocationsCache.Entry entry = getTableLocationEntry(tableId, partitionKey);
-      if (entry != null && !entry.isNonCoveredRange()
-          && entry.getTablet().getLeaderUUID() != null) {
+      if (entry != null && !entry.isNonCoveredRange() &&
+          entry.getTablet().getLeaderUUID() != null) {
         return Deferred.fromResult(null);  // Looks like no lookup needed.
       }
     }
@@ -1111,6 +1129,7 @@ public class AsyncKuduClient implements AutoCloseable {
             public Deferred<List<LocatedTablet>> call(GetTableLocationsResponsePB resp) {
               return loopLocateTable(table, lookupKey, endPartitionKey, ret, deadlineTracker);
             }
+
             @Override
             public String toString() {
               return "LoopLocateTableCB";
@@ -1188,6 +1207,7 @@ public class AsyncKuduClient implements AutoCloseable {
         sendRpcToTablet(rpc);
       }
     }
+
     assert (ex != null);
     Status reasonForRetry = ex.getStatus();
     rpc.addTrace(
@@ -1221,10 +1241,12 @@ public class AsyncKuduClient implements AutoCloseable {
       Master.GetTableLocationsResponsePB> {
     final KuduTable table;
     private final byte[] partitionKey;
+
     MasterLookupCB(KuduTable table, byte[] partitionKey) {
       this.table = table;
       this.partitionKey = partitionKey;
     }
+
     public Object call(final GetTableLocationsResponsePB response) {
       if (response.hasError()) {
         if (response.getError().getCode() == Master.MasterErrorPB.Code.TABLET_NOT_RUNNING) {
@@ -1247,6 +1269,7 @@ public class AsyncKuduClient implements AutoCloseable {
       }
       return null;
     }
+
     public String toString() {
       return "get tablet locations from the master for table " + table.getName();
     }
@@ -1496,6 +1519,7 @@ public class AsyncKuduClient implements AutoCloseable {
       ShutdownThread() {
         super("AsyncKuduClient@" + AsyncKuduClient.super.hashCode() + " shutdown");
       }
+
       public void run() {
         // This terminates the Executor.
         channelFactory.releaseExternalResources();
@@ -1510,6 +1534,7 @@ public class AsyncKuduClient implements AutoCloseable {
         new ShutdownThread().start();
         return arg;
       }
+
       public String toString() {
         return "release resources callback";
       }
@@ -1521,6 +1546,7 @@ public class AsyncKuduClient implements AutoCloseable {
       public Deferred<ArrayList<Void>> call(ArrayList<List<OperationResponse>> ignoredResponses) {
         return connectionCache.disconnectEverything().addCallback(new ReleaseResourcesCB());
       }
+
       public String toString() {
         return "disconnect callback";
       }
@@ -1562,15 +1588,15 @@ public class AsyncKuduClient implements AutoCloseable {
     return MASTER_TABLE_NAME_PLACEHOLDER == tableId;
   }
 
-  void newTimeout(final TimerTask task, final long timeout_ms) {
+  void newTimeout(final TimerTask task, final long timeoutMs) {
     try {
-      timer.newTimeout(task, timeout_ms, MILLISECONDS);
+      timer.newTimeout(task, timeoutMs, MILLISECONDS);
     } catch (IllegalStateException e) {
       // This can happen if the timer fires just before shutdown()
       // is called from another thread, and due to how threads get
       // scheduled we tried to call newTimeout() after timer.stop().
-      LOG.warn("Failed to schedule timer."
-          + "  Ignore this if we're shutting down.", e);
+      LOG.warn("Failed to schedule timer." +
+          " Ignore this if we're shutting down.", e);
     }
   }
 
@@ -1580,7 +1606,7 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   @InterfaceAudience.Public
   @InterfaceStability.Evolving
-  public final static class AsyncKuduClientBuilder {
+  public static final class AsyncKuduClientBuilder {
     private static final int DEFAULT_MASTER_PORT = 7051;
     private static final int DEFAULT_BOSS_COUNT = 1;
     private static final int DEFAULT_WORKER_COUNT = 2 * Runtime.getRuntime().availableProcessors();
@@ -1722,8 +1748,12 @@ public class AsyncKuduClient implements AutoCloseable {
                 .setNameFormat("kudu-nio-%d")
                 .setDaemon(true)
                 .build());
-        if (boss == null) boss = defaultExec;
-        if (worker == null) worker = defaultExec;
+        if (boss == null) {
+          boss = defaultExec;
+        }
+        if (worker == null) {
+          worker = defaultExec;
+        }
       }
       // Share the timer with the socket channel factory so that it does not
       // create an internal timer with a non-daemon thread.
