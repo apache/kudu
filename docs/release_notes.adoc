@@ -55,6 +55,13 @@
 
 XXX
 
+=== Command line tools
+
+* The tool `kudu tablet leader_step_down` has been added to manually force a leader to step down.
+* The tool `kudu remote_replica copy` has been added to manually copy a replica from
+  one running tablet server to another.
+* The tool `kudu local_replica delete` has been added to delete a replica of a tablet.
+
 == Wire protocol compatibility
 
 XXX
