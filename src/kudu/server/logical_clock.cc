@@ -85,16 +85,15 @@ LogicalClock* LogicalClock::CreateStartingAt(const Timestamp& timestamp) {
   return new LogicalClock(timestamp.value() - 1);
 }
 
-uint64_t LogicalClock::NowForMetrics() {
+uint64_t LogicalClock::GetCurrentTime() {
   // We don't want reading metrics to change the clock.
   return NoBarrier_Load(&now_);
 }
 
-
 void LogicalClock::RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) {
   METRIC_logical_clock_timestamp.InstantiateFunctionGauge(
       metric_entity,
-      Bind(&LogicalClock::NowForMetrics, Unretained(this)))
+      Bind(&LogicalClock::GetCurrentTime, Unretained(this)))
     ->AutoDetachToLastValue(&metric_detacher_);
 }
 

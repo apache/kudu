@@ -64,6 +64,10 @@ class LogicalClock : public Clock {
 
   virtual std::string Stringify(Timestamp timestamp) OVERRIDE;
 
+  // Used to get the timestamp without incrementing the logical component.
+  // Mostly used for tests/metrics.
+  uint64_t GetCurrentTime();
+
   // Logical clock doesn't support COMMIT_WAIT.
   virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) OVERRIDE {
     return mode != COMMIT_WAIT;
@@ -75,9 +79,6 @@ class LogicalClock : public Clock {
  private:
   // Should use LogicalClock::CreatingStartingAt()
   explicit LogicalClock(Timestamp::val_type initial_time) : now_(initial_time) {}
-
-  // Used to get the timestamp for metrics.
-  uint64_t NowForMetrics();
 
   base::subtle::Atomic64 now_;
 
