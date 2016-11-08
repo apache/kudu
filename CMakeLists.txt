@@ -843,6 +843,14 @@ ADD_THIRDPARTY_LIB(squeasel
 ##
 ##   cmake -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl ...
 ##
+## If no such OPENSSL_ROOT_DIR is specified, and we see that there is an OpenSSL
+## binary in thirdparty (deposited there by thirdparty/install-openssl-el6-workaround.sh)
+## then we'll use that one. See that script for more information.
+set(CENTOS_6_4_OPENSSL_DIR "${THIRDPARTY_INSTALL_DIR}/openssl-el6-workaround/usr/")
+if (NOT "${OPENSSL_ROOT_DIR}" AND
+    EXISTS "${CENTOS_6_4_OPENSSL_DIR}")
+  set(OPENSSL_ROOT_DIR "${CENTOS_6_4_OPENSSL_DIR}")
+endif()
 find_package(OpenSSL 1.0.0 REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(openssl_ssl
