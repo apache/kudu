@@ -47,6 +47,10 @@
     ** Enabled Scanner Replica Selection
     ** A few bug fixes for Python 3 in addition to various other improvements.
 
+* IN LIST predicate pushdown support was added to allow optimized execution of filters which
+  match on a set of column values. Support for Spark, Map Reduce and Impala queries utilizing
+  IN LIST pushdown is not yet complete.
+
 == Optimizations and improvements
 
 XXX
