@@ -804,10 +804,23 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
   for (int i = 0; i < client_schema.num_key_columns(); i++) {
     if (!IsTypeAllowableInKey(client_schema.column(i).type_info())) {
-        Status s = Status::InvalidArgument(
-            "Key column may not have type of BOOL, FLOAT, or DOUBLE");
-        SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-        return s;
+      Status s = Status::InvalidArgument(
+          "Key column may not have type of BOOL, FLOAT, or DOUBLE");
+      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+      return s;
+    }
+  }
+  // Check that the encodings are valid for the specified types.
+  for (int i = 0; i < client_schema.num_columns(); i++) {
+    const auto& col = client_schema.column(i);
+    const TypeEncodingInfo *dummy;
+    Status s = TypeEncodingInfo::Get(col.type_info(),
+                                     col.attributes().encoding,
+                                     &dummy);
+    if (!s.ok()) {
+      s = s.CloneAndPrepend(Substitute("invalid encoding for column '$0'", col.name()));
+      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+      return s;
     }
   }
   Schema schema = client_schema.CopyWithColumnIds();
@@ -1175,13 +1188,14 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
           return Status::InvalidArgument("ADD_COLUMN missing column info");
         }
 
-        // Verify that encoding is appropriate for the new column's
-        // type
         ColumnSchemaPB new_col_pb = step.add_column().schema();
         if (new_col_pb.has_id()) {
           return Status::InvalidArgument("column $0: client should not specify column ID",
                                          new_col_pb.ShortDebugString());
         }
+
+        // Verify that encoding is appropriate for the new column's
+        // type
         ColumnSchema new_col = ColumnSchemaFromPB(new_col_pb);
         const TypeEncodingInfo *dummy;
         RETURN_NOT_OK(TypeEncodingInfo::Get(new_col.type_info(),

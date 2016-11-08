@@ -3033,7 +3033,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
       ->Encoding(KuduColumnStorageAttributes::GROUP_VARINT);
     Status s = table_alterer->Alter();
     ASSERT_TRUE(s.IsNotSupported());
-    ASSERT_STR_CONTAINS(s.ToString(), "Unsupported type/encoding pair");
+    ASSERT_STR_CONTAINS(s.ToString(), "encoding GROUP_VARINT not supported for type BINARY");
     ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
   }
 
@@ -3635,6 +3635,23 @@ TEST_F(ClientTest, TestCreateTableWithTooManyReplicas) {
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Not enough live tablet servers to create a table with the requested "
                       "replication factor 3. 1 tablet servers are alive");
+}
+
+TEST_F(ClientTest, TestCreateTableWithInvalidEncodings) {
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  KuduSchema schema;
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey()
+      ->Encoding(KuduColumnStorageAttributes::DICT_ENCODING);
+  ASSERT_OK(schema_builder.Build(&schema));
+  Status s = table_creator->table_name("foobar")
+      .schema(&schema)
+      .set_range_partition_columns({ "key" })
+      .Create();
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "invalid encoding for column 'key': encoding "
+                      "DICT_ENCODING not supported for type INT32");
 }
 
 TEST_F(ClientTest, TestLatestObservedTimestamp) {
