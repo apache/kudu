@@ -30,12 +30,14 @@ using std::shared_ptr;
 using std::string;
 using strings::Substitute;
 
-string DeltaKeyAndUpdate::Stringify(DeltaType type, const Schema& schema) const {
-  return StrCat(Substitute("($0 delta key=$1, change_list=$2)",
-                           type == UNDO ? "UNDO" : "REDO",
-                           StringPrintf("%06u@tx%06u", key.row_idx(),
-                                        atoi(key.timestamp().ToString().c_str())),
-                           RowChangeList(cell).ToString(schema)));
+string DeltaKeyAndUpdate::Stringify(DeltaType type, const Schema& schema, bool pad_key) const {
+  return StrCat(Substitute("($0 delta key=$2, change_list=$1)",
+                           DeltaType_Name(type),
+                           RowChangeList(cell).ToString(schema),
+                           (pad_key ? StringPrintf("%06u@tx%06u", key.row_idx(),
+                                                   atoi(key.timestamp().ToString().c_str()))
+                                    : Substitute("$0@tx$1", key.row_idx(),
+                                                 key.timestamp().ToString()))));
 
 }
 
@@ -72,7 +74,7 @@ Status DebugDumpDeltaIterator(DeltaType type,
                       &cells,
                       &arena));
     for (const DeltaKeyAndUpdate& cell : cells) {
-      LOG_STRING(INFO, out) << cell.Stringify(type, schema);
+      LOG_STRING(INFO, out) << cell.Stringify(type, schema, true /*pad_key*/ );
     }
 
     i += n;

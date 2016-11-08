@@ -581,9 +581,10 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
       RETURN_NOT_OK(visitor->Visit(key, slice, &continue_visit));
       if (VLOG_IS_ON(3)) {
         RowChangeList rcl(slice);
-        DVLOG(3) << "Visited delta for key: " << key.ToString() << " Mut: "
-            << rcl.ToString(*projection_) << " Continue?: "
-            << (continue_visit ? "TRUE" : "FALSE");
+        DVLOG(3) << "Visited " << DeltaType_Name(delta_type_)
+                 << " delta for key: " << key.ToString() << " Mut: "
+                 << rcl.ToString(*projection_) << " Continue?: "
+                 << (continue_visit ? "TRUE" : "FALSE");
       }
     }
   }

@@ -148,8 +148,13 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
       // later at step 5.
       Mutation* new_redos_head = nullptr;
 
-      DVLOG(3) << "MDC: Input Row: " << CompactionInputRowToString(*input_row);
+      // Since this is a delta compaction the input and output row id's are the same.
+      rowid_t row_id = nrows + input_row->row.row_index();
 
+      DVLOG(3) << "MDC Input Row - RowId: " << row_id << " "
+               << CompactionInputRowToString(*input_row);
+
+      // NOTE: This is presently ignored.
       bool is_garbage_collected;
 
       RemoveAncientUndos(history_gc_opts_, input_row);
@@ -164,7 +169,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
                                                    &is_garbage_collected,
                                                    &num_rows_history_truncated));
 
-      DVLOG(3) << "MDC: Output Row: " << RowToString(dst_row, new_undos_head, new_redos_head);
+      DVLOG(3) << "MDC Output Row - RowId: " << row_id << " "
+               << RowToString(dst_row, new_undos_head, new_redos_head);
 
       // We only create a new undo delta file if we need to.
       if (new_undos_head != nullptr && !new_undo_delta_writer_) {
@@ -197,6 +203,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     //    into a REDO delta file.
     for (const DeltaKeyAndUpdate& key_and_update : out) {
       RowChangeList update(key_and_update.cell);
+      DVLOG(4) << "Keeping delta as REDO: "
+               << key_and_update.Stringify(DeltaType::REDO, base_schema_);
       RETURN_NOT_OK_PREPEND(new_redo_delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
                             "Failed to append a delta");
       WARN_NOT_OK(redo_stats.UpdateStats(key_and_update.key.timestamp(), update),

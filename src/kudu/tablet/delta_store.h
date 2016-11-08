@@ -108,7 +108,12 @@ struct DeltaKeyAndUpdate {
   DeltaKey key;
   Slice cell;
 
-  std::string Stringify(DeltaType type, const Schema& schema) const;
+  // Stringifies this DeltaKeyAndUpdate, according to 'schema'.
+  //
+  // If 'pad' is true, pads the delta row ids and txn ids in the output so that we can
+  // compare two stringified representations and obtain the same result as comparing the DeltaKey
+  // itself. That is, if 'pad' is true, then DeltaKey a < DeltaKey b => Stringify(a) < Stringify(b).
+  std::string Stringify(DeltaType type, const Schema& schema, bool pad_key = false) const;
 };
 
 class DeltaIterator {
