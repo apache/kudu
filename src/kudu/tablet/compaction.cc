@@ -519,6 +519,15 @@ class MergeCompactionInput : public CompactionInput {
   Arena* prepared_block_arena_;
 };
 
+// Makes the current head point to the 'new_head', if it's not null, and
+// makes 'new_head' the new head.
+void SetHead(Mutation** current_head, Mutation* new_head) {
+  if (*current_head != nullptr) {
+    new_head->set_next(*current_head);
+  }
+  *current_head = new_head;
+}
+
 } // anonymous namespace
 
 string RowToString(const RowBlockRow& row, const Mutation* redo_head, const Mutation* undo_head) {
@@ -606,23 +615,39 @@ void RowSetsInCompaction::DumpToLog() const {
   }
 }
 
-void RemoveAncientUndos(const HistoryGcOpts& history_gc_opts, CompactionInputRow* row) {
+void RemoveAncientUndos(const HistoryGcOpts& history_gc_opts,
+                        Mutation** undo_head,
+                        const Mutation* redo_head,
+                        bool* is_garbage_collected) {
+  *is_garbage_collected = false;
   if (!history_gc_opts.gc_enabled()) {
     return;
+  }
+
+  // Make sure there is at most one REDO in the redo_head and that, if present, it's a DELETE.
+  if (redo_head != nullptr) {
+    CHECK(redo_head->changelist().is_delete());
+    CHECK(redo_head->next() == nullptr);
+
+    // Garbage collect rows that are deleted before the AHM.
+    if (history_gc_opts.IsAncientHistory(redo_head->timestamp())) {
+      *is_garbage_collected = true;
+      return;
+    }
   }
 
   DVLOG(5) << "Ancient history mark: " << history_gc_opts.ancient_history_mark().ToString()
             << ": " << HybridClock::StringifyTimestamp(history_gc_opts.ancient_history_mark());
 
   Mutation *prev_undo = nullptr;
-  Mutation *undo_mut = row->undo_head;
+  Mutation *undo_mut = *undo_head;
   while (undo_mut != nullptr) {
     if (history_gc_opts.IsAncientHistory(undo_mut->timestamp())) {
       // Drop all undos following this one in the list; Their timestamps will be lower.
       if (prev_undo != nullptr) {
         prev_undo->set_next(nullptr);
       } else {
-        row->undo_head = nullptr;
+        *undo_head = nullptr;
       }
       break;
     }
@@ -631,30 +656,12 @@ void RemoveAncientUndos(const HistoryGcOpts& history_gc_opts, CompactionInputRow
   }
 }
 
-namespace {
-// Makes the current UNDO head point to the 'new_head', if it's not null, and
-// makes 'new_head' the new UNDO head.
-void SetUndoHead(Mutation** current_head, Mutation* new_head) {
-  if (*current_head != nullptr) {
-    new_head->set_next(*current_head);
-  }
-  *current_head = new_head;
-}
-} // anonymous namespace
-
 Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       const CompactionInputRow& src_row,
-                                      const HistoryGcOpts& history_gc_opts,
-                                      const Schema* base_schema,
                                       Mutation** new_undo_head,
                                       Mutation** new_redo_head,
                                       Arena* arena,
-                                      RowBlockRow* dst_row,
-                                      bool* is_garbage_collected,
-                                      uint64_t* num_rows_history_truncated) {
-  // In most cases, we don't want to remove all traces of this row after
-  // compaction.
-  *is_garbage_collected = false;
+                                      RowBlockRow* dst_row) {
 
   // At the time of writing, REINSERT is never encoded as an UNDO and the base
   // data can never be in a deleted state (see KUDU-237).
@@ -663,7 +670,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   #define ERROR_LOG_CONTEXT \
     Substitute("Source Row: $0\nDest Row: $1", \
                 CompactionInputRowToString(src_row), \
-                RowToString(*dst_row, undo_head, redo_head))
+                RowToString(*dst_row, undo_head, redo_delete))
 
   faststring dst;
   RowChangeListEncoder undo_encoder(&dst);
@@ -672,10 +679,9 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   // which doesn't actually mutate it and having Mutation::set_next()
   // take a non-const value is required in other places.
   Mutation* undo_head = const_cast<Mutation*>(src_row.undo_head);
-  Mutation* redo_head = nullptr;
+  Mutation* redo_delete = nullptr;
 
-  // Convert the redos into undos. Any redos that are eligible for history GC
-  // are applied and then thrown away (they don't generate undos).
+  // Convert the redos into undos.
   for (const Mutation *redo_mut = src_row.redo_head;
        redo_mut != nullptr;
        redo_mut = redo_mut->acquire_next()) {
@@ -689,11 +695,11 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 
     Mutation* current_undo;
     DVLOG(3) << "  @" << redo_mut->timestamp() << ": "
-             << redo_mut->changelist().ToString(*base_schema);
+             << redo_mut->changelist().ToString(*src_row.row.schema());
 
     RowChangeListDecoder redo_decoder(redo_mut->changelist());
     RETURN_NOT_OK_LOG(redo_decoder.Init(), ERROR,
-                      "Unable to decode changelist. " + ERROR_LOG_CONTEXT);
+                      "Unable to decode changelist.\n" + ERROR_LOG_CONTEXT);
 
     switch (redo_decoder.get_type()) {
       case RowChangeList::kUpdate: {
@@ -702,7 +708,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
         undo_encoder.SetToUpdate();
         RETURN_NOT_OK_LOG(redo_decoder.MutateRowAndCaptureChanges(
             dst_row, static_cast<Arena*>(nullptr), &undo_encoder), ERROR,
-                          "Unable to apply update undo. \n " + ERROR_LOG_CONTEXT);
+                          "Unable to apply update undo.\n " + ERROR_LOG_CONTEXT);
 
         // If all of the updates were for columns that we aren't projecting, we don't
         // need to push them into the UNDO file.
@@ -710,37 +716,29 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
           continue;
         }
 
-        if (history_gc_opts.IsAncientHistory(redo_mut->timestamp())) {
-          // Don't generate an undo for this.
-          continue;
-        }
-
         // create the UNDO mutation in the provided arena.
         current_undo = Mutation::CreateInArena(arena, redo_mut->timestamp(),
                                                undo_encoder.as_changelist());
 
-        SetUndoHead(&undo_head, current_undo);
+        SetHead(&undo_head, current_undo);
         break;
       }
       case RowChangeList::kDelete: {
+        CHECK(redo_delete == nullptr);
         redo_decoder.TwiddleDeleteStatus(&is_deleted);
         // Delete mutations are left as redos. Encode the DELETE as a redo.
         undo_encoder.SetToDelete();
-        redo_head = Mutation::CreateInArena(arena,
-                                            redo_mut->timestamp(),
-                                            undo_encoder.as_changelist());
-
-        if (history_gc_opts.IsAncientHistory(redo_mut->timestamp())) {
-          // This row was deleted prior to the ancient history mark. Remove all
-          // traces of this row. This flag is set to false once again if there
-          // is a subsequent reinsert (see above).
-          *is_garbage_collected = true;
-        }
+        redo_delete = Mutation::CreateInArena(arena,
+                                              redo_mut->timestamp(),
+                                              undo_encoder.as_changelist());
         break;
       }
       case RowChangeList::kReinsert: {
+        DCHECK(is_deleted) << "Got REINSERT for a non-deleted row. " << ERROR_LOG_CONTEXT;
+        CHECK(redo_delete != nullptr)  << "Got REINSERT without a redo DELETE. "
+                                        << ERROR_LOG_CONTEXT;
         redo_decoder.TwiddleDeleteStatus(&is_deleted);
-        *is_garbage_collected = false;
+
 
         // Right now when a REINSERT mutation is found it is treated as a new insert and it
         // clears the whole row history before it. We apply the reinsert to the new
@@ -763,12 +761,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 
         // Also reset the previous redo head since it stored the delete which was nullified
         // by this reinsert
-        redo_head = nullptr;
-
-        if ((*num_rows_history_truncated)++ == 0) {
-          LOG(WARNING) << "Found REINSERT REDO truncating row history for " << ERROR_LOG_CONTEXT
-                       << " Note: this warning will appear only for the first truncated row";
-        }
+        redo_delete = nullptr;
 
         if (PREDICT_FALSE(VLOG_IS_ON(2))) {
           VLOG(2) << "Found REINSERT REDO, cannot create UNDO for it, resetting row history "
@@ -781,7 +774,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   }
 
   *new_undo_head = undo_head;
-  *new_redo_head = redo_head;
+  *new_redo_head = redo_delete;
 
   return Status::OK();
 
@@ -798,8 +791,6 @@ Status FlushCompactionInput(CompactionInput* input,
   DCHECK(out->schema().has_column_ids());
 
   RowBlock block(out->schema(), 100, nullptr);
-
-  uint64_t num_rows_history_truncated = 0;
 
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
@@ -822,24 +813,22 @@ Status FlushCompactionInput(CompactionInput* input,
       Mutation* new_undos_head = nullptr;
       Mutation* new_redos_head = nullptr;
 
-      bool is_garbage_collected;
-      uint64_t prev_num_rows_history_truncated = num_rows_history_truncated;
-      RemoveAncientUndos(history_gc_opts, input_row);
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
                                                    *input_row,
-                                                   history_gc_opts,
-                                                   schema,
                                                    &new_undos_head,
                                                    &new_redos_head,
                                                    input->PreparedBlockArena(),
-                                                   &dst_row,
-                                                   &is_garbage_collected,
-                                                   &num_rows_history_truncated));
+                                                   &dst_row));
+
+      // Remove ancient UNDOS and check whether the row should be garbage collected.
+      bool is_garbage_collected;
+      RemoveAncientUndos(history_gc_opts,
+                                &new_undos_head,
+                                new_redos_head,
+                                &is_garbage_collected);
 
       DVLOG(4) << "Output Row: " << RowToString(dst_row, new_redos_head, new_undos_head) <<
-          "; Was garbage collected? " << is_garbage_collected <<
-          "; Was history truncated? " <<
-              (num_rows_history_truncated > prev_num_rows_history_truncated);
+          "; Was garbage collected? " << is_garbage_collected;
 
       // Whether this row was garbage collected
       if (is_garbage_collected) {
@@ -873,11 +862,6 @@ Status FlushCompactionInput(CompactionInput* input,
     }
 
     RETURN_NOT_OK(input->FinishBlock());
-  }
-
-  if (num_rows_history_truncated > 0) {
-    LOG(WARNING) << "Total " << num_rows_history_truncated
-                 << " rows lost some history due to REINSERT after DELETE";
   }
   return Status::OK();
 }

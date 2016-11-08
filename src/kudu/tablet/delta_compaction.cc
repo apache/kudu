@@ -113,7 +113,6 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
   DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_.ToString() << ")";
   DeltaStats redo_stats;
   DeltaStats undo_stats;
-  uint64_t num_rows_history_truncated = 0;
   size_t nrows = 0;
   // We know that we're reading everything from disk so we're including all transactions.
   MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
@@ -157,17 +156,17 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
       // NOTE: This is presently ignored.
       bool is_garbage_collected;
 
-      RemoveAncientUndos(history_gc_opts_, input_row);
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
                                                    *input_row,
-                                                   history_gc_opts_,
-                                                   &base_schema_,
                                                    &new_undos_head,
                                                    &new_redos_head,
                                                    &arena,
-                                                   &dst_row,
-                                                   &is_garbage_collected,
-                                                   &num_rows_history_truncated));
+                                                   &dst_row));
+
+      RemoveAncientUndos(history_gc_opts_,
+                         &new_undos_head,
+                         new_redos_head,
+                         &is_garbage_collected);
 
       DVLOG(3) << "MDC Output Row - RowId: " << row_id << " "
                << RowToString(dst_row, new_undos_head, new_redos_head);
