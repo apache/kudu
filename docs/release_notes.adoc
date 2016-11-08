@@ -33,7 +33,19 @@
 [[rn_1.1.0_new_features]]
 == New features
 
-XXX
+* The Python client has been brought up to feature parity with the Java and {cpp} clients
+  and as such the package version will be brought to 1.1 with this release (from 0.3). A
+  list of the highlights can be found below.
+    ** Improved Partial Row semantics
+    ** Range partition support
+    ** Scan Token API
+    ** Enhanced predicate support
+    ** Support for all Kudu data types (including a mapping of Python's `datetime.datetime` to
+    `UNIXTIME_MICROS`)
+    ** Alter table support
+    ** Enabled Read at Snapshot for Scanners
+    ** Enabled Scanner Replica Selection
+    ** A few bug fixes for Python 3 in addition to various other improvements.
 
 == Optimizations and improvements
 
