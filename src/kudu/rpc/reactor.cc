@@ -214,9 +214,10 @@ void ReactorThread::RegisterConnection(const scoped_refptr<Connection>& conn) {
   DCHECK(IsCurrentThread());
 
   Status s = StartConnectionNegotiation(conn);
-  if (!s.ok()) {
+  if (PREDICT_FALSE(!s.ok())) {
     LOG(ERROR) << "Server connection negotiation failed: " << s.ToString();
     DestroyConnection(conn.get(), s);
+    return;
   }
   server_conns_.push_back(conn);
 }
