@@ -241,7 +241,6 @@ TEST_F(TestSaslRpc, TestNoMatchingMechanisms) {
   ASSERT_OK(kdc.CreateServiceKeytab("kudu/localhost", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
 
-
   RunNegotiationTest(
       std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
                 [](const Status& s, SaslServer& server) {
@@ -265,6 +264,40 @@ TEST_F(TestSaslRpc, TestNoMatchingMechanisms) {
 
 // Test SASL negotiation using the GSSAPI (kerberos) mechanism over a socket.
 TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
+  MiniKdc kdc;
+  ASSERT_OK(kdc.Start());
+
+  // Create the server principal and keytab.
+  string kt_path;
+  ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
+  CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+
+  // Create and kinit as a client user.
+  ASSERT_OK(kdc.CreateUserPrincipal("testuser"));
+  ASSERT_OK(kdc.Kinit("testuser"));
+  ASSERT_OK(kdc.SetKrb5Environment());
+
+  // Authentication should succeed on both sides.
+  RunNegotiationTest(
+      std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
+                [](const Status& s, SaslServer& server) {
+                  CHECK_OK(s);
+                  CHECK_EQ(SaslMechanism::GSSAPI, server.negotiated_mechanism());
+                  CHECK_EQ("testuser", server.authenticated_user());
+                }),
+      std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
+                [](const Status& s, SaslClient& client) {
+                  CHECK_OK(s);
+                  CHECK_EQ(SaslMechanism::GSSAPI, client.negotiated_mechanism());
+                }));
+}
+
+#ifndef __APPLE__
+// Test invalid SASL negotiations using the GSSAPI (kerberos) mechanism over a socket.
+// This test is ignored on macOS because the system Kerberos implementation
+// (Heimdal) caches the non-existence of client credentials, which causes futher
+// tests to fail.
+TEST_F(TestSaslRpc, TestGSSAPIInvalidNegotiation) {
   MiniKdc kdc;
   ASSERT_OK(kdc.Start());
 
@@ -295,14 +328,6 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
   ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
 
-#if defined(__APPLE__)
-  string kErrorMsg = strings::Substitute("get-pricipal open($0): "
-                                         "No such file or directory (negative cache)",
-                                         kInvalidPath);
-#else
-  string kErrorMsg = "No Kerberos credentials available";
-#endif
-
   // Try to negotiate with no krb5 credentials on the client. It should fail on both
   // sides.
   RunNegotiationTest(
@@ -314,10 +339,10 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
                   CHECK(s.IsNetworkError());
                 }),
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
-                [kErrorMsg](const Status& s, SaslClient& client) {
+                [](const Status& s, SaslClient& client) {
                   CHECK(s.IsNotAuthorized());
 #ifndef KRB5_VERSION_LE_1_10
-                  CHECK_EQ(s.message().ToString(), kErrorMsg);
+                  CHECK_EQ(s.message().ToString(), "No Kerberos credentials available");
 #endif
                 }));
 
@@ -325,20 +350,6 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
   ASSERT_OK(kdc.CreateUserPrincipal("testuser"));
   ASSERT_OK(kdc.Kinit("testuser"));
   ASSERT_OK(kdc.SetKrb5Environment());
-
-  // Authentication should now succeed on both sides.
-  RunNegotiationTest(
-      std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
-                [](const Status& s, SaslServer& server) {
-                  CHECK_OK(s);
-                  CHECK_EQ(SaslMechanism::GSSAPI, server.negotiated_mechanism());
-                  CHECK_EQ("testuser", server.authenticated_user());
-                }),
-      std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
-                [](const Status& s, SaslClient& client) {
-                  CHECK_OK(s);
-                  CHECK_EQ(SaslMechanism::GSSAPI, client.negotiated_mechanism());
-                }));
 
   // Change the server's keytab file so that it has inappropriate
   // credentials.
@@ -363,11 +374,16 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
                                       "No key table entry found matching kudu/127.0.0.1");
 #endif
                 }));
-
 }
+#endif
 
+#ifndef __APPLE__
 // Test that the pre-flight check for servers requiring Kerberos provides
 // nice error messages for missing or bad keytabs.
+//
+// This is ignored on macOS because the system Kerberos implementation does not
+// fail the preflight check when the keytab is inaccessible, probably because
+// the preflight check passes a 0-length token.
 TEST_F(TestSaslRpc, TestPreflight) {
   // Try pre-flight with no keytab.
   Status s = SaslServer::PreflightCheckGSSAPI(kSaslAppName);
@@ -403,6 +419,7 @@ TEST_F(TestSaslRpc, TestPreflight) {
   ASSERT_STR_MATCHES(s.ToString(), "No key table entry found matching kudu/.*");
 #endif
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -140,7 +140,9 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
     // The error differs depending on the version of Kerberos, so we match
     // either message.
     ASSERT_STR_MATCHES(s.ToString(), "Not authorized.*"
-                       "(Credentials cache file.*not found|No Kerberos credentials)");
+                       "(Credentials cache file.*not found|"
+                        "No Kerberos credentials|"
+                        ".*No such file or directory)");
   }
   cluster.Shutdown();
 }
