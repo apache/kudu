@@ -31,9 +31,8 @@ import java.util.concurrent.Executor;
 /**
  * A synchronous and thread-safe client for Kudu.
  * <p>
- * This class acts as a wrapper around {@link AsyncKuduClient}. The {@link Deferred} objects are
- * joined against using the default admin operation timeout
- * (see {@link org.apache.kudu.client.KuduClient.KuduClientBuilder#defaultAdminOperationTimeoutMs(long)} (long)}).
+ * This class acts as a wrapper around {@link AsyncKuduClient} which contains all the relevant
+ * documentation.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
