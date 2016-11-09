@@ -1023,6 +1023,8 @@ class Partitioning(object):
         -------
         self: this object
         """
+        if isinstance(column_names, str):
+            column_names = [column_names]
         self._range_partition_cols = column_names
         return self
 
@@ -1464,6 +1466,8 @@ cdef class Scanner:
         -------
         self : Scanner
         """
+        if isinstance(names, str):
+            names = [names]
         cdef vector[string] v_names
         for name in names:
             v_names.push_back(tobytes(name))
@@ -1930,6 +1934,8 @@ cdef class ScanTokenBuilder:
         -------
         self : ScanTokenBuilder
         """
+        if isinstance(names, str):
+            names = [names]
         cdef vector[string] v_names
         for name in names:
             v_names.push_back(tobytes(name))
