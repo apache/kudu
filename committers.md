@@ -20,6 +20,7 @@ Following is a list of current Kudu committers and members of the Kudu PMC.
 | jarcec | Jarek Jarcec Cecho | PMC |
 | jdcryans | Jean-Daniel Cryans | PMC |
 | jfarrell | Jake Farrell | PMC |
+| jtbirdsell | Jordan Birdsell | PMC |
 | julien | Julien Le Dem | PMC |
 | mattmann | Chris Mattmann | PMC |
 | misty | Misty Stanley-Jones | PMC |
