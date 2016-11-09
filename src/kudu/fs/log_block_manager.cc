@@ -576,8 +576,10 @@ Status LogBlockContainer::AppendData(const Slice& data) {
   }
   total_bytes_written_ += data.size();
 
-  if (PREDICT_FALSE(!FLAGS_log_container_preallocate_bytes)) {
-    // Without preallocation, every call grows the container.
+  // This append may have changed the container size if:
+  // 1. It was large enough that it blew out the preallocated space.
+  // 2. Preallocation was disabled.
+  if (total_bytes_written_ > preallocated_offset_) {
     RETURN_NOT_OK(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
   }
   return Status::OK();
@@ -630,12 +632,12 @@ Status LogBlockContainer::EnsurePreallocated(size_t next_append_bytes) {
   if (!FLAGS_log_container_preallocate_bytes) {
     return Status::OK();
   }
-  DCHECK_GE(preallocated_offset_, total_bytes_written_);
 
-  // If the next write exceeds the remaining preallocated window, we need to
-  // preallocate another chunk.
-  if (next_append_bytes > preallocated_offset_ - total_bytes_written_) {
-    int64_t off = preallocated_offset_;
+  // If the last write blew out the preallocation window, or if the next write
+  // exceeds it, we need to preallocate another chunk.
+  if (total_bytes_written_ > preallocated_offset_ ||
+      next_append_bytes > preallocated_offset_ - total_bytes_written_) {
+    int64_t off = std::max(preallocated_offset_, total_bytes_written_);
     int64_t len = FLAGS_log_container_preallocate_bytes;
     {
       std::lock_guard<Mutex> l(data_file_lock_);
@@ -645,7 +647,7 @@ Status LogBlockContainer::EnsurePreallocated(size_t next_append_bytes) {
     VLOG(2) << Substitute("Preallocated $0 bytes at offset $1 in container $2",
                           len, off, ToString());
 
-    preallocated_offset_ += len;
+    preallocated_offset_ = off + len;
   }
 
   return Status::OK();

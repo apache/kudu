@@ -1007,6 +1007,25 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
                                      false));
 }
 
+// Regression test for a crash when a container's append offset exceeded its
+// preallocation offset.
+TEST_F(LogBlockManagerTest, TestAppendExceedsPreallocation) {
+  RETURN_NOT_LOG_BLOCK_MANAGER();
+
+  FLAGS_log_container_preallocate_bytes = 1;
+
+  // Create a container, preallocate it by one byte, and append more than one.
+  gscoped_ptr<WritableBlock> writer;
+  ASSERT_OK(bm_->CreateBlock(&writer));
+  ASSERT_OK(writer->Append("hello world"));
+  ASSERT_OK(writer->Close());
+
+  // On second append, don't crash just because the append offset is ahead of
+  // the preallocation offset!
+  ASSERT_OK(bm_->CreateBlock(&writer));
+  ASSERT_OK(writer->Append("hello world"));
+}
+
 TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
   // Reopen the block manager with metrics enabled.
   MetricRegistry registry;
