@@ -63,6 +63,9 @@ message MasterErrorPB {
 
     // The request or response involved a tablet which is not yet running.
     TABLET_NOT_RUNNING = 9;
+
+    // The number of replicas requested is even.
+    EVEN_REPLICATION_FACTOR = 10;
   }
 
   // The error code.

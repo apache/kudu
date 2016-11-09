@@ -44,6 +44,7 @@
 
 DECLARE_bool(enable_leader_failure_detection);
 DECLARE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader);
+DECLARE_bool(allow_unsafe_replication_factor);
 DEFINE_int32(num_election_test_loops, 3,
              "Number of random EmulateElection() loops to execute in "
              "TestReportNewLeaderOnLeaderChange");
@@ -106,6 +107,9 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   // EmulateElection() with a distributed consensus configuration.
   FLAGS_enable_leader_failure_detection = false;
   FLAGS_catalog_manager_wait_for_new_tablets_to_elect_leader = false;
+
+  // Allow creating table with even replication factor.
+  FLAGS_allow_unsafe_replication_factor = true;
 
   // Run a few more iters in slow-test mode.
   OverrideFlagForSlowTests("num_election_test_loops", "10");

@@ -397,7 +397,10 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
     "--flush_threshold_mb=0",
     "--maintenance_manager_polling_interval_ms=100"
   };
-  NO_FATALS(StartCluster(ts_flags));
+  vector<string> master_flags = {
+    "--allow_unsafe_replication_factor=true"
+  };
+  NO_FATALS(StartCluster(ts_flags, master_flags));
   const MonoDelta timeout = MonoDelta::FromSeconds(10);
   const int kTsIndex = 0; // We'll test with the first TS.
 
@@ -553,7 +556,8 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
       "--log_segment_size_mb=1"                   // Faster log rolls.
   };
   vector<string> master_flags = {
-      "--catalog_manager_wait_for_new_tablets_to_elect_leader=false"
+      "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+      "--allow_unsafe_replication_factor=true"
   };
   NO_FATALS(StartCluster(ts_flags, master_flags));
   const MonoDelta kTimeout = MonoDelta::FromSeconds(20);

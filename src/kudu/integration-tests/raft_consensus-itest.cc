@@ -1982,7 +1982,8 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 2;
   vector<string> ts_flags;
-  vector<string> master_flags = { "--master_add_server_when_underreplicated=false" };
+  vector<string> master_flags = { "--master_add_server_when_underreplicated=false",
+                                  "--allow_unsafe_replication_factor=true"};
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   LOG(INFO) << "Finding tablet leader and waiting for things to start...";
@@ -2133,14 +2134,19 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
 TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 2;
-  vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  ts_flags.push_back("--log_cache_size_limit_mb=1");
-  ts_flags.push_back("--log_segment_size_mb=1");
-  ts_flags.push_back("--log_async_preallocate_segments=false");
-  ts_flags.push_back("--flush_threshold_mb=1");
-  ts_flags.push_back("--maintenance_manager_polling_interval_ms=300");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+
+  vector<string> ts_flags = {
+      "--enable_leader_failure_detection=false",
+      "--log_cache_size_limit_mb=1",
+      "--log_segment_size_mb=1",
+      "--log_async_preallocate_segments=false",
+      "--flush_threshold_mb=1",
+      "--maintenance_manager_polling_interval_ms=300",
+  };
+  vector<string> master_flags = {
+      "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+      "--allow_unsafe_replication_factor=true"
+  };
   BuildAndStart(ts_flags, master_flags);
 
   // 50K is enough to cause flushes & log rolls.

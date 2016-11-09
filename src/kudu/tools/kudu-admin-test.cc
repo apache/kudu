@@ -57,7 +57,8 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 2;
   BuildAndStart({ "--enable_leader_failure_detection=false" },
-                { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false" });
+                { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+                  "--allow_unsafe_replication_factor=true"});
 
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);

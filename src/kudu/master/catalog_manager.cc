@@ -116,6 +116,10 @@ DEFINE_int32(default_num_replicas, 3,
              "Default number of replicas for tables that do not have the num_replicas set.");
 TAG_FLAG(default_num_replicas, advanced);
 
+DEFINE_bool(allow_unsafe_replication_factor, false,
+            "Allow creating tables with even replication factor.");
+TAG_FLAG(allow_unsafe_replication_factor, unsafe);
+
 DEFINE_int32(catalog_manager_bg_task_wait_ms, 1000,
              "Amount of time the catalog manager background task thread waits "
              "between runs");
@@ -924,6 +928,14 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // If they didn't specify a num_replicas, set it based on the default.
   if (!req.has_num_replicas()) {
     req.set_num_replicas(FLAGS_default_num_replicas);
+  }
+
+  // Reject create table with even replication factors, unless master flag
+  // allow_unsafe_replication_factor is on.
+  if (req.num_replicas() % 2 == 0 && !FLAGS_allow_unsafe_replication_factor) {
+    s = Status::InvalidArgument(Substitute("Illegal replication factor $0 (replication "
+                                           "factor must be odd)", req.num_replicas()));
+    return SetError(MasterErrorPB::EVEN_REPLICATION_FACTOR, s);
   }
 
   // Verify that the total number of tablets is reasonable, relative to the number

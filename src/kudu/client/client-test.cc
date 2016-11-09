@@ -72,6 +72,7 @@
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(log_inject_latency);
+DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(log_inject_latency_ms_mean);
 DECLARE_int32(log_inject_latency_ms_stddev);
@@ -1143,6 +1144,9 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   // Create test table and insert test rows.
   const string kScanTable = "TestScanFaultTolerance";
   shared_ptr<KuduTable> table;
+
+  // Allow creating table with even replication factor.
+  FLAGS_allow_unsafe_replication_factor = true;
 
   // We use only two replicas in this test so that every write is fully replicated to both
   // servers (the Raft majority is 2/2). This reduces potential flakiness if the scanner tries
@@ -4223,5 +4227,16 @@ TEST_F(ClientTest, TestGetTablet) {
   }
 }
 
+// Test create table with even replicas factor should fail.
+TEST_F(ClientTest, TestTableWithEvenReplicas) {
+  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  Status s = table_creator->table_name("table_with_even_replicas")
+                          .schema(&schema_)
+                          .num_replicas(2)
+                          .set_range_partition_columns({ "key" })
+                          .Create();
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(), "Illegal replication factor");
+}
 } // namespace client
 } // namespace kudu
