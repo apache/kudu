@@ -48,6 +48,12 @@ class EasyCurl {
                    const std::string& post_data,
                    faststring* dst);
 
+  // Set whether to verify the server's SSL certificate in the case of an HTTPS
+  // connection.
+  void set_verify_peer(bool verify) {
+    verify_peer_ = verify;
+  }
+
  private:
   // Do a request. If 'post_data' is non-NULL, does a POST.
   // Otherwise, does a GET.
@@ -55,6 +61,10 @@ class EasyCurl {
                    const std::string* post_data,
                    faststring* dst);
   CURL* curl_;
+
+  // Whether to verify the server certificate.
+  bool verify_peer_ = true;
+
   DISALLOW_COPY_AND_ASSIGN(EasyCurl);
 };
 

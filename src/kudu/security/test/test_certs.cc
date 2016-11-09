@@ -17,6 +17,14 @@
 
 #include "kudu/security/test/test_certs.h"
 
+#include <string>
+
+#include "kudu/util/env.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
+
+using std::string;
+
 namespace kudu {
 namespace security {
 namespace ca {
@@ -208,5 +216,76 @@ H/sbP2R+P6RvQceLEEtk6ZZLiuScVmLtVOpUoUZb3Rx6a7GKbec7oQ==
 )***";
 
 } // namespace ca
+
+Status CreateTestSSLCerts(const string& dir,
+                          string* cert_file,
+                          string* key_file,
+                          string* key_password) {
+  const char* kCert = R"(
+-----BEGIN CERTIFICATE-----
+MIIDXTCCAkWgAwIBAgIJAOOmFHYkBz4rMA0GCSqGSIb3DQEBCwUAMEUxCzAJBgNV
+BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX
+aWRnaXRzIFB0eSBMdGQwHhcNMTYxMTAyMjI0OTQ5WhcNMTcwMjEwMjI0OTQ5WjBF
+MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50
+ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB
+CgKCAQEAppo9GwiDisQVYAF9NXl8ykqo0MIi5rfNwiE9kUWbZ2ejzxs+1Cf7WCn4
+mzbkJx5ZscRjhnNb6dJxtZJeid/qgiNVBcNzh35H8J+ao0tEbHjCs7rKOX0etsFU
+p4GQwYkdfpvVBsU8ciXvkxhvt1XjSU3/YJJRAvCyGVxUQlKiVKGCD4OnFNBwMdNw
+7qI8ryiRv++7I9udfSuM713yMeBtkkV7hWUfxrTgQOLsV/CS+TsSoOJ7JJqHozeZ
++VYom85UqSfpIFJVzM6S7BTb6SX/vwYIoS70gubT3HbHgDRcMvpCye1npHL9fL7B
+87XZn7wnnUem0eeCqWyUjJ82Uj9mQQIDAQABo1AwTjAdBgNVHQ4EFgQUOY7rpWGo
+ZMrmyRZ9RohPWVwyPBowHwYDVR0jBBgwFoAUOY7rpWGoZMrmyRZ9RohPWVwyPBow
+DAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEATKh3io8ruqbhmopY3xQW
+A2pEhs4ZSu3H+AfULMruVsXKEZjWp27nTsFaxLZYUlzeZr0EcWwZ79qkcA8Dyj+m
+VHhrCAPpcjsDACh1ZdUQAgASkVS4VQvkukct3DFa3y0lz5VwQIxjoQR5y6dCvxxX
+T9NpRo/Z7pd4MRhEbz3NT6PScQ9f2MTrR0NOikLdB98JlpKQbEKxzbMhWDw4J3mr
+mK6zdemjdCcRDsBVPswKnyAjkibXaZkpNRzjvDNAgO88MKlArCYoyRZqIfkcSXAw
+wTdGQ+5GQLsY9zS49Rrhk9R7eOmDhaHybdRBDqW1JiCSmzURZAxlnrjox4GmC3JJ
+aA==
+-----END CERTIFICATE-----
+)";
+  const char* kKey = R"(
+-----BEGIN ENCRYPTED PRIVATE KEY-----
+MIIFDjBABgkqhkiG9w0BBQ0wMzAbBgkqhkiG9w0BBQwwDgQIA3+5nR+Jr18CAggA
+MBQGCCqGSIb3DQMHBAhCwHFGbZEcBgSCBMjT9vVbrYpd1reGwfLhk8703ihlspZi
+cm4Z2MM+lkJs0Pi8O4n+zNSTfgrEr2XGlKIktBWEBxbhYrdYy1bYm4Fu5Z055JFo
+89L/9zT1Zm/agk3CUW+ljirYZF60t/dDWmzLwt9f4dp8m4etL/UwvMJ1NglyxMkj
+c03+aWWh4wHLRGkGDJFsKEQY87LL+nAOZS7P1qY38HnzQTOgLyNpntXX3SryzvQ6
+CpNIyQFhVGXfGn6DzGJB76heyLpCyAvIiP87vBS3zbnSqDM6v6PTW3SMo8R42RfL
+d0CVmO8Z8NQeX29EkMHSRu7gCwXu1pf40QIog2vJZ7dmUgsU9GbBSg8l3nVWS6sm
+AICNwPvHXRMMGX0wBJyK2ihuC7rVd5aZLgmu1sjlLYaB9KkoETcFFT8KbFpnd6aR
+1whXQ4rPm1WyGtqbVGkZthisvGUeeGnbv2HXUVthSGleD+hQuwFXa8wE/8+Ruq9X
+rNv/WMrf2NLIm+wbr19JzVSvLh+j7mIBMZmIwGQvBPo3/Tuq2zeyZdfSOroFcanq
+Lyoc6yF5rAkU5BLVe36e48MarWICWDCxiz1n6tWdCpcXWfBvlWIkkjP1/rhqnOW3
+DKNjTyGJhaVYydkseoGrrpj4gkyyWtpgw+8c7jdtk+7cmIxpXu3UU6fh+Yt3vEhF
+VqHvCd+YuUgpJ+TW574xiau4xbyib5Qv6JAR1Qp3MtzZ1IngyCU4QqqgxBGMBVqc
+2LI7Romw7icfdzJxMeMp9WXh8D0Bxx5kjDcO0eUnkpVkFyozXZkoLCnoJ8u3yJo6
+yV4RQ4mOAWj7uZYg9KEUywNCHuIVPKG0CEfQkxKiPw4uvmdimKZ6Ij7aqrrc68Vi
+oZnNHJEfJhnG78MKHgxXHNrMLFXBgPpLoBQxUBVhI2nq5D2l7gL5bKc9JZNg+mRJ
+CouijXBHS1nZ/7GwVjLvNIGKWEsuiz1P0SYki1S02/3bBF9ySdeNGl1XTNqK4Xqy
+arK4agJc89wg3N6SOIA+q8kA4LScafMtCkVDChw0CcLUrQERpH1tv1cqCt5zXF9n
+5AnnWmEM2knlkHxXzg7k/1YXUz4JMmAhS4gVHuNU1uZR152lD+kgSy2K4sCyCfx2
+iWFpDGj556AUxDRGrqKU7OLC/64AuNz5IJs8doDa29cGGKFw3/foRoOaya84ISGW
+GTl2qDOHZrJbgR6BUpSh2E2mVyO3GwIBst6yIb5VaTpNuIwS6fhjC4fQZEV6hHcx
+qNvHxTTvz6eag4TeUPR48h/kGsI44DB0r4I79WbTwg5dvdlYbchPIwAs888bxpd6
+7ZxSg7EwuyHqJEL0FkWcDgw89+vLDETQiTwfscDxwm893gTymj5JPSDz35kudPlI
+rsNfABLeXSg8Z8/7LsPP6Q48c1jisLVPPndV80cS791dvyXRxZWvX2z5UFuTDy3K
+PV3L60mdejXudzFPfvovhgJDIWsKMmlxYplRWvG3WUXTck1Kb7KEcZmuo4nJMOID
+6caoDNa5L9p5XH54sBCB7uqTNdqijaqq9iBFx/MqL3LHt6/wVF5J9g6PmuDxuYDX
+tBKU0ns67U6wUxvLGBX/7RnWUibc5JwVGPBGw1E5u6MKWxW9Q6Dk1WakAtsqtDkR
+WEc=
+-----END ENCRYPTED PRIVATE KEY-----
+)";
+  const char* kKeyPassword = "test";
+
+  *cert_file = JoinPathSegments(dir, "test.cert");
+  *key_file = JoinPathSegments(dir, "test.key");
+  *key_password = kKeyPassword;
+
+  RETURN_NOT_OK(WriteStringToFile(Env::Default(), kCert, *cert_file));
+  RETURN_NOT_OK(WriteStringToFile(Env::Default(), kKey, *key_file));
+  return Status::OK();
+}
+
 } // namespace security
 } // namespace kudu

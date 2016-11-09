@@ -14,11 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-//
-
 #pragma once
 
+#include <string>
+
 namespace kudu {
+class Status;
+
 namespace security {
 namespace ca {
 
@@ -40,6 +42,14 @@ extern const char kCaExpiredCert[];
 extern const char kCaExpiredPrivateKey[];
 
 } // namespace ca
+
+// Creates a matching SSL certificate and private key file in 'dir', returning
+// their paths in '*cert_file' and '*key_file'. The password associated with
+// the private key is stored in '*key_password'.
+Status CreateTestSSLCerts(const std::string& dir,
+                          std::string* cert_file,
+                          std::string* key_file,
+                          std::string* key_password);
+
 } // namespace security
 } // namespace kudu
-

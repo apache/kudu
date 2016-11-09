@@ -102,5 +102,5 @@ endif()
 # server_process tests
 #########################################
 
-set(KUDU_TEST_LINK_LIBS server_process ${KUDU_MIN_TEST_LIBS})
+set(KUDU_TEST_LINK_LIBS server_process security-test ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(webserver-test)

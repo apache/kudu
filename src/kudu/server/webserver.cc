@@ -39,11 +39,13 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/subprocess.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
 
@@ -125,12 +127,12 @@ Status Webserver::BuildListenSpec(string* spec) const {
 Status Webserver::Start() {
   LOG(INFO) << "Starting webserver on " << http_address_;
 
-  vector<const char*> options;
+  vector<string> options;
 
   if (static_pages_available()) {
     LOG(INFO) << "Document root: " << opts_.doc_root;
     options.push_back("document_root");
-    options.push_back(opts_.doc_root.c_str());
+    options.push_back(opts_.doc_root);
     options.push_back("enable_directory_listing");
     options.push_back("no");
   } else {
@@ -140,12 +142,34 @@ Status Webserver::Start() {
   if (IsSecure()) {
     LOG(INFO) << "Webserver: Enabling HTTPS support";
     options.push_back("ssl_certificate");
-    options.push_back(opts_.certificate_file.c_str());
+    options.push_back(opts_.certificate_file);
+
+    if (!opts_.private_key_file.empty()) {
+      options.push_back("ssl_private_key");
+      options.push_back(opts_.private_key_file);
+
+      string key_password;
+      if (!opts_.private_key_password_cmd.empty()) {
+        vector<string> argv = strings::Split(opts_.private_key_password_cmd, " ",
+                                             strings::SkipEmpty());
+        if (argv.empty()) {
+          return Status::RuntimeError("invalid empty private key password command");
+        }
+        string stderr;
+        Status s = Subprocess::Call(argv, "" /* stdin */, &key_password, &stderr);
+        if (!s.ok()) {
+          return Status::RuntimeError("failed to run private key password command", stderr);
+        }
+        StripTrailingWhitespace(&key_password);
+      }
+      options.push_back("ssl_private_key_password");
+      options.push_back(key_password); // maybe empty if not configured.
+    }
   }
 
   if (!opts_.authentication_domain.empty()) {
     options.push_back("authentication_domain");
-    options.push_back(opts_.authentication_domain.c_str());
+    options.push_back(opts_.authentication_domain);
   }
 
   if (!opts_.password_file.empty()) {
@@ -158,21 +182,17 @@ Status Webserver::Start() {
     }
     LOG(INFO) << "Webserver: Password file is " << opts_.password_file;
     options.push_back("global_passwords_file");
-    options.push_back(opts_.password_file.c_str());
+    options.push_back(opts_.password_file);
   }
 
   options.push_back("listening_ports");
   string listening_str;
   RETURN_NOT_OK(BuildListenSpec(&listening_str));
-  options.push_back(listening_str.c_str());
+  options.push_back(listening_str);
 
   // Num threads
   options.push_back("num_threads");
-  string num_threads_str = SimpleItoa(opts_.num_worker_threads);
-  options.push_back(num_threads_str.c_str());
-
-  // Options must be a NULL-terminated list
-  options.push_back(nullptr);
+  options.push_back(std::to_string(opts_.num_worker_threads));
 
   // mongoose ignores SIGCHLD and we need it to run kinit. This means that since
   // mongoose does not reap its own children CGI programs must be avoided.
@@ -184,11 +204,18 @@ Status Webserver::Start() {
   callbacks.begin_request = &Webserver::BeginRequestCallbackStatic;
   callbacks.log_message = &Webserver::LogMessageCallbackStatic;
 
+  // Options must be a NULL-terminated list of C strings.
+  vector<const char*> c_options;
+  for (const auto& opt : options) {
+    c_options.push_back(opt.c_str());
+  }
+  c_options.push_back(nullptr);
+
   // To work around not being able to pass member functions as C callbacks, we store a
   // pointer to this server in the per-server state, and register a static method as the
   // default callback. That method unpacks the pointer to this and calls the real
   // callback.
-  context_ = sq_start(&callbacks, reinterpret_cast<void*>(this), &options[0]);
+  context_ = sq_start(&callbacks, reinterpret_cast<void*>(this), &c_options[0]);
 
   // Restore the child signal handler so wait() works properly.
   signal(SIGCHLD, sig_chld);

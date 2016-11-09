@@ -25,6 +25,9 @@
 namespace kudu {
 namespace security {
 
+// TODO(todd): consolidate these certs with those in
+// security/test/test_certs.h once we support configuring a password
+// for the RPC cert.
 static Status CreateSSLServerCert(const std::string& file_path) {
   static const char* test_server_cert = R"(
 -----BEGIN CERTIFICATE-----

@@ -23,6 +23,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/security/test/test_certs.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/curl_util.h"
@@ -35,20 +36,32 @@ DECLARE_int32(webserver_max_post_length_bytes);
 
 namespace kudu {
 
+namespace {
+void SetSslOptions(WebserverOptions* opts) {
+  string password;
+  CHECK_OK(security::CreateTestSSLCerts(GetTestDataDirectory(),
+                                        &opts->certificate_file,
+                                        &opts->private_key_file,
+                                        &password));
+  opts->private_key_password_cmd = strings::Substitute("echo $0", password);
+}
+} // anonymous namespace
+
 class WebserverTest : public KuduTest {
  public:
   WebserverTest() {
     static_dir_ = GetTestPath("webserver-docroot");
     CHECK_OK(env_->CreateDir(static_dir_));
-
-    WebserverOptions opts;
-    opts.port = 0;
-    opts.doc_root = static_dir_;
-    server_.reset(new Webserver(opts));
   }
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
+
+    WebserverOptions opts;
+    opts.port = 0;
+    opts.doc_root = static_dir_;
+    if (use_ssl()) SetSslOptions(&opts);
+    server_.reset(new Webserver(opts));
 
     AddDefaultPathHandlers(server_.get());
     ASSERT_OK(server_->Start());
@@ -60,12 +73,20 @@ class WebserverTest : public KuduTest {
   }
 
  protected:
+  // Overridden by subclasses.
+  virtual bool use_ssl() const { return false; }
+
   EasyCurl curl_;
   faststring buf_;
   gscoped_ptr<Webserver> server_;
   Sockaddr addr_;
 
   string static_dir_;
+};
+
+class SslWebserverTest : public WebserverTest {
+ protected:
+  bool use_ssl() const override { return true; }
 };
 
 TEST_F(WebserverTest, TestIndexPage) {
@@ -76,6 +97,16 @@ TEST_F(WebserverTest, TestIndexPage) {
 
   // Should have link to default path handlers (e.g memz)
   ASSERT_STR_CONTAINS(buf_.ToString(), "memz");
+}
+
+TEST_F(SslWebserverTest, TestSSL) {
+  // We use a self-signed cert, so we need to disable cert verification in curl.
+  curl_.set_verify_peer(false);
+
+  ASSERT_OK(curl_.FetchURL(strings::Substitute("https://$0/", addr_.ToString()),
+                           &buf_));
+  // Should have expected title.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
 }
 
 TEST_F(WebserverTest, TestDefaultPaths) {
@@ -159,6 +190,51 @@ TEST_F(WebserverTest, TestStaticFiles) {
   s = curl_.FetchURL(strings::Substitute("http://$0/dir/", addr_.ToString()),
                      &buf_);
   ASSERT_EQ("Remote error: HTTP 403", s.ToString());
+}
+
+// Various tests for failed webserver startup cases.
+class WebserverNegativeTests : public KuduTest {
+ protected:
+
+  // Tries to start the webserver, expecting it to fail.
+  // 'func' is used to set webserver options before starting it.
+  template<class OptsFunc>
+  void ExpectFailedStartup(const OptsFunc& func) {
+    WebserverOptions opts;
+    opts.port = 0;
+    func(&opts);
+    Webserver server(opts);
+    Status s = server.Start();
+    ASSERT_FALSE(s.ok());
+  }
+};
+
+TEST_F(WebserverNegativeTests, BadCertFile) {
+  ExpectFailedStartup([this](WebserverOptions* opts) {
+      SetSslOptions(opts);
+      opts->certificate_file = "/dev/null";
+    });
+}
+
+TEST_F(WebserverNegativeTests, BadKeyFile) {
+  ExpectFailedStartup([this](WebserverOptions* opts) {
+      SetSslOptions(opts);
+      opts->private_key_file = "/dev/null";
+    });
+}
+
+TEST_F(WebserverNegativeTests, WrongPassword) {
+  ExpectFailedStartup([this](WebserverOptions* opts) {
+      SetSslOptions(opts);
+      opts->private_key_password_cmd = "echo wrong_pass";
+    });
+}
+
+TEST_F(WebserverNegativeTests, BadPasswordCommand) {
+  ExpectFailedStartup([this](WebserverOptions* opts) {
+      SetSslOptions(opts);
+      opts->private_key_password_cmd = "/bin/false";
+    });
 }
 
 } // namespace kudu
