@@ -73,6 +73,10 @@
 * The tool `kudu remote_replica copy` has been added to manually copy a replica from
   one running tablet server to another.
 * The tool `kudu local_replica delete` has been added to delete a replica of a tablet.
+* The `kudu test loadgen` tool has been added to replace the obsoleted
+  `insert-generated-rows` standalone binary. The new tool is enriched with
+  additional functionality and can be used to run load generation tests against
+  a Kudu cluster.
 
 == Wire protocol compatibility
 
