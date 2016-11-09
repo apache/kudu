@@ -263,6 +263,10 @@ class RowChangeListDecoder {
   // the contiguous in-memory row format.
   Status GetReinsertedRowSlice(const Schema& schema, Slice* s) const;
 
+  const RowChangeList::ChangeType get_type() const {
+    return type_;
+  }
+
   // Append an entry to *column_ids for each column that is updated
   // in this RCL.
   // This 'consumes' the remainder of the encoded RowChangeList.
