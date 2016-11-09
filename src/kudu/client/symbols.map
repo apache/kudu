@@ -14,6 +14,7 @@
     # zlib
     adler32*;
     crc32*;
+    deflate*;
     get_crc_table;
     inflate*;
     zError;
