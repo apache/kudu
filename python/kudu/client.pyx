@@ -2409,42 +2409,42 @@ cdef class PartialRow:
             Slice slc
 
         if value is None:
-            self.row.SetNull(i)
+            check_status(self.row.SetNull(i))
             return
 
         # Leave it to Cython to do the coercion and complain if it doesn't
         # work. Cython will catch many casting problems but we should verify
         # with unit tests.
         if t == KUDU_BOOL:
-            self.row.SetBool(i, <c_bool> value)
+            check_status(self.row.SetBool(i, <c_bool> value))
         elif t == KUDU_INT8:
-            self.row.SetInt8(i, <int8_t> value)
+            check_status(self.row.SetInt8(i, <int8_t> value))
         elif t == KUDU_INT16:
-            self.row.SetInt16(i, <int16_t> value)
+            check_status(self.row.SetInt16(i, <int16_t> value))
         elif t == KUDU_INT32:
-            self.row.SetInt32(i, <int32_t> value)
+            check_status(self.row.SetInt32(i, <int32_t> value))
         elif t == KUDU_INT64:
-            self.row.SetInt64(i, <int64_t> value)
+            check_status(self.row.SetInt64(i, <int64_t> value))
         elif t == KUDU_FLOAT:
-            self.row.SetFloat(i, <float> value)
+            check_status(self.row.SetFloat(i, <float> value))
         elif t == KUDU_DOUBLE:
-            self.row.SetDouble(i, <double> value)
+            check_status(self.row.SetDouble(i, <double> value))
         elif t == KUDU_STRING:
             if isinstance(value, unicode):
                 value = value.encode('utf8')
 
             slc = Slice(<char*> value, len(value))
-            self.row.SetStringCopy(i, slc)
+            check_status(self.row.SetStringCopy(i, slc))
         elif t == KUDU_BINARY:
             if isinstance(value, unicode):
                 raise TypeError("Unicode objects must be explicitly encoded " +
                                 "before storing in a Binary field.")
 
             slc = Slice(<char*> value, len(value))
-            self.row.SetBinaryCopy(i, slc)
+            check_status(self.row.SetBinaryCopy(i, slc))
         elif t == KUDU_UNIXTIME_MICROS:
-            self.row.SetUnixTimeMicros(i, <int64_t>
-                to_unixtime_micros(value))
+            check_status(self.row.SetUnixTimeMicros(i, <int64_t>
+                to_unixtime_micros(value)))
         else:
             raise TypeError("Cannot set kudu type <{0}>.".format(_type_names[t]))
 

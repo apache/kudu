@@ -294,6 +294,10 @@ class TestClient(KuduTestBase, unittest.TestCase):
         with self.assertRaises(TypeError):
             op['int_val'] = 'incorrect'
 
+        # Test setting NULL in a not-null column
+        with self.assertRaises(kudu.errors.KuduInvalidArgument):
+            op['key'] = None
+
     def test_alter_table_rename(self):
         try:
             self.client.create_table('alter-rename',
