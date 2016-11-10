@@ -329,7 +329,6 @@ ADD_KUDU_TEST(oid_generator-test)
 ADD_KUDU_TEST(once-test)
 ADD_KUDU_TEST(os-util-test)
 ADD_KUDU_TEST(path_util-test)
-ADD_KUDU_TEST(pstack_watcher-test)
 ADD_KUDU_TEST(random-test)
 ADD_KUDU_TEST(random_util-test)
 ADD_KUDU_TEST(resettable_heartbeater-test)
@@ -354,6 +353,10 @@ ADD_KUDU_TEST(throttler-test)
 ADD_KUDU_TEST(trace-test)
 ADD_KUDU_TEST(url-coding-test)
 ADD_KUDU_TEST(user-test)
+
+if (NOT APPLE)
+  ADD_KUDU_TEST(pstack_watcher-test)
+endif()
 
 #######################################
 # jsonwriter_test_proto
