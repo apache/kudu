@@ -37,7 +37,7 @@ class ErrorCollector : public RefCountedThreadSafe<ErrorCollector> {
  public:
   ErrorCollector() = default;
 
-  void AddError(gscoped_ptr<KuduError> error);
+  virtual void AddError(gscoped_ptr<KuduError> error);
 
   // See KuduSession for details.
   size_t CountErrors() const;
@@ -45,9 +45,11 @@ class ErrorCollector : public RefCountedThreadSafe<ErrorCollector> {
   // See KuduSession for details.
   void GetErrors(std::vector<KuduError*>* errors, bool* overflowed);
 
+ protected:
+  virtual ~ErrorCollector();
+
  private:
   friend class RefCountedThreadSafe<ErrorCollector>;
-  virtual ~ErrorCollector();
 
   mutable simple_spinlock lock_;
   std::vector<KuduError*> errors_;

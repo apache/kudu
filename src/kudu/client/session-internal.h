@@ -231,6 +231,7 @@ class KuduSession::Data {
 
  private:
   FRIEND_TEST(ClientTest, TestAutoFlushBackgroundApplyBlocks);
+  FRIEND_TEST(ClientTest, TestAutoFlushBackgroundAndErrorCollector);
 
   bool buffer_pre_flush_enabled_; // Set to 'false' only in test scenarios.
 

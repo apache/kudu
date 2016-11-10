@@ -721,19 +721,9 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
     MarkHadErrors();
   }
 
-  // Remove all the ops from the "in-flight" list.
-  {
-    std::lock_guard<simple_spinlock> l(lock_);
-    for (InFlightOp* op : rpc.ops()) {
-      CHECK_EQ(1, ops_.erase(op))
-            << "Could not remove op " << op->ToString()
-            << " from in-flight list";
-    }
-  }
-
   // Check individual row errors.
   for (const WriteResponsePB_PerRowErrorPB& err_pb : rpc.resp().per_row_errors()) {
-    // TODO: handle case where we get one of the more specific TS errors
+    // TODO(todd): handle case where we get one of the more specific TS errors
     // like the tablet not being hosted?
 
     if (err_pb.row_index() >= rpc.ops().size()) {
@@ -750,6 +740,34 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
     gscoped_ptr<KuduError> error(new KuduError(op.release(), op_status));
     error_collector_->AddError(std::move(error));
     MarkHadErrors();
+  }
+
+  // Remove all the ops from the "in-flight" list. It's essential to do so
+  // _after_ adding all errors into the collector, otherwise there might be
+  // a race which manifests itself as described at KUDU-1743. Essentially,
+  // the race was the following:
+  //
+  //   * There are two concurrent calls to this method, one from each of RPC
+  //     sent to corresponding tservers.
+  //
+  //   * T1 removes its Write's ops from ops_, adds its errors, and calls
+  //     CheckForFinishedFlush().
+  //
+  //   * T2 does the same.
+  //
+  //   * T1 is descheduled/delayed after removing from ops_ but before adding
+  //     its errors.
+  //
+  //   * T2 runs completely through ProcessWriteResponse(),
+  //     calls CheckForFinishedFlush(), and wakes up the client thread
+  //     from which the Flush() is being called.
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    for (InFlightOp* op : rpc.ops()) {
+      CHECK_EQ(1, ops_.erase(op))
+            << "Could not remove op " << op->ToString()
+            << " from in-flight list";
+    }
   }
 
   CheckForFinishedFlush();

@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <map>
 #include <memory>
@@ -33,6 +34,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scanner-internal.h"
@@ -267,15 +269,24 @@ class ClientTest : public KuduTest {
     return ret;
   }
 
-  // Inserts 'num_rows' test rows using 'client'
-  void InsertTestRows(KuduClient* client, KuduTable* table, int num_rows, int first_row = 0) {
-    shared_ptr<KuduSession> session = client->NewSession();
-    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
-    session->SetTimeoutMillis(60000);
-    for (int i = first_row; i < num_rows + first_row; i++) {
+  // Inserts given number of tests rows into the specified table
+  // in the context of the session.
+  void InsertTestRows(KuduTable* table, KuduSession* session,
+                      int num_rows, int first_row = 0) {
+    for (int i = first_row; i < num_rows + first_row; ++i) {
       gscoped_ptr<KuduInsert> insert(BuildTestRow(table, i));
       ASSERT_OK(session->Apply(insert.release()));
     }
+  }
+
+  // Inserts 'num_rows' test rows using 'client'
+  void InsertTestRows(KuduClient* client, KuduTable* table,
+                      int num_rows, int first_row = 0) {
+    shared_ptr<KuduSession> session = client->NewSession();
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+    session->SetTimeoutMillis(60000);
+    ASSERT_NO_FATAL_FAILURE(InsertTestRows(table, session.get(),
+                                           num_rows, first_row));
     FlushSessionOrDie(session);
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
   }
@@ -2462,6 +2473,69 @@ TEST_F(ClientTest, TestAutoFlushBackgroundAndExplicitFlush) {
   EXPECT_FALSE(session->HasPendingOperations());
   // Check that all rows have reached the table.
   EXPECT_EQ(kIterNum, CountRowsFromClient(client_table_.get()));
+}
+
+// A test to verify that in case of AUTO_FLUSH_BACKGROUND information on
+// _all_ the errors is delivered after Flush() finishes. Basically, it's a test
+// to cover KUDU-1743 -- there was a race where Flush() returned before
+// the corresponding errors were added to the error collector.
+TEST_F(ClientTest, TestAutoFlushBackgroundAndErrorCollector) {
+  using kudu::client::internal::ErrorCollector;
+  // The main idea behind this custom error collector is to delay
+  // adding the very first error: this is to expose the race which is
+  // the root cause of the KUDU-1743 issue.
+  class CustomErrorCollector : public ErrorCollector {
+   public:
+    CustomErrorCollector():
+      ErrorCollector(),
+      error_cnt_(0) {
+    }
+
+    void AddError(gscoped_ptr<KuduError> error) override {
+      //LOG(INFO) << "Hello from: " << Thread::UniqueThreadId();
+      if (0 == error_cnt_++) {
+        const bool prev_allowed = ThreadRestrictions::SetWaitAllowed(true);
+        SleepFor(MonoDelta::FromSeconds(1));
+        ThreadRestrictions::SetWaitAllowed(prev_allowed);
+      }
+      ErrorCollector::AddError(std::move(error));
+    }
+
+   private:
+    std::atomic<uint64_t> error_cnt_;
+  };
+
+  const size_t kIterNum = AllowSlowTests() ? 32 : 2;
+  for (size_t i = 0; i < kIterNum; ++i) {
+    static const size_t kRowNum = 2;
+
+    vector<unique_ptr<KuduPartialRow>> splits;
+    unique_ptr<KuduPartialRow> split(schema_.NewRow());
+    ASSERT_OK(split->SetInt32("key", kRowNum / 2));
+    splits.push_back(std::move(split));
+
+    // Create the test table: it's important the table is split into multiple
+    // (at least two) tablets and replicated: that helps to get
+    // RPC completion callbacks from different reactor threads, which is
+    // the crux of the race condition for KUDU-1743.
+    const string table_name = Substitute("table.$0", i);
+    shared_ptr<KuduTable> table;
+    NO_FATALS(CreateTable(table_name, 3, std::move(splits), {}, &table));
+
+    shared_ptr<KuduSession> session(client_->NewSession());
+    scoped_refptr<ErrorCollector> ec(new CustomErrorCollector);
+    ec.swap(session->data_->error_collector_);
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+    NO_FATALS(InsertTestRows(table.get(), session.get(), kRowNum));
+    NO_FATALS(InsertTestRows(table.get(), session.get(), kRowNum));
+    vector<KuduError*> errors;
+    ElementDeleter deleter(&errors);
+    ASSERT_FALSE(session->Flush().ok());
+    bool overflowed;
+    session->GetPendingErrors(&errors, &overflowed);
+    ASSERT_FALSE(overflowed);
+    ASSERT_EQ(kRowNum, errors.size());
+  }
 }
 
 // A test which verifies that a session in AUTO_FLUSH_BACKGROUND mode can

@@ -1530,6 +1530,7 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   friend class internal::Batcher;
   friend class ClientTest;
   FRIEND_TEST(ClientTest, TestAutoFlushBackgroundApplyBlocks);
+  FRIEND_TEST(ClientTest, TestAutoFlushBackgroundAndErrorCollector);
 
   explicit KuduSession(const sp::shared_ptr<KuduClient>& client);
 
