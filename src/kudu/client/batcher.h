@@ -186,7 +186,7 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   kudu::client::KuduSession::ExternalConsistencyMode consistency_mode_;
 
   // Errors are reported into this error collector.
-  const scoped_refptr<ErrorCollector> error_collector_;
+  scoped_refptr<ErrorCollector> error_collector_;
 
   // The time when the very first operation was added into the batcher.
   MonoTime first_op_time_;
