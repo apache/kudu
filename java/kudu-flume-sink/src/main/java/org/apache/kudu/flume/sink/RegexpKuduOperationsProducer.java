@@ -147,7 +147,7 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
       pattern = Pattern.compile(regexp);
     } catch (PatternSyntaxException e) {
       throw new IllegalArgumentException(
-          String.format("The pattern '%s' is invalid", PATTERN_PROP, regexp), e);
+          String.format("The pattern '%s' is invalid", regexp), e);
     }
     String charsetName = context.getString(ENCODING_PROP, DEFAULT_ENCODING);
     try {
