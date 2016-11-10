@@ -33,7 +33,12 @@
 /// namespace in either case. Clients are encouraged to use these macros in
 /// order to ensure that applications compile universally.
 
+// This include is not used directly, but we need to include some C++ header in
+// order to ensure the _LIBCPP_VERSION macro is defined appropriately.
+#include <string>
+
 #if defined(_LIBCPP_VERSION)
+
 #include <memory>
 
 namespace kudu {
