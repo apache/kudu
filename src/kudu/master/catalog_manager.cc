@@ -545,6 +545,29 @@ Status CheckIfTableDeletedOrNotRunning(TableMetadataLock* lock, RespClass* resp)
   return Status::OK();
 }
 
+// Propagate the 'read_default' to the 'write_default' in 'col',
+// and check that the client didn't specify an invalid combination of the two fields.
+Status ProcessColumnPBDefaults(ColumnSchemaPB* col) {
+  if (col->has_read_default_value() && !col->has_write_default_value()) {
+    // We expect clients to send just the 'read_default_value' field.
+    col->set_write_default_value(col->read_default_value());
+  } else if (col->has_read_default_value() && col->has_write_default_value()) {
+    // C++ client 1.0 and earlier sends the default in both PB fields.
+    // Check that the defaults match (we never provided an API that would
+    // let them be set to different values)
+    if (col->read_default_value() != col->write_default_value()) {
+      return Status::InvalidArgument(Substitute(
+          "column '$0' has mismatched read/write defaults", col->name()));
+    }
+  } else if (!col->has_read_default_value() && col->has_write_default_value()) {
+    // We don't expect any client to send us this, but better cover our
+    // bases.
+    return Status::InvalidArgument(Substitute(
+        "column '$0' has write_default field set but no read_default", col->name()));
+  }
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 CatalogManager::CatalogManager(Master *master)
@@ -780,6 +803,11 @@ Status CatalogManager::CheckOnline() const {
 Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
                                    CreateTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
+  auto SetError = [&](MasterErrorPB::Code code, const Status& s) {
+    SetupError(resp->mutable_error(), code, s);
+    return s;
+  };
+
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
   Status s;
@@ -789,25 +817,35 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   LOG(INFO) << "CreateTable from " << RequestorString(rpc)
             << ":\n" << req.DebugString();
 
+  // Do some fix-up of any defaults specified on columns.
+  // Clients are only expected to pass the default value in the 'read_default'
+  // field, but we need to write the schema to disk including the default
+  // as both the 'read' and 'write' default. It's easier to do this fix-up
+  // on the protobuf here.
+  for (int i = 0; i < req.schema().columns_size(); i++) {
+    auto* col = req.mutable_schema()->mutable_columns(i);
+    Status s = ProcessColumnPBDefaults(col);
+    if (!s.ok()) {
+      return SetError(MasterErrorPB::INVALID_SCHEMA, s);
+    }
+  }
+
   // a. Validate the user request.
   Schema client_schema;
   RETURN_NOT_OK(SchemaFromPB(req.schema(), &client_schema));
   if (client_schema.has_column_ids()) {
-    s = Status::InvalidArgument("User requests should not have Column IDs");
-    SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-    return s;
+    return SetError(MasterErrorPB::INVALID_SCHEMA,
+                    Status::InvalidArgument("User requests should not have Column IDs"));
   }
   if (PREDICT_FALSE(client_schema.num_key_columns() <= 0)) {
-    s = Status::InvalidArgument("Must specify at least one key column");
-    SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-        return s;
+    return SetError(MasterErrorPB::INVALID_SCHEMA,
+                    Status::InvalidArgument("Must specify at least one key column"));
   }
   for (int i = 0; i < client_schema.num_key_columns(); i++) {
     if (!IsTypeAllowableInKey(client_schema.column(i).type_info())) {
-      Status s = Status::InvalidArgument(
-          "Key column may not have type of BOOL, FLOAT, or DOUBLE");
-      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-      return s;
+      return SetError(MasterErrorPB::INVALID_SCHEMA,
+                      Status::InvalidArgument(
+                          "Key column may not have type of BOOL, FLOAT, or DOUBLE"));
     }
   }
   // Check that the encodings are valid for the specified types.
@@ -818,11 +856,12 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
                                      col.attributes().encoding,
                                      &dummy);
     if (!s.ok()) {
-      s = s.CloneAndPrepend(Substitute("invalid encoding for column '$0'", col.name()));
-      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-      return s;
+      return SetError(MasterErrorPB::INVALID_SCHEMA,
+                      s.CloneAndPrepend(
+                          Substitute("invalid encoding for column '$0'", col.name())));
     }
   }
+
   Schema schema = client_schema.CopyWithColumnIds();
 
   // If the client did not set a partition schema in the create table request,
@@ -831,8 +870,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   PartitionSchema partition_schema;
   s = PartitionSchema::FromPB(req.partition_schema(), schema, &partition_schema);
   if (!s.ok()) {
-    SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-    return s;
+    return SetError(MasterErrorPB::INVALID_SCHEMA, s);
   }
 
   // Decode split rows.
@@ -857,9 +895,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
         if (i >= ops.size() ||
             (ops[i].type != RowOperationsPB::RANGE_UPPER_BOUND &&
              ops[i].type != RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND)) {
-          Status s = Status::InvalidArgument("Missing upper range bound in create table request");
-          SetupError(resp->mutable_error(), MasterErrorPB::UNKNOWN_ERROR, s);
-          return s;
+          return SetError(MasterErrorPB::UNKNOWN_ERROR,
+                          Status::InvalidArgument(
+                              "Missing upper range bound in create table request"));
         }
 
         if (op.type == RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND) {
@@ -897,8 +935,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   if (req.num_replicas() > 1 && max_tablets > 0 && partitions.size() > max_tablets) {
     s = Status::InvalidArgument(Substitute("The requested number of tablets is over the "
                                            "permitted maximum ($0)", max_tablets));
-    SetupError(resp->mutable_error(), MasterErrorPB::TOO_MANY_TABLETS, s);
-    return s;
+    return SetError(MasterErrorPB::TOO_MANY_TABLETS, s);
   }
 
   // Verify that the number of replicas isn't larger than the number of live tablet
@@ -908,8 +945,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     s = Status::InvalidArgument(Substitute(
         "Not enough live tablet servers to create a table with the requested replication "
         "factor $0. $1 tablet servers are alive.", req.num_replicas(), num_live_tservers));
-    SetupError(resp->mutable_error(), MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH, s);
-    return s;
+    return SetError(MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH, s);
   }
 
   scoped_refptr<TableInfo> table;
@@ -922,16 +958,14 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     if (table != nullptr) {
       s = Status::AlreadyPresent(Substitute("Table $0 already exists with id $1",
                                  req.name(), table->id()));
-      SetupError(resp->mutable_error(), MasterErrorPB::TABLE_ALREADY_PRESENT, s);
-      return s;
+      return SetError(MasterErrorPB::TABLE_ALREADY_PRESENT, s);
     }
 
     // c. Reserve the table name if possible.
     if (!InsertIfNotPresent(&reserved_table_names_, req.name())) {
       s = Status::ServiceUnavailable(Substitute(
           "New table name $0 is already reserved", req.name()));
-      SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
-      return s;
+      return SetError(MasterErrorPB::TABLE_NOT_FOUND, s);
     }
   }
 
@@ -1193,6 +1227,7 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
           return Status::InvalidArgument("column $0: client should not specify column ID",
                                          new_col_pb.ShortDebugString());
         }
+        RETURN_NOT_OK(ProcessColumnPBDefaults(&new_col_pb));
 
         // Verify that encoding is appropriate for the new column's
         // type
@@ -1202,7 +1237,7 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
                                             new_col.attributes().encoding,
                                             &dummy));
 
-        // can't accept a NOT NULL column without read default
+        // can't accept a NOT NULL column without a default
         if (!new_col.is_nullable() && !new_col.has_read_default()) {
           return Status::InvalidArgument(
               Substitute("column `$0`: NOT NULL columns must have a default", new_col.name()));

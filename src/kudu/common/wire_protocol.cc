@@ -183,11 +183,6 @@ Status SchemaToPB(const Schema& schema, SchemaPB *pb, int flags) {
   return SchemaToColumnPBs(schema, pb->mutable_columns(), flags);
 }
 
-Status SchemaToPBWithoutIds(const Schema& schema, SchemaPB *pb) {
-  pb->Clear();
-  return SchemaToColumnPBs(schema, pb->mutable_columns(), SCHEMA_PB_WITHOUT_IDS);
-}
-
 Status SchemaFromPB(const SchemaPB& pb, Schema *schema) {
   return ColumnPBsToSchema(pb.columns(), schema);
 }
@@ -211,7 +206,7 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
       pb->set_read_default_value(read_value, col_schema.type_info()->size());
     }
   }
-  if (col_schema.has_write_default()) {
+  if (col_schema.has_write_default() && !(flags & SCHEMA_PB_WITHOUT_WRITE_DEFAULT)) {
     if (col_schema.type_info()->physical_type() == BINARY) {
       const Slice *write_slice = static_cast<const Slice *>(col_schema.write_default_value());
       pb->set_write_default_value(write_slice->data(), write_slice->size());
@@ -299,7 +294,7 @@ Status SchemaToColumnPBs(const Schema& schema,
   int idx = 0;
   for (const ColumnSchema& col : schema.columns()) {
     ColumnSchemaPB* col_pb = cols->Add();
-    ColumnSchemaToPB(col, col_pb);
+    ColumnSchemaToPB(col, col_pb, flags);
     col_pb->set_is_key(idx < schema.num_key_columns());
 
     if (schema.has_column_ids() && !(flags & SCHEMA_PB_WITHOUT_IDS)) {

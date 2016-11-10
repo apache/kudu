@@ -628,6 +628,35 @@ TEST_F(MasterTest, TestCreateTableInvalidSchema) {
             resp.error().status().ShortDebugString());
 }
 
+// Test that, if the client specifies mismatched read and write defaults,
+// we return an error.
+TEST_F(MasterTest, TestCreateTableMismatchedDefaults) {
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  RpcController controller;
+
+  req.set_name("table");
+
+  ColumnSchemaPB* col = req.mutable_schema()->add_columns();
+  col->set_name("key");
+  col->set_type(INT32);
+  col->set_is_key(true);
+
+  col = req.mutable_schema()->add_columns();
+  col->set_name("col");
+  col->set_type(BINARY);
+  col->set_is_nullable(true);
+  req.mutable_schema()->mutable_columns(1)->set_read_default_value("hello");
+  req.mutable_schema()->mutable_columns(1)->set_write_default_value("bye");
+
+  ASSERT_OK(proxy_->CreateTable(req, &resp, &controller));
+  SCOPED_TRACE(resp.DebugString());
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ("code: INVALID_ARGUMENT message: \"column \\'col\\' has "
+            "mismatched read/write defaults\"",
+            resp.error().status().ShortDebugString());
+}
+
 // Regression test for KUDU-253/KUDU-592: crash if the GetTableLocations RPC call is
 // invalid.
 TEST_F(MasterTest, TestInvalidGetTableLocations) {

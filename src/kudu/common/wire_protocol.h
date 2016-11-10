@@ -63,14 +63,16 @@ Status AddHostPortPBs(const std::vector<Sockaddr>& addrs,
 enum SchemaPBConversionFlags {
   SCHEMA_PB_WITHOUT_IDS = 1 << 0,
   SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES = 1 << 1,
+
+  // When serializing, only write the 'read_default' value into the
+  // protobuf. Used when sending schemas from the client to the master
+  // for create/alter table.
+  SCHEMA_PB_WITHOUT_WRITE_DEFAULT = 1 << 2,
 };
 
 // Convert the specified schema to protobuf.
 // 'flags' is a bitfield of SchemaPBConversionFlags values.
 Status SchemaToPB(const Schema& schema, SchemaPB* pb, int flags = 0);
-
-// Convert the specified schema to protobuf without column IDs.
-Status SchemaToPBWithoutIds(const Schema& schema, SchemaPB *pb);
 
 // Returns the Schema created from the specified protobuf.
 // If the schema is invalid, return a non-OK status.

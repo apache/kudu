@@ -586,7 +586,8 @@ Status KuduTableCreator::Create() {
   if (data_->num_replicas_ >= 1) {
     req.set_num_replicas(data_->num_replicas_);
   }
-  RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema()),
+  RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema(),
+                                   SCHEMA_PB_WITHOUT_WRITE_DEFAULT),
                         "Invalid schema");
 
   RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());

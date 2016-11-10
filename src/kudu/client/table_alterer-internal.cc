@@ -62,7 +62,8 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
   }
 
   if (schema_ != nullptr) {
-    RETURN_NOT_OK(SchemaToPBWithoutIds(*schema_, req->mutable_schema()));
+    RETURN_NOT_OK(SchemaToPB(*schema_, req->mutable_schema(),
+                             SCHEMA_PB_WITHOUT_IDS | SCHEMA_PB_WITHOUT_WRITE_DEFAULT));
   }
 
   for (const Step& s : steps_) {
@@ -75,7 +76,8 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
         KuduColumnSchema col;
         RETURN_NOT_OK(s.spec->ToColumnSchema(&col));
         ColumnSchemaToPB(*col.col_,
-                         pb_step->mutable_add_column()->mutable_schema());
+                         pb_step->mutable_add_column()->mutable_schema(),
+                         SCHEMA_PB_WITHOUT_WRITE_DEFAULT);
         break;
       }
       case AlterTableRequestPB::DROP_COLUMN:

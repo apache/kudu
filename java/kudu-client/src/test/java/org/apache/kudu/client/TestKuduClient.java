@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -30,6 +31,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -112,6 +114,87 @@ public class TestKuduClient extends BaseKuduTest {
                  newSchema.getColumn("column3_s").getEncoding());
     assertEquals(ColumnSchema.CompressionAlgorithm.LZ4,
                  newSchema.getColumn("column3_s").getCompressionAlgorithm());
+  }
+
+  /**
+   * Test creating a table with columns with different combinations of NOT NULL and
+   * default values, inserting rows, and checking the results are as expected.
+   * Regression test for KUDU-180.
+   */
+  @Test(timeout = 100000)
+  public void testTableWithDefaults() throws Exception {
+    List<ColumnSchema> cols = new ArrayList<>();
+    cols.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING)
+             .key(true)
+             .build());
+    // nullable with no default
+    cols.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING)
+             .nullable(true)
+             .build());
+    // nullable with default
+    cols.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.STRING)
+             .nullable(true)
+             .defaultValue("def")
+             .build());
+    // not null with no default
+    cols.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.STRING)
+             .nullable(false)
+             .build());
+    // not null with default
+    cols.add(new ColumnSchema.ColumnSchemaBuilder("c4", Type.STRING)
+             .nullable(false)
+             .defaultValue("def")
+             .build());
+    Schema schema = new Schema(cols);
+    syncClient.createTable(tableName, schema, getBasicCreateTableOptions());
+    KuduSession session = syncClient.newSession();
+    KuduTable table = syncClient.openTable(tableName);
+
+    // Insert various rows. '-' indicates leaving the row unset in the insert.
+    List<String> rows = ImmutableList.of(
+        // Specify all columns
+        "r1,a,b,c,d",
+        // Specify all, set nullable ones to NULL.
+        "r2,NULL,NULL,c,d",
+        // Don't specify any columns except for the one that is NOT NULL
+        // with no default.
+        "r3,-,-,c,-",
+        // Two rows which should not succeed.
+        "fail_1,a,b,c,NULL",
+        "fail_2,a,b,NULL,d");
+    List<String> expectedStrings = ImmutableList.of(
+        "STRING key=r1, STRING c1=a, STRING c2=b, STRING c3=c, STRING c4=d",
+        "STRING key=r2, STRING c1=NULL, STRING c2=NULL, STRING c3=c, STRING c4=d",
+        "STRING key=r3, STRING c1=NULL, STRING c2=def, STRING c3=c, STRING c4=def");
+    for (String row : rows) {
+      try {
+        String[] fields = row.split(",");
+        Insert insert = table.newInsert();
+        for (int i = 0; i < fields.length; i++) {
+          if (fields[i].equals("-")) { // leave unset
+            continue;
+          }
+          if (fields[i].equals("NULL")) {
+            insert.getRow().setNull(i);
+          } else {
+            insert.getRow().addString(i, fields[i]);
+          }
+        }
+        session.apply(insert);
+      } catch (IllegalArgumentException e) {
+        // We expect two of the inserts to fail when we try to set NULL values for
+        // nullable columns.
+        assertTrue(e.getMessage(),
+                   e.getMessage().matches("c[34] cannot be set to null"));
+      }
+    }
+    session.flush();
+
+    // Check that we got the results we expected.
+    List<String> rowStrings = scanTableToStrings(table);
+    Collections.sort(rowStrings);
+    assertArrayEquals(rowStrings.toArray(new String[0]),
+                      expectedStrings.toArray(new String[0]));
   }
 
   /**

@@ -78,6 +78,18 @@ message ColumnSchemaPB {
   required DataType type = 3;
   optional bool is_key = 4 [default = false];
   optional bool is_nullable = 5 [default = false];
+
+  // Default values.
+  // NOTE: as far as clients are concerned, there is only one
+  // "default value" of a column. The read/write defaults are used
+  // internally and should not be exposed by any public client APIs.
+  //
+  // When passing schemas to the master for create/alter table,
+  // specify the default in 'read_default_value'.
+  //
+  // Contrary to this, when the client opens a table, it will receive
+  // both the read and write defaults, but the *write* default is
+  // what should be exposed as the "current" default.
   optional bytes read_default_value = 6;
   optional bytes write_default_value = 7;
 
