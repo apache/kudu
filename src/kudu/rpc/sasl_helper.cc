@@ -99,11 +99,6 @@ const char* SaslHelper::LocalMechListString() const {
 
 int SaslHelper::GetOptionCb(const char* plugin_name, const char* option,
                             const char** result, unsigned* len) {
-  string cb_name("client_mech_list");
-  if (peer_type_ == SERVER) {
-    cb_name = "mech_list";
-  }
-
   DVLOG(4) << tag_ << ": GetOption Callback called. ";
   DVLOG(4) << tag_ << ": GetOption Plugin name: "
                    << (plugin_name == nullptr ? "NULL" : plugin_name);
@@ -116,7 +111,7 @@ int SaslHelper::GetOptionCb(const char* plugin_name, const char* option,
 
   if (plugin_name == nullptr) {
     // SASL library option, not a plugin option
-    if (cb_name == option) {
+    if (strcmp(option, "mech_list") == 0) {
       *result = LocalMechListString();
       if (len != nullptr) *len = strlen(*result);
       VLOG(4) << tag_ << ": Enabled mech list: " << *result;

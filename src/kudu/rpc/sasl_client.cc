@@ -28,7 +28,9 @@
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/rpc/blocking_ops.h"
@@ -317,8 +319,6 @@ Status SaslClient::DoSaslStep(const string& in, const char** out, unsigned* out_
 
 Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
   TRACE("SASL Client: Received NEGOTIATE response from server");
-  map<string, SaslMessagePB::SaslAuth> mech_auth_map;
-
   // Fill in the set of features supported by the server.
   for (int flag : response.supported_features()) {
     // We only add the features that our local build knows about.
@@ -329,17 +329,30 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
     }
   }
 
-  // Build the list of SASL mechanisms requested by the client, and a map
-  // back to to the SaslAuth PBs.
-  string mech_list;
-  mech_list.reserve(64);  // Avoid resizing the buffer later.
+  // Build a map of the mechanisms offered by the server.
+  const set<string>& local_mechs = helper_.LocalMechs();
+  set<string> server_mechs;
+  map<string, SaslMessagePB::SaslAuth> server_mech_map;
   for (const SaslMessagePB::SaslAuth& auth : response.auths()) {
-    if (mech_list.length() > 0) mech_list.append(" ");
-    string mech = auth.mechanism();
-    mech_list.append(mech);
-    mech_auth_map[mech] = auth;
+    const auto& mech = auth.mechanism();
+    server_mech_map[mech] = auth;
+    server_mechs.insert(mech);
   }
-  TRACE("SASL Client: Server mech list: $0", mech_list);
+  // Determine which server mechs are also enabled by the client.
+  // Cyrus SASL 2.1.25 and later supports doing this set intersection via
+  // the 'client_mech_list' option, but that version is not available on
+  // RHEL 6, so we have to do it manually.
+  set<string> matching_mechs = STLSetIntersection(local_mechs, server_mechs);
+
+  if (matching_mechs.empty() &&
+      ContainsKey(server_mechs, kSaslMechGSSAPI) &&
+      !ContainsKey(local_mechs, kSaslMechGSSAPI)) {
+    return Status::NotAuthorized("server requires GSSAPI (Kerberos) authentication and "
+                                 "client was missing the required SASL module");
+  }
+
+  string matching_mechs_str = JoinElements(matching_mechs, " ");
+  TRACE("SASL Client: Matching mech list: $0", matching_mechs_str);
 
   const char* init_msg = nullptr;
   unsigned init_msg_len = 0;
@@ -362,32 +375,22 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
   TRACE("SASL Client: Calling sasl_client_start()");
   Status s = WrapSaslCall(sasl_conn_.get(), [&]() {
       return sasl_client_start(
-          sasl_conn_.get(),     // The SASL connection context created by init()
-          mech_list.c_str(),    // The list of mechanisms from the server.
-          nullptr,              // Disables INTERACT return if NULL.
-          &init_msg,            // Filled in on success.
-          &init_msg_len,        // Filled in on success.
-          &negotiated_mech);    // Filled in on success.
+          sasl_conn_.get(),           // The SASL connection context created by init()
+          matching_mechs_str.c_str(), // The list of mechanisms to negotiate.
+          nullptr,                    // Disables INTERACT return if NULL.
+          &init_msg,                  // Filled in on success.
+          &init_msg_len,              // Filled in on success.
+          &negotiated_mech);          // Filled in on success.
     });
 
   if (s.ok()) {
     nego_ok_ = true;
   } else if (!s.IsIncomplete()) {
-    // If we failed to negotiate because we didn't share any mechanisms,
-    // the most likely case is that the client is missing the GSSAPI SASL
-    // module, and the server is configured to only allow Kerberos connections.
-    // Return a more usable error message in this case.
-    if (MatchPattern(s.ToString(), "*No worthy mechs found") &&
-        ContainsKey(mech_auth_map, kSaslMechGSSAPI) &&
-        !ContainsKey(helper_.LocalMechs(), kSaslMechGSSAPI)) {
-      return Status::NotAuthorized("server requires GSSAPI (Kerberos) authentication and "
-                                   "client was missing the required SASL module");
-    }
     return s;
   }
 
   // The server matched one of our mechanisms.
-  SaslMessagePB::SaslAuth* auth = FindOrNull(mech_auth_map, negotiated_mech);
+  SaslMessagePB::SaslAuth* auth = FindOrNull(server_mech_map, negotiated_mech);
   if (PREDICT_FALSE(auth == nullptr)) {
     return Status::IllegalState("Unable to find auth in map, unexpected error", negotiated_mech);
   }
