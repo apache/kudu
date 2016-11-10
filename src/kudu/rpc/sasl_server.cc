@@ -467,6 +467,12 @@ int SaslServer::PlainAuthCb(sasl_conn_t * /*conn*/, const char * /*user*/, const
 }
 
 Status SaslServer::PreflightCheckGSSAPI(const string& app_name) {
+  // TODO(todd): the error messages that come from this function on el6
+  // are relatively useless due to the following krb5 bug:
+  // http://krbdev.mit.edu/rt/Ticket/Display.html?id=6973
+  // This may not be useful anymore given the keytab login that happens
+  // in security/init.cc.
+
   // Initialize a SaslServer with a null socket, and enable
   // only GSSAPI.
   //

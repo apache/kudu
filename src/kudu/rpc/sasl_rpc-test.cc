@@ -43,6 +43,17 @@
 using std::string;
 using std::thread;
 
+// HACK: MIT Kerberos doesn't have any way of determining its version number,
+// but the error messages in krb5-1.10 and earlier are broken due to
+// a bug: http://krbdev.mit.edu/rt/Ticket/Display.html?id=6973
+//
+// Since we don't have any way to explicitly figure out the version, we just
+// look for this random macro which was added in 1.11 (the same version in which
+// the above bug was fixed).
+#ifndef KRB5_RESPONDER_QUESTION_PASSWORD
+#define KRB5_VERSION_LE_1_10
+#endif
+
 namespace kudu {
 namespace rpc {
 
@@ -273,7 +284,9 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
                 [](const Status& s, SaslClient& client) {
                   CHECK(s.IsNotAuthorized());
+#ifndef KRB5_VERSION_LE_1_10
                   CHECK_GT(s.ToString().find("No Kerberos credentials available"), 0);
+#endif
                 }));
 
 
@@ -303,7 +316,9 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
                 [kErrorMsg](const Status& s, SaslClient& client) {
                   CHECK(s.IsNotAuthorized());
+#ifndef KRB5_VERSION_LE_1_10
                   CHECK_EQ(s.message().ToString(), kErrorMsg);
+#endif
                 }));
 
   // Create and kinit as a client user.
@@ -335,14 +350,18 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
       std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
                 [](const Status& s, SaslServer& server) {
                   CHECK(s.IsNotAuthorized());
+#ifndef KRB5_VERSION_LE_1_10
                   ASSERT_STR_CONTAINS(s.ToString(),
                                       "No key table entry found matching kudu/127.0.0.1");
+#endif
                 }),
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
                 [](const Status& s, SaslClient& client) {
                   CHECK(s.IsNotAuthorized());
+#ifndef KRB5_VERSION_LE_1_10
                   ASSERT_STR_CONTAINS(s.ToString(),
                                       "No key table entry found matching kudu/127.0.0.1");
+#endif
                 }));
 
 }
@@ -352,8 +371,10 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
 TEST_F(TestSaslRpc, TestPreflight) {
   // Try pre-flight with no keytab.
   Status s = SaslServer::PreflightCheckGSSAPI(kSaslAppName);
+  ASSERT_FALSE(s.ok());
+#ifndef KRB5_VERSION_LE_1_10
   ASSERT_STR_MATCHES(s.ToString(), "Key table file.*not found");
-
+#endif
   // Try with a valid krb5 environment and keytab.
   MiniKdc kdc;
   ASSERT_OK(kdc.Start());
@@ -367,14 +388,20 @@ TEST_F(TestSaslRpc, TestPreflight) {
   // Try with an inaccessible keytab.
   CHECK_ERR(chmod(kt_path.c_str(), 0000));
   s = SaslServer::PreflightCheckGSSAPI(kSaslAppName);
+  ASSERT_FALSE(s.ok());
+#ifndef KRB5_VERSION_LE_1_10
   ASSERT_STR_MATCHES(s.ToString(), "error accessing keytab: Permission denied");
+#endif
   CHECK_ERR(unlink(kt_path.c_str()));
 
   // Try with a keytab that has the wrong credentials.
   ASSERT_OK(kdc.CreateServiceKeytab("wrong-service/127.0.0.1", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
   s = SaslServer::PreflightCheckGSSAPI(kSaslAppName);
+  ASSERT_FALSE(s.ok());
+#ifndef KRB5_VERSION_LE_1_10
   ASSERT_STR_MATCHES(s.ToString(), "No key table entry found matching kudu/.*");
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
