@@ -24,6 +24,7 @@
 #include "kudu/consensus/consensus.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/server/clock.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
@@ -93,6 +94,40 @@ class TransactionTracker;
 //      be made durable.
 //
 // [1] - see 'Implementation Techniques for Main Memory Database Systems', DeWitt et. al.
+//
+// ===========================================================================================
+//
+// Ordering requirements for lock acquisition and write (mvcc) transaction start
+//
+// On the leader side, starting the mvcc transaction for writes
+// (calling tablet_->StartTransaction()) must always be done _after_ any relevant row locks are
+// acquired (using AcquireLockForOp). This ensures that, within each row, timestamps only move
+// forward. If we took a timestamp before getting the row lock, we could have the following
+// situation:
+//
+//   Thread 1         |  Thread 2
+//   ----------------------
+//   Start tx 1       |
+//                    |  Start tx 2
+//                    |  Obtain row lock
+//                    |  Update row
+//                    |  Commit tx 2
+//   Obtain row lock  |
+//   Delete row       |
+//   Commit tx 1
+//
+// This would cause the mutation list to look like: @t1: DELETE, @t2: UPDATE which is invalid,
+// since we expect to be able to be able to replay mutations in increasing timestamp order on a
+// given row.
+//
+// This requirement is basically two-phase-locking: the order in which row locks are acquired for
+// transactions determines their serialization order. If/when we support multi-node serializable
+// transactions, we'll have to acquire _all_ row locks (across all nodes) before obtaining a
+// timestamp.
+//
+// Note that on non-leader replicas this requirement is no longer relevant. The leader assigned
+// the timestamps and serialized the transactions properly, so calling tablet_->StartTransaction()
+// before lock acquisition on non-leader replicas is inconsequential.
 //
 // ===========================================================================================
 //
@@ -188,7 +223,8 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
                     log::Log* log,
                     ThreadPool* prepare_pool,
                     ThreadPool* apply_pool,
-                    TransactionOrderVerifier* order_verifier);
+                    TransactionOrderVerifier* order_verifier,
+                    scoped_refptr<server::Clock> clock);
 
   // Perform any non-constructor initialization. Sets the transaction
   // that will be executed.
@@ -264,6 +300,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   // The task submitted to the prepare threadpool to prepare and start
   // the transaction. If PrepareAndStart() fails, calls HandleFailure.
   void PrepareAndStartTask();
+
   // Actually prepare and start.
   Status PrepareAndStart();
 
@@ -316,6 +353,11 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
   // Lock that synchronizes access to the transaction's state.
   mutable simple_spinlock lock_;
+
+  // Temporarily have the clock on the driver so that we can assign timestamps to
+  // transactions.
+  // TODO(dralves) Remove this when the new TimeManager class gets in (part of KUDU-798).
+  scoped_refptr<server::Clock> clock_;
 
   // A copy of the transaction's OpId, set when the transaction first
   // receives one from Consensus and uninitialized until then.

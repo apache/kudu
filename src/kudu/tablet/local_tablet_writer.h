@@ -96,7 +96,7 @@ class LocalTabletWriter {
 
     RETURN_NOT_OK(tablet_->DecodeWriteOperations(client_schema_, tx_state_.get()));
     RETURN_NOT_OK(tablet_->AcquireRowLocks(tx_state_.get()));
-    tablet_->StartTransaction(tx_state_.get());
+    tablet_->AssignTimestampAndStartTransactionForTests(tx_state_.get());
 
     // Create a "fake" OpId and set it in the TransactionState for anchoring.
     tx_state_->mutable_op_id()->CopyFrom(consensus::MaximumOpId());

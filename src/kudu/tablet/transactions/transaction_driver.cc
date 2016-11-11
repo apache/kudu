@@ -86,13 +86,15 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
                                      Log* log,
                                      ThreadPool* prepare_pool,
                                      ThreadPool* apply_pool,
-                                     TransactionOrderVerifier* order_verifier)
+                                     TransactionOrderVerifier* order_verifier,
+                                     scoped_refptr<server::Clock> clock)
     : txn_tracker_(txn_tracker),
       consensus_(consensus),
       log_(log),
       prepare_pool_(prepare_pool),
       apply_pool_(apply_pool),
       order_verifier_(order_verifier),
+      clock_(std::move(clock)),
       trace_(new Trace()),
       start_time_(MonoTime::Now()),
       replication_state_(NOT_REPLICATING),
@@ -241,7 +243,6 @@ Status TransactionDriver::PrepareAndStart() {
   prepare_physical_timestamp_ = GetMonoTimeMicros();
 
   RETURN_NOT_OK(transaction_->Prepare());
-  RETURN_NOT_OK(transaction_->Start());
 
   // Only take the lock long enough to take a local copy of the
   // replication state and set our prepare state. This ensures that
@@ -259,6 +260,7 @@ Status TransactionDriver::PrepareAndStart() {
     // preempted after the state is prepared apply can be triggered by another thread without the
     // rpc being registered.
     if (transaction_->type() == consensus::REPLICA) {
+      RETURN_NOT_OK(transaction_->Start());
       RegisterFollowerTransactionOnResultTracker();
     // ... else we're a client-started transaction. Make sure we're still the driver of the
     // RPC and give up if we aren't.
@@ -277,13 +279,25 @@ Status TransactionDriver::PrepareAndStart() {
   switch (repl_state_copy) {
     case NOT_REPLICATING:
     {
-      // Set the timestamp in the message, now that it's prepared.
+      // Assign the timestamp just before submitting the transaction to consensus, if
+      // it doesn't have one.
+      // This is a placeholder since in the near future the timestamp will be assigned.
+      // within consensus.
+      // TODO(dralves) Remove this when the new TimeManager class gets in (part of KUDU-798)
+      DCHECK(!transaction_->state()->has_timestamp());
+      if (transaction_->state()->external_consistency_mode() == COMMIT_WAIT) {
+        transaction_->state()->set_timestamp(clock_->NowLatest());
+      } else {
+        transaction_->state()->set_timestamp(clock_->Now());
+      }
+
       transaction_->state()->consensus_round()->replicate_msg()->set_timestamp(
           transaction_->state()->timestamp().ToUint64());
 
+      RETURN_NOT_OK(transaction_->Start());
+
       VLOG_WITH_PREFIX(4) << "Triggering consensus repl";
       // Trigger the consensus replication.
-
       {
         std::lock_guard<simple_spinlock> lock(lock_);
         replication_state_ = REPLICATING;
@@ -427,8 +441,7 @@ Status TransactionDriver::ApplyAsync() {
     DCHECK_EQ(prepare_state_, PREPARED);
     if (transaction_status_.ok()) {
       DCHECK_EQ(replication_state_, REPLICATED);
-      order_verifier_->CheckApply(op_id_copy_.index(),
-                                  prepare_physical_timestamp_);
+      order_verifier_->CheckApply(op_id_copy_.index(), prepare_physical_timestamp_);
       // Now that the transaction is committed in consensus advance the safe time.
       if (transaction_->state()->external_consistency_mode() != COMMIT_WAIT) {
         transaction_->state()->tablet_peer()->tablet()->mvcc_manager()->

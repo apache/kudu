@@ -121,40 +121,14 @@ class Tablet {
   // otherwise destructed).
   Status AcquireRowLocks(WriteTransactionState* tx_state);
 
-  // Finish the Prepare phase of a write transaction.
+  // Starts an MVCC transaction which must have a pre-assigned timestamp.
   //
-  // Starts an MVCC transaction and assigns a timestamp for the transaction.
-  // This also snapshots the current set of tablet components into the transaction
-  // state.
-  //
-  // This should always be done _after_ any relevant row locks are acquired
-  // (using CreatePreparedInsert/CreatePreparedMutate). This ensures that,
-  // within each row, timestamps only move forward. If we took a timestamp before
-  // getting the row lock, we could have the following situation:
-  //
-  //   Thread 1         |  Thread 2
-  //   ----------------------
-  //   Start tx 1       |
-  //                    |  Start tx 2
-  //                    |  Obtain row lock
-  //                    |  Update row
-  //                    |  Commit tx 2
-  //   Obtain row lock  |
-  //   Delete row       |
-  //   Commit tx 1
-  //
-  // This would cause the mutation list to look like: @t1: DELETE, @t2: UPDATE
-  // which is invalid, since we expect to be able to be able to replay mutations
-  // in increasing timestamp order on a given row.
-  //
-  // This requirement is basically two-phase-locking: the order in which row locks
-  // are acquired for transactions determines their serialization order. If/when
-  // we support multi-node serializable transactions, we'll have to acquire _all_
-  // row locks (across all nodes) before obtaining a timestamp.
-  //
-  // TODO: rename this to something like "FinishPrepare" or "StartApply", since
+  // TODO(todd): rename this to something like "FinishPrepare" or "StartApply", since
   // it's not the first thing in a transaction!
   void StartTransaction(WriteTransactionState* tx_state);
+
+  // Like the above but actually assigns the timestamp. Only used for tests.
+  void AssignTimestampAndStartTransactionForTests(WriteTransactionState* tx_state);
 
   // Insert a new row into the tablet.
   //
@@ -399,7 +373,7 @@ class Tablet {
   // - the tablet components have been acquired
   // - the operation has been decoded
   Status InsertOrUpsertUnlocked(WriteTransactionState *tx_state,
-                                RowOp* insert,
+                                RowOp* op,
                                 ProbeStats* stats);
 
   // Same as above, but for UPDATE.

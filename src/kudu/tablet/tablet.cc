@@ -368,22 +368,24 @@ Status Tablet::AcquireLockForOp(WriteTransactionState* tx_state, RowOp* op) {
   return Status::OK();
 }
 
-void Tablet::StartTransaction(WriteTransactionState* tx_state) {
+void Tablet::AssignTimestampAndStartTransactionForTests(WriteTransactionState* tx_state) {
   gscoped_ptr<ScopedTransaction> mvcc_tx;
+  CHECK(!tx_state->has_timestamp());
 
-  // If the state already has a timestamp then we're replaying a transaction that occurred
-  // before a crash or at another node...
-  if (tx_state->has_timestamp()) {
-    mvcc_tx.reset(new ScopedTransaction(&mvcc_, tx_state->timestamp()));
-
-  // ... otherwise this is a new transaction and we must assign a new timestamp. We either
-  // assign a timestamp in the future, if the consistency mode is COMMIT_WAIT, or we assign
-  // one in the present if the consistency mode is any other one.
-  } else if (tx_state->external_consistency_mode() == COMMIT_WAIT) {
+  // We either assign a timestamp in the future, if the consistency mode is COMMIT_WAIT, or
+  // we assign one in the present if the consistency mode is any other one.
+  if (tx_state->external_consistency_mode() == COMMIT_WAIT) {
     mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW_LATEST));
   } else {
     mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW));
   }
+  tx_state->SetMvccTxAndTimestamp(std::move(mvcc_tx));
+}
+
+void Tablet::StartTransaction(WriteTransactionState* tx_state) {
+  gscoped_ptr<ScopedTransaction> mvcc_tx;
+  DCHECK(tx_state->has_timestamp());
+  mvcc_tx.reset(new ScopedTransaction(&mvcc_, tx_state->timestamp()));
   tx_state->SetMvccTxAndTimestamp(std::move(mvcc_tx));
 }
 

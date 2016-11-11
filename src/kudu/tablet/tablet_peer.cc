@@ -554,7 +554,8 @@ Status TabletPeer::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transacti
     log_.get(),
     prepare_pool_.get(),
     apply_pool_,
-    &txn_order_verifier_);
+    &txn_order_verifier_,
+    clock_);
   RETURN_NOT_OK(tx_driver->Init(std::move(transaction), consensus::LEADER));
   driver->swap(tx_driver);
 
@@ -569,7 +570,8 @@ Status TabletPeer::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transact
     log_.get(),
     prepare_pool_.get(),
     apply_pool_,
-    &txn_order_verifier_);
+    &txn_order_verifier_,
+    clock_);
   RETURN_NOT_OK(tx_driver->Init(std::move(transaction), consensus::REPLICA));
   driver->swap(tx_driver);
 
