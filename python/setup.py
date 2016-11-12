@@ -155,7 +155,7 @@ setup(
         'build_ext': build_ext
     },
     setup_requires=['pytest-runner'],
-    tests_require=['pytest', 'multiprocessing'],
+    tests_require=['pytest'],
     install_requires=['cython >= 0.21', 'pytz', 'six'],
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,

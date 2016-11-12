@@ -59,6 +59,11 @@
 #   BUILD_PYTHON       Default: 1
 #     Build and test the Python wrapper of the client API.
 #
+#   BUILD_PYTHON3      Default: 1
+#     Build and test the Python wrapper of the client API in Python. This
+#     option is not mutually exclusive from BUILD_PYTHON. If both options
+#     are set (default), then both will be run.
+#
 #   MVN_FLAGS          Default: ""
 #     Extra flags which are passed to 'mvn' when building and running Java
 #     tests. This can be useful, for example, to choose a different maven
@@ -99,6 +104,7 @@ export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
 BUILD_JAVA=${BUILD_JAVA:-1}
 BUILD_PYTHON=${BUILD_PYTHON:-1}
+BUILD_PYTHON3=${BUILD_PYTHON3:-1}
 
 # Ensure that the test data directory is usable.
 mkdir -p "$TEST_TMPDIR"
@@ -170,12 +176,14 @@ if [ "$BUILD_TYPE" = "ASAN" ]; then
   CMAKE_BUILD=fastdebug
   EXTRA_BUILD_FLAGS="-DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1"
   BUILD_PYTHON=0
+  BUILD_PYTHON3=0
 elif [ "$BUILD_TYPE" = "TSAN" ]; then
   USE_CLANG=1
   CMAKE_BUILD=fastdebug
   EXTRA_BUILD_FLAGS="-DKUDU_USE_TSAN=1"
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
   BUILD_PYTHON=0
+  BUILD_PYTHON3=0
 elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   USE_CLANG=1
   CMAKE_BUILD=debug
@@ -185,6 +193,7 @@ elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   # We currently dont capture coverage for Java or Python.
   BUILD_JAVA=0
   BUILD_PYTHON=0
+  BUILD_PYTHON3=0
 elif [ "$BUILD_TYPE" = "LINT" ]; then
   CMAKE_BUILD=debug
 else
@@ -290,6 +299,7 @@ if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
   # We don't support detecting java and python flaky tests at the moment.
   echo Disabling Java and python build since RUN_FLAKY_ONLY=1
   BUILD_PYTHON=0
+  BUILD_PYTHON3=0
   BUILD_JAVA=0
 fi
 
@@ -392,6 +402,41 @@ if [ "$BUILD_PYTHON" == "1" ]; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Python tests failed\n'
   fi
+  deactivate
+  popd
+fi
+
+if [ "$BUILD_PYTHON3" == "1" ]; then
+  echo
+  echo Building and testing python 3.
+  echo ------------------------------------------------------------
+
+  # Failing to compile the Python client should result in a build failure
+  set -e
+  export KUDU_HOME=$SOURCE_ROOT
+  export KUDU_BUILD=$BUILD_ROOT
+  pushd $SOURCE_ROOT/python
+
+  # Create a sane test environment
+  rm -Rf $KUDU_BUILD/py_env
+  virtualenv -p python3 $KUDU_BUILD/py_env
+  source $KUDU_BUILD/py_env/bin/activate
+  pip install --upgrade pip
+  CC=$CLANG CXX=$CLANG++ pip install --disable-pip-version-check -r requirements.txt
+
+  # Delete old Cython extensions to force them to be rebuilt.
+  rm -Rf build kudu_python.egg-info kudu/*.so
+
+  # Assuming we run this script from base dir
+  CC=$CLANG CXX=$CLANG++ python setup.py build_ext
+  set +e
+  if ! python setup.py test \
+      --addopts="kudu --junit-xml=$KUDU_BUILD/test-logs/python3_client.xml" \
+      2> $KUDU_BUILD/test-logs/python3_client.log ; then
+    EXIT_STATUS=1
+    FAILURES="$FAILURES"$'Python 3 tests failed\n'
+  fi
+  deactivate
   popd
 fi
 
