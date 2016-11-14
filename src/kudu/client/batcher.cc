@@ -734,7 +734,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
       continue;
     }
     gscoped_ptr<KuduWriteOperation> op = std::move(rpc.ops()[err_pb.row_index()]->write_op);
-    VLOG(1) << "Error on op " << op->ToString() << ": "
+    VLOG(2) << "Error on op " << op->ToString() << ": "
             << err_pb.error().ShortDebugString();
     Status op_status = StatusFromPB(err_pb.error());
     gscoped_ptr<KuduError> error(new KuduError(op.release(), op_status));
