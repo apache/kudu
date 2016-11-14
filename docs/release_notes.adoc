@@ -67,6 +67,27 @@
   the known leader replica. The default remains the latter. Use the relevant `ReplicaSelection`
   enum with the scanner's builder to change this behavior.
 
+* Tablet servers use a new policy for retaining write-ahead log (WAL) segments.
+  Previously, servers used the 'log_min_segments_to_retain' flag to prioritize
+  any flushes which were retaining log segments past the configured value (default 2).
+  This policy caused servers to flush in-memory data more frequently than necessary,
+  limiting write performance.
++
+The new policy introduces a new flag 'log_target_replay_size_mb' which
+  determines the threshold at which write-ahead log retention will prioritize flushes.
+  The new flag is considered experimental and users should not need to modify
+  its value.
++
+The improved policy has been seen to improve write performance in some use cases
+  by a factor of 2x relative to the old policy.
+
+* Kudu's implementation of the Raft consensus algorithm has been improved to include
+  a "pre-election" phase. This can improve the stability of tablet leader election
+  in high-load scenarios, especially if each server hosts a high number of tablets.
+
+* Tablet server start-up time has been substantially improved in the case that
+  the server contains a high number of tombstoned tablet replicas.
+
 === Command line tools
 
 * The tool `kudu tablet leader_step_down` has been added to manually force a leader to step down.
@@ -80,7 +101,14 @@
 
 == Wire protocol compatibility
 
-XXX
+Kudu 1.1.0 is wire-compatible with previous versions of Kudu:
+
+* Kudu 1.1 clients may connect to servers running Kudu 1.0. If the client uses the new
+  'IN LIST' predicate type, an error will be returned.
+* Kudu 1.0 clients may connect to servers running Kudu 1.1 without limitations.
+* Rolling upgrade between Kudu 1.0 and Kudu 1.1 servers is believed to be possible
+  though has not been sufficiently tested. Users are encouraged to shut down all nodes
+  in the cluster, upgrade the software, and then restart the daemons on the new version.
 
 [[rn_1.1.0_incompatible_changes]]
 == Incompatible changes in Kudu 1.1.0
@@ -162,23 +190,11 @@ space immediately.
 * Updates, inserts, and deletes via Impala are non-transactional. If a query
   fails part of the way through, its partial effects will not be rolled back.
 
-* All queries will be distributed across all Impala hosts which host a replica
-  of the target table(s), even if a predicate on a primary key could correctly
-  restrict the query to a single tablet. This limits the maximum concurrency of
-  short queries made via Impala.
-
 * No timestamp and decimal type support.
 
 * The maximum parallelism of a single query is limited to the number of tablets
   in a table. For good analytic performance, aim for 10 or more tablets per host
   or use large tables.
-
-* Impala is only able to push down predicates involving `=`, `<=`, `>=`,
-  or `BETWEEN` comparisons between any column and a literal value, and `<` and `>`
-  for integer columns only. For example, for a table with an integer key `ts`, and
-  a string key `name`, the predicate `WHERE ts >= 12345` will convert into an
-  efficient range scan, whereas `where name > 'lipcon'` will currently fetch all
-  data from the table and evaluate the predicate within Impala.
 
 === Security Limitations
 
