@@ -19,7 +19,11 @@
 
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/stl_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
@@ -60,6 +64,49 @@ int64_t CountTableRows(KuduTable* table) {
   vector<string> rows;
   client::ScanTableToStrings(table, &rows);
   return rows.size();
+}
+
+Status CountRowsWithRetries(KuduScanner* scanner, size_t* row_count) {
+  if (!scanner) {
+    return Status::InvalidArgument("null scanner");
+  }
+  // KUDU-1656: there might be timeouts, so re-try the operations
+  // to avoid flakiness.
+  Status row_count_status;
+  size_t actual_row_count = 0;
+  row_count_status = scanner->Open();
+  for (size_t i = 0; i < 3; ++i) {
+    if (!row_count_status.ok()) {
+      if (row_count_status.IsTimedOut()) {
+        // Start the row count over again.
+        continue;
+      }
+      RETURN_NOT_OK(row_count_status);
+    }
+    size_t count = 0;
+    while (scanner->HasMoreRows()) {
+      KuduScanBatch batch;
+      row_count_status = scanner->NextBatch(&batch);
+      if (!row_count_status.ok()) {
+        if (row_count_status.IsTimedOut()) {
+          // Break the NextBatch() cycle and start row count over again.
+          break;
+        }
+        RETURN_NOT_OK(row_count_status);
+      }
+      count += batch.NumRows();
+    }
+    if (row_count_status.ok()) {
+      // Success: stop the retry cycle.
+      actual_row_count = count;
+      break;
+    }
+  }
+  RETURN_NOT_OK(row_count_status);
+  if (row_count) {
+    *row_count = actual_row_count;
+  }
+  return Status::OK();
 }
 
 void ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {

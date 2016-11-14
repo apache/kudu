@@ -50,6 +50,10 @@ void ScanTableToStrings(KuduTable* table, std::vector<std::string>* row_strings)
 // Count the number of rows in the table in LEADER_ONLY mode.
 int64_t CountTableRows(KuduTable* table);
 
+// Open the specified scanner and iterate through the rows, returning the row
+// count. The scan operations are retried a few times in case of a timeout.
+Status CountRowsWithRetries(KuduScanner* scanner, size_t* row_count);
+
 void ScanToStrings(KuduScanner* scanner, std::vector<std::string>* row_strings);
 
 // Convert a kudu::Schema to a kudu::client::KuduSchema.
