@@ -231,7 +231,7 @@ object deriving from a special base class
 * icon:plus-circle[role="green",alt="pro"] supports the `weak_ptr` use cases:
  ** a temporary ownership when an object needs to be accessed only if it exists
  ** break circular references of `shared_ptr`, if any exists due to aggregation
-* icon:minus-circle[role="green",alt="pro"] you can convert from the
+* icon:plus-circle[role="green",alt="pro"] you can convert from the
 `shared_ptr` into the `weak_ptr` and back
 * icon:plus-circle[role="green",alt="pro"] if creating an instance with
 `std::make_shared<>()` only one allocation is made (since {cpp}11;
