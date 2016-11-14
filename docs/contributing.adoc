@@ -161,6 +161,7 @@ away from `foo.Pass()` in favor of `std::move(foo)`.
 
 `boost` classes from header-only libraries can be used in cases where a suitable
 replacement does not exist in the Kudu code base. However:
+
 * Do not introduce dependencies on `boost` classes not already depended on. We
   are actively trying to remove `boost` from the Kudu code base, and new
   dependencies make that work more difficult.
@@ -284,15 +285,15 @@ _util/callback_bind-test.cc_ for examples.
 `CMake` allows commands in lower, upper, or mixed case. To keep
 the CMake files consistent, please use the following guidelines:
 
-- *built-in commands* in lowercase
+* *built-in commands* in lowercase
 ----
 add_subdirectory(some/path)
 ----
-- *built-in arguments* in uppercase
+* *built-in arguments* in uppercase
 ----
 message(STATUS "message goes here")
 ----
-- *custom commands or macros* in uppercase
+* *custom commands or macros* in uppercase
 ----
 ADD_KUDU_TEST(some-test)
 ----
@@ -306,27 +307,29 @@ guidelines. Existing non-conformant ones will be made conformant in time.
 .Name
 
 The gflag's name conveys a lot of information, so choose a good name. The name
-will propagate into other systems, such as the link:configuration_reference.html[Configuration
-Reference].
-- The different parts of a multi-word name should be separated by underscores.
+will propagate into other systems, such as the
+link:configuration_reference.html[Configuration Reference].
+
+* The different parts of a multi-word name should be separated by underscores.
   For example, `fs_data_dirs`.
-- The name should be prefixed with the context that it affects. For example,
+* The name should be prefixed with the context that it affects. For example,
   `webserver_num_worker_threads` and `cfile_default_block_size`. Context can be
   difficult to define, so bear in mind that this prefix will be
   used to group similar gflags together. If the gflag affects the entire
   process, it should not be prefixed.
-- If the gflag is for a quantity, the name should be suffixed with the units.
+* If the gflag is for a quantity, the name should be suffixed with the units.
   For example, `tablet_copy_idle_timeout_ms`.
-- Where possible, use short names. This will save time for those entering
+* Where possible, use short names. This will save time for those entering
   command line options by hand.
-- The name is part of Kudu's compatibility contract, and should not change
+* The name is part of Kudu's compatibility contract, and should not change
   without very good reason.
 
 .Default value
 
 Choosing a default value is generally simple, but like the name, it propagates
 into other systems.
-- The default value is part of Kudu's compatibility contract, and should not
+
+* The default value is part of Kudu's compatibility contract, and should not
   change without very good reason.
 
 .Description
@@ -334,12 +337,13 @@ into other systems.
 The gflag's description should supplement the name and provide additional
 context and information. Like the name, the description propagates into other
 systems.
-- The description may include multiple sentences. Each should begin with a
+
+* The description may include multiple sentences. Each should begin with a
   capital letter, end with a period, and begin one space after the previous.
-- The description should NOT include the gflag's type or default value; they are
+* The description should NOT include the gflag's type or default value; they are
   provided out-of-band.
-- The description should be in the third person. Do not use words like `you`.
-- A gflag description can be changed freely; it is not expected to remain the
+* The description should be in the third person. Do not use words like `you`.
+* A gflag description can be changed freely; it is not expected to remain the
   same across Kudu releases.
 
 .Tags
@@ -350,7 +354,7 @@ comment in _flag_tags.h_ for guidelines.
 
 .Miscellaneous
 
-- Avoid creating multiple gflags for the same logical parameter. For
+* Avoid creating multiple gflags for the same logical parameter. For
   example, many Kudu binaries need to configure a WAL directory. Rather than
   creating `foo_wal_dir` and `bar_wal_dir` gflags, better to have a single
   `kudu_wal_dir` gflag for use universally.
