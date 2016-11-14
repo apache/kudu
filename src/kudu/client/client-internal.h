@@ -18,11 +18,13 @@
 #define KUDU_CLIENT_CLIENT_INTERNAL_H
 
 #include <algorithm>
-#include <boost/function.hpp>
+#include <cmath>
 #include <set>
 #include <string>
 #include <unordered_set>
 #include <vector>
+
+#include <boost/function.hpp>
 
 #include "kudu/client/client.h"
 #include "kudu/util/atomic.h"
