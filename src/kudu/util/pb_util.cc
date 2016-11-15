@@ -660,7 +660,7 @@ Status WritablePBContainerFile::Close() {
   return Status::OK();
 }
 
-const string& WritablePBContainerFile::filename() const {
+string WritablePBContainerFile::filename() const {
   return writer_->filename();
 }
 

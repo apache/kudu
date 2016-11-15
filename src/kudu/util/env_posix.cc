@@ -263,7 +263,7 @@ class PosixSequentialFile: public SequentialFile {
     return Status::OK();
   }
 
-  virtual const string& filename() const OVERRIDE { return filename_; }
+  virtual string filename() const OVERRIDE { return filename_; }
 };
 
 // pread() based random-access
@@ -302,7 +302,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
     return Status::OK();
   }
 
-  virtual const string& filename() const OVERRIDE { return filename_; }
+  virtual string filename() const OVERRIDE { return filename_; }
 
   virtual size_t memory_footprint() const OVERRIDE {
     return kudu_malloc_usable_size(this) + filename_.capacity();
@@ -438,7 +438,7 @@ class PosixWritableFile : public WritableFile {
     return filesize_;
   }
 
-  virtual const string& filename() const OVERRIDE { return filename_; }
+  virtual string filename() const OVERRIDE { return filename_; }
 
  private:
 
@@ -682,7 +682,7 @@ class PosixRWFile : public RWFile {
     return Status::OK();
   }
 
-  virtual const string& filename() const OVERRIDE {
+  virtual string filename() const OVERRIDE {
     return filename_;
   }
 

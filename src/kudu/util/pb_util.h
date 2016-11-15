@@ -309,7 +309,7 @@ class WritablePBContainerFile {
   Status Close();
 
   // Returns the path to the container's underlying file handle.
-  const std::string& filename() const;
+  std::string filename() const;
 
  private:
   friend class TestPBUtil;
