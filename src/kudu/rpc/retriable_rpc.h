@@ -142,8 +142,16 @@ bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(const RetriableR
       break;
     }
     case RetriableRpcStatus::SERVER_NOT_ACCESSIBLE: {
-      VLOG(1) << "Failing " << ToString() << " to a new target: " << result.status.ToString();
-      server_picker_->MarkServerFailed(server, result.status);
+      // TODO(KUDU-1745): not checking for null here results in a crash, since in the case
+      // of a failed master lookup we have no tablet server corresponding to the error.
+      //
+      // But, with the null check, we end up with a relatively tight retry loop
+      // in this scenario whereas we should be backing off. Need to improve
+      // test coverage here to understand why the back-off is not taking effect.
+      if (server != nullptr) {
+        VLOG(1) << "Failing " << ToString() << " to a new target: " << result.status.ToString();
+        server_picker_->MarkServerFailed(server, result.status);
+      }
       break;
     }
       // The TabletServer was not part of the config serving the tablet.
@@ -180,6 +188,7 @@ void RetriableRpc<Server, RequestPB, ResponsePB>::FinishInternal() {
 template <class Server, class RequestPB, class ResponsePB>
 void RetriableRpc<Server, RequestPB, ResponsePB>::ReplicaFoundCb(const Status& status,
                                                                  Server* server) {
+  // NOTE: 'server' here may be nullptr in the case that status is not OK!
   RetriableRpcStatus result = AnalyzeResponse(status);
   if (RetryIfNeeded(result, server)) return;
 

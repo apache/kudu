@@ -77,7 +77,7 @@ class ServerPicker : public RefCountedThreadSafe<ServerPicker<Server>> {
   // Picks the leader among the replicas serving a resource.
   // If the leader was found, it calls the callback with Status::OK() and
   // with 'server' set to the current leader, otherwise calls the callback
-  // with 'status' set to the failure reason.
+  // with 'status' set to the failure reason, and 'server' set to nullptr.
   // If picking a leader takes longer than 'deadline' the callback is called with
   // Status::TimedOut().
   virtual void PickLeader(const ServerPickedCallback& callback, const MonoTime& deadline) = 0;

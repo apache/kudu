@@ -204,4 +204,44 @@ ClientTestBehavior test_type[] = { kWrite, kRead, kReadWrite };
 INSTANTIATE_TEST_CASE_P(ClientBehavior, ClientFailoverParamITest,
                         ::testing::ValuesIn(test_type));
 
+
+class ClientFailoverITest : public ExternalMiniClusterITestBase {
+};
+
+// Regression test for KUDU-1745: if the tablet servers and the master
+// both experience some issue while writing, the client should not crash.
+TEST_F(ClientFailoverITest, TestClusterCrashDuringWorkload) {
+  // Start up with 1 tablet server and no special flags.
+  NO_FATALS(StartCluster({}, {}, 1));
+
+  // We have some VLOG messages in the client which have previously been
+  // a source of crashes in this kind of error case. So, bump up
+  // vlog for this test.
+  if (FLAGS_v == 0) FLAGS_v = 3;
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(1);
+
+  // When we shut down the servers, sometimes we get a timeout and sometimes
+  // we get a network error, depending on the exact timing of where the shutdown
+  // occurs. See KUDU-1466 for one possible reason why.
+  workload.set_timeout_allowed(true);
+  workload.set_network_error_allowed(true);
+
+  // Set a short write timeout so that StopAndJoin below returns quickly
+  // (the writes will retry as long as the timeout).
+  workload.set_write_timeout_millis(1000);
+
+  workload.Setup();
+  workload.Start();
+  // Wait until we've successfully written some rows, to ensure that we've
+  // primed the meta cache with the tablet server before it crashes.
+  while (workload.rows_inserted() == 0) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  cluster_->master()->Shutdown();
+  cluster_->tablet_server(0)->Shutdown();
+  workload.StopAndJoin();
+}
+
 } // namespace kudu

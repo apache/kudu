@@ -51,6 +51,7 @@ TestWorkload::TestWorkload(MiniClusterBase* cluster)
     timeout_allowed_(false),
     not_found_allowed_(false),
     already_present_allowed_(false),
+    network_error_allowed_(false),
     num_replicas_(3),
     num_tablets_(1),
     table_name_(kDefaultTableName),
@@ -149,6 +150,10 @@ void TestWorkload::WriteThread() {
         }
 
         if (already_present_allowed_ && e->status().IsAlreadyPresent()) {
+          continue;
+        }
+
+        if (network_error_allowed_ && e->status().IsNetworkError()) {
           continue;
         }
 

@@ -446,17 +446,17 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
 }
 
 void MetaCacheServerPicker::MarkServerFailed(RemoteTabletServer* replica, const Status& status) {
-  tablet_->MarkReplicaFailed(replica, status);
+  tablet_->MarkReplicaFailed(CHECK_NOTNULL(replica), status);
 }
 
 void MetaCacheServerPicker::MarkReplicaNotLeader(RemoteTabletServer* replica) {
   {
     std::lock_guard<simple_spinlock> lock(lock_);
-    followers_.insert(replica);
+    followers_.insert(CHECK_NOTNULL(replica));
   }
 }
 
-void MetaCacheServerPicker::MarkResourceNotFound(RemoteTabletServer* replica) {
+void MetaCacheServerPicker::MarkResourceNotFound(RemoteTabletServer* /*replica*/) {
   tablet_->MarkStale();
 }
 
