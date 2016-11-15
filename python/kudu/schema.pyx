@@ -328,7 +328,7 @@ cdef class ColumnSpec:
         """
         Change the column name.
         """
-        self.spec.RenameTo(new_name)
+        self.spec.RenameTo(tobytes(new_name))
         return self
 
     def block_size(self, block_size):

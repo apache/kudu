@@ -2658,7 +2658,7 @@ cdef class TableAlterer:
         result.spec = self._alterer.AlterColumn(tobytes(name))
 
         if rename_to:
-            result.rename(tobytes(rename_to))
+            result.rename(rename_to)
 
         return result
 
