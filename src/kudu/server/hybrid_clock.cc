@@ -277,7 +277,9 @@ Status HybridClock::Update(const Timestamp& to_update) {
 
   // If the incoming message is in the past relative to our current
   // physical clock, there's nothing to do.
-  if (PREDICT_TRUE(now.CompareTo(to_update) > 0)) return Status::OK();
+  if (PREDICT_TRUE(now > to_update)) {
+    return Status::OK();
+  }
 
   uint64_t to_update_physical = GetPhysicalValueMicros(to_update);
   uint64_t now_physical = GetPhysicalValueMicros(now);
@@ -356,7 +358,7 @@ Status HybridClock::WaitUntilAfterLocally(const Timestamp& then,
       std::lock_guard<simple_spinlock> lock(lock_);
       NowWithError(&now, &error);
     }
-    if (now.CompareTo(then) > 0) {
+    if (now > then) {
       return Status::OK();
     }
     uint64_t wait_for_usec = GetPhysicalValueMicros(then) - GetPhysicalValueMicros(now);

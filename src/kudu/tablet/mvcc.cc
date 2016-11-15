@@ -111,7 +111,7 @@ bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
   // Ensure that we didn't mark the given timestamp as "safe" in between
   // acquiring the time and taking the lock. This allows us to acquire timestamps
   // outside of the MVCC lock.
-  if (PREDICT_FALSE(no_new_transactions_at_or_before_.CompareTo(timestamp) >= 0)) {
+  if (PREDICT_FALSE(no_new_transactions_at_or_before_ >= timestamp)) {
     return false;
   }
   // Since transactions only commit once they are in the past, and new
@@ -123,7 +123,7 @@ bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
     << timestamp.ToString()
     << " cur_snap_: " << cur_snap_.ToString();
 
-  if (timestamp.CompareTo(earliest_in_flight_) < 0) {
+  if (timestamp < earliest_in_flight_) {
     earliest_in_flight_ = timestamp;
   }
 
@@ -137,7 +137,7 @@ void MvccManager::CommitTransaction(Timestamp timestamp) {
 
   // No more transactions will start with a ts that is lower than or equal
   // to 'timestamp', so we adjust the snapshot accordingly.
-  if (no_new_transactions_at_or_before_.CompareTo(timestamp) < 0) {
+  if (no_new_transactions_at_or_before_ < timestamp) {
     no_new_transactions_at_or_before_ = timestamp;
   }
 
@@ -158,7 +158,7 @@ void MvccManager::AbortTransaction(Timestamp timestamp) {
 
   // If we're aborting the earliest transaction that was in flight,
   // update our cached value.
-  if (earliest_in_flight_.CompareTo(timestamp) == 0) {
+  if (earliest_in_flight_ == timestamp) {
     AdvanceEarliestInFlightTimestamp();
   }
 }
@@ -171,8 +171,8 @@ void MvccManager::OfflineCommitTransaction(Timestamp timestamp) {
   bool was_earliest = false;
   CommitTransactionUnlocked(timestamp, &was_earliest);
 
-  if (was_earliest
-      && no_new_transactions_at_or_before_.CompareTo(timestamp) >= 0) {
+  if (was_earliest &&
+      no_new_transactions_at_or_before_ >= timestamp) {
     // If this transaction was the earliest in-flight, we might have to adjust
     // the "clean" timestamp.
     AdjustCleanTime();
@@ -230,7 +230,7 @@ void MvccManager::OfflineAdjustSafeTime(Timestamp safe_time) {
 
   // No more transactions will start with a ts that is lower than or equal
   // to 'safe_time', so we adjust the snapshot accordingly.
-  if (no_new_transactions_at_or_before_.CompareTo(safe_time) < 0) {
+  if (no_new_transactions_at_or_before_ < safe_time) {
     no_new_transactions_at_or_before_ = safe_time;
   }
 
@@ -264,7 +264,7 @@ void MvccManager::AdjustCleanTime() {
   // In either case, we have to add the newly committed ts only if it remains higher
   // than the new watermark.
 
-  if (earliest_in_flight_.CompareTo(no_new_transactions_at_or_before_) < 0) {
+  if (earliest_in_flight_ < no_new_transactions_at_or_before_) {
     cur_snap_.all_committed_before_ = earliest_in_flight_;
   } else {
     cur_snap_.all_committed_before_ = no_new_transactions_at_or_before_;
@@ -339,7 +339,7 @@ bool MvccManager::AreAllTransactionsCommittedUnlocked(Timestamp ts) const {
   if (timestamps_in_flight_.empty()) {
     // If nothing is in-flight, then check the clock. If the timestamp is in the past,
     // we know that no new uncommitted transactions may start before this ts.
-    return ts.CompareTo(clock_->Now()) <= 0;
+    return ts <= clock_->Now();
   }
   // If some transactions are in flight, then check the in-flight list.
   return !cur_snap_.MayHaveUncommittedTransactionsAtOrBefore(ts);
@@ -462,7 +462,7 @@ bool MvccSnapshot::IsCommittedFallback(const Timestamp& timestamp) const {
 }
 
 bool MvccSnapshot::MayHaveCommittedTransactionsAtOrAfter(const Timestamp& timestamp) const {
-  return timestamp.CompareTo(none_committed_at_or_after_) < 0;
+  return timestamp < none_committed_at_or_after_;
 }
 
 bool MvccSnapshot::MayHaveUncommittedTransactionsAtOrBefore(const Timestamp& timestamp) const {
@@ -470,8 +470,8 @@ bool MvccSnapshot::MayHaveUncommittedTransactionsAtOrBefore(const Timestamp& tim
   // - 'all_committed_before_' comes before 'timestamp'
   // - 'all_committed_before_' is precisely 'timestamp' but 'timestamp' isn't in the
   //   committed set.
-  return timestamp.CompareTo(all_committed_before_) > 0 ||
-      (timestamp.CompareTo(all_committed_before_) == 0 && !IsCommittedFallback(timestamp));
+  return timestamp > all_committed_before_ ||
+      (timestamp == all_committed_before_ && !IsCommittedFallback(timestamp));
 }
 
 std::string MvccSnapshot::ToString() const {
@@ -508,7 +508,7 @@ void MvccSnapshot::AddCommittedTimestamp(Timestamp timestamp) {
   committed_timestamps_.push_back(timestamp.value());
 
   // If this is a new upper bound commit mark, update it.
-  if (none_committed_at_or_after_.CompareTo(timestamp) <= 0) {
+  if (none_committed_at_or_after_ <= timestamp) {
     none_committed_at_or_after_ = Timestamp(timestamp.value() + 1);
   }
 }

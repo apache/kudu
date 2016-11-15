@@ -78,10 +78,10 @@ Status DeltaStats::UpdateStats(const Timestamp& timestamp,
     default: LOG(FATAL) << "Invalid mutation type: " << decoder.get_type();
   }
 
-  if (min_timestamp_.CompareTo(timestamp) > 0) {
+  if (min_timestamp_ > timestamp) {
     min_timestamp_ = timestamp;
   }
-  if (max_timestamp_.CompareTo(timestamp) < 0) {
+  if (max_timestamp_ < timestamp) {
     max_timestamp_ = timestamp;
   }
 

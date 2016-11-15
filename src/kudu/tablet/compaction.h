@@ -47,7 +47,7 @@ class HistoryGcOpts {
   // eligible for garbage collection. If GC is disabled, will return false for
   // any Timestamp with a value >= 0 (that is, all valid Timestamps).
   bool IsAncientHistory(Timestamp t) const {
-    return t.ComesBefore(ancient_history_mark_);
+    return t < ancient_history_mark_;
   }
 
   // Returns true if history GC is enabled.

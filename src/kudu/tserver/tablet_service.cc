@@ -1752,7 +1752,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
       return Status::NotSupported("Snapshot scans not supported on this server",
                                   s.ToString());
     }
-    if (tmp_snap_timestamp.CompareTo(max_allowed_ts) > 0) {
+    if (tmp_snap_timestamp > max_allowed_ts) {
       return Status::InvalidArgument(
           Substitute("Snapshot time $0 in the future. Max allowed timestamp is $1",
                      server_->clock()->Stringify(tmp_snap_timestamp),

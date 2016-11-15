@@ -17,12 +17,12 @@
 
 #include "kudu/common/timestamp.h"
 
-#include "kudu/util/faststring.h"
-#include "kudu/util/memcmpable_varint.h"
-#include "kudu/util/slice.h"
-#include "kudu/util/status.h"
-#include "kudu/gutil/strings/substitute.h"
+#include <ostream>
+
 #include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/memcmpable_varint.h"
 
 namespace kudu {
 
@@ -31,11 +31,11 @@ const Timestamp Timestamp::kMax(MathLimits<Timestamp::val_type>::kMax);
 const Timestamp Timestamp::kInitialTimestamp(MathLimits<Timestamp::val_type>::kMin + 1);
 const Timestamp Timestamp::kInvalidTimestamp(MathLimits<Timestamp::val_type>::kMax - 1);
 
-bool Timestamp::DecodeFrom(Slice *input) {
+bool Timestamp::DecodeFrom(Slice* input) {
   return GetMemcmpableVarint64(input, &v);
 }
 
-void Timestamp::EncodeTo(faststring *dst) const {
+void Timestamp::EncodeTo(faststring* dst) const {
   PutMemcmpableVarint64(dst, v);
 }
 
@@ -49,6 +49,10 @@ uint64_t Timestamp::ToUint64() const {
 
 void Timestamp::FromUint64(uint64_t value) {
   v = value;
+}
+
+std::ostream& operator<<(std::ostream& o, const Timestamp& timestamp) {
+  return o << timestamp.ToString();
 }
 
 }  // namespace kudu

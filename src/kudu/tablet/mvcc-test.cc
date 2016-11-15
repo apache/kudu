@@ -215,7 +215,7 @@ TEST_F(MvccTest, TestOfflineTransactions) {
   // now start a transaction in the "past"
   ASSERT_OK(mgr.StartTransactionAtTimestamp(Timestamp(50)));
 
-  ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(Timestamp::kInitialTimestamp), 0);
+  ASSERT_EQ(Timestamp::kInitialTimestamp, mgr.GetCleanTimestamp());
 
   // and committing this transaction "offline" this
   // should not advance the MvccManager 'all_committed_before_'
@@ -235,7 +235,7 @@ TEST_F(MvccTest, TestOfflineTransactions) {
   // Now advance the watermark to the last committed transaction.
   mgr.OfflineAdjustSafeTime(Timestamp(50));
 
-  ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(Timestamp(50)), 0);
+  ASSERT_EQ(Timestamp(50), mgr.GetCleanTimestamp());
 
   MvccSnapshot snap2;
   mgr.TakeSnapshot(&snap2);
@@ -499,7 +499,7 @@ TEST_F(MvccTest, TestTxnAbort) {
   // Now abort tx1, this shouldn't move the clean time and the transaction
   // shouldn't be reported as committed.
   mgr.AbortTransaction(tx1);
-  ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(Timestamp::kInitialTimestamp), 0);
+  ASSERT_EQ(Timestamp::kInitialTimestamp, mgr.GetCleanTimestamp());
   ASSERT_FALSE(mgr.cur_snap_.IsCommitted(tx1));
 
   // Committing tx3 shouldn't advance the clean time since it is not the earliest
@@ -508,13 +508,13 @@ TEST_F(MvccTest, TestTxnAbort) {
   mgr.StartApplyingTransaction(tx3);
   mgr.CommitTransaction(tx3);
   ASSERT_TRUE(mgr.cur_snap_.IsCommitted(tx3));
-  ASSERT_EQ(mgr.no_new_transactions_at_or_before_.CompareTo(tx3), 0);
+  ASSERT_EQ(tx3, mgr.no_new_transactions_at_or_before_);
 
   // Committing tx2 should advance the clean time to 3.
   mgr.StartApplyingTransaction(tx2);
   mgr.CommitTransaction(tx2);
   ASSERT_TRUE(mgr.cur_snap_.IsCommitted(tx2));
-  ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(tx3), 0);
+  ASSERT_EQ(tx3, mgr.GetCleanTimestamp());
 }
 
 // This tests for a bug we were observing, where a clean snapshot would not

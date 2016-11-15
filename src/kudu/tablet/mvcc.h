@@ -61,10 +61,10 @@ class MvccSnapshot {
   inline bool IsCommitted(const Timestamp& timestamp) const {
     // Inline the most likely path, in which our watermarks determine
     // whether a transaction is committed.
-    if (PREDICT_TRUE(timestamp.CompareTo(all_committed_before_) < 0)) {
+    if (PREDICT_TRUE(timestamp < all_committed_before_)) {
       return true;
     }
-    if (PREDICT_TRUE(timestamp.CompareTo(none_committed_at_or_after_) >= 0)) {
+    if (PREDICT_TRUE(timestamp >= none_committed_at_or_after_)) {
       return false;
     }
     // Out-of-line the unlikely case which involves more complex (loopy) code.
