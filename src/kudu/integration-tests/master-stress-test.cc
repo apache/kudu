@@ -289,7 +289,7 @@ class MasterStressTest : public KuduTest {
     deadline.AddDelta(MonoDelta::FromSeconds(FLAGS_num_seconds_to_run));
 
     MonoTime now(MonoTime::Now());
-    while (now.ComesBefore(deadline)) {
+    while (now < deadline) {
       ExternalMaster* master = cluster_->master(
           rand_.Uniform(cluster_->num_masters()));
       master->Shutdown();

@@ -454,7 +454,7 @@ void ResultTracker::GCResults() {
   // If we've heard from a client recently, but some of its responses are old, GC those responses.
   for (auto iter = clients_.begin(); iter != clients_.end();) {
     auto& client_state = iter->second;
-    if (client_state->last_heard_from.ComesBefore(time_to_gc_clients_from)) {
+    if (client_state->last_heard_from < time_to_gc_clients_from) {
       // Client should be GCed.
       bool ongoing_request = false;
       client_state->GCCompletionRecords(
@@ -479,7 +479,7 @@ void ResultTracker::GCResults() {
           mem_tracker_,
           [&] (SequenceNumber, CompletionRecord* completion_record) {
             return completion_record->state != RpcState::IN_PROGRESS &&
-                completion_record->last_updated.ComesBefore(time_to_gc_responses_from);
+                completion_record->last_updated < time_to_gc_responses_from;
           });
       ++iter;
     }

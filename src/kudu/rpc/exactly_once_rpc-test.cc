@@ -255,7 +255,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
     MonoTime run_until = MonoTime::Now();
     run_until.AddDelta(run_for);
     int counter = 0;
-    while (MonoTime::Now().ComesBefore(run_until)) {
+    while (MonoTime::Now() < run_until) {
       unique_ptr<RetriableRpcExactlyOnceAdder> adder(new RetriableRpcExactlyOnceAdder(
           test_picker_, request_tracker_, client_messenger_, 1,
           rand() % (2 * FLAGS_remember_responses_ttl_ms)));
@@ -293,7 +293,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
     // but we should get a new response.
     bool result_gced = false;
     bool client_gced = false;
-    while (MonoTime::Now().ComesBefore(run_until)) {
+    while (MonoTime::Now() < run_until) {
       ExactlyOnceResponsePB response;
       Status s = MakeAddCall(sequence_number, 0, &response);
       if (s.ok()) {

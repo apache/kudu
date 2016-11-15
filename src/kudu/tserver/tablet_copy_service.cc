@@ -333,13 +333,13 @@ Status TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(
 void TabletCopyServiceImpl::EndExpiredSessions() {
   do {
     MutexLock l(sessions_lock_);
-    MonoTime now = MonoTime::Now();
+    const MonoTime now = MonoTime::Now();
 
     vector<string> expired_session_ids;
     for (const MonoTimeMap::value_type& entry : session_expirations_) {
       const string& session_id = entry.first;
       const MonoTime& expiration = entry.second;
-      if (expiration.ComesBefore(now)) {
+      if (expiration < now) {
         expired_session_ids.push_back(session_id);
       }
     }
