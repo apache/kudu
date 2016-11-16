@@ -17,3 +17,7 @@
 
 # False positive from atexit() registration in libc
 leak:*__new_exitfn*
+
+# False positive from krb5 < 1.12
+# Fixed by upstream commit 379d39c17b8930718e98185a5b32a0f7f3e3b4b6
+leak:krb5_authdata_import_attributes
