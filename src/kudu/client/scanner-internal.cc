@@ -259,10 +259,23 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   PrepareRequest(KuduScanner::Data::NEW);
   next_req_.clear_scanner_id();
   NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
-  switch (configuration_.read_mode()) {
-    case READ_LATEST: scan->set_read_mode(kudu::READ_LATEST); break;
-    case READ_AT_SNAPSHOT: scan->set_read_mode(kudu::READ_AT_SNAPSHOT); break;
-    default: LOG(FATAL) << "Unexpected read mode.";
+  const KuduScanner::ReadMode read_mode = configuration_.read_mode();
+  switch (read_mode) {
+    case KuduScanner::READ_LATEST:
+      scan->set_read_mode(kudu::READ_LATEST);
+      if (configuration_.has_snapshot_timestamp()) {
+        LOG(WARNING) << "Ignoring snapshot timestamp since "
+                        "not in READ_AT_SNAPSHOT mode.";
+      }
+      break;
+    case KuduScanner::READ_AT_SNAPSHOT:
+      scan->set_read_mode(kudu::READ_AT_SNAPSHOT);
+      if (configuration_.has_snapshot_timestamp()) {
+        scan->set_snap_timestamp(configuration_.snapshot_timestamp());
+      }
+      break;
+    default:
+      LOG(FATAL) << Substitute("$0: unexpected read mode", read_mode);
   }
 
   if (configuration_.is_fault_tolerant()) {
@@ -279,13 +292,11 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
 
   scan->set_cache_blocks(configuration_.spec().cache_blocks());
 
-  if (configuration_.snapshot_timestamp() != ScanConfiguration::kNoTimestamp) {
-    if (PREDICT_FALSE(configuration_.read_mode() != READ_AT_SNAPSHOT)) {
-      LOG(WARNING) << "Scan snapshot timestamp set but read mode was READ_LATEST."
-          " Ignoring timestamp.";
-    } else {
-      scan->set_snap_timestamp(configuration_.snapshot_timestamp());
-    }
+  // For consistent operations, propagate the timestamp among all operations
+  // performed the context of the same client.
+  const uint64_t lo_ts = table_->client()->data_->GetLatestObservedTimestamp();
+  if (lo_ts != KuduClient::kNoTimestamp) {
+    scan->set_propagated_timestamp(lo_ts);
   }
 
   // Set up the predicates.
@@ -405,8 +416,9 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     }
   }
 
-  if (last_response_.has_snap_timestamp()) {
-    table_->client()->data_->UpdateLatestObservedTimestamp(last_response_.snap_timestamp());
+  if (last_response_.has_propagated_timestamp()) {
+    table_->client()->data_->UpdateLatestObservedTimestamp(
+        last_response_.propagated_timestamp());
   }
 
   return Status::OK();

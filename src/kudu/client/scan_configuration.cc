@@ -32,6 +32,9 @@ using std::vector;
 namespace kudu {
 namespace client {
 
+const uint64_t ScanConfiguration::kNoTimestamp = KuduClient::kNoTimestamp;
+const int ScanConfiguration::kHtTimestampBitsToShift = 12;
+
 ScanConfiguration::ScanConfiguration(KuduTable* table)
     : table_(table),
       projection_(table->schema().schema_),

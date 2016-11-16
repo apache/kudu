@@ -1108,6 +1108,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
       resp->set_last_primary_key(last.ToString());
     }
   }
+  resp->set_propagated_timestamp(server_->clock()->Now().ToUint64());
   SetResourceMetrics(resp->mutable_resource_metrics(), context);
   context->RespondSuccess();
 }
@@ -1482,6 +1483,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
         if (!s.ok()) {
           tmp_error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
         }
+        break;
       }
       TRACE("Iterator created");
     }

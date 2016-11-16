@@ -347,6 +347,10 @@ message ScanResponsePB {
 
   // The resource usage of this RPC.
   optional ResourceMetricsPB resource_metrics = 8;
+
+  // The server's time upon sending out the scan response. Should always
+  // be greater than the scan timestamp.
+  optional fixed64 propagated_timestamp = 9;
 }
 
 // A scanner keep-alive request.

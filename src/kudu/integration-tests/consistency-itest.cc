@@ -266,7 +266,7 @@ class TimestampPropagationTest : public MiniClusterITestBase {
 //     behind Ta server's time, and scanning at Tb's write time would not
 //     include the rows inserted into Ta.
 //
-TEST_F(TimestampPropagationTest, DISABLED_TwoBatchesAndReadAtSnapshot) {
+TEST_F(TimestampPropagationTest, TwoBatchesAndReadAtSnapshot) {
   uint64_t ts_a;
   {
     shared_ptr<KuduClient> client;

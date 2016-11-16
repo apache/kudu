@@ -1050,8 +1050,8 @@ TEST_F(TabletServerTest, TestScannerOpenWhenServerShutsDown) {
 }
 
 TEST_F(TabletServerTest, TestSnapshotScan) {
-  int num_rows = AllowSlowTests() ? 1000 : 100;
-  int num_batches = AllowSlowTests() ? 100 : 10;
+  const int num_rows = AllowSlowTests() ? 1000 : 100;
+  const int num_batches = AllowSlowTests() ? 100 : 10;
   vector<uint64_t> write_timestamps_collector;
 
   // perform a series of writes and collect the timestamps
@@ -1084,6 +1084,7 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
     ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
     req.set_call_seq_id(0);
 
+    const Timestamp pre_scan_ts = mini_server_->server()->clock()->Now();
     // Send the call
     {
       SCOPED_TRACE(req.DebugString());
@@ -1092,6 +1093,12 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
     }
+
+    // The 'propagated_timestamp' field must be set for 'success' responses.
+    ASSERT_TRUE(resp.has_propagated_timestamp());
+    ASSERT_GT(mini_server_->server()->clock()->Now().ToUint64(),
+              resp.propagated_timestamp());
+    ASSERT_LT(pre_scan_ts.ToUint64(), resp.propagated_timestamp());
 
     ASSERT_TRUE(resp.has_more_results());
     // Drain all the rows from the scanner.
@@ -1135,7 +1142,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
   req.set_batch_size_bytes(0); // so it won't return data right away
   scan->set_read_mode(READ_AT_SNAPSHOT);
 
-  Timestamp now = mini_server_->server()->clock()->Now();
+  const Timestamp pre_scan_ts = mini_server_->server()->clock()->Now();
 
   // Send the call
   {
@@ -1147,7 +1154,15 @@ TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
   }
 
   // make sure that the snapshot timestamp that was selected is >= now
-  ASSERT_GE(resp.snap_timestamp(), now.ToUint64());
+  ASSERT_GE(resp.snap_timestamp(), pre_scan_ts.ToUint64());
+  // The 'propagated_timestamp' field must be set for all successful responses.
+  ASSERT_TRUE(resp.has_propagated_timestamp());
+  ASSERT_GT(mini_server_->server()->clock()->Now().ToUint64(),
+            resp.propagated_timestamp());
+  ASSERT_LT(pre_scan_ts.ToUint64(), resp.propagated_timestamp());
+  // The propagated timestamp should be after (i.e. greater) than the scan
+  // timestamp.
+  ASSERT_GT(resp.propagated_timestamp(), resp.snap_timestamp());
 }
 
 // Tests that a snapshot in the future (beyond the current time plus maximum

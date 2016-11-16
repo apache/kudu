@@ -36,10 +36,6 @@ namespace client {
 // corresponding methods on KuduScanner.
 class ScanConfiguration {
  public:
-
-  static const int64_t kNoTimestamp = -1;
-  static const int kHtTimestampBitsToShift = 12;
-
   explicit ScanConfiguration(KuduTable* table);
   ~ScanConfiguration() = default;
 
@@ -124,7 +120,12 @@ class ScanConfiguration {
     return is_fault_tolerant_;
   }
 
-  int64_t snapshot_timestamp() const {
+  bool has_snapshot_timestamp() const {
+    return snapshot_timestamp_ != kNoTimestamp;
+  }
+
+  uint64_t snapshot_timestamp() const {
+    CHECK(has_snapshot_timestamp());
     return snapshot_timestamp_;
   }
 
@@ -138,6 +139,9 @@ class ScanConfiguration {
 
  private:
   friend class KuduScanTokenBuilder;
+
+  static const uint64_t kNoTimestamp;
+  static const int kHtTimestampBitsToShift;
 
   // Non-owned, non-null table.
   KuduTable* table_;
@@ -159,7 +163,7 @@ class ScanConfiguration {
 
   bool is_fault_tolerant_;
 
-  int64_t snapshot_timestamp_;
+  uint64_t snapshot_timestamp_;
 
   MonoDelta timeout_;
 

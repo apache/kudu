@@ -587,6 +587,33 @@ class ClientTest : public KuduTest {
                          const vector<size_t>& string_sizes,
                          CpuTimes* elapsed);
 
+  // Perform scan on the given table in the specified read mode, counting
+  // number of returned rows. The 'scan_ts' parameter is effective only in case
+  // of READ_AT_SNAPHOT mode. All scans are performed against the tablet's
+  // leader server.
+  static Status CountRowsOnLeaders(KuduTable* table,
+                                   KuduScanner::ReadMode scan_mode,
+                                   uint64_t scan_ts,
+                                   size_t* row_count) {
+    KuduScanner scanner(table);
+    RETURN_NOT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
+    RETURN_NOT_OK(scanner.SetReadMode(scan_mode));
+    if (scan_mode == KuduScanner::READ_AT_SNAPSHOT) {
+      RETURN_NOT_OK(scanner.SetSnapshotRaw(scan_ts + 1));
+    }
+    RETURN_NOT_OK(scanner.Open());
+    KuduScanBatch batch;
+    size_t count = 0;
+    while (scanner.HasMoreRows()) {
+      RETURN_NOT_OK(scanner.NextBatch(&batch));
+      count += batch.NumRows();
+    }
+    if (row_count) {
+      *row_count = count;
+    }
+    return Status::OK();
+  }
+
   enum WhichServerToKill {
     DEAD_MASTER,
     DEAD_TSERVER
@@ -3755,30 +3782,107 @@ TEST_F(ClientTest, TestCreateTableWithInvalidEncodings) {
                       "DICT_ENCODING not supported for type INT32");
 }
 
+// Check the behavior of the latest observed timestamp when performing
+// write and read operations.
 TEST_F(ClientTest, TestLatestObservedTimestamp) {
   // Check that a write updates the latest observed timestamp.
-  uint64_t ts0 = client_->GetLatestObservedTimestamp();
-  ASSERT_EQ(ts0, KuduClient::kNoTimestamp);
+  const uint64_t ts0 = client_->GetLatestObservedTimestamp();
+  ASSERT_EQ(KuduClient::kNoTimestamp, ts0);
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1, 0));
-  uint64_t ts1 = client_->GetLatestObservedTimestamp();
+  const uint64_t ts1 = client_->GetLatestObservedTimestamp();
   ASSERT_NE(ts0, ts1);
 
-  // Check that the timestamp of the previous write will be observed by another
-  // client performing a snapshot scan at that timestamp.
+  // Check that the latest observed timestamp moves forward when
+  // a scan is performed by the same or another client, even if reading/scanning
+  // at the fixed timestamp observed at the prior insert.
+  uint64_t latest_ts = ts1;
   shared_ptr<KuduClient> client;
-  shared_ptr<KuduTable> table;
   ASSERT_OK(KuduClientBuilder()
       .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
       .Build(&client));
-  ASSERT_EQ(client->GetLatestObservedTimestamp(), KuduClient::kNoTimestamp);
-  ASSERT_OK(client->OpenTable(client_table_->name(), &table));
-  KuduScanner scanner(table.get());
-  ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
-  ASSERT_OK(scanner.SetSnapshotRaw(ts1));
-  ASSERT_OK(scanner.Open());
-  scanner.Close();
-  uint64_t ts2 = client->GetLatestObservedTimestamp();
-  ASSERT_EQ(ts1, ts2);
+  vector<shared_ptr<KuduClient>> clients{ client_, client };
+  for (auto& c : clients) {
+    if (c != client_) {
+      // Check that the new client has no latest observed timestamp.
+      ASSERT_EQ(KuduClient::kNoTimestamp, c->GetLatestObservedTimestamp());
+    }
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(c->OpenTable(client_table_->name(), &table));
+    static const KuduScanner::ReadMode kReadModes[] = {
+      KuduScanner::READ_AT_SNAPSHOT,
+      KuduScanner::READ_LATEST,
+    };
+    for (auto read_mode : kReadModes) {
+      KuduScanner scanner(table.get());
+      ASSERT_OK(scanner.SetReadMode(read_mode));
+      if (read_mode == KuduScanner::READ_AT_SNAPSHOT) {
+        ASSERT_OK(scanner.SetSnapshotRaw(ts1));
+      }
+      ASSERT_OK(scanner.Open());
+    }
+    const uint64_t ts = c->GetLatestObservedTimestamp();
+    ASSERT_LT(latest_ts, ts);
+    latest_ts = ts;
+  }
+}
+
+// Insert bunch of rows, delete a row, and then insert the row back.
+// Run scans several scan and check the results are consistent with the
+// specified timestamps:
+//   * at the snapshot corresponding the timestamp when the row was deleted
+//   * at the snapshot corresponding the timestamp when the row was inserted
+//     back
+//   * read the latest data with no specified timestamp (READ_LATEST)
+TEST_F(ClientTest, TestScanAtLatestObservedTimestamp) {
+  const uint64_t pre_timestamp =
+      cluster_->mini_tablet_server(0)->server()->clock()->Now().ToUint64();
+  static const size_t kRowsNum = 2;
+  NO_FATALS(InsertTestRows(client_table_.get(), kRowsNum, 0));
+  const uint64_t ts_inserted_rows = client_->GetLatestObservedTimestamp();
+  // Delete one row (key == 0)
+  NO_FATALS(DeleteTestRows(client_table_.get(), 0, 1));
+  const uint64_t ts_deleted_row = client_->GetLatestObservedTimestamp();
+  // Insert the deleted row back.
+  NO_FATALS(InsertTestRows(client_table_.get(), 1, 0));
+  const uint64_t ts_all_rows = client_->GetLatestObservedTimestamp();
+  ASSERT_GT(ts_all_rows, ts_deleted_row);
+
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+      .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+      .Build(&client));
+  vector<shared_ptr<KuduClient>> clients{ client_, client };
+  for (auto& c : clients) {
+    SCOPED_TRACE((c == client_) ? "the same client" : "another client");
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(c->OpenTable(client_table_->name(), &table));
+    // There should be no rows in the table prior to the initial insert.
+    size_t row_count_before_inserted_rows;
+    ASSERT_OK(CountRowsOnLeaders(table.get(), KuduScanner::READ_AT_SNAPSHOT,
+                                 pre_timestamp, &row_count_before_inserted_rows));
+    EXPECT_EQ(0, row_count_before_inserted_rows);
+    // There should be kRowsNum rows if scanning at the initial insert timestamp.
+    size_t row_count_ts_inserted_rows;
+    ASSERT_OK(CountRowsOnLeaders(table.get(), KuduScanner::READ_AT_SNAPSHOT,
+                                 ts_inserted_rows, &row_count_ts_inserted_rows));
+    EXPECT_EQ(kRowsNum, row_count_ts_inserted_rows);
+    // There should be one less row if scanning at the deleted row timestamp.
+    size_t row_count_ts_deleted_row;
+    ASSERT_OK(CountRowsOnLeaders(table.get(), KuduScanner::READ_AT_SNAPSHOT,
+                                 ts_deleted_row, &row_count_ts_deleted_row));
+    EXPECT_EQ(kRowsNum - 1, row_count_ts_deleted_row);
+    // There should be kNumRows rows if scanning at the 'after last insert'
+    // timestamp.
+    size_t row_count_ts_all_rows;
+    ASSERT_OK(CountRowsOnLeaders(table.get(), KuduScanner::READ_AT_SNAPSHOT,
+                                 ts_all_rows, &row_count_ts_all_rows));
+    EXPECT_EQ(kRowsNum, row_count_ts_all_rows);
+    // There should be 2 rows if scanning in the 'read latest' mode.
+    size_t row_count_read_latest;
+    ASSERT_OK(CountRowsOnLeaders(table.get(), KuduScanner::READ_LATEST,
+                                 0, &row_count_read_latest));
+    EXPECT_EQ(kRowsNum, row_count_read_latest);
+  }
 }
 
 TEST_F(ClientTest, TestClonePredicates) {

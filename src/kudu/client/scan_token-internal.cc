@@ -135,15 +135,14 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
 
   if (message.has_read_mode()) {
     switch (message.read_mode()) {
-      case ReadMode::READ_LATEST: {
+      case ReadMode::READ_LATEST:
         RETURN_NOT_OK(scan_builder->SetReadMode(KuduScanner::READ_LATEST));
         break;
-      }
-      case ReadMode::READ_AT_SNAPSHOT: {
+      case ReadMode::READ_AT_SNAPSHOT:
         RETURN_NOT_OK(scan_builder->SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
         break;
-      }
-      default: return Status::InvalidArgument("scan token has unrecognized read mode");
+      default:
+        return Status::InvalidArgument("scan token has unrecognized read mode");
     }
   }
 
@@ -199,19 +198,23 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
     ColumnPredicateToPB(predicate_pair.second, pb.add_column_predicates());
   }
 
-  switch (configuration_.read_mode()) {
-    case KuduScanner::READ_LATEST: pb.set_read_mode(kudu::READ_LATEST); break;
-    case KuduScanner::READ_AT_SNAPSHOT: pb.set_read_mode(kudu::READ_AT_SNAPSHOT); break;
-    default: LOG(FATAL) << "Unexpected read mode.";
-  }
-
-  if (configuration_.snapshot_timestamp() != ScanConfiguration::kNoTimestamp) {
-    if (PREDICT_FALSE(configuration_.read_mode() != KuduScanner::READ_AT_SNAPSHOT)) {
-      LOG(WARNING) << "Scan token snapshot timestamp set but read mode was READ_LATEST."
-                      " Ignoring timestamp.";
-    } else {
-      pb.set_snap_timestamp(configuration_.snapshot_timestamp());
-    }
+  const KuduScanner::ReadMode read_mode = configuration_.read_mode();
+  switch (read_mode) {
+    case KuduScanner::READ_LATEST:
+      pb.set_read_mode(kudu::READ_LATEST);
+      if (configuration_.has_snapshot_timestamp()) {
+        LOG(WARNING) << "Ignoring snapshot timestamp since not in "
+                        "READ_AT_TIMESTAMP mode.";
+      }
+      break;
+    case KuduScanner::READ_AT_SNAPSHOT:
+      pb.set_read_mode(kudu::READ_AT_SNAPSHOT);
+      if (configuration_.has_snapshot_timestamp()) {
+        pb.set_snap_timestamp(configuration_.snapshot_timestamp());
+      }
+      break;
+    default:
+      LOG(FATAL) << Substitute("$0: unexpected read mode", read_mode);
   }
 
   pb.set_cache_blocks(configuration_.spec().cache_blocks());
