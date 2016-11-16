@@ -582,12 +582,6 @@ Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
   RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab(spn, &ktpath),
                         "could not create keytab");
   extra_env_ = kdc->GetEnvVars();
-
-  // Add workaround for krb5 1.10 bug. See krb5_realm_override.cc for details.
-  extra_env_["LD_PRELOAD"] = "libkrb5_realm_override.so";
-  if (getenv("LD_PRELOAD") != nullptr) {
-    extra_env_["LD_PRELOAD"] += ":" + string(getenv("LD_PRELOAD"));
-  }
   extra_flags_.push_back(Substitute("--keytab=$0", ktpath));
   extra_flags_.push_back(Substitute("--kerberos_principal=$0", spn));
   extra_flags_.push_back("--server_require_kerberos");

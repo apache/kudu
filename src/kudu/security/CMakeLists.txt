@@ -15,6 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# See the comment in krb5_realm_override.cc for details on this library's usage.
+# The top-level CMakeLists sets a ${KRB5_REALM_OVERRIDE} variable which should
+# be linked first into all Kudu binaries.
+add_library(krb5_realm_override STATIC krb5_realm_override.cc)
+target_link_libraries(krb5_realm_override glog)
+if(NOT APPLE)
+  target_link_libraries(krb5_realm_override dl)
+endif()
+
 add_library(security
   init.cc)
 target_link_libraries(security
@@ -32,11 +41,6 @@ target_link_libraries(security-test
   kudu_test_util
   kudu_util)
 
-# See the comment in krb5_realm_override.cc for details on this library's usage.
-add_library(krb5_realm_override SHARED test/krb5_realm_override.cc)
-add_library(krb5_realm_override_static STATIC test/krb5_realm_override.cc)
-target_link_libraries(krb5_realm_override glog)
-target_link_libraries(krb5_realm_override_static glog)
 
 # Tests
 set(KUDU_TEST_LINK_LIBS

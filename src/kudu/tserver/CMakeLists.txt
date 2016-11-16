@@ -141,6 +141,7 @@ target_link_libraries(tserver
 
 add_executable(kudu-tserver tablet_server_main.cc)
 target_link_libraries(kudu-tserver
+  ${KRB5_REALM_OVERRIDE}
   tserver
   ${KUDU_BASE_LIBS})
 

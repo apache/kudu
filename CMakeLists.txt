@@ -942,6 +942,16 @@ if (NOT NO_TESTS)
   find_package(KerberosPrograms)
 endif()
 
+# The tests as well as any binaries which are run as subprocesses by tests (eg tserver,
+# master, and the 'kudu' CLI tool) need to link this in. We have to set it
+# here so it's accessible by all targets.
+#
+# OSX doesn't support the linker flag below, but also has a new enough krb5 that the
+# override library isn't necessary.
+if (NOT APPLE)
+set(KRB5_REALM_OVERRIDE -Wl,--undefined=krb5_realm_override_loaded krb5_realm_override)
+endif()
+
 ## Boost
 
 # The boost-cmake project hasn't been maintained for years. Let's make sure we

@@ -71,6 +71,7 @@ add_executable(kudu
   tool_main.cc
 )
 target_link_libraries(kudu
+  ${KRB5_REALM_OVERRIDE}
   consensus
   gutil
   krpc

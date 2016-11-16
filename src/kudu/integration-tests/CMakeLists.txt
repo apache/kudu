@@ -38,9 +38,7 @@ target_link_libraries(integration-tests
   security-test)
 add_dependencies(integration-tests
   kudu-tserver
-  kudu-master
-  # ExternalMiniCluster uses this shared library as a LD_PRELOAD
-  krb5_realm_override)
+  kudu-master)
 
 # Tests
 set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_MIN_TEST_LIBS})

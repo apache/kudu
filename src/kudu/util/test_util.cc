@@ -101,6 +101,8 @@ void KuduTest::OverrideKrb5Environment() {
   setenv("KRB5_CONFIG", kInvalidPath, 1);
   setenv("KRB5_KTNAME", kInvalidPath, 1);
   setenv("KRB5CCNAME", kInvalidPath, 1);
+  // Enable the workaround for MIT krb5 1.10 bugs from krb5_realm_override.cc.
+  setenv("KUDU_ENABLE_KRB5_REALM_FIX", "yes", 1);
 }
 
 ///////////////////////////////////////////////////

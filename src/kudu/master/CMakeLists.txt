@@ -80,5 +80,6 @@ ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
 # Actual master executable
 add_executable(kudu-master master_main.cc)
 target_link_libraries(kudu-master
+  ${KRB5_REALM_OVERRIDE}
   master
   ${KUDU_BASE_LIBS})

@@ -28,14 +28,10 @@
 // in the Kerberos library. It detects the return code that indicates the
 // above problem and falls back to the default realm/
 //
-// The wrapper is injected in two ways:
-// 1) kudu_test_main static-links against this source so that all test
-//    binaries load our wrapped function ahead of the library-provided one.
-// 2) ExternalMiniCluster sets LD_PRELOAD to load a shared library built from
-//    this source before it forks server processes.
-//
-// Thus, we don't end up polluting our shipped binaries with this wrapper, but
-// our tests which depend on numeric host names can still pass on Kerberos 1.10.
+// The wrapper is injected via linking it into tests as well as the
+// "security" library. The linkage invocation uses the '-Wl,--undefined'
+// linker flag to force linking even though no symbol here is explicitly
+// referenced.
 
 #include <dlfcn.h>
 #include <stdio.h>
@@ -47,10 +43,9 @@
 
 extern "C" {
 
-// This symbol is exported from the static library so that
-// test_main.cc can reference it and force this compilation unit
-// to be linked. Otherwise the linker thinks it's unused and doesn't
-// link it.
+// This symbol is exported from the static library so that other static-linked binaries
+// can reference it and force this compilation unit to be linked. Otherwise the linker
+// thinks it's unused and doesn't link it.
 int krb5_realm_override_loaded = 1;
 
 // Save the original function from the Kerberos library itself.
@@ -59,6 +54,9 @@ int krb5_realm_override_loaded = 1;
 static void* g_orig_krb5_get_host_realm;
 static void* g_orig_krb5_get_default_realm;
 static void* g_orig_krb5_free_default_realm;
+
+// We only enable our workaround if this environment variable is set.
+constexpr static const char* kEnvVar = "KUDU_ENABLE_KRB5_REALM_FIX";
 
 #define CALL_ORIG(func_name, ...) \
   ((decltype(&func_name))g_orig_ ## func_name)(__VA_ARGS__)
@@ -76,7 +74,7 @@ krb5_error_code krb5_get_host_realm(krb5_context context, const char* host, char
   CHECK(g_orig_krb5_free_default_realm);
 
   krb5_error_code rc = CALL_ORIG(krb5_get_host_realm, context, host, realmsp);
-  if (rc != KRB5_ERR_NUMERIC_REALM) {
+  if (rc != KRB5_ERR_NUMERIC_REALM || getenv(kEnvVar) == nullptr) {
     return rc;
   }
   // If we get KRB5_ERR_NUMERIC_REALM, this is indicative of a Kerberos version
