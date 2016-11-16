@@ -133,6 +133,8 @@ public class TestKuduTable extends BaseKuduTest {
   public void testGetLocations() throws Exception {
     String table1 = name.getMethodName() + System.currentTimeMillis();
 
+    int initialTableCount = client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size();
+
     // Test a non-existing table
     try {
       openTable(table1);
@@ -222,7 +224,8 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals(0, client.getTablesList(table1).join(DEFAULT_SLEEP).getTablesList().size());
     assertEquals(1, client.getTablesList(tableWithDefault)
                           .join(DEFAULT_SLEEP).getTablesList().size());
-    assertEquals(5, client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
+    assertEquals(initialTableCount + 5,
+                 client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
     assertFalse(client.getTablesList(tableWithDefault).
         join(DEFAULT_SLEEP).getTablesList().isEmpty());
 
