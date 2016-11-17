@@ -13,12 +13,12 @@ covers ongoing development and news in the Apache Kudu project.
 * The first release candidate for Kudu 1.1.0 is [now available](http://mail-archives.apache.org/mod_mbox/kudu-dev/201611.mbox/%3CCADY20s7ZKZkPmUEcTexW%3D%2B_%2BLnDY2hABZg0-UZD3jvWAs9-pog%40mail.gmail.com%3E).
 
   Noteworthy new features/improvements:
+  : ^
   * The Python client has been brought to feature parity with the C++ and Java clients.
   * IN LIST predicates.
   * Java client now features client-side tracing.
   * Kudu now publishes jar files for Spark 2.0 compiled with Scala 2.11.
-  * Kudu's Raft implementation now features pre-elections. In our tests this has greatly
-    improved stability.
+  * Kudu's Raft implementation now features pre-elections. In our tests this has greatly improved stability.
 
   Community developers and users are encouraged to download the source
   tarball and vote on the release.
