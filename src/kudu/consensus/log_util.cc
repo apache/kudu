@@ -69,8 +69,6 @@ using std::unique_ptr;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 
-const char kTmpSuffix[] = ".tmp";
-
 const char kLogSegmentHeaderMagicString[] = "kudulogf";
 
 // A magic that is written as the very last thing when a segment is closed.
@@ -804,11 +802,6 @@ bool IsLogFileName(const string& fname) {
   if (HasPrefixString(fname, ".")) {
     // Hidden file or ./..
     VLOG(1) << "Ignoring hidden file: " << fname;
-    return false;
-  }
-
-  if (HasSuffixString(fname, kTmpSuffix)) {
-    LOG(WARNING) << "Ignoring tmp file: " << fname;
     return false;
   }
 
