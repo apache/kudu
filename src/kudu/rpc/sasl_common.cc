@@ -25,6 +25,7 @@
 #include <glog/logging.h>
 #include <regex.h>
 #include <sasl/sasl.h>
+#include <sasl/saslplug.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
@@ -44,6 +45,16 @@ const char* const kSaslMechGSSAPI = "GSSAPI";
 
 // See WrapSaslCall().
 static __thread string* g_auth_failure_capture = nullptr;
+
+// Determine whether initialization was ever called
+struct InitializationData {
+  Status status;
+  string app_name;
+};
+static struct InitializationData* sasl_init_data;
+
+// If true, then we expect someone else has initialized SASL.
+static bool g_disable_sasl_init = false;
 
 // Output Sasl messages.
 // context: not used.
@@ -156,13 +167,41 @@ static int SaslMutexUnlock(void* m) {
   return 0; // indicates success.
 }
 
+namespace internal {
+void SaslSetMutex() {
+  sasl_set_mutex(&SaslMutexAlloc, &SaslMutexLock, &SaslMutexUnlock, &SaslMutexFree);
+}
+} // namespace internal
 
-// Determine whether initialization was ever called
-struct InitializationData {
-  Status status;
-  string app_name;
-};
-static struct InitializationData* sasl_init_data;
+// Sasl initialization detection methods. The OS X SASL library doesn't define
+// the sasl_global_utils symbol, so we have to use less robust methods of
+// detection.
+#if defined(__APPLE__)
+static bool SaslIsInitialized() {
+  return sasl_global_listmech() != nullptr;
+}
+static bool SaslMutexImplementationProvided() {
+  return SaslIsInitialized();
+}
+#else
+
+// This symbol is exported by the SASL library but not defined
+// in the headers. It's marked as an API in the library source,
+// so seems safe to rely on.
+extern "C" sasl_utils_t* sasl_global_utils;
+static bool SaslIsInitialized() {
+  return sasl_global_utils != nullptr;
+}
+static bool SaslMutexImplementationProvided() {
+  if (!SaslIsInitialized()) return false;
+  void* m = sasl_global_utils->mutex_alloc();
+  sasl_global_utils->mutex_free(m);
+  // The default implementation of mutex_alloc just returns the constant pointer 0x1.
+  // This is a bit of an ugly heuristic, but seems unlikely that anyone would ever
+  // provide a valid implementation that returns an invalid pointer value.
+  return m != reinterpret_cast<void*>(1);
+}
+#endif
 
 // Actually perform the initialization for the SASL subsystem.
 // Meant to be called via GoogleOnceInitArg().
@@ -171,13 +210,33 @@ static void DoSaslInit(void* app_name_char_array) {
   // We were getting Clang 3.4 UBSAN errors when letting GoogleOnce cast.
   const char* const app_name = reinterpret_cast<const char* const>(app_name_char_array);
   VLOG(3) << "Initializing SASL library";
-
-  // Make SASL thread-safe.
-  sasl_set_mutex(&SaslMutexAlloc, &SaslMutexLock, &SaslMutexUnlock, &SaslMutexFree);
-
   sasl_init_data = new InitializationData();
   sasl_init_data->app_name = app_name;
 
+  bool sasl_initialized = SaslIsInitialized();
+  if (sasl_initialized && !g_disable_sasl_init) {
+    LOG(WARNING) << "SASL was initialized prior to Kudu's initialization. Skipping "
+                 << "initialization. Call kudu::client::DisableSaslInitialization() "
+                 << "to suppress this message.";
+    g_disable_sasl_init = true;
+  }
+
+  if (g_disable_sasl_init) {
+    if (!sasl_initialized) {
+      sasl_init_data->status = Status::RuntimeError(
+          "SASL initialization was disabled, but SASL was not externally initialized.");
+      return;
+    }
+    if (!SaslMutexImplementationProvided()) {
+      LOG(WARNING)
+          << "SASL appears to be initialized by code outside of Kudu "
+          << "but was not provided with a mutex implementation! If "
+          << "manually initializing SASL, use sasl_set_mutex(3).";
+    }
+    sasl_init_data->status = Status::OK();
+    return;
+  }
+  internal::SaslSetMutex();
   int result = sasl_client_init(&callbacks[0]);
   if (result != SASL_OK) {
     sasl_init_data->status = Status::RuntimeError("Could not initialize SASL client",
@@ -193,6 +252,16 @@ static void DoSaslInit(void* app_name_char_array) {
   }
 
   sasl_init_data->status = Status::OK();
+}
+
+Status DisableSaslInitialization() {
+  if (g_disable_sasl_init) return Status::OK();
+  if (sasl_init_data != nullptr) {
+    return Status::IllegalState("SASL already initialized. Initialization can only be disabled "
+                                "before first usage.");
+  }
+  g_disable_sasl_init = true;
+  return Status::OK();
 }
 
 Status SaslInit(const char* app_name) {

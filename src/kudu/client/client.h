@@ -127,6 +127,19 @@ void KUDU_EXPORT SetVerboseLogLevel(int level);
 /// @return Operation result status.
 Status KUDU_EXPORT SetInternalSignalNumber(int signum);
 
+/// Disable initialization of the Cyrus SASL library. Clients should call this
+/// method before using the Kudu client if they are manually initializing Cyrus
+/// SASL. If this method is not called, Kudu will attempt to auto-detect whether
+/// SASL has been externally initialized, but it is recommended to be explicit.
+///
+/// If this function is called, it must be called prior to the first construction
+/// of a KuduClient object.
+///
+/// NOTE: Kudu makes use of SASL from multiple threads. Thus, it's imperative
+/// that embedding applications use sasl_set_mutex(3) to provide a mutex
+/// implementation if they are choosing to handle SASL initialization manually.
+Status KUDU_EXPORT DisableSaslInitialization();
+
 /// @return Short version info, i.e. a single-line version string
 ///   identifying the Kudu client.
 std::string KUDU_EXPORT GetShortVersionString();

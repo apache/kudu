@@ -56,6 +56,9 @@ extern const char* const kSaslMechGSSAPI;
 // This function should NOT be called during static initialization.
 Status SaslInit(const char* app_name);
 
+// Disable Kudu's initialization of SASL. See equivalent method in client.h.
+Status DisableSaslInitialization();
+
 // Wrap a call into the SASL library. 'call' should be a lambda which
 // returns a SASL error code.
 //
@@ -106,6 +109,11 @@ struct SaslMechanism {
   static Type value_of(const std::string& mech);
   static const char* name_of(Type val);
 };
+
+// Internals exposed in the header for test purposes.
+namespace internal {
+void SaslSetMutex();
+} // namespace internal
 
 } // namespace rpc
 } // namespace kudu

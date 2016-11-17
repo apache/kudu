@@ -58,6 +58,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
+#include "kudu/rpc/sasl_common.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
@@ -176,6 +177,10 @@ void SetVerboseLogLevel(int level) {
 
 Status SetInternalSignalNumber(int signum) {
   return SetStackTraceSignal(signum);
+}
+
+Status DisableSaslInitialization() {
+  return kudu::rpc::DisableSaslInitialization();
 }
 
 string GetShortVersionString() {
