@@ -10,6 +10,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/time.h>
@@ -1220,6 +1221,31 @@ class PosixEnv : public Env {
     *ram = info.totalram;
 #endif
     return Status::OK();
+  }
+
+  virtual int64_t GetOpenFileLimit() OVERRIDE {
+    // There's no reason for this to ever fail.
+    struct rlimit l;
+    PCHECK(getrlimit(RLIMIT_NOFILE, &l) == 0);
+    return l.rlim_cur;
+  }
+
+  virtual void IncreaseOpenFileLimit() OVERRIDE {
+    // There's no reason for this to ever fail; any process should have
+    // sufficient privilege to increase its soft limit up to the hard limit.
+    //
+    // This change is logged because it is process-wide.
+    struct rlimit l;
+    PCHECK(getrlimit(RLIMIT_NOFILE, &l) == 0);
+    if (l.rlim_cur < l.rlim_max) {
+      LOG(INFO) << Substitute("Raising process file limit from $0 to $1",
+                              l.rlim_cur, l.rlim_max);
+      l.rlim_cur = l.rlim_max;
+      PCHECK(setrlimit(RLIMIT_NOFILE, &l) == 0);
+    } else {
+      LOG(INFO) << Substitute("Not raising process file limit of $0; it is "
+          "already as high as it can go", l.rlim_cur);
+    }
   }
 
  private:

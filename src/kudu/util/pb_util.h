@@ -252,7 +252,7 @@ class WritablePBContainerFile {
  public:
 
   // Initializes the class instance; writer must be open.
-  explicit WritablePBContainerFile(std::unique_ptr<RWFile> writer);
+  explicit WritablePBContainerFile(std::shared_ptr<RWFile> writer);
 
   // Closes the container if not already closed.
   ~WritablePBContainerFile();
@@ -347,7 +347,7 @@ class WritablePBContainerFile {
   int version_;
 
   // File writer.
-  std::unique_ptr<RWFile> writer_;
+  std::shared_ptr<RWFile> writer_;
 };
 
 // Protobuf container file opened for reading.
@@ -358,7 +358,7 @@ class ReadablePBContainerFile {
  public:
 
   // Initializes the class instance; reader must be open.
-  explicit ReadablePBContainerFile(std::unique_ptr<RandomAccessFile> reader);
+  explicit ReadablePBContainerFile(std::shared_ptr<RandomAccessFile> reader);
 
   // Closes the file if not already closed.
   ~ReadablePBContainerFile();
@@ -421,7 +421,7 @@ class ReadablePBContainerFile {
   // Wrapped in a unique_ptr so that clients need not include PB headers.
   std::unique_ptr<google::protobuf::FileDescriptorSet> protos_;
 
-  std::unique_ptr<RandomAccessFile> reader_;
+  std::shared_ptr<RandomAccessFile> reader_;
 };
 
 // Convenience functions for protobuf containers holding just one record.

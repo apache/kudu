@@ -33,8 +33,11 @@
 namespace kudu {
 
 class Env;
+template <class FileType>
+class FileCache;
 class MemTracker;
 class MetricEntity;
+class RandomAccessFile;
 class WritableFile;
 
 namespace fs {
@@ -114,6 +117,9 @@ class FileBlockManager : public BlockManager {
 
   // Manages and owns all of the block manager's data directories.
   DataDirManager dd_manager_;
+
+  // Manages files opened for reading.
+  std::unique_ptr<FileCache<RandomAccessFile>> file_cache_;
 
   // For generating block IDs.
   ThreadSafeRandom rand_;

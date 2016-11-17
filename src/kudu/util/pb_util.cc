@@ -541,7 +541,7 @@ void TruncateFields(Message* message, int max_len) {
   }
 }
 
-WritablePBContainerFile::WritablePBContainerFile(unique_ptr<RWFile> writer)
+WritablePBContainerFile::WritablePBContainerFile(shared_ptr<RWFile> writer)
   : state_(FileState::NOT_INITIALIZED),
     offset_(0),
     version_(kPBContainerDefaultVersion),
@@ -756,7 +756,7 @@ void WritablePBContainerFile::PopulateDescriptorSet(
   all_descs.Swap(output);
 }
 
-ReadablePBContainerFile::ReadablePBContainerFile(unique_ptr<RandomAccessFile> reader)
+ReadablePBContainerFile::ReadablePBContainerFile(shared_ptr<RandomAccessFile> reader)
   : state_(FileState::NOT_INITIALIZED),
     version_(kPBContainerInvalidVersion),
     offset_(0),

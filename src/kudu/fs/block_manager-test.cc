@@ -42,12 +42,6 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
-// LogBlockManager opens two files per container, and CloseManyBlocksTest
-// uses one container for each block. To simplify testing (i.e. no need to
-// raise the ulimit on open files), the default is kept low.
-DEFINE_int32(num_blocks_close, 500,
-             "Number of blocks to simultaneously close in CloseManyBlocksTest");
-
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
 
@@ -468,6 +462,8 @@ TYPED_TEST(BlockManagerTest, CloseTwiceTest) {
 }
 
 TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
+  const int kNumBlocks = 1000;
+
   if (!AllowSlowTests()) {
     LOG(INFO) << "Not running in slow-tests mode";
     return;
@@ -479,23 +475,24 @@ TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
   Random rand(SeedRandom());
   vector<WritableBlock*> dirty_blocks;
   ElementDeleter deleter(&dirty_blocks);
-  LOG(INFO) << "Creating " <<  FLAGS_num_blocks_close << " blocks";
-  for (int i = 0; i < FLAGS_num_blocks_close; i++) {
-    // Create a block.
-    gscoped_ptr<WritableBlock> written_block;
-    ASSERT_OK(this->bm_->CreateBlock(&written_block));
+  LOG_TIMING(INFO, Substitute("creating $0 blocks", kNumBlocks)) {
+    for (int i = 0; i < kNumBlocks; i++) {
+      // Create a block.
+      gscoped_ptr<WritableBlock> written_block;
+      ASSERT_OK(this->bm_->CreateBlock(&written_block));
 
-    // Write 64k bytes of random data into it.
-    uint8_t data[65536];
-    for (int i = 0; i < sizeof(data); i += sizeof(uint32_t)) {
-      data[i] = rand.Next();
+      // Write 64k bytes of random data into it.
+      uint8_t data[65536];
+      for (int i = 0; i < sizeof(data); i += sizeof(uint32_t)) {
+        data[i] = rand.Next();
+      }
+      written_block->Append(Slice(data, sizeof(data)));
+
+      dirty_blocks.push_back(written_block.release());
     }
-    written_block->Append(Slice(data, sizeof(data)));
-
-    dirty_blocks.push_back(written_block.release());
   }
 
-  LOG_TIMING(INFO, Substitute("closing $0 blocks", FLAGS_num_blocks_close)) {
+  LOG_TIMING(INFO, Substitute("closing $0 blocks", kNumBlocks)) {
     ASSERT_OK(this->bm_->CloseBlocks(dirty_blocks));
   }
 }

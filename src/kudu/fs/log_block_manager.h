@@ -19,13 +19,14 @@
 #define KUDU_FS_LOG_BLOCK_MANAGER_H
 
 #include <deque>
-#include <gtest/gtest_prod.h>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include <gtest/gtest_prod.h>
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
@@ -40,7 +41,10 @@
 
 namespace kudu {
 class Env;
+template <class FileType>
+class FileCache;
 class MetricEntity;
+class RWFile;
 class ThreadPool;
 
 namespace fs {
@@ -276,6 +280,9 @@ class LogBlockManager : public BlockManager {
 
   // Manages and owns all of the block manager's data directories.
   DataDirManager dd_manager_;
+
+  // Manages files opened for reading.
+  std::unique_ptr<FileCache<RWFile>> file_cache_;
 
   // Maps block IDs to blocks that are now readable, either because they
   // already existed on disk when the block manager was opened, or because

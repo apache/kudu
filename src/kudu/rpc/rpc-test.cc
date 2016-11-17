@@ -176,21 +176,13 @@ TEST_P(TestRpc, TestWrongService) {
                       "not registered on TestServer");
 }
 
-namespace {
-int GetOpenFileLimit() {
-  struct rlimit limit;
-  PCHECK(getrlimit(RLIMIT_NOFILE, &limit) == 0);
-  return limit.rlim_cur;
-}
-} // anonymous namespace
-
 // Test that we can still make RPC connections even if many fds are in use.
 // This is a regression test for KUDU-650.
 TEST_P(TestRpc, TestHighFDs) {
   // This test can only run if ulimit is set high.
   const int kNumFakeFiles = 3500;
   const int kMinUlimit = kNumFakeFiles + 100;
-  if (GetOpenFileLimit() < kMinUlimit) {
+  if (env_->GetOpenFileLimit() < kMinUlimit) {
     LOG(INFO) << "Test skipped: must increase ulimit -n to at least " << kMinUlimit;
     return;
   }

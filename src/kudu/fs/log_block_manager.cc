@@ -36,6 +36,7 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/malloc.h"
@@ -102,8 +103,8 @@ using internal::LogBlock;
 using internal::LogBlockContainer;
 using pb_util::ReadablePBContainerFile;
 using pb_util::WritablePBContainerFile;
+using std::shared_ptr;
 using std::string;
-using std::unordered_set;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -278,7 +279,7 @@ class LogBlockContainer {
  private:
   LogBlockContainer(LogBlockManager* block_manager, DataDir* data_dir,
                     unique_ptr<WritablePBContainerFile> metadata_file,
-                    unique_ptr<RWFile> data_file);
+                    shared_ptr<RWFile> data_file);
 
   // Performs sanity checks on a block record.
   void CheckBlockRecord(const BlockRecordPB& record,
@@ -301,7 +302,7 @@ class LogBlockContainer {
 
   // Opened file handles to the container's files.
   unique_ptr<WritablePBContainerFile> metadata_file_;
-  unique_ptr<RWFile> data_file_;
+  shared_ptr<RWFile> data_file_;
 
   // The amount of data written thus far in the container.
   int64_t total_bytes_written_ = 0;
@@ -317,7 +318,7 @@ LogBlockContainer::LogBlockContainer(
     LogBlockManager* block_manager,
     DataDir* data_dir,
     unique_ptr<WritablePBContainerFile> metadata_file,
-    unique_ptr<RWFile> data_file)
+    shared_ptr<RWFile> data_file)
     : block_manager_(block_manager),
       data_dir_(data_dir),
       metadata_file_(std::move(metadata_file)),
@@ -363,13 +364,31 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   } while (PREDICT_FALSE(metadata_status.IsAlreadyPresent() ||
                          data_status.IsAlreadyPresent()));
   if (metadata_status.ok() && data_status.ok()) {
-    unique_ptr<WritablePBContainerFile> metadata_file(
-        new WritablePBContainerFile(std::move(metadata_writer)));
+    unique_ptr<WritablePBContainerFile> metadata_file;
+    shared_ptr<RWFile> cached_data_file;
+
+    if (block_manager->file_cache_) {
+      metadata_writer.reset();
+      shared_ptr<RWFile> cached_metadata_writer;
+      RETURN_NOT_OK(block_manager->file_cache_->OpenExistingFile(
+          metadata_path, &cached_metadata_writer));
+      metadata_file.reset(new WritablePBContainerFile(
+          std::move(cached_metadata_writer)));
+
+      data_file.reset();
+      RETURN_NOT_OK(block_manager->file_cache_->OpenExistingFile(
+          data_path, &cached_data_file));
+    } else {
+      metadata_file.reset(new WritablePBContainerFile(
+          std::move(metadata_writer)));
+      cached_data_file = std::move(data_file);
+    }
     RETURN_NOT_OK(metadata_file->Init(BlockRecordPB()));
+
     container->reset(new LogBlockContainer(block_manager,
                                            dir,
                                            std::move(metadata_file),
-                                           std::move(data_file)));
+                                           std::move(cached_data_file)));
     VLOG(1) << "Created log block container " << (*container)->ToString();
   }
 
@@ -424,23 +443,37 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   }
 
   // Open the existing metadata and data files for writing.
-  unique_ptr<RWFile> metadata_writer;
-  RWFileOptions wr_opts;
-  wr_opts.mode = Env::OPEN_EXISTING;
+  unique_ptr<WritablePBContainerFile> metadata_pb_writer;
+  shared_ptr<RWFile> data_file;
 
-  RETURN_NOT_OK(env->NewRWFile(wr_opts,
-                               metadata_path,
-                               &metadata_writer));
-  unique_ptr<WritablePBContainerFile> metadata_pb_writer(
-      new WritablePBContainerFile(std::move(metadata_writer)));
+  if (block_manager->file_cache_) {
+    shared_ptr<RWFile> metadata_writer;
+    RETURN_NOT_OK(block_manager->file_cache_->OpenExistingFile(
+        metadata_path, &metadata_writer));
+    metadata_pb_writer.reset(new WritablePBContainerFile(
+        std::move(metadata_writer)));
+
+    RETURN_NOT_OK(block_manager->file_cache_->OpenExistingFile(
+        data_path, &data_file));
+  } else {
+    RWFileOptions wr_opts;
+    wr_opts.mode = Env::OPEN_EXISTING;
+
+    unique_ptr<RWFile> metadata_writer;
+    RETURN_NOT_OK(block_manager->env_->NewRWFile(wr_opts,
+                                                 metadata_path,
+                                                 &metadata_writer));
+    metadata_pb_writer.reset(new WritablePBContainerFile(
+        std::move(metadata_writer)));
+
+    unique_ptr<RWFile> uw;
+    RETURN_NOT_OK(block_manager->env_->NewRWFile(wr_opts,
+                                                 data_path,
+                                                 &uw));
+    data_file = std::move(uw);
+  }
   RETURN_NOT_OK(metadata_pb_writer->Reopen());
 
-  unique_ptr<RWFile> data_file;
-  RWFileOptions rw_opts;
-  rw_opts.mode = Env::OPEN_EXISTING;
-  RETURN_NOT_OK(env->NewRWFile(rw_opts,
-                               data_path,
-                               &data_file));
   uint64_t data_file_size;
   RETURN_NOT_OK(data_file->Size(&data_file_size));
 
@@ -1140,6 +1173,14 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
     read_only_(opts.read_only),
     next_block_id_(1) {
 
+  int64_t file_cache_capacity = GetFileCacheCapacityForBlockManager(env_);
+  if (file_cache_capacity != kint64max) {
+    file_cache_.reset(new FileCache<RWFile>("lbm",
+                                            env_,
+                                            file_cache_capacity,
+                                            opts.metric_entity));
+  }
+
   // HACK: when running in a test environment, we often instantiate many
   // LogBlockManagers in the same process, eg corresponding to different
   // tablet servers in a minicluster, or due to running many separate test
@@ -1193,6 +1234,10 @@ Status LogBlockManager::Open() {
     mode = DataDirManager::LockMode::MANDATORY;
   }
   RETURN_NOT_OK(dd_manager_.Open(kuint32max, mode));
+
+  if (file_cache_) {
+    RETURN_NOT_OK(file_cache_->Init());
+  }
 
   vector<Status> statuses(dd_manager_.data_dirs().size());
   int i = 0;

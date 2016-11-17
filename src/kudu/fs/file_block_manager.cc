@@ -17,6 +17,7 @@
 
 #include "kudu/fs/file_block_manager.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,7 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -508,6 +510,15 @@ FileBlockManager::FileBlockManager(Env* env, const BlockManagerOptions& opts)
     mem_tracker_(MemTracker::CreateTracker(-1,
                                            "file_block_manager",
                                            opts.parent_mem_tracker)) {
+
+  int64_t file_cache_capacity = GetFileCacheCapacityForBlockManager(env_);
+  if (file_cache_capacity != kint64max) {
+    file_cache_.reset(new FileCache<RandomAccessFile>("fbm",
+                                                      env_,
+                                                      file_cache_capacity,
+                                                      opts.metric_entity));
+  }
+
   if (opts.metric_entity) {
     metrics_.reset(new internal::BlockManagerMetrics(opts.metric_entity));
   }
@@ -531,7 +542,12 @@ Status FileBlockManager::Open() {
   } else {
     mode = DataDirManager::LockMode::MANDATORY;
   }
-  return dd_manager_.Open(kMaxPaths, mode);
+  RETURN_NOT_OK(dd_manager_.Open(kMaxPaths, mode));
+
+  if (file_cache_) {
+    RETURN_NOT_OK(file_cache_->Init());
+  }
+  return Status::OK();
 }
 
 Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
@@ -606,7 +622,11 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
   VLOG(1) << "Opening block with id " << block_id.ToString() << " at " << path;
 
   shared_ptr<RandomAccessFile> reader;
-  RETURN_NOT_OK(env_util::OpenFileForRandom(env_, path, &reader));
+  if (file_cache_) {
+    RETURN_NOT_OK(file_cache_->OpenExistingFile(path, &reader));
+  } else {
+    RETURN_NOT_OK(env_util::OpenFileForRandom(env_, path, &reader));
+  }
   block->reset(new internal::FileReadableBlock(this, block_id, reader));
   return Status::OK();
 }
@@ -619,7 +639,11 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
     return Status::NotFound(
         Substitute("Block $0 not found", block_id.ToString()));
   }
-  RETURN_NOT_OK(env_->DeleteFile(path));
+  if (file_cache_) {
+    RETURN_NOT_OK(file_cache_->DeleteFile(path));
+  } else {
+    RETURN_NOT_OK(env_->DeleteFile(path));
+  }
 
   // We don't bother fsyncing the parent directory as there's nothing to be
   // gained by ensuring that the deletion is made durable. Even if we did

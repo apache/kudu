@@ -287,6 +287,15 @@ class Env {
   // Get the total amount of RAM installed on this machine.
   virtual Status GetTotalRAMBytes(int64_t* ram) = 0;
 
+  // Get the max number of file descriptors that this process can open.
+  virtual int64_t GetOpenFileLimit() = 0;
+
+  // Increase the max number of file descriptors that this process can open as
+  // much as possible. On UNIX platforms, this means increasing the
+  // RLIMIT_NOFILE resource soft limit (the limit actually enforced by the
+  // kernel) to be equal to the hard limit.
+  virtual void IncreaseOpenFileLimit() = 0;
+
  private:
   // No copying allowed
   Env(const Env&);
