@@ -16,12 +16,14 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
@@ -99,6 +101,50 @@ public class TestAlterTable extends BaseKuduTest {
     session.flush();
     RowError[] rowErrors = session.getPendingErrors().getRowErrors();
     assertEquals(String.format("row errors: %s", Arrays.toString(rowErrors)), 0, rowErrors.length);
+  }
+
+  @Test
+  public void testAlterAddColumns() throws Exception {
+    KuduTable table = createTable(ImmutableList.<Pair<Integer,Integer>>of());
+    insertRows(table, 0, 100);
+    assertEquals(100, countRowsInTable(table));
+
+    syncClient.alterTable(tableName, new AlterTableOptions()
+        .addColumn("addNonNull", Type.INT32, 100)
+        .addNullableColumn("addNullable", Type.INT32)
+        .addNullableColumn("addNullableDef", Type.INT32, 200));
+    boolean done = syncClient.isAlterTableDone(tableName);
+    assertTrue(done);
+
+    // Reopen table for the new schema.
+    table = syncClient.openTable(tableName);
+    assertEquals(5, table.getSchema().getColumnCount());
+
+    // Add a row with addNullableDef=null
+    KuduSession session = syncClient.newSession();
+    Insert insert = table.newInsert();
+    PartialRow row = insert.getRow();
+    row.addInt("c0", 101);
+    row.addInt("c1", 101);
+    row.addInt("addNonNull", 101);
+    row.addInt("addNullable", 101);
+    row.setNull("addNullableDef");
+    session.apply(insert);
+    session.flush();
+    RowError[] rowErrors = session.getPendingErrors().getRowErrors();
+    assertEquals(String.format("row errors: %s", Arrays.toString(rowErrors)), 0, rowErrors.length);
+
+    // Check defaults applied, and that row key=101
+    List<String> actual = scanTableToStrings(table);
+    List<String> expected = new ArrayList<>(101);
+    for (int i = 0; i < 100; i++) {
+      expected.add(i, String.format("INT32 c0=%d, INT32 c1=%d, INT32 addNonNull=100" +
+          ", INT32 addNullable=NULL, INT32 addNullableDef=200", i, i));
+    }
+    expected.add("INT32 c0=101, INT32 c1=101, INT32 addNonNull=101" +
+        ", INT32 addNullable=101, INT32 addNullableDef=NULL");
+    Collections.sort(expected);
+    assertArrayEquals(expected.toArray(new String[0]), actual.toArray(new String[0]));
   }
 
   @Test

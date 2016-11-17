@@ -680,8 +680,8 @@ public final class AsyncKuduScanner {
     }
 
     public String toString() {
-      String ret = "AsyncKuduScanner$Response(scannerId=" + Bytes.pretty(scannerId) + ", data=" + data +
-          ", more=" + more;
+      String ret = "AsyncKuduScanner$Response(scannerId=" + Bytes.pretty(scannerId) +
+          ", data=" + data + ", more=" + more;
       if (scanTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
         ret += ", responseScanTimestamp =" + scanTimestamp;
       }

@@ -46,6 +46,25 @@ public class AlterTableOptions {
   }
 
   /**
+   * Add a new column.
+   * @param colSchema the schema of the new column
+   * @return this instance
+   */
+  public AlterTableOptions addColumn(ColumnSchema colSchema) {
+    if (!colSchema.isNullable() && colSchema.getDefaultValue() == null) {
+      throw new IllegalArgumentException("A new non-null column must have a default value");
+    }
+    if (colSchema.isKey()) {
+      throw new IllegalArgumentException("Key columns cannot be added");
+    }
+    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
+    step.setType(AlterTableRequestPB.StepType.ADD_COLUMN);
+    step.setAddColumn(AlterTableRequestPB.AddColumn.newBuilder()
+        .setSchema(ProtobufHelper.columnToPb(colSchema)));
+    return this;
+  }
+
+  /**
    * Add a new column that's not nullable.
    * @param name name of the new column
    * @param type type of the new column
@@ -53,33 +72,33 @@ public class AlterTableOptions {
    * @return this instance
    */
   public AlterTableOptions addColumn(String name, Type type, Object defaultVal) {
-    if (defaultVal == null) {
-      throw new IllegalArgumentException("A new column must have a default value, " +
-          "use addNullableColumn() to add a NULLABLE column");
-    }
-    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
-    step.setType(AlterTableRequestPB.StepType.ADD_COLUMN);
-    step.setAddColumn(AlterTableRequestPB.AddColumn.newBuilder().setSchema(ProtobufHelper
-        .columnToPb(new ColumnSchema.ColumnSchemaBuilder(name, type)
-            .defaultValue(defaultVal)
-            .build())));
-    return this;
+    return addColumn(new ColumnSchema.ColumnSchemaBuilder(name, type)
+        .defaultValue(defaultVal)
+        .build());
   }
 
   /**
-   * Add a new column that's nullable, thus has no default value.
+   * Add a new column that's nullable and has no default value.
    * @param name name of the new column
    * @param type type of the new column
    * @return this instance
    */
   public AlterTableOptions addNullableColumn(String name, Type type) {
-    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
-    step.setType(AlterTableRequestPB.StepType.ADD_COLUMN);
-    step.setAddColumn(AlterTableRequestPB.AddColumn.newBuilder().setSchema(ProtobufHelper
-        .columnToPb(new ColumnSchema.ColumnSchemaBuilder(name, type)
-            .nullable(true)
-            .build())));
-    return this;
+    return addNullableColumn(name, type, null);
+  }
+
+  /**
+   * Add a new column that's nullable.
+   * @param name name of the new column
+   * @param type type of the new column
+   * @param defaultVal the default value of the new column
+   * @return this instance
+   */
+  public AlterTableOptions addNullableColumn(String name, Type type, Object defaultVal) {
+    return addColumn(new ColumnSchema.ColumnSchemaBuilder(name, type)
+        .nullable(true)
+        .defaultValue(defaultVal)
+        .build());
   }
 
   /**
