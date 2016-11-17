@@ -6,22 +6,25 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fts.h>
-#include <glog/logging.h>
 #include <limits.h>
 #include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/uio.h>
-#include <time.h>
-#include <type_traits>
 #include <unistd.h>
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <memory>
+#include <type_traits>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
@@ -101,6 +104,8 @@ TAG_FLAG(never_fsync, unsafe);
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
+using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -721,7 +726,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status NewSequentialFile(const std::string& fname,
-                                   gscoped_ptr<SequentialFile>* result) OVERRIDE {
+                                   unique_ptr<SequentialFile>* result) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::NewSequentialFile", "path", fname);
     ThreadRestrictions::AssertIOAllowed();
     FILE* f = fopen(fname.c_str(), "r");
@@ -734,13 +739,13 @@ class PosixEnv : public Env {
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
-                                     gscoped_ptr<RandomAccessFile>* result) OVERRIDE {
+                                     unique_ptr<RandomAccessFile>* result) OVERRIDE {
     return NewRandomAccessFile(RandomAccessFileOptions(), fname, result);
   }
 
   virtual Status NewRandomAccessFile(const RandomAccessFileOptions& opts,
                                      const std::string& fname,
-                                     gscoped_ptr<RandomAccessFile>* result) OVERRIDE {
+                                     unique_ptr<RandomAccessFile>* result) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::NewRandomAccessFile", "path", fname);
     ThreadRestrictions::AssertIOAllowed();
     int fd = open(fname.c_str(), O_RDONLY);
@@ -753,13 +758,13 @@ class PosixEnv : public Env {
   }
 
   virtual Status NewWritableFile(const std::string& fname,
-                                 gscoped_ptr<WritableFile>* result) OVERRIDE {
+                                 unique_ptr<WritableFile>* result) OVERRIDE {
     return NewWritableFile(WritableFileOptions(), fname, result);
   }
 
   virtual Status NewWritableFile(const WritableFileOptions& opts,
                                  const std::string& fname,
-                                 gscoped_ptr<WritableFile>* result) OVERRIDE {
+                                 unique_ptr<WritableFile>* result) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::NewWritableFile", "path", fname);
     int fd;
     RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
@@ -769,7 +774,7 @@ class PosixEnv : public Env {
   virtual Status NewTempWritableFile(const WritableFileOptions& opts,
                                      const std::string& name_template,
                                      std::string* created_filename,
-                                     gscoped_ptr<WritableFile>* result) OVERRIDE {
+                                     unique_ptr<WritableFile>* result) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::NewTempWritableFile", "template", name_template);
     int fd;
     string tmp_filename;
@@ -780,13 +785,13 @@ class PosixEnv : public Env {
   }
 
   virtual Status NewRWFile(const string& fname,
-                           gscoped_ptr<RWFile>* result) OVERRIDE {
+                           unique_ptr<RWFile>* result) OVERRIDE {
     return NewRWFile(RWFileOptions(), fname, result);
   }
 
   virtual Status NewRWFile(const RWFileOptions& opts,
                            const string& fname,
-                           gscoped_ptr<RWFile>* result) OVERRIDE {
+                           unique_ptr<RWFile>* result) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::NewRWFile", "path", fname);
     int fd;
     RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
@@ -795,7 +800,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status NewTempRWFile(const RWFileOptions& opts, const std::string& name_template,
-                               std::string* created_filename, gscoped_ptr<RWFile>* res) OVERRIDE {
+                               std::string* created_filename, unique_ptr<RWFile>* res) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::NewTempRWFile", "template", name_template);
     int fd;
     RETURN_NOT_OK(MkTmpFile(name_template, &fd, created_filename));
@@ -1038,7 +1043,7 @@ class PosixEnv : public Env {
     uint32_t size = 64;
     uint32_t len = 0;
     while (true) {
-      gscoped_ptr<char[]> buf(new char[size]);
+      unique_ptr<char[]> buf(new char[size]);
 #if defined(__linux__)
       int rc = readlink("/proc/self/exe", buf.get(), size);
       if (rc == -1) {
@@ -1089,11 +1094,11 @@ class PosixEnv : public Env {
 
     // FTS requires a non-const copy of the name. strdup it and free() when
     // we leave scope.
-    gscoped_ptr<char, FreeDeleter> name_dup(strdup(root.c_str()));
+    unique_ptr<char, FreeDeleter> name_dup(strdup(root.c_str()));
     char *(paths[]) = { name_dup.get(), nullptr };
 
     // FTS_NOCHDIR is important here to make this thread-safe.
-    gscoped_ptr<FTS, FtsCloser> tree(
+    unique_ptr<FTS, FtsCloser> tree(
         fts_open(paths, FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR, nullptr));
     if (!tree.get()) {
       return IOError(root, errno);
@@ -1150,7 +1155,7 @@ class PosixEnv : public Env {
   virtual Status Canonicalize(const string& path, string* result) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::Canonicalize", "path", path);
     ThreadRestrictions::AssertIOAllowed();
-    gscoped_ptr<char[], FreeDeleter> r(realpath(path.c_str(), nullptr));
+    unique_ptr<char[], FreeDeleter> r(realpath(path.c_str(), nullptr));
     if (!r) {
       return IOError(path, errno);
     }
@@ -1178,7 +1183,7 @@ class PosixEnv : public Env {
   }
 
  private:
-  // gscoped_ptr Deleter implementation for fts_close
+  // unique_ptr Deleter implementation for fts_close
   struct FtsCloser {
     void operator()(FTS *fts) const {
       if (fts) { fts_close(fts); }
@@ -1187,7 +1192,7 @@ class PosixEnv : public Env {
 
   Status MkTmpFile(const string& name_template, int* fd, string* created_filename) {
     ThreadRestrictions::AssertIOAllowed();
-    gscoped_ptr<char[]> fname(new char[name_template.size() + 1]);
+    unique_ptr<char[]> fname(new char[name_template.size() + 1]);
     ::snprintf(fname.get(), name_template.size() + 1, "%s", name_template.c_str());
     int created_fd = mkstemp(fname.get());
     if (created_fd < 0) {
@@ -1202,7 +1207,7 @@ class PosixEnv : public Env {
   Status InstantiateNewWritableFile(const std::string& fname,
                                     int fd,
                                     const WritableFileOptions& opts,
-                                    gscoped_ptr<WritableFile>* result) {
+                                    unique_ptr<WritableFile>* result) {
     uint64_t file_size = 0;
     if (opts.mode == OPEN_EXISTING) {
       RETURN_NOT_OK(GetFileSize(fname, &file_size));

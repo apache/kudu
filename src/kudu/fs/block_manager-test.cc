@@ -38,6 +38,7 @@ using kudu::env_util::ReadFully;
 using kudu::pb_util::ReadablePBContainerFile;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -862,7 +863,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   {
     RWFileOptions opts;
     opts.mode = Env::OPEN_EXISTING;
-    gscoped_ptr<RWFile> file;
+    unique_ptr<RWFile> file;
     ASSERT_OK(env_->NewRWFile(opts, metadata_path, &file));
     ASSERT_OK(file->Truncate(good_meta_size + 1));
   }
@@ -914,7 +915,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   {
     RWFileOptions opts;
     opts.mode = Env::OPEN_EXISTING;
-    gscoped_ptr<RWFile> file;
+    unique_ptr<RWFile> file;
     ASSERT_OK(env_->NewRWFile(opts, metadata_path, &file));
     ASSERT_OK(file->Truncate(good_meta_size - 1));
   }
@@ -961,7 +962,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 
   // Find location of 2nd record in metadata file and corrupt it.
   // This is an unrecoverable error because it's in the middle of the file.
-  gscoped_ptr<RandomAccessFile> meta_file;
+  unique_ptr<RandomAccessFile> meta_file;
   ASSERT_OK(env_->NewRandomAccessFile(metadata_path, &meta_file));
   ReadablePBContainerFile pb_reader(std::move(meta_file));
   ASSERT_OK(pb_reader.Open());
@@ -980,7 +981,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   // unsigned integer. This will cause the length field to represent a large
   // value and also cause the length checksum not to validate.
   data[offset + 3] ^= 1 << 7;
-  gscoped_ptr<WritableFile> writable_file;
+  unique_ptr<WritableFile> writable_file;
   ASSERT_OK(env_->NewWritableFile(metadata_path, &writable_file));
   ASSERT_OK(writable_file->Append(data));
   ASSERT_OK(writable_file->Close());

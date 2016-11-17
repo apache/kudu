@@ -33,7 +33,6 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/fs.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -101,7 +100,7 @@ Status CheckHolePunch(Env* env, const string& path) {
 
   // Open the test file.
   string filename = JoinPathSegments(path, "hole_punch_test_file");
-  gscoped_ptr<RWFile> file;
+  unique_ptr<RWFile> file;
   RWFileOptions opts;
   RETURN_NOT_OK(env->NewRWFile(opts, filename, &file));
 

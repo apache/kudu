@@ -16,11 +16,12 @@
 // under the License.
 
 #include <algorithm>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <memory>
 #include <string>
 #include <utility>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -66,6 +67,8 @@ TAG_FLAG(disk_reserved_override_prefix_1_bytes_free_for_testing, runtime);
 TAG_FLAG(disk_reserved_override_prefix_2_bytes_free_for_testing, runtime);
 
 using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
@@ -79,7 +82,7 @@ Status OpenFileForWrite(Env* env, const string& path,
 Status OpenFileForWrite(const WritableFileOptions& opts,
                         Env *env, const string &path,
                         shared_ptr<WritableFile> *file) {
-  gscoped_ptr<WritableFile> w;
+  unique_ptr<WritableFile> w;
   RETURN_NOT_OK(env->NewWritableFile(opts, path, &w));
   file->reset(w.release());
   return Status::OK();
@@ -87,7 +90,7 @@ Status OpenFileForWrite(const WritableFileOptions& opts,
 
 Status OpenFileForRandom(Env *env, const string &path,
                          shared_ptr<RandomAccessFile> *file) {
-  gscoped_ptr<RandomAccessFile> r;
+  unique_ptr<RandomAccessFile> r;
   RETURN_NOT_OK(env->NewRandomAccessFile(path, &r));
   file->reset(r.release());
   return Status::OK();
@@ -95,7 +98,7 @@ Status OpenFileForRandom(Env *env, const string &path,
 
 Status OpenFileForSequential(Env *env, const string &path,
                              shared_ptr<SequentialFile> *file) {
-  gscoped_ptr<SequentialFile> r;
+  unique_ptr<SequentialFile> r;
   RETURN_NOT_OK(env->NewSequentialFile(path, &r));
   file->reset(r.release());
   return Status::OK();
@@ -188,17 +191,17 @@ Status CreateDirIfMissing(Env* env, const string& path, bool* created) {
 
 Status CopyFile(Env* env, const string& source_path, const string& dest_path,
                 WritableFileOptions opts) {
-  gscoped_ptr<SequentialFile> source;
+  unique_ptr<SequentialFile> source;
   RETURN_NOT_OK(env->NewSequentialFile(source_path, &source));
   uint64_t size;
   RETURN_NOT_OK(env->GetFileSize(source_path, &size));
 
-  gscoped_ptr<WritableFile> dest;
+  unique_ptr<WritableFile> dest;
   RETURN_NOT_OK(env->NewWritableFile(opts, dest_path, &dest));
   RETURN_NOT_OK(dest->PreAllocate(size));
 
   const int32_t kBufferSize = 1024 * 1024;
-  gscoped_ptr<uint8_t[]> scratch(new uint8_t[kBufferSize]);
+  unique_ptr<uint8_t[]> scratch(new uint8_t[kBufferSize]);
 
   uint64_t bytes_read = 0;
   while (bytes_read < size) {

@@ -16,11 +16,14 @@
 // under the License.
 
 #include <algorithm>
+#include <limits>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 #include <glog/stl_logging.h>
-#include <limits>
-#include <vector>
 
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/log-test-base.h"
@@ -44,6 +47,9 @@ namespace kudu {
 namespace log {
 
 using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
+using std::vector;
 using consensus::MakeOpId;
 using strings::Substitute;
 
@@ -89,9 +95,9 @@ class LogTest : public LogTestBase {
                                        int first_repl_index,
                                        LogReader* reader) {
     string fqp = GetTestPath(strings::Substitute("wal-00000000$0", sequence_number));
-    gscoped_ptr<WritableFile> w_log_seg;
+    unique_ptr<WritableFile> w_log_seg;
     RETURN_NOT_OK(fs_manager_->env()->NewWritableFile(fqp, &w_log_seg));
-    gscoped_ptr<RandomAccessFile> r_log_seg;
+    unique_ptr<RandomAccessFile> r_log_seg;
     RETURN_NOT_OK(fs_manager_->env()->NewRandomAccessFile(fqp, &r_log_seg));
 
     scoped_refptr<ReadableLogSegment> readable_segment(

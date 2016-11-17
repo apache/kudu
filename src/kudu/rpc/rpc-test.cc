@@ -199,7 +199,7 @@ TEST_P(TestRpc, TestHighFDs) {
   vector<RandomAccessFile*> fake_files;
   ElementDeleter d(&fake_files);
   for (int i = 0; i < kNumFakeFiles; i++) {
-    gscoped_ptr<RandomAccessFile> f;
+    unique_ptr<RandomAccessFile> f;
     CHECK_OK(Env::Default()->NewRandomAccessFile("/dev/zero", &f));
     fake_files.push_back(f.release());
   }

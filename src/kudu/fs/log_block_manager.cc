@@ -18,6 +18,7 @@
 #include "kudu/fs/log_block_manager.h"
 
 #include <algorithm>
+#include <memory>
 #include <mutex>
 
 #include "kudu/fs/block_manager_metrics.h"
@@ -101,7 +102,10 @@ using internal::LogBlock;
 using internal::LogBlockContainer;
 using pb_util::ReadablePBContainerFile;
 using pb_util::WritablePBContainerFile;
+using std::string;
 using std::unordered_set;
+using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace internal {
@@ -158,7 +162,7 @@ class LogBlockContainer {
   // Creates a new block container in 'dir'.
   static Status Create(LogBlockManager* block_manager,
                        DataDir* dir,
-                       gscoped_ptr<LogBlockContainer>* container);
+                       unique_ptr<LogBlockContainer>* container);
 
   // Opens an existing block container in 'dir'.
   //
@@ -172,7 +176,7 @@ class LogBlockContainer {
   static Status Open(LogBlockManager* block_manager,
                      DataDir* dir,
                      const std::string& id,
-                     gscoped_ptr<LogBlockContainer>* container);
+                     unique_ptr<LogBlockContainer>* container);
 
   // Indicates that the writing of 'block' is finished. If successful,
   // adds the block to the block manager's in-memory maps.
@@ -263,8 +267,8 @@ class LogBlockContainer {
 
  private:
   LogBlockContainer(LogBlockManager* block_manager, DataDir* data_dir,
-                    gscoped_ptr<WritablePBContainerFile> metadata_file,
-                    gscoped_ptr<RWFile> data_file);
+                    unique_ptr<WritablePBContainerFile> metadata_file,
+                    unique_ptr<RWFile> data_file);
 
   // Performs sanity checks on a block record.
   void CheckBlockRecord(const BlockRecordPB& record,
@@ -286,8 +290,8 @@ class LogBlockContainer {
   int64_t preallocated_offset_ = 0;
 
   // Opened file handles to the container's files.
-  gscoped_ptr<WritablePBContainerFile> metadata_file_;
-  gscoped_ptr<RWFile> data_file_;
+  unique_ptr<WritablePBContainerFile> metadata_file_;
+  unique_ptr<RWFile> data_file_;
 
   // The amount of data written thus far in the container.
   int64_t total_bytes_written_ = 0;
@@ -302,8 +306,8 @@ class LogBlockContainer {
 LogBlockContainer::LogBlockContainer(
     LogBlockManager* block_manager,
     DataDir* data_dir,
-    gscoped_ptr<WritablePBContainerFile> metadata_file,
-    gscoped_ptr<RWFile> data_file)
+    unique_ptr<WritablePBContainerFile> metadata_file,
+    unique_ptr<RWFile> data_file)
     : block_manager_(block_manager),
       data_dir_(data_dir),
       metadata_file_(std::move(metadata_file)),
@@ -313,14 +317,14 @@ LogBlockContainer::LogBlockContainer(
 
 Status LogBlockContainer::Create(LogBlockManager* block_manager,
                                  DataDir* dir,
-                                 gscoped_ptr<LogBlockContainer>* container) {
+                                 unique_ptr<LogBlockContainer>* container) {
   string common_path;
   string metadata_path;
   string data_path;
   Status metadata_status;
   Status data_status;
-  gscoped_ptr<RWFile> metadata_writer;
-  gscoped_ptr<RWFile> data_file;
+  unique_ptr<RWFile> metadata_writer;
+  unique_ptr<RWFile> data_file;
   RWFileOptions wr_opts;
   wr_opts.mode = Env::CREATE_NON_EXISTING;
 
@@ -349,7 +353,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   } while (PREDICT_FALSE(metadata_status.IsAlreadyPresent() ||
                          data_status.IsAlreadyPresent()));
   if (metadata_status.ok() && data_status.ok()) {
-    gscoped_ptr<WritablePBContainerFile> metadata_file(
+    unique_ptr<WritablePBContainerFile> metadata_file(
         new WritablePBContainerFile(std::move(metadata_writer)));
     RETURN_NOT_OK(metadata_file->Init(BlockRecordPB()));
     container->reset(new LogBlockContainer(block_manager,
@@ -366,7 +370,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
 Status LogBlockContainer::Open(LogBlockManager* block_manager,
                                DataDir* dir,
                                const string& id,
-                               gscoped_ptr<LogBlockContainer>* container) {
+                               unique_ptr<LogBlockContainer>* container) {
   Env* env = block_manager->env();
   string common_path = JoinPathSegments(dir->dir(), id);
   string metadata_path = StrCat(common_path, LogBlockManager::kContainerMetadataFileSuffix);
@@ -403,18 +407,18 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   }
 
   // Open the existing metadata and data files for writing.
-  gscoped_ptr<RWFile> metadata_writer;
+  unique_ptr<RWFile> metadata_writer;
   RWFileOptions wr_opts;
   wr_opts.mode = Env::OPEN_EXISTING;
 
   RETURN_NOT_OK(env->NewRWFile(wr_opts,
                                metadata_path,
                                &metadata_writer));
-  gscoped_ptr<WritablePBContainerFile> metadata_pb_writer(
+  unique_ptr<WritablePBContainerFile> metadata_pb_writer(
       new WritablePBContainerFile(std::move(metadata_writer)));
   RETURN_NOT_OK(metadata_pb_writer->Reopen());
 
-  gscoped_ptr<RWFile> data_file;
+  unique_ptr<RWFile> data_file;
   RWFileOptions rw_opts;
   rw_opts.mode = Env::OPEN_EXISTING;
   RETURN_NOT_OK(env->NewRWFile(rw_opts,
@@ -424,7 +428,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   RETURN_NOT_OK(data_file->Size(&data_file_size));
 
   // Create the in-memory container and populate it.
-  gscoped_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
+  unique_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
                                                                       dir,
                                                                       std::move(metadata_pb_writer),
                                                                       std::move(data_file)));
@@ -436,7 +440,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
 
 Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) const {
   string metadata_path = metadata_file_->filename();
-  gscoped_ptr<RandomAccessFile> metadata_reader;
+  unique_ptr<RandomAccessFile> metadata_reader;
   RETURN_NOT_OK(block_manager()->env()->NewRandomAccessFile(metadata_path, &metadata_reader));
   ReadablePBContainerFile pb_reader(std::move(metadata_reader));
   RETURN_NOT_OK(pb_reader.Open());
@@ -479,7 +483,7 @@ Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) co
     LOG(WARNING) << "Log block manager: Found partial trailing metadata record in container "
                   << ToString() << ": "
                   << "Truncating metadata file to last valid offset: " << truncate_offset;
-    gscoped_ptr<RWFile> file;
+    unique_ptr<RWFile> file;
     RWFileOptions opts;
     opts.mode = Env::OPEN_EXISTING;
     RETURN_NOT_OK(block_manager_->env()->NewRWFile(opts, metadata_path, &file));
@@ -1305,7 +1309,7 @@ Status LogBlockManager::GetOrCreateContainer(LogBlockContainer** container) {
   }
 
   // All containers are in use; create a new one.
-  gscoped_ptr<LogBlockContainer> new_container;
+  unique_ptr<LogBlockContainer> new_container;
   RETURN_NOT_OK_PREPEND(LogBlockContainer::Create(this,
                                                   dir,
                                                   &new_container),
@@ -1435,7 +1439,7 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
     if (!TryStripSuffixString(child, LogBlockManager::kContainerMetadataFileSuffix, &id)) {
       continue;
     }
-    gscoped_ptr<LogBlockContainer> container;
+    unique_ptr<LogBlockContainer> container;
     s = LogBlockContainer::Open(this, dir, id, &container);
     if (s.IsAborted()) {
       // Skip the container. Open() already handled logging for us.

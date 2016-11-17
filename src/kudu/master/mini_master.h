@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/env.h"

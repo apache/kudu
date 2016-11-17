@@ -86,6 +86,7 @@ using std::initializer_list;
 using std::ostream;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -203,7 +204,7 @@ Status NonShortRead<RWFile>(RWFile* file, uint64_t offset, uint64_t length,
 template<typename ReadableFileType>
 Status ValidateAndReadData(ReadableFileType* reader, uint64_t file_size,
                            uint64_t* offset, uint64_t length,
-                           Slice* result, gscoped_ptr<uint8_t[]>* scratch) {
+                           Slice* result, unique_ptr<uint8_t[]>* scratch) {
   // Validate the read length using the file size.
   if (*offset + length > file_size) {
     return Status::Incomplete("File size not large enough to be valid",
@@ -216,7 +217,7 @@ Status ValidateAndReadData(ReadableFileType* reader, uint64_t file_size,
 
   // Perform the read.
   Slice s;
-  gscoped_ptr<uint8_t[]> local_scratch(new uint8_t[length]);
+  unique_ptr<uint8_t[]> local_scratch(new uint8_t[length]);
   RETURN_NOT_OK(NonShortRead(reader, *offset, length, &s, local_scratch.get()));
   CHECK_EQ(length, s.size()) // Should never trigger due to contract with reader APIs.
       << Substitute("Unexpected short read: Proto container file $0: Tried to read $1 bytes "
@@ -273,7 +274,7 @@ Status ReadPBStartingAt(ReadableFileType* reader, int version, uint64_t* offset,
   uint64_t length_buflen = (version == 1) ? sizeof(uint32_t)
                                           : sizeof(uint32_t) + kPBContainerChecksumLen;
   Slice len_and_cksum_slice;
-  gscoped_ptr<uint8_t[]> length_scratch;
+  unique_ptr<uint8_t[]> length_scratch;
   RETURN_NOT_OK_PREPEND(ValidateAndReadData(reader, file_size, &tmp_offset, length_buflen,
                                             &len_and_cksum_slice, &length_scratch),
                         Substitute("Could not read data length from proto container file $0 "
@@ -292,7 +293,7 @@ Status ReadPBStartingAt(ReadableFileType* reader, int version, uint64_t* offset,
   // Read body and checksum into buffer for checksum & parsing.
   uint64_t data_and_cksum_buflen = data_length + kPBContainerChecksumLen;
   Slice body_and_cksum_slice;
-  gscoped_ptr<uint8_t[]> body_scratch;
+  unique_ptr<uint8_t[]> body_scratch;
   RETURN_NOT_OK_PREPEND(ValidateAndReadData(reader, file_size, &tmp_offset, data_and_cksum_buflen,
                                             &body_and_cksum_slice, &body_scratch),
                         Substitute("Could not read PB message data from proto container file $0 "
@@ -359,7 +360,7 @@ Status ParsePBFileHeader(ReadableFileType* reader, uint64_t* offset, int* versio
   // minimum number of bytes required for a V1 format data record.
   uint64_t tmp_offset = *offset;
   Slice header;
-  gscoped_ptr<uint8_t[]> scratch;
+  unique_ptr<uint8_t[]> scratch;
   RETURN_NOT_OK_PREPEND(ValidateAndReadData(reader, file_size, &tmp_offset, kPBContainerV2HeaderLen,
                                             &header, &scratch),
                         Substitute("Could not read header for proto container file $0",
@@ -464,7 +465,7 @@ Status WritePBToPath(Env* env, const std::string& path,
   const string tmp_template = path + kTmpTemplateSuffix;
   string tmp_path;
 
-  gscoped_ptr<WritableFile> file;
+  unique_ptr<WritableFile> file;
   RETURN_NOT_OK(env->NewTempWritableFile(WritableFileOptions(), tmp_template, &tmp_path, &file));
   env_util::ScopedFileDeleter tmp_deleter(env, tmp_path);
 
@@ -540,7 +541,7 @@ void TruncateFields(Message* message, int max_len) {
   }
 }
 
-WritablePBContainerFile::WritablePBContainerFile(gscoped_ptr<RWFile> writer)
+WritablePBContainerFile::WritablePBContainerFile(unique_ptr<RWFile> writer)
   : state_(FileState::NOT_INITIALIZED),
     offset_(0),
     version_(kPBContainerDefaultVersion),
@@ -755,7 +756,7 @@ void WritablePBContainerFile::PopulateDescriptorSet(
   all_descs.Swap(output);
 }
 
-ReadablePBContainerFile::ReadablePBContainerFile(gscoped_ptr<RandomAccessFile> reader)
+ReadablePBContainerFile::ReadablePBContainerFile(unique_ptr<RandomAccessFile> reader)
   : state_(FileState::NOT_INITIALIZED),
     version_(kPBContainerInvalidVersion),
     offset_(0),
@@ -813,7 +814,7 @@ Status ReadablePBContainerFile::Dump(ostream* os, bool oneline) {
         "Descriptor $0 referenced in container file not supported",
         pb_type()));
   }
-  gscoped_ptr<Message> msg(prototype->New());
+  unique_ptr<Message> msg(prototype->New());
 
   // Dump each message in the container file.
   int count = 0;
@@ -850,7 +851,7 @@ uint64_t ReadablePBContainerFile::offset() const {
 }
 
 Status ReadPBContainerFromPath(Env* env, const std::string& path, Message* msg) {
-  gscoped_ptr<RandomAccessFile> file;
+  unique_ptr<RandomAccessFile> file;
   RETURN_NOT_OK(env->NewRandomAccessFile(path, &file));
 
   ReadablePBContainerFile pb_file(std::move(file));
@@ -874,7 +875,7 @@ Status WritePBContainerToPath(Env* env, const std::string& path,
   const string tmp_template = path + kTmpTemplateSuffix;
   string tmp_path;
 
-  gscoped_ptr<RWFile> file;
+  unique_ptr<RWFile> file;
   RETURN_NOT_OK(env->NewTempRWFile(RWFileOptions(), tmp_template, &tmp_path, &file));
   env_util::ScopedFileDeleter tmp_deleter(env, tmp_path);
 

@@ -18,9 +18,11 @@
 #include "kudu/consensus/log.h"
 
 #include <algorithm>
-#include <boost/range/adaptor/reversed.hpp>
 #include <limits>
+#include <memory>
 #include <mutex>
+
+#include <boost/range/adaptor/reversed.hpp>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log_index.h"
@@ -133,6 +135,9 @@ using consensus::OpId;
 using consensus::ReplicateRefPtr;
 using env_util::OpenFileForRandom;
 using std::shared_ptr;
+using std::string;
+using std::vector;
+using std::unique_ptr;
 using strings::Substitute;
 
 // This class is responsible for managing the thread that appends to
@@ -176,7 +181,7 @@ Status Log::AppendThread::Init() {
 void Log::AppendThread::RunThread() {
   bool shutting_down = false;
   while (PREDICT_TRUE(!shutting_down)) {
-    std::vector<LogEntryBatch*> entry_batches;
+    vector<LogEntryBatch*> entry_batches;
     ElementDeleter d(&entry_batches);
 
     // We shut down the entry_queue when it's time to shut down the append
@@ -926,7 +931,7 @@ Status Log::SwitchToAllocatedSegment() {
   }
 
   // Open the segment we just created in readable form and add it to the reader.
-  gscoped_ptr<RandomAccessFile> readable_file;
+  unique_ptr<RandomAccessFile> readable_file;
 
   RandomAccessFileOptions opts;
   RETURN_NOT_OK(fs_manager_->env()->NewRandomAccessFile(opts, new_segment_path, &readable_file));
@@ -966,7 +971,7 @@ Status Log::CreatePlaceholderSegment(const WritableFileOptions& opts,
                                      shared_ptr<WritableFile>* out) {
   string path_tmpl = JoinPathSegments(log_dir_, kSegmentPlaceholderFileTemplate);
   VLOG(2) << "Creating temp. file for place holder segment, template: " << path_tmpl;
-  gscoped_ptr<WritableFile> segment_file;
+  unique_ptr<WritableFile> segment_file;
   RETURN_NOT_OK(fs_manager_->env()->NewTempWritableFile(opts,
                                                         path_tmpl,
                                                         result_path,

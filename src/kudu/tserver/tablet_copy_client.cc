@@ -426,7 +426,7 @@ Status TabletCopyClient::DownloadWAL(uint64_t wal_segment_seqno) {
 
   WritableFileOptions opts;
   opts.sync_on_close = true;
-  gscoped_ptr<WritableFile> writer;
+  unique_ptr<WritableFile> writer;
   RETURN_NOT_OK_PREPEND(fs_manager_->env()->NewWritableFile(opts, dest_path, &writer),
                         "Unable to open file for writing");
   RETURN_NOT_OK_PREPEND(DownloadFile(data_id, writer.get()),

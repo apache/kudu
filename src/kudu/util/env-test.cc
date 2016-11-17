@@ -16,9 +16,10 @@
 // under the License.
 
 #include <fcntl.h>
+#include <sys/types.h>
+
 #include <memory>
 #include <string>
-#include <sys/types.h>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -50,6 +51,7 @@ namespace kudu {
 
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 static const uint64_t kOneMb = 1024 * 1024;
@@ -105,7 +107,7 @@ class TestEnv : public KuduTest {
   }
 
   void MakeVectors(int num_slices, int slice_size, int num_iterations,
-                   gscoped_ptr<faststring[]>* data, vector<vector<Slice > >* vec) {
+                   unique_ptr<faststring[]>* data, vector<vector<Slice > >* vec) {
     data->reset(new faststring[num_iterations * num_slices]);
     vec->resize(num_iterations);
 
@@ -127,7 +129,7 @@ class TestEnv : public KuduTest {
   }
 
   void ReadAndVerifyTestData(RandomAccessFile* raf, size_t offset, size_t n) {
-    gscoped_ptr<uint8_t[]> scratch(new uint8_t[n]);
+    unique_ptr<uint8_t[]> scratch(new uint8_t[n]);
     Slice s;
     ASSERT_OK(env_util::ReadFully(raf, offset, n, &s,
                                          scratch.get()));
@@ -146,7 +148,7 @@ class TestEnv : public KuduTest {
       ASSERT_OK(file->Sync());
     }
 
-    gscoped_ptr<faststring[]> data;
+    unique_ptr<faststring[]> data;
     vector<vector<Slice> > input;
 
     MakeVectors(num_slices, slice_size, iterations, &data, &input);
@@ -304,7 +306,7 @@ TEST_F(TestEnv, TestHolePunch) {
     return;
   }
   string test_path = GetTestPath("test_env_wf");
-  gscoped_ptr<RWFile> file;
+  unique_ptr<RWFile> file;
   ASSERT_OK(env_->NewRWFile(test_path, &file));
 
   // Write 1 MB. The size and size-on-disk both agree.
@@ -335,7 +337,7 @@ TEST_F(TestEnv, TestHolePunch) {
 TEST_F(TestEnv, TestTruncate) {
   LOG(INFO) << "Testing Truncate()";
   string test_path = GetTestPath("test_env_wf");
-  gscoped_ptr<RWFile> file;
+  unique_ptr<RWFile> file;
   ASSERT_OK(env_->NewRWFile(test_path, &file));
   uint64_t size;
   ASSERT_OK(file->Size(&size));
@@ -358,10 +360,10 @@ TEST_F(TestEnv, TestTruncate) {
   ASSERT_OK(file->Close());
 
   // Read the whole file. Ensure it is all zeroes.
-  gscoped_ptr<RandomAccessFile> raf;
+  unique_ptr<RandomAccessFile> raf;
   ASSERT_OK(env_->NewRandomAccessFile(test_path, &raf));
   Slice s;
-  gscoped_ptr<uint8_t[]> scratch(new uint8_t[size]);
+  unique_ptr<uint8_t[]> scratch(new uint8_t[size]);
   ASSERT_OK(env_util::ReadFully(raf.get(), 0, size, &s, scratch.get()));
   const uint8_t* data = s.data();
   for (int i = 0; i < size; i++) {
@@ -433,7 +435,7 @@ TEST_F(TestEnv, TestReadFully) {
 
   const int kReadLength = 10000;
   Slice s;
-  gscoped_ptr<uint8_t[]> scratch(new uint8_t[kReadLength]);
+  unique_ptr<uint8_t[]> scratch(new uint8_t[kReadLength]);
 
   // Verify that ReadFully reads the whole requested data.
   ASSERT_OK(env_util::ReadFully(&sr_raf, 0, kReadLength, &s, scratch.get()));
@@ -475,7 +477,7 @@ TEST_F(TestEnv, TestOpenEmptyRandomAccessFile) {
   Env* env = Env::Default();
   string test_file = GetTestPath("test_file");
   ASSERT_NO_FATAL_FAILURE(WriteTestFile(env, test_file, 0));
-  gscoped_ptr<RandomAccessFile> readable_file;
+  unique_ptr<RandomAccessFile> readable_file;
   ASSERT_OK(env->NewRandomAccessFile(test_file, &readable_file));
   uint64_t size;
   ASSERT_OK(readable_file->Size(&size));
@@ -544,7 +546,7 @@ TEST_F(TestEnv, TestIsDirectory) {
   ASSERT_TRUE(is_dir);
 
   string not_dir = GetTestPath("not_a_directory");
-  gscoped_ptr<WritableFile> writer;
+  unique_ptr<WritableFile> writer;
   ASSERT_OK(env_->NewWritableFile(not_dir, &writer));
   ASSERT_OK(env_->IsDirectory(not_dir, &is_dir));
   ASSERT_FALSE(is_dir);
@@ -565,7 +567,7 @@ static Status CreateDir(Env* env, const string& name, vector<string>* created) {
 }
 
 static Status CreateFile(Env* env, const string& name, vector<string>* created) {
-  gscoped_ptr<WritableFile> writer;
+  unique_ptr<WritableFile> writer;
   RETURN_NOT_OK(env->NewWritableFile(name, &writer));
   created->push_back(writer->filename());
   return Status::OK();
@@ -625,7 +627,7 @@ TEST_F(TestEnv, TestWalkCbReturnsError) {
   string new_dir = GetTestPath("foo");
   string new_file = "myfile";
   ASSERT_OK(env_->CreateDir(new_dir));
-  gscoped_ptr<WritableFile> writer;
+  unique_ptr<WritableFile> writer;
   ASSERT_OK(env_->NewWritableFile(JoinPathSegments(new_dir, new_file), &writer));
   int num_calls = 0;
   ASSERT_TRUE(env_->Walk(new_dir, Env::PRE_ORDER,
@@ -647,7 +649,7 @@ TEST_F(TestEnv, TestGetBlockSize) {
 
   // Try with a file.
   string path = GetTestPath("foo");
-  gscoped_ptr<WritableFile> writer;
+  unique_ptr<WritableFile> writer;
   ASSERT_OK(env_->NewWritableFile(path, &writer));
   ASSERT_OK(env_->GetBlockSize(path, &block_size));
   ASSERT_GT(block_size, 0);
@@ -655,7 +657,7 @@ TEST_F(TestEnv, TestGetBlockSize) {
 
 TEST_F(TestEnv, TestRWFile) {
   // Create the file.
-  gscoped_ptr<RWFile> file;
+  unique_ptr<RWFile> file;
   ASSERT_OK(env_->NewRWFile(GetTestPath("foo"), &file));
 
   // Append to it.
@@ -664,7 +666,7 @@ TEST_F(TestEnv, TestRWFile) {
 
   // Read from it.
   Slice result;
-  gscoped_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
+  unique_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
   ASSERT_OK(file->Read(0, kTestData.length(), &result, scratch.get()));
   ASSERT_EQ(result, kTestData);
   uint64_t sz;
@@ -676,7 +678,7 @@ TEST_F(TestEnv, TestRWFile) {
   ASSERT_OK(file->Write(kTestData.length(), kTestData));
   ASSERT_OK(file->Write(1, kTestData));
   string kNewTestData = "aabcdebcdeabcde";
-  gscoped_ptr<uint8_t[]> scratch2(new uint8_t[kNewTestData.length()]);
+  unique_ptr<uint8_t[]> scratch2(new uint8_t[kNewTestData.length()]);
   ASSERT_OK(file->Read(0, kNewTestData.length(), &result, scratch2.get()));
 
   // Retest.
@@ -730,7 +732,7 @@ TEST_F(TestEnv, TestCopyFile) {
   Env* env = Env::Default();
   NO_FATALS(WriteTestFile(env, orig_path, kFileSize));
   ASSERT_OK(env_util::CopyFile(env, orig_path, copy_path, WritableFileOptions()));
-  gscoped_ptr<RandomAccessFile> copy;
+  unique_ptr<RandomAccessFile> copy;
   ASSERT_OK(env->NewRandomAccessFile(copy_path, &copy));
   NO_FATALS(ReadAndVerifyTestData(copy.get(), 0, kFileSize));
 }
@@ -739,7 +741,7 @@ TEST_F(TestEnv, TestCopyFile) {
 TEST_F(TestEnv, TestTempRWFile) {
   string tmpl = "foo.XXXXXX";
   string path;
-  gscoped_ptr<RWFile> file;
+  unique_ptr<RWFile> file;
 
   ASSERT_OK(env_->NewTempRWFile(RWFileOptions(), tmpl, &path, &file));
   ASSERT_NE(path, tmpl);

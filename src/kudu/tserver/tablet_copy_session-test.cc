@@ -189,7 +189,7 @@ class TabletCopyTest : public KuduTabletTest {
   // 'file' will be set to point to the SequentialFile containing the data.
   void FetchBlockToFile(const BlockId& block_id,
                         string* path,
-                        gscoped_ptr<SequentialFile>* file) {
+                        unique_ptr<SequentialFile>* file) {
     string data;
     int64_t block_file_size = 0;
     TabletCopyErrorPB::Code error_code;
@@ -201,7 +201,7 @@ class TabletCopyTest : public KuduTabletTest {
     // Write the file to a temporary location.
     WritableFileOptions opts;
     string path_template = GetTestPath(Substitute("test_block_$0.tmp.XXXXXX", block_id.ToString()));
-    gscoped_ptr<WritableFile> writable_file;
+    unique_ptr<WritableFile> writable_file;
     CHECK_OK(Env::Default()->NewTempWritableFile(opts, path_template, path, &writable_file));
     CHECK_OK(writable_file->Append(Slice(data.data(), data.size())));
     CHECK_OK(writable_file->Close());
@@ -258,7 +258,7 @@ TEST_F(TabletCopyTest, TestBlocksEqual) {
       BlockId block_id = BlockId::FromPB(block_id_pb);
 
       string path;
-      gscoped_ptr<SequentialFile> file;
+      unique_ptr<SequentialFile> file;
       FetchBlockToFile(block_id, &path, &file);
       uint64_t session_block_size = 0;
       ASSERT_OK(Env::Default()->GetFileSize(path, &session_block_size));

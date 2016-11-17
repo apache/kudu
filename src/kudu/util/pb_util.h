@@ -21,11 +21,11 @@
 #ifndef KUDU_UTIL_PB_UTIL_H
 #define KUDU_UTIL_PB_UTIL_H
 
+#include <memory>
 #include <string>
 
 #include <gtest/gtest_prod.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/mutex.h"
@@ -252,7 +252,7 @@ class WritablePBContainerFile {
  public:
 
   // Initializes the class instance; writer must be open.
-  explicit WritablePBContainerFile(gscoped_ptr<RWFile> writer);
+  explicit WritablePBContainerFile(std::unique_ptr<RWFile> writer);
 
   // Closes the container if not already closed.
   ~WritablePBContainerFile();
@@ -347,7 +347,7 @@ class WritablePBContainerFile {
   int version_;
 
   // File writer.
-  gscoped_ptr<RWFile> writer_;
+  std::unique_ptr<RWFile> writer_;
 };
 
 // Protobuf container file opened for reading.
@@ -358,7 +358,7 @@ class ReadablePBContainerFile {
  public:
 
   // Initializes the class instance; reader must be open.
-  explicit ReadablePBContainerFile(gscoped_ptr<RandomAccessFile> reader);
+  explicit ReadablePBContainerFile(std::unique_ptr<RandomAccessFile> reader);
 
   // Closes the file if not already closed.
   ~ReadablePBContainerFile();
@@ -418,10 +418,10 @@ class ReadablePBContainerFile {
   // The fully-qualified PB type name of the messages in the container.
   std::string pb_type_;
 
-  // Wrapped in a gscoped_ptr so that clients need not include PB headers.
-  gscoped_ptr<google::protobuf::FileDescriptorSet> protos_;
+  // Wrapped in a unique_ptr so that clients need not include PB headers.
+  std::unique_ptr<google::protobuf::FileDescriptorSet> protos_;
 
-  gscoped_ptr<RandomAccessFile> reader_;
+  std::unique_ptr<RandomAccessFile> reader_;
 };
 
 // Convenience functions for protobuf containers holding just one record.
@@ -470,7 +470,7 @@ class PbTracer : public debug::ConvertableToTraceFormat {
   // Actually stringifies the PB and appends the string to 'out'.
   void AppendAsTraceFormat(std::string* out) const override;
  private:
-  const gscoped_ptr<google::protobuf::Message> msg_;
+  const std::unique_ptr<google::protobuf::Message> msg_;
 };
 
 } // namespace pb_util

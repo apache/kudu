@@ -25,7 +25,6 @@
 #include <google/protobuf/descriptor.pb.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/pb_util-internal.h"
@@ -113,7 +112,7 @@ Status TestPBUtil::CreateKnownGoodContainerFile(CreateMode create, SyncMode sync
 
 Status TestPBUtil::NewPBCWriter(int version, RWFileOptions opts,
                                 unique_ptr<WritablePBContainerFile>* pb_writer) {
-  gscoped_ptr<RWFile> writer;
+  unique_ptr<RWFile> writer;
   RETURN_NOT_OK(env_->NewRWFile(opts, path_, &writer));
   pb_writer->reset(new WritablePBContainerFile(std::move(writer)));
   if (version != kUseDefaultVersion) {
@@ -141,7 +140,7 @@ Status TestPBUtil::BitFlipFileByteRange(const string& path, uint64_t offset, uin
   faststring buf;
   // Read the data from disk.
   {
-    gscoped_ptr<RandomAccessFile> file;
+    unique_ptr<RandomAccessFile> file;
     RETURN_NOT_OK(env_->NewRandomAccessFile(path, &file));
     uint64_t size;
     RETURN_NOT_OK(file->Size(&size));
@@ -159,7 +158,7 @@ Status TestPBUtil::BitFlipFileByteRange(const string& path, uint64_t offset, uin
   }
 
   // Write the data back to disk.
-  gscoped_ptr<WritableFile> file;
+  unique_ptr<WritableFile> file;
   RETURN_NOT_OK(env_->NewWritableFile(path, &file));
   RETURN_NOT_OK(file->Append(buf));
   RETURN_NOT_OK(file->Close());
@@ -168,7 +167,7 @@ Status TestPBUtil::BitFlipFileByteRange(const string& path, uint64_t offset, uin
 }
 
 Status TestPBUtil::TruncateFile(const string& path, uint64_t size) {
-  gscoped_ptr<RWFile> file;
+  unique_ptr<RWFile> file;
   RWFileOptions opts;
   opts.mode = Env::OPEN_EXISTING;
   RETURN_NOT_OK(env_->NewRWFile(opts, path, &file));
@@ -252,7 +251,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test that an empty file looks like corruption.
   {
     // Create the empty file.
-    gscoped_ptr<WritableFile> file;
+    unique_ptr<WritableFile> file;
     ASSERT_OK(env_->NewWritableFile(path_, &file));
     ASSERT_OK(file->Close());
   }
@@ -338,7 +337,7 @@ TEST_P(TestPBContainerVersions, TestPartialRecord) {
   ASSERT_OK(env_->GetFileSize(path_, &known_good_size));
   ASSERT_OK(TruncateFile(path_, known_good_size - 2));
 
-  gscoped_ptr<RandomAccessFile> file;
+  unique_ptr<RandomAccessFile> file;
   ASSERT_OK(env_->NewRandomAccessFile(path_, &file));
   ReadablePBContainerFile pb_file(std::move(file));
   ASSERT_OK(pb_file.Open());
@@ -371,7 +370,7 @@ TEST_P(TestPBContainerVersions, TestAppendAfterPartialWrite) {
 
   ASSERT_OK(TruncateFile(path_, known_good_size - 2));
 
-  gscoped_ptr<RandomAccessFile> file;
+  unique_ptr<RandomAccessFile> file;
   ASSERT_OK(env_->NewRandomAccessFile(path_, &file));
   ReadablePBContainerFile reader(std::move(file));
   ASSERT_OK(reader.Open());
@@ -427,7 +426,7 @@ TEST_P(TestPBContainerVersions, TestMultipleMessages) {
   ASSERT_OK(pb_writer->Close());
 
   int pbs_read = 0;
-  gscoped_ptr<RandomAccessFile> reader;
+  unique_ptr<RandomAccessFile> reader;
   ASSERT_OK(env_->NewRandomAccessFile(path_, &reader));
   ReadablePBContainerFile pb_reader(std::move(reader));
   ASSERT_OK(pb_reader.Open());
@@ -455,7 +454,7 @@ TEST_P(TestPBContainerVersions, TestInterleavedReadWrite) {
   // Open the file for writing and reading.
   unique_ptr<WritablePBContainerFile> pb_writer;
   ASSERT_OK(NewPBCWriter(version_, RWFileOptions(), &pb_writer));
-  gscoped_ptr<RandomAccessFile> reader;
+  unique_ptr<RandomAccessFile> reader;
   ASSERT_OK(env_->NewRandomAccessFile(path_, &reader));
   ReadablePBContainerFile pb_reader(std::move(reader));
 
@@ -509,7 +508,7 @@ TEST_F(TestPBUtil, TestPopulateDescriptorSet) {
 
 void TestPBUtil::DumpPBCToString(const string& path, bool oneline_output,
                                  string* ret) {
-  gscoped_ptr<RandomAccessFile> reader;
+  unique_ptr<RandomAccessFile> reader;
   ASSERT_OK(env_->NewRandomAccessFile(path, &reader));
   ReadablePBContainerFile pb_reader(std::move(reader));
   ASSERT_OK(pb_reader.Open());

@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
+
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -32,7 +34,10 @@
 #include "kudu/util/test_util.h"
 
 using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
 using std::unordered_set;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -130,7 +135,7 @@ TEST_F(FsManagerTestBase, TestListTablets) {
   ASSERT_EQ(0, tablet_ids.size());
 
   string path = fs_manager()->GetTabletMetadataDir();
-  gscoped_ptr<WritableFile> writer;
+  unique_ptr<WritableFile> writer;
   ASSERT_OK(env_->NewWritableFile(
       JoinPathSegments(path, "foo.tmp"), &writer));
   ASSERT_OK(env_->NewWritableFile(
@@ -148,7 +153,7 @@ TEST_F(FsManagerTestBase, TestCannotUseNonEmptyFsRoot) {
   string path = GetTestPath("new_fs_root");
   ASSERT_OK(env_->CreateDir(path));
   {
-    gscoped_ptr<WritableFile> writer;
+    unique_ptr<WritableFile> writer;
     ASSERT_OK(env_->NewWritableFile(
         JoinPathSegments(path, "some_file"), &writer));
   }

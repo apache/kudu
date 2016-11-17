@@ -47,7 +47,7 @@ Status DumpPBContainerFile(const RunnerContext& context) {
   const string& path = FindOrDie(context.required_args, kPathArg);
 
   Env* env = Env::Default();
-  gscoped_ptr<RandomAccessFile> reader;
+  unique_ptr<RandomAccessFile> reader;
   RETURN_NOT_OK(env->NewRandomAccessFile(path, &reader));
   pb_util::ReadablePBContainerFile pb_reader(std::move(reader));
   RETURN_NOT_OK(pb_reader.Open());
