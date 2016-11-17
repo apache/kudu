@@ -23,6 +23,9 @@
 
 namespace kudu {
 
+// Common tmp infix
+extern const char kTmpInfix[];
+
 // Join two path segments with the appropriate path separator,
 // if necessary.
 std::string JoinPathSegments(const std::string &a,

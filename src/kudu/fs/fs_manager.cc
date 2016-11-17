@@ -102,8 +102,6 @@ const char *FsManager::kCorruptedSuffix = ".corrupted";
 const char *FsManager::kInstanceMetadataFileName = "instance";
 const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 
-const char *FsManager::kTmpInfix = ".tmp";
-
 FsManagerOpts::FsManagerOpts()
   : wal_path(FLAGS_fs_wal_dir),
     read_only(false) {
@@ -410,7 +408,7 @@ string FsManager::GetTabletMetadataPath(const string& tablet_id) const {
 namespace {
 // Return true if 'fname' is a valid tablet ID.
 bool IsValidTabletId(const string& fname) {
-  if (fname.find(FsManager::kTmpInfix) != string::npos) {
+  if (fname.find(kTmpInfix) != string::npos) {
     LOG(WARNING) << "Ignoring tmp file in tablet metadata dir: " << fname;
     return false;
   }

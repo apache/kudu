@@ -125,8 +125,6 @@ static bool ValidateLogsToRetain(const char* flagname, int value) {
 static bool dummy = google::RegisterFlagValidator(
     &FLAGS_log_min_segments_to_retain, &ValidateLogsToRetain);
 
-static const char kSegmentPlaceholderFileTemplate[] = ".tmp.newsegmentXXXXXX";
-
 namespace kudu {
 namespace log {
 
@@ -969,7 +967,8 @@ Status Log::ReplaceSegmentInReaderUnlocked() {
 Status Log::CreatePlaceholderSegment(const WritableFileOptions& opts,
                                      string* result_path,
                                      shared_ptr<WritableFile>* out) {
-  string path_tmpl = JoinPathSegments(log_dir_, kSegmentPlaceholderFileTemplate);
+  string tmp_suffix = strings::Substitute("$0$1", kTmpInfix, ".newsegmentXXXXXX");
+  string path_tmpl = JoinPathSegments(log_dir_, tmp_suffix);
   VLOG(2) << "Creating temp. file for place holder segment, template: " << path_tmpl;
   unique_ptr<WritableFile> segment_file;
   RETURN_NOT_OK(fs_manager_->env()->NewTempWritableFile(opts,

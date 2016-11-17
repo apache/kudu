@@ -137,9 +137,9 @@ TEST_F(FsManagerTestBase, TestListTablets) {
   string path = fs_manager()->GetTabletMetadataDir();
   unique_ptr<WritableFile> writer;
   ASSERT_OK(env_->NewWritableFile(
-      JoinPathSegments(path, "foo.tmp"), &writer));
+      JoinPathSegments(path, "foo.kudutmp"), &writer));
   ASSERT_OK(env_->NewWritableFile(
-      JoinPathSegments(path, "foo.tmp.abc123"), &writer));
+      JoinPathSegments(path, "foo.kudutmp.abc123"), &writer));
   ASSERT_OK(env_->NewWritableFile(
       JoinPathSegments(path, ".hidden"), &writer));
   ASSERT_OK(env_->NewWritableFile(
@@ -218,7 +218,7 @@ Status CountTmpFiles(Env* env, const string& path, const vector<string>& childre
         RETURN_NOT_OK(env->GetChildren(sub_path, &sub_objects));
         RETURN_NOT_OK(CountTmpFiles(env, sub_path, sub_objects, checked_dirs, count));
       }
-    } else if (name.find(FsManager::kTmpInfix) != string::npos) {
+    } else if (name.find(kTmpInfix) != string::npos) {
       (*count)++;
     }
   }
@@ -244,20 +244,20 @@ TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
   // Create a few tmp files here
   shared_ptr<WritableFile> tmp_writer;
 
-  string tmp_path = JoinPathSegments(fs_manager()->GetWalsRootDir(), "wal.tmp.file");
+  string tmp_path = JoinPathSegments(fs_manager()->GetWalsRootDir(), "wal.kudutmp.file");
   ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
 
-  tmp_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[0], "data1.tmp.file");
+  tmp_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[0], "data1.kudutmp.file");
   ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
 
-  // Not a misprint here: checking for just ".tmp" as well
-  tmp_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[1], "data2.tmp");
+  // Not a misprint here: checking for just ".kudutmp" as well
+  tmp_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[1], "data2.kudutmp");
   ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
 
   // Try with nested directory
   string nested_dir_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[2], "data4");
   ASSERT_OK(env_util::CreateDirIfMissing(fs_manager()->env(), nested_dir_path));
-  tmp_path = JoinPathSegments(nested_dir_path, "data4.tmp.file");
+  tmp_path = JoinPathSegments(nested_dir_path, "data4.kudutmp.file");
   ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
 
   // Add a loop using symlink

@@ -59,7 +59,7 @@ Status ExternalMiniClusterFsInspector::ListFilesInDir(const string& path,
   RETURN_NOT_OK(env_->GetChildren(path, entries));
   auto iter = entries->begin();
   while (iter != entries->end()) {
-    if (*iter == "." || *iter == ".." || iter->find(".tmp.") != string::npos) {
+    if (*iter == "." || *iter == ".." || iter->find(kTmpInfix) != string::npos) {
       iter = entries->erase(iter);
       continue;
     }

@@ -33,6 +33,8 @@ using std::string;
 
 namespace kudu {
 
+const char kTmpInfix[] = ".kudutmp";
+
 std::string JoinPathSegments(const std::string &a,
                              const std::string &b) {
   CHECK(!a.empty()) << "empty first component: " << a;

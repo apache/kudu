@@ -277,7 +277,7 @@ Status TabletCopyClient::Finish() {
 
   if (FLAGS_tablet_copy_save_downloaded_metadata) {
     string meta_path = fs_manager_->GetTabletMetadataPath(tablet_id_);
-    string meta_copy_path = Substitute("$0.copy.$1.tmp", meta_path, start_time_micros_);
+    string meta_copy_path = Substitute("$0.copy.$1$2", meta_path, start_time_micros_, kTmpInfix);
     RETURN_NOT_OK_PREPEND(CopyFile(Env::Default(), meta_path, meta_copy_path,
                                    WritableFileOptions()),
                           "Unable to make copy of tablet metadata");
@@ -452,7 +452,7 @@ Status TabletCopyClient::WriteConsensusMetadata() {
 
   if (FLAGS_tablet_copy_save_downloaded_metadata) {
     string cmeta_path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
-    string cmeta_copy_path = Substitute("$0.copy.$1.tmp", cmeta_path, start_time_micros_);
+    string cmeta_copy_path = Substitute("$0.copy.$1$2", cmeta_path, start_time_micros_, kTmpInfix);
     RETURN_NOT_OK_PREPEND(CopyFile(Env::Default(), cmeta_path, cmeta_copy_path,
                                    WritableFileOptions()),
                           "Unable to make copy of consensus metadata");

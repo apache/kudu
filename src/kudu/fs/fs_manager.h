@@ -96,7 +96,6 @@ class FsManager {
  public:
   static const char *kWalFileNamePrefix;
   static const char *kWalsRecoveryDirSuffix;
-  static const char *kTmpInfix;
 
   // Only for unit tests.
   FsManager(Env* env, const std::string& root_path);

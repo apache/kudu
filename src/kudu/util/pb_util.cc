@@ -105,7 +105,7 @@ std::ostream& operator<< (std::ostream& os, const kudu::pb_util::FileState& stat
 namespace kudu {
 namespace pb_util {
 
-static const char* const kTmpTemplateSuffix = ".tmp.XXXXXX";
+static const char* const kTmpTemplateSuffix = ".XXXXXX";
 
 // Protobuf container constants.
 static const uint32_t kPBContainerInvalidVersion = 0;
@@ -462,7 +462,7 @@ Status ParseFromArray(MessageLite* msg, const uint8_t* data, uint32_t length) {
 Status WritePBToPath(Env* env, const std::string& path,
                      const MessageLite& msg,
                      SyncMode sync) {
-  const string tmp_template = path + kTmpTemplateSuffix;
+  const string tmp_template = path + kTmpInfix + kTmpTemplateSuffix;
   string tmp_path;
 
   unique_ptr<WritableFile> file;
@@ -872,7 +872,7 @@ Status WritePBContainerToPath(Env* env, const std::string& path,
     return Status::AlreadyPresent(Substitute("File $0 already exists", path));
   }
 
-  const string tmp_template = path + kTmpTemplateSuffix;
+  const string tmp_template = path + kTmpInfix + kTmpTemplateSuffix;
   string tmp_path;
 
   unique_ptr<RWFile> file;

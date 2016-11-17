@@ -199,7 +199,9 @@ class TabletCopyTest : public KuduTabletTest {
 
     // Write the file to a temporary location.
     WritableFileOptions opts;
-    string path_template = GetTestPath(Substitute("test_block_$0.tmp.XXXXXX", block_id.ToString()));
+    string path_template = GetTestPath(Substitute("test_block_$0$1.XXXXXX",
+                                                  block_id.ToString(),
+                                                  kTmpInfix));
     unique_ptr<WritableFile> writable_file;
     CHECK_OK(Env::Default()->NewTempWritableFile(opts, path_template, path, &writable_file));
     CHECK_OK(writable_file->Append(Slice(data.data(), data.size())));
