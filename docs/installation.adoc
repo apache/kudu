@@ -362,7 +362,7 @@ make -j4
 +
 ----
 $ sudo apt-get install autoconf automake curl g++ gcc gdb git \
-  krb5-admin-server krb5-kdc krb5-user libsasl2-dev libsasl2-modules \
+  krb5-admin-server krb5-kdc krb5-user libkrb5-dev libsasl2-dev libsasl2-modules \
   libsasl2-modules-gssapi-mit libssl-dev libtool lsb-release make ntp openssl \
   patch pkg-config python rsync unzip vim-common
 ----
@@ -427,7 +427,7 @@ the steps marked *Optional* above.
 #!/bin/bash
 
 sudo apt-get -y install autoconf automake curl g++ gcc gdb git \
-  krb5-admin-server krb5-kdc krb5-user libsasl2-dev libsasl2-modules \
+  krb5-admin-server krb5-kdc krb5-user libkrb5-dev libsasl2-dev libsasl2-modules \
   libsasl2-modules-gssapi-mit libssl-dev libtool lsb-release make ntp openssl \
   patch pkg-config python rsync unzip vim-common
 git clone https://github.com/apache/kudu
@@ -449,7 +449,7 @@ make -j4
 +
 ----
 $ sudo zypper install autoconf automake curl cyrus-sasl-devel \
-  cyrus-sasl-gssapi gcc gcc-c++ gdb git libtool lsb-release make ntp \
+  cyrus-sasl-gssapi gcc gcc-c++ gdb git krb5-devel libtool lsb-release make ntp \
   openssl-devel patch pkg-config python rsync unzip vim
 ----
 
@@ -502,7 +502,7 @@ the steps marked *Optional* above.
 #!/bin/bash
 
 sudo zypper install -y autoconf automake curl cyrus-sasl-devel \
-  cyrus-sasl-gssapi gcc gcc-c++ gdb git libtool lsb-release make ntp \
+  cyrus-sasl-gssapi gcc gcc-c++ gdb git krb5-devel libtool lsb-release make ntp \
   openssl-devel patch pkg-config python rsync unzip vim
 git clone https://github.com/apache/kudu
 cd kudu
