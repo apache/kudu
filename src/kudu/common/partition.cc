@@ -1011,12 +1011,21 @@ namespace {
         }
         break;
       }
-      case INT64:
+      case INT64: {
+         int64_t value;
+         RETURN_NOT_OK(row->GetInt64(idx, &value));
+         if (value < INT64_MAX) {
+           RETURN_NOT_OK(row->SetInt64(idx, value + 1));
+         } else {
+           *success = false;
+         }
+         break;
+       }
       case UNIXTIME_MICROS: {
         int64_t value;
-        RETURN_NOT_OK(row->GetInt64(idx, &value));
+        RETURN_NOT_OK(row->GetUnixTimeMicros(idx, &value));
         if (value < INT64_MAX) {
-          RETURN_NOT_OK(row->SetInt64(idx, value + 1));
+          RETURN_NOT_OK(row->SetUnixTimeMicros(idx, value + 1));
         } else {
           *success = false;
         }

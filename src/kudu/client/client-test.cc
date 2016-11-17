@@ -1386,6 +1386,33 @@ TEST_F(ClientTest, TestExclusiveInclusiveRangeBounds) {
   ASSERT_EQ(0, CountTableRows(table.get()));
 }
 
+TEST_F(ClientTest, TestExclusiveInclusiveUnixTimeMicrosRangeBounds) {
+  // Create test table with range partition using non-default bound types.
+  // KUDU-1722
+  KuduSchemaBuilder builder;
+  KuduSchema u_schema_;
+  builder.AddColumn("key")->Type(KuduColumnSchema::UNIXTIME_MICROS)->NotNull()->PrimaryKey();
+  builder.AddColumn("value")->Type(KuduColumnSchema::INT32)->NotNull();
+  CHECK_OK(builder.Build(&u_schema_));
+  const string table_name = "TestExclusiveInclusiveUnixTimeMicrosRangeBounds";
+  shared_ptr<KuduTable> table;
+
+  unique_ptr<KuduPartialRow> lower_bound(u_schema_.NewRow());
+  ASSERT_OK(lower_bound->SetUnixTimeMicros("key", -1));
+  unique_ptr<KuduPartialRow> upper_bound(u_schema_.NewRow());
+  ASSERT_OK(upper_bound->SetUnixTimeMicros("key", 99));
+
+  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->add_range_partition(lower_bound.release(), upper_bound.release(),
+                                      KuduTableCreator::EXCLUSIVE_BOUND,
+                                      KuduTableCreator::INCLUSIVE_BOUND);
+  ASSERT_OK(table_creator->table_name(table_name)
+                          .schema(&u_schema_)
+                          .num_replicas(1)
+                          .set_range_partition_columns({ "key" })
+                          .Create());
+}
+
 TEST_F(ClientTest, TestMetaCacheExpiry) {
   google::FlagSaver saver;
   FLAGS_table_locations_ttl_ms = 25;
