@@ -42,15 +42,16 @@
 #include "kudu/master/catalog_manager.h"
 
 #include <algorithm>
-#include <boost/optional.hpp>
 #include <condition_variable>
-#include <glog/logging.h>
 #include <memory>
 #include <mutex>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <boost/optional.hpp>
+#include <glog/logging.h>
 
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/common/key_util.h"
@@ -3561,7 +3562,6 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   vector<scoped_refptr<TabletInfo> > tablets_in_range;
   table->GetTabletsInRange(req, &tablets_in_range);
 
-  ServerRegistrationPB reg;
   for (const scoped_refptr<TabletInfo>& tablet : tablets_in_range) {
     Status s = BuildLocationsForTablet(tablet, resp->add_tablet_locations());
     if (s.ok()) {
