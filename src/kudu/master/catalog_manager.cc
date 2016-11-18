@@ -1412,12 +1412,12 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           if (existing_iter != existing_tablets.end()) {
             TabletMetadataLock metadata(existing_iter->second, TabletMetadataLock::READ);
             const auto& partition = metadata.data().pb.partition();
-            found_existing = partition.partition_key_start() == lower_bound ||
+            found_existing = partition.partition_key_start() == lower_bound &&
                              partition.partition_key_end() == upper_bound;
           }
           if (new_iter != new_tablets.end()) {
             const auto& partition = new_iter->second->mutable_metadata()->dirty().pb.partition();
-            found_new = partition.partition_key_start() == lower_bound ||
+            found_new = partition.partition_key_start() == lower_bound &&
                         partition.partition_key_end() == upper_bound;
           }
 

@@ -1304,6 +1304,200 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
   ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // KUDU-1750 Regression cases:
+
+  // DROP [0, 50)  <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 0));
+  ASSERT_OK(upper->SetInt32("c0", 50));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // DROP [50, 100)  <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 50));
+  ASSERT_OK(upper->SetInt32("c0", 100));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // ADD [100, 200)
+  // DROP [100, 150) <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 100));
+  ASSERT_OK(upper->SetInt32("c0", 200));
+  table_alterer->AddRangePartition(lower.release(), upper.release());
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 100));
+  ASSERT_OK(upper->SetInt32("c0", 150));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // ADD [100, 200)
+  // DROP [150, 200)  <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 100));
+  ASSERT_OK(upper->SetInt32("c0", 200));
+  table_alterer->AddRangePartition(lower.release(), upper.release());
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 150));
+  ASSERT_OK(upper->SetInt32("c0", 200));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // ADD [<min>, 0)
+  // DROP [<min>, -50] <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(upper->SetInt32("c0", 0));
+  table_alterer->AddRangePartition(lower.release(), upper.release());
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(upper->SetInt32("c0", -50));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // ADD [<min>, 0)
+  // DROP [<min>, 50] <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(upper->SetInt32("c0", 0));
+  table_alterer->AddRangePartition(lower.release(), upper.release());
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(upper->SetInt32("c0", 50));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // ADD [100, <max>)
+  // DROP [150, <max>] <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 100));
+  table_alterer->AddRangePartition(lower.release(), upper.release());
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 150));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // ADD [100, <max>)
+  // DROP [50, <max>] <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 100));
+  table_alterer->AddRangePartition(lower.release(), upper.release());
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 50));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // Setup for the next few test cases:
+  // ADD [<min>, 0)
+  // ADD [100, <max>)
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(upper->SetInt32("c0", 0));
+  table_alterer->AddRangePartition(lower.release(), upper.release());
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 100));
+  table_alterer->AddRangePartition(lower.release(), upper.release());
+  ASSERT_OK(table_alterer->Alter());
+
+  // DROP [<min>, -50] <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(upper->SetInt32("c0", -50));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // DROP [<min>, 50] <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(upper->SetInt32("c0", 50));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // DROP [150, <max>] <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 150));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // DROP [50, <max>] <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32("c0", 50));
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // DROP [<min>, <max>] <- illegal
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  lower.reset(schema_.NewRow());
+  upper.reset(schema_.NewRow());
+  table_alterer->DropRangePartition(lower.release(), upper.release());
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_EQ(100, CountTableRows(table.get()));
 }
 
 TEST_F(ReplicatedAlterTableTest, TestReplicatedAlter) {
