@@ -1088,6 +1088,9 @@ Status KuduScanner::SetSnapshotRaw(uint64_t snapshot_timestamp) {
   if (data_->open_) {
     return Status::IllegalState("Snapshot timestamp must be set before Open()");
   }
+  if (snapshot_timestamp == 0) {
+    return Status::IllegalState("Snapshot timestamp must be set bigger than 0");
+  }
   data_->mutable_configuration()->SetSnapshotRaw(snapshot_timestamp);
   return Status::OK();
 }
