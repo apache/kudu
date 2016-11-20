@@ -32,7 +32,7 @@ import platform
 import sys
 import subprocess
 
-DEV_NULL = file("/dev/null", "wb")
+DEV_NULL = open("/dev/null", "wb")
 CC = os.environ.get("CC", "cc")
 CXX = os.environ.get("CXX", "c++")
 
@@ -57,17 +57,17 @@ else:
   REQUIRED_TOOLS.append("libtool")
 
 def log_failure_and_exit(error_msg, exc=None):
-  print "***", error_msg
+  print("*** " + error_msg)
   if exc:
-    print exc.message
-    print
-  print "Please refer to docs/installation.adoc for complete installation "
-  print "instructions for your platform."
+    print(exc.message)
+    print("")
+  print("Please refer to docs/installation.adoc for complete installation ")
+  print("instructions for your platform.")
   sys.exit(1)
 
 
 def try_do(status_msg, error_msg, func):
-  print status_msg, "..."
+  print(status_msg + " ...")
   try:
     func()
   except Exception as e:
@@ -81,9 +81,10 @@ def compile(script, flags=None):
   p = subprocess.Popen([CXX, '-o', '/dev/null', '-c', '-x', 'c++', '-'] + flags,
       stderr=subprocess.PIPE,
       stdout=subprocess.PIPE,
-      stdin=subprocess.PIPE)
-  print >>p.stdin, script
-  stdout, stderr = p.communicate()
+      stdin=subprocess.PIPE,
+      universal_newlines=True)
+
+  stdout, stderr = p.communicate(input=script)
   if p.returncode != 0:
     raise Exception("Compilation failed: " + stderr)
 
@@ -92,7 +93,7 @@ def check_tools():
   """ Check that basic build tools are installed. """
   missing = []
   for tool in REQUIRED_TOOLS:
-    print "Checking for " + tool
+    print("Checking for " + tool)
     if subprocess.call(["which", tool], stdout=DEV_NULL, stderr=DEV_NULL) != 0:
       missing.append(tool)
   if missing:
@@ -130,18 +131,18 @@ def check_sasl():
 
 
 def main():
-  print "Running pre-flight checks"
-  print "-------------------------"
-  print "Using C compiler:", CXX
-  print "Using C++ compiler:", CXX
-  print ""
-  print "  (Set $CC and $CXX to change compiler)"
-  print "-------------------------"
+  print("Running pre-flight checks")
+  print("-------------------------")
+  print("Using C compiler: " + CXX)
+  print("Using C++ compiler: " + CXX)
+  print("")
+  print("  (Set $CC and $CXX to change compiler)")
+  print("-------------------------")
   check_tools()
   check_cxx11()
   check_sasl()
-  print "-------------"
-  print "Pre-flight checks succeeded."
+  print("-------------")
+  print("Pre-flight checks succeeded.")
   return 0
 
 if __name__ == "__main__":

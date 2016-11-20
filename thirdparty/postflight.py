@@ -32,7 +32,8 @@ def shell(status_msg, script):
   p = subprocess.Popen(["/bin/bash"],
       stderr=subprocess.PIPE,
       stdout=subprocess.PIPE,
-      stdin=subprocess.PIPE)
+      stdin=subprocess.PIPE,
+      universal_newlines=True)
   stdout, _ = p.communicate(input=script)
   if p.returncode != 0:
     to_print += " FAILED\n"
@@ -40,7 +41,7 @@ def shell(status_msg, script):
       to_print += "==> " + line + "\n"
   else:
     to_print += " PASSED"
-  print to_print
+  print(to_print)
 
   if p.returncode != 0:
     sys.exit(1)
@@ -84,11 +85,11 @@ echo All TSAN dependencies checked
 
 
 def main():
-  print "Running post-flight checks"
-  print "-------------------------"
+  print("Running post-flight checks")
+  print("-------------------------")
   check_tsan_dependencies()
-  print "-------------------------"
-  print "Post-flight checks succeeded."
+  print("-------------------------")
+  print("Post-flight checks succeeded.")
   return 0
 
 if __name__ == "__main__":
