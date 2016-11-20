@@ -253,7 +253,7 @@ Status MiniKdc::WaitForKdcPorts() {
   RETURN_NOT_OK(GetBinaryPath("lsof", {"/sbin", "/usr/sbin"}, &lsof));
 
   vector<string> cmd = {
-    lsof, "-wbn", "-Ffn",
+    lsof, "-wbnP", "-Ffn",
     "-p", std::to_string(kdc_process_->pid()),
     "-a", "-i", "4UDP"};
 
