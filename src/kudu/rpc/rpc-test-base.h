@@ -427,8 +427,11 @@ class RpcTestBase : public KuduTest {
     bld.set_num_reactors(n_reactors);
     bld.set_connection_keepalive_time(
       MonoDelta::FromMilliseconds(keepalive_time_ms_));
+    // In order for the keepalive timing to be accurate, we need to scan connections
+    // significantly more frequently than the keepalive time. This "coarse timer"
+    // granularity determines this.
     bld.set_coarse_timer_granularity(MonoDelta::FromMilliseconds(
-                                       std::min(keepalive_time_ms_, 100)));
+                                       std::min(keepalive_time_ms_ / 5, 100)));
     bld.set_metric_entity(metric_entity_);
     std::shared_ptr<Messenger> messenger;
     CHECK_OK(bld.Build(&messenger));
