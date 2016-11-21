@@ -425,10 +425,10 @@ TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
                                  64 * 1024); // roll every 64KB
   DoWriteTestRowSet(10000, &writer);
 
-  // Should have rolled 5 times.
+  // Should have rolled 4 times.
   vector<shared_ptr<RowSetMetadata> > metas;
   writer.GetWrittenRowSetMetadata(&metas);
-  EXPECT_EQ(5, metas.size());
+  EXPECT_EQ(4, metas.size());
   for (const shared_ptr<RowSetMetadata>& meta : metas) {
     ASSERT_TRUE(meta->HasDataForColumnIdForTests(schema_.column_id(0)));
   }

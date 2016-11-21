@@ -237,37 +237,37 @@ class TypeEncodingResolver {
   // added to the mapping becomes the default
  private:
   TypeEncodingResolver() {
+    AddMapping<UINT8, BIT_SHUFFLE>();
     AddMapping<UINT8, PLAIN_ENCODING>();
     AddMapping<UINT8, RLE>();
-    AddMapping<UINT8, BIT_SHUFFLE>();
+    AddMapping<INT8, BIT_SHUFFLE>();
     AddMapping<INT8, PLAIN_ENCODING>();
     AddMapping<INT8, RLE>();
-    AddMapping<INT8, BIT_SHUFFLE>();
+    AddMapping<UINT16, BIT_SHUFFLE>();
     AddMapping<UINT16, PLAIN_ENCODING>();
     AddMapping<UINT16, RLE>();
-    AddMapping<UINT16, BIT_SHUFFLE>();
+    AddMapping<INT16, BIT_SHUFFLE>();
     AddMapping<INT16, PLAIN_ENCODING>();
     AddMapping<INT16, RLE>();
-    AddMapping<INT16, BIT_SHUFFLE>();
+    AddMapping<UINT32, BIT_SHUFFLE>();
     AddMapping<UINT32, RLE>();
     AddMapping<UINT32, PLAIN_ENCODING>();
-    AddMapping<UINT32, BIT_SHUFFLE>();
+    AddMapping<INT32, BIT_SHUFFLE>();
     AddMapping<INT32, PLAIN_ENCODING>();
     AddMapping<INT32, RLE>();
-    AddMapping<INT32, BIT_SHUFFLE>();
+    AddMapping<UINT64, BIT_SHUFFLE>();
     AddMapping<UINT64, PLAIN_ENCODING>();
     AddMapping<UINT64, RLE>();
-    AddMapping<UINT64, BIT_SHUFFLE>();
+    AddMapping<INT64, BIT_SHUFFLE>();
     AddMapping<INT64, PLAIN_ENCODING>();
     AddMapping<INT64, RLE>();
-    AddMapping<INT64, BIT_SHUFFLE>();
-    AddMapping<FLOAT, PLAIN_ENCODING>();
     AddMapping<FLOAT, BIT_SHUFFLE>();
-    AddMapping<DOUBLE, PLAIN_ENCODING>();
+    AddMapping<FLOAT, PLAIN_ENCODING>();
     AddMapping<DOUBLE, BIT_SHUFFLE>();
+    AddMapping<DOUBLE, PLAIN_ENCODING>();
+    AddMapping<BINARY, DICT_ENCODING>();
     AddMapping<BINARY, PLAIN_ENCODING>();
     AddMapping<BINARY, PREFIX_ENCODING>();
-    AddMapping<BINARY, DICT_ENCODING>();
     AddMapping<BOOL, RLE>();
     AddMapping<BOOL, PLAIN_ENCODING>();
   }

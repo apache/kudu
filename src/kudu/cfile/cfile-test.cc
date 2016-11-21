@@ -689,7 +689,7 @@ TEST_P(TestCFileBothCacheTypes, TestMetadata) {
 
     // Test that, even though we didn't specify an encoding or compression, the
     // resulting file has them explicitly set.
-    ASSERT_EQ(PLAIN_ENCODING, reader->type_encoding_info()->encoding_type());
+    ASSERT_EQ(BIT_SHUFFLE, reader->type_encoding_info()->encoding_type());
     ASSERT_EQ(NO_COMPRESSION, reader->footer().compression());
   }
 }
