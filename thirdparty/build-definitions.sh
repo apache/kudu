@@ -407,11 +407,46 @@ build_bitshuffle() {
   mkdir -p $BITSHUFFLE_BDIR
   pushd $BITSHUFFLE_BDIR
   # bitshuffle depends on lz4, therefore set the flag I$PREFIX/include
-  ${CC:-gcc} $EXTRA_CFLAGS -std=c99 -I$PREFIX/include -O3 -DNDEBUG -fPIC -c \
-    "$BITSHUFFLE_SOURCE/src/bitshuffle_core.c" \
-    "$BITSHUFFLE_SOURCE/src/bitshuffle.c" \
-    "$BITSHUFFLE_SOURCE/src/iochain.c"
-  ar rs bitshuffle.a bitshuffle_core.o bitshuffle.o iochain.o
+
+  # This library has significant optimizations when built with -mavx2. However,
+  # we still need to support non-AVX2-capable hardware. So, we build it twice,
+  # once with the flag and once without, and use some linker tricks to
+  # suffix the AVX2 symbols with '_avx2'. OSX doesn't have objcopy, so we only
+  # do this trick on Linux.
+  if [ -n "$OS_LINUX" ]; then
+    arches="default avx2"
+  else
+    arches="default"
+  fi
+  to_link=""
+  for arch in $arches ; do
+    arch_flag=""
+    if [ "$arch" == "avx2" ]; then
+      arch_flag="-mavx2"
+    fi
+    tmp_obj=bitshuffle_${arch}_tmp.o
+    dst_obj=bitshuffle_${arch}.o
+    ${CC:-gcc} $EXTRA_CFLAGS $arch_flag -std=c99 -I$PREFIX/include -O3 -DNDEBUG -fPIC -c \
+      "$BITSHUFFLE_SOURCE/src/bitshuffle_core.c" \
+      "$BITSHUFFLE_SOURCE/src/bitshuffle.c" \
+      "$BITSHUFFLE_SOURCE/src/iochain.c"
+    # Merge the object files together to produce a combined .o file.
+    ld -r -o $tmp_obj bitshuffle_core.o bitshuffle.o iochain.o
+    # For the AVX2 symbols, suffix them.
+    if [ "$arch" == "avx2" ]; then
+      # Create a mapping file with '<old_sym> <suffixed_sym>' on each line.
+      nm --defined-only --extern-only $tmp_obj | while read addr type sym ; do
+        echo ${sym} ${sym}_${arch}
+      done > renames.txt
+      objcopy --redefine-syms=renames.txt $tmp_obj $dst_obj
+    else
+      mv $tmp_obj $dst_obj
+    fi
+    to_link="$to_link $dst_obj"
+  done
+
+  rm -f bitshuffle.a
+  ar rs bitshuffle.a $to_link
   cp bitshuffle.a $PREFIX/lib/
   cp $BITSHUFFLE_SOURCE/src/bitshuffle.h $PREFIX/include/bitshuffle.h
   cp $BITSHUFFLE_SOURCE/src/bitshuffle_core.h $PREFIX/include/bitshuffle_core.h

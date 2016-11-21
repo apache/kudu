@@ -32,6 +32,7 @@ add_library(cfile
   binary_dict_block.cc
   binary_plain_block.cc
   binary_prefix_block.cc
+  bitshuffle_arch_wrapper.cc
   block_cache.cc
   block_compression.cc
   bloomfile.cc

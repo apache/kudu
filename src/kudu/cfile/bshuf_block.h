@@ -25,8 +25,8 @@
 
 #include <algorithm>
 #include <stdint.h>
-#include <bitshuffle.h>
 
+#include "kudu/cfile/bitshuffle_arch_wrapper.h"
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
@@ -142,12 +142,12 @@ class BShufBlockBuilder : public BlockBuilder {
 
     int num_elems_after_padding = count_ + NumOfPaddingNeeded();
     buffer_.resize(kMaxHeaderSize +
-                   bshuf_compress_lz4_bound(num_elems_after_padding, final_size_of_type, 0));
+                   bitshuffle::compress_lz4_bound(num_elems_after_padding, final_size_of_type, 0));
 
     InlineEncodeFixed32(&buffer_[0], ordinal_pos);
     InlineEncodeFixed32(&buffer_[4], count_);
-    int64_t bytes = bshuf_compress_lz4(data_.data(), &buffer_[kMaxHeaderSize],
-                                    num_elems_after_padding, final_size_of_type, 0);
+    int64_t bytes = bitshuffle::compress_lz4(data_.data(), &buffer_[kMaxHeaderSize],
+                                             num_elems_after_padding, final_size_of_type, 0);
     if (PREDICT_FALSE(bytes < 0)) {
       // This means the bitshuffle function fails.
       // Ideally, this should not happen.
@@ -337,7 +337,8 @@ class BShufBlockDecoder : public BlockDecoder {
       int64_t bytes;
       decoded_.resize(num_elems_after_padding_ * size_of_type);
       uint8_t* in = const_cast<uint8_t*>(&data_[kHeaderSize]);
-      bytes = bshuf_decompress_lz4(in, decoded_.data(), num_elems_after_padding_, size_of_type, 0);
+      bytes = bitshuffle::decompress_lz4(in, decoded_.data(), num_elems_after_padding_,
+                                         size_of_type, 0);
       if (PREDICT_FALSE(bytes < 0)) {
         // Ideally, this should not happen.
         AbortWithBitShuffleError(bytes);
