@@ -24,7 +24,8 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SQLContext, SaveMode}
-import org.apache.kudu.Type
+import org.apache.kudu.{Type, ColumnSchema}
+
 import org.apache.kudu.annotations.InterfaceStability
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
 import org.apache.kudu.client._
@@ -38,7 +39,8 @@ import org.apache.kudu.client._
   * operations through [[org.apache.spark.sql.DataFrameReader.format]].
   */
 @InterfaceStability.Unstable
-class DefaultSource extends RelationProvider with CreatableRelationProvider {
+class DefaultSource extends RelationProvider with CreatableRelationProvider
+  with SchemaRelationProvider {
 
   val TABLE_KEY = "kudu.table"
   val KUDU_MASTER = "kudu.master"
@@ -58,18 +60,9 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
       throw new IllegalArgumentException(
         s"Kudu table name must be specified in create options using key '$TABLE_KEY'"))
     val kuduMaster = parameters.getOrElse(KUDU_MASTER, "localhost")
+    val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
 
-    val opParam = parameters.getOrElse(OPERATION, "upsert")
-    val operationType = opParam.toLowerCase match {
-      case "insert" => Insert
-      case "insert-ignore" => InsertIgnore
-      case "upsert" => Upsert
-      case "update" => Update
-      case "delete" => Delete
-      case _ => throw new IllegalArgumentException(s"Unsupported operation type '$opParam'")
-    }
-
-    new KuduRelation(tableName, kuduMaster, operationType)(sqlContext)
+    new KuduRelation(tableName, kuduMaster, operationType, None)(sqlContext)
   }
 
   /**
@@ -93,6 +86,28 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
 
     kuduRelation
   }
+
+  override def createRelation(sqlContext: SQLContext, parameters: Map[String, String],
+                              schema: StructType): BaseRelation = {
+    val tableName = parameters.getOrElse(TABLE_KEY,
+      throw new IllegalArgumentException(s"Kudu table name must be specified in create options " +
+        s"using key '$TABLE_KEY'"))
+    val kuduMaster = parameters.getOrElse(KUDU_MASTER, "localhost")
+    val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
+
+    new KuduRelation(tableName, kuduMaster, operationType, Some(schema))(sqlContext)
+  }
+
+  private def getOperationType(opParam: String): OperationType = {
+    opParam.toLowerCase match {
+      case "insert" => Insert
+      case "insert-ignore" => InsertIgnore
+      case "upsert" => Upsert
+      case "update" => Update
+      case "delete" => Delete
+      case _ => throw new IllegalArgumentException(s"Unsupported operation type '$opParam'")
+    }
+  }
 }
 
 /**
@@ -101,16 +116,18 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider {
   * @param tableName Kudu table that we plan to read from
   * @param masterAddrs Kudu master addresses
   * @param operationType The default operation type to perform when writing to the relation
+  * @param userSchema A schema used to select columns for the relation
   * @param sqlContext SparkSQL context
   */
 @InterfaceStability.Unstable
 class KuduRelation(private val tableName: String,
                    private val masterAddrs: String,
-                   private val operationType: OperationType)(
-                   val sqlContext: SQLContext)
-extends BaseRelation
-with PrunedFilteredScan
-with InsertableRelation {
+                   private val operationType: OperationType,
+                   private val userSchema: Option[StructType])(
+                    val sqlContext: SQLContext)
+  extends BaseRelation
+    with PrunedFilteredScan
+    with InsertableRelation {
 
   import KuduRelation._
 
@@ -127,13 +144,19 @@ with InsertableRelation {
     * @return schema generated from the Kudu table's schema
     */
   override def schema: StructType = {
-    val fields: Array[StructField] =
-      table.getSchema.getColumns.asScala.map { columnSchema =>
-        val sparkType = kuduTypeToSparkType(columnSchema.getType)
-        StructField(columnSchema.getName, sparkType, columnSchema.isNullable)
-      }.toArray
+    userSchema match {
+      case Some(x) =>
+        StructType(x.fields.map(uf => table.getSchema.getColumn(uf.name))
+          .map(kuduColumnToSparkField))
+      case None =>
+        StructType(table.getSchema.getColumns.asScala.map(kuduColumnToSparkField).toArray)
+    }
+  }
 
-    new StructType(fields)
+  def kuduColumnToSparkField: (ColumnSchema) => StructField = {
+    columnSchema =>
+      val sparkType = kuduTypeToSparkType(columnSchema.getType)
+      new StructField(columnSchema.getName, sparkType, columnSchema.isNullable)
   }
 
   /**

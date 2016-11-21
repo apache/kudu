@@ -25,19 +25,21 @@ import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
 
 import com.google.common.collect.ImmutableList
-import org.apache.spark.sql.SQLContext
+
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.types.{DataTypes, StructField, StructType};
 import org.junit.Assert._
 import org.junit.runner.RunWith
+import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfter, FunSuite}
 
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.{Schema, Type}
-import org.apache.kudu.client.CreateTableOptions;
+import org.apache.kudu.client.CreateTableOptions
 
 @RunWith(classOf[JUnitRunner])
-class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
+class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter with Matchers {
 
   test("timestamp conversion") {
     val epoch = new Timestamp(0)
@@ -449,5 +451,37 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
     assert(checkDf.schema === df.schema)
     assertTrue(kuduContext.tableExists(newTable))
     assert(checkDf.count == 10)
+  }
+
+  test("create relation with schema") {
+
+    // user-supplied schema that is compatible with actual schema, but with the key at the end
+    val userSchema: StructType = StructType(List(
+      StructField("c4_long", DataTypes.LongType),
+      StructField("key", DataTypes.IntegerType)
+    ))
+
+    val dfDefaultSchema = sqlContext.read.options(kuduOptions).kudu
+    assertEquals(11, dfDefaultSchema.schema.fields.length)
+
+    val dfWithUserSchema = sqlContext.read.options(kuduOptions).schema(userSchema).kudu
+    assertEquals(2, dfWithUserSchema.schema.fields.length)
+
+    dfWithUserSchema.limit(10).collect()
+    assertTrue(dfWithUserSchema.columns.deep == Array("c4_long", "key").deep)
+  }
+
+  test("create relation with invalid schema") {
+
+    // user-supplied schema that is NOT compatible with actual schema
+    val userSchema: StructType = StructType(List(
+      StructField("foo", DataTypes.LongType),
+      StructField("bar", DataTypes.IntegerType)
+    ))
+
+    intercept[IllegalArgumentException] {
+      sqlContext.read.options(kuduOptions).schema(userSchema).kudu
+    }.getMessage should include ("Unknown column: foo")
+
   }
 }
