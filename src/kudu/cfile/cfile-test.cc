@@ -352,8 +352,8 @@ TEST_P(TestCFileBothCacheTypes, TestWrite100MFileInts) {
   BlockId block_id;
   LOG_TIMING(INFO, "writing 100m ints") {
     LOG(INFO) << "Starting writefile";
-    UInt32DataGenerator<false> generator;
-    WriteTestFile(&generator, GROUP_VARINT, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
+    Int32DataGenerator<false> generator;
+    WriteTestFile(&generator, BIT_SHUFFLE, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
     LOG(INFO) << "Done writing";
   }
 
@@ -370,7 +370,7 @@ TEST_P(TestCFileBothCacheTypes, TestWrite100MFileNullableInts) {
   BlockId block_id;
   LOG_TIMING(INFO, "writing 100m nullable ints") {
     LOG(INFO) << "Starting writefile";
-    UInt32DataGenerator<true> generator;
+    Int32DataGenerator<true> generator;
     WriteTestFile(&generator, PLAIN_ENCODING, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
     LOG(INFO) << "Done writing";
   }
