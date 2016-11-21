@@ -250,9 +250,6 @@ class ConsistencyITest : public MiniClusterITestBase {
 // in the row history if T1 and T2 are performed in different servers,
 // as T2 can be assigned a timestamp that is lower than T1.
 //
-// The test is disabled because it fails due to the absense of timestamp
-// propagation. Remove the 'DISABLED_' prefix, recompile and run if needed.
-//
 // The scenario to expose inconsistency when not propagating the timestamp
 // for the scan operations:
 //
@@ -396,7 +393,7 @@ TEST_F(ConsistencyITest, TestTimestampPropagationFromScans) {
 //        the first tablet and difference in server clocks, not all rows would
 //        be visible the the scan.
 //
-TEST_F(ConsistencyITest, DISABLED_TestSnapshotScanTimestampReuse) {
+TEST_F(ConsistencyITest, TestSnapshotScanTimestampReuse) {
   const int32_t offset_usec = FLAGS_max_clock_sync_error_usec / 2;
   // Assuming the offset is specified as a positive number.
   ASSERT_GT(offset_usec, 0);

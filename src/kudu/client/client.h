@@ -1901,7 +1901,8 @@ class KUDU_EXPORT KuduScanner {
   FRIEND_TEST(ClientTest, TestScanFaultTolerance);
   FRIEND_TEST(ClientTest, TestScanNoBlockCaching);
   FRIEND_TEST(ClientTest, TestScanTimeout);
-  FRIEND_TEST(ConsistencyITest, DISABLED_TestSnapshotScanTimestampReuse);
+  FRIEND_TEST(ClientTest, TestReadAtSnapshotNoTimestampSet);
+  FRIEND_TEST(ConsistencyITest, TestSnapshotScanTimestampReuse);
 
   // Owned.
   Data* data_;

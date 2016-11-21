@@ -3896,6 +3896,73 @@ TEST_F(ClientTest, TestScanAtLatestObservedTimestamp) {
   }
 }
 
+// Peform a READ_AT_SNAPSHOT scan with no explicit snapshot timestamp specified
+// and verify that the timestamp received in the first tablet server's response
+// is set into the scan configuration and used for subsequent requests
+// sent to other tablet servers hosting the table's data.
+// Basically, this is a unit test for KUDU-1189.
+TEST_F(ClientTest, TestReadAtSnapshotNoTimestampSet) {
+  // Number of tablets which host the tablet data.
+  static const size_t kTabletsNum = 3;
+  static const size_t kRowsPerTablet = 2;
+
+  shared_ptr<KuduTable> table;
+  {
+    vector<unique_ptr<KuduPartialRow>> rows;
+    for (size_t i = 1; i < kTabletsNum; ++i) {
+      unique_ptr<KuduPartialRow> row(schema_.NewRow());
+      CHECK_OK(row->SetInt32(0, i * kRowsPerTablet));
+      rows.push_back(std::move(row));
+    }
+    ASSERT_NO_FATAL_FAILURE(CreateTable("test_table", 1,
+                                        std::move(rows), {}, &table));
+    // Insert some data into the table, so each tablet would get populated.
+    shared_ptr<KuduSession> session(client_->NewSession());
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    for (size_t i = 0; i < kTabletsNum * kRowsPerTablet; ++i) {
+      gscoped_ptr<KuduInsert> insert(BuildTestRow(table.get(), i));
+      ASSERT_OK(session->Apply(insert.release()));
+    }
+    FlushSessionOrDie(session);
+  }
+
+  // Now, run a scan in READ_AT_SNAPSHOT mode with no timestamp specified.
+  // The scan should fetch all the inserted rows. Since it's a multi-tablet
+  // scan, in the process there should be one NextBatch() per tablet.
+  KuduScanner sc(table.get());
+  ASSERT_OK(sc.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+
+  // The scan configuration object should not contain the snapshot timestamp:
+  // since its a fresh scan object with no snashot timestamp set.
+  ASSERT_FALSE(sc.data_->configuration().has_snapshot_timestamp());
+
+  ASSERT_OK(sc.Open());
+  // The reference timestamp.
+  ASSERT_TRUE(sc.data_->configuration().has_snapshot_timestamp());
+  const uint64_t ts_ref = sc.data_->configuration().snapshot_timestamp();
+  ASSERT_TRUE(sc.data_->last_response_.has_snap_timestamp());
+  EXPECT_EQ(ts_ref, sc.data_->last_response_.snap_timestamp());
+
+  // On some of the KuduScanner::NextBatch() calls the client connects to the
+  // next tablet server and fetches rows from there. It's necessary to check
+  // that the initial timestamp received from the very first tablet server
+  // stays as in the scan configuration, with no modification.
+  size_t total_row_count = 0;
+  while (sc.HasMoreRows()) {
+    const uint64_t ts_pre = sc.data_->configuration().snapshot_timestamp();
+    EXPECT_EQ(ts_ref, ts_pre);
+
+    KuduScanBatch batch;
+    ASSERT_OK(sc.NextBatch(&batch));
+    const size_t row_count = batch.NumRows();
+    total_row_count += row_count;
+
+    const uint64_t ts_post = sc.data_->configuration().snapshot_timestamp();
+    EXPECT_EQ(ts_ref, ts_post);
+  }
+  EXPECT_EQ(kTabletsNum * kRowsPerTablet, total_row_count);
+}
+
 TEST_F(ClientTest, TestClonePredicates) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          2, 0));

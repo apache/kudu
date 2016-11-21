@@ -409,11 +409,18 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   // primary key.  This is used when retrying the scan elsewhere.  The last
   // primary key is also updated on each scan response.
   if (configuration().is_fault_tolerant()) {
-    CHECK(last_response_.has_snap_timestamp());
-    configuration_.SetSnapshotRaw(last_response_.snap_timestamp());
     if (last_response_.has_last_primary_key()) {
       last_primary_key_ = last_response_.last_primary_key();
     }
+  }
+
+  if (configuration_.read_mode() == KuduScanner::READ_AT_SNAPSHOT &&
+      !configuration_.has_snapshot_timestamp()) {
+    // There must be a snapshot timestamp returned by the tablet server:
+    // it's the first response from the tablet server when scanning in the
+    // READ_AT_SNAPSHOT mode with unspecified snapshot timestamp.
+    CHECK(last_response_.has_snap_timestamp());
+    configuration_.SetSnapshotRaw(last_response_.snap_timestamp());
   }
 
   if (last_response_.has_propagated_timestamp()) {
