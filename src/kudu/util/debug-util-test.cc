@@ -23,6 +23,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
@@ -83,6 +84,11 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
   CountDownLatch l(1);
   scoped_refptr<Thread> t;
   ASSERT_OK(Thread::Create("test", "test thread", &SleeperThread, &l, &t));
+  auto cleanup_thr = MakeScopedCleanup([&]() {
+      // Allow the thread to finish.
+      l.CountDown();
+      t->Join();
+    });
 
   // We have to loop a little bit because it takes a little while for the thread
   // to start up and actually call our function.
@@ -124,10 +130,6 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
 
   // Re-enable so that other tests pass.
   ASSERT_OK(SetStackTraceSignal(SIGUSR2));
-
-  // Allow the thread to finish.
-  l.CountDown();
-  t->Join();
 }
 
 // Test which dumps all known threads within this process.
