@@ -774,37 +774,42 @@ TEST_F(ClientTest, TestScanAtFutureTimestamp) {
 
 TEST_F(ClientTest, TestScanMultiTablet) {
   // 5 tablets, each with 10 rows worth of space.
-  gscoped_ptr<KuduPartialRow> row(schema_.NewRow());
-  vector<unique_ptr<KuduPartialRow>> rows;
-  for (int i = 1; i < 5; i++) {
-    unique_ptr<KuduPartialRow> row(schema_.NewRow());
-    CHECK_OK(row->SetInt32(0, i * 10));
-    rows.push_back(std::move(row));
-  }
-  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  static const int kTabletsNum = 5;
+  static const int kRowsPerTablet = 10;
+
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable("TestScanMultiTablet", 1, std::move(rows), {}, &table));
+  {
+    vector<unique_ptr<KuduPartialRow>> rows;
+    for (int i = 1; i < kTabletsNum; ++i) {
+      unique_ptr<KuduPartialRow> row(schema_.NewRow());
+      ASSERT_OK(row->SetInt32(0, i * kRowsPerTablet));
+      rows.emplace_back(std::move(row));
+    }
+    ASSERT_NO_FATAL_FAILURE(CreateTable("TestScanMultiTablet", 1,
+                                        std::move(rows), {}, &table));
+  }
 
   // Insert rows with keys 12, 13, 15, 17, 22, 23, 25, 27...47 into each
   // tablet, except the first which is empty.
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(5000);
-  for (int i = 1; i < 5; i++) {
+  for (int i = 1; i < kTabletsNum; ++i) {
     gscoped_ptr<KuduInsert> insert;
-    insert = BuildTestRow(table.get(), 2 + (i * 10));
+    insert = BuildTestRow(table.get(), 2 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(insert.release()));
-    insert = BuildTestRow(table.get(), 3 + (i * 10));
+    insert = BuildTestRow(table.get(), 3 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(insert.release()));
-    insert = BuildTestRow(table.get(), 5 + (i * 10));
+    insert = BuildTestRow(table.get(), 5 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(insert.release()));
-    insert = BuildTestRow(table.get(), 7 + (i * 10));
+    insert = BuildTestRow(table.get(), 7 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(insert.release()));
   }
   FlushSessionOrDie(session);
 
   // Run through various scans.
-  ASSERT_EQ(16, CountRowsFromClient(table.get(), kNoBound, kNoBound));
+  ASSERT_EQ(4 * (kTabletsNum - 1),
+            CountRowsFromClient(table.get(), kNoBound, kNoBound));
   ASSERT_EQ(3, CountRowsFromClient(table.get(), kNoBound, 15));
   ASSERT_EQ(9, CountRowsFromClient(table.get(), 27, kNoBound));
   ASSERT_EQ(3, CountRowsFromClient(table.get(), 0, 15));
@@ -813,20 +818,22 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   ASSERT_EQ(8, CountRowsFromClient(table.get(), 0, 30));
   ASSERT_EQ(6, CountRowsFromClient(table.get(), 14, 30));
   ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 50, kNoBound));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), kTabletsNum * kRowsPerTablet,
+                                   kNoBound));
 
   // Update every other row
-  for (int i = 1; i < 5; ++i) {
+  for (int i = 1; i < kTabletsNum; ++i) {
     gscoped_ptr<KuduUpdate> update;
-    update = UpdateTestRow(table.get(), 2 + i * 10);
+    update = UpdateTestRow(table.get(), 2 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(update.release()));
-    update = UpdateTestRow(table.get(), 5 + i * 10);
+    update = UpdateTestRow(table.get(), 5 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(update.release()));
   }
   FlushSessionOrDie(session);
 
   // Check all counts the same (make sure updates don't change # of rows)
-  ASSERT_EQ(16, CountRowsFromClient(table.get(), kNoBound, kNoBound));
+  ASSERT_EQ(4 * (kTabletsNum - 1),
+            CountRowsFromClient(table.get(), kNoBound, kNoBound));
   ASSERT_EQ(3, CountRowsFromClient(table.get(), kNoBound, 15));
   ASSERT_EQ(9, CountRowsFromClient(table.get(), 27, kNoBound));
   ASSERT_EQ(3, CountRowsFromClient(table.get(), 0, 15));
@@ -835,20 +842,22 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   ASSERT_EQ(8, CountRowsFromClient(table.get(), 0, 30));
   ASSERT_EQ(6, CountRowsFromClient(table.get(), 14, 30));
   ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 50, kNoBound));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), kTabletsNum * kRowsPerTablet,
+                                   kNoBound));
 
   // Delete half the rows
-  for (int i = 1; i < 5; ++i) {
+  for (int i = 1; i < kTabletsNum; ++i) {
     gscoped_ptr<KuduDelete> del;
-    del = DeleteTestRow(table.get(), 5 + i*10);
+    del = DeleteTestRow(table.get(), 5 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(del.release()));
-    del = DeleteTestRow(table.get(), 7 + i*10);
+    del = DeleteTestRow(table.get(), 7 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(del.release()));
   }
   FlushSessionOrDie(session);
 
   // Check counts changed accordingly
-  ASSERT_EQ(8, CountRowsFromClient(table.get(), kNoBound, kNoBound));
+  ASSERT_EQ(2 * (kTabletsNum - 1),
+            CountRowsFromClient(table.get(), kNoBound, kNoBound));
   ASSERT_EQ(2, CountRowsFromClient(table.get(), kNoBound, 15));
   ASSERT_EQ(4, CountRowsFromClient(table.get(), 27, kNoBound));
   ASSERT_EQ(2, CountRowsFromClient(table.get(), 0, 15));
@@ -857,14 +866,15 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   ASSERT_EQ(4, CountRowsFromClient(table.get(), 0, 30));
   ASSERT_EQ(2, CountRowsFromClient(table.get(), 14, 30));
   ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 50, kNoBound));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), kTabletsNum * kRowsPerTablet,
+                                   kNoBound));
 
   // Delete rest of rows
-  for (int i = 1; i < 5; ++i) {
+  for (int i = 1; i < kTabletsNum; ++i) {
     gscoped_ptr<KuduDelete> del;
-    del = DeleteTestRow(table.get(), 2 + i*10);
+    del = DeleteTestRow(table.get(), 2 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(del.release()));
-    del = DeleteTestRow(table.get(), 3 + i*10);
+    del = DeleteTestRow(table.get(), 3 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(del.release()));
   }
   FlushSessionOrDie(session);
@@ -879,7 +889,8 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 30));
   ASSERT_EQ(0, CountRowsFromClient(table.get(), 14, 30));
   ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 50, kNoBound));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), kTabletsNum * kRowsPerTablet,
+                                   kNoBound));
 }
 
 TEST_F(ClientTest, TestScanEmptyTable) {
