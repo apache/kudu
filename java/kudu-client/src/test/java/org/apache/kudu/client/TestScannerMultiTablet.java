@@ -18,7 +18,9 @@ package org.apache.kudu.client;
 
 import static org.apache.kudu.Type.STRING;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 
@@ -190,6 +192,35 @@ public class TestScannerMultiTablet extends BaseKuduTest {
         .build();
 
     assertEquals(9, countRowsInScan(scanner));
+  }
+
+  @Test(timeout = 100000)
+  public void testReadAtSnapshotNoTimestamp() throws Exception {
+    // Perform scan in READ_AT_SNAPSHOT mode with no snapshot timestamp
+    // specified. Verify that the scanner timestamp is set from the tablet
+    // server response.
+    AsyncKuduScanner scanner = client.newScannerBuilder(table)
+            .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
+            .build();
+    assertEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
+    KuduScanner syncScanner = new KuduScanner(scanner);
+    assertEquals(scanner.getReadMode(), syncScanner.getReadMode());
+
+    assertTrue(syncScanner.hasMoreRows());
+    assertEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
+
+    int rowCount = syncScanner.nextRows().getNumRows();
+    // At this point, the call to the first tablet server should have been
+    // done already, so check the snapshot timestamp.
+    final long tsRef = scanner.getSnapshotTimestamp();
+    assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, tsRef);
+
+    assertTrue(syncScanner.hasMoreRows());
+    while (syncScanner.hasMoreRows()) {
+      rowCount += syncScanner.nextRows().getNumRows();
+      assertEquals(tsRef, scanner.getSnapshotTimestamp());
+    }
+    assertEquals(9, rowCount);
   }
 
   private AsyncKuduScanner getScanner(String lowerBoundKeyOne,

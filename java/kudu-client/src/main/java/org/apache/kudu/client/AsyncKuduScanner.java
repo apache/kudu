@@ -178,7 +178,7 @@ public final class AsyncKuduScanner {
 
   private final Common.OrderMode orderMode;
 
-  private final long htTimestamp;
+  private long htTimestamp;
 
   private final ReplicaSelection replicaSelection;
 
@@ -368,11 +368,18 @@ public final class AsyncKuduScanner {
     if (closed) {  // We're already done scanning.
       return Deferred.fromResult(null);
     } else if (tablet == null) {
-
       Callback<Deferred<RowResultIterator>, AsyncKuduScanner.Response> cb =
           new Callback<Deferred<RowResultIterator>, Response>() {
         @Override
         public Deferred<RowResultIterator> call(Response resp) throws Exception {
+          if (htTimestamp == AsyncKuduClient.NO_TIMESTAMP &&
+              resp.scanTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+            // If the server-assigned timestamp is present in the tablet
+            // server's response, store it in the scanner. The stored value
+            // is used for read operations at other tablet servers in the
+            // context of the same scan.
+            htTimestamp = resp.scanTimestamp;
+          }
           if (!resp.more || resp.scannerId == null) {
             scanFinished();
             return Deferred.fromResult(resp.data); // there might be data to return
@@ -639,17 +646,35 @@ public final class AsyncKuduScanner {
      */
     private final boolean more;
 
+    /**
+     * Server-assigned timestamp for the scan operation. It's used when
+     * the scan operates in READ_AT_SNAPSHOT mode and the timestamp is not
+     * specified explicitly. The field is set with the snapshot timestamp sent
+     * in the response from the very first tablet server contacted while
+     * fetching data from corresponding tablets. If the tablet server does not
+     * send the snapshot timestamp in its response, this field is assigned
+     * a special value AsyncKuduClient.NO_TIMESTAMP.
+     */
+    private final long scanTimestamp;
+
     Response(final byte[] scannerId,
              final RowResultIterator data,
-             final boolean more) {
+             final boolean more,
+             final long scanTimestamp) {
       this.scannerId = scannerId;
       this.data = data;
       this.more = more;
+      this.scanTimestamp = scanTimestamp;
     }
 
     public String toString() {
-      return "AsyncKuduScanner$Response(scannerId=" + Bytes.pretty(scannerId) +
-          ", data=" + data + ", more=" + more +  ") ";
+      String ret = "AsyncKuduScanner$Response(scannerId=" + Bytes.pretty(scannerId) + ", data=" + data +
+          ", more=" + more;
+      if (scanTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+        ret += ", responseScanTimestamp =" + scanTimestamp;
+      }
+      ret += ")";
+      return ret;
     }
   }
 
@@ -790,7 +815,9 @@ public final class AsyncKuduScanner {
             Bytes.pretty(scannerId));
         throw new NonRecoverableException(statusIllegalState);
       }
-      Response response = new Response(id, iterator, hasMore);
+      Response response = new Response(id, iterator, hasMore,
+          resp.hasSnapTimestamp() ? resp.getSnapTimestamp()
+                                  : AsyncKuduClient.NO_TIMESTAMP);
       if (LOG.isDebugEnabled()) {
         LOG.debug(response.toString());
       }
