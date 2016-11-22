@@ -708,7 +708,6 @@ public final class AsyncKuduScanner {
           newBuilder.setLimit(limit); // currently ignored
           newBuilder.addAllProjectedColumns(ProtobufHelper.schemaToListPb(schema));
           newBuilder.setTabletId(ZeroCopyLiteralByteString.wrap(tablet.getTabletIdAsBytes()));
-          newBuilder.setReadMode(AsyncKuduScanner.this.getReadMode().pbVersion());
           newBuilder.setOrderMode(AsyncKuduScanner.this.getOrderMode());
           newBuilder.setCacheBlocks(cacheBlocks);
           // if the last propagated timestamp is set send it with the scan
