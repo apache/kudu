@@ -151,6 +151,48 @@ void EncodeRangeKeysFromPredicates(const Schema& schema,
 }
 } // anonymous namespace
 
+vector<bool> PartitionPruner::PruneHashComponent(
+    const PartitionSchema& partition_schema,
+    const PartitionSchema::HashBucketSchema& hash_bucket_schema,
+    const Schema& schema,
+    const ScanSpec& scan_spec) {
+  vector<bool> hash_bucket_bitset(hash_bucket_schema.num_buckets, false);
+  vector<string> encoded_strings(1, "");
+  for (size_t col_offset = 0; col_offset < hash_bucket_schema.column_ids.size(); ++col_offset) {
+    vector<string> new_encoded_strings;
+    const ColumnSchema& column = schema.column_by_id(hash_bucket_schema.column_ids[col_offset]);
+    const ColumnPredicate& predicate = FindOrDie(scan_spec.predicates(), column.name());
+    const KeyEncoder<string>& encoder = GetKeyEncoder<string>(column.type_info());
+
+    vector<const void*> predicate_values;
+    if (predicate.predicate_type() == PredicateType::Equality) {
+      predicate_values.push_back(predicate.raw_lower());
+    } else {
+      CHECK(predicate.predicate_type() == PredicateType::InList);
+      predicate_values.insert(predicate_values.end(),
+                              predicate.raw_values().begin(),
+                              predicate.raw_values().end());
+    }
+    // For each of the encoded string, replicate it by the number of values in
+    // equality and in-list predicate.
+    for (const string& encoded_string : encoded_strings) {
+      for (const void* predicate_value : predicate_values) {
+        string new_encoded_string = encoded_string;
+        encoder.Encode(predicate_value,
+                       col_offset + 1 == hash_bucket_schema.column_ids.size(),
+                       &new_encoded_string);
+        new_encoded_strings.emplace_back(new_encoded_string);
+      }
+    }
+    encoded_strings.swap(new_encoded_strings);
+  }
+  for (const string& encoded_string : encoded_strings) {
+    uint32_t hash = partition_schema.BucketForEncodedColumns(encoded_string, hash_bucket_schema);
+    hash_bucket_bitset[hash] = true;
+  }
+  return hash_bucket_bitset;
+}
+
 void PartitionPruner::Init(const Schema& schema,
                            const PartitionSchema& partition_schema,
                            const ScanSpec& scan_spec) {
@@ -208,8 +250,8 @@ void PartitionPruner::Init(const Schema& schema,
   // examples above:
   //
   // 1) The partition keys are truncated after the final constrained component
-  //    (hash bucket components are constrained when the scan is limited to a
-  //    single bucket via equality predicates on that component, while range
+  //    (hash bucket components are constrained when the scan is limited to some
+  //    bucket via equality or in-list predicates on that component, while range
   //    components are constrained if they have an upper or lower bound via
   //    range or equality predicates on that component).
   //
@@ -220,7 +262,8 @@ void PartitionPruner::Init(const Schema& schema,
   // 3) The number of partition key ranges in the result is equal to the product
   //    of the number of buckets of each unconstrained hash component which come
   //    before a final constrained component. If there are no unconstrained hash
-  //    components, then the number of partition key ranges is one.
+  //    components and no in-list predicates, then the number of
+  //    partition key ranges is one.
 
   // Step 1: Build the range portion of the partition key.
   string range_lower_bound;
@@ -244,32 +287,30 @@ void PartitionPruner::Init(const Schema& schema,
 
   // Step 2: Create the hash bucket portion of the partition key.
 
-  // The list of hash buckets per hash component, or none if the component is
-  // not constrained.
-  vector<optional<uint32_t>> hash_buckets;
-  hash_buckets.reserve(partition_schema.hash_bucket_schemas_.size());
+  // The list of hash buckets bitset per hash component
+  vector<vector<bool>> hash_bucket_bitsets;
+  hash_bucket_bitsets.reserve(partition_schema.hash_bucket_schemas_.size());
   for (int hash_idx = 0; hash_idx < partition_schema.hash_bucket_schemas_.size(); hash_idx++) {
     const auto& hash_bucket_schema = partition_schema.hash_bucket_schemas_[hash_idx];
-    string encoded_columns;
     bool can_prune = true;
-    for (int col_offset = 0; col_offset < hash_bucket_schema.column_ids.size(); col_offset++) {
-      const ColumnSchema& column = schema.column_by_id(hash_bucket_schema.column_ids[col_offset]);
-      const ColumnPredicate* predicate = FindOrNull(scan_spec.predicates(), column.name());
-      if (predicate == nullptr || predicate->predicate_type() != PredicateType::Equality) {
+    for (const ColumnId& column_id : hash_bucket_schema.column_ids) {
+      const ColumnSchema& column = schema.column_by_id(column_id);
+      const ColumnPredicate *predicate = FindOrNull(scan_spec.predicates(), column.name());
+      if (predicate == nullptr ||
+          (predicate->predicate_type() != PredicateType::Equality &&
+           predicate->predicate_type() != PredicateType::InList)) {
         can_prune = false;
         break;
       }
-
-      const KeyEncoder<string>& encoder = GetKeyEncoder<string>(column.type_info());
-      encoder.Encode(predicate->raw_lower(),
-                     col_offset + 1 == hash_bucket_schema.column_ids.size(),
-                     &encoded_columns);
     }
     if (can_prune) {
-      hash_buckets.push_back(partition_schema.BucketForEncodedColumns(encoded_columns,
-                                                                      hash_bucket_schema));
+      auto hash_bucket_bitset = PruneHashComponent(partition_schema,
+                                                   hash_bucket_schema,
+                                                   schema,
+                                                   scan_spec);
+      hash_bucket_bitsets.emplace_back(std::move(hash_bucket_bitset));
     } else {
-      hash_buckets.push_back(boost::none);
+      hash_bucket_bitsets.emplace_back(hash_bucket_schema.num_buckets, true);
     }
   }
 
@@ -282,20 +323,19 @@ void PartitionPruner::Init(const Schema& schema,
     // Search the hash bucket constraints from right to left, looking for the
     // first constrained component.
     constrained_index = partition_schema.hash_bucket_schemas_.size() -
-                        distance(hash_buckets.rbegin(),
-                                 find_if(hash_buckets.rbegin(),
-                                         hash_buckets.rend(),
-                                         [] (const optional<uint32_t>& x) { return x; }));
+                        distance(hash_bucket_bitsets.rbegin(),
+                                 find_if(hash_bucket_bitsets.rbegin(),
+                                         hash_bucket_bitsets.rend(),
+                                         [] (const vector<bool>& x) {
+                                           return std::find(x.begin(), x.end(), true) != x.end();
+                                         }));
   }
 
   // Build up a set of partition key ranges out of the hash components.
   //
-  // Each constrained hash component simply appends its bucket number to the
+  // Each hash component simply appends its bucket number to the
   // partition key ranges (possibly incrementing the upper bound by one bucket
   // number if this is the final constraint, see note 2 in the example above).
-  //
-  // Each unconstrained hash component results in creating a new partition key
-  // range for each bucket of the hash component.
   vector<tuple<string, string>> partition_key_ranges(1);
   const KeyEncoder<string>& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
   for (int hash_idx = 0; hash_idx < constrained_index; hash_idx++) {
@@ -305,31 +345,22 @@ void PartitionPruner::Init(const Schema& schema,
     // exclusive.
     bool is_last = hash_idx + 1 == constrained_index && range_upper_bound.empty();
 
-    if (hash_buckets[hash_idx]) {
-      // This hash component is constrained by equality predicates to a single
-      // hash bucket.
-      uint32_t bucket = *hash_buckets[hash_idx];
-      uint32_t bucket_upper = is_last ? bucket + 1 : bucket;
-      for (auto& partition_key_range : partition_key_ranges) {
-        hash_encoder.Encode(&bucket, &get<0>(partition_key_range));
-        hash_encoder.Encode(&bucket_upper, &get<1>(partition_key_range));
-      }
-    } else {
-      const auto& hash_bucket_schema = partition_schema.hash_bucket_schemas_[hash_idx];
-      // Add a partition key range for each possible hash bucket.
-      vector<tuple<string, string>> new_partition_key_ranges;
-      for (const auto& partition_key_range : partition_key_ranges) {
-        for (uint32_t bucket = 0; bucket < hash_bucket_schema.num_buckets; bucket++) {
-          uint32_t bucket_upper = is_last ? bucket + 1 : bucket;
-          string lower = get<0>(partition_key_range);
-          string upper = get<1>(partition_key_range);
-          hash_encoder.Encode(&bucket, &lower);
-          hash_encoder.Encode(&bucket_upper, &upper);
-          new_partition_key_ranges.push_back(make_tuple(move(lower), move(upper)));
+    vector<tuple<string, string>> new_partition_key_ranges;
+    for (const auto& partition_key_range : partition_key_ranges) {
+      const vector<bool>& buckets_bitset = hash_bucket_bitsets[hash_idx];
+      for (uint32_t bucket = 0; bucket < buckets_bitset.size(); ++bucket) {
+        if (!buckets_bitset[bucket]) {
+          continue;
         }
+        uint32_t bucket_upper = is_last ? bucket + 1 : bucket;
+        string lower = get<0>(partition_key_range);
+        string upper = get<1>(partition_key_range);
+        hash_encoder.Encode(&bucket, &lower);
+        hash_encoder.Encode(&bucket_upper, &upper);
+        new_partition_key_ranges.push_back(make_tuple(move(lower), move(upper)));
       }
-      partition_key_ranges.swap(new_partition_key_ranges);
     }
+    partition_key_ranges.swap(new_partition_key_ranges);
   }
 
   // Step 3: append the (possibly empty) range bounds to the partition key ranges.

@@ -538,6 +538,194 @@ TEST(TestPartitionPruner, TestHashPruning) {
         1);
 }
 
+TEST(TestPartitionPruner, TestInListHashPruning) {
+  // CREATE TABLE t
+  // (a INT8, b INT8, c INT8)
+  // PRIMARY KEY (a, b, c)
+  // DISTRIBUTE BY HASH(a) INTO 3 BUCKETS,
+  //               HASH(b) INTO 3 BUCKETS;
+  //               HASH(c) INTO 3 BUCKETS;
+  Schema schema({ ColumnSchema("a", INT8),
+                  ColumnSchema("b", INT8),
+                  ColumnSchema("c", INT8) },
+                { ColumnId(0), ColumnId(1), ColumnId(2) },
+                3);
+
+  PartitionSchema partition_schema;
+  auto pb = PartitionSchemaPB();
+  auto hash_component_1 = pb.add_hash_bucket_schemas();
+  hash_component_1->add_columns()->set_name("a");
+  hash_component_1->set_num_buckets(3);
+  hash_component_1->set_seed(0);
+  auto hash_component_2 = pb.add_hash_bucket_schemas();
+  hash_component_2->add_columns()->set_name("b");
+  hash_component_2->set_num_buckets(3);
+  hash_component_2->set_seed(0);
+  auto hash_component_3 = pb.add_hash_bucket_schemas();
+  hash_component_3->add_columns()->set_name("c");
+  hash_component_3->set_num_buckets(3);
+  hash_component_3->set_seed(0);
+
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, schema, &partitions));
+
+
+  // Applies the specified predicates to a scan and checks that the expected
+  // number of partitions are pruned.
+  auto Check = [&] (const vector<ColumnPredicate>& predicates, size_t remaining_tablets) {
+    ScanSpec spec;
+
+    for (const auto& pred : predicates) {
+      spec.AddPredicate(pred);
+    }
+
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec, remaining_tablets);
+  };
+
+  // zero, one, eight are in different buckets when bucket number is 3 and seed is 0.
+  int8_t zero = 0;
+  int8_t one = 1;
+  int8_t eight = 8;
+
+  vector<const void*> a_values;
+  vector<const void*> b_values;
+  vector<const void*> c_values;
+
+  // a in [0, 1];
+  a_values = { &zero, &one };
+  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 18);
+
+  // a in [0, 1, 8];
+  a_values = { &zero, &one, &eight };
+  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 27);
+
+  // b in [0, 1]
+  b_values = { &zero, &one };
+  Check({ ColumnPredicate::InList(schema.column(1), &b_values) }, 18);
+
+  // c in [0, 1]
+  c_values = { &zero, &one };
+  Check({ ColumnPredicate::InList(schema.column(2), &c_values) }, 18);
+
+  // b in [0, 1], c in [0, 1]
+  b_values = { &zero, &one };
+  c_values = { &zero, &one };
+  Check({ ColumnPredicate::InList(schema.column(1), &b_values),
+          ColumnPredicate::InList(schema.column(2), &c_values) },
+        12);
+
+  //a in [0, 1], b in [0, 1], c in [0, 1]
+  a_values = { &zero, &one };
+  b_values = { &zero, &one };
+  c_values = { &zero, &one };
+  Check({ ColumnPredicate::InList(schema.column(0), &a_values),
+          ColumnPredicate::InList(schema.column(1), &b_values),
+          ColumnPredicate::InList(schema.column(2), &c_values) },
+        8);
+}
+
+TEST(TestPartitionPruner, TestMultiColumnInListHashPruning) {
+  // CREATE TABLE t
+  // (a INT8, b INT8, c INT8)
+  // PRIMARY KEY (a, b, c)
+  // DISTRIBUTE BY HASH(a) INTO 3 BUCKETS,
+  //               HASH(b, c) INTO 3 BUCKETS;
+  Schema schema({ ColumnSchema("a", INT8),
+                  ColumnSchema("b", INT8),
+                  ColumnSchema("c", INT8) },
+                { ColumnId(0), ColumnId(1), ColumnId(2) },
+                3);
+
+  PartitionSchema partition_schema;
+  auto pb = PartitionSchemaPB();
+  auto hash_component_1 = pb.add_hash_bucket_schemas();
+  hash_component_1->add_columns()->set_name("a");
+  hash_component_1->set_num_buckets(3);
+  hash_component_1->set_seed(0);
+  auto hash_component_2 = pb.add_hash_bucket_schemas();
+  hash_component_2->add_columns()->set_name("b");
+  hash_component_2->add_columns()->set_name("c");
+  hash_component_2->set_num_buckets(3);
+  hash_component_2->set_seed(0);
+
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, schema, &partitions));
+
+
+  // Applies the specified predicates to a scan and checks that the expected
+  // number of partitions are pruned.
+  auto Check = [&] (const vector<ColumnPredicate>& predicates, size_t remaining_tablets) {
+    ScanSpec spec;
+
+    for (const auto& pred : predicates) {
+      spec.AddPredicate(pred);
+    }
+
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec, remaining_tablets);
+  };
+
+  // zero, one, eight are in different buckets when bucket number is 3 and seed is 0.
+  int8_t zero = 0;
+  int8_t one = 1;
+  int8_t eight = 8;
+
+  vector<const void*> a_values;
+  vector<const void*> b_values;
+  vector<const void*> c_values;
+
+  // a in [0, 1];
+  a_values = { &zero, &one };
+  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 6);
+
+  // a in [0, 1, 8];
+  a_values = { &zero, &one, &eight };
+  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 9);
+
+  // b in [0, 1]
+  b_values = { &zero, &one };
+  Check({ ColumnPredicate::InList(schema.column(1), &b_values) }, 9);
+
+  // c in [0, 1]
+  c_values = { &zero, &one };
+  Check({ ColumnPredicate::InList(schema.column(2), &c_values) }, 9);
+
+  // b in [0, 1], c in [0, 1]
+  // (0, 0) in bucket 2
+  // (0, 1) in bucket 2
+  // (1, 0) in bucket 1
+  // (1, 1) in bucket 0
+  b_values = { &zero, &one };
+  c_values = { &zero, &one };
+  Check({ ColumnPredicate::InList(schema.column(1), &b_values),
+          ColumnPredicate::InList(schema.column(2), &c_values) },
+        9);
+
+  // b = 0, c in [0, 1]
+  c_values = { &zero, &one };
+  Check({ ColumnPredicate::Equality(schema.column(1), &zero),
+          ColumnPredicate::InList(schema.column(2), &c_values) },
+        3);
+
+  // b = 1, c in [0, 1]
+  c_values = { &zero, &one };
+  Check({ ColumnPredicate::Equality(schema.column(1), &one),
+          ColumnPredicate::InList(schema.column(2), &c_values) },
+        6);
+
+  //a in [0, 1], b in [0, 1], c in [0, 1]
+  a_values = { &zero, &one };
+  b_values = { &zero, &one };
+  c_values = { &zero, &one };
+  Check({ ColumnPredicate::InList(schema.column(0), &a_values),
+          ColumnPredicate::InList(schema.column(1), &b_values),
+          ColumnPredicate::InList(schema.column(2), &c_values) },
+        6);
+}
+
 TEST(TestPartitionPruner, TestPruning) {
   // CREATE TABLE timeseries
   // (host STRING, metric STRING, time UNIXTIME_MICROS, value DOUBLE)

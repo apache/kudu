@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/common/partition.h"
 
 namespace kudu {
 
@@ -65,6 +66,14 @@ class PartitionPruner {
   std::string ToString(const Schema& schema, const PartitionSchema& partition_schema) const;
 
  private:
+  // Search all combination of in-list and equality predicates.
+  // Return hash values bitset of these combination.
+  std::vector<bool> PruneHashComponent(
+      const PartitionSchema& partition_schema,
+      const PartitionSchema::HashBucketSchema& hash_bucket_schema,
+      const Schema& schema,
+      const ScanSpec& scan_spec);
+
   // The reverse sorted set of partition key ranges. Each range has an inclusive
   // lower and exclusive upper bound.
   std::vector<std::tuple<std::string, std::string>> partition_key_ranges_;
