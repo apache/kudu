@@ -88,9 +88,6 @@ race:kudu::master::CatalogManager::Shutdown
 race:kudu::master::CatalogManagerBgTasks::Shutdown
 race:kudu::master::CatalogManager::~CatalogManager
 
-# KUDU-189: unsynchronized access to 'state_' in DeferredCallback
-race:kudu::master::AsyncTabletRequestTask::DeferredCallback
-
 # KUDU-574: raft_consensus_quorum-test race on LocalTestPeerProxy destruction
 race:kudu::consensus::LocalTestPeerProxy::~LocalTestPeerProxy
 
