@@ -271,7 +271,11 @@ class TestCFile : public CFileTestBase {
     BlockId block_id;
     LOG_TIMING(INFO, "writing 100M strings") {
       LOG(INFO) << "Starting writefile";
-      StringDataGenerator<false> generator("hello %zu");
+      StringDataGenerator<false> generator([](size_t idx) {
+          char buf[kFastToBufferSize];
+          FastHex64ToBuffer(idx, buf);
+          return string(buf);
+        });
       WriteTestFile(&generator, encoding, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
       LOG(INFO) << "Done writing";
     }
