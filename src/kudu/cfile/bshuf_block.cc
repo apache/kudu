@@ -16,6 +16,11 @@
 // under the License.
 #include "kudu/cfile/bshuf_block.h"
 
+#include <algorithm>
+#include <limits>
+
+#include "kudu/gutil/port.h"
+
 namespace kudu {
 namespace cfile {
 
@@ -45,33 +50,32 @@ void AbortWithBitShuffleError(int64_t val) {
 }
 
 // Template specialization for UINT32, which is used by dictionary encoding.
-// It dynamically switch to block of UINT16 or UINT8 depending on the values
+// It dynamically switches the element size to UINT16 or UINT8 depending on the values
 // in the current block.
 template<>
 Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
   uint32_t max_value = 0;
   for (int i = 0; i < count_; i++) {
-    uint32_t value = *reinterpret_cast<uint32_t*>(&data_[i * sizeof(uint32_t)]);
-    max_value = (max_value < value)? value : max_value;
+    max_value = std::max(max_value, *cell_ptr(i));
   }
 
   // Shrink the block of UINT32 to block of UINT8 or UINT16 whenever possible and
   // set the header information accordingly, so that the decoder can recover the
   // encoded data.
   Slice ret;
-  if (max_value < 256) {
+  if (max_value <= std::numeric_limits<uint8_t>::max()) {
     for (int i = 0; i < count_; i++) {
-      uint32_t value = *reinterpret_cast<uint32_t*>(&data_[i * sizeof(uint32_t)]);
-      uint8_t  converted_value = (uint8_t)(value);
-      *reinterpret_cast<uint8_t*>(&data_[i * sizeof(uint8_t)]) = converted_value;
+      uint32_t value = *cell_ptr(i);
+      uint8_t converted_value = static_cast<uint8_t>(value);
+      memcpy(&data_[i * sizeof(converted_value)], &converted_value, sizeof(converted_value));
     }
     ret = Finish(ordinal_pos, sizeof(uint8_t));
     InlineEncodeFixed32(ret.mutable_data() + 16, sizeof(uint8_t));
-  } else if (max_value < 65536) {
+  } else if (max_value <= std::numeric_limits<uint16_t>::max()) {
     for (int i = 0; i < count_; i++) {
-      uint32_t value = *reinterpret_cast<uint32_t*>(&data_[i * sizeof(uint32_t)]);
-      uint16_t converted_value = (uint16_t)(value);
-      *reinterpret_cast<uint16_t*>(&data_[i * sizeof(uint16_t)]) = converted_value;
+      uint32_t value = *cell_ptr(i);
+      uint16_t converted_value = static_cast<uint16_t>(value);
+      memcpy(&data_[i * sizeof(converted_value)], &converted_value, sizeof(converted_value));
     }
     ret = Finish(ordinal_pos, sizeof(uint16_t));
     InlineEncodeFixed32(ret.mutable_data() + 16, sizeof(uint16_t));
@@ -80,27 +84,6 @@ Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
     InlineEncodeFixed32(ret.mutable_data() + 16, sizeof(uint32_t));
   }
   return ret;
-}
-
-// Template specialization for UINT32, dynamically decoded blocks of
-// bitshuffled UINT16 OR UINT8 to UINT32.
-template<>
-Status BShufBlockDecoder<UINT32>::Expand() {
-  if (num_elems_ > 0) {
-    int64_t bytes;
-    decoded_.resize(num_elems_after_padding_ * size_of_elem_);
-    uint8_t* in = const_cast<uint8_t*>(&data_[kHeaderSize]);
-
-    bytes = bitshuffle::decompress_lz4(in, decoded_.data(), num_elems_after_padding_,
-                                       size_of_elem_, 0);
-    if (PREDICT_FALSE(bytes < 0)) {
-      // Ideally, this should not happen.
-      AbortWithBitShuffleError(bytes);
-      return Status::RuntimeError("Unshuffle Process failed");
-    }
-  }
-
-  return Status::OK();
 }
 
 // Template specialization for UINT32.
@@ -166,15 +149,13 @@ Status BShufBlockDecoder<UINT32>::CopyNextValuesToArray(size_t* n, uint8_t* arra
   // the expansion for size = 1 or size = 2.
   if (size_of_elem_ == 1) {
     for (int i = max_fetch - 1; i >= 0; i--) {
-      uint8_t value = *reinterpret_cast<uint8_t*>(&array[i * sizeof(uint8_t)]);
-      uint32_t convert_value = (uint32_t)(value);
-      *reinterpret_cast<uint32_t*>(&array[i * sizeof(uint32_t)]) = convert_value;
+      uint32_t value = array[i];
+      memcpy(&array[i * sizeof(uint32_t)], &value, sizeof(value));
     }
   } else if (size_of_elem_ == 2) {
     for (int i = max_fetch - 1; i >= 0; i--) {
-      uint16_t value = *reinterpret_cast<uint16_t*>(&array[i * sizeof(uint16_t)]);
-      uint32_t convert_value = (uint32_t)(value);
-      *reinterpret_cast<uint32_t*>(&array[i * sizeof(uint32_t)]) = convert_value;
+      uint32_t value = UNALIGNED_LOAD16(&array[i * sizeof(uint16_t)]);
+      memcpy(&array[i * sizeof(uint32_t)], &value, sizeof(value));
     }
   }
 
