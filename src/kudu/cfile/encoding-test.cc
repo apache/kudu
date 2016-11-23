@@ -559,7 +559,8 @@ class TestEncoding : public ::testing::Test {
       i += run_size;
     }
 
-    BuilderType bb;
+    unique_ptr<WriterOptions> opts(NewWriterOptions());
+    BuilderType bb(opts.get());
     bb.Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
            to_insert.size());
     Slice s = bb.Finish(kOrdinalPosBase);
@@ -687,7 +688,8 @@ TEST_F(TestEncoding, TestIntBlockEncoder) {
 }
 
 TEST_F(TestEncoding, TestRleIntBlockEncoder) {
-  RleIntBlockBuilder<UINT32> ibb;
+  unique_ptr<WriterOptions> opts(NewWriterOptions());
+  RleIntBlockBuilder<UINT32> ibb(opts.get());
   gscoped_ptr<int[]> ints(new int[10000]);
   for (int i = 0; i < 10000; i++) {
     ints[i] = random();

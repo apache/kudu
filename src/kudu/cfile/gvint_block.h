@@ -47,9 +47,9 @@ class GVIntBlockBuilder : public BlockBuilder {
  public:
   explicit GVIntBlockBuilder(const WriterOptions *options);
 
-  bool IsBlockFull(size_t limit) const OVERRIDE;
+  bool IsBlockFull() const override;
 
-  int Add(const uint8_t *vals, size_t count) OVERRIDE;
+  int Add(const uint8_t *vals_buf, size_t count) OVERRIDE;
 
   Slice Finish(rowid_t ordinal_pos) OVERRIDE;
 

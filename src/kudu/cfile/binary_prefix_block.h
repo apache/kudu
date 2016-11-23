@@ -37,7 +37,7 @@ class BinaryPrefixBlockBuilder : public BlockBuilder {
  public:
   explicit BinaryPrefixBlockBuilder(const WriterOptions *options);
 
-  bool IsBlockFull(size_t limit) const OVERRIDE;
+  bool IsBlockFull() const override;
 
   int Add(const uint8_t *vals, size_t count) OVERRIDE;
 

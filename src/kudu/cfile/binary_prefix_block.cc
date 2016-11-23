@@ -79,9 +79,9 @@ void BinaryPrefixBlockBuilder::Reset() {
   last_val_.clear();
 }
 
-bool BinaryPrefixBlockBuilder::IsBlockFull(size_t limit) const {
-  // TODO: take restarts size into account
-  return buffer_.size() > limit;
+bool BinaryPrefixBlockBuilder::IsBlockFull() const {
+  // TODO(todd): take restarts size into account
+  return buffer_.size() > options_->storage_attributes.cfile_block_size;
 }
 
 Slice BinaryPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
@@ -132,7 +132,7 @@ int BinaryPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
   Slice prev_val(last_val_);
   // We generate a static call to IsBlockFull() to avoid the vtable lookup
   // in this hot path.
-  while (!BinaryPrefixBlockBuilder::IsBlockFull(options_->storage_attributes.cfile_block_size) &&
+  while (!BinaryPrefixBlockBuilder::IsBlockFull() &&
          added < count) {
     const Slice val = slices[added];
 

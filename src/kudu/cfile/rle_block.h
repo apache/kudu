@@ -23,6 +23,7 @@
 
 #include "kudu/gutil/port.h"
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
@@ -47,8 +48,9 @@ enum {
 //
 class RleBitMapBlockBuilder : public BlockBuilder {
  public:
-  RleBitMapBlockBuilder()
-      : encoder_(&buf_, 1) {
+  explicit RleBitMapBlockBuilder(const WriterOptions* options)
+      : encoder_(&buf_, 1),
+        options_(options) {
     Reset();
   }
 
@@ -64,8 +66,8 @@ class RleBitMapBlockBuilder : public BlockBuilder {
     return count;
   }
 
-  virtual bool IsBlockFull(size_t limit) const OVERRIDE {
-    return encoder_.len() > limit;
+  virtual bool IsBlockFull() const override {
+    return encoder_.len() > options_->storage_attributes.cfile_block_size;
   }
 
   virtual Slice Finish(rowid_t ordinal_pos) OVERRIDE {
@@ -98,6 +100,7 @@ class RleBitMapBlockBuilder : public BlockBuilder {
  private:
   faststring buf_;
   RleEncoder<bool> encoder_;
+  const WriterOptions* const options_;
   size_t count_;
 };
 
@@ -212,13 +215,14 @@ class RleBitMapBlockDecoder : public BlockDecoder {
 template <DataType IntType>
 class RleIntBlockBuilder : public BlockBuilder {
  public:
-  explicit RleIntBlockBuilder(const WriterOptions* opts = NULL)
-      : rle_encoder_(&buf_, kCppTypeSize * 8) {
+  explicit RleIntBlockBuilder(const WriterOptions* options)
+      : rle_encoder_(&buf_, kCppTypeSize * 8),
+        options_(options) {
     Reset();
   }
 
-  virtual bool IsBlockFull(size_t limit) const OVERRIDE {
-    return rle_encoder_.len() > limit;
+  virtual bool IsBlockFull() const OVERRIDE {
+    return rle_encoder_.len() > options_->storage_attributes.cfile_block_size;
   }
 
   virtual int Add(const uint8_t* vals_void, size_t count) OVERRIDE {
@@ -281,6 +285,7 @@ class RleIntBlockBuilder : public BlockBuilder {
   faststring buf_;
   size_t count_;
   RleEncoder<CppType> rle_encoder_;
+  const WriterOptions* const options_;
 };
 
 //

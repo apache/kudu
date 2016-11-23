@@ -98,15 +98,15 @@ class BShufBlockBuilder : public BlockBuilder {
     buffer_.resize(kHeaderSize);
   }
 
-  bool IsBlockFull(size_t limit) const OVERRIDE {
-    return EstimateEncodedSize() > limit;
+  bool IsBlockFull() const override {
+    return EstimateEncodedSize() > options_->storage_attributes.cfile_block_size;
   }
 
   int Add(const uint8_t* vals_void, size_t count) OVERRIDE {
     const CppType* vals = reinterpret_cast<const CppType* >(vals_void);
     int added = 0;
     // If the current block is full, stop adding more items.
-    while (!IsBlockFull(options_->storage_attributes.cfile_block_size) && added < count) {
+    while (!IsBlockFull() && added < count) {
       const uint8_t* ptr = reinterpret_cast<const uint8_t*>(vals);
       data_.append(ptr, size_of_type);
       vals++;

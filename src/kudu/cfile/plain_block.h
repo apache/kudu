@@ -61,8 +61,8 @@ class PlainBlockBuilder : public BlockBuilder {
     return count;
   }
 
-  virtual bool IsBlockFull(size_t limit) const OVERRIDE {
-    return buffer_.size() > limit;
+  virtual bool IsBlockFull() const override {
+    return buffer_.size() > options_->storage_attributes.cfile_block_size;
   }
 
   virtual Slice Finish(rowid_t ordinal_pos) OVERRIDE {

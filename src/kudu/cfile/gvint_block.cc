@@ -47,17 +47,17 @@ void GVIntBlockBuilder::Reset() {
   estimated_raw_size_ = 0;
 }
 
-bool GVIntBlockBuilder::IsBlockFull(size_t limit) const {
-  return EstimateEncodedSize() > limit;
+bool GVIntBlockBuilder::IsBlockFull() const {
+  return EstimateEncodedSize() > options_->storage_attributes.cfile_block_size;
 }
 
-int GVIntBlockBuilder::Add(const uint8_t *vals_void, size_t count) {
-  const uint32_t *vals = reinterpret_cast<const uint32_t *>(vals_void);
+int GVIntBlockBuilder::Add(const uint8_t *vals_buf, size_t count) {
+  const uint32_t *vals = reinterpret_cast<const uint32_t *>(vals_buf);
 
   int added = 0;
 
   // If the block is full, should stop adding more items.
-  while (!IsBlockFull(options_->storage_attributes.cfile_block_size) && added < count) {
+  while (!IsBlockFull() && added < count) {
     uint32_t val = *vals++;
     estimated_raw_size_ += CalcRequiredBytes32(val);
     ints_.push_back(val);

@@ -22,6 +22,7 @@
 #include <string>
 
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -42,13 +43,14 @@ struct WriterOptions;
 //
 class PlainBitMapBlockBuilder : public BlockBuilder {
  public:
-  PlainBitMapBlockBuilder()
-      : writer_(&buf_) {
+  explicit PlainBitMapBlockBuilder(const WriterOptions* options)
+      : writer_(&buf_),
+        options_(options) {
     Reset();
   }
 
-  virtual bool IsBlockFull(size_t limit) const OVERRIDE {
-    return writer_.bytes_written() > limit;
+  virtual bool IsBlockFull() const override {
+    return writer_.bytes_written() > options_->storage_attributes.cfile_block_size;
   }
 
   virtual int Add(const uint8_t* vals, size_t count) OVERRIDE  {
@@ -96,6 +98,8 @@ class PlainBitMapBlockBuilder : public BlockBuilder {
   faststring buf_;
   BitWriter writer_;
   size_t count_;
+
+  const WriterOptions* const options_;
 };
 
 

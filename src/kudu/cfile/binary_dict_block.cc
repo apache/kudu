@@ -51,7 +51,7 @@ void BinaryDictBlockBuilder::Reset() {
   buffer_.reserve(options_->storage_attributes.cfile_block_size);
 
   if (mode_ == kCodeWordMode &&
-      dict_block_.IsBlockFull(options_->storage_attributes.cfile_block_size)) {
+      dict_block_.IsBlockFull()) {
     mode_ = kPlainBinaryMode;
     data_builder_.reset(new BinaryPlainBlockBuilder(options_));
   } else {
@@ -80,10 +80,9 @@ Slice BinaryDictBlockBuilder::Finish(rowid_t ordinal_pos) {
 //
 // If it is the latter case, all the subsequent data blocks will switch to
 // StringPlainBlock automatically.
-bool BinaryDictBlockBuilder::IsBlockFull(size_t limit) const {
-  int block_size = options_->storage_attributes.cfile_block_size;
-  if (data_builder_->IsBlockFull(block_size)) return true;
-  if (dict_block_.IsBlockFull(block_size) && (mode_ == kCodeWordMode)) return true;
+bool BinaryDictBlockBuilder::IsBlockFull() const {
+  if (data_builder_->IsBlockFull()) return true;
+  if (dict_block_.IsBlockFull() && (mode_ == kCodeWordMode)) return true;
   return false;
 }
 

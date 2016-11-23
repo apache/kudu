@@ -52,8 +52,8 @@ void BinaryPlainBlockBuilder::Reset() {
   finished_ = false;
 }
 
-bool BinaryPlainBlockBuilder::IsBlockFull(size_t limit) const {
-  return size_estimate_ > limit;
+bool BinaryPlainBlockBuilder::IsBlockFull() const {
+  return size_estimate_ > options_->storage_attributes.cfile_block_size;
 }
 
 Slice BinaryPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
@@ -80,10 +80,10 @@ int BinaryPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
   size_t i = 0;
 
   // If the block is full, should stop adding more items.
-  while (!IsBlockFull(options_->storage_attributes.cfile_block_size) && i < count) {
+  while (!IsBlockFull() && i < count) {
 
     // Every fourth entry needs a gvint selector byte
-    // TODO: does it cost a lot to account these things specifically?
+    // TODO(todd): does it cost a lot to account these things specifically?
     // maybe cheaper to just over-estimate - allocation is cheaper than math?
     if (offsets_.size() % 4 == 0) {
       size_estimate_++;

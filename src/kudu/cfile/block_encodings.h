@@ -48,8 +48,10 @@ class BlockBuilder {
   }
 
   // Used by the cfile writer to determine whether the current block is full.
+  // A block is full if it its estimated size is larger than the configured
+  // WriterOptions' cfile_block_size.
   // If it is full, the cfile writer will call FinishCurDataBlock().
-  virtual bool IsBlockFull(size_t limit) const = 0;
+  virtual bool IsBlockFull() const = 0;
 
   // Add a sequence of values to the block.
   // Returns the number of values actually added, which may be less

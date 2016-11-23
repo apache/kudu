@@ -297,7 +297,7 @@ Status CFileWriter::AppendEntries(const void *entries, size_t count) {
     rem -= n;
     value_count_ += n;
 
-    if (data_block_->IsBlockFull(options_.storage_attributes.cfile_block_size)) {
+    if (data_block_->IsBlockFull()) {
       RETURN_NOT_OK(FinishCurDataBlock());
     }
   }
@@ -328,7 +328,7 @@ Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
         value_count_ += n;
         rem -= n;
 
-        if (data_block_->IsBlockFull(options_.storage_attributes.cfile_block_size)) {
+        if (data_block_->IsBlockFull()) {
           RETURN_NOT_OK(FinishCurDataBlock());
         }
 

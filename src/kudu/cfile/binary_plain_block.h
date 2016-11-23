@@ -43,7 +43,7 @@ class BinaryPlainBlockBuilder : public BlockBuilder {
  public:
   explicit BinaryPlainBlockBuilder(const WriterOptions *options);
 
-  bool IsBlockFull(size_t limit) const OVERRIDE;
+  bool IsBlockFull() const override;
 
   int Add(const uint8_t *vals, size_t count) OVERRIDE;
 

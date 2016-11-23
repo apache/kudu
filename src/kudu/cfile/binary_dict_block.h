@@ -68,7 +68,7 @@ class BinaryDictBlockBuilder : public BlockBuilder {
  public:
   explicit BinaryDictBlockBuilder(const WriterOptions* options);
 
-  bool IsBlockFull(size_t limit) const OVERRIDE;
+  bool IsBlockFull() const override;
 
   // Append the dictionary block for the current cfile to the end of the cfile and set the footer
   // accordingly.

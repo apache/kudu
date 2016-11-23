@@ -107,7 +107,7 @@ template<>
 struct DataTypeEncodingTraits<BOOL, PLAIN_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new PlainBitMapBlockBuilder();
+    *bb = new PlainBitMapBlockBuilder(options);
     return Status::OK();
   }
 
@@ -124,7 +124,7 @@ template<>
 struct DataTypeEncodingTraits<BOOL, RLE> {
 
   static Status CreateBlockBuilder(BlockBuilder** bb, const WriterOptions *options) {
-    *bb = new RleBitMapBlockBuilder();
+    *bb = new RleBitMapBlockBuilder(options);
     return Status::OK();
   }
 
@@ -189,7 +189,7 @@ template<DataType IntType>
 struct DataTypeEncodingTraits<IntType, RLE> {
 
   static Status CreateBlockBuilder(BlockBuilder** bb, const WriterOptions *options) {
-    *bb = new RleIntBlockBuilder<IntType>();
+    *bb = new RleIntBlockBuilder<IntType>(options);
     return Status::OK();
   }
 
