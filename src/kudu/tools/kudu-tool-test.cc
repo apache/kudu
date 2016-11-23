@@ -299,7 +299,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "cmeta.*Operate on a local tablet replica's consensus",
         "dump.*Dump a Kudu filesystem",
         "copy_from_remote.*Copy a tablet replica",
-        "delete.*Delete tablet replica from the local filesystem",
+        "delete.*Delete a tablet replica from the local filesystem",
         "list.*Show list of tablet replicas"
     };
     NO_FATALS(RunTestHelp("local_replica", kLocalReplicaModeRegexes));
@@ -1052,9 +1052,9 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
                                    tablet::RUNNING, kTimeout));
 }
 
-// Test 'kudu local_replica delete' tool when the tablet server is offline.
+// Test 'kudu local_replica delete' tool with --clean_unsafe flag for
+// deleting the tablet from the tablet server.
 TEST_F(ToolTest, TestLocalReplicaDelete) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   NO_FATALS(StartMiniCluster());
 
   // TestWorkLoad.Setup() internally generates a table.
@@ -1067,21 +1067,6 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
   ASSERT_OK(mini_cluster_->WaitForTabletServerCount(1));
   MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
 
-  // Grab the tablet_id to delete
-  ListTabletsRequestPB req;
-  ListTabletsResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(kTimeout);
-  {
-    unique_ptr<TabletServerServiceProxy> ts_proxy;
-    ASSERT_OK(BuildProxy(ts->bound_rpc_addr().ToString(),
-                         tserver::TabletServer::kDefaultPort, &ts_proxy));
-    ASSERT_OK(ts_proxy->ListTablets(req, &resp, &rpc));
-  }
-  ASSERT_FALSE(resp.has_error());
-  ASSERT_EQ(resp.status_and_schema_size(), 1);
-  const string& tablet_id = resp.status_and_schema(0).tablet_status().tablet_id();
-
   // Generate some workload followed by a flush to grow the size of the tablet on disk.
   while (workload.rows_inserted() < 10000) {
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -1090,15 +1075,18 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
 
   // Make sure the tablet data is flushed to disk. This is needed
   // so that we can compare the size of the data on disk before and
-  // after the deletion of local_replica to check if the size-on-disk is reduced at all.
+  // after the deletion of local_replica to check if the size-on-disk
+  // is reduced at all.
+  string tablet_id;
   {
-    scoped_refptr<TabletPeer> tablet_peer;
-    ASSERT_TRUE(ts->server()->tablet_manager()->LookupTablet(tablet_id, &tablet_peer));
-    Tablet* tablet = tablet_peer->tablet();
+    vector<scoped_refptr<TabletPeer>> tablet_peers;
+    ts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
+    ASSERT_EQ(1, tablet_peers.size());
+    Tablet* tablet = tablet_peers[0]->tablet();
     ASSERT_OK(tablet->Flush());
+    tablet_id = tablet_peers[0]->tablet_id();
   }
   const string& tserver_dir = ts->options()->fs_opts.wal_path;
-
   // Using the delete tool with tablet server running fails.
   string stderr;
   Status s = RunTool(
@@ -1109,16 +1097,8 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
   SCOPED_TRACE(stderr);
   ASSERT_STR_CONTAINS(stderr, "Resource temporarily unavailable");
 
-  // Shut down tablet server and use the delete tool again.
+  // Shut down tablet server and use the delete tool with --clean_unsafe.
   ts->Shutdown();
-
-  // Run the tool without --clean_unsafe flag first.
-  s = RunTool(Substitute("local_replica delete $0 --fs_wal_dir=$1 --fs_data_dirs=$1",
-                         tablet_id, tserver_dir),
-              nullptr, &stderr, nullptr, nullptr);
-  ASSERT_TRUE(s.IsRuntimeError());
-  SCOPED_TRACE(stderr);
-  ASSERT_STR_CONTAINS(stderr, "currently not supported without --clean_unsafe flag");
 
   const string& data_dir = JoinPathSegments(tserver_dir, "data");
   uint64_t size_before_delete;
@@ -1146,16 +1126,82 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
   // we can expect the tablet server to have nothing after it comes up.
   ASSERT_OK(ts->Start());
   ASSERT_OK(ts->WaitStarted());
-  rpc.Reset();
-  rpc.set_timeout(kTimeout);
-  {
-    unique_ptr<TabletServerServiceProxy> ts_proxy;
-    ASSERT_OK(BuildProxy(ts->bound_rpc_addr().ToString(),
-                         tserver::TabletServer::kDefaultPort, &ts_proxy));
-    ASSERT_OK(ts_proxy->ListTablets(req, &resp, &rpc));
+  vector<scoped_refptr<TabletPeer>> tablet_peers;
+  ts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
+  ASSERT_EQ(0, tablet_peers.size());
+}
+
+// Test 'kudu local_replica delete' tool for tombstoning the tablet.
+TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
+  NO_FATALS(StartMiniCluster());
+
+  // TestWorkLoad.Setup() internally generates a table.
+  TestWorkload workload(mini_cluster_.get());
+  workload.set_num_replicas(1);
+  workload.Setup();
+  workload.Start();
+
+  // There is only one tserver in the minicluster.
+  ASSERT_OK(mini_cluster_->WaitForTabletServerCount(1));
+  MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
+
+  // Generate some workload followed by a flush to grow the size of the tablet on disk.
+  while (workload.rows_inserted() < 10000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  ASSERT_FALSE(resp.has_error());
-  ASSERT_EQ(resp.status_and_schema_size(), 0);
+  workload.StopAndJoin();
+
+  // Make sure the tablet data is flushed to disk. This is needed
+  // so that we can compare the size of the data on disk before and
+  // after the deletion of local_replica to verify that the size-on-disk
+  // is reduced after the tool operation.
+  OpId last_logged_opid;
+  last_logged_opid.Clear();
+  string tablet_id;
+  {
+    vector<scoped_refptr<TabletPeer>> tablet_peers;
+    ts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
+    ASSERT_EQ(1, tablet_peers.size());
+    tablet_id = tablet_peers[0]->tablet_id();
+    tablet_peers[0]->log()->GetLatestEntryOpId(&last_logged_opid);
+    Tablet* tablet = tablet_peers[0]->tablet();
+    ASSERT_OK(tablet->Flush());
+  }
+  const string& tserver_dir = ts->options()->fs_opts.wal_path;
+
+  // Shut down tablet server and use the delete tool.
+  ts->Shutdown();
+  const string& data_dir = JoinPathSegments(tserver_dir, "data");
+  uint64_t size_before_delete;
+  ASSERT_OK(env_->GetFileSizeOnDiskRecursively(data_dir, &size_before_delete));
+  NO_FATALS(RunActionStdoutNone(Substitute("local_replica delete $0 --fs_wal_dir=$1 "
+                                           "--fs_data_dirs=$1",
+                                           tablet_id, tserver_dir)));
+  // Verify WAL segments for the tablet_id are gone and
+  // the data_dir size on tserver is reduced.
+  const string& wal_dir = JoinPathSegments(tserver_dir,
+                                           Substitute("wals/$0", tablet_id));
+  ASSERT_FALSE(env_->FileExists(wal_dir));
+  uint64_t size_after_delete;
+  ASSERT_OK(env_->GetFileSizeOnDiskRecursively(data_dir, &size_after_delete));
+  ASSERT_LT(size_after_delete, size_before_delete);
+
+  // Bring up the tablet server and verify that tablet is tombstoned and
+  // tombstone_last_logged_opid matches with the one test had cached earlier.
+  ASSERT_OK(ts->Start());
+  ASSERT_OK(ts->WaitStarted());
+  {
+    vector<scoped_refptr<TabletPeer>> tablet_peers;
+    ts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
+    ASSERT_EQ(1, tablet_peers.size());
+    ASSERT_EQ(tablet_id, tablet_peers[0]->tablet_id());
+    ASSERT_EQ(TabletDataState::TABLET_DATA_TOMBSTONED,
+              tablet_peers[0]->tablet_metadata()->tablet_data_state());
+    OpId tombstoned_opid = tablet_peers[0]->tablet_metadata()->tombstone_last_logged_opid();
+    ASSERT_TRUE(tombstoned_opid.IsInitialized());
+    ASSERT_EQ(last_logged_opid.term(), tombstoned_opid.term());
+    ASSERT_EQ(last_logged_opid.index(), tombstoned_opid.index());
+  }
 }
 
 } // namespace tools

@@ -91,10 +91,12 @@ using cfile::CFileReader;
 using cfile::DumpIterator;
 using cfile::ReaderOptions;
 using consensus::ConsensusMetadata;
+using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
-using consensus::ReplicateMsg;
 using fs::ReadableBlock;
+using log::LogEntryPB;
+using log::LogEntryReader;
 using log::LogIndex;
 using log::LogReader;
 using log::ReadableLogSegment;
@@ -158,6 +160,36 @@ Status ParseHostPortString(const string& hostport_str, HostPort* hostport) {
   }
   *hostport = hp;
   return Status::OK();
+}
+
+// Find the last committed OpId for the tablet_id from the WAL.
+Status FindLastCommittedOpId(FsManager* fs, const string& tablet_id,
+                             OpId* last_committed_opid) {
+  shared_ptr<LogReader> reader;
+  RETURN_NOT_OK(LogReader::Open(fs, scoped_refptr<log::LogIndex>(), tablet_id,
+                                scoped_refptr<MetricEntity>(), &reader));
+  SegmentSequence segs;
+  RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segs));
+  // Reverse iterate segments to find the first 'last committed' entry.
+  // Note that we still read the entries within a segment in sequential
+  // fashion, so the last entry within the 'found' segment will
+  // give us the last_committed_opid.
+  vector<scoped_refptr<ReadableLogSegment>>::reverse_iterator seg;
+  bool found = false;
+  for (seg = segs.rbegin(); seg != segs.rend(); ++seg) {
+    LogEntryReader reader(seg->get());
+    while (true) {
+      LogEntryPB entry;
+      Status s = reader.ReadNextEntry(&entry);
+      if (s.IsEndOfFile()) break;
+      RETURN_NOT_OK_PREPEND(s, "Error in log segment");
+      if (entry.type() != log::COMMIT) continue;
+      *last_committed_opid = entry.commit().commited_op_id();
+      found = true;
+    }
+    if (found) return Status::OK();
+  }
+  return Status::NotFound("Committed OpId not found in the log");
 }
 
 // Parses a colon-delimited string containing a uuid, hostname or IP address,
@@ -266,22 +298,34 @@ Status CopyFromRemote(const RunnerContext& context) {
 
 Status DeleteLocalReplica(const RunnerContext& context) {
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
-  if (!FLAGS_clean_unsafe) {
-    return Status::NotSupported(Substitute("Deletion of local replica $0 is "
-        "currently not supported without --clean_unsafe flag", tablet_id));
-  }
   FsManager fs_manager(Env::Default(), FsManagerOpts());
   RETURN_NOT_OK(fs_manager.Open());
+  boost::optional<OpId> last_committed_opid = boost::none;
+  TabletDataState state = TabletDataState::TABLET_DATA_DELETED;
+  if (!FLAGS_clean_unsafe) {
+    state = TabletDataState::TABLET_DATA_TOMBSTONED;
+    // Tombstone the tablet. If we couldn't find the last committed OpId from
+    // the log, it's not an error. But if we receive any other error,
+    // indicate the user to delete with --clean_unsafe flag.
+    OpId opid;
+    Status s = FindLastCommittedOpId(&fs_manager, tablet_id, &opid);
+    if (s.ok()) {
+      last_committed_opid = opid;
+    } else if (s.IsNotFound()) {
+      LOG(INFO) << "Could not find last committed OpId from WAL, "
+                << "but proceeding with tablet tombstone: " << s.ToString();
+    } else {
+      LOG(ERROR) << "Error attempting to find last committed OpId in WAL: " << s.ToString();
+      LOG(ERROR) << "Cannot delete (tombstone) the tablet, use --clean_unsafe to delete"
+                 << " the tablet permanently from this server.";
+      return s;
+    }
+  }
 
-  // This action cleans up metadata/data/WAL for a tablet on this node when
-  // the tablet server is offline. i.e, this tool is an alternative to
-  // actions like 'rm -rf <tablet-meta>' which could orphan the
-  // tablet data blocks with no means to clean them up later.
+  // Force the specified tablet on this node to be in 'state'.
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(TabletMetadata::Load(&fs_manager, tablet_id, &meta));
-
-  RETURN_NOT_OK(TSTabletManager::DeleteTabletData(
-      meta, TabletDataState::TABLET_DATA_DELETED, boost::none));
+  RETURN_NOT_OK(TSTabletManager::DeleteTabletData(meta, state, last_committed_opid));
   return Status::OK();
 }
 
@@ -742,7 +786,8 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
 
   unique_ptr<Action> delete_local_replica =
       ActionBuilder("delete", &DeleteLocalReplica)
-      .Description("Delete tablet replica from the local filesystem")
+      .Description("Delete a tablet replica from the local filesystem. "
+          "By default, leaves a tombstone record.")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
