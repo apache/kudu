@@ -91,31 +91,27 @@ class BShufBlockBuilder : public BlockBuilder {
   }
 
   void Reset() OVERRIDE {
+    auto block_size = options_->storage_attributes.cfile_block_size;
     count_ = 0;
     data_.clear();
-    data_.reserve(options_->storage_attributes.cfile_block_size);
+    data_.reserve(block_size);
     buffer_.clear();
     buffer_.resize(kHeaderSize);
     finished_ = false;
+    rem_elem_capacity_ = block_size / size_of_type;
   }
 
   bool IsBlockFull() const override {
-    return EstimateEncodedSize() > options_->storage_attributes.cfile_block_size;
+    return rem_elem_capacity_ == 0;
   }
 
   int Add(const uint8_t* vals_void, size_t count) OVERRIDE {
     DCHECK(!finished_);
-    const CppType* vals = reinterpret_cast<const CppType* >(vals_void);
-    int added = 0;
-    // If the current block is full, stop adding more items.
-    while (!IsBlockFull() && added < count) {
-      const uint8_t* ptr = reinterpret_cast<const uint8_t*>(vals);
-      data_.append(ptr, size_of_type);
-      vals++;
-      added++;
-      count_++;
-    }
-    return added;
+    int to_add = std::min<int>(rem_elem_capacity_, count);
+    data_.append(vals_void, to_add * size_of_type);
+    count_ += to_add;
+    rem_elem_capacity_ -= to_add;
+    return to_add;
   }
 
   size_t Count() const OVERRIDE {
@@ -166,19 +162,6 @@ class BShufBlockBuilder : public BlockBuilder {
     memcpy(&last_key_, cell_ptr(count_ - 1), size_of_type);
   }
 
-  size_t EstimateEncodedSize() const {
-    int num = KUDU_ALIGN_UP(count_, 8);
-    // The result of bshuf_compress_lz4_bound(num, size_of_type, 0)
-    // is always bigger than the original size (num * size_of_type).
-    // However, the compression ratio in most cases is larger than 1,
-    // Therefore, using the original size may be more accurate and
-    // cause less overhead.
-    //
-    // TODO(todd): we could make this estimate more accurate by keeping
-    // track of the maximum bit-width of the inserted elements.
-    return kHeaderSize + num * size_of_type;
-  }
-
   Slice Finish(rowid_t ordinal_pos, int final_size_of_type) {
     data_.resize(kHeaderSize + final_size_of_type * count_);
 
@@ -221,6 +204,7 @@ class BShufBlockBuilder : public BlockBuilder {
   faststring data_;
   faststring buffer_;
   uint32_t count_;
+  int rem_elem_capacity_;
   bool finished_;
   CppType first_key_;
   CppType last_key_;
