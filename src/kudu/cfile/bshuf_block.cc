@@ -54,6 +54,7 @@ void AbortWithBitShuffleError(int64_t val) {
 // in the current block.
 template<>
 Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
+  RememberFirstAndLastKey();
   uint32_t max_value = 0;
   for (int i = 0; i < count_; i++) {
     max_value = std::max(max_value, *cell_ptr(i));

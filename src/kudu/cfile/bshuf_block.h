@@ -96,6 +96,7 @@ class BShufBlockBuilder : public BlockBuilder {
     data_.reserve(options_->storage_attributes.cfile_block_size);
     buffer_.clear();
     buffer_.resize(kHeaderSize);
+    finished_ = false;
   }
 
   bool IsBlockFull() const override {
@@ -103,6 +104,7 @@ class BShufBlockBuilder : public BlockBuilder {
   }
 
   int Add(const uint8_t* vals_void, size_t count) OVERRIDE {
+    DCHECK(!finished_);
     const CppType* vals = reinterpret_cast<const CppType* >(vals_void);
     int added = 0;
     // If the current block is full, stop adding more items.
@@ -121,24 +123,25 @@ class BShufBlockBuilder : public BlockBuilder {
   }
 
   Status GetFirstKey(void* key) const OVERRIDE {
+    DCHECK(finished_);
     if (count_ == 0) {
       return Status::NotFound("no keys in data block");
     }
-    memcpy(key, cell_ptr(0), size_of_type);
+    memcpy(key, &first_key_, size_of_type);
     return Status::OK();
   }
 
   Status GetLastKey(void* key) const OVERRIDE {
+    DCHECK(finished_);
     if (count_ == 0) {
       return Status::NotFound("no keys in data block");
     }
-    // TODO(todd): the following memcpy is incorrect. Will fix this in the
-    // next commit in this patch series.
-    memcpy(key, &data_[count_ - 1], size_of_type);
+    memcpy(key, &last_key_, size_of_type);
     return Status::OK();
   }
 
   Slice Finish(rowid_t ordinal_pos) OVERRIDE {
+    RememberFirstAndLastKey();
     return Finish(ordinal_pos, size_of_type);
   }
 
@@ -152,6 +155,15 @@ class BShufBlockBuilder : public BlockBuilder {
   CppType* cell_ptr(int idx) {
     DCHECK_GE(idx, 0);
     return reinterpret_cast<CppType*>(&data_[idx * size_of_type]);
+  }
+
+  // Remember the last added key in 'last_key_'. This is done during
+  // Finish() because Finish() may rearrange/collapse the values in the
+  // data_ buffer during the encoding process.
+  void RememberFirstAndLastKey() {
+    if (count_ == 0) return;
+    memcpy(&first_key_, cell_ptr(0), size_of_type);
+    memcpy(&last_key_, cell_ptr(count_ - 1), size_of_type);
   }
 
   size_t EstimateEncodedSize() const {
@@ -196,6 +208,7 @@ class BShufBlockBuilder : public BlockBuilder {
     InlineEncodeFixed32(&buffer_[8], kHeaderSize + bytes);
     InlineEncodeFixed32(&buffer_[12], num_elems_after_padding);
     InlineEncodeFixed32(&buffer_[16], final_size_of_type);
+    finished_ = true;
     return Slice(buffer_.data(), kHeaderSize + bytes);
   }
 
@@ -208,6 +221,9 @@ class BShufBlockBuilder : public BlockBuilder {
   faststring data_;
   faststring buffer_;
   uint32_t count_;
+  bool finished_;
+  CppType first_key_;
+  CppType last_key_;
   const WriterOptions* options_;
 };
 

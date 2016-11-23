@@ -245,6 +245,13 @@ class TestEncoding : public ::testing::Test {
     // the slice should take at least a few bytes per entry
     ASSERT_GT(s.size(), kCount * 2u);
 
+    // Check first/last keys
+    Slice key;
+    ASSERT_OK(sbb.GetFirstKey(&key));
+    ASSERT_EQ("hello 0", key);
+    ASSERT_OK(sbb.GetLastKey(&key));
+    ASSERT_EQ(StringPrintf("hello %d", kCount - 1), key);
+
     DecoderType sbd(s);
     ASSERT_OK(sbd.ParseHeader());
     ASSERT_EQ(kCount, sbd.Count());
@@ -300,8 +307,9 @@ class TestEncoding : public ::testing::Test {
 
     CHECK_EQ(num_ints, ibb->Add(reinterpret_cast<uint8_t *>(&data[0]),
                                num_ints));
-
     Slice s = ibb->Finish(0);
+    LOG(INFO) << "Created " << TypeTraits<IntType>::name() << " block with " << num_ints << " ints"
+              << " (" << s.size() << " bytes)";
     BlockDecoderType ibd(s);
     ASSERT_OK(ibd.ParseHeader());
 
@@ -477,6 +485,13 @@ class TestEncoding : public ::testing::Test {
     ibb->Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
              to_insert.size());
     Slice s = ibb->Finish(kOrdinalPosBase);
+
+    // Check GetFirstKey() and GetLastKey().
+    CppType key;
+    ASSERT_OK(ibb->GetFirstKey(&key));
+    ASSERT_EQ(to_insert.front(), key);
+    ASSERT_OK(ibb->GetLastKey(&key));
+    ASSERT_EQ(to_insert.back(), key);
 
     DecoderType ibd(s);
     ASSERT_OK(ibd.ParseHeader());
@@ -862,12 +877,14 @@ class IntEncodingTest : public TestEncoding {
 
 
 TYPED_TEST(IntEncodingTest, TestSeekAllTypes) {
-  this->template DoIntSeekTest<UINT8>(32, 1000, true);
-  this->template DoIntSeekTest<INT8>(32, 1000, true);
-  this->template DoIntSeekTest<UINT16>(64, 1000, true);
-  this->template DoIntSeekTest<INT16>(64, 1000, true);
-  this->template DoIntSeekTest<UINT32>(64, 1000, true);
-  this->template DoIntSeekTest<INT32>(64, 1000, true);
+  this->template DoIntSeekTest<UINT8>(100, 1000, true);
+  this->template DoIntSeekTest<INT8>(100, 1000, true);
+  this->template DoIntSeekTest<UINT16>(10000, 1000, true);
+  this->template DoIntSeekTest<INT16>(10000, 1000, true);
+  this->template DoIntSeekTest<UINT32>(10000, 1000, true);
+  this->template DoIntSeekTest<INT32>(10000, 1000, true);
+  this->template DoIntSeekTest<UINT64>(10000, 1000, true);
+  this->template DoIntSeekTest<INT64>(10000, 1000, true);
 }
 
 TYPED_TEST(IntEncodingTest, IntSeekTestTinyBlockAllTypes) {
@@ -877,6 +894,8 @@ TYPED_TEST(IntEncodingTest, IntSeekTestTinyBlockAllTypes) {
   this->template DoIntSeekTestTinyBlock<INT16>();
   this->template DoIntSeekTestTinyBlock<UINT32>();
   this->template DoIntSeekTestTinyBlock<INT32>();
+  this->template DoIntSeekTestTinyBlock<UINT64>();
+  this->template DoIntSeekTestTinyBlock<INT64>();
 }
 
 TYPED_TEST(IntEncodingTest, TestRoundTrip) {
@@ -886,6 +905,8 @@ TYPED_TEST(IntEncodingTest, TestRoundTrip) {
   this->template DoIntRoundTripTest<INT16>();
   this->template DoIntRoundTripTest<UINT32>();
   this->template DoIntRoundTripTest<INT32>();
+  this->template DoIntRoundTripTest<UINT64>();
+  this->template DoIntRoundTripTest<INT64>();
 }
 
 #ifdef NDEBUG
