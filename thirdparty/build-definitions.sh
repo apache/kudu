@@ -445,7 +445,7 @@ build_bitshuffle() {
     to_link="$to_link $dst_obj"
   done
 
-  rm bitshuffle.a
+  rm -f bitshuffle.a
   ar rs bitshuffle.a $to_link
   cp bitshuffle.a $PREFIX/lib/
   cp $BITSHUFFLE_SOURCE/src/bitshuffle.h $PREFIX/include/bitshuffle.h
