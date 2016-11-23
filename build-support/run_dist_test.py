@@ -128,6 +128,11 @@ def main():
   env['GTEST_OUTPUT'] = 'xml:' + os.path.abspath(
     os.path.join(test_dir, "..", "test-logs")) + '/'
 
+  # Don't pollute /tmp in dist-test setting. If a test crashes, the dist-test slave
+  # will clear up our working directory but won't be able to find and clean up things
+  # left in /tmp.
+  env['TEST_TMPDIR'] = os.path.abspath(os.path.join(ROOT, "test-tmp"))
+
   env['ASAN_SYMBOLIZER_PATH'] = os.path.join(ROOT, "thirdparty/installed/uninstrumented/bin/llvm-symbolizer")
   rc = subprocess.call([os.path.join(ROOT, "build-support/run-test.sh")] + args,
                        env=env)
