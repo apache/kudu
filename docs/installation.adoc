@@ -256,7 +256,7 @@ on a version older than 7.0, the Red Hat Developer Toolset must be installed
 ----
 $ sudo yum install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
   cyrus-sasl-plain gcc gcc-c++ gdb git krb5-server krb5-workstation libtool \
-  make openssl-devel patch pkgconfig redhat-lsb-core rsync unzip vim-common
+  make openssl-devel patch pkgconfig redhat-lsb-core rsync unzip vim-common which
 ----
 
 . If building on RHEL or CentOS older than 7.0, install the Red Hat Developer
@@ -336,7 +336,7 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 
 sudo yum -y install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
   cyrus-sasl-plain gcc gcc-c++ gdb git krb5-server krb5-workstation libtool \
-  make openssl-devel patch pkgconfig redhat-lsb-core rsync unzip vim-common
+  make openssl-devel patch pkgconfig redhat-lsb-core rsync unzip vim-common which
 DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64.noarch.rpm
 DTLS_RPM_URL=https://www.softwarecollections.org/en/scls/rhscl/devtoolset-3/epel-6-x86_64/download/${DTLS_RPM}
 wget ${DTLS_RPM_URL} -O ${DTLS_RPM}
