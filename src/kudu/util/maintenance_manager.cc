@@ -28,6 +28,7 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/debug/trace_logging.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/stopwatch.h"
@@ -204,6 +205,11 @@ void MaintenanceManager::RunSchedulerThread() {
       return;
     }
 
+    if (!FLAGS_enable_maintenance_manager) {
+      KLOG_EVERY_N_SECS(INFO, 30) << "Maintenance manager is disabled. Doing nothing";
+      return;
+    }
+
     // Find the best op.
     MaintenanceOp* op = FindBestOp();
     if (!op) {
@@ -255,10 +261,6 @@ void MaintenanceManager::RunSchedulerThread() {
 MaintenanceOp* MaintenanceManager::FindBestOp() {
   TRACE_EVENT0("maintenance", "MaintenanceManager::FindBestOp");
 
-  if (!FLAGS_enable_maintenance_manager) {
-    VLOG_AND_TRACE("maintenance", 1) << "Maintenance manager is disabled. Doing nothing";
-    return nullptr;
-  }
   size_t free_threads = num_threads_ - running_ops_;
   if (free_threads == 0) {
     VLOG_AND_TRACE("maintenance", 1) << "there are no free threads, so we can't run anything.";

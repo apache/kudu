@@ -250,7 +250,6 @@ void ReactorThread::TimerHandler(ev::timer &watcher, int revents) {
     return;
   }
   MonoTime now(MonoTime::Now());
-  VLOG(4) << name() << ": timer tick at " << now.ToString();
   cur_time_ = now;
 
   ScanIdleConnections();
@@ -269,8 +268,8 @@ void ReactorThread::ScanIdleConnections() {
   for (; c != c_end; ) {
     const scoped_refptr<Connection>& conn = *c;
     if (!conn->Idle()) {
-      VLOG(3) << "Connection " << conn->ToString() << " not idle";
-      ++c; // TODO: clean up this loop
+      VLOG(10) << "Connection " << conn->ToString() << " not idle";
+      ++c; // TODO(todd): clean up this loop
       continue;
     }
 
