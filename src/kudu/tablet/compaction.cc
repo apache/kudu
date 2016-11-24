@@ -1049,10 +1049,7 @@ Status DebugDumpCompactionInput(CompactionInput *input, vector<string> *lines) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     for (const CompactionInputRow &input_row : rows) {
-      const Schema* schema = input_row.row.schema();
-      LOG_STRING(INFO, lines) << schema->DebugRow(input_row.row) <<
-        " Undos: " + Mutation::StringifyMutationList(*schema, input_row.undo_head) <<
-        " Redos: " + Mutation::StringifyMutationList(*schema, input_row.redo_head);
+      LOG_STRING(INFO, lines) << CompactionInputRowToString(input_row);
     }
 
     RETURN_NOT_OK(input->FinishBlock());

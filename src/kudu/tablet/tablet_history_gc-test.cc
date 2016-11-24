@@ -141,7 +141,8 @@ TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnMajorDeltaCompaction) {
 
   // Now, we should have base data = 2 with no other historical values.
   // Major delta compaction will not remove UNDOs, so we expect a single UNDO DELETE as well.
-  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=2\) Undos: \[@[[:digit:]]+\(DELETE\)\] Redos: \[\]$)");
+  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=2\); Undo Mutations: \[@[[:digit:]]+\(DELETE\)\]; )"
+                               R"(Redo Mutations: \[\];$)");
 }
 
 // Test that major delta compaction works when run on a subset of columns:
@@ -182,8 +183,8 @@ TEST_F(TabletHistoryGcTest, TestMajorDeltaCompactionOnSubsetOfColumns) {
                                                         tablet()->GetHistoryGcOpts()));
   }
 
-  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=2\) Undos: \[@[[:digit:]]+\(DELETE\)\] )"
-                               R"(Redos: \[@[[:digit:]]+\(SET key_idx=1\)\]$)");
+  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=2\); Undo Mutations: \[@[[:digit:]]+\(DELETE\)\]; )"
+                               R"(Redo Mutations: \[@[[:digit:]]+\(SET key_idx=1\)\];$)");
 
   vector<string> rows;
   ASSERT_OK(IterateToStringList(&rows));
@@ -239,7 +240,7 @@ TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnMRSFlush) {
     ASSERT_EQ(0, rsmd->undo_delta_blocks().size());
   }
   NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, 1, Timestamp(0), kRowsEqual0));
-  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=0\) Undos: \[\] Redos: \[\]$)");
+  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=0\); Undo Mutations: \[\]; Redo Mutations: \[\];$)");
 }
 
 // Test that undos get GCed on a merge compaction.
@@ -261,7 +262,7 @@ TEST_F(TabletHistoryGcTest, TestUndoGCOnMergeCompaction) {
   // Now the only thing we can see is the base data.
   NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, TotalNumRows(), time_before_insert,
                                                    kRowsEqual0));
-  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=0\) Undos: \[\] Redos: \[\]$)");
+  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=0\); Undo Mutations: \[\]; Redo Mutations: \[\];$)");
 }
 
 // Test that we GC the history and existence of entire deleted rows on a merge compaction.
@@ -282,12 +283,14 @@ TEST_F(TabletHistoryGcTest, TestRowRemovalGCOnMergeCompaction) {
   }
   ASSERT_OK(tablet()->Flush());
   ASSERT_DEBUG_DUMP_ROWS_MATCH(
-      R"(int32 val=0\) Undos: \[@[[:digit:]]+\(DELETE\)\] Redos: \[@[[:digit:]]+\(DELETE\)\]$)");
+      R"(int32 val=0\); Undo Mutations: \[@[[:digit:]]+\(DELETE\)\]; )"
+      R"(Redo Mutations: \[@[[:digit:]]+\(DELETE\)\];$)");
 
   // Compaction at this time will only remove the initial UNDO records. The
   // DELETE REDOs are too recent.
   ASSERT_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
-  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=0\) Undos: \[\] Redos: \[@[[:digit:]]+\(DELETE\)\]$)");
+  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=0\); Undo Mutations: \[\]; Redo Mutations: )"
+                               R"(\[@[[:digit:]]+\(DELETE\)\];$)");
 
   // Move the AHM so that the delete is now prior to it.
   NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(200)));
@@ -330,8 +333,8 @@ TEST_F(TabletHistoryGcTest, TestNoUndoGCUntilAncientHistoryMark) {
   // Still read 0 from the past.
   NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, TotalNumRows(), prev_time,
                                                    kRowsEqual0));
-  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=1\) Undos: \[@[[:digit:]]+\(SET val=0\), )"
-                               R"(@[[:digit:]]+\(DELETE\)\] Redos: \[\]$)");
+  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=1\); Undo Mutations: \[@[[:digit:]]+\(SET val=0\), )"
+                               R"(@[[:digit:]]+\(DELETE\)\]; Redo Mutations: \[\];$)");
 }
 
 // Test that "ghost" rows (deleted on one rowset, reinserted on another) don't
@@ -357,7 +360,7 @@ TEST_F(TabletHistoryGcTest, TestGhostRowsNotRevived) {
 
   // We should end up with a single row as base data.
   NO_FATALS(VerifyTestRows(0, 1));
-  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=3\) Undos: \[\] Redos: \[\])");
+  ASSERT_DEBUG_DUMP_ROWS_MATCH(R"(int32 val=3\); Undo Mutations: \[\]; Redo Mutations: \[\];)");
 }
 
 // Test to ensure that nothing bad happens when we partially GC different rows
