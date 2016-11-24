@@ -392,8 +392,7 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
 
         client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
         session->SetTimeoutMillis(20000);
-        ASSERT_OK_FAST(session->SetFlushMode(
-                         client::KuduSession::AUTO_FLUSH_BACKGROUND));
+        ASSERT_OK_FAST(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
 
         for (int32_t i = 0; i < num_rows_to_insert; i++) {
           int32_t row_key = rows_inserted_;
@@ -459,8 +458,7 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
         } else {
           client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
           session->SetTimeoutMillis(20000);
-          ASSERT_OK_FAST(session->SetFlushMode(
-                           client::KuduSession::AUTO_FLUSH_BACKGROUND));
+          ASSERT_OK_FAST(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
 
           for (const MaterializedTestRow& test_row : updates) {
             unique_ptr<client::KuduUpdate> update(table->NewUpdate());
@@ -519,8 +517,7 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
         } else {
           client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
           session->SetTimeoutMillis(20000);
-          ASSERT_OK_FAST(session->SetFlushMode(
-                           client::KuduSession::AUTO_FLUSH_BACKGROUND));
+          ASSERT_OK_FAST(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
 
           for (int32_t row_key : deletes) {
             unique_ptr<client::KuduDelete> del(table->NewDelete());
