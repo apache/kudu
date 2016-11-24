@@ -538,7 +538,7 @@ TEST_F(ConsistencyITest, TestSnapshotScanTimestampReuse) {
 // with the specified timestamp to retrieve the data: it should observe
 // a timestamp which is not less than the propagated timestamp
 // encoded in the token.
-TEST_F(ConsistencyITest, DISABLED_TestScanTokenTimestampPropagation) {
+TEST_F(ConsistencyITest, TestScanTokenTimestampPropagation) {
   const int32_t offset_usec = FLAGS_max_clock_sync_error_usec;
 
   // Need to have at least one row in the first partition with

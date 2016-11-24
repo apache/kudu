@@ -51,9 +51,6 @@ KuduScanToken::Data::Data(KuduTable* table,
       tablet_(std::move(tablet)) {
 }
 
-KuduScanToken::Data::~Data() {
-}
-
 Status KuduScanToken::Data::IntoKuduScanner(KuduScanner** scanner) const {
   return PBIntoScanner(table_->client(), message_, scanner);
 }
@@ -154,11 +151,11 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     RETURN_NOT_OK(scan_builder->SetSnapshotRaw(message.snap_timestamp()));
   }
 
-  if (message.has_propagated_timestamp()) {
-    // TODO(KUDU-420)
-  }
-
   RETURN_NOT_OK(scan_builder->SetCacheBlocks(message.cache_blocks()));
+
+  if (message.has_propagated_timestamp()) {
+    client->data_->UpdateLatestObservedTimestamp(message.propagated_timestamp());
+  }
 
   *scanner = scan_builder.release();
   return Status::OK();
@@ -219,6 +216,7 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
 
   pb.set_cache_blocks(configuration_.spec().cache_blocks());
   pb.set_fault_tolerant(configuration_.is_fault_tolerant());
+  pb.set_propagated_timestamp(client->GetLatestObservedTimestamp());
 
   MonoTime deadline = MonoTime::Now() + client->default_admin_operation_timeout();
 

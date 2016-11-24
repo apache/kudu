@@ -33,7 +33,6 @@ class KuduScanToken::Data {
   explicit Data(KuduTable* table,
                 ScanTokenPB message,
                 std::unique_ptr<KuduTablet> tablet);
-  ~Data();
 
   Status IntoKuduScanner(KuduScanner** scanner) const;
 

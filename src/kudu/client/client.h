@@ -464,6 +464,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class ClientTest;
   friend class KuduClientBuilder;
   friend class KuduScanner;
+  friend class KuduScanToken;
   friend class KuduScanTokenBuilder;
   friend class KuduSession;
   friend class KuduTable;

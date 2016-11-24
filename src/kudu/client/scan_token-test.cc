@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "kudu/client/client.h"
+#include "kudu/client/client.pb.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -319,6 +320,85 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
     ASSERT_EQ(2, tokens.size());
     ASSERT_EQ(40, CountRows(tokens));
     NO_FATALS(VerifyTabletInfo(tokens));
+  }
+}
+
+// When building a scanner from a serialized scan token,
+// verify that the propagated timestamp from the token makes its way into the
+// latest observed timestamp of the client object.
+TEST_F(ScanTokenTest, TestTimestampPropagation) {
+  static const string kTableName = "p_ts_table";
+
+  // Create a table to work with:
+  //   * Deserializing a scan token into a scanner requires the table to exist.
+  //   * Creating a scan token requires the table to exist.
+  shared_ptr<KuduTable> table;
+  {
+    static const string kKeyColumnName = "c_key";
+    KuduSchema schema;
+    {
+      KuduSchemaBuilder builder;
+      builder.AddColumn(kKeyColumnName)->NotNull()->
+          Type(KuduColumnSchema::INT64)->PrimaryKey();
+      ASSERT_OK(builder.Build(&schema));
+    }
+
+    {
+      unique_ptr<KuduPartialRow> split(schema.NewRow());
+      ASSERT_OK(split->SetInt64(kKeyColumnName, 0));
+      unique_ptr<client::KuduTableCreator> creator(client_->NewTableCreator());
+      ASSERT_OK(creator->table_name(kTableName)
+                .schema(&schema)
+                .add_hash_partitions({ kKeyColumnName }, 2)
+                .split_rows({ split.release() })
+                .num_replicas(1)
+                .Create());
+    }
+  }
+
+  // Deserialize a scan token and make sure the client's last observed timestamp
+  // is updated accordingly.
+  {
+    const uint64_t ts_prev = client_->GetLatestObservedTimestamp();
+    const uint64_t ts_propagated = ts_prev + 1000000;
+
+    ScanTokenPB pb;
+    pb.set_table_name(kTableName);
+    pb.set_read_mode(::kudu::READ_AT_SNAPSHOT);
+    pb.set_propagated_timestamp(ts_propagated);
+    const string serialized_token = pb.SerializeAsString();
+    EXPECT_EQ(ts_prev, client_->GetLatestObservedTimestamp());
+
+    KuduScanner* scanner_raw;
+    ASSERT_OK(KuduScanToken::DeserializeIntoScanner(client_.get(),
+                                                    serialized_token,
+                                                    &scanner_raw));
+    // The caller of the DeserializeIntoScanner() is responsible for
+    // de-allocating the result scanner object.
+    unique_ptr<KuduScanner> scanner(scanner_raw);
+    EXPECT_EQ(ts_propagated, client_->GetLatestObservedTimestamp());
+  }
+
+  // Build the set of scan tokens for the table, serialize them and
+  // make sure the serialized tokens contain the propagated timestamp.
+  {
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+    const uint64_t ts_prev = client_->GetLatestObservedTimestamp();
+    const uint64_t ts_propagated = ts_prev + 1000000;
+
+    client_->SetLatestObservedTimestamp(ts_propagated);
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
+    for (const auto* t : tokens) {
+      string serialized_token;
+      ASSERT_OK(t->Serialize(&serialized_token));
+
+      ScanTokenPB pb;
+      ASSERT_TRUE(pb.ParseFromString(serialized_token));
+      ASSERT_TRUE(pb.has_propagated_timestamp());
+      EXPECT_EQ(ts_propagated, pb.propagated_timestamp());
+    }
   }
 }
 
