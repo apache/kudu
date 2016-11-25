@@ -645,7 +645,7 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
     # This test has a corresponding .cc file, set it up as an executable.
     set(TEST_PATH "${EXECUTABLE_OUTPUT_PATH}/${TEST_NAME}")
     ADD_KUDU_TEST_NO_CTEST(${REL_TEST_NAME})
-  else()
+  elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${REL_TEST_NAME})
     # No executable, just invoke the test (probably a script) directly.
     get_filename_component(TEST_NAME_WITH_EXT ${REL_TEST_NAME} NAME)
     set(TEST_PATH "${EXECUTABLE_OUTPUT_PATH}/${TEST_NAME_WITH_EXT}")
@@ -655,6 +655,8 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
     # on an add_custom_command() that copies the test file into place).
     execute_process(COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/${REL_TEST_NAME}
       ${EXECUTABLE_OUTPUT_PATH})
+  else()
+    message(FATAL_ERROR "Neither ${REL_TEST_NAME} nor ${REL_TEST_NAME}.cc were found in ${CMAKE_CURRENT_SOURCE_DIR}/")
   endif()
 
   add_test(${TEST_NAME}
