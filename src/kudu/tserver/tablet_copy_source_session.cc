@@ -44,16 +44,11 @@ namespace tserver {
 using consensus::MinimumOpId;
 using consensus::OpId;
 using fs::ReadableBlock;
-using log::LogAnchorRegistry;
 using log::ReadableLogSegment;
 using std::shared_ptr;
 using strings::Substitute;
-using tablet::ColumnDataPB;
-using tablet::DeltaDataPB;
-using tablet::RowSetDataPB;
 using tablet::TabletMetadata;
 using tablet::TabletPeer;
-using tablet::TabletSuperBlockPB;
 
 TabletCopySourceSession::TabletCopySourceSession(
     const scoped_refptr<TabletPeer>& tablet_peer, std::string session_id,
@@ -260,18 +255,17 @@ Status TabletCopySourceSession::GetBlockPiece(const BlockId& block_id,
 }
 
 Status TabletCopySourceSession::GetLogSegmentPiece(uint64_t segment_seqno,
-                                                  uint64_t offset, int64_t client_maxlen,
-                                                  std::string* data, int64_t* block_file_size,
-                                                  TabletCopyErrorPB::Code* error_code) {
+                                                   uint64_t offset, int64_t client_maxlen,
+                                                   std::string* data, int64_t* log_file_size,
+                                                   TabletCopyErrorPB::Code* error_code) {
   ImmutableRandomAccessFileInfo* file_info;
   RETURN_NOT_OK(FindLogSegment(segment_seqno, &file_info, error_code));
   RETURN_NOT_OK(ReadFileChunkToBuf(file_info, offset, client_maxlen,
                                    Substitute("log segment $0", segment_seqno),
-                                   data, block_file_size, error_code));
+                                   data, log_file_size, error_code));
 
   // Note: We do not eagerly close log segment files, since we share ownership
   // of the LogSegment objects with the Log itself.
-
   return Status::OK();
 }
 

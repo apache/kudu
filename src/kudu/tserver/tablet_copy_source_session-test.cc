@@ -50,7 +50,6 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadata;
-using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
 using fs::ReadableBlock;
@@ -114,7 +113,7 @@ class TabletCopyTest : public KuduTabletTest {
                             Unretained(this),
                             tablet()->tablet_id())));
 
-    // TODO similar to code in tablet_peer-test, consider refactor.
+    // TODO(dralves) similar to code in tablet_peer-test, consider refactor.
     RaftConfigPB config;
     config.add_peers()->CopyFrom(config_peer);
     config.set_opid_index(consensus::kInvalidOpIdIndex);
