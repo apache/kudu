@@ -49,6 +49,11 @@
     </module>
     <!-- Turn off/on checkstyle with CHECKSTYLE:OFF CHECKSTYLE:ON comments -->
     <module name="SuppressionCommentFilter"/>
+    <!-- Suppress generated sources -->
+    <module name="SuppressionFilter">
+        <property name="file" value="checkstyle_suppressions.xml"/>
+        <property name="optional" value="false"/>
+    </module>
     <module name="TreeWalker">
         <module name="FileContentsHolder"/>
         <module name="OuterTypeFilename"/>

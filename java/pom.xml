@@ -257,10 +257,6 @@
                             <encoding>UTF-8</encoding>
                             <consoleOutput>true</consoleOutput>
                             <failsOnError>false</failsOnError>
-                            <!-- Don't check generated sources. -->
-                            <sourceDirectories>
-                                <sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
-                            </sourceDirectories>
                         </configuration>
                         <goals>
                             <goal>check</goal>
