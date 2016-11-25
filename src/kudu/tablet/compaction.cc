@@ -61,17 +61,17 @@ class MemRowSetCompactionInput : public CompactionInput {
       has_more_blocks_(false) {
   }
 
-  virtual Status Init() OVERRIDE {
+  Status Init() override {
     RETURN_NOT_OK(iter_->Init(nullptr));
     has_more_blocks_ = iter_->HasNext();
     return Status::OK();
   }
 
-  virtual bool HasMoreBlocks() OVERRIDE {
+  bool HasMoreBlocks() override {
     return has_more_blocks_;
   }
 
-  virtual Status PrepareBlock(vector<CompactionInputRow> *block) OVERRIDE {
+  Status PrepareBlock(vector<CompactionInputRow> *block) override {
     int num_in_block = iter_->remaining_in_leaf();
     block->resize(num_in_block);
 
@@ -107,13 +107,13 @@ class MemRowSetCompactionInput : public CompactionInput {
     return Status::OK();
   }
 
-  Arena* PreparedBlockArena() OVERRIDE { return &arena_; }
+  Arena* PreparedBlockArena() override { return &arena_; }
 
-  virtual Status FinishBlock() OVERRIDE {
+  Status FinishBlock() override {
     return Status::OK();
   }
 
-  virtual const Schema &schema() const OVERRIDE {
+  const Schema &schema() const override {
     return iter_->schema();
   }
 
@@ -148,7 +148,7 @@ class DiskRowSetCompactionInput : public CompactionInput {
         undo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)),
         first_rowid_in_block_(0) {}
 
-  virtual Status Init() OVERRIDE {
+  Status Init() override {
     ScanSpec spec;
     spec.set_cache_blocks(false);
     RETURN_NOT_OK(base_iter_->Init(&spec));
@@ -159,11 +159,11 @@ class DiskRowSetCompactionInput : public CompactionInput {
     return Status::OK();
   }
 
-  virtual bool HasMoreBlocks() OVERRIDE {
+  bool HasMoreBlocks() override {
     return base_iter_->HasNext();
   }
 
-  virtual Status PrepareBlock(vector<CompactionInputRow> *block) OVERRIDE {
+  Status PrepareBlock(vector<CompactionInputRow> *block) override {
     RETURN_NOT_OK(base_iter_->NextBlock(&block_));
     std::fill(redo_mutation_block_.begin(), redo_mutation_block_.end(),
               static_cast<Mutation *>(nullptr));
@@ -190,13 +190,13 @@ class DiskRowSetCompactionInput : public CompactionInput {
     return Status::OK();
   }
 
-  virtual Arena* PreparedBlockArena() OVERRIDE { return &arena_; }
+  Arena* PreparedBlockArena() override { return &arena_; }
 
-  virtual Status FinishBlock() OVERRIDE {
+  Status FinishBlock() override {
     return Status::OK();
   }
 
-  virtual const Schema &schema() const OVERRIDE {
+  const Schema &schema() const override {
     return base_iter_->schema();
   }
 
@@ -283,7 +283,7 @@ class MergeCompactionInput : public CompactionInput {
     STLDeleteElements(&states_);
   }
 
-  virtual Status Init() OVERRIDE {
+  Status Init() override {
     for (MergeState *state : states_) {
       RETURN_NOT_OK(state->input->Init());
     }
@@ -293,7 +293,7 @@ class MergeCompactionInput : public CompactionInput {
     return Status::OK();
   }
 
-  virtual bool HasMoreBlocks() OVERRIDE {
+  bool HasMoreBlocks() override {
     // Return true if any of the input blocks has more rows pending
     // or more blocks which have yet to be pulled.
     for (MergeState *state : states_) {
@@ -306,7 +306,7 @@ class MergeCompactionInput : public CompactionInput {
     return false;
   }
 
-  virtual Status PrepareBlock(vector<CompactionInputRow> *block) OVERRIDE {
+  Status PrepareBlock(vector<CompactionInputRow> *block) override {
     CHECK(!states_.empty());
 
     block->clear();
@@ -375,13 +375,13 @@ class MergeCompactionInput : public CompactionInput {
     return Status::OK();
   }
 
-  virtual Arena* PreparedBlockArena() OVERRIDE { return prepared_block_arena_; }
+  Arena* PreparedBlockArena() override { return prepared_block_arena_; }
 
-  virtual Status FinishBlock() OVERRIDE {
+  Status FinishBlock() override {
     return ProcessEmptyInputs();
   }
 
-  virtual const Schema &schema() const OVERRIDE {
+  const Schema &schema() const override {
     return *schema_;
   }
 
