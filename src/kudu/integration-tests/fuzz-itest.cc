@@ -474,18 +474,18 @@ TEST_F(FuzzTest, TestFuzz) {
 }
 
 // Generates a random test case, but the UPDATEs are all repeated many times.
-// This results in very row_keye batches which are likely to span multiple delta blocks
+// This results in very large batches which are likely to span multiple delta blocks
 // when flushed.
 TEST_F(FuzzTest, TestFuzzHugeBatches) {
   SeedRandom();
   vector<TestOp> test_ops;
-  GenerateTestCase(&test_ops, AllowSlowTests() ? 1000 : 50);
+  GenerateTestCase(&test_ops, AllowSlowTests() ? 500 : 50);
   int update_multiplier;
 #ifdef THREAD_SANITIZER
-  // TSAN builds run more slowly, so 1000 can cause timeouts.
+  // TSAN builds run more slowly, so 500 can cause timeouts.
   update_multiplier = 100;
 #else
-  update_multiplier = 1000;
+  update_multiplier = 500;
 #endif
   RunFuzzCase(test_ops, update_multiplier);
 }
