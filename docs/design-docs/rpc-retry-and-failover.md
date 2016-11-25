@@ -183,8 +183,9 @@ from history.
 ## Declaring RPCs as Exactly Once
 
 To make sure the results of an RPC are tracked **transiently** on the server side (we'll cover how
-to make sure ), all that is required is that the service definition enables the appropriate option.
-For instance in the case of writes this is done the following way:
+we made sure that write results were tracked **persistently** in the following section), all that
+is required is that the service definition enables the appropriate option. For instance in the case
+of writes this is done the following way:
 
 ```
 service TabletServerService {
