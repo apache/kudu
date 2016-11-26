@@ -127,7 +127,8 @@ class Tablet {
   // it's not the first thing in a transaction!
   void StartTransaction(WriteTransactionState* tx_state);
 
-  // Like the above but actually assigns the timestamp. Only used for tests.
+  // Like the above but actually assigns the timestamp. Only used for tests that
+  // don't boot a tablet server.
   void AssignTimestampAndStartTransactionForTests(WriteTransactionState* tx_state);
 
   // Insert a new row into the tablet.
@@ -475,6 +476,12 @@ class Tablet {
                                        const ReplaySizeMap& size_map);
 
   std::string LogPrefix() const;
+
+  // Test-only lock that synchronizes access to AssignTimestampAndStartTransactionForTests().
+  // Tests that use LocalTabletWriter take this lock to synchronize timestamp assignment,
+  // transaction start and safe time adjustment.
+  // NOTE: Should not be taken on non-test paths.
+  mutable simple_spinlock test_start_txn_lock_;
 
   // Lock protecting schema_ and key_schema_.
   //

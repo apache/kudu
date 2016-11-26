@@ -500,7 +500,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 
   // Before playing any segments we set the safe and clean times to 'kMin' so that
   // the MvccManager will accept all transactions that we replay as uncommitted.
-  tablet_->mvcc_manager()->OfflineAdjustSafeTime(Timestamp::kMin);
+  tablet_->mvcc_manager()->AdjustSafeTime(Timestamp::kMin);
   RETURN_NOT_OK_PREPEND(PlaySegments(consensus_info), "Failed log replay. Reason");
 
   // Flush the consensus metadata once at the end to persist our changes, if any.
@@ -1005,7 +1005,7 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
         Timestamp(replicate->timestamp()),
         MonoDelta::FromMicroseconds(-FLAGS_max_clock_sync_error_usec));
   }
-  tablet_->mvcc_manager()->OfflineAdjustSafeTime(safe_time);
+  tablet_->mvcc_manager()->AdjustSafeTime(safe_time);
 
   return Status::OK();
 }

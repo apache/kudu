@@ -369,17 +369,22 @@ Status Tablet::AcquireLockForOp(WriteTransactionState* tx_state, RowOp* op) {
 }
 
 void Tablet::AssignTimestampAndStartTransactionForTests(WriteTransactionState* tx_state) {
-  gscoped_ptr<ScopedTransaction> mvcc_tx;
   CHECK(!tx_state->has_timestamp());
+  // Don't support COMMIT_WAIT for tests that don't boot a tablet server.
+  CHECK_NE(tx_state->external_consistency_mode(), COMMIT_WAIT);
 
-  // We either assign a timestamp in the future, if the consistency mode is COMMIT_WAIT, or
-  // we assign one in the present if the consistency mode is any other one.
-  if (tx_state->external_consistency_mode() == COMMIT_WAIT) {
-    mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW_LATEST));
-  } else {
-    mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW));
+  // Make sure timestamp assignment and transaction start are atomic, for tests.
+  //
+  // This is to make sure that when test txns advance safe time later, we don't have
+  // any txn in-flight between getting a timestamp and being started. Otherwise we
+  // might run the risk of assigning a timestamp to txn1, and have another txn
+  // get a timestamp/start/advance safe time before txn1 starts making txn1's timestamp
+  // invalid on start.
+  {
+    std::lock_guard<simple_spinlock> l(test_start_txn_lock_);
+    tx_state->set_timestamp(clock_->Now());
+    StartTransaction(tx_state);
   }
-  tx_state->SetMvccTxAndTimestamp(std::move(mvcc_tx));
 }
 
 void Tablet::StartTransaction(WriteTransactionState* tx_state) {

@@ -34,6 +34,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/server/clock.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/tablet-test-util.h"
@@ -60,8 +61,8 @@ class TestRowSet : public KuduRowSetTest {
     : KuduRowSetTest(CreateTestSchema()),
       n_rows_(FLAGS_roundtrip_num_rows),
       op_id_(consensus::MaximumOpId()),
-      mvcc_(scoped_refptr<server::Clock>(
-          server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
+      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
+      mvcc_(clock_) {
     CHECK_GT(n_rows_, 0);
   }
 
@@ -186,7 +187,7 @@ class TestRowSet : public KuduRowSetTest {
     RowSetKeyProbe probe(rb.row());
 
     ProbeStats stats;
-    ScopedTransaction tx(&mvcc_);
+    ScopedTransaction tx(&mvcc_, clock_->Now());
     tx.StartApplying();
     Status s = rs->MutateRow(tx.timestamp(), probe, mutation, op_id_, &stats, result);
     tx.Commit();
@@ -335,6 +336,7 @@ class TestRowSet : public KuduRowSetTest {
 
   size_t n_rows_;
   consensus::OpId op_id_; // Generally a "fake" OpId for these tests.
+  scoped_refptr<server::Clock> clock_;
   MvccManager mvcc_;
 };
 

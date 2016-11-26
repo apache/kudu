@@ -70,8 +70,8 @@ class TestCompaction : public KuduRowSetTest {
     : KuduRowSetTest(CreateSchema()),
       op_id_(consensus::MaximumOpId()),
       row_builder_(schema_),
-      mvcc_(scoped_refptr<server::Clock>(
-              server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))),
+      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
+      mvcc_(clock_),
       log_anchor_registry_(new log::LogAnchorRegistry()) {
   }
 
@@ -95,7 +95,7 @@ class TestCompaction : public KuduRowSetTest {
   // The 'nullable_val' column is set to either NULL (when val is odd)
   // or 'val' (when val is even).
   void InsertRow(MemRowSet *mrs, int row_key, int32_t val) {
-    ScopedTransaction tx(&mvcc_);
+    ScopedTransaction tx(&mvcc_, clock_->Now());
     tx.StartApplying();
     row_builder_.Reset();
     snprintf(key_buf_, sizeof(key_buf_), kRowKeyFormat, row_key);
@@ -134,7 +134,7 @@ class TestCompaction : public KuduRowSetTest {
     ColumnId nullable_col_id = schema_.column_id(schema_.find_column("nullable_val"));
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
-      ScopedTransaction tx(&mvcc_);
+      ScopedTransaction tx(&mvcc_, clock_->Now());
       tx.StartApplying();
       snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, i * 10 + delta);
 
@@ -169,7 +169,7 @@ class TestCompaction : public KuduRowSetTest {
     faststring update_buf;
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
-      ScopedTransaction tx(&mvcc_);
+      ScopedTransaction tx(&mvcc_, clock_->Now());
       tx.StartApplying();
       snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, i * 10 + delta);
 
@@ -397,6 +397,7 @@ class TestCompaction : public KuduRowSetTest {
 
   RowBuilder row_builder_;
   char key_buf_[256];
+  scoped_refptr<server::Clock> clock_;
   MvccManager mvcc_;
 
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
