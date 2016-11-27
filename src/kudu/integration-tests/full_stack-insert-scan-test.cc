@@ -56,6 +56,8 @@
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 
+DEFINE_bool(skip_scans, false, "Whether to skip the scan part of the test.");
+
 // Test size parameters
 DEFINE_int32(concurrent_inserts, -1, "Number of inserting clients to launch");
 DEFINE_int32(inserts_per_client, -1,
@@ -304,6 +306,10 @@ void FullStackInsertScanTest::DoConcurrentClientInserts() {
 }
 
 void FullStackInsertScanTest::DoTestScans() {
+  if (FLAGS_skip_scans) {
+    LOG(INFO) << "Skipped scan part of the test.";
+    return;
+  }
   LOG(INFO) << "Doing test scans on table of " << kNumRows << " rows.";
 
   gscoped_ptr<Subprocess> stat = MakePerfStat();
