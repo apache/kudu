@@ -202,8 +202,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder(super.toString());
-    sb.append(" row_key=");
-    sb.append(row.stringifyRowKey());
+    sb.append(' ');
+    sb.append(row.toString());
     return sb.toString();
   }
 

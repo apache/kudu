@@ -521,6 +521,35 @@ public class PartialRow {
     return KeyEncoder.encodePrimaryKey(this);
   }
 
+  /** {@inheritDoc} */
+  public String toString() {
+    int numCols = schema.getColumnCount();
+    StringBuilder sb = new StringBuilder();
+    sb.append('(');
+    boolean first = true;
+    for (int idx = 0; idx < numCols; ++idx) {
+      if (!columnsBitSet.get(idx)) {
+        continue;
+      }
+
+      if (first) {
+        first = false;
+      } else {
+        sb.append(", ");
+      }
+
+      ColumnSchema col = schema.getColumnByIndex(idx);
+      sb.append(col.getType().getName());
+      sb.append(' ');
+      sb.append(col.getName());
+      sb.append('=');
+
+      appendCellValueDebugString(idx, sb);
+    }
+    sb.append(')');
+    return sb.toString();
+  }
+
   /**
    * Transforms the row key into a string representation where each column is in the format:
    * "type col_name=value".
@@ -629,7 +658,7 @@ public class PartialRow {
       case STRING:
         ByteBuffer value = getVarLengthData().get(idx).duplicate();
         value.reset(); // Make sure we start at the beginning.
-        byte[] data = new byte[value.limit()];
+        byte[] data = new byte[value.limit() - value.position()];
         value.get(data);
         if (col.getType() == Type.STRING) {
           sb.append('"');
