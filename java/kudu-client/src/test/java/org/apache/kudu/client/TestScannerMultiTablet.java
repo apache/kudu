@@ -200,8 +200,8 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     // specified. Verify that the scanner timestamp is set from the tablet
     // server response.
     AsyncKuduScanner scanner = client.newScannerBuilder(table)
-            .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
-            .build();
+        .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
+        .build();
     assertEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
     KuduScanner syncScanner = new KuduScanner(scanner);
     assertEquals(scanner.getReadMode(), syncScanner.getReadMode());
@@ -221,6 +221,35 @@ public class TestScannerMultiTablet extends BaseKuduTest {
       assertEquals(tsRef, scanner.getSnapshotTimestamp());
     }
     assertEquals(9, rowCount);
+  }
+
+  @Test(timeout = 100000)
+  public void testScanPropagatesLatestTimestamp() throws Exception {
+    AsyncKuduScanner scanner = client.newScannerBuilder(table).build();
+    // Initially, the client does not have the timestamp set.
+    assertEquals(AsyncKuduClient.NO_TIMESTAMP, client.getLastPropagatedTimestamp());
+    KuduScanner syncScanner = new KuduScanner(scanner);
+
+    assertTrue(syncScanner.hasMoreRows());
+    assertEquals(AsyncKuduClient.NO_TIMESTAMP, client.getLastPropagatedTimestamp());
+
+    int rowCount = syncScanner.nextRows().getNumRows();
+    // At this point, the call to the first tablet server should have been
+    // done already, so the client should have received the propagated timestamp
+    // in the scanner response.
+    long tsRef = client.getLastPropagatedTimestamp();
+    assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, tsRef);
+
+    assertTrue(syncScanner.hasMoreRows());
+    while (syncScanner.hasMoreRows()) {
+      rowCount += syncScanner.nextRows().getNumRows();
+      final long ts = client.getLastPropagatedTimestamp();
+      // Next scan responses from tablet servers should move the propagated
+      // timestamp further.
+      assertTrue(ts > tsRef);
+      tsRef = ts;
+    }
+    assertNotEquals(0, rowCount);
   }
 
   private AsyncKuduScanner getScanner(String lowerBoundKeyOne,

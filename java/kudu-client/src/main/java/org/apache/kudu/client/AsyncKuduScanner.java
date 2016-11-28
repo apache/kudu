@@ -380,6 +380,9 @@ public final class AsyncKuduScanner {
             // context of the same scan.
             htTimestamp = resp.scanTimestamp;
           }
+          if (resp.propagatedTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+            client.updateLastPropagatedTimestamp(resp.propagatedTimestamp);
+          }
           if (!resp.more || resp.scannerId == null) {
             scanFinished();
             return Deferred.fromResult(resp.data); // there might be data to return
@@ -657,14 +660,23 @@ public final class AsyncKuduScanner {
      */
     private final long scanTimestamp;
 
+    /**
+     * The server timestamp to propagate, if set. If the server response does
+     * not contain propagation timestamp, this field is set to special value
+     * AsyncKuduClient.NO_TIMESTAMP
+     */
+    private final long propagatedTimestamp;
+
     Response(final byte[] scannerId,
              final RowResultIterator data,
              final boolean more,
-             final long scanTimestamp) {
+             final long scanTimestamp,
+             final long propagatedTimestamp) {
       this.scannerId = scannerId;
       this.data = data;
       this.more = more;
       this.scanTimestamp = scanTimestamp;
+      this.propagatedTimestamp = propagatedTimestamp;
     }
 
     public String toString() {
@@ -817,7 +829,9 @@ public final class AsyncKuduScanner {
       }
       Response response = new Response(id, iterator, hasMore,
           resp.hasSnapTimestamp() ? resp.getSnapTimestamp()
-                                  : AsyncKuduClient.NO_TIMESTAMP);
+                                  : AsyncKuduClient.NO_TIMESTAMP,
+          resp.hasPropagatedTimestamp() ? resp.getPropagatedTimestamp()
+                                        : AsyncKuduClient.NO_TIMESTAMP);
       if (LOG.isDebugEnabled()) {
         LOG.debug(response.toString());
       }

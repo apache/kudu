@@ -207,20 +207,17 @@ public class AsyncKuduClient implements AutoCloseable {
 
   /**
    * Updates the last timestamp received from a server. Used for CLIENT_PROPAGATED
-   * external consistency. This is only publicly visible so that it can be set
-   * on tests, users should generally disregard this method.
+   * external consistency.
    *
    * @param lastPropagatedTimestamp the last timestamp received from a server
    */
-  @VisibleForTesting
   public synchronized void updateLastPropagatedTimestamp(long lastPropagatedTimestamp) {
-    if (this.lastPropagatedTimestamp == -1 ||
+    if (this.lastPropagatedTimestamp == NO_TIMESTAMP ||
         this.lastPropagatedTimestamp < lastPropagatedTimestamp) {
       this.lastPropagatedTimestamp = lastPropagatedTimestamp;
     }
   }
 
-  @VisibleForTesting
   public synchronized long getLastPropagatedTimestamp() {
     return lastPropagatedTimestamp;
   }
