@@ -74,72 +74,12 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
 
   // Escape table and column names with ` to avoid conflicts with Impala reserved words.
   *output << "CREATE EXTERNAL TABLE " << EscapeForHtmlToString("`" + table_name + "`")
-          << " (\n";
-
-  vector<string> key_columns;
-
-  for (int i = 0; i < schema.num_columns(); i++) {
-    const ColumnSchema& col = schema.column(i);
-
-    *output << EscapeForHtmlToString("`" + col.name() + "`") << " ";
-    switch (col.type_info()->type()) {
-      case STRING:
-        *output << "STRING";
-        break;
-      case BINARY:
-        *output << "BINARY";
-        break;
-      case UINT8:
-      case INT8:
-        *output << "TINYINT";
-        break;
-      case UINT16:
-      case INT16:
-        *output << "SMALLINT";
-        break;
-      case UINT32:
-      case INT32:
-        *output << "INT";
-        break;
-      case UINT64:
-      case INT64:
-        *output << "BIGINT";
-        break;
-      case UNIXTIME_MICROS:
-        *output << "INT64";
-        break;
-      case FLOAT:
-        *output << "FLOAT";
-        break;
-      case DOUBLE:
-        *output << "DOUBLE";
-        break;
-      case BOOL:
-        *output << "BOOLEAN";
-        break;
-      default:
-        *output << "[unsupported type " << col.type_info()->name() << "!]";
-        break;
-    }
-    if (i < schema.num_columns() - 1) {
-      *output << ",";
-    }
-    *output << "\n";
-
-    if (schema.is_key_column(i)) {
-      key_columns.push_back(col.name());
-    }
-  }
-  *output << ")\n";
-
+          << " STORED AS KUDU\n";
   *output << "TBLPROPERTIES(\n";
-  *output << "  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',\n";
   *output << "  'kudu.table_name' = '";
   *output << EscapeForHtmlToString(table_name) << "',\n";
   *output << "  'kudu.master_addresses' = '";
-  *output << EscapeForHtmlToString(master_addresses) << "',\n";
-  *output << "  'kudu.key_columns' = '";
-  *output << EscapeForHtmlToString(JoinElements(key_columns, ", ")) << "'\n";
+  *output << EscapeForHtmlToString(master_addresses) << "'";
   *output << ");\n";
   *output << "</code></pre>\n";
 }
