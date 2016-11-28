@@ -91,8 +91,7 @@ Status BShufBlockDecoder<UINT32>::Expand() {
     decoded_.resize(num_elems_after_padding_ * size_of_elem_);
     uint8_t* in = const_cast<uint8_t*>(&data_[kHeaderSize]);
 
-    bytes = bitshuffle::decompress_lz4(in, decoded_.data(), num_elems_after_padding_,
-                                       size_of_elem_, 0);
+    bytes = bshuf_decompress_lz4(in, decoded_.data(), num_elems_after_padding_, size_of_elem_, 0);
     if (PREDICT_FALSE(bytes < 0)) {
       // Ideally, this should not happen.
       AbortWithBitShuffleError(bytes);
