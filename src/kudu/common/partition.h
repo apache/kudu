@@ -139,9 +139,6 @@ class PartitionSchema {
   // Appends the row's encoded partition key into the provided buffer.
   // On failure, the buffer may have data partially appended.
   Status EncodeKey(const KuduPartialRow& row, std::string* buf) const WARN_UNUSED_RESULT;
-
-  // Appends the row's encoded partition key into the provided buffer.
-  // On failure, the buffer may have data partially appended.
   Status EncodeKey(const ConstContiguousRow& row, std::string* buf) const WARN_UNUSED_RESULT;
 
   // Creates the set of table partitions for a partition schema and collection
@@ -163,8 +160,6 @@ class PartitionSchema {
   Status PartitionContainsRow(const Partition& partition,
                               const KuduPartialRow& row,
                               bool* contains) const WARN_UNUSED_RESULT;
-
-  // Tests if the partition contains the row.
   Status PartitionContainsRow(const Partition& partition,
                               const ConstContiguousRow& row,
                               bool* contains) const WARN_UNUSED_RESULT;
@@ -172,35 +167,40 @@ class PartitionSchema {
   // Returns a text description of the partition suitable for debug printing.
   std::string PartitionDebugString(const Partition& partition, const Schema& schema) const;
 
-  // Returns a text description of the partial row's partition key suitable for debug printing.
-  std::string RowDebugString(const KuduPartialRow& row) const;
-
-  // Returns a text description of the row's partition key suitable for debug printing.
-  std::string RowDebugString(const ConstContiguousRow& row) const;
-
-  // Returns a text description of the encoded partition key suitable for debug printing.
-  std::string PartitionKeyDebugString(const std::string& key, const Schema& schema) const;
+  // Returns a text description of a partition key suitable for debug printing.
+  std::string PartitionKeyDebugString(Slice key, const Schema& schema) const;
+  std::string PartitionKeyDebugString(const KuduPartialRow& row) const;
+  std::string PartitionKeyDebugString(const ConstContiguousRow& row) const;
 
   // Returns a text description of the range partition with the provided
   // inclusive lower bound and exclusive upper bound.
   std::string RangePartitionDebugString(const KuduPartialRow& lower_bound,
                                         const KuduPartialRow& upper_bound) const;
-
-  // Returns a text description of the range partition with the provided
-  // inclusive lower bound and exclusive upper bound.
-  std::string RangePartitionDebugString(const std::string& lower_bound,
-                                        const std::string& upper_bound,
+  std::string RangePartitionDebugString(Slice lower_bound,
+                                        Slice upper_bound,
                                         const Schema& schema) const;
 
   // Returns a text description of the encoded range key suitable for debug printing.
-  std::string RangeKeyDebugString(const std::string& range_key, const Schema& schema) const;
+  std::string RangeKeyDebugString(Slice range_key, const Schema& schema) const;
+  std::string RangeKeyDebugString(const KuduPartialRow& key) const;
+  std::string RangeKeyDebugString(const ConstContiguousRow& key) const;
 
   // Returns a text description of this partition schema suitable for debug printing.
   std::string DebugString(const Schema& schema) const;
 
   // Returns a text description of this partition schema suitable for display in the web UI.
   // The format of this string is not guaranteed to be identical cross-version.
-  std::string DisplayString(const Schema& schema) const;
+  //
+  // 'range_partitions' should include the set of range partitions in the table,
+  // as formatted by 'RangePartitionDebugString'.
+  std::string DisplayString(const Schema& schema,
+                            const std::vector<std::string>& range_partitions) const;
+
+  // Returns header and entry HTML cells for the partition schema for the master
+  // table web UI. This is an abstraction leak, but it's better than leaking the
+  // internals of partitions to the master path handlers.
+  std::string PartitionTableHeader(const Schema& schema) const;
+  std::string PartitionTableEntry(const Schema& schema, const Partition& partition) const;
 
   // Returns true if the other partition schema is equivalent to this one.
   bool Equals(const PartitionSchema& other) const;
@@ -251,6 +251,10 @@ class PartitionSchema {
                              const HashBucketSchema& hash_bucket_schema,
                              int32_t* bucket);
 
+  // PartitionKeyDebugString implementation for row types.
+  template<typename Row>
+  std::string PartitionKeyDebugStringImpl(const Row& row) const;
+
   // Private templated helper for PartitionContainsRow.
   template<typename Row>
   Status PartitionContainsRowImpl(const Partition& partition,
@@ -272,6 +276,10 @@ class PartitionSchema {
   // logical minimum value for that column will be used instead.
   void AppendRangeDebugStringComponentsOrMin(const KuduPartialRow& row,
                                              std::vector<std::string>* components) const;
+
+  /// Returns the stringified hash and range schema componenets of the partition
+  /// schema.
+  std::vector<std::string> DebugStringComponents(const Schema& schema) const;
 
   // Encode the provided row into a range key. The row must not include values
   // for any columns not in the range key. Missing range values will be filled

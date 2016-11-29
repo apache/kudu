@@ -240,12 +240,13 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
   // Prepare the tablets table first because the tablet partition information is
   // also used to make the range bounds.
-  std::set<std::pair<string, string>> range_bounds;
+  std::vector<string> range_partitions;
   std::ostringstream tablets_output;
   tablets_output << "<h3>Tablets</h3>";
   tablets_output << "<table class='table table-striped'>\n";
-  tablets_output << "  <tr><th>Tablet ID</th><th>Partition</th><th>State</th>"
-      "<th>Message</th><th>Peers</th></tr>\n";
+  tablets_output << "  <tr><th>Tablet ID</th>"
+                 << partition_schema.PartitionTableHeader(schema)
+                 << "<th>State</th><th>Message</th><th>Peers</th></tr>\n";
   for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     vector<pair<string, RaftPeerPB::Role>> sorted_replicas;
     TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
@@ -282,15 +283,24 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
     Partition partition;
     Partition::FromPB(l.data().pb.partition(), &partition);
-    range_bounds.insert({partition.range_key_start().ToString(),
-                         partition.range_key_end().ToString()});
+
+    // For each unique range partition, add a debug string to range_partitions.
+    // To ensure uniqueness, only use partitions whose hash buckets are all 0.
+    if (std::all_of(partition.hash_buckets().begin(),
+                    partition.hash_buckets().end(),
+                    [] (const int32_t& bucket) { return bucket == 0; })) {
+        range_partitions.emplace_back(
+            partition_schema.RangePartitionDebugString(partition.range_key_start(),
+                                                       partition.range_key_end(),
+                                                       schema));
+    }
 
     string state = SysTabletsEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);
     tablets_output << Substitute(
-        "<tr><th>$0</th><td>$1</td><td>$2</td><td>$3</td><td>$4</td></tr>\n",
+        "<tr><th>$0</th>$1<td>$2</td><td>$3</td><td>$4</td></tr>\n",
         tablet->tablet_id(),
-        EscapeForHtmlToString(partition_schema.PartitionDebugString(partition, schema)),
+        partition_schema.PartitionTableEntry(schema, partition),
         state,
         EscapeForHtmlToString(l.data().pb.state_msg()),
         raft_config_html.str());
@@ -298,16 +308,9 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   tablets_output << "</table>\n";
 
   // Write out the partition schema and range bound information...
-  *output << "<h3>Partition schema &amp; range bounds</h3>";
+  *output << "<h3>Partition Schema</h3>";
   *output << "<pre>";
-  *output << EscapeForHtmlToString(partition_schema.DisplayString(schema));
-  *output << "Range bounds:\n";
-  for (const auto& pair : range_bounds) {
-    string range_bound = partition_schema.RangePartitionDebugString(pair.first,
-                                                                    pair.second,
-                                                                    schema);
-    *output << Substitute("  $0\n", EscapeForHtmlToString(range_bound));
-  }
+  *output << EscapeForHtmlToString(partition_schema.DisplayString(schema, range_partitions));
   *output << "</pre>";
 
   // ...then the tablets table.

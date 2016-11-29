@@ -274,7 +274,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
     bool partition_contains_row;
     CHECK(partition_schema.PartitionContainsRow(partition, row, &partition_contains_row).ok());
     CHECK(partition_contains_row)
-        << "Row " << partition_schema.RowDebugString(row)
+        << "Row " << partition_schema.PartitionKeyDebugString(row)
         << " not in partition " << partition_schema.PartitionDebugString(partition, *schema);
 #endif
 

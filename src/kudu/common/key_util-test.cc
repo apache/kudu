@@ -100,12 +100,12 @@ TEST_F(KeyUtilTest, TestIncrementCompositeIntStringPrimaryKey) {
   EXPECT_OK(p_row.SetInt32(0, 1000));
   EXPECT_OK(p_row.SetStringNoCopy(1, "hello"));
   EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
-  EXPECT_EQ("int32 k1=1000, string k2=hello\\000", p_row.ToString());
+  EXPECT_EQ(R"(int32 k1=1000, string k2="hello\000")", p_row.ToString());
 
   // There's no way to overflow a string key - you can always make it higher
   // by tacking on more \x00.
   EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
-  EXPECT_EQ("int32 k1=1000, string k2=hello\\000\\000", p_row.ToString());
+  EXPECT_EQ(R"(int32 k1=1000, string k2="hello\000\000")", p_row.ToString());
 }
 
 TEST_F(KeyUtilTest, TestIncrementCompositeStringIntPrimaryKey) {
@@ -121,13 +121,13 @@ TEST_F(KeyUtilTest, TestIncrementCompositeStringIntPrimaryKey) {
   EXPECT_OK(p_row.SetStringNoCopy(0, "hello"));
   EXPECT_OK(p_row.SetInt32(1, 1000));
   EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
-  EXPECT_EQ("string k1=hello, int32 k2=1001", p_row.ToString());
+  EXPECT_EQ(R"(string k1="hello", int32 k2=1001)", p_row.ToString());
 
   // Overflowing the int32 portion should tack \x00 onto the
   // string portion.
   EXPECT_OK(p_row.SetInt32(1, MathLimits<int32_t>::kMax));
   EXPECT_TRUE(key_util::IncrementPrimaryKey(&row, &arena_));
-  EXPECT_EQ("string k1=hello\\000, int32 k2=-2147483648", p_row.ToString());
+  EXPECT_EQ(R"(string k1="hello\000", int32 k2=-2147483648)", p_row.ToString());
 }
 
 } // namespace kudu

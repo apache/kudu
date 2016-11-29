@@ -125,7 +125,7 @@ TEST_F(CompositePushdownTest, TestPushDownExactEquality) {
   ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Exact match using compound key"));
   ASSERT_EQ(1, results.size());
   EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
-            "string hostname=foo, string data=2001/09/07-foo)",
+            R"(string hostname="foo", string data="2001/09/07-foo"))",
             results.front());
 }
 
@@ -152,10 +152,10 @@ TEST_F(CompositePushdownTest, TestPushDownStringInequality) {
   ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Exact match using compound key"));
   ASSERT_EQ(2, results.size());
   EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
-            "string hostname=baz, string data=2001/09/07-baz)",
+            R"(string hostname="baz", string data="2001/09/07-baz"))",
             results.front());
   EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
-            "string hostname=foo, string data=2001/09/07-foo)",
+            R"(string hostname="foo", string data="2001/09/07-foo"))",
             results.back());
 }
 
@@ -176,13 +176,13 @@ TEST_F(CompositePushdownTest, TestPushDownDateEquality) {
   ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Exact match using compound key"));
   ASSERT_EQ(3, results.size());
   EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
-            "string hostname=baz, string data=2001/09/07-baz)",
+            R"(string hostname="baz", string data="2001/09/07-baz"))",
             results[0]);
   EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
-            "string hostname=foo, string data=2001/09/07-foo)",
+            R"(string hostname="foo", string data="2001/09/07-foo"))",
             results[1]);
   EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
-            "string hostname=foobar, string data=2001/09/07-foobar)",
+            R"(string hostname="foobar", string data="2001/09/07-foobar"))",
             results[2]);
 }
 
@@ -201,10 +201,10 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEquality) {
                                        "Prefix match using 2/3 of a compound key"));
     ASSERT_EQ(28 * 3, results.size());
     EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=1, "
-              "string hostname=baz, string data=2001/09/01-baz)",
+              R"(string hostname="baz", string data="2001/09/01-baz"))",
               results.front());
     EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=28, "
-              "string hostname=foobar, string data=2001/09/28-foobar)",
+              R"(string hostname="foobar", string data="2001/09/28-foobar"))",
               results.back());
   }
 
@@ -216,13 +216,13 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEquality) {
                                        "Prefix match using 1/3 of a compound key"));
     ASSERT_EQ(28 * 12 * 3, results.size());
     EXPECT_EQ("(int16 year=2001, int8 month=1, int8 day=1, "
-              "string hostname=baz, string data=2001/01/01-baz)",
+              R"(string hostname="baz", string data="2001/01/01-baz"))",
               results.front());
     EXPECT_EQ("(int16 year=2001, int8 month=2, int8 day=1, "
-              "string hostname=baz, string data=2001/02/01-baz)",
+              R"(string hostname="baz", string data="2001/02/01-baz"))",
               results[28 * 3]);
     EXPECT_EQ("(int16 year=2001, int8 month=12, int8 day=28, "
-              "string hostname=foobar, string data=2001/12/28-foobar)",
+              R"(string hostname="foobar", string data="2001/12/28-foobar"))",
               results.back());
   }
 }
@@ -254,10 +254,10 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
     ASSERT_EQ(15 * 3, results.size());
     EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=1, "
-              "string hostname=baz, string data=2001/09/01-baz)",
+              R"(string hostname="baz", string data="2001/09/01-baz"))",
               results.front());
     EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=15, "
-              "string hostname=foobar, string data=2001/09/15-foobar)",
+              R"(string hostname="foobar", string data="2001/09/15-foobar"))",
               results.back());
   }
 
@@ -271,10 +271,10 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
     ASSERT_EQ(28 * 3, results.size());
     EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=1, "
-              "string hostname=baz, string data=2001/09/01-baz)",
+              R"(string hostname="baz", string data="2001/09/01-baz"))",
               results.front());
     EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=28, "
-              "string hostname=foobar, string data=2001/09/28-foobar)",
+              R"(string hostname="foobar", string data="2001/09/28-foobar"))",
               results.back());
   }
 
@@ -288,10 +288,10 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
     ASSERT_EQ(15 * 3, results.size());
     EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=1, "
-              "string hostname=baz, string data=2001/09/01-baz)",
+              R"(string hostname="baz", string data="2001/09/01-baz"))",
               results.front());
     EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=15, "
-              "string hostname=foobar, string data=2001/09/15-foobar)",
+              R"(string hostname="foobar", string data="2001/09/15-foobar"))",
               results.back());
   }
 
@@ -304,10 +304,10 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
     ASSERT_EQ(3 * 28 * 3, results.size());
     EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=1, "
-              "string hostname=baz, string data=2001/09/01-baz)",
+              R"(string hostname="baz", string data="2001/09/01-baz"))",
               results.front());
     EXPECT_EQ("(int16 year=2001, int8 month=11, int8 day=28, "
-              "string hostname=foobar, string data=2001/11/28-foobar)",
+              R"(string hostname="foobar", string data="2001/11/28-foobar"))",
               results.back());
   }
 
@@ -320,10 +320,10 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
     ASSERT_EQ(8 * 28 * 3, results.size());
     EXPECT_EQ("(int16 year=2001, int8 month=1, int8 day=1, "
-              "string hostname=baz, string data=2001/01/01-baz)",
+              R"(string hostname="baz", string data="2001/01/01-baz"))",
               results.front());
     EXPECT_EQ("(int16 year=2001, int8 month=8, int8 day=28, "
-              "string hostname=foobar, string data=2001/08/28-foobar)",
+              R"(string hostname="foobar", string data="2001/08/28-foobar"))",
               results.back());
   }
 }
@@ -341,10 +341,10 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix inequality"));
     ASSERT_EQ(3 * 12 * 28 * 3, results.size());
     EXPECT_EQ("(int16 year=2001, int8 month=1, int8 day=1, "
-              "string hostname=baz, string data=2001/01/01-baz)",
+              R"(string hostname="baz", string data="2001/01/01-baz"))",
               results.front());
     EXPECT_EQ("(int16 year=2003, int8 month=12, int8 day=28, "
-              "string hostname=foobar, string data=2003/12/28-foobar)",
+              R"(string hostname="foobar", string data="2003/12/28-foobar"))",
               results.back());
   }
 
@@ -359,10 +359,10 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
     // Needed because results from memrowset are returned first and memrowset begins
     // with last 10% of the keys (e.g., last few years)
     EXPECT_EQ("(int16 year=2001, int8 month=1, int8 day=1, "
-              "string hostname=baz, string data=2001/01/01-baz)",
+              R"(string hostname="baz", string data="2001/01/01-baz"))",
               results.front());
     EXPECT_EQ("(int16 year=2010, int8 month=12, int8 day=28, "
-              "string hostname=foobar, string data=2010/12/28-foobar)",
+              R"(string hostname="foobar", string data="2010/12/28-foobar"))",
               results.back());
   }
 
@@ -375,15 +375,12 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix inequality"));
     ASSERT_EQ(4 * 12 * 28 * 3, results.size());
     EXPECT_EQ("(int16 year=2000, int8 month=1, int8 day=1, "
-              "string hostname=baz, string data=2000/01/01-baz)",
+              R"(string hostname="baz", string data="2000/01/01-baz"))",
               results.front());
     EXPECT_EQ("(int16 year=2003, int8 month=12, int8 day=28, "
-              "string hostname=foobar, string data=2003/12/28-foobar)",
+              R"(string hostname="foobar", string data="2003/12/28-foobar"))",
               results.back());
   }
 }
-
-
-
 } // namespace tablet
 } // namespace kudu

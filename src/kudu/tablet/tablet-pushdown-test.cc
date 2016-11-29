@@ -101,9 +101,9 @@ class TabletPushdownTest : public KuduTabletTest,
       LOG(INFO) << str;
     }
     ASSERT_EQ(11, results.size());
-    ASSERT_EQ("(int32 key=200, int32 int_val=2000, string string_val=00000200)",
+    ASSERT_EQ(R"((int32 key=200, int32 int_val=2000, string string_val="00000200"))",
               results[0]);
-    ASSERT_EQ("(int32 key=210, int32 int_val=2100, string string_val=00000210)",
+    ASSERT_EQ(R"((int32 key=210, int32 int_val=2100, string string_val="00000210"))",
               results[10]);
 
     int expected_blocks_from_disk;

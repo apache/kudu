@@ -62,7 +62,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
 
     string Formatted() const {
       return strings::Substitute(
-        "(string key=$0, int32 val1=$1, string val2=$2, int32 val3=$3, string val4=$4)",
+        R"((string key="$0", int32 val1=$1, string val2="$2", int32 val3=$3, string val4="$4"))",
         key, val1, val2, val3, val4);
     }
   };

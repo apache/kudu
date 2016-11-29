@@ -384,7 +384,7 @@ TEST_F(RowOperationsTest, ProjectionTestWholeSchemaSpecified) {
     CHECK_OK(client_row.SetInt32("key", 12345));
     CHECK_OK(client_row.SetInt32("int_val", 54321));
     CHECK_OK(client_row.SetStringCopy("string_val", "hello world"));
-    EXPECT_EQ("INSERT (int32 key=12345, int32 int_val=54321, string string_val=hello world)",
+    EXPECT_EQ(R"(INSERT (int32 key=12345, int32 int_val=54321, string string_val="hello world"))",
               TestProjection(RowOperationsPB::INSERT, client_row, schema_));
 
     // The first result should have the field specified.
@@ -531,7 +531,7 @@ TEST_F(RowOperationsTest, TestProjectUpdates) {
 
   // Specify the key and update both columns
   ASSERT_OK(client_row.SetStringNoCopy("string_val", "foo"));
-  EXPECT_EQ("MUTATE (int32 key=12345) SET int_val=12345, string_val=foo",
+  EXPECT_EQ(R"(MUTATE (int32 key=12345) SET int_val=12345, string_val="foo")",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
   // Update the nullable column to null.

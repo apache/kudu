@@ -351,7 +351,7 @@ Status Tablet::CheckRowInTablet(const ConstContiguousRow& row) const {
         Substitute("Row not in tablet partition. Partition: '$0', row: '$1'.",
                    metadata_->partition_schema().PartitionDebugString(metadata_->partition(),
                                                                       *schema()),
-                   metadata_->partition_schema().RowDebugString(row)));
+                   metadata_->partition_schema().PartitionKeyDebugString(row)));
   }
   return Status::OK();
 }

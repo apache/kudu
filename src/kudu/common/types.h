@@ -371,7 +371,9 @@ struct DataTypeTraits<BINARY> {
   }
   static void AppendDebugStringForValue(const void *val, string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
+    str->push_back('"');
     str->append(strings::CHexEscape(s->ToString()));
+    str->push_back('"');
   }
   static int Compare(const void *lhs, const void *rhs) {
     const Slice *lhs_slice = reinterpret_cast<const Slice *>(lhs);
@@ -461,7 +463,9 @@ struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
   }
   static void AppendDebugStringForValue(const void *val, string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
+    str->push_back('"');
     str->append(strings::Utf8SafeCEscape(s->ToString()));
+    str->push_back('"');
   }
 };
 

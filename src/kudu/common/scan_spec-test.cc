@@ -668,8 +668,8 @@ TEST_F(CompositeIntStringKeysTest, TestPrefixEquality) {
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
   // Expect: key >= (64, "", "") AND key < (65, "", "")
-  EXPECT_EQ("PK >= (int8 a=64, string b=, string c=) AND "
-            "PK < (int8 a=65, string b=, string c=)",
+  EXPECT_EQ(R"(PK >= (int8 a=64, string b="", string c="") AND )"
+            R"(PK < (int8 a=65, string b="", string c=""))",
             spec.ToString(schema_));
 }
 
@@ -680,8 +680,8 @@ TEST_F(CompositeIntStringKeysTest, TestPrefixEqualityWithString) {
   AddPredicate<Slice>(&spec, "b", EQ, Slice("abc"));
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
-  EXPECT_EQ("PK >= (int8 a=64, string b=abc, string c=) AND "
-            "PK < (int8 a=64, string b=abc\\000, string c=)",
+  EXPECT_EQ(R"(PK >= (int8 a=64, string b="abc", string c="") AND )"
+            R"(PK < (int8 a=64, string b="abc\000", string c=""))",
             spec.ToString(schema_));
 }
 

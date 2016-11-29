@@ -265,7 +265,7 @@ TEST(TestSchema, TestRowOperations) {
   ASSERT_GT(schema.Compare(row_b, row_a), 0);
   ASSERT_LT(schema.Compare(row_a, row_b), 0);
 
-  ASSERT_EQ(string("(string col1=row_a_1, string col2=row_a_2, uint32 col3=3, int32 col4=-3)"),
+  ASSERT_EQ(R"((string col1="row_a_1", string col2="row_a_2", uint32 col3=3, int32 col4=-3))",
             schema.DebugRow(row_a));
 }
 
@@ -312,11 +312,11 @@ TEST(TestSchema, TestDecodeKeys_CompoundStringKey) {
                   ColumnSchema("col3", STRING) },
                 2);
 
-  EXPECT_EQ("(string col1=foo, string col2=bar)",
+  EXPECT_EQ(R"((string col1="foo", string col2="bar"))",
             schema.DebugEncodedRowKey(Slice("foo\0\0bar", 8), Schema::START_KEY));
-  EXPECT_EQ("(string col1=fo\\000o, string col2=bar)",
+  EXPECT_EQ(R"((string col1="fo\000o", string col2="bar"))",
             schema.DebugEncodedRowKey(Slice("fo\x00\x01o\0\0""bar", 10), Schema::START_KEY));
-  EXPECT_EQ("(string col1=fo\\000o, string col2=bar\\000xy)",
+  EXPECT_EQ(R"((string col1="fo\000o", string col2="bar\000xy"))",
             schema.DebugEncodedRowKey(Slice("fo\x00\x01o\0\0""bar\0xy", 13), Schema::START_KEY));
 
   EXPECT_EQ("<start of table>",

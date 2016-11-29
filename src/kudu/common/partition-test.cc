@@ -74,7 +74,7 @@ void CheckCreateRangePartitions(const vector<pair<optional<string>, optional<str
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(PartitionSchemaPB(), schema, &partition_schema));
 
-  ASSERT_EQ("range columns: [col]", partition_schema.DebugString(schema));
+  ASSERT_EQ("RANGE (col)", partition_schema.DebugString(schema));
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
   for (const auto& bound : raw_bounds) {
@@ -111,14 +111,6 @@ void CheckCreateRangePartitions(const vector<pair<optional<string>, optional<str
     EXPECT_EQ(upper, partitions[i].range_key_end());
     EXPECT_EQ(lower, partitions[i].partition_key_start());
     EXPECT_EQ(upper, partitions[i].partition_key_end());
-
-    string lower_debug = lower.empty() ? "<start>" :
-      strings::Substitute("(string col=$0)", strings::Utf8SafeCEscape(lower));
-    string upper_debug = upper.empty() ? "<end>" :
-      strings::Substitute("(string col=$0)", strings::Utf8SafeCEscape(upper));
-
-    EXPECT_EQ(strings::Substitute("range: [$0, $1)", lower_debug, upper_debug),
-              partition_schema.PartitionDebugString(partitions[i], schema));
   }
 }
 
@@ -141,7 +133,7 @@ TEST(PartitionTest, TestCompoundRangeKeyEncoding) {
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
 
-  ASSERT_EQ("range columns: [c1, c2, c3]", partition_schema.DebugString(schema));
+  ASSERT_EQ("RANGE (c1, c2, c3)", partition_schema.DebugString(schema));
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
   vector<KuduPartialRow> splits;
@@ -182,15 +174,13 @@ TEST(PartitionTest, TestCompoundRangeKeyEncoding) {
 
   EXPECT_TRUE(partitions[0].hash_buckets().empty());
 
-  EXPECT_EQ("range: [<start>, (string c1=, string c2=, string c3=a))",
+  EXPECT_EQ(R"(RANGE (c1, c2, c3) PARTITION VALUES < ("", "", "a"))",
             partition_schema.PartitionDebugString(partitions[0], schema));
-  EXPECT_EQ("range: [(string c1=, string c2=, string c3=a), "
-                    "(string c1=, string c2=, string c3=b))",
+  EXPECT_EQ(R"(RANGE (c1, c2, c3) PARTITION ("", "", "a") <= VALUES < ("", "", "b"))",
             partition_schema.PartitionDebugString(partitions[1], schema));
-  EXPECT_EQ("range: [(string c1=, string c2=b, string c3=c), "
-            "(string c1=d, string c2=, string c3=f))",
+  EXPECT_EQ(R"(RANGE (c1, c2, c3) PARTITION ("", "b", "c") <= VALUES < ("d", "", "f"))",
             partition_schema.PartitionDebugString(partitions[2], schema));
-  EXPECT_EQ("range: [(string c1=e, string c2=, string c3=), <end>)",
+  EXPECT_EQ(R"(RANGE (c1, c2, c3) PARTITION VALUES >= ("e", "", ""))",
             partition_schema.PartitionDebugString(partitions[3], schema));
 }
 
@@ -208,8 +198,7 @@ TEST(PartitionTest, TestPartitionKeyEncoding) {
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
 
-  ASSERT_EQ("hash bucket components: [(bucket count: 32, columns: [a, b]), "
-            "(bucket count: 32, seed: 42, columns: [c])], range columns: [a, b, c]",
+  ASSERT_EQ("HASH (a, b) PARTITIONS 32, HASH (c) PARTITIONS 32 SEED 42, RANGE (a, b, c)",
             partition_schema.DebugString(schema));
 
   {
@@ -223,9 +212,9 @@ TEST(PartitionTest, TestPartitionKeyEncoding) {
                      "\x80\0\0\0" // a = 0
                      "\0\0",      // b = ""; c is elided
                      14), key);
-    string debug = "bucket=0, bucket=20, int32 a=0, string b=, string c=";
-    EXPECT_EQ(debug, partition_schema.RowDebugString(row));
-    EXPECT_EQ(debug, partition_schema.PartitionKeyDebugString(key, schema));
+    string expected = R"(HASH (a, b): 0, HASH (c): 20, RANGE (a, b, c): (0, "", ""))";
+    EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
+    EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
   }
 
   {
@@ -240,9 +229,9 @@ TEST(PartitionTest, TestPartitionKeyEncoding) {
                      "\0\0",        // b = ""; c is elided
                      14), key);
 
-    string debug_b = "bucket=5, bucket=20, int32 a=1, string b=, string c=";
-    EXPECT_EQ(debug_b, partition_schema.RowDebugString(row));
-    EXPECT_EQ(debug_b, partition_schema.PartitionKeyDebugString(key, schema));
+    string expected = R"(HASH (a, b): 5, HASH (c): 20, RANGE (a, b, c): (1, "", ""))";
+    EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
+    EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
   }
 
   {
@@ -260,9 +249,9 @@ TEST(PartitionTest, TestPartitionKeyEncoding) {
                      "c",         // c = "c"
                      16), key);
 
-    string debug = "bucket=26, bucket=29, int32 a=0, string b=b, string c=c";
-    EXPECT_EQ(debug, partition_schema.RowDebugString(row));
-    EXPECT_EQ(debug, partition_schema.PartitionKeyDebugString(key, schema));
+    string expected = R"(HASH (a, b): 26, HASH (c): 29, RANGE (a, b, c): (0, "b", "c"))";
+    EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
+    EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
   }
 
   {
@@ -280,9 +269,9 @@ TEST(PartitionTest, TestPartitionKeyEncoding) {
                      "c",          // c = "c"
                      16), key);
 
-    string debug = "bucket=0, bucket=29, int32 a=1, string b=b, string c=c";
-    EXPECT_EQ(debug, partition_schema.RowDebugString(row));
-    EXPECT_EQ(debug, partition_schema.PartitionKeyDebugString(key, schema));
+    string expected = R"(HASH (a, b): 0, HASH (c): 29, RANGE (a, b, c): (1, "b", "c"))";
+    EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
+    EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
   }
 }
 
@@ -404,8 +393,7 @@ TEST(PartitionTest, TestCreateHashBucketPartitions) {
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
 
-  ASSERT_EQ("hash bucket components: [(bucket count: 3, seed: 42, columns: [a])]",
-            partition_schema.DebugString(schema));
+  ASSERT_EQ("HASH (a) PARTITIONS 3 SEED 42", partition_schema.DebugString(schema));
 
   // Encoded Partition Keys:
   //
@@ -420,9 +408,9 @@ TEST(PartitionTest, TestCreateHashBucketPartitions) {
   EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
   EXPECT_EQ("", partitions[0].range_key_start());
   EXPECT_EQ("", partitions[0].range_key_end());
-  EXPECT_EQ(string("", 0), partitions[0].partition_key_start());
+  EXPECT_EQ("", partitions[0].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1", 4), partitions[0].partition_key_end());
-  EXPECT_EQ("hash buckets: (0)",
+  EXPECT_EQ("HASH (a) PARTITION 0",
             partition_schema.PartitionDebugString(partitions[0], schema));
 
   EXPECT_EQ(1, partitions[1].hash_buckets()[0]);
@@ -430,15 +418,15 @@ TEST(PartitionTest, TestCreateHashBucketPartitions) {
   EXPECT_EQ("", partitions[1].range_key_end());
   EXPECT_EQ(string("\0\0\0\1", 4), partitions[1].partition_key_start());
   EXPECT_EQ(string("\0\0\0\2", 4), partitions[1].partition_key_end());
-  EXPECT_EQ("hash buckets: (1)",
+  EXPECT_EQ("HASH (a) PARTITION 1",
             partition_schema.PartitionDebugString(partitions[1], schema));
 
   EXPECT_EQ(2, partitions[2].hash_buckets()[0]);
   EXPECT_EQ("", partitions[2].range_key_start());
   EXPECT_EQ("", partitions[2].range_key_end());
   EXPECT_EQ(string("\0\0\0\2", 4), partitions[2].partition_key_start());
-  EXPECT_EQ(string("", 0), partitions[2].partition_key_end());
-  EXPECT_EQ("hash buckets: (2)",
+  EXPECT_EQ("", partitions[2].partition_key_end());
+  EXPECT_EQ("HASH (a) PARTITION 2",
             partition_schema.PartitionDebugString(partitions[2], schema));
 }
 
@@ -456,8 +444,7 @@ TEST(PartitionTest, TestCreatePartitions) {
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
 
-  ASSERT_EQ("hash bucket components: [(bucket count: 2, columns: [a]), "
-            "(bucket count: 2, columns: [b])], range columns: [a, b, c]",
+  ASSERT_EQ("HASH (a) PARTITIONS 2, HASH (b) PARTITIONS 2, RANGE (a, b, c)",
             partition_schema.DebugString(schema));
 
   // Split Rows:
@@ -508,11 +495,12 @@ TEST(PartitionTest, TestCreatePartitions) {
 
   EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[0].hash_buckets()[1]);
-  EXPECT_EQ(string("", 0), partitions[0].range_key_start());
+  EXPECT_EQ("", partitions[0].range_key_start());
   EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[0].range_key_end());
-  EXPECT_EQ(string("", 0), partitions[0].partition_key_start());
+  EXPECT_EQ("", partitions[0].partition_key_start());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a1\0\0b1\0\0c1", 18), partitions[0].partition_key_end());
-  EXPECT_EQ("hash buckets: (0, 0), range: [<start>, (string a=a1, string b=b1, string c=c1))",
+  EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 0, "
+            R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[0], schema));
 
   EXPECT_EQ(0, partitions[1].hash_buckets()[0]);
@@ -522,28 +510,28 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a1\0\0b1\0\0c1", 18),
             partitions[1].partition_key_start());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[1].partition_key_end());
-  EXPECT_EQ("hash buckets: (0, 0), range: [(string a=a1, string b=b1, string c=c1), "
-                                          "(string a=a2, string b=b2, string c=))",
+  EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 0, "
+            R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[1], schema));
 
   EXPECT_EQ(0, partitions[2].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[2].hash_buckets()[1]);
   EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[2].range_key_start());
-  EXPECT_EQ(string("", 0), partitions[2].range_key_end());
+  EXPECT_EQ("", partitions[2].range_key_end());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[2].partition_key_start());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[2].partition_key_end());
-  EXPECT_EQ("hash buckets: (0, 0), "
-            "range: [(string a=a2, string b=b2, string c=), <end>)",
+  EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 0, "
+            R"(RANGE (a, b, c) PARTITION VALUES >= ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[2], schema));
 
   EXPECT_EQ(0, partitions[3].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[3].hash_buckets()[1]);
-  EXPECT_EQ(string("", 0), partitions[3].range_key_start());
+  EXPECT_EQ("", partitions[3].range_key_start());
   EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[3].range_key_end());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[3].partition_key_start());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a1\0\0b1\0\0c1", 18), partitions[3].partition_key_end());
-  EXPECT_EQ("hash buckets: (0, 1), "
-            "range: [<start>, (string a=a1, string b=b1, string c=c1))",
+  EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 1, "
+            R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[3], schema));
 
   EXPECT_EQ(0, partitions[4].hash_buckets()[0]);
@@ -553,26 +541,28 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a1\0\0b1\0\0c1", 18),
             partitions[4].partition_key_start());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[4].partition_key_end());
-  EXPECT_EQ("hash buckets: (0, 1), range: [(string a=a1, string b=b1, string c=c1), "
-                                          "(string a=a2, string b=b2, string c=))",
+  EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 1, "
+            R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[4], schema));
 
   EXPECT_EQ(0, partitions[5].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[5].hash_buckets()[1]);
   EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[5].range_key_start());
-  EXPECT_EQ(string("", 0), partitions[5].range_key_end());
+  EXPECT_EQ("", partitions[5].range_key_end());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[5].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1", 4), partitions[5].partition_key_end());
-  EXPECT_EQ("hash buckets: (0, 1), range: [(string a=a2, string b=b2, string c=), <end>)",
+  EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 1, "
+            R"(RANGE (a, b, c) PARTITION VALUES >= ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[5], schema));
 
   EXPECT_EQ(1, partitions[6].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[6].hash_buckets()[1]);
-  EXPECT_EQ(string("", 0), partitions[6].range_key_start());
+  EXPECT_EQ("", partitions[6].range_key_start());
   EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[6].range_key_end());
   EXPECT_EQ(string("\0\0\0\1", 4), partitions[6].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a1\0\0b1\0\0c1", 18), partitions[6].partition_key_end());
-  EXPECT_EQ("hash buckets: (1, 0), range: [<start>, (string a=a1, string b=b1, string c=c1))",
+  EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 0, "
+            R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[6], schema));
 
   EXPECT_EQ(1, partitions[7].hash_buckets()[0]);
@@ -582,26 +572,28 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a1\0\0b1\0\0c1", 18),
             partitions[7].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[7].partition_key_end());
-  EXPECT_EQ("hash buckets: (1, 0), range: [(string a=a1, string b=b1, string c=c1), "
-                                          "(string a=a2, string b=b2, string c=))",
+  EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 0, "
+            R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[7], schema));
 
   EXPECT_EQ(1, partitions[8].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[8].hash_buckets()[1]);
   EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[8].range_key_start());
-  EXPECT_EQ(string("", 0), partitions[8].range_key_end());
+  EXPECT_EQ("", partitions[8].range_key_end());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[8].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[8].partition_key_end());
-  EXPECT_EQ("hash buckets: (1, 0), range: [(string a=a2, string b=b2, string c=), <end>)",
+  EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 0, "
+            R"(RANGE (a, b, c) PARTITION VALUES >= ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[8], schema));
 
   EXPECT_EQ(1, partitions[9].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[9].hash_buckets()[1]);
-  EXPECT_EQ(string("", 0), partitions[9].range_key_start());
+  EXPECT_EQ("", partitions[9].range_key_start());
   EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[9].range_key_end());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[9].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a1\0\0b1\0\0c1", 18), partitions[9].partition_key_end());
-  EXPECT_EQ("hash buckets: (1, 1), range: [<start>, (string a=a1, string b=b1, string c=c1))",
+  EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 1, "
+            R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[9], schema));
 
   EXPECT_EQ(1, partitions[10].hash_buckets()[0]);
@@ -611,17 +603,18 @@ TEST(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a1\0\0b1\0\0c1", 18),
             partitions[10].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[10].partition_key_end());
-  EXPECT_EQ("hash buckets: (1, 1), range: [(string a=a1, string b=b1, string c=c1), "
-                                          "(string a=a2, string b=b2, string c=))",
+  EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 1, "
+            R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[10], schema));
 
   EXPECT_EQ(1, partitions[11].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[11].hash_buckets()[1]);
   EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[11].range_key_start());
-  EXPECT_EQ(string("", 0), partitions[11].range_key_end());
+  EXPECT_EQ("", partitions[11].range_key_end());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[11].partition_key_start());
-  EXPECT_EQ(string("", 0), partitions[11].partition_key_end());
-  EXPECT_EQ("hash buckets: (1, 1), range: [(string a=a2, string b=b2, string c=), <end>)",
+  EXPECT_EQ("", partitions[11].partition_key_end());
+  EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 1, "
+            R"(RANGE (a, b, c) PARTITION VALUES >= ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[11], schema));
 }
 
@@ -714,7 +707,7 @@ TEST(PartitionTest, TestIncrementRangePartitionBounds) {
     ASSERT_OK(lower_bound.SetInt8("c3", 127));
     Status s = partition_schema.MakeLowerBoundRangePartitionKeyInclusive(&lower_bound);
     ASSERT_EQ("Invalid argument: Exclusive lower bound range partition key must not have "
-              "maximum values for all components: int8 c1=127, int8 c2=127, int8 c3=127",
+              "maximum values for all components: (127, 127, 127)",
               s.ToString());
 }
 

@@ -460,11 +460,11 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
   gscoped_ptr<CompactionInput> input(CompactionInput::Create(*mrs, &schema_, snap));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
-  EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=hello 00000000, int32 val=0, "
+  EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=0, )"
                 "int32 nullable_val=0); Undo Mutations: [@1(DELETE)]; Redo Mutations: "
                 "[@11(SET val=1, nullable_val=1), @21(SET val=2, nullable_val=NULL)];",
             out[0]);
-  EXPECT_EQ("RowIdxInBlock: 9; Base: (string key=hello 00000090, int32 val=9, "
+  EXPECT_EQ(R"(RowIdxInBlock: 9; Base: (string key="hello 00000090", int32 val=9, )"
                 "int32 nullable_val=NULL); Undo Mutations: [@10(DELETE)]; Redo Mutations: "
                 "[@20(SET val=1, nullable_val=1), @30(SET val=2, nullable_val=NULL)];",
             out[9]);
@@ -485,16 +485,16 @@ TEST_F(TestCompaction, TestFlushMRSWithRolling) {
   vector<string> rows;
   rows.reserve(30000 / 2);
   rowsets[0]->DebugDump(&rows);
-  EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=hello 00000000, int32 val=0, "
+  EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=0, )"
                 "int32 nullable_val=0); Undo Mutations: [@1(DELETE)]; Redo Mutations: [];",
             rows[0]);
 
   rows.clear();
   rowsets[1]->DebugDump(&rows);
-  EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=hello 00154700, int32 val=15470, "
+  EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00154700", int32 val=15470, )"
                 "int32 nullable_val=15470); Undo Mutations: [@15471(DELETE)]; Redo Mutations: [];",
             rows[0]);
-  EXPECT_EQ("RowIdxInBlock: 1; Base: (string key=hello 00154710, int32 val=15471, "
+  EXPECT_EQ(R"(RowIdxInBlock: 1; Base: (string key="hello 00154710", int32 val=15471, )"
                 "int32 nullable_val=NULL); Undo Mutations: [@15472(DELETE)]; Redo Mutations: [];",
             rows[1]);
 }
@@ -525,12 +525,12 @@ TEST_F(TestCompaction, TestRowSetInput) {
   ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
-  EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=hello 00000000, int32 val=0, "
+  EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=0, )"
                 "int32 nullable_val=0); Undo Mutations: [@1(DELETE)]; Redo Mutations: "
                 "[@11(SET val=1, nullable_val=1), @21(SET val=2, nullable_val=NULL), "
                 "@31(SET val=3, nullable_val=3), @41(SET val=4, nullable_val=NULL)];",
             out[0]);
-  EXPECT_EQ("RowIdxInBlock: 9; Base: (string key=hello 00000090, int32 val=9, "
+  EXPECT_EQ(R"(RowIdxInBlock: 9; Base: (string key="hello 00000090", int32 val=9, )"
                 "int32 nullable_val=NULL); Undo Mutations: [@10(DELETE)]; Redo Mutations: "
                 "[@20(SET val=1, nullable_val=1), @30(SET val=2, nullable_val=NULL), "
                 "@40(SET val=3, nullable_val=3), @50(SET val=4, nullable_val=NULL)];",
@@ -598,12 +598,12 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
   vector<string> out;
   IterateInput(input.get(), &out);
   ASSERT_EQ(out.size(), 10);
-  EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=hello 00000000, int32 val=2, "
+  EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=2, )"
                 "int32 nullable_val=NULL); Undo Mutations: [@61(SET val=0, nullable_val=0), "
                 "@51(DELETE), @41(REINSERT val=1, nullable_val=1), @31(SET val=0, nullable_val=0), "
                 "@21(DELETE), @11(REINSERT val=0, nullable_val=0), @1(DELETE)]; "
                 "Redo Mutations: [];", out[0]);
-  EXPECT_EQ("RowIdxInBlock: 9; Base: (string key=hello 00000090, int32 val=2, "
+  EXPECT_EQ(R"(RowIdxInBlock: 9; Base: (string key="hello 00000090", int32 val=2, )"
                 "int32 nullable_val=NULL); Undo Mutations: [@70(SET val=9, nullable_val=NULL), "
                 "@60(DELETE), @50(REINSERT val=1, nullable_val=1), @40(SET val=9, "
                 "nullable_val=NULL), @30(DELETE), @20(REINSERT val=9, nullable_val=NULL), "
@@ -840,10 +840,10 @@ TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
   vector<string> out;
   IterateInput(merged.get(), &out);
   EXPECT_EQ(out.size(), 2);
-  EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=hello 00000001, int32 val=1, "
+  EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000001", int32 val=1, )"
                 "int32 nullable_val=NULL); Undo Mutations: [@1(DELETE)]; Redo Mutations: "
                 "[@2(DELETE)];", out[0]);
-  EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=hello 00000002, int32 val=0, "
+  EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000002", int32 val=0, )"
                 "int32 nullable_val=0); Undo Mutations: [@2(DELETE)]; Redo Mutations: [];", out[1]);
 }
 
@@ -884,7 +884,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
-  EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=hello 00000000, int32 val=1, "
+  EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=1, )"
                 "int32 nullable_val=1); Undo Mutations: [@1001(SET val=0, nullable_val=0), "
                 "@1(DELETE)]; Redo Mutations: [@2001(SET val=2, nullable_val=NULL), "
                 "@3001(SET val=3, nullable_val=3)];", out[0]);
@@ -991,10 +991,10 @@ TEST_F(TestCompaction, TestMergeMRS) {
   vector<string> out;
   IterateInput(input.get(), &out);
   ASSERT_EQ(out.size(), 20);
-  EXPECT_EQ("RowIdxInBlock: 0; Base: (string key=hello 00000000, int32 val=0, "
+  EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=0, )"
                 "int32 nullable_val=0); Undo Mutations: [@1(DELETE)]; "
                 "Redo Mutations: [];", out[0]);
-  EXPECT_EQ("RowIdxInBlock: 9; Base: (string key=hello 00000091, int32 val=9, "
+  EXPECT_EQ(R"(RowIdxInBlock: 9; Base: (string key="hello 00000091", int32 val=9, )"
                 "int32 nullable_val=NULL); Undo Mutations: [@20(DELETE)]; "
                 "Redo Mutations: [];", out[19]);
 }

@@ -145,7 +145,7 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_OK(row.SetStringCopy("string_val", "hello world"));
   EXPECT_TRUE(row.IsColumnSet(1));
   EXPECT_TRUE(row.IsColumnSet(2));
-  EXPECT_EQ("int32 key=12345, int32 int_val=54321, string string_val=hello world",
+  EXPECT_EQ(R"(int32 key=12345, int32 int_val=54321, string string_val="hello world")",
             row.ToString());
   Slice slice;
   EXPECT_OK(row.GetString("string_val", &slice));
@@ -174,7 +174,7 @@ TEST_F(PartialRowTest, UnitTest) {
 
   // Set the NULL string back to non-NULL
   EXPECT_OK(row.SetStringCopy("string_val", "goodbye world"));
-  EXPECT_EQ("int32 key=12345, int32 int_val=54321, string string_val=goodbye world",
+  EXPECT_EQ(R"(int32 key=12345, int32 int_val=54321, string string_val="goodbye world")",
             row.ToString());
 
   // Unset some columns.
@@ -190,7 +190,7 @@ TEST_F(PartialRowTest, UnitTest) {
 
   // Set the binary column as a copy.
   EXPECT_OK(row.SetBinaryCopy("binary_val", "hello_world"));
-  EXPECT_EQ("int32 int_val=99999, binary binary_val=hello_world",
+  EXPECT_EQ(R"(int32 int_val=99999, binary binary_val="hello_world")",
               row.ToString());
   // Unset the binary column.
   EXPECT_OK(row.Unset("binary_val"));

@@ -163,7 +163,7 @@ TEST_F(EncodedKeyTest, TestDecodeSimpleKeys) {
 
   {
     Slice val("aKey");
-    EXPECT_DECODED_KEY_EQ(STRING, "(string key=aKey)", "aKey", &val);
+    EXPECT_DECODED_KEY_EQ(STRING, R"((string key="aKey"))", "aKey", &val);
   }
 }
 
@@ -200,7 +200,7 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
     builder.AddColumnKey(&key1);
     key.reset(builder.BuildEncodedKey());
 
-    EXPECT_ROWKEY_EQ(schema, "(uint16 key0=12345, string key1=aKey)", *key);
+    EXPECT_ROWKEY_EQ(schema, R"((uint16 key0=12345, string key1="aKey"))", *key);
   }
 
   {
@@ -217,7 +217,7 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
     builder.AddColumnKey(&key2);
     key.reset(builder.BuildEncodedKey());
 
-    EXPECT_ROWKEY_EQ(schema, "(uint16 key0=12345, string key1=aKey, uint8 key2=123)", *key);
+    EXPECT_ROWKEY_EQ(schema, R"((uint16 key0=12345, string key1="aKey", uint8 key2=123))", *key);
   }
 }
 

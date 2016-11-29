@@ -206,13 +206,13 @@ TEST_F(TestMemRowSet, TestInsertAndIterate) {
   // be "goodbye" because 'g' sorts before 'h'
   ASSERT_TRUE(iter->HasNext());
   MRSRow row = iter->GetCurrentRow();
-  EXPECT_EQ("(string key=goodbye world, uint32 val=54321)", schema_.DebugRow(row));
+  EXPECT_EQ(R"((string key="goodbye world", uint32 val=54321))", schema_.DebugRow(row));
 
   // Next row should be 'hello world'
   ASSERT_TRUE(iter->Next());
   ASSERT_TRUE(iter->HasNext());
   row = iter->GetCurrentRow();
-  EXPECT_EQ("(string key=hello world, uint32 val=12345)", schema_.DebugRow(row));
+  EXPECT_EQ(R"((string key="hello world", uint32 val=12345))", schema_.DebugRow(row));
 
   ASSERT_FALSE(iter->Next());
   ASSERT_FALSE(iter->HasNext());
@@ -275,21 +275,21 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
   // be "goodbye" (row3) sorted on the second key
   ASSERT_TRUE(iter->HasNext());
   MRSRow row = iter->GetCurrentRow();
-  EXPECT_EQ("(string key1=goodbye world, int32 key2=1, uint32 val=12345)",
+  EXPECT_EQ(R"((string key1="goodbye world", int32 key2=1, uint32 val=12345))",
             compound_key_schema.DebugRow(row));
 
   // Next row should be "goodbye" (row2)
   ASSERT_TRUE(iter->Next());
   ASSERT_TRUE(iter->HasNext());
   row = iter->GetCurrentRow();
-  EXPECT_EQ("(string key1=goodbye world, int32 key2=2, uint32 val=54321)",
+  EXPECT_EQ(R"((string key1="goodbye world", int32 key2=2, uint32 val=54321))",
             compound_key_schema.DebugRow(row));
 
   // Next row should be 'hello world' (row1)
   ASSERT_TRUE(iter->Next());
   ASSERT_TRUE(iter->HasNext());
   row = iter->GetCurrentRow();
-  EXPECT_EQ("(string key1=hello world, int32 key2=1, uint32 val=12345)",
+  EXPECT_EQ(R"((string key1="hello world", int32 key2=1, uint32 val=12345))",
             compound_key_schema.DebugRow(row));
 
   ASSERT_FALSE(iter->Next());
@@ -316,7 +316,7 @@ TEST_F(TestMemRowSet, TestUpdate) {
   ASSERT_OK(InsertRow(mrs.get(), "hello world", 1));
 
   // Validate insertion
-  CheckValue(mrs, "hello world", "(string key=hello world, uint32 val=1)");
+  CheckValue(mrs, "hello world", R"((string key="hello world", uint32 val=1))");
 
   // Update a key which exists.
   OperationResultPB result;
@@ -325,7 +325,7 @@ TEST_F(TestMemRowSet, TestUpdate) {
   ASSERT_EQ(0L, result.mutated_stores(0).mrs_id());
 
   // Validate the updated value
-  CheckValue(mrs, "hello world", "(string key=hello world, uint32 val=2)");
+  CheckValue(mrs, "hello world", R"((string key="hello world", uint32 val=2))");
 
   // Try to update a key which doesn't exist - should return NotFound
   result.Clear();
@@ -347,7 +347,7 @@ TEST_F(TestMemRowSet, TestInsertCopiesToArena) {
   for (uint32_t i = 0; i < 100; i++) {
     snprintf(keybuf, sizeof(keybuf), "hello %d", i);
     CheckValue(mrs, keybuf,
-               StringPrintf("(string key=%s, uint32 val=%d)", keybuf, i));
+               StringPrintf(R"((string key="%s", uint32 val=%d))", keybuf, i));
   }
 }
 
@@ -405,14 +405,14 @@ TEST_F(TestMemRowSet, TestDelete) {
   vector<string> rows;
   ASSERT_OK(mrs->DebugDump(&rows));
   ASSERT_EQ(1, rows.size());
-  EXPECT_EQ("@1: row (string key=hello world, uint32 val=1) mutations="
+  EXPECT_EQ(R"(@1: row (string key="hello world", uint32 val=1) mutations=)"
             "[@2(DELETE), @5(REINSERT val=2)]",
             rows[0]);
 
   // Verify that iterating the rowset at the first snapshot shows the row.
   ASSERT_OK(DumpRowSet(*mrs, schema_, snapshot_before_delete, &rows));
   ASSERT_EQ(1, rows.size());
-  EXPECT_EQ("(string key=hello world, uint32 val=1)", rows[0]);
+  EXPECT_EQ(R"((string key="hello world", uint32 val=1))", rows[0]);
 
   // Verify that iterating the rowset at the snapshot where it's deleted
   // doesn't show the row.
@@ -422,7 +422,7 @@ TEST_F(TestMemRowSet, TestDelete) {
   // Verify that iterating the rowset after it's re-inserted shows the row.
   ASSERT_OK(DumpRowSet(*mrs, schema_, snapshot_after_reinsert, &rows));
   ASSERT_EQ(1, rows.size());
-  EXPECT_EQ("(string key=hello world, uint32 val=2)", rows[0]);
+  EXPECT_EQ(R"((string key="hello world", uint32 val=2))", rows[0]);
 }
 
 // Test for basic operations.
@@ -489,7 +489,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
     vector<string> rows;
     ASSERT_OK(kudu::tablet::DumpRowSet(*mrs, schema_, snapshots[i], &rows));
     ASSERT_EQ(1 + i, rows.size());
-    string expected = StringPrintf("(string key=tx%d, uint32 val=%d)", i, i);
+    string expected = StringPrintf(R"((string key="tx%d", uint32 val=%d))", i, i);
     ASSERT_EQ(expected, rows[i]);
   }
 }
@@ -530,7 +530,7 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
     ASSERT_OK(kudu::tablet::DumpRowSet(*mrs, schema_, snapshots[i], &rows));
     ASSERT_EQ(1, rows.size());
 
-    string expected = StringPrintf("(string key=my row, uint32 val=%d)", i);
+    string expected = StringPrintf(R"((string key="my row", uint32 val=%d))", i);
     LOG(INFO) << "Reading with snapshot " << snapshots[i].ToString() << ": "
               << rows[0];
     EXPECT_EQ(expected, rows[0]);

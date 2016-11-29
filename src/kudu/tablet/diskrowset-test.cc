@@ -173,7 +173,7 @@ TEST_F(TestRowSet, TestRandomRead) {
 
   // Read un-updated row.
   VerifyRandomRead(*rs, "hello 000000000000050",
-                   "(string key=hello 000000000000050, uint32 val=50)");
+                   R"((string key="hello 000000000000050", uint32 val=50))");
   NO_FATALS();
 
   // Update the row.
@@ -182,7 +182,7 @@ TEST_F(TestRowSet, TestRandomRead) {
 
   // Read it again -- should see the updated value.
   VerifyRandomRead(*rs, "hello 000000000000050",
-                   "(string key=hello 000000000000050, uint32 val=12345)");
+                   R"((string key="hello 000000000000050", uint32 val=12345))");
   NO_FATALS();
 
   // Try to read a row which comes before the first key.
@@ -222,13 +222,13 @@ TEST_F(TestRowSet, TestDelete) {
     // Reading the MVCC snapshot prior to deletion should show the row.
     ASSERT_OK(DumpRowSet(*rs, schema_, snap_before_delete, &rows));
     ASSERT_EQ(2, rows.size());
-    EXPECT_EQ("(string key=hello 000000000000000, uint32 val=0)", rows[0]);
-    EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[1]);
+    EXPECT_EQ(R"((string key="hello 000000000000000", uint32 val=0))", rows[0]);
+    EXPECT_EQ(R"((string key="hello 000000000000001", uint32 val=1))", rows[1]);
 
     // Reading the MVCC snapshot after the deletion should hide the row.
     ASSERT_OK(DumpRowSet(*rs, schema_, snap_after_delete, &rows));
     ASSERT_EQ(1, rows.size());
-    EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[0]);
+    EXPECT_EQ(R"((string key="hello 000000000000001", uint32 val=1))", rows[0]);
 
     // Trying to delete or update the same row again should fail.
     OperationResultPB result;
@@ -363,7 +363,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(&schema_, snaps[i], UNORDERED, &iter));
     string data = InitAndDumpIterator(std::move(iter));
-    EXPECT_EQ(StringPrintf("(string key=row, uint32 val=%d)", i + 1), data);
+    EXPECT_EQ(StringPrintf(R"((string key="row", uint32 val=%d))", i + 1), data);
   }
 
   // Flush deltas to disk and ensure that the historical versions are still
@@ -375,9 +375,8 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(&schema_, snaps[i], UNORDERED, &iter));
     string data = InitAndDumpIterator(std::move(iter));
-    EXPECT_EQ(StringPrintf("(string key=row, uint32 val=%d)", i + 1), data);
+    EXPECT_EQ(StringPrintf(R"((string key="row", uint32 val=%d))", i + 1), data);
   }
-
 }
 
 // Similar to TestDMSFlush above, except does not actually verify

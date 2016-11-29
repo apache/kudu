@@ -935,7 +935,7 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
 TEST_F(ClientTest, TestProjectInvalidColumn) {
   KuduScanner scanner(client_table_.get());
   Status s = scanner.SetProjectedColumns({ "column-doesnt-exist" });
-  ASSERT_EQ("Not found: Column: \"column-doesnt-exist\" was not found in the table schema.",
+  ASSERT_EQ(R"(Not found: Column: "column-doesnt-exist" was not found in the table schema.)",
             s.ToString());
 
   // Test trying to use a projection where a column is used multiple times.
@@ -1276,9 +1276,9 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
     ScanToStrings(&scanner, &rows);
 
     ASSERT_EQ(200, rows.size());
-    ASSERT_EQ("(int32 key=0, int32 int_val=0, string string_val=hello 0,"
+    ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="hello 0",)"
               " int32 non_null_with_default=0)", rows.front());
-    ASSERT_EQ("(int32 key=299, int32 int_val=598, string string_val=hello 299,"
+    ASSERT_EQ(R"((int32 key=299, int32 int_val=598, string string_val="hello 299",)"
               " int32 non_null_with_default=897)", rows.back());
   }
 
@@ -1291,9 +1291,9 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
     ScanToStrings(&scanner, &rows);
 
     ASSERT_EQ(100, rows.size());
-    ASSERT_EQ("(int32 key=200, int32 int_val=400, string string_val=hello 200,"
+    ASSERT_EQ(R"((int32 key=200, int32 int_val=400, string string_val="hello 200",)"
               " int32 non_null_with_default=600)", rows.front());
-    ASSERT_EQ("(int32 key=299, int32 int_val=598, string string_val=hello 299,"
+    ASSERT_EQ(R"((int32 key=299, int32 int_val=598, string string_val="hello 299",)"
               " int32 non_null_with_default=897)", rows.back());
   }
 
@@ -1306,9 +1306,9 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
     ScanToStrings(&scanner, &rows);
 
     ASSERT_EQ(100, rows.size());
-    ASSERT_EQ("(int32 key=0, int32 int_val=0, string string_val=hello 0,"
+    ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="hello 0",)"
               " int32 non_null_with_default=0)", rows.front());
-    ASSERT_EQ("(int32 key=99, int32 int_val=198, string string_val=hello 99,"
+    ASSERT_EQ(R"((int32 key=99, int32 int_val=198, string string_val="hello 99",)"
               " int32 non_null_with_default=297)", rows.back());
   }
 
@@ -1867,7 +1867,7 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
   KuduInsert* ptr = insert.get();
   Status s = session->Apply(insert.release());
   ASSERT_EQ("Illegal state: Key not specified: "
-            "INSERT int32 int_val=54321, string string_val=hello world",
+            R"(INSERT int32 int_val=54321, string string_val="hello world")",
             s.ToString());
 
   // Get error
@@ -1970,8 +1970,9 @@ TEST_F(ClientTest, TestWriteTimeout) {
     gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
     ASSERT_TRUE(error->status().IsTimedOut()) << error->status().ToString();
     ASSERT_STR_CONTAINS(error->status().ToString(),
-                        "GetTableLocations { table: 'client-testtb', partition-key: (int32 key=1),"
-                        " attempt: 1 } failed: timed out after deadline expired");
+                        "GetTableLocations { table: 'client-testtb', "
+                        "partition-key: (RANGE (key): 1), attempt: 1 } failed: "
+                        "timed out after deadline expired");
   }
 
   // Next time out the actual write on the tablet server.
@@ -2109,7 +2110,7 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
   ScanTableToStrings(client_table_.get(), &rows);
   std::sort(rows.begin(), rows.end());
   ASSERT_EQ(kNumRowsPerTablet, rows.size());
-  ASSERT_EQ("(int32 key=0, int32 int_val=0, string string_val=hello world, "
+  ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="hello world", )"
             "int32 non_null_with_default=12345)"
             , rows[0]);
 }
@@ -2136,16 +2137,16 @@ TEST_F(ClientTest, TestBatchWithPartialError) {
   gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
   ASSERT_TRUE(error->status().IsAlreadyPresent());
   ASSERT_EQ(error->failed_op().ToString(),
-            "INSERT int32 key=1, int32 int_val=1, string string_val=Attempted dup");
+            R"(INSERT int32 key=1, int32 int_val=1, string string_val="Attempted dup")");
 
   // Verify that the other row was successfully inserted
   vector<string> rows;
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(2, rows.size());
   std::sort(rows.begin(), rows.end());
-  ASSERT_EQ("(int32 key=1, int32 int_val=1, string string_val=original row, "
+  ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="original row", )"
             "int32 non_null_with_default=12345)", rows[0]);
-  ASSERT_EQ("(int32 key=2, int32 int_val=1, string string_val=Should succeed, "
+  ASSERT_EQ(R"((int32 key=2, int32 int_val=1, string string_val="Should succeed", )"
             "int32 non_null_with_default=12345)", rows[1]);
 }
 
@@ -2182,7 +2183,7 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   }
 
   ASSERT_EQ(error->failed_op().ToString(),
-            "INSERT int32 key=1, int32 int_val=1, string string_val=x");
+            R"(INSERT int32 key=1, int32 int_val=1, string string_val="x")");
 }
 
 // Test error handling cases where the master is down (tablet resolution fails)
@@ -2918,7 +2919,7 @@ TEST_F(ClientTest, TestMutationsWork) {
   vector<string> rows;
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
-  ASSERT_EQ("(int32 key=1, int32 int_val=2, string string_val=original row, "
+  ASSERT_EQ(R"((int32 key=1, int32 int_val=2, string string_val="original row", )"
             "int32 non_null_with_default=12345)", rows[0]);
   rows.clear();
 
@@ -3005,7 +3006,7 @@ TEST_F(ClientTest, TestUpsert) {
   {
     vector<string> rows;
     ScanTableToStrings(client_table_.get(), &rows);
-    EXPECT_EQ(vector<string>({"(int32 key=1, int32 int_val=1, string string_val=original row, "
+    EXPECT_EQ(vector<string>({R"((int32 key=1, int32 int_val=1, string string_val="original row", )"
               "int32 non_null_with_default=12345)"}),
       rows);
   }
@@ -3017,7 +3018,7 @@ TEST_F(ClientTest, TestUpsert) {
   {
     vector<string> rows;
     ScanTableToStrings(client_table_.get(), &rows);
-    EXPECT_EQ(vector<string>({"(int32 key=1, int32 int_val=2, string string_val=upserted row, "
+    EXPECT_EQ(vector<string>({R"((int32 key=1, int32 int_val=2, string string_val="upserted row", )"
               "int32 non_null_with_default=12345)"}),
         rows);
   }
@@ -3035,7 +3036,7 @@ TEST_F(ClientTest, TestUpsert) {
   {
     vector<string> rows;
     ScanTableToStrings(client_table_.get(), &rows);
-    EXPECT_EQ(vector<string>({"(int32 key=1, int32 int_val=2, string string_val=updated row, "
+    EXPECT_EQ(vector<string>({R"((int32 key=1, int32 int_val=2, string string_val="updated row", )"
               "int32 non_null_with_default=999)"}),
         rows);
   }
@@ -3047,8 +3048,9 @@ TEST_F(ClientTest, TestUpsert) {
   {
     vector<string> rows;
     ScanTableToStrings(client_table_.get(), &rows);
-    EXPECT_EQ(vector<string>({"(int32 key=1, int32 int_val=3, string string_val=upserted row 2, "
-              "int32 non_null_with_default=999)"}),
+    EXPECT_EQ(vector<string>({
+          R"((int32 key=1, int32 int_val=3, string string_val="upserted row 2", )"
+          "int32 non_null_with_default=999)"}),
         rows);
   }
 
@@ -3105,7 +3107,7 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
             "Client provided column int_val[int32 NOT NULL] "
             "not present in tablet");
   ASSERT_EQ(error->failed_op().ToString(),
-            "INSERT int32 key=12345, int32 int_val=12345, string string_val=x");
+            R"(INSERT int32 key=12345, int32 int_val=12345, string string_val="x")");
 }
 
 TEST_F(ClientTest, TestBasicAlterOperations) {
@@ -3556,7 +3558,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   vector<string> rows;
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
-  ASSERT_EQ("(int32 key=1, int32 int_val=2, string string_val=, "
+  ASSERT_EQ(R"((int32 key=1, int32 int_val=2, string string_val="", )"
             "int32 non_null_with_default=12345)", rows[0]);
   rows.clear();
 
@@ -3568,7 +3570,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
-  ASSERT_EQ("(int32 key=1, int32 int_val=2, string string_val=, "
+  ASSERT_EQ(R"((int32 key=1, int32 int_val=2, string string_val="", )"
             "int32 non_null_with_default=12345)", rows[0]);
   rows.clear();
 
@@ -3586,7 +3588,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
-  ASSERT_EQ("(int32 key=1, int32 int_val=1, string string_val=, "
+  ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="", )"
             "int32 non_null_with_default=12345)", rows[0]);
   rows.clear();
   LOG(INFO) << "Testing delete/insert in same batch, key " << 1 << ".";
@@ -3595,7 +3597,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
-  ASSERT_EQ("(int32 key=1, int32 int_val=2, string string_val=, "
+  ASSERT_EQ(R"((int32 key=1, int32 int_val=2, string string_val="", )"
             "int32 non_null_with_default=12345)", rows[0]);
             rows.clear();
 }

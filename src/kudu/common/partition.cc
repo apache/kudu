@@ -30,6 +30,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hash_util.h"
+#include "kudu/util/url-coding.h"
 
 using std::pair;
 using std::set;
@@ -126,7 +127,7 @@ Status ExtractColumnIds(const RepeatedPtrField<PartitionSchemaPB_ColumnIdentifie
 void SetColumnIdentifiers(const vector<ColumnId>& column_ids,
                           RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>* identifiers) {
     identifiers->Reserve(column_ids.size());
-    for (ColumnId column_id : column_ids) {
+    for (const ColumnId& column_id : column_ids) {
       identifiers->Add()->set_id(column_id);
     }
 }
@@ -365,7 +366,7 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
   }
 
   unordered_set<int> range_column_idxs;
-  for (ColumnId column_id : range_schema_.column_ids) {
+  for (const ColumnId& column_id : range_schema_.column_ids) {
     int column_idx = schema.find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {
       return Status::InvalidArgument(Substitute("range partition column ID $0 "
@@ -534,36 +535,9 @@ Status PartitionSchema::DecodeHashBuckets(Slice* encoded_key,
   return Status::OK();
 }
 
-string PartitionSchema::PartitionDebugString(const Partition& partition,
-                                             const Schema& schema) const {
-  string s;
-
-  if (!partition.hash_buckets().empty()) {
-    vector<string> components;
-    for (int32_t bucket : partition.hash_buckets()) {
-      components.push_back(Substitute("$0", bucket));
-    }
-    s.append("hash buckets: (");
-    s.append(JoinStrings(components, ", "));
-    if (!range_schema_.column_ids.empty()) {
-      s.append("), ");
-    } else {
-      s.append(")");
-    }
-  }
-
-  if (!range_schema_.column_ids.empty()) {
-    s.append("range: ");
-    s.append(RangePartitionDebugString(partition.range_key_start().ToString(),
-                                       partition.range_key_end().ToString(),
-                                       schema));
-  }
-  return s;
-}
-
 bool PartitionSchema::IsRangePartitionKeyEmpty(const KuduPartialRow& row) const {
   ConstContiguousRow const_row(row.schema(), row.row_data_);
-  for (ColumnId column_id : range_schema_.column_ids) {
+  for (const ColumnId& column_id : range_schema_.column_ids) {
     if (row.IsColumnSet(row.schema()->find_column_by_id(column_id))) return false;
   }
   return true;
@@ -573,11 +547,10 @@ void PartitionSchema::AppendRangeDebugStringComponentsOrMin(const KuduPartialRow
                                                             vector<string>* components) const {
   ConstContiguousRow const_row(row.schema(), row.row_data_);
 
-  for (ColumnId column_id : range_schema_.column_ids) {
-    string column;
+  for (const ColumnId& column_id : range_schema_.column_ids) {
     int32_t column_idx = row.schema()->find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {
-      components->push_back("<unknown-column>");
+      components->emplace_back("<unknown-column>");
       continue;
     }
     const ColumnSchema& column_schema = row.schema()->column(column_idx);
@@ -586,161 +559,20 @@ void PartitionSchema::AppendRangeDebugStringComponentsOrMin(const KuduPartialRow
       uint8_t min_value[kLargestTypeSize];
       column_schema.type_info()->CopyMinValue(&min_value);
       SimpleConstCell cell(&column_schema, &min_value);
-      column_schema.DebugCellAppend(cell, &column);
+      components->emplace_back(column_schema.Stringify(cell.ptr()));
     } else {
-      column_schema.DebugCellAppend(const_row.cell(column_idx), &column);
-    }
-
-    components->push_back(column);
-  }
-}
-
-string PartitionSchema::RowDebugString(const ConstContiguousRow& row) const {
-  vector<string> components;
-
-  for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
-    int32_t bucket;
-    Status s = BucketForRow(row, hash_bucket_schema, &bucket);
-    if (s.ok()) {
-      components.push_back(Substitute("bucket=$0", bucket));
-    } else {
-      components.push_back(Substitute("<bucket-error: $0>", s.ToString()));
+      components->emplace_back(column_schema.Stringify(const_row.cell_ptr(column_idx)));
     }
   }
-
-  for (ColumnId column_id : range_schema_.column_ids) {
-    string column;
-    int32_t column_idx = row.schema()->find_column_by_id(column_id);
-    if (column_idx == Schema::kColumnNotFound) {
-      components.push_back("<unknown-column>");
-      break;
-    }
-    row.schema()->column(column_idx).DebugCellAppend(row.cell(column_idx), &column);
-    components.push_back(column);
-  }
-
-  return JoinStrings(components, ", ");
-}
-
-string PartitionSchema::RowDebugString(const KuduPartialRow& row) const {
-  vector<string> components;
-
-  for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
-    int32_t bucket;
-    Status s = BucketForRow(row, hash_bucket_schema, &bucket);
-    if (s.ok()) {
-      components.push_back(Substitute("bucket=$0", bucket));
-    } else {
-      components.push_back(Substitute("<bucket-error: $0>", s.ToString()));
-    }
-  }
-
-  AppendRangeDebugStringComponentsOrMin(row, &components);
-
-  return JoinStrings(components, ", ");
-}
-
-string PartitionSchema::PartitionKeyDebugString(const string& key, const Schema& schema) const {
-  Slice encoded_key = key;
-
-  vector<string> components;
-
-  if (!hash_bucket_schemas_.empty()) {
-    vector<int32_t> buckets;
-    Status s = DecodeHashBuckets(&encoded_key, &buckets);
-    if (!s.ok()) {
-      return Substitute("<hash-decode-error: $0>", s.ToString());
-    }
-    for (int32_t bucket : buckets) {
-      components.push_back(Substitute("bucket=$0", bucket));
-    }
-  }
-
-  if (!range_schema_.column_ids.empty()) {
-    Arena arena(1024, 128 * 1024);
-    KuduPartialRow row(&schema);
-
-    Status s = DecodeRangeKey(&encoded_key, &row, &arena);
-    if (!s.ok()) {
-      return Substitute("<range-decode-error: $0>", s.ToString());
-    }
-
-    AppendRangeDebugStringComponentsOrMin(row, &components);
-  }
-
-  return JoinStrings(components, ", ");
-}
-
-string PartitionSchema::RangePartitionDebugString(const KuduPartialRow& lower_bound,
-                                                  const KuduPartialRow& upper_bound) const {
-  string out("[");
-  if (IsRangePartitionKeyEmpty(lower_bound)) {
-    out.append("<start>");
-  } else {
-    vector<string> components;
-    AppendRangeDebugStringComponentsOrMin(lower_bound, &components);
-    out.push_back('(');
-    out.append(JoinStrings(components, ", "));
-    out.push_back(')');
-  }
-  out.append(", ");
-  if (IsRangePartitionKeyEmpty(upper_bound)) {
-    out.append("<end>");
-  } else {
-    vector<string> components;
-    AppendRangeDebugStringComponentsOrMin(upper_bound, &components);
-    out.push_back('(');
-    out.append(JoinStrings(components, ", "));
-    out.push_back(')');
-  }
-  out.push_back(')');
-  return out;
-}
-
-string PartitionSchema::RangePartitionDebugString(const string& lower_bound,
-                                                  const string& upper_bound,
-                                                  const Schema& schema) const {
-  string out("[");
-  if (lower_bound.empty()) {
-    out.append("<start>");
-  } else {
-    out.push_back('(');
-    out.append(RangeKeyDebugString(lower_bound, schema));
-    out.push_back(')');
-  }
-  out.append(", ");
-  if (upper_bound.empty()) {
-    out.append("<end>");
-  } else {
-    out.push_back('(');
-    out.append(RangeKeyDebugString(upper_bound, schema));
-    out.push_back(')');
-  }
-  out.push_back(')');
-  return out;
-}
-
-string PartitionSchema::RangeKeyDebugString(const string& range_key, const Schema& schema) const {
-  Arena arena(1024, 128 * 1024);
-  KuduPartialRow row(&schema);
-  vector<string> components;
-
-  Slice encoded_key(range_key);
-  Status s = DecodeRangeKey(&encoded_key, &row, &arena);
-  if (!s.ok()) {
-    return Substitute("<range-decode-error: $0>", s.ToString());
-  }
-  AppendRangeDebugStringComponentsOrMin(row, &components);
-  return JoinStrings(components, ", ");
 }
 
 namespace {
 // Converts a list of column IDs to a string with the column names seperated by
 // a comma character.
 string ColumnIdsToColumnNames(const Schema& schema,
-                              const vector<ColumnId> column_ids) {
+                              const vector<ColumnId>& column_ids) {
   vector<string> names;
-  for (ColumnId column_id : column_ids) {
+  for (const ColumnId& column_id : column_ids) {
     names.push_back(schema.column(schema.find_column_by_id(column_id)).name());
   }
 
@@ -748,65 +580,261 @@ string ColumnIdsToColumnNames(const Schema& schema,
 }
 } // namespace
 
-string PartitionSchema::DebugString(const Schema& schema) const {
-  vector<string> component_types;
+string PartitionSchema::PartitionDebugString(const Partition& partition,
+                                             const Schema& schema) const {
+  vector<string> components;
+  if (partition.hash_buckets_.size() != hash_bucket_schemas_.size()) {
+    return "<hash-partition-error>";
+  }
 
-  if (!hash_bucket_schemas_.empty()) {
-    vector<string> hash_components;
-    for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
-      string component;
-      component.append(Substitute("(bucket count: $0", hash_bucket_schema.num_buckets));
-      if (hash_bucket_schema.seed != 0) {
-        component.append(Substitute(", seed: $0", hash_bucket_schema.seed));
-      }
-      component.append(Substitute(", columns: [$0])",
-                                  ColumnIdsToColumnNames(schema, hash_bucket_schema.column_ids)));
-      hash_components.push_back(component);
-    }
-    component_types.push_back(Substitute("hash bucket components: [$0]",
-                                         JoinStrings(hash_components, ", ")));
+  for (int i = 0; i < hash_bucket_schemas_.size(); i++) {
+    string s = Substitute("HASH ($0) PARTITION $1",
+                          ColumnIdsToColumnNames(schema, hash_bucket_schemas_[i].column_ids),
+                          partition.hash_buckets_[i]);
+    components.emplace_back(std::move(s));
   }
 
   if (!range_schema_.column_ids.empty()) {
-    component_types.push_back(Substitute("range columns: [$0]",
-                                         ColumnIdsToColumnNames(schema, range_schema_.column_ids)));
+    string s = Substitute("RANGE ($0) PARTITION $1",
+                          ColumnIdsToColumnNames(schema, range_schema_.column_ids),
+                          RangePartitionDebugString(partition.range_key_start(),
+                                                    partition.range_key_end(),
+                                                    schema));
+    components.emplace_back(std::move(s));
   }
-  return JoinStrings(component_types, ", ");
+
+  return JoinStrings(components, ", ");
 }
 
-string PartitionSchema::DisplayString(const Schema& schema) const {
-  string display_string;
+template<typename Row>
+string PartitionSchema::PartitionKeyDebugStringImpl(const Row& row) const {
+  vector<string> components;
 
-  if (!hash_bucket_schemas_.empty()) {
-    display_string.append("Hash components:\n");
-    for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
-      display_string.append("  (");
-      vector<string> hash_components;
-      hash_components.reserve(hash_bucket_schema.column_ids.size());
-      for (const ColumnId& col_id : hash_bucket_schema.column_ids) {
-        const ColumnSchema& col = schema.column_by_id(col_id);
-        hash_components.push_back(Substitute("$0 $1", col.name(), col.type_info()->name()));
-      }
-      display_string.append(JoinStrings(hash_components, ", "));
-      SubstituteAndAppend(&display_string, ") bucket count: $0", hash_bucket_schema.num_buckets);
-      if (hash_bucket_schema.seed != 0) {
-        SubstituteAndAppend(&display_string, " seed: $0", hash_bucket_schema.seed);
-      }
-      display_string.append("\n");
+  for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
+    int32_t bucket;
+    Status s = BucketForRow(row, hash_bucket_schema, &bucket);
+    if (s.ok()) {
+      components.emplace_back(
+          Substitute("HASH ($0): $1",
+                     ColumnIdsToColumnNames(*row.schema(), hash_bucket_schema.column_ids),
+                     bucket));
+    } else {
+      components.emplace_back(Substitute("<hash-error: $0>", s.ToString()));
     }
   }
 
   if (!range_schema_.column_ids.empty()) {
-    display_string.append("Range component:\n");
-    vector<string> range_component;
-    range_component.reserve(range_schema_.column_ids.size());
-    for (const ColumnId& col_id : range_schema_.column_ids) {
-      const ColumnSchema& col = schema.column_by_id(col_id);
-      range_component.push_back(Substitute("$0 $1", col.name(), col.type_info()->name()));
+      components.emplace_back(
+          Substitute("RANGE ($0): $1",
+                     ColumnIdsToColumnNames(*row.schema(), range_schema_.column_ids),
+                     RangeKeyDebugString(row)));
+  }
+
+  return JoinStrings(components, ", ");
+}
+template
+string PartitionSchema::PartitionKeyDebugStringImpl(const KuduPartialRow& row) const;
+template
+string PartitionSchema::PartitionKeyDebugStringImpl(const ConstContiguousRow& row) const;
+
+string PartitionSchema::PartitionKeyDebugString(const ConstContiguousRow& row) const {
+  return PartitionKeyDebugStringImpl(row);
+}
+
+string PartitionSchema::PartitionKeyDebugString(const KuduPartialRow& row) const {
+  return PartitionKeyDebugStringImpl(row);
+}
+
+string PartitionSchema::PartitionKeyDebugString(Slice key, const Schema& schema) const {
+  vector<string> components;
+
+  size_t hash_components_size = kEncodedBucketSize * hash_bucket_schemas_.size();
+  if (key.size() < hash_components_size) {
+    return "<hash-decode-error>";
+  }
+
+  for (const auto& hash_schema : hash_bucket_schemas_) {
+    uint32_t big_endian;
+    memcpy(&big_endian, key.data(), sizeof(uint32_t));
+    key.remove_prefix(sizeof(uint32_t));
+    components.emplace_back(
+        Substitute("HASH ($0): $1",
+                    ColumnIdsToColumnNames(schema, hash_schema.column_ids),
+                    BigEndian::ToHost32(big_endian)));
+  }
+
+  if (!range_schema_.column_ids.empty()) {
+      components.emplace_back(
+          Substitute("RANGE ($0): $1",
+                     ColumnIdsToColumnNames(schema, range_schema_.column_ids),
+                     RangeKeyDebugString(key, schema)));
+  }
+
+  return JoinStrings(components, ", ");
+}
+
+string PartitionSchema::RangePartitionDebugString(const KuduPartialRow& lower_bound,
+                                                  const KuduPartialRow& upper_bound) const {
+  bool lower_unbounded = IsRangePartitionKeyEmpty(lower_bound);
+  bool upper_unbounded = IsRangePartitionKeyEmpty(upper_bound);
+  if (lower_unbounded && upper_unbounded) {
+    return "UNBOUNDED";
+  }
+  if (lower_unbounded) {
+    return Substitute("VALUES < $0", RangeKeyDebugString(upper_bound));
+  }
+  if (upper_unbounded) {
+    return Substitute("VALUES >= $0", RangeKeyDebugString(lower_bound));
+  }
+  // TODO(dan): recognize when a simplified 'VALUES =' form can be used (see
+  // org.apache.kudu.client.Partition#formatRangePartition).
+  return Substitute("$0 <= VALUES < $1",
+                    RangeKeyDebugString(lower_bound),
+                    RangeKeyDebugString(upper_bound));
+}
+
+string PartitionSchema::RangePartitionDebugString(Slice lower_bound,
+                                                  Slice upper_bound,
+                                                  const Schema& schema) const {
+  Arena arena(1024, 128 * 1024);
+  KuduPartialRow lower(&schema);
+  KuduPartialRow upper(&schema);
+
+  Status s = DecodeRangeKey(&lower_bound, &lower, &arena);
+  if (!s.ok()) {
+    return Substitute("<range-key-decode-error: $0>", s.ToString());
+  }
+  s = DecodeRangeKey(&upper_bound, &upper, &arena);
+  if (!s.ok()) {
+    return Substitute("<range-key-decode-error: $0>", s.ToString());
+  }
+
+  return RangePartitionDebugString(lower, upper);
+}
+
+string PartitionSchema::RangeKeyDebugString(Slice range_key, const Schema& schema) const {
+  Arena arena(1024, 128 * 1024);
+  KuduPartialRow row(&schema);
+
+  Status s = DecodeRangeKey(&range_key, &row, &arena);
+  if (!s.ok()) {
+    return Substitute("<range-key-decode-error: $0>", s.ToString());
+  }
+  return RangeKeyDebugString(row);
+}
+
+string PartitionSchema::RangeKeyDebugString(const KuduPartialRow& key) const {
+  vector<string> components;
+  AppendRangeDebugStringComponentsOrMin(key, &components);
+  if (components.size() == 1) {
+    // Omit the parentheses if the range partition has a single column.
+    return components.back();
+  }
+  return Substitute("($0)", JoinStrings(components, ", "));
+}
+
+string PartitionSchema::RangeKeyDebugString(const ConstContiguousRow& key) const {
+  vector<string> components;
+
+  for (const ColumnId& column_id : range_schema_.column_ids) {
+    string column;
+    int32_t column_idx = key.schema()->find_column_by_id(column_id);
+    if (column_idx == Schema::kColumnNotFound) {
+      components.push_back("<unknown-column>");
+      break;
     }
-    SubstituteAndAppend(&display_string, "  ($0)\n", JoinStrings(range_component, ", "));
+    key.schema()->column(column_idx).DebugCellAppend(key.cell(column_idx), &column);
+    components.push_back(column);
+  }
+
+  if (components.size() == 1) {
+    // Omit the parentheses if the range partition has a single column.
+    return components.back();
+  }
+  return Substitute("($0)", JoinStrings(components, ", "));
+}
+
+vector<string> PartitionSchema::DebugStringComponents(const Schema& schema) const {
+  vector<string> components;
+
+  for (const auto& hash_bucket_schema : hash_bucket_schemas_) {
+    string s;
+    SubstituteAndAppend(&s, "HASH ($0) PARTITIONS $1",
+                        ColumnIdsToColumnNames(schema, hash_bucket_schema.column_ids),
+                        hash_bucket_schema.num_buckets);
+    if (hash_bucket_schema.seed != 0) {
+      SubstituteAndAppend(&s, " SEED $0", hash_bucket_schema.seed);
+    }
+    components.emplace_back(std::move(s));
+  }
+
+  if (!range_schema_.column_ids.empty()) {
+    string s = Substitute("RANGE ($0)", ColumnIdsToColumnNames(schema, range_schema_.column_ids));
+    components.emplace_back(std::move(s));
+  }
+
+  return components;
+}
+
+string PartitionSchema::DebugString(const Schema& schema) const {
+  return JoinStrings(DebugStringComponents(schema), ", ");
+}
+
+string PartitionSchema::DisplayString(const Schema& schema,
+                                      const vector<string>& range_partitions) const {
+  string display_string = JoinStrings(DebugStringComponents(schema), ",\n");
+
+  if (!range_schema_.column_ids.empty()) {
+    display_string.append(" (");
+    if (range_partitions.empty()) {
+      display_string.append(")");
+    } else {
+      bool is_first = true;
+      for (const string& range_partition : range_partitions) {
+        if (is_first) {
+          is_first = false;
+        } else {
+          display_string.push_back(',');
+        }
+        display_string.append("\n    PARTITION ");
+        display_string.append(range_partition);
+      }
+      display_string.append("\n)");
+    }
   }
   return display_string;
+}
+
+string PartitionSchema::PartitionTableHeader(const Schema& schema) const {
+  string header;
+  for (const auto& hash_bucket_schema : hash_bucket_schemas_) {
+    SubstituteAndAppend(&header, "<th>HASH ($0) PARTITION</th>",
+                        EscapeForHtmlToString(
+                          ColumnIdsToColumnNames(schema, hash_bucket_schema.column_ids)));
+  }
+  if (!range_schema_.column_ids.empty()) {
+    SubstituteAndAppend(&header, "<th>RANGE ($0) PARTITION</th>",
+                        EscapeForHtmlToString(
+                          ColumnIdsToColumnNames(schema, range_schema_.column_ids)));
+  }
+  return header;
+}
+
+string PartitionSchema::PartitionTableEntry(const Schema& schema,
+                                            const Partition& partition) const {
+  string entry;
+  for (int32_t bucket : partition.hash_buckets_) {
+    SubstituteAndAppend(&entry, "<td>$0</td>", bucket);
+  }
+
+  if (!range_schema_.column_ids.empty()) {
+    SubstituteAndAppend(&entry, "<td>$0</td>",
+                        EscapeForHtmlToString(
+                          RangePartitionDebugString(partition.range_key_start(),
+                                                    partition.range_key_end(),
+                                                    schema)));
+  }
+  return entry;
 }
 
 bool PartitionSchema::Equals(const PartitionSchema& other) const {
@@ -913,7 +941,7 @@ Status PartitionSchema::Validate(const Schema& schema) const {
       return Status::InvalidArgument("must have at least one hash column");
     }
 
-    for (ColumnId hash_column : hash_schema.column_ids) {
+    for (const ColumnId& hash_column : hash_schema.column_ids) {
       if (!hash_columns.insert(hash_column).second) {
         return Status::InvalidArgument("hash bucket schema components must not "
                                        "contain columns in common");
@@ -929,7 +957,7 @@ Status PartitionSchema::Validate(const Schema& schema) const {
     }
   }
 
-  for (ColumnId column_id : range_schema_.column_ids) {
+  for (const ColumnId& column_id : range_schema_.column_ids) {
     int32_t column_idx = schema.find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {
       return Status::InvalidArgument("must specify existing columns for range "
@@ -1089,7 +1117,7 @@ Status PartitionSchema::IncrementRangePartitionKey(KuduPartialRow* row, bool* in
 
 Status PartitionSchema::MakeLowerBoundRangePartitionKeyInclusive(KuduPartialRow* row) const {
   // To transform a lower bound range partition key from exclusive to inclusive,
-  // the key mut be incremented. To increment the key, start with the least
+  // the key must be incremented. To increment the key, start with the least
   // significant column in the key (furthest right), and increment it.  If the
   // increment fails because the value is already the maximum, move on to the
   // next least significant column and attempt to increment it (and so on). When
@@ -1119,7 +1147,7 @@ Status PartitionSchema::MakeLowerBoundRangePartitionKeyInclusive(KuduPartialRow*
     AppendRangeDebugStringComponentsOrMin(*row, &components);
     return Status::InvalidArgument("Exclusive lower bound range partition key must not "
                                    "have maximum values for all components",
-                                   JoinStrings(components, ", "));
+                                   RangeKeyDebugString(*row));
   }
 
   return Status::OK();
@@ -1140,7 +1168,7 @@ Status PartitionSchema::MakeUpperBoundRangePartitionKeyExclusive(KuduPartialRow*
   //   an unbounded upper bound (this is a special case increment).
 
   bool all_unset = true;
-  for (ColumnId column_id : range_schema_.column_ids) {
+  for (const ColumnId& column_id : range_schema_.column_ids) {
     int32_t idx = row->schema()->find_column_by_id(column_id);
     if (idx == Schema::kColumnNotFound) {
       return Status::InvalidArgument(Substitute("range partition column ID $0 "
@@ -1156,7 +1184,7 @@ Status PartitionSchema::MakeUpperBoundRangePartitionKeyExclusive(KuduPartialRow*
   bool increment;
   RETURN_NOT_OK(IncrementRangePartitionKey(row, &increment));
   if (!increment) {
-    for (ColumnId column_id : range_schema_.column_ids) {
+    for (const ColumnId& column_id : range_schema_.column_ids) {
       int32_t idx = row->schema()->find_column_by_id(column_id);
       RETURN_NOT_OK(row->Unset(idx));
     }

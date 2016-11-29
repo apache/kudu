@@ -240,7 +240,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
     vector<string> results;
     IterateTabletRows(tablet.get(), &results);
     ASSERT_EQ(1, results.size());
-    ASSERT_EQ("(int32 key=1, int32 int_val=0, string string_val=this is a test insert)",
+    ASSERT_EQ(R"((int32 key=1, int32 int_val=0, string string_val="this is a test insert"))",
               results[0]);
     ASSERT_EQ(2, tablet->metadata()->last_durable_mrs_id());
   }
@@ -309,7 +309,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
 
   // 'key=3' means the REPLICATE message was inserted when current_id_ was 3, meaning
   // that only the non-orphan commit went in.
-  ASSERT_EQ("(int32 key=3, int32 int_val=0, string string_val=this is a test insert)",
+  ASSERT_EQ(R"((int32 key=3, int32 int_val=0, string string_val="this is a test insert"))",
             results[0]);
 }
 
@@ -392,7 +392,7 @@ TEST_F(BootstrapTest, TestOperationOverwriting) {
   IterateTabletRows(tablet.get(), &results);
   ASSERT_EQ(1, results.size());
 
-  ASSERT_EQ("(int32 key=1, int32 int_val=0, string string_val=this is a test insert)",
+  ASSERT_EQ(R"((int32 key=1, int32 int_val=0, string string_val="this is a test insert"))",
             results[0]);
 }
 
@@ -456,7 +456,7 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
   IterateTabletRows(tablet.get(), &results);
   ASSERT_EQ(1, results.size());
 
-  ASSERT_EQ("(int32 key=10, int32 int_val=2, string string_val=this is a test mutate)",
+  ASSERT_EQ(R"((int32 key=10, int32 int_val=2, string string_val="this is a test mutate"))",
             results[0]);
 }
 

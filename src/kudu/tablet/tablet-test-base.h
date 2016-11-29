@@ -89,9 +89,8 @@ struct StringKeyTestSetup {
     char buf[256];
     FormatKey(buf, sizeof(buf), key_idx);
 
-    return Substitute(
-      "(string key=$0, int32 key_idx=$1, int32 val=$2)",
-      buf, key_idx, val);
+    return Substitute(R"((string key="$0", int32 key_idx=$1, int32 val=$2))",
+                      buf, key_idx, val);
   }
 
   // Slices can be arbitrarily large

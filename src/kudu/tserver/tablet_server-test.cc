@@ -174,7 +174,7 @@ TEST_F(TabletServerTest, TestWebPages) {
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablets", addr),
                               &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), kTabletId);
-  ASSERT_STR_CONTAINS(buf.ToString(), "<td>range: [&lt;start&gt;, &lt;end&gt;)</td>");
+  ASSERT_STR_CONTAINS(buf.ToString(), "RANGE (key) PARTITION UNBOUNDED</td>");
 
   // Tablet page should include the schema.
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablet?id=$1", addr, kTabletId),
@@ -197,7 +197,7 @@ TEST_F(TabletServerTest, TestWebPages) {
     // Check that the tablet entry shows up.
     ASSERT_STR_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
     ASSERT_STR_CONTAINS(buf.ToString(), "\"id\": \"TestTablet\"");
-    ASSERT_STR_CONTAINS(buf.ToString(), "\"partition\": \"range: [<start>, <end>)\"");
+    ASSERT_STR_CONTAINS(buf.ToString(), "\"partition\": \"RANGE (key) PARTITION UNBOUNDED");
 
 
     // Check entity attributes.
@@ -1117,8 +1117,8 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
     }
 
     // assert that the first and last rows were the expected ones
-    ASSERT_EQ("(int32 key=0, int32 int_val=0, string string_val=original0)", results[0]);
-    ASSERT_EQ(Substitute("(int32 key=$0, int32 int_val=$0, string string_val=original$0)",
+    ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="original0"))", results[0]);
+    ASSERT_EQ(Substitute(R"((int32 key=$0, int32 int_val=$0, string string_val="original$0"))",
                          (batch_idx * (num_rows / num_batches) - 1)), results[results.size() - 1]);
     batch_idx++;
   }
@@ -1375,7 +1375,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimes
   vector<string> results;
   ASSERT_NO_FATAL_FAILURE(DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(1, results.size());
-  ASSERT_EQ("(int32 key=0, int32 int_val=0, string string_val=original0)", results[0]);
+  ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="original0"))", results[0]);
 }
 
 
@@ -1454,8 +1454,8 @@ TEST_F(TabletServerTest, TestScanWithStringPredicates) {
   ASSERT_NO_FATAL_FAILURE(
     DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(10, results.size());
-  ASSERT_EQ("(int32 key=50, int32 int_val=100, string string_val=hello 50)", results[0]);
-  ASSERT_EQ("(int32 key=59, int32 int_val=118, string string_val=hello 59)", results[9]);
+  ASSERT_EQ(R"((int32 key=50, int32 int_val=100, string string_val="hello 50"))", results[0]);
+  ASSERT_EQ(R"((int32 key=59, int32 int_val=118, string string_val="hello 59"))", results[9]);
 }
 
 TEST_F(TabletServerTest, TestScanWithPredicates) {
@@ -1545,9 +1545,9 @@ TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
   ASSERT_NO_FATAL_FAILURE(
     DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(9, results.size());
-  EXPECT_EQ("(int32 key=51, int32 int_val=102, string string_val=hello 51)",
+  EXPECT_EQ(R"((int32 key=51, int32 int_val=102, string string_val="hello 51"))",
             results.front());
-  EXPECT_EQ("(int32 key=59, int32 int_val=118, string string_val=hello 59)",
+  EXPECT_EQ(R"((int32 key=59, int32 int_val=118, string string_val="hello 59"))",
             results.back());
 }
 
@@ -1763,7 +1763,8 @@ TEST_F(TabletServerTest, TestOrderedScan_ProjectionWithKeyColumnsInOrder) {
     sb.AddColumn(schema_.column(i), false);
   }
   const Schema& projection = sb.BuildWithoutIds();
-  DoOrderedScanTest(projection, "(int32 key=$0, int32 int_val=$1, string string_val=hello $0)");
+  DoOrderedScanTest(projection,
+                    R"((int32 key=$0, int32 int_val=$1, string string_val="hello $0"))");
 }
 
 // Same as above but doesn't add the key columns to the projection.
@@ -1774,7 +1775,7 @@ TEST_F(TabletServerTest, TestOrderedScan_ProjectionWithoutKeyColumns) {
     sb.AddColumn(schema_.column(i), false);
   }
   const Schema& projection = sb.BuildWithoutIds();
-  DoOrderedScanTest(projection, "(int32 int_val=$1, string string_val=hello $0)");
+  DoOrderedScanTest(projection, R"((int32 int_val=$1, string string_val="hello $0"))");
 }
 
 // Same as above but creates a projection with the order of columns reversed.
@@ -1785,7 +1786,8 @@ TEST_F(TabletServerTest, TestOrderedScan_ProjectionWithKeyColumnsOutOfOrder) {
     sb.AddColumn(schema_.column(i), false);
   }
   const Schema& projection = sb.BuildWithoutIds();
-  DoOrderedScanTest(projection, "(string string_val=hello $0, int32 int_val=$1, int32 key=$0)");
+  DoOrderedScanTest(projection,
+                    R"((string string_val="hello $0", int32 int_val=$1, int32 key=$0))");
 }
 
 TEST_F(TabletServerTest, TestAlterSchema) {

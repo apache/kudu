@@ -73,7 +73,7 @@ TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
   LOG(INFO) << "Encoded: " << HexDump(buf);
 
   // Read it back.
-  EXPECT_EQ(string("SET col1=update1, col2=update2, col3=12345, col4=NULL"),
+  EXPECT_EQ(R"(SET col1="update1", col2="update2", col3=12345, col4=NULL)",
             RowChangeList(Slice(buf)).ToString(schema_));
 
   RowChangeListDecoder decoder((RowChangeList(buf)));
@@ -149,7 +149,7 @@ TEST_F(TestRowChangeList, TestReinserts) {
   // Read it back.
   // Note that col1 (hello) is not present in the output string as it's part of the primary
   // key which not encoded in the REINSERT mutation.
-  EXPECT_EQ(string("REINSERT col2=world, col3=12345, col4=NULL"),
+  EXPECT_EQ(string(R"(REINSERT col2="world", col3=12345, col4=NULL)"),
             RowChangeList(Slice(buf)).ToString(schema_));
 
   RowChangeListDecoder reinsert_1_dec((RowChangeList(buf)));
@@ -173,11 +173,11 @@ TEST_F(TestRowChangeList, TestReinserts) {
                                                        &reinsert_2_enc));
     // The row should now match reinsert 1
     ASSERT_STR_CONTAINS(schema_.DebugRow(dst_row),
-    "(string col1=hello, string col2=world, uint32 col3=12345, uint32 col4=NULL)");
+        R"((string col1="hello", string col2="world", uint32 col3=12345, uint32 col4=NULL))");
   }
 
   // And reinsert 2 should contain the original state of the row.
-  EXPECT_EQ(string("REINSERT col2=mundo, col3=54321, col4=1"),
+  EXPECT_EQ(R"(REINSERT col2="mundo", col3=54321, col4=1)",
             RowChangeList(Slice(buf2)).ToString(schema_));
 }
 
