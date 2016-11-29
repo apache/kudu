@@ -476,7 +476,10 @@ public class PartitionPruner {
     // key to convert it to an exclusive upper bound.
     if (finalPredicate.getType() == KuduPredicate.PredicateType.EQUALITY ||
         finalPredicate.getType() == KuduPredicate.PredicateType.IN_LIST) {
-      incrementKey(row, rangePartitionColumnIdxs.subList(0, pushedPredicates));
+      // If the increment fails then this bound is is not constraining the keyspace.
+      if (!incrementKey(row, rangePartitionColumnIdxs.subList(0, pushedPredicates))) {
+        return AsyncKuduClient.EMPTY_ARRAY;
+      }
     }
 
     // Step 3: Fill the remaining columns without predicates with the min value.

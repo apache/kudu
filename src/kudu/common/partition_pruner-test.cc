@@ -327,6 +327,8 @@ TEST(TestPartitionPruner, TestRangePruning) {
   int8_t five = 5;
   int8_t ten = 10;
   int8_t hundred = 100;
+  int8_t min = INT8_MIN;
+  int8_t max = INT8_MAX;
 
   Slice empty = "";
   Slice a = "a";
@@ -350,6 +352,13 @@ TEST(TestPartitionPruner, TestRangePruning) {
   // c < 100
   Check({ ColumnPredicate::Range(schema.column(2), nullptr, &hundred) }, 3);
 
+  // c < MIN
+  // TODO(dan): this should prune all partitions.
+  Check({ ColumnPredicate::Range(schema.column(2), nullptr, &min) }, 1);
+
+  // c < MAX
+  Check({ ColumnPredicate::Range(schema.column(2), nullptr, &max) }, 3);
+
   // c >= -10
   Check({ ColumnPredicate::Range(schema.column(0), &neg_ten, nullptr) }, 3);
 
@@ -364,6 +373,18 @@ TEST(TestPartitionPruner, TestRangePruning) {
 
   // c >= 100
   Check({ ColumnPredicate::Range(schema.column(2), &hundred, nullptr) }, 1);
+
+  // c >= MIN
+  Check({ ColumnPredicate::Range(schema.column(2), &min, nullptr) }, 3);
+
+  // c >= MAX
+  Check({ ColumnPredicate::Range(schema.column(2), &max, nullptr) }, 1);
+
+  // c = MIN
+  Check({ ColumnPredicate::Equality(schema.column(2), &min) }, 1);
+
+  // c = MAX
+  Check({ ColumnPredicate::Equality(schema.column(2), &max) }, 1);
 
   // c >= -10
   // c < 0

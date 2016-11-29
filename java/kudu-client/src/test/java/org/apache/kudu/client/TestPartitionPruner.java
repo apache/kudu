@@ -246,8 +246,7 @@ public class TestPartitionPruner extends BaseKuduTest {
     // CREATE TABLE t
     // (a INT8, b STRING, c INT8)
     // PRIMARY KEY (a, b, c))
-    // DISTRIBUTE BY RANGE(c, b);
-    // PARTITION BY RANGE (a, b, c)
+    // PARTITION BY RANGE (c, b)
     //    (PARTITION              VALUES < (0, "m"),
     //     PARTITION  (0, "m") <= VALUES < (10, "r")
     //     PARTITION (10, "r") <= VALUES);
@@ -292,6 +291,13 @@ public class TestPartitionPruner extends BaseKuduTest {
     assertEquals(3, countPartitions(table, partitions,
         KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, 100)));
 
+    // c < MIN
+    // TODO(dan): this should prune all partitions.
+    assertEquals(1, countPartitions(table, partitions,
+                                    KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, Byte.MIN_VALUE)));
+    // c < MAX
+    assertEquals(3, countPartitions(table, partitions,
+                                    KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, Byte.MAX_VALUE)));
 
     // c >= -10
     assertEquals(3, countPartitions(table, partitions,
@@ -312,6 +318,13 @@ public class TestPartitionPruner extends BaseKuduTest {
     // c >= 100
     assertEquals(1, countPartitions(table, partitions,
         KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, 100)));
+
+    // c >= MIN
+    assertEquals(3, countPartitions(table, partitions,
+                                    KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, Byte.MIN_VALUE)));
+    // c >= MAX
+    assertEquals(1, countPartitions(table, partitions,
+                                    KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, Byte.MAX_VALUE)));
 
     // c >= -10
     // c < 0
@@ -396,6 +409,13 @@ public class TestPartitionPruner extends BaseKuduTest {
     assertEquals(0, countPartitions(table, partitions,
         KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 0),
         KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, 2)));
+
+    // c = MIN
+    assertEquals(1, countPartitions(table, partitions,
+                                    KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, Byte.MIN_VALUE)));
+    // c = MAX
+    assertEquals(1, countPartitions(table, partitions,
+                                    KuduPredicate.newComparisonPredicate(c, ComparisonOp.EQUAL, Byte.MAX_VALUE)));
 
     // a IN (1, 2)
     assertEquals(1, countPartitions(table, partitions,
