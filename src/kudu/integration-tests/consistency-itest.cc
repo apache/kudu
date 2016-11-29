@@ -382,7 +382,7 @@ TEST_F(ConsistencyITest, TestTimestampPropagationFromScans) {
 // write operation. Since a write operation should always advance the server
 // clock, the resulting timestamp returned to the client should be strictly
 // greater than the propagated one.
-TEST_F(ConsistencyITest, DISABLED_TestTimestampPropagationForWriteOps) {
+TEST_F(ConsistencyITest, TestTimestampPropagationForWriteOps) {
   const int32_t offset_usec = FLAGS_max_clock_sync_error_usec;
   // Assuming the offset is specified as a positive number.
   ASSERT_GT(offset_usec, 0);

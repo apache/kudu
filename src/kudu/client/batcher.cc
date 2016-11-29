@@ -194,7 +194,8 @@ class WriteRpc : public RetriableRpc<RemoteTabletServer, WriteRequestPB, WriteRe
            vector<InFlightOp*> ops,
            const MonoTime& deadline,
            const shared_ptr<Messenger>& messenger,
-           const string& tablet_id);
+           const string& tablet_id,
+           uint64_t propagated_timestamp);
   virtual ~WriteRpc();
   string ToString() const override;
 
@@ -231,7 +232,8 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
                    vector<InFlightOp*> ops,
                    const MonoTime& deadline,
                    const shared_ptr<Messenger>& messenger,
-                   const string& tablet_id)
+                   const string& tablet_id,
+                   uint64_t propagated_timestamp)
     : RetriableRpc(replica_picker, request_tracker, deadline, messenger),
       batcher_(batcher),
       ops_(std::move(ops)),
@@ -249,6 +251,10 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
     default:
       LOG(FATAL) << "Unsupported consistency mode: " << batcher->external_consistency_mode();
 
+  }
+  // If set, propagate the latest observed timestamp.
+  if (PREDICT_TRUE(propagated_timestamp != KuduClient::kNoTimestamp)) {
+    req_.set_propagated_timestamp(propagated_timestamp);
   }
 
   // Set up schema
@@ -695,7 +701,8 @@ void Batcher::FlushBuffer(RemoteTablet* tablet, const vector<InFlightOp*>& ops) 
                                ops,
                                deadline_,
                                client_->data_->messenger_,
-                               tablet->tablet_id());
+                               tablet->tablet_id(),
+                               client_->data_->GetLatestObservedTimestamp());
   rpc->SendRpc();
 }
 
