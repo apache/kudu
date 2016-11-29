@@ -353,6 +353,86 @@ TEST_F(ConsistencyITest, TestTimestampPropagationFromScans) {
   }
 }
 
+// Make sure the client propagates the timestamp for write operations.
+//
+// The idea of verification is simple:
+//
+//   * Let's get two tablet servers, where the clock of the first server
+//     is ahead of the second one.
+//
+//   * Create a client object.
+//
+//   * Using the newly created client object, insert some data into the tablet
+//     hosted by the first server.
+//
+//   * Record the client's latest observed timestamp.
+//
+//   * Using the same client object, insert some data into the tablet
+//     hosted by the second server.
+//
+//   * Get the client's latest observed timestamp: it should be strictly greater
+//     than the recorded timestamp.
+//
+//   * Make a full table scan at in READ_AT_TIMESTAMP mode at 'ts_ref'
+//     timestamp: the scan should retrieve only the first row.
+//
+// If the client propates the timestamps, the second server should receive
+// the recorded timestamp value in write request in the 'propagated_timestamp'
+// field and adjust its clock first. After that it should perform the requested
+// write operation. Since a write operation should always advance the server
+// clock, the resulting timestamp returned to the client should be strictly
+// greater than the propagated one.
+TEST_F(ConsistencyITest, DISABLED_TestTimestampPropagationForWriteOps) {
+  const int32_t offset_usec = FLAGS_max_clock_sync_error_usec;
+  // Assuming the offset is specified as a positive number.
+  ASSERT_GT(offset_usec, 0);
+  // Need to have at least one row in the first partition starting with key 0.
+  ASSERT_LE(1, key_split_value_);
+
+  uint64_t ts_ref;
+  {
+    shared_ptr<KuduClient> client;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+    ASSERT_OK(CreateTable(client.get(), table_name_));
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client->OpenTable(table_name_, &table));
+
+    // Advance tablet server's clock hosting the first key range
+    // (i.e. for the row which is about to be inserted below).
+    ASSERT_OK(UpdateClockForTabletHostingKey(
+        0, MonoDelta::FromMicroseconds(offset_usec)));
+
+    // Insert 1 row into the first tablet.
+    ASSERT_OK(InsertTestRows(client.get(), table.get(), 1, 0));
+    // Retrieve the latest observed timestamp.
+    ts_ref = client->GetLatestObservedTimestamp();
+
+    // Insert 1 row into the second tablet.
+    ASSERT_OK(InsertTestRows(client.get(), table.get(), 1, key_split_value_));
+    // Retrieve the latest observed timestamp.
+    const uint64_t ts = client->GetLatestObservedTimestamp();
+
+    // If the client propagates the timestamp with write operations,
+    // the timestamp received from the second server should be greater
+    // than the timestamp received from the first server.
+    EXPECT_GT(ts, ts_ref);
+  }
+
+  // An additional check: scan the table at the 'ts_ref' timestamp and
+  // make sure only the first row is visible.
+  {
+    shared_ptr<KuduClient> client;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client->OpenTable(table_name_, &table));
+
+    size_t row_count;
+    ASSERT_OK(GetRowCount(table.get(), KuduScanner::READ_AT_SNAPSHOT,
+                          ts_ref, &row_count));
+    EXPECT_EQ(1, row_count);
+  }
+}
+
 // This is a test for KUDU-1189. It verifies that in case of a READ_AT_SNAPSHOT
 // scan with unspecified snapshot timestamp, the scanner picks timestamp from
 // the first server that the data is read from. If the scan spans multiple
