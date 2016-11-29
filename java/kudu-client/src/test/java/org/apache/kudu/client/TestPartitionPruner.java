@@ -292,8 +292,7 @@ public class TestPartitionPruner extends BaseKuduTest {
         KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, 100)));
 
     // c < MIN
-    // TODO(dan): this should prune all partitions.
-    assertEquals(1, countPartitions(table, partitions,
+    assertEquals(0, countPartitions(table, partitions,
                                     KuduPredicate.newComparisonPredicate(c, ComparisonOp.LESS, Byte.MIN_VALUE)));
     // c < MAX
     assertEquals(3, countPartitions(table, partitions,
@@ -630,6 +629,6 @@ public class TestPartitionPruner extends BaseKuduTest {
 
     // timestamp IS NOT NULL
     assertEquals(4, countPartitions(table, partitions,
-          KuduPredicate.newIsNotNullPredicate(timestamp)));
+          KuduPredicate.isNotNull(timestamp)));
   }
 }

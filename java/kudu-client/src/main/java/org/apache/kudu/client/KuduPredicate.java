@@ -120,7 +120,7 @@ public class KuduPredicate {
         if (value) {
           return new KuduPredicate(PredicateType.EQUALITY, column, Bytes.fromBoolean(true), null);
         } else {
-          return newIsNotNullPredicate(column);
+          return isNotNull(column);
         }
       }
       case EQUAL: return new KuduPredicate(PredicateType.EQUALITY, column,
@@ -138,7 +138,7 @@ public class KuduPredicate {
         // b <= true  -> b IS NOT NULL
         // b <= false -> b = false
         if (value) {
-          return newIsNotNullPredicate(column);
+          return isNotNull(column);
         } else {
           return new KuduPredicate(PredicateType.EQUALITY, column, Bytes.fromBoolean(false), null);
         }
@@ -157,26 +157,29 @@ public class KuduPredicate {
                                                      ComparisonOp op,
                                                      long value) {
     checkColumn(column, Type.INT8, Type.INT16, Type.INT32, Type.INT64, Type.UNIXTIME_MICROS);
-    Preconditions.checkArgument(value <= maxIntValue(column.getType()) &&
-                                    value >= minIntValue(column.getType()),
+    long minValue = minIntValue(column.getType());
+    long maxValue = maxIntValue(column.getType());
+    Preconditions.checkArgument(value <= maxValue && value >= minValue,
                                 "integer value out of range for %s column: %s",
                                 column.getType(), value);
 
     if (op == ComparisonOp.LESS_EQUAL) {
-      if (value == maxIntValue(column.getType())) {
+      if (value == maxValue) {
         // If the value can't be incremented because it is at the top end of the
         // range, then substitute the predicate with an IS NOT NULL predicate.
         // This has the same effect as an inclusive upper bound on the maximum
         // value. If the column is not nullable then the IS NOT NULL predicate
         // is ignored.
-        return newIsNotNullPredicate(column);
+        return isNotNull(column);
       }
       value += 1;
+      op = ComparisonOp.LESS;
     } else if (op == ComparisonOp.GREATER) {
-      if (value == maxIntValue(column.getType())) {
+      if (value == maxValue) {
         return none(column);
       }
       value += 1;
+      op = ComparisonOp.GREATER_EQUAL;
     }
 
     byte[] bytes;
@@ -202,13 +205,19 @@ public class KuduPredicate {
         throw new RuntimeException("already checked");
     }
     switch (op) {
-      case GREATER:
       case GREATER_EQUAL:
+        if (value == minValue) {
+          return isNotNull(column);
+        } else if (value == maxValue) {
+          return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
+        }
         return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
       case EQUAL:
         return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
       case LESS:
-      case LESS_EQUAL:
+        if (value == minValue) {
+          return none(column);
+        }
         return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
       default:
         throw new RuntimeException("unknown comparison op");
@@ -227,25 +236,33 @@ public class KuduPredicate {
     checkColumn(column, Type.FLOAT);
     if (op == ComparisonOp.LESS_EQUAL) {
       if (value == Float.POSITIVE_INFINITY) {
-        return newIsNotNullPredicate(column);
+        return isNotNull(column);
       }
       value = Math.nextAfter(value, Float.POSITIVE_INFINITY);
+      op = ComparisonOp.LESS;
     } else if (op == ComparisonOp.GREATER) {
       if (value == Float.POSITIVE_INFINITY) {
         return none(column);
       }
       value = Math.nextAfter(value, Float.POSITIVE_INFINITY);
+      op = ComparisonOp.GREATER_EQUAL;
     }
 
     byte[] bytes = Bytes.fromFloat(value);
     switch (op) {
-      case GREATER:
       case GREATER_EQUAL:
+        if (value == Float.NEGATIVE_INFINITY) {
+          return isNotNull(column);
+        } else if (value == Float.POSITIVE_INFINITY) {
+          return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
+        }
         return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
       case EQUAL:
         return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
       case LESS:
-      case LESS_EQUAL:
+        if (value == Float.NEGATIVE_INFINITY) {
+          return none(column);
+        }
         return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
       default:
         throw new RuntimeException("unknown comparison op");
@@ -264,25 +281,33 @@ public class KuduPredicate {
     checkColumn(column, Type.DOUBLE);
     if (op == ComparisonOp.LESS_EQUAL) {
       if (value == Double.POSITIVE_INFINITY) {
-        return newIsNotNullPredicate(column);
+        return isNotNull(column);
       }
       value = Math.nextAfter(value, Double.POSITIVE_INFINITY);
+      op = ComparisonOp.LESS;
     } else if (op == ComparisonOp.GREATER) {
       if (value == Double.POSITIVE_INFINITY) {
         return none(column);
       }
       value = Math.nextAfter(value, Double.POSITIVE_INFINITY);
+      op = ComparisonOp.GREATER_EQUAL;
     }
 
     byte[] bytes = Bytes.fromDouble(value);
     switch (op) {
-      case GREATER:
       case GREATER_EQUAL:
+        if (value == Double.NEGATIVE_INFINITY) {
+          return isNotNull(column);
+        } else if (value == Double.POSITIVE_INFINITY) {
+          return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
+        }
         return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
       case EQUAL:
         return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
       case LESS:
-      case LESS_EQUAL:
+        if (value == Double.NEGATIVE_INFINITY) {
+          return none(column);
+        }
         return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
       default:
         throw new RuntimeException("unknown comparison op");
@@ -301,18 +326,26 @@ public class KuduPredicate {
     checkColumn(column, Type.STRING);
 
     byte[] bytes = Bytes.fromString(value);
-    if (op == ComparisonOp.LESS_EQUAL || op == ComparisonOp.GREATER) {
+    if (op == ComparisonOp.LESS_EQUAL) {
       bytes = Arrays.copyOf(bytes, bytes.length + 1);
+      op = ComparisonOp.LESS;
+    } else if (op == ComparisonOp.GREATER) {
+      bytes = Arrays.copyOf(bytes, bytes.length + 1);
+      op = ComparisonOp.GREATER_EQUAL;
     }
 
     switch (op) {
-      case GREATER:
       case GREATER_EQUAL:
+        if (bytes.length == 0) {
+          return isNotNull(column);
+        }
         return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
       case EQUAL:
         return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
       case LESS:
-      case LESS_EQUAL:
+        if (bytes.length == 0) {
+          return none(column);
+        }
         return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
       default:
         throw new RuntimeException("unknown comparison op");
@@ -330,18 +363,26 @@ public class KuduPredicate {
                                                      byte[] value) {
     checkColumn(column, Type.BINARY);
 
-    if (op == ComparisonOp.LESS_EQUAL || op == ComparisonOp.GREATER) {
+    if (op == ComparisonOp.LESS_EQUAL) {
       value = Arrays.copyOf(value, value.length + 1);
+      op = ComparisonOp.LESS;
+    } else if (op == ComparisonOp.GREATER) {
+      value = Arrays.copyOf(value, value.length + 1);
+      op = ComparisonOp.GREATER_EQUAL;
     }
 
     switch (op) {
-      case GREATER:
       case GREATER_EQUAL:
+        if (value.length == 0) {
+          return isNotNull(column);
+        }
         return new KuduPredicate(PredicateType.RANGE, column, value, null);
       case EQUAL:
         return new KuduPredicate(PredicateType.EQUALITY, column, value, null);
       case LESS:
-      case LESS_EQUAL:
+        if (value.length == 0) {
+          return none(column);
+        }
         return new KuduPredicate(PredicateType.RANGE, column, null, value);
       default:
         throw new RuntimeException("unknown comparison op");
@@ -469,7 +510,7 @@ public class KuduPredicate {
    * @return a {@code IS NOT NULL} predicate
    */
   @VisibleForTesting
-  static KuduPredicate newIsNotNullPredicate(ColumnSchema column) {
+  static KuduPredicate isNotNull(ColumnSchema column) {
     return new KuduPredicate(PredicateType.IS_NOT_NULL, column, null, null);
   }
 
@@ -585,7 +626,7 @@ public class KuduPredicate {
   private static KuduPredicate buildInList(ColumnSchema column, Collection<byte[]> values) {
     // IN (true, false) predicates can be simplified to IS NOT NULL.
     if (column.getType().getDataType() == Common.DataType.BOOL && values.size() > 1) {
-      return KuduPredicate.newIsNotNullPredicate(column);
+      return isNotNull(column);
     }
 
     switch (values.size()) {
@@ -687,7 +728,7 @@ public class KuduPredicate {
                                  range.hasUpper() ? range.getUpper().toByteArray() : null);
       }
       case IS_NOT_NULL:
-        return newIsNotNullPredicate(column);
+        return isNotNull(column);
       case IN_LIST: {
         Common.ColumnPredicatePB.InList inList = pb.getInList();
 
