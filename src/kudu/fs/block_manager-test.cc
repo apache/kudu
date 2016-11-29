@@ -326,26 +326,22 @@ void BlockManagerTest<LogBlockManager>::RunLogContainerPreallocationTest() {
   ASSERT_OK(written_block->Append(kTestData));
   ASSERT_OK(written_block->Close());
 
-  // We expect the container size to either be equal to the test data size (if
-  // preallocation isn't supported) or equal to the preallocation amount, which
-  // we know is greater than the test data size.
+  // We expect the container size to be equal to the preallocation amount,
+  // which we know is greater than the test data size.
   string container_data_filename;
   NO_FATALS(GetOnlyContainerDataFile(&container_data_filename));
   uint64_t size;
   ASSERT_OK(env_->GetFileSizeOnDisk(container_data_filename, &size));
-  ASSERT_TRUE(size == kTestData.size() ||
-              size == FLAGS_log_container_preallocate_bytes);
+  ASSERT_EQ(FLAGS_log_container_preallocate_bytes, size);
 
-  // Upon writing a second block, we'd expect the container to either double in
-  // size (without preallocation) or remain the same size (with preallocation).
+  // Upon writing a second block, we'd expect the container to remain the same
+  // size.
   ASSERT_OK(bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->Append(kTestData));
   ASSERT_OK(written_block->Close());
   NO_FATALS(GetOnlyContainerDataFile(&container_data_filename));
   ASSERT_OK(env_->GetFileSizeOnDisk(container_data_filename, &size));
-  ASSERT_TRUE(size == kTestData.size() * 2 ||
-              size == FLAGS_log_container_preallocate_bytes);
-
+  ASSERT_EQ(FLAGS_log_container_preallocate_bytes, size);
 
   // Now reopen the block manager and create another block. The block manager
   // should be smart enough to reuse the previously preallocated amount.
@@ -358,8 +354,7 @@ void BlockManagerTest<LogBlockManager>::RunLogContainerPreallocationTest() {
   ASSERT_OK(written_block->Close());
   NO_FATALS(GetOnlyContainerDataFile(&container_data_filename));
   ASSERT_OK(env_->GetFileSizeOnDisk(container_data_filename, &size));
-  ASSERT_TRUE(size == kTestData.size() * 3 ||
-              size == FLAGS_log_container_preallocate_bytes);
+  ASSERT_EQ(FLAGS_log_container_preallocate_bytes, size);
 }
 
 template <>
@@ -1025,6 +1020,52 @@ TEST_F(LogBlockManagerTest, TestAppendExceedsPreallocation) {
   // the preallocation offset!
   ASSERT_OK(bm_->CreateBlock(&writer));
   ASSERT_OK(writer->Append("hello world"));
+}
+
+TEST_F(LogBlockManagerTest, TestPreallocationAndTruncation) {
+  RETURN_NOT_LOG_BLOCK_MANAGER();
+
+  // Ensure preallocation window is greater than the container size itself.
+  FLAGS_log_container_max_size = 1024 * 1024;
+  FLAGS_log_container_preallocate_bytes = 32 * 1024 * 1024;
+
+  // Fill up one container.
+  gscoped_ptr<WritableBlock> writer;
+  ASSERT_OK(bm_->CreateBlock(&writer));
+  unique_ptr<uint8_t[]> data(new uint8_t[FLAGS_log_container_max_size]);
+  memset(data.get(), 0, FLAGS_log_container_max_size);
+  ASSERT_OK(writer->Append({ data.get(), FLAGS_log_container_max_size } ));
+  string fname;
+  NO_FATALS(GetOnlyContainerDataFile(&fname));
+  uint64_t size_after_append;
+  ASSERT_OK(env_->GetFileSize(fname, &size_after_append));
+  ASSERT_EQ(FLAGS_log_container_preallocate_bytes, size_after_append);
+
+  // Close it. The extra preallocated space should be truncated off the file.
+  ASSERT_OK(writer->Close());
+  uint64_t size_after_close;
+  ASSERT_OK(env_->GetFileSize(fname, &size_after_close));
+  ASSERT_EQ(FLAGS_log_container_max_size, size_after_close);
+
+  // For the sake of testing, artificially double the file's size.
+  unique_ptr<RWFile> data_file;
+  RWFileOptions opts;
+  opts.mode = Env::OPEN_EXISTING;
+  ASSERT_OK(env_->NewRWFile(opts, fname, &data_file));
+  ASSERT_OK(data_file->PreAllocate(size_after_close, size_after_close));
+  uint64_t size_after_preallocate;
+  ASSERT_OK(env_->GetFileSize(fname, &size_after_preallocate));
+  ASSERT_EQ(size_after_close * 2, size_after_preallocate);
+
+  // Now reopen the block manager. It should notice that the container grew
+  // and truncate the extra preallocated space off again.
+  ASSERT_OK(ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                               shared_ptr<MemTracker>(),
+                               { this->test_dir_ },
+                               false));
+  uint64_t size_after_reopen;
+  ASSERT_OK(env_->GetFileSize(fname, &size_after_reopen));
+  ASSERT_EQ(FLAGS_log_container_max_size, size_after_reopen);
 }
 
 TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {

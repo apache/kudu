@@ -234,6 +234,16 @@ class LogBlockContainer {
   // TODO(unknown): Add support to synchronize just a range.
   Status SyncMetadata();
 
+  // Truncates this container's data file to 'total_bytes_written_' if it is
+  // full. This effectively removes any preallocated but unused space.
+  //
+  // Should be called only when 'total_bytes_written_' is up-to-date with
+  // respect to the data on disk (i.e. after the container's records have
+  // been loaded), otherwise data may be lost!
+  //
+  // This function is thread unsafe.
+  Status TruncateDataToTotalBytesWritten();
+
   // Reads the container's metadata from disk, sanity checking and
   // returning the records.
   Status ReadContainerRecords(deque<BlockRecordPB>* records) const;
@@ -438,6 +448,15 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   return Status::OK();
 }
 
+Status LogBlockContainer::TruncateDataToTotalBytesWritten() {
+  if (full() && preallocated_offset_ > total_bytes_written_) {
+    VLOG(2) << Substitute("Truncating container $0 to offset $1",
+                          ToString(), total_bytes_written_);
+    RETURN_NOT_OK(data_file_->Truncate(total_bytes_written_));
+  }
+  return Status::OK();
+}
+
 Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) const {
   string metadata_path = metadata_file_->filename();
   unique_ptr<RandomAccessFile> metadata_reader;
@@ -538,6 +557,14 @@ Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
                                      total_bytes_written_ - block->BytesAppended(),
                                      block->BytesAppended()));
   UpdateBytesWritten(0);
+
+  // Truncate the container if it's now full; any left over preallocated space
+  // is no longer needed.
+  //
+  // Note that this take places _after_ the container has been synced to disk.
+  // That's OK; truncation isn't needed for correctness, and in the event of a
+  // crash, it will be retried at startup.
+  RETURN_NOT_OK(TruncateDataToTotalBytesWritten());
 
   if (full() && block_manager()->metrics()) {
     block_manager()->metrics()->full_containers->Increment();
@@ -1479,6 +1506,18 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
       ProcessBlockRecord(r, container.get(), &blocks_in_container);
       max_block_id = std::max(max_block_id, r.block_id().id());
     }
+
+    // Having processed the block records, it is now safe to truncate the
+    // preallocated space off of the end of the container. This is a no-op for
+    // non-full containers, where excess preallocated space is expected to be
+    // (eventually) used.
+    s = container->TruncateDataToTotalBytesWritten();
+    if (!s.ok()) {
+      *result_status = s.CloneAndPrepend(Substitute(
+          "Could not truncate container $0", container->ToString()));
+      return;
+    }
+
     next_block_id_.StoreMax(max_block_id + 1);
 
     // Under the lock, merge this map into the main block map and add
