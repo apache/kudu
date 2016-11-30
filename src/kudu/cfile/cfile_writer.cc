@@ -69,7 +69,6 @@ namespace cfile {
 
 const char kMagicString[] = "kuducfil";
 
-static const size_t kBlockSizeLimit = 16 * 1024 * 1024; // 16MB
 static const size_t kMinBlockSize = 512;
 
 static CompressionType GetDefaultCompressionCodec() {
@@ -153,7 +152,7 @@ Status CFileWriter::Start() {
   if (compression_ != NO_COMPRESSION) {
     const CompressionCodec* codec;
     RETURN_NOT_OK(GetCompressionCodec(compression_, &codec));
-    block_compressor_ .reset(new CompressedBlockBuilder(codec, kBlockSizeLimit));
+    block_compressor_ .reset(new CompressedBlockBuilder(codec));
   }
 
   CFileHeaderPB header;

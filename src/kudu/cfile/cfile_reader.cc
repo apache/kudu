@@ -60,8 +60,6 @@ const char* CFILE_CACHE_HIT_BYTES_METRIC_NAME = "cfile_cache_hit_bytes";
 static const size_t kMagicAndLengthSize = 12;
 static const size_t kMaxHeaderFooterPBSize = 64*1024;
 
-static const size_t kBlockSizeLimit = 16 * 1024 * 1024; // 16MB
-
 static Status ParseMagicAndLength(const Slice &data,
                                   uint32_t *parsed_len) {
   if (data.size() != kMagicAndLengthSize) {
@@ -213,7 +211,7 @@ Status CFileReader::ReadAndParseFooter() {
   if (footer_->compression() != NO_COMPRESSION) {
     const CompressionCodec* codec;
     RETURN_NOT_OK(GetCompressionCodec(footer_->compression(), &codec));
-    block_uncompressor_.reset(new CompressedBlockDecoder(codec, kBlockSizeLimit));
+    block_uncompressor_.reset(new CompressedBlockDecoder(codec));
   }
 
   VLOG(2) << "Read footer: " << footer_->DebugString();

@@ -17,22 +17,32 @@
 
 #include <glog/logging.h>
 #include <algorithm>
+#include <gflags/gflags.h>
 
 #include "kudu/cfile/block_compression.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/util/coding.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding-inl.h"
+#include "kudu/util/coding.h"
+#include "kudu/util/flag_tags.h"
+
+DEFINE_int64(max_cfile_block_size, 16 * 1024 * 1024,
+             "The maximum size of an uncompressed CFile block when using compression. "
+             "Blocks larger than this will prevent flushing.");
+// Mark this flag unsafe since we're likely to hit other downstream issues with
+// cells that are this large, and we haven't tested these scenarios. The purpose
+// of this flag is just to provide an 'escape hatch' if we somehow insert a too-large
+// value.
+TAG_FLAG(max_cfile_block_size, unsafe);
 
 namespace kudu {
 namespace cfile {
 
 using std::vector;
 
-CompressedBlockBuilder::CompressedBlockBuilder(const CompressionCodec* codec,
-                                               size_t size_limit)
-  : codec_(DCHECK_NOTNULL(codec)),
-    compressed_size_limit_(size_limit) {
+CompressedBlockBuilder::CompressedBlockBuilder(const CompressionCodec* codec)
+  : codec_(DCHECK_NOTNULL(codec)) {
 }
 
 Status CompressedBlockBuilder::Compress(const Slice& data, Slice *result) {
@@ -47,15 +57,19 @@ Status CompressedBlockBuilder::Compress(const vector<Slice> &data_slices, Slice 
     data_size += data.size();
   }
 
-  // Ensure that the buffer for header + compressed data is large enough
-  size_t max_compressed_size = codec_->MaxCompressedLength(data_size);
-  if (max_compressed_size > compressed_size_limit_) {
-    return Status::InvalidArgument(
-      StringPrintf("estimated max size %lu is greater than the expected %lu",
-        max_compressed_size, compressed_size_limit_));
+  // On the read side, we won't read any data which uncompresses larger than the
+  // configured maximum. So, we should prevent writing any data which would later
+  // be unreadable.
+  if (data_size > FLAGS_max_cfile_block_size) {
+    return Status::InvalidArgument(strings::Substitute(
+        "uncompressed block size $0 is greater than the configured maximum "
+        "size $1", data_size, FLAGS_max_cfile_block_size));
   }
 
-  buffer_.resize(kHeaderReservedLength + max_compressed_size);
+  // Ensure that the buffer for header + compressed data is large enough
+  // for the upper bound compressed size reported by the codec.
+  size_t ub_compressed_size = codec_->MaxCompressedLength(data_size);
+  buffer_.resize(kHeaderReservedLength + ub_compressed_size);
 
   // Compress
   size_t compressed_size;
@@ -70,10 +84,8 @@ Status CompressedBlockBuilder::Compress(const vector<Slice> &data_slices, Slice 
   return Status::OK();
 }
 
-CompressedBlockDecoder::CompressedBlockDecoder(const CompressionCodec* codec,
-                                               size_t size_limit)
-  : codec_(DCHECK_NOTNULL(codec)),
-    uncompressed_size_limit_(size_limit) {
+CompressedBlockDecoder::CompressedBlockDecoder(const CompressionCodec* codec)
+  : codec_(DCHECK_NOTNULL(codec)) {
 }
 
 Status CompressedBlockDecoder::ValidateHeader(const Slice& data, uint32_t *uncompressed_size) {
@@ -99,10 +111,10 @@ Status CompressedBlockDecoder::ValidateHeader(const Slice& data, uint32_t *uncom
   }
 
   // Check if uncompressed size seems to be reasonable
-  if (*uncompressed_size > uncompressed_size_limit_) {
+  if (*uncompressed_size > FLAGS_max_cfile_block_size) {
     return Status::Corruption(
       StringPrintf("uncompressed size %u overflows the maximum length %lu, buffer",
-        compressed_size, uncompressed_size_limit_), data.ToDebugString(50));
+        compressed_size, FLAGS_max_cfile_block_size), data.ToDebugString(50));
   }
 
   return Status::OK();
