@@ -239,6 +239,13 @@ public class ColumnSchema {
 
     /**
      * Marks the column as allowing null values. False by default.
+     * <p>
+     * <strong>NOTE:</strong> the "not-nullable-by-default" behavior here differs from
+     * the equivalent API in the Python and C++ clients. It also differs from the
+     * standard behavior of SQL <code>CREATE TABLE</code> statements. It is
+     * recommended to always specify nullability explicitly using this API
+     * in order to avoid confusion.
+     *
      * @param nullable a boolean that indicates if the column allows null values
      * @return this instance
      */
