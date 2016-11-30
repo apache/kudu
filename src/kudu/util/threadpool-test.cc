@@ -223,15 +223,34 @@ TEST(TestThreadPool, TestMaxQueueSize) {
       .set_max_queue_size(1).Build(&thread_pool));
 
   CountDownLatch latch(1);
+  // We will be able to submit two tasks: one for max_threads == 1 and one for
+  // max_queue_size == 1.
+  ASSERT_OK(thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch))));
   ASSERT_OK(thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch))));
   Status s = thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch)));
-  // We race against the worker thread to re-enqueue.
-  // If we get there first, we fail on the 2nd Submit().
-  // If the worker dequeues first, we fail on the 3rd.
-  if (s.ok()) {
-    s = thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch)));
-  }
   CHECK(s.IsServiceUnavailable()) << "Expected failure due to queue blowout:" << s.ToString();
+  latch.CountDown();
+  thread_pool->Wait();
+  thread_pool->Shutdown();
+}
+
+// Test that when we specify a zero-sized queue, the maximum number of threads
+// running is used for enforcement.
+TEST(TestThreadPool, TestZeroQueueSize) {
+  gscoped_ptr<ThreadPool> thread_pool;
+  const int kMaxThreads = 4;
+  ASSERT_OK(ThreadPoolBuilder("test")
+      .set_max_queue_size(0)
+      .set_max_threads(kMaxThreads)
+      .Build(&thread_pool));
+
+  CountDownLatch latch(1);
+  for (int i = 0; i < kMaxThreads; i++) {
+    ASSERT_OK(thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch))));
+  }
+  Status s = thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch)));
+  ASSERT_TRUE(s.IsServiceUnavailable()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Thread pool is at capacity");
   latch.CountDown();
   thread_pool->Wait();
   thread_pool->Shutdown();
@@ -251,7 +270,6 @@ TEST(TestThreadPool, TestPromises) {
   ASSERT_EQ(5, my_promise.Get());
   thread_pool->Shutdown();
 }
-
 
 METRIC_DEFINE_entity(test_entity);
 METRIC_DEFINE_histogram(test_entity, queue_length, "queue length",

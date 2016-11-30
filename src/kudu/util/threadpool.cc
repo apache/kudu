@@ -82,7 +82,6 @@ ThreadPoolBuilder& ThreadPoolBuilder::set_max_threads(int max_threads) {
 }
 
 ThreadPoolBuilder& ThreadPoolBuilder::set_max_queue_size(int max_queue_size) {
-  CHECK_GT(max_queue_size, 0);
   max_queue_size_ = max_queue_size;
   return *this;
 }
@@ -191,9 +190,12 @@ Status ThreadPool::Submit(const std::shared_ptr<Runnable>& task) {
   }
 
   // Size limit check.
-  if (queue_size_ == max_queue_size_) {
-    return Status::ServiceUnavailable(Substitute("Thread pool queue is full ($0 items)",
-                                                 queue_size_));
+  int64_t capacity_remaining = static_cast<int64_t>(max_threads_) - active_threads_ +
+                               static_cast<int64_t>(max_queue_size_) - queue_size_;
+  if (capacity_remaining < 1) {
+    return Status::ServiceUnavailable(
+        Substitute("Thread pool is at capacity ($0/$1 tasks running, $2/$3 tasks queued)",
+                   num_threads_, max_threads_, queue_size_, max_queue_size_));
   }
 
   // Should we create another thread?
@@ -213,12 +215,11 @@ Status ThreadPool::Submit(const std::shared_ptr<Runnable>& task) {
       if (num_threads_ == 0) {
         // If we have no threads, we can't do any work.
         return status;
-      } else {
-        // If we failed to create a thread, but there are still some other
-        // worker threads, log a warning message and continue.
-        LOG(WARNING) << "Thread pool failed to create thread: "
-                     << status.ToString();
       }
+      // If we failed to create a thread, but there are still some other
+      // worker threads, log a warning message and continue.
+      LOG(ERROR) << "Thread pool failed to create thread: "
+                 << status.ToString();
     }
   }
 
@@ -280,7 +281,6 @@ void ThreadPool::SetQueueTimeMicrosHistogram(const scoped_refptr<Histogram>& his
 void ThreadPool::SetRunTimeMicrosHistogram(const scoped_refptr<Histogram>& hist) {
   run_time_us_histogram_ = hist;
 }
-
 
 void ThreadPool::DispatchThread(bool permanent) {
   MutexLock unique_lock(lock_);
