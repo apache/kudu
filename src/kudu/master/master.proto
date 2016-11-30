@@ -58,7 +58,7 @@ message MasterErrorPB {
     NOT_THE_LEADER = 7;
 
     // The number of replicas requested is greater than the number of live servers
-    // in the cluster.
+    // in the cluster or the configured maximum.
     REPLICATION_FACTOR_TOO_HIGH = 8;
 
     // The request or response involved a tablet which is not yet running.
@@ -66,6 +66,9 @@ message MasterErrorPB {
 
     // The number of replicas requested is even.
     EVEN_REPLICATION_FACTOR = 10;
+
+    // The number of replicas requested is illegal (eg non-positive).
+    ILLEGAL_REPLICATION_FACTOR = 11;
   }
 
   // The error code.

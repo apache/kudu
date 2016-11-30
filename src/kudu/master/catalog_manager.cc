@@ -116,6 +116,11 @@ DEFINE_int32(default_num_replicas, 3,
              "Default number of replicas for tables that do not have the num_replicas set.");
 TAG_FLAG(default_num_replicas, advanced);
 
+DEFINE_int32(max_num_replicas, 7,
+             "Maximum number of replicas that may be specified for a table.");
+// Tag as unsafe since we have done very limited testing of higher than 5 replicas.
+TAG_FLAG(max_num_replicas, unsafe);
+
 DEFINE_bool(allow_unsafe_replication_factor, false,
             "Allow creating tables with even replication factor.");
 TAG_FLAG(allow_unsafe_replication_factor, unsafe);
@@ -933,9 +938,25 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // Reject create table with even replication factors, unless master flag
   // allow_unsafe_replication_factor is on.
   if (req.num_replicas() % 2 == 0 && !FLAGS_allow_unsafe_replication_factor) {
-    s = Status::InvalidArgument(Substitute("Illegal replication factor $0 (replication "
+    s = Status::InvalidArgument(Substitute("illegal replication factor $0 (replication "
                                            "factor must be odd)", req.num_replicas()));
     return SetError(MasterErrorPB::EVEN_REPLICATION_FACTOR, s);
+  }
+
+  if (req.num_replicas() > FLAGS_max_num_replicas) {
+    s = Status::InvalidArgument(Substitute("illegal replication factor $0 (max replication "
+                                           "factor is $1)",
+                                           req.num_replicas(),
+                                           FLAGS_max_num_replicas));
+    return SetError(MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH, s);
+
+  }
+  if (req.num_replicas() <= 0) {
+    s = Status::InvalidArgument(Substitute("illegal replication factor $0 (replication factor "
+                                           "must be positive)",
+                                           req.num_replicas(),
+                                           FLAGS_max_num_replicas));
+    return SetError(MasterErrorPB::ILLEGAL_REPLICATION_FACTOR, s);
   }
 
   // Verify that the total number of tablets is reasonable, relative to the number

@@ -26,6 +26,7 @@
 #include <vector>
 
 #include <boost/bind.hpp>
+#include <boost/optional.hpp>
 
 #include "kudu/client/batcher.h"
 #include "kudu/client/callbacks.h"
@@ -588,8 +589,8 @@ Status KuduTableCreator::Create() {
   // Build request.
   CreateTableRequestPB req;
   req.set_name(data_->table_name_);
-  if (data_->num_replicas_ >= 1) {
-    req.set_num_replicas(data_->num_replicas_);
+  if (data_->num_replicas_ != boost::none) {
+    req.set_num_replicas(data_->num_replicas_.get());
   }
   RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema(),
                                    SCHEMA_PB_WITHOUT_WRITE_DEFAULT),

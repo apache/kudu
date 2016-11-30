@@ -27,7 +27,6 @@ namespace client {
 KuduTableCreator::Data::Data(KuduClient* client)
   : client_(client),
     schema_(nullptr),
-    num_replicas_(0),
     wait_(true) {
 }
 

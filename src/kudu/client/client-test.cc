@@ -3760,24 +3760,27 @@ TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
                       "The requested number of tablets is over the permitted maximum (1)");
 }
 
-TEST_F(ClientTest, TestCreateTableWithTooManyReplicas) {
-  KuduPartialRow* split1 = schema_.NewRow();
-  ASSERT_OK(split1->SetInt32("key", 1));
+// Tests for too many replicas, too few replicas, even replica count, etc.
+TEST_F(ClientTest, TestCreateTableWithBadNumReplicas) {
+  const vector<pair<int, string>> cases = {
+    {3, "Not enough live tablet servers to create a table with the requested "
+     "replication factor 3. 1 tablet servers are alive"},
+    {2, "illegal replication factor 2 (replication factor must be odd)"},
+    {-1, "illegal replication factor -1 (replication factor must be positive)"},
+    {11, "illegal replication factor 11 (max replication factor is 7)"}
+  };
 
-  KuduPartialRow* split2 = schema_.NewRow();
-  ASSERT_OK(split2->SetInt32("key", 2));
-
-  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-  Status s = table_creator->table_name("foobar")
-      .schema(&schema_)
-      .set_range_partition_columns({ "key" })
-      .split_rows({ split1, split2 })
-      .num_replicas(3)
-      .Create();
-  ASSERT_TRUE(s.IsInvalidArgument());
-  ASSERT_STR_CONTAINS(s.ToString(),
-                      "Not enough live tablet servers to create a table with the requested "
-                      "replication factor 3. 1 tablet servers are alive");
+  for (const auto& c : cases) {
+    SCOPED_TRACE(Substitute("num_replicas=$0", c.first));
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    Status s = table_creator->table_name("foobar")
+        .schema(&schema_)
+        .set_range_partition_columns({ "key" })
+        .num_replicas(c.first)
+        .Create();
+    EXPECT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), c.second);
+  }
 }
 
 TEST_F(ClientTest, TestCreateTableWithInvalidEncodings) {
@@ -4182,7 +4185,7 @@ TEST_F(ClientTest, TestBatchScanConstIterator) {
 }
 
 TEST_F(ClientTest, TestTableNumReplicas) {
-  for (int i : { 1, 3, 5, 7, 9 }) {
+  for (int i : { 1, 3, 5, 7 }) {
     shared_ptr<KuduTable> table;
     NO_FATALS(CreateTable(Substitute("table_with_$0_replicas", i),
                           i, {}, {}, &table));
@@ -4227,16 +4230,5 @@ TEST_F(ClientTest, TestGetTablet) {
   }
 }
 
-// Test create table with even replicas factor should fail.
-TEST_F(ClientTest, TestTableWithEvenReplicas) {
-  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-  Status s = table_creator->table_name("table_with_even_replicas")
-                          .schema(&schema_)
-                          .num_replicas(2)
-                          .set_range_partition_columns({ "key" })
-                          .Create();
-  ASSERT_TRUE(s.IsInvalidArgument());
-  ASSERT_STR_CONTAINS(s.ToString(), "Illegal replication factor");
-}
 } // namespace client
 } // namespace kudu
