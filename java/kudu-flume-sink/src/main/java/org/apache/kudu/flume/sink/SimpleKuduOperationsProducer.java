@@ -26,6 +26,8 @@ import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.FlumeException;
 
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.Insert;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
@@ -52,6 +54,8 @@ import org.apache.kudu.client.PartialRow;
  * </tr>
  * </table>
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class SimpleKuduOperationsProducer implements KuduOperationsProducer {
   public static final String PAYLOAD_COLUMN_PROP = "payloadColumn";
   public static final String PAYLOAD_COLUMN_DEFAULT = "payload";

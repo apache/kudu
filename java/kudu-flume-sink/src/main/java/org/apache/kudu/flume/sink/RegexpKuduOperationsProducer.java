@@ -36,6 +36,8 @@ import org.slf4j.LoggerFactory;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.Insert;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
@@ -113,6 +115,8 @@ import org.apache.kudu.client.Upsert;
  *
  * @see Pattern
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
   private static final Logger logger = LoggerFactory.getLogger(RegexpKuduOperationsProducer.class);
 

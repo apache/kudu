@@ -48,6 +48,8 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.PartialRow;
@@ -80,6 +82,8 @@ import org.apache.kudu.client.PartialRow;
  * </tr>
  * </table>
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class AvroKuduOperationsProducer implements KuduOperationsProducer {
   public static final String OPERATION_PROP = "operation";
   public static final String SCHEMA_PROP = "schemaPath";
