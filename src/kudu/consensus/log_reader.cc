@@ -142,8 +142,17 @@ Status LogReader::Init(const string& tablet_wal_path) {
     if (HasPrefixString(log_file, FsManager::kWalFileNamePrefix)) {
       string fqp = JoinPathSegments(tablet_wal_path, log_file);
       scoped_refptr<ReadableLogSegment> segment;
-      RETURN_NOT_OK_PREPEND(ReadableLogSegment::Open(env, fqp, &segment),
-                            "Unable to open readable log segment");
+      Status s = ReadableLogSegment::Open(env, fqp, &segment);
+      if (s.IsUninitialized()) {
+        // This indicates that the segment was created but the writer
+        // crashed before the header was successfully written. In this
+        // case, we should skip it.
+        LOG(WARNING) << "Ignoring log segment " << log_file << " since it was uninitialized "
+                     << "(probably left after a prior tablet server crash)";
+        continue;
+      }
+
+      RETURN_NOT_OK_PREPEND(s, "Unable to open readable log segment");
       DCHECK(segment);
       CHECK(segment->IsInitialized()) << "Uninitialized segment at: " << segment->path();
 

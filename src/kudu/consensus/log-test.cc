@@ -257,8 +257,7 @@ TEST_F(LogTest, TestLogNotTrimmed) {
 
 // Test that the reader will not fail if a log file is completely blank.
 // This happens when it's opened but nothing has been written.
-// The reader should gracefully handle this situation, but somehow expose that
-// the segment is uninitialized. See KUDU-140.
+// The reader should gracefully handle this situation. See KUDU-140.
 TEST_F(LogTest, TestBlankLogFile) {
   ASSERT_OK(BuildLog());
 

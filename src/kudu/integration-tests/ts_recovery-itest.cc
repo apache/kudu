@@ -191,6 +191,39 @@ TEST_F(TsRecoveryITest, TestCrashDuringLogReplay) {
                                        MonoDelta::FromSeconds(30)));
 }
 
+// Regression test for KUDU-1551: if the tserver crashes after preallocating a segment
+// but before writing its header, the TS would previously crash on restart.
+// Instead, it should ignore the uninitialized segment.
+TEST_F(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
+  NO_FATALS(StartCluster({ "--log_segment_size_mb=1" }));
+
+  TestWorkload work(cluster_.get());
+  work.set_num_replicas(1);
+  work.set_write_timeout_millis(100);
+  work.set_timeout_allowed(true);
+  work.Setup();
+
+  // Enable the fault point after creating the table, but before writing any data.
+  // Otherwise, we'd crash during creation of the tablet.
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+                              "fault_crash_before_write_log_segment_header", "0.5"));
+  work.Start();
+
+  // Wait for the process to crash during log roll.
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(60)));
+  work.StopAndJoin();
+
+  cluster_->tablet_server(0)->Shutdown();
+  ignore_result(cluster_->tablet_server(0)->Restart());
+
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckRowCountWithRetries(work.table_name(),
+                                       ClusterVerifier::AT_LEAST,
+                                       work.rows_inserted(),
+                                       MonoDelta::FromSeconds(60)));
+}
+
+
 // A set of threads which pick rows which are known to exist in the table
 // and issue random updates against them.
 class UpdaterThreads {

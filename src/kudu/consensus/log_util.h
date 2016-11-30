@@ -265,10 +265,23 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   Status ReadFileSize();
 
+  // Read the log file magic and header protobuf into 'header_'. Sets 'first_entry_offset_'
+  // to indicate the start of the actual log data.
+  //
+  // Returns Uninitialized() if the file appears to be preallocated but never
+  // written.
   Status ReadHeader();
 
+  // Read the magic and header length from the top of the file, returning
+  // the header length in 'len'.
+  //
+  // Returns Uninitialized() if the file appears to be preallocated but never
+  // written.
   Status ReadHeaderMagicAndHeaderLength(uint32_t *len);
 
+  // Parse the magic and the PB-header length prefix from 'data'.
+  // In the case that 'data' is all '\0' bytes, indicating a preallocated
+  // but never-written segment, returns Status::Uninitialized().
   Status ParseHeaderMagicAndHeaderLength(const Slice &data, uint32_t *parsed_len);
 
   Status ReadFooter();

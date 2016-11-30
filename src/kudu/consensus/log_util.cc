@@ -38,6 +38,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -57,6 +58,10 @@ TAG_FLAG(log_preallocate_segments, advanced);
 DEFINE_bool(log_async_preallocate_segments, true,
             "Whether the WAL segments preallocation should happen asynchronously");
 TAG_FLAG(log_async_preallocate_segments, advanced);
+
+DEFINE_double(fault_crash_before_write_log_segment_header, 0.0,
+              "Fraction of the time we will crash just before writing the log segment header");
+TAG_FLAG(fault_crash_before_write_log_segment_header, unsafe);
 
 namespace kudu {
 namespace log {
@@ -382,14 +387,6 @@ Status ReadableLogSegment::ReadFileSize() {
 Status ReadableLogSegment::ReadHeader() {
   uint32_t header_size;
   RETURN_NOT_OK(ReadHeaderMagicAndHeaderLength(&header_size));
-  if (header_size == 0) {
-    // If a log file has been pre-allocated but not initialized, then
-    // 'header_size' will be 0 even the file size is > 0; in this
-    // case, 'is_initialized_' remains set to false and return
-    // Status::OK() early. LogReader ignores segments where
-    // IsInitialized() returns false.
-    return Status::OK();
-  }
 
   if (header_size > kLogSegmentMaxHeaderOrFooterSize) {
     return Status::Corruption(
@@ -473,8 +470,7 @@ Status ReadableLogSegment::ParseHeaderMagicAndHeaderLength(const Slice &data,
       LOG(WARNING) << "Log segment file " << path() << " has 12 initial NULL bytes instead of "
                    << "magic and header length: " << data.ToDebugString()
                    << " and will be treated as a blank segment.";
-      *parsed_len = 0;
-      return Status::OK();
+      return Status::Uninitialized("log magic and header length are all NULL bytes");
     }
     // If no magic and not uninitialized, the file is considered corrupt.
     return Status::Corruption(Substitute("Invalid log segment file $0: Bad magic. $1",
@@ -713,6 +709,8 @@ WritableLogSegment::WritableLogSegment(string path,
       written_offset_(0) {}
 
 Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_header) {
+  MAYBE_FAULT(FLAGS_fault_crash_before_write_log_segment_header);
+
   DCHECK(!IsHeaderWritten()) << "Can only call WriteHeader() once";
   DCHECK(new_header.IsInitialized())
       << "Log segment header must be initialized" << new_header.InitializationErrorString();
