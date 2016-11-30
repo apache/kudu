@@ -795,6 +795,114 @@ TEST_F(TestColumnPredicate, TestExclusive) {
   }
 }
 
+TEST_F(TestColumnPredicate, TestLess) {
+    ColumnSchema i8("i8", INT8);
+    ColumnSchema i16("i16", INT16);
+    ColumnSchema i32("i32", INT32);
+    ColumnSchema i64("i64", INT64);
+    ColumnSchema micros("micros", UNIXTIME_MICROS);
+    ColumnSchema f32("f32", FLOAT);
+    ColumnSchema f64("f64", DOUBLE);
+    ColumnSchema string("string", STRING);
+    ColumnSchema binary("binary", BINARY);
+
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::Range(i8, nullptr, TypeTraits<INT8>::min_value())
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::Range(i16, nullptr, TypeTraits<INT16>::min_value())
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::Range(i32, nullptr, TypeTraits<INT32>::min_value())
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::Range(i64, nullptr, TypeTraits<INT64>::min_value())
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::Range(micros, nullptr, TypeTraits<UNIXTIME_MICROS>::min_value())
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::Range(f32, nullptr, TypeTraits<FLOAT>::min_value())
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::Range(f64, nullptr, TypeTraits<DOUBLE>::min_value())
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::Range(string, nullptr, TypeTraits<STRING>::min_value())
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::Range(binary, nullptr, TypeTraits<BINARY>::min_value())
+                              .predicate_type());
+}
+
+TEST_F(TestColumnPredicate, TestGreaterThanEquals) {
+    ColumnSchema i8("i8", INT8);
+    ColumnSchema i16("i16", INT16);
+    ColumnSchema i32("i32", INT32);
+    ColumnSchema i64("i64", INT64);
+    ColumnSchema micros("micros", UNIXTIME_MICROS);
+    ColumnSchema f32("f32", FLOAT);
+    ColumnSchema f64("f64", DOUBLE);
+    ColumnSchema string("string", STRING);
+    ColumnSchema binary("binary", BINARY);
+
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::Range(i8, TypeTraits<INT8>::min_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::Range(i16, TypeTraits<INT16>::min_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::Range(i32, TypeTraits<INT32>::min_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::Range(i64, TypeTraits<INT64>::min_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::Range(micros, TypeTraits<UNIXTIME_MICROS>::min_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::Range(f32, TypeTraits<FLOAT>::min_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::Range(f64, TypeTraits<DOUBLE>::min_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::Range(string, TypeTraits<STRING>::min_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::Range(binary, TypeTraits<BINARY>::min_value(), nullptr)
+                              .predicate_type());
+
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::Range(i8, TypeTraits<INT8>::max_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::Range(i16, TypeTraits<INT16>::max_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::Range(i32, TypeTraits<INT32>::max_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::Range(i64, TypeTraits<INT64>::max_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::Range(micros, TypeTraits<UNIXTIME_MICROS>::max_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::Range(f32, TypeTraits<FLOAT>::max_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::Range(f64, TypeTraits<DOUBLE>::max_value(), nullptr)
+                              .predicate_type());
+
+    Slice s = "foo";
+    ASSERT_EQ(PredicateType::Range,
+              ColumnPredicate::Range(string, &s, nullptr).predicate_type());
+    ASSERT_EQ(PredicateType::Range,
+              ColumnPredicate::Range(binary, &s, nullptr).predicate_type());
+}
+
 // Test the InList constructor.
 TEST_F(TestColumnPredicate, TestInList) {
     vector<const void*> values;

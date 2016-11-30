@@ -60,6 +60,12 @@ class TypeInfo {
   void CopyMinValue(void* dst) const {
     memcpy(dst, min_value_, size_);
   }
+  bool IsMinValue(const void* value) const {
+    return Compare(value, min_value_) == 0;
+  }
+  bool IsMaxValue(const void* value) const {
+    return max_value_ != nullptr && Compare(value, max_value_) == 0;
+  }
 
  private:
   friend class TypeInfoResolver;
@@ -70,6 +76,8 @@ class TypeInfo {
   const string name_;
   const size_t size_;
   const void* const min_value_;
+  // The maximum value of the type, or null if the type has no max value.
+  const void* const max_value_;
 
   typedef void (*AppendDebugFunc)(const void *, string *);
   const AppendDebugFunc append_func_;
@@ -133,6 +141,9 @@ struct DataTypeTraits<UINT8> {
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
   }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kMax;
+  }
 };
 
 template<>
@@ -153,6 +164,9 @@ struct DataTypeTraits<INT8> {
   }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
+  }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kMax;
   }
 };
 
@@ -175,6 +189,9 @@ struct DataTypeTraits<UINT16> {
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
   }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kMax;
+  }
 };
 
 template<>
@@ -195,6 +212,9 @@ struct DataTypeTraits<INT16> {
   }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
+  }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kMax;
   }
 };
 
@@ -217,6 +237,9 @@ struct DataTypeTraits<UINT32> {
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
   }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kMax;
+  }
 };
 
 template<>
@@ -237,6 +260,9 @@ struct DataTypeTraits<INT32> {
   }
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
+  }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kMax;
   }
 };
 
@@ -259,6 +285,9 @@ struct DataTypeTraits<UINT64> {
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
   }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kMax;
+  }
 };
 
 template<>
@@ -280,6 +309,9 @@ struct DataTypeTraits<INT64> {
   static const cpp_type* min_value() {
     return &MathLimits<cpp_type>::kMin;
   }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kMax;
+  }
 };
 
 template<>
@@ -299,7 +331,10 @@ struct DataTypeTraits<FLOAT> {
     return AreFloatsConsecutive<FLOAT>(a, b);
   }
   static const cpp_type* min_value() {
-    return &MathLimits<cpp_type>::kMin;
+    return &MathLimits<cpp_type>::kNegInf;
+  }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kPosInf;
   }
 };
 
@@ -320,7 +355,10 @@ struct DataTypeTraits<DOUBLE> {
     return AreFloatsConsecutive<DOUBLE>(a, b);
   }
   static const cpp_type* min_value() {
-    return &MathLimits<cpp_type>::kMin;
+    return &MathLimits<cpp_type>::kNegInf;
+  }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kPosInf;
   }
 };
 
@@ -357,6 +395,9 @@ struct DataTypeTraits<BINARY> {
     static Slice s("");
     return &s;
   }
+  static const cpp_type* max_value() {
+    return nullptr;
+  }
 };
 
 template<>
@@ -377,6 +418,10 @@ struct DataTypeTraits<BOOL> {
   }
   static const cpp_type* min_value() {
     static bool b = false;
+    return &b;
+  }
+  static const cpp_type* max_value() {
+    static bool b = true;
     return &b;
   }
 };
@@ -402,6 +447,10 @@ struct DerivedTypeTraits {
 
   static const cpp_type* min_value() {
     return DataTypeTraits<PhysicalType>::min_value();
+  }
+
+  static const cpp_type* max_value() {
+    return DataTypeTraits<PhysicalType>::max_value();
   }
 };
 

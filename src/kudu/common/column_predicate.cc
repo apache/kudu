@@ -154,23 +154,38 @@ void ColumnPredicate::SetToNone() {
 }
 
 void ColumnPredicate::Simplify() {
-  // TODO(dan): we are missing some simplification opportunities here:
-  //    * range predicates including the entire range of a bool/integer
-  //      (`my_int8 >= -127`) can be simplified to `IS NOT NULL`.
-  //    * `IN` predicates including all values of a bool/integer
-  //      (`my_bool IN (true, false)`) can be simplified to `IS NOT NULL`.
+  auto type_info = column_.type_info();
   switch (predicate_type_) {
     case PredicateType::None:
     case PredicateType::Equality:
     case PredicateType::IsNotNull: return;
     case PredicateType::Range: {
+      DCHECK(lower_ != nullptr || upper_ != nullptr);
       if (lower_ != nullptr && upper_ != nullptr) {
-        if (column_.type_info()->Compare(lower_, upper_) >= 0) {
+        // _ <= VALUE < _
+        if (type_info->Compare(lower_, upper_) >= 0) {
           // If the range bounds are empty then no results can be returned.
           SetToNone();
-        } else if (column_.type_info()->AreConsecutive(lower_, upper_)) {
+        } else if (type_info->AreConsecutive(lower_, upper_)) {
           // If the values are consecutive, then it is an equality bound.
           predicate_type_ = PredicateType::Equality;
+          upper_ = nullptr;
+        }
+      } else if (lower_ != nullptr) {
+        // VALUE >= _
+        if (type_info->IsMinValue(lower_)) {
+          predicate_type_ = PredicateType::IsNotNull;
+          lower_ = nullptr;
+          upper_ = nullptr;
+        } else if (type_info->IsMaxValue(lower_)) {
+          predicate_type_ = PredicateType::Equality;
+          upper_ = nullptr;
+        }
+      } else if (upper_ != nullptr) {
+        // VALUE < _
+        if (type_info->IsMinValue(upper_)) {
+          predicate_type_ = PredicateType::None;
+          lower_ = nullptr;
           upper_ = nullptr;
         }
       }
@@ -185,7 +200,7 @@ void ColumnPredicate::Simplify() {
         predicate_type_ = PredicateType::Equality;
         lower_ = values_[0];
         values_.clear();
-      } else if (column_.type_info()->type() == BOOL) {
+      } else if (type_info->type() == BOOL) {
         // If this is a boolean IN list with both true and false in the list,
         // then we can just convert it to IS NOT NULL. This same simplification
         // could be done for other integer types, but it's probably not as

@@ -353,8 +353,7 @@ TEST(TestPartitionPruner, TestRangePruning) {
   Check({ ColumnPredicate::Range(schema.column(2), nullptr, &hundred) }, 3);
 
   // c < MIN
-  // TODO(dan): this should prune all partitions.
-  Check({ ColumnPredicate::Range(schema.column(2), nullptr, &min) }, 1);
+  Check({ ColumnPredicate::Range(schema.column(2), nullptr, &min) }, 0);
 
   // c < MAX
   Check({ ColumnPredicate::Range(schema.column(2), nullptr, &max) }, 3);

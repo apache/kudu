@@ -34,6 +34,7 @@ TypeInfo::TypeInfo(TypeTraitsClass t)
     name_(TypeTraitsClass::name()),
     size_(TypeTraitsClass::size),
     min_value_(TypeTraitsClass::min_value()),
+    max_value_(TypeTraitsClass::max_value()),
     append_func_(TypeTraitsClass::AppendDebugStringForValue),
     compare_func_(TypeTraitsClass::Compare),
     are_consecutive_func_(TypeTraitsClass::AreConsecutive) {
