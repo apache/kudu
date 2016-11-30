@@ -269,8 +269,8 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
   ASSERT_EQ("{\"tables\":[],\"tablets\":[]}", entities_buf.ToString());
 }
 
-// Test that a DeleteTable RPC is rejected without a matching destination UUID.
-TEST_F(DeleteTableTest, TestDeleteTableDestUuidValidation) {
+// Test that a DeleteTablet RPC is rejected without a matching destination UUID.
+TEST_F(DeleteTableTest, TestDeleteTabletDestUuidValidation) {
   NO_FATALS(StartCluster());
   // Create a table on the cluster. We're just using TestWorkload
   // as a convenient way to create it.
@@ -969,6 +969,47 @@ TEST_F(DeleteTableTest, TestFDsNotLeakedOnTabletTombstone) {
   ASSERT_OK(ets->Restart());
   ASSERT_EQ(0, PrintOpenTabletFiles(ets->pid(), tablet_id));
 }
+
+// Regression test for KUDU-1545: crash when visiting the tablet page for a
+// tombstoned tablet.
+TEST_F(DeleteTableTest, TestWebPageForTombstonedTablet) {
+  const MonoDelta timeout = MonoDelta::FromSeconds(30);
+
+  NO_FATALS(StartCluster({}, {}, 1));
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts_map_.begin()->second, 1, timeout, &tablets));
+  const string& tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Tombstone the tablet.
+  ExternalTabletServer* ets = cluster_->tablet_server(0);
+  ASSERT_OK(itest::DeleteTablet(ts_map_[ets->uuid()],
+                                tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+
+  // Check the various web pages associated with the tablet, ensuring
+  // they don't crash and at least have the tablet ID within them.
+  EasyCurl c;
+  const auto& pages = { "tablet",
+                        "tablet-rowsetlayout-svg",
+                        "tablet-consensus-status",
+                        "log-anchors" };
+  for (const auto& page : pages) {
+    faststring buf;
+    ASSERT_OK(c.FetchURL(Substitute(
+        "http://$0/$1?id=$2",
+        cluster_->tablet_server(0)->bound_http_hostport().ToString(),
+        page,
+        tablet_id), &buf));
+    ASSERT_STR_CONTAINS(buf.ToString(), tablet_id);
+  }
+}
+
 
 TEST_F(DeleteTableTest, TestUnknownTabletsAreNotDeleted) {
   // Speed up heartbeating so that the unknown tablet is detected faster.

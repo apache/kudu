@@ -343,10 +343,15 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
   if (!LoadTablet(tserver_, req, &tablet_id, &peer, output)) return;
 
   string table_name = peer->tablet_metadata()->table_name();
-  RaftPeerPB::Role role = peer->consensus()->role();
+  RaftPeerPB::Role role = RaftPeerPB::UNKNOWN_ROLE;
+  auto consensus = peer->consensus();
+  if (consensus) {
+    role = consensus->role();
+  }
 
   *output << "<h1>Tablet " << EscapeForHtmlToString(tablet_id)
-          << " (" << RaftPeerPB::Role_Name(role) << ")</h1>\n";
+          << " (" << peer->HumanReadableState()
+          << "/" << RaftPeerPB::Role_Name(role) << ")</h1>\n";
   *output << "<h3>Table " << EscapeForHtmlToString(table_name) << "</h3>";
 
   // Output schema in tabular format.
