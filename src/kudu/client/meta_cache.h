@@ -195,9 +195,7 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   // not be returned in future cache lookups.
   //
   // The provided status is used for logging.
-  // Returns true if 'ts' was found among this tablet's replicas, false if not.
-  bool MarkReplicaFailed(RemoteTabletServer *ts,
-                         const Status& status);
+  void MarkReplicaFailed(RemoteTabletServer *ts, const Status& status);
 
   // Return the number of failed replicas for this tablet.
   int GetNumFailedReplicas() const;

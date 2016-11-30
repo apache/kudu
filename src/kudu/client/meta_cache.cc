@@ -188,9 +188,8 @@ bool RemoteTablet::stale() const {
   return stale_;
 }
 
-bool RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
+void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
                                      const Status& status) {
-  bool found = false;
   std::lock_guard<simple_spinlock> l(lock_);
   VLOG(2) << "Tablet " << tablet_id_ << ": Current remote replicas in meta cache: "
           << ReplicasAsStringUnlocked();
@@ -199,10 +198,8 @@ bool RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
   for (RemoteReplica& rep : replicas_) {
     if (rep.ts == ts) {
       rep.failed = true;
-      found = true;
     }
   }
-  return found;
 }
 
 int RemoteTablet::GetNumFailedReplicas() const {
@@ -253,33 +250,25 @@ void RemoteTablet::GetRemoteReplicas(vector<RemoteReplica>* replicas) const {
 }
 
 void RemoteTablet::MarkTServerAsLeader(const RemoteTabletServer* server) {
-  bool found = false;
   std::lock_guard<simple_spinlock> l(lock_);
   for (RemoteReplica& replica : replicas_) {
     if (replica.ts == server) {
       replica.role = RaftPeerPB::LEADER;
-      found = true;
     } else if (replica.role == RaftPeerPB::LEADER) {
       replica.role = RaftPeerPB::FOLLOWER;
     }
   }
   VLOG(3) << "Latest replicas: " << ReplicasAsStringUnlocked();
-  DCHECK(found) << "Tablet " << tablet_id_ << ": Specified server not found: "
-                << server->ToString() << ". Replicas: " << ReplicasAsStringUnlocked();
 }
 
 void RemoteTablet::MarkTServerAsFollower(const RemoteTabletServer* server) {
-  bool found = false;
   std::lock_guard<simple_spinlock> l(lock_);
   for (RemoteReplica& replica : replicas_) {
     if (replica.ts == server) {
       replica.role = RaftPeerPB::FOLLOWER;
-      found = true;
     }
   }
   VLOG(3) << "Latest replicas: " << ReplicasAsStringUnlocked();
-  DCHECK(found) << "Tablet " << tablet_id_ << ": Specified server not found: "
-                << server->ToString() << ". Replicas: " << ReplicasAsStringUnlocked();
 }
 
 string RemoteTablet::ReplicasAsString() const {
