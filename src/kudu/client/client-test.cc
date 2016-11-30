@@ -3109,6 +3109,8 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
 }
 
 TEST_F(ClientTest, TestBasicAlterOperations) {
+  const vector<string> kBadNames = {"", string(1000, 'x')};
+
   // test that having no steps throws an error
   {
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
@@ -3152,6 +3154,38 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     Status s = table_alterer->Alter();
     ASSERT_TRUE(s.IsAlreadyPresent());
     ASSERT_STR_CONTAINS(s.ToString(), "The column already exists: string_val");
+  }
+
+  // Test that renaming a column to an invalid name throws an error.
+  for (const string& bad_name : kBadNames) {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("int_val")->RenameTo(bad_name);
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "invalid column name");
+  }
+
+  // Test that renaming a table to an invalid name throws an error.
+  for (const string& bad_name : kBadNames) {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->RenameTo(bad_name);
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "invalid table name");
+  }
+
+  // Test trying to add columns to a table such that it exceeds the permitted
+  // maximum.
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    for (int i = 0; i < 1000; i++) {
+      table_alterer->AddColumn(Substitute("c$0", i))->Type(KuduColumnSchema::INT32);
+    }
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "number of columns 1004 is greater than the "
+                        "permitted maximum 300");
   }
 
   // Need a tablet peer for the next set of tests.
@@ -3799,6 +3833,61 @@ TEST_F(ClientTest, TestCreateTableWithInvalidEncodings) {
                       "invalid encoding for column 'key': encoding "
                       "DICT_ENCODING not supported for type INT32");
 }
+
+TEST_F(ClientTest, TestCreateTableWithTooManyColumns) {
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  KuduSchema schema;
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  for (int i = 0; i < 1000; i++) {
+    schema_builder.AddColumn(Substitute("c$0", i))
+        ->Type(KuduColumnSchema::INT32)->NotNull();
+  }
+  ASSERT_OK(schema_builder.Build(&schema));
+  Status s = table_creator->table_name("foobar")
+      .schema(&schema)
+      .set_range_partition_columns({ "key" })
+      .Create();
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "number of columns 1001 is greater than the "
+                      "permitted maximum 300");
+}
+
+TEST_F(ClientTest, TestCreateTableWithTooLongTableName) {
+  const string kLongName(1000, 'x');
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  KuduSchema schema;
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  ASSERT_OK(schema_builder.Build(&schema));
+  Status s = table_creator->table_name(kLongName)
+      .schema(&schema)
+      .set_range_partition_columns({ "key" })
+      .Create();
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(),
+                     "invalid table name: identifier 'xxx*' "
+                     "longer than maximum permitted length 256");
+}
+
+TEST_F(ClientTest, TestCreateTableWithTooLongColumnName) {
+  const string kLongName(1000, 'x');
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  KuduSchema schema;
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn(kLongName)->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  ASSERT_OK(schema_builder.Build(&schema));
+  Status s = table_creator->table_name("foobar")
+      .schema(&schema)
+      .set_range_partition_columns({ kLongName })
+      .Create();
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(),
+                     "invalid column name: identifier 'xxx*' "
+                     "longer than maximum permitted length 256");
+}
+
 
 // Check the behavior of the latest observed timestamp when performing
 // write and read operations.

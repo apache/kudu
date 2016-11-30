@@ -121,6 +121,20 @@ DEFINE_int32(max_num_replicas, 7,
 // Tag as unsafe since we have done very limited testing of higher than 5 replicas.
 TAG_FLAG(max_num_replicas, unsafe);
 
+DEFINE_int32(max_num_columns, 300,
+             "Maximum number of columns that may be in a table.");
+// Tag as unsafe since we have done very limited testing of higher than 300 columns.
+TAG_FLAG(max_num_columns, unsafe);
+
+
+DEFINE_int32(max_identifier_length, 256,
+             "Maximum length of the name of a column or table.");
+// Tag as unsafe because we end up writing schemas in every WAL entry, etc,
+// and having very long column names would enter untested territory and affect
+// performance.
+TAG_FLAG(max_identifier_length, unsafe);
+
+
 DEFINE_bool(allow_unsafe_replication_factor, false,
             "Allow creating tables with even replication factor.");
 TAG_FLAG(allow_unsafe_replication_factor, unsafe);
@@ -807,6 +821,65 @@ Status CatalogManager::CheckOnline() const {
   return Status::OK();
 }
 
+namespace {
+
+// Validate a table or column name to ensure that it is a valid identifier.
+Status ValidateIdentifier(const string& id) {
+  if (id.empty()) {
+    return Status::InvalidArgument("empty string not a valid identifier");
+  }
+
+  if (id.length() > FLAGS_max_identifier_length) {
+    return Status::InvalidArgument(Substitute(
+        "identifier '$0' longer than maximum permitted length $1",
+        id, FLAGS_max_identifier_length));
+  }
+
+  return Status::OK();
+}
+
+// Validate the client-provided schema and name.
+Status ValidateClientSchema(const boost::optional<string>& name,
+                            const Schema& schema) {
+  if (name != boost::none) {
+    RETURN_NOT_OK_PREPEND(ValidateIdentifier(name.get()), "invalid table name");
+  }
+  for (int i = 0; i < schema.num_columns(); i++) {
+    RETURN_NOT_OK_PREPEND(ValidateIdentifier(schema.column(i).name()),
+                          "invalid column name");
+  }
+  if (schema.num_key_columns() <= 0) {
+    return Status::InvalidArgument("must specify at least one key column");
+  }
+  if (schema.num_columns() > FLAGS_max_num_columns) {
+    return Status::InvalidArgument(Substitute(
+        "number of columns $0 is greater than the permitted maximum $1",
+        schema.num_columns(), FLAGS_max_num_columns));
+  }
+  for (int i = 0; i < schema.num_key_columns(); i++) {
+    if (!IsTypeAllowableInKey(schema.column(i).type_info())) {
+      return Status::InvalidArgument(
+          "key column may not have type of BOOL, FLOAT, or DOUBLE");
+    }
+  }
+
+  // Check that the encodings are valid for the specified types.
+  for (int i = 0; i < schema.num_columns(); i++) {
+    const auto& col = schema.column(i);
+    const TypeEncodingInfo *dummy;
+    Status s = TypeEncodingInfo::Get(col.type_info(),
+                                     col.attributes().encoding,
+                                     &dummy);
+    if (!s.ok()) {
+      return s.CloneAndPrepend(
+          Substitute("invalid encoding for column '$0'", col.name()));
+    }
+  }
+  return Status::OK();
+}
+
+} // anonymous namespace
+
 // Create a new table.
 // See README file in this directory for a description of the design.
 Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
@@ -842,35 +915,13 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // a. Validate the user request.
   Schema client_schema;
   RETURN_NOT_OK(SchemaFromPB(req.schema(), &client_schema));
-  if (client_schema.has_column_ids()) {
-    return SetError(MasterErrorPB::INVALID_SCHEMA,
-                    Status::InvalidArgument("User requests should not have Column IDs"));
+  s = ValidateClientSchema(req.name(), client_schema);
+  if (s.ok() && client_schema.has_column_ids()) {
+    s = Status::InvalidArgument("User requests should not have Column IDs");
   }
-  if (PREDICT_FALSE(client_schema.num_key_columns() <= 0)) {
-    return SetError(MasterErrorPB::INVALID_SCHEMA,
-                    Status::InvalidArgument("Must specify at least one key column"));
+  if (!s.ok()) {
+    return SetError(MasterErrorPB::INVALID_SCHEMA, s);
   }
-  for (int i = 0; i < client_schema.num_key_columns(); i++) {
-    if (!IsTypeAllowableInKey(client_schema.column(i).type_info())) {
-      return SetError(MasterErrorPB::INVALID_SCHEMA,
-                      Status::InvalidArgument(
-                          "Key column may not have type of BOOL, FLOAT, or DOUBLE"));
-    }
-  }
-  // Check that the encodings are valid for the specified types.
-  for (int i = 0; i < client_schema.num_columns(); i++) {
-    const auto& col = client_schema.column(i);
-    const TypeEncodingInfo *dummy;
-    Status s = TypeEncodingInfo::Get(col.type_info(),
-                                     col.attributes().encoding,
-                                     &dummy);
-    if (!s.ok()) {
-      return SetError(MasterErrorPB::INVALID_SCHEMA,
-                      s.CloneAndPrepend(
-                          Substitute("invalid encoding for column '$0'", col.name())));
-    }
-  }
-
   Schema schema = client_schema.CopyWithColumnIds();
 
   // If the client did not set a partition schema in the create table request,
@@ -1262,15 +1313,8 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
         }
         RETURN_NOT_OK(ProcessColumnPBDefaults(&new_col_pb));
 
-        // Verify that encoding is appropriate for the new column's
-        // type
+        // Can't accept a NOT NULL column without a default.
         ColumnSchema new_col = ColumnSchemaFromPB(new_col_pb);
-        const TypeEncodingInfo *dummy;
-        RETURN_NOT_OK(TypeEncodingInfo::Get(new_col.type_info(),
-                                            new_col.attributes().encoding,
-                                            &dummy));
-
-        // can't accept a NOT NULL column without a default
         if (!new_col.is_nullable() && !new_col.has_read_default()) {
           return Status::InvalidArgument(
               Substitute("column `$0`: NOT NULL columns must have a default", new_col.name()));
@@ -1548,7 +1592,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   string table_name = l.data().name();
   *resp->mutable_table_id() = table->id();
 
-  // 4. Calculate new schema for the on-disk state, not persisted yet.
+  // 4. Calculate and validate new schema for the on-disk state, not persisted yet.
   Schema new_schema;
   ColumnId next_col_id = ColumnId(l.data().pb.next_column_id());
   if (!alter_schema_steps.empty()) {
@@ -1561,10 +1605,24 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     DCHECK_NE(next_col_id, 0);
     DCHECK_EQ(new_schema.find_column_by_id(next_col_id),
               static_cast<int>(Schema::kColumnNotFound));
+
+    // Just validate the schema, not the name (validated below).
+    s = ValidateClientSchema(boost::none, new_schema);
+    if (!s.ok()) {
+      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+      return s;
+    }
   }
 
-  // 5. Try to acquire the new table name.
+  // 5. Validate and try to acquire the new table name.
   if (req->has_new_table_name()) {
+    Status s = ValidateIdentifier(req->new_table_name());
+    if (!s.ok()) {
+      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA,
+                 s.CloneAndPrepend("invalid table name"));
+      return s;
+    }
+
     std::lock_guard<LockType> catalog_lock(lock_);
     TRACE("Acquired catalog manager lock");
 

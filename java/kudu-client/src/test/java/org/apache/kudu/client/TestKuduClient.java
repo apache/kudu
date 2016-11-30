@@ -24,8 +24,10 @@ import static org.apache.kudu.client.RowResult.timestampToString;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.matchers.JUnitMatchers.containsString;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -115,6 +117,31 @@ public class TestKuduClient extends BaseKuduTest {
     assertEquals(ColumnSchema.CompressionAlgorithm.LZ4,
                  newSchema.getColumn("column3_s").getCompressionAlgorithm());
   }
+
+
+  /**
+   * Test creating a table with various invalid schema cases.
+   */
+  @Test(timeout = 100000)
+  public void testCreateTableTooManyColumns() throws Exception {
+    List<ColumnSchema> cols = new ArrayList<>();
+    cols.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING)
+             .key(true)
+             .build());
+    for (int i = 0; i < 1000; i++) {
+      // not null with default
+      cols.add(new ColumnSchema.ColumnSchemaBuilder("c" + i, Type.STRING)
+               .build());
+    }
+    Schema schema = new Schema(cols);
+    try {
+      syncClient.createTable(tableName, schema, getBasicCreateTableOptions());
+    } catch (NonRecoverableException nre) {
+      assertThat(nre.toString(), containsString(
+          "number of columns 1001 is greater than the permitted maximum"));
+    }
+  }
+
 
   /**
    * Test creating a table with columns with different combinations of NOT NULL and

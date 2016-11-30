@@ -581,28 +581,13 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
 TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
   const char *kTableName = "testtb";
 
-  {
-    const Schema kTableSchema({ ColumnSchema("key", BOOL) }, 1);
+  const DataType types[] = { BOOL, FLOAT, DOUBLE };
+  for (DataType type : types) {
+    const Schema kTableSchema({ ColumnSchema("key", type) }, 1);
     Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>(), {});
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-        "Key column may not have type of BOOL, FLOAT, or DOUBLE");
-  }
-
-  {
-    const Schema kTableSchema({ ColumnSchema("key", FLOAT) }, 1);
-    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>(), {});
-    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(),
-        "Key column may not have type of BOOL, FLOAT, or DOUBLE");
-  }
-
-  {
-    const Schema kTableSchema({ ColumnSchema("key", DOUBLE) }, 1);
-    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>(), {});
-    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(),
-        "Key column may not have type of BOOL, FLOAT, or DOUBLE");
+        "key column may not have type of BOOL, FLOAT, or DOUBLE");
   }
 }
 
