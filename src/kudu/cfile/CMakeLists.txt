@@ -41,7 +41,6 @@ add_library(cfile
   cfile_util.cc
   cfile_writer.cc
   compression_codec.cc
-  gvint_block.cc
   index_block.cc
   index_btree.cc
   type_encodings.cc)

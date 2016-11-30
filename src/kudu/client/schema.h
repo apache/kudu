@@ -58,10 +58,13 @@ class KUDU_EXPORT KuduColumnStorageAttributes {
     AUTO_ENCODING = 0,
     PLAIN_ENCODING = 1,
     PREFIX_ENCODING = 2,
-    GROUP_VARINT = 3,
     RLE = 4,
     DICT_ENCODING = 5,
-    BIT_SHUFFLE = 6
+    BIT_SHUFFLE = 6,
+
+    /// @deprecated GROUP_VARINT is not supported for valid types, and
+    /// will fall back to another encoding on the server side.
+    GROUP_VARINT = 3
   };
 
   /// @brief Column compression types.

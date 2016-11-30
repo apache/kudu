@@ -53,6 +53,7 @@ enum EncodingType {
   AUTO_ENCODING = 0;
   PLAIN_ENCODING = 1;
   PREFIX_ENCODING = 2;
+  // GROUP_VARINT encoding is deprecated and no longer implemented.
   GROUP_VARINT = 3;
   RLE = 4;
   DICT_ENCODING = 5;

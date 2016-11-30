@@ -443,7 +443,7 @@ TEST_P(TestCFileBothCacheTypes, TestWrite1MDuplicateFileStringsDictEncoding) {
 }
 
 TEST_P(TestCFileBothCacheTypes, TestReadWriteUInt32) {
-  for (auto enc : { PLAIN_ENCODING, RLE, GROUP_VARINT }) {
+  for (auto enc : { PLAIN_ENCODING, RLE }) {
     TestReadWriteFixedSizeTypes<UInt32DataGenerator<false>>(enc);
   }
 }
@@ -740,8 +740,10 @@ TEST_P(TestCFileBothCacheTypes, TestAppendRaw) {
 
 TEST_P(TestCFileBothCacheTypes, TestNullInts) {
   UInt32DataGenerator<true> generator;
-  TestNullTypes(&generator, GROUP_VARINT, NO_COMPRESSION);
-  TestNullTypes(&generator, GROUP_VARINT, LZ4);
+  TestNullTypes(&generator, PLAIN_ENCODING, NO_COMPRESSION);
+  TestNullTypes(&generator, PLAIN_ENCODING, LZ4);
+  TestNullTypes(&generator, BIT_SHUFFLE, NO_COMPRESSION);
+  TestNullTypes(&generator, BIT_SHUFFLE, LZ4);
 }
 
 TEST_P(TestCFileBothCacheTypes, TestNullFloats) {

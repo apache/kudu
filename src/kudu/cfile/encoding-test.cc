@@ -25,7 +25,6 @@
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/bshuf_block.h"
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/gvint_block.h"
 #include "kudu/cfile/plain_bitmap_block.h"
 #include "kudu/cfile/plain_block.h"
 #include "kudu/cfile/rle_block.h"
@@ -681,27 +680,6 @@ TEST_F(TestEncoding, TestBShufDoubleBlockEncoder) {
                                     BShufBlockDecoder<DOUBLE> >(doubles.get(), kSize);
 }
 
-TEST_F(TestEncoding, TestIntBlockEncoder) {
-  gscoped_ptr<WriterOptions> opts(NewWriterOptions());
-  GVIntBlockBuilder ibb(opts.get());
-
-  auto ints = new int[10000];
-  for (int i = 0; i < 10000; i++) {
-    ints[i] = random();
-  }
-  ibb.Add(reinterpret_cast<const uint8_t *>(ints), 10000);
-  delete[] ints;
-
-  Slice s = ibb.Finish(12345);
-  LOG(INFO) << "Encoded size for 10k ints: " << s.size();
-
-  // Test empty case -- should be 5 bytes for just the
-  // header word (all zeros)
-  ibb.Reset();
-  s = ibb.Finish(0);
-  ASSERT_EQ(5UL, s.size());
-}
-
 TEST_F(TestEncoding, TestRleIntBlockEncoder) {
   unique_ptr<WriterOptions> opts(NewWriterOptions());
   RleIntBlockBuilder<UINT32> ibb(opts.get());
@@ -730,16 +708,6 @@ TEST_F(TestEncoding, TestPlainBitMapRoundTrip) {
 
 TEST_F(TestEncoding, TestRleBitMapRoundTrip) {
   TestBoolBlockRoundTrip<RleBitMapBlockBuilder, RleBitMapBlockDecoder>();
-}
-
-TEST_F(TestEncoding, TestGVIntBlockRoundTrip) {
-  gscoped_ptr<WriterOptions> opts(NewWriterOptions());
-  gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
-  TestIntBlockRoundTrip<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get());
-}
-
-TEST_F(TestEncoding, TestGVIntEmptyBlockEncodeDecode) {
-  TestEmptyBlockEncodeDecode<GVIntBlockBuilder, GVIntBlockDecoder>();
 }
 
 // Test seeking to a value in a small block.
@@ -789,29 +757,6 @@ TEST_F(TestEncoding, TestBinaryPlainBlockBuilderTruncation) {
 TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderTruncation) {
   TestBinaryBlockTruncation<BinaryPrefixBlockBuilder, BinaryPrefixBlockDecoder>();
 }
-
-#ifdef NDEBUG
-TEST_F(TestEncoding, GVIntSeekBenchmark) {
-  gscoped_ptr<WriterOptions> opts(NewWriterOptions());
-  gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
-  DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), 32768, 100000, false);
-}
-#endif
-
-TEST_F(TestEncoding, GVIntSeekTest) {
-  gscoped_ptr<WriterOptions> opts(NewWriterOptions());
-  gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
-  DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), 64, 1000, true);
-}
-
-TEST_F(TestEncoding, GVIntSeekTestTinyBlock) {
-  gscoped_ptr<WriterOptions> opts(NewWriterOptions());
-  for (int block_size = 1; block_size < 16; block_size++) {
-    gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
-    DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), block_size, 1000, true);
-  }
-}
-
 
 // We have several different encodings for INT blocks.
 // The following tests use GTest's TypedTest functionality to run the tests

@@ -48,8 +48,6 @@ using std::unordered_map;
 
 class BlockPointer;
 class BTreeInfoPB;
-class GVIntBlockBuilder;
-class BinaryPrefixBlockBuilder;
 class IndexTreeBuilder;
 
 // Magic used in header/footer

@@ -23,7 +23,6 @@
 #include <glog/logging.h>
 
 #include "kudu/cfile/bshuf_block.h"
-#include "kudu/cfile/gvint_block.h"
 #include "kudu/cfile/plain_bitmap_block.h"
 #include "kudu/cfile/plain_block.h"
 #include "kudu/cfile/rle_block.h"
@@ -168,23 +167,6 @@ struct DataTypeEncodingTraits<BINARY, DICT_ENCODING> {
   }
 };
 
-
-// Optimized grouping variable encoding for 32bit unsigned integers
-template<>
-struct DataTypeEncodingTraits<UINT32, GROUP_VARINT> {
-
-  static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new GVIntBlockBuilder(options);
-    return Status::OK();
-  }
-
-  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
-                                   CFileIterator *iter) {
-    *bd = new GVIntBlockDecoder(slice);
-    return Status::OK();
-  }
-};
-
 template<DataType IntType>
 struct DataTypeEncodingTraits<IntType, RLE> {
 
@@ -271,7 +253,6 @@ class TypeEncodingResolver {
     AddMapping<INT16, PLAIN_ENCODING>();
     AddMapping<INT16, RLE>();
     AddMapping<INT16, BIT_SHUFFLE>();
-    AddMapping<UINT32, GROUP_VARINT>();
     AddMapping<UINT32, RLE>();
     AddMapping<UINT32, PLAIN_ENCODING>();
     AddMapping<UINT32, BIT_SHUFFLE>();
