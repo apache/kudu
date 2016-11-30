@@ -46,7 +46,7 @@ enum {
 // RLE encoder for the BOOL datatype: uses an RLE-encoded bitmap to
 // represent a bool column.
 //
-class RleBitMapBlockBuilder : public BlockBuilder {
+class RleBitMapBlockBuilder final : public BlockBuilder {
  public:
   explicit RleBitMapBlockBuilder(const WriterOptions* options)
       : encoder_(&buf_, 1),
@@ -107,7 +107,7 @@ class RleBitMapBlockBuilder : public BlockBuilder {
 //
 // RLE decoder for bool datatype
 //
-class RleBitMapBlockDecoder : public BlockDecoder {
+class RleBitMapBlockDecoder final : public BlockDecoder {
  public:
   explicit RleBitMapBlockDecoder(Slice slice)
       : data_(std::move(slice)),
@@ -213,7 +213,7 @@ class RleBitMapBlockDecoder : public BlockDecoder {
 // TODO : consider if this can also be used for BOOL with only minor
 //        alterations
 template <DataType IntType>
-class RleIntBlockBuilder : public BlockBuilder {
+class RleIntBlockBuilder final : public BlockBuilder {
  public:
   explicit RleIntBlockBuilder(const WriterOptions* options)
       : rle_encoder_(&buf_, kCppTypeSize * 8),
@@ -296,7 +296,7 @@ class RleIntBlockBuilder : public BlockBuilder {
 //        code here for the BOOL type.
 //
 template <DataType IntType>
-class RleIntBlockDecoder : public BlockDecoder {
+class RleIntBlockDecoder final : public BlockDecoder {
  public:
   explicit RleIntBlockDecoder(Slice slice)
       : data_(std::move(slice)),

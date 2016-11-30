@@ -39,7 +39,7 @@ namespace cfile {
 
 struct WriterOptions;
 
-class BinaryPlainBlockBuilder : public BlockBuilder {
+class BinaryPlainBlockBuilder final : public BlockBuilder {
  public:
   explicit BinaryPlainBlockBuilder(const WriterOptions *options);
 
@@ -88,7 +88,7 @@ class BinaryPlainBlockBuilder : public BlockBuilder {
 
 };
 
-class BinaryPlainBlockDecoder : public BlockDecoder {
+class BinaryPlainBlockDecoder final : public BlockDecoder {
  public:
   explicit BinaryPlainBlockDecoder(Slice slice);
 

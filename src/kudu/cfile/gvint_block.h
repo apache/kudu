@@ -43,7 +43,7 @@ using std::vector;
 //
 // See AppendGroupVarInt32(...) for details on the varint
 // encoding.
-class GVIntBlockBuilder : public BlockBuilder {
+class GVIntBlockBuilder final : public BlockBuilder {
  public:
   explicit GVIntBlockBuilder(const WriterOptions *options);
 
@@ -98,7 +98,7 @@ class GVIntBlockBuilder : public BlockBuilder {
 };
 
 // Decoder for UINT32 type, GROUP_VARINT coding
-class GVIntBlockDecoder : public BlockDecoder {
+class GVIntBlockDecoder final : public BlockDecoder {
  public:
   explicit GVIntBlockDecoder(Slice slice);
 

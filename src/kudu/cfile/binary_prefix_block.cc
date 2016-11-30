@@ -130,10 +130,7 @@ int BinaryPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
   int added = 0;
   const Slice* slices = reinterpret_cast<const Slice*>(vals);
   Slice prev_val(last_val_);
-  // We generate a static call to IsBlockFull() to avoid the vtable lookup
-  // in this hot path.
-  while (!BinaryPrefixBlockBuilder::IsBlockFull() &&
-         added < count) {
+  while (!IsBlockFull() && added < count) {
     const Slice val = slices[added];
 
     int old_size = buffer_.size();

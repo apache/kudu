@@ -43,7 +43,7 @@ static const size_t kPlainBlockHeaderSize = sizeof(uint32_t) * 2;
 // A plain encoder for generic fixed size data types.
 //
 template<DataType Type>
-class PlainBlockBuilder : public BlockBuilder {
+class PlainBlockBuilder final : public BlockBuilder {
  public:
   explicit PlainBlockBuilder(const WriterOptions *options)
       : options_(options) {
@@ -109,7 +109,7 @@ class PlainBlockBuilder : public BlockBuilder {
 // A plain decoder for generic fixed size data types.
 //
 template<DataType Type>
-class PlainBlockDecoder : public BlockDecoder {
+class PlainBlockDecoder final : public BlockDecoder {
  public:
   explicit PlainBlockDecoder(Slice slice)
       : data_(std::move(slice)),

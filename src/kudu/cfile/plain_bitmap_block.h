@@ -41,7 +41,7 @@ struct WriterOptions;
 // A plain encoder for the BOOL datatype: stores a column of BOOL values
 // as a packed bitmap.
 //
-class PlainBitMapBlockBuilder : public BlockBuilder {
+class PlainBitMapBlockBuilder final : public BlockBuilder {
  public:
   explicit PlainBitMapBlockBuilder(const WriterOptions* options)
       : writer_(&buf_),
@@ -106,7 +106,7 @@ class PlainBitMapBlockBuilder : public BlockBuilder {
 //
 // Plain decoder for the BOOL datatype
 //
-class PlainBitMapBlockDecoder : public BlockDecoder {
+class PlainBitMapBlockDecoder final : public BlockDecoder {
  public:
   explicit PlainBitMapBlockDecoder(Slice slice)
       : data_(std::move(slice)),

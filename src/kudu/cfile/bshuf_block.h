@@ -82,7 +82,7 @@ void AbortWithBitShuffleError(int64_t val) ATTRIBUTE_NORETURN;
 //    The header is followed by the bitshuffle-compressed element data.
 //
 template<DataType Type>
-class BShufBlockBuilder : public BlockBuilder {
+class BShufBlockBuilder final : public BlockBuilder {
  public:
   explicit BShufBlockBuilder(const WriterOptions* options)
     : count_(0),
@@ -215,7 +215,7 @@ template<>
 Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos);
 
 template<DataType Type>
-class BShufBlockDecoder : public BlockDecoder {
+class BShufBlockDecoder final : public BlockDecoder {
  public:
   explicit BShufBlockDecoder(Slice slice)
       : data_(std::move(slice)),

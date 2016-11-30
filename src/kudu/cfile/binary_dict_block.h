@@ -64,7 +64,7 @@ enum DictEncodingMode {
   DictEncodingMode_max = 2
 };
 
-class BinaryDictBlockBuilder : public BlockBuilder {
+class BinaryDictBlockBuilder final : public BlockBuilder {
  public:
   explicit BinaryDictBlockBuilder(const WriterOptions* options);
 
@@ -119,7 +119,7 @@ class BinaryDictBlockBuilder : public BlockBuilder {
 
 class CFileIterator;
 
-class BinaryDictBlockDecoder : public BlockDecoder {
+class BinaryDictBlockDecoder final : public BlockDecoder {
  public:
   explicit BinaryDictBlockDecoder(Slice slice, CFileIterator* iter);
 

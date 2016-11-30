@@ -33,7 +33,7 @@ struct WriterOptions;
 
 // Encoding for data blocks of binary data that have common prefixes.
 // This encodes in a manner similar to LevelDB (prefix coding)
-class BinaryPrefixBlockBuilder : public BlockBuilder {
+class BinaryPrefixBlockBuilder final : public BlockBuilder {
  public:
   explicit BinaryPrefixBlockBuilder(const WriterOptions *options);
 
@@ -82,7 +82,7 @@ class BinaryPrefixBlockBuilder : public BlockBuilder {
 };
 
 // Decoder for BINARY type, PREFIX encoding
-class BinaryPrefixBlockDecoder : public BlockDecoder {
+class BinaryPrefixBlockDecoder final : public BlockDecoder {
  public:
   explicit BinaryPrefixBlockDecoder(Slice slice);
 
