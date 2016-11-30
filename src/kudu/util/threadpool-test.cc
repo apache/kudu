@@ -25,6 +25,7 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/promise.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/trace.h"
@@ -161,7 +162,10 @@ TEST(TestThreadPool, TestThreadPoolWithNoMinimum) {
 // Regression test for a bug where a task is submitted exactly
 // as a thread is about to exit. Previously this could hang forever.
 TEST(TestThreadPool, TestRace) {
-  alarm(10);
+  alarm(60);
+  auto cleanup = MakeScopedCleanup([]() {
+    alarm(0); // Disable alarm on test exit.
+  });
   MonoDelta idle_timeout = MonoDelta::FromMicroseconds(1);
   gscoped_ptr<ThreadPool> thread_pool;
   ASSERT_OK(ThreadPoolBuilder("test")
@@ -176,7 +180,6 @@ TEST(TestThreadPool, TestRace) {
     // the bug.
     SleepFor(MonoDelta::FromMicroseconds(i));
   }
-  alarm(0);
 }
 
 TEST(TestThreadPool, TestVariableSizeThreadPool) {
