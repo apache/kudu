@@ -120,6 +120,7 @@ class WriteTransactionState : public TransactionState {
   // Release the already-acquired schema lock.
   void ReleaseSchemaLock();
 
+  void ReleaseMvccTxn(Transaction::TransactionResult result);
 
   void set_schema_at_decode_time(const Schema* schema) {
     std::lock_guard<simple_spinlock> l(txn_state_lock_);
@@ -151,12 +152,6 @@ class WriteTransactionState : public TransactionState {
   //
   // Note: request_ and response_ are set to NULL after this method returns.
   void CommitOrAbort(Transaction::TransactionResult result);
-
-  // Aborts the mvcc transaction and releases the component lock.
-  // Only one of Commit() or Abort() should be called.
-  //
-  // REQUIRES: StartApplying() must never have been called.
-  void Abort();
 
   // Returns all the prepared row writes for this transaction. Usually called
   // on the apply phase to actually make changes to the tablet.
@@ -235,6 +230,8 @@ class WriteTransaction : public Transaction {
   // affected rows. This results in adding 'RowOp' objects for each of the operations
   // into the WriteTransactionState.
   virtual Status Prepare() OVERRIDE;
+
+  virtual void AbortPrepare() OVERRIDE;
 
   // Actually starts the Mvcc transaction and assigns a timestamp to this transaction.
   virtual Status Start() OVERRIDE;

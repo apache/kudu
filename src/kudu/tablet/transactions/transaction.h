@@ -96,6 +96,9 @@ class Transaction {
   // side-effects.
   virtual Status Prepare() = 0;
 
+  // Aborts the prepare phase.
+  virtual void AbortPrepare() {}
+
   // Actually starts a transaction, assigning a timestamp to the transaction.
   // LEADER replicas execute this in or right after Prepare(), while FOLLOWER/LEARNER
   // replicas execute this right before the Apply() phase as the transaction's

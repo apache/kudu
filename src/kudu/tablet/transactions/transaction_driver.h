@@ -53,22 +53,23 @@ class TransactionTracker;
 //  1 - Init() is called on a newly created driver object.
 //      If the driver is instantiated from a REPLICA, then we know that
 //      the operation is already "REPLICATING" (and thus we don't need to
-//      trigger replication ourself later on).
+//      trigger replication ourself later on). In this case the transaction has already
+//      been serialized by the leader, so we also call transaction_->Start().
 //
-//  2 - ExecuteAsync() is called. This submits PrepareAndStartTask() to prepare_pool_
+//  2 - ExecuteAsync() is called. This submits PrepareTask() to prepare_pool_
 //      and returns immediately.
 //
-//  3 - PrepareAndStartTask() calls Prepare() and Start() on the transaction.
+//  3 - PrepareTask() calls Prepare() on the transaction.
 //
 //      Once successfully prepared, if we have not yet replicated (i.e we are leader),
-//      also triggers consensus->Replicate() and changes the replication state to
-//      REPLICATING.
+//      assign a timestamp and call transaction_->Start(). Finally call consensus->Replicate()
+//      and change the replication state to REPLICATING.
 //
 //      On the other hand, if we have already successfully replicated (eg we are the
-//      follower and ConsensusCommitted() has already been called, then we can move
+//      follower and ReplicationFinished() has already been called, then we can move
 //      on to ApplyAsync().
 //
-//  4 - The Consensus implementation calls ConsensusCommitted()
+//  4 - The Consensus implementation calls ReplicationFinished()
 //
 //      This is triggered by consensus when the commit index moves past our own
 //      OpId. On followers, this can happen before Prepare() finishes, and thus
@@ -297,12 +298,12 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
   ~TransactionDriver() {}
 
-  // The task submitted to the prepare threadpool to prepare and start
-  // the transaction. If PrepareAndStart() fails, calls HandleFailure.
-  void PrepareAndStartTask();
+  // The task submitted to the prepare threadpool to prepare the transaction. If Prepare() fails,
+  // calls HandleFailure.
+  void PrepareTask();
 
-  // Actually prepare and start.
-  Status PrepareAndStart();
+  // Actually prepare.
+  Status Prepare();
 
   // Submits ApplyTask to the apply pool.
   Status ApplyAsync();

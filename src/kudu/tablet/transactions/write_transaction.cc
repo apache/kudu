@@ -101,6 +101,10 @@ Status WriteTransaction::Prepare() {
   return Status::OK();
 }
 
+void WriteTransaction::AbortPrepare() {
+  state()->ReleaseMvccTxn(TransactionResult::ABORTED);
+}
+
 Status WriteTransaction::Start() {
   TRACE_EVENT0("txn", "WriteTransaction::Start");
   TRACE("Start()");
@@ -255,6 +259,19 @@ void WriteTransactionState::StartApplying() {
 }
 
 void WriteTransactionState::CommitOrAbort(Transaction::TransactionResult result) {
+  ReleaseMvccTxn(result);
+
+  TRACE("Releasing row and schema locks");
+  ReleaseRowLocks();
+  ReleaseSchemaLock();
+
+  // After committing, if there is an RPC going on, the driver will respond to it.
+  // That will delete the RPC request and response objects. So, NULL them here
+  // so we don't read them again after they're deleted.
+  ResetRpcFields();
+}
+
+void WriteTransactionState::ReleaseMvccTxn(Transaction::TransactionResult result) {
   if (mvcc_tx_.get() != nullptr) {
     // Commit the transaction.
     switch (result) {
@@ -267,15 +284,6 @@ void WriteTransactionState::CommitOrAbort(Transaction::TransactionResult result)
     }
   }
   mvcc_tx_.reset();
-
-  TRACE("Releasing row and schema locks");
-  ReleaseRowLocks();
-  ReleaseSchemaLock();
-
-  // After committing, if there is an RPC going on, the driver will respond to it.
-  // That will delete the RPC request and response objects. So, NULL them here
-  // so we don't read them again after they're deleted.
-  ResetRpcFields();
 }
 
 void WriteTransactionState::ReleaseTxResultPB(TxResultPB* result) const {

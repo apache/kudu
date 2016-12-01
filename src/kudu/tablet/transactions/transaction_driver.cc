@@ -114,6 +114,13 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
     DCHECK(op_id_copy_.IsInitialized());
     replication_state_ = REPLICATING;
     replication_start_time_ = MonoTime::Now();
+    // Start the replica transaction in the thread that is updating consensus, for non-leader
+    // transactions.
+    // Replica transactions were already assigned a timestamp so we don't need to acquire locks
+    // before calling Start(). Starting the the transaction here gives a strong guarantee
+    // to consensus that the transaction is on mvcc when it moves "safe" time so that we don't
+    // risk marking a timestamp "safe" before all transactions before it are in-flight are on mvcc.
+    RETURN_NOT_OK(transaction_->Start());
     if (state()->are_results_tracked()) {
       // If this is a follower transaction, make sure to set the transaction completion callback
       // before the transaction has a chance to fail.
@@ -138,7 +145,6 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
   }
 
   RETURN_NOT_OK(txn_tracker_->Add(this));
-
   return Status::OK();
 }
 
@@ -189,7 +195,7 @@ Status TransactionDriver::ExecuteAsync() {
 
   if (s.ok()) {
     s = prepare_pool_->SubmitClosure(
-      Bind(&TransactionDriver::PrepareAndStartTask, Unretained(this)));
+      Bind(&TransactionDriver::PrepareTask, Unretained(this)));
   }
 
   if (!s.ok()) {
@@ -200,9 +206,9 @@ Status TransactionDriver::ExecuteAsync() {
   return Status::OK();
 }
 
-void TransactionDriver::PrepareAndStartTask() {
-  TRACE_EVENT_FLOW_END0("txn", "PrepareAndStartTask", this);
-  Status prepare_status = PrepareAndStart();
+void TransactionDriver::PrepareTask() {
+  TRACE_EVENT_FLOW_END0("txn", "PrepareTask", this);
+  Status prepare_status = Prepare();
   if (PREDICT_FALSE(!prepare_status.ok())) {
     HandleFailure(prepare_status);
   }
@@ -236,9 +242,10 @@ void TransactionDriver::RegisterFollowerTransactionOnResultTracker() {
   }
 }
 
-Status TransactionDriver::PrepareAndStart() {
-  TRACE_EVENT1("txn", "PrepareAndStart", "txn", this);
-  VLOG_WITH_PREFIX(4) << "PrepareAndStart()";
+Status TransactionDriver::Prepare() {
+  TRACE_EVENT1("txn", "Prepare", "txn", this);
+  VLOG_WITH_PREFIX(4) << "Prepare()";
+
   // Actually prepare and start the transaction.
   prepare_physical_timestamp_ = GetMonoTimeMicros();
 
@@ -260,7 +267,6 @@ Status TransactionDriver::PrepareAndStart() {
     // preempted after the state is prepared apply can be triggered by another thread without the
     // rpc being registered.
     if (transaction_->type() == consensus::REPLICA) {
-      RETURN_NOT_OK(transaction_->Start());
       RegisterFollowerTransactionOnResultTracker();
     // ... else we're a client-started transaction. Make sure we're still the driver of the
     // RPC and give up if we aren't.
@@ -295,9 +301,8 @@ Status TransactionDriver::PrepareAndStart() {
           transaction_->state()->timestamp().ToUint64());
 
       RETURN_NOT_OK(transaction_->Start());
-
-      VLOG_WITH_PREFIX(4) << "Triggering consensus repl";
-      // Trigger the consensus replication.
+      VLOG_WITH_PREFIX(4) << "Triggering consensus replication.";
+      // Trigger consensus replication.
       {
         std::lock_guard<simple_spinlock> lock(lock_);
         replication_state_ = REPLICATING;
@@ -384,6 +389,13 @@ void TransactionDriver::ReplicationFinished(const Status& status) {
     mutable_state()->mutable_op_id()->CopyFrom(op_id_copy_);
   }
 
+  // If we're going to abort, do so before changing the state below. This avoids a race with
+  // the prepare thread, which would race with the thread calling this method to release the driver
+  // while we're aborting, if we were to do it afterwards.
+  if (!status.ok()) {
+    transaction_->AbortPrepare();
+  }
+
   MonoDelta replication_duration;
   PrepareState prepare_state_copy;
   {
@@ -398,7 +410,6 @@ void TransactionDriver::ReplicationFinished(const Status& status) {
     prepare_state_copy = prepare_state_;
     replication_duration = replication_finished_time - replication_start_time_;
   }
-
 
   TRACE_COUNTER_INCREMENT("replication_time_us", replication_duration.ToMicroseconds());
 
