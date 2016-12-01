@@ -185,6 +185,7 @@ class ToolTest : public KuduTest {
     ASSERT_OK(s);
   }
 
+  // Run tool with specified arguments, expecting help output.
   void RunTestHelp(const string& arg_str,
                    const vector<string>& regexes,
                    const Status& expected_status = Status::OK()) const {
@@ -318,6 +319,18 @@ TEST_F(ToolTest, TestModeHelp) {
         "rewrite_raft_config.*Rewrite a tablet replica"
     };
     NO_FATALS(RunTestHelp("local_replica cmeta", kLocalReplicaCMetaRegexes));
+    // Try with a hyphen instead of an underscore.
+    NO_FATALS(RunTestHelp("local-replica cmeta", kLocalReplicaCMetaRegexes));
+  }
+  {
+    const vector<string> kLocalReplicaCopyFromRemoteRegexes = {
+        "Copy a tablet replica from a remote server"
+    };
+    NO_FATALS(RunTestHelp("local_replica copy_from_remote --help",
+                          kLocalReplicaCopyFromRemoteRegexes));
+    // Try with hyphens instead of underscores.
+    NO_FATALS(RunTestHelp("local-replica copy-from-remote --help",
+                          kLocalReplicaCopyFromRemoteRegexes));
   }
   {
     const vector<string> kClusterModeRegexes = {

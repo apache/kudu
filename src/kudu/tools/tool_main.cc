@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <deque>
 #include <iostream>
 #include <memory>
@@ -108,6 +109,12 @@ int DispatchCommand(const vector<Mode*>& chain,
   }
 }
 
+// Replace hyphens with underscores in a string and return a copy.
+string HyphensToUnderscores(string str) {
+  std::replace(str.begin(), str.end(), '-', '_');
+  return str;
+}
+
 int RunTool(int argc, char** argv, bool show_help) {
   unique_ptr<Mode> root = ModeBuilder(argv[0])
     .Description("doesn't matter") // root mode description isn't printed
@@ -135,7 +142,9 @@ int RunTool(int argc, char** argv, bool show_help) {
 
     // Match argument with a mode.
     for (const auto& m : cur->modes()) {
-      if (m->name() == argv[i]) {
+      if (m->name() == argv[i] ||
+          // Allow hyphens in addition to underscores in mode names.
+          m->name() == HyphensToUnderscores(argv[i])) {
         next_mode = m.get();
         break;
       }
@@ -143,7 +152,9 @@ int RunTool(int argc, char** argv, bool show_help) {
 
     // Match argument with an action.
     for (const auto& a : cur->actions()) {
-      if (a->name() == argv[i]) {
+      if (a->name() == argv[i] ||
+          // Allow hyphens in addition to underscores in action names.
+          a->name() == HyphensToUnderscores(argv[i])) {
         next_action = a.get();
         break;
       }
