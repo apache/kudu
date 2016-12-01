@@ -231,18 +231,14 @@ Status TSTabletManager::WaitForAllBootstrapsToFinish() {
 
   open_tablet_pool_->Wait();
 
-  Status s = Status::OK();
-
   shared_lock<rw_spinlock> l(lock_);
   for (const TabletMap::value_type& entry : tablet_map_) {
     if (entry.second->state() == tablet::FAILED) {
-      if (s.ok()) {
-        s = entry.second->error();
-      }
+      return entry.second->error();
     }
   }
 
-  return s;
+  return Status::OK();
 }
 
 Status TSTabletManager::CreateNewTablet(const string& table_id,

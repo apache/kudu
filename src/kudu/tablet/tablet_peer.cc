@@ -387,6 +387,7 @@ string TabletPeer::last_status() const {
 
 void TabletPeer::SetFailed(const Status& error) {
   std::lock_guard<simple_spinlock> lock(lock_);
+  CHECK(!error.ok());
   state_ = FAILED;
   error_ = error;
   last_status_ = error.ToString();
