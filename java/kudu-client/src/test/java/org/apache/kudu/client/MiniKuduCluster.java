@@ -39,6 +39,7 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.base.Stopwatch;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
@@ -75,6 +76,8 @@ public class MiniKuduCluster implements AutoCloseable {
   private final List<String> pathsToDelete = new ArrayList<>();
   private final List<HostAndPort> masterHostPorts = new ArrayList<>();
   private List<Integer> tserverPorts = new ArrayList<>();
+  private ImmutableList<String> extraTserverFlags;
+  private ImmutableList<String> extraMasterFlags;
 
   // Client we can use for common operations.
   private final KuduClient syncClient;
@@ -90,8 +93,12 @@ public class MiniKuduCluster implements AutoCloseable {
   private MiniKuduCluster(int numMasters,
                           int numTservers,
                           final int defaultTimeoutMs,
-                          boolean enableKerberos) throws Exception {
+                          boolean enableKerberos,
+                          final List<String> extraTserverFlags,
+                          final List<String> extraMasterFlags) throws Exception {
     this.defaultTimeoutMs = defaultTimeoutMs;
+    this.extraTserverFlags = ImmutableList.copyOf(extraTserverFlags);
+    this.extraMasterFlags = ImmutableList.copyOf(extraMasterFlags);
 
     if (enableKerberos) {
       miniKdc = MiniKdc.withDefaults();
@@ -209,6 +216,8 @@ public class MiniKuduCluster implements AutoCloseable {
         commandLine.add("--server_require_kerberos");
       }
 
+      commandLine.addAll(extraTserverFlags);
+
       tserverProcesses.put(rpcPort, configureAndStartProcess(rpcPort, commandLine));
       commandLines.put(rpcPort, commandLine);
 
@@ -273,6 +282,7 @@ public class MiniKuduCluster implements AutoCloseable {
           "--rpc_bind_addresses=" + bindHost + ":" + port,
           "--webserver_port=" + masterWebPorts.get(i),
           "--raft_heartbeat_interval_ms=200"); // make leader elections faster for faster tests
+
       if (numMasters > 1) {
         commandLine.add("--master_addresses=" + masterAddresses);
       }
@@ -282,6 +292,8 @@ public class MiniKuduCluster implements AutoCloseable {
         commandLine.add("--kerberos_principal=kudu/" + bindHost);
         commandLine.add("--server_require_kerberos");
       }
+
+      commandLine.addAll(extraMasterFlags);
 
       masterProcesses.put(port, configureAndStartProcess(port, commandLine));
       commandLines.put(port, commandLine);
@@ -563,6 +575,8 @@ public class MiniKuduCluster implements AutoCloseable {
     private int numTservers = 3;
     private int defaultTimeoutMs = 50000;
     private boolean enableKerberos = false;
+    private List<String> extraTserverFlags = new ArrayList<>();
+    private List<String> extraMasterFlags = new ArrayList<>();
 
     public MiniKuduClusterBuilder numMasters(int numMasters) {
       this.numMasters = numMasters;
@@ -594,8 +608,27 @@ public class MiniKuduCluster implements AutoCloseable {
       return this;
     }
 
+    /**
+     * Adds a new flag to be passed to the Tablet Server daemons on start.
+     * @return this instance
+     */
+    public MiniKuduClusterBuilder addTserverFlag(String flag) {
+      this.extraTserverFlags.add(flag);
+      return this;
+    }
+
+    /**
+     * Adds a new flag to be passed to the Master daemons on start.
+     * @return this instance
+     */
+    public MiniKuduClusterBuilder addMasterFlag(String flag) {
+      this.extraMasterFlags.add(flag);
+      return this;
+    }
+
     public MiniKuduCluster build() throws Exception {
-      return new MiniKuduCluster(numMasters, numTservers, defaultTimeoutMs, enableKerberos);
+      return new MiniKuduCluster(numMasters, numTservers, defaultTimeoutMs,
+          enableKerberos, extraTserverFlags, extraMasterFlags);
     }
   }
 }

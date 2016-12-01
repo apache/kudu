@@ -63,6 +63,10 @@ public class BaseKuduTest {
 
   private static MiniKuduCluster miniCluster;
 
+  // Expose the MiniKuduCluster builder so that subclasses can alter the builder.
+  protected static final MiniKuduCluster.MiniKuduClusterBuilder miniClusterBuilder =
+      new MiniKuduCluster.MiniKuduClusterBuilder();
+
   // Comma separate describing the master addresses and ports.
   protected static String masterAddresses;
   protected static List<HostAndPort> masterHostPorts;
@@ -77,11 +81,12 @@ public class BaseKuduTest {
   public static void setUpBeforeClass() throws Exception {
     LOG.info("Setting up before class...");
 
-    miniCluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+    miniCluster = miniClusterBuilder
         .numMasters(NUM_MASTERS)
         .numTservers(NUM_TABLET_SERVERS)
         .defaultTimeoutMs(DEFAULT_SLEEP)
         .build();
+
     masterAddresses = miniCluster.getMasterAddresses();
     masterHostPorts = miniCluster.getMasterHostPorts();
 
