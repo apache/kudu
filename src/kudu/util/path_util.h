@@ -25,6 +25,8 @@ namespace kudu {
 
 // Common tmp infix
 extern const char kTmpInfix[];
+// Infix from versions of Kudu prior to 1.2.
+extern const char kOldTmpInfix[];
 
 // Join two path segments with the appropriate path separator,
 // if necessary.

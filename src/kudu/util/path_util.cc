@@ -34,6 +34,7 @@ using std::string;
 namespace kudu {
 
 const char kTmpInfix[] = ".kudutmp";
+const char kOldTmpInfix[] = ".tmp";
 
 std::string JoinPathSegments(const std::string &a,
                              const std::string &b) {

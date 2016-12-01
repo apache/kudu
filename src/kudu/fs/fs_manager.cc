@@ -408,7 +408,8 @@ string FsManager::GetTabletMetadataPath(const string& tablet_id) const {
 namespace {
 // Return true if 'fname' is a valid tablet ID.
 bool IsValidTabletId(const string& fname) {
-  if (fname.find(kTmpInfix) != string::npos) {
+  if (fname.find(kTmpInfix) != string::npos ||
+      fname.find(kOldTmpInfix) != string::npos) {
     LOG(WARNING) << "Ignoring tmp file in tablet metadata dir: " << fname;
     return false;
   }
