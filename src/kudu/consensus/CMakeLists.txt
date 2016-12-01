@@ -105,6 +105,7 @@ set(CONSENSUS_SRCS
   quorum_util.cc
   raft_consensus.cc
   raft_consensus_state.cc
+  time_manager.cc
 )
 
 add_library(consensus ${CONSENSUS_SRCS})
@@ -135,6 +136,7 @@ ADD_KUDU_TEST(log_index-test)
 ADD_KUDU_TEST(mt-log-test)
 ADD_KUDU_TEST(quorum_util-test)
 ADD_KUDU_TEST(raft_consensus_quorum-test)
+ADD_KUDU_TEST(time_manager-test)
 
 # Our current version of gmock overrides virtual functions without adding
 # the 'override' keyword which, since our move to c++11, make the compiler
