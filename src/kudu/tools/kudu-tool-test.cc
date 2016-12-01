@@ -258,10 +258,10 @@ TEST_F(ToolTest, TestTopLevelHelp) {
   const vector<string> kTopLevelRegexes = {
       "cluster.*Kudu cluster",
       "fs.*Kudu filesystem",
-      "local_replica.*Kudu replicas",
+      "local_replica.*tablet replicas",
       "master.*Kudu Master",
       "pbc.*protobuf container",
-      "remote_replica.*replicas on a Kudu Tablet Server",
+      "remote_replica.*tablet replicas on a Kudu Tablet Server",
       "table.*Kudu tables",
       "tablet.*Kudu tablets",
       "test.*tests",
@@ -295,11 +295,11 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kLocalReplicaModeRegexes = {
-        "cmeta.*Operate on a local Kudu replica's consensus",
+        "cmeta.*Operate on a local tablet replica's consensus",
         "dump.*Dump a Kudu filesystem",
-        "copy_from_remote.*Copy a replica",
-        "delete.*Delete Kudu replica from the local filesystem",
-        "list.*Show list of Kudu replicas"
+        "copy_from_remote.*Copy a tablet replica",
+        "delete.*Delete tablet replica from the local filesystem",
+        "list.*Show list of tablet replicas"
     };
     NO_FATALS(RunTestHelp("local_replica", kLocalReplicaModeRegexes));
   }
@@ -311,14 +311,13 @@ TEST_F(ToolTest, TestModeHelp) {
         "wals.*Dump all WAL"
     };
     NO_FATALS(RunTestHelp("local_replica dump", kLocalReplicaDumpModeRegexes));
-
   }
   {
-    const vector<string> kCmetaModeRegexes = {
-        "print_replica_uuids.*Print all replica UUIDs",
-        "rewrite_raft_config.*Rewrite a replica"
+    const vector<string> kLocalReplicaCMetaRegexes = {
+        "print_replica_uuids.*Print all tablet replica peer UUIDs",
+        "rewrite_raft_config.*Rewrite a tablet replica"
     };
-    NO_FATALS(RunTestHelp("local_replica cmeta", kCmetaModeRegexes));
+    NO_FATALS(RunTestHelp("local_replica cmeta", kLocalReplicaCMetaRegexes));
   }
   {
     const vector<string> kClusterModeRegexes = {
@@ -342,11 +341,11 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kRemoteReplicaModeRegexes = {
-        "check.*Check if all replicas",
-        "copy.*Copy a replica from one Kudu Tablet Server to another",
-        "delete.*Delete a replica",
-        "dump.*Dump the data of a replica",
-        "list.*List all replicas"
+        "check.*Check if all tablet replicas",
+        "copy.*Copy a tablet replica from one Kudu Tablet Server to another",
+        "delete.*Delete a tablet replica",
+        "dump.*Dump the data of a tablet replica",
+        "list.*List all tablet replicas"
     };
     NO_FATALS(RunTestHelp("remote_replica", kRemoteReplicaModeRegexes));
   }

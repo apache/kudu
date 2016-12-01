@@ -696,7 +696,7 @@ unique_ptr<Mode> BuildDumpMode() {
 unique_ptr<Mode> BuildLocalReplicaMode() {
   unique_ptr<Action> print_replica_uuids =
       ActionBuilder("print_replica_uuids", &PrintReplicaUuids)
-      .Description("Print all replica UUIDs found in a "
+      .Description("Print all tablet replica peer UUIDs found in a "
         "tablet's Raft configuration")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("fs_wal_dir")
@@ -705,7 +705,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
 
   unique_ptr<Action> rewrite_raft_config =
       ActionBuilder("rewrite_raft_config", &RewriteRaftConfig)
-      .Description("Rewrite a replica's Raft configuration")
+      .Description("Rewrite a tablet replica's Raft configuration")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredVariadicParameter({
         "peers", "List of peers where each peer is of "
@@ -716,7 +716,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
 
   unique_ptr<Mode> cmeta =
       ModeBuilder("cmeta")
-      .Description("Operate on a local Kudu replica's consensus "
+      .Description("Operate on a local tablet replica's consensus "
         "metadata file")
       .AddAction(std::move(print_replica_uuids))
       .AddAction(std::move(rewrite_raft_config))
@@ -724,7 +724,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
 
   unique_ptr<Action> copy_from_remote =
       ActionBuilder("copy_from_remote", &CopyFromRemote)
-      .Description("Copy a replica from a remote server")
+      .Description("Copy a tablet replica from a remote server")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ "source", "Source RPC address of "
         "form hostname:port" })
@@ -734,7 +734,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
 
   unique_ptr<Action> list =
       ActionBuilder("list", &ListLocalReplicas)
-      .Description("Show list of Kudu replicas in the local filesystem")
+      .Description("Show list of tablet replicas in the local filesystem")
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("list_detail")
@@ -742,7 +742,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
 
   unique_ptr<Action> delete_local_replica =
       ActionBuilder("delete", &DeleteLocalReplica)
-      .Description("Delete Kudu replica from the local filesystem")
+      .Description("Delete tablet replica from the local filesystem")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
@@ -750,7 +750,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .Build();
 
   return ModeBuilder("local_replica")
-      .Description("Operate on local Kudu replicas via the local filesystem")
+      .Description("Operate on local tablet replicas via the local filesystem")
       .AddMode(std::move(cmeta))
       .AddAction(std::move(copy_from_remote))
       .AddAction(std::move(delete_local_replica))

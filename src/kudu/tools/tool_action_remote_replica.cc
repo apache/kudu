@@ -339,13 +339,13 @@ Status CopyReplica(const RunnerContext& context) {
 unique_ptr<Mode> BuildRemoteReplicaMode() {
   unique_ptr<Action> check_replicas =
       ActionBuilder("check", &CheckReplicas)
-      .Description("Check if all replicas on a Kudu Tablet Server are running")
+      .Description("Check if all tablet replicas on a Kudu Tablet Server are running")
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .Build();
 
   unique_ptr<Action> copy_replica =
       ActionBuilder("copy", &CopyReplica)
-      .Description("Copy a replica from one Kudu Tablet Server to another")
+      .Description("Copy a tablet replica from one Kudu Tablet Server to another")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kSrcAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kDstAddressArg, kTServerAddressDesc })
@@ -353,7 +353,7 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
 
   unique_ptr<Action> delete_replica =
       ActionBuilder("delete", &DeleteReplica)
-      .Description("Delete a replica from a Kudu Tablet Server")
+      .Description("Delete a tablet replica from a Kudu Tablet Server")
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kReasonArg, "Reason for deleting the replica" })
@@ -361,19 +361,19 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
 
   unique_ptr<Action> dump_replica =
       ActionBuilder("dump", &DumpReplica)
-      .Description("Dump the data of a replica on a Kudu Tablet Server")
+      .Description("Dump the data of a tablet replica on a Kudu Tablet Server")
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .Build();
 
   unique_ptr<Action> list =
       ActionBuilder("list", &ListReplicas)
-      .Description("List all replicas on a Kudu Tablet Server")
+      .Description("List all tablet replicas on a Kudu Tablet Server")
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .Build();
 
   return ModeBuilder("remote_replica")
-      .Description("Operate on replicas on a Kudu Tablet Server")
+      .Description("Operate on remote tablet replicas on a Kudu Tablet Server")
       .AddAction(std::move(check_replicas))
       .AddAction(std::move(copy_replica))
       .AddAction(std::move(delete_replica))
