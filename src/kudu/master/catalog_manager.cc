@@ -70,6 +70,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
+#include "kudu/gutil/utf/utf.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
@@ -833,6 +834,22 @@ Status ValidateIdentifier(const string& id) {
     return Status::InvalidArgument(Substitute(
         "identifier '$0' longer than maximum permitted length $1",
         id, FLAGS_max_identifier_length));
+  }
+
+  // Identifiers should be valid UTF8.
+  const char* p = id.data();
+  int rem = id.size();
+  while (rem > 0) {
+    Rune rune = Runeerror;
+    int rune_len = charntorune(&rune, p, rem);
+    if (rune == Runeerror) {
+      return Status::InvalidArgument("invalid UTF8 sequence");
+    }
+    if (rune == 0) {
+      return Status::InvalidArgument("identifier must not contain null bytes");
+    }
+    rem -= rune_len;
+    p += rune_len;
   }
 
   return Status::OK();

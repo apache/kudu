@@ -3856,21 +3856,32 @@ TEST_F(ClientTest, TestCreateTableWithTooManyColumns) {
                       "permitted maximum 300");
 }
 
-TEST_F(ClientTest, TestCreateTableWithTooLongTableName) {
-  const string kLongName(1000, 'x');
-  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-  KuduSchema schema;
-  KuduSchemaBuilder schema_builder;
-  schema_builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-  ASSERT_OK(schema_builder.Build(&schema));
-  Status s = table_creator->table_name(kLongName)
-      .schema(&schema)
-      .set_range_partition_columns({ "key" })
-      .Create();
-  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-  ASSERT_STR_MATCHES(s.ToString(),
-                     "invalid table name: identifier 'xxx*' "
-                     "longer than maximum permitted length 256");
+TEST_F(ClientTest, TestCreateTable_TableNames) {
+  const vector<pair<string, string>> kCases = {
+    {string(1000, 'x'), "longer than maximum permitted length"},
+    {string("foo\0bar", 7), "invalid table name: identifier must not contain null bytes"},
+    // From http://stackoverflow.com/questions/1301402/example-invalid-utf8-string
+    {string("foo\xf0\x28\x8c\xbc", 7), "invalid table name: invalid UTF8 sequence"},
+    // Should pass validation but fail due to lack of tablet servers running.
+    {"你好", "Not enough live tablet servers"}
+  };
+
+  for (const auto& test_case : kCases) {
+    const auto& bad_name = test_case.first;
+    const auto& substr = test_case.second;
+    SCOPED_TRACE(bad_name);
+
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    KuduSchema schema;
+    KuduSchemaBuilder schema_builder;
+    schema_builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    ASSERT_OK(schema_builder.Build(&schema));
+    Status s = table_creator->table_name(bad_name)
+        .schema(&schema)
+        .set_range_partition_columns({ "key" })
+        .Create();
+    ASSERT_STR_CONTAINS(s.ToString(), substr);
+  }
 }
 
 TEST_F(ClientTest, TestCreateTableWithTooLongColumnName) {
