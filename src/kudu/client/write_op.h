@@ -31,6 +31,7 @@ namespace client {
 
 namespace internal {
 class Batcher;
+class ErrorCollector;
 class WriteRpc;
 } // namespace internal
 
@@ -100,6 +101,7 @@ class KUDU_EXPORT KuduWriteOperation {
  private:
   friend class internal::Batcher;
   friend class internal::WriteRpc;
+  friend class internal::ErrorCollector;
 
   // Create and encode the key for this write (key must be set)
   //

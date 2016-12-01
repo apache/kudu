@@ -4332,5 +4332,60 @@ TEST_F(ClientTest, TestGetTablet) {
   }
 }
 
+TEST_F(ClientTest, TestErrorCollector) {
+    shared_ptr<KuduSession> session(client_->NewSession());
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+    NO_FATALS(InsertTestRows(client_table_.get(), session.get(), 1, 0));
+    ASSERT_OK(session->Flush());
+
+    // Set the maximum size limit too low even for a single error
+    // and make sure the error collector reports overflow and drops the error.
+    {
+      ASSERT_OK(session->SetErrorBufferSpace(1));
+      // Trying to insert a duplicate row.
+      NO_FATALS(InsertTestRows(client_table_.get(), session.get(), 1, 0));
+      // Expecting an error since tried to insert a duplicate key.
+      ASSERT_TRUE((session->Flush()).IsIOError());
+
+      // It's impossible to update the error buffer size because
+      // the error collector's buffer is overflown and one error has been dropped.
+      EXPECT_TRUE(session->SetErrorBufferSpace(0).IsIllegalState());
+
+      vector<KuduError*> errors;
+      ElementDeleter drop(&errors);
+      bool overflowed;
+      session->GetPendingErrors(&errors, &overflowed);
+      EXPECT_TRUE(errors.empty());
+      EXPECT_TRUE(overflowed);
+    }
+
+    // After calling the GetPendingErrors() and retrieving the errors, it's
+    // possible to update the limit on the error buffer size. Besides, the error
+    // collector should be able to accomodate the duplicate row error
+    // if the error fits the buffer.
+    {
+      ASSERT_OK(session->SetErrorBufferSpace(1024));
+      NO_FATALS(InsertTestRows(client_table_.get(), session.get(), 1, 0));
+      // Expecting an error: tried to insert a duplicate key.
+      ASSERT_TRUE((session->Flush()).IsIOError());
+
+      // It's impossible to update the error buffer size if the error collector
+      // would become overflown.
+      EXPECT_TRUE(session->SetErrorBufferSpace(1).IsIllegalState());
+
+      // It's OK to update the error buffer size because the new limit is high
+      // enough and the error collector hasn't dropped a single error yet.
+      EXPECT_OK(session->SetErrorBufferSpace(2048));
+
+      vector<KuduError*> errors;
+      ElementDeleter drop(&errors);
+      bool overflowed;
+      session->GetPendingErrors(&errors, &overflowed);
+      EXPECT_EQ(1, errors.size());
+      EXPECT_FALSE(overflowed);
+    }
+}
+
 } // namespace client
 } // namespace kudu

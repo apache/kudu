@@ -859,6 +859,10 @@ int KuduSession::CountBufferedOperations() const {
   return data_->CountBufferedOperations();
 }
 
+Status KuduSession::SetErrorBufferSpace(size_t size_bytes) {
+  return data_->error_collector_->SetMaxMemSize(size_bytes);
+}
+
 int KuduSession::CountPendingErrors() const {
   return data_->error_collector_->CountErrors();
 }

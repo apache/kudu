@@ -27,8 +27,5 @@ KuduError::Data::Data(gscoped_ptr<KuduWriteOperation> failed_op,
   status_(status) {
 }
 
-KuduError::Data::~Data() {
-}
-
 } // namespace client
 } // namespace kudu

@@ -69,6 +69,7 @@ class KuduWriteOperation;
 
 namespace internal {
 class Batcher;
+class ErrorCollector;
 class GetTableSchemaRpc;
 class LookupRpc;
 class MetaCache;
@@ -1123,6 +1124,7 @@ class KUDU_EXPORT KuduError {
   class KUDU_NO_EXPORT Data;
 
   friend class internal::Batcher;
+  friend class internal::ErrorCollector;
   friend class KuduSession;
 
   KuduError(KuduWriteOperation* failed_op, const Status& error);
@@ -1514,10 +1516,39 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
       ATTRIBUTE_DEPRECATED("this method is experimental and will disappear "
                            "in a future release");
 
+  /// Set limit on maximum buffer (memory) size used by this session's errors.
+  /// By default, when a session is created, there is no limit on maximum size.
+  ///
+  /// The session's error buffer contains information on failed write
+  /// operations. In most cases, the error contains the row which would be
+  /// applied as is. If the error buffer space limit is set, the number of
+  /// errors which fit into the buffer varies depending on error conditions,
+  /// write operation types (insert/update/delete), and write operation
+  /// row sizes.
+  ///
+  /// When the limit is set, the session will drop the first error that would
+  /// overflow the buffer as well as all subsequent errors. To resume the
+  /// accumulation of session errors, it's necessary to flush the current
+  /// contents of the error buffer using the GetPendingErrors() method.
+  ///
+  /// @param [in] size_bytes
+  ///   Limit on the maximum memory size consumed by collected session errors,
+  ///   where @c 0 means 'unlimited'.
+  /// @return Operation result status. An error is returned on an attempt
+  ///   to set the limit on the buffer space if:
+  ///   @li the session has already dropped at least one error since the last
+  ///     call to the GetPendingErrors() method
+  ///   @li the new limit is less than the amount of space occupied by already
+  ///     accumulated errors.
+  Status SetErrorBufferSpace(size_t size_bytes);
+
   /// Get error count for pending operations.
   ///
   /// Errors may accumulate in session's lifetime; use this method to
   /// see how many errors happened since last call of GetPendingErrors() method.
+  /// The error count includes both the accumulated and dropped errors. An error
+  /// might be dropped due to the limit on the error buffer size; see the
+  /// SetErrorBufferSpace() method for details.
   ///
   /// @return Total count of errors accumulated during the session.
   int CountPendingErrors() const;
@@ -1531,7 +1562,7 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   ///   ownership of the returned errors in the container.
   /// @param [out] overflowed
   ///   If there were more errors than could be held in the session's error
-  ///   storage, then @c overflowed is set to @c true.
+  ///   buffer, then @c overflowed is set to @c true.
   void GetPendingErrors(std::vector<KuduError*>* errors, bool* overflowed);
 
   /// @return Client for the session: pointer to the associated client object.
