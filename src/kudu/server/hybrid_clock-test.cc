@@ -279,5 +279,15 @@ TEST_F(HybridClockTest, TestClockDoesntGoBackwardsWithUpdates) {
   }
 }
 
+TEST_F(HybridClockTest, TestGetPhysicalComponentDifference) {
+  Timestamp now1 = HybridClock::TimestampFromMicrosecondsAndLogicalValue(100, 100);
+  SleepFor(MonoDelta::FromMilliseconds(1));
+  Timestamp now2 = HybridClock::TimestampFromMicrosecondsAndLogicalValue(200, 0);
+  MonoDelta delta = clock_->GetPhysicalComponentDifference(now2, now1);
+  MonoDelta negative_delta = clock_->GetPhysicalComponentDifference(now1, now2);
+  ASSERT_EQ(100, delta.ToMicroseconds());
+  ASSERT_EQ(-100, negative_delta.ToMicroseconds());
+}
+
 }  // namespace server
 }  // namespace kudu

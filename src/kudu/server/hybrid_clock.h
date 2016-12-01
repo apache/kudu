@@ -60,7 +60,9 @@ class HybridClock : public Clock {
   // HybridClock supports all external consistency modes.
   virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) OVERRIDE;
 
-  virtual bool HasPhysicalComponent() OVERRIDE;
+  virtual bool HasPhysicalComponent() const OVERRIDE;
+
+  MonoDelta GetPhysicalComponentDifference(Timestamp lhs, Timestamp rhs) const OVERRIDE;
 
   // Blocks the caller thread until the true time is after 'then'.
   // In other words, waits until the HybridClock::Now() on _all_ nodes

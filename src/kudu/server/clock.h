@@ -29,7 +29,6 @@
 namespace kudu {
 class faststring;
 class MetricEntity;
-class MonoDelta;
 class Slice;
 class Status;
 namespace server {
@@ -67,8 +66,17 @@ class Clock : public RefCountedThreadSafe<Clock> {
 
   // Indicates whether the clock has a physical component to its timestamps
   // (wallclock time).
-  virtual bool HasPhysicalComponent() {
+  virtual bool HasPhysicalComponent() const {
     return false;
+  }
+
+  // Get a MonoDelta representing the physical component difference between two timestamps,
+  // specifically lhs - rhs.
+  //
+  // Requires that this clock's timestamps have a physical component, i.e.
+  // that HasPhysicalComponent() return true, otherwise it will crash.
+  virtual MonoDelta GetPhysicalComponentDifference(Timestamp /*lhs*/, Timestamp /*rhs*/) const {
+    LOG(FATAL) << "Clock's timestamps don't have a physical component.";
   }
 
   // Update the clock with a transaction timestamp originating from

@@ -301,11 +301,15 @@ bool HybridClock::SupportsExternalConsistencyMode(ExternalConsistencyMode mode) 
   return true;
 }
 
-bool HybridClock::HasPhysicalComponent() {
+bool HybridClock::HasPhysicalComponent() const {
   return true;
 }
 
-Status HybridClock::WaitUntilAfter(const Timestamp& then_latest,
+MonoDelta HybridClock::GetPhysicalComponentDifference(Timestamp lhs, Timestamp rhs) const {
+  return MonoDelta::FromMicroseconds(GetPhysicalValueMicros(lhs) - GetPhysicalValueMicros(rhs));
+}
+
+Status HybridClock::WaitUntilAfter(const Timestamp& then,
                                    const MonoTime& deadline) {
   TRACE_EVENT0("clock", "HybridClock::WaitUntilAfter");
   Timestamp now;
@@ -317,7 +321,7 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest,
 
   // "unshift" the timestamps so that we can measure actual time
   uint64_t now_usec = GetPhysicalValueMicros(now);
-  uint64_t then_latest_usec = GetPhysicalValueMicros(then_latest);
+  uint64_t then_latest_usec = GetPhysicalValueMicros(then);
 
   uint64_t now_earliest_usec = now_usec - error;
 
@@ -326,7 +330,7 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest,
     return Status::OK();
   }
 
-  // Case 2 wait out until we are sure that then_latest has passed
+  // Case 2 wait out until we are sure that then has passed
 
   // We'll sleep then_latest_usec - now_earliest_usec so that the new
   // nw.earliest is higher than then.latest.
