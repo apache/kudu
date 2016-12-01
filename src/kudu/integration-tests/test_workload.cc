@@ -27,6 +27,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/random.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
 namespace kudu {
@@ -44,13 +45,13 @@ const char* const TestWorkload::kDefaultTableName = "test-workload";
 
 TestWorkload::TestWorkload(MiniClusterBase* cluster)
   : cluster_(cluster),
+    rng_(SeedRandom()),
     payload_bytes_(11),
     num_write_threads_(4),
     write_batch_size_(50),
     write_timeout_millis_(20000),
     timeout_allowed_(false),
     not_found_allowed_(false),
-    already_present_allowed_(false),
     network_error_allowed_(false),
     num_replicas_(3),
     num_tablets_(1),
@@ -60,6 +61,8 @@ TestWorkload::TestWorkload(MiniClusterBase* cluster)
     rows_inserted_(0),
     batches_completed_(0),
     sequential_key_gen_(0) {
+  // Make the default write pattern random row inserts.
+  set_write_pattern(INSERT_RANDOM_ROWS);
 }
 
 TestWorkload::~TestWorkload() {
@@ -67,8 +70,6 @@ TestWorkload::~TestWorkload() {
 }
 
 void TestWorkload::WriteThread() {
-  Random r(Env::Default()->gettid());
-
   shared_ptr<KuduTable> table;
   // Loop trying to open up the table. In some tests we set up very
   // low RPC timeouts to test those behaviors, so this might fail and
@@ -104,7 +105,7 @@ void TestWorkload::WriteThread() {
         gscoped_ptr<KuduUpdate> update(table->NewUpdate());
         KuduPartialRow* row = update->mutable_row();
         CHECK_OK(row->SetInt32(0, 0));
-        CHECK_OK(row->SetInt32(1, r.Next()));
+        CHECK_OK(row->SetInt32(1, rng_.Next()));
         CHECK_OK(session->Apply(update.release()));
       } else {
         gscoped_ptr<KuduInsert> insert(table->NewInsert());
@@ -113,13 +114,13 @@ void TestWorkload::WriteThread() {
         if (write_pattern_ == INSERT_SEQUENTIAL_ROWS) {
           key = sequential_key_gen_.Increment();
         } else {
-          key = r.Next();
+          key = rng_.Next();
           if (write_pattern_ == INSERT_WITH_MANY_DUP_KEYS) {
             key %= kNumRowsForDuplicateKeyWorkload;
           }
         }
         CHECK_OK(row->SetInt32(0, key));
-        CHECK_OK(row->SetInt32(1, r.Next()));
+        CHECK_OK(row->SetInt32(1, rng_.Next()));
         string test_payload("hello world");
         if (payload_bytes_ != 11) {
           // We fill with zeros if you change the default.

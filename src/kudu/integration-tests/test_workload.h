@@ -26,6 +26,7 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/random.h"
 
 namespace kudu {
 
@@ -130,9 +131,17 @@ class TestWorkload {
 
   void set_write_pattern(WritePattern pattern) {
     write_pattern_ = pattern;
-    // Since we're writing with dup keys we will get AlreadyPresent() errors on the response
-    // so allow it.
-    set_already_present_allowed(true);
+    switch (pattern) {
+      case INSERT_WITH_MANY_DUP_KEYS:
+        set_already_present_allowed(true);
+        break;
+      case INSERT_RANDOM_ROWS:
+      case UPDATE_ONE_ROW:
+      case INSERT_SEQUENTIAL_ROWS:
+        set_already_present_allowed(false);
+        break;
+      default: LOG(FATAL) << "Unsupported WritePattern.";
+    }
   }
 
   // Sets up the internal client and creates the table which will be used for
@@ -166,6 +175,7 @@ class TestWorkload {
   MiniClusterBase* cluster_;
   client::KuduClientBuilder client_builder_;
   client::sp::shared_ptr<client::KuduClient> client_;
+  ThreadSafeRandom rng_;
 
   int payload_bytes_;
   int num_write_threads_;
@@ -175,7 +185,7 @@ class TestWorkload {
   bool not_found_allowed_;
   bool already_present_allowed_;
   bool network_error_allowed_;
-  WritePattern write_pattern_ = INSERT_RANDOM_ROWS;
+  WritePattern write_pattern_;
 
   int num_replicas_;
   int num_tablets_;

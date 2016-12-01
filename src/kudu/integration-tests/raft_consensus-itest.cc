@@ -1402,7 +1402,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     ScanRequestPB req;
     ScanResponsePB resp;
     RpcController rpc;
-    rpc.set_timeout(MonoDelta::FromMilliseconds(100));
+    rpc.set_timeout(MonoDelta::FromMilliseconds(1000));
     NewScanRequestPB* scan = req.mutable_new_scan_request();
     scan->set_tablet_id(tablet_id_);
     scan->set_read_mode(READ_AT_SNAPSHOT);
@@ -2506,7 +2506,7 @@ TEST_F(RaftConsensusITest, TestCommitIndexFarBehindAfterLeaderElection) {
 
   TabletServerMap active_tservers = tablet_servers_;
   active_tservers.erase(only_vote_ts->uuid());
-  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(30),
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(60),
                                   active_tservers,
                                   tablet_id_, 13));
 }
