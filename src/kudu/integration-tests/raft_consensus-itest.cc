@@ -37,6 +37,7 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
+#include "kudu/integration-tests/log_verifier.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/server/server_base.pb.h"
@@ -353,6 +354,10 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   static const bool WITH_NOTIFICATION_LATENCY = true;
   static const bool WITHOUT_NOTIFICATION_LATENCY = false;
   void DoTestChurnyElections(bool with_latency);
+
+  // Prepare for a test where a single replica of a 3-server cluster is left
+  // running as a follower.
+  void SetupSingleReplicaTest(TServerDetails** replica_ts);
 
  protected:
   // Flags needed for CauseFollowerToFallBehindLogGC() to work well.
@@ -1181,10 +1186,7 @@ void RaftConsensusITest::AddOp(const OpId& id, ConsensusRequestPB* req) {
                  id.ShortDebugString(), write_req->mutable_row_operations());
 }
 
-// Regression test for KUDU-644:
-// Triggers some complicated scenarios on the replica involving aborting and
-// replacing transactions.
-TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
+void RaftConsensusITest::SetupSingleReplicaTest(TServerDetails** replica_ts) {
   FLAGS_num_replicas = 3;
   FLAGS_num_tablet_servers = 3;
   vector<string> ts_flags, master_flags;
@@ -1193,7 +1195,6 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   BuildAndStart(ts_flags, master_flags);
 
   // Kill all the servers but one.
-  TServerDetails *replica_ts;
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
   ASSERT_EQ(3, tservers.size());
@@ -1202,11 +1203,86 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   ASSERT_OK(StartElection(tservers[2], tablet_id_, MonoDelta::FromSeconds(10)));
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
 
-  replica_ts = tservers[0];
   cluster_->tablet_server_by_uuid(tservers[1]->uuid())->Shutdown();
   cluster_->tablet_server_by_uuid(tservers[2]->uuid())->Shutdown();
 
+  *replica_ts = tservers[0];
   LOG(INFO) << "================================== Cluster setup complete.";
+}
+
+// Regression test for KUDU-1775: when a replica is restarted, and the first
+// request it receives from a leader results in a LMP mismatch error, the
+// replica should still respond with the correct 'last_committed_idx'.
+TEST_F(RaftConsensusITest, TestLMPMismatchOnRestartedReplica) {
+  TServerDetails* replica_ts;
+  NO_FATALS(SetupSingleReplicaTest(&replica_ts));
+  auto* replica_ets = cluster_->tablet_server_by_uuid(replica_ts->uuid());
+
+  ConsensusServiceProxy* c_proxy = CHECK_NOTNULL(replica_ts->consensus_proxy.get());
+  ConsensusRequestPB req;
+  ConsensusResponsePB resp;
+  RpcController rpc;
+
+  req.set_tablet_id(tablet_id_);
+  req.set_dest_uuid(replica_ts->uuid());
+  req.set_caller_uuid("fake_caller");
+  req.set_caller_term(2);
+  req.set_all_replicated_index(0);
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(1, 1));
+
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+
+  // Send operations 2.1 through 2.3, committing through 2.2.
+  AddOp(MakeOpId(2, 1), &req);
+  AddOp(MakeOpId(2, 2), &req);
+  AddOp(MakeOpId(2, 3), &req);
+  req.set_committed_index(2);
+  rpc.Reset();
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+
+  // The COMMIT messages end up in the WAL asynchronously, so loop reading the
+  // tablet server's WAL until it shows up.
+  AssertEventually([&]() {
+      LogVerifier lv(cluster_.get());
+      OpId commit;
+      ASSERT_OK(lv.ScanForHighestCommittedOpIdInLog(replica_ets, tablet_id_, &commit));
+      ASSERT_EQ("2.2", OpIdToString(commit));
+    });
+
+  // Restart the replica.
+  replica_ets->Shutdown();
+  ASSERT_OK(replica_ets->Restart());
+
+  // Send an operation 3.4 with preceding OpId 3.3.
+  // We expect an LMP mismatch, since the replica has operation 2.3.
+  // We use 'AssertEventually' here because the replica
+  // may need a few retries while it's in BOOTSTRAPPING state.
+  req.set_caller_term(3);
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(3, 3));
+  req.clear_ops();
+  AddOp(MakeOpId(3, 4), &req);
+  AssertEventually([&]() {
+      rpc.Reset();
+      ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+      ASSERT_EQ(resp.status().error().code(),
+                consensus::ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH) << resp.DebugString();
+    });
+  SCOPED_TRACE(resp.DebugString());
+  EXPECT_EQ(2, resp.status().last_committed_idx());
+  EXPECT_EQ("0.0", OpIdToString(resp.status().last_received_current_leader()));
+  // Even though the replica previously received operations through 2.3, the LMP mismatch
+  // above causes us to truncate operation 2.3, so 2.2 remains.
+  EXPECT_EQ("2.2", OpIdToString(resp.status().last_received()));
+}
+
+// Regression test for KUDU-644:
+// Triggers some complicated scenarios on the replica involving aborting and
+// replacing transactions.
+TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
+  TServerDetails* replica_ts;
+  NO_FATALS(SetupSingleReplicaTest(&replica_ts));
 
   // Check that the 'term' metric is correctly exposed.
   {

@@ -196,7 +196,7 @@ class ConsensusQueueTest : public KuduTest {
 // with several messages and then starts to track a peer whose watermark
 // falls in the middle of the current messages in the queue.
 TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
-  queue_->Init(MinimumOpId());
+  queue_->Init(MinimumOpId(), MinimumOpId());
   queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm, BuildRaftConfigPBForTests(2));
   AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 100);
 
@@ -236,7 +236,7 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
 // Tests that the peers gets the messages pages, with the size of a page
 // being 'consensus_max_batch_size_bytes'
 TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
-  queue_->Init(MinimumOpId());
+  queue_->Init(MinimumOpId(), MinimumOpId());
   queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm, BuildRaftConfigPBForTests(2));
 
   // helper to estimate request size so that we can set the max batch size appropriately
@@ -300,7 +300,7 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 }
 
 TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
-  queue_->Init(MinimumOpId());
+  queue_->Init(MinimumOpId(), MinimumOpId());
   queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm, BuildRaftConfigPBForTests(3));
   AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 100);
 
@@ -367,7 +367,7 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
 }
 
 TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
-  queue_->Init(MinimumOpId());
+  queue_->Init(MinimumOpId(), MinimumOpId());
   queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm, BuildRaftConfigPBForTests(5));
   // Track 4 additional peers (in addition to the local peer)
   queue_->TrackPeer("peer-1");
@@ -466,7 +466,7 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
   // the last operation in the log.
   CloseAndReopenQueue();
 
-  queue_->Init(leader_last_op);
+  queue_->Init(leader_last_op, leader_last_op);
   queue_->SetLeaderMode(leader_last_op.index(),
                         leader_last_op.term(),
                         BuildRaftConfigPBForTests(3));
@@ -539,7 +539,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   OpId last_in_log;
   log_->GetLatestEntryOpId(&last_in_log);
   int64_t committed_index = 15;
-  queue_->Init(last_in_log);
+  queue_->Init(last_in_log, MakeOpId(2, committed_index));
   queue_->SetLeaderMode(committed_index,
                         last_in_log.term(),
                         BuildRaftConfigPBForTests(3));
@@ -619,7 +619,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 // operations, which would cause a check failure on the write immediately
 // following the overwriting write.
 TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
-  queue_->Init(MinimumOpId());
+  queue_->Init(MinimumOpId(), MinimumOpId());
   queue_->SetNonLeaderMode();
   // Append a bunch of messages.
   AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 10);
@@ -679,8 +679,8 @@ TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
 TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) {
   FLAGS_consensus_max_batch_size_bytes = 1024 * 10;
 
-  const int kInitialCommittedIndex = 31;
-  queue_->Init(MakeOpId(72, 30));
+  const int kInitialCommittedIndex = 30;
+  queue_->Init(MakeOpId(72, 30), MakeOpId(82, 30));
   queue_->SetLeaderMode(kInitialCommittedIndex, 76, BuildRaftConfigPBForTests(3));
 
   ConsensusRequestPB request;
@@ -774,7 +774,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
 
 // Test that Tablet Copy is triggered when a "tablet not found" error occurs.
 TEST_F(ConsensusQueueTest, TestTriggerTabletCopyIfTabletNotFound) {
-  queue_->Init(MinimumOpId());
+  queue_->Init(MinimumOpId(), MinimumOpId());
   queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm, BuildRaftConfigPBForTests(3));
   AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 100);
 
@@ -814,7 +814,7 @@ TEST_F(ConsensusQueueTest, TestTriggerTabletCopyIfTabletNotFound) {
 }
 
 TEST_F(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics) {
-  queue_->Init(MinimumOpId());
+  queue_->Init(MinimumOpId(), MinimumOpId());
   queue_->SetNonLeaderMode();
 
   AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 10);

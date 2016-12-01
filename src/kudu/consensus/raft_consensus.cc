@@ -294,7 +294,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
 
     pending_.SetInitialCommittedOpId(info.last_committed_id);
 
-    queue_->Init(info.last_id);
+    queue_->Init(info.last_id, info.last_committed_id);
   }
 
   {

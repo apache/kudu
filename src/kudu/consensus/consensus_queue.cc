@@ -119,12 +119,14 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
   CHECK_OK(ThreadPoolBuilder("queue-observers-pool").set_max_threads(1).Build(&observers_pool_));
 }
 
-void PeerMessageQueue::Init(const OpId& last_locally_replicated) {
+void PeerMessageQueue::Init(const OpId& last_locally_replicated,
+                            const OpId& last_locally_committed) {
   std::lock_guard<simple_spinlock> lock(queue_lock_);
   CHECK_EQ(queue_state_.state, kQueueConstructed);
   log_cache_.Init(last_locally_replicated);
   queue_state_.last_appended = last_locally_replicated;
   queue_state_.state = kQueueOpen;
+  queue_state_.committed_index = last_locally_committed.index();
   TrackPeerUnlocked(local_peer_pb_.permanent_uuid());
 }
 

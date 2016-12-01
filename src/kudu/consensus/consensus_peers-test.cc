@@ -137,7 +137,7 @@ class ConsensusPeersTest : public KuduTest {
 TEST_F(ConsensusPeersTest, TestRemotePeer) {
   // We use a majority size of 2 since we make one fake remote peer
   // in addition to our real local log.
-  message_queue_->Init(MinimumOpId());
+  message_queue_->Init(MinimumOpId(), MinimumOpId());
   message_queue_->SetLeaderMode(kMinimumOpIdIndex,
                                 kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
@@ -161,7 +161,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
 }
 
 TEST_F(ConsensusPeersTest, TestRemotePeers) {
-  message_queue_->Init(MinimumOpId());
+  message_queue_->Init(MinimumOpId(), MinimumOpId());
   message_queue_->SetLeaderMode(kMinimumOpIdIndex,
                                 kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
@@ -220,7 +220,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
 // Regression test for KUDU-699: even if a peer isn't making progress,
 // and thus always has data pending, we should be able to close the peer.
 TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
-  message_queue_->Init(MinimumOpId());
+  message_queue_->Init(MinimumOpId(), MinimumOpId());
   message_queue_->SetLeaderMode(kMinimumOpIdIndex,
                                 kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
@@ -258,7 +258,7 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
 }
 
 TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
-  message_queue_->Init(MinimumOpId());
+  message_queue_->Init(MinimumOpId(), MinimumOpId());
   message_queue_->SetLeaderMode(kMinimumOpIdIndex,
                                 kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));

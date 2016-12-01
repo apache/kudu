@@ -133,7 +133,8 @@ class PeerMessageQueue {
                    const std::string& tablet_id);
 
   // Initialize the queue.
-  void Init(const OpId& last_locally_replicated);
+  void Init(const OpId& last_locally_replicated,
+            const OpId& last_locally_committed);
 
   // Changes the queue to leader mode, meaning it tracks majority replicated
   // operations and notifies observers when those change.

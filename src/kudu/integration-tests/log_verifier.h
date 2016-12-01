@@ -17,6 +17,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <string>
 
 #include "kudu/gutil/macros.h"
@@ -25,7 +26,12 @@
 namespace kudu {
 
 class ExternalMiniCluster;
+class ExternalTabletServer;
 class FsManager;
+
+namespace consensus {
+class OpId;
+} // namespace consensus
 
 // Verifies correctness of the logs in an external mini-cluster.
 class LogVerifier {
@@ -46,7 +52,16 @@ class LogVerifier {
   // loop and retry on failure.
   Status VerifyCommittedOpIdsMatch();
 
+  // Scans the WAL on the given tablet server to find the COMMIT message with the highest
+  // index.
+  Status ScanForHighestCommittedOpIdInLog(ExternalTabletServer* ets,
+                                          const std::string& tablet_id,
+                                          consensus::OpId* commit_id);
+
  private:
+  // Open an FsManager for the given tablet server.
+  Status OpenFsManager(ExternalTabletServer* ets, std::unique_ptr<FsManager>* fs);
+
   // Scan the WALs for tablet 'tablet_id' on the given 'fs'. Sets entries
   // in '*index_to_term' for each COMMIT entry found in the WALs.
   Status ScanForCommittedOpIds(FsManager* fs, const std::string& tablet_id,
