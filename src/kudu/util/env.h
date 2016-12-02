@@ -260,6 +260,13 @@ class Env {
                       DirectoryOrder order,
                       const WalkCallback& cb) = 0;
 
+  // Finds paths on the filesystem matching a pattern.
+  //
+  // The found pathnames are added to the 'paths' vector. If no pathnames are
+  // found matching the pattern, no paths are added to the vector and an OK
+  // status is returned.
+  virtual Status Glob(const std::string& path_pattern, std::vector<std::string>* paths) = 0;
+
   // Canonicalize 'path' by applying the following conversions:
   // - Converts a relative path into an absolute one using the cwd.
   // - Converts '.' and '..' references.

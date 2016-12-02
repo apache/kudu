@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fts.h>
+#include <glob.h>
 #include <limits.h>
 #include <pthread.h>
 #include <sys/mman.h>
@@ -21,6 +22,7 @@
 #include <cstring>
 #include <ctime>
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -40,6 +42,7 @@
 #include "kudu/util/malloc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread_restrictions.h"
@@ -1148,6 +1151,27 @@ class PosixEnv : public Env {
 
     if (had_errors) {
       return Status::IOError(root, "One or more errors occurred");
+    }
+    return Status::OK();
+  }
+
+  Status Glob(const string& path_pattern, vector<string>* paths) override {
+    TRACE_EVENT1("io", "PosixEnv::Glob", "path_pattern", path_pattern);
+    ThreadRestrictions::AssertIOAllowed();
+
+    glob_t result;
+    auto cleanup = MakeScopedCleanup([&] { globfree(&result); });
+
+    int ret = glob(path_pattern.c_str(), GLOB_TILDE | GLOB_ERR , NULL, &result);
+    switch (ret) {
+      case 0: break;
+      case GLOB_NOMATCH: return Status::OK();
+      case GLOB_NOSPACE: return Status::RuntimeError("glob out of memory");
+      default: return Status::IOError("glob failure", std::to_string(ret));
+    }
+
+    for (size_t i = 0; i < result.gl_pathc; ++i) {
+      paths->emplace_back(result.gl_pathv[i]);
     }
     return Status::OK();
   }

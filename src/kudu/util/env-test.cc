@@ -637,6 +637,32 @@ TEST_F(TestEnv, TestWalkCbReturnsError) {
   ASSERT_EQ(2, num_calls);
 }
 
+TEST_F(TestEnv, TestGlob) {
+  string dir = GetTestPath("glob");
+  ASSERT_OK(env_->CreateDir(dir));
+
+  vector<string> filenames = { "fuzz", "fuzzy", "fuzzyiest", "buzz" };
+  vector<pair<string, size_t>> matchers = {
+    { "file", 0 },
+    { "fuzz", 1 },
+    { "fuzz*", 3 },
+    { "?uzz", 2 },
+  };
+
+  for (const auto& name : filenames) {
+    unique_ptr<WritableFile> file;
+    ASSERT_OK(env_->NewWritableFile(JoinPathSegments(dir, name), &file));
+  }
+
+  for (const auto& matcher : matchers) {
+    SCOPED_TRACE(strings::Substitute("pattern: $0, expected matches: $1",
+                                     matcher.first, matcher.second));
+    vector<string> matches;
+    ASSERT_OK(env_->Glob(JoinPathSegments(dir, matcher.first), &matches));
+    ASSERT_EQ(matcher.second, matches.size());
+  }
+}
+
 TEST_F(TestEnv, TestGetBlockSize) {
   uint64_t block_size;
 
