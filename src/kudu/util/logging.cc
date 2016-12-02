@@ -28,13 +28,25 @@
 
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/spinlock.h"
+#include "kudu/util/async_logger.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/flag_tags.h"
 
 DEFINE_string(log_filename, "",
     "Prefix of log filename - "
     "full path is <log_dir>/<log_filename>.[INFO|WARN|ERROR|FATAL]");
 TAG_FLAG(log_filename, stable);
+
+DEFINE_bool(log_async, true,
+            "Enable asynchronous writing to log files. This improves "
+            "latency and stability.");
+TAG_FLAG(log_async, hidden);
+
+DEFINE_int32(log_async_buffer_bytes_per_level, 2 * 1024 * 1024,
+             "The number of bytes of buffer space used by each log "
+             "level. Only relevant when --log_async is enabled.");
+TAG_FLAG(log_async_buffer_bytes_per_level, hidden);
 
 #define PROJ_NAME "kudu"
 
@@ -100,6 +112,18 @@ SimpleSink* registered_sink = nullptr;
 // Protected by 'logging_mutex'.
 int initial_stderr_severity;
 
+void EnableAsyncLogging() {
+  debug::ScopedLeakCheckDisabler leaky;
+
+  // Enable Async for every level except for FATAL. Fatal should be synchronous
+  // to ensure that we get the fatal log message written before exiting.
+  for (auto level : { google::INFO, google::WARNING, google::ERROR }) {
+    auto* orig = google::base::GetLogger(level);
+    auto* async = new AsyncLogger(orig, FLAGS_log_async_buffer_bytes_per_level);
+    async->Start();
+    google::base::SetLogger(level, async);
+  }
+}
 
 void UnregisterLoggingCallbackUnlocked() {
   CHECK(logging_mutex.IsHeld());
@@ -219,6 +243,11 @@ void InitGoogleLoggingSafe(const char* arg) {
   // Stderr logging threshold: FLAGS_stderrthreshold.
   // Sink logging: off.
   initial_stderr_severity = FLAGS_stderrthreshold;
+
+  if (FLAGS_log_async) {
+    EnableAsyncLogging();
+  }
+
   logging_initialized = true;
 }
 

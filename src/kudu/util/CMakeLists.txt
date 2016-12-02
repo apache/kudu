@@ -108,6 +108,7 @@ if (${OPENSSL_VERSION} VERSION_LESS "1.0.2")
 endif()
 
 set(UTIL_SRCS
+  async_logger.cc
   atomic.cc
   bitmap.cc
   bloom_filter.cc

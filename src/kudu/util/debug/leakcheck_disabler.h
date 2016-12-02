@@ -17,7 +17,6 @@
 #ifndef KUDU_UTIL_DEBUG_LEAKCHECK_DISABLER_H_
 #define KUDU_UTIL_DEBUG_LEAKCHECK_DISABLER_H_
 
-#include <gperftools/heap-checker.h>
 #include "kudu/gutil/macros.h"
 #include "kudu/util/debug/leak_annotations.h"
 

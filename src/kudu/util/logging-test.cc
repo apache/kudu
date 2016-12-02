@@ -18,11 +18,17 @@
 #include <glog/logging.h>
 #include <gmock/gmock.h>
 #include <string>
+#include <thread>
 #include <vector>
 
-#include "kudu/util/logging_test_util.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/async_logger.h"
+#include "kudu/util/barrier.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/logging_test_util.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/stopwatch.h"
 
 using std::string;
 using std::vector;
@@ -79,6 +85,79 @@ TEST(LoggingTest, TestAdvancedThrottling) {
   EXPECT_THAT(msgs[0], testing::ContainsRegex("test b$"));
   EXPECT_THAT(msgs[1], testing::ContainsRegex("test c$"));
   EXPECT_THAT(msgs[2], testing::ContainsRegex("test b$"));
+}
+
+// Test Logger implementation that just counts the number of messages
+// and flushes.
+//
+// This is purposefully thread-unsafe because we expect that the
+// AsyncLogger is only accessing the underlying logger from a single
+// thhread.
+class CountingLogger : public google::base::Logger {
+ public:
+  void Write(bool force_flush,
+             time_t /*timestamp*/,
+             const char* /*message*/,
+             int /*message_len*/) override {
+    message_count_++;
+    if (force_flush) {
+      Flush();
+    }
+  }
+
+  void Flush() override {
+    // Simulate a slow disk.
+    SleepFor(MonoDelta::FromMilliseconds(5));
+    flush_count_++;
+  }
+
+  uint32 LogSize() override {
+    return 0;
+  }
+
+  int flush_count_ = 0;
+  int message_count_ = 0;
+};
+
+TEST(LoggingTest, TestAsyncLogger) {
+  const int kNumThreads = 4;
+  const int kNumMessages = 10000;
+  const int kBuffer = 10000;
+  CountingLogger base;
+  AsyncLogger async(&base, kBuffer);
+  async.Start();
+
+  vector<std::thread> threads;
+  Barrier go_barrier(kNumThreads + 1);
+  // Start some threads writing log messages.
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.emplace_back([&]() {
+        go_barrier.Wait();
+        for (int m = 0; m < kNumMessages; m++) {
+          async.Write(true, m, "x", 1);
+        }
+      });
+  }
+
+  // And a thread calling Flush().
+  threads.emplace_back([&]() {
+      go_barrier.Wait();
+      for (int i = 0; i < 10; i++) {
+        async.Flush();
+        SleepFor(MonoDelta::FromMilliseconds(3));
+      }
+    });
+
+  for (auto& t : threads) {
+    t.join();
+  }
+  async.Stop();
+  ASSERT_EQ(base.message_count_, kNumMessages * kNumThreads);
+  // The async logger should only flush once per "batch" rather than
+  // once per message, even though we wrote every message with
+  // 'flush' set to true.
+  ASSERT_LT(base.flush_count_, kNumMessages * kNumThreads);
+  ASSERT_GT(async.app_threads_blocked_count_for_tests(), 0);
 }
 
 } // namespace kudu
