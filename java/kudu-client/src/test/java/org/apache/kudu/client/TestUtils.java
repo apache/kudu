@@ -103,16 +103,44 @@ public class TestUtils {
     }
   }
 
-  private static String findBuildDir() {
-    URL myUrl = BaseKuduTest.class.getProtectionDomain().getCodeSource().getLocation();
-    File myPath = new File(urlToPath(myUrl));
-    while (myPath != null) {
-      if (new File(myPath, ".git").isDirectory()) {
-        return new File(myPath, "build/latest/bin").getAbsolutePath();
+  /**
+   * Find the nearest directory up in the path hierarchy that is a git source directory.
+   */
+  private static File findParentGitDir(File dir) {
+    while (dir != null) {
+      if (new File(dir, ".git").isDirectory()) {
+        return dir;
       }
-      myPath = myPath.getParentFile();
+      dir = dir.getParentFile();
     }
-    LOG.warn("Unable to find build dir! myUrl={}", myUrl);
+    return null;
+  }
+
+  /**
+   * Find the binary directory within the build tree.
+   */
+  private static String findBinDir() {
+    // First check the system property, which is our standard override.
+    String binDirProp = System.getProperty(BIN_DIR_PROP);
+    if (binDirProp != null) {
+      LOG.info("Using binary directory specified by property: {}", binDirProp);
+      return binDirProp;
+    }
+
+    // Next, attempt to traverse from the location of the class file.
+    URL codeSrcUrl = BaseKuduTest.class.getProtectionDomain().getCodeSource().getLocation();
+    File srcDir = findParentGitDir(new File(urlToPath(codeSrcUrl)));
+    if (srcDir != null) {
+      return new File(srcDir, "build/latest/bin").getAbsolutePath();
+    }
+
+    // Note: It has been discussed in the past whether to also search from the current working
+    // directory to find the source directory. At this time we have elected *not* to support this,
+    // instead relying on setting -DbinDir for cases where the test libs may be in the Maven repo.
+    // See the following code reviews for the discussion: https://gerrit.cloudera.org/5328 and
+    // https://gerrit.cloudera.org/4630
+
+    LOG.warn("Unable to find bin dir! codeSrcUrl={}", codeSrcUrl);
     return null;
   }
 
@@ -122,13 +150,7 @@ public class TestUtils {
    * @throws FileNotFoundException if no such binary is found
    */
   public static String findBinary(String binName) throws FileNotFoundException {
-    String binDir = System.getProperty(BIN_DIR_PROP);
-    if (binDir != null) {
-      LOG.info("Using binary directory specified by property: {}",
-          binDir);
-    } else {
-      binDir = findBuildDir();
-    }
+    String binDir = findBinDir();
 
     File candidate = new File(binDir, binName);
     if (candidate.canExecute()) {
