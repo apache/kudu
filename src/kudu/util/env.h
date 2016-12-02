@@ -303,7 +303,7 @@ class SequentialFile {
   virtual Status Skip(uint64_t n) = 0;
 
   // Returns the filename provided when the SequentialFile was constructed.
-  virtual std::string filename() const = 0;
+  virtual const std::string& filename() const = 0;
 };
 
 // A file abstraction for randomly reading the contents of a file.
@@ -328,7 +328,7 @@ class RandomAccessFile {
   virtual Status Size(uint64_t *size) const = 0;
 
   // Returns the filename provided when the RandomAccessFile was constructed.
-  virtual std::string filename() const = 0;
+  virtual const std::string& filename() const = 0;
 
   // Returns the approximate memory usage of this RandomAccessFile including
   // the object itself.
@@ -400,7 +400,7 @@ class WritableFile {
   virtual uint64_t Size() const = 0;
 
   // Returns the filename provided when the WritableFile was constructed.
-  virtual std::string filename() const = 0;
+  virtual const std::string& filename() const = 0;
 
  private:
   // No copying allowed
@@ -507,7 +507,7 @@ class RWFile {
   virtual Status Size(uint64_t* size) const = 0;
 
   // Returns the filename provided when the RWFile was constructed.
-  virtual std::string filename() const = 0;
+  virtual const std::string& filename() const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RWFile);

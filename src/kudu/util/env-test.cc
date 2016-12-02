@@ -395,7 +395,7 @@ class ShortReadRandomAccessFile : public RandomAccessFile {
     return wrapped_->Size(size);
   }
 
-  virtual string filename() const OVERRIDE { return wrapped_->filename(); }
+  virtual const string& filename() const OVERRIDE { return wrapped_->filename(); }
 
   virtual size_t memory_footprint() const OVERRIDE {
     return wrapped_->memory_footprint();
