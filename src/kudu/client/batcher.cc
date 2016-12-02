@@ -316,7 +316,7 @@ void WriteRpc::Finish(const Status& status) {
     final_status = final_status.CloneAndPrepend(
         Substitute("Failed to write batch of $0 ops to tablet $1 after $2 attempt(s)",
                    ops_.size(), tablet_id_, num_attempts()));
-    LOG(WARNING) << final_status.ToString();
+    KLOG_EVERY_N_SECS(WARNING, 1) << final_status.ToString();
   }
   batcher_->ProcessWriteResponse(*this, final_status);
 }

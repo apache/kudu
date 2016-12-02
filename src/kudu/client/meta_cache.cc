@@ -33,6 +33,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 
@@ -193,7 +194,7 @@ void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
   std::lock_guard<simple_spinlock> l(lock_);
   VLOG(2) << "Tablet " << tablet_id_ << ": Current remote replicas in meta cache: "
           << ReplicasAsStringUnlocked();
-  LOG(WARNING) << "Tablet " << tablet_id_ << ": Replica " << ts->ToString()
+  KLOG_EVERY_N_SECS(WARNING, 1) << "Tablet " << tablet_id_ << ": Replica " << ts->ToString()
                << " has failed: " << status.ToString();
   for (RemoteReplica& rep : replicas_) {
     if (rep.ts == ts) {
@@ -682,7 +683,7 @@ void LookupRpc::NewLeaderMasterDeterminedCb(const Status& status) {
     mutable_retrier()->mutable_controller()->Reset();
     SendRpc();
   } else {
-    LOG(WARNING) << "Failed to determine new Master: " << status.ToString();
+    KLOG_EVERY_N_SECS(WARNING, 1) << "Failed to determine new Master: " << status.ToString();
     mutable_retrier()->DelayedRetry(this, status);
   }
 }
@@ -707,7 +708,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
     if (resp_.error().code() == master::MasterErrorPB::NOT_THE_LEADER ||
         resp_.error().code() == master::MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
       if (meta_cache_->client_->IsMultiMaster()) {
-        LOG(WARNING) << "Leader Master has changed, re-trying...";
+        KLOG_EVERY_N_SECS(WARNING, 1) << "Leader Master has changed, re-trying...";
         ResetMasterLeaderAndRetry();
         ignore_result(delete_me.release());
         return;
@@ -720,7 +721,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
   if (new_status.IsTimedOut()) {
     if (MonoTime::Now() < retrier().deadline()) {
       if (meta_cache_->client_->IsMultiMaster()) {
-        LOG(WARNING) << "Leader Master timed out, re-trying...";
+        KLOG_EVERY_N_SECS(WARNING, 1) << "Leader Master timed out, re-trying...";
         ResetMasterLeaderAndRetry();
         ignore_result(delete_me.release());
         return;
@@ -734,8 +735,8 @@ void LookupRpc::SendRpcCb(const Status& status) {
 
   if (new_status.IsNetworkError()) {
     if (meta_cache_->client_->IsMultiMaster()) {
-      LOG(WARNING) << "Encountered a network error from the Master: " << new_status.ToString()
-                     << ", retrying...";
+      KLOG_EVERY_N_SECS(WARNING, 1) << "Encountered a network error from the Master: "
+                                    << new_status.ToString() << ", retrying...";
       ResetMasterLeaderAndRetry();
       ignore_result(delete_me.release());
       return;
@@ -760,7 +761,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
     }
   } else {
     new_status = new_status.CloneAndPrepend(Substitute("$0 failed", ToString()));
-    LOG(WARNING) << new_status.ToString();
+    KLOG_EVERY_N_SECS(WARNING, 1) << new_status.ToString();
   }
   user_cb_.Run(new_status);
 }

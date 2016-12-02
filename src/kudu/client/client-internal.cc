@@ -40,6 +40,7 @@
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/thread_restrictions.h"
@@ -185,9 +186,10 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     }
 
     if (s.IsNetworkError()) {
-      LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
-                   << ") to leader Master (" << leader_master_hostport().ToString()
-                   << "): " << s.ToString();
+      KLOG_EVERY_N_SECS(WARNING, 1)
+          << "Unable to send the request (" << req.ShortDebugString()
+          << ") to leader Master (" << leader_master_hostport().ToString() << "): "
+          << s.ToString();
       if (client->IsMultiMaster()) {
         LOG(INFO) << "Determining the new leader Master and retrying...";
         WARN_NOT_OK(SetMasterServerProxy(client, deadline),
@@ -198,9 +200,10 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
 
     if (s.IsTimedOut()) {
       if (MonoTime::Now() < deadline) {
-        LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
-                     << ") to leader Master (" << leader_master_hostport().ToString()
-                     << "): " << s.ToString();
+        KLOG_EVERY_N_SECS(WARNING, 1)
+            << "Unable to send the request (" << req.ShortDebugString()
+            << ") to leader Master (" << leader_master_hostport().ToString()
+            << "): " << s.ToString();
         if (client->IsMultiMaster()) {
           LOG(INFO) << "Determining the new leader Master and retrying...";
           WARN_NOT_OK(SetMasterServerProxy(client, deadline),
@@ -218,7 +221,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
       if (resp->error().code() == MasterErrorPB::NOT_THE_LEADER ||
           resp->error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
         if (client->IsMultiMaster()) {
-          LOG(INFO) << "Determining the new leader Master and retrying...";
+          KLOG_EVERY_N_SECS(INFO, 1) << "Determining the new leader Master and retrying...";
           WARN_NOT_OK(SetMasterServerProxy(client, deadline),
                       "Unable to determine the new leader Master");
           continue;
@@ -649,8 +652,9 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
       return;
     }
     if (addrs.size() > 1) {
-      LOG(WARNING) << "Specified master server address '" << master_server_addr << "' "
-                   << "resolved to multiple IPs. Using " << addrs[0].ToString();
+      KLOG_EVERY_N_SECS(WARNING, 1)
+          << "Specified master server address '" << master_server_addr << "' "
+          << "resolved to multiple IPs. Using " << addrs[0].ToString();
     }
     master_sockaddrs.push_back(addrs[0]);
   }
