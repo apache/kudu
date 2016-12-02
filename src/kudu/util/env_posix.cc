@@ -940,6 +940,22 @@ class PosixEnv : public Env {
     return s;
   }
 
+  virtual Status GetFileModifiedTime(const string& fname, int64_t* timestamp) override {
+    TRACE_EVENT1("io", "PosixEnv::GetFileModifiedTime", "fname", fname);
+    ThreadRestrictions::AssertIOAllowed();
+
+    struct stat s;
+    if (stat(fname.c_str(), &s) != 0) {
+      return IOError(fname, errno);
+    }
+#ifdef __APPLE__
+    *timestamp = s.st_mtimespec.tv_sec * 1e6 + s.st_mtimespec.tv_nsec / 1e3;
+#else
+    *timestamp = s.st_mtim.tv_sec * 1e6 + s.st_mtim.tv_nsec / 1e3;
+#endif
+    return Status::OK();
+  }
+
   // Local convenience function for safely running statvfs().
   static Status StatVfs(const string& path, struct statvfs* buf) {
     ThreadRestrictions::AssertIOAllowed();

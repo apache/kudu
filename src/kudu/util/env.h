@@ -171,6 +171,15 @@ class Env {
   // as reported by GetFileSizeOnDisk(), storing the grand total in 'bytes_used'.
   virtual Status GetFileSizeOnDiskRecursively(const std::string& root, uint64_t* bytes_used) = 0;
 
+  // Returns the modified time of the file in microseconds.
+  //
+  // The timestamp is a 'system' timestamp, and is not guaranteed to be
+  // monotonic, or have any other consistency properties. The granularity of the
+  // timestamp is not guaranteed, and may be as high as 1 second on some
+  // platforms. The timestamp is not guaranteed to be anchored to any particular
+  // epoch.
+  virtual Status GetFileModifiedTime(const std::string& fname, int64_t* timestamp) = 0;
+
   // Store the block size of the filesystem where fname resides in
   // *block_size. fname must exist but it may be a file or a directory.
   virtual Status GetBlockSize(const std::string& fname, uint64_t* block_size) = 0;

@@ -186,14 +186,9 @@ Status ExternalMiniClusterFsInspector::ReadTabletSuperBlockOnTS(int index,
 
 int64_t ExternalMiniClusterFsInspector::GetTabletSuperBlockMTimeOrDie(int ts_index,
                                                                       const string& tablet_id) {
-  const auto& sb_path = GetTabletSuperBlockPathOnTS(ts_index, tablet_id);
-  struct stat s;
-  CHECK_ERR(stat(sb_path.c_str(), &s)) << "failed to stat: " << sb_path;
-#ifdef __APPLE__
-  return s.st_mtimespec.tv_sec * 1e6 + s.st_mtimespec.tv_nsec / 1000;
-#else
-  return s.st_mtim.tv_sec * 1e6 + s.st_mtim.tv_nsec / 1000;
-#endif
+  int64_t timestamp;
+  CHECK_OK(env_->GetFileModifiedTime(GetTabletSuperBlockPathOnTS(ts_index, tablet_id), &timestamp));
+  return timestamp;
 }
 
 string ExternalMiniClusterFsInspector::GetConsensusMetadataPathOnTS(int index,

@@ -681,6 +681,24 @@ TEST_F(TestEnv, TestGetBlockSize) {
   ASSERT_GT(block_size, 0);
 }
 
+TEST_F(TestEnv, TestGetFileModifiedTime) {
+  string path = GetTestPath("mtime");
+  unique_ptr<WritableFile> writer;
+  ASSERT_OK(env_->NewWritableFile(path, &writer));
+
+  int64_t initial_time;
+  ASSERT_OK(env_->GetFileModifiedTime(writer->filename(), &initial_time));
+
+  // HFS has 1 second mtime granularity.
+  AssertEventually([&] {
+    int64_t after_time;
+    writer->Append(" ");
+    writer->Sync();
+    ASSERT_OK(env_->GetFileModifiedTime(writer->filename(), &after_time));
+    ASSERT_LT(initial_time, after_time);
+  }, MonoDelta::FromSeconds(5));
+}
+
 TEST_F(TestEnv, TestRWFile) {
   // Create the file.
   unique_ptr<RWFile> file;
