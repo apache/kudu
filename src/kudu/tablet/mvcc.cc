@@ -36,10 +36,9 @@ namespace kudu { namespace tablet {
 
 using strings::Substitute;
 
-MvccManager::MvccManager(const scoped_refptr<server::Clock>& clock)
+MvccManager::MvccManager()
   : safe_time_(Timestamp::kMin),
-    earliest_in_flight_(Timestamp::kMax),
-    clock_(clock) {
+    earliest_in_flight_(Timestamp::kMax) {
   cur_snap_.all_committed_before_ = Timestamp::kInitialTimestamp;
   cur_snap_.none_committed_at_or_after_ = Timestamp::kInitialTimestamp;
 }
@@ -52,7 +51,8 @@ void MvccManager::StartTransaction(Timestamp timestamp) {
   CHECK(InitTransactionUnlocked(timestamp)) << "There is already a transaction with timestamp: "
                                             << timestamp.value() << " in flight or this timestamp "
                                             << "is before than or equal to \"safe\" time."
-                                            << "Current Snapshot: " << cur_snap_.ToString();
+                                            << "Current Snapshot: " << cur_snap_.ToString()
+                                            << " Current safe time: " << safe_time_;
 }
 
 void MvccManager::StartApplyingTransaction(Timestamp timestamp) {
@@ -130,10 +130,6 @@ MvccManager::TxnState MvccManager::RemoveInFlightAndGetStateUnlocked(Timestamp t
 
 void MvccManager::CommitTransactionUnlocked(Timestamp timestamp,
                                             bool* was_earliest_in_flight) {
-  DCHECK(clock_->IsAfter(timestamp))
-    << "Trying to commit a transaction with a future timestamp: "
-    << timestamp.ToString() << ". Current time: " << clock_->Stringify(clock_->Now());
-
   *was_earliest_in_flight = earliest_in_flight_ == timestamp;
 
   // Remove from our in-flight list.

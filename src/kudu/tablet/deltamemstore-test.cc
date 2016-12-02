@@ -49,8 +49,7 @@ class TestDeltaMemStore : public KuduTest {
   TestDeltaMemStore()
     : op_id_(consensus::MaximumOpId()),
       schema_(CreateSchema()),
-      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
-      mvcc_(clock_) {
+      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
     CHECK_OK(DeltaMemStore::Create(0, 0,
                                    new log::LogAnchorRegistry(),
                                    MemTracker::GetRootTracker(), &dms_));

@@ -49,8 +49,7 @@ class TestMemRowSet : public ::testing::Test {
       log_anchor_registry_(new LogAnchorRegistry()),
       schema_(CreateSchema()),
       key_schema_(schema_.CreateKeyProjection()),
-      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
-      mvcc_(clock_) {
+      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 

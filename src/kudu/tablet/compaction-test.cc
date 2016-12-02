@@ -72,7 +72,6 @@ class TestCompaction : public KuduRowSetTest {
       row_builder_(schema_),
       arena_(32*1024, 128*1024),
       clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
-      mvcc_(clock_),
       log_anchor_registry_(new log::LogAnchorRegistry()) {
   }
 

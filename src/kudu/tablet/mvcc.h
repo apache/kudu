@@ -178,7 +178,7 @@ class MvccSnapshot {
 // this class like "clean" and "safe" time.
 class MvccManager {
  public:
-  explicit MvccManager(const scoped_refptr<server::Clock>& clock);
+  MvccManager();
 
   // Begins a new transaction, which is assigned the provided timestamp.
   //
@@ -282,6 +282,8 @@ class MvccManager {
 
   bool InitTransactionUnlocked(const Timestamp& timestamp);
 
+  // TODO(dralves) ponder merging these since the new ALL_COMMITTED path no longer
+  // waits for the clean timestamp.
   enum WaitFor {
     ALL_COMMITTED,
     NONE_APPLYING
@@ -355,7 +357,6 @@ class MvccManager {
   // over timestamps_in_flight_ on every commit.
   Timestamp earliest_in_flight_;
 
-  scoped_refptr<server::Clock> clock_;
   mutable std::vector<WaitingState*> waiters_;
 
   DISALLOW_COPY_AND_ASSIGN(MvccManager);

@@ -165,7 +165,6 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     mem_trackers_(tablet_id(), parent_mem_tracker),
     next_mrs_id_(0),
     clock_(clock),
-    mvcc_(clock),
     rowsets_flush_sem_(1),
     state_(kInitialized) {
       CHECK(schema()->has_column_ids());

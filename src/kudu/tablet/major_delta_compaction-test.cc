@@ -48,9 +48,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
                               ColumnSchema("val1", INT32),
                               ColumnSchema("val2", STRING),
                               ColumnSchema("val3", INT32),
-                              ColumnSchema("val4", STRING) }, 1)),
-      mvcc_(scoped_refptr<server::Clock>(
-          server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
+                              ColumnSchema("val4", STRING) }, 1)) {
   }
 
   struct ExpectedRow {

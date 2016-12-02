@@ -62,7 +62,7 @@ class MvccTest : public KuduTest {
 };
 
 TEST_F(MvccTest, TestMvccBasic) {
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
   MvccSnapshot snap;
 
   // Initial state should not have any committed transactions.
@@ -99,7 +99,7 @@ TEST_F(MvccTest, TestMvccBasic) {
 }
 
 TEST_F(MvccTest, TestMvccMultipleInFlight) {
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
   MvccSnapshot snap;
 
   Timestamp t1 = clock_->Now();
@@ -173,7 +173,7 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
 TEST_F(MvccTest, TestOutOfOrderTxns) {
   scoped_refptr<Clock> hybrid_clock(new HybridClock());
   ASSERT_OK(hybrid_clock->Init());
-  MvccManager mgr(hybrid_clock);
+  MvccManager mgr;
 
   // Start a normal non-commit-wait txn.
   Timestamp normal_txn = hybrid_clock->Now();
@@ -215,7 +215,7 @@ TEST_F(MvccTest, TestOutOfOrderTxns) {
 // Tests starting transaction at a point-in-time in the past and committing them while
 // adjusting safe time.
 TEST_F(MvccTest, TestSafeTimeWithOutOfOrderTxns) {
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
 
   // Set the clock to some time in the "future".
   ASSERT_OK(clock_->Update(Timestamp(100)));
@@ -251,7 +251,7 @@ TEST_F(MvccTest, TestSafeTimeWithOutOfOrderTxns) {
 }
 
 TEST_F(MvccTest, TestScopedTransaction) {
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
   MvccSnapshot snap;
 
   {
@@ -369,7 +369,7 @@ TEST_F(MvccTest, TestMayHaveUncommittedTransactionsBefore) {
 }
 
 TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
 
   // start several transactions and take snapshots along the way
   Timestamp tx1 = clock_->Now();
@@ -409,7 +409,7 @@ TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
 }
 
 TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapWithNoInflights) {
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
   Timestamp to_wait_for = clock_->Now();
   mgr.AdjustSafeTime(clock_->Now());
   thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, to_wait_for);
@@ -420,8 +420,7 @@ TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapWithNoInflights) {
 }
 
 TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapBeforeSafeTimeWithInFlights) {
-
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
 
   Timestamp tx1 = clock_->Now();
   mgr.StartTransaction(tx1);
@@ -448,7 +447,7 @@ TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapBeforeSafeTimeWithInFlights) {
 }
 
 TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapAfterSafeTimeWithInFlights) {
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
   Timestamp tx1 = clock_->Now();
   mgr.StartTransaction(tx1);
   Timestamp tx2 = clock_->Now();
@@ -478,8 +477,7 @@ TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapAfterSafeTimeWithInFlights) {
 }
 
 TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapAtTimestampWithInFlights) {
-
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
 
   // Transactions with timestamp 1 through 3
   Timestamp tx1 = clock_->Now();
@@ -516,11 +514,42 @@ TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapAtTimestampWithInFlights) {
   ASSERT_TRUE(HasResultSnapshot());
 }
 
+TEST_F(MvccTest, TestWaitForApplyingTransactionsToCommit) {
+  MvccManager mgr;
+
+  Timestamp tx1 = clock_->Now();
+  mgr.StartTransaction(tx1);
+  Timestamp tx2 = clock_->Now();
+  mgr.StartTransaction(tx2);
+  mgr.AdjustSafeTime(tx2);
+
+  // Wait should return immediately, since we have no transactions "applying"
+  // yet.
+  mgr.WaitForApplyingTransactionsToCommit();
+
+  mgr.StartApplyingTransaction(tx1);
+
+  thread waiting_thread = thread(&MvccManager::WaitForApplyingTransactionsToCommit, &mgr);
+  while (mgr.GetNumWaitersForTests() == 0) {
+    SleepFor(MonoDelta::FromMilliseconds(5));
+  }
+  ASSERT_EQ(mgr.GetNumWaitersForTests(), 1);
+
+  // Aborting the other transaction shouldn't affect our waiter.
+  mgr.AbortTransaction(tx2);
+  ASSERT_EQ(mgr.GetNumWaitersForTests(), 1);
+
+  // Committing our transaction should wake the waiter.
+  mgr.CommitTransaction(tx1);
+  ASSERT_EQ(mgr.GetNumWaitersForTests(), 0);
+  waiting_thread.join();
+}
+
 // Test that if we abort a transaction we don't advance the safe time and don't
 // add the transaction to the committed set.
 TEST_F(MvccTest, TestTxnAbort) {
 
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
 
   // Transactions with timestamps 1 through 3
   Timestamp tx1 = clock_->Now();
@@ -555,7 +584,7 @@ TEST_F(MvccTest, TestTxnAbort) {
 // coalesce to the latest timestamp.
 TEST_F(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnCommit) {
 
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
   clock_->Update(Timestamp(20));
 
   mgr.StartTransaction(Timestamp(10));
@@ -578,7 +607,7 @@ TEST_F(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnCommit) {
 //
 // Any other transition should fire a CHECK failure.
 TEST_F(MvccTest, TestIllegalStateTransitionsCrash) {
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
   MvccSnapshot snap;
 
   EXPECT_DEATH({
@@ -637,7 +666,7 @@ TEST_F(MvccTest, TestIllegalStateTransitionsCrash) {
 }
 
 TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
-  MvccManager mgr(clock_.get());
+  MvccManager mgr;
 
   // Transactions with timestamp 1
   Timestamp tx1 = clock_->Now();
