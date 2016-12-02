@@ -95,14 +95,17 @@ class ReplicaDumper {
     ScanRequestPB req;
     ScanResponsePB resp;
 
+    // Scan and dump the tablet.
+    // Note that we do a READ_LATEST scan as we might be scanning a tablet who lost majority
+    // and thus cannot do snapshot scans.
+    // TODO(dalves) When KUDU-1704 is in change this to perform stale snapshot reads, which
+    // can be ordered.
     NewScanRequestPB* new_req = req.mutable_new_scan_request();
     RETURN_NOT_OK(SchemaToColumnPBs(
         schema, new_req->mutable_projected_columns(),
         SCHEMA_PB_WITHOUT_IDS | SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES));
     new_req->set_tablet_id(tablet_id);
     new_req->set_cache_blocks(false);
-    new_req->set_order_mode(ORDERED);
-    new_req->set_read_mode(READ_AT_SNAPSHOT);
 
     do {
       RpcController rpc;

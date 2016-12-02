@@ -28,6 +28,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/stl_util.h"
@@ -78,6 +79,12 @@ TAG_FLAG(scanner_batch_size_rows, runtime);
 DEFINE_bool(scanner_allow_snapshot_scans_with_logical_timestamps, false,
             "If set, the server will support snapshot scans with logical timestamps.");
 TAG_FLAG(scanner_allow_snapshot_scans_with_logical_timestamps, unsafe);
+
+DEFINE_int32(scanner_max_wait_ms, 1000,
+             "The maximum amount of time (in milliseconds) we'll hang a scanner thread waiting for "
+             "safe time to advance or transactions to commit, even if its deadline allows waiting "
+             "longer.");
+TAG_FLAG(scanner_max_wait_ms, advanced);
 
 // Fault injection flags.
 DEFINE_int32(scanner_inject_latency_on_each_batch_ms, 0,
@@ -1374,6 +1381,26 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   return Status::OK();
 }
 
+namespace {
+// Checks if 'timestamp' is before the 'tablet's AHM if this is a READ_AT_SNAPSHOT scan.
+// Returns Status::OK() if it's not or Status::InvalidArgument() if it is.
+Status VerifyNotAncientHistory(Tablet* tablet, ReadMode read_mode, Timestamp timestamp) {
+  tablet::HistoryGcOpts history_gc_opts = tablet->GetHistoryGcOpts();
+  if (read_mode == READ_AT_SNAPSHOT && history_gc_opts.IsAncientHistory(timestamp)) {
+    return Status::InvalidArgument(
+        Substitute("Snapshot timestamp is earlier than the ancient history mark. Consider "
+                       "increasing the value of the configuration parameter "
+                       "--tablet_history_max_age_sec. Snapshot timestamp: $0 "
+                       "Ancient History Mark: $1 Physical time difference: $2",
+                   tablet->clock()->Stringify(timestamp),
+                   tablet->clock()->Stringify(history_gc_opts.ancient_history_mark()),
+                   tablet->clock()->GetPhysicalComponentDifference(
+                       timestamp, history_gc_opts.ancient_history_mark()).ToString()));
+  }
+  return Status::OK();
+}
+} // anonymous namespace
+
 // Start a new scan.
 Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
                                                const ScanRequestPB* req,
@@ -1483,13 +1510,21 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
         break;
       }
       case READ_AT_SNAPSHOT: {
-        s = HandleScanAtSnapshot(scan_pb, rpc_context, projection, tablet, &iter, snap_timestamp);
+        s = HandleScanAtSnapshot(scan_pb, rpc_context, projection, tablet_peer,
+                                 &iter, snap_timestamp);
+        // If we got a Status::ServiceUnavailable() from HandleScanAtSnapshot() it might
+        // mean we're just behind so let the client try again.
+        if (s.IsServiceUnavailable()) {
+          *error_code = TabletServerErrorPB::THROTTLED;
+          return s;
+        }
+
         if (!s.ok()) {
           tmp_error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
         }
         break;
       }
-      TRACE("Iterator created");
+        TRACE("Iterator created");
     }
   }
 
@@ -1535,23 +1570,15 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   // end up with a valid snapshot in that case. It would be more correct to
   // initialize the row iterator and then select the latest timestamp
   // represented by those open files in that case.
-  tablet::HistoryGcOpts history_gc_opts = tablet->GetHistoryGcOpts();
-  if (scan_pb.read_mode() == READ_AT_SNAPSHOT &&
-      history_gc_opts.IsAncientHistory(*snap_timestamp)) {
-    // Now that we have initialized our row iterator at a snapshot, return an
-    // error if the snapshot timestamp was prior to the ancient history mark.
-    // We have to check after we open the iterator in order to avoid a TOCTOU
-    // error.
+  //
+  // Now that we have initialized our row iterator at a snapshot, return an
+  // error if the snapshot timestamp was prior to the ancient history mark.
+  // We have to check after we open the iterator in order to avoid a TOCTOU
+  // error.
+  s = VerifyNotAncientHistory(tablet.get(), scan_pb.read_mode(), *snap_timestamp);
+  if (!s.ok()) {
     *error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
-    return Status::InvalidArgument(
-        Substitute("Snapshot timestamp is earlier than the ancient history mark. Consider "
-                   "increasing the value of the configuration parameter "
-                   "--tablet_history_max_age_sec. Snapshot timestamp: $0 "
-                   "Ancient History Mark: $1 Physical time difference: $2",
-                   server_->clock()->Stringify(*snap_timestamp),
-                   server_->clock()->Stringify(history_gc_opts.ancient_history_mark()),
-                   server_->clock()->GetPhysicalComponentDifference(
-                       *snap_timestamp, history_gc_opts.ancient_history_mark()).ToString()));
+    return s;
   }
 
   *has_more_results = iter->HasNext();
@@ -1726,16 +1753,25 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   return Status::OK();
 }
 
+namespace {
+// Helper to clamp a client deadline for a scan to the max supported by the server.
+MonoTime ClampScanDeadlineForWait(const MonoTime& deadline, bool* was_clamped) {
+  MonoTime now = MonoTime::Now();
+  if (deadline.GetDeltaSince(now).ToMilliseconds() > FLAGS_scanner_max_wait_ms) {
+    *was_clamped = true;
+    return now + MonoDelta::FromMilliseconds(FLAGS_scanner_max_wait_ms);
+  }
+  *was_clamped = false;
+  return deadline;
+}
+} // anonymous namespace
+
 Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                                                const RpcContext* rpc_context,
                                                const Schema& projection,
-                                               const shared_ptr<Tablet>& tablet,
+                                               TabletPeer* tablet_peer,
                                                gscoped_ptr<RowwiseIterator>* iter,
                                                Timestamp* snap_timestamp) {
-
-  // TODO check against the earliest boundary (i.e. how early can we go) right
-  // now we're keeping all undos/redos forever!
-
   // If the client sent a timestamp update our clock with it.
   if (scan_pb.has_propagated_timestamp()) {
     Timestamp propagated_timestamp(scan_pb.propagated_timestamp());
@@ -1776,32 +1812,51 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
     }
   }
 
+  // Before we wait on anything check that the timestamp is after the AHM.
+  // This is not the final check. We'll check this again after the iterators are open but
+  // there is no point in waiting if we can't actually scan afterwards.
+  RETURN_NOT_OK(VerifyNotAncientHistory(tablet_peer->tablet(),
+                                        ReadMode::READ_AT_SNAPSHOT,
+                                        tmp_snap_timestamp));
+
   tablet::MvccSnapshot snap;
+  Tablet* tablet = tablet_peer->tablet();
+  scoped_refptr<consensus::TimeManager> time_manager = tablet_peer->time_manager();
+  tablet::MvccManager* mvcc_manager = tablet->mvcc_manager();
 
-  // Wait for the in-flights in the snapshot to be finished.
-  // We'll use the client-provided deadline, but not if it's more than 5 seconds from
-  // now -- it's better to make the client retry than hold RPC threads busy.
-  //
-  // TODO(KUDU-1127): even this may not be sufficient -- perhaps we should check how long it
-  // has been since the MVCC manager was able to advance its safe time. If it has been
-  // a long time, it's likely that the majority of voters for this tablet are down
-  // and some writes are "stuck" and therefore won't be committed.
-  // Subtract a little bit from the client deadline so that it's more likely we actually
-  // have time to send our response sent back before it times out.
-  MonoTime client_deadline =
-      rpc_context->GetClientDeadline() - MonoDelta::FromMilliseconds(10);
+  // Reduce the client's deadline by a few msecs to allow for overhead.
+  MonoTime client_deadline = rpc_context->GetClientDeadline() - MonoDelta::FromMilliseconds(10);
 
-  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
-  if (client_deadline < deadline) {
-    deadline = client_deadline;
+  // Its not good for the tablet server or for the client if we hang here forever. The tablet
+  // server will have one less available thread and the client might be stuck spending all
+  // of the allotted time for the scan on a partitioned server that will never have a consistent
+  // snapshot at 'snap_timestamp'.
+  // Because of this we clamp the client's deadline to the max. configured. If the client
+  // sets a long timeout then it can use it by trying in other servers.
+  bool was_clamped = false;
+  MonoTime final_deadline = ClampScanDeadlineForWait(client_deadline, &was_clamped);
+
+  // Wait for the tablet to know that 'snap_timestamp' is safe. I.e. that all operations
+  // that came before it are, at least, started. This, together with waiting for the mvcc
+  // snapshot to be clean below, allows us to always return the same data when scanning at
+  // the same timestamp (repeatable reads).
+  TRACE("Waiting safe time to advance");
+  MonoTime before = MonoTime::Now();
+  Status s = time_manager->WaitUntilSafe(tmp_snap_timestamp, final_deadline);
+
+  if (s.ok()) {
+    // Wait for the in-flights in the snapshot to be finished.
+    TRACE("Waiting for operations to commit");
+    s = mvcc_manager->WaitForSnapshotWithAllCommitted(tmp_snap_timestamp, &snap, client_deadline);
   }
 
-  TRACE("Waiting for operations in snapshot to commit");
-  MonoTime before = MonoTime::Now();
-  RETURN_NOT_OK_PREPEND(
-      tablet->mvcc_manager()->WaitForCleanSnapshotAtTimestamp(
-          tmp_snap_timestamp, &snap, deadline),
-      "could not wait for desired snapshot timestamp to be consistent");
+  // If we got an TimeOut but we had clamped the deadline, return a ServiceUnavailable instead
+  // so that the client retries.
+  if (s.IsTimedOut() && was_clamped) {
+    return Status::ServiceUnavailable(s.CloneAndPrepend(
+        "could not wait for desired snapshot timestamp to be consistent").ToString());
+  }
+  RETURN_NOT_OK(s);
 
   uint64_t duration_usec = (MonoTime::Now() - before).ToMicroseconds();
   tablet->metrics()->snapshot_read_inflight_wait_duration->Increment(duration_usec);

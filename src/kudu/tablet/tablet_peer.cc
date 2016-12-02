@@ -92,6 +92,7 @@ using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
 using consensus::RaftConsensus;
+using consensus::TimeManager;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::WRITE_OP;
 using log::Log;
@@ -162,11 +163,14 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     RETURN_NOT_OK(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id_,
                                           meta_->fs_manager()->uuid(), &cmeta));
 
+    scoped_refptr<TimeManager> time_manager(new TimeManager(
+        clock, tablet_->mvcc_manager()->GetCleanTimestamp()));
+
     consensus_ = RaftConsensus::Create(options,
                                        std::move(cmeta),
                                        local_peer_pb_,
                                        metric_entity,
-                                       clock_,
+                                       time_manager,
                                        this,
                                        messenger_,
                                        log_.get(),
@@ -532,9 +536,6 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
   // TODO(todd) Look at wiring the stuff below on the driver
   TransactionState* state = transaction->state();
   state->set_consensus_round(round);
-  Timestamp ts(replicate_msg->timestamp());
-  state->set_timestamp(ts);
-  clock_->Update(ts);
 
   scoped_refptr<TransactionDriver> driver;
   RETURN_NOT_OK(NewReplicaTransactionDriver(std::move(transaction), &driver));
@@ -555,8 +556,7 @@ Status TabletPeer::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transacti
     log_.get(),
     prepare_pool_.get(),
     apply_pool_,
-    &txn_order_verifier_,
-    clock_);
+    &txn_order_verifier_);
   RETURN_NOT_OK(tx_driver->Init(std::move(transaction), consensus::LEADER));
   driver->swap(tx_driver);
 
@@ -571,8 +571,7 @@ Status TabletPeer::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transact
     log_.get(),
     prepare_pool_.get(),
     apply_pool_,
-    &txn_order_verifier_,
-    clock_);
+    &txn_order_verifier_);
   RETURN_NOT_OK(tx_driver->Init(std::move(transaction), consensus::REPLICA));
   driver->swap(tx_driver);
 

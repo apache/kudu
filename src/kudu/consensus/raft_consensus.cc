@@ -163,7 +163,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
     unique_ptr<ConsensusMetadata> cmeta,
     const RaftPeerPB& local_peer_pb,
     const scoped_refptr<MetricEntity>& metric_entity,
-    const scoped_refptr<server::Clock>& clock,
+    scoped_refptr<TimeManager> time_manager,
     ReplicaTransactionFactory* txn_factory,
     const shared_ptr<rpc::Messenger>& messenger,
     const scoped_refptr<log::Log>& log,
@@ -175,6 +175,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
   // where.
   gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity,
                                                            log,
+                                                           time_manager,
                                                            local_peer_pb,
                                                            options.tablet_id));
 
@@ -206,7 +207,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
                               std::move(thread_pool),
                               metric_entity,
                               peer_uuid,
-                              clock,
+                              std::move(time_manager),
                               txn_factory,
                               log,
                               parent_mem_tracker,
@@ -222,19 +223,19 @@ RaftConsensus::RaftConsensus(
     gscoped_ptr<ThreadPool> thread_pool,
     const scoped_refptr<MetricEntity>& metric_entity,
     const std::string& peer_uuid,
-    const scoped_refptr<server::Clock>& clock,
+    scoped_refptr<TimeManager> time_manager,
     ReplicaTransactionFactory* txn_factory,
     const scoped_refptr<log::Log>& log,
     shared_ptr<MemTracker> parent_mem_tracker,
     Callback<void(const std::string& reason)> mark_dirty_clbk)
     : thread_pool_(std::move(thread_pool)),
       log_(log),
-      clock_(clock),
+      time_manager_(std::move(time_manager)),
       peer_proxy_factory_(std::move(peer_proxy_factory)),
       txn_factory_(txn_factory),
       peer_manager_(std::move(peer_manager)),
       queue_(std::move(queue)),
-      pending_(Substitute("T $0 P $1: ", options.tablet_id, peer_uuid)),
+      pending_(Substitute("T $0 P $1: ", options.tablet_id, peer_uuid), time_manager_),
       rng_(GetRandomSeed32()),
       failure_monitor_(GetRandomSeed32(), GetFailureMonitorCheckMeanMs(),
                        GetFailureMonitorCheckStddevMs()),
@@ -529,12 +530,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   auto replicate = new ReplicateMsg;
   replicate->set_op_type(NO_OP);
   replicate->mutable_noop_request(); // Define the no-op request field.
-
-  // TODO: We should have no-ops (?) and config changes be COMMIT_WAIT
-  // transactions. See KUDU-798.
-  // Note: This timestamp has no meaning from a serialization perspective
-  // because this method is not executed on the TabletPeer's prepare thread.
-  replicate->set_timestamp(clock_->Now().ToUint64());
+  CHECK_OK(time_manager_->AssignTimestamp(replicate));
 
   scoped_refptr<ConsensusRound> round(
       new ConsensusRound(this, make_scoped_refptr(new RefCountedReplicate(replicate))));
@@ -1174,8 +1170,6 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     auto iter = deduped_req.messages.begin();
 
     if (PREDICT_TRUE(!deduped_req.messages.empty())) {
-      // TODO(KUDU-798) Temporary until the leader explicitly propagates the safe timestamp.
-      clock_->Update(Timestamp(deduped_req.messages.back()->get()->timestamp()));
 
       // This request contains at least one message, and is likely to increase
       // our memory pressure.
@@ -1201,6 +1195,9 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       if (PREDICT_FALSE(!prepare_status.ok())) {
         break;
       }
+      // TODO(dralves) Without leader leases this shouldn't be a allowed to fail.
+      // Once we have that functionality we'll have to revisit this.
+      CHECK_OK(time_manager_->MessageReceivedFromLeader(*(*iter)->get()));
       ++iter;
     }
 
@@ -1235,6 +1232,14 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
         FillConsensusResponseOKUnlocked(response);
         return Status::OK();
       }
+    }
+
+    // All transactions that are going to be prepared were started, advance the safe timestamp.
+    // TODO(dralves) This is only correct because the queue only sets safe time when the request is
+    // an empty heartbeat. If we actually start setting this on a consensus request along with
+    // actual messages we need to be careful to ignore it if any of the messages fails to prepare.
+    if (request->has_safe_timestamp()) {
+      time_manager_->AdvanceSafeTime(Timestamp(request->safe_timestamp()));
     }
 
     OpId last_from_leader;
@@ -1307,6 +1312,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       }
     } while (s.IsTimedOut());
     RETURN_NOT_OK(s);
+
     TRACE("finished");
   }
 
@@ -1772,12 +1778,7 @@ Status RaftConsensus::ReplicateConfigChangeUnlocked(const RaftConfigPB& old_conf
   cc_req->set_tablet_id(tablet_id());
   *cc_req->mutable_old_config() = old_config;
   *cc_req->mutable_new_config() = new_config;
-
-  // TODO: We should have no-ops (?) and config changes be COMMIT_WAIT
-  // transactions. See KUDU-798.
-  // Note: This timestamp has no meaning from a serialization perspective
-  // because this method is not executed on the TabletPeer's prepare thread.
-  cc_replicate->set_timestamp(clock_->Now().ToUint64());
+  CHECK_OK(time_manager_->AssignTimestamp(cc_replicate));
 
   scoped_refptr<ConsensusRound> round(
       new ConsensusRound(this, make_scoped_refptr(new RefCountedReplicate(cc_replicate))));
@@ -1909,6 +1910,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     }
   }
 
+  // The vote was granted, become leader.
   ReplicaState::UniqueLock lock;
   Status s = state_->LockForConfigChange(&lock);
   if (PREDICT_FALSE(!s.ok())) {

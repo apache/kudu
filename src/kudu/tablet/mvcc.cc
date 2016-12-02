@@ -34,6 +34,8 @@
 
 namespace kudu { namespace tablet {
 
+using strings::Substitute;
+
 MvccManager::MvccManager(const scoped_refptr<server::Clock>& clock)
   : safe_time_(Timestamp::kMin),
     earliest_in_flight_(Timestamp::kMax),
@@ -72,7 +74,7 @@ void MvccManager::StartApplyingTransaction(Timestamp timestamp) {
 
 bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
   // Ensure that we didn't mark the given timestamp as "safe".
-  if (PREDICT_FALSE(safe_time_ >= timestamp)) {
+  if (PREDICT_FALSE(timestamp <= safe_time_)) {
     return false;
   }
 
@@ -164,10 +166,17 @@ void MvccManager::AdjustSafeTime(Timestamp safe_time) {
 
   // No more transactions will start with a ts that is lower than or equal
   // to 'safe_time', so we adjust the snapshot accordingly.
-  if (PREDICT_TRUE(safe_time_ < safe_time)) {
+  if (PREDICT_TRUE(safe_time_ <= safe_time)) {
     safe_time_ = safe_time;
   } else {
-    // If we couldn't adjust "safe" time don't bother adjusting "clean" time.
+    // TODO(dralves) This shouldn't happen, the safe time passed to MvccManager should be
+    // monotically increasing. If if does though, the impact is on scan snapshot correctness,
+    // not on corruption of state and some test-only code sets this back (LocalTabletWriter).
+    // Note that we will still crash if a transaction comes in with a timestamp that is lower
+    // than 'cur_snap_.all_committed_before_'.
+    LOG_EVERY_N(ERROR, 10) << Substitute("Tried to move safe_time back from $0 to $1. "
+                                         "Current Snapshot: $2", safe_time_.ToString(),
+                                         safe_time.ToString(), cur_snap_.ToString());
     return;
   }
 
@@ -226,8 +235,7 @@ void MvccManager::AdjustCleanTime() {
   }
 }
 
-Status MvccManager::WaitUntil(WaitFor wait_for, Timestamp ts,
-                              const MonoTime& deadline) const {
+Status MvccManager::WaitUntil(WaitFor wait_for, Timestamp ts, const MonoTime& deadline) const {
   TRACE_EVENT2("tablet", "MvccManager::WaitUntil",
                "wait_for", wait_for == ALL_COMMITTED ? "all_committed" : "none_applying",
                "ts", ts.ToUint64())
@@ -256,10 +264,9 @@ Status MvccManager::WaitUntil(WaitFor wait_for, Timestamp ts,
   }
 
   waiters_.erase(std::find(waiters_.begin(), waiters_.end(), &waiting_state));
-  return Status::TimedOut(strings::Substitute(
-      "Timed out waiting for all transactions with ts < $0 to $1",
-      clock_->Stringify(ts),
-      wait_for == ALL_COMMITTED ? "commit" : "finish applying"));
+  return Status::TimedOut(Substitute("Timed out waiting for all transactions with ts < $0 to $1",
+                                     ts.ToString(),
+                                     wait_for == ALL_COMMITTED ? "commit" : "finish applying"));
 }
 
 bool MvccManager::IsDoneWaitingUnlocked(const WaitingState& waiter) const {
@@ -273,16 +280,18 @@ bool MvccManager::IsDoneWaitingUnlocked(const WaitingState& waiter) const {
 }
 
 bool MvccManager::AreAllTransactionsCommittedUnlocked(Timestamp ts) const {
-  if (timestamps_in_flight_.empty()) {
-    // If nothing is in-flight, then check the clock. If the timestamp is in the past,
-    // we know that no new uncommitted transactions may start before this ts.
-    return ts <= clock_->Now();
-  }
-  // If some transactions are in flight, then check the in-flight list.
-  return !cur_snap_.MayHaveUncommittedTransactionsAtOrBefore(ts);
+  // If ts is before the 'all_committed_before_' watermark on the current snapshot then
+  // all transactions before it are committed.
+  if (ts < cur_snap_.all_committed_before_) return true;
+
+  // We might not have moved 'cur_snap_.all_committed_before_' (the clean time) but 'ts'
+  // might still come before any possible in-flights.
+  return ts < earliest_in_flight_;
 }
 
 bool MvccManager::AnyApplyingAtOrBeforeUnlocked(Timestamp ts) const {
+  // TODO(todd) this is not actually checking on the applying txns, it's checking on
+  // _all in-flight_. Is this a bug?
   for (const InFlightMap::value_type entry : timestamps_in_flight_) {
     if (entry.first <= ts.value()) {
       return true;
@@ -296,18 +305,14 @@ void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
   *snap = cur_snap_;
 }
 
-Status MvccManager::WaitForCleanSnapshotAtTimestamp(Timestamp timestamp,
-                                                    MvccSnapshot *snap,
+Status MvccManager::WaitForSnapshotWithAllCommitted(Timestamp timestamp,
+                                                    MvccSnapshot* snapshot,
                                                     const MonoTime& deadline) const {
-  TRACE_EVENT0("tablet", "MvccManager::WaitForCleanSnapshotAtTimestamp");
-  RETURN_NOT_OK(clock_->WaitUntilAfterLocally(timestamp, deadline));
-  RETURN_NOT_OK(WaitUntil(ALL_COMMITTED, timestamp, deadline));
-  *snap = MvccSnapshot(timestamp);
-  return Status::OK();
-}
+  TRACE_EVENT0("tablet", "MvccManager::WaitForSnapshotWithAllCommitted");
 
-void MvccManager::WaitForCleanSnapshot(MvccSnapshot* snap) const {
-  CHECK_OK(WaitForCleanSnapshotAtTimestamp(clock_->Now(), snap, MonoTime::Max()));
+  RETURN_NOT_OK(WaitUntil(ALL_COMMITTED, timestamp, deadline));
+  *snapshot = MvccSnapshot(timestamp);
+  return Status::OK();
 }
 
 void MvccManager::WaitForApplyingTransactionsToCommit() const {

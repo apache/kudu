@@ -55,6 +55,8 @@ DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(tablet_history_max_age_sec);
 DECLARE_string(block_manager);
 DECLARE_bool(enable_maintenance_manager);
+DECLARE_double(missed_heartbeats_before_rejecting_snapshot_scans);
+DECLARE_int32(safe_time_max_lag_ms);
 
 DEFINE_int32(test_num_rounds, 200, "Number of rounds to loop "
                                    "RandomizedTabletHistoryGcITest.TestRandomHistoryGCWorkload");
@@ -112,6 +114,11 @@ class RandomizedTabletHistoryGcITest : public TabletHistoryGcITest {
     FLAGS_enable_maintenance_manager = false;
     FLAGS_use_mock_wall_clock = true;
     FLAGS_tablet_history_max_age_sec = 100;
+
+    // Set these really high since we're using the mock clock.
+    // This allows the TimeManager to still work.
+    FLAGS_safe_time_max_lag_ms = 30 * 1000 * 1000;
+    FLAGS_missed_heartbeats_before_rejecting_snapshot_scans = 100.0;
   }
 
  protected:
@@ -661,7 +668,8 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
 
         unique_ptr<client::KuduScanner> scanner(new KuduScanner(table.get()));
         ASSERT_OK(scanner->SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
-        ASSERT_OK(scanner->SetOrderMode(KuduScanner::ORDERED));
+        ASSERT_OK(scanner->SetFaultTolerant());
+        ASSERT_OK(scanner->SetTimeoutMillis(60 * 1000));
         ASSERT_OK(scanner->SetSnapshotRaw(snapshot_ts.ToUint64()));
         ASSERT_OK(scanner->Open());
 

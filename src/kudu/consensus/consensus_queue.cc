@@ -32,6 +32,7 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -64,6 +65,8 @@ DEFINE_int32(consensus_inject_latency_ms_in_notifications, 0,
              "consensus implementation.");
 TAG_FLAG(consensus_inject_latency_ms_in_notifications, hidden);
 TAG_FLAG(consensus_inject_latency_ms_in_notifications, unsafe);
+
+DECLARE_bool(safe_time_advancement_without_writes);
 
 namespace kudu {
 namespace consensus {
@@ -100,12 +103,14 @@ PeerMessageQueue::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_ent
 
 PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                                    const scoped_refptr<log::Log>& log,
+                                   scoped_refptr<TimeManager> time_manager,
                                    const RaftPeerPB& local_peer_pb,
                                    const string& tablet_id)
     : local_peer_pb_(local_peer_pb),
       tablet_id_(tablet_id),
       log_cache_(metric_entity, log, local_peer_pb.permanent_uuid(), tablet_id),
-      metrics_(metric_entity) {
+      metrics_(metric_entity),
+      time_manager_(std::move(time_manager)) {
   DCHECK(local_peer_pb_.has_permanent_uuid());
   DCHECK(local_peer_pb_.has_last_known_addr());
   queue_state_.current_term = 0;
@@ -159,6 +164,7 @@ void PeerMessageQueue::SetLeaderMode(int64_t committed_index,
   for (const PeersMap::value_type& entry : peers_map_) {
     entry.second->last_successful_communication_time = now;
   }
+  time_manager_->SetLeaderMode();
 }
 
 void PeerMessageQueue::SetNonLeaderMode() {
@@ -168,6 +174,7 @@ void PeerMessageQueue::SetNonLeaderMode() {
   queue_state_.majority_size_ = -1;
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Queue going to NON_LEADER mode. State: "
       << queue_state_.ToString();
+  time_manager_->SetNonLeaderMode();
 }
 
 void PeerMessageQueue::TrackPeer(const string& uuid) {
@@ -274,6 +281,14 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
                queue_state_.first_index_in_current_term == boost::none) {
       queue_state_.first_index_in_current_term = id.index();
     }
+  }
+
+  // Update safe time in the TimeManager if we're leader.
+  // This will 'unpin' safe time advancement, which had stopped since we assigned a timestamp to
+  // the message.
+  // Until we have leader leases, replicas only call this when the message is committed.
+  if (queue_state_.mode == LEADER) {
+    time_manager_->AdvanceSafeTimeWithMessage(*msgs.back()->get());
   }
 
   // Unlock ourselves during Append to prevent a deadlock: it's possible that
@@ -431,6 +446,15 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
           << LogPrefixUnlocked() << "Peer " << uuid << " is lagging by at least "
           << (request->committed_index() - last_op_sent)
           << " ops behind the committed index " << THROTTLE_MSG;
+    }
+  // If we're not sending ops to the follower, set the safe time on the request.
+  // TODO(dralves) When we have leader leases, send this all the time.
+  } else {
+    if (PREDICT_TRUE(FLAGS_safe_time_advancement_without_writes)) {
+      request->set_safe_timestamp(time_manager_->GetSafeTime().value());
+    } else {
+      KLOG_EVERY_N_SECS(WARNING, 300) << "Safe time advancement without writes is disabled. "
+            "Snapshot reads on non-leader replicas may stall if there are no writes in progress.";
     }
   }
 

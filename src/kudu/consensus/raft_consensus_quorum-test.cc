@@ -151,8 +151,11 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       RaftPeerPB local_peer_pb;
       CHECK_OK(GetRaftConfigMember(config_, peer_uuid, &local_peer_pb));
+
+      scoped_refptr<TimeManager> time_manager(new TimeManager(clock_, Timestamp::kMin));
       gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity_,
                                                                logs_[i],
+                                                               time_manager,
                                                                local_peer_pb,
                                                                kTestTablet));
 
@@ -177,7 +180,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                             std::move(thread_pool),
                             metric_entity_,
                             config_.peers(i).permanent_uuid(),
-                            clock_,
+                            time_manager,
                             txn_factory,
                             logs_[i],
                             parent_mem_trackers_[i],

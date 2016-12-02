@@ -60,6 +60,7 @@ namespace consensus {
 class ConsensusCommitContinuation;
 class ConsensusRound;
 class ReplicaTransactionFactory;
+class TimeManager;
 
 typedef int64_t ConsensusTerm;
 
@@ -258,6 +259,8 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
   // Returns the id of the tablet whose updates this consensus instance helps coordinate.
   virtual std::string tablet_id() const = 0;
+
+  virtual scoped_refptr<TimeManager> time_manager() const = 0;
 
   // Returns a copy of the committed state of the Consensus system.
   virtual ConsensusStatePB ConsensusState(ConsensusConfigType type) const = 0;

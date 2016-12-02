@@ -55,6 +55,12 @@ public class TestHybridTime extends BaseKuduTest {
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
+    // Before starting the cluster, disable automatic safe time advancement in the
+    // absence of writes. This test does snapshot reads in the present and expects
+    // certain timestamps to be assigned to the scans. If safe time was allowed
+    // to move automatically the scans might not be assigned the expected timestamps.
+    miniClusterBuilder.addTserverFlag("--safe_time_advancement_without_writes=false");
+
     BaseKuduTest.setUpBeforeClass();
 
     // Using multiple tablets doesn't work with the current way this test works since we could

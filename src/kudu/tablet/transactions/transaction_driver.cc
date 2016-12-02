@@ -20,6 +20,7 @@
 #include <mutex>
 
 #include "kudu/consensus/consensus.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/tablet_peer.h"
@@ -76,7 +77,6 @@ class FollowerTransactionCompletionCallback : public TransactionCompletionCallba
   scoped_refptr<ResultTracker> result_tracker_;
 };
 
-
 ////////////////////////////////////////////////////////////
 // TransactionDriver
 ////////////////////////////////////////////////////////////
@@ -86,15 +86,13 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
                                      Log* log,
                                      ThreadPool* prepare_pool,
                                      ThreadPool* apply_pool,
-                                     TransactionOrderVerifier* order_verifier,
-                                     scoped_refptr<server::Clock> clock)
+                                     TransactionOrderVerifier* order_verifier)
     : txn_tracker_(txn_tracker),
       consensus_(consensus),
       log_(log),
       prepare_pool_(prepare_pool),
       apply_pool_(apply_pool),
       order_verifier_(order_verifier),
-      clock_(std::move(clock)),
       trace_(new Trace()),
       start_time_(MonoTime::Now()),
       replication_state_(NOT_REPLICATING),
@@ -285,21 +283,9 @@ Status TransactionDriver::Prepare() {
   switch (repl_state_copy) {
     case NOT_REPLICATING:
     {
-      // Assign the timestamp just before submitting the transaction to consensus, if
-      // it doesn't have one.
-      // This is a placeholder since in the near future the timestamp will be assigned.
-      // within consensus.
-      // TODO(dralves) Remove this when the new TimeManager class gets in (part of KUDU-798)
-      DCHECK(!transaction_->state()->has_timestamp());
-      if (transaction_->state()->external_consistency_mode() == COMMIT_WAIT) {
-        transaction_->state()->set_timestamp(clock_->NowLatest());
-      } else {
-        transaction_->state()->set_timestamp(clock_->Now());
-      }
-
-      transaction_->state()->consensus_round()->replicate_msg()->set_timestamp(
-          transaction_->state()->timestamp().ToUint64());
-
+      // Assign a timestamp to the transaction before we Start() it.
+      RETURN_NOT_OK(consensus_->time_manager()->AssignTimestamp(
+                        mutable_state()->consensus_round()->replicate_msg()));
       RETURN_NOT_OK(transaction_->Start());
       VLOG_WITH_PREFIX(4) << "Triggering consensus replication.";
       // Trigger consensus replication.

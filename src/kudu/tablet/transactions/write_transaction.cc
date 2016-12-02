@@ -20,8 +20,8 @@
 #include <algorithm>
 #include <vector>
 
-#include "kudu/common/wire_protocol.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/walltime.h"
@@ -108,6 +108,9 @@ void WriteTransaction::AbortPrepare() {
 Status WriteTransaction::Start() {
   TRACE_EVENT0("txn", "WriteTransaction::Start");
   TRACE("Start()");
+  DCHECK(!state_->has_timestamp());
+  DCHECK(state_->consensus_round()->replicate_msg()->has_timestamp());
+  state_->set_timestamp(Timestamp(state_->consensus_round()->replicate_msg()->timestamp()));
   state_->tablet_peer()->tablet()->StartTransaction(state_.get());
   TRACE("Timestamp: $0", state_->tablet_peer()->clock()->Stringify(state_->timestamp()));
   return Status::OK();
@@ -224,13 +227,8 @@ WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
   }
 }
 
-void WriteTransactionState::SetMvccTxAndTimestamp(gscoped_ptr<ScopedTransaction> mvcc_tx) {
+void WriteTransactionState::SetMvccTx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(!mvcc_tx_) << "Mvcc transaction already started/set.";
-  if (has_timestamp()) {
-    DCHECK_EQ(timestamp(), mvcc_tx->timestamp());
-  } else {
-    set_timestamp(mvcc_tx->timestamp());
-  }
   mvcc_tx_ = std::move(mvcc_tx);
 }
 

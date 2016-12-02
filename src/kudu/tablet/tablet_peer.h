@@ -26,6 +26,7 @@
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/tablet.h"
@@ -146,6 +147,10 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   Tablet* tablet() const {
     std::lock_guard<simple_spinlock> lock(lock_);
     return tablet_.get();
+  }
+
+  scoped_refptr<consensus::TimeManager> time_manager() const {
+    return consensus_->time_manager();
   }
 
   std::shared_ptr<Tablet> shared_tablet() const {

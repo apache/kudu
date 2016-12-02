@@ -21,6 +21,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus_state.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -351,10 +352,11 @@ string ReplicaState::ToStringUnlocked() const {
 // TODO(todd): move to its own file
 //------------------------------------------------------------
 
-PendingRounds::PendingRounds(string log_prefix)
+PendingRounds::PendingRounds(string log_prefix, scoped_refptr<TimeManager> time_manager)
     : log_prefix_(std::move(log_prefix)),
-      last_committed_op_id_(MinimumOpId()) {
-}
+      last_committed_op_id_(MinimumOpId()),
+      time_manager_(std::move(time_manager)) {}
+
 PendingRounds::~PendingRounds() {
 }
 
@@ -485,6 +487,7 @@ Status PendingRounds::AdvanceCommittedIndex(int64_t committed_index) {
 
     pending_txns_.erase(iter++);
     last_committed_op_id_ = round->id();
+    time_manager_->AdvanceSafeTimeWithMessage(*round->replicate_msg());
     round->NotifyReplicationFinished(Status::OK());
   }
 

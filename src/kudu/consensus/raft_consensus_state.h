@@ -44,6 +44,7 @@ class Messenger;
 }
 
 namespace consensus {
+class TimeManager;
 
 // Class that coordinates access to the persistent Raft state (independently of Role).
 // This has a 1-1 relationship with RaftConsensus and is essentially responsible for
@@ -252,7 +253,7 @@ class ReplicaState {
 // We should consolidate to "round".
 class PendingRounds {
  public:
-  explicit PendingRounds(std::string log_prefix);
+  PendingRounds(std::string log_prefix, scoped_refptr<TimeManager> time_manager);
   ~PendingRounds();
 
   // Set the committed op during startup. This should be done after
@@ -319,6 +320,8 @@ class PendingRounds {
 
   // The OpId of the round that was last committed. Initialized to MinimumOpId().
   OpId last_committed_op_id_;
+
+  scoped_refptr<TimeManager> time_manager_;
 };
 
 }  // namespace consensus

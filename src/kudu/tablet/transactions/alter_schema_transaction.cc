@@ -62,7 +62,6 @@ void AlterSchemaTransactionState::ReleaseSchemaLock() {
   TRACE("Released schema lock");
 }
 
-
 AlterSchemaTransaction::AlterSchemaTransaction(unique_ptr<AlterSchemaTransactionState> state,
                                                DriverType type)
     : Transaction(state.get(), type, Transaction::ALTER_SCHEMA_TXN),
@@ -96,9 +95,9 @@ Status AlterSchemaTransaction::Prepare() {
 }
 
 Status AlterSchemaTransaction::Start() {
-  if (!state_->has_timestamp()) {
-    state_->set_timestamp(state_->tablet_peer()->clock()->Now());
-  }
+  DCHECK(!state_->has_timestamp());
+  DCHECK(state_->consensus_round()->replicate_msg()->has_timestamp());
+  state_->set_timestamp(Timestamp(state_->consensus_round()->replicate_msg()->timestamp()));
   TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
   return Status::OK();
 }

@@ -21,7 +21,6 @@
 #include <limits>
 #include <vector>
 
-
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet_peer.h"

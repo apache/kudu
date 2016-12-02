@@ -93,7 +93,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
   Status HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                               const rpc::RpcContext* rpc_context,
                               const Schema& projection,
-                              const std::shared_ptr<tablet::Tablet>& tablet,
+                              tablet::TabletPeer* tablet_peer,
                               gscoped_ptr<RowwiseIterator>* iter,
                               Timestamp* snap_timestamp);
 

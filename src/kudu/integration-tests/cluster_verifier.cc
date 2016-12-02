@@ -125,7 +125,8 @@ Status ClusterVerifier::DoCheckRowCount(const std::string& table_name,
   client::KuduScanner scanner(table.get());
   CHECK_OK(scanner.SetReadMode(client::KuduScanner::READ_AT_SNAPSHOT));
   CHECK_OK(scanner.SetFaultTolerant());
-  CHECK_OK(scanner.SetTimeoutMillis(5000));
+  // Allow a long scan timeout for verification.
+  CHECK_OK(scanner.SetTimeoutMillis(60 * 1000));
   CHECK_OK(scanner.SetProjectedColumns({}));
   RETURN_NOT_OK_PREPEND(scanner.Open(), "Unable to open scanner");
   int count = 0;

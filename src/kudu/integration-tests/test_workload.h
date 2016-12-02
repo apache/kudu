@@ -38,6 +38,11 @@ class Thread;
 // The actual data inserted is random, and thus can't be verified for
 // integrity. However, this is still useful in conjunction with ClusterVerifier
 // to verify that replicas do not diverge.
+//
+// The read workload essentially tests read-your-writes. It constantly
+// issues snapshot scans in the present and asserts that we see at least as
+// many rows as we have written, independently of which replica we choose
+// to scan.
 class TestWorkload {
  public:
   static const char* const kDefaultTableName;
@@ -51,6 +56,10 @@ class TestWorkload {
 
   void set_num_write_threads(int n) {
     num_write_threads_ = n;
+  }
+
+  void set_num_read_threads(int n) {
+    num_read_threads_ = n;
   }
 
   void set_write_batch_size(int s) {
@@ -170,7 +179,9 @@ class TestWorkload {
   }
 
  private:
+  void OpenTable(client::sp::shared_ptr<client::KuduTable>* table);
   void WriteThread();
+  void ReadThread();
 
   MiniClusterBase* cluster_;
   client::KuduClientBuilder client_builder_;
@@ -179,6 +190,7 @@ class TestWorkload {
 
   int payload_bytes_;
   int num_write_threads_;
+  int num_read_threads_;
   int write_batch_size_;
   int write_timeout_millis_;
   bool timeout_allowed_;

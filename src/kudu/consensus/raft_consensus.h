@@ -30,6 +30,7 @@
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/raft_consensus_state.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/failure_detector.h"
 
@@ -56,6 +57,7 @@ class ConsensusMetadata;
 class Peer;
 class PeerProxyFactory;
 class PeerManager;
+class TimeManager;
 struct ElectionResult;
 
 class RaftConsensus : public Consensus,
@@ -66,7 +68,7 @@ class RaftConsensus : public Consensus,
     std::unique_ptr<ConsensusMetadata> cmeta,
     const RaftPeerPB& local_peer_pb,
     const scoped_refptr<MetricEntity>& metric_entity,
-    const scoped_refptr<server::Clock>& clock,
+    scoped_refptr<TimeManager> time_manager,
     ReplicaTransactionFactory* txn_factory,
     const std::shared_ptr<rpc::Messenger>& messenger,
     const scoped_refptr<log::Log>& log,
@@ -81,7 +83,7 @@ class RaftConsensus : public Consensus,
                 gscoped_ptr<ThreadPool> thread_pool,
                 const scoped_refptr<MetricEntity>& metric_entity,
                 const std::string& peer_uuid,
-                const scoped_refptr<server::Clock>& clock,
+                scoped_refptr<TimeManager> time_manager,
                 ReplicaTransactionFactory* txn_factory,
                 const scoped_refptr<log::Log>& log,
                 std::shared_ptr<MemTracker> parent_mem_tracker,
@@ -130,6 +132,8 @@ class RaftConsensus : public Consensus,
   std::string peer_uuid() const override;
 
   std::string tablet_id() const override;
+
+  scoped_refptr<TimeManager> time_manager() const override { return time_manager_; }
 
   ConsensusStatePB ConsensusState(ConsensusConfigType type) const override;
 
@@ -441,7 +445,7 @@ class RaftConsensus : public Consensus,
   gscoped_ptr<ThreadPool> thread_pool_;
 
   scoped_refptr<log::Log> log_;
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<TimeManager> time_manager_;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;
 
   // When we receive a message from a remote peer telling us to start a transaction, we use

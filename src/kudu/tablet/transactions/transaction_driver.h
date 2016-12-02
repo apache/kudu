@@ -224,8 +224,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
                     log::Log* log,
                     ThreadPool* prepare_pool,
                     ThreadPool* apply_pool,
-                    TransactionOrderVerifier* order_verifier,
-                    scoped_refptr<server::Clock> clock);
+                    TransactionOrderVerifier* order_verifier);
 
   // Perform any non-constructor initialization. Sets the transaction
   // that will be executed.
@@ -354,11 +353,6 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
   // Lock that synchronizes access to the transaction's state.
   mutable simple_spinlock lock_;
-
-  // Temporarily have the clock on the driver so that we can assign timestamps to
-  // transactions.
-  // TODO(dralves) Remove this when the new TimeManager class gets in (part of KUDU-798).
-  scoped_refptr<server::Clock> clock_;
 
   // A copy of the transaction's OpId, set when the transaction first
   // receives one from Consensus and uninitialized until then.

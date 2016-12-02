@@ -65,8 +65,11 @@ class ConsensusPeersTest : public KuduTest {
     clock_.reset(new server::HybridClock());
     ASSERT_OK(clock_->Init());
 
+    scoped_refptr<TimeManager> time_manager(new TimeManager(clock_, Timestamp::kMin));
+
     message_queue_.reset(new PeerMessageQueue(metric_entity_,
                                               log_.get(),
+                                              time_manager,
                                               FakeRaftPeerPB(kLeaderUuid),
                                               kTabletId));
   }

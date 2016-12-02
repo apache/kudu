@@ -347,6 +347,13 @@ message ConsensusRequestPB {
   // the process of being added to the configuration but has not yet copied a snapshot,
   // this value may drop to 0.
   optional int64 all_replicated_index = 9;
+
+  // The safe timestamp on the leader.
+  // This is only set if the leader has no messages to send to the peer or if the last sent
+  // message is already (raft) committed. By setting this the leader allows followers to advance
+  // the "safe time" past the timestamp of the last committed message and answer snapshot scans
+  // in the present in the absense of writes.
+  optional fixed64 safe_timestamp = 10;
 }
 
 message ConsensusResponsePB {

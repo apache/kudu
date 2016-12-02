@@ -94,8 +94,7 @@ class TransactionTrackerTest : public KuduTest {
                                 nullptr,
                                 nullptr,
                                 nullptr,
-                                nullptr,
-                                scoped_refptr<server::Clock>()));
+                                nullptr));
       gscoped_ptr<NoOpTransaction> tx(new NoOpTransaction(new NoOpTransactionState));
       RETURN_NOT_OK(driver->Init(tx.PassAs<Transaction>(), consensus::LEADER));
       local_drivers.push_back(driver);

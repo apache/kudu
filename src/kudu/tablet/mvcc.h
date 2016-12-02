@@ -218,6 +218,10 @@ class MvccManager {
   //
   // This must only be called when there is a guarantee that there won't be
   // any more transactions with timestamps equal to or lower than 'safe_time'.
+  //
+  // TODO(dralves) Until leader leases is implemented this should only be called
+  // with the timestamps of consensus committed transactions, not with the safe
+  // time received from the leader (which can go back without leader leases).
   void AdjustSafeTime(Timestamp safe_time);
 
   // Take a snapshot of the current MVCC state, which indicates which
@@ -228,30 +232,13 @@ class MvccManager {
   // all transactions which have a lower timestamp)
   //
   // If there are any in-flight transactions at a lower timestamp, waits for
-  // them to complete before returning. Hence, we guarantee that, upon return,
-  // snapshot->is_clean().
+  // them to complete before returning.
   //
-  // TODO(KUDU-689): this may currently block forever, stalling scanner threads
-  // and potentially blocking tablet shutdown.
-  //
-  // REQUIRES: 'timestamp' must be in the past according to the configured
-  // clock.
-  Status WaitForCleanSnapshotAtTimestamp(Timestamp timestamp,
+  // If 'timestamp' was marked safe before the call to this method (e.g. by TimeManager)
+  // then the returned snapshot is repeatable.
+  Status WaitForSnapshotWithAllCommitted(Timestamp timestamp,
                                          MvccSnapshot* snapshot,
                                          const MonoTime& deadline) const WARN_UNUSED_RESULT;
-
-  // Take a snapshot at the current timestamp, and then wait for any
-  // currently running transactions at an earlier timestamp to finish.
-  //
-  // The returned snapshot acts as a "barrier":
-  // - all transactions which started prior to this call are included in
-  //   snapshot
-  // - no transactions which start after the call returns will be included
-  //   in snapshot
-  // - snapshot->is_clean() is guaranteed
-  //
-  // Note that transactions are not blocked during this call.
-  void WaitForCleanSnapshot(MvccSnapshot* snapshot) const;
 
   // Wait for all operations that are currently APPLYING to commit.
   //
@@ -286,6 +273,7 @@ class MvccManager {
   FRIEND_TEST(MvccTest, TestTxnAbort);
   FRIEND_TEST(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnCommit);
   FRIEND_TEST(MvccTest, TestWaitForApplyingTransactionsToCommit);
+  FRIEND_TEST(MvccTest, TestWaitForCleanSnapshot_SnapAfterSafeTimeWithInFlights);
 
   enum TxnState {
     RESERVED,
@@ -326,7 +314,7 @@ class MvccManager {
   // Commits the given transaction.
   // Sets *was_earliest to true if this was the earliest in-flight transaction.
   void CommitTransactionUnlocked(Timestamp timestamp,
-                                 bool* was_earliest);
+                                 bool* was_earliest_in_flight);
 
   // Remove the timestamp 'ts' from the in-flight map.
   // FATALs if the ts is not in the in-flight map.

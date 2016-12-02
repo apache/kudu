@@ -391,7 +391,7 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
   gscoped_ptr<ScopedTransaction> mvcc_tx;
   DCHECK(tx_state->has_timestamp());
   mvcc_tx.reset(new ScopedTransaction(&mvcc_, tx_state->timestamp()));
-  tx_state->SetMvccTxAndTimestamp(std::move(mvcc_tx));
+  tx_state->SetMvccTx(std::move(mvcc_tx));
 }
 
 Status Tablet::InsertOrUpsertUnlocked(WriteTransactionState *tx_state,

@@ -74,10 +74,12 @@ DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(log_inject_latency);
 DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_int32(heartbeat_interval_ms);
+DECLARE_int32(leader_failure_exp_backoff_max_delta_ms);
 DECLARE_int32(log_inject_latency_ms_mean);
 DECLARE_int32(log_inject_latency_ms_stddev);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 DECLARE_int32(max_create_tablets_per_ts);
+DECLARE_int32(raft_heartbeat_interval_ms);
 DECLARE_int32(scanner_gc_check_interval_us);
 DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(scanner_max_batch_size_bytes);
@@ -1096,6 +1098,8 @@ static void DoScanWithCallback(KuduTable* table,
   // Initialize fault-tolerant snapshot scanner.
   KuduScanner scanner(table);
   ASSERT_OK(scanner.SetFaultTolerant());
+  // Set a long timeout as we'll be restarting nodes while performing snapshot scans.
+  ASSERT_OK(scanner.SetTimeoutMillis(60 * 1000 /* 60 seconds */))
   // Set a small batch size so it reads in multiple batches.
   ASSERT_OK(scanner.SetBatchSizeBytes(1));
 
@@ -1148,11 +1152,12 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   // Allow creating table with even replication factor.
   FLAGS_allow_unsafe_replication_factor = true;
 
-  // We use only two replicas in this test so that every write is fully replicated to both
-  // servers (the Raft majority is 2/2). This reduces potential flakiness if the scanner tries
-  // to read from a replica that is lagging for some reason. This won't be necessary once
-  // we implement full support for snapshot consistency (KUDU-430).
-  const int kNumReplicas = 2;
+  // Make elections faster, otherwise we can go a long time without a leader and thus without
+  // advancing safe time and unblocking scanners.
+  FLAGS_raft_heartbeat_interval_ms = 50;
+  FLAGS_leader_failure_exp_backoff_max_delta_ms = 1000;
+
+  const int kNumReplicas = 3;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
 

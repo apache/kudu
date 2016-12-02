@@ -874,6 +874,7 @@ void RaftConsensusITest::DoTestCrashyNodes(TestWorkload* workload, int max_rows_
   // can verify an exact number of rows in the end, thanks to exactly once semantics.
   workload->set_write_timeout_millis(60 * 1000 /* 60 seconds */);
   workload->set_num_write_threads(10);
+  workload->set_num_read_threads(2);
   workload->Setup();
   workload->Start();
 
@@ -960,6 +961,7 @@ void RaftConsensusITest::CreateClusterForChurnyElectionsTests(
   ts_flags.push_back("--leader_failure_monitor_check_mean_ms=1");
   ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=1");
   ts_flags.push_back("--never_fsync");
+
   ts_flags.insert(ts_flags.end(), extra_ts_flags.cbegin(), extra_ts_flags.cend());
 
   CreateCluster("raft_consensus-itest-cluster", ts_flags, {});
@@ -1006,6 +1008,7 @@ TEST_F(RaftConsensusITest, TestChurnyElections) {
   CreateClusterForChurnyElectionsTests({});
   TestWorkload workload(cluster_.get());
   workload.set_write_batch_size(1);
+  workload.set_num_read_threads(2);
   DoTestChurnyElections(&workload, kNumWrites);
 }
 
@@ -1017,6 +1020,7 @@ TEST_F(RaftConsensusITest, TestChurnyElections_WithNotificationLatency) {
   const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
   TestWorkload workload(cluster_.get());
   workload.set_write_batch_size(1);
+  workload.set_num_read_threads(2);
   DoTestChurnyElections(&workload, kNumWrites);
 }
 
@@ -1250,6 +1254,8 @@ void RaftConsensusITest::SetupSingleReplicaTest(TServerDetails** replica_ts) {
   FLAGS_num_replicas = 3;
   FLAGS_num_tablet_servers = 3;
   vector<string> ts_flags, master_flags;
+  // Don't use the hybrid clock as we set logical timestamps on ops.
+  ts_flags.push_back("--use_hybrid_clock=false");
   ts_flags.push_back("--enable_leader_failure_detection=false");
   master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   BuildAndStart(ts_flags, master_flags);
@@ -1520,7 +1526,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     ScanRequestPB req;
     ScanResponsePB resp;
     RpcController rpc;
-    rpc.set_timeout(MonoDelta::FromMilliseconds(5000));
+    rpc.set_timeout(MonoDelta::FromMilliseconds(100));
     NewScanRequestPB* scan = req.mutable_new_scan_request();
     scan->set_tablet_id(tablet_id_);
     scan->set_read_mode(READ_AT_SNAPSHOT);
@@ -1533,8 +1539,8 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     ASSERT_OK(replica_ts->tserver_proxy->Scan(req, &resp, &rpc));
     SCOPED_TRACE(resp.DebugString());
     string err_str = StatusFromPB(resp.error().status()).ToString();
-    ASSERT_STR_CONTAINS(err_str, "Timed out waiting for all transactions");
-    ASSERT_STR_CONTAINS(err_str, "to commit");
+    ASSERT_STR_CONTAINS(err_str, "Timed out waiting for ts:");
+    ASSERT_STR_CONTAINS(err_str, "to be safe");
   }
 
   resp.Clear();
@@ -2378,6 +2384,7 @@ TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
   workload.set_table_name(kTableId);
   workload.set_num_replicas(FLAGS_num_replicas);
   workload.set_num_write_threads(10);
+  workload.set_num_read_threads(2);
   workload.set_write_batch_size(100);
   workload.Setup();
 
@@ -2502,6 +2509,7 @@ TEST_F(RaftConsensusITest, TestSlowLeader) {
 
   TestWorkload workload(cluster_.get());
   workload.set_table_name(kTableId);
+  workload.set_num_read_threads(2);
   workload.Setup();
   workload.Start();
   SleepFor(MonoDelta::FromSeconds(60));
@@ -2652,6 +2660,7 @@ TEST_F(RaftConsensusITest, TestSlowFollower) {
 
   TestWorkload workload(cluster_.get());
   workload.set_table_name(kTableId);
+  workload.set_num_read_threads(2);
   workload.Setup();
   workload.Start();
   SleepFor(MonoDelta::FromSeconds(60));

@@ -27,6 +27,7 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/util/metrics.h"
@@ -73,8 +74,12 @@ class ConsensusQueueTest : public KuduTest {
   }
 
   void CloseAndReopenQueue() {
+    scoped_refptr<server::Clock> clock(new server::HybridClock());
+    ASSERT_OK(clock->Init());
+    scoped_refptr<TimeManager> time_manager(new TimeManager(clock, Timestamp::kMin));
     queue_.reset(new PeerMessageQueue(metric_entity_,
                                       log_.get(),
+                                      time_manager,
                                       FakeRaftPeerPB(kLeaderUuid),
                                       kTestTablet));
   }

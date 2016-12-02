@@ -24,9 +24,23 @@
 #include "kudu/util/flag_tags.h"
 
 DEFINE_bool(safe_time_advancement_without_writes, true,
-            "Whether to enable the advancement of \"safe\" time in "
-            "the absense of write operations");
+            "Whether to enable the advancement of \"safe\" time in the absense of write "
+            "operations");
 TAG_FLAG(safe_time_advancement_without_writes, advanced);
+
+DEFINE_double(missed_heartbeats_before_rejecting_snapshot_scans, 1.5,
+              "The maximum raft heartbeat periods since the tablet has seen safe time advanced "
+              "before refusing scans at snapshots that aren't yet safe and forcing clients to "
+              "try again.");
+TAG_FLAG(missed_heartbeats_before_rejecting_snapshot_scans, experimental);
+
+DEFINE_int32(safe_time_max_lag_ms, 30 * 1000,
+             "The maximum amount of time we allow safe time to lag behind the requested timestamp"
+             "before forcing the client to retry, in milliseconds.");
+TAG_FLAG(safe_time_max_lag_ms, experimental);
+
+DECLARE_int32(raft_heartbeat_interval_ms);
+DECLARE_int32(scanner_max_wait_ms);
 
 namespace kudu {
 namespace consensus {
@@ -50,6 +64,7 @@ ExternalConsistencyMode TimeManager::GetMessageConsistencyMode(const ReplicateMs
 TimeManager::TimeManager(scoped_refptr<Clock> clock, Timestamp initial_safe_time)
   : last_serial_ts_assigned_(initial_safe_time),
     last_safe_ts_(initial_safe_time),
+    last_advanced_safe_time_(MonoTime::Now()),
     mode_(NON_LEADER),
     clock_(std::move(clock)) {}
 
@@ -67,7 +82,9 @@ void TimeManager::SetNonLeaderMode() {
 Status TimeManager::AssignTimestamp(ReplicateMsg* message) {
   Lock l(lock_);
   if (PREDICT_FALSE(mode_ == NON_LEADER)) {
-    return Status::IllegalState("Cannot assign timestamp. TimeManager is not in Leader mode.");
+    return Status::IllegalState(Substitute("Cannot assign timestamp to transaction. Tablet is not "
+                                           "in leader mode. Last heard from a leader: $0 secs ago.",
+                                           last_advanced_safe_time_.ToString()));
   }
   Timestamp t;
   switch (GetMessageConsistencyMode(*message)) {
@@ -122,7 +139,69 @@ void TimeManager::AdvanceSafeTime(Timestamp safe_time) {
   AdvanceSafeTimeAndWakeUpWaitersUnlocked(safe_time);
 }
 
+bool TimeManager::HasAdvancedSafeTimeRecentlyUnlocked(string* error_message) {
+  MonoDelta time_since_last_advance = MonoTime::Now() - last_advanced_safe_time_;
+  int64_t max_last_advanced = FLAGS_missed_heartbeats_before_rejecting_snapshot_scans *
+      FLAGS_raft_heartbeat_interval_ms;
+  // Clamp max_last_advanced to 100 ms. Some tests set leader election timeouts really
+  // low and don't necessarily want to stress scanners.
+  max_last_advanced = std::max<int64_t>(max_last_advanced, 100LL);
+  MonoDelta max_delta = MonoDelta::FromMilliseconds(max_last_advanced);
+  if (time_since_last_advance > max_delta) {
+    *error_message = Substitute("Tablet hasn't heard from leader, or there hasn't been a stable "
+                                "leader for: $0 secs, (max is $1):",
+                                time_since_last_advance.ToString(), max_delta.ToString());
+    return false;
+  }
+  return true;
+}
+
+bool TimeManager::IsSafeTimeLaggingUnlocked(Timestamp timestamp, string* error_message) {
+  // Can't calculate safe time lag for the logical clock.
+  if (PREDICT_FALSE(!clock_->HasPhysicalComponent())) return false;
+  MonoDelta safe_time_diff = clock_->GetPhysicalComponentDifference(timestamp,
+                                                                    last_safe_ts_);
+  if (safe_time_diff.ToMilliseconds() > FLAGS_safe_time_max_lag_ms) {
+    *error_message = Substitute("Tablet is lagging too much to be able to serve snapshot scan. "
+                                "Lagging by: $0 ms, (max is $1 ms):",
+                                safe_time_diff.ToMilliseconds(),
+                                FLAGS_safe_time_max_lag_ms);
+    return true;
+  }
+  return false;
+}
+
+void TimeManager::MakeWaiterTimeoutMessageUnlocked(Timestamp timestamp, string* error_message) {
+  string mode = mode_ == LEADER ? "LEADER" : "NON-LEADER";
+  string clock_diff = clock_->HasPhysicalComponent() ? clock_->GetPhysicalComponentDifference(
+      timestamp, last_safe_ts_).ToString() : "None (Logical clock)";
+  *error_message = Substitute("Timed out waiting for ts: $0 to be safe (mode: $1). Current safe "
+                              "time: $2 Physical time difference: $3", clock_->Stringify(timestamp),
+                              mode, clock_->Stringify(last_safe_ts_), clock_diff);
+}
+
 Status TimeManager::WaitUntilSafe(Timestamp timestamp, const MonoTime& deadline) {
+  string error_message;
+
+  // Pre-flight checks:
+  // - If this timestamp is before the last safe time return.
+  // - If we're not the leader make sure we've heard from the leader recently.
+  // - If we're not the leader make sure safe time isn't lagging too much.
+  {
+    Lock l(lock_);
+    if (timestamp < GetSafeTimeUnlocked()) return Status::OK();
+
+    if (mode_ == NON_LEADER) {
+      if (IsSafeTimeLaggingUnlocked(timestamp, &error_message)) {
+        return Status::TimedOut(error_message);
+      }
+
+      if (!HasAdvancedSafeTimeRecentlyUnlocked(&error_message)) {
+        return Status::TimedOut(error_message);
+      }
+    }
+  }
+
   // First wait for the clock to be past 'timestamp'.
   RETURN_NOT_OK(clock_->WaitUntilAfterLocally(timestamp, deadline));
 
@@ -152,15 +231,9 @@ Status TimeManager::WaitUntilSafe(Timestamp timestamp, const MonoTime& deadline)
     if (waiter.latch->count() == 0) return Status::OK();
 
     waiters_.erase(std::find(waiters_.begin(), waiters_.end(), &waiter));
-    return Status::TimedOut(Substitute(
-        "Timed out waiting for ts: $0 to be safe (mode: $1). "
-        "Current safe time: $2 Physical time difference: $3",
-        clock_->Stringify(waiter.timestamp),
-        (mode_ == LEADER ? "LEADER" : "NON-LEADER"),
-        clock_->Stringify(last_safe_ts_),
-        (clock_->HasPhysicalComponent() ?
-         clock_->GetPhysicalComponentDifference(timestamp, last_safe_ts_).ToString() :
-         "None (Logical clock)")));
+
+    MakeWaiterTimeoutMessageUnlocked(waiter.timestamp, &error_message);
+    return Status::TimedOut(error_message);
   }
 }
 
@@ -169,6 +242,7 @@ void TimeManager::AdvanceSafeTimeAndWakeUpWaitersUnlocked(Timestamp safe_time) {
     return;
   }
   last_safe_ts_ = safe_time;
+  last_advanced_safe_time_ = MonoTime::Now();
 
   if (PREDICT_FALSE(!waiters_.empty())) {
     auto iter = waiters_.begin();
@@ -216,6 +290,7 @@ Timestamp TimeManager::GetSafeTimeUnlocked() {
       // leader will never assign a new timestamp lower than it.
       if (PREDICT_TRUE(last_serial_ts_assigned_ <= last_safe_ts_)) {
         last_safe_ts_ = clock_->Now();
+        last_advanced_safe_time_ = MonoTime::Now();
         return last_safe_ts_;
       }
       // If the current state is b), then there might be transaction with a timestamp that is lower

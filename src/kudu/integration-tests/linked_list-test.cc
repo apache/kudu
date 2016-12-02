@@ -271,6 +271,7 @@ TEST_F(LinkedListTest, TestLoadWhileOneServerDownAndVerify) {
 
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_tablets = 1;
+
   ASSERT_NO_FATAL_FAILURE(BuildAndStart());
 
   // Load the data with one of the three servers down.
@@ -298,7 +299,10 @@ TEST_F(LinkedListTest, TestLoadWhileOneServerDownAndVerify) {
 
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();
-  ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
+
+  ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run,
+                                   written,
+                                   LinkedListTester::FINISH_WITH_SCAN_LATEST));
 }
 
 } // namespace kudu

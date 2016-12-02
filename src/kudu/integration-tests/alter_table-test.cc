@@ -854,7 +854,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterUpdatingRemovedColumn) {
             "---------------------------\n"
             "MRS memrowset:\n"
             "RowSet RowSet(0):\n"
-            "RowIdxInBlock: 0; Base: (int32 c0=0, int32 c2=12345); Undo Mutations: [@3(DELETE)]; "
+            "RowIdxInBlock: 0; Base: (int32 c0=0, int32 c2=12345); Undo Mutations: [@4(DELETE)]; "
                 "Redo Mutations: [];",
             JoinStrings(rows, "\n"));
 
@@ -903,9 +903,9 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasIntoMissingBaseData) {
             "MRS memrowset:\n"
             "RowSet RowSet(0):\n"
             "RowIdxInBlock: 0; Base: (int32 c0=0, int32 c1=0, int32 c2=54321); Undo Mutations: "
-                "[@5(SET c2=12345), @2(DELETE)]; Redo Mutations: [];\n"
+                "[@6(SET c2=12345), @3(DELETE)]; Redo Mutations: [];\n"
             "RowIdxInBlock: 1; Base: (int32 c0=16777216, int32 c1=1, int32 c2=12345); "
-                "Undo Mutations: [@3(DELETE)]; Redo Mutations: [];",
+                "Undo Mutations: [@4(DELETE)]; Redo Mutations: [];",
             JoinStrings(rows, "\n"));
 }
 
@@ -958,7 +958,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn) {
             "---------------------------\n"
             "MRS memrowset:\n"
             "RowSet RowSet(0):\n"
-            "RowIdxInBlock: 0; Base: (int32 c0=0, int32 c1=0); Undo Mutations: [@2(DELETE)]; "
+            "RowIdxInBlock: 0; Base: (int32 c0=0, int32 c1=0); Undo Mutations: [@3(DELETE)]; "
                 "Redo Mutations: [];",
             JoinStrings(rows, "\n"));
 }

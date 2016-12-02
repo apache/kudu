@@ -33,6 +33,8 @@
 namespace kudu {
 
 using client::KuduInsert;
+using client::KuduScanBatch;
+using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduSchemaFromSchema;
 using client::KuduSession;
@@ -48,6 +50,7 @@ TestWorkload::TestWorkload(MiniClusterBase* cluster)
     rng_(SeedRandom()),
     payload_bytes_(11),
     num_write_threads_(4),
+    num_read_threads_(0),
     write_batch_size_(50),
     write_timeout_millis_(20000),
     timeout_allowed_(false),
@@ -69,13 +72,12 @@ TestWorkload::~TestWorkload() {
   StopAndJoin();
 }
 
-void TestWorkload::WriteThread() {
-  shared_ptr<KuduTable> table;
+void TestWorkload::OpenTable(shared_ptr<KuduTable>* table) {
   // Loop trying to open up the table. In some tests we set up very
   // low RPC timeouts to test those behaviors, so this might fail and
   // need retrying.
   while (should_run_.Load()) {
-    Status s = client_->OpenTable(table_name_, &table);
+    Status s = client_->OpenTable(table_name_, table);
     if (s.ok()) {
       break;
     }
@@ -86,20 +88,26 @@ void TestWorkload::WriteThread() {
     CHECK_OK(s);
   }
 
-  shared_ptr<KuduSession> session = client_->NewSession();
-  session->SetTimeoutMillis(write_timeout_millis_);
-  CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-
   // Wait for all of the workload threads to be ready to go. This maximizes the chance
   // that they all send a flood of requests at exactly the same time.
   //
   // This also minimizes the chance that we see failures to call OpenTable() if
-  // a late-starting thread overlaps with the flood of outbound traffic from the
-  // ones that are already writing data.
+  // a late-starting thread overlaps with the flood of traffic from the ones that are
+  // already writing/reading data.
   start_latch_.CountDown();
   start_latch_.Wait();
+}
+
+void TestWorkload::WriteThread() {
+  shared_ptr<KuduTable> table;
+  OpenTable(&table);
+
+  shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(write_timeout_millis_);
+  CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   while (should_run_.Load()) {
+    int inserted = 0;
     for (int i = 0; i < write_batch_size_; i++) {
       if (write_pattern_ == UPDATE_ONE_ROW) {
         gscoped_ptr<KuduUpdate> update(table->NewUpdate());
@@ -128,10 +136,9 @@ void TestWorkload::WriteThread() {
         }
         CHECK_OK(row->SetStringCopy(2, test_payload));
         CHECK_OK(session->Apply(insert.release()));
+        inserted++;
       }
     }
-
-    int inserted = write_batch_size_;
 
     Status s = session->Flush();
 
@@ -158,15 +165,43 @@ void TestWorkload::WriteThread() {
           continue;
         }
 
-        CHECK(e->status().ok()) << "Unexpected status: " << e->status().ToString();
+        CHECK_OK(s);
       }
       inserted -= errors.size();
     }
 
-    rows_inserted_.IncrementBy(inserted);
     if (inserted > 0) {
+      rows_inserted_.IncrementBy(inserted);
       batches_completed_.Increment();
     }
+  }
+}
+
+void TestWorkload::ReadThread() {
+  shared_ptr<KuduTable> table;
+  OpenTable(&table);
+
+  while (should_run_.Load()) {
+    // Slow the scanners down to avoid imposing too much stress on already stressful tests.
+    SleepFor(MonoDelta::FromMilliseconds(150));
+
+    KuduScanner scanner(table.get());
+    // Set a high scanner timeout so that we're likely to have a chance to scan, even in
+    // high-stress workloads.
+    CHECK_OK(scanner.SetTimeoutMillis(60 * 1000 /* 60 seconds */));
+    CHECK_OK(scanner.SetFaultTolerant());
+
+    int64_t expected_row_count = rows_inserted_.Load();
+    size_t row_count = 0;
+
+    CHECK_OK(scanner.Open());
+    while (scanner.HasMoreRows()) {
+      KuduScanBatch batch;
+      CHECK_OK(scanner.NextBatch(&batch));
+      row_count += batch.NumRows();
+    }
+
+    CHECK_GE(row_count, expected_row_count);
   }
 }
 
@@ -225,17 +260,27 @@ void TestWorkload::Setup() {
     CHECK_OK(row->SetInt32(1, 0));
     CHECK_OK(row->SetStringCopy(2, "hello world"));
     CHECK_OK(session->Apply(insert.release()));
+    rows_inserted_.Store(1);
   }
 }
 
 void TestWorkload::Start() {
   CHECK(!should_run_.Load()) << "Already started";
   should_run_.Store(true);
-  start_latch_.Reset(num_write_threads_);
+  start_latch_.Reset(num_write_threads_ + num_read_threads_);
   for (int i = 0; i < num_write_threads_; i++) {
     scoped_refptr<kudu::Thread> new_thread;
     CHECK_OK(kudu::Thread::Create("test", strings::Substitute("test-writer-$0", i),
                                   &TestWorkload::WriteThread, this,
+                                  &new_thread));
+    threads_.push_back(new_thread);
+  }
+  // Start the read threads. Order matters here, the read threads are last so that
+  // we'll have a chance to do some scans after all writers are done.
+  for (int i = 0; i < num_read_threads_; i++) {
+    scoped_refptr<kudu::Thread> new_thread;
+    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("test-reader-$0", i),
+                                  &TestWorkload::ReadThread, this,
                                   &new_thread));
     threads_.push_back(new_thread);
   }

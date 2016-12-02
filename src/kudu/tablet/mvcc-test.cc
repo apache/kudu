@@ -43,7 +43,7 @@ class MvccTest : public KuduTest {
 
   void WaitForSnapshotAtTSThread(MvccManager* mgr, Timestamp ts) {
     MvccSnapshot s;
-    CHECK_OK(mgr->WaitForCleanSnapshotAtTimestamp(ts, &s, MonoTime::Max()));
+    CHECK_OK(mgr->WaitForSnapshotWithAllCommitted(ts, &s, MonoTime::Max()));
     CHECK(s.is_clean()) << "verifying postcondition";
     std::lock_guard<simple_spinlock> lock(lock_);
     result_snapshot_.reset(new MvccSnapshot(s));
@@ -378,6 +378,7 @@ TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
   mgr.StartTransaction(tx2);
   Timestamp tx3 = clock_->Now();
   mgr.StartTransaction(tx3);
+  mgr.AdjustSafeTime(clock_->Now());
 
   ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(1)));
   ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(2)));
@@ -409,14 +410,16 @@ TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
 
 TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapWithNoInflights) {
   MvccManager mgr(clock_.get());
-  thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, clock_->Now());
+  Timestamp to_wait_for = clock_->Now();
+  mgr.AdjustSafeTime(clock_->Now());
+  thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, to_wait_for);
 
   // join immediately.
   waiting_thread.join();
   ASSERT_TRUE(HasResultSnapshot());
 }
 
-TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapWithInFlights) {
+TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapBeforeSafeTimeWithInFlights) {
 
   MvccManager mgr(clock_.get());
 
@@ -425,8 +428,14 @@ TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapWithInFlights) {
   Timestamp tx2 = clock_->Now();
   mgr.StartTransaction(tx2);
   mgr.AdjustSafeTime(tx2);
+  Timestamp to_wait_for = clock_->Now();
 
-  thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, clock_->Now());
+  // Select a safe time that is after all transactions and after the the timestamp we'll wait for
+  // and adjust it on the MvccManager. This will cause "clean time" to move when tx1 and tx2 commit.
+  Timestamp safe_time = clock_->Now();
+  mgr.AdjustSafeTime(safe_time);
+
+  thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, to_wait_for);
 
   ASSERT_FALSE(HasResultSnapshot());
   mgr.StartApplyingTransaction(tx1);
@@ -438,9 +447,8 @@ TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapWithInFlights) {
   ASSERT_TRUE(HasResultSnapshot());
 }
 
-TEST_F(MvccTest, TestWaitForApplyingTransactionsToCommit) {
+TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapAfterSafeTimeWithInFlights) {
   MvccManager mgr(clock_.get());
-
   Timestamp tx1 = clock_->Now();
   mgr.StartTransaction(tx1);
   Timestamp tx2 = clock_->Now();
@@ -480,7 +488,6 @@ TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapAtTimestampWithInFlights) {
   mgr.StartTransaction(tx2);
   Timestamp tx3 = clock_->Now();
   mgr.StartTransaction(tx3);
-  mgr.AdjustSafeTime(tx3);
 
   // Start a thread waiting for transactions with ts <= 2 to commit
   thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, tx2);
@@ -498,9 +505,13 @@ TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapAtTimestampWithInFlights) {
   SleepFor(MonoDelta::FromMilliseconds(1));
   ASSERT_FALSE(HasResultSnapshot());
 
-  // Commit tx 2 - thread can now continue
+  // Commit tx 2 - thread should still wait.
   mgr.StartApplyingTransaction(tx2);
   mgr.CommitTransaction(tx2);
+  ASSERT_FALSE(HasResultSnapshot());
+
+  // Advance safe time, thread should continue.
+  mgr.AdjustSafeTime(tx3);
   waiting_thread.join();
   ASSERT_TRUE(HasResultSnapshot());
 }
@@ -636,7 +647,7 @@ TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
   // transaction isn't committed yet.
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(10);
   MvccSnapshot snap;
-  Status s = mgr.WaitForCleanSnapshotAtTimestamp(tx1, &snap, deadline);
+  Status s = mgr.WaitForSnapshotWithAllCommitted(tx1, &snap, deadline);
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 }
 
