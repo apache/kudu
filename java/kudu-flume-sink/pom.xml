@@ -29,34 +29,16 @@
   <build>
     <plugins>
       <plugin>
-        <artifactId>maven-assembly-plugin</artifactId>
-        <version>${maven-assembly-plugin.version}</version>
-        <configuration>
-          <descriptorRefs>
-            <descriptorRef>jar-with-dependencies</descriptorRef>
-          </descriptorRefs>
-        </configuration>
-        <executions>
-          <execution>
-            <id>make-assembly</id>
-            <phase>package</phase>
-            <goals>
-              <goal>single</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
         <version>2.3</version>
         <configuration>
-          <relocations>
-            <relocation>
-              <pattern>org.apache.hadoop</pattern>
-              <shadedPattern>org.apache.kudu.flume.sink.shaded.org.apache.hadoop</shadedPattern>
-            </relocation>
-          </relocations>
+          <artifactSet>
+            <includes>
+              <!-- We want to transitively shade what kudu-client shades. -->
+              <include>org.apache.kudu:kudu-client</include>
+            </includes>
+          </artifactSet>
           <shadeTestJar>true</shadeTestJar>
         </configuration>
         <executions>
@@ -116,6 +98,7 @@
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-client</artifactId>
       <version>${hadoop.version}</version>
+      <scope>provided</scope>
     </dependency>
 
     <dependency>
