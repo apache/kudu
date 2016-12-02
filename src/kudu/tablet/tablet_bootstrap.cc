@@ -1274,6 +1274,8 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
     tx_state.ReleaseTxResultPB(commit->mutable_result());
   }
 
+  tx_state.CommitOrAbort(Transaction::COMMITTED);
+
   RETURN_NOT_OK(log_->Append(&commit_entry));
 
   return Status::OK();

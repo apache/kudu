@@ -325,8 +325,7 @@ WriteTransactionState::~WriteTransactionState() {
 }
 
 void WriteTransactionState::Reset() {
-  // We likely shouldn't Commit() here. See KUDU-625.
-  CommitOrAbort(Transaction::COMMITTED);
+  CommitOrAbort(Transaction::ABORTED);
   tx_metrics_.Reset();
   timestamp_ = Timestamp::kInvalidTimestamp;
   tablet_components_ = nullptr;
