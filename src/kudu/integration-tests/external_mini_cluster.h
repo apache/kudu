@@ -24,6 +24,8 @@
 #include <sys/types.h>
 #include <vector>
 
+#include <boost/optional.hpp>
+
 #include "kudu/client/client.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -122,6 +124,10 @@ struct ExternalMiniClusterOptions {
   // test process will be modified to include Kerberos credentials for
   // a principal named 'testuser'.
   bool enable_kerberos;
+
+  // If true, sends logging output to stderr instead of a log file. Defaults to
+  // true.
+  bool logtostderr;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons
@@ -279,6 +285,12 @@ class ExternalMiniCluster : public MiniClusterBase {
   // standard Kudu test directory otherwise.
   std::string GetDataPath(const std::string& daemon_id) const;
 
+  // Returns the path where 'daemon_id' is expected to store its logs, or none
+  // if it will log to stderr. Based on ExternalMiniClusterOptions.logtostderr
+  // and ExternalMiniClusterOptions.data_root, or on the standard Kudu test
+  // directory otherwise.
+  boost::optional<std::string> GetLogPath(const std::string& daemon_id) const;
+
  private:
   FRIEND_TEST(MasterFailoverTest, TestKillAnyMaster);
 
@@ -307,8 +319,11 @@ class ExternalMiniCluster : public MiniClusterBase {
 
 class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
  public:
-  ExternalDaemon(std::shared_ptr<rpc::Messenger> messenger, std::string exe,
-                 std::string data_dir, std::vector<std::string> extra_flags);
+  ExternalDaemon(std::shared_ptr<rpc::Messenger> messenger,
+                 std::string exe,
+                 std::string data_dir,
+                 boost::optional<std::string> log_dir,
+                 std::vector<std::string> extra_flags);
 
   HostPort bound_rpc_hostport() const;
   Sockaddr bound_rpc_addr() const;
@@ -366,6 +381,12 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
 
   const std::string& data_dir() const { return data_dir_; }
 
+  // Returns the log dir of the external daemon, or none if the daemon is
+  // configured to log to stderr.
+  const boost::optional<std::string>& log_dir() const {
+    return log_dir_;
+  }
+
   // Return a pointer to the flags used for this server on restart.
   // Modifying these flags will only take effect on the next restart.
   std::vector<std::string>* mutable_flags() { return &extra_flags_; }
@@ -408,6 +429,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
 
   const std::shared_ptr<rpc::Messenger> messenger_;
   const std::string data_dir_;
+  const boost::optional<std::string> log_dir_;
   std::string exe_;
   std::vector<std::string> extra_flags_;
   std::map<std::string, std::string> extra_env_;
@@ -444,14 +466,18 @@ class ScopedResumeExternalDaemon {
 
 class ExternalMaster : public ExternalDaemon {
  public:
-  ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
-                 const std::string& exe, const std::string& data_dir,
-                 const std::vector<std::string>& extra_flags);
+  ExternalMaster(std::shared_ptr<rpc::Messenger> messenger,
+                 std::string exe,
+                 std::string data_dir,
+                 boost::optional<std::string> log_dir,
+                 std::vector<std::string> extra_flags);
 
-  ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
-                 const std::string& exe, const std::string& data_dir,
+  ExternalMaster(std::shared_ptr<rpc::Messenger> messenger,
+                 std::string exe,
+                 std::string data_dir,
+                 boost::optional<std::string> log_dir,
                  std::string rpc_bind_address,
-                 const std::vector<std::string>& extra_flags);
+                 std::vector<std::string> extra_flags);
 
   Status Start();
 
@@ -472,11 +498,13 @@ class ExternalMaster : public ExternalDaemon {
 
 class ExternalTabletServer : public ExternalDaemon {
  public:
-  ExternalTabletServer(const std::shared_ptr<rpc::Messenger>& messenger,
-                       const std::string& exe, const std::string& data_dir,
+  ExternalTabletServer(std::shared_ptr<rpc::Messenger> messenger,
+                       std::string exe,
+                       std::string data_dir,
+                       boost::optional<std::string> log_dir,
                        std::string bind_host,
-                       const std::vector<HostPort>& master_addrs,
-                       const std::vector<std::string>& extra_flags);
+                       std::vector<HostPort> master_addrs,
+                       std::vector<std::string> extra_flags);
 
   Status Start();
 

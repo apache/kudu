@@ -85,7 +85,8 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
     : num_masters(1),
       num_tablet_servers(1),
       bind_to_unique_loopback_addresses(kBindToUniqueLoopbackAddress),
-      enable_kerberos(false) {
+      enable_kerberos(false),
+      logtostderr(true) {
 }
 
 ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
@@ -227,6 +228,13 @@ string ExternalMiniCluster::GetDataPath(const string& daemon_id) const {
   return JoinPathSegments(data_root_, daemon_id);
 }
 
+boost::optional<string> ExternalMiniCluster::GetLogPath(const string& daemon_id) const {
+  if (opts_.logtostderr) {
+    return boost::none;
+  }
+  return GetDataPath(daemon_id) + "-logs";
+}
+
 namespace {
 vector<string> SubstituteInFlags(const vector<string>& orig_flags,
                                  int index) {
@@ -241,12 +249,13 @@ vector<string> SubstituteInFlags(const vector<string>& orig_flags,
 } // anonymous namespace
 
 Status ExternalMiniCluster::StartSingleMaster() {
-  string exe = GetBinaryPath(kMasterBinaryName);
-  vector<string> flags = SubstituteInFlags(opts_.extra_master_flags, 0);
-
+  string daemon_id = "master-0";
   scoped_refptr<ExternalMaster> master =
-      new ExternalMaster(messenger_, exe, GetDataPath("master-0"), flags);
-
+      new ExternalMaster(messenger_,
+                        GetBinaryPath(kMasterBinaryName),
+                        GetDataPath(daemon_id),
+                        GetLogPath(daemon_id),
+                        SubstituteInFlags(opts_.extra_master_flags, 0));
   if (opts_.enable_kerberos) {
     RETURN_NOT_OK_PREPEND(master->EnableKerberos(kdc_.get(), "127.0.0.1"),
                           "could not enable Kerberos");
@@ -276,10 +285,12 @@ Status ExternalMiniCluster::StartDistributedMasters() {
 
   // Start the masters.
   for (int i = 0; i < num_masters; i++) {
+    string daemon_id = Substitute("master-$0", i);
     scoped_refptr<ExternalMaster> peer =
         new ExternalMaster(messenger_,
                            exe,
-                           GetDataPath(Substitute("master-$0", i)),
+                           GetDataPath(daemon_id),
+                           GetLogPath(daemon_id),
                            peer_addrs[i],
                            SubstituteInFlags(flags, i));
     if (opts_.enable_kerberos) {
@@ -309,18 +320,21 @@ Status ExternalMiniCluster::AddTabletServer() {
       << "Must have started at least 1 master before adding tablet servers";
 
   int idx = tablet_servers_.size();
+  string daemon_id = Substitute("ts-$0", idx);
 
-  string exe = GetBinaryPath(kTabletServerBinaryName);
   vector<HostPort> master_hostports;
   for (int i = 0; i < num_masters(); i++) {
     master_hostports.push_back(DCHECK_NOTNULL(master(i))->bound_rpc_hostport());
   }
   string bind_host = GetBindIpForTabletServer(idx);
   scoped_refptr<ExternalTabletServer> ts =
-    new ExternalTabletServer(messenger_, exe, GetDataPath(Substitute("ts-$0", idx)),
-                             bind_host,
-                             master_hostports,
-                             SubstituteInFlags(opts_.extra_tserver_flags, idx));
+      new ExternalTabletServer(messenger_,
+                               GetBinaryPath(kTabletServerBinaryName),
+                               GetDataPath(daemon_id),
+                               GetLogPath(daemon_id),
+                               bind_host,
+                               master_hostports,
+                               SubstituteInFlags(opts_.extra_tserver_flags, idx));
   if (opts_.enable_kerberos) {
     RETURN_NOT_OK_PREPEND(ts->EnableKerberos(kdc_.get(), bind_host),
                           "could not enable Kerberos");
@@ -567,10 +581,13 @@ Status ExternalMiniCluster::SetFlag(ExternalDaemon* daemon,
 //------------------------------------------------------------
 
 ExternalDaemon::ExternalDaemon(std::shared_ptr<rpc::Messenger> messenger,
-                               string exe, string data_dir,
+                               string exe,
+                               string data_dir,
+                               boost::optional<string> log_dir,
                                vector<string> extra_flags)
     : messenger_(std::move(messenger)),
       data_dir_(std::move(data_dir)),
+      log_dir_(std::move(log_dir)),
       exe_(std::move(exe)),
       extra_flags_(std::move(extra_flags)) {}
 
@@ -600,10 +617,22 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   argv.insert(argv.end(), user_flags.begin(), user_flags.end());
 
   // Enable metrics logging.
-  // Even though we set -logtostderr down below, metrics logs end up being written
-  // based on -log_dir. So, we have to set that too.
   argv.push_back("--metrics_log_interval_ms=1000");
-  argv.push_back("--log_dir=" + data_dir_);
+
+  if (log_dir_) {
+    argv.push_back("--log_dir=" + *log_dir_);
+    Env* env = Env::Default();
+    if (!env->FileExists(*log_dir_)) {
+      RETURN_NOT_OK(env->CreateDir(*log_dir_));
+    }
+  } else {
+    // Ensure that logging goes to the test output and doesn't get buffered.
+    argv.push_back("--logtostderr");
+    argv.push_back("--logbuflevel=-1");
+    // Even though we are logging to stderr, metrics logs end up being written
+    // based on -log_dir. So, we have to set that too.
+    argv.push_back("--log_dir=" + data_dir_);
+  }
 
   // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
   // options struct). These come at the end so they can override things like
@@ -622,10 +651,6 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // A previous instance of the daemon may have run in the same directory. So, remove
   // the previous info file if it's there.
   ignore_result(Env::Default()->DeleteFile(info_path));
-
-  // Ensure that logging goes to the test output and doesn't get buffered.
-  argv.push_back("--logtostderr");
-  argv.push_back("--logbuflevel=-1");
 
   // Allow unsafe and experimental flags from tests, since we often use
   // fault injection, etc.
@@ -912,19 +937,30 @@ ScopedResumeExternalDaemon::~ScopedResumeExternalDaemon() {
 // ExternalMaster
 //------------------------------------------------------------
 
-ExternalMaster::ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
-                               const string& exe,
-                               const string& data_dir,
-                               const vector<string>& extra_flags)
-    : ExternalDaemon(messenger, exe, data_dir, extra_flags),
+ExternalMaster::ExternalMaster(std::shared_ptr<rpc::Messenger> messenger,
+                               string exe,
+                               string data_dir,
+                               boost::optional<string> log_dir,
+                               vector<string> extra_flags)
+    : ExternalDaemon(std::move(messenger),
+                     std::move(exe),
+                     std::move(data_dir),
+                     std::move(log_dir),
+                     std::move(extra_flags)),
       rpc_bind_address_("127.0.0.1:0") {
 }
 
-ExternalMaster::ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
-                               const string& exe, const string& data_dir,
+ExternalMaster::ExternalMaster(std::shared_ptr<rpc::Messenger> messenger,
+                               string exe,
+                               string data_dir,
+                               boost::optional<string> log_dir,
                                string rpc_bind_address,
-                               const std::vector<string>& extra_flags)
-    : ExternalDaemon(messenger, exe, data_dir, extra_flags),
+                               std::vector<string> extra_flags)
+    : ExternalDaemon(std::move(messenger),
+                     std::move(exe),
+                     std::move(data_dir),
+                     std::move(log_dir),
+                     std::move(extra_flags)),
       rpc_bind_address_(std::move(rpc_bind_address)) {}
 
 ExternalMaster::~ExternalMaster() {
@@ -1003,11 +1039,18 @@ Status ExternalMaster::WaitForCatalogManager() {
 // ExternalTabletServer
 //------------------------------------------------------------
 
-ExternalTabletServer::ExternalTabletServer(
-    const std::shared_ptr<rpc::Messenger>& messenger, const string& exe,
-    const string& data_dir, string bind_host,
-    const vector<HostPort>& master_addrs, const vector<string>& extra_flags)
-    : ExternalDaemon(messenger, exe, data_dir, extra_flags),
+ExternalTabletServer::ExternalTabletServer(std::shared_ptr<rpc::Messenger> messenger,
+                                           string exe,
+                                           string data_dir,
+                                           boost::optional<string> log_dir,
+                                           string bind_host,
+                                           vector<HostPort> master_addrs,
+                                           vector<string> extra_flags)
+    : ExternalDaemon(std::move(messenger),
+                     std::move(exe),
+                     std::move(data_dir),
+                     std::move(log_dir),
+                     std::move(extra_flags)),
       master_addrs_(HostPort::ToCommaSeparatedString(master_addrs)),
       bind_host_(std::move(bind_host)) {}
 

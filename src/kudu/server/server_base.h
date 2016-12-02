@@ -124,10 +124,14 @@ class ServerBase {
   void MetricsLoggingThread();
   std::string FooterHtml() const;
 
+  Status StartExcessGlogDeleterThread();
+  void ExcessGlogDeleterThread();
+
   ServerBaseOptions options_;
 
   scoped_refptr<Thread> metrics_logging_thread_;
-  CountDownLatch stop_metrics_logging_latch_;
+  scoped_refptr<Thread> excess_glog_deleter_thread_;
+  CountDownLatch stop_background_threads_latch_;
 
   gscoped_ptr<ScopedGLogMetrics> glog_metrics_;
 

@@ -24,7 +24,7 @@
 // Summary
 // ------------------------------------------------------------
 //
-// This API provides a basic set of metrics primitives along the lines of the Code Hale's
+// This API provides a basic set of metrics primitives along the lines of the Coda Hale's
 // metrics library along with JSON formatted output of running metrics.
 //
 // The metrics system has a few main concepts in its data model:

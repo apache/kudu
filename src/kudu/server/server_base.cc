@@ -37,16 +37,17 @@
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/server/rpc_server.h"
-#include "kudu/server/tcmalloc_metrics.h"
-#include "kudu/server/webserver.h"
 #include "kudu/server/rpcz-path-handler.h"
-#include "kudu/server/server_base_options.h"
 #include "kudu/server/server_base.pb.h"
+#include "kudu/server/server_base_options.h"
+#include "kudu/server/tcmalloc_metrics.h"
 #include "kudu/server/tracing-path-handlers.h"
+#include "kudu/server/webserver.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -106,7 +107,7 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
           MemTracker::CreateTracker(-1, "result-tracker", mem_tracker_)))),
       is_first_run_(false),
       options_(options),
-      stop_metrics_logging_latch_(1) {
+      stop_background_threads_latch_(1) {
   FsManagerOpts fs_opts;
   fs_opts.metric_entity = metric_entity_;
   fs_opts.parent_mem_tracker = mem_tracker_;
@@ -198,6 +199,7 @@ Status ServerBase::Init() {
   RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
 
   result_tracker_->StartGCThread();
+  RETURN_NOT_OK(StartExcessGlogDeleterThread());
 
   return Status::OK();
 }
@@ -273,7 +275,7 @@ void ServerBase::MetricsLoggingThread() {
 
 
   MonoTime next_log = MonoTime::Now();
-  while (!stop_metrics_logging_latch_.WaitUntil(next_log)) {
+  while (!stop_background_threads_latch_.WaitUntil(next_log)) {
     next_log = MonoTime::Now() +
         MonoDelta::FromMilliseconds(options_.metrics_log_interval_ms);
 
@@ -307,6 +309,26 @@ void ServerBase::MetricsLoggingThread() {
   WARN_NOT_OK(log.Close(), "Unable to close metric log");
 }
 
+Status ServerBase::StartExcessGlogDeleterThread() {
+  if (FLAGS_logtostderr) {
+    return Status::OK();
+  }
+  // Try synchronously deleting excess log files once at startup to make sure it
+  // works, then start a background thread to continue deleting them in the
+  // future.
+  RETURN_NOT_OK_PREPEND(DeleteExcessLogFiles(options_.env), "Unable to delete excess log files");
+  return Thread::Create("server", "excess-glog-deleter", &ServerBase::ExcessGlogDeleterThread,
+                        this, &excess_glog_deleter_thread_);
+}
+
+void ServerBase::ExcessGlogDeleterThread() {
+  // How often to attempt to clean up excess glog files.
+  const MonoDelta kWait = MonoDelta::FromSeconds(60);
+  while (!stop_background_threads_latch_.WaitUntil(MonoTime::Now() + kWait)) {
+    WARN_NOT_OK(DeleteExcessLogFiles(options_.env), "Unable to delete excess log files");
+  }
+}
+
 std::string ServerBase::FooterHtml() const {
   return Substitute("<pre>$0\nserver uuid $1</pre>",
                     VersionInfo::GetShortVersionString(),
@@ -337,9 +359,12 @@ Status ServerBase::Start() {
 }
 
 void ServerBase::Shutdown() {
+  stop_background_threads_latch_.CountDown();
   if (metrics_logging_thread_) {
-    stop_metrics_logging_latch_.CountDown();
     metrics_logging_thread_->Join();
+  }
+  if (excess_glog_deleter_thread_) {
+    excess_glog_deleter_thread_->Join();
   }
   web_server_->Stop();
   rpc_server_->Shutdown();

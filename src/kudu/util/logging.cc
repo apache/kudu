@@ -16,22 +16,30 @@
 // under the License.
 #include "kudu/util/logging.h"
 
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_io.hpp>
-#include <boost/uuid/uuid_generators.hpp>
+#include <stdio.h>
+
+#include <algorithm>
+#include <fstream>
+#include <iostream>
 #include <mutex>
 #include <sstream>
-#include <stdio.h>
-#include <iostream>
-#include <fstream>
+#include <utility>
+#include <vector>
+
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/spinlock.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/async_logger.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
+#include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/status.h"
 
 DEFINE_string(log_filename, "",
     "Prefix of log filename - "
@@ -47,6 +55,12 @@ DEFINE_int32(log_async_buffer_bytes_per_level, 2 * 1024 * 1024,
              "The number of bytes of buffer space used by each log "
              "level. Only relevant when --log_async is enabled.");
 TAG_FLAG(log_async_buffer_bytes_per_level, hidden);
+
+DEFINE_int32(max_log_files, 10,
+    "Maximum number of log files to retain per severity level. The most recent "
+    "log files are retained. If set to 0, all log files are retained.");
+TAG_FLAG(max_log_files, runtime);
+TAG_FLAG(max_log_files, experimental);
 
 #define PROJ_NAME "kudu"
 
@@ -331,8 +345,52 @@ void LogCommandLineFlags() {
             << google::CommandlineFlagsIntoString();
 }
 
+Status DeleteExcessLogFiles(Env* env) {
+  int32_t max_log_files = FLAGS_max_log_files;
+  // Ignore bad input or disable log rotation.
+  if (max_log_files <= 0) return Status::OK();
+
+  for (int severity = 0; severity < google::NUM_SEVERITIES; ++severity) {
+    vector<string> logfiles;
+    // Build glob pattern for input
+    // e.g. /var/log/kudu/kudu-master.*.INFO.*
+    string pattern = strings::Substitute("$0/$1.*.$2.*", FLAGS_log_dir, FLAGS_log_filename,
+                                         google::GetLogSeverityName(severity));
+    RETURN_NOT_OK(env->Glob(pattern, &logfiles));
+
+    if (logfiles.size() <= max_log_files) {
+      continue;
+    }
+
+    vector<pair<time_t, string>> logfile_mtimes;
+    for (string& logfile : logfiles) {
+      int64_t mtime;
+      RETURN_NOT_OK(env->GetFileModifiedTime(logfile, &mtime));
+      logfile_mtimes.emplace_back(mtime, std::move(logfile));
+    }
+
+    // Keep the 'max_log_files' most recent log files, as compared by
+    // modification time. Glog files contain a second-granularity timestamp in
+    // the name, so this could potentially use the filename sort order as
+    // guaranteed by glob, however this code has been adapted from Impala which
+    // uses mtime to determine which files to delete, and there haven't been any
+    // issues in production settings.
+    std::sort(logfile_mtimes.begin(), logfile_mtimes.end());
+    logfile_mtimes.resize(logfile_mtimes.size() - max_log_files);
+
+    VLOG(2) << "Deleting " << logfile_mtimes.size()
+            << " excess glog files at " << google::GetLogSeverityName(severity)
+            << " severity";
+
+    for (const auto& logfile: logfile_mtimes) {
+      RETURN_NOT_OK(env->DeleteFile(logfile.second));
+    }
+  }
+  return Status::OK();
+}
+
 // Support for the special THROTTLE_MSG token in a log message stream.
-ostream& operator<<(ostream &os, const PRIVATE_ThrottleMsg&) {
+ostream& operator<<(ostream &os, const PRIVATE_ThrottleMsg& /*unused*/) {
   using google::LogMessage;
 #ifdef DISABLE_RTTI
   LogMessage::LogStream *log = static_cast<LogMessage::LogStream*>(&os);

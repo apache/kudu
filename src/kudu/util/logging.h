@@ -25,6 +25,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/logging_callback.h"
+#include "kudu/util/status.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Throttled logging support
@@ -169,10 +170,9 @@ enum PRIVATE_ThrottleMsg {THROTTLE_MSG};
 #define LOG_IF_EVERY_N(severity, condition, n) \
   GOOGLE_GLOG_COMPILE_ASSERT(false, "LOG_IF_EVERY_N is deprecated. Please use KLOG_IF_EVERY_N.")
 
-
-
-
 namespace kudu {
+
+class Env;
 
 // glog doesn't allow multiple invocations of InitGoogleLogging. This method conditionally
 // calls InitGoogleLogging only if it hasn't been called before.
@@ -211,6 +211,12 @@ void ShutdownLoggingSafe();
 
 // Writes all command-line flags to the log at level INFO.
 void LogCommandLineFlags();
+
+// Deletes excess rotated log files.
+//
+// Keeps at most 'FLAG_max_log_files' of the most recent log files at every
+// severity level, using the file's modified time to determine recency.
+Status DeleteExcessLogFiles(Env* env);
 
 namespace logging {
 
