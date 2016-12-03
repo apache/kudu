@@ -173,6 +173,11 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // Add an Insert operation to the given consensus request.
   // The row to be inserted is generated based on the OpId.
   void AddOp(const OpId& id, ConsensusRequestPB* req);
+  void AddOpWithTypeAndKey(const OpId& id,
+                           RowOperationsPB::Type op_type,
+                           int32_t key,
+                           ConsensusRequestPB* req);
+
 
   string DumpToString(TServerDetails* leader,
                       const vector<string>& leader_results,
@@ -1174,6 +1179,14 @@ TEST_F(RaftConsensusITest, TestKUDU_597) {
 }
 
 void RaftConsensusITest::AddOp(const OpId& id, ConsensusRequestPB* req) {
+  AddOpWithTypeAndKey(id, RowOperationsPB::INSERT,
+                      id.index() * 10000 + id.term(), req);
+}
+
+void RaftConsensusITest::AddOpWithTypeAndKey(const OpId& id,
+                                             RowOperationsPB::Type op_type,
+                                             int32_t key,
+                                             ConsensusRequestPB* req) {
   ReplicateMsg* msg = req->add_ops();
   msg->mutable_id()->CopyFrom(id);
   msg->set_timestamp(id.index());
@@ -1181,8 +1194,7 @@ void RaftConsensusITest::AddOp(const OpId& id, ConsensusRequestPB* req) {
   WriteRequestPB* write_req = msg->mutable_write_request();
   CHECK_OK(SchemaToPB(schema_, write_req->mutable_schema()));
   write_req->set_tablet_id(tablet_id_);
-  int key = id.index() * 10000 + id.term();
-  AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, id.term(),
+  AddTestRowToPB(op_type, schema_, key, id.term(),
                  id.ShortDebugString(), write_req->mutable_row_operations());
 }
 
@@ -1275,6 +1287,64 @@ TEST_F(RaftConsensusITest, TestLMPMismatchOnRestartedReplica) {
   // Even though the replica previously received operations through 2.3, the LMP mismatch
   // above causes us to truncate operation 2.3, so 2.2 remains.
   EXPECT_EQ("2.2", OpIdToString(resp.status().last_received()));
+}
+
+// Test a scenario where a replica has pending operations with lock
+// dependencies on each other:
+//   2.2: UPSERT row 1
+//   2.3: UPSERT row 1
+//   2.4: UPSERT row 1
+// ...and a new leader tries to abort 2.4 in order to replace it with a new
+// operation. Because the operations have a lock dependency, operation 2.4
+// will be 'stuck' in the Prepare queue. This verifies that we can abort an
+// operation even if it's stuck in the queue.
+TEST_F(RaftConsensusITest, TestReplaceOperationStuckInPrepareQueue) {
+  TServerDetails* replica_ts;
+  NO_FATALS(SetupSingleReplicaTest(&replica_ts));
+
+  ConsensusServiceProxy* c_proxy = CHECK_NOTNULL(replica_ts->consensus_proxy.get());
+  ConsensusRequestPB req;
+  ConsensusResponsePB resp;
+  RpcController rpc;
+
+  req.set_tablet_id(tablet_id_);
+  req.set_dest_uuid(replica_ts->uuid());
+  req.set_caller_uuid("fake_caller");
+  req.set_caller_term(2);
+  req.set_all_replicated_index(0);
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(1, 1));
+  AddOpWithTypeAndKey(MakeOpId(2, 2), RowOperationsPB::UPSERT, 1, &req);
+  AddOpWithTypeAndKey(MakeOpId(2, 3), RowOperationsPB::UPSERT, 1, &req);
+  AddOpWithTypeAndKey(MakeOpId(2, 4), RowOperationsPB::UPSERT, 1, &req);
+  req.set_committed_index(2);
+  rpc.Reset();
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+
+  // Replace operation 2.4 with 3.4, add 3.5 (upsert of a new key)
+  req.set_caller_term(3);
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 3));
+  req.clear_ops();
+  AddOpWithTypeAndKey(MakeOpId(3, 4), RowOperationsPB::UPSERT, 1, &req);
+  AddOpWithTypeAndKey(MakeOpId(3, 5), RowOperationsPB::UPSERT, 2, &req);
+  rpc.Reset();
+  rpc.set_timeout(MonoDelta::FromSeconds(5));
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+
+  // Commit all ops.
+  req.clear_ops();
+  req.set_committed_index(5);
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(3, 5));
+  rpc.Reset();
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+
+  // Ensure we can read the data.
+  vector<string> results;
+  NO_FATALS(WaitForRowCount(replica_ts->tserver_proxy.get(), 2, &results));
+  ASSERT_EQ("(int32 key=1, int32 int_val=3, string string_val=\"term: 3 index: 4\")", results[0]);
+  ASSERT_EQ("(int32 key=2, int32 int_val=3, string string_val=\"term: 3 index: 5\")", results[1]);
 }
 
 // Regression test for KUDU-644:
