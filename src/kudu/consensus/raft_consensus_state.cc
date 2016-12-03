@@ -145,7 +145,7 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
   }
-  if (!IsRaftConfigVoter(peer_uuid_, ConsensusStateUnlocked(CONSENSUS_CONFIG_ACTIVE).config())) {
+  if (!IsRaftConfigVoter(peer_uuid_, cmeta_->active_config())) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Allowing update even though not a member of the config";
   }
   lock->swap(l);
