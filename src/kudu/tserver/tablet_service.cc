@@ -1709,18 +1709,30 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     }
   }
 
-  // Update metrics based on this scan request.
   scoped_refptr<TabletPeer> tablet_peer = scanner->tablet_peer();
   shared_ptr<Tablet> tablet;
-  RETURN_NOT_OK(GetTabletRef(tablet_peer, &tablet, error_code));
+  TabletServerErrorPB::Code tablet_ref_error_code;
+  const Status s = GetTabletRef(tablet_peer, &tablet, &tablet_ref_error_code);
+  // If the tablet is not running, but the scan operation in progress
+  // has reached this point, the tablet server has the necessary data to
+  // send in response for the scan continuation request.
+  if (PREDICT_FALSE(!s.ok() && tablet_ref_error_code !=
+                        TabletServerErrorPB::TABLET_NOT_RUNNING)) {
+    *error_code = tablet_ref_error_code;
+    return s;
+  }
 
-  // First, the number of rows/cells/bytes actually returned to the user.
-  tablet->metrics()->scanner_rows_returned->IncrementBy(
-      result_collector->NumRowsReturned());
-  tablet->metrics()->scanner_cells_returned->IncrementBy(
-      result_collector->NumRowsReturned() * scanner->client_projection_schema()->num_columns());
-  tablet->metrics()->scanner_bytes_returned->IncrementBy(
-      result_collector->ResponseSize());
+  // Update metrics based on this scan request.
+  if (tablet) {
+    // First, the number of rows/cells/bytes actually returned to the user.
+    tablet->metrics()->scanner_rows_returned->IncrementBy(
+        result_collector->NumRowsReturned());
+    tablet->metrics()->scanner_cells_returned->IncrementBy(
+        result_collector->NumRowsReturned() *
+            scanner->client_projection_schema()->num_columns());
+    tablet->metrics()->scanner_bytes_returned->IncrementBy(
+        result_collector->ResponseSize());
+  }
 
   // Then the number of rows/cells/bytes actually processed. Here we have to dig
   // into the per-column iterator stats, sum them up, and then subtract out the
@@ -1735,12 +1747,14 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   delta_stats.SubtractStats(scanner->already_reported_stats());
   scanner->set_already_reported_stats(total_stats);
 
-  tablet->metrics()->scanner_rows_scanned->IncrementBy(
-      rows_scanned);
-  tablet->metrics()->scanner_cells_scanned_from_disk->IncrementBy(
-      delta_stats.cells_read_from_disk);
-  tablet->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(
-      delta_stats.bytes_read_from_disk);
+  if (tablet) {
+    tablet->metrics()->scanner_rows_scanned->IncrementBy(
+        rows_scanned);
+    tablet->metrics()->scanner_cells_scanned_from_disk->IncrementBy(
+        delta_stats.cells_read_from_disk);
+    tablet->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(
+        delta_stats.bytes_read_from_disk);
+  }
 
   scanner->UpdateAccessTime();
   *has_more_results = !req->close_scanner() && iter->HasNext();

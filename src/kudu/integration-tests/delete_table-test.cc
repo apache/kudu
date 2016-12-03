@@ -1276,7 +1276,7 @@ INSTANTIATE_TEST_CASE_P(FaultFlags, DeleteTableTombstonedParamTest,
 
 // Make sure the tablet server keeps the necessary data to serve scan request in
 // progress if tablet is marked for deletion.
-TEST_F(DeleteTableTest, DISABLED_TestDeleteTableWhileScanInProgress) {
+TEST_F(DeleteTableTest, TestDeleteTableWhileScanInProgress) {
   const KuduScanner::ReadMode read_modes[] = {
     KuduScanner::READ_LATEST,
     KuduScanner::READ_AT_SNAPSHOT,
