@@ -123,7 +123,10 @@ Status ClusterVerifier::DoCheckRowCount(const std::string& table_name,
   RETURN_NOT_OK_PREPEND(client->OpenTable(table_name, &table),
                         "Unable to open table");
   client::KuduScanner scanner(table.get());
-  CHECK_OK(scanner.SetProjectedColumns(vector<string>()));
+  CHECK_OK(scanner.SetReadMode(client::KuduScanner::READ_AT_SNAPSHOT));
+  CHECK_OK(scanner.SetFaultTolerant());
+  CHECK_OK(scanner.SetTimeoutMillis(5000));
+  CHECK_OK(scanner.SetProjectedColumns({}));
   RETURN_NOT_OK_PREPEND(scanner.Open(), "Unable to open scanner");
   int count = 0;
   vector<client::KuduRowResult> rows;

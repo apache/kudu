@@ -356,9 +356,10 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
                                        bool* has_leader,
                                        master::TabletLocationsPB* tablet_locations);
 
-  static const bool WITH_NOTIFICATION_LATENCY = true;
-  static const bool WITHOUT_NOTIFICATION_LATENCY = false;
-  void DoTestChurnyElections(bool with_latency);
+  void CreateClusterForChurnyElectionsTests(const vector<string>& extra_ts_flags);
+  void DoTestChurnyElections(TestWorkload* workload, int max_rows_to_insert);
+  void CreateClusterForCrashyNodesTests();
+  void DoTestCrashyNodes(TestWorkload* workload, int max_rows_to_insert);
 
   // Prepare for a test where a single replica of a 3-server cluster is left
   // running as a follower.
@@ -830,23 +831,13 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   }
 }
 
-// This test starts several tablet servers, and configures them with
-// fault injection so that the leaders frequently crash just before
-// sending RPCs to followers.
-//
-// This can result in various scenarios where leaders crash right after
-// being elected and never succeed in replicating their first operation.
-// For example, KUDU-783 reproduces from this test approximately 5% of the
-// time on a slow-test debug build.
-TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
-  int kCrashesToCause = 3;
+void RaftConsensusITest::CreateClusterForCrashyNodesTests() {
   if (AllowSlowTests()) {
     FLAGS_num_tablet_servers = 7;
     FLAGS_num_replicas = 7;
-    kCrashesToCause = 15;
   }
 
-  vector<string> ts_flags, master_flags;
+  vector<string> ts_flags;
 
   // Crash 5% of the time just before sending an RPC. With 7 servers,
   // this means we crash about 30% of the time before we've fully
@@ -859,8 +850,7 @@ TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
   ts_flags.push_back("--log_inject_latency_ms_mean=30");
   ts_flags.push_back("--log_inject_latency_ms_stddev=60");
 
-  // Make leader elections faster so we get through more cycles of
-  // leaders.
+  // Make leader elections faster so we get through more cycles of leaders.
   ts_flags.push_back("--raft_heartbeat_interval_ms=100");
   ts_flags.push_back("--leader_failure_monitor_check_mean_ms=50");
   ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=25");
@@ -870,28 +860,33 @@ TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
   // log area.
   ts_flags.push_back("--log_preallocate_segments=false");
 
-  CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
+  CreateCluster("raft_consensus-itest-crashy-nodes-cluster", ts_flags, {});
+}
 
-  TestWorkload workload(cluster_.get());
-  workload.set_num_replicas(FLAGS_num_replicas);
-  workload.set_timeout_allowed(true);
-  workload.set_write_timeout_millis(10000);
-  workload.set_num_write_threads(10);
-  workload.set_write_batch_size(1);
-  workload.Setup();
-  workload.Start();
+void RaftConsensusITest::DoTestCrashyNodes(TestWorkload* workload, int max_rows_to_insert) {
+  int crashes_to_cause = 3;
+  if (AllowSlowTests()) {
+    crashes_to_cause = 15;
+  }
+
+  workload->set_num_replicas(FLAGS_num_replicas);
+  // Set a really high write timeout so that even in the presence of many failures we
+  // can verify an exact number of rows in the end, thanks to exactly once semantics.
+  workload->set_write_timeout_millis(60 * 1000 /* 60 seconds */);
+  workload->set_num_write_threads(10);
+  workload->Setup();
+  workload->Start();
 
   int num_crashes = 0;
-  while (num_crashes < kCrashesToCause &&
-         workload.rows_inserted() < 100) {
+  while (num_crashes < crashes_to_cause &&
+      workload->rows_inserted() < max_rows_to_insert) {
     num_crashes += RestartAnyCrashedTabletServers();
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
 
-  workload.StopAndJoin();
-
-  // After we stop the writes, we can still get crashes because heartbeats could
-  // trigger the fault path. So, disable the faults and restart one more time.
+  // Writers are likely ongoing. To have some chance of completing all writes,
+  // restart the tablets servers, otherwise they'll keep crashing and the writes
+  // can never complete.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     ExternalTabletServer* ts = cluster_->tablet_server(i);
     vector<string>* flags = ts->mutable_flags();
@@ -906,35 +901,54 @@ TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
     ASSERT_TRUE(removed_flag) << "could not remove flag from TS " << i
                               << "\nFlags:\n" << *flags;
     ts->Shutdown();
-    CHECK_OK(ts->Restart());
+    ASSERT_OK(ts->Restart());
   }
 
+  workload->StopAndJoin();
+
   // Ensure that the replicas converge.
-  // We don't know exactly how many rows got inserted, since the writer
-  // probably saw many errors which left inserts in indeterminate state.
-  // But, we should have at least as many as we got confirmation for.
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
-  NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
-                            workload.rows_inserted()));
+  NO_FATALS(v.CheckRowCount(workload->table_name(),
+                            ClusterVerifier::EXACTLY,
+                            workload->rows_inserted()));
 }
 
-// This test sets all of the election timers to be very short, resulting
-// in a lot of churn. We expect to make some progress and not diverge or
-// crash, despite the frequent re-elections and races.
-TEST_F(RaftConsensusITest, TestChurnyElections) {
-  DoTestChurnyElections(WITHOUT_NOTIFICATION_LATENCY);
+// This test starts several tablet servers, and configures them with
+// fault injection so that the leaders frequently crash just before
+// sending RPCs to followers.
+//
+// This can result in various scenarios where leaders crash right after
+// being elected and never succeed in replicating their first operation.
+// For example, KUDU-783 reproduces from this test approximately 5% of the
+// time on a slow-test debug build.
+TEST_F(RaftConsensusITest, InsertUniqueKeysWithCrashyNodes) {
+  CreateClusterForCrashyNodesTests();
+
+  TestWorkload workload(cluster_.get());
+  workload.set_write_batch_size(1);
+
+  NO_FATALS(DoTestCrashyNodes(&workload, 100));
 }
 
-// The same test, except inject artificial latency when propagating notifications
-// from the queue back to consensus. This previously reproduced bugs like KUDU-1078 which
-// normally only appear under high load.
-TEST_F(RaftConsensusITest, TestChurnyElections_WithNotificationLatency) {
-  DoTestChurnyElections(WITH_NOTIFICATION_LATENCY);
+// The same crashy nodes test as above but inserts many duplicate keys.
+// This emulates cases where there are many duplicate keys which, due to two phase
+// locking, may cause deadlocks and other anomalies that cannot be observed when
+// keys are unique.
+TEST_F(RaftConsensusITest, InsertDuplicateKeysWithCrashyNodes) {
+  CreateClusterForCrashyNodesTests();
+
+  TestWorkload workload(cluster_.get());
+  workload.set_write_pattern(TestWorkload::INSERT_WITH_MANY_DUP_KEYS);
+  // Increase the number of rows per batch to get a higher chance of key collision.
+  workload.set_write_batch_size(3);
+
+  NO_FATALS(DoTestCrashyNodes(&workload, 300));
 }
 
-void RaftConsensusITest::DoTestChurnyElections(bool with_latency) {
-  vector<string> ts_flags, master_flags;
+void RaftConsensusITest::CreateClusterForChurnyElectionsTests(
+    const vector<string>& extra_ts_flags) {
+  vector<string> ts_flags;
 
 #ifdef THREAD_SANITIZER
   // On TSAN builds, we need to be a little bit less churny in order to make
@@ -946,44 +960,78 @@ void RaftConsensusITest::DoTestChurnyElections(bool with_latency) {
   ts_flags.push_back("--leader_failure_monitor_check_mean_ms=1");
   ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=1");
   ts_flags.push_back("--never_fsync");
-  if (with_latency) {
-    ts_flags.push_back("--consensus_inject_latency_ms_in_notifications=50");
-  }
+  ts_flags.insert(ts_flags.end(), extra_ts_flags.cbegin(), extra_ts_flags.cend());
 
-  CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
+  CreateCluster("raft_consensus-itest-cluster", ts_flags, {});
+}
 
-  TestWorkload workload(cluster_.get());
-  workload.set_num_replicas(FLAGS_num_replicas);
-  workload.set_timeout_allowed(true);
-  workload.set_write_timeout_millis(100);
-  workload.set_num_write_threads(2);
-  workload.set_write_batch_size(1);
-  workload.Setup();
-  workload.Start();
+void RaftConsensusITest::DoTestChurnyElections(TestWorkload* workload, int max_rows_to_insert) {
+  workload->set_num_replicas(FLAGS_num_replicas);
+  // Set a really high write timeout so that even in the presence of many failures we
+  // can verify an exact number of rows in the end, thanks to exactly once semantics.
+  workload->set_write_timeout_millis(60 * 1000 /* 60 seconds */);
+  workload->set_num_write_threads(2);
+  workload->set_write_batch_size(1);
+  workload->Setup();
+  workload->Start();
 
   // Run for either a prescribed number of writes, or 30 seconds,
   // whichever comes first. This prevents test timeouts on slower
   // build machines, TSAN builds, etc.
   Stopwatch sw;
   sw.start();
-  const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
-  while (workload.rows_inserted() < kNumWrites &&
-         sw.elapsed().wall_seconds() < 30) {
+  while (workload->rows_inserted() < max_rows_to_insert &&
+      sw.elapsed().wall_seconds() < 30) {
     SleepFor(MonoDelta::FromMilliseconds(10));
-    NO_FATALS(AssertNoTabletServersCrashed());
+        NO_FATALS(AssertNoTabletServersCrashed());
   }
-  workload.StopAndJoin();
-  ASSERT_GT(workload.rows_inserted(), 0) << "No rows inserted";
+  workload->StopAndJoin();
+  ASSERT_GT(workload->rows_inserted(), 0) << "No rows inserted";
 
   // Ensure that the replicas converge.
-  // We don't know exactly how many rows got inserted, since the writer
-  // probably saw many errors which left inserts in indeterminate state.
-  // But, we should have at least as many as we got confirmation for.
+  // We expect an exact result due to exactly once semantics and snapshot scans.
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
-  NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
-                            workload.rows_inserted()));
+  NO_FATALS(v.CheckRowCount(workload->table_name(),
+                            ClusterVerifier::EXACTLY,
+                            workload->rows_inserted()));
   NO_FATALS(AssertNoTabletServersCrashed());
+}
+
+// This test sets all of the election timers to be very short, resulting
+// in a lot of churn. We expect to make some progress and not diverge or
+// crash, despite the frequent re-elections and races.
+TEST_F(RaftConsensusITest, TestChurnyElections) {
+  const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
+  CreateClusterForChurnyElectionsTests({});
+  TestWorkload workload(cluster_.get());
+  workload.set_write_batch_size(1);
+  DoTestChurnyElections(&workload, kNumWrites);
+}
+
+// The same test, except inject artificial latency when propagating notifications
+// from the queue back to consensus. This previously reproduced bugs like KUDU-1078 which
+// normally only appear under high load.
+TEST_F(RaftConsensusITest, TestChurnyElections_WithNotificationLatency) {
+  CreateClusterForChurnyElectionsTests({"--consensus_inject_latency_ms_in_notifications=50"});
+  const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
+  TestWorkload workload(cluster_.get());
+  workload.set_write_batch_size(1);
+  DoTestChurnyElections(&workload, kNumWrites);
+}
+
+// The same as TestChurnyElections except insert many duplicated rows.
+// This emulates cases where there are many duplicate keys which, due to two phase
+// locking, may cause deadlocks and other anomalies that cannot be observed when
+// keys are unique.
+TEST_F(RaftConsensusITest, TestChurnyElections_WithDuplicateKeys) {
+  CreateClusterForChurnyElectionsTests({});
+  const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
+  TestWorkload workload(cluster_.get());
+  workload.set_write_pattern(TestWorkload::INSERT_WITH_MANY_DUP_KEYS);
+  // Increase the number of rows per batch to get a higher chance of key collision.
+  workload.set_write_batch_size(3);
+  DoTestChurnyElections(&workload, kNumWrites);
 }
 
 TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
@@ -1472,7 +1520,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     ScanRequestPB req;
     ScanResponsePB resp;
     RpcController rpc;
-    rpc.set_timeout(MonoDelta::FromMilliseconds(1000));
+    rpc.set_timeout(MonoDelta::FromMilliseconds(5000));
     NewScanRequestPB* scan = req.mutable_new_scan_request();
     scan->set_tablet_id(tablet_id_);
     scan->set_read_mode(READ_AT_SNAPSHOT);
