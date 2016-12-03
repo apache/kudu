@@ -47,6 +47,7 @@ class ExternalMiniClusterITestBase : public KuduTest {
   void StartCluster(const std::vector<std::string>& extra_ts_flags = {},
                     const std::vector<std::string>& extra_master_flags = {},
                     int num_tablet_servers = 3);
+  void StopCluster();
 
   std::unique_ptr<ExternalMiniCluster> cluster_;
   std::unique_ptr<itest::ExternalMiniClusterFsInspector> inspect_;

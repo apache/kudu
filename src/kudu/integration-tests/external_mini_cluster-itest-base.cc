@@ -33,28 +33,7 @@
 namespace kudu {
 
 void ExternalMiniClusterITestBase::TearDown() {
-  if (!cluster_) {
-    return;
-  }
-
-  if (HasFatalFailure()) {
-    LOG(INFO) << "Found fatal failure";
-    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      if (!cluster_->tablet_server(i)->IsProcessAlive()) {
-        LOG(INFO) << "Tablet server " << i
-                  << " is not running. Cannot dump its stacks.";
-        continue;
-      }
-      LOG(INFO) << "Attempting to dump stacks of TS " << i
-                << " with UUID " << cluster_->tablet_server(i)->uuid()
-                << " and pid " << cluster_->tablet_server(i)->pid();
-      WARN_NOT_OK(PstackWatcher::DumpPidStacks(cluster_->tablet_server(i)->pid()),
-                  "Couldn't dump stacks");
-    }
-  }
-  cluster_->Shutdown();
-  STLDeleteValues(&ts_map_);
-
+  StopCluster();
   KuduTest::TearDown();
 }
 
@@ -75,6 +54,32 @@ void ExternalMiniClusterITestBase::StartCluster(
                                          cluster_->messenger(),
                                          &ts_map_));
   ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+}
+
+void ExternalMiniClusterITestBase::StopCluster() {
+  if (!cluster_) {
+    return;
+  }
+
+  if (HasFatalFailure()) {
+    LOG(INFO) << "Found fatal failure";
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      if (!cluster_->tablet_server(i)->IsProcessAlive()) {
+        LOG(INFO) << "Tablet server " << i << " is not running. Cannot dump its stacks.";
+        continue;
+      }
+      LOG(INFO) << "Attempting to dump stacks of TS " << i
+                << " with UUID " << cluster_->tablet_server(i)->uuid()
+                << " and pid " << cluster_->tablet_server(i)->pid();
+      WARN_NOT_OK(PstackWatcher::DumpPidStacks(cluster_->tablet_server(i)->pid()),
+                  "Couldn't dump stacks");
+    }
+  }
+  cluster_->Shutdown();
+  client_.reset();
+  inspect_.reset();
+  cluster_.reset();
+  STLDeleteValues(&ts_map_);
 }
 
 } // namespace kudu

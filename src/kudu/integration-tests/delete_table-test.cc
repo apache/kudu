@@ -15,14 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/optional.hpp>
-#include <glog/stl_logging.h>
-#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <unordered_map>
 
+#include <boost/optional.hpp>
+#include <glog/stl_logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
@@ -41,9 +43,11 @@
 #include "kudu/util/subprocess.h"
 
 using kudu::client::KuduClient;
-using kudu::client::KuduClientBuilder;
+using kudu::client::KuduScanner;
+using kudu::client::KuduScanBatch;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
+using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::ConsensusMetadataPB;
@@ -83,6 +87,11 @@ class DeleteTableTest : public ExternalMiniClusterITestBase {
     SUPERBLOCK_EXPECTED = 1
   };
 
+  enum ErrorDumpStackSelector {
+    ON_ERROR_DO_NOT_DUMP_STACKS = 0,
+    ON_ERROR_DUMP_STACKS = 1,
+  };
+
   // Get the UUID of the leader of the specified tablet, as seen by the TS with
   // the given 'ts_uuid'.
   string GetLeaderUUID(const string& ts_uuid, const string& tablet_id);
@@ -114,9 +123,10 @@ class DeleteTableTest : public ExternalMiniClusterITestBase {
   void WaitForAllTSToCrash();
   void WaitUntilTabletRunning(int index, const std::string& tablet_id);
 
-  // Delete the given table. If the operation times out, dumps the master stacks
-  // to help debug master-side deadlocks.
-  void DeleteTable(const string& table_name);
+  // Delete the given table. If the operation times out, optionally dump
+  // the master stacks to help debug master-side deadlocks.
+  void DeleteTable(const string& table_name,
+                   ErrorDumpStackSelector selector = ON_ERROR_DUMP_STACKS);
 };
 
 string DeleteTableTest::GetLeaderUUID(const string& ts_uuid, const string& tablet_id) {
@@ -208,11 +218,12 @@ void DeleteTableTest::WaitUntilTabletRunning(int index, const std::string& table
                                           tablet_id, MonoDelta::FromSeconds(60)));
 }
 
-void DeleteTableTest::DeleteTable(const string& table_name) {
+void DeleteTableTest::DeleteTable(const string& table_name,
+                                  ErrorDumpStackSelector selector) {
   Status s = client_->DeleteTable(table_name);
-  if (s.IsTimedOut()) {
+  if (s.IsTimedOut() && (ON_ERROR_DUMP_STACKS == selector)) {
     WARN_NOT_OK(PstackWatcher::DumpPidStacks(cluster_->master()->pid()),
-                        "Couldn't dump stacks");
+                "Couldn't dump stacks");
   }
   ASSERT_OK(s);
 }
@@ -1262,5 +1273,138 @@ const char* tombstoned_faults[] = {"fault_crash_after_blocks_deleted",
 
 INSTANTIATE_TEST_CASE_P(FaultFlags, DeleteTableTombstonedParamTest,
                         ::testing::ValuesIn(tombstoned_faults));
+
+// Make sure the tablet server keeps the necessary data to serve scan request in
+// progress if tablet is marked for deletion.
+TEST_F(DeleteTableTest, DISABLED_TestDeleteTableWhileScanInProgress) {
+  const KuduScanner::ReadMode read_modes[] = {
+    KuduScanner::READ_LATEST,
+    KuduScanner::READ_AT_SNAPSHOT,
+  };
+  const auto read_mode_to_string = [](KuduScanner::ReadMode mode) {
+    switch (mode) {
+      case KuduScanner::READ_LATEST:
+        return "READ_LATEST";
+      case KuduScanner::READ_AT_SNAPSHOT:
+        return "READ_AT_SNAPSHOT";
+      default:
+        return "UNKNOWN";
+    }
+  };
+
+  const KuduClient::ReplicaSelection replica_selectors[] = {
+    KuduClient::LEADER_ONLY,
+    KuduClient::CLOSEST_REPLICA,
+    KuduClient::FIRST_REPLICA,
+  };
+  const auto replica_sel_to_string = [](KuduClient::ReplicaSelection sel) {
+    switch (sel) {
+      case KuduClient::LEADER_ONLY:
+        return "LEADER_ONLY";
+      case KuduClient::CLOSEST_REPLICA:
+        return "CLOSEST_REPLICA";
+      case KuduClient::FIRST_REPLICA:
+        return "FIRST_REPLICA";
+      default:
+        return "UNKNOWN";
+    }
+  };
+
+  const std::vector<std::string> extra_ts_flags = {
+    // Set the flush threshold low so that we have a mix of flushed and
+    // unflushed operations in the WAL, when we bootstrap.
+    "--flush_threshold_mb=1",
+
+    // Set the compaction budget to be low so that we get multiple passes
+    // of compaction instead of selecting all of the rowsets in a single
+    // compaction of the whole tablet.
+    "--tablet_compaction_budget_mb=1",
+
+    // Set the major delta compaction ratio low enough that we trigger
+    // a lot of them.
+    "--tablet_delta_store_major_compact_min_ratio=0.001",
+  };
+
+  // Approximate number of rows to insert. This is not exact number due to the
+  // way how the test controls the progress of the test workload.
+  const size_t rows_to_insert = AllowSlowTests() ? 100000 : 10000;
+  for (const auto sel : replica_selectors) {
+    for (const auto mode : read_modes) {
+      SCOPED_TRACE(Substitute("mode $0; replica $1",
+                              read_mode_to_string(mode),
+                              replica_sel_to_string(sel)));
+      NO_FATALS(StartCluster(extra_ts_flags));
+
+      TestWorkload w(cluster_.get());
+      w.set_write_pattern(TestWorkload::INSERT_RANDOM_ROWS);
+      w.Setup();
+
+      // Start the workload, and wait to see some rows actually inserted.
+      w.Start();
+      while (w.rows_inserted() < rows_to_insert) {
+        SleepFor(MonoDelta::FromMilliseconds(50));
+      }
+      w.StopAndJoin();
+      const int64_t ref_row_count = w.rows_inserted();
+
+      using kudu::client::sp::shared_ptr;
+      shared_ptr<KuduTable> table;
+      ASSERT_OK(client_->OpenTable(w.table_name(), &table));
+      KuduScanner scanner(table.get());
+      ASSERT_OK(scanner.SetReadMode(mode));
+      ASSERT_OK(scanner.SetSelection(sel));
+      // Setup batch size to be small enough to guarantee the scan
+      // will not fetch all the data at once.
+      ASSERT_OK(scanner.SetBatchSizeBytes(1));
+      ASSERT_OK(scanner.Open());
+      ASSERT_TRUE(scanner.HasMoreRows());
+      KuduScanBatch batch;
+      ASSERT_OK(scanner.NextBatch(&batch));
+      size_t row_count = batch.NumRows();
+
+      // Once the first batch of data has been fetched and there is some more
+      // to fetch, delete the table.
+      NO_FATALS(DeleteTable(w.table_name(), ON_ERROR_DO_NOT_DUMP_STACKS));
+
+      // Wait while the table is no longer advertised on the cluster.
+      // This ensures the table deletion request has been processed by tablet
+      // servers.
+      vector<string> tablets;
+      do {
+        SleepFor(MonoDelta::FromMilliseconds(250));
+        tablets = inspect_->ListTablets();
+      } while (!tablets.empty());
+
+      // Make sure the scanner can continue and fetch the rest of rows.
+      ASSERT_TRUE(scanner.HasMoreRows());
+      while (scanner.HasMoreRows()) {
+        KuduScanBatch batch;
+        const Status s = scanner.NextBatch(&batch);
+        ASSERT_TRUE(s.ok()) << s.ToString();
+        row_count += batch.NumRows();
+      }
+
+      // Verify the total row count. The exact count must be there in case of
+      // READ_AT_SNAPSHOT mode regardless of replica selection or if reading
+      // from a leader tablet in any scan mode. In the case of the READ_LATEST
+      // mode the data might be fetched from a lagging replica and the scan
+      // row count might be less than the inserted row count.
+      if (mode == KuduScanner::READ_AT_SNAPSHOT ||
+          sel == KuduClient::LEADER_ONLY) {
+        EXPECT_EQ(ref_row_count, row_count);
+      }
+
+      // Close the scanner to make sure it does not hold any references on the
+      // data about to be deleted by the hosting tablet server.
+      scanner.Close();
+
+      // Make sure the table has been deleted.
+      EXPECT_OK(inspect_->WaitForNoData());
+      NO_FATALS(cluster_->AssertNoCrashes());
+      // Tear down the cluster -- prepare for the next iteration of the loop.
+      NO_FATALS(StopCluster());
+    }
+  }
+}
 
 } // namespace kudu
