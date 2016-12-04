@@ -204,12 +204,13 @@ TEST_F(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
   work.set_num_replicas(1);
   work.set_write_timeout_millis(100);
   work.set_timeout_allowed(true);
+  work.set_payload_bytes(10000); // make logs roll without needing lots of ops.
   work.Setup();
 
   // Enable the fault point after creating the table, but before writing any data.
   // Otherwise, we'd crash during creation of the tablet.
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
-                              "fault_crash_before_write_log_segment_header", "0.5"));
+                              "fault_crash_before_write_log_segment_header", "0.9"));
   work.Start();
 
   // Wait for the process to crash during log roll.
