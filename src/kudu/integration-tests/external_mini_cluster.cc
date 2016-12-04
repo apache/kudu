@@ -40,6 +40,7 @@
 #include "kudu/util/async_util.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
@@ -710,16 +711,49 @@ bool ExternalDaemon::IsProcessAlive() const {
   return s.IsTimedOut();
 }
 
-Status ExternalDaemon::WaitForCrash(const MonoDelta& timeout) const {
+Status ExternalDaemon::WaitForInjectedCrash(const MonoDelta& timeout) const {
+  return WaitForCrash(timeout, [](int status) {
+      return WIFEXITED(status) && WEXITSTATUS(status) == fault_injection::kExitStatus;
+    }, "fault injection");
+}
+
+Status ExternalDaemon::WaitForFatal(const MonoDelta& timeout) const {
+  return WaitForCrash(timeout, [](int status) {
+      return WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+    }, "FATAL crash");
+}
+
+
+Status ExternalDaemon::WaitForCrash(const MonoDelta& timeout,
+                                    const std::function<bool(int)>& wait_status_predicate,
+                                    const char* crash_type_str) const {
+  CHECK(process_) << "process not started";
   MonoTime deadline = MonoTime::Now() + timeout;
 
   int i = 1;
-  while (MonoTime::Now() < deadline) {
-    if (!IsProcessAlive()) return Status::OK();
+  while (IsProcessAlive() && MonoTime::Now() < deadline) {
     int sleep_ms = std::min(i++ * 10, 200);
     SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
   }
-  return Status::TimedOut(Substitute("Process did not crash within $0", timeout.ToString()));
+
+  if (IsProcessAlive()) {
+    return Status::TimedOut(Substitute("Process did not crash within $0",
+                                       timeout.ToString()));
+  }
+
+  // If the process has exited, make sure it exited with the expected status.
+  int wait_status;
+  RETURN_NOT_OK_PREPEND(process_->WaitNoBlock(&wait_status),
+                        "could not get wait status");
+
+  if (!wait_status_predicate(wait_status)) {
+    string info_str;
+    RETURN_NOT_OK_PREPEND(process_->GetExitStatus(nullptr, &info_str),
+                          "could not get description of exit");
+    return Status::Aborted(
+        Substitute("process exited, but not due to a $0: $1", crash_type_str, info_str));
+  }
+  return Status::OK();
 }
 
 pid_t ExternalDaemon::pid() const {

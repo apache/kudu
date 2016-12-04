@@ -56,9 +56,14 @@
 namespace kudu {
 namespace fault_injection {
 
+// The exit status returned from a process exiting due to a fault.
+// The choice of value here is arbitrary: just needs to be something
+// wouldn't normally be returned by a non-fault-injection code path.
+constexpr int kExitStatus = 85;
+
 // Out-of-line implementation.
 void DoMaybeFault(const char* fault_str, double fraction);
-void DoInjectRandomLatency(double max_latency);
+void DoInjectRandomLatency(double max_latency_ms);
 Status DoMaybeReturnFailure(double fraction,
                             const Status& bad_status_to_return);
 

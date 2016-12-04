@@ -104,7 +104,7 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
   // Wait for crash due to inability to flush or compact.
   Status s;
   for (int i = 0; i < 10; i++) {
-    s = cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(1));
+    s = cluster_->tablet_server(0)->WaitForFatal(MonoDelta::FromSeconds(1));
     if (s.ok()) break;
     LOG(INFO) << "Rows inserted: " << workload.rows_inserted();
   }
@@ -144,7 +144,7 @@ TEST_F(DiskReservationITest, TestWalWriteToFullDiskAborts) {
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
                               "disk_reserved_bytes_free_for_testing", "10000001"));
 
-  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(10)));
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForFatal(MonoDelta::FromSeconds(10)));
   workload.StopAndJoin();
 }
 

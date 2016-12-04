@@ -17,6 +17,7 @@
 #ifndef KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_H
 #define KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_H
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -348,9 +349,18 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // explicitly call Shutdown().
   bool IsProcessAlive() const;
 
-  // Wait for this process to crash, or the given timeout to
-  // elapse. If the process is already crashed, returns immediately.
-  Status WaitForCrash(const MonoDelta& timeout) const;
+  // Wait for this process to crash due to a configured fault
+  // injection, or the given timeout to elapse. If the process
+  // crashes for some reason other than an injected fault, returns
+  // Status::Aborted.
+  //
+  // If the process is already crashed, returns immediately.
+  Status WaitForInjectedCrash(const MonoDelta& timeout) const;
+
+  // Same as the above, but expects the process to crash due to a
+  // LOG(FATAL) or CHECK failure. In other words, waits for it to
+  // crash from SIGABRT.
+  Status WaitForFatal(const MonoDelta& timeout) const;
 
   virtual void Shutdown();
 
@@ -380,6 +390,17 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   virtual ~ExternalDaemon();
 
   Status StartProcess(const std::vector<std::string>& user_flags);
+
+  // Wait for the process to exit, and then call 'wait_status_predicate'
+  // on the resulting exit status. NOTE: this is not the return code, but
+  // rather the value provided by waitpid(2): use WEXITSTATUS, etc.
+  //
+  // If the predicate matches, returns OK. Otherwise, returns an error.
+  // 'crash_type_str' should be a descriptive name for the type of crash,
+  // used in formatting the error message.
+  Status WaitForCrash(const MonoDelta& timeout,
+                      const std::function<bool(int)>& wait_status_predicate,
+                      const char* crash_type_str) const;
 
   // In a code-coverage build, try to flush the coverage data to disk.
   // In a non-coverage build, this does nothing.

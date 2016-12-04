@@ -50,18 +50,13 @@ void DoMaybeFault(const char* fault_str, double fraction) {
   if (PREDICT_TRUE(g_random->NextDoubleFraction() >= fraction)) {
     return;
   }
-
-  // Disable core dumps -- it's not useful to get a core dump when we're
-  // purposefully crashing, and some tests cause lots of server crashes
-  // in a loop. This avoids filling up the disk with useless cores.
-  DisableCoreDumps();
-
-  LOG(FATAL) << "Injected fault: " << fault_str;
+  LOG(ERROR) << "Injecting fault: " << fault_str << " (process will exit)";
+  exit(kExitStatus);
 }
 
-void DoInjectRandomLatency(double max_ms) {
+void DoInjectRandomLatency(double max_latency_ms) {
   GoogleOnceInit(&g_random_once, InitRandom);
-  SleepFor(MonoDelta::FromMilliseconds(g_random->NextDoubleFraction() * max_ms));
+  SleepFor(MonoDelta::FromMilliseconds(g_random->NextDoubleFraction() * max_latency_ms));
 }
 
 Status DoMaybeReturnFailure(double fraction,

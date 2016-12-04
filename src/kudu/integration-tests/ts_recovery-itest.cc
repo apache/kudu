@@ -86,7 +86,7 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   work.Start();
 
   // Wait for the process to crash due to the injected fault.
-  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(30)));
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForInjectedCrash(MonoDelta::FromSeconds(30)));
 
   // Stop the writers.
   work.StopAndJoin();
@@ -133,7 +133,7 @@ TEST_F(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
   work.Start();
 
   // Wait for the process to crash due to the injected fault.
-  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(30)));
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForInjectedCrash(MonoDelta::FromSeconds(30)));
 
   // Stop the writers.
   work.StopAndJoin();
@@ -172,11 +172,14 @@ TEST_F(TsRecoveryITest, TestCrashDuringLogReplay) {
   cluster_->tablet_server(0)->Shutdown();
 
   // Restart might crash very quickly and actually return a bad status, so we
-  // ignore the result.
-  ignore_result(cluster_->tablet_server(0)->Restart());
+  // have to check the result.
+  Status s = cluster_->tablet_server(0)->Restart();
 
-  // Wait for the process to crash during log replay.
-  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(30)));
+  // Wait for the process to crash during log replay (if it didn't already crash
+  // above while we were restarting it).
+  if (s.ok()) {
+    ASSERT_OK(cluster_->tablet_server(0)->WaitForInjectedCrash(MonoDelta::FromSeconds(30)));
+  }
 
   // Now remove the crash flag, so the next replay will complete, and restart
   // the server once more.
@@ -210,7 +213,7 @@ TEST_F(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
   work.Start();
 
   // Wait for the process to crash during log roll.
-  ASSERT_OK(cluster_->tablet_server(0)->WaitForCrash(MonoDelta::FromSeconds(60)));
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForInjectedCrash(MonoDelta::FromSeconds(60)));
   work.StopAndJoin();
 
   cluster_->tablet_server(0)->Shutdown();

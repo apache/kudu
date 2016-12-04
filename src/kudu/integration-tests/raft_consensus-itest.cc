@@ -2797,7 +2797,7 @@ TEST_F(RaftConsensusITest, Test_KUDU_1735) {
   // change operations due to the above fault injection.
   ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tservers[1], boost::none, kTimeout));
   for (int i = 1; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(external_tservers[i]->WaitForCrash(kTimeout));
+    ASSERT_OK(external_tservers[i]->WaitForInjectedCrash(kTimeout));
   }
 
   // Delete the table, so that when we restart the crashed servers, they'll get RPCs to
@@ -2935,7 +2935,7 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
   }
   ASSERT_OK(StartElection(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
   for (int i = 1; i <= 2; i++) {
-    ASSERT_OK(ext_tservers[i]->WaitForCrash(MonoDelta::FromSeconds(10)));
+    ASSERT_OK(ext_tservers[i]->WaitForFatal(MonoDelta::FromSeconds(10)));
   }
 
   // Now we know followers crash when they write to their log.
@@ -2954,7 +2954,7 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
   workload.Start();
 
   // Leader should crash as well.
-  ASSERT_OK(ext_tservers[0]->WaitForCrash(MonoDelta::FromSeconds(10)));
+  ASSERT_OK(ext_tservers[0]->WaitForFatal(MonoDelta::FromSeconds(10)));
   workload.StopAndJoin();
 
   LOG(INFO) << "Everything crashed!";
@@ -3003,7 +3003,7 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
     ASSERT_OK(ext_tservers[i]->Restart());
   }
   // Leader will crash.
-  ASSERT_OK(ext_tservers[0]->WaitForCrash(MonoDelta::FromSeconds(10)));
+  ASSERT_OK(ext_tservers[0]->WaitForFatal(MonoDelta::FromSeconds(10)));
 }
 
 }  // namespace tserver

@@ -190,7 +190,7 @@ void DeleteTableTest::WaitForTabletDeletedOnTS(int index,
 void DeleteTableTest::WaitForTSToCrash(int index) {
   auto ts = cluster_->tablet_server(index);
   SCOPED_TRACE(ts->instance_id().permanent_uuid());
-  ASSERT_OK(ts->WaitForCrash(MonoDelta::FromSeconds(60)));
+  ASSERT_OK(ts->WaitForInjectedCrash(MonoDelta::FromSeconds(60)));
 }
 
 void DeleteTableTest::WaitForAllTSToCrash() {
@@ -491,6 +491,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
       "--fault_crash_after_tc_files_fetched=1.0");
 
   // Restart TS 0 and add it to the config. It will crash when tablet copy starts.
+  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
   string leader_uuid = GetLeaderUUID(cluster_->tablet_server(1)->uuid(), replicated_tablet_id);
   TServerDetails* leader = DCHECK_NOTNULL(ts_map_[leader_uuid]);
   TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
