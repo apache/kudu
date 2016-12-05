@@ -269,6 +269,17 @@ Status WaitForNumTabletsOnTS(
     const MonoDelta& timeout,
     std::vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* tablets);
 
+// Check if the tablet is in the specified state.
+Status CheckIfTabletInState(TServerDetails* ts,
+                            const std::string& tablet_id,
+                            tablet::TabletStatePB expected_state,
+                            const MonoDelta& timeout);
+
+// Check if the given tablet is RUNNING.
+Status CheckIfTabletRunning(TServerDetails* ts,
+                            const std::string& tablet_id,
+                            const MonoDelta& timeout);
+
 // Wait until the specified replica is in the specified state.
 Status WaitUntilTabletInState(TServerDetails* ts,
                               const std::string& tablet_id,

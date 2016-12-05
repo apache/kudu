@@ -78,7 +78,7 @@ static void SetupErrorAndRespond(rpc::RpcContext* context,
                                  const string& message,
                                  const Status& s) {
   LOG(WARNING) << "Error handling TabletCopyService RPC request from "
-               << context->requestor_string() << ": "
+               << context->requestor_string() << ": " << message << ": "
                << s.ToString();
   TabletCopyErrorPB error;
   StatusToPB(s, error.mutable_status());
@@ -129,7 +129,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
                                                requestor_uuid, fs_manager_));
       RPC_RETURN_NOT_OK(session->Init(),
                         TabletCopyErrorPB::UNKNOWN_ERROR,
-                        Substitute("Error initializing tablet copy session for tablet $0",
+                        Substitute("Error beginning tablet copy session for tablet $0",
                                    tablet_id));
       InsertOrDie(&sessions_, session_id, session);
     } else {

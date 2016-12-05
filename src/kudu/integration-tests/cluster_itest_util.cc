@@ -695,31 +695,43 @@ Status WaitForNumTabletsOnTS(TServerDetails* ts,
   return Status::OK();
 }
 
+Status CheckIfTabletInState(TServerDetails* ts,
+                            const std::string& tablet_id,
+                            tablet::TabletStatePB expected_state,
+                            const MonoDelta& timeout) {
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  RETURN_NOT_OK(ListTablets(ts, timeout, &tablets));
+  for (const ListTabletsResponsePB::StatusAndSchemaPB& t : tablets) {
+    if (t.tablet_status().tablet_id() == tablet_id) {
+      tablet::TabletStatePB current_state = t.tablet_status().state();
+      if (current_state != expected_state) {
+        return Status::IllegalState(Substitute("Tablet not in expected state $0 (state = $1)",
+                                               TabletStatePB_Name(expected_state),
+                                               TabletStatePB_Name(current_state)));
+      }
+      return Status::OK();
+    }
+  }
+  return Status::NotFound("Tablet " + tablet_id + " not found");
+}
+
+Status CheckIfTabletRunning(TServerDetails* ts,
+                            const std::string& tablet_id,
+                            const MonoDelta& timeout) {
+  return CheckIfTabletInState(ts, tablet_id, tablet::RUNNING, timeout);
+}
+
 Status WaitUntilTabletInState(TServerDetails* ts,
                               const std::string& tablet_id,
                               tablet::TabletStatePB state,
                               const MonoDelta& timeout) {
   MonoTime start = MonoTime::Now();
   MonoTime deadline = start + timeout;
-  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
   Status s;
-  tablet::TabletStatePB last_state = tablet::UNKNOWN;
   while (true) {
-    s = ListTablets(ts, MonoDelta::FromSeconds(10), &tablets);
+    s = CheckIfTabletInState(ts, tablet_id, state, deadline - MonoTime::Now());
     if (s.ok()) {
-      bool seen = false;
-      for (const ListTabletsResponsePB::StatusAndSchemaPB& t : tablets) {
-        if (t.tablet_status().tablet_id() == tablet_id) {
-          seen = true;
-          last_state = t.tablet_status().state();
-          if (last_state == state) {
-            return Status::OK();
-          }
-        }
-      }
-      if (!seen) {
-        s = Status::NotFound("Tablet " + tablet_id + " not found");
-      }
+      return Status::OK();
     }
     if (MonoTime::Now() > deadline) {
       break;
@@ -727,11 +739,11 @@ Status WaitUntilTabletInState(TServerDetails* ts,
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
   return Status::TimedOut(Substitute("T $0 P $1: Tablet not in $2 state after $3: "
-                                     "Tablet state: $4, Status message: $5",
+                                     "Status message: $4",
                                      tablet_id, ts->uuid(),
                                      tablet::TabletStatePB_Name(state),
                                      (MonoTime::Now() - start).ToString(),
-                                     tablet::TabletStatePB_Name(last_state), s.ToString()));
+                                     s.ToString()));
 }
 
 // Wait until the specified tablet is in RUNNING state.

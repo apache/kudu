@@ -69,6 +69,8 @@ Status TabletCopySourceSession::Init() {
   MutexLock l(session_lock_);
   CHECK(!initted_);
 
+  RETURN_NOT_OK(tablet_peer_->CheckRunning());
+
   const string& tablet_id = tablet_peer_->tablet_id();
 
   // Prevent log GC while we grab log segments and Tablet metadata.
@@ -94,7 +96,7 @@ Status TabletCopySourceSession::Init() {
 
   // Get the latest opid in the log at this point in time so we can re-anchor.
   OpId last_logged_opid;
-  tablet_peer_->log()->GetLatestEntryOpId(&last_logged_opid);
+  CHECK_NOTNULL(tablet_peer_->log())->GetLatestEntryOpId(&last_logged_opid);
 
   // Get the current segments from the log, including the active segment.
   // The Log doesn't add the active segment to the log reader's list until
