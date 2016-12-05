@@ -26,8 +26,10 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/tserver/tserver.pb.h"
 
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::TServerDetails;

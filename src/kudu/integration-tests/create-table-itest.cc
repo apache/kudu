@@ -15,17 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
-#include <glog/stl_logging.h>
-#include <gtest/gtest.h>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
 
+#include <gflags/gflags.h>
+#include <glog/stl_logging.h>
+#include <gtest/gtest.h>
+
 #include "kudu/client/client-test-util.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/master/master.pb.h"
+#include "kudu/master/master.proxy.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/metrics.h"
 
 using std::multimap;

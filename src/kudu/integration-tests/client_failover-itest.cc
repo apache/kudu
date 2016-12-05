@@ -23,6 +23,7 @@
 #include "kudu/client/client-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 

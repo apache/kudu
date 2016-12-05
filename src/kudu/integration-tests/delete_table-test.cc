@@ -27,13 +27,17 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/pstack_watcher.h"
 #include "kudu/util/subprocess.h"
 
 using kudu::client::KuduClient;
