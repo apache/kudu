@@ -17,6 +17,7 @@
 
 #include "kudu/util/fault_injection.h"
 
+#include <stdlib.h>
 #include <sys/time.h>
 
 #include "kudu/gutil/once.h"
@@ -51,7 +52,9 @@ void DoMaybeFault(const char* fault_str, double fraction) {
     return;
   }
   LOG(ERROR) << "Injecting fault: " << fault_str << " (process will exit)";
-  exit(kExitStatus);
+  // _exit will exit the program without running atexit handlers. This more
+  // accurately simiulates a crash.
+  _exit(kExitStatus);
 }
 
 void DoInjectRandomLatency(double max_latency_ms) {
