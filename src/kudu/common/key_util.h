@@ -60,6 +60,9 @@ bool IncrementPrimaryKey(ContiguousRow* row, Arena* arena) WARN_UNUSED_RESULT;
 // Increments the provided cell in place.
 bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena);
 
+// Decrements the provided cell. If fail, the result will not be updated.
+bool TryDecrementCell(const ColumnSchema &col, void *cell_ptr);
+
 // Pushes lower bound key predicates into the row. Returns the number of pushed
 // predicates. Unpushed predicate columns will be set to the minimum value
 // (unless no predicates are pushed at all).

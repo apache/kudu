@@ -46,7 +46,8 @@ class TestScanSpec : public KuduTest {
   enum ComparisonOp {
     GE,
     EQ,
-    LE
+    LE,
+    LT
   };
 
   template<class T>
@@ -68,7 +69,10 @@ class TestScanSpec : public KuduTest {
         auto p = ColumnPredicate::InclusiveRange(schema_.column(idx), nullptr, val_void, &arena_);
         if (p) spec->AddPredicate(*p);
         break;
-      };
+      }
+      case LT:
+        spec->AddPredicate(ColumnPredicate::Range(schema_.column(idx), nullptr, val_void));
+        break;
     }
   }
 
@@ -193,7 +197,7 @@ TEST_F(CompositeIntKeysTest, TestConsecutiveUpperRangePredicates) {
   AddPredicate<int8_t>(&spec, "c", LE, 5);
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
-  EXPECT_EQ("PK < (int8 a=4, int8 b=-128, int8 c=-128) AND `b` < 5 AND `c` < 6",
+  EXPECT_EQ("PK < (int8 a=3, int8 b=4, int8 c=6) AND `b` < 5 AND `c` < 6",
             spec.ToString(schema_));
 }
 
@@ -221,7 +225,7 @@ TEST_F(CompositeIntKeysTest, TestEqualityAndConsecutiveRangePredicates) {
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
   EXPECT_EQ("PK >= (int8 a=3, int8 b=4, int8 c=5) AND "
-            "PK < (int8 a=3, int8 b=15, int8 c=-128) AND "
+            "PK < (int8 a=3, int8 b=14, int8 c=16) AND "
             "`c` >= 5 AND `c` < 16", spec.ToString(schema_));
 }
 
@@ -362,7 +366,7 @@ TEST_F(CompositeIntKeysTest, TestInListPushdownWithRange) {
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
   EXPECT_EQ("PK >= (int8 a=10, int8 b=50, int8 c=-128) AND "
-            "PK < (int8 a=101, int8 b=-128, int8 c=-128) AND "
+            "PK < (int8 a=100, int8 b=101, int8 c=-128) AND "
             "`b` IN (50, 100)",
             spec.ToString(schema_));
 
@@ -692,6 +696,53 @@ TEST_F(CompositeIntStringKeysTest, TestPrefixEqualityWithString) {
   EXPECT_EQ(R"(PK >= (int8 a=64, string b="abc", string c="") AND )"
             R"(PK < (int8 a=64, string b="abc\000", string c=""))",
             spec.ToString(schema_));
+}
+
+TEST_F(CompositeIntStringKeysTest, TestDecreaseUpperBoundKey) {
+  {
+    ScanSpec spec;
+    AddPredicate<int8_t>(&spec, "a", LT, 64);
+    AddPredicate<Slice>(&spec, "b", LT, Slice("abc"));
+    AddPredicate<Slice>(&spec, "c", LT, Slice("def\0", 4));
+    SCOPED_TRACE(spec.ToString(schema_));
+    spec.OptimizeScan(schema_, &arena_, &pool_, true);
+    EXPECT_EQ(R"(PK < (int8 a=63, string b="abc", string c="") AND )"
+              R"(`b` < "abc" AND `c` < "def\000")",
+              spec.ToString(schema_));
+  }
+  {
+    ScanSpec spec;
+    AddPredicate<int8_t>(&spec, "a", LT, 64);
+    AddPredicate<Slice>(&spec, "b", LT, Slice("abc\0", 4));
+    AddPredicate<Slice>(&spec, "c", LT, Slice("def"));
+    SCOPED_TRACE(spec.ToString(schema_));
+    spec.OptimizeScan(schema_, &arena_, &pool_, true);
+    EXPECT_EQ(R"(PK < (int8 a=63, string b="abc", string c="def") AND )"
+              R"(`b` < "abc\000" AND `c` < "def")",
+              spec.ToString(schema_));
+  }
+  {
+    ScanSpec spec;
+    AddPredicate<int8_t>(&spec, "a", LT, 64);
+    AddPredicate<Slice>(&spec, "b", LT, Slice("abc\0", 4));
+    AddPredicate<Slice>(&spec, "c", LT, Slice("def\0", 4));
+    SCOPED_TRACE(spec.ToString(schema_));
+    spec.OptimizeScan(schema_, &arena_, &pool_, true);
+    EXPECT_EQ(R"(PK < (int8 a=63, string b="abc", string c="def\000") AND )"
+              R"(`b` < "abc\000" AND `c` < "def\000")",
+              spec.ToString(schema_));
+  }
+  {
+    ScanSpec spec;
+    AddPredicate<int8_t>(&spec, "a", LT, 64);
+    AddPredicate<Slice>(&spec, "b", LT, Slice("abc"));
+    AddPredicate<Slice>(&spec, "c", LT, Slice("def"));
+    SCOPED_TRACE(spec.ToString(schema_));
+    spec.OptimizeScan(schema_, &arena_, &pool_, true);
+    EXPECT_EQ(R"(PK < (int8 a=63, string b="abc", string c="") AND )"
+              R"(`b` < "abc" AND `c` < "def")",
+              spec.ToString(schema_));
+  }
 }
 
 // Tests for non-composite int key

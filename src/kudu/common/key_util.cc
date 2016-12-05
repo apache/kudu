@@ -55,6 +55,17 @@ bool IncrementBoolCell(void* cell_ptr) {
   }
 }
 
+bool DecrementBoolCell(void* cell_ptr) {
+  bool orig;
+  memcpy(&orig, cell_ptr, sizeof(bool));
+  if (orig) {
+    bool dec = false;
+    memcpy(cell_ptr, &dec, sizeof(bool));
+    return true;
+  }
+  return false;
+}
+
 template<DataType type>
 bool IncrementIntCell(void* cell_ptr) {
   typedef DataTypeTraits<type> traits;
@@ -80,6 +91,33 @@ bool IncrementIntCell(void* cell_ptr) {
 }
 
 template<DataType type>
+bool DecrementIntCell(void* cell_ptr) {
+  typedef DataTypeTraits<type> traits;
+  typedef typename traits::cpp_type cpp_type;
+
+  cpp_type orig;
+  memcpy(&orig, cell_ptr, sizeof(cpp_type));
+
+  cpp_type dec;
+  if (std::is_unsigned<cpp_type>::value) {
+    dec = orig - 1;
+  } else {
+    // Signed overflow is undefined in C. So, we'll use a branch here
+    // instead of counting on undefined behavior.
+    if (orig == MathLimits<cpp_type>::kMin) {
+      dec = MathLimits<cpp_type>::kMax;
+    } else {
+      dec = orig - 1;
+    }
+  }
+  if (dec < orig) {
+    memcpy(cell_ptr, &dec, sizeof(cpp_type));
+    return true;
+  }
+  return false;
+}
+
+template<DataType type>
 bool IncrementFloatingPointCell(void* cell_ptr) {
   typedef DataTypeTraits<type> traits;
   typedef typename traits::cpp_type cpp_type;
@@ -89,6 +127,20 @@ bool IncrementFloatingPointCell(void* cell_ptr) {
   cpp_type inc = nextafter(orig, numeric_limits<cpp_type>::infinity());
   memcpy(cell_ptr, &inc, sizeof(cpp_type));
   return inc != orig;
+}
+
+template<DataType type>
+bool DecrementFloatingPointCell(void* cell_ptr) {
+  typedef DataTypeTraits<type> traits;
+  typedef typename traits::cpp_type cpp_type;
+
+  cpp_type orig;
+  memcpy(&orig, cell_ptr, sizeof(cpp_type));
+  cpp_type dec = nextafter(orig, -numeric_limits<cpp_type>::infinity());
+  if (dec != orig) {
+    memcpy(cell_ptr, &dec, sizeof(cpp_type));
+  }
+  return false;
 }
 
 bool IncrementStringCell(void* cell_ptr, Arena* arena) {
@@ -101,6 +153,17 @@ bool IncrementStringCell(void* cell_ptr, Arena* arena) {
 
   Slice inc(new_buf, orig.size() + 1);
   memcpy(cell_ptr, &inc, sizeof(inc));
+  return true;
+}
+
+bool DecrementStringCell(void* cell_ptr) {
+  Slice orig;
+  memcpy(&orig, cell_ptr, sizeof(orig));
+  if (orig.size() == 0 || orig[orig.size() - 1] != '\0') {
+    return false;
+  }
+  orig.truncate(orig.size() - 1);
+  memcpy(cell_ptr, &orig, sizeof(orig));
   return true;
 }
 
@@ -140,13 +203,11 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
 
   const Schema& schema = *CHECK_NOTNULL(row->schema());
   int pushed_predicates = 0;
-  // Tracks whether the last pushed predicate is an equality or InList predicate.
-  const ColumnPredicate* final_predicate = nullptr;
 
-  // Step 1: copy predicates into the row in key column order, stopping after
-  // the first range or missing predicate.
-
+  // Step 1: copy predicates into the row in key column order, stopping after the first missing
+  // predicate or range predicate which can't be transformed to an inclusive upper bound.
   bool break_loop = false;
+  bool is_inclusive_bound = true;
   for (auto col_idx_it = first; !break_loop && col_idx_it < last; std::advance(col_idx_it, 1)) {
     const ColumnSchema& column = schema.column(*col_idx_it);
     const ColumnPredicate* predicate = FindOrNull(predicates, column.name());
@@ -156,19 +217,20 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
       case PredicateType::Equality:
         memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_lower(), size);
         pushed_predicates++;
-        final_predicate = predicate;
         break;
       case PredicateType::Range:
         if (predicate->raw_upper() != nullptr) {
           memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_upper(), size);
           pushed_predicates++;
-          final_predicate = predicate;
+          // Try to decrease because upper bound is exclusive.
+          if (!TryDecrementCell(row->schema()->column(*col_idx_it),
+                                row->mutable_cell_ptr(*col_idx_it))) {
+            is_inclusive_bound = false;
+            break_loop = true;
+          }
+        } else {
+          break_loop = true;
         }
-        // After the first column with a range constraint we stop pushing
-        // constraints into the upper bound. Instead, we push minimum values
-        // to the remaining columns (below), which is the maximally tight
-        // constraint.
-        break_loop = true;
         break;
       case PredicateType::IsNotNull:
         break_loop = true;
@@ -179,7 +241,6 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
         DCHECK(!predicate->raw_values().empty());
         memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_values().back(), size);
         pushed_predicates++;
-        final_predicate = predicate;
         break;
       case PredicateType::None:
         LOG(FATAL) << "NONE predicate can not be pushed into key";
@@ -189,10 +250,8 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
   // If no predicates were pushed, no need to do any more work.
   if (pushed_predicates == 0) { return 0; }
 
-  // Step 2: If the final predicate is an equality predicate or an InList predicate,
-  // increment the key to convert it to an exclusive upper bound.
-  if (final_predicate->predicate_type() == PredicateType::Equality
-      || final_predicate->predicate_type() == PredicateType::InList) {
+  // Step 2: If the upper bound is inclusive, increment it to become exclusive.
+  if (is_inclusive_bound) {
     if (!IncrementKey(first, std::next(first, pushed_predicates), row, arena)) {
       // If the increment fails then this bound is is not constraining the keyspace.
       return 0;
@@ -288,6 +347,35 @@ bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena) {
     case STRING:
     case BINARY:
       return IncrementStringCell(cell_ptr, arena);
+    case UNKNOWN_DATA:
+    default: LOG(FATAL) << "Unknown data type: " << type;
+  }
+  return false; // unreachable
+#undef HANDLE_TYPE
+}
+
+bool TryDecrementCell(const ColumnSchema &col, void *cell_ptr) {
+  DataType type = col.type_info()->physical_type();
+  switch (type) {
+    case BOOL:
+      return DecrementBoolCell(cell_ptr);
+#define HANDLE_TYPE(t) case t: return DecrementIntCell<t>(cell_ptr);
+    HANDLE_TYPE(UINT8);
+    HANDLE_TYPE(UINT16);
+    HANDLE_TYPE(UINT32);
+    HANDLE_TYPE(UINT64);
+    HANDLE_TYPE(INT8);
+    HANDLE_TYPE(INT16);
+    HANDLE_TYPE(INT32);
+    HANDLE_TYPE(UNIXTIME_MICROS);
+    HANDLE_TYPE(INT64);
+    case FLOAT:
+      return DecrementFloatingPointCell<FLOAT>(cell_ptr);
+    case DOUBLE:
+      return DecrementFloatingPointCell<DOUBLE>(cell_ptr);
+    case STRING:
+    case BINARY:
+      return DecrementStringCell(cell_ptr);
     case UNKNOWN_DATA:
     default: LOG(FATAL) << "Unknown data type: " << type;
   }

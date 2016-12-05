@@ -130,4 +130,61 @@ TEST_F(KeyUtilTest, TestIncrementCompositeStringIntPrimaryKey) {
   EXPECT_EQ(R"(string k1="hello\000", int32 k2=-2147483648)", p_row.ToString());
 }
 
+TEST_F(KeyUtilTest, TestTryDecrementCell) {
+  {
+    ColumnSchema col_uint32("a", UINT32);
+    uint32_t orig = 12;
+    EXPECT_EQ(key_util::TryDecrementCell(col_uint32, &orig), true);
+    EXPECT_EQ(orig, 11);
+  }
+  {
+    ColumnSchema col_uint32("a", UINT32);
+    uint32_t orig = 0;
+    EXPECT_EQ(key_util::TryDecrementCell(col_uint32, &orig), false);
+    EXPECT_EQ(orig, 0);
+  }
+  {
+    ColumnSchema col_int32("a", INT32);
+    int32_t orig = 0;
+    EXPECT_EQ(key_util::TryDecrementCell(col_int32, &orig), true);
+    EXPECT_EQ(orig, -1);
+  }
+  {
+    ColumnSchema col_int32("a", INT32);
+    int32_t orig = numeric_limits<int32_t>::min();
+    EXPECT_EQ(key_util::TryDecrementCell(col_int32, &orig), false);
+    EXPECT_EQ(orig, numeric_limits<int32_t>::min());
+  }
+  {
+    ColumnSchema col_bool("a", BOOL);
+    bool orig = true;
+    EXPECT_EQ(key_util::TryDecrementCell(col_bool, &orig), true);
+    EXPECT_EQ(orig, false);
+  }
+  {
+    ColumnSchema col_bool("a", BOOL);
+    int32_t orig = false;
+    EXPECT_EQ(key_util::TryDecrementCell(col_bool, &orig), false);
+    EXPECT_EQ(orig, false);
+  }
+  {
+    ColumnSchema col_str("a", STRING);
+    Slice orig("abc\0", 4);
+    EXPECT_EQ(key_util::TryDecrementCell(col_str, &orig), true);
+    EXPECT_EQ(orig, Slice("abc"));
+  }
+  {
+    ColumnSchema col_str("a", STRING);
+    Slice orig("abc");
+    EXPECT_EQ(key_util::TryDecrementCell(col_str, &orig), false);
+    EXPECT_EQ(orig, Slice("abc"));
+  }
+  {
+    ColumnSchema col_str("a", STRING);
+    Slice orig("");
+    EXPECT_EQ(key_util::TryDecrementCell(col_str, &orig), false);
+    EXPECT_EQ(orig, Slice(""));
+  }
+}
+
 } // namespace kudu
