@@ -279,12 +279,11 @@ class ExactlyOnceRpcTest : public RpcTestBase {
   // Stubbornly sends the same request to the server, this should observe three states.
   // The request should be successful at first, then its result should be GCed and the
   // client should be GCed.
-  void StubbornlyWriteTheSameRequestThread(MonoDelta run_for) {
+  void StubbornlyWriteTheSameRequestThread(ResultTracker::SequenceNumber sequence_number,
+                                           MonoDelta run_for) {
     MonoTime run_until = MonoTime::Now();
     run_until.AddDelta(run_for);
     // Make an initial request, so that we get a response to compare to.
-    ResultTracker::SequenceNumber sequence_number;
-    CHECK_OK(request_tracker_->NewSeqNo(&sequence_number));
     ExactlyOnceResponsePB original_response;
     CHECK_OK(MakeAddCall(sequence_number, 0, &original_response));
 
@@ -459,10 +458,12 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsWithConcurrentUpdaters) {
     vector<unique_ptr<SimultaneousExactlyOnceAdder>> adders;
     for (int j = 0; j < kNumThreads; j++) {
       unique_ptr<SimultaneousExactlyOnceAdder> adder(
-          new SimultaneousExactlyOnceAdder(proxy_.get(), i, 1,
-                                           rand() % 20,
-                                           rand() % 10,
-                                           attempt_nos_.fetch_add(1)));
+          new SimultaneousExactlyOnceAdder(proxy_.get(),
+                                           i, // sequence number
+                                           1, // value
+                                           rand() % 20, // client_sleep
+                                           rand() % 10, // server_sleep
+                                           attempt_nos_.fetch_add(1))); // attempt number
       adders.push_back(std::move(adder));
       adders[j]->Start();
     }
@@ -550,15 +551,25 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsGarbageCollectionStressTest) 
     stubborn_run_for = MonoDelta::FromSeconds(11);
   }
 
-  scoped_refptr<kudu::Thread> write_thread;
-  scoped_refptr<kudu::Thread> stubborn_thread;
   result_tracker_->StartGCThread();
+
+  // Assign the first sequence number (0) to the 'stubborn writes' thread.
+  // This thread will keep making RPCs with this sequence number while
+  // the 'write_thread' will make normal requests with increasing sequence
+  // numbers.
+  ResultTracker::SequenceNumber stubborn_req_seq_num;
+  CHECK_OK(request_tracker_->NewSeqNo(&stubborn_req_seq_num));
+  ASSERT_EQ(stubborn_req_seq_num, 0);
+
+  scoped_refptr<kudu::Thread> stubborn_thread;
+  CHECK_OK(kudu::Thread::Create(
+      "stubborn", "stubborn", &ExactlyOnceRpcTest::StubbornlyWriteTheSameRequestThread,
+      this, stubborn_req_seq_num, stubborn_run_for, &stubborn_thread));
+
+  scoped_refptr<kudu::Thread> write_thread;
   CHECK_OK(kudu::Thread::Create(
       "write", "write", &ExactlyOnceRpcTest::DoLongWritesThread,
       this, writes_run_for, &write_thread));
-  CHECK_OK(kudu::Thread::Create(
-      "stubborn", "stubborn", &ExactlyOnceRpcTest::StubbornlyWriteTheSameRequestThread,
-      this, stubborn_run_for, &stubborn_thread));
 
   write_thread->Join();
   stubborn_thread->Join();
