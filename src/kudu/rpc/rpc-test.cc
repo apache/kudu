@@ -260,8 +260,8 @@ TEST_P(TestRpc, TestConnectionKeepalive) {
 // succeeds -- i.e that we don't consider a connection to be "idle" on the
 // server if there is a call outstanding on it.
 TEST_P(TestRpc, TestCallLongerThanKeepalive) {
-  // set very short keepalive
-  keepalive_time_ms_ = 50;
+  // Set a short keepalive.
+  keepalive_time_ms_ = 1000;
 
   // Set up server.
   Sockaddr server_addr;
@@ -275,7 +275,7 @@ TEST_P(TestRpc, TestCallLongerThanKeepalive) {
   // Make a call which sleeps longer than the keepalive.
   RpcController controller;
   SleepRequestPB req;
-  req.set_sleep_micros(100 * 1000);
+  req.set_sleep_micros(3 * 1000 * 1000); // 3 seconds.
   req.set_deferred(true);
   SleepResponsePB resp;
   ASSERT_OK(p.SyncRequest(GenericCalculatorService::kSleepMethodName,
