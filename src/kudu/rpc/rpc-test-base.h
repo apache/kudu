@@ -483,8 +483,8 @@ class RpcTestBase : public KuduTest {
   void DoTestExpectTimeout(const Proxy &p, const MonoDelta &timeout) {
     SleepRequestPB req;
     SleepResponsePB resp;
-    // Sleep for 50ms longer than the call timeout.
-    int sleep_micros = timeout.ToMicroseconds() + 50000;
+    // Sleep for 500ms longer than the call timeout.
+    int sleep_micros = timeout.ToMicroseconds() + 500 * 1000;
     req.set_sleep_micros(sleep_micros);
 
     RpcController c;
