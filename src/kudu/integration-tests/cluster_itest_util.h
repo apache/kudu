@@ -302,7 +302,8 @@ Status DeleteTablet(const TServerDetails* ts,
 // Repeatedly try to delete the tablet, retrying on failure up to the
 // specified timeout. Deletion can fail when other operations, such as
 // bootstrap or tablet copy, are running.
-void DeleteTabletWithRetries(const TServerDetails* ts, const std::string& tablet_id,
+void DeleteTabletWithRetries(const TServerDetails* ts,
+                             const std::string& tablet_id,
                              tablet::TabletDataState delete_type,
                              const boost::optional<int64_t>& config_opid_index,
                              const MonoDelta& timeout);
@@ -310,11 +311,11 @@ void DeleteTabletWithRetries(const TServerDetails* ts, const std::string& tablet
 // Cause the remote to initiate tablet copy using the specified host as a
 // source.
 Status StartTabletCopy(const TServerDetails* ts,
-                            const std::string& tablet_id,
-                            const std::string& copy_source_uuid,
-                            const HostPort& copy_source_addr,
-                            int64_t caller_term,
-                            const MonoDelta& timeout);
+                       const std::string& tablet_id,
+                       const std::string& copy_source_uuid,
+                       const HostPort& copy_source_addr,
+                       int64_t caller_term,
+                       const MonoDelta& timeout);
 
 } // namespace itest
 } // namespace kudu

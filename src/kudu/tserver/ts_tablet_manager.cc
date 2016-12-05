@@ -59,6 +59,10 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
 
+DEFINE_int32(num_tablets_to_copy_simultaneously, 10,
+             "Number of threads available to copy tablets from remote servers.");
+TAG_FLAG(num_tablets_to_copy_simultaneously, advanced);
+
 DEFINE_int32(num_tablets_to_open_simultaneously, 0,
              "Number of threads available to open tablets during startup. If this "
              "is set to 0 (the default), then the number of bootstrap threads will "
@@ -171,16 +175,24 @@ TSTabletManager::~TSTabletManager() {
 Status TSTabletManager::Init() {
   CHECK_EQ(state(), MANAGER_INITIALIZING);
 
+  // Start the tablet copy thread pool. We set a max queue size of 0 so that if
+  // the number of requests exceeds the number of threads, a
+  // SERVICE_UNAVAILABLE error may be returned to the remote caller.
+  RETURN_NOT_OK(ThreadPoolBuilder("tablet-copy")
+                .set_max_queue_size(0)
+                .set_max_threads(FLAGS_num_tablets_to_copy_simultaneously)
+                .Build(&tablet_copy_pool_));
+
   // Start the threadpool we'll use to open tablets.
   // This has to be done in Init() instead of the constructor, since the
   // FsManager isn't initialized until this point.
-  int max_bootstrap_threads = FLAGS_num_tablets_to_open_simultaneously;
-  if (max_bootstrap_threads == 0) {
+  int max_open_threads = FLAGS_num_tablets_to_open_simultaneously;
+  if (max_open_threads == 0) {
     // Default to the number of disks.
-    max_bootstrap_threads = fs_manager_->GetDataRootDirs().size();
+    max_open_threads = fs_manager_->GetDataRootDirs().size();
   }
-  RETURN_NOT_OK(ThreadPoolBuilder("tablet-bootstrap")
-                .set_max_threads(max_bootstrap_threads)
+  RETURN_NOT_OK(ThreadPoolBuilder("tablet-open")
+                .set_max_threads(max_open_threads)
                 .Build(&open_tablet_pool_));
 
   // Search for tablets in the metadata dir.
@@ -305,14 +317,13 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   return Status::OK();
 }
 
-// If 'expr' fails, log a message, tombstone the given tablet, and return the
-// error status.
+// If 'expr' fails, log a message, tombstone the given tablet, and return.
 #define TOMBSTONE_NOT_OK(expr, peer, msg) \
   do { \
-    Status _s = (expr); \
+    const Status& _s = (expr); \
     if (PREDICT_FALSE(!_s.ok())) { \
       LogAndTombstone((peer), (msg), _s); \
-      return _s; \
+      return; \
     } \
   } while (0)
 
@@ -321,27 +332,103 @@ Status TSTabletManager::CheckLeaderTermNotLower(const string& tablet_id,
                                                 int64_t last_logged_term) {
   if (PREDICT_FALSE(leader_term < last_logged_term)) {
     Status s = Status::InvalidArgument(
-        Substitute("Leader has replica of tablet $0 with term $1 "
-                    "lower than last logged term $2 on local replica. Rejecting "
-                    "tablet copy request",
-                    tablet_id,
-                    leader_term, last_logged_term));
+        Substitute("Leader has replica of tablet $0 with term $1, which "
+                   "is lower than last-logged term $2 on local replica. Rejecting "
+                   "tablet copy request",
+                   tablet_id, leader_term, last_logged_term));
     LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Copy: " << s.ToString();
     return s;
   }
   return Status::OK();
 }
 
-Status TSTabletManager::StartTabletCopy(
-    const StartTabletCopyRequestPB& req,
-    boost::optional<TabletServerErrorPB::Code>* error_code) {
-  const string& tablet_id = req.tablet_id();
-  const string& copy_source_uuid = req.copy_peer_uuid();
-  HostPort copy_source_addr;
-  RETURN_NOT_OK(HostPortFromPB(req.copy_peer_addr(), &copy_source_addr));
-  int64_t leader_term = req.caller_term();
+// Tablet Copy runnable that will run on a ThreadPool.
+class TabletCopyRunnable : public Runnable {
+ public:
+  TabletCopyRunnable(TSTabletManager* ts_tablet_manager,
+                     const StartTabletCopyRequestPB* req,
+                     std::function<void(const Status&, TabletServerErrorPB::Code)> cb)
+      : ts_tablet_manager_(ts_tablet_manager),
+        req_(req),
+        cb_(std::move(cb)) {
+  }
 
-  const string kLogPrefix = LogPrefix(tablet_id);
+  virtual ~TabletCopyRunnable() {
+    // If the Runnable is destroyed without the Run() method being invoked, we
+    // must invoke the user callback ourselves in order to free request
+    // resources. This may happen when the ThreadPool is shut down while the
+    // Runnable is enqueued.
+    if (!cb_invoked_) {
+      cb_(Status::ServiceUnavailable("Tablet server shutting down"),
+          TabletServerErrorPB::THROTTLED);
+    }
+  }
+
+  virtual void Run() override {
+    ts_tablet_manager_->RunTabletCopy(req_, cb_);
+    cb_invoked_ = true;
+  }
+
+  // Disable automatic invocation of the callback by the destructor.
+  void DisableCallback() {
+    cb_invoked_ = true;
+  }
+
+ private:
+  TSTabletManager* const ts_tablet_manager_;
+  const StartTabletCopyRequestPB* const req_;
+  const std::function<void(const Status&, TabletServerErrorPB::Code)> cb_;
+  bool cb_invoked_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(TabletCopyRunnable);
+};
+
+void TSTabletManager::StartTabletCopy(
+    const StartTabletCopyRequestPB* req,
+    std::function<void(const Status&, TabletServerErrorPB::Code)> cb) {
+  shared_ptr<TabletCopyRunnable> runnable(new TabletCopyRunnable(this, req, cb));
+  Status s = tablet_copy_pool_->Submit(runnable);
+  if (PREDICT_TRUE(s.ok())) {
+    return;
+  }
+
+  // We were unable to submit the TabletCopyRunnable to the ThreadPool. We will
+  // invoke the callback ourselves, so disable the automatic callback mechanism.
+  runnable->DisableCallback();
+
+  // Thread pool is at capacity.
+  if (s.IsServiceUnavailable()) {
+    cb(s, TabletServerErrorPB::THROTTLED);
+    return;
+  }
+  cb(s, TabletServerErrorPB::UNKNOWN_ERROR);
+}
+
+#define CALLBACK_AND_RETURN(status) \
+  do { \
+    cb(status, error_code); \
+    return; \
+  } while (0)
+
+#define CALLBACK_RETURN_NOT_OK(expr) \
+  do { \
+    Status _s = (expr); \
+    if (PREDICT_FALSE(!_s.ok())) { \
+      CALLBACK_AND_RETURN(_s); \
+    } \
+  } while (0)
+
+void TSTabletManager::RunTabletCopy(
+    const StartTabletCopyRequestPB* req,
+    std::function<void(const Status&, TabletServerErrorPB::Code)> cb) {
+
+  TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
+
+  const string& tablet_id = req->tablet_id();
+  const string& copy_source_uuid = req->copy_peer_uuid();
+  HostPort copy_source_addr;
+  CALLBACK_RETURN_NOT_OK(HostPortFromPB(req->copy_peer_addr(), &copy_source_addr));
+  int64_t leader_term = req->caller_term();
 
   scoped_refptr<TabletPeer> old_tablet_peer;
   scoped_refptr<TabletMetadata> meta;
@@ -356,8 +443,8 @@ Status TSTabletManager::StartTabletCopy(
     Status ret = StartTabletStateTransitionUnlocked(tablet_id, "copying tablet",
                                                     &deleter);
     if (!ret.ok()) {
-      *error_code = TabletServerErrorPB::ALREADY_INPROGRESS;
-      return ret;
+      error_code = TabletServerErrorPB::ALREADY_INPROGRESS;
+      CALLBACK_AND_RETURN(ret);
     }
   }
 
@@ -371,18 +458,19 @@ Status TSTabletManager::StartTabletCopy(
                    << "Found tablet in TABLET_DATA_COPYING state during StartTabletCopy()";
       case TABLET_DATA_TOMBSTONED: {
         int64_t last_logged_term = meta->tombstone_last_logged_opid().term();
-        RETURN_NOT_OK(CheckLeaderTermNotLower(tablet_id, leader_term, last_logged_term));
+        CALLBACK_RETURN_NOT_OK(CheckLeaderTermNotLower(tablet_id, leader_term, last_logged_term));
         break;
       }
       case TABLET_DATA_READY: {
         Log* log = old_tablet_peer->log();
         if (!log) {
-          return Status::IllegalState("Log unavailable. Tablet is not running", tablet_id);
+          CALLBACK_AND_RETURN(
+              Status::IllegalState("Log unavailable. Tablet is not running", tablet_id));
         }
         OpId last_logged_opid;
         log->GetLatestEntryOpId(&last_logged_opid);
         int64_t last_logged_term = last_logged_opid.term();
-        RETURN_NOT_OK(CheckLeaderTermNotLower(tablet_id, leader_term, last_logged_term));
+        CALLBACK_RETURN_NOT_OK(CheckLeaderTermNotLower(tablet_id, leader_term, last_logged_term));
 
         // Tombstone the tablet and store the last-logged OpId.
         old_tablet_peer->Shutdown();
@@ -394,22 +482,25 @@ Status TSTabletManager::StartTabletCopy(
         // will simply tablet copy this replica again. We could try to
         // check again after calling Shutdown(), and if the check fails, try to
         // reopen the tablet. For now, we live with the (unlikely) race.
-        RETURN_NOT_OK_PREPEND(DeleteTabletData(meta, TABLET_DATA_TOMBSTONED, last_logged_opid),
-                              Substitute("Unable to delete on-disk data from tablet $0",
-                                         tablet_id));
+        Status s = DeleteTabletData(meta, TABLET_DATA_TOMBSTONED, last_logged_opid);
+        if (PREDICT_FALSE(!s.ok())) {
+          CALLBACK_AND_RETURN(
+              s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
+                                           tablet_id)));
+        }
         break;
       }
       default:
-        return Status::IllegalState(
+        CALLBACK_AND_RETURN(Status::IllegalState(
             Substitute("Found tablet in unsupported state for tablet copy. "
                         "Tablet: $0, tablet data state: $1",
-                        tablet_id, TabletDataState_Name(data_state)));
+                        tablet_id, TabletDataState_Name(data_state))));
     }
   }
 
-  string init_msg = kLogPrefix + Substitute("Initiating tablet copy from Peer $0 ($1)",
-                                            copy_source_uuid,
-                                            copy_source_addr.ToString());
+  const string kSrcPeerInfo = Substitute("$0 ($1)", copy_source_uuid, copy_source_addr.ToString());
+  string init_msg = LogPrefix(tablet_id) +
+                    Substitute("Initiating tablet copy from peer $0", kSrcPeerInfo);
   LOG(INFO) << init_msg;
   TRACE(init_msg);
 
@@ -417,9 +508,9 @@ Status TSTabletManager::StartTabletCopy(
 
   // Download and persist the remote superblock in TABLET_DATA_COPYING state.
   if (replacing_tablet) {
-    RETURN_NOT_OK(tc_client.SetTabletToReplace(meta, leader_term));
+    CALLBACK_RETURN_NOT_OK(tc_client.SetTabletToReplace(meta, leader_term));
   }
-  RETURN_NOT_OK(tc_client.Start(copy_source_addr, &meta));
+  CALLBACK_RETURN_NOT_OK(tc_client.Start(copy_source_addr, &meta));
 
   // From this point onward, the superblock is persisted in TABLET_DATA_COPYING
   // state, and we need to tombtone the tablet if additional steps prior to
@@ -428,13 +519,21 @@ Status TSTabletManager::StartTabletCopy(
   // Registering a non-initialized TabletPeer offers visibility through the Web UI.
   RegisterTabletPeerMode mode = replacing_tablet ? REPLACEMENT_PEER : NEW_PEER;
   scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta, mode);
-  string peer_str = copy_source_uuid + " (" + copy_source_addr.ToString() + ")";
+
+  // Now we invoke the StartTabletCopy callback and respond success to the
+  // remote caller. Then we proceed to do most of the actual tablet copying work.
+  cb(Status::OK(), TabletServerErrorPB::UNKNOWN_ERROR);
+  cb = [](const Status&, TabletServerErrorPB::Code) {
+    LOG(FATAL) << "Callback invoked twice from TSTabletManager::RunTabletCopy()";
+  };
+
+  // From this point onward, we do not notify the caller about progress or success.
 
   // Download all of the remote files.
   Status s = tc_client.FetchAll(implicit_cast<TabletStatusListener*>(tablet_peer.get()));
   TOMBSTONE_NOT_OK(s, tablet_peer,
-                   "Tablet Copy: Unable to fetch data from remote peer " +
-                   copy_source_uuid + " (" + copy_source_addr.ToString() + ")");
+                   Substitute("Tablet Copy: Unable to fetch data from remote peer $0",
+                              kSrcPeerInfo));
 
   MAYBE_FAULT(FLAGS_fault_crash_after_tc_files_fetched);
 
@@ -442,12 +541,9 @@ Status TSTabletManager::StartTabletCopy(
   // TabletDataState in the superblock to TABLET_DATA_READY.
   TOMBSTONE_NOT_OK(tc_client.Finish(), tablet_peer, "Tablet Copy: Failure calling Finish()");
 
-  // We run this asynchronously. We don't tombstone the tablet if this fails,
-  // because if we were to fail to open the tablet, on next startup, it's in a
-  // valid fully-copied state.
-  RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
-                                              this, meta, deleter)));
-  return Status::OK();
+  // We don't tombstone the tablet if opening the tablet fails, because on next
+  // startup it's still in a valid, fully-copied state.
+  OpenTablet(meta, deleter);
 }
 
 // Create and register a new TabletPeer, given tablet metadata.
@@ -720,7 +816,11 @@ void TSTabletManager::Shutdown() {
     }
   }
 
-  // Shut down the bootstrap pool, so new tablets are registered after this point.
+  // Stop copying tablets.
+  // TODO(mpercy): Cancel all outstanding tablet copy tasks (KUDU-1795).
+  tablet_copy_pool_->Shutdown();
+
+  // Shut down the bootstrap pool, so no new tablets are registered after this point.
   open_tablet_pool_->Shutdown();
 
   // Take a snapshot of the peers list -- that way we don't have to hold

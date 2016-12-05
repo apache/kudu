@@ -140,17 +140,21 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   virtual Status GetTabletPeer(const std::string& tablet_id,
                                scoped_refptr<tablet::TabletPeer>* tablet_peer) const
-                               OVERRIDE;
+                               override;
 
-  virtual const NodeInstancePB& NodeInstance() const OVERRIDE;
+  virtual const NodeInstancePB& NodeInstance() const override;
 
-  // Initiate tablet copy of the specified tablet.
+  // Initiate tablet copy of the specified tablet on the tablet_copy_pool_.
   // See the StartTabletCopy() RPC declaration in consensus.proto for details.
-  // Currently this runs the entire procedure synchronously.
-  // TODO: KUDU-921: Run this procedure on a background thread.
-  virtual Status StartTabletCopy(
-      const consensus::StartTabletCopyRequestPB& req,
-      boost::optional<TabletServerErrorPB::Code>* error_code) OVERRIDE;
+  // 'cb' is guaranteed to be invoked as a callback.
+  virtual void StartTabletCopy(
+      const consensus::StartTabletCopyRequestPB* req,
+      std::function<void(const Status&, TabletServerErrorPB::Code)> cb) override;
+
+  // Synchronously run the tablet copy procedure.
+  void RunTabletCopy(
+      const consensus::StartTabletCopyRequestPB* req,
+      std::function<void(const Status&, TabletServerErrorPB::Code)> cb);
 
   // Adds updated tablet information to 'report'.
   void PopulateFullTabletReport(master::TabletReportPB* report) const;
@@ -311,6 +315,9 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   MetricRegistry* metric_registry_;
 
   TSTabletManagerStatePB state_;
+
+  // Thread pool used to run tablet copy operations.
+  gscoped_ptr<ThreadPool> tablet_copy_pool_;
 
   // Thread pool used to open the tablets async, whether bootstrap is required or not.
   gscoped_ptr<ThreadPool> open_tablet_pool_;

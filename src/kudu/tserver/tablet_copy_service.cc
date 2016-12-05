@@ -183,8 +183,8 @@ void TabletCopyServiceImpl::CheckSessionActive(
 }
 
 void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
-                                           FetchDataResponsePB* resp,
-                                           rpc::RpcContext* context) {
+                                      FetchDataResponsePB* resp,
+                                      rpc::RpcContext* context) {
   const string& session_id = req->session_id();
 
   // Look up and validate tablet copy session.

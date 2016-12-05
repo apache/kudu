@@ -112,8 +112,8 @@ class TabletCopyITest : public KuduTest {
 };
 
 void TabletCopyITest::StartCluster(const vector<string>& extra_tserver_flags,
-                                        const vector<string>& extra_master_flags,
-                                        int num_tablet_servers) {
+                                   const vector<string>& extra_master_flags,
+                                   int num_tablet_servers) {
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = num_tablet_servers;
   opts.extra_tserver_flags = extra_tserver_flags;
@@ -186,7 +186,7 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
                                          0, // Say I'm from term 0.
                                          timeout);
   ASSERT_TRUE(s.IsInvalidArgument());
-  ASSERT_STR_CONTAINS(s.ToString(), "term 0 lower than last logged term 1");
+  ASSERT_STR_CONTAINS(s.ToString(), "term 0, which is lower than last-logged term 1");
 
   // Now pause the actual leader so we can bring him back as a zombie later.
   ASSERT_OK(cluster_->tablet_server(zombie_leader_index)->Pause());
@@ -893,6 +893,75 @@ TEST_F(TabletCopyITest, TestTabletCopyingDeletedTabletFails) {
                                         1, // We are in term 1.
                                         kTimeout));
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
+}
+
+// Test that the tablet copy thread pool being full results in throttling and
+// backpressure on the callers.
+TEST_F(TabletCopyITest, TestTabletCopyThrottling) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kNumTablets = 4;
+  // We want 2 tablet servers and we don't want the master to interfere when we
+  // forcibly make copies of tablets onto servers it doesn't know about.
+  // We also want to make sure only one tablet copy is possible at a given time
+  // in order to test the throttling.
+  NO_FATALS(StartCluster({"--num_tablets_to_copy_simultaneously=1"},
+                         {"--master_tombstone_evicted_tablet_replicas=false"},
+                         2));
+  // Shut down the 2nd tablet server; we'll create tablets on the first one.
+  cluster_->tablet_server(1)->Shutdown();
+
+  // Restart the Master so it doesn't try to assign tablets to the dead TS.
+  cluster_->master()->Shutdown();
+  ASSERT_OK(cluster_->master()->Restart());
+  ASSERT_OK(cluster_->WaitForTabletServerCount(1, kTimeout));
+
+  // Write a bunch of data to the first tablet server.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_write_threads(8);
+  workload.set_num_replicas(1);
+  workload.set_num_tablets(kNumTablets);
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < 10000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  TServerDetails* ts0 = ts_map_[cluster_->tablet_server(0)->uuid()];
+  TServerDetails* ts1 = ts_map_[cluster_->tablet_server(1)->uuid()];
+
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts0, kNumTablets, kTimeout, &tablets));
+
+  workload.StopAndJoin();
+
+  // Now we attempt to copy all of that data over to the 2nd tablet server.
+  // We will attempt to copy 4 tablets simultanously, but because we have tuned
+  // the number of tablet copy threads down to 1, we should get at least one
+  // ServiceUnavailable error.
+  ASSERT_OK(cluster_->tablet_server(1)->Restart());
+
+  // Attempt to copy all of the tablets from TS0 to TS1.
+  // Collect the status messages.
+  vector<Status> statuses(kNumTablets);
+  for (const auto& t : tablets) {
+    HostPort src_addr;
+    ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &src_addr));
+    statuses.push_back(StartTabletCopy(ts1, t.tablet_status().tablet_id(), ts0->uuid(),
+                                       src_addr, 0, kTimeout));
+  }
+
+  // The "Service unavailable" messages are serialized as RemoteError type.
+  // Ensure that we got at least one.
+  int num_service_unavailable = 0;
+  for (const Status& s : statuses) {
+    if (!s.ok()) {
+      ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "Service unavailable: Thread pool is at capacity");
+      num_service_unavailable++;
+    }
+  }
+  ASSERT_GT(num_service_unavailable, 0);
+  LOG(INFO) << "Number of Service unavailable responses: " << num_service_unavailable;
 }
 
 } // namespace kudu

@@ -988,20 +988,19 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
 }
 
 void ConsensusServiceImpl::StartTabletCopy(const StartTabletCopyRequestPB* req,
-                                                StartTabletCopyResponsePB* resp,
-                                                rpc::RpcContext* context) {
+                                           StartTabletCopyResponsePB* resp,
+                                           rpc::RpcContext* context) {
   if (!CheckUuidMatchOrRespond(tablet_manager_, "StartTabletCopy", req, resp, context)) {
     return;
   }
-  boost::optional<TabletServerErrorPB::Code> error_code;
-  Status s = tablet_manager_->StartTabletCopy(*req, &error_code);
-  if (!s.ok()) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         error_code.get_value_or(TabletServerErrorPB::UNKNOWN_ERROR),
-                         context);
-    return;
-  }
-  context->RespondSuccess();
+  auto response_callback = [context, resp](const Status& s, TabletServerErrorPB::Code error_code) {
+    if (!s.ok()) {
+      SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
+      return;
+    }
+    context->RespondSuccess();
+  };
+  tablet_manager_->StartTabletCopy(req, response_callback);
 }
 
 void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,

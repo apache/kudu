@@ -164,4 +164,77 @@ TEST_F(TabletCopyClientSessionITest, TestStartTabletCopyWhileSourceBootstrapping
   }
 }
 
+// Test that StartTabletCopy() works in different scenarios.
+TEST_F(TabletCopyClientSessionITest, TestStartTabletCopy) {
+  NO_FATALS(PrepareClusterForTabletCopy());
+
+  TServerDetails* ts0 = ts_map_[cluster_->tablet_server(0)->uuid()];
+  TServerDetails* ts1 = ts_map_[cluster_->tablet_server(1)->uuid()];
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts0, kDefaultNumTablets, kDefaultTimeout, &tablets));
+  ASSERT_EQ(kDefaultNumTablets, tablets.size());
+  const string& tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Scenarios to run tablet copy on top of:
+  enum Scenarios {
+    kPristine,    // No tablets.
+    kTombstoned,  // A tombstoned tablet.
+    kLast
+  };
+  for (int scenario = 0; scenario < kLast; scenario++) {
+    if (scenario == kTombstoned) {
+      NO_FATALS(DeleteTabletWithRetries(ts1, tablet_id,
+                                        TabletDataState::TABLET_DATA_TOMBSTONED,
+                                        boost::none, kDefaultTimeout));
+    }
+
+    // Run tablet copy.
+    HostPort src_addr;
+    ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &src_addr));
+    ASSERT_OK(StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr,
+                              std::numeric_limits<int64_t>::max(), kDefaultTimeout));
+    ASSERT_OK(WaitUntilTabletRunning(ts1, tablet_id, kDefaultTimeout));
+  }
+}
+
+// Test that a tablet copy session will tombstone the tablet if the source
+// server crashes in the middle of the tablet copy.
+TEST_F(TabletCopyClientSessionITest, TestCopyFromCrashedSource) {
+  NO_FATALS(PrepareClusterForTabletCopy());
+
+  TServerDetails* ts0 = ts_map_[cluster_->tablet_server(0)->uuid()];
+  TServerDetails* ts1 = ts_map_[cluster_->tablet_server(1)->uuid()];
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts0, kDefaultNumTablets, kDefaultTimeout, &tablets));
+  ASSERT_EQ(kDefaultNumTablets, tablets.size());
+  const string& tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Crash when serving tablet copy.
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+                              "fault_crash_on_handle_tc_fetch_data",
+                              "1.0"));
+
+  HostPort src_addr;
+  ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &src_addr));
+  ASSERT_OK(StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr,
+                            std::numeric_limits<int64_t>::max(), kDefaultTimeout));
+
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(1, tablet_id,
+                                                 { TabletDataState::TABLET_DATA_TOMBSTONED },
+                                                 kDefaultTimeout));
+
+  // The source server will crash.
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForInjectedCrash(kDefaultTimeout));
+  cluster_->tablet_server(0)->Shutdown();
+
+  // It will restart without the fault flag set.
+  ASSERT_OK(cluster_->tablet_server(0)->Restart());
+
+  // Attempt the copy again. This time it should succeed.
+  ASSERT_OK(WaitUntilTabletRunning(ts0, tablet_id, kDefaultTimeout));
+  ASSERT_OK(StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr,
+                            std::numeric_limits<int64_t>::max(), kDefaultTimeout));
+  ASSERT_OK(WaitUntilTabletRunning(ts1, tablet_id, kDefaultTimeout));
+}
+
 } // namespace kudu

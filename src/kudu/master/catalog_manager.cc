@@ -2297,10 +2297,11 @@ const NodeInstancePB& CatalogManager::NodeInstance() const {
   return master_->instance_pb();
 }
 
-Status CatalogManager::StartTabletCopy(
-    const StartTabletCopyRequestPB& req,
-    boost::optional<kudu::tserver::TabletServerErrorPB::Code>* error_code) {
-  return Status::NotSupported("Tablet Copy not yet implemented for the master tablet");
+void CatalogManager::StartTabletCopy(
+    const StartTabletCopyRequestPB* /* req */,
+    std::function<void(const Status&, TabletServerErrorPB::Code)> cb) {
+  cb(Status::NotSupported("Tablet Copy not yet implemented for the master tablet"),
+     TabletServerErrorPB::UNKNOWN_ERROR);
 }
 
 // Interface used by RetryingTSRpcTask to pick the tablet server to

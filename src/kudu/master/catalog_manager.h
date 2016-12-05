@@ -494,15 +494,15 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   //
   // See also: TabletPeerLookupIf, ConsensusServiceImpl.
   virtual Status GetTabletPeer(const std::string& tablet_id,
-                               scoped_refptr<tablet::TabletPeer>* tablet_peer) const OVERRIDE;
+                               scoped_refptr<tablet::TabletPeer>* tablet_peer) const override;
 
-  virtual const NodeInstancePB& NodeInstance() const OVERRIDE;
+  virtual const NodeInstancePB& NodeInstance() const override;
 
   bool IsInitialized() const;
 
-  virtual Status StartTabletCopy(
-      const consensus::StartTabletCopyRequestPB& req,
-      boost::optional<kudu::tserver::TabletServerErrorPB::Code>* error_code) OVERRIDE;
+  virtual void StartTabletCopy(
+      const consensus::StartTabletCopyRequestPB* req,
+      std::function<void(const Status&, tserver::TabletServerErrorPB::Code)> cb) override;
 
   // Returns this CatalogManager's role in a consensus configuration. CatalogManager
   // must be initialized before calling this method.

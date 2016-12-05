@@ -18,6 +18,7 @@
 #define KUDU_TSERVER_TABLET_PEER_LOOKUP_H_
 
 #include <boost/optional/optional_fwd.hpp>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -51,8 +52,9 @@ class TabletPeerLookupIf {
 
   virtual const NodeInstancePB& NodeInstance() const = 0;
 
-  virtual Status StartTabletCopy(const consensus::StartTabletCopyRequestPB& req,
-                                      boost::optional<TabletServerErrorPB::Code>* error_code) = 0;
+  virtual void StartTabletCopy(
+      const consensus::StartTabletCopyRequestPB* req,
+      std::function<void(const Status&, TabletServerErrorPB::Code)> cb) = 0;
 };
 
 } // namespace tserver
