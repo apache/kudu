@@ -33,14 +33,14 @@ namespace kudu {
 
 // These non-POD elements will be alive for the lifetime of the process, so don't allocate in
 // static storage.
-static std::vector<Mutex*> ssl_mutexes;
+static Mutex* g_ssl_mutexes;
 
 // Lock/Unlock the nth lock. Only to be used by OpenSSL.
 static void CryptoLockingCallback(int mode, int n, const char* /*unused*/, int /*unused*/) {
   if (mode & CRYPTO_LOCK) {
-    ssl_mutexes[n]->Acquire();
+    g_ssl_mutexes[n].Acquire();
   } else {
-    ssl_mutexes[n]->Release();
+    g_ssl_mutexes[n].Release();
   }
 }
 
@@ -55,10 +55,8 @@ void DoSSLInit() {
   OpenSSL_add_all_algorithms();
   RAND_poll();
 
-  for (int i = 0; i < CRYPTO_num_locks(); ++i) {
-    debug::ScopedLeakCheckDisabler d;
-    ssl_mutexes.push_back(new Mutex());
-  }
+  debug::ScopedLeakCheckDisabler d;
+  g_ssl_mutexes = new Mutex[CRYPTO_num_locks()];
 
   // Callbacks used by OpenSSL required in a multi-threaded setting.
   CRYPTO_set_locking_callback(CryptoLockingCallback);
