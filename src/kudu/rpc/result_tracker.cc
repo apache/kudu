@@ -297,99 +297,118 @@ ResultTracker::FindCompletionRecordOrNullUnlocked(const RequestIdPB& request_id)
 
 void ResultTracker::RecordCompletionAndRespond(const RequestIdPB& request_id,
                                                const Message* response) {
-  lock_guard<simple_spinlock> l(lock_);
+  vector<OnGoingRpcInfo> to_respond;
+  {
+    lock_guard<simple_spinlock> l(lock_);
 
-  CompletionRecord* completion_record = FindCompletionRecordOrDieUnlocked(request_id);
-  ScopedMemTrackerUpdater<CompletionRecord> updater(mem_tracker_.get(), completion_record);
+    CompletionRecord* completion_record = FindCompletionRecordOrDieUnlocked(request_id);
+    ScopedMemTrackerUpdater<CompletionRecord> updater(mem_tracker_.get(), completion_record);
 
-  CHECK_EQ(completion_record->driver_attempt_no, request_id.attempt_no())
-    << "Called RecordCompletionAndRespond() from an executor identified with an attempt number that"
-    << " was not marked as the driver for the RPC. RequestId: " << request_id.ShortDebugString()
-    << "\nTracker state:\n " << ToStringUnlocked();
-  DCHECK_EQ(completion_record->state, RpcState::IN_PROGRESS);
-  completion_record->response.reset(DCHECK_NOTNULL(response)->New());
-  completion_record->response->CopyFrom(*response);
-  completion_record->state = RpcState::COMPLETED;
-  completion_record->last_updated = MonoTime::Now();
+    CHECK_EQ(completion_record->driver_attempt_no, request_id.attempt_no())
+        << "Called RecordCompletionAndRespond() from an executor identified with an "
+        << "attempt number that was not marked as the driver for the RPC. RequestId: "
+        << request_id.ShortDebugString() << "\nTracker state:\n " << ToStringUnlocked();
+    DCHECK_EQ(completion_record->state, RpcState::IN_PROGRESS);
+    completion_record->response.reset(DCHECK_NOTNULL(response)->New());
+    completion_record->response->CopyFrom(*response);
+    completion_record->state = RpcState::COMPLETED;
+    completion_record->last_updated = MonoTime::Now();
 
-  CHECK_EQ(completion_record->driver_attempt_no, request_id.attempt_no());
+    CHECK_EQ(completion_record->driver_attempt_no, request_id.attempt_no());
 
-  int64_t handler_attempt_no = request_id.attempt_no();
+    int64_t handler_attempt_no = request_id.attempt_no();
 
-  // Go through the ongoing RPCs and reply to each one.
-  for (auto orpc_iter = completion_record->ongoing_rpcs.rbegin();
-       orpc_iter != completion_record->ongoing_rpcs.rend();) {
+    // Go through the ongoing RPCs and reply to each one.
+    for (auto orpc_iter = completion_record->ongoing_rpcs.rbegin();
+         orpc_iter != completion_record->ongoing_rpcs.rend();) {
 
-    const OnGoingRpcInfo& ongoing_rpc = *orpc_iter;
-    if (MustHandleRpc(handler_attempt_no, completion_record, ongoing_rpc)) {
-      if (ongoing_rpc.context != nullptr) {
-        if (PREDICT_FALSE(ongoing_rpc.response != response)) {
-          ongoing_rpc.response->CopyFrom(*completion_record->response);
+      const OnGoingRpcInfo& ongoing_rpc = *orpc_iter;
+      if (MustHandleRpc(handler_attempt_no, completion_record, ongoing_rpc)) {
+        if (ongoing_rpc.context != nullptr) {
+          to_respond.push_back(ongoing_rpc);
         }
-        LogAndTraceAndRespondSuccess(ongoing_rpc.context, *ongoing_rpc.response);
+        ++orpc_iter;
+        orpc_iter = std::vector<OnGoingRpcInfo>::reverse_iterator(
+            completion_record->ongoing_rpcs.erase(orpc_iter.base()));
+      } else {
+        ++orpc_iter;
       }
-      ++orpc_iter;
-      orpc_iter = std::vector<OnGoingRpcInfo>::reverse_iterator(
-          completion_record->ongoing_rpcs.erase(orpc_iter.base()));
-    } else {
-      ++orpc_iter;
     }
+  }
+
+  // Respond outside of holding the lock. This reduces lock contention and also
+  // means that we will have fully updated our memory tracking before responding,
+  // which makes testing easier.
+  for (auto& ongoing_rpc : to_respond) {
+    if (PREDICT_FALSE(ongoing_rpc.response != response)) {
+      ongoing_rpc.response->CopyFrom(*response);
+    }
+    LogAndTraceAndRespondSuccess(ongoing_rpc.context, *ongoing_rpc.response);
   }
 }
 
 void ResultTracker::FailAndRespondInternal(const RequestIdPB& request_id,
                                            HandleOngoingRpcFunc func) {
-  lock_guard<simple_spinlock> l(lock_);
-  auto state_and_record = FindClientStateAndCompletionRecordOrNullUnlocked(request_id);
-  if (PREDICT_FALSE(state_and_record.first == nullptr)) {
-    LOG(FATAL) << "Couldn't find ClientState for request: " << request_id.ShortDebugString()
-        << ". \nTracker state:\n" << ToStringUnlocked();
-  }
+  vector<OnGoingRpcInfo> to_handle;
+  {
+    lock_guard<simple_spinlock> l(lock_);
+    auto state_and_record = FindClientStateAndCompletionRecordOrNullUnlocked(request_id);
+    if (PREDICT_FALSE(state_and_record.first == nullptr)) {
+      LOG(FATAL) << "Couldn't find ClientState for request: " << request_id.ShortDebugString()
+                 << ". \nTracker state:\n" << ToStringUnlocked();
+    }
 
-  CompletionRecord* completion_record = state_and_record.second;
+    CompletionRecord* completion_record = state_and_record.second;
 
-  // It is possible for this method to be called for an RPC that was never actually tracked (though
-  // RecordCompletionAndRespond() can't). One such case is when a follower transaction fails
-  // on the TransactionManager, for some reason, before it was tracked. The CompletionCallback still
-  // calls this method. In this case, do nothing.
-  if (completion_record == nullptr) {
-    return;
-  }
+    // It is possible for this method to be called for an RPC that was never actually
+    // tracked (though RecordCompletionAndRespond() can't). One such case is when a
+    // follower transaction fails on the TransactionManager, for some reason, before it
+    // was tracked. The CompletionCallback still calls this method. In this case, do
+    // nothing.
+    if (completion_record == nullptr) {
+      return;
+    }
 
-  ScopedMemTrackerUpdater<CompletionRecord> cr_updater(mem_tracker_.get(), completion_record);
-  completion_record->last_updated = MonoTime::Now();
+    ScopedMemTrackerUpdater<CompletionRecord> cr_updater(mem_tracker_.get(), completion_record);
+    completion_record->last_updated = MonoTime::Now();
 
-  int64_t seq_no = request_id.seq_no();
-  int64_t handler_attempt_no = request_id.attempt_no();
+    int64_t seq_no = request_id.seq_no();
+    int64_t handler_attempt_no = request_id.attempt_no();
 
-  // If we're copying from a client originated response we need to take care to reply
-  // to that call last, otherwise we'll lose 'response', before we go through all the
-  // CompletionRecords.
-  for (auto orpc_iter = completion_record->ongoing_rpcs.rbegin();
-       orpc_iter != completion_record->ongoing_rpcs.rend();) {
+    // If we're copying from a client originated response we need to take care to reply
+    // to that call last, otherwise we'll lose 'response', before we go through all the
+    // CompletionRecords.
+    for (auto orpc_iter = completion_record->ongoing_rpcs.rbegin();
+         orpc_iter != completion_record->ongoing_rpcs.rend();) {
 
-    const OnGoingRpcInfo& ongoing_rpc = *orpc_iter;
-    if (MustHandleRpc(handler_attempt_no, completion_record, ongoing_rpc)) {
-      if (ongoing_rpc.context != nullptr) {
-        func(ongoing_rpc);
-        delete ongoing_rpc.context;
+      const OnGoingRpcInfo& ongoing_rpc = *orpc_iter;
+      if (MustHandleRpc(handler_attempt_no, completion_record, ongoing_rpc)) {
+        to_handle.push_back(ongoing_rpc);
+        ++orpc_iter;
+        orpc_iter = std::vector<OnGoingRpcInfo>::reverse_iterator(
+            completion_record->ongoing_rpcs.erase(orpc_iter.base()));
+      } else {
+        ++orpc_iter;
       }
-      ++orpc_iter;
-      orpc_iter = std::vector<OnGoingRpcInfo>::reverse_iterator(
-          completion_record->ongoing_rpcs.erase(orpc_iter.base()));
-    } else {
-      ++orpc_iter;
+    }
+
+    // If we're the last ones trying this and the state is not completed,
+    // delete the completion record.
+    if (completion_record->ongoing_rpcs.size() == 0
+        && completion_record->state != RpcState::COMPLETED) {
+      cr_updater.Cancel();
+      unique_ptr<CompletionRecord> completion_record =
+          EraseKeyReturnValuePtr(&state_and_record.first->completion_records, seq_no);
+      mem_tracker_->Release(completion_record->memory_footprint());
     }
   }
 
-  // If we're the last ones trying this and the state is not completed,
-  // delete the completion record.
-  if (completion_record->ongoing_rpcs.size() == 0
-      && completion_record->state != RpcState::COMPLETED) {
-    cr_updater.Cancel();
-    unique_ptr<CompletionRecord> completion_record =
-        EraseKeyReturnValuePtr(&state_and_record.first->completion_records, seq_no);
-    mem_tracker_->Release(completion_record->memory_footprint());
+  // Wait until outside the lock to do the heavy-weight work.
+  for (auto& ongoing_rpc : to_handle) {
+    if (ongoing_rpc.context != nullptr) {
+      func(ongoing_rpc);
+      delete ongoing_rpc.context;
+    }
   }
 }
 

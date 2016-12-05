@@ -355,13 +355,8 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsAfterRpcCompleted) {
     // plus some fixed overhead for the client-tracking structure.
     int expected_incremental_usage = original_resp.SpaceUsed() + 200;
 
-    // The consumption isn't immediately updated, since the MemTracker update
-    // happens after we call 'Respond' on the RPC.
-    int mem_consumption_after;
-    AssertEventually([&]() {
-        mem_consumption_after = mem_tracker_->consumption();
-        ASSERT_GT(mem_consumption_after - mem_consumption, expected_incremental_usage);
-      });
+    int mem_consumption_after = mem_tracker_->consumption();
+    ASSERT_GT(mem_consumption_after - mem_consumption, expected_incremental_usage);
     mem_consumption = mem_consumption_after;
   }
 
@@ -396,9 +391,7 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsAfterRpcCompleted) {
 
     // Send the first request for this new client.
     ASSERT_OK(proxy_->AddExactlyOnce(req, &resp, &controller));
-    AssertEventually([&]() {
-        ASSERT_EQ(mem_tracker_->consumption(), mem_consumption * 2);
-      });
+    ASSERT_EQ(mem_tracker_->consumption(), mem_consumption * 2);
   }
 }
 
@@ -478,14 +471,11 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsWithConcurrentUpdaters) {
       }
     }
 
-    // Wait for the MemTracker to be updated.
     // After all adders finished we should at least the size of one more response.
     // The actual size depends of multiple factors, for instance, how many calls were "attached"
     // (which is timing dependent) so we can't be more precise than this.
-    AssertEventually([&]() {
-        ASSERT_GT(mem_tracker_->consumption(),
-                  memory_consumption_initial + single_response_size * i);
-      });
+    ASSERT_GT(mem_tracker_->consumption(),
+              memory_consumption_initial + single_response_size * i);
   }
 }
 
