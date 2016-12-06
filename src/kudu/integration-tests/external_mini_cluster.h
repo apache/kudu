@@ -76,13 +76,22 @@ struct ExternalMiniClusterOptions {
   // Default: "", which auto-generates a unique path for this cluster.
   std::string data_root;
 
-  // If true, binds each tablet server to a different loopback address.
+  // BindMode lets you specify the socket binding mode for RPC and/or HTTP server.
+  // A) LOOPBACK binds each server to loopback ip address "127.0.0.1".
+  //
+  // B) WILDCARD specifies "0.0.0.0" as the ip to bind to, which means sockets
+  // can be bound to any interface on the local host.
+  // For example, if a host has two interfaces with addresses
+  // 192.168.0.10 and 192.168.0.11, the server process can accept connection
+  // requests addressed to 192.168.0.10 or 192.168.0.11.
+  //
+  // C) UNIQUE_LOOPBACK binds each tablet server to a different loopback address.
   // This affects the server's RPC server, and also forces the server to
   // only use this IP address for outgoing socket connections as well.
   // This allows the use of iptables on the localhost to simulate network
   // partitions.
   //
-  // The addressed used are 127.<A>.<B>.<C> where:
+  // The addresses used are 127.<A>.<B>.<C> where:
   // - <A,B> are the high and low bytes of the pid of the process running the
   //   minicluster (not the daemon itself).
   // - <C> is the index of the server within this minicluster.
@@ -97,8 +106,13 @@ struct ExternalMiniClusterOptions {
   //
   // NOTE: this does not currently affect the HTTP server.
   //
-  // Default: true
-  bool bind_to_unique_loopback_addresses;
+  // Default: UNIQUE_LOOPBACK on Linux, LOOPBACK on macOS.
+  enum BindMode {
+    UNIQUE_LOOPBACK,
+    WILDCARD,
+    LOOPBACK
+  };
+  BindMode bind_mode;
 
   // The path where the kudu daemons should be run from.
   // Default: "", which uses the same path as the currently running executable.
@@ -422,6 +436,14 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // In a non-coverage build, this does nothing.
   void FlushCoverage();
 
+  // Get/Set rpc_bind_addresses for daemon.
+  virtual const std::string& get_rpc_bind_address() const {
+    return rpc_bind_address_;
+  }
+  virtual void set_rpc_bind_address(std::string host) {
+    rpc_bind_address_ = host;
+  }
+
   const std::shared_ptr<rpc::Messenger> messenger_;
   const std::string data_dir_;
   const boost::optional<std::string> log_dir_;
@@ -432,6 +454,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   gscoped_ptr<Subprocess> process_;
 
   gscoped_ptr<server::ServerStatusPB> status_;
+  std::string rpc_bind_address_;
 
   // These capture the daemons parameters and running ports and
   // are used to Restart() the daemon with the same parameters.
@@ -487,8 +510,6 @@ class ExternalMaster : public ExternalDaemon {
  private:
   friend class RefCountedThreadSafe<ExternalMaster>;
   virtual ~ExternalMaster();
-
-  const std::string rpc_bind_address_;
 };
 
 class ExternalTabletServer : public ExternalDaemon {
@@ -509,7 +530,6 @@ class ExternalTabletServer : public ExternalDaemon {
 
  private:
   const std::string master_addrs_;
-  const std::string bind_host_;
 
   friend class RefCountedThreadSafe<ExternalTabletServer>;
   virtual ~ExternalTabletServer();

@@ -24,6 +24,7 @@
 #include <gflags/gflags.h>
 
 #include "kudu/codegen/compilation_manager.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -51,6 +52,7 @@
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/rolling_log.h"
@@ -213,9 +215,10 @@ void ServerBase::GetStatusPB(ServerStatusPB* status) const {
     vector<Sockaddr> addrs;
     CHECK_OK(rpc_server_->GetBoundAddresses(&addrs));
     for (const Sockaddr& addr : addrs) {
+      HostPort hp;
+      CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
       HostPortPB* pb = status->add_bound_rpc_addresses();
-      pb->set_host(addr.host());
-      pb->set_port(addr.port());
+      CHECK_OK(HostPortToPB(hp, pb));
     }
   }
 
@@ -224,9 +227,10 @@ void ServerBase::GetStatusPB(ServerStatusPB* status) const {
     vector<Sockaddr> addrs;
     CHECK_OK(web_server_->GetBoundAddresses(&addrs));
     for (const Sockaddr& addr : addrs) {
+      HostPort hp;
+      CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
       HostPortPB* pb = status->add_bound_http_addresses();
-      pb->set_host(addr.host());
-      pb->set_port(addr.port());
+      CHECK_OK(HostPortToPB(hp, pb));
     }
   }
 
