@@ -407,12 +407,19 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
       RETURN_NOT_OK_PREPEND(s, "unable to determine data file size");
     }
 
-    if (metadata_size < pb_util::kPBContainerMinimumValidLength && data_size == 0) {
-      LOG(WARNING) << "Data and metadata files for container  " << common_path
-                   << " are both missing or empty. Deleting container.";
-      IgnoreResult(env->DeleteFile(metadata_path));
-      IgnoreResult(env->DeleteFile(data_path));
-      return Status::Aborted("orphaned empty metadata and data files removed");
+    if (metadata_size < pb_util::kPBContainerMinimumValidLength &&
+        data_size == 0) {
+      bool ro = block_manager->read_only_;
+      LOG(WARNING) << Substitute(
+          "Data and metadata files for container $0 are both missing or empty: $1",
+          common_path, ro ? "ignoring" : "deleting container");
+      if (!ro) {
+        IgnoreResult(env->DeleteFile(metadata_path));
+        IgnoreResult(env->DeleteFile(data_path));
+      }
+      return Status::Aborted(Substitute(
+          "orphaned empty metadata and data files $0",
+          ro ? "ignored" : "removed"));
     }
   }
 
@@ -498,19 +505,25 @@ Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) co
     // We found a partial trailing record in a version of the pb container file
     // format that can reliably detect this. Consider this a failed partial
     // write and truncate the metadata file to remove this partial record.
-    uint64_t truncate_offset = pb_reader.offset();
-    LOG(WARNING) << "Log block manager: Found partial trailing metadata record in container "
-                  << ToString() << ": "
-                  << "Truncating metadata file to last valid offset: " << truncate_offset;
-    unique_ptr<RWFile> file;
-    RWFileOptions opts;
-    opts.mode = Env::OPEN_EXISTING;
-    RETURN_NOT_OK(block_manager_->env()->NewRWFile(opts, metadata_path, &file));
-    RETURN_NOT_OK(file->Truncate(truncate_offset));
-    RETURN_NOT_OK(file->Close());
-    // Reopen the PB writer so that it will refresh its metadata about the
-    // underlying file and resume appending to the new end of the file.
-    RETURN_NOT_OK(metadata_file_->Reopen());
+    LOG(WARNING) << Substitute(
+        "Log block manager: Found partial trailing metadata record in "
+        "container $0: $1",
+        ToString(), block_manager()->read_only_ ?
+            "ignoring" :
+            Substitute("truncating metadata file to last valid offset: $0",
+                       pb_reader.offset()));
+    if (!block_manager()->read_only_) {
+      unique_ptr<RWFile> file;
+      RWFileOptions opts;
+      opts.mode = Env::OPEN_EXISTING;
+      RETURN_NOT_OK(block_manager_->env()->NewRWFile(opts, metadata_path, &file));
+      RETURN_NOT_OK(file->Truncate(pb_reader.offset()));
+      RETURN_NOT_OK(file->Close());
+
+      // Reopen the PB writer so that it will refresh its metadata about the
+      // underlying file and resume appending to the new end of the file.
+      RETURN_NOT_OK(metadata_file_->Reopen());
+    }
     records->swap(local_records);
     return Status::OK();
   }
@@ -1511,11 +1524,13 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
     // preallocated space off of the end of the container. This is a no-op for
     // non-full containers, where excess preallocated space is expected to be
     // (eventually) used.
-    s = container->TruncateDataToTotalBytesWritten();
-    if (!s.ok()) {
-      *result_status = s.CloneAndPrepend(Substitute(
-          "Could not truncate container $0", container->ToString()));
-      return;
+    if (!read_only_) {
+      s = container->TruncateDataToTotalBytesWritten();
+      if (!s.ok()) {
+        *result_status = s.CloneAndPrepend(Substitute(
+            "Could not truncate container $0", container->ToString()));
+        return;
+      }
     }
 
     next_block_id_.StoreMax(max_block_id + 1);

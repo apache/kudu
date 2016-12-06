@@ -102,8 +102,8 @@ class BlockManagerTest : public KuduTest {
 
  protected:
   T* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
-                                   const shared_ptr<MemTracker>& parent_mem_tracker,
-                                   const vector<string>& paths) {
+                        const shared_ptr<MemTracker>& parent_mem_tracker,
+                        const vector<string>& paths) {
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
     opts.parent_mem_tracker = parent_mem_tracker;
