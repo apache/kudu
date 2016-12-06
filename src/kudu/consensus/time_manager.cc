@@ -228,6 +228,7 @@ Timestamp TimeManager::GetSafeTimeUnlocked() {
     case NON_LEADER:
       return last_safe_ts_;
   }
+  __builtin_unreachable(); // silence gcc warnings
 }
 
 Timestamp TimeManager::GetSerialTimestamp() {
