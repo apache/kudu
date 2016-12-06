@@ -686,7 +686,7 @@ string PartitionSchema::RangePartitionDebugString(const KuduPartialRow& lower_bo
   if (upper_unbounded) {
     return Substitute("VALUES >= $0", RangeKeyDebugString(lower_bound));
   }
-  // TODO(dan): recognize when a simplified 'VALUES =' form can be used (see
+  // TODO(dan): recognize when a simplified 'VALUE =' form can be used (see
   // org.apache.kudu.client.Partition#formatRangePartition).
   return Substitute("$0 <= VALUES < $1",
                     RangeKeyDebugString(lower_bound),

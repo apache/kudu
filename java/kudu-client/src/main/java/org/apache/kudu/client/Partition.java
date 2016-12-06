@@ -241,7 +241,7 @@ public class Partition implements Comparable<Partition> {
           KeyEncoder.decodeRangePartitionKey(schema, partitionSchema, rangeKeyEnd);
 
       if (PartialRow.isIncremented(lowerBound, upperBound, idxs)) {
-        sb.append("VALUES = ");
+        sb.append("VALUE = ");
         if (numColumns > 1) {
           sb.append('(');
         }

@@ -354,7 +354,7 @@ public class TestKuduTable extends BaseKuduTest {
                                 RangePartitionBound.INCLUSIVE_BOUND);
     }
     {
-      expected.add("VALUES = 300");
+      expected.add("VALUE = 300");
       PartialRow lower = basicSchema.newPartialRow();
       lower.addInt(0, 300);
       PartialRow upper = basicSchema.newPartialRow();
@@ -399,7 +399,7 @@ public class TestKuduTable extends BaseKuduTest {
       builder.addRangePartition(schema.newPartialRow(), upper);
     }
     {
-      expected.add("VALUES = (\"abc\", 0)");
+      expected.add("VALUE = (\"abc\", 0)");
       PartialRow lower = schema.newPartialRow();
       lower.addString(0, "abc");
       lower.addByte(1, (byte) 0);
@@ -446,7 +446,7 @@ public class TestKuduTable extends BaseKuduTest {
       builder.addRangePartition(schema.newPartialRow(), upper);
     }
     {
-      expected.add("VALUES = \"abc\"");
+      expected.add("VALUE = \"abc\"");
       PartialRow lower = schema.newPartialRow();
       lower.addString(0, "abc");
       PartialRow upper = schema.newPartialRow();
