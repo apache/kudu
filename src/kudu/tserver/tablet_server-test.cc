@@ -1714,6 +1714,20 @@ TEST_F(TabletServerTest, TestScan_InvalidScanSeqId) {
   }
 }
 
+// Regression test for KUDU-1789: when ScannerKeepAlive is called on a non-existent
+// scanner, it should properly respond with an error.
+TEST_F(TabletServerTest, TestScan_KeepAliveExpiredScanner) {
+  ScannerKeepAliveRequestPB req;
+  ScannerKeepAliveResponsePB resp;
+  RpcController rpc;
+
+  rpc.set_timeout(MonoDelta::FromSeconds(5));
+  req.set_scanner_id("does-not-exist");
+  ASSERT_OK(proxy_->ScannerKeepAlive(req, &resp, &rpc));
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ(resp.error().code(), TabletServerErrorPB::SCANNER_EXPIRED);
+}
+
 void TabletServerTest::DoOrderedScanTest(const Schema& projection,
                                          const string& expected_rows_as_string) {
   InsertTestRowsDirect(0, 10);

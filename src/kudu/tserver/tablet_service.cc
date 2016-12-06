@@ -1013,6 +1013,7 @@ void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
       resp->mutable_error()->set_code(TabletServerErrorPB::SCANNER_EXPIRED);
       StatusToPB(Status::NotFound("Scanner not found"),
                  resp->mutable_error()->mutable_status());
+      context->RespondSuccess();
       return;
   }
   scanner->UpdateAccessTime();
