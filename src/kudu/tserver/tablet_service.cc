@@ -1535,7 +1535,6 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   // end up with a valid snapshot in that case. It would be more correct to
   // initialize the row iterator and then select the latest timestamp
   // represented by those open files in that case.
-  Timestamp ancient_history_mark;
   tablet::HistoryGcOpts history_gc_opts = tablet->GetHistoryGcOpts();
   if (scan_pb.read_mode() == READ_AT_SNAPSHOT &&
       history_gc_opts.IsAncientHistory(*snap_timestamp)) {
@@ -1544,9 +1543,15 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     // We have to check after we open the iterator in order to avoid a TOCTOU
     // error.
     *error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
-    return Status::InvalidArgument("Snapshot timestamp is earlier than the ancient history mark",
-                                   "consider increasing the value of the configuration parameter "
-                                   "--tablet_history_max_age_sec");
+    return Status::InvalidArgument(
+        Substitute("Snapshot timestamp is earlier than the ancient history mark. Consider "
+                   "increasing the value of the configuration parameter "
+                   "--tablet_history_max_age_sec. Snapshot timestamp: $0 "
+                   "Ancient History Mark: $1 Physical time difference: $2",
+                   server_->clock()->Stringify(*snap_timestamp),
+                   server_->clock()->Stringify(history_gc_opts.ancient_history_mark()),
+                   server_->clock()->GetPhysicalComponentDifference(
+                       *snap_timestamp, history_gc_opts.ancient_history_mark()).ToString()));
   }
 
   *has_more_results = iter->HasNext();
