@@ -376,6 +376,7 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
   NO_FATALS(StartCluster());
   int n_iters = AllowSlowTests() ? 20 : 1;
   for (int i = 0; i < n_iters; i++) {
+    LOG(INFO) << "Running iteration " << i;
     TestWorkload workload(cluster_.get());
     workload.set_table_name(Substitute("table-$0", i));
 
@@ -630,7 +631,9 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
   TServerDetails* leader = ts_map_[kLeaderUuid];
   TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
-  ASSERT_OK(itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, boost::none, kTimeout));
+  // The server may crash before responding to our RPC.
+  Status s = itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, boost::none, kTimeout);
+  ASSERT_TRUE(s.ok() || s.IsNetworkError()) << s.ToString();
   NO_FATALS(WaitForTSToCrash(kLeaderIndex));
 
   // The tablet server will detect that the leader failed, and automatically
@@ -1146,7 +1149,11 @@ class DeleteTableTombstonedParamTest : public DeleteTableTest,
 //    (transition from TABLET_DATA_TOMBSTONED to TABLET_DATA_DELETED).
 TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   vector<string> flags;
-  flags.push_back("--log_segment_size_mb=1"); // Faster log rolls.
+  // We want fast log rolls and deterministic preallocation, since we wait for
+  // a certain number of logs at the beginning of the test.
+  flags.push_back("--log_segment_size_mb=1");
+  flags.push_back("--log_async_preallocate_segments=false");
+  flags.push_back("--log_min_segments_to_retain=3");
   NO_FATALS(StartCluster(flags));
   const string fault_flag = GetParam();
   LOG(INFO) << "Running with fault flag: " << fault_flag;
@@ -1173,6 +1180,8 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
 
   // Start a workload on the cluster, and run it until we find WALs on disk.
   TestWorkload workload(cluster_.get());
+  workload.set_payload_bytes(32 * 1024); // Write ops of size 32KB to quickly fill the logs.
+  workload.set_write_batch_size(1);
   workload.Setup();
 
   // The table should have 2 tablets (1 split) on all 3 tservers (for a total of 6).
@@ -1185,6 +1194,8 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
   ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 2, timeout, &tablets));
 
+  LOG(INFO) << "Starting workload...";
+
   // Run the workload against whoever the leader is until WALs appear on TS 0
   // for the tablets we created.
   const int kTsIndex = 0; // Index of the tablet server we'll use for the test.
@@ -1192,10 +1203,18 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   while (workload.rows_inserted() < 100) {
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
+
+  LOG(INFO) << "Waiting for 3 wal files for tablet "
+            << tablets[0].tablet_status().tablet_id() << "...";
   ASSERT_OK(inspect_->WaitForMinFilesInTabletWalDirOnTS(kTsIndex,
             tablets[0].tablet_status().tablet_id(), 3));
+
+  LOG(INFO) << "Waiting for 3 wal files for tablet "
+            << tablets[1].tablet_status().tablet_id() << "...";
   ASSERT_OK(inspect_->WaitForMinFilesInTabletWalDirOnTS(kTsIndex,
             tablets[1].tablet_status().tablet_id(), 3));
+
+  LOG(INFO) << "Stopping workload...";
   workload.StopAndJoin();
 
   // Shut down the master and the other tablet servers so they don't interfere
