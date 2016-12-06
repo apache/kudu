@@ -131,9 +131,9 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
       return last_error_.ok() ?
           ret : ret.CloneAndAppend(last_error_.ToString());
     }
-    LOG(INFO) << "Error scanning on server " << ts_->ToString() << ": "
-              << err.status.ToString() << ". Will retry after "
-              << sleep.ToString() << "; attempt " << scan_attempts_;
+    VLOG(1) << "Error scanning on server " << ts_->ToString() << ": "
+            << err.status.ToString() << ". Will retry after "
+            << sleep.ToString() << "; attempt " << scan_attempts_;
     SleepFor(sleep);
   }
   if (can_retry) {

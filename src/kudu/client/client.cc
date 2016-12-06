@@ -1309,11 +1309,13 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
       data_->scan_attempts_++;
 
       // Error handling.
-      LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
-                   << ToString() << " failed: " << result.status.ToString();
-
       set<string> blacklist;
-      RETURN_NOT_OK(data_->HandleError(result, batch_deadline, &blacklist));
+      Status s = data_->HandleError(result, batch_deadline, &blacklist);
+      if (!s.ok()) {
+        LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
+                     << ToString() << " failed: " << result.status.ToString();
+        return s;
+      }
 
       if (data_->configuration().is_fault_tolerant()) {
         LOG(WARNING) << "Attempting to retry scan of tablet " << ToString() << " elsewhere.";
