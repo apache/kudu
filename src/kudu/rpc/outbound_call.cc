@@ -130,6 +130,8 @@ string OutboundCall::StateName(State state) {
       return "READY";
     case ON_OUTBOUND_QUEUE:
       return "ON_OUTBOUND_QUEUE";
+    case SENDING:
+      return "SENDING";
     case SENT:
       return "SENT";
     case TIMED_OUT:
@@ -162,11 +164,16 @@ void OutboundCall::set_state_unlocked(State new_state) {
     case ON_OUTBOUND_QUEUE:
       DCHECK_EQ(state_, READY);
       break;
+    case SENDING:
+      // Allow SENDING to be set idempotently so we don't have to specifically check
+      // whether the state is transitioning in the RPC code.
+      DCHECK(state_ == ON_OUTBOUND_QUEUE || state_ == SENDING);
+      break;
     case SENT:
-      DCHECK_EQ(state_, ON_OUTBOUND_QUEUE);
+      DCHECK_EQ(state_, SENDING);
       break;
     case TIMED_OUT:
-      DCHECK(state_ == SENT || state_ == ON_OUTBOUND_QUEUE);
+      DCHECK(state_ == SENT || state_ == ON_OUTBOUND_QUEUE || state_ == SENDING);
       break;
     case FINISHED_SUCCESS:
       DCHECK_EQ(state_, SENT);
@@ -233,6 +240,10 @@ void OutboundCall::SetQueued() {
   set_state(ON_OUTBOUND_QUEUE);
 }
 
+void OutboundCall::SetSending() {
+  set_state(SENDING);
+}
+
 void OutboundCall::SetSent() {
   set_state(SENT);
 
@@ -271,10 +282,11 @@ void OutboundCall::SetTimedOut() {
   {
     std::lock_guard<simple_spinlock> l(lock_);
     status_ = Status::TimedOut(Substitute(
-        "$0 RPC to $1 timed out after $2",
+        "$0 RPC to $1 timed out after $2 ($3)",
         remote_method_.method_name(),
         conn_id_.remote().ToString(),
-        timeout.ToString()));
+        timeout.ToString(),
+        StateName(state_)));
     set_state_unlocked(TIMED_OUT);
   }
   CallCallback();
@@ -289,6 +301,7 @@ bool OutboundCall::IsFinished() const {
   std::lock_guard<simple_spinlock> l(lock_);
   switch (state_) {
     case READY:
+    case SENDING:
     case ON_OUTBOUND_QUEUE:
     case SENT:
       return false;
@@ -312,6 +325,32 @@ void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
   resp->mutable_header()->CopyFrom(header_);
   resp->set_micros_elapsed(
       (MonoTime::Now() - start_time_).ToMicroseconds());
+
+  switch (state_) {
+    case READY:
+      // Don't bother setting a state for "READY" since we don't expose a call
+      // until it's at least on the queue of a connection.
+      break;
+    case ON_OUTBOUND_QUEUE:
+      resp->set_state(RpcCallInProgressPB::ON_OUTBOUND_QUEUE);
+      break;
+    case SENDING:
+      resp->set_state(RpcCallInProgressPB::SENDING);
+      break;
+    case SENT:
+      resp->set_state(RpcCallInProgressPB::SENT);
+      break;
+    case TIMED_OUT:
+      resp->set_state(RpcCallInProgressPB::TIMED_OUT);
+      break;
+    case FINISHED_ERROR:
+      resp->set_state(RpcCallInProgressPB::FINISHED_ERROR);
+      break;
+    case FINISHED_SUCCESS:
+      resp->set_state(RpcCallInProgressPB::FINISHED_SUCCESS);
+      break;
+  }
+
 }
 
 ///

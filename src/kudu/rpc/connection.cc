@@ -590,6 +590,8 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
           delete transfer;
           continue;
         }
+
+        car->call->SetSending();
       }
     }
 

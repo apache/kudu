@@ -172,6 +172,10 @@ class OutboundCall {
   // Callback after the call has been put on the outbound connection queue.
   void SetQueued();
 
+  // Update the call state to show that the request has started being sent
+  // on the socket.
+  void SetSending();
+
   // Update the call state to show that the request has been sent.
   void SetSent();
 
@@ -229,11 +233,12 @@ class OutboundCall {
   // and OutboundCall::StateName(State state) as well.
   enum State {
     READY = 0,
-    ON_OUTBOUND_QUEUE = 1,
-    SENT = 2,
-    TIMED_OUT = 3,
-    FINISHED_ERROR = 4,
-    FINISHED_SUCCESS = 5
+    ON_OUTBOUND_QUEUE,
+    SENDING,
+    SENT,
+    TIMED_OUT,
+    FINISHED_ERROR,
+    FINISHED_SUCCESS
   };
 
   static std::string StateName(State state);
