@@ -18,6 +18,7 @@
 #include "kudu/fs/log_block_manager.h"
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <mutex>
 
@@ -28,6 +29,7 @@
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -58,6 +60,12 @@ DECLARE_bool(block_manager_lock_dirs);
 DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,
               "Maximum size (soft) of a log container");
 TAG_FLAG(log_container_max_size, advanced);
+
+DEFINE_int64(log_container_max_blocks, -1,
+             "Maximum number of blocks (soft) of a log container. Use 0 for "
+             "no limit. Use -1 for no limit except in the case of a kernel "
+             "bug with hole punching on ext4 (see KUDU-1508 for details).");
+TAG_FLAG(log_container_max_blocks, advanced);
 
 DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
               "Number of bytes to preallocate in a log container when "
@@ -103,6 +111,7 @@ using internal::LogBlock;
 using internal::LogBlockContainer;
 using pb_util::ReadablePBContainerFile;
 using pb_util::WritablePBContainerFile;
+using std::map;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -258,12 +267,13 @@ class LogBlockContainer {
   // returning the records.
   Status ReadContainerRecords(deque<BlockRecordPB>* records) const;
 
-  // Updates 'total_bytes_written_', marking this container as full if
-  // needed. Should only be called when a block is fully written, as it
-  // will round up the container data file's position.
+  // Updates 'total_bytes_written_' and 'total_blocks_written_', marking this
+  // container as full if needed. Should only be called when a block is fully
+  // written, as it will round up the container data file's position.
   //
   // This function is thread unsafe.
-  void UpdateBytesWritten(int64_t block_offset, size_t block_length);
+  void UpdateBytesWrittenAndTotalBlocks(int64_t block_offset,
+                                        size_t block_length);
 
   // Run a task on this container's data directory thread pool.
   //
@@ -278,7 +288,8 @@ class LogBlockContainer {
   LogBlockManager* block_manager() const { return block_manager_; }
   int64_t total_bytes_written() const { return total_bytes_written_; }
   bool full() const {
-    return total_bytes_written_ >= FLAGS_log_container_max_size;
+    return total_bytes_written_ >= FLAGS_log_container_max_size ||
+        (max_num_blocks_ && (total_blocks_written_ >= max_num_blocks_));
   }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   const DataDir* data_dir() const { return data_dir_; }
@@ -301,6 +312,8 @@ class LogBlockContainer {
   // The data directory where the container lives.
   DataDir* data_dir_;
 
+  const boost::optional<int64_t> max_num_blocks_;
+
   // Offset up to which we have preallocated bytes.
   int64_t preallocated_offset_ = 0;
 
@@ -310,6 +323,9 @@ class LogBlockContainer {
 
   // The amount of data written thus far in the container.
   int64_t total_bytes_written_ = 0;
+
+  // The number of blocks written thus far in the container.
+  int64_t total_blocks_written_ = 0;
 
   // The metrics. Not owned by the log container; it has the same lifespan
   // as the block manager.
@@ -325,6 +341,8 @@ LogBlockContainer::LogBlockContainer(
     shared_ptr<RWFile> data_file)
     : block_manager_(block_manager),
       data_dir_(data_dir),
+      max_num_blocks_(FindOrDie(block_manager->block_limits_by_data_dir_,
+                                data_dir)),
       metadata_file_(std::move(metadata_file)),
       data_file_(std::move(data_file)),
       metrics_(block_manager->metrics()) {
@@ -624,7 +642,8 @@ Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
   CHECK(block_manager()->AddLogBlock(this, block->id(),
                                      total_bytes_written_,
                                      block->BytesAppended()));
-  UpdateBytesWritten(total_bytes_written_, block->BytesAppended());
+  UpdateBytesWrittenAndTotalBlocks(total_bytes_written_,
+                                   block->BytesAppended());
 
   // Truncate the container if it's now full; any left over preallocated space
   // is no longer needed.
@@ -736,7 +755,8 @@ Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
   return Status::OK();
 }
 
-void LogBlockContainer::UpdateBytesWritten(int64_t block_offset, size_t block_length) {
+void LogBlockContainer::UpdateBytesWrittenAndTotalBlocks(int64_t block_offset,
+                                                         size_t block_length) {
   DCHECK_GE(block_offset, 0);
 
   // The log block manager maintains block contiguity as an invariant, which
@@ -757,6 +777,8 @@ void LogBlockContainer::UpdateBytesWritten(int64_t block_offset, size_t block_le
         "bytes), ignoring", ToString(), total_bytes_written_, new_total_bytes);
   }
   total_bytes_written_ = std::max(total_bytes_written_, new_total_bytes);
+
+  total_blocks_written_++;
 
   if (full()) {
     VLOG(1) << Substitute(
@@ -1199,6 +1221,13 @@ const char* LogBlockManager::kContainerDataFileSuffix = ".data";
 
 static const char* kBlockManagerType = "log";
 
+// These values were arrived at via experimentation. See commit 4923a74 for
+// more details.
+const map<int64_t, int64_t> LogBlockManager::per_fs_block_size_block_limits({
+  { 1024, 673 },
+  { 2048, 1353 },
+  { 4096, 2721 }});
+
 LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
   : mem_tracker_(MemTracker::CreateTracker(-1,
                                            "log_block_manager",
@@ -1210,6 +1239,7 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
                         BlockAllocator(mem_tracker_)),
     env_(DCHECK_NOTNULL(env)),
     read_only_(opts.read_only),
+    buggy_el6_kernel_(IsBuggyEl6Kernel(env->GetKernelRelease())),
     next_block_id_(1) {
 
   int64_t file_cache_capacity = GetFileCacheCapacityForBlockManager(env_);
@@ -1276,6 +1306,48 @@ Status LogBlockManager::Open() {
 
   if (file_cache_) {
     RETURN_NOT_OK(file_cache_->Init());
+  }
+
+  // Establish (and log) block limits for each data directory using kernel,
+  // filesystem, and gflags information.
+  for (const auto& dd : dd_manager_.data_dirs()) {
+    boost::optional<int64_t> limit;
+
+    if (FLAGS_log_container_max_blocks == -1) {
+      // No limit, unless this is KUDU-1508.
+
+      // The log block manager requires hole punching and, of the ext
+      // filesystems, only ext4 supports it. Thus, if this is an ext
+      // filesystem, it's ext4 by definition.
+      bool is_on_ext4;
+      RETURN_NOT_OK(env_->IsOnExtFilesystem(dd->dir(), &is_on_ext4));
+      if (buggy_el6_kernel_ && is_on_ext4) {
+        uint64_t fs_block_size =
+            dd->instance()->metadata()->filesystem_block_size_bytes();
+        bool untested_block_size =
+            !ContainsKey(per_fs_block_size_block_limits, fs_block_size);
+        string msg = Substitute(
+            "Data dir $0 is on an ext4 filesystem vulnerable to KUDU-1508 "
+            "with $1block size $2", dd->dir(),
+            untested_block_size ? "untested " : "", fs_block_size);
+        if (untested_block_size) {
+          LOG(WARNING) << msg;
+        } else {
+          LOG(INFO) << msg;
+        }
+        limit = LookupBlockLimit(fs_block_size);
+      }
+    } else if (FLAGS_log_container_max_blocks > 0) {
+      // Use the provided limit.
+      limit = FLAGS_log_container_max_blocks;
+    }
+
+    if (limit) {
+      LOG(INFO) << Substitute(
+          "Limiting containers on data directory $0 to $1 blocks",
+          dd->dir(), *limit);
+    }
+    InsertOrDie(&block_limits_by_data_dir_, dd.get(), limit);
   }
 
   vector<Status> statuses(dd_manager_.data_dirs().size());
@@ -1675,7 +1747,8 @@ Status LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
       //
       // If we ignored deleted blocks, we would end up reusing the space
       // belonging to the last deleted block in the container.
-      container->UpdateBytesWritten(record.offset(), record.length());
+      container->UpdateBytesWrittenAndTotalBlocks(record.offset(),
+                                                  record.length());
       break;
     }
     case DELETE:
@@ -1697,6 +1770,28 @@ Status LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
 
 std::string LogBlockManager::ContainerPathForTests(internal::LogBlockContainer* container) {
   return container->ToString();
+}
+
+bool LogBlockManager::IsBuggyEl6Kernel(const string& kernel_release) {
+  // Any kernel older than 2.6.32-674 (el6.9) is buggy.
+  //
+  // TODO(adar): need to update this when the fix is backported to el6.8.z. See
+  // https://bugzilla.redhat.com/show_bug.cgi?id=1397808.
+  autodigit_less lt;
+  return kernel_release.find("el6") != string::npos &&
+      lt(kernel_release, "2.6.32-674");
+}
+
+int64_t LogBlockManager::LookupBlockLimit(int64_t fs_block_size) {
+  const int64_t* limit = FindFloorOrNull(per_fs_block_size_block_limits,
+                                         fs_block_size);
+  if (limit) {
+    return *limit;
+  }
+
+  // Block size must have been less than the very first key. Return the
+  // first recorded entry and hope for the best.
+  return per_fs_block_size_block_limits.begin()->second;
 }
 
 } // namespace fs

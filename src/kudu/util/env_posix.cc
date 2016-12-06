@@ -16,6 +16,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include <cstdio>
@@ -55,7 +56,9 @@
 #include <sys/sysctl.h>
 #else
 #include <linux/falloc.h>
+#include <linux/magic.h>
 #include <sys/sysinfo.h>
+#include <sys/vfs.h>
 #endif  // defined(__APPLE__)
 
 // Copied from falloc.h. Useful for older kernels that lack support for
@@ -1265,6 +1268,31 @@ class PosixEnv : public Env {
       LOG(INFO) << Substitute("Not raising process file limit of $0; it is "
           "already as high as it can go", l.rlim_cur);
     }
+  }
+
+  virtual Status IsOnExtFilesystem(const string& path, bool* result) OVERRIDE {
+    TRACE_EVENT0("io", "PosixEnv::IsOnExtFilesystem");
+    ThreadRestrictions::AssertIOAllowed();
+
+#ifdef __APPLE__
+    *result = false;
+#else
+    struct statfs buf;
+    int ret;
+    RETRY_ON_EINTR(ret, statfs(path.c_str(), &buf));
+    if (ret == -1) {
+      return IOError(Substitute("statfs: $0", path), errno);
+    }
+    *result = (buf.f_type == EXT4_SUPER_MAGIC);
+#endif
+    return Status::OK();
+  }
+
+  virtual string GetKernelRelease() OVERRIDE {
+    // There's no reason for this to ever fail.
+    struct utsname u;
+    PCHECK(uname(&u) == 0);
+    return string(u.release);
   }
 
  private:

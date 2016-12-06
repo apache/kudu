@@ -73,8 +73,11 @@ function run_test() {
 
   # Create the test filesystem and file.
   #
+  # Note that 'fallocate --length <bytes>' doesn't appear to be recognized on
+  # el6.6, despite what the help says.
+  #
   # The 'sync' at the end speeds up subsequent hole punching.
-  run "fallocate --length $FILESYSTEM_SIZE $BLOCK_DEVICE_FILE"
+  run "fallocate -l $FILESYSTEM_SIZE $BLOCK_DEVICE_FILE"
   run "mkfs -F -t ext4 -b $BLOCK_SIZE $BLOCK_DEVICE_FILE"
   run "sudo mount -o loop $BLOCK_DEVICE_FILE $MOUNT_DIR"
   run "sudo chown $EUID $MOUNT_DIR"

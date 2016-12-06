@@ -19,6 +19,7 @@
 #define KUDU_FS_LOG_BLOCK_MANAGER_H
 
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -26,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/fs/block_id.h"
@@ -182,8 +184,11 @@ class LogBlockManager : public BlockManager {
   int64_t CountBlocksForTests() const;
 
  private:
-  FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
+  FRIEND_TEST(LogBlockManagerTest, TestLookupBlockLimit);
   FRIEND_TEST(LogBlockManagerTest, TestMetadataTruncation);
+  FRIEND_TEST(LogBlockManagerTest, TestParseKernelRelease);
+  FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
+
   friend class internal::LogBlockContainer;
 
   // Simpler typedef for a block map which isn't tracked in the memory tracker.
@@ -268,10 +273,21 @@ class LogBlockManager : public BlockManager {
 
   Env* env() const { return env_; }
 
-  // Return the path of the given container. Only for use by tests.
+  // Returns the path of the given container. Only for use by tests.
   static std::string ContainerPathForTests(internal::LogBlockContainer* container);
 
+  // Returns whether the given kernel release is vulnerable to KUDU-1508.
+  static bool IsBuggyEl6Kernel(const std::string& kernel_release);
+
+  // Finds an appropriate block limit from 'per_fs_block_size_block_limits'
+  // using the given filesystem block size.
+  static int64_t LookupBlockLimit(int64_t fs_block_size);
+
   const internal::LogBlockManagerMetrics* metrics() const { return metrics_.get(); }
+
+  // For kernels affected by KUDU-1508, tracks a known good upper bound on the
+  // number of blocks per container, given a particular filesystem block size.
+  static const std::map<int64_t, int64_t> per_fs_block_size_block_limits;
 
   // Tracks memory consumption of any allocations numerous enough to be
   // interesting (e.g. LogBlocks).
@@ -282,6 +298,11 @@ class LogBlockManager : public BlockManager {
 
   // Manages and owns all of the block manager's data directories.
   DataDirManager dd_manager_;
+
+  // Maps a data directory to an upper bound on the number of blocks that a
+  // container residing in that directory should observe, if one is necessary.
+  std::unordered_map<const DataDir*,
+                     boost::optional<int64_t>> block_limits_by_data_dir_;
 
   // Manages files opened for reading.
   std::unique_ptr<FileCache<RWFile>> file_cache_;
@@ -318,6 +339,9 @@ class LogBlockManager : public BlockManager {
 
   // If true, only read operations are allowed.
   const bool read_only_;
+
+  // If true, the kernel is vulnerable to KUDU-1508.
+  const bool buggy_el6_kernel_;
 
   // For generating container names.
   ObjectIdGenerator oid_generator_;

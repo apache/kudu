@@ -16,6 +16,7 @@
 // under the License.
 
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 #include <string>
 #include <vector>
@@ -42,6 +43,7 @@ using kudu::pb_util::ReadablePBContainerFile;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -53,6 +55,7 @@ DECLARE_uint64(log_container_max_size);
 
 DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
+DECLARE_int64(log_container_max_blocks);
 
 DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
 
@@ -141,6 +144,14 @@ class BlockManagerTest : public KuduTest {
     }
     ASSERT_FALSE(container_data_filename.empty());
     *data_file = container_data_filename;
+  }
+
+  void AssertNumContainers(int expected_num_containers) {
+    // The expected directory contents are dot, dotdot, test metadata, instance
+    // file, and a file pair per container.
+    vector<string> children;
+    ASSERT_OK(env_->GetChildren(GetTestDataDirectory(), &children));
+    ASSERT_EQ(4 + (2 * expected_num_containers), children.size());
   }
 
   void RunMultipathTest(const vector<string>& paths);
@@ -1231,6 +1242,147 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
                                        { GetTestDataDirectory() },
                                        false));
   }
+}
+
+TEST_F(LogBlockManagerTest, TestContainerWithManyHoles) {
+  // This is a regression test of sorts for KUDU-1508, though it doesn't
+  // actually fail if the fix is missing; it just corrupts the filesystem.
+  RETURN_NOT_LOG_BLOCK_MANAGER();
+
+  static unordered_map<int, int> block_size_to_last_interior_node_block_number =
+     {{1024, 168},
+      {2048, 338},
+      {4096, 680}};
+
+  const int kNumBlocks = 16 * 1024;
+
+  uint64_t fs_block_size;
+  ASSERT_OK(env_->GetBlockSize(test_dir_, &fs_block_size));
+  if (!ContainsKey(block_size_to_last_interior_node_block_number,
+                   fs_block_size)) {
+    LOG(INFO) << Substitute("Filesystem block size is $0, skipping test",
+                            fs_block_size);
+    return;
+  }
+  int last_interior_node_block_number = FindOrDie(
+      block_size_to_last_interior_node_block_number, fs_block_size);
+
+  ASSERT_GE(kNumBlocks, last_interior_node_block_number);
+
+  // Speed up the test.
+  FLAGS_never_fsync = true;
+
+  // Create a bunch of blocks. They should all go in one container (unless
+  // the container becomes full).
+  LOG(INFO) << Substitute("Creating $0 blocks", kNumBlocks);
+  vector<BlockId> ids;
+  for (int i = 0; i < kNumBlocks; i++) {
+    gscoped_ptr<WritableBlock> block;
+    ASSERT_OK(bm_->CreateBlock(&block));
+    ASSERT_OK(block->Append("aaaa"));
+    ASSERT_OK(block->Close());
+    ids.push_back(block->id());
+  }
+
+  // Delete every other block. In effect, this maximizes the number of extents
+  // in the container by forcing the filesystem to alternate every hole with
+  // a live extent.
+  LOG(INFO) << "Deleting every other block";
+  for (int i = 0; i < ids.size(); i += 2) {
+    ASSERT_OK(bm_->DeleteBlock(ids[i]));
+  }
+
+  // Delete all of the blocks belonging to the interior node. If KUDU-1508
+  // applies, this should corrupt the filesystem.
+  LOG(INFO) << Substitute("Deleting remaining blocks up to block number $0",
+                          last_interior_node_block_number);
+  for (int i = 1; i < last_interior_node_block_number; i += 2) {
+    ASSERT_OK(bm_->DeleteBlock(ids[i]));
+  }
+}
+
+TEST_F(LogBlockManagerTest, TestParseKernelRelease) {
+  ASSERT_TRUE(LogBlockManager::IsBuggyEl6Kernel("1.7.0.0.el6.x86_64"));
+
+  // no el6 infix
+  ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.6.32"));
+
+  ASSERT_TRUE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-1.0.0.el6.x86_64"));
+  ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.6.33-1.0.0.el6.x86_64"));
+
+  // Make sure it's a numeric sort, not a lexicographic one.
+  ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-1000.0.0.el6.x86_64"));
+  ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.6.100-1.0.0.el6.x86_64"));
+  ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.10.0-1.0.0.el6.x86_64"));
+  ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("10.0.0-1.0.0.el6.x86_64"));
+
+  // Kernel from el6.6: buggy
+  ASSERT_TRUE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-504.30.3.el6.x86_64"));
+
+  // Kernel from el6.9: not buggy.
+  ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-674.0.0.el6.x86_64"));
+}
+
+TEST_F(LogBlockManagerTest, TestLookupBlockLimit) {
+  int64_t limit_1024 = LogBlockManager::LookupBlockLimit(1024);
+  int64_t limit_2048 = LogBlockManager::LookupBlockLimit(2048);
+  int64_t limit_4096 = LogBlockManager::LookupBlockLimit(4096);
+
+  // Test the floor behavior in LookupBlockLimit().
+  for (int i = 0; i < 16384; i++) {
+    if (i < 2048) {
+      ASSERT_EQ(limit_1024, LogBlockManager::LookupBlockLimit(i));
+    } else if (i < 4096) {
+      ASSERT_EQ(limit_2048, LogBlockManager::LookupBlockLimit(i));
+    } else {
+      ASSERT_EQ(limit_4096, LogBlockManager::LookupBlockLimit(i));
+    }
+  }
+}
+
+TEST_F(LogBlockManagerTest, TestContainerBlockLimiting) {
+  RETURN_NOT_LOG_BLOCK_MANAGER();
+
+  const int kNumBlocks = 1000;
+
+  // Speed up the test.
+  FLAGS_never_fsync = true;
+
+  // Creates 'kNumBlocks' blocks with minimal data.
+  auto create_some_blocks = [&]() -> Status {
+    for (int i = 0; i < kNumBlocks; i++) {
+      gscoped_ptr<WritableBlock> block;
+      RETURN_NOT_OK(bm_->CreateBlock(&block));
+      RETURN_NOT_OK(block->Append("aaaa"));
+      RETURN_NOT_OK(block->Close());
+    }
+    return Status::OK();
+  };
+
+  // All of these blocks should fit into one container.
+  ASSERT_OK(create_some_blocks());
+  NO_FATALS(AssertNumContainers(1));
+
+  // With a limit imposed, the existing container is immediately full, and we
+  // need a few more to satisfy another 'kNumBlocks' blocks.
+  FLAGS_log_container_max_blocks = 400;
+  ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                     shared_ptr<MemTracker>(),
+                                     { GetTestDataDirectory() },
+                                     false));
+  ASSERT_OK(create_some_blocks());
+  NO_FATALS(AssertNumContainers(4));
+
+  // Now remove the limit and create more blocks. They should go into existing
+  // containers, which are now no longer full.
+  FLAGS_log_container_max_blocks = -1;
+  ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                     shared_ptr<MemTracker>(),
+                                     { GetTestDataDirectory() },
+                                     false));
+
+  ASSERT_OK(create_some_blocks());
+  NO_FATALS(AssertNumContainers(4));
 }
 
 } // namespace fs
