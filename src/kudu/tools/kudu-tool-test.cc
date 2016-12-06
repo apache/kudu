@@ -229,17 +229,17 @@ class ToolTest : public KuduTest {
   unique_ptr<ExternalMiniClusterFsInspector> inspect_;
   unordered_map<string, TServerDetails*> ts_map_;
   unique_ptr<MiniCluster> mini_cluster_;
+  ExternalMiniClusterOptions cluster_opts_;
   string tool_path_;
 };
 
 void ToolTest::StartExternalMiniCluster(const vector<string>& extra_master_flags,
                                         const vector<string>& extra_tserver_flags,
                                         int num_tablet_servers) {
-  ExternalMiniClusterOptions opts;
-  opts.extra_master_flags = extra_master_flags;
-  opts.extra_tserver_flags = extra_tserver_flags;
-  opts.num_tablet_servers = num_tablet_servers;
-  cluster_.reset(new ExternalMiniCluster(opts));
+  cluster_opts_.extra_master_flags = extra_master_flags;
+  cluster_opts_.extra_tserver_flags = extra_tserver_flags;
+  cluster_opts_.num_tablet_servers = num_tablet_servers;
+  cluster_.reset(new ExternalMiniCluster(cluster_opts_));
   ASSERT_OK(cluster_->Start());
   inspect_.reset(new ExternalMiniClusterFsInspector(cluster_.get()));
   ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy().get(),
@@ -961,6 +961,11 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
   const int kDstTsIndex = 1;
   const int kNumTservers = 3;
   const int kNumTablets = 3;
+  // This lets us specify wildcard ip addresses for rpc servers
+  // on the tablet servers in the cluster giving us the test coverage
+  // for KUDU-1776. With this, 'kudu remote_replica copy' can be used to
+  // connect to tablet servers bound to wildcard ip addresses.
+  cluster_opts_.bind_mode = ExternalMiniClusterOptions::WILDCARD;
   NO_FATALS(StartExternalMiniCluster(
       {"--catalog_manager_wait_for_new_tablets_to_elect_leader=false"},
       {"--enable_leader_failure_detection=false"}, kNumTservers));

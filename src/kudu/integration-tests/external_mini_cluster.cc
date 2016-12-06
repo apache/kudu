@@ -71,20 +71,24 @@ namespace kudu {
 
 static const char* const kMasterBinaryName = "kudu-master";
 static const char* const kTabletServerBinaryName = "kudu-tserver";
+static const char* const kWildcardIpAddr = "0.0.0.0";
+static const char* const kLoopbackIpAddr = "127.0.0.1";
 static double kProcessStartTimeoutSeconds = 30.0;
 static double kTabletServerRegistrationTimeoutSeconds = 15.0;
 static double kMasterCatalogManagerTimeoutSeconds = 30.0;
 
 #if defined(__APPLE__)
-static bool kBindToUniqueLoopbackAddress = false;
+static ExternalMiniClusterOptions::BindMode kBindMode =
+    ExternalMiniClusterOptions::BindMode::LOOPBACK;
 #else
-static bool kBindToUniqueLoopbackAddress = true;
+static ExternalMiniClusterOptions::BindMode kBindMode =
+    ExternalMiniClusterOptions::BindMode::UNIQUE_LOOPBACK;
 #endif
 
 ExternalMiniClusterOptions::ExternalMiniClusterOptions()
     : num_masters(1),
       num_tablet_servers(1),
-      bind_to_unique_loopback_addresses(kBindToUniqueLoopbackAddress),
+      bind_mode(kBindMode),
       enable_kerberos(false),
       logtostderr(true) {
 }
@@ -257,7 +261,7 @@ Status ExternalMiniCluster::StartSingleMaster() {
                         GetLogPath(daemon_id),
                         SubstituteInFlags(opts_.extra_master_flags, 0));
   if (opts_.enable_kerberos) {
-    RETURN_NOT_OK_PREPEND(master->EnableKerberos(kdc_.get(), "127.0.0.1"),
+    RETURN_NOT_OK_PREPEND(master->EnableKerberos(kdc_.get(), Substitute("$0", kLoopbackIpAddr)),
                           "could not enable Kerberos");
   }
 
@@ -276,7 +280,7 @@ Status ExternalMiniCluster::StartDistributedMasters() {
 
   vector<string> peer_addrs;
   for (int i = 0; i < num_masters; i++) {
-    string addr = Substitute("127.0.0.1:$0", opts_.master_rpc_ports[i]);
+    string addr = Substitute("$0:$1", kLoopbackIpAddr, opts_.master_rpc_ports[i]);
     peer_addrs.push_back(addr);
   }
   vector<string> flags = opts_.extra_master_flags;
@@ -294,7 +298,7 @@ Status ExternalMiniCluster::StartDistributedMasters() {
                            peer_addrs[i],
                            SubstituteInFlags(flags, i));
     if (opts_.enable_kerberos) {
-      RETURN_NOT_OK_PREPEND(peer->EnableKerberos(kdc_.get(), "127.0.0.1"),
+      RETURN_NOT_OK_PREPEND(peer->EnableKerberos(kdc_.get(), Substitute("$0", kLoopbackIpAddr)),
                             "could not enable Kerberos");
     }
     RETURN_NOT_OK_PREPEND(peer->Start(),
@@ -306,13 +310,17 @@ Status ExternalMiniCluster::StartDistributedMasters() {
 }
 
 string ExternalMiniCluster::GetBindIpForTabletServer(int index) const {
-  if (opts_.bind_to_unique_loopback_addresses) {
+  string bind_ip;
+  if (opts_.bind_mode == ExternalMiniClusterOptions::UNIQUE_LOOPBACK) {
     pid_t p = getpid();
     CHECK_LE(p, MathLimits<uint16_t>::kMax) << "Cannot run on systems with >16-bit pid";
-    return Substitute("127.$0.$1.$2", p >> 8, p & 0xff, index);
+    bind_ip = Substitute("127.$0.$1.$2", p >> 8, p & 0xff, index);
+  } else if (opts_.bind_mode == ExternalMiniClusterOptions::WILDCARD) {
+    bind_ip = Substitute("$0", kWildcardIpAddr);
   } else {
-    return "127.0.0.1";
+    bind_ip = Substitute("$0", kLoopbackIpAddr);
   }
+  return bind_ip;
 }
 
 Status ExternalMiniCluster::AddTabletServer() {
@@ -789,9 +797,18 @@ void ExternalDaemon::Shutdown() {
   if (!process_) return;
 
   // Before we kill the process, store the addresses. If we're told to
-  // start again we'll reuse these.
-  bound_rpc_ = bound_rpc_hostport();
-  bound_http_ = bound_http_hostport();
+  // start again we'll reuse these. Store only the port if the
+  // daemons were using wildcard address for binding.
+  const string& wildcard_ip = Substitute("$0", kWildcardIpAddr);
+  if (get_rpc_bind_address() != wildcard_ip) {
+    bound_rpc_ = bound_rpc_hostport();
+    bound_http_ = bound_http_hostport();
+  } else {
+    bound_rpc_.set_host(wildcard_ip);
+    bound_rpc_.set_port(bound_rpc_hostport().port());
+    bound_http_.set_host(wildcard_ip);
+    bound_http_.set_port(bound_http_hostport().port());
+  }
 
   if (IsProcessAlive()) {
     // In coverage builds, ask the process nicely to flush coverage info
@@ -946,8 +963,8 @@ ExternalMaster::ExternalMaster(std::shared_ptr<rpc::Messenger> messenger,
                      std::move(exe),
                      std::move(data_dir),
                      std::move(log_dir),
-                     std::move(extra_flags)),
-      rpc_bind_address_("127.0.0.1:0") {
+                     std::move(extra_flags)) {
+  set_rpc_bind_address(Substitute("$0:0", kLoopbackIpAddr));
 }
 
 ExternalMaster::ExternalMaster(std::shared_ptr<rpc::Messenger> messenger,
@@ -960,8 +977,9 @@ ExternalMaster::ExternalMaster(std::shared_ptr<rpc::Messenger> messenger,
                      std::move(exe),
                      std::move(data_dir),
                      std::move(log_dir),
-                     std::move(extra_flags)),
-      rpc_bind_address_(std::move(rpc_bind_address)) {}
+                     std::move(extra_flags)) {
+  set_rpc_bind_address(std::move(rpc_bind_address));
+}
 
 ExternalMaster::~ExternalMaster() {
 }
@@ -970,7 +988,7 @@ Status ExternalMaster::Start() {
   vector<string> flags;
   flags.push_back("--fs_wal_dir=" + data_dir_);
   flags.push_back("--fs_data_dirs=" + data_dir_);
-  flags.push_back("--rpc_bind_addresses=" + rpc_bind_address_);
+  flags.push_back("--rpc_bind_addresses=" + get_rpc_bind_address());
   flags.push_back("--webserver_interface=localhost");
   flags.push_back("--webserver_port=0");
   RETURN_NOT_OK(StartProcess(flags));
@@ -1051,8 +1069,9 @@ ExternalTabletServer::ExternalTabletServer(std::shared_ptr<rpc::Messenger> messe
                      std::move(data_dir),
                      std::move(log_dir),
                      std::move(extra_flags)),
-      master_addrs_(HostPort::ToCommaSeparatedString(master_addrs)),
-      bind_host_(std::move(bind_host)) {}
+      master_addrs_(HostPort::ToCommaSeparatedString(master_addrs)) {
+  set_rpc_bind_address(std::move(bind_host));
+}
 
 ExternalTabletServer::~ExternalTabletServer() {
 }
@@ -1062,11 +1081,11 @@ Status ExternalTabletServer::Start() {
   flags.push_back("--fs_wal_dir=" + data_dir_);
   flags.push_back("--fs_data_dirs=" + data_dir_);
   flags.push_back(Substitute("--rpc_bind_addresses=$0:0",
-                             bind_host_));
+                             get_rpc_bind_address()));
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
-                             bind_host_));
+                             get_rpc_bind_address()));
   flags.push_back(Substitute("--webserver_interface=$0",
-                             bind_host_));
+                             get_rpc_bind_address()));
   flags.push_back("--webserver_port=0");
   flags.push_back("--tserver_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
@@ -1083,10 +1102,10 @@ Status ExternalTabletServer::Restart() {
   flags.push_back("--fs_data_dirs=" + data_dir_);
   flags.push_back("--rpc_bind_addresses=" + bound_rpc_.ToString());
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
-                             bind_host_));
+                             get_rpc_bind_address()));
   flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
   flags.push_back(Substitute("--webserver_interface=$0",
-                             bind_host_));
+                             bound_http_.host()));
   flags.push_back("--tserver_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
