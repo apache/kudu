@@ -1451,7 +1451,8 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           auto existing_iter = existing_tablets.upper_bound(lower_bound);
           if (existing_iter != existing_tablets.end()) {
             TabletMetadataLock metadata(existing_iter->second, TabletMetadataLock::READ);
-            if (metadata.data().pb.partition().partition_key_start() < upper_bound) {
+            if (upper_bound.empty() ||
+                metadata.data().pb.partition().partition_key_start() < upper_bound) {
               return Status::InvalidArgument(
                   "New range partition conflicts with existing range partition",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
@@ -1459,7 +1460,8 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           }
           if (existing_iter != existing_tablets.begin()) {
             TabletMetadataLock metadata(std::prev(existing_iter)->second, TabletMetadataLock::READ);
-            if (metadata.data().pb.partition().partition_key_end() > lower_bound) {
+            if (metadata.data().pb.partition().partition_key_end().empty() ||
+                metadata.data().pb.partition().partition_key_end() > lower_bound) {
               return Status::InvalidArgument(
                   "New range partition conflicts with existing range partition",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
@@ -1470,7 +1472,8 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           auto new_iter = new_tablets.upper_bound(lower_bound);
           if (new_iter != new_tablets.end()) {
             const auto& metadata = new_iter->second->mutable_metadata()->dirty();
-            if (metadata.pb.partition().partition_key_start() < upper_bound) {
+            if (upper_bound.empty() ||
+                metadata.pb.partition().partition_key_start() < upper_bound) {
               return Status::InvalidArgument(
                   "New range partition conflicts with another new range partition",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
@@ -1478,7 +1481,8 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           }
           if (new_iter != new_tablets.begin()) {
             const auto& metadata = std::prev(new_iter)->second->mutable_metadata()->dirty();
-            if (metadata.pb.partition().partition_key_end() > lower_bound) {
+            if (metadata.pb.partition().partition_key_end().empty() ||
+                metadata.pb.partition().partition_key_end() > lower_bound) {
               return Status::InvalidArgument(
                   "New range partition conflicts with another new range partition",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));

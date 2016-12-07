@@ -349,6 +349,9 @@ class TestClient(KuduTestBase, unittest.TestCase):
         # Add Range Partition
         table = self.client.table(self.ex_table)
         alterer = self.client.new_table_alterer(table)
+        # Drop the unbounded range partition.
+        alterer.drop_range_partition()
+        # Add a partition from 0 to 100
         alterer.add_range_partition(
             lower_bound={'key': 0},
             upper_bound={'key': 100}
@@ -357,10 +360,13 @@ class TestClient(KuduTestBase, unittest.TestCase):
         # TODO(jtbirdsell): Once C++ client can list partition schema
         # then this test should confirm that the partition was added.
         alterer = self.client.new_table_alterer(table)
+        # Drop the partition from 0 to 100
         alterer.drop_range_partition(
             lower_bound={'key': 0},
             upper_bound={'key': 100}
         )
+        # Add back the unbounded range partition
+        alterer.add_range_partition()
         table = alterer.alter()
 
 

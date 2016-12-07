@@ -22,6 +22,7 @@
 #include <utility>
 
 #include <boost/bind.hpp>
+#include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
@@ -1501,6 +1502,320 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
   ASSERT_EQ(100, CountTableRows(table.get()));
+}
+
+// Attempts to exhaustively check all cases of single-column range partition
+// conflicts for ALTER TABLE ADD RANGE PARTITION ops involving two ranges.
+//
+// Also tests some cases of DROP RANGE PARTITION where possible, but the
+// coverage is not exhaustive (the state space for invalid add/drop combinations
+// is much bigger than for add/add combinations).
+//
+// Regression test for KUDU-1792
+TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
+  unique_ptr<KuduTableAlterer> table_alterer;
+
+  // CREATE TABLE t (c0 INT PRIMARY KEY)
+  // PARTITION BY
+  //    RANGE (c0) ();
+  string table_name = "test-alter-range-partitioning-invalid-unbounded";
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(table_name)
+                          .schema(&schema_)
+                          .set_range_partition_columns({ "c0" })
+                          .num_replicas(1)
+                          .Create());
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(table_name, &table));
+
+  // Drop the default UNBOUNDED tablet in order to start with a table with no ranges.
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  ASSERT_OK(table_alterer->DropRangePartition(schema_.NewRow(), schema_.NewRow())
+                         ->wait(true)->Alter());
+
+  // Turns an optional value into a row for the table.
+  auto fill_row = [&] (boost::optional<int32_t> value) -> unique_ptr<KuduPartialRow> {
+    unique_ptr<KuduPartialRow> row(schema_.NewRow());
+    if (value) {
+      CHECK_OK(row->SetInt32("c0", *value));
+    }
+    return row;
+  };
+
+  // Attempts to add a range partition to the table with the specified bounds.
+  auto add_range_partition = [&] (boost::optional<int32_t> lower_bound,
+                                  boost::optional<int32_t> upper_bound) -> Status {
+    table_alterer.reset(client_->NewTableAlterer(table_name));
+    return table_alterer->AddRangePartition(fill_row(lower_bound).release(),
+                                            fill_row(upper_bound).release())
+                        ->wait(false)
+                        ->Alter();
+  };
+
+  // Attempts to drop a range partition to the table with the specified bounds.
+  auto drop_range_partition = [&] (boost::optional<int32_t> lower_bound,
+                                   boost::optional<int32_t> upper_bound) -> Status {
+    table_alterer.reset(client_->NewTableAlterer(table_name));
+    return table_alterer->DropRangePartition(fill_row(lower_bound).release(),
+                                             fill_row(upper_bound).release())
+                        ->wait(false)
+                        ->Alter();
+  };
+
+  // Attempts to add two range partitions to the table in a single transaction.
+  auto add_range_partitions = [&] (boost::optional<int32_t> a_lower_bound,
+                                   boost::optional<int32_t> a_upper_bound,
+                                   boost::optional<int32_t> b_lower_bound,
+                                   boost::optional<int32_t> b_upper_bound) -> Status {
+    table_alterer.reset(client_->NewTableAlterer(table_name));
+    return table_alterer->AddRangePartition(fill_row(a_lower_bound).release(),
+                                            fill_row(a_upper_bound).release())
+                        ->AddRangePartition(fill_row(b_lower_bound).release(),
+                                            fill_row(b_upper_bound).release())
+                        ->wait(false)
+                        ->Alter();
+  };
+
+  // Attempts to add and drop two range partitions in a single transaction.
+  auto add_drop_range_partitions = [&] (boost::optional<int32_t> a_lower_bound,
+                                        boost::optional<int32_t> a_upper_bound,
+                                        boost::optional<int32_t> b_lower_bound,
+                                        boost::optional<int32_t> b_upper_bound) -> Status {
+    table_alterer.reset(client_->NewTableAlterer(table_name));
+    return table_alterer->AddRangePartition(fill_row(a_lower_bound).release(),
+                                            fill_row(a_upper_bound).release())
+                        ->DropRangePartition(fill_row(b_lower_bound).release(),
+                                             fill_row(b_upper_bound).release())
+                        ->wait(false)
+                        ->Alter();
+  };
+
+  auto bounds_to_string = [] (boost::optional<int32_t> lower_bound,
+                              boost::optional<int32_t> upper_bound) -> string {
+    if (!lower_bound && !upper_bound) {
+      return "UNBOUNDED";
+    }
+    if (!lower_bound) {
+      return strings::Substitute("VALUES < $0", *upper_bound);
+    }
+    if (!upper_bound) {
+      return strings::Substitute("VALUES >= $0", *lower_bound);
+    }
+    return strings::Substitute("$0 <= VALUES < $1", *lower_bound, *upper_bound);
+  };
+
+  // Checks that b conflicts with a, when added in that order.
+  auto do_expect_range_partitions_conflict = [&] (boost::optional<int32_t> a_lower_bound,
+                                                  boost::optional<int32_t> a_upper_bound,
+                                                  boost::optional<int32_t> b_lower_bound,
+                                                  boost::optional<int32_t> b_upper_bound) {
+    SCOPED_TRACE(strings::Substitute("b: $0", bounds_to_string(b_lower_bound, b_upper_bound)));
+    SCOPED_TRACE(strings::Substitute("a: $0", bounds_to_string(a_lower_bound, a_upper_bound)));
+
+    // Add a then add b.
+    ASSERT_OK(add_range_partition(a_lower_bound, a_upper_bound));
+    Status s = add_range_partition(b_lower_bound, b_upper_bound);
+    ASSERT_FALSE(s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "New range partition conflicts with existing range partition");
+    // Clean up by removing a.
+    ASSERT_OK(drop_range_partition(a_lower_bound, a_upper_bound));
+
+    // Add a and b in the same transaction.
+    s = add_range_partitions(a_lower_bound, a_upper_bound,
+                             b_lower_bound, b_upper_bound);
+    ASSERT_FALSE(s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "New range partition conflicts with another new range partition");
+
+    // To get some extra coverage of DROP RANGE PARTITION, check if the two
+    // ranges are not equal, and if so, check that adding one and dropping the
+    // other fails.
+
+    if (a_lower_bound != b_lower_bound || a_upper_bound != b_upper_bound) {
+      // Add a then drop b.
+      ASSERT_OK(add_range_partition(a_lower_bound, a_upper_bound));
+      Status s = drop_range_partition(b_lower_bound, b_upper_bound);
+      ASSERT_FALSE(s.ok());
+      ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+      // Clean up by removing a.
+      ASSERT_OK(drop_range_partition(a_lower_bound, a_upper_bound));
+
+      // Add a and drop b in a single transaction.
+      s = add_drop_range_partitions(a_lower_bound, a_upper_bound,
+                                    b_lower_bound, b_upper_bound);
+      ASSERT_FALSE(s.ok());
+      ASSERT_STR_CONTAINS(s.ToString(),
+                          "No range partition found for drop range partition step");
+    }
+  };
+
+  // Checks that two range partitions conflict.
+  auto expect_range_partitions_conflict = [&] (boost::optional<int32_t> a_lower_bound,
+                                               boost::optional<int32_t> a_upper_bound,
+                                               boost::optional<int32_t> b_lower_bound,
+                                               boost::optional<int32_t> b_upper_bound) {
+    do_expect_range_partitions_conflict(a_lower_bound, a_upper_bound,
+                                        b_lower_bound, b_upper_bound);
+    do_expect_range_partitions_conflict(b_lower_bound, b_upper_bound,
+                                        a_lower_bound, a_upper_bound);
+  };
+
+  /// Bounded / Bounded
+
+  // [----------)
+  // [----------)
+  expect_range_partitions_conflict(0, 100, 0, 100);
+
+  // [----------)
+  //      [----------)
+  expect_range_partitions_conflict(0, 100, 50, 150);
+
+  // [----------)
+  // [------)
+  expect_range_partitions_conflict(0, 100, 0, 50);
+
+  // [----------)
+  //     [------)
+  expect_range_partitions_conflict(0, 100, 50, 100);
+
+  // [----------)
+  //   [------)
+  expect_range_partitions_conflict(0, 100, 25, 75);
+
+  /// Bounded / Unbounded Above
+
+  //  [----------)
+  // [-------------->
+  expect_range_partitions_conflict(0, 100, -1, boost::none);
+
+  // [----------)
+  // [-------------->
+  expect_range_partitions_conflict(0, 100, 0, boost::none);
+
+  // [----------)
+  //  [------------->
+  expect_range_partitions_conflict(0, 100, 1, boost::none);
+
+  // [----------)
+  //      [------------->
+  expect_range_partitions_conflict(0, 100, 50, boost::none);
+
+  // [----------)
+  //           [--------->
+  expect_range_partitions_conflict(0, 100, 99, boost::none);
+
+  /// Bounded / Unbounded Below
+
+  //        [----------)
+  // <-------)
+  expect_range_partitions_conflict(0, 100, boost::none, 1);
+
+  //        [----------)
+  // <------------)
+  expect_range_partitions_conflict(0, 100, boost::none, 50);
+
+  //        [----------)
+  // <-----------------)
+  expect_range_partitions_conflict(0, 100, boost::none, 100);
+
+  //        [----------)
+  // <-------------------)
+  expect_range_partitions_conflict(0, 100, boost::none, 125);
+
+  /// Bounded / Unbounded
+
+  //     [----------)
+  // <------------------->
+  expect_range_partitions_conflict(0, 100, boost::none, boost::none);
+
+  /// Bounded / Single Value
+
+  // [----------)
+  // |
+  expect_range_partitions_conflict(0, 100, 0, 1);
+
+  // [----------)
+  //      |
+  expect_range_partitions_conflict(0, 100, 25, 26);
+
+  // [----------)
+  //           |
+  expect_range_partitions_conflict(0, 100, 99, 100);
+
+  /// Unbounded Above / Unbounded Above
+
+  //    [---------->
+  // [---------->
+  expect_range_partitions_conflict(0, boost::none, -10, boost::none);
+
+  // [---------->
+  // [---------->
+  expect_range_partitions_conflict(0, boost::none, 0, boost::none);
+
+  /// Unbounded Above / Unbounded Below
+
+  // [---------->
+  // <----------)
+  expect_range_partitions_conflict(0, boost::none, boost::none, 100);
+
+  //        [---------->
+  // <-------)
+  expect_range_partitions_conflict(0, boost::none, boost::none, 1);
+
+  /// Unbounded Above / Unbounded
+
+  // [---------->
+  // <---------->
+  expect_range_partitions_conflict(0, boost::none, boost::none, boost::none);
+
+  /// Unbounded Above / Single Value
+
+  // [---------->
+  // |
+  expect_range_partitions_conflict(0, boost::none, 0, 1);
+
+  // [---------->
+  //   |
+  expect_range_partitions_conflict(0, boost::none, 100, 101);
+
+  /// Unbounded Below / Unbounded Below
+
+  // <----------)
+  // <----------)
+  expect_range_partitions_conflict(boost::none, 100, boost::none, 100);
+
+  // <----------)
+  // <-----)
+  expect_range_partitions_conflict(boost::none, 100, boost::none, 50);
+
+  /// Unbounded Below / Unbounded
+
+  // <----------)
+  // <---------->
+  expect_range_partitions_conflict(boost::none, 100, boost::none, boost::none);
+
+  /// Unbounded Below / Single Value
+
+  // <----------)
+  //       |
+  expect_range_partitions_conflict(boost::none, 100, 50, 51);
+
+  // <----------)
+  //           |
+  expect_range_partitions_conflict(boost::none, 100, 99, 100);
+
+  /// Unbounded / Unbounded
+
+  // <---------->
+  // <---------->
+  expect_range_partitions_conflict(boost::none, boost::none, boost::none, boost::none);
+
+  /// Single Value / Single Value
+
+  // |
+  // |
+  expect_range_partitions_conflict(0, 1, 0, 1);
 }
 
 TEST_F(ReplicatedAlterTableTest, TestReplicatedAlter) {
