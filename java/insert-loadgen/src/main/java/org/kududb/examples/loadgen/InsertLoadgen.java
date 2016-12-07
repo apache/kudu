@@ -1,5 +1,10 @@
 package org.kududb.examples.loadgen;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+import java.util.UUID;
+
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.Insert;
@@ -9,14 +14,7 @@ import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.SessionConfiguration;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-
 public class InsertLoadgen {
-
   private static class RandomDataGenerator {
     private final Random rng;
     private final int index;
@@ -50,7 +48,7 @@ public class InsertLoadgen {
           row.addInt(index, rng.nextInt(Integer.MAX_VALUE));
           return;
         case INT64:
-        case TIMESTAMP:
+        case UNIXTIME_MICROS:
           row.addLong(index, rng.nextLong());
           return;
         case BINARY:
@@ -76,10 +74,16 @@ public class InsertLoadgen {
     }
   }
 
-  public static void runLoad(String masterHost, String tableName) {
-    KuduClient client = new KuduClient.KuduClientBuilder(masterHost).build();
+  public static void main(String[] args) throws Exception {
+    if (args.length != 2) {
+      System.err.println("Usage: InsertLoadgen kudu_master_host kudu_table");
+      System.exit(1);
+    }
 
-    try {
+    String masterHost = args[0];
+    String tableName = args[1];
+
+    try (KuduClient client = new KuduClient.KuduClientBuilder(masterHost).build()) {
       KuduTable table = client.openTable(tableName);
       Schema schema = table.getSchema();
       List<RandomDataGenerator> generators = new ArrayList<>(schema.getColumnCount());
@@ -89,52 +93,18 @@ public class InsertLoadgen {
 
       KuduSession session = client.newSession();
       session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
-      while (true) {
+      for (int insertCount = 0; ; insertCount++) {
         Insert insert = table.newInsert();
         PartialRow row = insert.getRow();
         for (int i = 0; i < schema.getColumnCount(); i++) {
           generators.get(i).generateColumnData(row);
         }
         session.apply(insert);
-      }
 
-    } catch (Exception e) {
-      e.printStackTrace();
-    } finally {
-      try {
-        client.shutdown();
-      } catch (Exception e) {
-        e.printStackTrace();
-      }
-    }
-  }
-
-  public static void main(String[] args) {
-    if (args.length != 3) {
-      System.err.println("Usage: InsertLoadgen kudu_master_host kudu_table num_threads");
-      System.exit(1);
-    }
-
-    final String masterHost = args[0];
-    final String tableName = args[1];
-    int numThreads = Integer.parseInt(args[2]);
-
-    final CountDownLatch latch = new CountDownLatch(numThreads);
-
-    List<Thread> threads = new ArrayList<>(numThreads);
-    for (int i = 0; i < numThreads; i++) {
-      threads.add(new Thread(new Runnable() {
-        public void run() {
-          runLoad(masterHost, tableName);
-          latch.countDown();
+        if (insertCount % 1000 == 0 && session.countPendingErrors() > 0) {
+          throw new RuntimeException(session.getPendingErrors().getRowErrors()[0].toString());
         }
-      }));
-      threads.get(i).start();
-    }
-    try {
-      latch.await();
-    } catch (InterruptedException e) {
-      e.printStackTrace();
+      }
     }
   }
 }
