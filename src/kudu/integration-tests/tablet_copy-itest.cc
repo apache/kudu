@@ -711,18 +711,23 @@ TEST_F(TabletCopyITest, TestDisableTabletCopy_NoTightLoopWhenTabletDeleted) {
   // Ensure that, if we sleep for a second while still doing writes to the leader:
   // a) we don't spew logs on the leader side
   // b) we don't get hit with a lot of UpdateConsensus calls on the replica.
+  MonoTime start = MonoTime::Now();
   int64_t num_update_rpcs_initial = CountUpdateConsensusCalls(replica_ets, tablet_id);
   int64_t num_logs_initial = CountLogMessages(leader_ts);
 
   SleepFor(MonoDelta::FromSeconds(1));
   int64_t num_update_rpcs_after_sleep = CountUpdateConsensusCalls(replica_ets, tablet_id);
   int64_t num_logs_after_sleep = CountLogMessages(leader_ts);
+  MonoTime end = MonoTime::Now();
+  MonoDelta elapsed = end - start;
 
   // Calculate rate per second of RPCs and log messages
-  int64_t update_rpcs_per_second = num_update_rpcs_after_sleep - num_update_rpcs_initial;
+  int64_t update_rpcs_per_second =
+      (num_update_rpcs_after_sleep - num_update_rpcs_initial) / elapsed.ToSeconds();
   EXPECT_LT(update_rpcs_per_second, 20);
-  int64_t num_logs_per_second = num_logs_after_sleep - num_logs_initial;
-  EXPECT_LT(num_logs_per_second, 20);
+  int64_t num_logs_per_second =
+      (num_logs_after_sleep - num_logs_initial) / elapsed.ToSeconds();
+  EXPECT_LT(num_logs_per_second, 30); // We might occasionally get unrelated log messages.
 }
 
 // Test that if a Tablet Copy is taking a long time but the client peer is still responsive,
