@@ -296,6 +296,12 @@ class Env {
   // kernel) to be equal to the hard limit.
   virtual void IncreaseOpenFileLimit() = 0;
 
+  // Special string injected into file-growing operations' random failures
+  // (if enabled).
+  //
+  // Only useful for tests.
+  static const char* const kInjectedFailureStatusMsg;
+
  private:
   // No copying allowed
   Env(const Env&);

@@ -248,11 +248,13 @@ class LogBlockManager : public BlockManager {
   // already gone.
   scoped_refptr<internal::LogBlock> RemoveLogBlock(const BlockId& block_id);
 
-  // Parse a block record, adding or removing it in 'block_map', and
+  // Parses a block record, adding or removing it in 'block_map', and
   // accounting for it in the metadata for 'container'.
-  void ProcessBlockRecord(const BlockRecordPB& record,
-                          internal::LogBlockContainer* container,
-                          UntrackedBlockMap* block_map);
+  //
+  // Returns a bad status if the record is malformed in some way.
+  Status ProcessBlockRecord(const BlockRecordPB& record,
+                            internal::LogBlockContainer* container,
+                            UntrackedBlockMap* block_map);
 
   // Open a particular data directory belonging to the block manager.
   //

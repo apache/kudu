@@ -55,7 +55,7 @@
 
 DEFINE_double(sys_catalog_fail_during_write, 0.0,
               "Fraction of the time when system table writes will fail");
-TAG_FLAG(sys_catalog_fail_during_write, unsafe);
+TAG_FLAG(sys_catalog_fail_during_write, hidden);
 
 using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::ConsensusMetadata;

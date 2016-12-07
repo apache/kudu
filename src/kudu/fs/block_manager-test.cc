@@ -16,6 +16,9 @@
 // under the License.
 
 #include <memory>
+#include <unordered_set>
+#include <string>
+#include <vector>
 
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
@@ -39,8 +42,11 @@ using kudu::pb_util::ReadablePBContainerFile;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+
+DECLARE_bool(never_fsync);
 
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
@@ -49,7 +55,10 @@ DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
 
 DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
+
 DECLARE_string(block_manager);
+
+DECLARE_double(env_inject_io_error_on_write_or_preallocate);
 
 // Generic block manager metrics.
 METRIC_DECLARE_gauge_uint64(block_manager_blocks_open_reading);
@@ -1123,6 +1132,104 @@ TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
             entity->FindOrNull(METRIC_data_dirs_full).get())->value());
       }
     }
+  }
+}
+
+// Regression test for KUDU-1793.
+TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
+  const int kNumTries = 3;
+  const int kNumBlockTries = 1000;
+  const int kNumAppends = 4;
+  const string kTestData = "asdf";
+
+  // Speed up the test.
+  FLAGS_never_fsync = true;
+
+  // Since we're appending so little data, reconfigure these to ensure quite a
+  // few containers and a good amount of preallocating.
+  FLAGS_log_container_max_size = 256 * 1024;
+  FLAGS_log_container_preallocate_bytes = 8 * 1024;
+
+  // Force some file operations to fail.
+  FLAGS_env_inject_io_error_on_write_or_preallocate = 0.2;
+
+  // Creates a block, writing the result to 'out' on success.
+  auto create_a_block = [&](BlockId* out) -> Status {
+    gscoped_ptr<WritableBlock> block;
+    RETURN_NOT_OK(this->bm_->CreateBlock(&block));
+    for (int i = 0; i < kNumAppends; i++) {
+      RETURN_NOT_OK(block->Append(kTestData));
+    }
+    RETURN_NOT_OK(block->Close());
+    *out = block->id();
+    return Status::OK();
+  };
+
+  // Reads a block given by 'id', comparing its contents to kTestData.
+  auto read_a_block = [&](const BlockId& id) -> Status {
+    gscoped_ptr<ReadableBlock> block;
+    RETURN_NOT_OK(this->bm_->OpenBlock(id, &block));
+    uint64_t size;
+    RETURN_NOT_OK(block->Size(&size));
+    CHECK_EQ(kNumAppends * kTestData.size(), size);
+
+    for (int i = 0; i < kNumAppends; i++) {
+      uint8_t buf[kTestData.size()];
+      Slice s;
+      RETURN_NOT_OK(block->Read(i * kNumAppends, sizeof(buf), &s, buf));
+      CHECK_EQ(kTestData, s);
+    }
+    return Status::OK();
+  };
+
+  // For each iteration:
+  // 1. Try to create kNumTries new blocks.
+  // 2. Try to delete every other block.
+  // 3. Read and test every block.
+  // 4. Restart the block manager, forcing the on-disk metadata to be reloaded.
+  unordered_set<BlockId, BlockIdHash> ids;
+  for (int attempt = 0; attempt < kNumTries; attempt++) {
+    int num_created = 0;
+    for (int i = 0; i < kNumBlockTries; i++) {
+      BlockId id;
+      Status s = create_a_block(&id);
+      if (s.ok()) {
+        InsertOrDie(&ids, id);
+        num_created++;
+      }
+    }
+    LOG(INFO) << Substitute("Successfully created $0 blocks on $1 attempts",
+                            num_created, kNumBlockTries);
+
+    int num_deleted = 0;
+    int num_deleted_attempts = 0;
+    for (auto it = ids.begin(); it != ids.end();) {
+      // TODO(adar): the lbm removes a block from its block map even if the
+      // on-disk deletion fails. When that's fixed, update this code to
+      // erase() only if s.ok().
+      Status s = this->bm_->DeleteBlock(*it);
+      it = ids.erase(it);
+      if (s.ok()) {
+        num_deleted++;
+      }
+      num_deleted_attempts++;
+
+      // Skip every other block.
+      if (it != ids.end()) {
+        it++;
+      }
+    }
+    LOG(INFO) << Substitute("Successfully deleted $0 blocks on $1 attempts",
+                            num_deleted, num_deleted_attempts);
+
+    for (const auto& id : ids) {
+      ASSERT_OK(read_a_block(id));
+    }
+
+    ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                       shared_ptr<MemTracker>(),
+                                       { GetTestDataDirectory() },
+                                       false));
   }
 }
 
