@@ -2693,7 +2693,7 @@ cdef class TableAlterer:
         returns success, however other existing clients may have to wait for a
         timeout period to elapse before the tablets become visible. This period
         is configured by the master's 'table_locations_ttl_ms' flag, and
-        defaults to one hour.
+        defaults to 5 minutes.
 
         Parameters
         ----------

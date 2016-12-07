@@ -984,7 +984,7 @@ class KUDU_EXPORT KuduTableAlterer {
   ///   Alter() returns success, however other existing clients may have to wait
   ///   for a timeout period to elapse before the tablets become visible. This
   ///   period is configured by the master's 'table_locations_ttl_ms' flag, and
-  ///   defaults to one hour.
+  ///   defaults to 5 minutes.
   ///
   /// @param [in] lower_bound
   ///   The lower bound of the range partition to add. If the row is empty, then

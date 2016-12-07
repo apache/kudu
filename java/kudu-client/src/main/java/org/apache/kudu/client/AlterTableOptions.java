@@ -141,7 +141,7 @@ public class AlterTableOptions {
    * This client will immediately be able to write and scan the new tablets when the alter table
    * operation returns success, however other existing clients may have to wait for a timeout period
    * to elapse before the tablets become visible. This period is configured by the master's
-   * 'table_locations_ttl_ms' flag, and defaults to one hour.
+   * 'table_locations_ttl_ms' flag, and defaults to 5 minutes.
    *
    * @param lowerBound inclusive lower bound, may be empty but not null
    * @param upperBound exclusive upper bound, may be empty but not null
@@ -167,7 +167,7 @@ public class AlterTableOptions {
    * This client will immediately be able to write and scan the new tablets when the alter table
    * operation returns success, however other existing clients may have to wait for a timeout period
    * to elapse before the tablets become visible. This period is configured by the master's
-   * 'table_locations_ttl_ms' flag, and defaults to one hour.
+   * 'table_locations_ttl_ms' flag, and defaults to 5 minutes.
    *
    * @param lowerBound lower bound, may be empty but not null
    * @param upperBound upper bound, may be empty but not null
