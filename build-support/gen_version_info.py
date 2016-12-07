@@ -81,7 +81,7 @@ def main():
       git_hash = check_output(["git", "rev-parse", "HEAD"]).strip()
       clean_repo = subprocess.call("git diff --quiet && git diff --cached --quiet", shell=True) == 0
       clean_repo = str(clean_repo).lower()
-    except Exception, e:
+    except Exception:
       # If the git commands failed, we're probably building outside of a git
       # repository.
       logging.info("Build appears to be outside of a git repository... " +
