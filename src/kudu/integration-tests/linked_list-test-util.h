@@ -592,7 +592,7 @@ Status LinkedListTester::VerifyLinkedListRemote(
   client::KuduScanner scanner(table.get());
   RETURN_NOT_OK_PREPEND(scanner.SetProjectedColumns(verify_projection_), "Bad projection");
   RETURN_NOT_OK(scanner.SetBatchSizeBytes(0)); // Force at least one NextBatch RPC.
-  RETURN_NOT_OK(scanner.SetTimeoutMillis(20 * 1000 /* 20 seconds */));
+  RETURN_NOT_OK(scanner.SetTimeoutMillis(60 * 1000 /* 60 seconds */));
 
   if (snapshot_timestamp != kNoSnapshot) {
     RETURN_NOT_OK(scanner.SetReadMode(client::KuduScanner::READ_AT_SNAPSHOT));
