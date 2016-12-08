@@ -318,7 +318,8 @@ public class MiniKdc implements Closeable {
     return ImmutableMap.of(
         "KRB5_CONFIG", options.dataRoot.resolve("krb5.conf").toString(),
         "KRB5_KDC_PROFILE", options.dataRoot.resolve("kdc.conf").toString(),
-        "KRB5CCNAME", options.dataRoot.resolve("krb5cc").toString()
+        "KRB5CCNAME", options.dataRoot.resolve("krb5cc").toString(),
+        "KUDU_ENABLE_KRB5_REALM_FIX", "yes"
     );
   }
 
