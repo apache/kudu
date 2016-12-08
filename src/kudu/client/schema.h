@@ -27,7 +27,6 @@
 namespace kudu {
 
 class ColumnSchema;
-struct ColumnSchemaDelta;
 class KuduPartialRow;
 class Schema;
 class TestWorkload;
@@ -349,10 +348,6 @@ class KUDU_EXPORT KuduColumnSpec {
   explicit KuduColumnSpec(const std::string& col_name);
 
   Status ToColumnSchema(KuduColumnSchema* col) const;
-
-  Status ToColumnSchemaDelta(ColumnSchemaDelta* col_delta) const;
-
-  Slice DefaultValueAsSlice() const;
 
   // Owned.
   Data* data_;

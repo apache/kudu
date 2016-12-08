@@ -330,7 +330,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
 
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE {
     CHECK(parsed_) << "Must call ParseHeader()";
-    CHECK(pos < num_elems_ || (num_elems_ == 0 && pos == 0))
+    CHECK_LT(pos, num_elems_)
         << "Tried to seek to " << pos << " which is >= number of elements ("
         << num_elems_ << ") in the block!.";
 

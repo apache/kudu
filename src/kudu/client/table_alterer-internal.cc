@@ -86,31 +86,29 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
         break;
       }
       case AlterTableRequestPB::ALTER_COLUMN:
-      {
-        // We only support rename column, change block_size, encoding, and compression
+        // TODO(KUDU-861): support altering a column in the wire protocol.
+        // For now, we just give an error if the caller tries to do
+        // any operation other than rename.
         if (s.spec->data_->has_type ||
+            s.spec->data_->has_encoding ||
+            s.spec->data_->has_compression ||
             s.spec->data_->has_nullable ||
-            s.spec->data_->primary_key) {
-          return Status::NotSupported("unsupported alter operation",
+            s.spec->data_->primary_key ||
+            s.spec->data_->has_default ||
+            s.spec->data_->default_val ||
+            s.spec->data_->remove_default) {
+          return Status::NotSupported("cannot support AlterColumn of this type",
                                       s.spec->data_->name);
         }
-        if (!s.spec->data_->has_rename_to &&
-            !s.spec->data_->has_default &&
-            !s.spec->data_->default_val &&
-            !s.spec->data_->remove_default &&
-            !s.spec->data_->has_encoding &&
-            !s.spec->data_->has_compression &&
-            !s.spec->data_->has_block_size) {
+        // We only support rename column
+        if (!s.spec->data_->has_rename_to) {
           return Status::InvalidArgument("no alter operation specified",
                                          s.spec->data_->name);
         }
-        ColumnSchemaDelta col_delta(s.spec->data_->name);
-        RETURN_NOT_OK(s.spec->ToColumnSchemaDelta(&col_delta));
-        auto* alter_pb = pb_step->mutable_alter_column();
-        ColumnSchemaDeltaToPB(col_delta, alter_pb->mutable_delta());
-        pb_step->set_type(AlterTableRequestPB::ALTER_COLUMN);
+        pb_step->mutable_rename_column()->set_old_name(s.spec->data_->name);
+        pb_step->mutable_rename_column()->set_new_name(s.spec->data_->rename_to);
+        pb_step->set_type(AlterTableRequestPB::RENAME_COLUMN);
         break;
-      }
       case AlterTableRequestPB::ADD_RANGE_PARTITION:
       {
         RowOperationsPBEncoder encoder(pb_step->mutable_add_range_partition()

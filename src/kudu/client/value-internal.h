@@ -55,10 +55,6 @@ class KuduValue::Data {
                                 DataType t,
                                 void** val_void);
 
-  // Return this KuduValue as a Slice. The KuduValue object retains ownership
-  // of the underlying data.
-  const Slice GetSlice();
-
  private:
   // Check that this value has the expected type 'type', returning
   // a nice error Status if not.

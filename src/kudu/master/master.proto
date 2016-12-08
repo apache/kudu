@@ -425,8 +425,10 @@ message AlterTableRequestPB {
     UNKNOWN = 0;
     ADD_COLUMN = 1;
     DROP_COLUMN = 2;
-    // Deprecated. Replaced by AlterColumn.
     RENAME_COLUMN = 3;
+
+    // TODO(KUDU-861): this will subsume RENAME_COLUMN, but not yet implemented
+    // on the master side.
     ALTER_COLUMN = 4;
     ADD_RANGE_PARTITION = 5;
     DROP_RANGE_PARTITION = 6;
@@ -441,14 +443,10 @@ message AlterTableRequestPB {
     // Name of the column to drop.
     required string name = 1;
   }
-  // Deprecated. Replaced by AlterColumn.
   message RenameColumn {
     // Name of the column to rename;
     required string old_name = 1;
     required string new_name = 2;
-  }
-  message AlterColumn {
-    required ColumnSchemaDeltaPB delta = 1;
   }
   message AddRangePartition {
     // A set of row operations containing the lower and upper range bound for
@@ -470,7 +468,6 @@ message AlterTableRequestPB {
     optional RenameColumn rename_column = 4;
     optional AddRangePartition add_range_partition = 5;
     optional DropRangePartition drop_range_partition = 6;
-    optional AlterColumn alter_column = 7;
   }
 
   required TableIdentifierPB table = 1;

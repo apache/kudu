@@ -17,7 +17,6 @@
 
 #include "kudu/client/schema.h"
 
-#include <boost/optional.hpp>
 #include <glog/logging.h>
 #include <unordered_map>
 
@@ -205,6 +204,8 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   // Verify that the user isn't trying to use any methods that
   // don't make sense for CREATE.
   if (data_->has_rename_to) {
+    // TODO(KUDU-861): adjust these errors as this method will also be used for
+    // ALTER TABLE ADD COLUMN support.
     return Status::NotSupported("cannot rename a column during CreateTable",
                                 data_->name);
   }
@@ -251,57 +252,6 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
                           KuduColumnStorageAttributes(encoding, compression, block_size));
 
   return Status::OK();
-}
-
-Status KuduColumnSpec::ToColumnSchemaDelta(ColumnSchemaDelta* col_delta) const {
-  if (data_->has_type) {
-    return Status::InvalidArgument("type provided for column schema delta", data_->name);
-  }
-  if (data_->has_nullable) {
-    return Status::InvalidArgument("nullability provided for column schema delta", data_->name);
-  }
-  if (data_->primary_key) {
-    return Status::InvalidArgument("primary key set for column schema delta", data_->name);
-  }
-
-  if (data_->has_rename_to) {
-    col_delta->new_name = boost::optional<string>(std::move(data_->rename_to));
-  }
-
-  if (data_->has_default) {
-    col_delta->default_value = boost::optional<Slice>(DefaultValueAsSlice());
-  }
-
-  if (data_->remove_default) {
-    col_delta->remove_default = true;
-  }
-
-  if (col_delta->remove_default && col_delta->default_value) {
-    return Status::InvalidArgument("new default set but default also removed", data_->name);
-  }
-
-  if (data_->has_encoding) {
-    col_delta->encoding =
-            boost::optional<EncodingType>(ToInternalEncodingType(data_->encoding));
-  }
-
-  if (data_->has_compression) {
-    col_delta->compression =
-            boost::optional<CompressionType>(ToInternalCompressionType(data_->compression));
-  }
-
-  if (data_->has_block_size) {
-    col_delta->cfile_block_size = boost::optional<int32_t>(data_->block_size);
-  }
-
-  return Status::OK();
-}
-
-Slice KuduColumnSpec::DefaultValueAsSlice() const {
-  if (!data_->has_default) {
-    return Slice();
-  }
-  return data_->default_val->data_->GetSlice();
 }
 
 
