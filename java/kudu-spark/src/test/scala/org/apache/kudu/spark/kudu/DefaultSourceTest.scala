@@ -272,6 +272,36 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
     assert(results.get(0).getInt(0).equals(2))
   }
 
+  test("Test basic SparkSQL with in list predicate") {
+    val keys = Array(1, 5, 7)
+    val results = sqlContext.sql(s"SELECT key FROM $tableName where key in (${keys.mkString(", ")})").collectAsList()
+    assert(results.size() == keys.length)
+    keys.zipWithIndex.foreach { case (v, i) =>
+      assert(results.get(i).size.equals(1))
+      assert(results.get(i).getInt(0).equals(v))
+    }
+  }
+
+  test("Test basic SparkSQL with in list predicate on string") {
+    val keys = Array(1, 4, 6)
+    val results = sqlContext.sql(s"SELECT key FROM $tableName where c2_s in (${keys.mkString("'", "', '", "'")})").collectAsList()
+    assert(results.size() == keys.count(_ % 2 == 0))
+    keys.filter(_ % 2 == 0).zipWithIndex.foreach { case (v, i) =>
+      assert(results.get(i).size.equals(1))
+      assert(results.get(i).getInt(0).equals(v))
+    }
+  }
+
+  test("Test basic SparkSQL with in list and comparison predicate") {
+    val keys = Array(1, 5, 7)
+    val results = sqlContext.sql(s"SELECT key FROM $tableName where key>2 and key in (${keys.mkString(", ")})").collectAsList()
+    assert(results.size() == keys.count(_>2))
+    keys.filter(_>2).zipWithIndex.foreach { case (v, i) =>
+      assert(results.get(i).size.equals(1))
+      assert(results.get(i).getInt(0).equals(v))
+    }
+  }
+
   test("Test basic SparkSQL with two predicates negative") {
     val results = sqlContext.sql("SELECT key FROM " + tableName + " where key=1 and c2_s='2'").collectAsList()
     assert(results.size() == 0)

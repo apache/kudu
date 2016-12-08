@@ -169,6 +169,8 @@ with InsertableRelation {
         Array(comparisonPredicate(column, ComparisonOp.LESS, value))
       case LessThanOrEqual(column, value) =>
         Array(comparisonPredicate(column, ComparisonOp.LESS_EQUAL, value))
+      case In(column, values) =>
+        Array(inListPredicate(column, values))
       case And(left, right) => filterToPredicate(left) ++ filterToPredicate(right)
       case _ => Array()
     }
@@ -198,6 +200,17 @@ with InsertableRelation {
       case value: String => KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
       case value: Array[Byte] => KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
     }
+  }
+
+  /**
+    * Creates a new in list predicate for the column and values.
+    *
+    * @param column the column name
+    * @param values the values
+    * @return the in list predicate
+    */
+  private def inListPredicate(column: String, values: Array[Any]): KuduPredicate = {
+    KuduPredicate.newInListPredicate(table.getSchema.getColumn(column), values.toList.asJava)
   }
 
   /**
@@ -247,7 +260,8 @@ private[spark] object KuduRelation {
        | GreaterThan(_, _)
        | GreaterThanOrEqual(_, _)
        | LessThan(_, _)
-       | LessThanOrEqual(_, _) => true
+       | LessThanOrEqual(_, _)
+       | In(_, _) => true
     case And(left, right) => supportsFilter(left) && supportsFilter(right)
     case _ => false
   }
