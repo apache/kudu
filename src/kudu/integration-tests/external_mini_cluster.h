@@ -147,11 +147,6 @@ class ExternalMiniCluster : public MiniClusterBase {
   // Restarts the cluster. Requires that it has been Shutdown() first.
   Status Restart();
 
-  // Like the previous method but performs initialization synchronously, i.e.
-  // this will wait for all TS's to be started and initialized. Tests should
-  // use this if they interact with tablets immediately after Start();
-  Status StartSync();
-
   // Add a new TS to the cluster. The new TS is started.
   // Requires that the master is already running.
   Status AddTabletServer();

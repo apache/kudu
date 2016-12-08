@@ -52,6 +52,14 @@ TEST(LogRollingITest, TestLogCleanupOnStartup) {
   ExternalMiniCluster cluster(opts);
   ASSERT_OK(cluster.Start());
 
+  // Explicitly wait for the catalog manager because we've got no tservers in
+  // our cluster, which means the usual waiting in ExternalMiniCluster::Start()
+  // won't work.
+  //
+  // This is only needed the first time the master starts so that it can write
+  // the catalog out to disk.
+  ASSERT_OK(cluster.master()->WaitForCatalogManager());
+
   for (int i = 1; i <= 10; i++) {
     ASSERT_EQ(std::min(3, i), CountInfoLogs(*cluster.master()->log_dir()));
     cluster.master()->Shutdown();
