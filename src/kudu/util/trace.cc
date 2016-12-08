@@ -215,11 +215,17 @@ void Trace::MetricsToJSON(JsonWriter* jw) const {
     jw->String(e.first);
     jw->Int64(e.second);
   }
-  if (!child_traces_.empty()) {
+  vector<pair<StringPiece, scoped_refptr<Trace>>> child_traces;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    child_traces = child_traces_;
+  }
+
+  if (!child_traces.empty()) {
     jw->String("child_traces");
     jw->StartArray();
 
-    for (const auto& e : child_traces_) {
+    for (const auto& e : child_traces) {
       jw->StartArray();
       jw->String(e.first.data(), e.first.size());
       e.second->MetricsToJSON(jw);
