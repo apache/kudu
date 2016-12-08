@@ -162,18 +162,18 @@ Status ParseHostPortString(const string& hostport_str, HostPort* hostport) {
   return Status::OK();
 }
 
-// Find the last committed OpId for the tablet_id from the WAL.
-Status FindLastCommittedOpId(FsManager* fs, const string& tablet_id,
-                             OpId* last_committed_opid) {
+// Find the last replicated OpId for the tablet_id from the WAL.
+Status FindLastLoggedOpId(FsManager* fs, const string& tablet_id,
+                          OpId* last_logged_opid) {
   shared_ptr<LogReader> reader;
   RETURN_NOT_OK(LogReader::Open(fs, scoped_refptr<log::LogIndex>(), tablet_id,
                                 scoped_refptr<MetricEntity>(), &reader));
   SegmentSequence segs;
   RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segs));
-  // Reverse iterate segments to find the first 'last committed' entry.
+  // Reverse iterate the segments to find the 'last replicated' entry quickly.
   // Note that we still read the entries within a segment in sequential
-  // fashion, so the last entry within the 'found' segment will
-  // give us the last_committed_opid.
+  // fashion, so the last entry within the first 'found' segment will
+  // give us the last_logged_opid.
   vector<scoped_refptr<ReadableLogSegment>>::reverse_iterator seg;
   bool found = false;
   for (seg = segs.rbegin(); seg != segs.rend(); ++seg) {
@@ -183,13 +183,13 @@ Status FindLastCommittedOpId(FsManager* fs, const string& tablet_id,
       Status s = reader.ReadNextEntry(&entry);
       if (s.IsEndOfFile()) break;
       RETURN_NOT_OK_PREPEND(s, "Error in log segment");
-      if (entry.type() != log::COMMIT) continue;
-      *last_committed_opid = entry.commit().commited_op_id();
+      if (entry.type() != log::REPLICATE) continue;
+      *last_logged_opid = entry.replicate().id();
       found = true;
     }
     if (found) return Status::OK();
   }
-  return Status::NotFound("Committed OpId not found in the log");
+  return Status::NotFound("No entries found in the write-ahead log");
 }
 
 // Parses a colon-delimited string containing a uuid, hostname or IP address,
@@ -300,7 +300,7 @@ Status DeleteLocalReplica(const RunnerContext& context) {
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   FsManager fs_manager(Env::Default(), FsManagerOpts());
   RETURN_NOT_OK(fs_manager.Open());
-  boost::optional<OpId> last_committed_opid = boost::none;
+  boost::optional<OpId> last_logged_opid = boost::none;
   TabletDataState state = TabletDataState::TABLET_DATA_DELETED;
   if (!FLAGS_clean_unsafe) {
     state = TabletDataState::TABLET_DATA_TOMBSTONED;
@@ -308,14 +308,14 @@ Status DeleteLocalReplica(const RunnerContext& context) {
     // the log, it's not an error. But if we receive any other error,
     // indicate the user to delete with --clean_unsafe flag.
     OpId opid;
-    Status s = FindLastCommittedOpId(&fs_manager, tablet_id, &opid);
+    Status s = FindLastLoggedOpId(&fs_manager, tablet_id, &opid);
     if (s.ok()) {
-      last_committed_opid = opid;
+      last_logged_opid = opid;
     } else if (s.IsNotFound()) {
-      LOG(INFO) << "Could not find last committed OpId from WAL, "
+      LOG(INFO) << "Could not find any replicated OpId from WAL, "
                 << "but proceeding with tablet tombstone: " << s.ToString();
     } else {
-      LOG(ERROR) << "Error attempting to find last committed OpId in WAL: " << s.ToString();
+      LOG(ERROR) << "Error attempting to find last replicated OpId from WAL: " << s.ToString();
       LOG(ERROR) << "Cannot delete (tombstone) the tablet, use --clean_unsafe to delete"
                  << " the tablet permanently from this server.";
       return s;
@@ -325,7 +325,7 @@ Status DeleteLocalReplica(const RunnerContext& context) {
   // Force the specified tablet on this node to be in 'state'.
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(TabletMetadata::Load(&fs_manager, tablet_id, &meta));
-  RETURN_NOT_OK(TSTabletManager::DeleteTabletData(meta, state, last_committed_opid));
+  RETURN_NOT_OK(TSTabletManager::DeleteTabletData(meta, state, last_logged_opid));
   return Status::OK();
 }
 
