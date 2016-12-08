@@ -387,8 +387,10 @@ class TabletServerTestBase : public KuduTest {
           rb_row.Reset(&block, i);
           VLOG(1) << "Verified row " << schema.DebugRow(rb_row);
           ASSERT_LT(count, expected.size()) << "Got more rows than expected!";
-          ASSERT_EQ(expected[count].first, *schema.ExtractColumnFromRow<INT32>(rb_row, 0));
-          ASSERT_EQ(expected[count].second, *schema.ExtractColumnFromRow<INT32>(rb_row, 1));
+          EXPECT_EQ(expected[count].first, *schema.ExtractColumnFromRow<INT32>(rb_row, 0))
+              << "Key mismatch at row: " << count;
+          EXPECT_EQ(expected[count].second, *schema.ExtractColumnFromRow<INT32>(rb_row, 1))
+              << "Value mismatch at row: " << count;
           count++;
         }
       }

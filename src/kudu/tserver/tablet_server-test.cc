@@ -951,6 +951,66 @@ TEST_F(TabletServerTest, TestKUDU_1341) {
   ANFF(VerifyRows(schema_, { KeyValue(1, 12345) }));
 }
 
+TEST_F(TabletServerTest, DISABLED_TestExactlyOnceForErrorsAcrossRestart) {
+  WriteRequestPB req;
+  WriteResponsePB resp;
+  RpcController rpc;
+
+  // Set up a request to insert two rows.
+  req.set_tablet_id(kTabletId);
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678, "hello world via RPC",
+                 req.mutable_row_operations());
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 12345, 5679, "hello world via RPC2",
+                 req.mutable_row_operations());
+  ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
+
+  // Insert it, assuming no errors.
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_OK(proxy_->Write(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(0, resp.per_row_errors_size());
+  }
+
+  // Set up a RequestID to use in the later requests.
+  rpc::RequestIdPB req_id;
+  req_id.set_client_id("client-id");
+  req_id.set_seq_no(1);
+  req_id.set_first_incomplete_seq_no(1);
+  req_id.set_attempt_no(1);
+
+  // Insert the row again, with the request ID specified. We should expect an
+  // "ALREADY_PRESENT" error.
+  {
+    rpc.Reset();
+    rpc.SetRequestIdPB(unique_ptr<rpc::RequestIdPB>(new rpc::RequestIdPB(req_id)));
+    ASSERT_OK(proxy_->Write(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(2, resp.per_row_errors_size());
+  }
+
+  // Restart the tablet server several times, and after each restart, send a new attempt of the
+  // same request. We make the request itself invalid by clearing the schema and ops, but
+  // that shouldn't matter since it's just hitting the ResultTracker and returning the
+  // cached response. If the ResultTracker didn't have a cached response, then we'd get an
+  // error about an invalid request.
+  req.clear_schema();
+  req.clear_row_operations();
+  for (int i = 1; i <= 5; i++) {
+    SCOPED_TRACE(Substitute("restart attempt #$0", i));
+    NO_FATALS(ShutdownAndRebuildTablet());
+    rpc.Reset();
+    req_id.set_attempt_no(req_id.attempt_no() + 1);
+    rpc.SetRequestIdPB(unique_ptr<rpc::RequestIdPB>(new rpc::RequestIdPB(req_id)));
+    ASSERT_OK(proxy_->Write(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(2, resp.per_row_errors_size());
+  }
+}
+
 // Regression test for KUDU-177. Ensures that after a major delta compaction,
 // rows that were in the old DRS's DMS are properly replayed.
 TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompaction) {
