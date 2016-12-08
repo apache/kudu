@@ -76,8 +76,11 @@ def to_unixtime_micros(timestamp, format = "%Y-%m-%dT%H:%M:%S.%f"):
     else:
         timestamp = timestamp.replace(tzinfo=utc)
 
-    # Return the unixtime_micros for the provided datetime and locale
-    return int((timestamp - _epoch()).total_seconds() * 1000000)
+    # Return the unixtime_micros for the provided datetime and locale.
+    # Avoid timedelta.total_seconds() for py2.6 compatibility.
+    td = timestamp - _epoch()
+    td_micros = td.microseconds + (td.seconds + td.days * 24 * 3600) * 10**6
+    return int(td_micros)
 
 def from_unixtime_micros(unixtime_micros):
     """
