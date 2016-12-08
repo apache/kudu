@@ -26,6 +26,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/util/env.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
@@ -61,7 +62,9 @@ TEST(LogRollingITest, TestLogCleanupOnStartup) {
   ASSERT_OK(cluster.master()->WaitForCatalogManager());
 
   for (int i = 1; i <= 10; i++) {
-    ASSERT_EQ(std::min(3, i), CountInfoLogs(*cluster.master()->log_dir()));
+    AssertEventually([&] () {
+        ASSERT_EQ(std::min(3, i), CountInfoLogs(*cluster.master()->log_dir()));
+    });
     cluster.master()->Shutdown();
     ASSERT_OK(cluster.master()->Restart());
   }
