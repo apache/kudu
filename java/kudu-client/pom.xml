@@ -188,6 +188,10 @@
                     <shadedPattern>org.apache.kudu.client.shaded.com.google.protobuf</shadedPattern>
                   </relocation>
                   <relocation>
+                    <pattern>com.google.thirdparty</pattern>
+                    <shadedPattern>org.apache.kudu.client.shaded.com.google.thirdparty</shadedPattern>
+                  </relocation>
+                  <relocation>
                     <pattern>com.sangupta</pattern>
                     <shadedPattern>org.apache.kudu.client.shaded.com.sangupta</shadedPattern>
                   </relocation>
