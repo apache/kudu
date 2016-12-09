@@ -1364,8 +1364,8 @@ public class AsyncKuduClient implements AutoCloseable {
 
       RemoteTablet rt = new RemoteTablet(tableId, tabletPb, servers);
 
-      LOG.info("Learned about tablet {} for table '{}' with partition {}",
-               rt.getTabletId(), tableName, rt.getPartition());
+      LOG.debug("Learned about tablet {} for table '{}' with partition {}",
+                rt.getTabletId(), tableName, rt.getPartition());
       tablets.add(rt);
     }
 
