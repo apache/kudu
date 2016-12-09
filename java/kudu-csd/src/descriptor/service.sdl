@@ -39,15 +39,6 @@
       "type" : "boolean",
       "required" : "true",
       "default" : "false"
-    },
-    {
-      "name" : "core_dump_directory",
-      "label" : "Core Dump Directory",
-      "description" : "If Enable Core Dump is set, Kudu processes will dump cores to this location.",
-      "type" : "path",
-      "pathType" : "serviceSpecific",
-      "required" : "true",
-      "default" : "/var/log/kudu"
     }
   ],
   "rolesWithExternalLinks" : [
@@ -65,7 +56,7 @@
         ],
         "environmentVariables" : {
           "ENABLE_CORE_DUMP" : "${enable_core_dump}",
-          "CORE_DUMP_DIRECTORY" : "${core_dump_directory}"
+          "CORE_DUMP_DIRECTORY" : "${master_core_dump_directory}"
         }
       },
       "logging" : {
@@ -139,6 +130,15 @@
           "required" : "true",
           "default" : "false",
           "type" : "boolean"
+        },
+        {
+          "name" : "master_core_dump_directory",
+          "label" : "Kudu Master Core Dump Directory",
+          "description" : "If Enable Core Dump is set, Kudu masters will dump cores to this location.",
+          "type" : "path",
+          "pathType" : "serviceSpecific",
+          "required" : "true",
+          "default" : "/var/log/kudu"
         }
       ],
       "configWriter" : {
@@ -149,7 +149,7 @@
             "excludedParams" : [
               "master_address",
               "enable_core_dump",
-              "core_dump_directory"
+              "master_core_dump_directory"
             ]
           },
           {
@@ -181,7 +181,7 @@
         ],
         "environmentVariables" : {
           "ENABLE_CORE_DUMP" : "${enable_core_dump}",
-          "CORE_DUMP_DIRECTORY" : "${core_dump_directory}"
+          "CORE_DUMP_DIRECTORY" : "${tserver_core_dump_directory}"
         }
       },
       "logging" : {
@@ -237,8 +237,7 @@
           "type" : "memory",
           "unit" : "bytes",
           "min" : 1073741824,
-          "default" : 4294967296,
-          "scaleFactor" : 1.3
+          "default" : 4294967296
         },
         {
           "name" : "block_cache_capacity_mb",
@@ -268,6 +267,15 @@
           "type" : "long",
           "min" : 1,
           "softMax" : 8
+        },
+        {
+          "name" : "tserver_core_dump_directory",
+          "label" : "Kudu Tablet Server Core Dump Directory",
+          "description" : "If Enable Core Dump is set, Kudu Tablet Servers will dump cores to this location.",
+          "type" : "path",
+          "pathType" : "serviceSpecific",
+          "required" : "true",
+          "default" : "/var/log/kudu"
         }
 
       ],
@@ -278,7 +286,7 @@
             "configFormat" : "gflags",
             "excludedParams" : [
               "enable_core_dump",
-              "core_dump_directory"
+              "tserver_core_dump_directory"
             ]
           },
           {
