@@ -76,7 +76,7 @@ directories where the Master will place its data blocks.
 |--fs_wal_dir | string | | The directory where the Master will
 place its write-ahead logs. May be the same as _one of_ the directories listed in
 `--fs_data_dirs`, but not a sub-directory of a data directory.
-|--log_dir | string | /var/log/kudu | The directory to store Master log files.
+|--log_dir | string | /tmp | The directory to store Master log files.
 |===
 
 For the full list of flags for masters, see the
@@ -98,7 +98,7 @@ of directories where the Tablet Server will place its data blocks.
 |--fs_wal_dir | string | | The directory where the Tablet Server will
 place its write-ahead logs. May be the same as _one of_ the directories listed in
 `--fs_data_dirs`, but not a sub-directory of a data directory.
-|--log_dir | string | /var/log/kudu | The directory to store Tablet Server log files
+|--log_dir | string | /tmp | The directory to store Tablet Server log files
 |--tserver_master_addrs | string | `127.0.0.1:7051` |  Comma separated
 addresses of the masters which the tablet server should connect to. The masters
 do not read this flag.
