@@ -18,10 +18,10 @@
 #include <atomic>
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
-#include <gtest/gtest.h>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
@@ -31,16 +31,13 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/pstack_watcher.h"
-#include "kudu/util/test_util.h"
 
 DEFINE_int32(test_num_threads, 16,
              "Number of test threads to launch");
@@ -53,12 +50,9 @@ DEFINE_int32(test_delete_leader_payload_bytes, 16 * 1024,
 DEFINE_int32(test_delete_leader_num_writer_threads, 1,
              "Number of writer threads in TestDeleteLeaderDuringTabletCopyStressTest.");
 
-using kudu::client::KuduClient;
-using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
-using kudu::client::sp::shared_ptr;
 using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_DELETED;
@@ -68,7 +62,6 @@ using kudu::tserver::TabletCopyClient;
 using std::string;
 using std::unordered_map;
 using std::vector;
-using strings::Substitute;
 
 METRIC_DECLARE_entity(server);
 METRIC_DECLARE_histogram(handler_latency_kudu_consensus_ConsensusService_UpdateConsensus);
@@ -78,55 +71,8 @@ METRIC_DECLARE_counter(glog_error_messages);
 
 namespace kudu {
 
-class TabletCopyITest : public KuduTest {
- public:
-  virtual void TearDown() OVERRIDE {
-    if (HasFatalFailure()) {
-      LOG(INFO) << "Found fatal failure";
-      for (int i = 0; i < 3; i++) {
-        if (!cluster_->tablet_server(i)->IsProcessAlive()) {
-          LOG(INFO) << "Tablet server " << i << " is not running. Cannot dump its stacks.";
-          continue;
-        }
-        LOG(INFO) << "Attempting to dump stacks of TS " << i
-                  << " with UUID " << cluster_->tablet_server(i)->uuid()
-                  << " and pid " << cluster_->tablet_server(i)->pid();
-        WARN_NOT_OK(PstackWatcher::DumpPidStacks(cluster_->tablet_server(i)->pid()),
-                    "Couldn't dump stacks");
-      }
-    }
-    if (cluster_) cluster_->Shutdown();
-    KuduTest::TearDown();
-    STLDeleteValues(&ts_map_);
-  }
-
- protected:
-  void StartCluster(const vector<string>& extra_tserver_flags = vector<string>(),
-                    const vector<string>& extra_master_flags = vector<string>(),
-                    int num_tablet_servers = 3);
-
-  gscoped_ptr<ExternalMiniCluster> cluster_;
-  gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;
-  shared_ptr<KuduClient> client_;
-  unordered_map<string, TServerDetails*> ts_map_;
+class TabletCopyITest : public ExternalMiniClusterITestBase {
 };
-
-void TabletCopyITest::StartCluster(const vector<string>& extra_tserver_flags,
-                                   const vector<string>& extra_master_flags,
-                                   int num_tablet_servers) {
-  ExternalMiniClusterOptions opts;
-  opts.num_tablet_servers = num_tablet_servers;
-  opts.extra_tserver_flags = extra_tserver_flags;
-  opts.extra_tserver_flags.push_back("--never_fsync"); // fsync causes flakiness on EC2.
-  opts.extra_master_flags = extra_master_flags;
-  cluster_.reset(new ExternalMiniCluster(opts));
-  ASSERT_OK(cluster_->Start());
-  inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
-  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
-                                          cluster_->messenger(),
-                                          &ts_map_));
-  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
-}
 
 // If a rogue (a.k.a. zombie) leader tries to replace a tombstoned
 // tablet via Tablet Copy, make sure its term isn't older than the latest term
