@@ -35,7 +35,6 @@ import javax.security.auth.login.Configuration;
 import javax.security.auth.login.LoginContext;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.base.Stopwatch;
@@ -75,72 +74,76 @@ public class MiniKuduCluster implements AutoCloseable {
 
   private final List<String> pathsToDelete = new ArrayList<>();
   private final List<HostAndPort> masterHostPorts = new ArrayList<>();
-  private List<Integer> tserverPorts = new ArrayList<>();
-  private ImmutableList<String> extraTserverFlags;
-  private ImmutableList<String> extraMasterFlags;
+  private final List<Integer> tserverPorts = new ArrayList<>();
+  private final ImmutableList<String> extraTserverFlags;
+  private final ImmutableList<String> extraMasterFlags;
 
   // Client we can use for common operations.
-  private final KuduClient syncClient;
+  private KuduClient syncClient;
   private final int defaultTimeoutMs;
 
   private String masterAddresses;
 
   private final String bindHost = TestUtils.getUniqueLocalhost();
-  private final Path keytab;
-  private final MiniKdc miniKdc;
-  private final Subject subject;
+  private Path keytab;
+  private MiniKdc miniKdc;
+  private Subject subject;
 
-  private MiniKuduCluster(int numMasters,
-                          int numTservers,
-                          final int defaultTimeoutMs,
-                          boolean enableKerberos,
+  private MiniKuduCluster(final int defaultTimeoutMs,
                           final List<String> extraTserverFlags,
-                          final List<String> extraMasterFlags) throws Exception {
+                          final List<String> extraMasterFlags) {
     this.defaultTimeoutMs = defaultTimeoutMs;
     this.extraTserverFlags = ImmutableList.copyOf(extraTserverFlags);
     this.extraMasterFlags = ImmutableList.copyOf(extraMasterFlags);
+  }
 
-    if (enableKerberos) {
-      miniKdc = MiniKdc.withDefaults();
-      miniKdc.start();
+  /**
+   * Enable Kerberos security for this cluster, start the MiniKdc, and log in
+   * the required subjects.
+   */
+  private void startKerberos() throws Exception {
+    miniKdc = MiniKdc.withDefaults();
+    miniKdc.start();
 
-      keytab = miniKdc.createServiceKeytab("kudu/" + bindHost);
+    keytab = miniKdc.createServiceKeytab("kudu/" + bindHost);
 
-      miniKdc.createUserPrincipal("testuser");
-      miniKdc.kinit("testuser");
-      System.setProperty("java.security.krb5.conf", miniKdc.getEnvVars().get("KRB5_CONFIG"));
+    miniKdc.createUserPrincipal("testuser");
+    miniKdc.kinit("testuser");
+    System.setProperty("java.security.krb5.conf", miniKdc.getEnvVars().get("KRB5_CONFIG"));
 
-      Configuration conf = new Configuration() {
-        @Override
-        public AppConfigurationEntry[] getAppConfigurationEntry(String name) {
-          Map<String, String> options = new HashMap<>();
-          options.put("useKeyTab", "true");
-          options.put("useTicketCache", "true");
-          options.put("ticketCache", miniKdc.getEnvVars().get("KRB5CCNAME"));
-          options.put("principal", "testuser");
-          options.put("doNotPrompt", "true");
-          options.put("renewTGT", "true");
-          options.put("debug", "true");
+    Configuration conf = new Configuration() {
+      @Override
+      public AppConfigurationEntry[] getAppConfigurationEntry(String name) {
+        Map<String, String> options = new HashMap<>();
+        options.put("useKeyTab", "true");
+        options.put("useTicketCache", "true");
+        options.put("ticketCache", miniKdc.getEnvVars().get("KRB5CCNAME"));
+        options.put("principal", "testuser");
+        options.put("doNotPrompt", "true");
+        options.put("renewTGT", "true");
+        options.put("debug", "true");
 
-          return new AppConfigurationEntry[] {
-            new AppConfigurationEntry("com.sun.security.auth.module.Krb5LoginModule",
-                                      AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
-                                      options)
-          };
-        }
-      };
+        return new AppConfigurationEntry[] {
+          new AppConfigurationEntry("com.sun.security.auth.module.Krb5LoginModule",
+                                    AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
+                                    options)
+        };
+      }
+    };
 
-      LoginContext context = new LoginContext("com.sun.security.auth.module.Krb5LoginModule",
-                                              new Subject(), null, conf);
-      context.login();
-      context.getSubject();
-      subject = context.getSubject();
-    } else {
-      miniKdc = null;
-      keytab = null;
-      subject = null;
-    }
+    LoginContext context = new LoginContext("com.sun.security.auth.module.Krb5LoginModule",
+                                            new Subject(), null, conf);
+    context.login();
+    context.getSubject();
+    subject = context.getSubject();
+  }
 
+  /**
+   * Start the master and tablet server processes.
+   * @param numMasters the number of masters to start.
+   * @param numTservers the number of tablet servers to start.
+   */
+  private void start(int numMasters, int numTservers) throws Exception {
     startCluster(numMasters, numTservers);
 
     PrivilegedAction<KuduClient> createClient = new PrivilegedAction<KuduClient>() {
@@ -430,12 +433,9 @@ public class MiniKuduCluster implements AutoCloseable {
     destroyAndWaitForProcess(master);
   }
 
-  /**
-   * See {@link #shutdown()}.
-   * @throws Exception never thrown, exceptions are logged
-   */
+  /** {@override} */
   @Override
-  public void close() throws Exception {
+  public void close() {
     shutdown();
   }
 
@@ -627,8 +627,19 @@ public class MiniKuduCluster implements AutoCloseable {
     }
 
     public MiniKuduCluster build() throws Exception {
-      return new MiniKuduCluster(numMasters, numTservers, defaultTimeoutMs,
-          enableKerberos, extraTserverFlags, extraMasterFlags);
+      MiniKuduCluster cluster =
+          new MiniKuduCluster(defaultTimeoutMs, extraTserverFlags, extraMasterFlags);
+      try {
+        if (enableKerberos) {
+          cluster.startKerberos();
+        }
+        cluster.start(numMasters, numTservers);
+      } catch (Exception e) {
+        // MiniKuduCluster.close should not throw, so no need for a nested try/catch.
+        cluster.close();
+        throw e;
+      }
+      return cluster;
     }
   }
 }
