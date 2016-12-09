@@ -49,7 +49,6 @@ TEST(LogRollingITest, TestLogCleanupOnStartup) {
   opts.num_tablet_servers = 0;
   opts.extra_master_flags = { "--max_log_files=3", };
   opts.logtostderr = false;
-  opts.bind_mode = ExternalMiniClusterOptions::UNIQUE_LOOPBACK;
   ExternalMiniCluster cluster(opts);
   ASSERT_OK(cluster.Start());
 
