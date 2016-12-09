@@ -19,12 +19,12 @@ limitations under the License.
   <parent>
     <groupId>org.apache.kudu</groupId>
     <artifactId>kudu-parent</artifactId>
-    <version>1.2.0-SNAPSHOT</version>
+    <version>1.3.0-SNAPSHOT</version>
   </parent>
 
   <groupId>com.cloudera.csd</groupId>
   <artifactId>KUDU</artifactId>
-  <version>1.2.0-SNAPSHOT</version>
+  <version>1.3.0-SNAPSHOT</version>
   <name>The Kudu CSD</name>
   <packaging>pom</packaging>
 
