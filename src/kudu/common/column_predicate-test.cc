@@ -660,6 +660,81 @@ class TestColumnPredicate : public KuduTest {
               ColumnPredicate::InList(column, &bot_list),
               ColumnPredicate::InList(column, &res_list),
               PredicateType::InList);
+
+    // IS NULL
+
+    // IS NULL AND
+    // None
+    // =
+    // None
+    TestMerge(ColumnPredicate::IsNull(column),
+              ColumnPredicate::None(column),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // IS NULL AND
+    // |
+    // =
+    // None
+    TestMerge(ColumnPredicate::IsNull(column),
+              ColumnPredicate::Equality(column, &values[0]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // IS NULL AND
+    // [-------)
+    // =
+    // None
+    TestMerge(ColumnPredicate::IsNull(column),
+              ColumnPredicate::Range(column, &values[0], &values[2]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // IS NULL AND
+    // [------->
+    // =
+    // None
+    TestMerge(ColumnPredicate::IsNull(column),
+              ColumnPredicate::Range(column, &values[0], nullptr),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // IS NULL AND
+    // <-------)
+    // =
+    // None
+    TestMerge(ColumnPredicate::IsNull(column),
+              ColumnPredicate::Range(column, nullptr, &values[2]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // IS NULL AND
+    // | | |
+    // =
+    // None
+    bot_list = { &values[1], &values[3], &values[6] };
+    TestMerge(ColumnPredicate::IsNull(column),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // IS NULL AND
+    // IS NOT NULL
+    // =
+    // None
+    TestMerge(ColumnPredicate::IsNull(column),
+              ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // IS NULL AND
+    // IS NULL
+    // =
+    // IS NULL
+    TestMerge(ColumnPredicate::IsNull(column),
+              ColumnPredicate::IsNull(column),
+              ColumnPredicate::IsNull(column),
+              PredicateType::IsNull);
   }
 };
 
@@ -979,13 +1054,16 @@ TEST_F(TestColumnPredicate, TestSelectivity) {
   ColumnSchema column_s("d", STRING, true);
 
   // Predicate type
+  ASSERT_LT(SelectivityComparator(ColumnPredicate::IsNull(column_i32),
+                                  ColumnPredicate::Equality(column_i32, &one_32)),
+            0);
   ASSERT_LT(SelectivityComparator(ColumnPredicate::Equality(column_i32, &one_32),
                                   ColumnPredicate::Range(column_d, &one_d, nullptr)),
             0);
   ASSERT_LT(SelectivityComparator(ColumnPredicate::Equality(column_i32, &one_32),
                                   ColumnPredicate::IsNotNull(column_s)),
             0);
-  ASSERT_LT(SelectivityComparator(ColumnPredicate::Range(column_i64, &one_64, nullptr),
+  ASSERT_LT(SelectivityComparator(ColumnPredicate::Range(column_i32, &one_32, nullptr),
                                   ColumnPredicate::IsNotNull(column_i32)),
             0);
 

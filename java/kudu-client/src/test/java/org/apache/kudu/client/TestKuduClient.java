@@ -413,6 +413,9 @@ public class TestKuduClient extends BaseKuduTest {
       row.addString("key", String.format("key_%02d", i));
       row.addString("c1", "c1_" + i);
       row.addString("c2", "c2_" + i);
+      if (i % 2 == 0) {
+        row.addString("c3", "c3_" + i);
+      }
       session.apply(insert);
     }
     session.flush();
@@ -444,8 +447,20 @@ public class TestKuduClient extends BaseKuduTest {
 
     // IS NOT NULL
     assertEquals(100, scanTableToStrings(table,
-       KuduPredicate.isNotNull(schema.getColumn("c2")),
-       KuduPredicate.isNotNull(schema.getColumn("key"))
+       KuduPredicate.newIsNotNullPredicate(schema.getColumn("c1")),
+       KuduPredicate.newIsNotNullPredicate(schema.getColumn("key"))
+    ).size());
+    assertEquals(50, scanTableToStrings(table,
+        KuduPredicate.newIsNotNullPredicate(schema.getColumn("c3"))
+    ).size());
+
+    // IS NULL
+    assertEquals(0, scanTableToStrings(table,
+            KuduPredicate.newIsNullPredicate(schema.getColumn("c2")),
+            KuduPredicate.newIsNullPredicate(schema.getColumn("key"))
+    ).size());
+    assertEquals(50, scanTableToStrings(table,
+            KuduPredicate.newIsNullPredicate(schema.getColumn("c3"))
     ).size());
 
     // IN list
@@ -460,7 +475,7 @@ public class TestKuduClient extends BaseKuduTest {
     assertEquals(2, scanTableToStrings(table,
        KuduPredicate.newInListPredicate(schema.getColumn("c2"),
                                         ImmutableList.of("c2_30", "c2_1", "invalid", "c2_99")),
-       KuduPredicate.isNotNull(schema.getColumn("c2")),
+       KuduPredicate.newIsNotNullPredicate(schema.getColumn("c2")),
        KuduPredicate.newInListPredicate(schema.getColumn("key"),
                                         ImmutableList.of("key_30", "key_45", "invalid", "key_99"))
     ).size());

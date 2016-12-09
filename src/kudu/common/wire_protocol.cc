@@ -385,6 +385,10 @@ void ColumnPredicateToPB(const ColumnPredicate& predicate,
       pb->mutable_is_not_null();
       return;
     };
+    case PredicateType::IsNull: {
+      pb->mutable_is_null();
+      return;
+    }
     case PredicateType::InList: {
       auto* values = pb->mutable_in_list()->mutable_values();
       for (const void* value : predicate.raw_values()) {
@@ -454,10 +458,13 @@ Status ColumnPredicateFromPB(const Schema& schema,
       break;
     };
     case ColumnPredicatePB::kIsNotNull: {
-      ColumnPredicate p = ColumnPredicate::IsNotNull(col);
       *predicate = ColumnPredicate::IsNotNull(col);
       break;
     };
+    case ColumnPredicatePB::kIsNull: {
+        *predicate = ColumnPredicate::IsNull(col);
+        break;
+      }
     default: return Status::InvalidArgument("Unknown predicate type for column", col.name());
   }
   return Status::OK();

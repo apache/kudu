@@ -59,6 +59,8 @@ public class KuduPredicate {
     RANGE,
     /** A predicate which filters all null rows. */
     IS_NOT_NULL,
+    /** A predicate which filters all non-null rows. */
+    IS_NULL,
     /** A predicate which filters all rows not matching a list of values. */
     IN_LIST,
   }
@@ -120,7 +122,7 @@ public class KuduPredicate {
         if (value) {
           return new KuduPredicate(PredicateType.EQUALITY, column, Bytes.fromBoolean(true), null);
         } else {
-          return isNotNull(column);
+          return newIsNotNullPredicate(column);
         }
       }
       case EQUAL: return new KuduPredicate(PredicateType.EQUALITY, column,
@@ -138,7 +140,7 @@ public class KuduPredicate {
         // b <= true  -> b IS NOT NULL
         // b <= false -> b = false
         if (value) {
-          return isNotNull(column);
+          return newIsNotNullPredicate(column);
         } else {
           return new KuduPredicate(PredicateType.EQUALITY, column, Bytes.fromBoolean(false), null);
         }
@@ -170,7 +172,7 @@ public class KuduPredicate {
         // This has the same effect as an inclusive upper bound on the maximum
         // value. If the column is not nullable then the IS NOT NULL predicate
         // is ignored.
-        return isNotNull(column);
+        return newIsNotNullPredicate(column);
       }
       value += 1;
       op = ComparisonOp.LESS;
@@ -207,7 +209,7 @@ public class KuduPredicate {
     switch (op) {
       case GREATER_EQUAL:
         if (value == minValue) {
-          return isNotNull(column);
+          return newIsNotNullPredicate(column);
         } else if (value == maxValue) {
           return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
         }
@@ -236,7 +238,7 @@ public class KuduPredicate {
     checkColumn(column, Type.FLOAT);
     if (op == ComparisonOp.LESS_EQUAL) {
       if (value == Float.POSITIVE_INFINITY) {
-        return isNotNull(column);
+        return newIsNotNullPredicate(column);
       }
       value = Math.nextAfter(value, Float.POSITIVE_INFINITY);
       op = ComparisonOp.LESS;
@@ -252,7 +254,7 @@ public class KuduPredicate {
     switch (op) {
       case GREATER_EQUAL:
         if (value == Float.NEGATIVE_INFINITY) {
-          return isNotNull(column);
+          return newIsNotNullPredicate(column);
         } else if (value == Float.POSITIVE_INFINITY) {
           return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
         }
@@ -281,7 +283,7 @@ public class KuduPredicate {
     checkColumn(column, Type.DOUBLE);
     if (op == ComparisonOp.LESS_EQUAL) {
       if (value == Double.POSITIVE_INFINITY) {
-        return isNotNull(column);
+        return newIsNotNullPredicate(column);
       }
       value = Math.nextAfter(value, Double.POSITIVE_INFINITY);
       op = ComparisonOp.LESS;
@@ -297,7 +299,7 @@ public class KuduPredicate {
     switch (op) {
       case GREATER_EQUAL:
         if (value == Double.NEGATIVE_INFINITY) {
-          return isNotNull(column);
+          return newIsNotNullPredicate(column);
         } else if (value == Double.POSITIVE_INFINITY) {
           return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
         }
@@ -337,7 +339,7 @@ public class KuduPredicate {
     switch (op) {
       case GREATER_EQUAL:
         if (bytes.length == 0) {
-          return isNotNull(column);
+          return newIsNotNullPredicate(column);
         }
         return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
       case EQUAL:
@@ -374,7 +376,7 @@ public class KuduPredicate {
     switch (op) {
       case GREATER_EQUAL:
         if (value.length == 0) {
-          return isNotNull(column);
+          return newIsNotNullPredicate(column);
         }
         return new KuduPredicate(PredicateType.RANGE, column, value, null);
       case EQUAL:
@@ -466,6 +468,29 @@ public class KuduPredicate {
   }
 
   /**
+   * Creates a new {@code IS NOT NULL} predicate.
+   *
+   * @param column the column that the predicate applies to
+   * @return an {@code IS NOT NULL} predicate
+   */
+  public static KuduPredicate newIsNotNullPredicate(ColumnSchema column) {
+    return new KuduPredicate(PredicateType.IS_NOT_NULL, column, null, null);
+  }
+
+  /**
+   * Creates a new {@code IS NULL} predicate.
+   *
+   * @param column the column that the predicate applies to
+   * @return an {@code IS NULL} predicate
+   */
+  public static KuduPredicate newIsNullPredicate(ColumnSchema column) {
+    if (!column.isNullable()) {
+      return none(column);
+    }
+    return new KuduPredicate(PredicateType.IS_NULL, column, null, null);
+  }
+
+  /**
    * @param type the predicate type
    * @param column the column to which the predicate applies
    * @param lower the lower bound serialized value if this is a Range predicate,
@@ -505,16 +530,6 @@ public class KuduPredicate {
   }
 
   /**
-   * Factory function for an {@code IS NOT NULL} predicate.
-   * @param column the column to which the predicate applies
-   * @return a {@code IS NOT NULL} predicate
-   */
-  @VisibleForTesting
-  static KuduPredicate isNotNull(ColumnSchema column) {
-    return new KuduPredicate(PredicateType.IS_NOT_NULL, column, null, null);
-  }
-
-  /**
    * @return the type of this predicate
    */
   PredicateType getType() {
@@ -532,21 +547,28 @@ public class KuduPredicate {
     Preconditions.checkArgument(column.equals(other.column),
                                 "predicates from different columns may not be merged");
 
+    // First, consider other.type == NONE, IS_NOT_NULL, or IS_NULL
     // NONE predicates dominate.
     if (other.type == PredicateType.NONE) {
       return other;
     }
 
-    // NOT NULL is dominated by all other predicates.
-    // Note: this will no longer be true when an IS NULL predicate type is
-    // added.
+    // NOT NULL is dominated by all other predicates,
+    // except IS NULL, for which the merge is NONE.
     if (other.type == PredicateType.IS_NOT_NULL) {
-      return this;
+      return type == PredicateType.IS_NULL ? none(column) : this;
     }
 
+    // NULL merged with any predicate type besides itself is NONE.
+    if (other.type == PredicateType.IS_NULL) {
+      return type == PredicateType.IS_NULL ? this : none(column);
+    }
+
+    // Now other.type == EQUALITY, RANGE, or IN_LIST.
     switch (type) {
       case NONE: return this;
       case IS_NOT_NULL: return other;
+      case IS_NULL: return none(column);
       case EQUALITY: {
         if (other.type == PredicateType.EQUALITY) {
           if (compare(column, lower, other.lower) != 0) {
@@ -626,7 +648,7 @@ public class KuduPredicate {
   private static KuduPredicate buildInList(ColumnSchema column, Collection<byte[]> values) {
     // IN (true, false) predicates can be simplified to IS NOT NULL.
     if (column.getType().getDataType() == Common.DataType.BOOL && values.size() > 1) {
-      return isNotNull(column);
+      return newIsNotNullPredicate(column);
     }
 
     switch (values.size()) {
@@ -695,6 +717,10 @@ public class KuduPredicate {
         builder.setIsNotNull(builder.getIsNotNullBuilder());
         break;
       }
+      case IS_NULL: {
+        builder.setIsNull(builder.getIsNullBuilder());
+        break;
+      }
       case IN_LIST: {
         Common.ColumnPredicatePB.InList.Builder inListBuilder = builder.getInListBuilder();
         for (byte[] value : inListValues) {
@@ -728,7 +754,9 @@ public class KuduPredicate {
                                  range.hasUpper() ? range.getUpper().toByteArray() : null);
       }
       case IS_NOT_NULL:
-        return isNotNull(column);
+        return newIsNotNullPredicate(column);
+      case IS_NULL:
+        return newIsNullPredicate(column);
       case IN_LIST: {
         Common.ColumnPredicatePB.InList inList = pb.getInList();
 
@@ -971,6 +999,7 @@ public class KuduPredicate {
         return String.format("`%s` IN (%s)", column.getName(), Joiner.on(", ").join(strings));
       }
       case IS_NOT_NULL: return String.format("`%s` IS NOT NULL", column.getName());
+      case IS_NULL: return String.format("`%s` IS NULL", column.getName());
       case NONE: return String.format("`%s` NONE", column.getName());
       default: throw new IllegalArgumentException(String.format("unknown predicate type %s", type));
     }

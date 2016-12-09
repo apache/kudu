@@ -232,7 +232,8 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
           break_loop = true;
         }
         break;
-      case PredicateType::IsNotNull:
+      case PredicateType::IsNotNull: // Fallthrough intended
+      case PredicateType::IsNull:
         break_loop = true;
         break;
       case PredicateType::InList:
@@ -293,7 +294,8 @@ int PushLowerBoundKeyPredicates(ColIdxIter first,
         memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_lower(), size);
         pushed_predicates++;
         break;
-      case PredicateType::IsNotNull:
+      case PredicateType::IsNotNull: // Fallthrough intended
+      case PredicateType::IsNull:
         break_loop = true;
         break;
       case PredicateType::InList:

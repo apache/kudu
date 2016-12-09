@@ -116,6 +116,50 @@ class InListPredicateData : public KuduPredicate::Data {
   std::vector<KuduValue*> vals_;
 };
 
+// A predicate for selecting non-null values.
+class IsNotNullPredicateData : public KuduPredicate::Data {
+ public:
+  explicit IsNotNullPredicateData(ColumnSchema col)
+      : col_(std::move(col)) {
+  }
+
+  Status AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) override {
+    spec->AddPredicate(ColumnPredicate::IsNotNull(col_));
+    return Status::OK();
+  }
+
+  IsNotNullPredicateData* Clone() const override {
+    return new IsNotNullPredicateData(col_);
+  }
+
+ private:
+  friend class KuduScanner;
+
+  ColumnSchema col_;
+};
+
+// A predicate for selecting null values.
+class IsNullPredicateData : public KuduPredicate::Data {
+ public:
+  explicit IsNullPredicateData(ColumnSchema col)
+      : col_(std::move(col)) {
+  }
+
+  Status AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) override {
+    spec->AddPredicate(ColumnPredicate::IsNull(col_));
+    return Status::OK();
+  }
+
+  IsNullPredicateData* Clone() const override {
+    return new IsNullPredicateData(col_);
+  }
+
+ private:
+  friend class KuduScanner;
+
+  ColumnSchema col_;
+};
+
 } // namespace client
 } // namespace kudu
 #endif /* KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H */

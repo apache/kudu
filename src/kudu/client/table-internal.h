@@ -21,6 +21,7 @@
 
 #include "kudu/common/partition.h"
 #include "kudu/client/client.h"
+#include "kudu/client/scan_predicate-internal.h"
 
 namespace kudu {
 
@@ -35,6 +36,23 @@ class KuduTable::Data {
        const KuduSchema& schema,
        PartitionSchema partition_schema);
   ~Data();
+
+  template<class PredicateMakerFunc>
+  static KuduPredicate* MakePredicate(const Slice& col_name,
+                                      const Schema& schema,
+                                      const PredicateMakerFunc& f) {
+    StringPiece name_sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
+    int col_idx = schema.find_column(name_sp);
+    if (col_idx == Schema::kColumnNotFound) {
+      // Since the new predicate functions don't return errors, instead we create a special
+      // predicate that just returns the errors when we add it to the scanner.
+      //
+      // This allows the predicate API to be more "fluent".
+      return new KuduPredicate(new ErrorPredicateData(
+          Status::NotFound("column not found", col_name)));
+    }
+    return f(schema.column(col_idx));
+  }
 
   sp::shared_ptr<KuduClient> client_;
 

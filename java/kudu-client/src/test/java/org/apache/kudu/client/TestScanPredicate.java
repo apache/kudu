@@ -212,6 +212,12 @@ public class TestScanPredicate extends BaseKuduTest {
           KuduPredicate.newComparisonPredicate(col, ComparisonOp.LESS, v);
       Assert.assertEquals(values.headSet(v).size(), countRows(table, less));
     }
+
+    KuduPredicate isNotNull = KuduPredicate.newIsNotNullPredicate(col);
+    Assert.assertEquals(values.size(), countRows(table, isNotNull));
+
+    KuduPredicate isNull = KuduPredicate.newIsNullPredicate(col);
+    Assert.assertEquals(1, countRows(table, isNull));
   }
 
   @Test
@@ -446,6 +452,12 @@ public class TestScanPredicate extends BaseKuduTest {
           KuduPredicate.newComparisonPredicate(col, ComparisonOp.LESS, v);
       Assert.assertEquals(values.headSet(v).size(), countRows(table, less));
     }
+
+    KuduPredicate isNotNull = KuduPredicate.newIsNotNullPredicate(col);
+    Assert.assertEquals(values.size(), countRows(table, isNotNull));
+
+    KuduPredicate isNull = KuduPredicate.newIsNullPredicate(col);
+    Assert.assertEquals(1, countRows(table, isNull));
   }
 
   @Test
@@ -499,6 +511,12 @@ public class TestScanPredicate extends BaseKuduTest {
           KuduPredicate.newComparisonPredicate(col, ComparisonOp.LESS, v);
       Assert.assertEquals(values.headSet(v).size(), countRows(table, less));
     }
+
+    KuduPredicate isNotNull = KuduPredicate.newIsNotNullPredicate(col);
+    Assert.assertEquals(values.size(), countRows(table, isNotNull));
+
+    KuduPredicate isNull = KuduPredicate.newIsNullPredicate(col);
+    Assert.assertEquals(1, countRows(table, isNull));
   }
 
   @Test
@@ -552,6 +570,12 @@ public class TestScanPredicate extends BaseKuduTest {
           KuduPredicate.newComparisonPredicate(col, ComparisonOp.LESS, v);
       Assert.assertEquals(values.headSet(v).size(), countRows(table, less));
     }
+
+    KuduPredicate isNotNull = KuduPredicate.newIsNotNullPredicate(col);
+    Assert.assertEquals(values.size(), countRows(table, isNotNull));
+
+    KuduPredicate isNull = KuduPredicate.newIsNullPredicate(col);
+    Assert.assertEquals(1, countRows(table, isNull));
   }
 
   @Test
@@ -606,5 +630,11 @@ public class TestScanPredicate extends BaseKuduTest {
           KuduPredicate.newComparisonPredicate(col, ComparisonOp.LESS, v);
       Assert.assertEquals(values.headSet(s).size(), countRows(table, less));
     }
+
+    KuduPredicate isNotNull = KuduPredicate.newIsNotNullPredicate(col);
+    Assert.assertEquals(values.size(), countRows(table, isNotNull));
+
+    KuduPredicate isNull = KuduPredicate.newIsNullPredicate(col);
+    Assert.assertEquals(1, countRows(table, isNull));
   }
 }

@@ -4119,6 +4119,199 @@ TEST_F(ClientTest, TestReadAtSnapshotNoTimestampSet) {
   EXPECT_EQ(kTabletsNum * kRowsPerTablet, total_row_count);
 }
 
+enum IntEncoding {
+  kPlain,
+  kBitShuffle,
+  kRunLength
+};
+
+class IntEncodingNullPredicatesTest : public ClientTest,
+                                      public ::testing::WithParamInterface<IntEncoding> {
+};
+
+TEST_P(IntEncodingNullPredicatesTest, TestIntEncodings) {
+  // Create table with appropriate encoded, nullable column.
+  KuduSchema schema;
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  auto int_col = b.AddColumn("int_val")->Type(KuduColumnSchema::INT32);
+  IntEncoding enc = GetParam();
+  switch (enc) {
+    case kPlain:
+      int_col->Encoding(KuduColumnStorageAttributes::PLAIN_ENCODING);
+      break;
+    case kBitShuffle:
+      int_col->Encoding(KuduColumnStorageAttributes::BIT_SHUFFLE);
+      break;
+    case kRunLength:
+      int_col->Encoding(KuduColumnStorageAttributes::RLE);
+      break;
+  }
+  ASSERT_OK(b.Build(&schema));
+
+  string table_name = "IntEncodingNullPredicatesTestTable";
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(table_name)
+                .schema(&schema)
+                .num_replicas(1)
+                .set_range_partition_columns({ "key" })
+                .Create());
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(table_name, &table));
+
+  // Insert rows.
+  shared_ptr<KuduSession> session = table->client()->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  session->SetTimeoutMillis(5000);
+  const size_t kNumRows = AllowSlowTests() ? 10000 : 10000;
+  for (int i = 0; i < kNumRows; i++) {
+    KuduInsert* insert = table->NewInsert();
+    KuduPartialRow* row = insert->mutable_row();
+    ASSERT_OK(row->SetInt32("key", i));
+    if (i % 2 == 0) {
+      ASSERT_OK(row->SetInt32("int_val", i));
+    } else {
+      ASSERT_OK(row->SetNull("int_val"));
+    }
+    ASSERT_OK(session->Apply(insert));
+    if (i % 10001 == 0) {
+      ASSERT_OK(session->Flush());
+    }
+  }
+  ASSERT_OK(session->Flush());
+
+  // Scan rows and check for correct counts.
+  { // IS NULL
+    KuduScanner scanner(table.get());
+    KuduPredicate *p = table->NewIsNullPredicate("int_val");
+    ASSERT_OK(scanner.AddConjunctPredicate(p));
+    ASSERT_OK(scanner.Open());
+    int count = 0;
+    KuduScanBatch batch;
+    while (scanner.HasMoreRows()) {
+      CHECK_OK(scanner.NextBatch(&batch));
+      count += batch.NumRows();
+    }
+    ASSERT_EQ(kNumRows / 2, count);
+  }
+
+  { // IS NOT NULL
+    KuduScanner scanner(table.get());
+    KuduPredicate *p = table->NewIsNotNullPredicate("int_val");
+    ASSERT_OK(scanner.AddConjunctPredicate(p));
+    ASSERT_OK(scanner.Open());
+    int count = 0;
+    KuduScanBatch batch;
+    while (scanner.HasMoreRows()) {
+      CHECK_OK(scanner.NextBatch(&batch));
+      count += batch.NumRows();
+    }
+    ASSERT_EQ(kNumRows / 2, count);
+  }
+}
+
+INSTANTIATE_TEST_CASE_P(IntColEncodings,
+                        IntEncodingNullPredicatesTest,
+                        ::testing::Values(kPlain, kBitShuffle, kRunLength));
+
+
+enum BinaryEncoding {
+  kPlainBin,
+  kPrefix,
+  kDictionary
+};
+
+class BinaryEncodingNullPredicatesTest : public ClientTest,
+                                         public ::testing::WithParamInterface<IntEncoding> {
+};
+
+TEST_P(BinaryEncodingNullPredicatesTest, TestBinaryEncodings) {
+  // Create table with appropriate encoded, nullable column.
+  KuduSchema schema;
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  auto string_col = b.AddColumn("string_val")->Type(KuduColumnSchema::STRING);
+  IntEncoding enc = GetParam();
+  switch (enc) {
+    case kPlainBin:
+      string_col->Encoding(KuduColumnStorageAttributes::PLAIN_ENCODING);
+      break;
+    case kPrefix:
+      string_col->Encoding(KuduColumnStorageAttributes::PREFIX_ENCODING);
+      break;
+    case kDictionary:
+      string_col->Encoding(KuduColumnStorageAttributes::DICT_ENCODING);
+      break;
+  }
+  ASSERT_OK(b.Build(&schema));
+
+  string table_name = "BinaryEncodingNullPredicatesTestTable";
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(table_name)
+                .schema(&schema)
+                .num_replicas(1)
+                .set_range_partition_columns({ "key" })
+                .Create());
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(table_name, &table));
+
+  // Insert rows.
+  shared_ptr<KuduSession> session = table->client()->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  session->SetTimeoutMillis(5000);
+  const size_t kNumRows = AllowSlowTests() ? 10000 : 1000;
+  for (int i = 0; i < kNumRows; i++) {
+    KuduInsert* insert = table->NewInsert();
+    KuduPartialRow* row = insert->mutable_row();
+    ASSERT_OK(row->SetInt32("key", i));
+    if (i % 2 == 0) {
+      ASSERT_OK(row->SetString("string_val", Substitute("taco %d", i % 25)));
+    } else {
+      ASSERT_OK(row->SetNull("string_val"));
+    }
+    ASSERT_OK(session->Apply(insert));
+    if (i % 10001 == 0) {
+      ASSERT_OK(session->Flush());
+    }
+  }
+  ASSERT_OK(session->Flush());
+
+  // Scan rows and check for correct counts.
+  { // IS NULL
+    KuduScanner scanner(table.get());
+    KuduPredicate *p = table->NewIsNullPredicate("string_val");
+    ASSERT_OK(scanner.AddConjunctPredicate(p));
+    ASSERT_OK(scanner.Open());
+    int count = 0;
+    KuduScanBatch batch;
+    while (scanner.HasMoreRows()) {
+      CHECK_OK(scanner.NextBatch(&batch));
+      count += batch.NumRows();
+    }
+    ASSERT_EQ(kNumRows / 2, count);
+  }
+
+  { // IS NOT NULL
+    KuduScanner scanner(table.get());
+    KuduPredicate *p = table->NewIsNotNullPredicate("string_val");
+    ASSERT_OK(scanner.AddConjunctPredicate(p));
+    ASSERT_OK(scanner.Open());
+    int count = 0;
+    KuduScanBatch batch;
+    while (scanner.HasMoreRows()) {
+      CHECK_OK(scanner.NextBatch(&batch));
+      count += batch.NumRows();
+    }
+    ASSERT_EQ(kNumRows / 2, count);
+  }
+}
+
+INSTANTIATE_TEST_CASE_P(BinaryColEncodings,
+                        BinaryEncodingNullPredicatesTest,
+                        ::testing::Values(kPlainBin, kPrefix, kDictionary));
+
 TEST_F(ClientTest, TestClonePredicates) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          2, 0));

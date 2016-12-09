@@ -165,7 +165,7 @@ class PredicateTest : public KuduTest {
 
   // Returns a vector of floating point numbers from -50.50 (inclusive) to 49.49
   // (exclusive) (100 values), plus min, max, two normals around 0, two
-  // subnormals around 0, positive and negatic infinity, and NaN.
+  // subnormals around 0, positive and negative infinity, and NaN.
   template <typename T>
   vector<T> CreateFloatingPointValues() {
     vector<T> values;
@@ -231,9 +231,9 @@ class PredicateTest : public KuduTest {
   }
 
   // Check integer predicates against the specified table. The table must have
-  // key/value rows with values from CreateIntValues, plus a null value.
+  // key/value rows with values from CreateIntValues, plus one null value.
   template <typename T>
-  void CheckIntPredicates(shared_ptr<KuduTable> table) {
+  void CheckIntPredicates(const shared_ptr<KuduTable>& table) {
     vector<T> values = CreateIntValues<T>();
     vector<T> test_values = CreateIntTestValues<T>();
     ASSERT_EQ(values.size() + 1, CountRows(table, {}));
@@ -333,6 +333,13 @@ class PredicateTest : public KuduTest {
       int count = CountMatchedRows<T>(values, vector<T>(test_values.begin(), end));
       ASSERT_EQ(count, CountRows(table, { table->NewInListPredicate("value", &vals) }));
     }
+
+    // IS NOT NULL predicate
+    ASSERT_EQ(CountRows(table, {}) - 1,
+              CountRows(table, { table->NewIsNotNullPredicate("value") }));
+
+    // IS NULL predicate
+    ASSERT_EQ(1, CountRows(table, { table->NewIsNullPredicate("value") }));
   }
 
   // Check string predicates against the specified table.
@@ -442,6 +449,13 @@ class PredicateTest : public KuduTest {
       int count = CountMatchedRows<string>(values, vector<string>(test_values.begin(), end));
       ASSERT_EQ(count, CountRows(table, { table->NewInListPredicate("value", &vals) }));
     }
+
+    // IS NOT NULL predicate
+    ASSERT_EQ(CountRows(table, {}) - 1,
+              CountRows(table, { table->NewIsNotNullPredicate("value") }));
+
+    // IS NULL predicate
+    ASSERT_EQ(1, CountRows(table, { table->NewIsNullPredicate("value") }));
   }
 
   shared_ptr<KuduClient> client_;
@@ -561,6 +575,13 @@ TEST_F(PredicateTest, TestBoolPredicates) {
     KuduPredicate* pred = table->NewInListPredicate("value", &values);
     ASSERT_EQ(2, CountRows(table, { pred }));
   }
+
+  // IS NOT NULL predicate
+  ASSERT_EQ(CountRows(table, {}) - 1,
+            CountRows(table, { table->NewIsNotNullPredicate("value") }));
+
+  // IS NULL predicate
+  ASSERT_EQ(1, CountRows(table, { table->NewIsNullPredicate("value") }));
 }
 
 TEST_F(PredicateTest, TestInt8Predicates) {
@@ -778,6 +799,13 @@ TEST_F(PredicateTest, TestFloatPredicates) {
     int count = CountMatchedRows<float>(values, vector<float>(test_values.begin(), end));
     ASSERT_EQ(count, CountRows(table, { table->NewInListPredicate("value", &vals) }));
   }
+
+  // IS NOT NULL predicate
+  ASSERT_EQ(values.size(),
+            CountRows(table, { table->NewIsNotNullPredicate("value") }));
+
+  // IS NULL predicate
+  ASSERT_EQ(1, CountRows(table, { table->NewIsNullPredicate("value") }));
 }
 
 TEST_F(PredicateTest, TestDoublePredicates) {
@@ -895,6 +923,13 @@ TEST_F(PredicateTest, TestDoublePredicates) {
     int count = CountMatchedRows<double>(values, vector<double>(test_values.begin(), end));
     ASSERT_EQ(count, CountRows(table, { table->NewInListPredicate("value", &vals) }));
   }
+
+  // IS NOT NULL predicate
+  ASSERT_EQ(values.size(),
+            CountRows(table, { table->NewIsNotNullPredicate("value") }));
+
+  // IS NULL predicate
+  ASSERT_EQ(1, CountRows(table, { table->NewIsNullPredicate("value") }));
 }
 
 TEST_F(PredicateTest, TestStringPredicates) {

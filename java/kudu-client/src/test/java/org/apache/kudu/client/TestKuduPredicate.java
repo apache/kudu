@@ -58,7 +58,7 @@ public class TestKuduPredicate {
       new ColumnSchema.ColumnSchemaBuilder("double", Type.DOUBLE).build();
 
   private static final ColumnSchema stringCol =
-      new ColumnSchema.ColumnSchemaBuilder("string", Type.STRING).build();
+      new ColumnSchema.ColumnSchemaBuilder("string", Type.STRING).nullable(true).build();
 
   private static final ColumnSchema binaryCol =
       new ColumnSchema.ColumnSchemaBuilder("binary", Type.BINARY).build();
@@ -95,6 +95,7 @@ public class TestKuduPredicate {
   public void testMergeInt() {
 
     // Equality + Equality
+    //--------------------
 
     // |
     // |
@@ -112,6 +113,7 @@ public class TestKuduPredicate {
               KuduPredicate.none(intCol));
 
     // Range + Equality
+    //--------------------
 
     // [-------->
     //      |
@@ -146,6 +148,7 @@ public class TestKuduPredicate {
               KuduPredicate.none(intCol));
 
     // Unbounded Range + Unbounded Range
+    //--------------------
 
     // [--------> AND
     // [-------->
@@ -215,6 +218,7 @@ public class TestKuduPredicate {
               KuduPredicate.none(intCol));
 
     // Range + Range
+    //--------------------
 
     // [--------) AND
     // [--------)
@@ -265,6 +269,7 @@ public class TestKuduPredicate {
               KuduPredicate.none(intCol));
 
     // Lower Bound + Range
+    //--------------------
 
     // [------------>
     //       [---)
@@ -299,6 +304,7 @@ public class TestKuduPredicate {
               KuduPredicate.none(intCol));
 
     // Upper Bound + Range
+    //--------------------
 
     // <------------)
     //       [---)
@@ -326,6 +332,7 @@ public class TestKuduPredicate {
               intRange(0, 5));
 
     // Range + Equality
+    //--------------------
 
     //   [---) AND
     // |
@@ -368,6 +375,7 @@ public class TestKuduPredicate {
               KuduPredicate.none(intCol));
 
     // IN list + IN list
+    //--------------------
 
     // | | |
     //   | | |
@@ -382,15 +390,18 @@ public class TestKuduPredicate {
               KuduPredicate.none(intCol));
 
     // IN list + NOT NULL
+    //--------------------
+
     testMerge(intInList(10),
-              KuduPredicate.isNotNull(intCol),
+              KuduPredicate.newIsNotNullPredicate(intCol),
               KuduPredicate.newComparisonPredicate(intCol, EQUAL, 10));
 
     testMerge(intInList(10, -100),
-              KuduPredicate.isNotNull(intCol),
+              KuduPredicate.newIsNotNullPredicate(intCol),
               intInList(-100, 10));
 
     // IN list + Equality
+    //--------------------
 
     // | | |
     //   |
@@ -409,6 +420,7 @@ public class TestKuduPredicate {
               KuduPredicate.none(intCol));
 
     // IN list + Range
+    //--------------------
 
     // | | | | |
     //   [---)
@@ -475,6 +487,7 @@ public class TestKuduPredicate {
               KuduPredicate.none(intCol));
 
     // None
+    //--------------------
 
     // None AND
     // [---->
@@ -483,6 +496,7 @@ public class TestKuduPredicate {
     testMerge(KuduPredicate.none(intCol),
               KuduPredicate.newComparisonPredicate(intCol, GREATER_EQUAL, 0),
               KuduPredicate.none(intCol));
+
     // None AND
     // <----)
     // =
@@ -513,6 +527,141 @@ public class TestKuduPredicate {
     // None
     testMerge(KuduPredicate.none(intCol),
               KuduPredicate.none(intCol),
+              KuduPredicate.none(intCol));
+
+    // IS NOT NULL
+    //--------------------
+
+    // IS NOT NULL AND
+    // NONE
+    // =
+    // NONE
+    testMerge(KuduPredicate.newIsNotNullPredicate(intCol),
+              KuduPredicate.none(intCol),
+              KuduPredicate.none(intCol));
+
+    // IS NOT NULL AND
+    // IS NULL
+    // =
+    // NONE
+    testMerge(KuduPredicate.newIsNotNullPredicate(intCol),
+              KuduPredicate.newIsNullPredicate(intCol),
+              KuduPredicate.none(intCol));
+
+    // IS NOT NULL AND
+    // IS NOT NULL
+    // =
+    // IS NOT NULL
+    testMerge(KuduPredicate.newIsNotNullPredicate(intCol),
+              KuduPredicate.newIsNotNullPredicate(intCol),
+              KuduPredicate.newIsNotNullPredicate(intCol));
+
+    // IS NOT NULL AND
+    // |
+    // =
+    // |
+    testMerge(KuduPredicate.newIsNotNullPredicate(intCol),
+              KuduPredicate.newComparisonPredicate(intCol, EQUAL, 5),
+              KuduPredicate.newComparisonPredicate(intCol, EQUAL, 5));
+
+    // IS NOT NULL AND
+    // [------->
+    // =
+    // [------->
+    testMerge(KuduPredicate.newIsNotNullPredicate(intCol),
+              KuduPredicate.newComparisonPredicate(intCol, GREATER_EQUAL, 5),
+              KuduPredicate.newComparisonPredicate(intCol, GREATER_EQUAL, 5));
+
+    // IS NOT NULL AND
+    // <---------)
+    // =
+    // <---------)
+    testMerge(KuduPredicate.newIsNotNullPredicate(intCol),
+              KuduPredicate.newComparisonPredicate(intCol, LESS, 5),
+              KuduPredicate.newComparisonPredicate(intCol, LESS, 5));
+
+    // IS NOT NULL AND
+    // [-------)
+    // =
+    // [-------)
+    testMerge(KuduPredicate.newIsNotNullPredicate(intCol),
+              intRange(0, 12),
+              intRange(0, 12));
+
+
+    // IS NOT NULL AND
+    // |   |   |
+    // =
+    // |   |   |
+    testMerge(KuduPredicate.newIsNotNullPredicate(intCol),
+              intInList(0, 10, 20),
+              intInList(0, 10, 20));
+
+    // IS NULL
+    //--------------------
+
+    // IS NULL AND
+    // NONE
+    // =
+    // NONE
+    testMerge(KuduPredicate.newIsNullPredicate(intCol),
+              KuduPredicate.none(intCol),
+              KuduPredicate.none(intCol));
+
+    // IS NULL AND
+    // IS NULL
+    // =
+    // IS_NULL
+    testMerge(KuduPredicate.newIsNullPredicate(intCol),
+              KuduPredicate.newIsNullPredicate(intCol),
+              KuduPredicate.newIsNullPredicate(intCol));
+
+    // IS NULL AND
+    // IS NOT NULL
+    // =
+    // NONE
+    testMerge(KuduPredicate.newIsNullPredicate(intCol),
+              KuduPredicate.newIsNotNullPredicate(intCol),
+              KuduPredicate.none(intCol));
+
+    // IS NULL AND
+    // |
+    // =
+    // NONE
+    testMerge(KuduPredicate.newIsNullPredicate(intCol),
+              KuduPredicate.newComparisonPredicate(intCol, EQUAL, 5),
+              KuduPredicate.none(intCol));
+
+    // IS NULL AND
+    // [------->
+    // =
+    // NONE
+    testMerge(KuduPredicate.newIsNullPredicate(intCol),
+              KuduPredicate.newComparisonPredicate(intCol, GREATER_EQUAL, 0),
+              KuduPredicate.none(intCol));
+
+    // IS NULL AND
+    // <---------)
+    // =
+    // NONE
+    testMerge(KuduPredicate.newIsNullPredicate(intCol),
+              KuduPredicate.newComparisonPredicate(intCol, LESS, 5),
+              KuduPredicate.none(intCol));
+
+    // IS NULL AND
+    // [-------)
+    // =
+    // NONE
+    testMerge(KuduPredicate.newIsNullPredicate(intCol),
+              intRange(0, 12),
+              KuduPredicate.none(intCol));
+
+    // IS NULL AND
+    // |   |   |
+    // =
+    // NONE
+    testMerge(KuduPredicate.newIsNullPredicate(intCol),
+              intInList(0, 10, 20),
               KuduPredicate.none(intCol));
   }
 
@@ -558,7 +707,7 @@ public class TestKuduPredicate {
     //     [----->
     //   | | | |
     // =
-    //     [--)
+    //     | | |
     testMerge(KuduPredicate.newComparisonPredicate(stringCol, GREATER_EQUAL, "a"),
               stringInList("a", "c", "b", ""),
               stringInList("a", "b", "c"));
@@ -566,8 +715,8 @@ public class TestKuduPredicate {
     //   IS NOT NULL
     //   | | | |
     // =
-    //     [--)
-    testMerge(KuduPredicate.isNotNull(stringCol),
+    //   | | | |
+    testMerge(KuduPredicate.newIsNotNullPredicate(stringCol),
               stringInList("a", "c", "b", ""),
               stringInList("", "a", "b", "c"));
   }
@@ -576,7 +725,7 @@ public class TestKuduPredicate {
   public void testBoolean() {
 
     // b >= false
-    Assert.assertEquals(KuduPredicate.isNotNull(boolCol),
+    Assert.assertEquals(KuduPredicate.newIsNotNullPredicate(boolCol),
                         KuduPredicate.newComparisonPredicate(boolCol, GREATER_EQUAL, false));
     // b > false
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(boolCol, EQUAL, true),
@@ -604,7 +753,7 @@ public class TestKuduPredicate {
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(boolCol, EQUAL, false),
                         KuduPredicate.newComparisonPredicate(boolCol, LESS, true));
     // b <= true
-    Assert.assertEquals(KuduPredicate.isNotNull(boolCol),
+    Assert.assertEquals(KuduPredicate.newIsNotNullPredicate(boolCol),
                         KuduPredicate.newComparisonPredicate(boolCol, LESS_EQUAL, true));
 
     // b IN ()
@@ -619,7 +768,7 @@ public class TestKuduPredicate {
                         boolInList(false));
 
     // b IN (false, true)
-    Assert.assertEquals(KuduPredicate.isNotNull(boolCol),
+    Assert.assertEquals(KuduPredicate.newIsNotNullPredicate(boolCol),
                         boolInList(false, true, false, true));
   }
 
@@ -638,7 +787,7 @@ public class TestKuduPredicate {
 
     testMerge(KuduPredicate.newComparisonPredicate(boolCol, GREATER_EQUAL, false),
               KuduPredicate.newComparisonPredicate(boolCol, LESS_EQUAL, true),
-              KuduPredicate.isNotNull(boolCol));
+              KuduPredicate.newIsNotNullPredicate(boolCol));
 
     testMerge(KuduPredicate.newComparisonPredicate(byteCol, GREATER_EQUAL, 0),
               KuduPredicate.newComparisonPredicate(byteCol, LESS, 10),
@@ -728,21 +877,21 @@ public class TestKuduPredicate {
                         KuduPredicate.newComparisonPredicate(binaryCol, LESS, new byte[] { (byte) 10, (byte) 0 }));
 
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(byteCol, LESS_EQUAL, Byte.MAX_VALUE),
-                        KuduPredicate.isNotNull(byteCol));
+                        KuduPredicate.newIsNotNullPredicate(byteCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(shortCol, LESS_EQUAL, Short.MAX_VALUE),
-                        KuduPredicate.isNotNull(shortCol));
+                        KuduPredicate.newIsNotNullPredicate(shortCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(intCol, LESS_EQUAL, Integer.MAX_VALUE),
-                        KuduPredicate.isNotNull(intCol));
+                        KuduPredicate.newIsNotNullPredicate(intCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(longCol, LESS_EQUAL, Long.MAX_VALUE),
-                        KuduPredicate.isNotNull(longCol));
+                        KuduPredicate.newIsNotNullPredicate(longCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(floatCol, LESS_EQUAL, Float.MAX_VALUE),
                         KuduPredicate.newComparisonPredicate(floatCol, LESS, Float.POSITIVE_INFINITY));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(floatCol, LESS_EQUAL, Float.POSITIVE_INFINITY),
-                        KuduPredicate.isNotNull(floatCol));
+                        KuduPredicate.newIsNotNullPredicate(floatCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(doubleCol, LESS_EQUAL, Double.MAX_VALUE),
                         KuduPredicate.newComparisonPredicate(doubleCol, LESS, Double.POSITIVE_INFINITY));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(doubleCol, LESS_EQUAL, Double.POSITIVE_INFINITY),
-                        KuduPredicate.isNotNull(doubleCol));
+                        KuduPredicate.newIsNotNullPredicate(doubleCol));
   }
 
   @Test
@@ -805,21 +954,21 @@ public class TestKuduPredicate {
   @Test
   public void testGreaterEqual() {
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(byteCol, GREATER_EQUAL, Byte.MIN_VALUE),
-                        KuduPredicate.isNotNull(byteCol));
+                        KuduPredicate.newIsNotNullPredicate(byteCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(shortCol, GREATER_EQUAL, Short.MIN_VALUE),
-                        KuduPredicate.isNotNull(shortCol));
+                        KuduPredicate.newIsNotNullPredicate(shortCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(intCol, GREATER_EQUAL, Integer.MIN_VALUE),
-                        KuduPredicate.isNotNull(intCol));
+                        KuduPredicate.newIsNotNullPredicate(intCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(longCol, GREATER_EQUAL, Long.MIN_VALUE),
-                        KuduPredicate.isNotNull(longCol));
+                        KuduPredicate.newIsNotNullPredicate(longCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(floatCol, GREATER_EQUAL, Float.NEGATIVE_INFINITY),
-                        KuduPredicate.isNotNull(floatCol));
+                        KuduPredicate.newIsNotNullPredicate(floatCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(doubleCol, GREATER_EQUAL, Double.NEGATIVE_INFINITY),
-                        KuduPredicate.isNotNull(doubleCol));
+                        KuduPredicate.newIsNotNullPredicate(doubleCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(stringCol, GREATER_EQUAL, ""),
-                        KuduPredicate.isNotNull(stringCol));
+                        KuduPredicate.newIsNotNullPredicate(stringCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(binaryCol, GREATER_EQUAL, new byte[] {}),
-                        KuduPredicate.isNotNull(binaryCol));
+                        KuduPredicate.newIsNotNullPredicate(binaryCol));
 
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(byteCol, GREATER_EQUAL, Byte.MAX_VALUE),
                         KuduPredicate.newComparisonPredicate(byteCol, EQUAL, Byte.MAX_VALUE));
@@ -858,7 +1007,12 @@ public class TestKuduPredicate {
     Assert.assertEquals("`int` IN (-10, 0, 10)",
                         intInList(10, 0, -10).toString());
     Assert.assertEquals("`string` IS NOT NULL",
-                        KuduPredicate.isNotNull(stringCol).toString());
+                        KuduPredicate.newIsNotNullPredicate(stringCol).toString());
+    Assert.assertEquals("`string` IS NULL",
+                        KuduPredicate.newIsNullPredicate(stringCol).toString());
+    // IS NULL predicate on non-nullable column = NONE predicate
+    Assert.assertEquals("`int` NONE",
+            KuduPredicate.newIsNullPredicate(intCol).toString());
 
     Assert.assertEquals("`bool` = true", KuduPredicate.newInListPredicate(
         boolCol, ImmutableList.of(true)).toString());

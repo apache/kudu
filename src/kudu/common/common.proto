@@ -314,10 +314,13 @@ message ColumnPredicatePB {
 
   message IsNotNull {}
 
+  message IsNull {}
+
   oneof predicate {
     Range range = 2;
     Equality equality = 3;
     IsNotNull is_not_null = 4;
     InList in_list = 5;
+    IsNull is_null = 6;
   }
 }

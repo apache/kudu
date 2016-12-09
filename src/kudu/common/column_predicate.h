@@ -46,6 +46,9 @@ enum class PredicateType {
   // A predicate which evaluates to true if the value is not null.
   IsNotNull,
 
+  // A predicate which evaluates to true if the value is null.
+  IsNull,
+
   // A predicate which evaluates to true if the column value is present in
   // a value list.
   InList,
@@ -112,11 +115,19 @@ class ColumnPredicate {
   // Creates a new IS NOT NULL predicate for the column.
   static ColumnPredicate IsNotNull(ColumnSchema column);
 
+  // Creates a new IS NULL predicate for the column.
+  //
+  // If the column is non-nullable, returns a None predicate instead.
+  static ColumnPredicate IsNull(ColumnSchema column);
+
   // Create a new IN <LIST> predicate for the column.
   //
   // The values are not copied, and must outlive the returned predicate.
   // The InList will be simplified into an Equality, Range or None if possible.
   static ColumnPredicate InList(ColumnSchema column, std::vector<const void*>* values);
+
+  // Creates a new predicate which matches no values.
+  static ColumnPredicate None(ColumnSchema column);
 
   // Returns the type of this predicate.
   PredicateType predicate_type() const {
@@ -171,6 +182,9 @@ class ColumnPredicate {
       };
       case PredicateType::IsNotNull: {
         return true;
+      };
+      case PredicateType::IsNull: {
+        return false;
       };
       case PredicateType::InList: {
         return std::binary_search(values_.begin(), values_.end(), cell,
@@ -227,9 +241,6 @@ class ColumnPredicate {
                   ColumnSchema column,
                   std::vector<const void*>* values);
 
-  // Creates a new predicate which matches no values.
-  static ColumnPredicate None(ColumnSchema column);
-
   // Transition to a None predicate type.
   void SetToNone();
 
@@ -241,6 +252,12 @@ class ColumnPredicate {
 
   // Merge another predicate into this Equality predicate.
   void MergeIntoEquality(const ColumnPredicate& other);
+
+  // Merge another predicate into this IS NOT NULL predicate.
+  void MergeIntoIsNotNull(const ColumnPredicate& other);
+
+  // Merge another predicate into this IS NULL predicate.
+  void MergeIntoIsNull(const ColumnPredicate& other);
 
   // Templated evaluation to inline the dispatch of comparator. Templating this
   // allows dispatch to occur only once per batch.

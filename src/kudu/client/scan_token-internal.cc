@@ -170,6 +170,10 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
   KuduClient* client = table->client();
   configuration_.OptimizeScanSpec();
 
+  if (configuration_.spec().CanShortCircuit()) {
+    return Status::OK();
+  }
+
   ScanTokenPB pb;
 
   pb.set_table_name(table->name());

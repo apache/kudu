@@ -64,6 +64,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/oid_generator.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/version_info.h"
 
 using kudu::master::AlterTableRequestPB;
@@ -712,38 +713,44 @@ const PartitionSchema& KuduTable::partition_schema() const {
 KuduPredicate* KuduTable::NewComparisonPredicate(const Slice& col_name,
                                                  KuduPredicate::ComparisonOp op,
                                                  KuduValue* value) {
-  StringPiece name_sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
-  const Schema* s = data_->schema_.schema_;
-  int col_idx = s->find_column(name_sp);
-  if (col_idx == Schema::kColumnNotFound) {
-    // Since this function doesn't return an error, instead we create a special
-    // predicate that just returns the errors when we add it to the scanner.
-    //
-    // This makes the API more "fluent".
-    delete value; // we always take ownership of 'value'.
-    return new KuduPredicate(new ErrorPredicateData(
-                                 Status::NotFound("column not found", col_name)));
-  }
-
-  return new KuduPredicate(new ComparisonPredicateData(s->column(col_idx), op, value));
+  // We always take ownership of value; this ensures cleanup if the predicate is invalid.
+  auto cleanup = MakeScopedCleanup([&]() {
+    delete value;
+  });
+  const Schema& schema = *data_->schema_.schema_;
+  return data_->MakePredicate(col_name, schema, [&](const ColumnSchema& col_schema) {
+    // Ownership of value is passed to the valid returned predicate.
+    cleanup.cancel();
+    return new KuduPredicate(new ComparisonPredicateData(col_schema, op, value));
+  });
 }
 
 KuduPredicate* KuduTable::NewInListPredicate(const Slice& col_name,
                                              vector<KuduValue*>* values) {
-  StringPiece name_sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
-  const Schema* s = data_->schema_.schema_;
-  int col_idx = s->find_column(name_sp);
-  if (col_idx == Schema::kColumnNotFound) {
-    // Since this function doesn't return an error, instead we create a special
-    // predicate that just returns the errors when we add it to the scanner.
-    //
-    // This makes the API more "fluent".
-    STLDeleteElements(values); // we always take ownership of 'values'.
-    delete values;
-    return new KuduPredicate(new ErrorPredicateData(
-      Status::NotFound("column not found", col_name)));
-  }
-  return new KuduPredicate(new InListPredicateData(s->column(col_idx), values));
+  // We always take ownership of values; this ensures cleanup if the predicate is invalid.
+  auto cleanup = MakeScopedCleanup([&]() {
+    STLDeleteElements(values);
+  });
+  const Schema& schema = *data_->schema_.schema_;
+  return data_->MakePredicate(col_name, schema, [&](const ColumnSchema& col_schema) {
+    // Ownership of values is passed to the valid returned predicate.
+    cleanup.cancel();
+    return new KuduPredicate(new InListPredicateData(col_schema, values));
+  });
+}
+
+KuduPredicate* KuduTable::NewIsNotNullPredicate(const Slice& col_name) {
+  const Schema& schema = *data_->schema_.schema_;
+  return data_->MakePredicate(col_name, schema, [&](const ColumnSchema& col_schema) {
+    return new KuduPredicate(new IsNotNullPredicateData(col_schema));
+  });
+}
+
+KuduPredicate* KuduTable::NewIsNullPredicate(const Slice& col_name) {
+  const Schema& schema = *data_->schema_.schema_;
+  return data_->MakePredicate(col_name, schema, [&](const ColumnSchema& col_schema) {
+    return new KuduPredicate(new IsNullPredicateData(col_schema));
+  });
 }
 
 ////////////////////////////////////////////////////////////

@@ -143,6 +143,12 @@ ColumnPredicate ColumnPredicate::IsNotNull(ColumnSchema column) {
   return ColumnPredicate(PredicateType::IsNotNull, move(column), nullptr, nullptr);
 }
 
+ColumnPredicate ColumnPredicate::IsNull(ColumnSchema column) {
+  return column.is_nullable() ?
+         ColumnPredicate(PredicateType::IsNull, move(column), nullptr, nullptr) :
+         None(move(column));
+}
+
 ColumnPredicate ColumnPredicate::None(ColumnSchema column) {
   return ColumnPredicate(PredicateType::None, move(column), nullptr, nullptr);
 }
@@ -159,6 +165,7 @@ void ColumnPredicate::Simplify() {
     case PredicateType::None:
     case PredicateType::Equality:
     case PredicateType::IsNotNull: return;
+    case PredicateType::IsNull: return;
     case PredicateType::Range: {
       DCHECK(lower_ != nullptr || upper_ != nullptr);
       if (lower_ != nullptr && upper_ != nullptr) {
@@ -229,18 +236,13 @@ void ColumnPredicate::Merge(const ColumnPredicate& other) {
       return;
     };
     case PredicateType::IsNotNull: {
-      // NOT NULL is less selective than all other predicate types, so the
-      // intersection of NOT NULL with any other predicate is just the other
-      // predicate.
-      //
-      // Note: this will no longer be true when an IS NULL predicate type is
-      // added.
-      predicate_type_ = other.predicate_type_;
-      lower_ = other.lower_;
-      upper_ = other.upper_;
-      values_ = other.values_;
+      MergeIntoIsNotNull(other);
       return;
     };
+    case PredicateType::IsNull: {
+      MergeIntoIsNull(other);
+      return;
+    }
     case PredicateType::InList: {
       MergeIntoInList(other);
       return;
@@ -288,6 +290,10 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
       return;
     };
     case PredicateType::IsNotNull: return;
+    case PredicateType::IsNull: {
+      SetToNone();
+      return;
+    }
     case PredicateType::InList : {
       // The InList predicate values are examined to check whether
       // they lie in the range.
@@ -333,6 +339,10 @@ void ColumnPredicate::MergeIntoEquality(const ColumnPredicate& other) {
       return;
     };
     case PredicateType::IsNotNull: return;
+    case PredicateType::IsNull: {
+      SetToNone();
+      return;
+    }
     case PredicateType::InList : {
       // The equality value needs to be a member of the InList
       if (!other.CheckValueInList(lower_)) {
@@ -344,12 +354,47 @@ void ColumnPredicate::MergeIntoEquality(const ColumnPredicate& other) {
   LOG(FATAL) << "unknown predicate type";
 }
 
+void ColumnPredicate::MergeIntoIsNotNull(const ColumnPredicate &other) {
+  CHECK(predicate_type_ == PredicateType::IsNotNull);
+  switch (other.predicate_type()) {
+    // The intersection of NULL and IS NOT NULL is None.
+    case PredicateType::IsNull: {
+      SetToNone();
+      return;
+    }
+    default: {
+      // Otherwise, the intersection is the other predicate.
+      predicate_type_ = other.predicate_type_;
+      lower_ = other.lower_;
+      upper_ = other.upper_;
+      values_ = other.values_;
+      return;
+    }
+  }
+}
+
+void ColumnPredicate::MergeIntoIsNull(const ColumnPredicate &other) {
+  CHECK(predicate_type_ == PredicateType::IsNull);
+  switch (other.predicate_type()) {
+    // The intersection of IS NULL and IS NULL is IS NULL.
+    case PredicateType::IsNull: {
+      return;
+    }
+    default: {
+      // Otherwise, the intersection is None.
+      // NB: This will not be true if NULL is allowed in an InList predicate.
+      SetToNone();
+      return;
+    }
+  }
+}
+
 void ColumnPredicate::MergeIntoInList(const ColumnPredicate &other) {
   CHECK(predicate_type_ == PredicateType::InList);
   DCHECK(values_.size() > 1);
 
   switch (other.predicate_type()) {
-    case PredicateType::None : {
+    case PredicateType::None: {
       SetToNone();
       return;
     };
@@ -388,6 +433,10 @@ void ColumnPredicate::MergeIntoInList(const ColumnPredicate &other) {
       return;
     }
     case PredicateType::IsNotNull: return;
+    case PredicateType::IsNull: {
+      SetToNone();
+      return;
+    }
     case PredicateType::InList: {
       // Merge the 'other' IN list into this IN list. The basic idea is to loop
       // through this predicate list, retaining only the values which are also
@@ -505,6 +554,20 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
       }
       return;
     };
+    case PredicateType::IsNull: {
+      if (!block.is_nullable()) {
+        BitmapChangeBits(sel->mutable_bitmap(), 0, block.nrows(), false);
+        return;
+      }
+      // TODO(wdberkeley): make this more efficient by using bitwise operations on the
+      // null and selection vectors.
+      for (size_t i = 0; i < block.nrows(); i++) {
+        if (sel->IsRowSelected(i) && !block.is_null(i)) {
+          BitmapClear(sel->mutable_bitmap(), i);
+        }
+      }
+      return;
+    }
     case PredicateType::InList: {
       ApplyPredicate(block, sel, [this] (const void* cell) {
         return std::binary_search(values_.begin(), values_.end(), cell,
@@ -559,6 +622,9 @@ string ColumnPredicate::ToString() const {
     case PredicateType::IsNotNull: {
       return strings::Substitute("`$0` IS NOT NULL", column_.name());
     };
+    case PredicateType::IsNull: {
+      return strings::Substitute("`$0` IS NULL", column_.name());
+    };
     case PredicateType::InList: {
       string ss = "`";
       ss.append(column_.name());
@@ -602,7 +668,8 @@ bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
       return true;
     };
     case PredicateType::None:
-    case PredicateType::IsNotNull: return true;
+    case PredicateType::IsNotNull:
+    case PredicateType::IsNull: return true;
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -625,10 +692,11 @@ int SelectivityRank(const ColumnPredicate& predicate) {
   int rank;
   switch (predicate.predicate_type()) {
     case PredicateType::None: rank = 0; break;
-    case PredicateType::Equality: rank = 1; break;
-    case PredicateType::InList: rank = 2; break;
-    case PredicateType::Range: rank = 3; break;
-    case PredicateType::IsNotNull: rank = 4; break;
+    case PredicateType::IsNull: rank = 1; break;
+    case PredicateType::Equality: rank = 2; break;
+    case PredicateType::InList: rank = 3; break;
+    case PredicateType::Range: rank = 4; break;
+    case PredicateType::IsNotNull: rank = 5; break;
     default: LOG(FATAL) << "unknown predicate type";
   }
   return rank * (kLargestTypeSize + 1) + predicate.column().type_info()->size();

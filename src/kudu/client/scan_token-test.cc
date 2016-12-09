@@ -195,6 +195,32 @@ TEST_F(ScanTokenTest, TestScanTokens) {
     NO_FATALS(VerifyTabletInfo(tokens));
   }
 
+  { // IS NOT NULL predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewIsNotNullPredicate("col"));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_GE(8, tokens.size());
+    ASSERT_EQ(200, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // IS NULL predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewIsNullPredicate("col"));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_GE(0, tokens.size());
+    ASSERT_EQ(0, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
   { // primary key bound
     vector<KuduScanToken*> tokens;
     ElementDeleter deleter(&tokens);
@@ -304,6 +330,32 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
 
     ASSERT_EQ(1, tokens.size());
     ASSERT_EQ(1, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // IS NOT NULL predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewIsNotNullPredicate("col"));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_EQ(6, tokens.size());
+    ASSERT_EQ(300, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // IS NULL predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewIsNullPredicate("col"));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_GE(0, tokens.size());
+    ASSERT_EQ(0, CountRows(tokens));
     NO_FATALS(VerifyTabletInfo(tokens));
   }
 

@@ -73,6 +73,7 @@ void ScanSpec::SetLowerBoundKey(const EncodedKey* key) {
     lower_bound_key_ = key;
   }
 }
+
 void ScanSpec::SetExclusiveUpperBoundKey(const EncodedKey* key) {
   if (exclusive_upper_bound_key_ == nullptr ||
       key->encoded_key().compare(exclusive_upper_bound_key_->encoded_key()) < 0) {

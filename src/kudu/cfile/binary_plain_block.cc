@@ -300,6 +300,7 @@ Status BinaryPlainBlockDecoder::CopyNextValues(size_t* n, ColumnDataView* dst) {
     CHECK(out_arena->RelocateSlice(elem, out));
   });
 }
+
 Status BinaryPlainBlockDecoder::CopyNextAndEval(size_t* n,
                                                 ColumnMaterializationContext* ctx,
                                                 SelectionVectorView* sel,
