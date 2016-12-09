@@ -1259,6 +1259,22 @@ class PosixEnv : public Env {
     // This change is logged because it is process-wide.
     struct rlimit l;
     PCHECK(getrlimit(RLIMIT_NOFILE, &l) == 0);
+#if defined(__APPLE__)
+    // OS X 10.11 can return RLIM_INFINITY from getrlimit, but allows rlim_cur and
+    // rlim_max to be raised only as high as the value of the maxfilesperproc
+    // kernel variable. Emperically, this value is 10240 across all tested macOS
+    // versions. Testing on OS X 10.10 and macOS 10.12 revealed that getrlimit
+    // returns the true limits (not RLIM_INFINITY), rlim_max can *not* be raised
+    // (when running as non-root), and rlim_cur can only be raised as high as
+    // rlim_max (this is consistent with Linux).
+    // TLDR; OS X 10.11 is wack.
+    if (l.rlim_max == RLIM_INFINITY) {
+      uint64_t limit;
+      size_t len = sizeof(limit);
+      PCHECK(sysctlbyname("kern.maxfilesperproc", &limit, &len, nullptr, 0) == 0);
+      l.rlim_max = limit;
+    }
+#endif
     if (l.rlim_cur < l.rlim_max) {
       LOG(INFO) << Substitute("Raising process file limit from $0 to $1",
                               l.rlim_cur, l.rlim_max);

@@ -552,6 +552,14 @@ TEST_F(TestEnv, TestIsDirectory) {
   ASSERT_FALSE(is_dir);
 }
 
+// Regression test for KUDU-1776.
+TEST_F(TestEnv, TestIncreaseOpenFileLimit) {
+  int64_t limit_before = env_->GetOpenFileLimit();
+  env_->IncreaseOpenFileLimit();
+  int64_t limit_after = env_->GetOpenFileLimit();
+  ASSERT_GE(limit_after, limit_before) << "Failed to retain/increase open file limit";
+}
+
 static Status TestWalkCb(vector<string>* actual,
                          Env::FileType type,
                          const string& dirname, const string& basename) {
