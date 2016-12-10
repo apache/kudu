@@ -49,46 +49,64 @@ import org.apache.kudu.util.AsyncUtil;
 import org.apache.kudu.util.Slice;
 
 /**
- * A AsyncKuduSession belongs to a specific AsyncKuduClient, and represents a context in
- * which all read/write data access should take place. Within a session,
+ * An {@code AsyncKuduSession} belongs to a specific {@link AsyncKuduClient}, and represents a
+ * context in which all write data access should take place. Within a session,
  * multiple operations may be accumulated and batched together for better
  * efficiency. Settings like timeouts, priorities, and trace IDs are also set
- * per session.<p>
+ * per session.
  *
- * AsyncKuduSession is separate from KuduTable because a given batch or transaction
- * may span multiple tables. This is particularly important in the future when
- * we add ACID support, but even in the context of batching, we may be able to
- * coalesce writes to different tables hosted on the same server into the same
- * RPC.<p>
- *
- * AsyncKuduSession is separate from AsyncKuduClient because, in a multi-threaded
+ * <p>{@code AsyncKuduSession} is separate from {@link AsyncKuduClient} because, in a multi-threaded
  * application, different threads may need to concurrently execute
  * transactions. Similar to a JDBC "session", transaction boundaries will be
  * delineated on a per-session basis -- in between a "BeginTransaction" and
  * "Commit" call on a given session, all operations will be part of the same
- * transaction. Meanwhile another concurrent Session object can safely run
- * non-transactional work or other transactions without interfering.<p>
+ * transaction. Meanwhile another concurrent session object can safely run
+ * non-transactional work or other transactions without interfering.
  *
- * Therefore, this class is <b>not</b> thread-safe.<p>
+ * <p>Therefore, this class is <b>not</b> thread-safe.
  *
- * Additionally, there is a guarantee that writes from different sessions do not
+ * <p>Additionally, there is a guarantee that writes from different sessions do not
  * get batched together into the same RPCs -- this means that latency-sensitive
- * clients can run through the same AsyncKuduClient object as throughput-oriented
+ * clients can run through the same {@link AsyncKuduClient} object as throughput-oriented
  * clients, perhaps by setting the latency-sensitive session's timeouts low and
  * priorities high. Without the separation of batches, a latency-sensitive
  * single-row insert might get batched along with 10MB worth of inserts from the
- * batch writer, thus delaying the response significantly.<p>
+ * batch writer, thus delaying the response significantly.
  *
- * Though we currently do not have transactional support, users will be forced
- * to use a AsyncKuduSession to instantiate reads as well as writes.  This will make
- * it more straight-forward to add RW transactions in the future without
- * significant modifications to the API.<p>
+ * <p>Timeouts are handled differently depending on the flush mode.
+ * With {@link SessionConfiguration.FlushMode#AUTO_FLUSH_SYNC AUTO_FLUSH_SYNC}, the timeout is set
+ * on each {@linkplain #apply apply}()'d operation.
+ * With {@link SessionConfiguration.FlushMode#AUTO_FLUSH_BACKGROUND AUTO_FLUSH_BACKGROUND} and
+ * {@link SessionConfiguration.FlushMode#MANUAL_FLUSH MANUAL_FLUSH}, the timeout is assigned to a
+ * whole batch of operations upon {@linkplain #flush flush}()'ing. It means that in a situation
+ * with a timeout of 500ms and a flush interval of 1000ms, an operation can be outstanding for up to
+ * 1500ms before being timed out.
  *
- * Timeouts are handled differently depending on the flush mode.
- * With AUTO_FLUSH_SYNC, the timeout is set on each apply()'d operation.
- * With AUTO_FLUSH_BACKGROUND and MANUAL_FLUSH, the timeout is assigned to a whole batch of
- * operations upon flush()'ing. It means that in a situation with a timeout of 500ms and a flush
- * interval of 1000ms, an operation can be outstanding for up to 1500ms before being timed out.
+ * <p><strong>Warning: a note on out-of-order operations</strong>
+ *
+ * <p>When using {@code AsyncKuduSession}, it is not difficult to trigger concurrent flushes on
+ * the same session. The result is that operations applied in a particular order within a single
+ * session may be applied in a different order on the server side, even for a single tablet. To
+ * prevent this behavior, ensure that only one flush is outstanding at a given time (the maximum
+ * concurrent flushes per {@code AsyncKuduSession} is hard-coded to 2).
+ *
+ * <p>If operation interleaving would be unacceptable for your application, consider using one of
+ * the following strategies to avoid it:
+ *
+ * <ol>
+ * <li>When using {@link SessionConfiguration.FlushMode#MANUAL_FLUSH MANUAL_FLUSH} mode,
+ * wait for one {@link #flush flush()} to {@code join()} before triggering another flush.
+ * <li>When using {@link SessionConfiguration.FlushMode#AUTO_FLUSH_SYNC AUTO_FLUSH_SYNC}
+ * mode, wait for each {@link #apply apply()} to {@code join()} before applying another operation.
+ * <li>Consider not using
+ * {@link SessionConfiguration.FlushMode#AUTO_FLUSH_BACKGROUND AUTO_FLUSH_BACKGROUND} mode.
+ * <li>Make your application resilient to out-of-order application of writes.
+ * <li>Avoid applying an {@link Operation} on a particular row until any previous write to that
+ * row has been successfully flushed.
+ * </ol>
+ *
+ * <p>For more information on per-session operation interleaving, see
+ * <a href="https://issues.apache.org/jira/browse/KUDU-1767">KUDU-1767</a>.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Unstable
@@ -489,12 +507,15 @@ public class AsyncKuduSession implements SessionConfiguration {
 
   /**
    * Apply the given operation.
-   * The behavior of this function depends on the current flush mode. Regardless
-   * of flush mode, however, Apply may begin to perform processing in the background
-   * for the call (e.g looking up the tablet, etc).
+   * <p>
+   * The behavior of this method depends on the configured
+   * {@link SessionConfiguration.FlushMode FlushMode}. Regardless
+   * of flush mode, however, {@code apply()} may begin to perform processing in the background
+   * for the call (e.g looking up the tablet location, etc).
    * @param operation operation to apply
    * @return a Deferred to track this operation
    * @throws KuduException if an error happens or {@link PleaseThrottleException} is triggered
+   * @see SessionConfiguration.FlushMode FlushMode
    */
   public Deferred<OperationResponse> apply(final Operation operation) throws KuduException {
     Preconditions.checkNotNull(operation, "Can not apply a null operation");

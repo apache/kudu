@@ -223,7 +223,14 @@ in some situations, at the moment. Below are the details and next, some recommen
   See <<recommendations>> for a workaround.
 * Impala scans are currently performed as `READ_LATEST` and have no consistency
   guarantees.
-
+* In `AUTO_BACKGROUND_FLUSH` mode, or when using "async" flushing mechanisms,
+  writes applied to a single client session may become reordered due to the
+  concurrency of flushing the data to the server. This may be particularly
+  noticeable if a single row is quickly updated with different values in
+  succession. This phenomenon affects all client API implementations.
+  Workarounds are described in the API documentation for the respective
+  implementations in the docs for `FlushMode` or `AsyncKuduSession`.
+  See link:https://issues.apache.org/jira/browse/KUDU-1767[KUDU-1767].
 
 [[recommendations]]
 === Recommendations
