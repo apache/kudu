@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 
 #include <boost/optional.hpp>
@@ -1289,17 +1290,19 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
 // Tombstoning a tablet does not delete the consensus metadata.
 const char* tombstoned_faults[] = {"fault_crash_after_blocks_deleted",
                                    "fault_crash_after_wal_deleted"};
-
 INSTANTIATE_TEST_CASE_P(FaultFlags, DeleteTableTombstonedParamTest,
                         ::testing::ValuesIn(tombstoned_faults));
 
+
+class DeleteTableWhileScanInProgressParamTest :
+    public DeleteTableTest,
+    public ::testing::WithParamInterface<
+        std::tuple<KuduScanner::ReadMode, KuduClient::ReplicaSelection>> {
+};
+
 // Make sure the tablet server keeps the necessary data to serve scan request in
 // progress if tablet is marked for deletion.
-TEST_F(DeleteTableTest, TestDeleteTableWhileScanInProgress) {
-  const KuduScanner::ReadMode read_modes[] = {
-    KuduScanner::READ_LATEST,
-    KuduScanner::READ_AT_SNAPSHOT,
-  };
+TEST_P(DeleteTableWhileScanInProgressParamTest, Test) {
   const auto read_mode_to_string = [](KuduScanner::ReadMode mode) {
     switch (mode) {
       case KuduScanner::READ_LATEST:
@@ -1309,12 +1312,6 @@ TEST_F(DeleteTableTest, TestDeleteTableWhileScanInProgress) {
       default:
         return "UNKNOWN";
     }
-  };
-
-  const KuduClient::ReplicaSelection replica_selectors[] = {
-    KuduClient::LEADER_ONLY,
-    KuduClient::CLOSEST_REPLICA,
-    KuduClient::FIRST_REPLICA,
   };
   const auto replica_sel_to_string = [](KuduClient::ReplicaSelection sel) {
     switch (sel) {
@@ -1345,90 +1342,106 @@ TEST_F(DeleteTableTest, TestDeleteTableWhileScanInProgress) {
   };
 
   // Approximate number of rows to insert. This is not exact number due to the
-  // way how the test controls the progress of the test workload.
+  // way the test controls the progress of the test workload.
 #if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER)
   // Test is too slow in ASAN/TSAN.
   const size_t rows_to_insert = 10000;
 #else
   const size_t rows_to_insert = AllowSlowTests() ? 100000 : 10000;
 #endif
-  for (const auto sel : replica_selectors) {
-    for (const auto mode : read_modes) {
-      SCOPED_TRACE(Substitute("mode $0; replica $1",
-                              read_mode_to_string(mode),
-                              replica_sel_to_string(sel)));
-      NO_FATALS(StartCluster(extra_ts_flags));
 
-      TestWorkload w(cluster_.get());
-      w.set_write_pattern(TestWorkload::INSERT_RANDOM_ROWS);
-      w.Setup();
+  const auto& param = GetParam();
+  const auto mode = std::get<0>(param);
+  const auto sel = std::get<1>(param);
 
-      // Start the workload, and wait to see some rows actually inserted.
-      w.Start();
-      while (w.rows_inserted() < rows_to_insert) {
-        SleepFor(MonoDelta::FromMilliseconds(50));
-      }
-      w.StopAndJoin();
-      const int64_t ref_row_count = w.rows_inserted();
+  // In case of failure, print out string representation of the parameterized
+  // case for ease of troubleshooting.
+  SCOPED_TRACE(Substitute("read mode $0; replica selection mode $1",
+                          read_mode_to_string(mode),
+                          replica_sel_to_string(sel)));
+  NO_FATALS(StartCluster(extra_ts_flags));
 
-      using kudu::client::sp::shared_ptr;
-      shared_ptr<KuduTable> table;
-      ASSERT_OK(client_->OpenTable(w.table_name(), &table));
-      KuduScanner scanner(table.get());
-      ASSERT_OK(scanner.SetReadMode(mode));
-      ASSERT_OK(scanner.SetSelection(sel));
-      // Setup batch size to be small enough to guarantee the scan
-      // will not fetch all the data at once.
-      ASSERT_OK(scanner.SetBatchSizeBytes(1));
-      ASSERT_OK(scanner.Open());
-      ASSERT_TRUE(scanner.HasMoreRows());
-      KuduScanBatch batch;
-      ASSERT_OK(scanner.NextBatch(&batch));
-      size_t row_count = batch.NumRows();
+  TestWorkload w(cluster_.get());
+  w.set_write_pattern(TestWorkload::INSERT_RANDOM_ROWS);
+  w.Setup();
 
-      // Once the first batch of data has been fetched and there is some more
-      // to fetch, delete the table.
-      NO_FATALS(DeleteTable(w.table_name(), ON_ERROR_DO_NOT_DUMP_STACKS));
-
-      // Wait while the table is no longer advertised on the cluster.
-      // This ensures the table deletion request has been processed by tablet
-      // servers.
-      vector<string> tablets;
-      do {
-        SleepFor(MonoDelta::FromMilliseconds(250));
-        tablets = inspect_->ListTablets();
-      } while (!tablets.empty());
-
-      // Make sure the scanner can continue and fetch the rest of rows.
-      ASSERT_TRUE(scanner.HasMoreRows());
-      while (scanner.HasMoreRows()) {
-        KuduScanBatch batch;
-        const Status s = scanner.NextBatch(&batch);
-        ASSERT_TRUE(s.ok()) << s.ToString();
-        row_count += batch.NumRows();
-      }
-
-      // Verify the total row count. The exact count must be there in case of
-      // READ_AT_SNAPSHOT mode regardless of replica selection or if reading
-      // from a leader tablet in any scan mode. In the case of the READ_LATEST
-      // mode the data might be fetched from a lagging replica and the scan
-      // row count might be less than the inserted row count.
-      if (mode == KuduScanner::READ_AT_SNAPSHOT ||
-          sel == KuduClient::LEADER_ONLY) {
-        EXPECT_EQ(ref_row_count, row_count);
-      }
-
-      // Close the scanner to make sure it does not hold any references on the
-      // data about to be deleted by the hosting tablet server.
-      scanner.Close();
-
-      // Make sure the table has been deleted.
-      EXPECT_OK(inspect_->WaitForNoData());
-      NO_FATALS(cluster_->AssertNoCrashes());
-      // Tear down the cluster -- prepare for the next iteration of the loop.
-      NO_FATALS(StopCluster());
-    }
+  // Start the workload, and wait to see some rows actually inserted.
+  w.Start();
+  while (w.rows_inserted() < rows_to_insert) {
+    SleepFor(MonoDelta::FromMilliseconds(50));
   }
+  w.StopAndJoin();
+  const int64_t ref_row_count = w.rows_inserted();
+
+  using kudu::client::sp::shared_ptr;
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(w.table_name(), &table));
+  KuduScanner scanner(table.get());
+  ASSERT_OK(scanner.SetReadMode(mode));
+  ASSERT_OK(scanner.SetSelection(sel));
+  // Setup batch size to be small enough to guarantee the scan
+  // will not fetch all the data at once.
+  ASSERT_OK(scanner.SetBatchSizeBytes(1));
+  ASSERT_OK(scanner.Open());
+  ASSERT_TRUE(scanner.HasMoreRows());
+  KuduScanBatch batch;
+  ASSERT_OK(scanner.NextBatch(&batch));
+  size_t row_count = batch.NumRows();
+
+  // Once the first batch of data has been fetched and there is some more
+  // to fetch, delete the table.
+  NO_FATALS(DeleteTable(w.table_name(), ON_ERROR_DO_NOT_DUMP_STACKS));
+
+  // Wait while the table is no longer advertised on the cluster.
+  // This ensures the table deletion request has been processed by tablet
+  // servers.
+  vector<string> tablets;
+  do {
+    SleepFor(MonoDelta::FromMilliseconds(250));
+    tablets = inspect_->ListTablets();
+  } while (!tablets.empty());
+
+  // Make sure the scanner can continue and fetch the rest of rows.
+  ASSERT_TRUE(scanner.HasMoreRows());
+  while (scanner.HasMoreRows()) {
+    KuduScanBatch batch;
+    const Status s = scanner.NextBatch(&batch);
+    ASSERT_TRUE(s.ok()) << s.ToString();
+    row_count += batch.NumRows();
+  }
+
+  // Verify the total row count. The exact count must be there in case of
+  // READ_AT_SNAPSHOT mode regardless of replica selection or if reading
+  // from a leader tablet in any scan mode. In the case of the READ_LATEST
+  // mode the data might be fetched from a lagging replica and the scan
+  // row count might be less than the inserted row count.
+  if (mode == KuduScanner::READ_AT_SNAPSHOT ||
+      sel == KuduClient::LEADER_ONLY) {
+    EXPECT_EQ(ref_row_count, row_count);
+  }
+
+  // Close the scanner to make sure it does not hold any references on the
+  // data about to be deleted by the hosting tablet server.
+  scanner.Close();
+
+  // Make sure the table has been deleted.
+  EXPECT_OK(inspect_->WaitForNoData());
+  NO_FATALS(cluster_->AssertNoCrashes());
+  NO_FATALS(StopCluster());
 }
+
+const KuduScanner::ReadMode read_modes[] = {
+  KuduScanner::READ_LATEST,
+  KuduScanner::READ_AT_SNAPSHOT,
+};
+const KuduClient::ReplicaSelection replica_selectors[] = {
+  KuduClient::LEADER_ONLY,
+  KuduClient::CLOSEST_REPLICA,
+  KuduClient::FIRST_REPLICA,
+};
+INSTANTIATE_TEST_CASE_P(
+    Params, DeleteTableWhileScanInProgressParamTest,
+    ::testing::Combine(::testing::ValuesIn(read_modes),
+                       ::testing::ValuesIn(replica_selectors)));
 
 } // namespace kudu
