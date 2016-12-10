@@ -33,6 +33,8 @@
 #include "kudu/util/random.h"
 #include "kudu/util/spinlock_profiling.h"
 
+DECLARE_bool(never_fsync);
+
 DEFINE_string(test_leave_files, "on_failure",
               "Whether to leave test files around after the test run. "
               " Valid values are 'always', 'on_failure', or 'never'");
@@ -64,6 +66,9 @@ bool g_is_gtest = true;
 KuduTest::KuduTest()
   : env_(Env::Default()),
     test_dir_(GetTestDataDirectory()) {
+  // Disabling fsync() speeds up tests dramatically, and it's safe to do as no
+  // tests rely on cutting power to a machine or equivalent.
+  FLAGS_never_fsync = true;
 }
 
 KuduTest::~KuduTest() {

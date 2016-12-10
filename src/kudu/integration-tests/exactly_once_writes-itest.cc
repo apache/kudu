@@ -283,7 +283,6 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithChurnyEl
 #endif
   ts_flags.push_back("--leader_failure_monitor_check_mean_ms=2");
   ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=1");
-  ts_flags.push_back("--never_fsync");
 
   int num_batches = 200;
   if (AllowSlowTests()) {

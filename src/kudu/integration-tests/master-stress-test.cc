@@ -92,12 +92,6 @@ class MasterStressTest : public KuduTest {
     opts.num_masters = opts.master_rpc_ports.size();
     opts.num_tablet_servers = 3;
 
-    // Because this test performs a lot of DDL operations, we end up flushing
-    // and rewriting metadata files quite a bit. Globally disabling fsync
-    // speeds the test runtime up dramatically.
-    opts.extra_master_flags.push_back("--never_fsync");
-    opts.extra_tserver_flags.push_back("--never_fsync");
-
     // Don't preallocate log segments, since we're creating many tablets here.
     // If each preallocates 64M or so, we use a ton of disk space in this
     // test, and it fails on normal sized /tmp dirs.

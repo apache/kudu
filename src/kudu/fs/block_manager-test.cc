@@ -48,8 +48,6 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
-DECLARE_bool(never_fsync);
-
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
 
@@ -1153,9 +1151,6 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
   const int kNumAppends = 4;
   const string kTestData = "asdf";
 
-  // Speed up the test.
-  FLAGS_never_fsync = true;
-
   // Since we're appending so little data, reconfigure these to ensure quite a
   // few containers and a good amount of preallocating.
   FLAGS_log_container_max_size = 256 * 1024;
@@ -1269,9 +1264,6 @@ TEST_F(LogBlockManagerTest, TestContainerWithManyHoles) {
 
   ASSERT_GE(kNumBlocks, last_interior_node_block_number);
 
-  // Speed up the test.
-  FLAGS_never_fsync = true;
-
   // Create a bunch of blocks. They should all go in one container (unless
   // the container becomes full).
   LOG(INFO) << Substitute("Creating $0 blocks", kNumBlocks);
@@ -1344,9 +1336,6 @@ TEST_F(LogBlockManagerTest, TestContainerBlockLimiting) {
   RETURN_NOT_LOG_BLOCK_MANAGER();
 
   const int kNumBlocks = 1000;
-
-  // Speed up the test.
-  FLAGS_never_fsync = true;
 
   // Creates 'kNumBlocks' blocks with minimal data.
   auto create_some_blocks = [&]() -> Status {

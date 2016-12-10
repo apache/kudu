@@ -63,8 +63,6 @@
     CHECK(_s.ok()) << "Bad status: " << _s.ToString();                    \
   } while (0);
 
-DECLARE_bool(never_fsync);
-
 // This default value is friendly to many n-CPU configurations.
 DEFINE_int32(test_max_open_files, 192, "Maximum number of open files enforced "
              "by the cache. Should be a multiple of the number of CPUs on the "
@@ -96,10 +94,6 @@ class FileCacheStressTest : public KuduTest {
                scoped_refptr<MetricEntity>()),
         rand_(SeedRandom()),
         running_(1) {
-
-    // Increases total number of files manipulated, which is the right kind
-    // of stress for this test.
-    FLAGS_never_fsync = true;
   }
 
   void SetUp() override {

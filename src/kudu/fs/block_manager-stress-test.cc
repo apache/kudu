@@ -37,7 +37,6 @@
 DECLARE_int64(block_manager_max_open_files);
 DECLARE_uint64(log_container_max_size);
 DECLARE_uint64(log_container_preallocate_bytes);
-DECLARE_bool(never_fsync);
 
 DEFINE_int32(test_duration_secs, 2, "Number of seconds to run the test");
 DEFINE_int32(num_writer_threads, 4, "Number of writer threads to run");
@@ -90,10 +89,6 @@ class BlockManagerStressTest : public KuduTest {
     total_blocks_read_(0),
     total_bytes_read_(0),
     total_blocks_deleted_(0) {
-
-    // Increases total number of blocks manipulated, which is the right kind
-    // of stress for this test.
-    FLAGS_never_fsync = true;
 
     // Increase the number of containers created.
     FLAGS_log_container_max_size = 1 * 1024 * 1024;

@@ -48,7 +48,6 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(max_clock_sync_error_usec);
 DECLARE_int32(scanner_gc_check_interval_us);
@@ -79,8 +78,6 @@ class ConsistencyITest : public MiniClusterITestBase {
         table_name_("timestamp_propagation_test_table"),
         key_column_name_("key"),
         key_split_value_(8) {
-    // Keep unit tests fast.
-    FLAGS_enable_data_block_fsync = false;
 
     // Using the mock clock: need to advance the clock for tablet servers.
     FLAGS_use_mock_wall_clock = true;

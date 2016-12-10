@@ -45,8 +45,6 @@ TEST_F(KuduTest, TestWebUIDoesNotCrashCluster) {
   const int kNumTablets = 50;
 
   ExternalMiniClusterOptions opts;
-  opts.extra_master_flags.push_back("--never_fsync");
-  opts.extra_tserver_flags.push_back("--never_fsync");
   ExternalMiniCluster cluster(opts);
   ASSERT_OK(cluster.Start());
 

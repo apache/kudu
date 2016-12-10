@@ -960,7 +960,6 @@ void RaftConsensusITest::CreateClusterForChurnyElectionsTests(
 #endif
   ts_flags.push_back("--leader_failure_monitor_check_mean_ms=1");
   ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=1");
-  ts_flags.push_back("--never_fsync");
 
   ts_flags.insert(ts_flags.end(), extra_ts_flags.cbegin(), extra_ts_flags.cend());
 

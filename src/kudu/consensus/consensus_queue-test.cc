@@ -34,7 +34,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(consensus_max_batch_size_bytes);
 
 METRIC_DECLARE_entity(tablet);
@@ -52,7 +51,6 @@ class ConsensusQueueTest : public KuduTest {
       : schema_(GetSimpleTestSchema()),
         metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "queue-test")),
         registry_(new log::LogAnchorRegistry) {
-    FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 
   virtual void SetUp() OVERRIDE {

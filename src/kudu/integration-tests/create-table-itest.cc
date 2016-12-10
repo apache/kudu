@@ -127,10 +127,7 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
 TEST_F(CreateTableITest, TestSpreadReplicasEvenly) {
   const int kNumServers = 10;
   const int kNumTablets = 20;
-  vector<string> ts_flags;
-  vector<string> master_flags;
-  ts_flags.push_back("--never_fsync"); // run faster on slow disks
-  NO_FATALS(StartCluster(ts_flags, master_flags, kNumServers));
+  NO_FATALS(StartCluster({}, {}, kNumServers));
 
   gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
   client::KuduSchema client_schema(client::KuduSchemaFromSchema(GetSimpleTestSchema()));

@@ -81,7 +81,6 @@ void VersionMigrationTest::StartCluster(const vector<string>& extra_ts_flags,
   opts.extra_master_flags = extra_master_flags;
   opts.extra_master_flags.push_back("--undefok=unlock_experimental_flags,unlock_unsafe_flags");
   opts.extra_tserver_flags = extra_ts_flags;
-  opts.extra_tserver_flags.push_back("--never_fsync"); // fsync causes flakiness on EC2.
   opts.extra_tserver_flags.push_back("--undefok=unlock_experimental_flags,unlock_unsafe_flags");
   cluster_.reset(new ExternalMiniCluster(opts));
   verifier_.reset(new LogVerifier(cluster_.get()));

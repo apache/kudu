@@ -334,8 +334,6 @@ TEST_P(Kudu969Test, Test) {
   // concurrency bugs where a compaction and a flush might be happening
   // at the same time during the crash.
   opts.extra_tserver_flags.push_back("--maintenance_manager_num_threads=3");
-  // Speed up test by not fsyncing.
-  opts.extra_tserver_flags.push_back("--never_fsync");
   cluster_.reset(new ExternalMiniCluster(opts));
   ASSERT_OK(cluster_->Start());
 

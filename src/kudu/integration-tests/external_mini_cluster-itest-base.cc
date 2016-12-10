@@ -45,8 +45,6 @@ void ExternalMiniClusterITestBase::StartCluster(
   opts.num_tablet_servers = num_tablet_servers;
   opts.extra_master_flags = extra_master_flags;
   opts.extra_tserver_flags = extra_ts_flags;
-  // fsync causes flakiness on EC2.
-  opts.extra_tserver_flags.push_back("--never_fsync");
   cluster_.reset(new ExternalMiniCluster(opts));
   ASSERT_OK(cluster_->Start());
   inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));

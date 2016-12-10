@@ -624,6 +624,10 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Then all the flags coming from the minicluster framework.
   argv.insert(argv.end(), user_flags.begin(), user_flags.end());
 
+  // Disable fsync to dramatically speed up runtime. This is safe as no tests
+  // rely on forcefully cutting power to a machine or equivalent.
+  argv.push_back("--never_fsync");
+
   // Enable metrics logging.
   argv.push_back("--metrics_log_interval_ms=1000");
 
@@ -642,11 +646,6 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
     argv.push_back("--log_dir=" + data_dir_);
   }
 
-  // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
-  // options struct). These come at the end so they can override things like
-  // web port or RPC bind address if necessary.
-  argv.insert(argv.end(), extra_flags_.begin(), extra_flags_.end());
-
   // Tell the server to dump its port information so we can pick it up.
   string info_path = JoinPathSegments(data_dir_, "info.pb");
   argv.push_back("--server_dump_info_path=" + info_path);
@@ -656,14 +655,19 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // in unit tests.
   argv.push_back("--rpc_server_allow_ephemeral_ports");
 
-  // A previous instance of the daemon may have run in the same directory. So, remove
-  // the previous info file if it's there.
-  ignore_result(Env::Default()->DeleteFile(info_path));
-
   // Allow unsafe and experimental flags from tests, since we often use
   // fault injection, etc.
   argv.push_back("--unlock_experimental_flags");
   argv.push_back("--unlock_unsafe_flags");
+
+  // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
+  // options struct). These come at the end so they can override things like
+  // web port or RPC bind address if necessary.
+  argv.insert(argv.end(), extra_flags_.begin(), extra_flags_.end());
+
+  // A previous instance of the daemon may have run in the same directory. So, remove
+  // the previous info file if it's there.
+  ignore_result(Env::Default()->DeleteFile(info_path));
 
   gscoped_ptr<Subprocess> p(new Subprocess(exe_, argv));
   p->ShareParentStdout(false);

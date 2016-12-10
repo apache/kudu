@@ -25,6 +25,8 @@
 #include "kudu/util/logging_test_util.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(never_fsync);
+
 DEFINE_int32(flag_with_no_tags, 0, "test flag that has no tags");
 
 DEFINE_int32(flag_with_one_tag, 0, "test flag that has 1 tag");
@@ -46,6 +48,12 @@ using std::unordered_set;
 namespace kudu {
 
 class FlagTagsTest : public KuduTest {
+ public:
+  FlagTagsTest() {
+    // Set to true via KuduTest, but explicitly unset here as this test deals
+    // with unsafe flags.
+    FLAGS_never_fsync = false;
+  }
 };
 
 TEST_F(FlagTagsTest, TestTags) {

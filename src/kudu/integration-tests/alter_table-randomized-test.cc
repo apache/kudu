@@ -69,10 +69,6 @@ class AlterTableRandomized : public KuduTest {
 
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = 3;
-    // Because this test performs a lot of alter tables, we end up flushing
-    // and rewriting metadata files quite a bit. Globally disabling fsync
-    // speeds the test runtime up dramatically.
-    opts.extra_tserver_flags.push_back("--never_fsync");
     // This test produces tables with lots of columns. With container preallocation,
     // we end up using quite a bit of disk space. So, we disable it.
     opts.extra_tserver_flags.push_back("--log_container_preallocate_bytes=0");

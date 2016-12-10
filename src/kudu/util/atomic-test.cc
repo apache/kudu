@@ -17,9 +17,12 @@
 
 #include "kudu/util/atomic.h"
 
-#include <gtest/gtest.h>
 #include <limits>
 #include <vector>
+
+#include <gtest/gtest.h>
+
+#include "kudu/util/test_util.h"
 
 namespace kudu {
 
@@ -32,7 +35,7 @@ using std::vector;
 // invariants are preserved in a multi-threaded environment.
 
 template<typename T>
-class AtomicIntTest : public ::testing::Test {
+class AtomicIntTest : public KuduTest {
  public:
 
   AtomicIntTest()

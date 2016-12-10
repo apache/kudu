@@ -33,12 +33,17 @@ DEFINE_string(test_default_ff, "default",
              "Check if we track defaults from flagfile");
 DEFINE_string(test_default_explicit, "default",
              "Check if we track explicitly set defaults");
-DECLARE_string(flagfile);
-
+DECLARE_bool(never_fsync);
 
 namespace kudu {
 
 class FlagsTest : public KuduTest {
+ public:
+  FlagsTest() {
+    // Set to true via KuduTest, but explicitly unset here as this test parses
+    // command line flags and fails if an unsafe flag is set.
+    FLAGS_never_fsync = false;
+  }
 };
 
 TEST_F(FlagsTest, TestNonDefaultFlags) {

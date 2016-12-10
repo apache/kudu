@@ -34,7 +34,6 @@ DEFINE_int32(first_row_to_update, 10000, "the first row to update");
 DEFINE_int32(last_row_to_update, 100000, "the last row to update");
 DEFINE_int32(n_verify, 1, "number of times to verify the updates"
              "(useful for benchmarks");
-DECLARE_bool(never_fsync);
 
 using std::is_sorted;
 using std::shared_ptr;
@@ -52,8 +51,6 @@ class TestDeltaFile : public KuduTest {
   TestDeltaFile() :
     schema_(CreateSchema()),
     arena_(1024, 1024) {
-    // Speed up unit tests.
-    FLAGS_never_fsync = true;
   }
 
  public:

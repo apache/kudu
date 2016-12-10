@@ -18,7 +18,6 @@
 #define KUDU_TABLET_TABLET_TEST_UTIL_H
 
 #include <algorithm>
-#include <gflags/gflags.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -33,8 +32,6 @@
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
-
-DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
 namespace tablet {
@@ -51,10 +48,6 @@ class KuduTabletTest : public KuduTest {
     : schema_(schema.CopyWithColumnIds()),
       client_schema_(schema),
       clock_type_(clock_type) {
-    // Keep unit tests fast, but only if no one has set the flag explicitly.
-    if (google::GetCommandLineFlagInfoOrDie("enable_data_block_fsync").is_default) {
-      FLAGS_enable_data_block_fsync = false;
-    }
   }
 
   virtual void SetUp() OVERRIDE {

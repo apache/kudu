@@ -69,7 +69,6 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
-DECLARE_bool(enable_data_block_fsync);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(log_inject_latency);
 DECLARE_bool(allow_unsafe_replication_factor);
@@ -129,8 +128,6 @@ class ClientTest : public KuduTest {
     b.AddColumn("non_null_with_default")->Type(KuduColumnSchema::INT32)->NotNull()
       ->Default(KuduValue::FromInt(12345));
     CHECK_OK(b.Build(&schema_));
-
-    FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 
   void SetUp() override {

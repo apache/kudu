@@ -854,8 +854,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 void ToolTest::RunLoadgen(int num_tservers,
                           const vector<string>& tool_args,
                           const string& table_name) {
-  // fsync causes flakiness on EC2
-  NO_FATALS(StartExternalMiniCluster({}, {"--never_fsync"}, num_tservers));
+  NO_FATALS(StartExternalMiniCluster({}, {}, num_tservers));
   if (!table_name.empty()) {
     static const string kKeyColumnName = "key";
     static const Schema kSchema = Schema(

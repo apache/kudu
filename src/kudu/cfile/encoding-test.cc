@@ -37,26 +37,26 @@
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
-#include "kudu/util/test_macros.h"
-#include <kudu/util/test_util.h>
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 using std::unique_ptr;
 using std::vector;
 
-namespace kudu { namespace cfile {
+namespace kudu {
 
-extern void DumpSSETable();
+namespace cfile {
 
-class TestEncoding : public ::testing::Test {
+class TestEncoding : public KuduTest {
  public:
   TestEncoding()
-    : ::testing::Test(),
-      arena_(1024, 1024*1024) {
+    : arena_(1024, 1024*1024) {
   }
 
  protected:
   virtual void SetUp() OVERRIDE {
+    KuduTest::SetUp();
     arena_.Reset();
   }
 

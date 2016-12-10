@@ -57,9 +57,7 @@
 
 DEFINE_int32(rpc_timeout, 1000, "Timeout for RPC calls, in seconds");
 DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
-DECLARE_bool(log_force_fsync_all);
 DECLARE_bool(enable_maintenance_manager);
-DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_rpc_timeout_ms);
 
 METRIC_DEFINE_entity(test);
@@ -85,11 +83,6 @@ class TabletServerTestBase : public KuduTest {
     // the hearbeat timeout to 1 second speeds up unit tests which
     // purposefully specify non-running Master servers.
     FLAGS_heartbeat_rpc_timeout_ms = 1000;
-
-    // Keep unit tests fast, but only if no one has set the flag explicitly.
-    if (google::GetCommandLineFlagInfoOrDie("enable_data_block_fsync").is_default) {
-      FLAGS_enable_data_block_fsync = false;
-    }
   }
 
   // Starts the tablet server, override to start it later.
