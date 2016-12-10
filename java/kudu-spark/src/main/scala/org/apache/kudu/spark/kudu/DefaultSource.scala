@@ -20,12 +20,10 @@ package org.apache.kudu.spark.kudu
 import java.sql.Timestamp
 
 import scala.collection.JavaConverters._
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SQLContext, SaveMode}
-
 import org.apache.kudu.Type
 import org.apache.kudu.annotations.InterfaceStability
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
@@ -171,8 +169,29 @@ with InsertableRelation {
         Array(comparisonPredicate(column, ComparisonOp.LESS_EQUAL, value))
       case In(column, values) =>
         Array(inListPredicate(column, values))
+      case StringStartsWith(column, prefix) =>
+        prefixInfimum(prefix) match {
+          case None => Array(comparisonPredicate(column, ComparisonOp.GREATER_EQUAL, prefix))
+          case Some(inf) =>
+            Array(comparisonPredicate(column, ComparisonOp.GREATER_EQUAL, prefix),
+                  comparisonPredicate(column, ComparisonOp.LESS, inf))
+        }
       case And(left, right) => filterToPredicate(left) ++ filterToPredicate(right)
       case _ => Array()
+    }
+  }
+
+  /**
+    * Returns the smallest string s such that, if p is a prefix of t,
+    * then t < s, if one exists.
+    *
+    * @param p the prefix
+    * @return Some(the prefix infimum), or None if none exists.
+    */
+  private def prefixInfimum(p: String): Option[String] = {
+    p.reverse.dropWhile(_ == Char.MaxValue).reverse match {
+      case "" => None
+      case q => Some(q.slice(0, q.length - 1) + (q(q.length - 1) + 1).toChar)
     }
   }
 
@@ -261,7 +280,8 @@ private[spark] object KuduRelation {
        | GreaterThanOrEqual(_, _)
        | LessThan(_, _)
        | LessThanOrEqual(_, _)
-       | In(_, _) => true
+       | In(_, _)
+       | StringStartsWith(_, _) => true
     case And(left, right) => supportsFilter(left) && supportsFilter(right)
     case _ => false
   }

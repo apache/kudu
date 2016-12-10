@@ -24,6 +24,7 @@ import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
 
+import com.google.common.collect.ImmutableList
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions._
 import org.junit.Assert._
@@ -31,6 +32,8 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfter, FunSuite}
 
+import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
+import org.apache.kudu.{Schema, Type}
 import org.apache.kudu.client.CreateTableOptions;
 
 @RunWith(classOf[JUnitRunner])
@@ -330,6 +333,47 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
     assert(results.get(0).getString(1).equals("2"))
   }
 
+  test("Test SparkSQL StringStartsWith filters") {
+    // This test requires a special table.
+    val testTableName = "startswith"
+    val schema = new Schema(ImmutableList.of(
+      new ColumnSchemaBuilder("key", Type.STRING).key(true).build()))
+    val tableOptions = new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
+      .setNumReplicas(1)
+    val testTable = kuduClient.createTable(testTableName, schema, tableOptions)
+
+    val kuduSession = kuduClient.newSession()
+    val chars = List('a', 'b', '乕', Char.MaxValue, '\0')
+    val keys = for (x <- chars; y <- chars; z <- chars; w <- chars) yield Array(x, y, z, w).mkString
+    keys.foreach { key =>
+      val insert = testTable.newInsert
+      val row = insert.getRow
+      val r = Array(1, 2, 3)
+      row.addString(0, key)
+      kuduSession.apply(insert)
+    }
+    val options: Map[String, String] = Map(
+      "kudu.table" -> testTableName,
+      "kudu.master" -> miniCluster.getMasterAddresses)
+    sqlContext.read.options(options).kudu.registerTempTable(testTableName)
+
+    val checkPrefixCount = { prefix: String =>
+      val results = sqlContext.sql(s"SELECT key FROM $testTableName WHERE key LIKE '$prefix%'")
+      assertEquals(keys.count(k => k.startsWith(prefix)), results.count())
+    }
+    // empty string
+    checkPrefixCount("")
+    // one character
+    for (x <- chars) {
+      checkPrefixCount(Array(x).mkString)
+    }
+    // all two character combos
+    for (x <- chars; y <- chars) {
+      checkPrefixCount(Array(x, y).mkString)
+    }
+  }
+
+
   test("Test SQL: insert into") {
     val insertTable = "insertintotest"
 
@@ -365,10 +409,11 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
 
     try {
       sqlContext.sql(s"INSERT OVERWRITE TABLE $insertTable SELECT * FROM $tableName")
-      fail()
+      fail("insert overwrite should throw UnsupportedOperationException")
     } catch {
       case _: UnsupportedOperationException => // good
-      case NonFatal(_) => fail()
+      case NonFatal(_) =>
+        fail("insert overwrite should throw UnsupportedOperationException")
     }
   }
 
