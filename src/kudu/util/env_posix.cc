@@ -432,13 +432,14 @@ class PosixWritableFile : public WritableFile {
 #if defined(__linux__)
     int flags = SYNC_FILE_RANGE_WRITE;
     if (mode == FLUSH_SYNC) {
+      flags |= SYNC_FILE_RANGE_WAIT_BEFORE;
       flags |= SYNC_FILE_RANGE_WAIT_AFTER;
     }
     if (sync_file_range(fd_, 0, 0, flags) < 0) {
       return IOError(filename_, errno);
     }
 #else
-    if (fsync(fd_) < 0) {
+    if (mode == Env::FLUSH_SYNC && fsync(fd_) < 0) {
       return IOError(filename_, errno);
     }
 #endif
@@ -657,7 +658,7 @@ class PosixRWFile : public RWFile {
       return IOError(filename_, errno);
     }
 #else
-    if (fsync(fd_) < 0) {
+    if (mode == Env::FLUSH_SYNC && fsync(fd_) < 0) {
       return IOError(filename_, errno);
     }
 #endif
