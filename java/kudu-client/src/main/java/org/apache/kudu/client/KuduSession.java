@@ -45,24 +45,35 @@ public class KuduSession implements SessionConfiguration {
   }
 
   /**
-   * Blocking call with a different behavior based on the flush mode. PleaseThrottleException is
-   * managed by this method and will not be thrown, unlike {@link AsyncKuduSession#apply}.
+   * Apply a given {@link Operation} to Kudu as part of this session.
+   *
    * <p>
+   * This is a blocking call that has different behavior based on the configured flush mode:
+   *
    * <ul>
-   * <li>AUTO_FLUSH_SYNC: the call returns when the operation is persisted,
-   * else it throws an exception.
-   * <li>AUTO_FLUSH_BACKGROUND: the call returns when the operation has been added to the buffer.
+   * <li>{@link SessionConfiguration.FlushMode#AUTO_FLUSH_SYNC AUTO_FLUSH_SYNC}:
+   * the call returns when the operation is persisted, else it throws an exception.
+   *
+   * <li>{@link SessionConfiguration.FlushMode#AUTO_FLUSH_BACKGROUND AUTO_FLUSH_BACKGROUND}:
+   * the call returns when the operation has been added to the buffer.
    * This call should normally perform only fast in-memory operations but
    * it may have to wait when the buffer is full and there's another buffer being flushed. Row
    * errors can be checked by calling {@link #countPendingErrors()} and can be retrieved by calling
    * {@link #getPendingErrors()}.
-   * <li>MANUAL_FLUSH: the call returns when the operation has been added to the buffer,
-   * else it throws a KuduException if the buffer is full.
+   *
+   * <li>{@link SessionConfiguration.FlushMode#MANUAL_FLUSH MANUAL_FLUSH}:
+   * the call returns when the operation has been added to the buffer, else it throws a
+   * {@link KuduException} if the buffer is full.
    * </ul>
+   *
+   * <p>
+   * Note: {@link PleaseThrottleException} is handled by this method and will not be thrown, unlike
+   * with {@link AsyncKuduSession#apply AsyncKuduSession.apply()}.
    *
    * @param operation operation to apply
    * @return an OperationResponse for the applied Operation
    * @throws KuduException if anything went wrong
+   * @see SessionConfiguration.FlushMode FlushMode
    */
   public OperationResponse apply(Operation operation) throws KuduException {
     while (true) {

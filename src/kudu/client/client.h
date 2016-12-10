@@ -1222,6 +1222,14 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
     /// the current batch is sent and the reclaimed space is available
     /// for new operations.
     ///
+    /// @attention The @c AUTO_FLUSH_BACKGROUND mode, when used in conjunction
+    ///   with a KuduSession::SetMutationBufferMaxNum() of greater than 1
+    ///   (the default is 2), may result in out-of-order writes. This
+    ///   is because the buffers may flush concurrently, so multiple write
+    ///   operations may be sent to the server in parallel.
+    ///   See [KUDU-1767](https://issues.apache.org/jira/browse/KUDU-1767) for
+    ///   more information.
+    ///
     /// @todo Provide an API for the user to specify a callback to do their own
     ///   error reporting.
     AUTO_FLUSH_BACKGROUND,
@@ -1229,6 +1237,15 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
     /// Apply() calls will return immediately, and the writes will not be
     /// sent until the user calls Flush(). If the buffer runs past the
     /// configured space limit, then Apply() will return an error.
+    ///
+    /// @attention The @c MANUAL_FLUSH mode, when used in conjunction
+    ///   with a KuduSession::SetMutationBufferMaxNum() of greater than 1
+    ///   (the default is 2), may result in out-of-order writes if
+    ///   KuduSession::FlushAsync() is used. This is because the buffers may
+    ///   flush concurrently, so multiple write operations may be sent to the
+    ///   server in parallel.
+    ///   See [KUDU-1767](https://issues.apache.org/jira/browse/KUDU-1767) for
+    ///   more information.
     MANUAL_FLUSH
   };
 

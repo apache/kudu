@@ -31,33 +31,50 @@ public interface SessionConfiguration {
   @InterfaceAudience.Public
   @InterfaceStability.Evolving
   enum FlushMode {
-    // Every write will be sent to the server in-band with the Apply()
-    // call. No batching will occur. This is the default flush mode. In this
-    // mode, the Flush() call never has any effect, since each Apply() call
-    // has already flushed the buffer.
+    /**
+     * Each {@link KuduSession#apply KuduSession.apply()} call will return only after being
+     * flushed to the server automatically. No batching will occur.
+     *
+     * <p>In this mode, the {@link KuduSession#flush} call never has any effect, since each
+     * {@link KuduSession#apply KuduSession.apply()} has already flushed the buffer before
+     * returning.
+     *
+     * <p><strong>This is the default flush mode.</strong>
+     */
     AUTO_FLUSH_SYNC,
 
-    // Apply() calls will return immediately, but the writes will be sent in
-    // the background, potentially batched together with other writes from
-    // the same session. If there is not sufficient buffer space, then Apply()
-    // may block for buffer space to be available.
-    //
-    // Because writes are applied in the background, any errors will be stored
-    // in a session-local buffer. Call CountPendingErrors() or GetPendingErrors()
-    // to retrieve them.
-    //
-    // The Flush() call can be used to block until the buffer is empty.
+    /**
+     * {@link KuduSession#apply KuduSession.apply()} calls will return immediately, but the writes
+     * will be sent in the background, potentially batched together with other writes from
+     * the same session. If there is not sufficient buffer space, then
+     * {@link KuduSession#apply KuduSession.apply()} may block for buffer space to be available.
+     *
+     * <p>Because writes are applied in the background, any errors will be stored
+     * in a session-local buffer. Call {@link #countPendingErrors() countPendingErrors()} or
+     * {@link #getPendingErrors() getPendingErrors()} to retrieve them.
+     *
+     * <p><strong>Note:</strong> The {@code AUTO_FLUSH_BACKGROUND} mode may result in
+     * out-of-order writes to Kudu. This is because in this mode multiple write
+     * operations may be sent to the server in parallel.
+     * See <a href="https://issues.apache.org/jira/browse/KUDU-1767">KUDU-1767</a> for more
+     * information.
+     *
+     * <p>The {@link KuduSession#flush()} call can be used to block until the buffer is empty.
+     */
     AUTO_FLUSH_BACKGROUND,
 
-    // Apply() calls will return immediately, and the writes will not be
-    // sent until the user calls Flush(). If the buffer runs past the
-    // configured space limit, then Apply() will return an error.
+    /**
+     * {@link KuduSession#apply KuduSession.apply()} calls will return immediately, but the writes
+     * will not be sent until the user calls {@link KuduSession#flush()}. If the buffer runs past
+     * the configured space limit, then {@link KuduSession#apply KuduSession.apply()} will return
+     * an error.
+     */
     MANUAL_FLUSH
   }
 
   /**
    * Get the current flush mode.
-   * @return flush mode, AUTO_FLUSH_SYNC by default
+   * @return flush mode, {@link FlushMode#AUTO_FLUSH_SYNC AUTO_FLUSH_SYNC} by default
    */
   FlushMode getFlushMode();
 
@@ -137,14 +154,15 @@ public interface SessionConfiguration {
    * This can be needed when facing KUDU-568. The effect of enabling this is that operation
    * responses that match this pattern will be cleared of their row errors, meaning that we consider
    * them successful.
-   * This is disabled by default.
+   *
+   * <p>Disabled by default.
    * @param ignoreAllDuplicateRows true if this session should enforce this, else false
    */
   void setIgnoreAllDuplicateRows(boolean ignoreAllDuplicateRows);
 
   /**
    * Return the number of errors which are pending. Errors may accumulate when
-   * using the AUTO_FLUSH_BACKGROUND mode.
+   * using {@link FlushMode#AUTO_FLUSH_BACKGROUND AUTO_FLUSH_BACKGROUND} mode.
    * @return a count of errors
    */
   int countPendingErrors();
@@ -152,7 +170,8 @@ public interface SessionConfiguration {
   /**
    * Return any errors from previous calls. If there were more errors
    * than could be held in the session's error storage, the overflow state is set to true.
-   * Resets the pending errors.
+   *
+   * <p>Clears the pending errors.
    * @return an object that contains the errors and the overflow status
    */
   RowErrorsAndOverflowStatus getPendingErrors();
