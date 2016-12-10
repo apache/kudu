@@ -95,10 +95,11 @@
 } while ((nread) == 0 && ferror(stream) == EINTR)
 
 // See KUDU-588 for details.
-DEFINE_bool(writable_file_use_fsync, false,
+DEFINE_bool(env_use_fsync, false,
             "Use fsync(2) instead of fdatasync(2) for synchronizing dirty "
             "data to disk.");
-TAG_FLAG(writable_file_use_fsync, advanced);
+TAG_FLAG(env_use_fsync, advanced);
+TAG_FLAG(env_use_fsync, evolving);
 
 DEFINE_bool(suicide_on_eio, true,
             "Kill the process if an I/O operation results in EIO");
@@ -207,7 +208,7 @@ static Status IOError(const std::string& context, int err_number) {
 static Status DoSync(int fd, const string& filename) {
   ThreadRestrictions::AssertIOAllowed();
   if (FLAGS_never_fsync) return Status::OK();
-  if (FLAGS_writable_file_use_fsync) {
+  if (FLAGS_env_use_fsync) {
     TRACE_COUNTER_SCOPE_LATENCY_US("fsync_us");
     TRACE_COUNTER_INCREMENT("fsync", 1);
     if (fsync(fd) < 0) {
