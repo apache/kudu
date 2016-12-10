@@ -936,7 +936,7 @@ operations will become available in future betas.
 The following are known bugs and issues with the current release of Kudu. They will
 be addressed in later beta releases.
 
-* If the Kudu master is configured with the `-log_fsync_all` option, tablet servers
+* If the Kudu master is configured with the `-log_force_fsync_all` option, tablet servers
 and clients will experience frequent timeouts, and the cluster may become unusable.
 
 * If a tablet server has a very large number of tablets, it may take several minutes
