@@ -122,7 +122,7 @@ def rev_list(arg):
 
 def describe_commit(rev):
   """ Return a one-line description of a commit. """
-  return subprocess.check_output(
+  return check_output(
       ['git', 'log', '--color', '-n1', '--oneline', rev]).strip()
 
 
