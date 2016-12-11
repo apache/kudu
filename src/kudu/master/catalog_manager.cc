@@ -3824,17 +3824,17 @@ std::string TableInfo::ToString() const {
 }
 
 bool TableInfo::RemoveTablet(const std::string& partition_key_start) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard<rw_spinlock> l(lock_);
   return EraseKeyReturnValuePtr(&tablet_map_, partition_key_start) != nullptr;
 }
 
 void TableInfo::AddTablet(TabletInfo *tablet) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard<rw_spinlock> l(lock_);
   AddTabletUnlocked(tablet);
 }
 
 void TableInfo::AddTablets(const vector<TabletInfo*>& tablets) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard<rw_spinlock> l(lock_);
   for (TabletInfo *tablet : tablets) {
     AddTabletUnlocked(tablet);
   }
@@ -3842,7 +3842,7 @@ void TableInfo::AddTablets(const vector<TabletInfo*>& tablets) {
 
 void TableInfo::AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablets_to_add,
                                  const vector<scoped_refptr<TabletInfo>>& tablets_to_drop) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard<rw_spinlock> l(lock_);
   for (const auto& tablet : tablets_to_drop) {
     const auto& lower_bound = tablet->metadata().state().pb.partition().partition_key_start();
     CHECK(EraseKeyReturnValuePtr(&tablet_map_, lower_bound) != nullptr);
@@ -3866,7 +3866,7 @@ void TableInfo::AddTabletUnlocked(TabletInfo* tablet) {
 
 void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
                                   vector<scoped_refptr<TabletInfo> > *ret) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   int max_returned_locations = req->max_returned_locations();
 
   TableInfo::TabletInfoMap::const_iterator it, it_end;
@@ -3893,7 +3893,7 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
 }
 
 bool TableInfo::IsAlterInProgress(uint32_t version) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   for (const TableInfo::TabletInfoMap::value_type& e : tablet_map_) {
     if (e.second->reported_schema_version() < version) {
       VLOG(3) << "Table " << table_id_ << " ALTER in progress due to tablet "
@@ -3906,7 +3906,7 @@ bool TableInfo::IsAlterInProgress(uint32_t version) const {
 }
 
 bool TableInfo::IsCreateInProgress() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   for (const TableInfo::TabletInfoMap::value_type& e : tablet_map_) {
     TabletMetadataLock tablet_lock(e.second, TabletMetadataLock::READ);
     if (!tablet_lock.data().is_running()) {
@@ -3919,14 +3919,14 @@ bool TableInfo::IsCreateInProgress() const {
 void TableInfo::AddTask(MonitoredTask* task) {
   task->AddRef();
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard<rw_spinlock> l(lock_);
     pending_tasks_.insert(task);
   }
 }
 
 void TableInfo::RemoveTask(MonitoredTask* task) {
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard<rw_spinlock> l(lock_);
     pending_tasks_.erase(task);
   }
 
@@ -3936,7 +3936,7 @@ void TableInfo::RemoveTask(MonitoredTask* task) {
 }
 
 void TableInfo::AbortTasks() {
-  std::lock_guard<simple_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   for (MonitoredTask* task : pending_tasks_) {
     task->Abort();
   }
@@ -3946,7 +3946,7 @@ void TableInfo::WaitTasksCompletion() {
   int wait_time = 5;
   while (1) {
     {
-      std::lock_guard<simple_spinlock> l(lock_);
+      shared_lock<rw_spinlock> l(lock_);
       if (pending_tasks_.empty()) {
         break;
       }
@@ -3957,7 +3957,7 @@ void TableInfo::WaitTasksCompletion() {
 }
 
 void TableInfo::GetTaskList(std::vector<scoped_refptr<MonitoredTask> > *ret) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   for (MonitoredTask* task : pending_tasks_) {
     ret->push_back(make_scoped_refptr(task));
   }
@@ -3965,7 +3965,7 @@ void TableInfo::GetTaskList(std::vector<scoped_refptr<MonitoredTask> > *ret) {
 
 void TableInfo::GetAllTablets(vector<scoped_refptr<TabletInfo> > *ret) const {
   ret->clear();
-  std::lock_guard<simple_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_);
   for (const auto& e : tablet_map_) {
     ret->push_back(make_scoped_refptr(e.second));
   }

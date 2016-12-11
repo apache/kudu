@@ -229,13 +229,13 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
 
   // Returns a snapshot copy of the table info's tablet map.
   TabletInfoMap tablet_map() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    shared_lock<rw_spinlock> l(lock_);
     return tablet_map_;
   }
 
   // Returns the number of tablets.
   int num_tablets() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    shared_lock<rw_spinlock> l(lock_);
     return tablet_map_.size();
   }
 
@@ -252,7 +252,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   TabletInfoMap tablet_map_;
 
   // Protects tablet_map_ and pending_tasks_
-  mutable simple_spinlock lock_;
+  mutable rw_spinlock lock_;
 
   CowObject<PersistentTableInfo> metadata_;
 
