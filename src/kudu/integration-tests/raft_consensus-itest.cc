@@ -1401,10 +1401,16 @@ TEST_F(RaftConsensusITest, TestReplaceOperationStuckInPrepareQueue) {
   ASSERT_FALSE(resp.has_error()) << resp.DebugString();
 
   // Ensure we can read the data.
-  vector<string> results;
-  NO_FATALS(WaitForRowCount(replica_ts->tserver_proxy.get(), 2, &results));
-  ASSERT_EQ("(int32 key=1, int32 int_val=3, string string_val=\"term: 3 index: 4\")", results[0]);
-  ASSERT_EQ("(int32 key=2, int32 int_val=3, string string_val=\"term: 3 index: 5\")", results[1]);
+  // We need to AssertEventually here because otherwise it's possible to read the old value
+  // of row '1', if the operation is still in flight.
+  AssertEventually([&]() {
+      vector<string> results;
+      NO_FATALS(WaitForRowCount(replica_ts->tserver_proxy.get(), 2, &results));
+      ASSERT_EQ("(int32 key=1, int32 int_val=3, string string_val=\"term: 3 index: 4\")",
+                results[0]);
+      ASSERT_EQ("(int32 key=2, int32 int_val=3, string string_val=\"term: 3 index: 5\")",
+                results[1]);
+    });
 }
 
 // Regression test for KUDU-644:
