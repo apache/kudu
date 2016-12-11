@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <stdlib.h>
+
 #include <boost/optional.hpp>
 
 #include "kudu/common/wire_protocol.h"
@@ -90,7 +92,11 @@ void TabletCopyClientSessionITest::PrepareClusterForTabletCopy(
 // Regression test for KUDU-1785. Ensure that starting a tablet copy session
 // while a tablet is bootstrapping will result in a simple failure, not a crash.
 TEST_F(TabletCopyClientSessionITest, TestStartTabletCopyWhileSourceBootstrapping) {
-  const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Test only runs in slow test mode";
+    return;
+  }
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(90); // Can be very slow on TSAN.
   NO_FATALS(PrepareClusterForTabletCopy());
 
   TServerDetails* ts0 = ts_map_[cluster_->tablet_server(0)->uuid()];
@@ -119,7 +125,8 @@ TEST_F(TabletCopyClientSessionITest, TestStartTabletCopyWhileSourceBootstrapping
         Status s;
         while (true) {
           if (MonoTime::Now() > deadline) {
-            FAIL() << "Timed out waiting for bootstrap: " << s.ToString();
+            LOG(WARNING) << "Test thread timed out waiting for bootstrap: " << s.ToString();
+            return;
           }
           s = StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr, 0,
                               deadline - MonoTime::Now());
@@ -130,11 +137,11 @@ TEST_F(TabletCopyClientSessionITest, TestStartTabletCopyWhileSourceBootstrapping
           if (s.ok()) {
             break;
           }
-          SleepFor(MonoDelta::FromMilliseconds(10));
+          SleepFor(MonoDelta::FromMilliseconds(rand() % 50));
           continue;
         }
-        LOG(INFO) << "Waiting until tablet running...";
-        EXPECT_OK(WaitUntilTabletRunning(ts1, tablet_id, deadline - MonoTime::Now()));
+        // If we got here, we either successfully started a tablet copy or we
+        // observed the tablet running.
       }, &t));
       threads.push_back(t);
     }
@@ -144,7 +151,7 @@ TEST_F(TabletCopyClientSessionITest, TestStartTabletCopyWhileSourceBootstrapping
 
     // Wait for one of the threads to succeed with its tablet copy and for the
     // tablet to be running on TS 1.
-    EXPECT_OK(WaitUntilTabletRunning(ts1, tablet_id, kTimeout));
+    ASSERT_OK(WaitUntilTabletRunning(ts1, tablet_id, kTimeout));
 
     for (auto& t : threads) {
       t->Join();
