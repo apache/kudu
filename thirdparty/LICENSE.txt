@@ -637,11 +637,6 @@ source: https://github.com/gcovr/gcovr
 NOTE: optional build-time dependency
 
 --------------------------------------------------------------------------------
-thirdparty/gcc-*/: GPL version 2
-Source: https://gcc.gnu.org
-NOTE: build-time dependency, not linked or bundled.
-
---------------------------------------------------------------------------------
 thirdparty/gmock-*/: BSD 3-clause
 Source: https://github.com/google/googletest
 NOTE: build-time dependency
