@@ -439,7 +439,7 @@ class PosixWritableFile : public WritableFile {
       return IOError(filename_, errno);
     }
 #else
-    if (mode == Env::FLUSH_SYNC && fsync(fd_) < 0) {
+    if (mode == FLUSH_SYNC && fsync(fd_) < 0) {
       return IOError(filename_, errno);
     }
 #endif
@@ -658,7 +658,7 @@ class PosixRWFile : public RWFile {
       return IOError(filename_, errno);
     }
 #else
-    if (mode == Env::FLUSH_SYNC && fsync(fd_) < 0) {
+    if (mode == FLUSH_SYNC && fsync(fd_) < 0) {
       return IOError(filename_, errno);
     }
 #endif
