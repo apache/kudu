@@ -648,7 +648,9 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
     // Run the maintenance manager frequently so that we don't have to wait
     // long for GC.
     "--maintenance_manager_polling_interval_ms=100",
-    "--log_target_replay_size_mb=1"
+    "--log_target_replay_size_mb=1",
+    // We write 128KB cells in this test, so bump the limit.
+    "--max_cell_size_bytes=1000000"
   };
   BuildAndStart(extra_flags);
   TServerDetails* replica = (*tablet_replicas_.begin()).second;
@@ -787,8 +789,13 @@ void RaftConsensusITest::CauseFollowerToFallBehindLogGC(string* leader_uuid,
 //
 // This is a regression test for KUDU-775 and KUDU-562.
 TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
-  // Disable follower eviction to maintain the original intent of this test.
-  vector<string> extra_flags = { "--evict_failed_followers=false" };
+  vector<string> extra_flags = {
+    // Disable follower eviction to maintain the original intent of this test.
+    "--evict_failed_followers=false",
+    // We write 128KB cells in this test, so bump the limit.
+    "--max_cell_size_bytes=1000000"
+  };
+
   AddFlagsForLogRolls(&extra_flags); // For CauseFollowerToFallBehindLogGC().
   BuildAndStart(extra_flags);
 
@@ -2692,9 +2699,15 @@ TEST_F(RaftConsensusITest, TestHammerOneRow) {
 // Test that followers that fall behind the leader's log GC threshold are
 // evicted from the config.
 TEST_F(RaftConsensusITest, TestEvictAbandonedFollowers) {
-  vector<string> ts_flags;
+  vector<string> ts_flags = {
+    // We write 128KB cells in this test, so bump the limit.
+    "--max_cell_size_bytes=1000000"
+  };
   AddFlagsForLogRolls(&ts_flags); // For CauseFollowerToFallBehindLogGC().
-  vector<string> master_flags = { "--master_add_server_when_underreplicated=false" };
+  vector<string> master_flags = {
+    "--master_add_server_when_underreplicated=false",
+  };
+
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   MonoDelta timeout = MonoDelta::FromSeconds(30);
@@ -2716,9 +2729,12 @@ TEST_F(RaftConsensusITest, TestEvictAbandonedFollowers) {
 // Test that, after followers are evicted from the config, the master re-adds a new
 // replica for that follower and it eventually catches back up.
 TEST_F(RaftConsensusITest, TestMasterReplacesEvictedFollowers) {
-  vector<string> extra_flags;
-  AddFlagsForLogRolls(&extra_flags); // For CauseFollowerToFallBehindLogGC().
-  BuildAndStart(extra_flags);
+  vector<string> ts_flags = {
+    // We write 128KB cells in this test, so bump the limit.
+    "--max_cell_size_bytes=1000000"
+  };
+  AddFlagsForLogRolls(&ts_flags); // For CauseFollowerToFallBehindLogGC().
+  BuildAndStart(ts_flags);
 
   MonoDelta timeout = MonoDelta::FromSeconds(30);
 

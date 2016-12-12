@@ -1248,6 +1248,7 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
     result_tracker_->RecordCompletionAndRespond(replicate_msg->request_id(), response.get());
   }
 
+  Status play_status;
   bool all_already_flushed = std::all_of(already_flushed.begin(),
                                          already_flushed.end(),
                                          [](bool f) { return f; });
@@ -1259,19 +1260,32 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
     }
   } else {
     if (write->has_row_operations()) {
-      // TODO: get rid of redundant params below - they can be gotten from the Request
-      RETURN_NOT_OK(PlayRowOperations(&tx_state,
+      // TODO(todd): get rid of redundant params below - they can be gotten from the Request
+      // Rather than RETURN_NOT_OK() here, we need to just save the status and do the
+      // RETURN_NOT_OK() down below the Commit() call below. Even though it seems wrong
+      // to commit the transaction when in fact it failed to apply, we would throw a CHECK
+      // failure if we attempted to 'Abort()' after entering the applying stage. Allowing it to
+      // Commit isn't problematic because we don't expose the results anyway, and the bad
+      // Status returned below will cause us to fail the entire tablet bootstrap anyway.
+      play_status = PlayRowOperations(&tx_state,
                                       write->schema(),
                                       write->row_operations(),
                                       commit_msg.result(),
-                                      already_flushed));
+                                      already_flushed);
     }
-    // Replace the original commit message's result with the new one from
-    // the replayed operation.
-    tx_state.ReleaseTxResultPB(commit->mutable_result());
+
+    if (play_status.ok()) {
+      // Replace the original commit message's result with the new one from
+      // the replayed operation.
+      tx_state.ReleaseTxResultPB(commit->mutable_result());
+    }
   }
 
   tx_state.CommitOrAbort(Transaction::COMMITTED);
+
+  // If we failed to apply the operations, fail bootstrap before we write anything incorrect
+  // to the recovery log.
+  RETURN_NOT_OK(play_status);
 
   RETURN_NOT_OK(log_->Append(&commit_entry));
 

@@ -3906,6 +3906,50 @@ TEST_F(ClientTest, TestCreateTableWithTooLongColumnName) {
                      "longer than maximum permitted length 256");
 }
 
+// Test trying to insert a row with an encoded key that is too large.
+TEST_F(ClientTest, TestInsertTooLongEncodedPrimaryKey) {
+  const string kLongValue(10000, 'x');
+  const char* kTableName = "too-long-pk";
+
+  // Create and open a table with a three-column composite PK.
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  KuduSchema schema;
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("k1")->Type(KuduColumnSchema::STRING)->NotNull();
+  schema_builder.AddColumn("k2")->Type(KuduColumnSchema::STRING)->NotNull();
+  schema_builder.AddColumn("k3")->Type(KuduColumnSchema::STRING)->NotNull();
+  schema_builder.SetPrimaryKey({"k1", "k2", "k3"});
+  ASSERT_OK(schema_builder.Build(&schema));
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&schema)
+            .num_replicas(1)
+            .set_range_partition_columns({ "k1" })
+            .Create());
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+
+  // Create a session and insert a row with a too-large composite key.
+  shared_ptr<KuduSession> session(client_->NewSession());
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  gscoped_ptr<KuduInsert> insert(table->NewInsert());
+  for (int i = 0; i < 3; i++) {
+    ASSERT_OK(insert->mutable_row()->SetStringCopy(i, kLongValue));
+  }
+  ASSERT_OK(session->Apply(insert.release()));
+  Status s = session->Flush();
+  ASSERT_FALSE(s.ok()) << s.ToString();
+
+  // Check the error.
+  vector<KuduError*> errors;
+  ElementDeleter drop(&errors);
+  bool overflowed;
+  session->GetPendingErrors(&errors, &overflowed);
+  ASSERT_EQ(1, errors.size());
+  EXPECT_EQ("Invalid argument: encoded primary key too large "
+            "(30004 bytes, maximum is 65536 bytes)",
+            errors[0]->status().ToString());
+}
+
 
 // Check the behavior of the latest observed timestamp when performing
 // write and read operations.

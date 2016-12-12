@@ -114,6 +114,23 @@ DEFINE_int32(tablet_history_max_age_sec, 15 * 60,
              "To disable history removal, set to -1.");
 TAG_FLAG(tablet_history_max_age_sec, advanced);
 
+DEFINE_int32(max_cell_size_bytes, 64 * 1024,
+             "The maximum size of any individual cell in a table. Attempting to store "
+             "string or binary columns with a size greater than this will result "
+             "in errors.");
+TAG_FLAG(max_cell_size_bytes, unsafe);
+
+// Large encoded keys cause problems because we store the min/max encoded key in the
+// CFile footer for the composite key column. The footer has a max length of 64K, so
+// the default here comfortably fits two of them with room for other metadata.
+DEFINE_int32(max_encoded_key_size_bytes, 16 * 1024,
+             "The maximum size of a row's encoded composite primary key. This length is "
+             "approximately the sum of the sizes of the component columns, though it can "
+             "be larger in cases where the components contain embedded NULL bytes. "
+             "Attempting to insert a row with a larger encoded composite key will "
+             "result in an error.");
+TAG_FLAG(max_encoded_key_size_bytes, unsafe);
+
 METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
                          kudu::MetricUnit::kBytes,
@@ -393,9 +410,78 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
   tx_state->SetMvccTx(std::move(mvcc_tx));
 }
 
+Status Tablet::ValidateInsertOrUpsertUnlocked(const RowOp& op) const {
+  // Check that no individual cell is larger than the specified max.
+  ConstContiguousRow row(schema(), op.decoded_op.row_data);
+  for (int i = 0; i < schema()->num_columns(); i++) {
+    if (!BitmapTest(op.decoded_op.isset_bitmap, i)) continue;
+    const auto& col = schema()->column(i);
+    if (col.type_info()->physical_type() != BINARY) continue;
+    const auto& cell = row.cell(i);
+    if (cell.is_nullable() && cell.is_null()) continue;
+    Slice s;
+    memcpy(&s, cell.ptr(), sizeof(s));
+    if (PREDICT_FALSE(s.size() > FLAGS_max_cell_size_bytes)) {
+      return Status::InvalidArgument(Substitute(
+          "value too large for column '$0' ($1 bytes, maximum is $2 bytes)",
+          col.name(), s.size(), FLAGS_max_cell_size_bytes));
+    }
+  }
+  // Check that the encoded key is not longer than the maximum.
+  auto enc_key_size = op.key_probe->encoded_key_slice().size();
+  if (PREDICT_FALSE(enc_key_size > FLAGS_max_encoded_key_size_bytes)) {
+    return Status::InvalidArgument(Substitute(
+        "encoded primary key too large ($0 bytes, maximum is $1 bytes)",
+        enc_key_size, FLAGS_max_cell_size_bytes));
+  }
+  return Status::OK();
+}
+
+Status Tablet::ValidateMutateUnlocked(const RowOp& op) const {
+  RowChangeListDecoder rcl_decoder(op.decoded_op.changelist);
+  RETURN_NOT_OK(rcl_decoder.Init());
+  if (rcl_decoder.is_reinsert()) {
+    // REINSERT mutations are the byproduct of an INSERT on top of a ghost
+    // row, not something the user is allowed to specify on their own.
+    return Status::InvalidArgument("User may not specify REINSERT mutations");
+  }
+
+  if (rcl_decoder.is_delete()) {
+    // Don't validate the composite key length on delete. This is important to allow users
+    // to delete a row if a row with a too-large key was inserted on a previous version
+    // that had no limits.
+    return Status::OK();
+  }
+
+  // For updates, just check the new cell values themselves, and not the row key,
+  // following the same logic.
+  while (rcl_decoder.HasNext()) {
+    RowChangeListDecoder::DecodedUpdate cell_update;
+    RETURN_NOT_OK(rcl_decoder.DecodeNext(&cell_update));
+    if (cell_update.null) continue;
+    Slice s = cell_update.raw_value;
+    if (PREDICT_FALSE(s.size() > FLAGS_max_cell_size_bytes)) {
+      const auto& col = schema()->column_by_id(cell_update.col_id);
+      return Status::InvalidArgument(Substitute(
+          "value too large for column '$0' ($1 bytes, maximum is $2 bytes)",
+          col.name(), s.size(), FLAGS_max_cell_size_bytes));
+
+    }
+  }
+  return Status::OK();
+}
+
 Status Tablet::InsertOrUpsertUnlocked(WriteTransactionState *tx_state,
                                       RowOp* op,
                                       ProbeStats* stats) {
+
+  Status s = ValidateInsertOrUpsertUnlocked(*op);
+  if (PREDICT_FALSE(!s.ok())) {
+    // TODO(todd): add a metric tracking the number of invalid ops.
+    op->SetFailed(s);
+    return s;
+  }
+
   const bool is_upsert = op->decoded_op.type == RowOperationsPB::UPSERT;
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
 
@@ -425,7 +511,7 @@ Status Tablet::InsertOrUpsertUnlocked(WriteTransactionState *tx_state,
 
   // Now try to op into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been oped there.
-  Status s = comps->memrowset->Insert(ts, row, tx_state->op_id());
+  s = comps->memrowset->Insert(ts, row, tx_state->op_id());
   if (s.ok()) {
     op->SetInsertSucceeded(comps->memrowset->mrs_id());
   } else {
@@ -532,23 +618,15 @@ vector<RowSet*> Tablet::FindRowSetsToCheck(RowOp* op,
 Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
                                  RowOp* mutate,
                                  ProbeStats* stats) {
-  gscoped_ptr<OperationResultPB> result(new OperationResultPB());
-
-  const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
-
-  // Validate the update.
-  RowChangeListDecoder rcl_decoder(mutate->decoded_op.changelist);
-  Status s = rcl_decoder.Init();
-  if (rcl_decoder.is_reinsert()) {
-    // REINSERT mutations are the byproduct of an INSERT on top of a ghost
-    // row, not something the user is allowed to specify on their own.
-    s = Status::InvalidArgument("User may not specify REINSERT mutations");
-  }
+  // Validate the mutation.
+  Status s = ValidateMutateUnlocked(*mutate);
   if (!s.ok()) {
     mutate->SetFailed(s);
     return s;
   }
 
+  gscoped_ptr<OperationResultPB> result(new OperationResultPB());
+  const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
   Timestamp ts = tx_state->timestamp();
 
   // First try to update in memrowset.

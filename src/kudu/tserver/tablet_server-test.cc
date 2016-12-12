@@ -324,8 +324,10 @@ TEST_F(TabletServerTest, TestInsert) {
   }
 
   // Send a batch with multiple rows, one of which is a duplicate of
-  // the above insert. This should generate one error into per_row_errors.
+  // the above insert, and one of which has a too-large value.
+  // This should generate two errors into per_row_errors.
   {
+    const string kTooLargeValue(100 * 1024, 'x');
     controller.Reset();
     RowOperationsPB* data = req.mutable_row_operations();
     data->Clear();
@@ -333,15 +335,23 @@ TEST_F(TabletServerTest, TestInsert) {
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1, 1, "ceci n'est pas une dupe", data);
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 2, 1, "also not a dupe key", data);
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 1, "I am a duplicate key", data);
+    AddTestRowToPB(RowOperationsPB::INSERT, schema_, 3, 1, kTooLargeValue, data);
     SCOPED_TRACE(req.DebugString());
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
-    ASSERT_EQ(1, resp.per_row_errors().size());
+    ASSERT_EQ(3, rows_inserted->value());  // This counter only counts successful inserts.
+    ASSERT_EQ(2, resp.per_row_errors().size());
+
+    // Check the duplicate key error.
     ASSERT_EQ(2, resp.per_row_errors().Get(0).row_index());
     Status s = StatusFromPB(resp.per_row_errors().Get(0).error());
     ASSERT_STR_CONTAINS(s.ToString(), "Already present");
-    ASSERT_EQ(3, rows_inserted->value());  // This counter only counts successful inserts.
+
+    // Check the value-too-large error.
+    ASSERT_EQ(3, resp.per_row_errors().Get(1).row_index());
+    s = StatusFromPB(resp.per_row_errors().Get(1).error());
+    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument");
   }
 
   // get the clock's current timestamp
@@ -598,6 +608,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
 
   // Do a mixed operation (some insert, update, and delete, some of which fail)
   {
+    const string kTooLargeValue(100 * 1024, 'x');
     WriteRequestPB req;
     WriteResponsePB resp;
     req.set_tablet_id(kTabletId);
@@ -612,16 +623,22 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     AddTestKeyToPB(RowOperationsPB::DELETE, schema_, 5, ops);
     // op 3: Insert a new row 6 (succeeds)
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 6, 6, "new row 6", ops);
+    // op 4: update a row with a too-large value (fail)
+    AddTestRowToPB(RowOperationsPB::UPDATE, schema_, 4, 6, kTooLargeValue, ops);
 
     SCOPED_TRACE(req.DebugString());
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
-    ASSERT_EQ(2, resp.per_row_errors().size());
+    ASSERT_EQ(3, resp.per_row_errors().size());
     EXPECT_EQ("row_index: 0 error { code: NOT_FOUND message: \"key not found\" }",
               resp.per_row_errors(0).ShortDebugString());
     EXPECT_EQ("row_index: 2 error { code: NOT_FOUND message: \"key not found\" }",
               resp.per_row_errors(1).ShortDebugString());
+    EXPECT_EQ("row_index: 4 error { code: INVALID_ARGUMENT message: "
+              "\"value too large for column \\'string_val\\' (102400 bytes, "
+              "maximum is 65536 bytes)\" }",
+              resp.per_row_errors(2).ShortDebugString());
     controller.Reset();
   }
 

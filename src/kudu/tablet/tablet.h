@@ -367,6 +367,14 @@ class Tablet {
 
   Status FlushUnlocked();
 
+  // Validate the given insert/upsert operation. In particular, checks that the size
+  // of any cells is not too large given the configured maximum on the server, and
+  // that the encoded key is not too large.
+  Status ValidateInsertOrUpsertUnlocked(const RowOp& op) const;
+
+  // Validate the given update/delete operation. In particular, validates that no
+  // cell is being updated to an invalid (too large) value.
+  Status ValidateMutateUnlocked(const RowOp& op) const;
 
   // Perform an INSERT or UPSERT operation, assuming that the transaction is already in
   // prepared state. This state ensures that:
