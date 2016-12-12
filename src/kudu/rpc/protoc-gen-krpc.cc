@@ -359,8 +359,8 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       Print(printer, *subs,
         "class $service_name$If : public ::kudu::rpc::GeneratedServiceIf {\n"
         " public:\n"
-        "  explicit $service_name$If(const scoped_refptr<MetricEntity>& entity,"
-            " const scoped_refptr<rpc::ResultTracker>& result_tracker);\n"
+        "  explicit $service_name$If(const scoped_refptr<::kudu::MetricEntity>& entity,"
+            " const scoped_refptr<::kudu::rpc::ResultTracker>& result_tracker);\n"
         "  virtual ~$service_name$If();\n"
         "  std::string service_name() const override;\n"
         "  static std::string static_service_name();\n"
