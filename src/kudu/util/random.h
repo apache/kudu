@@ -10,6 +10,7 @@
 #include <random>
 #include <vector>
 
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/locks.h"
 
@@ -73,16 +74,12 @@ class Random {
   uint32_t Next32() { return Next(); }
 
   // Next pseudo-random 64-bit unsigned integer.
-  // FIXME: This currently only generates 62 bits of randomness due to Next()
-  // only giving 31 bits of randomness. The 2 most significant bits will always
-  // be zero.
   uint64_t Next64() {
     uint64_t large = Next();
-    // Only shift by 31 bits so we end up with zeros in MSB and not scattered
-    // throughout the 64-bit word. This is due to the weakness in Next() noted
-    // above.
     large <<= 31;
     large |= Next();
+    // Fill in the highest two MSBs.
+    large |= implicit_cast<uint64_t>(Next32()) << 62;
     return large;
   }
 
