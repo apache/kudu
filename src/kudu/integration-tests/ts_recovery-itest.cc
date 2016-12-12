@@ -386,7 +386,7 @@ TEST_P(Kudu969Test, Test) {
   // Restart the TS to trigger bootstrap, and wait for it to start up.
   ts->Shutdown();
   ASSERT_OK(ts->Restart());
-  ASSERT_OK(cluster_->WaitForTabletsRunning(ts, -1, MonoDelta::FromSeconds(90)));
+  ASSERT_OK(cluster_->WaitForTabletsRunning(ts, -1, MonoDelta::FromSeconds(180)));
 
   // Verify that the bootstrapped server matches the other replications, which
   // had no faults.
