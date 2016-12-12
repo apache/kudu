@@ -98,6 +98,11 @@ class LogEntryReader {
     return offset_;
   }
 
+  // Return the offset at which this reader will stop reading.
+  int64_t read_up_to_offset() const {
+    return read_up_to_;
+  }
+
  private:
   friend class ReadableLogSegment;
 

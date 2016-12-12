@@ -37,6 +37,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -1041,7 +1042,10 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   // writing.
   RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
 
+  auto last_status_update = MonoTime::Now();
+  const auto kStatusUpdateInterval = MonoDelta::FromSeconds(5);
   int segment_count = 0;
+
   for (const scoped_refptr<ReadableLogSegment>& segment : segments) {
     log::LogEntryReader reader(segment.get());
 
@@ -1075,11 +1079,19 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
 
       // If HandleEntry returns OK, then it has taken ownership of the entry.
       entry.release();
+
+      auto now = MonoTime::Now();
+      if (now - last_status_update > kStatusUpdateInterval) {
+        StatusMessage(Substitute("Bootstrap replaying log segment $0/$1 "
+                                 "($2/$3 this segment, stats: $4)",
+                                 segment_count + 1, log_reader_->num_segments(),
+                                 HumanReadableNumBytes::ToString(reader.offset()),
+                                 HumanReadableNumBytes::ToString(reader.read_up_to_offset()),
+                                 stats_.ToString()));
+        last_status_update = now;
+      }
     }
 
-    // TODO: could be more granular here and log during the segments as well,
-    // plus give info about number of MB processed, but this is better than
-    // nothing.
     StatusMessage(Substitute("Bootstrap replayed $0/$1 log segments. "
                              "Stats: $2. Pending: $3 replicates",
                              segment_count + 1, log_reader_->num_segments(),
