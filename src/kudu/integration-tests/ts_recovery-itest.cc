@@ -16,6 +16,7 @@
 // under the License.
 
 #include "kudu/client/client.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
@@ -223,6 +224,59 @@ TEST_F(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckRowCountWithRetries(work.table_name(),
                                        ClusterVerifier::AT_LEAST,
+                                       work.rows_inserted(),
+                                       MonoDelta::FromSeconds(60)));
+}
+
+// Test the following scenario:
+// - an insert is written to the WAL with a cell that is valid with the configuration
+//   at the time of write (eg because it's from a version of Kudu prior to cell size
+//   limits)
+// - the server is restarted with cell size limiting enabled (or lowered)
+// - the bootstrap should fail (but not crash) because it cannot apply the cell size
+// - if we manually increase the cell size limit again, it should replay correctly.
+TEST_F(TsRecoveryITest, TestChangeMaxCellSize) {
+  NO_FATALS(StartCluster({}));
+  TestWorkload work(cluster_.get());
+  work.set_num_replicas(1);
+  work.set_payload_bytes(10000);
+  work.Setup();
+  work.Start();
+  while (work.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+  work.StopAndJoin();
+
+  // Restart the server with a lower value of max_cell_size_bytes.
+  auto* ts = cluster_->tablet_server(0);
+  ts->Shutdown();
+  ts->mutable_flags()->push_back("--max_cell_size_bytes=1000");
+  ASSERT_OK(ts->Restart());
+
+  // The bootstrap should fail and leave the tablet in FAILED state.
+  std::unordered_map<std::string, itest::TServerDetails*> ts_map;
+  ValueDeleter del(&ts_map);
+
+  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
+                                         cluster_->messenger(),
+                                         &ts_map));
+  AssertEventually([&]() {
+      vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+      ASSERT_OK(ListTablets(ts_map[ts->uuid()], MonoDelta::FromSeconds(10), &tablets));
+      ASSERT_EQ(1, tablets.size());
+      ASSERT_EQ(tablet::FAILED, tablets[0].tablet_status().state());
+      ASSERT_STR_CONTAINS(tablets[0].tablet_status().last_status(),
+                          "value too large for column");
+    });
+
+  // Restart the server again with the default max_cell_size.
+  // Bootstrap should succeed and all rows should be present.
+  ts->Shutdown();
+  ts->mutable_flags()->pop_back();
+  ASSERT_OK(ts->Restart());
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckRowCountWithRetries(work.table_name(),
+                                       ClusterVerifier::EXACTLY,
                                        work.rows_inserted(),
                                        MonoDelta::FromSeconds(60)));
 }

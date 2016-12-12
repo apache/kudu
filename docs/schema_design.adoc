@@ -73,8 +73,8 @@ column types include:
 * unixtime_micros (64-bit microseconds since the Unix epoch)
 * single-precision (32-bit) IEEE-754 floating-point number
 * double-precision (64-bit) IEEE-754 floating-point number
-* UTF-8 encoded string
-* binary
+* UTF-8 encoded string (up to 64KB)
+* binary (up to 64KB)
 
 Kudu takes advantage of strongly-typed columns and a columnar on-disk storage
 format to provide efficient encoding and serialization. To make the most of
@@ -447,14 +447,17 @@ designing your schema, consider these limitations together, not in isolation. If
 test these limitations and your findings are different from these, please share your
 test cases and results.
 
-Number of Columns:: Kudu has not been thoroughly tested with more than 200 columns
-and we recommend schemas with fewer than 50 columns per table.
+Number of Columns:: By default, Kudu will not permit the creation of tables with
+more than 300 columns. We recommend schema designs that use fewer columns for best
+performance.
 
-Size of Rows:: Kudu has not been thoroughly tested with rows larger than 10 kb. Most
-testing has been on rows at 1 kb.
+Size of Cells:: No individual cell may be larger than 64KB. The cells making up a
+a composite key are limited to a total of 16KB after the internal composite-key encoding
+done by Kudu. Inserting rows not conforming to these limitations will result in errors
+being returned to the client.
 
-Size of Cells:: There is no hard limit imposed by Kudu, however large cells may
-push the entire row over the recommended size.
+Size of Rows:: Although individual cells may be up to 64KB, and Kudu supports up to
+300 columns, it is recommended that no single row be larger than a few hundred KB.
 
 Immutable Primary Keys:: Kudu does not allow you to update the primary key
 columns of a row.
@@ -463,7 +466,8 @@ Non-alterable Primary Key:: Kudu does not allow you to alter the primary key
 columns after table creation.
 
 Non-alterable Partitioning:: Kudu does not allow you to change how a table is
-partitioned after creation.
+partitioned after creation, with the exception of adding or dropping range
+partitions.
 
 Non-alterable Column Types:: Kudu does not allow the type of a column to be
 altered.

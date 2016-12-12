@@ -165,7 +165,7 @@ void TestWorkload::WriteThread() {
           continue;
         }
 
-        CHECK_OK(s);
+        LOG(FATAL) << e->status().ToString();
       }
       inserted -= errors.size();
     }
