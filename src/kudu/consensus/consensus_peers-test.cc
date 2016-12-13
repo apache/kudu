@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
+
 #include <gtest/gtest.h>
 
 #include "kudu/common/schema.h"
@@ -38,6 +40,7 @@ namespace consensus {
 
 using log::Log;
 using log::LogOptions;
+using std::shared_ptr;
 
 const char* kTabletId = "test-peers-tablet";
 const char* kLeaderUuid = "peer-0";
@@ -80,7 +83,7 @@ class ConsensusPeersTest : public KuduTest {
 
   DelayablePeerProxy<NoOpTestPeerProxy>* NewRemotePeer(
       const string& peer_name,
-      gscoped_ptr<Peer>* peer) {
+      shared_ptr<Peer>* peer) {
     RaftPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
     auto proxy_ptr = new DelayablePeerProxy<NoOpTestPeerProxy>(
@@ -145,7 +148,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
                                 kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
 
-  gscoped_ptr<Peer> remote_peer;
+  shared_ptr<Peer> remote_peer;
   DelayablePeerProxy<NoOpTestPeerProxy>* proxy =
       NewRemotePeer(kFollowerUuid, &remote_peer);
 
@@ -170,11 +173,11 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
                                 BuildRaftConfigPBForTests(3));
 
   // Create a set of remote peers
-  gscoped_ptr<Peer> remote_peer1;
+  shared_ptr<Peer> remote_peer1;
   DelayablePeerProxy<NoOpTestPeerProxy>* remote_peer1_proxy =
       NewRemotePeer("peer-1", &remote_peer1);
 
-  gscoped_ptr<Peer> remote_peer2;
+  shared_ptr<Peer> remote_peer2;
   DelayablePeerProxy<NoOpTestPeerProxy>* remote_peer2_proxy =
       NewRemotePeer("peer-2", &remote_peer2);
 
@@ -229,7 +232,7 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
                                 BuildRaftConfigPBForTests(3));
 
   auto mock_proxy = new MockedPeerProxy(pool_.get());
-  gscoped_ptr<Peer> peer;
+  shared_ptr<Peer> peer;
   ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB(kFollowerUuid),
                                 kTabletId,
                                 kLeaderUuid,
@@ -267,7 +270,7 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
                                 BuildRaftConfigPBForTests(3));
 
   auto mock_proxy = new MockedPeerProxy(pool_.get());
-  gscoped_ptr<Peer> peer;
+  shared_ptr<Peer> peer;
   ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB(kFollowerUuid),
                                 kTabletId,
                                 kLeaderUuid,

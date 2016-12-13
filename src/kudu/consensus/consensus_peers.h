@@ -73,9 +73,9 @@ class VoteResponsePB;
 // object, and performed on a thread pool (since it may do IO). When a
 // response is received, the peer updates the PeerMessageQueue
 // using PeerMessageQueue::ResponseFromPeer(...) on the same threadpool.
-class Peer {
+class Peer : public std::enable_shared_from_this<Peer> {
  public:
-  // Initializes a peer and get its status.
+  // Initializes a peer and start sending periodic heartbeats.
   Status Init();
 
   // Signals that this peer has a new request to replicate/store.
@@ -87,11 +87,16 @@ class Peer {
   const RaftPeerPB& peer_pb() const { return peer_pb_; }
 
   // Stop sending requests and periodic heartbeats.
-  // TODO(KUDU-699). This currently blocks until the most recent request
-  // has completed, which is problematic.
+  //
+  // This does not block waiting on any current outstanding requests to finish.
+  // However, when they do finish, the results will be disregarded, so this
+  // is safe to call at any point.
+  //
+  // This method must be called before the Peer's associated ThreadPool
+  // is destructed. Once this method returns, it is safe to destruct
+  // the ThreadPool.
   void Close();
 
-  // Calls Close() automatically.
   ~Peer();
 
   // Creates a new remote peer and makes the queue track it.'
@@ -106,7 +111,7 @@ class Peer {
                               PeerMessageQueue* queue,
                               ThreadPool* thread_pool,
                               gscoped_ptr<PeerProxy> proxy,
-                              gscoped_ptr<Peer>* peer);
+                              std::shared_ptr<Peer>* peer);
 
  private:
   Peer(const RaftPeerPB& peer_pb, std::string tablet_id, std::string leader_uuid,
@@ -124,12 +129,12 @@ class Peer {
   // Run on 'thread_pool'. Does response handling that requires IO or may block.
   void DoProcessResponse();
 
-  // Fetch the desired tablet copy request from the queue and send it
-  // to the peer. The callback goes to ProcessTabletCopyResponse().
+  // Fetch the desired tablet copy request from the queue and set up
+  // tc_request_ appropriately.
   //
   // Returns a bad Status if tablet copy is disabled, or if the
   // request cannot be generated for some reason.
-  Status SendTabletCopyRequest();
+  Status PrepareTabletCopyRequest();
 
   // Handle RPC callback from initiating tablet copy.
   void ProcessTabletCopyResponse();
@@ -167,13 +172,6 @@ class Peer {
 
   rpc::RpcController controller_;
 
-  // Held if there is an outstanding request.
-  // This is used in order to ensure that we only have a single request
-  // oustanding at a time, and to wait for the outstanding requests
-  // at Close().
-  Semaphore sem_;
-
-
   // Heartbeater for remote peer implementations.
   // This will send status only requests to the remote peers
   // whenever we go more than 'FLAGS_raft_heartbeat_interval_ms'
@@ -183,17 +181,12 @@ class Peer {
   // Thread pool used to construct requests to this peer.
   ThreadPool* thread_pool_;
 
-  enum State {
-    kPeerCreated,
-    kPeerStarted,
-    kPeerRunning,
-    kPeerClosed
-  };
-
   // lock that protects Peer state changes, initialization, etc.
-  // Must not try to acquire sem_ while holding peer_lock_.
   mutable simple_spinlock peer_lock_;
-  State state_;
+  bool request_pending_ = false;
+  bool closed_ = false;
+  bool has_sent_first_request_ = false;
+
 };
 
 // A proxy to another peer. Usually a thin wrapper around an rpc proxy but can

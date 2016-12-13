@@ -1632,6 +1632,40 @@ TEST_F(RaftConsensusITest, TestLeaderStepDown) {
                                   << s.ToString();
 }
 
+// Test for KUDU-699: sets the consensus RPC timeout to be long,
+// and freezes both followers before asking the leader to step down.
+// Prior to fixing KUDU-699, the step-down process would block
+// until the pending requests timed out.
+TEST_F(RaftConsensusITest, TestStepDownWithSlowFollower) {
+  vector<string> ts_flags = {
+    "--enable_leader_failure_detection=false",
+    // Bump up the RPC timeout, so that we can verify that the stepdown responds
+    // quickly even when an outbound request is hung.
+    "--consensus_rpc_timeout_ms=15000"
+  };
+  vector<string> master_flags = {
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false"
+  };
+  BuildAndStart(ts_flags, master_flags);
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_OK(StartElection(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitUntilLeader(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
+
+  // Stop both followers.
+  for (int i = 1; i < 3; i++) {
+    cluster_->tablet_server_by_uuid(tservers[i]->uuid())->Pause();
+  }
+
+  // Sleep a little bit of time to make sure that the leader has outstanding heartbeats
+  // to the paused followers before requesting the stepdown.
+  SleepFor(MonoDelta::FromSeconds(1));
+
+  // Step down should respond quickly despite the hung requests.
+  ASSERT_OK(LeaderStepDown(tservers[0], tablet_id_, MonoDelta::FromSeconds(3)));
+}
+
 void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
     const TabletServerMap& tablet_servers, const string& leader_uuid) {
 

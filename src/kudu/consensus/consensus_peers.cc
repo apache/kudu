@@ -40,6 +40,10 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/threadpool.h"
 
+// This file uses C++14 'generalized lambda capture' syntax, which is supported
+// in C++11 mode both by clang and by GCC. Disable the accompanying warning.
+#pragma clang diagnostic ignored "-Wc++14-extensions"
+
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
              "Timeout used for all consensus internal RPC communications.");
 TAG_FLAG(consensus_rpc_timeout_ms, advanced);
@@ -84,16 +88,16 @@ Status Peer::NewRemotePeer(const RaftPeerPB& peer_pb,
                            PeerMessageQueue* queue,
                            ThreadPool* thread_pool,
                            gscoped_ptr<PeerProxy> proxy,
-                           gscoped_ptr<Peer>* peer) {
+                           shared_ptr<Peer>* peer) {
 
-  gscoped_ptr<Peer> new_peer(new Peer(peer_pb,
-                                      tablet_id,
-                                      leader_uuid,
-                                      std::move(proxy),
-                                      queue,
-                                      thread_pool));
+  shared_ptr<Peer> new_peer(new Peer(peer_pb,
+                                     tablet_id,
+                                     leader_uuid,
+                                     std::move(proxy),
+                                     queue,
+                                     thread_pool));
   RETURN_NOT_OK(new_peer->Init());
-  peer->reset(new_peer.release());
+  *peer = std::move(new_peer);
   return Status::OK();
 }
 
@@ -106,69 +110,66 @@ Peer::Peer(const RaftPeerPB& peer_pb, string tablet_id, string leader_uuid,
       proxy_(std::move(proxy)),
       queue_(queue),
       failed_attempts_(0),
-      sem_(1),
       heartbeater_(
           peer_pb.permanent_uuid(),
           MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms),
           boost::bind(&Peer::SignalRequest, this, true)),
-      thread_pool_(thread_pool),
-      state_(kPeerCreated) {}
-
+      thread_pool_(thread_pool) {
+}
 
 Status Peer::Init() {
   std::lock_guard<simple_spinlock> lock(peer_lock_);
   queue_->TrackPeer(peer_pb_.permanent_uuid());
   RETURN_NOT_OK(heartbeater_.Start());
-  state_ = kPeerStarted;
   return Status::OK();
 }
 
 Status Peer::SignalRequest(bool even_if_queue_empty) {
-  // If the peer is currently sending, return Status::OK().
-  // If there are new requests in the queue we'll get them on ProcessResponse().
-  if (!sem_.TryAcquire()) {
-    return Status::OK();
-  }
-  {
-    std::lock_guard<simple_spinlock> l(peer_lock_);
+  std::lock_guard<simple_spinlock> l(peer_lock_);
 
-    if (PREDICT_FALSE(state_ == kPeerClosed)) {
-      sem_.Release();
-      return Status::IllegalState("Peer was closed.");
-    }
-
-    // For the first request sent by the peer, we send it even if the queue is empty,
-    // which it will always appear to be for the first request, since this is the
-    // negotiation round.
-    if (PREDICT_FALSE(state_ == kPeerStarted)) {
-      even_if_queue_empty = true;
-      state_ = kPeerRunning;
-    }
-    DCHECK_EQ(state_, kPeerRunning);
-
-    // If our last request generated an error, and this is not a normal
-    // heartbeat request, then don't send the "per-RPC" request. Instead,
-    // we'll wait for the heartbeat.
-    //
-    // TODO: we could consider looking at the number of consecutive failed
-    // attempts, and instead of ignoring the signal, ask the heartbeater
-    // to "expedite" the next heartbeat in order to achieve something like
-    // exponential backoff after an error. As it is implemented today, any
-    // transient error will result in a latency blip as long as the heartbeat
-    // period.
-    if (failed_attempts_ > 0 && !even_if_queue_empty) {
-      sem_.Release();
-      return Status::OK();
-    }
+  if (PREDICT_FALSE(closed_)) {
+    return Status::IllegalState("Peer was closed.");
   }
 
-
-  RETURN_NOT_OK(thread_pool_->SubmitClosure(
-                  Bind(&Peer::SendNextRequest, Unretained(this), even_if_queue_empty)));
+  RETURN_NOT_OK(thread_pool_->SubmitFunc([=, s_this = shared_from_this()]() {
+        s_this->SendNextRequest(even_if_queue_empty);
+      }));
   return Status::OK();
 }
 
 void Peer::SendNextRequest(bool even_if_queue_empty) {
+  std::unique_lock<simple_spinlock> l(peer_lock_);
+  if (PREDICT_FALSE(closed_)) {
+    return;
+  }
+
+  // Only allow one request at a time.
+  if (request_pending_) {
+    return;
+  }
+
+  // For the first request sent by the peer, we send it even if the queue is empty,
+  // which it will always appear to be for the first request, since this is the
+  // negotiation round.
+  if (!has_sent_first_request_) {
+    even_if_queue_empty = true;
+    has_sent_first_request_ = true;
+  }
+
+  // If our last request generated an error, and this is not a normal
+  // heartbeat request, then don't send the "per-op" request. Instead,
+  // we'll wait for the heartbeat.
+  //
+  // TODO(todd): we could consider looking at the number of consecutive failed
+  // attempts, and instead of ignoring the signal, ask the heartbeater
+  // to "expedite" the next heartbeat in order to achieve something like
+  // exponential backoff after an error. As it is implemented today, any
+  // transient error will result in a latency blip as long as the heartbeat
+  // period.
+  if (failed_attempts_ > 0 && !even_if_queue_empty) {
+    return;
+  }
+
   // The peer has no pending request nor is sending: send the request.
   bool needs_tablet_copy = false;
   int64_t commit_index_before = request_.has_committed_index() ?
@@ -181,17 +182,25 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Could not obtain request from queue for peer: "
         << peer_pb_.permanent_uuid() << ". Status: " << s.ToString();
-    sem_.Release();
     return;
   }
 
   if (PREDICT_FALSE(needs_tablet_copy)) {
-    Status s = SendTabletCopyRequest();
+    Status s = PrepareTabletCopyRequest();
     if (!s.ok()) {
       LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to generate Tablet Copy request for peer: "
                                         << s.ToString();
-      sem_.Release();
     }
+
+    controller_.Reset();
+    request_pending_ = true;
+    l.unlock();
+    // Capture a shared_ptr reference into the RPC callback so that we're guaranteed
+    // that this object outlives the RPC.
+    proxy_->StartTabletCopy(&tc_request_, &tc_response_, &controller_,
+                            [s_this = shared_from_this()]() {
+                              s_this->ProcessTabletCopyResponse();
+                            });
     return;
   }
 
@@ -203,7 +212,6 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   // If the queue is empty, check if we were told to send a status-only
   // message, if not just return.
   if (PREDICT_FALSE(!req_has_ops && !even_if_queue_empty)) {
-    sem_.Release();
     return;
   }
 
@@ -220,15 +228,23 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
       << request_.ShortDebugString();
   controller_.Reset();
 
+  request_pending_ = true;
+  l.unlock();
+  // Capture a shared_ptr reference into the RPC callback so that we're guaranteed
+  // that this object outlives the RPC.
   proxy_->UpdateAsync(&request_, &response_, &controller_,
-                      boost::bind(&Peer::ProcessResponse, this));
+                      [s_this = shared_from_this()]() {
+                        s_this->ProcessResponse();
+                      });
 }
 
 void Peer::ProcessResponse() {
   // Note: This method runs on the reactor thread.
-
-  DCHECK_EQ(0, sem_.GetValue())
-    << "Got a response when nothing was pending";
+  std::unique_lock<simple_spinlock> lock(peer_lock_);
+  if (closed_) {
+    return;
+  }
+  CHECK(request_pending_);
 
   MAYBE_FAULT(FLAGS_fault_crash_after_leader_request_fraction);
 
@@ -263,16 +279,17 @@ void Peer::ProcessResponse() {
   // the WAL) and SendNextRequest() may do the same thing. So we run the rest
   // of the response handling logic on our thread pool and not on the reactor
   // thread.
-  Status s = thread_pool_->SubmitClosure(Bind(&Peer::DoProcessResponse, Unretained(this)));
+  Status s = thread_pool_->SubmitFunc([s_this = shared_from_this()]() {
+      s_this->DoProcessResponse();
+    });
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to process peer response: " << s.ToString()
         << ": " << response_.ShortDebugString();
-    sem_.Release();
+    request_pending_ = false;
   }
 }
 
 void Peer::DoProcessResponse() {
-  failed_attempts_ = 0;
 
   VLOG_WITH_PREFIX_UNLOCKED(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
       << response_.ShortDebugString();
@@ -280,30 +297,42 @@ void Peer::DoProcessResponse() {
   bool more_pending;
   queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), response_, &more_pending);
 
+  {
+    std::unique_lock<simple_spinlock> lock(peer_lock_);
+    CHECK(request_pending_);
+    failed_attempts_ = 0;
+    request_pending_ = false;
+  }
   // We're OK to read the state_ without a lock here -- if we get a race,
   // the worst thing that could happen is that we'll make one more request before
   // noticing a close.
-  if (more_pending && ANNOTATE_UNPROTECTED_READ(state_) != kPeerClosed) {
+  if (more_pending) {
     SendNextRequest(true);
-  } else {
-    sem_.Release();
   }
 }
 
-Status Peer::SendTabletCopyRequest() {
+Status Peer::PrepareTabletCopyRequest() {
   if (!FLAGS_enable_tablet_copy) {
     failed_attempts_++;
     return Status::NotSupported("Tablet Copy is disabled");
   }
 
   RETURN_NOT_OK(queue_->GetTabletCopyRequestForPeer(peer_pb_.permanent_uuid(), &tc_request_));
-  controller_.Reset();
-  proxy_->StartTabletCopy(&tc_request_, &tc_response_, &controller_,
-                          boost::bind(&Peer::ProcessTabletCopyResponse, this));
+
   return Status::OK();
 }
 
 void Peer::ProcessTabletCopyResponse() {
+  // If the peer is already closed return.
+  {
+    std::unique_lock<simple_spinlock> lock(peer_lock_);
+    if (closed_) {
+      return;
+    }
+    CHECK(request_pending_);
+    request_pending_ = false;
+  }
+
   if (controller_.status().ok() && tc_response_.has_error()) {
     // ALREADY_INPROGRESS is expected, so we do not log this error.
     if (tc_response_.error().code() ==
@@ -314,7 +343,6 @@ void Peer::ProcessTabletCopyResponse() {
                                         << tc_response_.ShortDebugString();
     }
   }
-  sem_.Release();
 }
 
 void Peer::ProcessResponseError(const Status& status) {
@@ -331,7 +359,7 @@ void Peer::ProcessResponseError(const Status& status) {
       << " Status: " << status.ToString() << "."
       << " Retrying in the next heartbeat period."
       << " Already tried " << failed_attempts_ << " times.";
-  sem_.Release();
+  request_pending_ = false;
 }
 
 string Peer::LogPrefixUnlocked() const {
@@ -346,23 +374,18 @@ void Peer::Close() {
   // If the peer is already closed return.
   {
     std::lock_guard<simple_spinlock> lock(peer_lock_);
-    if (state_ == kPeerClosed) return;
-    DCHECK(state_ == kPeerRunning || state_ == kPeerStarted) << "Unexpected state: " << state_;
-    state_ = kPeerClosed;
+    if (closed_) return;
+    closed_ = true;
   }
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Closing peer: " << peer_pb_.permanent_uuid();
 
-  // Acquire the semaphore to wait for any concurrent request to finish.
-  // They will see the state_ == kPeerClosed and not start any new requests,
-  // but we can't currently cancel the already-sent ones. (see KUDU-699)
-  std::lock_guard<Semaphore> l(sem_);
   queue_->UntrackPeer(peer_pb_.permanent_uuid());
-  // We don't own the ops (the queue does).
-  request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), nullptr);
 }
 
 Peer::~Peer() {
   Close();
+  // We don't own the ops (the queue does).
+  request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), nullptr);
 }
 
 

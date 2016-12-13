@@ -51,16 +51,12 @@ PeerManager::~PeerManager() {
 }
 
 Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
-  unordered_set<string> new_peers;
-
   VLOG(1) << "Updating peers from new config: " << config.ShortDebugString();
 
   std::lock_guard<simple_spinlock> lock(lock_);
   // Create new peers
   for (const RaftPeerPB& peer_pb : config.peers()) {
-    new_peers.insert(peer_pb.permanent_uuid());
-    Peer* peer = FindPtrOrNull(peers_, peer_pb.permanent_uuid());
-    if (peer != nullptr) {
+    if (ContainsKey(peers_, peer_pb.permanent_uuid())) {
       continue;
     }
     if (peer_pb.permanent_uuid() == local_uuid_) {
@@ -72,7 +68,7 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
     RETURN_NOT_OK_PREPEND(peer_proxy_factory_->NewProxy(peer_pb, &peer_proxy),
                           "Could not obtain a remote proxy to the peer.");
 
-    gscoped_ptr<Peer> remote_peer;
+    std::shared_ptr<Peer> remote_peer;
     RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
                                       tablet_id_,
                                       local_uuid_,
@@ -80,7 +76,7 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
                                       thread_pool_,
                                       std::move(peer_proxy),
                                       &remote_peer));
-    InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());
+    peers_.emplace(peer_pb.permanent_uuid(), std::move(remote_peer));
   }
 
   return Status::OK();
@@ -88,14 +84,15 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
 
 void PeerManager::SignalRequest(bool force_if_queue_empty) {
   std::lock_guard<simple_spinlock> lock(lock_);
-  auto iter = peers_.begin();
-  for (; iter != peers_.end(); iter++) {
+  for (auto iter = peers_.begin(); iter != peers_.end();) {
     Status s = (*iter).second->SignalRequest(force_if_queue_empty);
     if (PREDICT_FALSE(!s.ok())) {
       LOG(WARNING) << GetLogPrefix()
                    << "Peer was closed, removing from peers. Peer: "
                    << (*iter).second->peer_pb().ShortDebugString();
-      peers_.erase(iter);
+      peers_.erase(iter++);
+    } else {
+      ++iter;
     }
   }
 }
@@ -103,10 +100,10 @@ void PeerManager::SignalRequest(bool force_if_queue_empty) {
 void PeerManager::Close() {
   {
     std::lock_guard<simple_spinlock> lock(lock_);
-    for (const PeersMap::value_type& entry : peers_) {
+    for (const auto& entry : peers_) {
       entry.second->Close();
     }
-    STLDeleteValues(&peers_);
+    peers_.clear();
   }
 }
 
