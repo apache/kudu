@@ -1016,7 +1016,6 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 
         // 2 - Apply the changes of the reinsert to the latest version of the row
         // capturing the old row while we're at it.
-        // TODO(dralves) Make Reinserts set defaults on the dest row. See KUDU-1760.
         undo_encoder.SetToReinsert();
         RETURN_NOT_OK_LOG(redo_decoder.MutateRowAndCaptureChanges(
             dst_row, static_cast<Arena*>(nullptr), &undo_encoder), ERROR,

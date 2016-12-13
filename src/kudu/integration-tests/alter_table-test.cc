@@ -53,6 +53,7 @@ DECLARE_bool(enable_maintenance_manager);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_bool(use_hybrid_clock);
+DECLARE_bool(scanner_allow_snapshot_scans_with_logical_timestamps);
 
 namespace kudu {
 
@@ -60,6 +61,7 @@ using client::CountTableRows;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
+using client::KuduDelete;
 using client::KuduError;
 using client::KuduInsert;
 using client::KuduRowResult;
@@ -95,6 +97,7 @@ class AlterTableTest : public KuduTest {
     CHECK_OK(b.Build(&schema_));
 
     FLAGS_use_hybrid_clock = false;
+    FLAGS_scanner_allow_snapshot_scans_with_logical_timestamps = true;
   }
 
   void SetUp() override {
@@ -208,6 +211,7 @@ class AlterTableTest : public KuduTest {
   void VerifyRows(int start_row, int num_rows, VerifyPattern pattern);
 
   void InsertRows(int start_row, int num_rows);
+  void DeleteRow(int row_key);
 
   Status InsertRowsSequential(const string& table_name, int start_row, int num_rows);
 
@@ -448,6 +452,19 @@ void AlterTableTest::InsertRows(int start_row, int num_rows) {
     }
   }
 
+  FlushSessionOrDie(session);
+}
+
+void AlterTableTest::DeleteRow(int row_key) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  shared_ptr<KuduTable> table;
+  CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  session->SetTimeoutMillis(15 * 1000);
+  CHECK_OK(client_->OpenTable(kTableName, &table));
+
+  unique_ptr<KuduDelete> del(table->NewDelete());
+  CHECK_OK(del->mutable_row()->SetInt32(0, bswap_32(row_key)));
+  CHECK_OK(session->Apply(del.release()));
   FlushSessionOrDie(session);
 }
 
@@ -850,6 +867,36 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn) {
             "RowIdxInBlock: 0; Base: (int32 c0=0, int32 c1=0); Undo Mutations: [@3(DELETE)]; "
                 "Redo Mutations: [];",
             JoinStrings(rows, "\n"));
+}
+
+// Test that, if we have history of previous versions of a row stored as REINSERTs,
+// and those REINSERTs were written prior to adding a new column, that reading the
+// old versions of the row will return the default value for the new column.
+// See KUDU-1760.
+TEST_F(AlterTableTest, TestReadHistoryAfterAlter) {
+  FLAGS_enable_maintenance_manager = false;
+
+  InsertRows(0, 1);
+  DeleteRow(0);
+  InsertRows(0, 1);
+  DeleteRow(0);
+  InsertRows(0, 1);
+  uint64_t ts1 = client_->GetLatestObservedTimestamp();
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  KuduScanner scanner(table.get());
+  ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+  // TODO(KUDU-1813): why do we need the '- 1' below? this seems odd that the
+  // "latest observed" timestamp is one higher than the thing we wrote, and the
+  // Delete then is assigned that timestamp.
+  ASSERT_OK(scanner.SetSnapshotRaw(ts1 - 1));
+  vector<string> row_strings;
+  client::ScanToStrings(&scanner, &row_strings);
+  ASSERT_EQ(1, row_strings.size());
+  ASSERT_EQ("(int32 c0=0, int32 c1=0, int32 c2=12345)", row_strings[0]);
 }
 
 // Thread which inserts rows into the table.
