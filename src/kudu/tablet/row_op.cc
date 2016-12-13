@@ -52,10 +52,10 @@ string RowOp::ToString(const Schema& schema) const {
   return decoded_op.ToString(schema);
 }
 
-void RowOp::SetAlreadyFlushed() {
-  DCHECK(!result) << SecureDebugString(*result);
-  result.reset(new OperationResultPB());
-  result->set_flushed(true);
+void RowOp::SetSkippedResult(const OperationResultPB& result) {
+  DCHECK(!this->result) << SecureDebugString(*this->result);
+  DCHECK(result.skip_on_replay());
+  this->result.reset(new OperationResultPB(result));
 }
 
 } // namespace tablet

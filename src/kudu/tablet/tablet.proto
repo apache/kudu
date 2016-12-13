@@ -39,8 +39,9 @@ message MemStoreTargetPB {
 // Stores the result of an Insert or Mutate.
 message OperationResultPB {
 
-  // set on replay if this operation was already flushed.
-  optional bool flushed = 1 [ default = false ];
+  // set on replay to reflect that this operation was already flushed or had previously
+  // failed and should not be applied again.
+  optional bool skip_on_replay = 1 [ default = false ];
 
   // set if this particular operation failed
   optional kudu.AppStatusPB failed_status = 2;

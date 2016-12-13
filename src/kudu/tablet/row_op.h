@@ -34,15 +34,18 @@ namespace tablet {
 struct RowOp {
  public:
   explicit RowOp(DecodedRowOperation decoded_op);
+  RowOp();
   ~RowOp();
 
   // Functions to set the result of the mutation.
-  // Only one of the following three functions must be called,
-  // at most once.
+  // Only one of the following four functions must be called, at most once.
   void SetFailed(const Status& s);
   void SetInsertSucceeded(int mrs_id);
   void SetMutateSucceeded(gscoped_ptr<OperationResultPB> result);
-  void SetAlreadyFlushed();
+  // Sets the result of a skipped operation on bootstrap.
+  // TODO(dralves) Currently this performs a copy. Might be avoided with some refactoring.
+  // see TODO(dralves) in TabletBoostrap::ApplyOperations().
+  void SetSkippedResult(const OperationResultPB& result);
 
   // In the case that this operation is being replayed from the WAL
   // during tablet bootstrap, we may need to look at the original result

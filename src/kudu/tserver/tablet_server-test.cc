@@ -951,7 +951,7 @@ TEST_F(TabletServerTest, TestKUDU_1341) {
   ANFF(VerifyRows(schema_, { KeyValue(1, 12345) }));
 }
 
-TEST_F(TabletServerTest, DISABLED_TestExactlyOnceForErrorsAcrossRestart) {
+TEST_F(TabletServerTest, TestExactlyOnceForErrorsAcrossRestart) {
   WriteRequestPB req;
   WriteResponsePB resp;
   RpcController rpc;
