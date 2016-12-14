@@ -89,10 +89,13 @@ class TableLocationsCache {
    *
    * @param tablets the discovered tablets to cache
    * @param requestPartitionKey the lookup partition key
+   * @param requestedBatchSize the number of tablet locations requested from the master in the
+   *                           original request
    * @param ttl the time in milliseconds that the tablets may be cached for
    */
   public void cacheTabletLocations(List<RemoteTablet> tablets,
                                    byte[] requestPartitionKey,
+                                   int requestedBatchSize,
                                    long ttl) {
     long deadline = System.nanoTime() + ttl * TimeUnit.MILLISECONDS.toNanos(1);
     if (requestPartitionKey == null) {
@@ -166,7 +169,7 @@ class TableLocationsCache {
       }
 
       if (lastUpperBound.length > 0 &&
-          tablets.size() < AsyncKuduClient.MAX_RETURNED_TABLE_LOCATIONS) {
+          tablets.size() < requestedBatchSize) {
         // There is a non-covered range between the last tablet and the end of the
         // partition key space, such as F.
         newEntries.add(

@@ -35,9 +35,11 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
   private final byte[] startPartitionKey;
   private final byte[] endKey;
   private final String tableId;
+  private final int maxReturnedLocations;
 
   GetTableLocationsRequest(KuduTable table, byte[] startPartitionKey,
-                           byte[] endPartitionKey, String tableId) {
+                           byte[] endPartitionKey, String tableId,
+                           int maxReturnedLocations) {
     super(table);
     if (startPartitionKey != null && endPartitionKey != null &&
         Bytes.memcmp(startPartitionKey, endPartitionKey) > 0) {
@@ -47,6 +49,7 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
     this.startPartitionKey = startPartitionKey;
     this.endKey = endPartitionKey;
     this.tableId = tableId;
+    this.maxReturnedLocations = maxReturnedLocations;
   }
 
   @Override
@@ -83,7 +86,7 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
     if (endKey != null) {
       builder.setPartitionKeyEnd(ZeroCopyLiteralByteString.wrap(endKey));
     }
-    builder.setMaxReturnedLocations(AsyncKuduClient.MAX_RETURNED_TABLE_LOCATIONS);
+    builder.setMaxReturnedLocations(maxReturnedLocations);
     return toChannelBuffer(header, builder.build());
   }
 }

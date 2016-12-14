@@ -123,6 +123,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   @Test
   public void testBadHostnames() throws Exception {
     String badHostname = "some-unknown-host-hopefully";
+    final int requestBatchSize = 10;
 
     // Test that a bad hostname for the master makes us error out quickly.
     AsyncKuduClient invalidClient = new AsyncKuduClient.AsyncKuduClientBuilder(badHostname).build();
@@ -153,7 +154,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     try {
       KuduTable badTable = new KuduTable(client, "Invalid table name",
           "Invalid table ID", null, null);
-      client.discoverTablets(badTable, null, tabletLocations, 1000);
+      client.discoverTablets(badTable, null, requestBatchSize, tabletLocations, 1000);
       fail("This should have failed quickly");
     } catch (NonRecoverableException ex) {
       assertTrue(ex.getMessage().contains(badHostname));
@@ -162,6 +163,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
 
   @Test
   public void testNoLeader() throws Exception {
+    final int requestBatchSize = 10;
     CreateTableOptions options = getBasicCreateTableOptions();
     KuduTable table = createTable(
         "testNoLeader-" + System.currentTimeMillis(),
@@ -169,8 +171,9 @@ public class TestAsyncKuduClient extends BaseKuduTest {
         options);
 
     // Lookup the current locations so that we can pass some valid information to discoverTablets.
-    List<LocatedTablet> tablets =
-        client.locateTable(table, null, null, DEFAULT_SLEEP).join(DEFAULT_SLEEP);
+    List<LocatedTablet> tablets = client
+        .locateTable(table, null, null, requestBatchSize, DEFAULT_SLEEP)
+        .join(DEFAULT_SLEEP);
     LocatedTablet tablet = tablets.get(0);
     LocatedTablet.Replica leader = tablet.getLeaderReplica();
 
@@ -183,7 +186,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
         "master", leader.getRpcHost(), leader.getRpcPort(), Metadata.RaftPeerPB.Role.FOLLOWER));
     tabletLocations.add(tabletPb.build());
     try {
-      client.discoverTablets(table, new byte[0], tabletLocations, 1000);
+      client.discoverTablets(table, new byte[0], requestBatchSize, tabletLocations, 1000);
       fail("discoverTablets should throw an exception if there's no leader");
     } catch (NoLeaderFoundException ex) {
       // Expected.

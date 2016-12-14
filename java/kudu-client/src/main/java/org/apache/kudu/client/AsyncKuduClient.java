@@ -121,7 +121,18 @@ public class AsyncKuduClient implements AutoCloseable {
   public static final long DEFAULT_OPERATION_TIMEOUT_MS = 30000;
   public static final long DEFAULT_SOCKET_READ_TIMEOUT_MS = 10000;
   private static final long MAX_RPC_ATTEMPTS = 100;
-  static final int MAX_RETURNED_TABLE_LOCATIONS = 10;
+
+  /**
+   * The number of tablets to fetch from the master in a round trip when performing
+   * a lookup of a single partition (e.g. for a write), or re-looking-up a tablet with
+   * stale information.
+   */
+  static int FETCH_TABLETS_PER_POINT_LOOKUP = 10;
+  /**
+   * The number of tablets to fetch from the master when looking up a range of
+   * tablets.
+   */
+  static int FETCH_TABLETS_PER_RANGE_LOOKUP = 1000;
 
   private final ClientSocketChannelFactory channelFactory;
 
@@ -723,7 +734,7 @@ public class AsyncKuduClient implements AutoCloseable {
     Callback<Deferred<R>, Master.GetTableLocationsResponsePB> cb = new RetryRpcCB<>(request);
     Callback<Deferred<R>, Exception> eb = new RetryRpcErrback<>(request);
     Deferred<Master.GetTableLocationsResponsePB> returnedD =
-        locateTablet(request.getTable(), partitionKey, request);
+        locateTablet(request.getTable(), partitionKey, FETCH_TABLETS_PER_POINT_LOOKUP, request);
     return AsyncUtil.addCallbacksDeferring(returnedD, cb, eb);
   }
 
@@ -733,7 +744,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * <p>
    * Use {@code AsyncUtil.addCallbacksDeferring} to add this as the callback and
    * {@link AsyncKuduClient.RetryRpcErrback} as the "errback" to the {@code Deferred}
-   * returned by {@link #locateTablet(KuduTable, byte[], KuduRpc)}.
+   * returned by {@link #locateTablet(KuduTable, byte[], int, KuduRpc)}.
    * @param <R> RPC's return type.
    * @param <D> Previous query's return type, which we don't use, but need to specify in order to
    *           tie it all together.
@@ -763,7 +774,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * <p>
    * Use {@code AsyncUtil.addCallbacksDeferring} to add this as the "errback" and
    * {@link RetryRpcCB} as the callback to the {@code Deferred} returned by
-   * {@link #locateTablet(KuduTable, byte[], KuduRpc)}.
+   * {@link #locateTablet(KuduTable, byte[], int, KuduRpc)}.
    * @see #delayedSendRpcToTablet(KuduRpc, KuduException)
    * @param <R> The type of the original RPC.
    */
@@ -1001,11 +1012,13 @@ public class AsyncKuduClient implements AutoCloseable {
    * Sends a getTableLocations RPC to the master to find the table's tablets.
    * @param table table to lookup
    * @param partitionKey can be null, if not we'll find the exact tablet that contains it
+   * @param fetchBatchSize the number of tablets to fetch per round trip from the master
    * @param parentRpc RPC that prompted a master lookup, can be null
    * @return Deferred to track the progress
    */
   private Deferred<Master.GetTableLocationsResponsePB> locateTablet(KuduTable table,
                                                                     byte[] partitionKey,
+                                                                    int fetchBatchSize,
                                                                     KuduRpc<?> parentRpc) {
     boolean hasPermit = acquireMasterLookupPermit();
     String tableId = table.getTableId();
@@ -1029,7 +1042,7 @@ public class AsyncKuduClient implements AutoCloseable {
     } else {
       // Leave the end of the partition key range empty in order to pre-fetch tablet locations.
       GetTableLocationsRequest rpc =
-          new GetTableLocationsRequest(masterTable, partitionKey, null, tableId);
+          new GetTableLocationsRequest(masterTable, partitionKey, null, tableId, fetchBatchSize);
       if (parentRpc != null) {
         rpc.setTimeoutMillis(parentRpc.deadlineTracker.getMillisBeforeDeadline());
         rpc.setParentRpc(parentRpc);
@@ -1038,7 +1051,7 @@ public class AsyncKuduClient implements AutoCloseable {
       }
       d = sendRpcToTablet(rpc);
     }
-    d.addCallback(new MasterLookupCB(table, partitionKey));
+    d.addCallback(new MasterLookupCB(table, partitionKey, fetchBatchSize));
     if (hasPermit) {
       d.addBoth(new ReleaseMasterLookupPermit<Master.GetTableLocationsResponsePB>());
     }
@@ -1083,6 +1096,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param startPartitionKey where to start in the table, pass null to start at the beginning
    * @param endPartitionKey where to stop in the table, pass null to get all the tablets until the
    *                        end of the table
+   * @param fetchBatchSize the number of tablets to fetch per round trip from the master
    * @param deadline deadline in milliseconds for this method to finish
    * @return a list of the tablets in the table, which can be queried for metadata about
    *         each tablet
@@ -1091,13 +1105,15 @@ public class AsyncKuduClient implements AutoCloseable {
   List<LocatedTablet> syncLocateTable(KuduTable table,
                                       byte[] startPartitionKey,
                                       byte[] endPartitionKey,
+                                      int fetchBatchSize,
                                       long deadline) throws Exception {
-    return locateTable(table, startPartitionKey, endPartitionKey, deadline).join();
+    return locateTable(table, startPartitionKey, endPartitionKey, fetchBatchSize, deadline).join();
   }
 
   private Deferred<List<LocatedTablet>> loopLocateTable(final KuduTable table,
                                                         final byte[] startPartitionKey,
                                                         final byte[] endPartitionKey,
+                                                        final int fetchBatchSize,
                                                         final List<LocatedTablet> ret,
                                                         final DeadlineTracker deadlineTracker) {
     // We rely on the keys initially not being empty.
@@ -1138,11 +1154,12 @@ public class AsyncKuduClient implements AutoCloseable {
       // When lookup completes, the tablet (or non-covered range) for the next
       // partition key will be located and added to the client's cache.
       final byte[] lookupKey = partitionKey;
-      return locateTablet(table, key, null).addCallbackDeferring(
+      return locateTablet(table, key, fetchBatchSize, null).addCallbackDeferring(
           new Callback<Deferred<List<LocatedTablet>>, GetTableLocationsResponsePB>() {
             @Override
             public Deferred<List<LocatedTablet>> call(GetTableLocationsResponsePB resp) {
-              return loopLocateTable(table, lookupKey, endPartitionKey, ret, deadlineTracker);
+              return loopLocateTable(table, lookupKey, endPartitionKey, fetchBatchSize,
+                                     ret, deadlineTracker);
             }
 
             @Override
@@ -1162,6 +1179,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param startPartitionKey where to start in the table, pass null to start at the beginning
    * @param endPartitionKey where to stop in the table, pass null to get all the tablets until the
    *                        end of the table
+   * @param fetchBatchSize the number of tablets to fetch per round trip from the master
    * @param deadline max time spent in milliseconds for the deferred result of this method to
    *         get called back, if deadline is reached, the deferred result will get erred back
    * @return a deferred object that yields a list of the tablets in the table, which can be queried
@@ -1170,11 +1188,13 @@ public class AsyncKuduClient implements AutoCloseable {
   Deferred<List<LocatedTablet>> locateTable(final KuduTable table,
                                             final byte[] startPartitionKey,
                                             final byte[] endPartitionKey,
+                                            int fetchBatchSize,
                                             long deadline) {
     final List<LocatedTablet> ret = Lists.newArrayList();
     final DeadlineTracker deadlineTracker = new DeadlineTracker();
     deadlineTracker.setDeadline(deadline);
-    return loopLocateTable(table, startPartitionKey, endPartitionKey, ret, deadlineTracker);
+    return loopLocateTable(table, startPartitionKey, endPartitionKey, fetchBatchSize,
+                           ret, deadlineTracker);
   }
 
   /**
@@ -1256,10 +1276,12 @@ public class AsyncKuduClient implements AutoCloseable {
       Master.GetTableLocationsResponsePB> {
     final KuduTable table;
     private final byte[] partitionKey;
+    private final int requestedBatchSize;
 
-    MasterLookupCB(KuduTable table, byte[] partitionKey) {
+    MasterLookupCB(KuduTable table, byte[] partitionKey, int requestedBatchSize) {
       this.table = table;
       this.partitionKey = partitionKey;
+      this.requestedBatchSize = requestedBatchSize;
     }
 
     public Object call(final GetTableLocationsResponsePB response) {
@@ -1276,6 +1298,7 @@ public class AsyncKuduClient implements AutoCloseable {
         try {
           discoverTablets(table,
                           partitionKey,
+                          requestedBatchSize,
                           response.getTabletLocationsList(),
                           response.getTtlMillis());
         } catch (KuduException e) {
@@ -1313,12 +1336,15 @@ public class AsyncKuduClient implements AutoCloseable {
    * Makes discovered tablet locations visible in the clients caches.
    * @param table the table which the locations belong to
    * @param requestPartitionKey the partition key of the table locations request
+   * @param requestedBatchSize the number of tablet locations requested from the master in the
+   *                           original request
    * @param locations the discovered locations
    * @param ttl the ttl of the locations
    */
   @VisibleForTesting
   void discoverTablets(KuduTable table,
                        byte[] requestPartitionKey,
+                       int requestedBatchSize,
                        List<Master.TabletLocationsPB> locations,
                        long ttl) throws KuduException {
     String tableId = table.getTableId();
@@ -1371,7 +1397,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
     // Give the locations to the tablet location cache for the table, so that it
     // can cache them and discover non-covered ranges.
-    locationsCache.cacheTabletLocations(tablets, requestPartitionKey, ttl);
+    locationsCache.cacheTabletLocations(tablets, requestPartitionKey, requestedBatchSize, ttl);
 
     // Now test if we found the tablet we were looking for. If so, RetryRpcCB will retry the RPC
     // right away. If not, we throw an exception that RetryRpcErrback will understand as needing to
@@ -1407,16 +1433,22 @@ public class AsyncKuduClient implements AutoCloseable {
   Deferred<LocatedTablet> getTabletLocation(final KuduTable table,
                                             final byte[] partitionKey,
                                             long deadline) {
-    // Locate the tablets at the partition key by locating all tablets between
-    // the partition key (inclusive), and the incremented partition key (exclusive).
 
-    Deferred<List<LocatedTablet>> locatedTablets;
+    // Locate the tablet at the partition key by locating tablets between
+    // the partition key (inclusive), and the incremented partition key (exclusive).
+    // We expect this to return at most a single tablet (checked below).
+    byte[] startPartitionKey;
+    byte[] endPartitionKey;
     if (partitionKey.length == 0) {
-      locatedTablets = locateTable(table, null, new byte[] { 0x00 }, deadline);
+      startPartitionKey = null;
+      endPartitionKey = new byte[] { 0x00 };
     } else {
-      locatedTablets = locateTable(table, partitionKey,
-                                   Arrays.copyOf(partitionKey, partitionKey.length + 1), deadline);
+      startPartitionKey = partitionKey;
+      endPartitionKey = Arrays.copyOf(partitionKey, partitionKey.length + 1);
     }
+
+    Deferred<List<LocatedTablet>> locatedTablets = locateTable(
+        table, startPartitionKey, endPartitionKey, FETCH_TABLETS_PER_POINT_LOOKUP, deadline);
 
     // Then pick out the single tablet result from the list.
     return locatedTablets.addCallbackDeferring(
