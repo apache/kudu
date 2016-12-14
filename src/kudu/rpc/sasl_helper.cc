@@ -29,6 +29,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -147,17 +148,18 @@ bool SaslHelper::IsPlainEnabled() const {
   return plain_enabled_;
 }
 
-Status SaslHelper::SanityCheckSaslCallId(int32_t call_id) const {
-  if (call_id != kSaslCallId) {
-    Status s = Status::IllegalState(StringPrintf("Non-SASL request during negotiation. "
-          "Expected callId: %d, received callId: %d", kSaslCallId, call_id));
+Status SaslHelper::SanityCheckNegotiateCallId(int32_t call_id) const {
+  if (call_id != kNegotiateCallId) {
+    Status s = Status::IllegalState(strings::Substitute(
+          "Non-Negotiate request during negotiation. Expected callId: $0, received callId: $1",
+          kNegotiateCallId, call_id));
     LOG(DFATAL) << tag_ << ": " << s.ToString();
     return s;
   }
   return Status::OK();
 }
 
-Status SaslHelper::ParseSaslMessage(const Slice& param_buf, SaslMessagePB* msg) {
+Status SaslHelper::ParseNegotiatePB(const Slice& param_buf, NegotiatePB* msg) {
   if (!msg->ParseFromArray(param_buf.data(), param_buf.size())) {
     return Status::IOError(tag_ + ": Invalid SASL message, missing fields",
         msg->InitializationErrorString());
@@ -165,8 +167,10 @@ Status SaslHelper::ParseSaslMessage(const Slice& param_buf, SaslMessagePB* msg) 
   return Status::OK();
 }
 
-Status SaslHelper::SendSaslMessage(Socket* sock, const MessageLite& header, const MessageLite& msg,
-      const MonoTime& deadline) {
+Status SaslHelper::SendNegotiatePB(Socket* sock,
+                                   const MessageLite& header,
+                                   const MessageLite& msg,
+                                   const MonoTime& deadline) {
   DCHECK(sock != nullptr);
   DCHECK(header.IsInitialized()) << tag_ << ": Header must be initialized";
   DCHECK(msg.IsInitialized()) << tag_ << ": Message must be initialized";

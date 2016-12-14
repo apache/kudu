@@ -41,7 +41,7 @@ static const uint32_t kCurrentRpcVersion = 9;
 // From Hadoop.
 static const int32_t kInvalidCallId = -2;
 static const int32_t kConnectionContextCallId = -3;
-static const int32_t kSaslCallId = -33;
+static const int32_t kNegotiateCallId = -33;
 
 static const uint8_t kMagicNumberLength = 4;
 static const uint8_t kHeaderFlagsLength = 3;

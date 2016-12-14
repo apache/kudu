@@ -173,36 +173,36 @@ Status SaslServer::Negotiate() {
 
   nego_ok_ = false;
   while (!nego_ok_) {
-    TRACE("Waiting for next SASL message...");
+    TRACE("Waiting for next Negotiation message...");
     RequestHeader header;
     Slice param_buf;
     RETURN_NOT_OK(ReceiveFramedMessageBlocking(sock_, &recv_buf, &header, &param_buf, deadline_));
 
-    SaslMessagePB request;
-    RETURN_NOT_OK(ParseSaslMsgRequest(header, param_buf, &request));
+    NegotiatePB request;
+    RETURN_NOT_OK(ParseNegotiatePB(header, param_buf, &request));
 
-    switch (request.state()) {
+    switch (request.step()) {
       // NEGOTIATE: They want a list of available mechanisms.
-      case SaslMessagePB::NEGOTIATE:
+      case NegotiatePB::NEGOTIATE:
         RETURN_NOT_OK(HandleNegotiateRequest(request));
         break;
 
       // INITIATE: They want to initiate negotiation based on their specified mechanism.
-      case SaslMessagePB::INITIATE:
+      case NegotiatePB::INITIATE:
         RETURN_NOT_OK(HandleInitiateRequest(request));
         break;
 
       // RESPONSE: Client sent a new request as a follow-up to a CHALLENGE response.
-      case SaslMessagePB::RESPONSE:
+      case NegotiatePB::RESPONSE:
         RETURN_NOT_OK(HandleResponseRequest(request));
         break;
 
-      // Client sent us some unsupported SASL request.
+      // Client sent us an unsupported Negotiation request.
       default: {
         TRACE("SASL Server: Received unsupported request from client");
-        Status s = Status::InvalidArgument("RPC server doesn't support SASL state in request",
-            SaslMessagePB::SaslState_Name(request.state()));
-        RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+        Status s = Status::InvalidArgument("RPC server doesn't support negotiation step in request",
+                                           NegotiatePB::NegotiateStep_Name(request.step()));
+        RETURN_NOT_OK(SendRpcError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
         return s;
       }
     }
@@ -234,35 +234,36 @@ Status SaslServer::ValidateConnectionHeader(faststring* recv_buf) {
   return Status::OK();
 }
 
-Status SaslServer::ParseSaslMsgRequest(const RequestHeader& header, const Slice& param_buf,
-    SaslMessagePB* request) {
-  Status s = helper_.SanityCheckSaslCallId(header.call_id());
+Status SaslServer::ParseNegotiatePB(const RequestHeader& header,
+                                    const Slice& param_buf,
+                                    NegotiatePB* request) {
+  Status s = helper_.SanityCheckNegotiateCallId(header.call_id());
   if (!s.ok()) {
-    RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_INVALID_RPC_HEADER, s));
+    RETURN_NOT_OK(SendRpcError(ErrorStatusPB::FATAL_INVALID_RPC_HEADER, s));
   }
 
-  s = helper_.ParseSaslMessage(param_buf, request);
+  s = helper_.ParseNegotiatePB(param_buf, request);
   if (!s.ok()) {
-    RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_DESERIALIZING_REQUEST, s));
+    RETURN_NOT_OK(SendRpcError(ErrorStatusPB::FATAL_DESERIALIZING_REQUEST, s));
     return s;
   }
 
   return Status::OK();
 }
 
-Status SaslServer::SendSaslMessage(const SaslMessagePB& msg) {
+Status SaslServer::SendNegotiatePB(const NegotiatePB& msg) {
   DCHECK_NE(server_state_, SaslNegotiationState::NEW)
-      << "Must not send SASL messages before calling Init()";
+      << "Must not send Negotiate messages before calling Init()";
   DCHECK_NE(server_state_, SaslNegotiationState::NEGOTIATED)
-      << "Must not send SASL messages after Negotiate() succeeds";
+      << "Must not send Negotiate messages after Negotiate() succeeds";
 
-  // Create header with SASL-specific callId
+  // Create header with negotiation-specific callId
   ResponseHeader header;
-  header.set_call_id(kSaslCallId);
-  return helper_.SendSaslMessage(sock_, header, msg, deadline_);
+  header.set_call_id(kNegotiateCallId);
+  return helper_.SendNegotiatePB(sock_, header, msg, deadline_);
 }
 
-Status SaslServer::SendSaslError(ErrorStatusPB::RpcErrorCodePB code, const Status& err) {
+Status SaslServer::SendRpcError(ErrorStatusPB::RpcErrorCodePB code, const Status& err) {
   DCHECK_NE(server_state_, SaslNegotiationState::NEW)
       << "Must not send SASL messages before calling Init()";
   DCHECK_NE(server_state_, SaslNegotiationState::NEGOTIATED)
@@ -271,9 +272,9 @@ Status SaslServer::SendSaslError(ErrorStatusPB::RpcErrorCodePB code, const Statu
     return Status::InvalidArgument("Cannot send error message using OK status");
   }
 
-  // Create header with SASL-specific callId
+  // Create header with negotiation-specific callId
   ResponseHeader header;
-  header.set_call_id(kSaslCallId);
+  header.set_call_id(kNegotiateCallId);
   header.set_is_error(true);
 
   // Get RPC error code from Status object
@@ -281,12 +282,12 @@ Status SaslServer::SendSaslError(ErrorStatusPB::RpcErrorCodePB code, const Statu
   msg.set_code(code);
   msg.set_message(err.ToString());
 
-  RETURN_NOT_OK(helper_.SendSaslMessage(sock_, header, msg, deadline_));
+  RETURN_NOT_OK(helper_.SendNegotiatePB(sock_, header, msg, deadline_));
   TRACE("Sent SASL error: $0", ErrorStatusPB::RpcErrorCodePB_Name(code));
   return Status::OK();
 }
 
-Status SaslServer::HandleNegotiateRequest(const SaslMessagePB& request) {
+Status SaslServer::HandleNegotiateRequest(const NegotiatePB& request) {
   TRACE("SASL Server: Received NEGOTIATE request from client");
 
   // Fill in the set of features supported by the client.
@@ -305,7 +306,7 @@ Status SaslServer::HandleNegotiateRequest(const SaslMessagePB& request) {
     Status s = Status::IllegalState("SASL server mechanism list is empty!");
     LOG(ERROR) << s.ToString();
     TRACE("SASL Server: Sending FATAL_UNAUTHORIZED response to client");
-    RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    RETURN_NOT_OK(SendRpcError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
     return s;
   }
 
@@ -314,8 +315,8 @@ Status SaslServer::HandleNegotiateRequest(const SaslMessagePB& request) {
 }
 
 Status SaslServer::SendNegotiateResponse(const set<string>& server_mechs) {
-  SaslMessagePB response;
-  response.set_state(SaslMessagePB::NEGOTIATE);
+  NegotiatePB response;
+  response.set_step(NegotiatePB::NEGOTIATE);
 
   for (const string& mech : server_mechs) {
     response.add_auths()->set_mechanism(mech);
@@ -326,24 +327,24 @@ Status SaslServer::SendNegotiateResponse(const set<string>& server_mechs) {
     response.add_supported_features(feature);
   }
 
-  RETURN_NOT_OK(SendSaslMessage(response));
+  RETURN_NOT_OK(SendNegotiatePB(response));
   TRACE("Sent NEGOTIATE response");
   return Status::OK();
 }
 
 
-Status SaslServer::HandleInitiateRequest(const SaslMessagePB& request) {
+Status SaslServer::HandleInitiateRequest(const NegotiatePB& request) {
   TRACE("SASL Server: Received INITIATE request from client");
 
   if (request.auths_size() != 1) {
     Status s = Status::NotAuthorized(StringPrintf(
           "SASL INITIATE request must include exactly one SaslAuth section, found: %d",
           request.auths_size()));
-    RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    RETURN_NOT_OK(SendRpcError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
     return s;
   }
 
-  const SaslMessagePB::SaslAuth& auth = request.auths(0);
+  const NegotiatePB::SaslAuth& auth = request.auths(0);
   TRACE("SASL Server: Client requested to use mechanism: $0", auth.mechanism());
 
   // Security issue to display this. Commented out but left for debugging purposes.
@@ -363,7 +364,7 @@ Status SaslServer::HandleInitiateRequest(const SaslMessagePB& request) {
           &server_out_len);         // Output len.
     });
   if (PREDICT_FALSE(!s.ok() && !s.IsIncomplete())) {
-    RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    RETURN_NOT_OK(SendRpcError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
     return s;
   }
   negotiated_mech_ = SaslMechanism::value_of(auth.mechanism());
@@ -379,32 +380,32 @@ Status SaslServer::HandleInitiateRequest(const SaslMessagePB& request) {
 }
 
 Status SaslServer::SendChallengeResponse(const char* challenge, unsigned clen) {
-  SaslMessagePB response;
-  response.set_state(SaslMessagePB::CHALLENGE);
+  NegotiatePB response;
+  response.set_step(NegotiatePB::CHALLENGE);
   response.mutable_token()->assign(challenge, clen);
   TRACE("SASL Server: Sending CHALLENGE response to client");
-  RETURN_NOT_OK(SendSaslMessage(response));
+  RETURN_NOT_OK(SendNegotiatePB(response));
   return Status::OK();
 }
 
 Status SaslServer::SendSuccessResponse(const char* token, unsigned tlen) {
-  SaslMessagePB response;
-  response.set_state(SaslMessagePB::SUCCESS);
+  NegotiatePB response;
+  response.set_step(NegotiatePB::SUCCESS);
   if (PREDICT_FALSE(tlen > 0)) {
     response.mutable_token()->assign(token, tlen);
   }
   TRACE("SASL Server: Sending SUCCESS response to client");
-  RETURN_NOT_OK(SendSaslMessage(response));
+  RETURN_NOT_OK(SendNegotiatePB(response));
   return Status::OK();
 }
 
 
-Status SaslServer::HandleResponseRequest(const SaslMessagePB& request) {
+Status SaslServer::HandleResponseRequest(const NegotiatePB& request) {
   TRACE("SASL Server: Received RESPONSE request from client");
 
   if (!request.has_token()) {
     Status s = Status::InvalidArgument("No token in CHALLENGE RESPONSE from client");
-    RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    RETURN_NOT_OK(SendRpcError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
     return s;
   }
 
@@ -420,7 +421,7 @@ Status SaslServer::HandleResponseRequest(const SaslMessagePB& request) {
           &server_out_len);         // Output len
     });
   if (!s.ok() && !s.IsIncomplete()) {
-    RETURN_NOT_OK(SendSaslError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    RETURN_NOT_OK(SendRpcError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
     return s;
   }
 

@@ -74,8 +74,8 @@ enum RpcFeatureFlag {
 };
 
 // Message type passed back & forth for the SASL negotiation.
-message SaslMessagePB {
-  enum SaslState {
+message NegotiatePB {
+  enum NegotiateStep {
     UNKNOWN   = 999;
     SUCCESS   = 0;
     NEGOTIATE = 1;
@@ -101,9 +101,9 @@ message SaslMessagePB {
   // to simplify backporting of features out-of-order.
   repeated RpcFeatureFlag supported_features = 1;
 
-  required SaslState state = 2;  // RPC system SASL state.
-  optional bytes token     = 3  [(REDACT) = true];
-  repeated SaslAuth auths  = 4;
+  required NegotiateStep step = 2;
+  optional bytes token        = 3 [(REDACT) = true];
+  repeated SaslAuth auths     = 4;
 }
 
 message RemoteMethodPB {

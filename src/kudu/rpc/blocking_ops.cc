@@ -41,7 +41,7 @@ using google::protobuf::MessageLite;
 
 const char kHTTPHeader[] = "HTTP";
 
-Status EnsureBlockingMode(const Socket* const sock) {
+Status EnsureBlockingMode(const Socket* sock) {
   bool is_nonblocking;
   RETURN_NOT_OK(sock->IsNonBlocking(&is_nonblocking));
   if (is_nonblocking) {

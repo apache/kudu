@@ -37,9 +37,9 @@ namespace rpc {
 
 using std::string;
 
+class NegotiatePB;
+class NegotiatePB_SaslAuth;
 class ResponseHeader;
-class SaslMessagePB;
-class SaslMessagePB_SaslAuth;
 
 // Class for doing SASL negotiation with a SaslServer over a bidirectional socket.
 // Operations on this class are NOT thread-safe.
@@ -106,18 +106,19 @@ class SaslClient {
   int SecretCb(sasl_conn_t* conn, int id, sasl_secret_t** psecret);
 
  private:
-  // Encode and send the specified SASL message to the server.
-  Status SendSaslMessage(const SaslMessagePB& msg);
+  // Encode and send the specified negotiate message to the server.
+  Status SendNegotiatePB(const NegotiatePB& msg);
 
   // Validate that header does not indicate an error, parse param_buf into response.
-  Status ParseSaslMsgResponse(const ResponseHeader& header, const Slice& param_buf,
-      SaslMessagePB* response);
+  Status ParseNegotiatePB(const ResponseHeader& header,
+                          const Slice& param_buf,
+                          NegotiatePB* response);
 
   // Send an NEGOTIATE message to the server.
   Status SendNegotiateMessage();
 
-  // Send an INITIATE message to the server.
-  Status SendInitiateMessage(const SaslMessagePB_SaslAuth& auth,
+  // Send an SASL_INITIATE message to the server.
+  Status SendInitiateMessage(const NegotiatePB_SaslAuth& auth,
                              const char* init_msg, unsigned init_msg_len);
 
   // Send a RESPONSE message to the server.
@@ -132,13 +133,13 @@ class SaslClient {
   Status DoSaslStep(const string& in, const char** out, unsigned* out_len);
 
   // Handle case when server sends NEGOTIATE response.
-  Status HandleNegotiateResponse(const SaslMessagePB& response);
+  Status HandleNegotiateResponse(const NegotiatePB& response);
 
   // Handle case when server sends CHALLENGE response.
-  Status HandleChallengeResponse(const SaslMessagePB& response);
+  Status HandleChallengeResponse(const NegotiatePB& response);
 
   // Handle case when server sends SUCCESS response.
-  Status HandleSuccessResponse(const SaslMessagePB& response);
+  Status HandleSuccessResponse(const NegotiatePB& response);
 
   // Parse error status message from raw bytes of an ErrorStatusPB.
   Status ParseError(const Slice& err_data);

@@ -43,7 +43,7 @@ namespace rpc {
 
 using std::string;
 
-class SaslMessagePB;
+class NegotiatePB;
 
 // Helper class which contains functionality that is common to SaslClient & SaslServer.
 // Most of these methods are convenience methods for interacting with the libsasl2 library.
@@ -93,16 +93,18 @@ class SaslHelper {
   // Check for the PLAIN SASL mechanism.
   bool IsPlainEnabled() const;
 
-  // Sanity check that the call ID is the SASL call ID.
+  // Sanity check that the call ID is the negotiation call ID.
   // Logs DFATAL if call_id does not match.
-  Status SanityCheckSaslCallId(int32_t call_id) const;
+  Status SanityCheckNegotiateCallId(int32_t call_id) const;
 
   // Parse msg from the given Slice.
-  Status ParseSaslMessage(const Slice& param_buf, SaslMessagePB* msg);
+  Status ParseNegotiatePB(const Slice& param_buf, NegotiatePB* msg);
 
   // Encode and send a message over a socket, sending the connection header if necessary.
-  Status SendSaslMessage(Socket* sock, const google::protobuf::MessageLite& header,
-      const google::protobuf::MessageLite& msg, const MonoTime& deadline);
+  Status SendNegotiatePB(Socket* sock,
+                         const google::protobuf::MessageLite& header,
+                         const google::protobuf::MessageLite& msg,
+                         const MonoTime& deadline);
 
  private:
   Status EnableMechanism(const std::string& mech);

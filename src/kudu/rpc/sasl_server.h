@@ -116,24 +116,25 @@ class SaslServer {
   Status ValidateConnectionHeader(faststring* recv_buf);
 
   // Parse request body. If malformed, sends an error message to the client.
-  Status ParseSaslMsgRequest(const RequestHeader& header, const Slice& param_buf,
-    SaslMessagePB* request);
+  Status ParseNegotiatePB(const RequestHeader& header,
+                          const Slice& param_buf,
+                          NegotiatePB* request);
 
   // Encode and send the specified SASL message to the client.
-  Status SendSaslMessage(const SaslMessagePB& msg);
+  Status SendNegotiatePB(const NegotiatePB& msg);
 
   // Encode and send the specified RPC error message to the client.
   // Calls Status.ToString() for the embedded error message.
-  Status SendSaslError(ErrorStatusPB::RpcErrorCodePB code, const Status& err);
+  Status SendRpcError(ErrorStatusPB::RpcErrorCodePB code, const Status& err);
 
   // Handle case when client sends NEGOTIATE request.
-  Status HandleNegotiateRequest(const SaslMessagePB& request);
+  Status HandleNegotiateRequest(const NegotiatePB& request);
 
   // Send a NEGOTIATE response to the client with the list of available mechanisms.
   Status SendNegotiateResponse(const std::set<string>& server_mechs);
 
   // Handle case when client sends INITIATE request.
-  Status HandleInitiateRequest(const SaslMessagePB& request);
+  Status HandleInitiateRequest(const NegotiatePB& request);
 
   // Send a CHALLENGE response to the client with a challenge token.
   Status SendChallengeResponse(const char* challenge, unsigned clen);
@@ -142,7 +143,7 @@ class SaslServer {
   Status SendSuccessResponse(const char* token, unsigned tlen);
 
   // Handle case when client sends RESPONSE request.
-  Status HandleResponseRequest(const SaslMessagePB& request);
+  Status HandleResponseRequest(const NegotiatePB& request);
 
   string app_name_;
   Socket* sock_;

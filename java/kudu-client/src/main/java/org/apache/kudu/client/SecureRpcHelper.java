@@ -106,18 +106,18 @@ public class SecureRpcHelper {
   }
 
   private void sendNegotiateMessage(Channel channel) {
-    RpcHeader.SaslMessagePB.Builder builder = RpcHeader.SaslMessagePB.newBuilder();
+    RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
 
     // Advertise our supported features
     for (RpcHeader.RpcFeatureFlag flag : SUPPORTED_RPC_FEATURES) {
       builder.addSupportedFeatures(flag);
     }
 
-    builder.setState(RpcHeader.SaslMessagePB.SaslState.NEGOTIATE);
+    builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.NEGOTIATE);
     sendSaslMessage(channel, builder.build());
   }
 
-  private void sendSaslMessage(Channel channel, RpcHeader.SaslMessagePB msg) {
+  private void sendSaslMessage(Channel channel, RpcHeader.NegotiatePB msg) {
     RpcHeader.RequestHeader.Builder builder = RpcHeader.RequestHeader.newBuilder();
     builder.setCallId(SASL_CALL_ID);
     RpcHeader.RequestHeader header = builder.build();
@@ -128,8 +128,8 @@ public class SecureRpcHelper {
 
   public ChannelBuffer handleResponse(ChannelBuffer buf, Channel chan) throws SaslException {
     if (!saslClient.isComplete() || negoUnderway) {
-      RpcHeader.SaslMessagePB response = parseSaslMsgResponse(buf);
-      switch (response.getState()) {
+      RpcHeader.NegotiatePB response = parseSaslMsgResponse(buf);
+      switch (response.getStep()) {
         case NEGOTIATE:
           handleNegotiateResponse(chan, response);
           break;
@@ -140,7 +140,7 @@ public class SecureRpcHelper {
           handleSuccessResponse(chan);
           break;
         default:
-          LOG.error(String.format("Wrong SASL state: %s", response.getState()));
+          LOG.error(String.format("Wrong negotiation step: %s", response.getStep()));
       }
       return null;
     }
@@ -189,7 +189,7 @@ public class SecureRpcHelper {
     }
   }
 
-  private RpcHeader.SaslMessagePB parseSaslMsgResponse(ChannelBuffer buf) {
+  private RpcHeader.NegotiatePB parseSaslMsgResponse(ChannelBuffer buf) {
     CallResponse response = new CallResponse(buf);
     RpcHeader.ResponseHeader responseHeader = response.getHeader();
     int id = responseHeader.getCallId();
@@ -197,16 +197,16 @@ public class SecureRpcHelper {
       throw new IllegalStateException("Received a call that wasn't for SASL");
     }
 
-    RpcHeader.SaslMessagePB.Builder saslBuilder =  RpcHeader.SaslMessagePB.newBuilder();
+    RpcHeader.NegotiatePB.Builder saslBuilder = RpcHeader.NegotiatePB.newBuilder();
     KuduRpc.readProtobuf(response.getPBMessage(), saslBuilder);
     return saslBuilder.build();
   }
 
 
-  private void handleNegotiateResponse(Channel chan, RpcHeader.SaslMessagePB response) throws
+  private void handleNegotiateResponse(Channel chan, RpcHeader.NegotiatePB response) throws
       SaslException {
-    RpcHeader.SaslMessagePB.SaslAuth negotiatedAuth = null;
-    for (RpcHeader.SaslMessagePB.SaslAuth auth : response.getAuthsList()) {
+    RpcHeader.NegotiatePB.SaslAuth negotiatedAuth = null;
+    for (RpcHeader.NegotiatePB.SaslAuth auth : response.getAuthsList()) {
       negotiatedAuth = auth;
     }
 
@@ -223,24 +223,24 @@ public class SecureRpcHelper {
       saslToken = saslClient.evaluateChallenge(saslToken);
     }
 
-    RpcHeader.SaslMessagePB.Builder builder = RpcHeader.SaslMessagePB.newBuilder();
+    RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
     if (saslToken != null) {
       builder.setToken(ZeroCopyLiteralByteString.wrap(saslToken));
     }
-    builder.setState(RpcHeader.SaslMessagePB.SaslState.INITIATE);
+    builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.INITIATE);
     builder.addAuths(negotiatedAuth);
     sendSaslMessage(chan, builder.build());
   }
 
-  private void handleChallengeResponse(Channel chan, RpcHeader.SaslMessagePB response) throws
+  private void handleChallengeResponse(Channel chan, RpcHeader.NegotiatePB response) throws
       SaslException {
     byte[] saslToken = saslClient.evaluateChallenge(response.getToken().toByteArray());
     if (saslToken == null) {
       throw new IllegalStateException("Not expecting an empty token");
     }
-    RpcHeader.SaslMessagePB.Builder builder = RpcHeader.SaslMessagePB.newBuilder();
+    RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
     builder.setToken(ZeroCopyLiteralByteString.wrap(saslToken));
-    builder.setState(RpcHeader.SaslMessagePB.SaslState.RESPONSE);
+    builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.RESPONSE);
     sendSaslMessage(chan, builder.build());
   }
 
