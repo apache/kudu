@@ -27,6 +27,7 @@
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/server/server_base.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/debug/leak_annotations.h"
 #include "kudu/util/flag_tags.h"
 
 DECLARE_bool(use_mock_wall_clock);
@@ -94,7 +95,28 @@ void GenericServiceImpl::SetFlag(const SetFlagRequestPB* req,
   rpc->RespondSuccess();
 }
 
-void GenericServiceImpl::FlushCoverage(const FlushCoverageRequestPB* req,
+void GenericServiceImpl::CheckLeaks(const CheckLeaksRequestPB* /*req*/,
+                                    CheckLeaksResponsePB* resp,
+                                    rpc::RpcContext* rpc) {
+  // We have to use these nested #if statements rather than an && to avoid
+  // a preprocessor error with GCC which doesn't know about __has_feature.
+#if defined(__has_feature)
+#  if __has_feature(address_sanitizer)
+#    define LSAN_ENABLED
+#  endif
+#endif
+#ifndef LSAN_ENABLED
+  resp->set_success(false);
+#else
+  LOG(INFO) << "Checking for leaks (request via RPC)";
+  resp->set_success(true);
+  resp->set_found_leaks(__lsan_do_recoverable_leak_check());
+#endif
+#undef LSAN_ENABLED
+  rpc->RespondSuccess();
+}
+
+void GenericServiceImpl::FlushCoverage(const FlushCoverageRequestPB* /*req*/,
                                        FlushCoverageResponsePB* resp,
                                        rpc::RpcContext* rpc) {
   if (IsCoverageBuild()) {

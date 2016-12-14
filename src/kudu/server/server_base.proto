@@ -84,6 +84,15 @@ message FlushCoverageResponsePB {
   optional bool success = 1;
 }
 
+// Run leak checks in an LSAN-instrumented build.
+message CheckLeaksRequestPB {
+}
+message CheckLeaksResponsePB {
+  // If the current build is not an LSAN-instrumented build, returns false.
+  optional bool success = 1;
+  optional bool found_leaks = 2;
+}
+
 // Requests the server's current timestamp.
 message ServerClockRequestPB {
 }
@@ -119,6 +128,9 @@ service GenericService {
 
   rpc FlushCoverage(FlushCoverageRequestPB)
     returns (FlushCoverageResponsePB);
+
+  rpc CheckLeaks(CheckLeaksRequestPB)
+    returns (CheckLeaksResponsePB);
 
   rpc ServerClock(ServerClockRequestPB)
     returns (ServerClockResponsePB);

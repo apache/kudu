@@ -725,12 +725,14 @@ void ExternalDaemon::SetExePath(string exe) {
 Status ExternalDaemon::Pause() {
   if (!process_) return Status::OK();
   VLOG(1) << "Pausing " << exe_ << " with pid " << process_->pid();
+  paused_ = true;
   return process_->Kill(SIGSTOP);
 }
 
 Status ExternalDaemon::Resume() {
   if (!process_) return Status::OK();
   VLOG(1) << "Resuming " << exe_ << " with pid " << process_->pid();
+  paused_ = false;
   return process_->Kill(SIGCONT);
 }
 
@@ -815,15 +817,20 @@ void ExternalDaemon::Shutdown() {
   }
 
   if (IsProcessAlive()) {
-    // In coverage builds, ask the process nicely to flush coverage info
-    // before we kill -9 it. Otherwise, we never get any coverage from
-    // external clusters.
-    FlushCoverage();
+    if (!paused_) {
+      // In coverage builds, ask the process nicely to flush coverage info
+      // before we kill -9 it. Otherwise, we never get any coverage from
+      // external clusters.
+      FlushCoverage();
+      // Similarly, check for leaks in LSAN builds before killing.
+      CheckForLeaks();
+    }
 
     LOG(INFO) << "Killing " << exe_ << " with pid " << process_->pid();
     ignore_result(process_->Kill(SIGKILL));
   }
   WARN_NOT_OK(process_->Wait(), "Waiting on " + exe_);
+  paused_ = false;
   process_.reset();
 }
 
@@ -838,14 +845,35 @@ void ExternalDaemon::FlushCoverage() {
   server::FlushCoverageResponsePB resp;
   rpc::RpcController rpc;
 
-  // Set a reasonably short timeout, since some of our tests kill servers which
-  // are kill -STOPed.
-  rpc.set_timeout(MonoDelta::FromMilliseconds(100));
+  rpc.set_timeout(MonoDelta::FromMilliseconds(1000));
   Status s = proxy.FlushCoverage(req, &resp, &rpc);
   if (s.ok() && !resp.success()) {
     s = Status::RemoteError("Server does not appear to be running a coverage build");
   }
   WARN_NOT_OK(s, Substitute("Unable to flush coverage on $0 pid $1", exe_, process_->pid()));
+#endif
+}
+
+void ExternalDaemon::CheckForLeaks() {
+#if defined(__has_feature)
+#  if __has_feature(address_sanitizer)
+  LOG(INFO) << "Attempting to check leaks for " << exe_ << " pid " << process_->pid();
+  server::GenericServiceProxy proxy(messenger_, bound_rpc_addr());
+  server::CheckLeaksRequestPB req;
+  server::CheckLeaksResponsePB resp;
+  rpc::RpcController rpc;
+
+  rpc.set_timeout(MonoDelta::FromMilliseconds(1000));
+  Status s = proxy.CheckLeaks(req, &resp, &rpc);
+  if (s.ok()) {
+    if (!resp.success()) {
+      s = Status::RemoteError("Server does not appear to be running an LSAN build");
+    } else {
+      CHECK(!resp.found_leaks()) << "Found leaks in " << exe_ << " pid " << process_->pid();
+    }
+  }
+  WARN_NOT_OK(s, Substitute("Unable to check leaks on $0 pid $1", exe_, process_->pid()));
+#  endif
 #endif
 }
 

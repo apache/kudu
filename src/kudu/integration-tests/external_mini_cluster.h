@@ -436,6 +436,10 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // In a non-coverage build, this does nothing.
   void FlushCoverage();
 
+  // In an LSAN build, ask the daemon to check for leaked memory, and
+  // LOG(FATAL) if there are any leaks.
+  void CheckForLeaks();
+
   // Get/Set rpc_bind_addresses for daemon.
   virtual const std::string& get_rpc_bind_address() const {
     return rpc_bind_address_;
@@ -452,6 +456,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   std::map<std::string, std::string> extra_env_;
 
   gscoped_ptr<Subprocess> process_;
+  bool paused_ = false;
 
   gscoped_ptr<server::ServerStatusPB> status_;
   std::string rpc_bind_address_;

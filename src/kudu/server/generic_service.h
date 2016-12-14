@@ -38,6 +38,10 @@ class GenericServiceImpl : public GenericServiceIf {
                              FlushCoverageResponsePB* resp,
                              rpc::RpcContext* rpc) OVERRIDE;
 
+  virtual void CheckLeaks(const CheckLeaksRequestPB* req,
+                          CheckLeaksResponsePB* resp,
+                          rpc::RpcContext* rpc) OVERRIDE;
+
   virtual void ServerClock(const ServerClockRequestPB* req,
                            ServerClockResponsePB* resp,
                            rpc::RpcContext* rpc) OVERRIDE;
