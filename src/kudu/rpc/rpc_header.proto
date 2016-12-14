@@ -85,13 +85,11 @@ message SaslMessagePB {
   }
 
   message SaslAuth {
-    optional string method    = 1;  // Deprecated, but was 'required' in Kudu 0.5.0 and 0.6.0.
     required string mechanism = 2;  // Standard SASL mechanism, i.e. ANONYMOUS, PLAIN, GSSAPI.
 
-    // SASL challenge token from server, if the client chooses to use this method.
-    // Only used when the server is piggy-backing a challenge on a NEGOTIATE response.
-    // Otherwise, SaslMessagePB::token is used as the challenge token.
-    optional bytes challenge = 5 [(REDACT) = true];
+    // Deprecated: no longer used.
+    optional string DEPRECATED_method = 1;
+    optional bytes DEPRECATED_challenge = 5 [(REDACT) = true];
   }
 
   // When the client sends its first NEGOTIATE message, it sends its set of supported

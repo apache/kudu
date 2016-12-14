@@ -396,14 +396,6 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
   }
   negotiated_mech_ = SaslMechanism::value_of(negotiated_mech);
 
-  // Handle the case where the server sent a challenge with the NEGOTIATE response.
-  if (auth->has_challenge()) {
-    if (PREDICT_FALSE(nego_ok_)) {
-      LOG(DFATAL) << "Server sent challenge after sasl_client_start() returned SASL_OK";
-    }
-    RETURN_NOT_OK(DoSaslStep(auth->challenge(), &init_msg, &init_msg_len));
-  }
-
   RETURN_NOT_OK(SendInitiateMessage(*auth, init_msg, init_msg_len));
   return Status::OK();
 }
