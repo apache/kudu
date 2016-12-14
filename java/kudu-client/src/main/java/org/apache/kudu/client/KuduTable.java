@@ -168,7 +168,9 @@ public class KuduTable {
   public Deferred<List<LocatedTablet>> asyncGetTabletsLocations(byte[] startKey,
                                                                 byte[] endKey,
                                                                 long deadline) {
-    return client.locateTable(this, startKey, endKey, deadline);
+    return client.locateTable(this, startKey, endKey,
+                              AsyncKuduClient.FETCH_TABLETS_PER_RANGE_LOOKUP,
+                              deadline);
   }
 
   /**
@@ -202,7 +204,9 @@ public class KuduTable {
   public List<LocatedTablet> getTabletsLocations(byte[] startKey,
                                                  byte[] endKey,
                                                  long deadline) throws Exception {
-    return client.syncLocateTable(this, startKey, endKey, deadline);
+    return client.syncLocateTable(this, startKey, endKey,
+                                  AsyncKuduClient.FETCH_TABLETS_PER_RANGE_LOOKUP,
+                                  deadline);
   }
 
   /**

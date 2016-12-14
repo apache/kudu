@@ -513,37 +513,46 @@ public class TestKuduClient extends BaseKuduTest {
    */
   @Test
   public void testScanTokens() throws Exception {
-    Schema schema = createManyStringsSchema();
-    CreateTableOptions createOptions = new CreateTableOptions();
-    createOptions.addHashPartitions(ImmutableList.of("key"), 8);
+    int saveFetchTablets = AsyncKuduClient.FETCH_TABLETS_PER_RANGE_LOOKUP;
+    try {
+      // For this test, make sure that we cover the case that not all tablets
+      // are returned in a single batch.
+      AsyncKuduClient.FETCH_TABLETS_PER_RANGE_LOOKUP = 4;
 
-    PartialRow splitRow = schema.newPartialRow();
-    splitRow.addString("key", "key_50");
-    createOptions.addSplitRow(splitRow);
+      Schema schema = createManyStringsSchema();
+      CreateTableOptions createOptions = new CreateTableOptions();
+      createOptions.addHashPartitions(ImmutableList.of("key"), 8);
 
-    syncClient.createTable(tableName, schema, createOptions);
+      PartialRow splitRow = schema.newPartialRow();
+      splitRow.addString("key", "key_50");
+      createOptions.addSplitRow(splitRow);
 
-    KuduSession session = syncClient.newSession();
-    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
-    KuduTable table = syncClient.openTable(tableName);
-    for (int i = 0; i < 100; i++) {
-      Insert insert = table.newInsert();
-      PartialRow row = insert.getRow();
-      row.addString("key", String.format("key_%02d", i));
-      row.addString("c1", "c1_" + i);
-      row.addString("c2", "c2_" + i);
-      session.apply(insert);
-    }
-    session.flush();
+      syncClient.createTable(tableName, schema, createOptions);
 
-    KuduScanToken.KuduScanTokenBuilder tokenBuilder = syncClient.newScanTokenBuilder(table);
-    tokenBuilder.setProjectedColumnIndexes(ImmutableList.<Integer>of());
-    List<KuduScanToken> tokens = tokenBuilder.build();
-    assertEquals(16, tokens.size());
+      KuduSession session = syncClient.newSession();
+      session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+      KuduTable table = syncClient.openTable(tableName);
+      for (int i = 0; i < 100; i++) {
+        Insert insert = table.newInsert();
+        PartialRow row = insert.getRow();
+        row.addString("key", String.format("key_%02d", i));
+        row.addString("c1", "c1_" + i);
+        row.addString("c2", "c2_" + i);
+        session.apply(insert);
+      }
+      session.flush();
 
-    for (KuduScanToken token : tokens) {
-      // Sanity check to make sure the debug printing does not throw.
-      LOG.debug(KuduScanToken.stringifySerializedToken(token.serialize(), syncClient));
+      KuduScanToken.KuduScanTokenBuilder tokenBuilder = syncClient.newScanTokenBuilder(table);
+      tokenBuilder.setProjectedColumnIndexes(ImmutableList.<Integer>of());
+      List<KuduScanToken> tokens = tokenBuilder.build();
+      assertEquals(16, tokens.size());
+
+      for (KuduScanToken token : tokens) {
+        // Sanity check to make sure the debug printing does not throw.
+        LOG.debug(KuduScanToken.stringifySerializedToken(token.serialize(), syncClient));
+      }
+    } finally {
+      AsyncKuduClient.FETCH_TABLETS_PER_RANGE_LOOKUP = saveFetchTablets;
     }
   }
 
