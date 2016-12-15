@@ -146,28 +146,33 @@ Status ThreadPool::Init() {
   return Status::OK();
 }
 
-void ThreadPool::ClearQueue() {
-  for (QueueEntry& e : queue_) {
-    if (e.trace) {
-      e.trace->Release();
-    }
-  }
-  queue_.clear();
-  queue_size_ = 0;
-}
-
 void ThreadPool::Shutdown() {
   MutexLock unique_lock(lock_);
   CheckNotPoolThreadUnlocked();
 
   pool_status_ = Status::ServiceUnavailable("The pool has been shut down.");
-  ClearQueue();
+
+  // Clear the queue_ member under the lock, but defer the releasing
+  // of the entries outside the lock, in case there are concurrent threads
+  // wanting to access the ThreadPool. The task's destructors may acquire
+  // locks, etc, so this also prevents lock inversions.
+  auto to_release = std::move(queue_);
+  queue_.clear();
+  queue_size_ = 0;
   not_empty_.Broadcast();
 
   // The Runnable doesn't have Abort() so we must wait
   // and hopefully the abort is done outside before calling Shutdown().
   while (num_threads_ > 0) {
     no_threads_cond_.Wait();
+  }
+
+  // Finally release the tasks that were in the queue, outside the lock.
+  unique_lock.Unlock();
+  for (QueueEntry& e : to_release) {
+    if (e.trace) {
+      e.trace->Release();
+    }
   }
 }
 
@@ -313,7 +318,7 @@ void ThreadPool::DispatchThread(bool permanent) {
     }
 
     // Fetch a pending task
-    QueueEntry entry = queue_.front();
+    QueueEntry entry = std::move(queue_.front());
     queue_.pop_front();
     queue_size_--;
     ++active_threads_;
@@ -350,6 +355,13 @@ void ThreadPool::DispatchThread(bool permanent) {
       TRACE_COUNTER_INCREMENT(run_wall_time_trace_metric_name_, wall_us);
       TRACE_COUNTER_INCREMENT(run_cpu_time_trace_metric_name_, cpu_us);
     }
+    // Destruct the task while we do not hold the lock.
+    //
+    // The task's destructor may be expensive if it has a lot of bound
+    // objects, and we don't want to block submission of the threadpool.
+    // In the worst case, the destructor might even try to do something
+    // with this threadpool, and produce a deadlock.
+    entry.runnable.reset();
     unique_lock.Lock();
 
     if (--active_threads_ == 0) {

@@ -201,9 +201,6 @@ class ThreadPool {
   // Initialize the thread pool by starting the minimum number of threads.
   Status Init();
 
-  // Clear all entries from queue_. Requires that lock_ is held.
-  void ClearQueue();
-
   // Dispatcher responsible for dequeueing and executing the tasks
   void DispatchThread(bool permanent);
 

@@ -349,4 +349,28 @@ TEST(TestThreadPool, TestDeadlocks) {
 }
 #endif
 
+class SlowDestructorRunnable : public Runnable {
+ public:
+  void Run() override {}
+
+  virtual ~SlowDestructorRunnable() {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+};
+
+// Test that if a tasks's destructor is slow, it doesn't cause serialization of the tasks
+// in the queue.
+TEST(TestThreadPool, TestSlowDestructor) {
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_OK(BuildMinMaxTestPool(1, 20, &thread_pool));
+  MonoTime start = MonoTime::Now();
+  for (int i = 0; i < 100; i++) {
+    shared_ptr<Runnable> task(new SlowDestructorRunnable());
+    ASSERT_OK(thread_pool->Submit(std::move(task)));
+  }
+  thread_pool->Wait();
+  ASSERT_LT((MonoTime::Now() - start).ToSeconds(), 5);
+}
+
+
 } // namespace kudu
