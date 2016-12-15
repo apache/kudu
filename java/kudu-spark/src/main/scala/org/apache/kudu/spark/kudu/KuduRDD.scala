@@ -95,8 +95,8 @@ private[spark] class RowResultIteratorScala(private val scanner: KuduScanner) ex
   private var currentIterator: RowResultIterator = null
 
   override def hasNext: Boolean = {
-    if ((currentIterator != null && !currentIterator.hasNext && scanner.hasMoreRows) ||
-      (scanner.hasMoreRows && currentIterator == null)) {
+    while ((currentIterator != null && !currentIterator.hasNext && scanner.hasMoreRows) ||
+           (scanner.hasMoreRows && currentIterator == null)) {
       currentIterator = scanner.nextRows()
     }
     currentIterator.hasNext
