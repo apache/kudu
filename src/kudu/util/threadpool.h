@@ -157,12 +157,10 @@ class ThreadPool {
   Status SubmitClosure(const Closure& task) WARN_UNUSED_RESULT;
 
   // Submit a function binded using boost::bind(&FuncName, args...)
-  Status SubmitFunc(const boost::function<void()>& func)
-      WARN_UNUSED_RESULT;
+  Status SubmitFunc(boost::function<void()> func) WARN_UNUSED_RESULT;
 
   // Submit a Runnable class
-  Status Submit(const std::shared_ptr<Runnable>& task)
-      WARN_UNUSED_RESULT;
+  Status Submit(std::shared_ptr<Runnable> task) WARN_UNUSED_RESULT;
 
   // Wait until all the tasks are completed.
   void Wait();

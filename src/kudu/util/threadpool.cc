@@ -182,11 +182,11 @@ Status ThreadPool::SubmitClosure(const Closure& task) {
   return SubmitFunc(boost::bind(&Closure::Run, task));
 }
 
-Status ThreadPool::SubmitFunc(const boost::function<void()>& func) {
-  return Submit(std::shared_ptr<Runnable>(new FunctionRunnable(func)));
+Status ThreadPool::SubmitFunc(boost::function<void()> func) {
+  return Submit(std::shared_ptr<Runnable>(new FunctionRunnable(std::move(func))));
 }
 
-Status ThreadPool::Submit(const std::shared_ptr<Runnable>& task) {
+Status ThreadPool::Submit(std::shared_ptr<Runnable> task) {
   MonoTime submit_time = MonoTime::Now();
 
   MutexLock guard(lock_);
@@ -229,7 +229,7 @@ Status ThreadPool::Submit(const std::shared_ptr<Runnable>& task) {
   }
 
   QueueEntry e;
-  e.runnable = task;
+  e.runnable = std::move(task);
   e.trace = Trace::CurrentTrace();
   // Need to AddRef, since the thread which submitted the task may go away,
   // and we don't want the trace to be destructed while waiting in the queue.
@@ -238,7 +238,7 @@ Status ThreadPool::Submit(const std::shared_ptr<Runnable>& task) {
   }
   e.submit_time = submit_time;
 
-  queue_.push_back(e);
+  queue_.emplace_back(std::move(e));
   int length_at_submit = queue_size_++;
 
   guard.Unlock();
