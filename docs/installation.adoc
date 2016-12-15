@@ -533,6 +533,7 @@ for more information.
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
+$ brew tap homebrew/dupes
 $ brew install autoconf automake cmake krb5 libtool openssl pkg-config pstree
 ----
 
@@ -592,6 +593,7 @@ are installed.
 ----
 #!/bin/bash
 
+brew tap homebrew/dupes
 brew install autoconf automake cmake krb5 libtool openssl pkg-config pstree
 git clone https://github.com/apache/kudu
 cd kudu
