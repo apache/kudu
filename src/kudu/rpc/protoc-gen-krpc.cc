@@ -437,6 +437,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
 
     Print(printer, *subs,
       "using google::protobuf::Message;\n"
+      "using kudu::MetricEntity;\n"
       "using kudu::rpc::ResultTracker;\n"
       "using kudu::rpc::RpcContext;\n"
       "using kudu::rpc::RpcMethodInfo;\n"
