@@ -39,7 +39,6 @@ using std::set;
 namespace kudu {
 namespace rpc {
 
-const char* const kSaslMechAnonymous = "ANONYMOUS";
 const char* const kSaslMechPlain = "PLAIN";
 const char* const kSaslMechGSSAPI = "GSSAPI";
 
@@ -380,9 +379,6 @@ sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context) {
 }
 
 SaslMechanism::Type SaslMechanism::value_of(const string& mech) {
-  if (boost::iequals(mech, "ANONYMOUS")) {
-    return ANONYMOUS;
-  }
   if (boost::iequals(mech, "PLAIN")) {
     return PLAIN;
   }
@@ -394,7 +390,6 @@ SaslMechanism::Type SaslMechanism::value_of(const string& mech) {
 
 const char* SaslMechanism::name_of(SaslMechanism::Type val) {
   switch (val) {
-    case ANONYMOUS: return "ANONYMOUS";
     case PLAIN: return "PLAIN";
     case GSSAPI: return "GSSAPI";
     default:

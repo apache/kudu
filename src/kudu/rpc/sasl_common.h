@@ -36,7 +36,6 @@ namespace rpc {
 using std::string;
 
 // Constants
-extern const char* const kSaslMechAnonymous;
 extern const char* const kSaslMechPlain;
 extern const char* const kSaslMechGSSAPI;
 
@@ -102,7 +101,6 @@ struct SaslNegotiationState {
 struct SaslMechanism {
   enum Type {
     INVALID,
-    ANONYMOUS,
     PLAIN,
     GSSAPI
   };

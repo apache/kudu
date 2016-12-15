@@ -48,10 +48,6 @@ class SaslClient {
   // Does not take ownership of the socket indicated by the fd.
   SaslClient(string app_name, Socket* socket);
 
-  // Enable ANONYMOUS authentication.
-  // Must be called after Init().
-  Status EnableAnonymous();
-
   // Enable PLAIN authentication.
   // Must be called after Init().
   Status EnablePlain(const string& user, const string& pass);

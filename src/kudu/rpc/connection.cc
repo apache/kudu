@@ -656,8 +656,6 @@ Status Connection::InitSaslClient() {
                             << "servers requiring Kerberos authentication.";
     }
   }
-  // TODO(todd): we dont seem to ever use ANONYMOUS. Should we remove it?
-  RETURN_NOT_OK(sasl_client().EnableAnonymous());
   RETURN_NOT_OK(sasl_client().EnablePlain(user_credentials().real_user(), ""));
   RETURN_NOT_OK(sasl_client().Init(kSaslProtoName));
   return Status::OK();

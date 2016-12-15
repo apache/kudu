@@ -46,7 +46,6 @@ using google::protobuf::MessageLite;
 SaslHelper::SaslHelper(PeerType peer_type)
   : peer_type_(peer_type),
     conn_header_exchanged_(false),
-    anonymous_enabled_(false),
     plain_enabled_(false),
     gssapi_enabled_(false) {
   tag_ = (peer_type_ == SERVER) ? "Sasl Server" : "Sasl Client";
@@ -122,16 +121,6 @@ int SaslHelper::GetOptionCb(const char* plugin_name, const char* option,
     VLOG(4) << tag_ << ": GetOptionCb: Unknown plugin: " << plugin_name;
   }
   return SASL_FAIL;
-}
-
-Status SaslHelper::EnableAnonymous() {
-  RETURN_NOT_OK(EnableMechanism(kSaslMechAnonymous));
-  anonymous_enabled_ = true;
-  return Status::OK();
-}
-
-bool SaslHelper::IsAnonymousEnabled() const {
-  return anonymous_enabled_;
 }
 
 Status SaslHelper::EnablePlain() {

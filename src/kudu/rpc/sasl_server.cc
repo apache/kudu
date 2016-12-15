@@ -65,11 +65,6 @@ SaslServer::SaslServer(string app_name, Socket* socket)
   callbacks_.push_back(SaslBuildCallback(SASL_CB_LIST_END, nullptr, nullptr));
 }
 
-Status SaslServer::EnableAnonymous() {
-  DCHECK_EQ(server_state_, SaslNegotiationState::NEW);
-  return helper_.EnableAnonymous();
-}
-
 Status SaslServer::EnablePlain() {
   DCHECK_EQ(server_state_, SaslNegotiationState::NEW);
   RETURN_NOT_OK(helper_.EnablePlain());

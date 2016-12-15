@@ -73,10 +73,10 @@ class TestSaslRpc : public RpcTestBase {
 // Test basic initialization of the objects.
 TEST_F(TestSaslRpc, TestBasicInit) {
   SaslServer server(kSaslAppName, nullptr);
-  server.EnableAnonymous();
+  server.EnablePlain();
   ASSERT_OK(server.Init(kSaslAppName));
   SaslClient client(kSaslAppName, nullptr);
-  client.EnableAnonymous();
+  client.EnablePlain("test", "test");
   ASSERT_OK(client.Init(kSaslAppName));
 }
 
@@ -119,27 +119,6 @@ static void RunNegotiationTest(const SocketCallable& server_runner,
 
   server.join();
   LOG(INFO) << "Server thread terminated.";
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-static void RunAnonNegotiationServer(Socket* conn) {
-  SaslServer sasl_server(kSaslAppName, conn);
-  CHECK_OK(sasl_server.EnableAnonymous());
-  CHECK_OK(sasl_server.Init(kSaslAppName));
-  CHECK_OK(sasl_server.Negotiate());
-}
-
-static void RunAnonNegotiationClient(Socket* conn) {
-  SaslClient sasl_client(kSaslAppName, conn);
-  CHECK_OK(sasl_client.EnableAnonymous());
-  CHECK_OK(sasl_client.Init(kSaslAppName));
-  CHECK_OK(sasl_client.Negotiate());
-}
-
-// Test SASL negotiation using the ANONYMOUS mechanism over a socket.
-TEST_F(TestSaslRpc, TestAnonNegotiation) {
-  RunNegotiationTest(RunAnonNegotiationServer, RunAnonNegotiationClient);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -430,7 +409,7 @@ TEST_F(TestSaslRpc, TestPreflight) {
 
 static void RunTimeoutExpectingServer(Socket* conn) {
   SaslServer sasl_server(kSaslAppName, conn);
-  CHECK_OK(sasl_server.EnableAnonymous());
+  CHECK_OK(sasl_server.EnablePlain());
   CHECK_OK(sasl_server.Init(kSaslAppName));
   Status s = sasl_server.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected client to time out and close the connection. Got: "
@@ -439,7 +418,7 @@ static void RunTimeoutExpectingServer(Socket* conn) {
 
 static void RunTimeoutNegotiationClient(Socket* sock) {
   SaslClient sasl_client(kSaslAppName, sock);
-  CHECK_OK(sasl_client.EnableAnonymous());
+  CHECK_OK(sasl_client.EnablePlain("test", "test"));
   CHECK_OK(sasl_client.Init(kSaslAppName));
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   sasl_client.set_deadline(deadline);
@@ -457,7 +436,7 @@ TEST_F(TestSaslRpc, TestClientTimeout) {
 
 static void RunTimeoutNegotiationServer(Socket* sock) {
   SaslServer sasl_server(kSaslAppName, sock);
-  CHECK_OK(sasl_server.EnableAnonymous());
+  CHECK_OK(sasl_server.EnablePlain());
   CHECK_OK(sasl_server.Init(kSaslAppName));
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   sasl_server.set_deadline(deadline);
@@ -468,7 +447,7 @@ static void RunTimeoutNegotiationServer(Socket* sock) {
 
 static void RunTimeoutExpectingClient(Socket* conn) {
   SaslClient sasl_client(kSaslAppName, conn);
-  CHECK_OK(sasl_client.EnableAnonymous());
+  CHECK_OK(sasl_client.EnablePlain("test", "test"));
   CHECK_OK(sasl_client.Init(kSaslAppName));
   Status s = sasl_client.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected server to time out and close the connection. Got: "

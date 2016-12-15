@@ -46,10 +46,6 @@ class SaslServer {
   // Does not take ownership of 'socket'.
   SaslServer(string app_name, Socket* socket);
 
-  // Enable ANONYMOUS authentication.
-  // Must be called after Init().
-  Status EnableAnonymous();
-
   // Enable PLAIN authentication.
   // Despite PLAIN authentication taking a username and password, we disregard
   // the password and use this as a "unauthenticated" mode.

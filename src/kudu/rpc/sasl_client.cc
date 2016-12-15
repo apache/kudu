@@ -101,11 +101,6 @@ SaslClient::SaslClient(string app_name, Socket* socket)
   callbacks_.push_back(SaslBuildCallback(SASL_CB_LIST_END, nullptr, nullptr));
 }
 
-Status SaslClient::EnableAnonymous() {
-  DCHECK_EQ(client_state_, SaslNegotiationState::NEW);
-  return helper_.EnableAnonymous();
-}
-
 Status SaslClient::EnablePlain(const string& user, const string& pass) {
   DCHECK_EQ(client_state_, SaslNegotiationState::NEW);
   RETURN_NOT_OK(helper_.EnablePlain());
@@ -207,7 +202,6 @@ Status SaslClient::Negotiate() {
 
   // We set nego_ok_ = true when the SASL library returns SASL_OK to us.
   // We set nego_response_expected_ = true each time we send a request to the server.
-  // When using ANONYMOUS, we get SASL_OK back immediately but still send INITIATE to the server.
   while (!nego_ok_ || nego_response_expected_) {
     ResponseHeader header;
     Slice param_buf;
@@ -457,9 +451,13 @@ int SaslClient::GetOptionCb(const char* plugin_name, const char* option,
   return helper_.GetOptionCb(plugin_name, option, result, len);
 }
 
-// Used for PLAIN and ANONYMOUS.
+// Used for PLAIN.
 // SASL callback for SASL_CB_USER, SASL_CB_AUTHNAME, SASL_CB_LANGUAGE
 int SaslClient::SimpleCb(int id, const char** result, unsigned* len) {
+  if (PREDICT_FALSE(!helper_.IsPlainEnabled())) {
+    LOG(DFATAL) << "SASL Client: Simple callback called, but PLAIN auth is not enabled";
+    return SASL_FAIL;
+  }
   if (PREDICT_FALSE(result == nullptr)) {
     LOG(DFATAL) << "SASL Client: result outparam is NULL";
     return SASL_BADPARAM;
@@ -469,19 +467,13 @@ int SaslClient::SimpleCb(int id, const char** result, unsigned* len) {
     // For impersonation, USER is the impersonated user, AUTHNAME is the "sudoer".
     case SASL_CB_USER:
       TRACE("SASL Client: callback for SASL_CB_USER");
-      if (helper_.IsPlainEnabled()) {
-        *result = plain_auth_user_.c_str();
-        if (len != nullptr) *len = plain_auth_user_.length();
-      } else if (helper_.IsAnonymousEnabled()) {
-        *result = nullptr;
-      }
+      *result = plain_auth_user_.c_str();
+      if (len != nullptr) *len = plain_auth_user_.length();
       break;
     case SASL_CB_AUTHNAME:
       TRACE("SASL Client: callback for SASL_CB_AUTHNAME");
-      if (helper_.IsPlainEnabled()) {
-        *result = plain_auth_user_.c_str();
-        if (len != nullptr) *len = plain_auth_user_.length();
-      }
+      *result = plain_auth_user_.c_str();
+      if (len != nullptr) *len = plain_auth_user_.length();
       break;
     case SASL_CB_LANGUAGE:
       LOG(DFATAL) << "SASL Client: Unable to handle SASL callback type SASL_CB_LANGUAGE"

@@ -84,12 +84,6 @@ class SaslHelper {
   // Implements the client_mech_list / mech_list callbacks.
   int GetOptionCb(const char* plugin_name, const char* option, const char** result, unsigned* len);
 
-  // Enable the ANONYMOUS SASL mechanism.
-  Status EnableAnonymous();
-
-  // Check for the ANONYMOUS SASL mechanism.
-  bool IsAnonymousEnabled() const;
-
   // Enable the PLAIN SASL mechanism.
   Status EnablePlain();
 
@@ -125,7 +119,6 @@ class SaslHelper {
   std::set<string> mechs_;    // Active mechanisms.
   mutable string mech_list_;  // Mechanism list string returned by callbacks.
 
-  bool anonymous_enabled_;
   bool plain_enabled_;
   bool gssapi_enabled_;
 
