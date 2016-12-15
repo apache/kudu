@@ -432,7 +432,7 @@ Status Tablet::ValidateInsertOrUpsertUnlocked(const RowOp& op) const {
   if (PREDICT_FALSE(enc_key_size > FLAGS_max_encoded_key_size_bytes)) {
     return Status::InvalidArgument(Substitute(
         "encoded primary key too large ($0 bytes, maximum is $1 bytes)",
-        enc_key_size, FLAGS_max_cell_size_bytes));
+        enc_key_size, FLAGS_max_encoded_key_size_bytes));
   }
   return Status::OK();
 }
