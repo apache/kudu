@@ -3943,7 +3943,7 @@ TEST_F(ClientTest, TestInsertTooLongEncodedPrimaryKey) {
   session->GetPendingErrors(&errors, &overflowed);
   ASSERT_EQ(1, errors.size());
   EXPECT_EQ("Invalid argument: encoded primary key too large "
-            "(30004 bytes, maximum is 65536 bytes)",
+            "(30004 bytes, maximum is 16384 bytes)",
             errors[0]->status().ToString());
 }
 
