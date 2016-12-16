@@ -507,8 +507,7 @@ public class RowResult {
 
   @Override
   public String toString() {
-    return "RowResult index: " + this.index + ", size: " + this.rowSize + ", " +
-        "schema: " + this.schema;
+    return "RowResult index: " + this.index + ", size: " + this.rowSize;
   }
 
   /**
