@@ -22,7 +22,13 @@ set -x
 # Time marker for both stderr and stdout
 date 1>&2
 
-export KUDU_HOME=${KUDU_HOME:-/usr/lib/kudu}
+# Preference order:
+# 1. KUDU_HOME (set by kudu_env.sh in the KUDU parcel).
+# 2. CDH_KUDU_HOME (set by cdh_env.sh in the CDH parcel).
+# 3. Hardcoded default value (where the Cloudera packages install Kudu).
+DEFAULT_KUDU_HOME=/usr/lib/kudu
+export KUDU_HOME=${KUDU_HOME:-$CDH_KUDU_HOME}
+export KUDU_HOME=${KUDU_HOME:-$DEFAULT_KUDU_HOME}
 
 CMD=$1
 shift 2
