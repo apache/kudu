@@ -76,33 +76,42 @@ enum RpcFeatureFlag {
 // Message type passed back & forth for the SASL negotiation.
 message NegotiatePB {
   enum NegotiateStep {
-    UNKNOWN   = 999;
-    SUCCESS   = 0;
-    NEGOTIATE = 1;
-    INITIATE  = 2;
-    CHALLENGE = 3;
-    RESPONSE  = 4;
+    UNKNOWN        = 999;
+    NEGOTIATE      = 1;
+    SASL_SUCCESS   = 0;
+    SASL_INITIATE  = 2;
+    SASL_CHALLENGE = 3;
+    SASL_RESPONSE  = 4;
   }
 
   message SaslAuth {
-    required string mechanism = 2;  // Standard SASL mechanism, i.e. ANONYMOUS, PLAIN, GSSAPI.
+    // The SASL mechanism, i.e. 'PLAIN' or 'GSSAPI'.
+    required string mechanism = 2;
 
     // Deprecated: no longer used.
     optional string DEPRECATED_method = 1;
     optional bytes DEPRECATED_challenge = 5 [(REDACT) = true];
   }
 
-  // When the client sends its first NEGOTIATE message, it sends its set of supported
-  // RPC system features. In the response to this message, the server sends back its own.
-  // This allows the two peers to agree on whether newer extensions of the
-  // RPC system may be used on this connection. We use a list of features rather than
-  // a simple version number to make it easier for the Java and C++ clients to implement
-  // features in different orders while still maintaining compatibility, as well as
-  // to simplify backporting of features out-of-order.
+  // When the client sends its NEGOTIATE step message, it sends its set of
+  // supported RPC system features. In the response to this message, the server
+  // sends back its own.  This allows the two peers to agree on whether newer
+  // extensions of the RPC system may be used on this connection. We use a list
+  // of features rather than a simple version number to make it easier for the
+  // Java and C++ clients to implement features in different orders while still
+  // maintaining compatibility, as well as to simplify backporting of features
+  // out-of-order.
   repeated RpcFeatureFlag supported_features = 1;
 
+  // The current negotiation step.
   required NegotiateStep step = 2;
+
+  // The SASL token, containing either the challenge during the SASL_CHALLENGE
+  // step, or the response during the SASL_RESPONSE step.
   optional bytes token        = 3 [(REDACT) = true];
+
+  // During the NEGOTIATE step, contains the supported SASL mechanisms.
+  // During the SASL_INITIATE step, contains the single chosen SASL mechanism.
   repeated SaslAuth auths     = 4;
 }
 

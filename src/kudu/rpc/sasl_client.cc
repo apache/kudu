@@ -217,13 +217,13 @@ Status SaslClient::Negotiate() {
         RETURN_NOT_OK(HandleNegotiateResponse(response));
         break;
 
-      // CHALLENGE: Server sent us a follow-up to an INITIATE or RESPONSE request.
-      case NegotiatePB::CHALLENGE:
+      // SASL_CHALLENGE: Server sent us a follow-up to an SASL_INITIATE or SASL_RESPONSE request.
+      case NegotiatePB::SASL_CHALLENGE:
         RETURN_NOT_OK(HandleChallengeResponse(response));
         break;
 
-      // SUCCESS: Server has accepted our authentication request. Negotiation successful.
-      case NegotiatePB::SUCCESS:
+      // SASL_SUCCESS: Server has accepted our authentication request. Negotiation successful.
+      case NegotiatePB::SASL_SUCCESS:
         RETURN_NOT_OK(HandleSuccessResponse(response));
         break;
 
@@ -282,10 +282,10 @@ Status SaslClient::SendNegotiateMessage() {
 Status SaslClient::SendInitiateMessage(const NegotiatePB_SaslAuth& auth,
     const char* init_msg, unsigned init_msg_len) {
   NegotiatePB msg;
-  msg.set_step(NegotiatePB::INITIATE);
+  msg.set_step(NegotiatePB::SASL_INITIATE);
   msg.mutable_token()->assign(init_msg, init_msg_len);
   msg.add_auths()->CopyFrom(auth);
-  TRACE("SASL Client: Sending INITIATE request to server.");
+  TRACE("SASL Client: Sending SASL_INITIATE request to server.");
   RETURN_NOT_OK(SendNegotiatePB(msg));
   nego_response_expected_ = true;
   return Status::OK();
@@ -293,9 +293,9 @@ Status SaslClient::SendInitiateMessage(const NegotiatePB_SaslAuth& auth,
 
 Status SaslClient::SendResponseMessage(const char* resp_msg, unsigned resp_msg_len) {
   NegotiatePB reply;
-  reply.set_step(NegotiatePB::RESPONSE);
+  reply.set_step(NegotiatePB::SASL_RESPONSE);
   reply.mutable_token()->assign(resp_msg, resp_msg_len);
-  TRACE("SASL Client: Sending RESPONSE request to server.");
+  TRACE("SASL Client: Sending SASL_RESPONSE request to server.");
   RETURN_NOT_OK(SendNegotiatePB(reply));
   nego_response_expected_ = true;
   return Status::OK();
@@ -396,13 +396,13 @@ Status SaslClient::HandleNegotiateResponse(const NegotiatePB& response) {
 }
 
 Status SaslClient::HandleChallengeResponse(const NegotiatePB& response) {
-  TRACE("SASL Client: Received CHALLENGE response from server");
+  TRACE("SASL Client: Received SASL_CHALLENGE response from server");
   if (PREDICT_FALSE(nego_ok_)) {
-    LOG(DFATAL) << "Server sent CHALLENGE response after client library returned SASL_OK";
+    LOG(DFATAL) << "Server sent SASL_CHALLENGE response after client library returned SASL_OK";
   }
 
   if (PREDICT_FALSE(!response.has_token())) {
-    return Status::InvalidArgument("No token in CHALLENGE response from server");
+    return Status::InvalidArgument("No token in SASL_CHALLENGE response from server");
   }
 
   const char* out = nullptr;
@@ -416,7 +416,7 @@ Status SaslClient::HandleChallengeResponse(const NegotiatePB& response) {
 }
 
 Status SaslClient::HandleSuccessResponse(const NegotiatePB& response) {
-  TRACE("SASL Client: Received SUCCESS response from server");
+  TRACE("SASL Client: Received SASL_SUCCESS response from server");
   if (!nego_ok_) {
     const char* out = nullptr;
     unsigned out_len = 0;
@@ -427,7 +427,7 @@ Status SaslClient::HandleSuccessResponse(const NegotiatePB& response) {
     }
     RETURN_NOT_OK(s);
     if (out_len > 0) {
-      return Status::IllegalState("SASL client library generated spurious token after SUCCESS",
+      return Status::IllegalState("SASL client library generated spurious token after SASL_SUCCESS",
           string(out, out_len));
     }
     CHECK(nego_ok_);

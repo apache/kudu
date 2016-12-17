@@ -188,12 +188,12 @@ Status SaslServer::Negotiate() {
         break;
 
       // INITIATE: They want to initiate negotiation based on their specified mechanism.
-      case NegotiatePB::INITIATE:
+      case NegotiatePB::SASL_INITIATE:
         RETURN_NOT_OK(HandleInitiateRequest(request));
         break;
 
-      // RESPONSE: Client sent a new request as a follow-up to a CHALLENGE response.
-      case NegotiatePB::RESPONSE:
+      // RESPONSE: Client sent a new request as a follow-up to a SASL_CHALLENGE response.
+      case NegotiatePB::SASL_RESPONSE:
         RETURN_NOT_OK(HandleResponseRequest(request));
         break;
 
@@ -381,20 +381,20 @@ Status SaslServer::HandleInitiateRequest(const NegotiatePB& request) {
 
 Status SaslServer::SendChallengeResponse(const char* challenge, unsigned clen) {
   NegotiatePB response;
-  response.set_step(NegotiatePB::CHALLENGE);
+  response.set_step(NegotiatePB::SASL_CHALLENGE);
   response.mutable_token()->assign(challenge, clen);
-  TRACE("SASL Server: Sending CHALLENGE response to client");
+  TRACE("SASL Server: Sending SASL_CHALLENGE response to client");
   RETURN_NOT_OK(SendNegotiatePB(response));
   return Status::OK();
 }
 
 Status SaslServer::SendSuccessResponse(const char* token, unsigned tlen) {
   NegotiatePB response;
-  response.set_step(NegotiatePB::SUCCESS);
+  response.set_step(NegotiatePB::SASL_SUCCESS);
   if (PREDICT_FALSE(tlen > 0)) {
     response.mutable_token()->assign(token, tlen);
   }
-  TRACE("SASL Server: Sending SUCCESS response to client");
+  TRACE("SASL Server: Sending SASL_SUCCESS response to client");
   RETURN_NOT_OK(SendNegotiatePB(response));
   return Status::OK();
 }
@@ -404,7 +404,7 @@ Status SaslServer::HandleResponseRequest(const NegotiatePB& request) {
   TRACE("SASL Server: Received RESPONSE request from client");
 
   if (!request.has_token()) {
-    Status s = Status::InvalidArgument("No token in CHALLENGE RESPONSE from client");
+    Status s = Status::InvalidArgument("No token in SASL_RESPONSE from client");
     RETURN_NOT_OK(SendRpcError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
     return s;
   }

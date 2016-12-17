@@ -26,7 +26,6 @@
 
 package org.apache.kudu.client;
 
-import java.security.PrivilegedExceptionAction;
 import java.util.Map;
 import java.util.Set;
 import javax.security.auth.Subject;
@@ -133,10 +132,10 @@ public class SecureRpcHelper {
         case NEGOTIATE:
           handleNegotiateResponse(chan, response);
           break;
-        case CHALLENGE:
+        case SASL_CHALLENGE:
           handleChallengeResponse(chan, response);
           break;
-        case SUCCESS:
+        case SASL_SUCCESS:
           handleSuccessResponse(chan);
           break;
         default:
@@ -227,7 +226,7 @@ public class SecureRpcHelper {
     if (saslToken != null) {
       builder.setToken(ZeroCopyLiteralByteString.wrap(saslToken));
     }
-    builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.INITIATE);
+    builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.SASL_INITIATE);
     builder.addAuths(negotiatedAuth);
     sendSaslMessage(chan, builder.build());
   }
@@ -240,7 +239,7 @@ public class SecureRpcHelper {
     }
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
     builder.setToken(ZeroCopyLiteralByteString.wrap(saslToken));
-    builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.RESPONSE);
+    builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.SASL_RESPONSE);
     sendSaslMessage(chan, builder.build());
   }
 
