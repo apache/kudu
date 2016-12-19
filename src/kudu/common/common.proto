@@ -27,6 +27,8 @@ package kudu;
 
 option java_package = "org.apache.kudu";
 
+import "kudu/util/pb_util.proto";
+
 // If you add a new type keep in mind to add it to the end
 // or update AddMapping() functions like the one in key_encoder.cc
 // that have a vector that maps the protobuf tag with the index.
@@ -300,22 +302,22 @@ message ColumnPredicatePB {
     // predicate type for null-ness.
 
     // The inclusive lower bound.
-    optional bytes lower = 1;
+    optional bytes lower = 1 [(kudu.REDACT) = true];
 
     // The exclusive upper bound.
-    optional bytes upper = 2;
+    optional bytes upper = 2 [(kudu.REDACT) = true];
   }
 
   message Equality {
     // The inclusive lower bound. See comment in Range for notes on the
     // encoding.
-    optional bytes value = 1;
+    optional bytes value = 1 [(kudu.REDACT) = true];
   }
 
   message InList {
     // A list of values for the field. See comment in Range for notes on
     // the encoding.
-    repeated bytes values = 1;
+    repeated bytes values = 1 [(kudu.REDACT) = true];
   }
 
   message IsNotNull {}

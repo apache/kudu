@@ -21,6 +21,7 @@ option java_package = "org.apache.kudu.tserver";
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/tablet/tablet.proto";
+import "kudu/util/pb_util.proto";
 
 // Tablet-server specific errors use this protobuf.
 message TabletServerErrorPB {
@@ -196,8 +197,8 @@ message ColumnRangePredicatePB {
   // predicate type for null-ness.
   //
   // Both bounds are inclusive.
-  optional bytes lower_bound = 2;
-  optional bytes inclusive_upper_bound = 3;
+  optional bytes lower_bound = 2 [(kudu.REDACT) = true];
+  optional bytes inclusive_upper_bound = 3 [(kudu.REDACT) = true];
 }
 
 // List of predicates used by the Java client. Will rapidly evolve into something more reusable
@@ -224,9 +225,9 @@ message NewScanRequestPB {
   repeated ColumnPredicatePB column_predicates = 13;
 
   // Encoded primary key to begin scanning at (inclusive).
-  optional bytes start_primary_key = 8;
+  optional bytes start_primary_key = 8 [(kudu.REDACT) = true];
   // Encoded primary key to stop scanning at (exclusive).
-  optional bytes stop_primary_key = 9;
+  optional bytes stop_primary_key = 9 [(kudu.REDACT) = true];
 
   // Which columns to select.
   // if this is an empty list, no data will be returned, but the num_rows
@@ -259,7 +260,7 @@ message NewScanRequestPB {
   // If retrying a scan, the final primary key retrieved in the previous scan
   // attempt. If set, this will take precedence over the `start_primary_key`
   // field, and functions as an exclusive start primary key.
-  optional bytes last_primary_key = 12;
+  optional bytes last_primary_key = 12 [(kudu.REDACT) = true];
 }
 
 // A scan request. Initially, it should specify a scan. Later on, you
@@ -343,7 +344,7 @@ message ScanResponsePB {
 
   // If this is a fault-tolerant scanner, this is set to the encoded primary
   // key of the last row returned in the response.
-  optional bytes last_primary_key = 7;
+  optional bytes last_primary_key = 7 [(kudu.REDACT) = true];
 
   // The resource usage of this RPC.
   optional ResourceMetricsPB resource_metrics = 8;

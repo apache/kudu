@@ -99,6 +99,18 @@ Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg, 
 // The text "<truncated>" is appended to any such truncated fields.
 void TruncateFields(google::protobuf::Message* message, int max_len);
 
+// Redaction-sensitive variant of Message::DebugString.
+//
+// For most protobufs, this has identical output to Message::DebugString. However,
+// a field with string or binary type may be tagged with the 'kudu.REDACT' option,
+// available by importing 'pb_util.proto'. When such a field is encountered by this
+// method, its contents will be redacted using the 'KUDU_REDACT' macro as documented
+// in kudu/util/logging.h.
+std::string SecureDebugString(const google::protobuf::Message& msg);
+
+// Same as SecureDebugString() above, but equivalent to Message::ShortDebugString.
+std::string SecureShortDebugString(const google::protobuf::Message& msg);
+
 // A protobuf "container" has the following format (all integers in
 // little-endian byte order).
 //

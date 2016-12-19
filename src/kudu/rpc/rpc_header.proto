@@ -22,6 +22,7 @@ package kudu.rpc;
 option java_package = "org.apache.kudu.rpc";
 
 import "google/protobuf/descriptor.proto";
+import "kudu/util/pb_util.proto";
 
 // The Kudu RPC protocol is similar to the RPC protocol of Hadoop and HBase.
 // See the following for reference on those other protocols:
@@ -90,7 +91,7 @@ message SaslMessagePB {
     // SASL challenge token from server, if the client chooses to use this method.
     // Only used when the server is piggy-backing a challenge on a NEGOTIATE response.
     // Otherwise, SaslMessagePB::token is used as the challenge token.
-    optional bytes challenge = 5;
+    optional bytes challenge = 5 [(REDACT) = true];
   }
 
   // When the client sends its first NEGOTIATE message, it sends its set of supported
@@ -103,7 +104,7 @@ message SaslMessagePB {
   repeated RpcFeatureFlag supported_features = 1;
 
   required SaslState state = 2;  // RPC system SASL state.
-  optional bytes token     = 3;
+  optional bytes token     = 3  [(REDACT) = true];
   repeated SaslAuth auths  = 4;
 }
 

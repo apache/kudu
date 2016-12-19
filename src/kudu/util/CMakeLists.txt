@@ -385,7 +385,7 @@ if(NOT "${NO_TESTS}")
 endif()
 
 #######################################
-# proto_container_test_proto
+# pb_util_test_proto
 #######################################
 
 PROTOBUF_GENERATE_CPP(
@@ -395,11 +395,13 @@ PROTOBUF_GENERATE_CPP(
   PROTO_FILES
     proto_container_test.proto
     proto_container_test2.proto
-    proto_container_test3.proto)
-add_library(proto_container_test_proto
+    proto_container_test3.proto
+    pb_util_test.proto)
+add_library(pb_util_test_proto
   ${PROTO_CONTAINER_TEST_PROTO_SRCS}
   ${PROTO_CONTAINER_TEST_PROTO_HDRS})
-target_link_libraries(proto_container_test_proto
+target_link_libraries(pb_util_test_proto
+  pb_util_proto
   protobuf)
 
 #######################################
@@ -409,5 +411,5 @@ target_link_libraries(proto_container_test_proto
 ADD_KUDU_TEST(pb_util-test)
 if(NOT "${NO_TESTS}")
   target_link_libraries(pb_util-test
-    proto_container_test_proto)
+    pb_util_test_proto)
 endif()
