@@ -982,6 +982,11 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
   ASSERT_OK(WaitForNumTabletsOnTS(src_ts, kNumTablets, kTimeout, &tablets));
   TServerDetails* dst_ts = ts_map_[cluster_->tablet_server(kDstTsIndex)->uuid()];
   ASSERT_OK(WaitForNumTabletsOnTS(dst_ts, kNumTablets, kTimeout, &tablets));
+  const string& healthy_tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until the tablets are RUNNING before we start any copies.
+  ASSERT_OK(WaitUntilTabletInState(src_ts, healthy_tablet_id, tablet::RUNNING, kTimeout));
+  ASSERT_OK(WaitUntilTabletInState(dst_ts, healthy_tablet_id, tablet::RUNNING, kTimeout));
 
   // Test 1: Test when the destination replica is healthy with and without --force_copy flag.
   // This is an 'online tablet copy'. i.e, when the tool initiates a copy,
@@ -992,7 +997,6 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
   string stderr;
   const string& src_ts_addr = cluster_->tablet_server(kSrcTsIndex)->bound_rpc_addr().ToString();
   const string& dst_ts_addr = cluster_->tablet_server(kDstTsIndex)->bound_rpc_addr().ToString();
-  const string& healthy_tablet_id = tablets[0].tablet_status().tablet_id();
   Status s = RunTool(
       Substitute("remote_replica copy $0 $1 $2",
                  healthy_tablet_id, src_ts_addr, dst_ts_addr),
