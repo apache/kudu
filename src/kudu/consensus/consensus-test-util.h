@@ -146,7 +146,9 @@ class TestPeerProxy : public PeerProxy {
       // Drop the lock before submitting to the pool, since the callback itself may
       // destroy this instance.
     }
-    CHECK_OK(pool_->SubmitFunc(callback));
+    // If the peer has been closed while a response was in-flight, this can
+    // return a bad Status, but that's fine.
+    ignore_result(pool_->SubmitFunc(callback));
   }
 
   virtual void RegisterCallbackAndRespond(Method method, const rpc::ResponseCallback& callback) {
