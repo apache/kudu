@@ -38,3 +38,7 @@ message ContainerSupHeaderPB {
   // be fully qualified (i.e. kudu.tablet.TabletSuperBlockPB).
   required string pb_type = 2;
 }
+
+extend google.protobuf.FieldOptions {
+  optional bool REDACT = 50001 [default=false];
+}

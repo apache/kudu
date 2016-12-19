@@ -23,6 +23,7 @@ import "kudu/consensus/metadata.proto";
 import "kudu/fs/fs.proto";
 import "kudu/rpc/rpc_header.proto";
 import "kudu/tablet/metadata.proto";
+import "kudu/util/pb_util.proto";
 
 // RaftConfig tablet copy RPC calls.
 service TabletCopyService {
@@ -172,7 +173,7 @@ message DataChunkPB {
   required uint64 offset = 1;
 
   // Actual bytes of data from the data block, starting at 'offset'.
-  required bytes data = 2;
+  required bytes data = 2 [(kudu.REDACT) = true];
 
   // CRC32C of the bytes contained in 'data'.
   required fixed32 crc32 = 3;

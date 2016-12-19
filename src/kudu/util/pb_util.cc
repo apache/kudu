@@ -43,6 +43,7 @@
 #include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 #include <google/protobuf/message.h>
 #include <google/protobuf/message_lite.h>
+#include <google/protobuf/text_format.h>
 
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback.h"
@@ -58,6 +59,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util-internal.h"
@@ -77,6 +79,7 @@ using google::protobuf::Message;
 using google::protobuf::MessageLite;
 using google::protobuf::Reflection;
 using google::protobuf::SimpleDescriptorDatabase;
+using google::protobuf::TextFormat;
 using kudu::crc::Crc;
 using kudu::pb_util::internal::SequentialFileFileInputStream;
 using kudu::pb_util::internal::WritableFileOutputStream;
@@ -540,6 +543,64 @@ void TruncateFields(Message* message, int max_len) {
     }
   }
 }
+
+namespace {
+class SecureFieldPrinter : public TextFormat::FieldValuePrinter {
+ public:
+  using super = TextFormat::FieldValuePrinter;
+
+  string PrintFieldName(const Message& message,
+                        const Reflection* reflection,
+                        const FieldDescriptor* field) const override {
+    hide_next_string_ = field->cpp_type() == FieldDescriptor::CPPTYPE_STRING &&
+        field->options().GetExtension(REDACT);
+    return super::PrintFieldName(message, reflection, field);
+  }
+
+  string PrintString(const string& val) const override {
+    if (hide_next_string_) {
+      hide_next_string_ = false;
+      return KUDU_REDACT(super::PrintString(val));
+    }
+    return super::PrintString(val);
+  }
+  string PrintBytes(const string& val) const override {
+    if (hide_next_string_) {
+      hide_next_string_ = false;
+      return KUDU_REDACT(super::PrintString(val));
+    }
+    return super::PrintBytes(val);
+  }
+
+  mutable bool hide_next_string_ = false;
+};
+} // anonymous namespace
+
+string SecureDebugString(const Message& msg) {
+  string debug_string;
+  TextFormat::Printer printer;
+  printer.SetDefaultFieldValuePrinter(new SecureFieldPrinter());
+  printer.PrintToString(msg, &debug_string);
+  return debug_string;
+}
+
+string SecureShortDebugString(const Message& msg) {
+  string debug_string;
+
+  TextFormat::Printer printer;
+  printer.SetSingleLineMode(true);
+  printer.SetDefaultFieldValuePrinter(new SecureFieldPrinter());
+
+  printer.PrintToString(msg, &debug_string);
+  // Single line mode currently might have an extra space at the end.
+  if (!debug_string.empty() &&
+      debug_string[debug_string.size() - 1] == ' ') {
+    debug_string.resize(debug_string.size() - 1);
+  }
+
+  return debug_string;
+}
+
 
 WritablePBContainerFile::WritablePBContainerFile(shared_ptr<RWFile> writer)
   : state_(FileState::NOT_INITIALIZED),

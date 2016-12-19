@@ -22,17 +22,21 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <google/protobuf/descriptor.pb.h>
 #include <gtest/gtest.h>
 
 #include "kudu/util/env_util.h"
-#include "kudu/util/pb_util.h"
 #include "kudu/util/pb_util-internal.h"
+#include "kudu/util/pb_util.h"
+#include "kudu/util/pb_util_test.pb.h"
 #include "kudu/util/proto_container_test.pb.h"
 #include "kudu/util/proto_container_test2.pb.h"
 #include "kudu/util/proto_container_test3.pb.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_bool(log_redact_user_data);
 
 namespace kudu {
 namespace pb_util {
@@ -578,6 +582,31 @@ TEST_F(TestPBUtil, TestOverwriteExistingPB) {
   ASSERT_TRUE(CreateKnownGoodContainerFile(NO_OVERWRITE).IsAlreadyPresent());
   ASSERT_OK(CreateKnownGoodContainerFile(OVERWRITE));
   ASSERT_OK(CreateKnownGoodContainerFile(OVERWRITE));
+}
+
+TEST_F(TestPBUtil, TestRedaction) {
+  FLAGS_log_redact_user_data = true;
+  TestSecurePrintingPB pb;
+
+  pb.set_insecure1("public 1");
+  pb.set_insecure2("public 2");
+  pb.set_secure1("private 1");
+  pb.set_secure2("private 2");
+  pb.add_repeated_secure("private 3");
+  pb.add_repeated_secure("private 4");
+  pb.set_insecure3("public 3");
+
+  for (auto s : {SecureDebugString(pb), SecureShortDebugString(pb)}) {
+    ASSERT_EQ(string::npos, s.find("private"));
+    ASSERT_STR_CONTAINS(s, "<redacted>");
+    ASSERT_STR_CONTAINS(s, "public 1");
+    ASSERT_STR_CONTAINS(s, "public 2");
+    ASSERT_STR_CONTAINS(s, "public 3");
+  }
+
+  // If we disable redaction, we should see the private fields.
+  FLAGS_log_redact_user_data = false;
+  ASSERT_STR_CONTAINS(SecureDebugString(pb), "private");
 }
 
 } // namespace pb_util

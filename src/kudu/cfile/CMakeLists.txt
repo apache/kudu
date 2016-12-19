@@ -22,6 +22,7 @@ PROTOBUF_GENERATE_CPP(
   PROTO_FILES cfile.proto)
 set(CFILE_PROTO_LIBS
   kudu_common_proto
+  pb_util_proto
   protobuf)
 ADD_EXPORTABLE_LIBRARY(cfile_proto
   SRCS ${CFILE_PROTO_SRCS}

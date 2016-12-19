@@ -22,6 +22,7 @@ package kudu.client;
 option java_package = "org.apache.kudu.client";
 
 import "kudu/common/common.proto";
+import "kudu/util/pb_util.proto";
 
 // Serialization format for client scan tokens. Scan tokens are serializable
 // scan descriptors that are used by query engines to plan a set of parallizable
@@ -55,16 +56,16 @@ message ScanTokenPB {
   repeated ColumnPredicatePB column_predicates = 4;
 
   // Encoded primary key to begin scanning at (inclusive).
-  optional bytes lower_bound_primary_key = 5;
+  optional bytes lower_bound_primary_key = 5 [(kudu.REDACT) = true];
 
   // Encoded primary key to stop scanning at (exclusive).
-  optional bytes upper_bound_primary_key = 6;
+  optional bytes upper_bound_primary_key = 6 [(kudu.REDACT) = true];
 
   // Encoded partition key to begin scanning at (inclusive).
-  optional bytes lower_bound_partition_key = 7;
+  optional bytes lower_bound_partition_key = 7 [(kudu.REDACT) = true];
 
   // Encoded partition key to stop scanning at (exclusive).
-  optional bytes upper_bound_partition_key = 8;
+  optional bytes upper_bound_partition_key = 8 [(kudu.REDACT) = true];
 
   // The maximum number of rows to scan.
   // The scanner will automatically stop yielding results and close
