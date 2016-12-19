@@ -1346,7 +1346,12 @@ TEST_F(DeleteTableTest, TestDeleteTableWhileScanInProgress) {
 
   // Approximate number of rows to insert. This is not exact number due to the
   // way how the test controls the progress of the test workload.
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER)
+  // Test is too slow in ASAN/TSAN.
+  const size_t rows_to_insert = 10000;
+#else
   const size_t rows_to_insert = AllowSlowTests() ? 100000 : 10000;
+#endif
   for (const auto sel : replica_selectors) {
     for (const auto mode : read_modes) {
       SCOPED_TRACE(Substitute("mode $0; replica $1",
