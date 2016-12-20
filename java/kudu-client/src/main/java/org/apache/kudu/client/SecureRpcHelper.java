@@ -183,9 +183,6 @@ public class SecureRpcHelper {
       ret.clear();
       ret.writeInt(wrapped.length);
       ret.writeBytes(wrapped);
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Wrapped payload: " + Bytes.pretty(ret));
-      }
       return ret;
     } catch (SaslException e) {
       throw new IllegalStateException("Failed to wrap payload", e);

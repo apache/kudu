@@ -199,14 +199,6 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     tabletStatistics.incrementStatistic(Statistic.BYTES_WRITTEN, getRowOperationSizeBytes());
   }
 
-  @Override
-  public String toString() {
-    StringBuilder sb = new StringBuilder(super.toString());
-    sb.append(' ');
-    sb.append(row.toString());
-    return sb.toString();
-  }
-
   /**
    * Helper method that puts a list of Operations together into a WriteRequestPB.
    * @param operations The list of ops to put together in a WriteRequestPB

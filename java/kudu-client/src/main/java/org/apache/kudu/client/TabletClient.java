@@ -280,7 +280,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
     if (LOG.isDebugEnabled()) {
       LOG.debug(getPeerUuidLoggingString() + chan + " Sending RPC #" + rpcid +
-          ", payload=" + payload + ' ' + Bytes.pretty(payload));
+          ", payload=" + payload);
     }
 
     payload = secureRpcHelper.wrap(payload);
@@ -400,7 +400,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (!header.hasCallId()) {
       final int size = response.getTotalResponseSize();
       final String msg = getPeerUuidLoggingString() + "RPC response (size: " + size + ") doesn't" +
-          " have a call ID: " + header + ", buf=" + Bytes.pretty(buf);
+          " have a call ID: " + header;
       LOG.error(msg);
       Status statusIncomplete = Status.Incomplete(msg);
       throw new NonRecoverableException(statusIncomplete);
@@ -411,8 +411,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     final KuduRpc rpc = rpcsInflight.get(rpcid);
 
     if (rpc == null) {
-      final String msg = getPeerUuidLoggingString() + "Invalid rpcid: " + rpcid + " found in " +
-          buf + '=' + Bytes.pretty(buf);
+      final String msg = getPeerUuidLoggingString() + "Invalid rpcid: " + rpcid;
       LOG.error(msg);
       Status statusIllegalState = Status.IllegalState(msg);
       // The problem here is that we don't know which Deferred corresponds to
@@ -524,7 +523,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       }
     } catch (Exception e) {
       LOG.debug(getPeerUuidLoggingString() + "Unexpected exception while handling RPC #" + rpcid +
-          ", rpc=" + rpc + ", buf=" + Bytes.pretty(buf), e);
+          ", rpc=" + rpc, e);
     }
     if (LOG.isDebugEnabled()) {
       LOG.debug("------------------<< LEAVING  DECODE <<------------------" +
@@ -620,8 +619,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         if (buf.readable()) {
           LOG.error(getPeerUuidLoggingString() + "After decoding the last message on " + chan +
               ", there was still some undecoded bytes in the channel's" +
-              " buffer (which are going to be lost): " +
-              buf + '=' + Bytes.pretty(buf));
+              " buffer (which are going to be lost)");
         }
       }
     } else {

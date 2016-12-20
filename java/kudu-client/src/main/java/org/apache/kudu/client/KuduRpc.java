@@ -331,7 +331,6 @@ public abstract class KuduRpc<R> {
   }
 
   public String toString() {
-
     final StringBuilder buf = new StringBuilder();
     buf.append("KuduRpc(method=");
     buf.append(method());
@@ -365,8 +364,7 @@ public abstract class KuduRpc<R> {
             " incompatible RPC? Error is: " + builder.getInitializationErrorString());
       }
     } catch (InvalidProtocolBufferException e) {
-      throw new RuntimeException("Invalid RPC response: length=" + length +
-            ", payload=" + Bytes.pretty(payload));
+      throw new RuntimeException("Invalid RPC response: length=" + length, e);
     }
   }
 
@@ -416,11 +414,10 @@ public abstract class KuduRpc<R> {
     if ((length & MAX_BYTE_ARRAY_MASK) != 0) {
       if (length < 0) {
         throw new IllegalArgumentException("Read negative byte array length: " +
-            length + " in buf=" + buf + '=' + Bytes.pretty(buf));
+            length + " in buf=" + buf);
       } else {
         throw new IllegalArgumentException("Read byte array length that's too" +
-            " large: " + length + " > " + ~MAX_BYTE_ARRAY_MASK + " in buf=" +
-            buf + '=' + Bytes.pretty(buf));
+            " large: " + length + " > " + ~MAX_BYTE_ARRAY_MASK + " in buf=" + buf);
       }
     }
   }

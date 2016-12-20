@@ -385,6 +385,7 @@ public class ColumnRangePredicate {
     } catch (InvalidProtocolBufferException e) {
       // We shade our pb dependency so we can't send out the exception above since other modules
       // won't know what to expect.
+      // Intentionally not redacting the list to make this more useful.
       throw new IllegalArgumentException("Encountered an invalid column range predicate list: " +
           Bytes.pretty(listBytes), e);
     }
