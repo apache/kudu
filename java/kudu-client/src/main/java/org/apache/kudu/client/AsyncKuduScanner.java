@@ -279,7 +279,7 @@ public final class AsyncKuduScanner {
     // If the partition pruner has pruned all partitions, then the scan can be
     // short circuited without contacting any tablet servers.
     if (!pruner.hasMorePartitionKeyRanges()) {
-      LOG.debug("Short circuiting scan with predicates: {}", predicates.values());
+      LOG.debug("Short circuiting scan");
       this.hasMore = false;
       this.closed = true;
     }
@@ -790,9 +790,6 @@ public final class AsyncKuduScanner {
       }
 
       ScanRequestPB request = builder.build();
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Sending scan req: " + request.toString());
-      }
 
       return toChannelBuffer(header, request);
     }
