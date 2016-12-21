@@ -416,7 +416,7 @@ Status DumpTabletMeta(FsManager* fs_manager,
 
   cout << Indent(indent) << "Partition: "
        << meta->partition_schema().PartitionDebugString(meta->partition(),
-                                                       meta->schema())
+                                                        meta->schema())
        << endl;
   cout << Indent(indent) << "Table name: " << meta->table_name()
        << " Table id: " << meta->table_id() << endl;

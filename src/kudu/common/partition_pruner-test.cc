@@ -55,13 +55,13 @@ void CheckPrunedPartitions(const Schema& schema,
   SCOPED_TRACE(strings::Substitute("schema: $0", schema.ToString()));
   SCOPED_TRACE(strings::Substitute("partition schema: $0", partition_schema.DebugString(schema)));
   SCOPED_TRACE(strings::Substitute("partition pruner: $0",
-                                    pruner.ToString(schema, partition_schema)));
+                                   pruner.ToString(schema, partition_schema)));
   SCOPED_TRACE(strings::Substitute("scan spec: $0", spec.ToString(schema)));
 
   int pruned_partitions = count_if(partitions.begin(), partitions.end(),
-                                    [&] (const Partition& partition) {
-                                      return pruner.ShouldPrune(partition);
-                                    });
+                                   [&] (const Partition& partition) {
+                                     return pruner.ShouldPrune(partition);
+                                   });
   ASSERT_EQ(remaining_tablets, partitions.size() - pruned_partitions);
 }
 

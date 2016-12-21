@@ -75,6 +75,9 @@ class KUDU_EXPORT KuduWriteOperation {
   KuduPartialRow* mutable_row() { return &row_; }
 
   /// @return String representation of the operation.
+  ///
+  /// @internal this method does *NOT* redact row values. The
+  ///   caller must handle redaction themselves, if necessary.
   virtual std::string ToString() const = 0;
  protected:
   /// @cond PROTECTED_MEMBERS_DOCUMENTED

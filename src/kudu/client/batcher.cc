@@ -175,9 +175,14 @@ struct InFlightOp {
   // order of operations. This is important when multiple operations act on the same row.
   int sequence_number_;
 
+  // Stringifies the InFlightOp.
+  //
+  // This should be used in log messages instead of KuduWriteOperation::ToString
+  // because it handles redaction.
   string ToString() const {
     return strings::Substitute("op[state=$0, write_op=$1]",
-                               state, write_op->ToString());
+                               state,
+                               KUDU_REDACT(write_op->ToString()));
   }
 };
 
@@ -285,7 +290,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
     // until after we sent it, the RPC callback could fire before we got a chance
     // to change its state to 'sent'.
     op->state = InFlightOp::kRequestSent;
-    VLOG(4) << ++ctr << ". Encoded row " << op->write_op->ToString();
+    VLOG(4) << ++ctr << ". Encoded row " << op->ToString();
   }
 
   if (VLOG_IS_ON(3)) {
@@ -520,7 +525,7 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
   op->state = InFlightOp::kLookingUpTablet;
 
   AddInFlightOp(op.get());
-  VLOG(3) << "Looking up tablet for " << op->write_op->ToString();
+  VLOG(3) << "Looking up tablet for " << op->ToString();
   // Increment our reference count for the outstanding callback.
   //
   // deadline_ is set in FlushAsync(), after all Add() calls are done, so
@@ -586,14 +591,14 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
   std::unique_lock<simple_spinlock> l(lock_);
 
   if (IsAbortedUnlocked()) {
-    VLOG(1) << "Aborted batch: TabletLookupFinished for " << op->write_op->ToString();
+    VLOG(1) << "Aborted batch: TabletLookupFinished for " << op->ToString();
     MarkInFlightOpFailedUnlocked(op, Status::Aborted("Batch aborted"));
     // 'op' is deleted by above function.
     return;
   }
 
   if (VLOG_IS_ON(3)) {
-    VLOG(3) << "TabletLookupFinished for " << op->write_op->ToString()
+    VLOG(3) << "TabletLookupFinished for " << op->ToString()
             << ": " << s.ToString();
     if (s.ok()) {
       VLOG(3) << "Result: tablet_id = " << op->tablet->tablet_id();

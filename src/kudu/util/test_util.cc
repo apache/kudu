@@ -33,6 +33,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/spinlock_profiling.h"
 
+DECLARE_bool(log_redact_user_data);
 DECLARE_bool(never_fsync);
 
 DEFINE_string(test_leave_files, "on_failure",
@@ -69,6 +70,9 @@ KuduTest::KuduTest()
   // Disabling fsync() speeds up tests dramatically, and it's safe to do as no
   // tests rely on cutting power to a machine or equivalent.
   FLAGS_never_fsync = true;
+
+  // Disable log redaction.
+  FLAGS_log_redact_user_data = false;
 }
 
 KuduTest::~KuduTest() {

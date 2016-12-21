@@ -27,6 +27,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/memory/overwrite.h"
 #include "kudu/util/status.h"
 
@@ -665,6 +666,8 @@ bool KuduPartialRow::IsKeySet() const {
 
 
 std::string KuduPartialRow::ToString() const {
+  ScopedDisableRedaction no_redaction;
+
   ContiguousRow row(schema_, row_data_);
   std::string ret;
   bool first = true;

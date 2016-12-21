@@ -25,6 +25,7 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/util/logging.h"
 
 namespace kudu {
 
@@ -323,10 +324,8 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
     return Status::InvalidArgument("NULL operation");
   }
   if (PREDICT_FALSE(!write_op->row().IsKeySet())) {
-    Status status = Status::IllegalState(
-        "Key not specified", write_op->ToString());
-    error_collector_->AddError(
-        gscoped_ptr<KuduError>(new KuduError(write_op, status)));
+    Status status = Status::IllegalState("Key not specified", KUDU_REDACT(write_op->ToString()));
+    error_collector_->AddError(gscoped_ptr<KuduError>(new KuduError(write_op, status)));
     return status;
   }
 

@@ -1923,6 +1923,9 @@ class KUDU_EXPORT KuduScanner {
   KuduSchema GetProjectionSchema() const;
 
   /// @return String representation of this scan.
+  ///
+  /// @internal This method must not be used in log messages because it contains
+  ///   sensitive predicate values. Use Scanner::Data::DebugString instead.
   std::string ToString() const;
 
  private:
@@ -2111,9 +2114,6 @@ class KUDU_EXPORT KuduScanTokenBuilder {
   ///   elements.
   /// @return Operation result status.
   Status Build(std::vector<KuduScanToken*>* tokens) WARN_UNUSED_RESULT;
-
-  /// @return String representation of this scan.
-  std::string ToString() const;
 
  private:
   class KUDU_NO_EXPORT Data;

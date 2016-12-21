@@ -320,6 +320,11 @@ class MetaCacheEntry {
   // Returns true if this meta cache entry is stale.
   bool stale() const;
 
+  // Returns a formatted string representation of the metacache suitable for
+  // debug printing.
+  //
+  // This string will not be redacted, since table partitions are considered
+  // metadata.
   std::string DebugString(const KuduTable* table) const;
 
  private:

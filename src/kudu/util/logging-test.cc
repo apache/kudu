@@ -160,4 +160,39 @@ TEST(LoggingTest, TestAsyncLogger) {
   ASSERT_GT(async.app_threads_blocked_count_for_tests(), 0);
 }
 
+// Basic test that the redaction utilities work as expected.
+TEST(LoggingTest, TestRedactionBasic) {
+  ASSERT_STREQ("<redacted>", KUDU_REDACT("hello"));
+  {
+    ScopedDisableRedaction no_redaction;
+    ASSERT_STREQ("hello", KUDU_REDACT("hello"));
+  }
+  ASSERT_STREQ("hello", KUDU_DISABLE_REDACTION(KUDU_REDACT("hello")));
+}
+
+// Typically, ToString() methods apply to some complex object with a bunch
+// of fields, some of which are user data (need redaction) and others of which
+// are not. This shows an example of a such a function, which will behave
+// differently based on whether the calling scope has explicitly disabled
+// redaction.
+string SomeComplexStringify(const string& public_data, const string& private_data) {
+  return strings::Substitute("public=$0, private=$1",
+                             public_data,
+                             KUDU_REDACT(private_data));
+}
+
+TEST(LoggingTest, TestRedactionIllustrateUsage) {
+  // By default, the private data will be redacted.
+  ASSERT_EQ("public=abc, private=<redacted>", SomeComplexStringify("abc", "def"));
+
+  // We can wrap the expression in KUDU_DISABLE_REDACTION(...) to evaluate it
+  // with redaction temporarily disabled.
+  ASSERT_EQ("public=abc, private=def", KUDU_DISABLE_REDACTION(SomeComplexStringify("abc", "def")));
+
+  // Or we can execute an entire scope with redaction disabled.
+  KUDU_DISABLE_REDACTION({
+    ASSERT_EQ("public=abc, private=def", SomeComplexStringify("abc", "def"));
+  });
+}
+
 } // namespace kudu
