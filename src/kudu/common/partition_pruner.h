@@ -60,6 +60,8 @@ class PartitionPruner {
   // Returns true if the provided partition should be pruned.
   bool ShouldPrune(const Partition& partition) const;
 
+  // Returns a text description of this partition pruner suitable for debug
+  // printing.
   std::string ToString(const Schema& schema, const PartitionSchema& partition_schema) const;
 
  private:

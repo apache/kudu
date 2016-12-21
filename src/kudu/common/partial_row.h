@@ -458,6 +458,8 @@ class KUDU_EXPORT KuduPartialRow {
   bool AllColumnsSet() const;
 
   /// @return String representation for the partial row.
+  ///
+  /// @internal NOTE: this is not redacted.
   std::string ToString() const;
 
   /// @return The schema object for the partial row.

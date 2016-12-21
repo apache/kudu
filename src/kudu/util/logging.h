@@ -18,6 +18,7 @@
 #define KUDU_UTIL_LOGGING_H
 
 #include <string>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
@@ -26,6 +27,76 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/logging_callback.h"
 #include "kudu/util/status.h"
+
+////////////////////////////////////////////////////////////////////////////////
+// Redaction support
+////////////////////////////////////////////////////////////////////////////////
+
+// Disable redaction of user data while evaluating the expression 'expr'.
+// This may be used inline as an expression, such as:
+//
+//   LOG(INFO) << KUDU_DISABLE_REDACTION(schema.DebugRow(my_row));
+//
+// or with a block:
+//
+//  KUDU_DISABLE_REDACTION({
+//    LOG(INFO) << schema.DebugRow(my_row);
+//  });
+//
+// Redaction should be disabled in the following cases:
+//
+// 1) Outputting strings to a "secure" endpoint (for example an authenticated and authorized
+//    web UI)
+//
+// 2) Using methods like schema.DebugRow(...) when the parameter is not in fact a user-provided
+//    row, but instead some piece of metadata such as a partition boundary.
+#define KUDU_DISABLE_REDACTION(expr) ([&]() {        \
+      kudu::ScopedDisableRedaction s;                \
+      return (expr);                                 \
+    })()
+
+// Evaluates to 'true' if the caller should redact any user data in the current scope.
+// Most callers should instead use KUDU_REDACT(...) defined below, but this can be useful
+// to short-circuit expensive logic.
+#define KUDU_SHOULD_REDACT() (FLAGS_log_redact_user_data && kudu::tls_redact_user_data)
+
+// Either evaluate and return 'expr', or return the string "redacted", depending on whether
+// redaction is enabled in the current scope.
+#define KUDU_REDACT(expr) \
+  (KUDU_SHOULD_REDACT() ? kudu::kRedactionMessage : (expr))
+
+
+////////////////////////////////////////
+// Redaction implementation details follow.
+////////////////////////////////////////
+DECLARE_bool(log_redact_user_data);
+
+namespace kudu {
+
+// Flag which allows redaction to be enabled or disabled for a thread context.
+// Defaults to enabling redaction, since it's the safer default with respect to
+// leaking user data, and it's easier to identify when data is over-redacted
+// than vice-versa.
+extern __thread bool tls_redact_user_data;
+
+// Redacted log messages are replaced with this constant.
+extern const char* const kRedactionMessage;
+
+class ScopedDisableRedaction {
+ public:
+  ScopedDisableRedaction()
+      : old_val_(tls_redact_user_data) {
+    tls_redact_user_data = false;
+  }
+
+  ~ScopedDisableRedaction() {
+    tls_redact_user_data = old_val_;
+  }
+ private:
+  bool old_val_;
+};
+
+} // namespace kudu
 
 ////////////////////////////////////////////////////////////////////////////////
 // Throttled logging support

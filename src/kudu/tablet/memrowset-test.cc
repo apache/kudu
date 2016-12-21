@@ -42,7 +42,7 @@ using consensus::OpId;
 using log::LogAnchorRegistry;
 using std::shared_ptr;
 
-class TestMemRowSet : public ::testing::Test {
+class TestMemRowSet : public KuduTest {
  public:
   TestMemRowSet()
     : op_id_(consensus::MaximumOpId()),

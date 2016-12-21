@@ -41,7 +41,7 @@ namespace kudu {
     EXPECT_NO_FATAL_FAILURE(ExpectDecodedKeyEq<(type)>((expected), (encoded_form), (val))); \
   } while (0)
 
-class EncodedKeyTest : public ::testing::Test {
+class EncodedKeyTest : public KuduTest {
  public:
   EncodedKeyTest()
   : schema_(CreateSchema()),

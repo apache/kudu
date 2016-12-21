@@ -15,12 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm>
-#include <boost/optional.hpp>
-#include <iterator>
 #include <stdint.h>
+
+#include <algorithm>
+#include <iterator>
 #include <utility>
 #include <vector>
+
+#include <boost/optional.hpp>
+#include <gflags/gflags.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
@@ -37,6 +40,8 @@ using boost::optional;
 using std::pair;
 using std::string;
 using std::vector;
+
+DECLARE_bool(log_redact_user_data);
 
 namespace kudu {
 
@@ -116,10 +121,12 @@ void CheckCreateRangePartitions(const vector<pair<optional<string>, optional<str
 
 } // namespace
 
+class PartitionTest : public KuduTest {};
+
 // Tests that missing values are correctly filled in with minimums when creating
 // range partition keys, and that completely missing keys are encoded as the
 // logical minimum and logical maximum for lower and upper bounds, respectively.
-TEST(PartitionTest, TestCompoundRangeKeyEncoding) {
+TEST_F(PartitionTest, TestCompoundRangeKeyEncoding) {
 
   // CREATE TABLE t (c1 STRING, c2 STRING, c3 STRING),
   // PRIMARY KEY (c1, c2, c3)
@@ -184,7 +191,7 @@ TEST(PartitionTest, TestCompoundRangeKeyEncoding) {
             partition_schema.PartitionDebugString(partitions[3], schema));
 }
 
-TEST(PartitionTest, TestPartitionKeyEncoding) {
+TEST_F(PartitionTest, TestPartitionKeyEncoding) {
   // CREATE TABLE t (a INT32, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
   // PARITITION BY [HASH BUCKET (a, b), HASH BUCKET (c), RANGE (a, b, c)];
   Schema schema({ ColumnSchema("a", INT32),
@@ -273,9 +280,25 @@ TEST(PartitionTest, TestPartitionKeyEncoding) {
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
   }
+
+  {
+    // Check that row values are redacted when the log_redact_user_data flag is set.
+    FLAGS_log_redact_user_data = true;
+    string key;
+    KuduPartialRow row(&schema);
+    ASSERT_OK(row.SetInt32("a", 1));
+    ASSERT_OK(row.SetStringCopy("b", "b"));
+    ASSERT_OK(row.SetStringCopy("c", "c"));
+    ASSERT_OK(partition_schema.EncodeKey(row, &key));
+
+    string expected =
+      R"(HASH (a, b): 0, HASH (c): 29, RANGE (a, b, c): (<redacted>, <redacted>, <redacted>))";
+    EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
+    EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
+  }
 }
 
-TEST(PartitionTest, TestCreateRangePartitions) {
+TEST_F(PartitionTest, TestCreateRangePartitions) {
   {
     // Splits:
     // { a: "1" }
@@ -382,7 +405,7 @@ TEST(PartitionTest, TestCreateRangePartitions) {
   }
 }
 
-TEST(PartitionTest, TestCreateHashBucketPartitions) {
+TEST_F(PartitionTest, TestCreateHashBucketPartitions) {
   // CREATE TABLE t (a VARCHAR PRIMARY KEY),
   // PARITITION BY [HASH BUCKET (a)];
   Schema schema({ ColumnSchema("a", STRING) }, { ColumnId(0) }, 1);
@@ -430,7 +453,12 @@ TEST(PartitionTest, TestCreateHashBucketPartitions) {
             partition_schema.PartitionDebugString(partitions[2], schema));
 }
 
-TEST(PartitionTest, TestCreatePartitions) {
+TEST_F(PartitionTest, TestCreatePartitions) {
+  // Explicitly enable redaction. It should have no effect on the subsequent
+  // partition pretty printing tests, as partitions are metadata and thus not
+  // redacted.
+  FLAGS_log_redact_user_data = true;
+
   // CREATE TABLE t (a VARCHAR, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
   // PARITITION BY [HASH BUCKET (a), HASH BUCKET (b), RANGE (a, b, c)];
   Schema schema({ ColumnSchema("a", STRING),
@@ -618,7 +646,7 @@ TEST(PartitionTest, TestCreatePartitions) {
             partition_schema.PartitionDebugString(partitions[11], schema));
 }
 
-TEST(PartitionTest, TestIncrementRangePartitionBounds) {
+TEST_F(PartitionTest, TestIncrementRangePartitionBounds) {
   // CREATE TABLE t (a INT8, b INT8, c INT8, PRIMARY KEY (a, b, c))
   // PARITITION BY RANGE (a, b, c);
   Schema schema({ ColumnSchema("c1", INT8),
@@ -711,7 +739,7 @@ TEST(PartitionTest, TestIncrementRangePartitionBounds) {
               s.ToString());
 }
 
-TEST(PartitionTest, TestIncrementRangePartitionStringBounds) {
+TEST_F(PartitionTest, TestIncrementRangePartitionStringBounds) {
   // CREATE TABLE t (a STRING, b STRING, PRIMARY KEY (a, b))
   // PARITITION BY RANGE (a, b, c);
   Schema schema({ ColumnSchema("c1", STRING),

@@ -624,6 +624,9 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Then all the flags coming from the minicluster framework.
   argv.insert(argv.end(), user_flags.begin(), user_flags.end());
 
+  // Disable log redaction.
+  argv.push_back("--log_redact_user_data=false");
+
   // Enable metrics logging.
   argv.push_back("--metrics_log_interval_ms=1000");
 

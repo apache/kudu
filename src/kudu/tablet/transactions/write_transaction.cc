@@ -354,8 +354,6 @@ string WriteTransactionState::ToString() const {
   }
 
   // Stringify the actual row operations (eg INSERT/UPDATE/etc)
-  // NOTE: we'll eventually need to gate this by some flag if we want to avoid
-  // user data escaping into the log. See KUDU-387.
   string row_ops_str = "[";
   {
     std::lock_guard<simple_spinlock> l(txn_state_lock_);

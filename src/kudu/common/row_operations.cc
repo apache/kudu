@@ -23,6 +23,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/safe_math.h"
 #include "kudu/util/slice.h"
 
@@ -32,6 +33,9 @@ using strings::Substitute;
 namespace kudu {
 
 string DecodedRowOperation::ToString(const Schema& schema) const {
+  // A note on redaction: We redact row operations, since they contain sensitive
+  // row data. Range partition operations are not redacted, since range
+  // partitions are considered to be metadata.
   switch (type) {
     case RowOperationsPB::UNKNOWN:
       return "UNKNOWN";
@@ -45,15 +49,17 @@ string DecodedRowOperation::ToString(const Schema& schema) const {
                         schema.DebugRowKey(ConstContiguousRow(&schema, row_data)),
                         changelist.ToString(schema));
     case RowOperationsPB::SPLIT_ROW:
-      return Substitute("SPLIT_ROW $0", split_row->ToString());
+      return Substitute("SPLIT_ROW $0", KUDU_DISABLE_REDACTION(split_row->ToString()));
     case RowOperationsPB::RANGE_LOWER_BOUND:
-      return Substitute("RANGE_LOWER_BOUND $0", split_row->ToString());
+      return Substitute("RANGE_LOWER_BOUND $0", KUDU_DISABLE_REDACTION(split_row->ToString()));
     case RowOperationsPB::RANGE_UPPER_BOUND:
-      return Substitute("RANGE_UPPER_BOUND $0", split_row->ToString());
+      return Substitute("RANGE_UPPER_BOUND $0", KUDU_DISABLE_REDACTION(split_row->ToString()));
     case RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND:
-      return Substitute("EXCLUSIVE_RANGE_LOWER_BOUND $0", split_row->ToString());
+      return Substitute("EXCLUSIVE_RANGE_LOWER_BOUND $0",
+                        KUDU_DISABLE_REDACTION(split_row->ToString()));
     case RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND:
-      return Substitute("INCLUSIVE_RANGE_UPPER_BOUND $0", split_row->ToString());
+      return Substitute("INCLUSIVE_RANGE_UPPER_BOUND $0",
+                        KUDU_DISABLE_REDACTION(split_row->ToString()));
   }
   return "UNKNOWN";
 }

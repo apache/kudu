@@ -125,6 +125,15 @@ class Partition {
 // When creating the initial set of partitions during table creation, we deal
 // with this by "carrying through" absolute-start or absolute-ends into lower
 // significance components.
+//
+// Notes on redaction:
+//
+// For the purposes of redaction, Kudu considers partitions and partition
+// schemas to be metadata - not sensitive data which needs to be redacted from
+// log files. However, the partition keys of individual rows _are_ considered
+// sensitive, so we redact them from log messages and error messages. Thus,
+// methods which format partitions and partition schemas will never redact, but
+// the methods which format individual partition keys do redact.
 class PartitionSchema {
  public:
 
@@ -165,6 +174,9 @@ class PartitionSchema {
                               bool* contains) const WARN_UNUSED_RESULT;
 
   // Returns a text description of the partition suitable for debug printing.
+  //
+  // Partitions are considered metadata, so no redaction will happen on the hash
+  // and range bound values.
   std::string PartitionDebugString(const Partition& partition, const Schema& schema) const;
 
   // Returns a text description of a partition key suitable for debug printing.
@@ -174,18 +186,19 @@ class PartitionSchema {
 
   // Returns a text description of the range partition with the provided
   // inclusive lower bound and exclusive upper bound.
+  //
+  // Range partitions are considered metadata, so no redaction will happen on
+  // the row values.
   std::string RangePartitionDebugString(const KuduPartialRow& lower_bound,
                                         const KuduPartialRow& upper_bound) const;
   std::string RangePartitionDebugString(Slice lower_bound,
                                         Slice upper_bound,
                                         const Schema& schema) const;
 
-  // Returns a text description of the encoded range key suitable for debug printing.
-  std::string RangeKeyDebugString(Slice range_key, const Schema& schema) const;
-  std::string RangeKeyDebugString(const KuduPartialRow& key) const;
-  std::string RangeKeyDebugString(const ConstContiguousRow& key) const;
-
   // Returns a text description of this partition schema suitable for debug printing.
+  //
+  // The partition schema is considered metadata, so partition bound information
+  // is not redacted from the returned string.
   std::string DebugString(const Schema& schema) const;
 
   // Returns a text description of this partition schema suitable for display in the web UI.
@@ -199,6 +212,8 @@ class PartitionSchema {
   // Returns header and entry HTML cells for the partition schema for the master
   // table web UI. This is an abstraction leak, but it's better than leaking the
   // internals of partitions to the master path handlers.
+  //
+  // Partitions are considered metadata, so no redaction will be done.
   std::string PartitionTableHeader(const Schema& schema) const;
   std::string PartitionTableEntry(const Schema& schema, const Partition& partition) const;
 
@@ -207,10 +222,16 @@ class PartitionSchema {
 
   // Transforms an exclusive lower bound range partition key into an inclusive
   // lower bound range partition key.
+  //
+  // The provided partial row is considered metadata, so error messages may
+  // contain unredacted row data.
   Status MakeLowerBoundRangePartitionKeyInclusive(KuduPartialRow* row) const;
 
   // Transforms an inclusive upper bound range partition key into an exclusive
   // upper bound range partition key.
+  //
+  // The provided partial row is considered metadata, so error messages may
+  // contain unredacted row data.
   Status MakeUpperBoundRangePartitionKeyExclusive(KuduPartialRow* row) const;
 
  private:
@@ -227,6 +248,11 @@ class PartitionSchema {
     int32_t num_buckets;
     uint32_t seed;
   };
+
+  // Returns a text description of the encoded range key suitable for debug printing.
+  std::string RangeKeyDebugString(Slice range_key, const Schema& schema) const;
+  std::string RangeKeyDebugString(const KuduPartialRow& key) const;
+  std::string RangeKeyDebugString(const ConstContiguousRow& key) const;
 
   // Encodes the specified columns of a row into lexicographic sort-order
   // preserving format.
@@ -277,8 +303,11 @@ class PartitionSchema {
   void AppendRangeDebugStringComponentsOrMin(const KuduPartialRow& row,
                                              std::vector<std::string>* components) const;
 
-  /// Returns the stringified hash and range schema componenets of the partition
-  /// schema.
+  // Returns the stringified hash and range schema componenets of the partition
+  // schema.
+  //
+  // Partition schemas are considered metadata, so no redaction will happen on
+  // the hash and range bound values.
   std::vector<std::string> DebugStringComponents(const Schema& schema) const;
 
   // Encode the provided row into a range key. The row must not include values

@@ -25,6 +25,8 @@
 #include "kudu/common/types.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(log_redact_user_data);
+
 namespace kudu {
 
 class TestColumnPredicate : public KuduTest {
@@ -1002,4 +1004,12 @@ TEST_F(TestColumnPredicate, TestSelectivity) {
                                   ColumnPredicate::Equality(column_s, &one_s)),
             0);
 }
+
+TEST_F(TestColumnPredicate, TestRedaction) {
+  FLAGS_log_redact_user_data = true;
+  ColumnSchema column_i32("a", INT32, true);
+  int32_t one_32 = 1;
+  ASSERT_EQ("`a` = <redacted>", ColumnPredicate::Equality(column_i32, &one_32).ToString());
+}
+
 } // namespace kudu

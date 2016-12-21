@@ -21,6 +21,7 @@
 #include <unordered_map>
 
 #include "kudu/gutil/singleton.h"
+#include "kudu/util/logging.h"
 
 using std::shared_ptr;
 using std::unordered_map;
@@ -41,7 +42,11 @@ TypeInfo::TypeInfo(TypeTraitsClass t)
 }
 
 void TypeInfo::AppendDebugStringForValue(const void *ptr, string *str) const {
-  append_func_(ptr, str);
+  if (KUDU_SHOULD_REDACT()) {
+    str->append(kRedactionMessage);
+  } else {
+    append_func_(ptr, str);
+  }
 }
 
 int TypeInfo::Compare(const void *lhs, const void *rhs) const {

@@ -25,6 +25,7 @@
 #include "kudu/util/logging_test_util.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(log_redact_user_data);
 DEFINE_int32(flag_with_no_tags, 0, "test flag that has no tags");
 
 DEFINE_int32(flag_with_one_tag, 0, "test flag that has 1 tag");
@@ -46,6 +47,12 @@ using std::unordered_set;
 namespace kudu {
 
 class FlagTagsTest : public KuduTest {
+ public:
+  FlagTagsTest() {
+    // Set by KuduTest, and set back to the default value here as this test
+    // deals with unsafe and experimental flags.
+    FLAGS_log_redact_user_data = true;
+  }
 };
 
 TEST_F(FlagTagsTest, TestTags) {

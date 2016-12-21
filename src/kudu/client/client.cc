@@ -1183,11 +1183,10 @@ struct CloseCallback {
 } // anonymous namespace
 
 string KuduScanner::ToString() const {
-  return Substitute("$0: $1",
-                    data_->table_->name(),
-                    data_->configuration()
-                    .spec()
-                    .ToString(*data_->table_->schema().schema_));
+  return KUDU_DISABLE_REDACTION(Substitute(
+      "$0: $1",
+      data_->table_->name(),
+      data_->configuration().spec().ToString(*data_->table_->schema().schema_)));
 }
 
 Status KuduScanner::Open() {
@@ -1200,13 +1199,13 @@ Status KuduScanner::Open() {
 
   if (data_->configuration().spec().CanShortCircuit() ||
       !data_->partition_pruner_.HasMorePartitionKeyRanges()) {
-    VLOG(2) << "Short circuiting scan " << ToString();
+    VLOG(2) << "Short circuiting scan " << data_->DebugString();
     data_->open_ = true;
     data_->short_circuit_ = true;
     return Status::OK();
   }
 
-  VLOG(2) << "Beginning scan " << ToString();
+  VLOG(2) << "Beginning " << data_->DebugString();
 
   MonoTime deadline = MonoTime::Now() + data_->configuration().timeout();
   set<string> blacklist;
@@ -1224,7 +1223,7 @@ Status KuduScanner::KeepAlive() {
 void KuduScanner::Close() {
   if (!data_->open_) return;
 
-  VLOG(2) << "Ending scan " << ToString();
+  VLOG(2) << "Ending " << data_->DebugString();
 
   // Close the scanner on the server-side, if necessary.
   //
@@ -1277,7 +1276,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
 
   if (data_->data_in_open_) {
     // We have data from a previous scan.
-    VLOG(2) << "Extracting data from scan " << ToString();
+    VLOG(2) << "Extracting data from " << data_->DebugString();
     data_->data_in_open_ = false;
     return batch->data_->Reset(&data_->controller_,
                                data_->configuration().projection(),
@@ -1285,7 +1284,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
                                 make_gscoped_ptr(data_->last_response_.release_data()));
   } else if (data_->last_response_.has_more_results()) {
     // More data is available in this tablet.
-    VLOG(2) << "Continuing scan " << ToString();
+    VLOG(2) << "Continuing " << data_->DebugString();
 
     MonoTime batch_deadline = MonoTime::Now() + data_->configuration().timeout();
     data_->PrepareRequest(KuduScanner::Data::CONTINUE);
@@ -1313,12 +1312,13 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
       Status s = data_->HandleError(result, batch_deadline, &blacklist);
       if (!s.ok()) {
         LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
-                     << ToString() << " failed: " << result.status.ToString();
+                     << data_->DebugString() << " failed: " << result.status.ToString();
         return s;
       }
 
       if (data_->configuration().is_fault_tolerant()) {
-        LOG(WARNING) << "Attempting to retry scan of tablet " << ToString() << " elsewhere.";
+        LOG(WARNING) << "Attempting to retry scan of tablet " << data_->DebugString()
+                     << " elsewhere.";
         return data_->ReopenCurrentTablet(batch_deadline, &blacklist);
       }
 
@@ -1334,7 +1334,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
     // More data may be available in other tablets.
     // No need to close the current tablet; we scanned all the data so the
     // server closed it for us.
-    VLOG(2) << "Scanning next tablet " << ToString();
+    VLOG(2) << "Scanning next tablet " << data_->DebugString();
     data_->last_primary_key_.clear();
     MonoTime deadline = MonoTime::Now() + data_->configuration().timeout();
     set<string> blacklist;

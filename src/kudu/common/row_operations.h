@@ -66,6 +66,7 @@ struct DecodedRowOperation {
   // For SPLIT_ROW, the partial row to split on.
   std::shared_ptr<KuduPartialRow> split_row;
 
+  // Stringifies, including redaction when appropriate.
   std::string ToString(const Schema& schema) const;
 };
 

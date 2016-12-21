@@ -30,6 +30,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hash_util.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/url-coding.h"
 
 using std::pair;
@@ -318,7 +319,8 @@ Status PartitionSchema::SplitRangeBounds(const Schema& schema,
     for (; split != splits.end() && (upper.empty() || *split <= upper); split++) {
       if (!lower.empty() && *split < lower) {
         return Status::InvalidArgument("split out of bounds", RangeKeyDebugString(*split, schema));
-      } else if (lower == *split || upper == *split) {
+      }
+      if (lower == *split || upper == *split) {
         return Status::InvalidArgument("split matches lower or upper bound",
                                        RangeKeyDebugString(*split, schema));
       }
@@ -582,6 +584,9 @@ string ColumnIdsToColumnNames(const Schema& schema,
 
 string PartitionSchema::PartitionDebugString(const Partition& partition,
                                              const Schema& schema) const {
+  // Partitions are considered metadata, so don't redact them.
+  ScopedDisableRedaction no_redaction;
+
   vector<string> components;
   if (partition.hash_buckets_.size() != hash_bucket_schemas_.size()) {
     return "<hash-partition-error>";
@@ -675,6 +680,9 @@ string PartitionSchema::PartitionKeyDebugString(Slice key, const Schema& schema)
 
 string PartitionSchema::RangePartitionDebugString(const KuduPartialRow& lower_bound,
                                                   const KuduPartialRow& upper_bound) const {
+  // Partitions are considered metadata, so don't redact them.
+  ScopedDisableRedaction no_redaction;
+
   bool lower_unbounded = IsRangePartitionKeyEmpty(lower_bound);
   bool upper_unbounded = IsRangePartitionKeyEmpty(upper_bound);
   if (lower_unbounded && upper_unbounded) {

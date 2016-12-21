@@ -42,6 +42,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
@@ -268,6 +269,10 @@ int Webserver::BeginRequestCallbackStatic(struct sq_connection* connection) {
 
 int Webserver::BeginRequestCallback(struct sq_connection* connection,
                                     struct sq_request_info* request_info) {
+  // Redaction is disabled from the web UI. This affects operations like default
+  // value and scan predicate pretty printing.
+  ScopedDisableRedaction disable_redaction;
+
   PathHandler* handler;
   {
     shared_lock<RWMutex> l(lock_);

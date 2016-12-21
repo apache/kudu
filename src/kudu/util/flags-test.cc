@@ -34,11 +34,17 @@ DEFINE_string(test_default_ff, "default",
 DEFINE_string(test_default_explicit, "default",
              "Check if we track explicitly set defaults");
 DECLARE_string(flagfile);
-
+DECLARE_bool(log_redact_user_data);
 
 namespace kudu {
 
 class FlagsTest : public KuduTest {
+ public:
+  FlagsTest() {
+    // Set by KuduTest, and set back to the default value here as this test
+    // deals with unsafe and experimental flags.
+    FLAGS_log_redact_user_data = true;
+  }
 };
 
 TEST_F(FlagsTest, TestNonDefaultFlags) {

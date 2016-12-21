@@ -23,6 +23,7 @@
 
 #include "kudu/common/types.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/test_util.h"
 
 using std::get;
 using std::make_tuple;
@@ -33,7 +34,9 @@ using std::vector;
 
 namespace kudu {
 
-TEST(TestTypes, TestTimestampPrinting) {
+class TestTypes : public KuduTest {};
+
+TEST_F(TestTypes, TestTimestampPrinting) {
   const TypeInfo* info = GetTypeInfo(UNIXTIME_MICROS);
 
   // Test the minimum value
@@ -86,7 +89,7 @@ namespace {
   }
 } // anonymous namespace
 
-TEST(TestTypes, TestAreConsecutiveInteger) {
+TEST_F(TestTypes, TestAreConsecutiveInteger) {
   vector<tuple<int64_t, int64_t, bool>> test_cases {
     make_tuple(0, 0, false),
     make_tuple(0, 1, true),
@@ -104,7 +107,7 @@ TEST(TestTypes, TestAreConsecutiveInteger) {
   TestAreConsecutive(INT64, test_cases);
 }
 
-TEST(TestTypes, TestAreConsecutiveDouble) {
+TEST_F(TestTypes, TestAreConsecutiveDouble) {
   vector<tuple<double, double, bool>> test_cases {
     make_tuple(0.0, 1.0, false),
     make_tuple(0.0, 0.1, false),
@@ -116,7 +119,7 @@ TEST(TestTypes, TestAreConsecutiveDouble) {
   TestAreConsecutive(DOUBLE, test_cases);
 }
 
-TEST(TestTypes, TestAreConsecutiveString) {
+TEST_F(TestTypes, TestAreConsecutiveString) {
   vector<tuple<Slice, Slice, bool>> test_cases {
     make_tuple("abc", "abc", false),
     make_tuple("abc", Slice("abc\0", 4), true),

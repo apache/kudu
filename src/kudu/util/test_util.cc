@@ -33,6 +33,8 @@
 #include "kudu/util/random.h"
 #include "kudu/util/spinlock_profiling.h"
 
+DECLARE_bool(log_redact_user_data);
+
 DEFINE_string(test_leave_files, "on_failure",
               "Whether to leave test files around after the test run. "
               " Valid values are 'always', 'on_failure', or 'never'");
@@ -64,6 +66,8 @@ bool g_is_gtest = true;
 KuduTest::KuduTest()
   : env_(Env::Default()),
     test_dir_(GetTestDataDirectory()) {
+  // Disable log redaction.
+  FLAGS_log_redact_user_data = false;
 }
 
 KuduTest::~KuduTest() {

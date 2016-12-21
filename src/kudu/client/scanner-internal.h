@@ -215,6 +215,17 @@ class KuduScanner::Data {
   // The scanner's cumulative resource metrics since the scan was started.
   ResourceMetrics resource_metrics_;
 
+  // Returns a text description of the scan suitable for debug printing.
+  //
+  // This method will not return sensitive predicate information, so it's
+  // suitable for use in client-side logging (as opposed to Scanner::ToString).
+  std::string DebugString() const {
+    return strings::Substitute("Scanner { table: $0, projection: $1, scan_spec: $2 }",
+                               table_->name(),
+                               configuration_.projection()->ToString(),
+                               configuration_.spec().ToString(*table_->schema().schema_));
+  }
+
  private:
   // Analyze the response of the last Scan RPC made by this scanner.
   //
