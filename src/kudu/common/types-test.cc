@@ -16,10 +16,12 @@
 // under the License.
 
 #include <cmath>
-#include <gtest/gtest.h>
 #include <string>
 #include <tuple>
 #include <vector>
+
+#include <gflags/gflags.h>
+#include <gtest/gtest.h>
 
 #include "kudu/common/types.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -31,6 +33,8 @@ using std::nextafter;
 using std::string;
 using std::tuple;
 using std::vector;
+
+DECLARE_bool(log_redact_user_data);
 
 namespace kudu {
 
@@ -71,6 +75,17 @@ TEST_F(TestTypes, TestTimestampPrinting) {
   time = MathLimits<int64>::kMax;
   info->AppendDebugStringForValue(&time, &result);
   ASSERT_EQ("294247-01-10T04:00:54.775807Z", result);
+  result = "";
+
+  {
+    // Check that row values are redacted when the log_redact_user_data flag is set.
+    google::FlagSaver flag_saver;
+    FLAGS_log_redact_user_data = true;
+    time = 0;
+    info->AppendDebugStringForValue(&time, &result);
+    ASSERT_EQ("<redacted>", result);
+    result = "";
+  }
 }
 
 namespace {

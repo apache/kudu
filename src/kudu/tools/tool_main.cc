@@ -222,10 +222,14 @@ static bool ParseCommandLineFlags(int* argc, char*** argv) {
 }
 
 int main(int argc, char** argv) {
-  bool show_help = ParseCommandLineFlags(&argc, &argv);
   FLAGS_logtostderr = true;
-  // Disable redaction so that user data printed to the console will be shown in full.
-  FLAGS_log_redact_user_data = false;
+  bool show_help = ParseCommandLineFlags(&argc, &argv);
+
+  if (google::GetCommandLineFlagInfoOrDie("log_redact_user_data").is_default) {
+    // Disable redaction so that user data printed to the console will be shown in full.
+    FLAGS_log_redact_user_data = false;
+  }
+
   kudu::InitGoogleLoggingSafe(argv[0]);
   return kudu::tools::RunTool(argc, argv, show_help);
 }

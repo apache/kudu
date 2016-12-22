@@ -76,7 +76,8 @@ class KUDU_EXPORT KuduWriteOperation {
 
   /// @return String representation of the operation.
   ///
-  /// @internal this method does *NOT* redact row values. The
+  /// @internal
+  /// @note this method does note redact row values. The
   ///   caller must handle redaction themselves, if necessary.
   virtual std::string ToString() const = 0;
  protected:

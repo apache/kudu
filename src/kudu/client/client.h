@@ -1924,7 +1924,8 @@ class KUDU_EXPORT KuduScanner {
 
   /// @return String representation of this scan.
   ///
-  /// @internal This method must not be used in log messages because it contains
+  /// @internal
+  /// @note This method must not be used in log messages because it contains
   ///   sensitive predicate values. Use Scanner::Data::DebugString instead.
   std::string ToString() const;
 
