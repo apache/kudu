@@ -17,9 +17,11 @@
 
 #include "kudu/common/column_predicate.h"
 
+#include <vector>
+
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <vector>
 
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"

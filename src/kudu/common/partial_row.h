@@ -459,7 +459,9 @@ class KUDU_EXPORT KuduPartialRow {
 
   /// @return String representation for the partial row.
   ///
-  /// @internal NOTE: this is not redacted.
+  /// @internal
+  /// @note this method does note redact row values. The
+  ///   caller must handle redaction themselves, if necessary.
   std::string ToString() const;
 
   /// @return The schema object for the partial row.

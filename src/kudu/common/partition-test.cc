@@ -23,7 +23,7 @@
 #include <vector>
 
 #include <boost/optional.hpp>
-#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"

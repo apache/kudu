@@ -60,7 +60,7 @@
 // to short-circuit expensive logic.
 #define KUDU_SHOULD_REDACT() (FLAGS_log_redact_user_data && kudu::tls_redact_user_data)
 
-// Either evaluate and return 'expr', or return the string "redacted", depending on whether
+// Either evaluate and return 'expr', or return the string "<redacted>", depending on whether
 // redaction is enabled in the current scope.
 #define KUDU_REDACT(expr) \
   (KUDU_SHOULD_REDACT() ? kudu::kRedactionMessage : (expr))
