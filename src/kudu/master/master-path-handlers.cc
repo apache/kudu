@@ -44,6 +44,7 @@
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/string_case.h"
 #include "kudu/util/url-coding.h"
 
@@ -84,7 +85,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
     string row = Substitute("<tr><th>$0</th><td>$1</td><td><pre><code>$2</code></pre></td></tr>\n",
                             RegistrationToHtml(reg, desc->permanent_uuid()),
                             time_since_hb,
-                            EscapeForHtmlToString(reg.ShortDebugString()));
+                            EscapeForHtmlToString(SecureShortDebugString(reg)));
 
     if (desc->PresumedDead()) {
       version_counts[reg.software_version()][1]++;
@@ -369,7 +370,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
         master.registration(),
         master.instance_id().permanent_uuid());
     string reg_str = EscapeForHtmlToString(
-        master.registration().ShortDebugString());
+        SecureShortDebugString(master.registration()));
     *output << Substitute(
         "  <tr><td>$0</td><td>$1</td><td><code>$2</code></td></tr>\n",
         uuid_text,

@@ -226,19 +226,19 @@ Status SysCatalogTable::CreateDistributedConfig(const MasterOptions& options,
     if (peer.has_permanent_uuid()) {
       resolved_config.add_peers()->CopyFrom(peer);
     } else {
-      LOG(INFO) << peer.ShortDebugString()
+      LOG(INFO) << SecureShortDebugString(peer)
                 << " has no permanent_uuid. Determining permanent_uuid...";
       RaftPeerPB new_peer = peer;
       RETURN_NOT_OK_PREPEND(consensus::SetPermanentUuidForRemotePeer(master_->messenger(),
                                                                      &new_peer),
                             Substitute("Unable to resolve UUID for peer $0",
-                                       peer.ShortDebugString()));
+                                       SecureShortDebugString(peer)));
       resolved_config.add_peers()->CopyFrom(new_peer);
     }
   }
 
   RETURN_NOT_OK(consensus::VerifyRaftConfig(resolved_config, consensus::COMMITTED_QUORUM));
-  VLOG(1) << "Distributed Raft configuration: " << resolved_config.ShortDebugString();
+  VLOG(1) << "Distributed Raft configuration: " << SecureShortDebugString(resolved_config);
 
   *committed_config = resolved_config;
   return Status::OK();
@@ -255,7 +255,7 @@ void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const stri
   }
   consensus::ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
   LOG_WITH_PREFIX(INFO) << "SysCatalogTable state changed. Reason: " << reason << ". "
-                        << "Latest consensus state: " << cstate.ShortDebugString();
+                        << "Latest consensus state: " << SecureShortDebugString(cstate);
   RaftPeerPB::Role new_role = GetConsensusRole(tablet_peer_->permanent_uuid(), cstate);
   LOG_WITH_PREFIX(INFO) << "This master's current role is: "
                         << RaftPeerPB::Role_Name(new_role);

@@ -43,6 +43,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/thread_restrictions.h"
 
 using std::set;
@@ -187,7 +188,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
 
     if (s.IsNetworkError()) {
       KLOG_EVERY_N_SECS(WARNING, 1)
-          << "Unable to send the request (" << req.ShortDebugString()
+          << "Unable to send the request (" << SecureShortDebugString(req)
           << ") to leader Master (" << leader_master_hostport().ToString() << "): "
           << s.ToString();
       if (client->IsMultiMaster()) {
@@ -201,7 +202,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     if (s.IsTimedOut()) {
       if (MonoTime::Now() < deadline) {
         KLOG_EVERY_N_SECS(WARNING, 1)
-            << "Unable to send the request (" << req.ShortDebugString()
+            << "Unable to send the request (" << SecureShortDebugString(req)
             << ") to leader Master (" << leader_master_hostport().ToString()
             << "): " << s.ToString();
         if (client->IsMultiMaster()) {

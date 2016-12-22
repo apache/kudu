@@ -44,6 +44,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/pb_util.h"
 
 DEFINE_int32(tablet_copy_begin_session_timeout_ms, 3000,
              "Tablet server RPC client timeout for BeginTabletCopySession calls. "
@@ -184,7 +185,7 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
   if (resp.superblock().tablet_data_state() != tablet::TABLET_DATA_READY) {
     Status s = Status::IllegalState("Remote peer (" + copy_peer_uuid + ")" +
                                     " is currently copying itself!",
-                                    resp.superblock().ShortDebugString());
+                                    SecureShortDebugString(resp.superblock()));
     LOG_WITH_PREFIX(WARNING) << s.ToString();
     return s;
   }
@@ -295,7 +296,7 @@ Status TabletCopyClient::ExtractRemoteError(const rpc::ErrorStatusPB& remote_err
               TabletCopyErrorPB::Code_Name(error.code()) + " from remote service");
   } else {
     return Status::InvalidArgument("Unable to decode tablet copy RPC error message",
-                                   remote_error.ShortDebugString());
+                                   SecureShortDebugString(remote_error));
   }
 }
 
@@ -519,7 +520,8 @@ Status TabletCopyClient::DownloadFile(const DataIdPB& data_id,
 
     // Sanity-check for corruption.
     RETURN_NOT_OK_PREPEND(VerifyData(offset, resp.chunk()),
-                          Substitute("Error validating data item $0", data_id.ShortDebugString()));
+                          Substitute("Error validating data item $0",
+                                     SecureShortDebugString(data_id)));
 
     // Write the data.
     RETURN_NOT_OK(appendable->Append(resp.chunk().data()));

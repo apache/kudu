@@ -30,6 +30,7 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
 
@@ -90,7 +91,7 @@ Status TabletCopySourceSession::Init() {
   vector<BlockIdPB> data_blocks;
   TabletMetadata::CollectBlockIdPBs(tablet_superblock_, &data_blocks);
   for (const BlockIdPB& block_id : data_blocks) {
-    VLOG(1) << "Opening block " << block_id.DebugString();
+    VLOG(1) << "Opening block " << SecureDebugString(block_id);
     RETURN_NOT_OK(OpenBlockUnlocked(BlockId::FromPB(block_id)));
   }
 

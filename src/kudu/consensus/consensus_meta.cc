@@ -236,7 +236,7 @@ void ConsensusMetadata::UpdateActiveRole() {
   ConsensusStatePB cstate = ToConsensusStatePB(CONSENSUS_CONFIG_ACTIVE);
   active_role_ = GetConsensusRole(peer_uuid_, cstate);
   VLOG_WITH_PREFIX(1) << "Updating active role to " << RaftPeerPB::Role_Name(active_role_)
-                      << ". Consensus state: " << cstate.ShortDebugString();
+                      << ". Consensus state: " << SecureShortDebugString(cstate);
 }
 
 } // namespace consensus

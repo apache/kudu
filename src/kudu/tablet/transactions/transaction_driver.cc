@@ -28,6 +28,7 @@
 #include "kudu/util/debug-util.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
@@ -231,8 +232,8 @@ void TransactionDriver::RegisterFollowerTransactionOnResultTracker() {
       mutable_state()->set_completion_callback(
           gscoped_ptr<TransactionCompletionCallback>(new TransactionCompletionCallback()));
       VLOG(2) << state()->result_tracker() << " Follower Rpc was already COMPLETED or STALE: "
-          << rpc_state << " OpId: " << state()->op_id().ShortDebugString()
-          << " RequestId: " << state()->request_id().ShortDebugString();
+          << rpc_state << " OpId: " << SecureShortDebugString(state()->op_id())
+          << " RequestId: " << SecureShortDebugString(state()->request_id());
       return;
     }
     default:
@@ -273,7 +274,7 @@ Status TransactionDriver::Prepare() {
           && !state()->result_tracker()->IsCurrentDriver(state()->request_id())) {
         transaction_status_ = Status::AlreadyPresent(strings::Substitute(
             "There's already an attempt of the same operation on the server for request id: $0",
-            state()->request_id().ShortDebugString()));
+            SecureShortDebugString(state()->request_id())));
         replication_state_ = REPLICATION_FAILED;
         return transaction_status_;
       }

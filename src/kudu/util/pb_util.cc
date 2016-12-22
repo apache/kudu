@@ -884,11 +884,11 @@ Status ReadablePBContainerFile::Dump(ostream* os, bool oneline) {
       s.ok();
       s = ReadNextPB(msg.get())) {
     if (oneline) {
-      *os << count++ << "\t" << msg->ShortDebugString() << endl;
+      *os << count++ << "\t" << SecureShortDebugString(*msg) << endl;
     } else {
       *os << "Message " << count << endl;
       *os << "-------" << endl;
-      *os << msg->DebugString() << endl;
+      *os << SecureDebugString(*msg) << endl;
       count++;
     }
   }

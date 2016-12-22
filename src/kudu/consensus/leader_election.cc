@@ -34,6 +34,7 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -171,7 +172,7 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
            vote_counter_->GetTotalExpectedVotes())
       << "Expected different number of followers. Follower UUIDs: ["
       << JoinStringsIterator(follower_uuids_.begin(), follower_uuids_.end(), ", ")
-      << "]; RaftConfig: {" << config.ShortDebugString() << "}";
+      << "]; RaftConfig: {" << SecureShortDebugString(config) << "}";
 }
 
 LeaderElection::~LeaderElection() {

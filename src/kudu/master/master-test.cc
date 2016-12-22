@@ -36,6 +36,7 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
@@ -167,7 +168,8 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   ASSERT_EQ(1, descs.size()) << "Should have registered the TS";
   ServerRegistrationPB reg;
   descs[0]->GetRegistration(&reg);
-  ASSERT_EQ(fake_reg.DebugString(), reg.DebugString()) << "Master got different registration";
+  ASSERT_EQ(SecureDebugString(fake_reg), SecureDebugString(reg))
+      << "Master got different registration";
 
   ASSERT_TRUE(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
   ASSERT_EQ(ts_desc, descs[0]);
@@ -272,7 +274,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     ListTabletServersResponsePB resp;
     RpcController rpc;
     ASSERT_OK(proxy_->ListTabletServers(req, &resp, &rpc));
-    LOG(INFO) << resp.DebugString();
+    LOG(INFO) << SecureDebugString(resp);
     ASSERT_EQ(1, resp.servers_size());
     ASSERT_EQ("my-ts-uuid", resp.servers(0).instance_id().permanent_uuid());
     ASSERT_EQ(1, resp.servers(0).instance_id().instance_seqno());
@@ -353,7 +355,7 @@ Status MasterTest::CreateTable(const string& table_name,
 void MasterTest::DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp) {
   RpcController controller;
   ASSERT_OK(proxy_->ListTables(req, resp, &controller));
-  SCOPED_TRACE(resp->DebugString());
+  SCOPED_TRACE(SecureDebugString(*resp));
   ASSERT_FALSE(resp->has_error());
 }
 
@@ -384,7 +386,7 @@ TEST_F(MasterTest, TestCatalog) {
     RpcController controller;
     req.mutable_table()->set_table_name(kTableName);
     ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 
@@ -607,10 +609,10 @@ TEST_F(MasterTest, TestCreateTableInvalidSchema) {
   }
 
   ASSERT_OK(proxy_->CreateTable(req, &resp, &controller));
-  SCOPED_TRACE(resp.DebugString());
+  SCOPED_TRACE(SecureDebugString(resp));
   ASSERT_TRUE(resp.has_error());
   ASSERT_EQ("code: INVALID_ARGUMENT message: \"Duplicate column name: col\"",
-            resp.error().status().ShortDebugString());
+            SecureShortDebugString(resp.error().status()));
 }
 
 // Test that, if the client specifies mismatched read and write defaults,
@@ -635,11 +637,11 @@ TEST_F(MasterTest, TestCreateTableMismatchedDefaults) {
   req.mutable_schema()->mutable_columns(1)->set_write_default_value("bye");
 
   ASSERT_OK(proxy_->CreateTable(req, &resp, &controller));
-  SCOPED_TRACE(resp.DebugString());
+  SCOPED_TRACE(SecureDebugString(resp));
   ASSERT_TRUE(resp.has_error());
   ASSERT_EQ("code: INVALID_ARGUMENT message: \"column \\'col\\' has "
             "mismatched read/write defaults\"",
-            resp.error().status().ShortDebugString());
+            SecureShortDebugString(resp.error().status()));
 }
 
 // Regression test for KUDU-253/KUDU-592: crash if the GetTableLocations RPC call is
@@ -657,11 +659,11 @@ TEST_F(MasterTest, TestInvalidGetTableLocations) {
     req.set_partition_key_start("zzzz");
     req.set_partition_key_end("aaaa");
     ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ("code: INVALID_ARGUMENT message: "
               "\"start partition key is greater than the end partition key\"",
-              resp.error().status().ShortDebugString());
+              SecureShortDebugString(resp.error().status()));
   }
 }
 
@@ -731,7 +733,7 @@ TEST_F(MasterTest, TestGetTableSchemaIsAtomicWithCreateTable) {
       RpcController controller;
 
       CHECK_OK(proxy_->GetTableSchema(req, &resp, &controller));
-      SCOPED_TRACE(resp.DebugString());
+      SCOPED_TRACE(SecureDebugString(resp));
 
       // There are two possible outcomes:
       //
@@ -1084,7 +1086,7 @@ TEST_F(MasterTest, TestConcurrentCreateOfSameTable) {
       req.set_name(kTableName);
       CHECK_OK(SchemaToPB(kTableSchema, req.mutable_schema()));
       CHECK_OK(proxy_->CreateTable(req, &resp, &controller));
-      SCOPED_TRACE(resp.DebugString());
+      SCOPED_TRACE(SecureDebugString(resp));
 
       // There are three expected outcomes:
       //
@@ -1096,7 +1098,7 @@ TEST_F(MasterTest, TestConcurrentCreateOfSameTable) {
       if (resp.has_error()) {
         Status s = StatusFromPB(resp.error().status());
         string failure_msg = Substitute("Unexpected response: $0",
-                                        resp.DebugString());
+                                        SecureDebugString(resp));
         switch (resp.error().code()) {
           case MasterErrorPB::TABLE_NOT_FOUND:
             CHECK(s.IsServiceUnavailable()) << failure_msg;
@@ -1136,7 +1138,7 @@ TEST_F(MasterTest, TestConcurrentRenameOfSameTable) {
       req.mutable_table()->set_table_name(kOldName);
       req.set_new_table_name(kNewName);
       CHECK_OK(proxy_->AlterTable(req, &resp, &controller));
-      SCOPED_TRACE(resp.DebugString());
+      SCOPED_TRACE(SecureDebugString(resp));
 
       // There are two expected outcomes:
       //
@@ -1146,7 +1148,7 @@ TEST_F(MasterTest, TestConcurrentRenameOfSameTable) {
       if (resp.has_error()) {
         Status s = StatusFromPB(resp.error().status());
         string failure_msg = Substitute("Unexpected response: $0",
-                                        resp.DebugString());
+                                        SecureDebugString(resp));
         CHECK_EQ(MasterErrorPB::TABLE_NOT_FOUND, resp.error().code()) << failure_msg;
         CHECK(s.IsNotFound()) << failure_msg;
       }
@@ -1190,7 +1192,7 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
 
         CHECK_OK(SchemaToPB(kTableSchema, req.mutable_schema()));
         CHECK_OK(proxy_->CreateTable(req, &resp, &controller));
-        SCOPED_TRACE(resp.DebugString());
+        SCOPED_TRACE(SecureDebugString(resp));
 
         // There are three expected outcomes:
         //
@@ -1202,7 +1204,7 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
         if (resp.has_error()) {
           Status s = StatusFromPB(resp.error().status());
           string failure_msg = Substitute("Unexpected response: $0",
-                                          resp.DebugString());
+                                          SecureDebugString(resp));
           switch (resp.error().code()) {
             case MasterErrorPB::TABLE_NOT_FOUND:
               CHECK(s.IsServiceUnavailable()) << failure_msg;
@@ -1227,7 +1229,7 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
         req.mutable_table()->set_table_name(kOldName);
         req.set_new_table_name(kNewName);
         CHECK_OK(proxy_->AlterTable(req, &resp, &controller));
-        SCOPED_TRACE(resp.DebugString());
+        SCOPED_TRACE(SecureDebugString(resp));
 
         // There are three expected outcomes:
         //
@@ -1241,7 +1243,7 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
         if (resp.has_error()) {
           Status s = StatusFromPB(resp.error().status());
           string failure_msg = Substitute("Unexpected response: $0",
-                                          resp.DebugString());
+                                          SecureDebugString(resp));
           switch (resp.error().code()) {
             case MasterErrorPB::TABLE_NOT_FOUND:
               CHECK(s.IsServiceUnavailable() || s.IsNotFound()) << failure_msg;

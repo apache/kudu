@@ -30,6 +30,7 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/pb_util.h"
 
 
 DEFINE_int32(master_inject_latency_on_tablet_lookups_ms, 0,
@@ -107,7 +108,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
     if (s.IsNotFound()) {
       LOG(INFO) << Substitute("Got heartbeat from unknown tserver ($0) as $1; "
           "Asking this server to re-register.",
-          req->common().ts_instance().ShortDebugString(), rpc->requestor_string());
+          SecureShortDebugString(req->common().ts_instance()), rpc->requestor_string());
       resp->set_needs_reregister(true);
 
       // Don't bother asking for a full tablet report if we're a follower;
@@ -118,7 +119,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
       return;
     } else if (!s.ok()) {
       LOG(WARNING) << Substitute("Unable to look up tserver for heartbeat "
-          "request $0 from $1: $2", req->DebugString(),
+          "request $0 from $1: $2", SecureDebugString(*req),
           rpc->requestor_string(), s.ToString());
       rpc->RespondFailure(s.CloneAndPrepend("Unable to lookup tserver"));
       return;

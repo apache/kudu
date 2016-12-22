@@ -39,6 +39,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/pb_util.h"
 
 DEFINE_int32(log_cache_size_limit_mb, 128,
              "The total per-tablet size of consensus entries which may be kept in memory. "
@@ -474,7 +475,7 @@ void LogCache::DumpToHtml(std::ostream& out) const {
                       "<td>$4</td><td>$5</td></tr>",
                       counter++, msg->id().term(), msg->id().index(),
                       OperationType_Name(msg->op_type()),
-                      msg->ByteSize(), msg->id().ShortDebugString()) << endl;
+                      msg->ByteSize(), SecureShortDebugString(msg->id())) << endl;
   }
   out << "</table>";
 }

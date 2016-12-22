@@ -52,6 +52,7 @@
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/pb_util.h"
 
 using std::pair;
 using std::set;
@@ -294,7 +295,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   }
 
   if (VLOG_IS_ON(3)) {
-    VLOG(3) << "Created batch for " << tablet_id << ":\n" << req_.ShortDebugString();
+    VLOG(3) << "Created batch for " << tablet_id << ":\n" << SecureShortDebugString(req_);
   }
 }
 
@@ -742,12 +743,13 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
       LOG(ERROR) << "Received a per_row_error for an out-of-bound op index "
                  << err_pb.row_index() << " (sent only "
                  << rpc.ops().size() << " ops)";
-      LOG(ERROR) << "Response from tablet " << rpc.tablet_id() << ":\n" << rpc.resp().DebugString();
+      LOG(ERROR) << "Response from tablet " << rpc.tablet_id() << ":\n"
+                 << SecureDebugString(rpc.resp());
       continue;
     }
     gscoped_ptr<KuduWriteOperation> op = std::move(rpc.ops()[err_pb.row_index()]->write_op);
     VLOG(2) << "Error on op " << op->ToString() << ": "
-            << err_pb.error().ShortDebugString();
+            << SecureShortDebugString(err_pb.error());
     Status op_status = StatusFromPB(err_pb.error());
     gscoped_ptr<KuduError> error(new KuduError(op.release(), op_status));
     error_collector_->AddError(std::move(error));

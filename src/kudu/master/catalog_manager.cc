@@ -85,6 +85,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
@@ -250,7 +251,8 @@ class TableLoader : public TableVisitor {
     l.Commit();
 
     LOG(INFO) << "Loaded metadata for table " << table->ToString();
-    VLOG(1) << "Metadata for table " << table->ToString() << ": " << metadata.ShortDebugString();
+    VLOG(1) << "Metadata for table " << table->ToString()
+            << ": " << SecureShortDebugString(metadata);
     return Status::OK();
   }
 
@@ -280,7 +282,7 @@ class TabletLoader : public TabletVisitor {
       // Tables and tablets are always created/deleted in one operation, so
       // this shouldn't be possible.
       LOG(ERROR) << "Missing Table " << table_id << " required by tablet " << tablet_id;
-      LOG(ERROR) << "Metadata: " << metadata.DebugString();
+      LOG(ERROR) << "Metadata: " << SecureDebugString(metadata);
       return Status::Corruption("Missing table for tablet: ", tablet_id);
     }
 
@@ -301,7 +303,7 @@ class TabletLoader : public TabletVisitor {
 
     LOG(INFO) << "Loaded metadata for tablet " << tablet_id
               << " (table " << table->ToString() << ")";
-    VLOG(2) << "Metadata for tablet " << tablet_id << ": " << metadata.ShortDebugString();
+    VLOG(2) << "Metadata for tablet " << tablet_id << ": " << SecureShortDebugString(metadata);
     return Status::OK();
   }
 
@@ -657,7 +659,7 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   if (!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid) {
     return Status::IllegalState(
         Substitute("Node $0 not leader. Consensus state: $1",
-                    uuid, cstate.ShortDebugString()));
+                    uuid, SecureShortDebugString(cstate)));
   }
 
   // Wait for all transactions to be committed.
@@ -915,7 +917,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // Copy the request, so we can fill in some defaults.
   CreateTableRequestPB req = *orig_req;
   LOG(INFO) << "CreateTable from " << RequestorString(rpc)
-            << ":\n" << req.DebugString();
+            << ":\n" << SecureDebugString(req);
 
   // Do some fix-up of any defaults specified on columns.
   // Clients are only expected to pass the default value in the 'read_default'
@@ -1152,7 +1154,7 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
+    Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
@@ -1219,14 +1221,14 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   RETURN_NOT_OK(CheckOnline());
 
   LOG(INFO) << "Servicing DeleteTable request from " << RequestorString(rpc)
-            << ": " << req->ShortDebugString();
+            << ": " << SecureShortDebugString(*req);
 
   // 1. Look up the table, lock it, and mark it as removed.
   TRACE("Looking up table");
   scoped_refptr<TableInfo> table;
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
+    Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
@@ -1327,7 +1329,7 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
         ColumnSchemaPB new_col_pb = step.add_column().schema();
         if (new_col_pb.has_id()) {
           return Status::InvalidArgument("column $0: client should not specify column ID",
-                                         new_col_pb.ShortDebugString());
+                                         SecureShortDebugString(new_col_pb));
         }
         RETURN_NOT_OK(ProcessColumnPBDefaults(&new_col_pb));
 
@@ -1374,7 +1376,8 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
       // TODO: EDIT_COLUMN
 
       default: {
-        return Status::InvalidArgument("Invalid alter schema step type", step.ShortDebugString());
+        return Status::InvalidArgument("Invalid alter schema step type",
+                                       SecureShortDebugString(step));
       }
     }
   }
@@ -1414,7 +1417,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 
     if (ops.size() != 2) {
       return Status::InvalidArgument("expected two row operations for alter range partition step",
-                                     step.ShortDebugString());
+                                     SecureShortDebugString(step));
     }
 
     if ((ops[0].type != RowOperationsPB::RANGE_LOWER_BOUND &&
@@ -1536,7 +1539,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
       }
       default: {
         return Status::InvalidArgument("Unknown alter table range partitioning step",
-                                       step.ShortDebugString());
+                                       SecureShortDebugString(step));
       }
     }
   }
@@ -1554,7 +1557,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   RETURN_NOT_OK(CheckOnline());
 
   LOG(INFO) << "Servicing AlterTable request from " << RequestorString(rpc)
-            << ": " << req->ShortDebugString();
+            << ": " << SecureShortDebugString(*req);
 
   RETURN_NOT_OK(CheckOnline());
 
@@ -1576,7 +1579,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
       }
       case AlterTableRequestPB::ALTER_COLUMN:
       case AlterTableRequestPB::UNKNOWN: {
-        return Status::InvalidArgument("Invalid alter step type", step.ShortDebugString());
+        return Status::InvalidArgument("Invalid alter step type", SecureShortDebugString(step));
       }
     }
   }
@@ -1586,7 +1589,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   scoped_refptr<TableInfo> table;
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
+    Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
@@ -1605,7 +1608,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     scoped_refptr<TableInfo> table_again;
     CHECK_OK(FindTable(req->table(), &table_again));
     if (table_again == nullptr) {
-      Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
+      Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
       SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
       return s;
     }
@@ -1831,7 +1834,7 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
+    Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
@@ -1859,7 +1862,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist", req->table().ShortDebugString());
+    Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
@@ -1962,7 +1965,7 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
 
   if (VLOG_IS_ON(2)) {
     VLOG(2) << "Received tablet report from " <<
-      RequestorString(rpc) << ": " << report.DebugString();
+      RequestorString(rpc) << ": " << SecureDebugString(report);
   }
 
   // TODO: on a full tablet report, we may want to iterate over the tablets we think
@@ -1973,7 +1976,7 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
     ReportedTabletUpdatesPB *tablet_report = report_update->add_tablets();
     tablet_report->set_tablet_id(reported.tablet_id());
     RETURN_NOT_OK_PREPEND(HandleReportedTablet(ts_desc, reported, tablet_report),
-                          Substitute("Error handling $0", reported.ShortDebugString()));
+                          Substitute("Error handling $0", SecureShortDebugString(reported)));
   }
 
   if (report.updated_tablets_size() > 0) {
@@ -2033,7 +2036,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
   DCHECK(tablet->table()); // guaranteed by TabletLoader
 
-  VLOG(3) << "tablet report: " << report.ShortDebugString();
+  VLOG(3) << "tablet report: " << SecureShortDebugString(report);
 
   // TODO: we don't actually need to do the COW here until we see we're going
   // to change the state. Can we change CowedObject to lazily do the copy?
@@ -2131,7 +2134,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     if (!tablet_lock.data().is_running() && ShouldTransitionTabletToRunning(report)) {
       DCHECK_EQ(SysTabletsEntryPB::CREATING, tablet_lock.data().pb.state())
           << "Tablet in unexpected state: " << tablet->ToString()
-          << ": " << tablet_lock.data().pb.ShortDebugString();
+          << ": " << SecureShortDebugString(tablet_lock.data().pb);
       // Mark the tablet as running
       // TODO: we could batch the IO onto a background thread, or at least
       // across multiple tablets in the same report.
@@ -2143,7 +2146,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     // The Master only accepts committed consensus configurations since it needs the committed index
     // to only cache the most up-to-date config.
     if (PREDICT_FALSE(!cstate.config().has_opid_index())) {
-      LOG(DFATAL) << "Missing opid_index in reported config:\n" << report.DebugString();
+      LOG(DFATAL) << "Missing opid_index in reported config:\n" << SecureDebugString(report);
       return Status::InvalidArgument("Missing opid_index in reported config");
     }
 
@@ -2169,7 +2172,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                                   "a different leader for term $1 than the current cstate. "
                                   "Previous cstate: $2. Current cstate: $3.",
                                   tablet->ToString(), cstate.current_term(),
-                                  prev_cstate.ShortDebugString(), cstate.ShortDebugString());
+                                  SecureShortDebugString(prev_cstate),
+                                  SecureShortDebugString(cstate));
           LOG(DFATAL) << msg;
           return Status::InvalidArgument(msg);
         }
@@ -2179,7 +2183,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       // master's copy of that configuration.
       LOG(INFO) << "T " << tablet->tablet_id() << " reported consensus state change: "
                 << DiffConsensusStates(prev_cstate, cstate)
-                << ". New consensus state: " << cstate.ShortDebugString();
+                << ". New consensus state: " << SecureShortDebugString(cstate);
 
       // If we need to change the report, copy the whole thing on the stack
       // rather than const-casting.
@@ -2213,7 +2217,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   Status s = sys_catalog_->Write(actions);
   if (!s.ok()) {
     LOG(WARNING) << "Error updating tablets: " << s.ToString() << ". Tablet report was: "
-                 << report.ShortDebugString();
+                 << SecureShortDebugString(report);
     return s;
   }
   tablet_lock.Commit();
@@ -2660,7 +2664,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
     VLOG(1) << "Send create tablet request to "
             << target_ts_desc_->ToString() << ":\n"
             << " (attempt " << attempt << "):\n"
-            << req_.DebugString();
+            << SecureDebugString(req_);
     ts_proxy_->CreateTabletAsync(req_, &resp_, &rpc_,
                                  boost::bind(&AsyncCreateReplica::RpcCallback, this));
     return true;
@@ -2838,7 +2842,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
 
     VLOG(1) << "Send alter table request to " << target_ts_desc_->ToString()
             << " (attempt " << attempt << "):\n"
-            << req.DebugString();
+            << SecureDebugString(req);
     ts_proxy_->AlterSchemaAsync(req, &resp_, &rpc_,
                                 boost::bind(&AsyncAlterTable::RpcCallback, this));
     return true;
@@ -2951,7 +2955,7 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
   peer->set_member_type(RaftPeerPB::VOTER);
   VLOG(1) << "Sending AddServer ChangeConfig request to "
           << target_ts_desc_->ToString() << ":\n"
-          << req_.DebugString();
+          << SecureDebugString(req_);
   consensus_proxy_->ChangeConfigAsync(req_, &resp_, &rpc_,
                                       boost::bind(&AsyncAddServerTask::RpcCallback, this));
   return true;
@@ -3444,7 +3448,7 @@ shared_ptr<TSDescriptor> CatalogManager::SelectReplica(
 void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
                                     int nreplicas,
                                     consensus::RaftConfigPB *config) {
-  DCHECK_EQ(0, config->peers_size()) << "RaftConfig not empty: " << config->ShortDebugString();
+  DCHECK_EQ(0, config->peers_size()) << "RaftConfig not empty: " << SecureShortDebugString(*config);
   DCHECK_LE(nreplicas, ts_descs.size());
 
   // Keep track of servers we've already selected, so that we don't attempt to
@@ -3620,7 +3624,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
     if (names_copy.erase(name) != 1) {
       *out << "  [not present in by-name map]\n";
     }
-    *out << "  metadata: " << l.data().pb.ShortDebugString() << "\n";
+    *out << "  metadata: " << SecureShortDebugString(l.data().pb) << "\n";
 
     *out << "  tablets:\n";
 
@@ -3629,7 +3633,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
     for (const scoped_refptr<TabletInfo>& tablet : table_tablets) {
       TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
       *out << "    " << tablet->tablet_id() << ": "
-           << l_tablet.data().pb.ShortDebugString() << "\n";
+           << SecureShortDebugString(l_tablet.data().pb) << "\n";
 
       if (tablets_copy.erase(tablet->tablet_id()) != 1) {
         *out << "  [ERROR: not present in CM tablet map!]\n";
@@ -3643,7 +3647,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
       const scoped_refptr<TabletInfo>& tablet = entry.second;
       TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
       *out << "    " << tablet->tablet_id() << ": "
-           << l_tablet.data().pb.ShortDebugString() << "\n";
+           << SecureShortDebugString(l_tablet.data().pb) << "\n";
     }
   }
 
@@ -3697,7 +3701,7 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
   if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
     leader_status_ = Status::IllegalState(
         Substitute("Not the leader. Local UUID: $0, Consensus state: $1",
-                   uuid, cstate.ShortDebugString()));
+                   uuid, SecureShortDebugString(cstate)));
     return;
   }
   if (PREDICT_FALSE(catalog_->leader_ready_term_ != cstate.current_term() ||

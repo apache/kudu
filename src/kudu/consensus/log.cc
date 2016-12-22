@@ -377,7 +377,7 @@ Status Log::CloseCurrentSegment() {
         "Segment: " << active_segment_->path();
   }
   VLOG(2) << "Segment footer for " << active_segment_->path()
-          << ": " << footer_builder_.ShortDebugString();
+          << ": " << SecureShortDebugString(footer_builder_);
 
   footer_builder_.set_close_timestamp_micros(GetCurrentTimeMicros());
   RETURN_NOT_OK(active_segment_->WriteFooterAndClose(footer_builder_));
@@ -416,7 +416,7 @@ Status Log::Reserve(LogEntryTypePB type,
   // In non-debug builds the foreach loop gets optimized out.
   #ifndef NDEBUG
   for (const LogEntryPB& entry : entry_batch->entry()) {
-    DCHECK_EQ(entry.type(), type) << "Bad batch: " << entry_batch->DebugString();
+    DCHECK_EQ(entry.type(), type) << "Bad batch: " << SecureDebugString(*entry_batch);
   }
   #endif
 

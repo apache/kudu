@@ -34,6 +34,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
@@ -172,7 +173,7 @@ class TabletCopyServiceTest : public TabletCopyTest {
     const Status app_status = ExtractRemoteError(remote_error);
     const TabletCopyErrorPB& error =
         remote_error->GetExtension(TabletCopyErrorPB::tablet_copy_error_ext);
-    ASSERT_EQ(app_code, error.code()) << error.ShortDebugString();
+    ASSERT_EQ(app_code, error.code()) << SecureShortDebugString(error);
     ASSERT_EQ(status_code_string, app_status.CodeAsString()) << app_status.ToString();
     LOG(INFO) << app_status.ToString();
   }
@@ -239,7 +240,7 @@ TEST_F(TabletCopyServiceTest, TestBeginConcurrently) {
   }
   // Verify that all threads got the same result.
   for (int i = 1; i < threads.size(); i++) {
-    ASSERT_EQ(sblocks[i].DebugString(), sblocks[0].DebugString());
+    ASSERT_EQ(SecureDebugString(sblocks[i]), SecureDebugString(sblocks[0]));
   }
 }
 

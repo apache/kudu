@@ -27,6 +27,7 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -236,7 +237,8 @@ static void AssertConsensusMergeExpected(const unique_ptr<ConsensusMetadata>& cm
   // See header docs for ConsensusMetadata::MergeCommittedConsensusStatePB() for
   // a "spec" of these assertions.
   ASSERT_TRUE(!cmeta->has_pending_config());
-  ASSERT_EQ(cmeta->committed_config().ShortDebugString(), cstate.config().ShortDebugString());
+  ASSERT_EQ(SecureShortDebugString(cmeta->committed_config()),
+            SecureShortDebugString(cstate.config()));
   ASSERT_EQ("", cmeta->leader_uuid());
   ASSERT_EQ(expected_term, cmeta->current_term());
   if (expected_voted_for.empty()) {

@@ -38,6 +38,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
 
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
@@ -217,7 +218,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 
 
   VLOG_WITH_PREFIX_UNLOCKED(2) << "Sending to peer " << peer_pb().permanent_uuid() << ": "
-      << request_.ShortDebugString();
+      << SecureShortDebugString(request_);
   controller_.Reset();
 
   proxy_->UpdateAsync(&request_, &response_, &controller_,
@@ -266,7 +267,7 @@ void Peer::ProcessResponse() {
   Status s = thread_pool_->SubmitClosure(Bind(&Peer::DoProcessResponse, Unretained(this)));
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to process peer response: " << s.ToString()
-        << ": " << response_.ShortDebugString();
+        << ": " << SecureShortDebugString(response_);
     sem_.Release();
   }
 }
@@ -275,7 +276,7 @@ void Peer::DoProcessResponse() {
   failed_attempts_ = 0;
 
   VLOG_WITH_PREFIX_UNLOCKED(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
-      << response_.ShortDebugString();
+      << SecureShortDebugString(response_);
 
   bool more_pending;
   queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), response_, &more_pending);
@@ -311,7 +312,7 @@ void Peer::ProcessTabletCopyResponse() {
       queue_->NotifyPeerIsResponsiveDespiteError(peer_pb_.permanent_uuid());
     } else {
       LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin Tablet Copy on peer: "
-                                        << tc_response_.ShortDebugString();
+                                        << SecureShortDebugString(tc_response_);
     }
   }
   sem_.Release();
@@ -447,7 +448,7 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
       MonoDelta::FromMilliseconds(FLAGS_raft_get_node_instance_timeout_ms);
   int attempt = 1;
   while (true) {
-    VLOG(2) << "Getting uuid from remote peer. Request: " << req.ShortDebugString();
+    VLOG(2) << "Getting uuid from remote peer. Request: " << SecureShortDebugString(req);
 
     controller.Reset();
     Status s = proxy->GetNodeInstance(req, &resp, &controller);
@@ -469,7 +470,7 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
       VLOG(1) << "Sleeping " << delay_ms << " ms. before retrying to get uuid from remote peer...";
       SleepFor(MonoDelta::FromMilliseconds(delay_ms));
       LOG(INFO) << "Retrying to get permanent uuid for remote peer: "
-          << remote_peer->ShortDebugString() << " attempt: " << attempt++;
+          << SecureShortDebugString(*remote_peer) << " attempt: " << attempt++;
     } else {
       s = Status::TimedOut(Substitute("Getting permanent uuid from $0 timed out after $1 ms.",
                                       hostport.ToString(),

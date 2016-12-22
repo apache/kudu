@@ -43,9 +43,10 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/pb_util.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/stopwatch.h"
 
 METRIC_DECLARE_entity(tablet);
 
@@ -208,7 +209,7 @@ class LogTestBase : public KuduTest {
 
   void EntriesToIdList(vector<uint32_t>* ids) {
     for (const LogEntryPB* entry : entries_) {
-      VLOG(2) << "Entry contents: " << entry->DebugString();
+      VLOG(2) << "Entry contents: " << SecureDebugString(*entry);
       if (entry->type() == REPLICATE) {
         ids->push_back(entry->replicate().id().index());
       }
@@ -364,9 +365,10 @@ class LogTestBase : public KuduTest {
       strings::SubstituteAndAppend(&dump, "Segment: $0, Path: $1\n",
                                    segment->header().sequence_number(), segment->path());
       strings::SubstituteAndAppend(&dump, "Header: $0\n",
-                                   segment->header().ShortDebugString());
+                                   SecureShortDebugString(segment->header()));
       if (segment->HasFooter()) {
-        strings::SubstituteAndAppend(&dump, "Footer: $0\n", segment->footer().ShortDebugString());
+        strings::SubstituteAndAppend(&dump, "Footer: $0\n",
+                                     SecureShortDebugString(segment->footer()));
       } else {
         dump.append("Footer: None or corrupt.");
       }

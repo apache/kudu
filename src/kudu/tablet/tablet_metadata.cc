@@ -35,10 +35,10 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
-#include "kudu/util/flag_tags.h"
 #include "kudu/util/trace.h"
 
 DEFINE_bool(enable_tablet_orphaned_block_deletion, true,
@@ -276,7 +276,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
   vector<BlockId> orphaned_blocks;
 
   VLOG(2) << "Loading TabletMetadata from SuperBlockPB:" << std::endl
-          << superblock.DebugString();
+          << SecureDebugString(superblock);
 
   {
     std::lock_guard<LockType> l(data_lock_);
@@ -285,7 +285,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     if (superblock.tablet_id() != tablet_id_) {
       return Status::Corruption("Expected id=" + tablet_id_ +
                                 " found " + superblock.tablet_id(),
-                                superblock.DebugString());
+                                SecureDebugString(superblock));
     }
 
     last_durable_mrs_id_ = superblock.last_durable_mrs_id();
@@ -296,7 +296,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     gscoped_ptr<Schema> schema(new Schema());
     RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), schema.get()),
                           "Failed to parse Schema from superblock " +
-                          superblock.ShortDebugString());
+                          SecureShortDebugString(superblock));
     SetSchemaUnlocked(std::move(schema), schema_version);
 
     if (!superblock.has_partition()) {
@@ -306,7 +306,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
           << " version is not supported. Please upgrade to 0.6.0 before"
           << " moving to a higher version.";
       return Status::NotFound("Missing partition in superblock "+
-                              superblock.DebugString());
+                              SecureDebugString(superblock));
     }
 
     // Some metadata fields are assumed to be immutable and thus are

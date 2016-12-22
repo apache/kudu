@@ -42,6 +42,7 @@
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -470,8 +471,8 @@ class RaftConsensusQuorumTest : public KuduTest {
     ExtractReplicateIds(replica_entries, &replica_ids);
     ASSERT_EQ(leader_ids.size(), replica_ids.size());
     for (int i = 0; i < leader_ids.size(); i++) {
-      ASSERT_EQ(leader_ids[i].ShortDebugString(),
-                replica_ids[i].ShortDebugString());
+      ASSERT_EQ(SecureShortDebugString(leader_ids[i]),
+                SecureShortDebugString(replica_ids[i]));
     }
   }
 
@@ -483,10 +484,10 @@ class RaftConsensusQuorumTest : public KuduTest {
     for (const LogEntryPB* entry : entries) {
       if (entry->has_replicate()) {
         ASSERT_TRUE(InsertIfNotPresent(&replication_ops, entry->replicate().id()))
-          << "REPLICATE op id showed up twice: " << entry->ShortDebugString();
+          << "REPLICATE op id showed up twice: " << SecureShortDebugString(*entry);
       } else if (entry->has_commit()) {
         ASSERT_EQ(1, replication_ops.erase(entry->commit().commited_op_id()))
-          << "COMMIT came before associated REPLICATE: " << entry->ShortDebugString();
+          << "COMMIT came before associated REPLICATE: " << SecureShortDebugString(*entry);
       }
     }
   }
@@ -513,7 +514,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     SubstituteAndAppend(&ret, "$1 log entries for replica $0:\n",
                         replica_id, replica_entries.size());
     for (LogEntryPB* replica_entry : replica_entries) {
-      StrAppend(&ret, "Replica log entry: ", replica_entry->ShortDebugString(), "\n");
+      StrAppend(&ret, "Replica log entry: ", SecureShortDebugString(*replica_entry), "\n");
     }
     return ret;
   }
@@ -1147,7 +1148,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_EQ(last_op_id.term() + 3, res.responder_term());
   ASSERT_TRUE(res.status().has_error());
   ASSERT_EQ(ConsensusErrorPB::INVALID_TERM, res.status().error().code());
-  LOG(INFO) << "Follower rejected old heartbeat, as expected: " << res.ShortDebugString();
+  LOG(INFO) << "Follower rejected old heartbeat, as expected: " << SecureShortDebugString(res);
 }
 
 }  // namespace consensus

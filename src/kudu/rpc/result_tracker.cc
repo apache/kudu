@@ -27,8 +27,8 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mem_tracker.h"
-#include "kudu/util/trace.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/trace.h"
 
 DEFINE_int64(remember_clients_ttl_ms, 3600 * 1000 /* 1 hour */,
     "Maximum amount of time, in milliseconds, the server \"remembers\" a client for the "
@@ -140,7 +140,7 @@ ResultTracker::RpcState ResultTracker::TrackRpcUnlocked(const RequestIdPB& reque
       context->call_->RespondFailure(
           ErrorStatusPB::ERROR_REQUEST_STALE,
           Status::Incomplete(Substitute("Request with id { $0 } is stale.",
-                                        request_id.ShortDebugString())));
+                                        SecureShortDebugString(request_id))));
       delete context;
     }
     return RpcState::STALE;
@@ -245,7 +245,7 @@ void ResultTracker::LogAndTraceAndRespondSuccess(RpcContext* context,
                                                  const Message& msg) {
   InboundCall* call = context->call_;
   VLOG(1) << this << " " << call->remote_method().service_name() << ": Sending RPC success "
-      "response for " << call->ToString() << ":" << std::endl << msg.DebugString();
+      "response for " << call->ToString() << ":" << std::endl << SecureDebugString(msg);
   TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
                          "response", pb_util::PbTracer::TracePb(msg),
                          "trace", context->trace()->DumpToString());
@@ -257,7 +257,7 @@ void ResultTracker::LogAndTraceFailure(RpcContext* context,
                                        const Message& msg) {
   InboundCall* call = context->call_;
   VLOG(1) << this << " " << call->remote_method().service_name() << ": Sending RPC failure "
-      "response for " << call->ToString() << ": " << msg.DebugString();
+      "response for " << call->ToString() << ": " << SecureDebugString(msg);
   TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
                          "response", pb_util::PbTracer::TracePb(msg),
                          "trace", context->trace()->DumpToString());
@@ -307,7 +307,7 @@ void ResultTracker::RecordCompletionAndRespond(const RequestIdPB& request_id,
     CHECK_EQ(completion_record->driver_attempt_no, request_id.attempt_no())
         << "Called RecordCompletionAndRespond() from an executor identified with an "
         << "attempt number that was not marked as the driver for the RPC. RequestId: "
-        << request_id.ShortDebugString() << "\nTracker state:\n " << ToStringUnlocked();
+        << SecureShortDebugString(request_id) << "\nTracker state:\n " << ToStringUnlocked();
     DCHECK_EQ(completion_record->state, RpcState::IN_PROGRESS);
     completion_record->response.reset(DCHECK_NOTNULL(response)->New());
     completion_record->response->CopyFrom(*response);
@@ -354,7 +354,7 @@ void ResultTracker::FailAndRespondInternal(const RequestIdPB& request_id,
     lock_guard<simple_spinlock> l(lock_);
     auto state_and_record = FindClientStateAndCompletionRecordOrNullUnlocked(request_id);
     if (PREDICT_FALSE(state_and_record.first == nullptr)) {
-      LOG(FATAL) << "Couldn't find ClientState for request: " << request_id.ShortDebugString()
+      LOG(FATAL) << "Couldn't find ClientState for request: " << SecureShortDebugString(request_id)
                  << ". \nTracker state:\n" << ToStringUnlocked();
     }
 
@@ -563,7 +563,7 @@ string ResultTracker::CompletionRecord::ToString() const {
                              "Cached response: $2, $3 OngoingRpcs:",
                              state,
                              driver_attempt_no,
-                             response ? response->ShortDebugString() : "None",
+                             response ? SecureShortDebugString(*response) : "None",
                              ongoing_rpcs.size());
   for (auto& orpc : ongoing_rpcs) {
     SubstituteAndAppend(&result, Substitute("\n\t$0", orpc.ToString()));
@@ -574,7 +574,8 @@ string ResultTracker::CompletionRecord::ToString() const {
 
 string ResultTracker::OnGoingRpcInfo::ToString() const {
   return Substitute("OngoingRpc[Handler: $0, Context: $1, Response: $2]",
-                    handler_attempt_no, context, response ? response->ShortDebugString() : "NULL");
+                    handler_attempt_no, context,
+                    response ? SecureShortDebugString(*response) : "NULL");
 }
 
 } // namespace rpc

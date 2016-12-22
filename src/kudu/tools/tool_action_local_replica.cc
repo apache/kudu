@@ -426,7 +426,7 @@ Status DumpTabletMeta(FsManager* fs_manager,
 
   tablet::TabletSuperBlockPB pb;
   RETURN_NOT_OK_PREPEND(meta->ToSuperBlock(&pb), "Could not get superblock");
-  cout << "Superblock:\n" << pb.DebugString() << endl;
+  cout << "Superblock:\n" << SecureDebugString(pb) << endl;
 
   return Status::OK();
 }
@@ -457,7 +457,7 @@ Status DumpCFileBlockInternal(FsManager* fs_manager,
   RETURN_NOT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
   cout << Indent(indent) << "CFile Header: "
-       << reader->header().ShortDebugString() << endl;
+       << SecureShortDebugString(reader->header()) << endl;
   if (!FLAGS_dump_data) {
     return Status::OK();
   }
@@ -587,7 +587,7 @@ Status DumpRowSetInternal(FsManager* fs_manager,
   tablet::RowSetDataPB pb;
   rs_meta->ToProtobuf(&pb);
 
-  cout << Indent(indent) << "RowSet metadata: " << pb.DebugString()
+  cout << Indent(indent) << "RowSet metadata: " << SecureDebugString(pb)
        << endl << endl;
 
   RowSetMetadata::ColumnIdToBlockIdMap col_blocks =

@@ -249,7 +249,7 @@ Status FsManager::Open() {
 
   RETURN_NOT_OK(block_manager_->Open());
   LOG(INFO) << "Opened local filesystem: " << JoinStrings(canonicalized_all_fs_roots_, ",")
-            << std::endl << metadata_->DebugString();
+            << std::endl << SecureDebugString(*metadata_);
   return Status::OK();
 }
 
@@ -360,7 +360,7 @@ Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
                                                 pb_util::NO_OVERWRITE,
                                                 pb_util::SYNC));
   LOG(INFO) << "Generated new instance metadata in path " << path << ":\n"
-            << metadata.DebugString();
+            << SecureDebugString(metadata);
   return Status::OK();
 }
 

@@ -25,6 +25,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -130,43 +131,43 @@ Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type) {
   if (config.peers_size() == 0) {
     return Status::IllegalState(
         Substitute("RaftConfig must have at least one peer. RaftConfig: $0",
-                   config.ShortDebugString()));
+                   SecureShortDebugString(config)));
   }
 
   // All configurations must have 'opid_index' populated.
   if (!config.has_opid_index()) {
     return Status::IllegalState(
         Substitute("Configs must have opid_index set. RaftConfig: $0",
-                   config.ShortDebugString()));
+                   SecureShortDebugString(config)));
   }
 
   for (const RaftPeerPB& peer : config.peers()) {
     if (!peer.has_permanent_uuid() || peer.permanent_uuid() == "") {
       return Status::IllegalState(Substitute("One peer didn't have an uuid or had the empty"
-          " string. RaftConfig: $0", config.ShortDebugString()));
+          " string. RaftConfig: $0", SecureShortDebugString(config)));
     }
     if (ContainsKey(uuids, peer.permanent_uuid())) {
       return Status::IllegalState(
           Substitute("Found multiple peers with uuid: $0. RaftConfig: $1",
-                     peer.permanent_uuid(), config.ShortDebugString()));
+                     peer.permanent_uuid(), SecureShortDebugString(config)));
     }
     uuids.insert(peer.permanent_uuid());
 
     if (config.peers_size() > 1 && !peer.has_last_known_addr()) {
       return Status::IllegalState(
           Substitute("Peer: $0 has no address. RaftConfig: $1",
-                     peer.permanent_uuid(), config.ShortDebugString()));
+                     peer.permanent_uuid(), SecureShortDebugString(config)));
     }
     if (!peer.has_member_type()) {
       return Status::IllegalState(
           Substitute("Peer: $0 has no member type set. RaftConfig: $1", peer.permanent_uuid(),
-                     config.ShortDebugString()));
+                     SecureShortDebugString(config)));
     }
     if (peer.member_type() == RaftPeerPB::NON_VOTER) {
       return Status::IllegalState(
           Substitute(
               "Peer: $0 is a NON_VOTER, but this isn't supported yet. RaftConfig: $1",
-              peer.permanent_uuid(), config.ShortDebugString()));
+              peer.permanent_uuid(), SecureShortDebugString(config)));
     }
   }
 
@@ -175,10 +176,11 @@ Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type) {
 
 Status VerifyConsensusState(const ConsensusStatePB& cstate, RaftConfigState type) {
   if (!cstate.has_current_term()) {
-    return Status::IllegalState("ConsensusStatePB missing current_term", cstate.ShortDebugString());
+    return Status::IllegalState("ConsensusStatePB missing current_term",
+                                SecureShortDebugString(cstate));
   }
   if (!cstate.has_config()) {
-    return Status::IllegalState("ConsensusStatePB missing config", cstate.ShortDebugString());
+    return Status::IllegalState("ConsensusStatePB missing config", SecureShortDebugString(cstate));
   }
   RETURN_NOT_OK(VerifyRaftConfig(cstate.config(), type));
 
@@ -186,7 +188,7 @@ Status VerifyConsensusState(const ConsensusStatePB& cstate, RaftConfigState type
     if (!IsRaftConfigVoter(cstate.leader_uuid(), cstate.config())) {
       return Status::IllegalState(
           Substitute("Leader with UUID $0 is not a VOTER in the config! Consensus state: $1",
-                     cstate.leader_uuid(), cstate.ShortDebugString()));
+                     cstate.leader_uuid(), SecureShortDebugString(cstate)));
     }
   }
 
@@ -289,12 +291,12 @@ string DiffConsensusStates(const ConsensusStatePB& old_state,
   // it's still useful to report some change unless the protobufs are identical.
   // So, we fall back to just dumping the before/after debug strings.
   if (change_strs.empty()) {
-    if (old_state.ShortDebugString() == new_state.ShortDebugString()) {
+    if (SecureShortDebugString(old_state) == SecureShortDebugString(new_state)) {
       return "no change";
     }
     return Substitute("change from {$0} to {$1}",
-                      old_state.ShortDebugString(),
-                      new_state.ShortDebugString());
+                      SecureShortDebugString(old_state),
+                      SecureShortDebugString(new_state));
   }
 
 

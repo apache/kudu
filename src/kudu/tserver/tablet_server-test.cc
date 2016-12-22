@@ -32,6 +32,7 @@
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/zlib.h"
 
@@ -112,7 +113,7 @@ TEST_F(TabletServerTest, TestSetFlags) {
     req.set_flag("foo");
     req.set_value("bar");
     ASSERT_OK(proxy.SetFlag(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_EQ(server::SetFlagResponsePB::NO_SUCH_FLAG, resp.result());
     EXPECT_TRUE(resp.msg().empty());
   }
@@ -124,7 +125,7 @@ TEST_F(TabletServerTest, TestSetFlags) {
     req.set_flag("metrics_retirement_age_ms");
     req.set_value("12345");
     ASSERT_OK(proxy.SetFlag(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_EQ(server::SetFlagResponsePB::SUCCESS, resp.result());
     EXPECT_EQ(resp.msg(), "metrics_retirement_age_ms set to 12345\n");
     EXPECT_EQ(Substitute("$0", old_val), resp.old_value());
@@ -137,7 +138,7 @@ TEST_F(TabletServerTest, TestSetFlags) {
     req.set_flag("metrics_retirement_age_ms");
     req.set_value("foo");
     ASSERT_OK(proxy.SetFlag(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_EQ(server::SetFlagResponsePB::BAD_VALUE, resp.result());
     EXPECT_EQ(resp.msg(), "Unable to set flag: bad value");
     EXPECT_EQ(12345, FLAGS_metrics_retirement_age_ms);
@@ -149,7 +150,7 @@ TEST_F(TabletServerTest, TestSetFlags) {
     req.set_flag("tablet_bloom_target_fp_rate");
     req.set_value("1.0");
     ASSERT_OK(proxy.SetFlag(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_EQ(server::SetFlagResponsePB::NOT_SAFE, resp.result());
   }
 
@@ -160,7 +161,7 @@ TEST_F(TabletServerTest, TestSetFlags) {
     req.set_value("1.0");
     req.set_force(true);
     ASSERT_OK(proxy.SetFlag(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_EQ(server::SetFlagResponsePB::SUCCESS, resp.result());
   }
 }
@@ -283,9 +284,9 @@ TEST_F(TabletServerTest, TestInsert) {
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678, "hello world via RPC",
                    req.mutable_row_operations());
 
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
     Status s = StatusFromPB(resp.error().status());
@@ -300,9 +301,9 @@ TEST_F(TabletServerTest, TestInsert) {
   {
     controller.Reset();
     ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
     req.clear_row_operations();
   }
@@ -315,9 +316,9 @@ TEST_F(TabletServerTest, TestInsert) {
 
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
                    "hello world via RPC", data);
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
     req.clear_row_operations();
     ASSERT_EQ(1, rows_inserted->value());
@@ -336,10 +337,10 @@ TEST_F(TabletServerTest, TestInsert) {
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 2, 1, "also not a dupe key", data);
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 1, "I am a duplicate key", data);
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 3, 1, kTooLargeValue, data);
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error()) << SecureShortDebugString(resp);
     ASSERT_EQ(3, rows_inserted->value());  // This counter only counts successful inserts.
     ASSERT_EQ(2, resp.per_row_errors().size());
 
@@ -399,9 +400,9 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
   req.set_external_consistency_mode(CLIENT_PROPAGATED);
 
   req.set_propagated_timestamp(current.ToUint64());
-  SCOPED_TRACE(req.DebugString());
+  SCOPED_TRACE(SecureDebugString(req));
   ASSERT_OK(proxy_->Write(req, &resp, &controller));
-  SCOPED_TRACE(resp.DebugString());
+  SCOPED_TRACE(SecureDebugString(resp));
   ASSERT_FALSE(resp.has_error());
   req.clear_row_operations();
   ASSERT_EQ(1, rows_inserted->value());
@@ -451,9 +452,9 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
   // set the external consistency mode to COMMIT_WAIT
   req.set_external_consistency_mode(COMMIT_WAIT);
 
-  SCOPED_TRACE(req.DebugString());
+  SCOPED_TRACE(SecureDebugString(req));
   ASSERT_OK(proxy_->Write(req, &resp, &controller));
-  SCOPED_TRACE(resp.DebugString());
+  SCOPED_TRACE(SecureDebugString(resp));
   ASSERT_FALSE(resp.has_error());
   req.clear_row_operations();
   ASSERT_EQ(1, rows_inserted->value());
@@ -514,10 +515,10 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1, 1, "original1", data);
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 2, 2, "original2", data);
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, 3, 3, "original3", data);
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error()) << SecureShortDebugString(resp);
     ASSERT_EQ(0, resp.per_row_errors().size());
     ASSERT_EQ(3, rows_inserted->value());
     ASSERT_EQ(0, rows_updated->value());
@@ -537,10 +538,10 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
                    req.mutable_row_operations());
     AddTestRowToPB(RowOperationsPB::UPDATE, schema_, 3, 4, "mutation3",
                    req.mutable_row_operations());
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error()) << SecureShortDebugString(resp);
     ASSERT_EQ(0, resp.per_row_errors().size());
     ASSERT_EQ(3, rows_inserted->value());
     ASSERT_EQ(3, rows_updated->value());
@@ -556,10 +557,10 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
 
     AddTestRowToPB(RowOperationsPB::UPDATE, schema_, 1234, 2, "mutated",
                    req.mutable_row_operations());
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error()) << resp.ShortDebugString();
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error()) << SecureShortDebugString(resp);
     ASSERT_EQ(1, resp.per_row_errors().size());
     ASSERT_EQ(3, rows_updated->value());
     controller.Reset();
@@ -573,10 +574,10 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
     AddTestKeyToPB(RowOperationsPB::DELETE, schema_, 1, req.mutable_row_operations());
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error())<< SecureShortDebugString(resp);
     ASSERT_EQ(0, resp.per_row_errors().size());
     ASSERT_EQ(3, rows_updated->value());
     ASSERT_EQ(1, rows_deleted->value());
@@ -592,10 +593,10 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
 
     AddTestRowToPB(RowOperationsPB::UPDATE, schema_, 1, 2, "mutated1",
                    req.mutable_row_operations());
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error())<< SecureShortDebugString(resp);
     ASSERT_EQ(1, resp.per_row_errors().size());
     controller.Reset();
   }
@@ -626,19 +627,19 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
     // op 4: update a row with a too-large value (fail)
     AddTestRowToPB(RowOperationsPB::UPDATE, schema_, 4, 6, kTooLargeValue, ops);
 
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error())<< SecureShortDebugString(resp);
     ASSERT_EQ(3, resp.per_row_errors().size());
     EXPECT_EQ("row_index: 0 error { code: NOT_FOUND message: \"key not found\" }",
-              resp.per_row_errors(0).ShortDebugString());
+              SecureShortDebugString(resp.per_row_errors(0)));
     EXPECT_EQ("row_index: 2 error { code: NOT_FOUND message: \"key not found\" }",
-              resp.per_row_errors(1).ShortDebugString());
+              SecureShortDebugString(resp.per_row_errors(1)));
     EXPECT_EQ("row_index: 4 error { code: INVALID_ARGUMENT message: "
               "\"value too large for column \\'string_val\\' (102400 bytes, "
               "maximum is 65536 bytes)\" }",
-              resp.per_row_errors(2).ShortDebugString());
+              SecureShortDebugString(resp.per_row_errors(2)));
     controller.Reset();
   }
 
@@ -683,9 +684,9 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
     RowOperationsPBEncoder enc(data);
     enc.Add(RowOperationsPB::INSERT, row);
 
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
     ASSERT_STR_CONTAINS(resp.error().status().message(),
@@ -704,9 +705,9 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
 
     AddTestKeyToPB(RowOperationsPB::UPDATE, bad_schema_with_ids, 1,
                    req.mutable_row_operations());
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_SCHEMA, resp.error().code());
     ASSERT_STR_CONTAINS(resp.error().status().message(),
@@ -1104,10 +1105,10 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
     const Timestamp pre_scan_ts = mini_server_->server()->clock()->Now();
     // Send the call
     {
-      SCOPED_TRACE(req.DebugString());
+      SCOPED_TRACE(SecureDebugString(req));
       req.set_batch_size_bytes(0); // so it won't return data right away
       ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-      SCOPED_TRACE(resp.DebugString());
+      SCOPED_TRACE(SecureDebugString(resp));
       ASSERT_FALSE(resp.has_error());
     }
 
@@ -1163,10 +1164,10 @@ TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     req.set_batch_size_bytes(0); // so it won't return data right away
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 
@@ -1211,9 +1212,9 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_SNAPSHOT, resp.error().code());
   }
@@ -1243,9 +1244,9 @@ TEST_F(TabletServerTest, TestSnapshotScan_OpenScanner) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
   // Intentionally do not drain the scanner at the end, to leave it open.
@@ -1298,10 +1299,10 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
 
     // Send the call
     {
-      SCOPED_TRACE(req.DebugString());
+      SCOPED_TRACE(SecureDebugString(req));
       req.set_batch_size_bytes(0); // so it won't return data right away
       ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-      SCOPED_TRACE(resp.DebugString());
+      SCOPED_TRACE(SecureDebugString(resp));
       ASSERT_FALSE(resp.has_error());
     }
 
@@ -1310,10 +1311,10 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
       rpc.Reset();
       // Send the call.
       {
-        SCOPED_TRACE(req.DebugString());
+        SCOPED_TRACE(SecureDebugString(req));
         req.set_batch_size_bytes(i);
         ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-        SCOPED_TRACE(resp.DebugString());
+        SCOPED_TRACE(SecureDebugString(resp));
         ASSERT_FALSE(resp.has_error());
       }
       // Save the rows into 'results' vector.
@@ -1372,9 +1373,9 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimes
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 
@@ -1431,9 +1432,9 @@ TEST_F(TabletServerTest, TestSnapshotScan__SnapshotInTheFutureBeyondPropagatedTi
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_SNAPSHOT, resp.error().code());
   }
@@ -1460,9 +1461,9 @@ TEST_F(TabletServerTest, TestScanWithStringPredicates) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 
@@ -1505,9 +1506,9 @@ TEST_F(TabletServerTest, TestScanWithPredicates) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 
@@ -1551,9 +1552,9 @@ TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 
@@ -1577,9 +1578,9 @@ TEST_F(TabletServerTest, TestBadScannerID) {
 
   req.set_scanner_id("does-not-exist");
 
-  SCOPED_TRACE(req.DebugString());
+  SCOPED_TRACE(SecureDebugString(req));
   ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-  SCOPED_TRACE(resp.DebugString());
+  SCOPED_TRACE(SecureDebugString(resp));
   ASSERT_TRUE(resp.has_error());
   ASSERT_EQ(TabletServerErrorPB::SCANNER_EXPIRED, resp.error().code());
 }
@@ -1595,7 +1596,7 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_NewScanAndScannerID) {
   scan->set_tablet_id(kTabletId);
   req.set_batch_size_bytes(0); // so it won't return data right away
   req.set_scanner_id("x");
-  SCOPED_TRACE(req.DebugString());
+  SCOPED_TRACE(SecureDebugString(req));
   Status s = proxy_->Scan(req, &resp, &rpc);
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Must not pass both a scanner_id and new_scan_request");
@@ -1679,9 +1680,9 @@ TEST_F(TabletServerTest, TestScan_NoResults) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
 
     // Because there are no entries, we should immediately return "no results".
@@ -1707,7 +1708,7 @@ TEST_F(TabletServerTest, TestScan_InvalidScanSeqId) {
     req.set_batch_size_bytes(0); // so it won't return data right away
 
     // Create the scanner
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
     ASSERT_FALSE(resp.has_error());
     ASSERT_TRUE(resp.has_more_results());
@@ -1724,7 +1725,7 @@ TEST_F(TabletServerTest, TestScan_InvalidScanSeqId) {
     req.set_batch_size_bytes(0); // so it won't return data right away
     req.set_call_seq_id(42); // should be 1
 
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_SCAN_CALL_SEQ_ID, resp.error().code());
@@ -1766,10 +1767,10 @@ void TabletServerTest::DoOrderedScanTest(const Schema& projection,
   scan->set_order_mode(ORDERED);
 
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     req.set_batch_size_bytes(0); // so it won't return data right away
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 
@@ -1842,9 +1843,9 @@ TEST_F(TabletServerTest, TestAlterSchema) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(admin_proxy_->AlterSchema(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 
@@ -1897,9 +1898,9 @@ TEST_F(TabletServerTest, TestAlterSchema_AddColWithoutWriteDefault) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(admin_proxy_->AlterSchema(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 
@@ -1936,9 +1937,9 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(admin_proxy_->CreateTablet(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::TABLET_ALREADY_EXISTS, resp.error().code());
   }
@@ -1987,9 +1988,9 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(admin_proxy_->DeleteTablet(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 
@@ -2028,9 +2029,9 @@ TEST_F(TabletServerTest, TestDeleteTablet_TabletNotCreated) {
 
   // Send the call
   {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(admin_proxy_->DeleteTablet(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_FOUND, resp.error().code());
   }
@@ -2054,7 +2055,7 @@ TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
   req.set_delete_type(tablet::TABLET_DATA_DELETED);
 
   for (int i = 0; i < kNumDeletes; i++) {
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     admin_proxy_->DeleteTabletAsync(req, &responses[i], &rpcs[i],
                                     boost::bind(&CountDownLatch::CountDown, &latch));
   }
@@ -2064,7 +2065,7 @@ TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
   for (int i = 0; i < kNumDeletes; i++) {
     ASSERT_TRUE(rpcs[i].finished());
     LOG(INFO) << "STATUS " << i << ": " << rpcs[i].status().ToString();
-    LOG(INFO) << "RESPONSE " << i << ": " << responses[i].DebugString();
+    LOG(INFO) << "RESPONSE " << i << ": " << SecureDebugString(responses[i]);
     if (!responses[i].has_error()) {
       num_success++;
     }
@@ -2171,9 +2172,9 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
   for (const RowOperationsPB::Type &op : ops) {
     RowOperationsPB* data = req.mutable_row_operations();
     AddTestRowToPB(op, schema_, 20, 1, "1", data);
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
 
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, resp.error().code());
@@ -2236,7 +2237,7 @@ TEST_F(TabletServerTest, TestChecksumScan) {
   total_crc += CalcTestRowChecksum(key);
   uint64_t first_crc = total_crc; // Cache first record checksum.
 
-  ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp.error());
   ASSERT_EQ(total_crc, resp.checksum());
   ASSERT_FALSE(resp.has_more_results());
   EXPECT_TRUE(resp.has_resource_metrics());
@@ -2249,7 +2250,7 @@ TEST_F(TabletServerTest, TestChecksumScan) {
   ASSERT_OK(proxy_->Checksum(req, &resp, &controller));
   total_crc += CalcTestRowChecksum(key, false);
 
-  ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp.error());
   ASSERT_EQ(total_crc, resp.checksum());
   ASSERT_FALSE(resp.has_more_results());
 

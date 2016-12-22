@@ -31,6 +31,7 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/safe_math.h"
 #include "kudu/util/slice.h"
 
@@ -147,7 +148,7 @@ Status StatusFromPB(const AppStatusPB& pb) {
       return Status::EndOfFile(pb.message(), "", posix_code);
     case AppStatusPB::UNKNOWN_ERROR:
     default:
-      LOG(WARNING) << "Unknown error code in status: " << pb.ShortDebugString();
+      LOG(WARNING) << "Unknown error code in status: " << SecureShortDebugString(pb);
       return Status::RuntimeError("(unknown error code)", pb.message(), posix_code);
   }
 }
@@ -268,7 +269,7 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
     if (pb.is_key()) {
       if (!is_handling_key) {
         return Status::InvalidArgument(
-          "Got out-of-order key column", pb.ShortDebugString());
+          "Got out-of-order key column", SecureShortDebugString(pb));
       }
       num_key_columns++;
     } else {
@@ -401,12 +402,12 @@ Status ColumnPredicateFromPB(const Schema& schema,
                              const ColumnPredicatePB& pb,
                              optional<ColumnPredicate>* predicate) {
   if (!pb.has_column()) {
-    return Status::InvalidArgument("Column predicate must include a column", pb.DebugString());
+    return Status::InvalidArgument("Column predicate must include a column", SecureDebugString(pb));
   }
   const string& column = pb.column();
   int32_t idx = schema.find_column(column);
   if (idx == Schema::kColumnNotFound) {
-    return Status::InvalidArgument("unknown column in predicate", pb.DebugString());
+    return Status::InvalidArgument("unknown column in predicate", SecureDebugString(pb));
   }
   const ColumnSchema& col = schema.column(idx);
 
@@ -558,14 +559,14 @@ Status FindLeaderHostPort(const RepeatedPtrField<ServerEntryPB>& entries,
                           HostPort* leader_hostport) {
   for (const ServerEntryPB& entry : entries) {
     if (entry.has_error()) {
-      LOG(WARNING) << "Error encountered for server entry " << entry.ShortDebugString()
+      LOG(WARNING) << "Error encountered for server entry " << SecureShortDebugString(entry)
                    << ": " << StatusFromPB(entry.error()).ToString();
       continue;
     }
     if (!entry.has_role()) {
       return Status::IllegalState(
           strings::Substitute("Every server in must have a role, but entry ($0) has no role.",
-                              entry.ShortDebugString()));
+                              SecureShortDebugString(entry)));
     }
     if (entry.role() == consensus::RaftPeerPB::LEADER) {
       return HostPortFromPB(entry.registration().rpc_addresses(0), leader_hostport);

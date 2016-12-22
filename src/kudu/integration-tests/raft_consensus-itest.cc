@@ -41,6 +41,7 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/server/server_base.pb.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
@@ -122,9 +123,9 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     // Send the call
     {
       req.set_batch_size_bytes(0);
-      SCOPED_TRACE(req.DebugString());
+      SCOPED_TRACE(SecureDebugString(req));
       ASSERT_OK(replica_proxy->Scan(req, &resp, &rpc));
-      SCOPED_TRACE(resp.DebugString());
+      SCOPED_TRACE(SecureDebugString(resp));
       if (resp.has_error()) {
         ASSERT_OK(StatusFromPB(resp.error().status()));
       }
@@ -483,7 +484,7 @@ TEST_F(RaftConsensusITest, TestFailedTransaction) {
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
 
   ASSERT_OK(DCHECK_NOTNULL(leader->tserver_proxy.get())->Write(req, &resp, &controller));
-  SCOPED_TRACE(resp.ShortDebugString());
+  SCOPED_TRACE(SecureShortDebugString(resp));
   ASSERT_FALSE(resp.has_error());
 
   ASSERT_ALL_REPLICAS_AGREE(1);
@@ -552,7 +553,7 @@ TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
 
   ASSERT_OK(followers[0]->tserver_proxy->Write(req, &resp, &rpc));
-  SCOPED_TRACE(resp.DebugString());
+  SCOPED_TRACE(SecureDebugString(resp));
   ASSERT_TRUE(resp.has_error());
   Status s = StatusFromPB(resp.error().status());
   EXPECT_TRUE(s.IsIllegalState());
@@ -628,7 +629,7 @@ void RaftConsensusITest::Write128KOpsToLeader(int num_writes) {
     key++;
     ASSERT_OK(leader->tserver_proxy->Write(req, &resp, &rpc));
 
-    ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+    ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
   }
 }
 
@@ -1191,7 +1192,7 @@ void RaftConsensusITest::StubbornlyWriteSameRowThread(int replica_idx, const Ato
     rpc.set_timeout(MonoDelta::FromSeconds(10));
     ignore_result(ts->tserver_proxy->Write(req, &resp, &rpc));
     VLOG(1) << "Response from server " << replica_idx << ": "
-            << resp.ShortDebugString();
+            << SecureShortDebugString(resp);
   }
 }
 
@@ -1254,7 +1255,7 @@ void RaftConsensusITest::AddOpWithTypeAndKey(const OpId& id,
   CHECK_OK(SchemaToPB(schema_, write_req->mutable_schema()));
   write_req->set_tablet_id(tablet_id_);
   AddTestRowToPB(op_type, schema_, key, id.term(),
-                 id.ShortDebugString(), write_req->mutable_row_operations());
+                 SecureShortDebugString(id), write_req->mutable_row_operations());
 }
 
 void RaftConsensusITest::SetupSingleReplicaTest(TServerDetails** replica_ts) {
@@ -1304,7 +1305,7 @@ TEST_F(RaftConsensusITest, TestLMPMismatchOnRestartedReplica) {
   req.mutable_preceding_id()->CopyFrom(MakeOpId(1, 1));
 
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
 
   // Send operations 2.1 through 2.3, committing through 2.2.
   AddOp(MakeOpId(2, 1), &req);
@@ -1313,7 +1314,7 @@ TEST_F(RaftConsensusITest, TestLMPMismatchOnRestartedReplica) {
   req.set_committed_index(2);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
 
   // The COMMIT messages end up in the WAL asynchronously, so loop reading the
   // tablet server's WAL until it shows up.
@@ -1340,9 +1341,10 @@ TEST_F(RaftConsensusITest, TestLMPMismatchOnRestartedReplica) {
       rpc.Reset();
       ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
       ASSERT_EQ(resp.status().error().code(),
-                consensus::ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH) << resp.DebugString();
+                consensus::ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH)
+          << SecureDebugString(resp);
     });
-  SCOPED_TRACE(resp.DebugString());
+  SCOPED_TRACE(SecureDebugString(resp));
   EXPECT_EQ(2, resp.status().last_committed_idx());
   EXPECT_EQ("0.0", OpIdToString(resp.status().last_received_current_leader()));
   // Even though the replica previously received operations through 2.3, the LMP mismatch
@@ -1380,7 +1382,7 @@ TEST_F(RaftConsensusITest, TestReplaceOperationStuckInPrepareQueue) {
   req.set_committed_index(2);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
 
   // Replace operation 2.4 with 3.4, add 3.5 (upsert of a new key)
   req.set_caller_term(3);
@@ -1391,7 +1393,7 @@ TEST_F(RaftConsensusITest, TestReplaceOperationStuckInPrepareQueue) {
   rpc.Reset();
   rpc.set_timeout(MonoDelta::FromSeconds(5));
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
 
   // Commit all ops.
   req.clear_ops();
@@ -1399,7 +1401,7 @@ TEST_F(RaftConsensusITest, TestReplaceOperationStuckInPrepareQueue) {
   req.mutable_preceding_id()->CopyFrom(MakeOpId(3, 5));
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
 
   // Ensure we can read the data.
   vector<string> results;
@@ -1439,7 +1441,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   req.mutable_preceding_id()->CopyFrom(MakeOpId(1, 1));
 
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
 
   // Send some operations, but don't advance the commit index.
   // They should not commit.
@@ -1448,7 +1450,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   AddOp(MakeOpId(2, 4), &req);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
 
   // We shouldn't read anything yet, because the ops should be pending.
   {
@@ -1464,7 +1466,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   AddOp(MakeOpId(2, 6), &req);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_TRUE(resp.has_error()) << resp.DebugString();
+  ASSERT_TRUE(resp.has_error()) << SecureDebugString(resp);
   ASSERT_EQ(resp.error().status().message(),
             "New operation's index does not follow the previous op's index. "
             "Current: 2.6. Previous: 2.4");
@@ -1478,7 +1480,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   AddOp(MakeOpId(2, 6), &req);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_TRUE(resp.has_error()) << resp.DebugString();
+  ASSERT_TRUE(resp.has_error()) << SecureDebugString(resp);
   ASSERT_EQ(resp.error().status().message(),
             "New operation's term is not >= than the previous op's term."
             " Current: 2.6. Previous: 3.5");
@@ -1497,7 +1499,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   req.set_committed_index(4);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
   // Verify only 2.2 and 2.3 are committed.
   {
     vector<string> results;
@@ -1515,7 +1517,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   AddOp(MakeOpId(2, 6), &req);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
 
   // Verify they are committed.
   {
@@ -1542,9 +1544,9 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     // Send the call. We expect to get a timeout passed back from the server side
     // (i.e. not an RPC timeout)
     req.set_batch_size_bytes(0);
-    SCOPED_TRACE(req.DebugString());
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(replica_ts->tserver_proxy->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     string err_str = StatusFromPB(resp.error().status()).ToString();
     ASSERT_STR_CONTAINS(err_str, "Timed out waiting for ts:");
     ASSERT_STR_CONTAINS(err_str, "to be safe");
@@ -1566,8 +1568,8 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     AddOp(MakeOpId(leader_term, 6), &req);
     rpc.Reset();
     ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-    ASSERT_FALSE(resp.has_error()) << "Req: " << req.ShortDebugString()
-        << " Resp: " << resp.DebugString();
+    ASSERT_FALSE(resp.has_error()) << "Req: " << SecureShortDebugString(req)
+        << " Resp: " << SecureDebugString(resp);
   }
 
   // Send an empty request from the newest term which should commit
@@ -1578,7 +1580,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     req.clear_ops();
     rpc.Reset();
     ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
-    ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+    ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
   }
 
   // Verify the new rows are committed.
@@ -1619,7 +1621,7 @@ TEST_F(RaftConsensusITest, TestLeaderStepDown) {
   TabletServerErrorPB error;
   s = LeaderStepDown(tservers[0], tablet_id_, MonoDelta::FromSeconds(10), &error);
   ASSERT_TRUE(s.IsIllegalState()) << "TS #0 should not be leader anymore: " << s.ToString();
-  ASSERT_EQ(TabletServerErrorPB::NOT_THE_LEADER, error.code()) << error.ShortDebugString();
+  ASSERT_EQ(TabletServerErrorPB::NOT_THE_LEADER, error.code()) << SecureShortDebugString(error);
 
   s = WriteSimpleTestRow(tservers[0], tablet_id_, RowOperationsPB::INSERT,
                          kTestRowKey, kTestRowIntVal, "foo", MonoDelta::FromSeconds(10));
@@ -1709,11 +1711,11 @@ Status RaftConsensusITest::GetTabletLocations(const string& tablet_id, const Mon
     return StatusFromPB(resp.error().status());
   }
   if (resp.errors_size() > 0) {
-    CHECK_EQ(1, resp.errors_size()) << resp.ShortDebugString();
-    CHECK_EQ(tablet_id, resp.errors(0).tablet_id()) << resp.ShortDebugString();
+    CHECK_EQ(1, resp.errors_size()) << SecureShortDebugString(resp);
+    CHECK_EQ(tablet_id, resp.errors(0).tablet_id()) << SecureShortDebugString(resp);
     return StatusFromPB(resp.errors(0).status());
   }
-  CHECK_EQ(1, resp.tablet_locations_size()) << resp.ShortDebugString();
+  CHECK_EQ(1, resp.tablet_locations_size()) << SecureShortDebugString(resp);
   *tablet_locations = resp.tablet_locations(0);
   return Status::OK();
 }
@@ -1743,9 +1745,10 @@ void RaftConsensusITest::WaitForReplicasReportedToMaster(
     if (deadline < MonoTime::Now()) break;
     SleepFor(MonoDelta::FromMilliseconds(20));
   }
-  ASSERT_EQ(num_replicas, tablet_locations->replicas_size()) << tablet_locations->DebugString();
+  ASSERT_EQ(num_replicas, tablet_locations->replicas_size())
+      << SecureDebugString(*tablet_locations);
   if (wait_for_leader == WAIT_FOR_LEADER) {
-    ASSERT_TRUE(*has_leader) << tablet_locations->DebugString();
+    ASSERT_TRUE(*has_leader) << SecureDebugString(*tablet_locations);
   }
 }
 
@@ -2218,7 +2221,7 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   bool has_leader;
   NO_FATALS(WaitForReplicasReportedToMaster(2, tablet_id, timeout, WAIT_FOR_LEADER,
                                             &has_leader, &tablet_locations));
-  LOG(INFO) << "Tablet locations:\n" << tablet_locations.DebugString();
+  LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
@@ -2237,8 +2240,8 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   LOG(INFO) << "Waiting for Master to see config change...";
   NO_FATALS(WaitForReplicasReportedToMaster(3, tablet_id, timeout, NO_WAIT_FOR_LEADER,
                                             &has_leader, &tablet_locations));
-  ASSERT_TRUE(has_leader) << tablet_locations.DebugString();
-  LOG(INFO) << "Tablet locations:\n" << tablet_locations.DebugString();
+  ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
+  LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 
   // Change the config again.
   LOG(INFO) << "Removing tserver with uuid " << tserver_to_add->uuid();
@@ -2251,8 +2254,8 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   LOG(INFO) << "Waiting for Master to see config change...";
   NO_FATALS(WaitForReplicasReportedToMaster(2, tablet_id, timeout, NO_WAIT_FOR_LEADER,
                                             &has_leader, &tablet_locations));
-  ASSERT_TRUE(has_leader) << tablet_locations.DebugString();
-  LOG(INFO) << "Tablet locations:\n" << tablet_locations.DebugString();
+  ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
+  LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 }
 
 // Test that even with memory pressure, a replica will still commit pending
@@ -2308,7 +2311,7 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
 
   // At the time that the follower received our request it was still under the
   // tiny memory limit defined above, so the request should have succeeded.
-  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
   ASSERT_TRUE(resp.has_status());
   ASSERT_TRUE(resp.status().has_last_committed_idx());
   ASSERT_EQ(last_opid.index(), resp.status().last_received().index());
@@ -2877,10 +2880,10 @@ TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
   }
 
   ASSERT_OK(replica_ts->consensus_proxy->UpdateConsensus(req, &resp, &rpc));
-  LOG(INFO) << resp.ShortDebugString();
+  LOG(INFO) << SecureShortDebugString(resp);
   ASSERT_TRUE(resp.status().has_error());
   ASSERT_EQ(consensus::ConsensusErrorPB::CANNOT_PREPARE, resp.status().error().code());
-  ASSERT_STR_CONTAINS(resp.ShortDebugString(), "Could not prepare a single transaction");
+  ASSERT_STR_CONTAINS(SecureShortDebugString(resp), "Could not prepare a single transaction");
 }
 
 // Test that, if the raft metadata on a replica is corrupt, then the server

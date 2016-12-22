@@ -38,6 +38,7 @@
 #include "kudu/util/malloc.h"
 #include "kudu/util/memory/overwrite.h"
 #include "kudu/util/object_pool.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -142,8 +143,8 @@ Status CFileReader::InitOnce() {
                                       &type_encoding_info_));
 
   VLOG(2) << "Initialized CFile reader. "
-          << "Header: " << header_->DebugString()
-          << " Footer: " << footer_->DebugString()
+          << "Header: " << SecureDebugString(*header_)
+          << " Footer: " << SecureDebugString(*footer_)
           << " Type: " << type_info_->name();
 
   // The header/footer have been allocated; memory consumption has changed.
@@ -177,7 +178,7 @@ Status CFileReader::ReadAndParseHeader() {
     return Status::Corruption("Invalid cfile pb header");
   }
 
-  VLOG(2) << "Read header: " << header_->DebugString();
+  VLOG(2) << "Read header: " << SecureDebugString(*header_);
 
   return Status::OK();
 }
@@ -214,7 +215,7 @@ Status CFileReader::ReadAndParseFooter() {
     block_uncompressor_.reset(new CompressedBlockDecoder(codec));
   }
 
-  VLOG(2) << "Read footer: " << footer_->DebugString();
+  VLOG(2) << "Read footer: " << SecureDebugString(*footer_);
 
   return Status::OK();
 }

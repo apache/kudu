@@ -30,6 +30,7 @@
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_util.h"
 
 #define ASSERT_REPORT_HAS_UPDATED_TABLET(report, tablet_id) \
@@ -160,18 +161,18 @@ static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
       found_tablet = true;
       ASSERT_TRUE(reported_tablet.has_committed_consensus_state());
       ASSERT_TRUE(reported_tablet.committed_consensus_state().has_current_term())
-          << reported_tablet.ShortDebugString();
+          << SecureShortDebugString(reported_tablet);
       ASSERT_TRUE(reported_tablet.committed_consensus_state().has_leader_uuid())
-          << reported_tablet.ShortDebugString();
+          << SecureShortDebugString(reported_tablet);
       ASSERT_TRUE(reported_tablet.committed_consensus_state().has_config());
       const RaftConfigPB& committed_config = reported_tablet.committed_consensus_state().config();
       ASSERT_EQ(kInvalidOpIdIndex, committed_config.opid_index());
       ASSERT_EQ(1, committed_config.peers_size());
       ASSERT_TRUE(committed_config.peers(0).has_permanent_uuid())
-          << reported_tablet.ShortDebugString();
+          << SecureShortDebugString(reported_tablet);
       ASSERT_EQ(committed_config.peers(0).permanent_uuid(),
                 reported_tablet.committed_consensus_state().leader_uuid())
-          << reported_tablet.ShortDebugString();
+          << SecureShortDebugString(reported_tablet);
     }
   }
   ASSERT_TRUE(found_tablet);
@@ -236,8 +237,8 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   while (true) {
     bool found_tablet_2 = false;
     GenerateIncrementalTabletReport(&report);
-    ASSERT_TRUE(report.is_incremental()) << report.ShortDebugString();
-    ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report) << report.ShortDebugString();
+    ASSERT_TRUE(report.is_incremental()) << SecureShortDebugString(report);
+    ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report) << SecureShortDebugString(report);
     for (const ReportedTabletPB& reported_tablet : report.updated_tablets()) {
       if (reported_tablet.tablet_id() == "tablet-2") {
         found_tablet_2  = true;
@@ -249,7 +250,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
     ASSERT_TRUE(elapsed < timeout)
         << "Waited too long for tablet-2 to be marked dirty: "
         << elapsed.ToString() << ". "
-        << "Latest report: " << report.ShortDebugString();
+        << "Latest report: " << SecureShortDebugString(report);
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
 

@@ -27,8 +27,9 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/pb_util.h"
 
 DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
              "The period of time that a Master can go without receiving a heartbeat from a "
@@ -98,8 +99,8 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
         "Tablet server $0 is attempting to re-register with a different host/port. "
         "This is not currently supported. Old: {$1} New: {$2}",
         instance.permanent_uuid(),
-        registration_->ShortDebugString(),
-        registration.ShortDebugString());
+        SecureShortDebugString(*registration_),
+        SecureShortDebugString(registration));
     LOG(ERROR) << msg;
     return Status::InvalidArgument(msg);
   }
@@ -108,7 +109,7 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
       registration.http_addresses().empty()) {
     return Status::InvalidArgument(
         "invalid registration: must have at least one RPC and one HTTP address",
-        registration.ShortDebugString());
+        SecureShortDebugString(registration));
   }
 
   if (instance.instance_seqno() < latest_seqno_) {
@@ -121,7 +122,7 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
     // It's possible that the TS registered, but our response back to it
     // got lost, so it's trying to register again with the same sequence
     // number. That's fine.
-    LOG(INFO) << "Processing retry of TS registration from " << instance.ShortDebugString();
+    LOG(INFO) << "Processing retry of TS registration from " << SecureShortDebugString(instance);
   }
 
   latest_seqno_ = instance.instance_seqno();
@@ -214,7 +215,8 @@ Status TSDescriptor::ResolveSockaddr(Sockaddr* addr) const {
   }
 
   if (addrs.size() == 0) {
-    return Status::NetworkError("Unable to find the TS address: ", registration_->DebugString());
+    return Status::NetworkError("Unable to find the TS address: ",
+                                SecureDebugString(*registration_));
   }
 
   if (addrs.size() > 1) {

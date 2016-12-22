@@ -143,7 +143,7 @@ void PrintIdOnly(const LogEntryPB& entry) {
       break;
     }
     default:
-      cout << "UNKNOWN: " << entry.ShortDebugString();
+      cout << "UNKNOWN: " << SecureShortDebugString(entry);
   }
 
   cout << endl;
@@ -163,7 +163,7 @@ Status PrintDecodedWriteRequestPB(const string& indent,
 
   cout << indent << "Tablet: " << write.tablet_id() << endl;
   cout << indent << "RequestId: "
-      << (request_id ? request_id->ShortDebugString() : "None") << endl;
+      << (request_id ? SecureShortDebugString(*request_id) : "None") << endl;
   cout << indent << "Consistency: "
        << ExternalConsistencyMode_Name(write.external_consistency_mode()) << endl;
   if (write.has_propagated_timestamp()) {
@@ -195,11 +195,11 @@ Status PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
           replicate.write_request(),
           replicate.has_request_id() ? &replicate.request_id() : nullptr));
     } else {
-      cout << indent << replicate.ShortDebugString() << endl;
+      cout << indent << SecureShortDebugString(replicate) << endl;
     }
   } else if (entry.has_commit()) {
     // For COMMIT we'll just dump the PB
-    cout << indent << entry.commit().ShortDebugString() << endl;
+    cout << indent << SecureShortDebugString(entry.commit()) << endl;
   }
 
   return Status::OK();
@@ -259,7 +259,7 @@ Status GetServerStatus(const string& address, uint16_t default_port,
 Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   PrintEntryType print_type = ParsePrintType();
   if (FLAGS_print_meta) {
-    cout << "Header:\n" << segment->header().DebugString();
+    cout << "Header:\n" << SecureDebugString(segment->header());
   }
   if (print_type != DONT_PRINT) {
     Schema tablet_schema;
@@ -277,7 +277,7 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
           pb_util::TruncateFields(&entry, FLAGS_truncate_data);
         }
 
-        cout << "Entry:\n" << entry.DebugString();
+        cout << "Entry:\n" << SecureDebugString(entry);
       } else if (print_type == PRINT_DECODED) {
         RETURN_NOT_OK(PrintDecoded(entry, tablet_schema));
       } else if (print_type == PRINT_ID) {
@@ -286,7 +286,7 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
     }
   }
   if (FLAGS_print_meta && segment->HasFooter()) {
-    cout << "Footer:\n" << segment->footer().DebugString();
+    cout << "Footer:\n" << SecureDebugString(segment->footer());
   }
 
   return Status::OK();
@@ -314,14 +314,14 @@ Status SetServerFlag(const string& address, uint16_t default_port,
       return Status::RemoteError(resp.msg() +
                                  " (use --force flag to allow anyway)");
     default:
-      return Status::RemoteError(resp.ShortDebugString());
+      return Status::RemoteError(SecureShortDebugString(resp));
   }
 }
 
 Status PrintServerStatus(const string& address, uint16_t default_port) {
   ServerStatusPB status;
   RETURN_NOT_OK(GetServerStatus(address, default_port, &status));
-  cout << status.DebugString() << endl;
+  cout << SecureDebugString(status) << endl;
   return Status::OK();
 }
 

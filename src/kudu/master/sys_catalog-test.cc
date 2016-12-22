@@ -29,10 +29,11 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
-#include "kudu/rpc/messenger.h"
 
 using std::string;
 using std::shared_ptr;
@@ -99,7 +100,7 @@ class TableLoader : public TableVisitor {
 };
 
 static bool PbEquals(const google::protobuf::Message& a, const google::protobuf::Message& b) {
-  return a.DebugString() == b.DebugString();
+  return SecureDebugString(a) == SecureDebugString(b);
 }
 
 template<class C>

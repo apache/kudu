@@ -56,6 +56,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_bool(skip_remove_old_recovery_dir, false,
@@ -410,7 +411,7 @@ static string DebugInfo(const string& tablet_id,
   // Truncate the debug string to a reasonable length for logging.
   // Otherwise, glog will truncate for us and we may miss important
   // information which came after this long string.
-  string debug_str = entry.ShortDebugString();
+  string debug_str = SecureShortDebugString(entry);
   if (debug_str.size() > 500) {
     debug_str.resize(500);
     debug_str.append("...");
@@ -463,7 +464,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   if (VLOG_IS_ON(1)) {
     TabletSuperBlockPB super_block;
     RETURN_NOT_OK(meta_->ToSuperBlock(&super_block));
-    VLOG_WITH_PREFIX(1) << "Tablet Metadata: " << super_block.DebugString();
+    VLOG_WITH_PREFIX(1) << "Tablet Metadata: " << SecureDebugString(super_block);
   }
 
   RETURN_NOT_OK(flushed_stores_.InitFrom(*meta_.get()));
@@ -724,7 +725,7 @@ struct ReplayState {
   void AddEntriesToStrings(const OpIndexToEntryMap& entries, vector<string>* strings) const {
     for (const OpIndexToEntryMap::value_type& map_entry : entries) {
       LogEntryPB* entry = DCHECK_NOTNULL(map_entry.second);
-      strings->push_back(Substitute("   $0", entry->ShortDebugString()));
+      strings->push_back(Substitute("   $0", SecureShortDebugString(*entry)));
     }
   }
 
@@ -761,7 +762,7 @@ struct ReplayState {
 // Otherwise, caller frees.
 Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
   if (VLOG_IS_ON(1)) {
-    VLOG_WITH_PREFIX(1) << "Handling entry: " << entry->ShortDebugString();
+    VLOG_WITH_PREFIX(1) << "Handling entry: " << SecureShortDebugString(*entry);
   }
 
   switch (entry->type()) {
@@ -824,7 +825,8 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* r
 
 // Takes ownership of 'commit_entry' on OK status.
 Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* commit_entry) {
-  DCHECK(commit_entry->has_commit()) << "Not a commit message: " << commit_entry->DebugString();
+  DCHECK(commit_entry->has_commit()) << "Not a commit message: "
+                                     << SecureDebugString(*commit_entry);
 
   // Match up the COMMIT record with the original entry that it's applied to.
   const OpId& committed_op_id = commit_entry->commit().commited_op_id();
@@ -846,7 +848,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
   if ((*state->pending_replicates.begin()).first != committed_op_id.index()) {
     if (!ContainsKey(state->pending_replicates, committed_op_id.index())) {
       return Status::Corruption(Substitute("Could not find replicate for commit: $0",
-                                           commit_entry->ShortDebugString()));
+                                           SecureShortDebugString(*commit_entry)));
     }
     VLOG_WITH_PREFIX(2) << "Adding pending commit for " << committed_op_id;
     InsertOrDie(&state->pending_commits, committed_op_id.index(), commit_entry);
@@ -897,8 +899,8 @@ Status TabletBootstrap::CheckOrphanedCommitDoesntNeedReplay(const CommitMsg& com
     TabletSuperBlockPB super;
     WARN_NOT_OK(meta_->ToSuperBlock(&super), LogPrefix() + "Couldn't build TabletSuperBlockPB");
     return Status::Corruption(Substitute("CommitMsg was orphaned but it referred to "
-        "stores which need replay. Commit: $0. TabletMetadata: $1", commit.ShortDebugString(),
-        super.ShortDebugString()));
+        "stores which need replay. Commit: $0. TabletMetadata: $1", SecureShortDebugString(commit),
+        SecureShortDebugString(super)));
   }
 
   return Status::OK();
@@ -921,10 +923,10 @@ Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* commi
     if (!OpIdEquals(committed_op_id, pending_replicate_entry->replicate().id())) {
       string error_msg = Substitute("Committed operation's OpId: $0 didn't match the"
           "commit message's committed OpId: $1. Pending operation: $2, Commit message: $3",
-          pending_replicate_entry->replicate().id().ShortDebugString(),
-          committed_op_id.ShortDebugString(),
-          pending_replicate_entry->replicate().ShortDebugString(),
-          commit_entry->commit().ShortDebugString());
+          SecureShortDebugString(pending_replicate_entry->replicate().id()),
+          SecureShortDebugString(committed_op_id),
+          SecureShortDebugString(pending_replicate_entry->replicate()),
+          SecureShortDebugString(commit_entry->commit()));
       LOG_WITH_PREFIX(DFATAL) << error_msg;
       return Status::Corruption(error_msg);
     }
@@ -942,10 +944,11 @@ Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* commi
 Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry) {
   const char* error_fmt = "Failed to play $0 request. ReplicateMsg: { $1 }, CommitMsg: { $2 }";
 
-#define RETURN_NOT_OK_REPLAY(ReplayMethodName, replicate, commit) \
-  RETURN_NOT_OK_PREPEND(ReplayMethodName(replicate, commit), \
+#define RETURN_NOT_OK_REPLAY(ReplayMethodName, replicate, commit)       \
+  RETURN_NOT_OK_PREPEND(ReplayMethodName(replicate, commit),            \
                         Substitute(error_fmt, OperationType_Name(op_type), \
-                                   replicate->ShortDebugString(), commit.ShortDebugString()))
+                                   SecureShortDebugString(*replicate),   \
+                                   SecureShortDebugString(commit)))
 
   ReplicateMsg* replicate = replicate_entry->mutable_replicate();
   const CommitMsg& commit = commit_entry->commit();
@@ -1104,7 +1107,7 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
         WARN_NOT_OK(meta_->ToSuperBlock(&super), "Couldn't build TabletSuperBlockPB.");
         return Status::Corruption(Substitute("CommitMsg was pending but it did not refer "
             "to any active memory stores. Commit: $0. TabletMetadata: $1",
-            entry.second->commit().ShortDebugString(), super.ShortDebugString()));
+            SecureShortDebugString(entry.second->commit()), SecureShortDebugString(super)));
       }
     }
   }
@@ -1219,7 +1222,7 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
   if (tracking_results) {
     VLOG(1) << result_tracker_.get() << " Boostrapping request for tablet: "
         << write->tablet_id() << ". State: " << 0 << " id: "
-        << replicate_msg->request_id().DebugString();
+        << SecureDebugString(replicate_msg->request_id());
     // We only replay committed requests so the result of tracking this request can be:
     // NEW:
     //   This is a previously untracked request, or we changed the driver -> store the result
@@ -1360,7 +1363,7 @@ Status TabletBootstrap::PlayRowOperations(WriteTransactionState* tx_state,
 
   RETURN_NOT_OK_PREPEND(tablet_->DecodeWriteOperations(&inserts_schema, tx_state),
                         Substitute("Could not decode row operations: $0",
-                                   ops_pb.ShortDebugString()));
+                                   SecureShortDebugString(ops_pb)));
   DCHECK_EQ(tx_state->row_ops().size(), already_flushed.size());
 
   // Propagate the 'already_flushed' information into the decoded operations.
@@ -1424,7 +1427,7 @@ Status TabletBootstrap::ApplyOperations(WriteTransactionState* tx_state,
       Status status = StatusFromPB(orig_op_result.failed_status());
       if (VLOG_IS_ON(1)) {
         VLOG_WITH_PREFIX(1) << "Skipping operation that originally resulted in error. OpId: "
-                            << tx_state->op_id().DebugString() << " op index: "
+                            << SecureDebugString(tx_state->op_id()) << " op index: "
                             << op_idx - 1 << " original error: "
                             << status.ToString();
       }
@@ -1446,7 +1449,7 @@ Status TabletBootstrap::ApplyOperations(WriteTransactionState* tx_state,
                                 "during log replay",
                                 Substitute("Op: $0\nFailure: $1",
                                            op->ToString(*tablet_->schema()),
-                                           op->result->failed_status().ShortDebugString()));
+                                           SecureShortDebugString(op->result->failed_status())));
     }
   }
   return Status::OK();
@@ -1463,7 +1466,7 @@ Status TabletBootstrap::FilterOperation(const OperationResultPB& op_result,
   int num_mutated_stores = op_result.mutated_stores_size();
   if (PREDICT_FALSE(num_mutated_stores > 2)) {
     return Status::Corruption(Substitute("All operations must have at most two mutated_stores: $0",
-                                         op_result.ShortDebugString()));
+                                         SecureShortDebugString(op_result)));
   }
   // NOTE: it's possible that num_mutated_stores = 0 in the case of an
   // UPSERT which only specified the primary key. In that case, if the
@@ -1491,7 +1494,7 @@ Status TabletBootstrap::FilterOperation(const OperationResultPB& op_result,
     // the 'second' store was live. But at no time should the metadata refer to both the
     // 'input' and 'output' stores of a compaction.
     return Status::Corruption("Mutation was duplicated to two stores that are considered live",
-                              op_result.ShortDebugString());
+                              SecureShortDebugString(op_result));
   }
 
   *already_flushed = false;

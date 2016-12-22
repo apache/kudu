@@ -56,6 +56,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
 #include "kudu/util/trace.h"
@@ -185,7 +186,7 @@ bool CheckUuidMatchOrRespond(TabletPeerLookupIf* tablet_manager,
   if (PREDICT_FALSE(!req->has_dest_uuid())) {
     // Maintain compat in release mode, but complain.
     string msg = Substitute("$0: Missing destination UUID in request from $1: $2",
-                            method_name, context->requestor_string(), req->ShortDebugString());
+                            method_name, context->requestor_string(), SecureShortDebugString(*req));
 #ifdef NDEBUG
     KLOG_EVERY_N(ERROR, 100) << msg;
 #else
@@ -198,7 +199,7 @@ bool CheckUuidMatchOrRespond(TabletPeerLookupIf* tablet_manager,
                                                   "Local UUID: $1. Requested UUID: $2",
                                                   method_name, local_uuid, req->dest_uuid()));
     LOG(WARNING) << s.ToString() << ": from " << context->requestor_string()
-                 << ": " << req->ShortDebugString();
+                 << ": " << SecureShortDebugString(*req);
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::WRONG_SERVER_UUID, context);
     return false;
@@ -529,7 +530,7 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
   if (!CheckUuidMatchOrRespond(server_->tablet_manager(), "AlterSchema", req, resp, context)) {
     return;
   }
-  DVLOG(3) << "Received Alter Schema RPC: " << req->DebugString();
+  DVLOG(3) << "Received Alter Schema RPC: " << SecureDebugString(*req);
 
   scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletPeerOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
@@ -631,7 +632,7 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
             << " (table=" << req->table_name()
             << " [id=" << req->table_id() << "]), partition="
             << partition_schema.PartitionDebugString(partition, schema);
-  VLOG(1) << "Full request: " << req->DebugString();
+  VLOG(1) << "Full request: " << SecureDebugString(*req);
 
   s = server_->tablet_manager()->CreateNewTablet(req->table_id(),
                                                  req->tablet_id(),
@@ -672,7 +673,7 @@ void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
             << " with delete_type " << TabletDataState_Name(delete_type)
             << (req->has_reason() ? (" (" + req->reason() + ")") : "")
             << " from " << context->requestor_string();
-  VLOG(1) << "Full request: " << req->DebugString();
+  VLOG(1) << "Full request: " << SecureDebugString(*req);
 
   boost::optional<int64_t> cas_config_opid_index_less_or_equal;
   if (req->has_cas_config_opid_index_less_or_equal()) {
@@ -695,7 +696,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                               rpc::RpcContext* context) {
   TRACE_EVENT1("tserver", "TabletServiceImpl::Write",
                "tablet_id", req->tablet_id());
-  DVLOG(3) << "Received Write RPC: " << req->DebugString();
+  DVLOG(3) << "Received Write RPC: " << SecureDebugString(*req);
 
   scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletPeerOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
@@ -797,7 +798,7 @@ ConsensusServiceImpl::~ConsensusServiceImpl() {
 void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
                                            ConsensusResponsePB* resp,
                                            rpc::RpcContext* context) {
-  DVLOG(3) << "Received Consensus Update RPC: " << req->DebugString();
+  DVLOG(3) << "Received Consensus Update RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "UpdateConsensus", req, resp, context)) {
     return;
   }
@@ -829,7 +830,7 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
 void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
                                                 VoteResponsePB* resp,
                                                 rpc::RpcContext* context) {
-  DVLOG(3) << "Received Consensus Request Vote RPC: " << req->DebugString();
+  DVLOG(3) << "Received Consensus Request Vote RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "RequestConsensusVote", req, resp, context)) {
     return;
   }
@@ -854,7 +855,7 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
 void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
                                         ChangeConfigResponsePB* resp,
                                         RpcContext* context) {
-  DVLOG(3) << "Received ChangeConfig RPC: " << req->DebugString();
+  DVLOG(3) << "Received ChangeConfig RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "ChangeConfig", req, resp, context)) {
     return;
   }
@@ -878,7 +879,7 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
 void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
                                            GetNodeInstanceResponsePB* resp,
                                            rpc::RpcContext* context) {
-  DVLOG(3) << "Received Get Node Instance RPC: " << req->DebugString();
+  DVLOG(3) << "Received Get Node Instance RPC: " << SecureDebugString(*req);
   resp->mutable_node_instance()->CopyFrom(tablet_manager_->NodeInstance());
   context->RespondSuccess();
 }
@@ -886,7 +887,7 @@ void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
 void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* req,
                                              RunLeaderElectionResponsePB* resp,
                                              rpc::RpcContext* context) {
-  DVLOG(3) << "Received Run Leader Election RPC: " << req->DebugString();
+  DVLOG(3) << "Received Run Leader Election RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "RunLeaderElection", req, resp, context)) {
     return;
   }
@@ -912,7 +913,7 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
 void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
                                           LeaderStepDownResponsePB* resp,
                                           RpcContext* context) {
-  DVLOG(3) << "Received Leader stepdown RPC: " << req->DebugString();
+  DVLOG(3) << "Received Leader stepdown RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "LeaderStepDown", req, resp, context)) {
     return;
   }
@@ -936,7 +937,7 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
 void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *req,
                                        consensus::GetLastOpIdResponsePB *resp,
                                        rpc::RpcContext *context) {
-  DVLOG(3) << "Received GetLastOpId RPC: " << req->DebugString();
+  DVLOG(3) << "Received GetLastOpId RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "GetLastOpId", req, resp, context)) {
     return;
   }
@@ -971,7 +972,7 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
 void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateRequestPB *req,
                                              consensus::GetConsensusStateResponsePB *resp,
                                              rpc::RpcContext *context) {
-  DVLOG(3) << "Received GetConsensusState RPC: " << req->DebugString();
+  DVLOG(3) << "Received GetConsensusState RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "GetConsensusState", req, resp, context)) {
     return;
   }
@@ -1146,7 +1147,7 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
 void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
                                  ChecksumResponsePB* resp,
                                  rpc::RpcContext* context) {
-  VLOG(1) << "Full request: " << req->DebugString();
+  VLOG(1) << "Full request: " << SecureDebugString(*req);
 
   // Validate the request: user must pass a new_scan_request or
   // a scanner ID, but not both.
@@ -1324,7 +1325,7 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   for (const ColumnRangePredicatePB& pred_pb : scan_pb.deprecated_range_predicates()) {
     if (!pred_pb.has_lower_bound() && !pred_pb.has_inclusive_upper_bound()) {
       return Status::InvalidArgument(
-        string("Invalid predicate ") + pred_pb.ShortDebugString() +
+        string("Invalid predicate ") + SecureShortDebugString(pred_pb) +
         ": has no lower or upper bound.");
     }
     ColumnSchema col(ColumnSchemaFromPB(pred_pb.column()));
@@ -1355,7 +1356,7 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
     if (pred) {
       if (VLOG_IS_ON(3)) {
         VLOG(3) << "Parsed predicate " << pred->ToString()
-                << " from " << scan_pb.ShortDebugString();
+                << " from " << SecureShortDebugString(scan_pb);
       }
       ret->AddPredicate(*pred);
     }
@@ -1548,7 +1549,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     *error_code = tmp_error_code;
     return s;
   } else if (PREDICT_FALSE(!s.ok())) {
-    LOG(WARNING) << "Error setting up scanner with request " << req->ShortDebugString();
+    LOG(WARNING) << "Error setting up scanner with request " << SecureShortDebugString(*req);
     *error_code = TabletServerErrorPB::UNKNOWN_ERROR;
     return s;
   }
@@ -1641,7 +1642,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   ScopedUnregisterScanner unreg_scanner(server_->scanner_manager(), scanner->id());
 
   VLOG(2) << "Found existing scanner " << scanner->id() << " for request: "
-          << req->ShortDebugString();
+          << SecureShortDebugString(*req);
   TRACE("Found scanner $0", scanner->id());
 
   if (batch_size_bytes == 0 && req->close_scanner()) {
@@ -1678,7 +1679,8 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
     Status s = iter->NextBlock(&block);
     if (PREDICT_FALSE(!s.ok())) {
-      LOG(WARNING) << "Copying rows from internal iterator for request " << req->ShortDebugString();
+      LOG(WARNING) << "Copying rows from internal iterator for request "
+                   << SecureShortDebugString(*req);
       *error_code = TabletServerErrorPB::UNKNOWN_ERROR;
       return s;
     }

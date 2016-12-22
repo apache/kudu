@@ -34,10 +34,11 @@
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/thread.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/thread.h"
 #include "kudu/util/version_info.h"
 
 DEFINE_int32(heartbeat_rpc_timeout_ms, 15000,
@@ -384,7 +385,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
   RpcController rpc;
   rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms));
 
-  VLOG(2) << "Sending heartbeat:\n" << req.DebugString();
+  VLOG(2) << "Sending heartbeat:\n" << SecureDebugString(req);
   master::TSHeartbeatResponsePB resp;
   RETURN_NOT_OK_PREPEND(proxy_->TSHeartbeat(req, &resp, &rpc),
                         "Failed to send heartbeat to master");
@@ -393,7 +394,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
   }
 
   VLOG(2) << Substitute("Received heartbeat response from $0:\n$1",
-                        master_address_.ToString(), resp.DebugString());
+                        master_address_.ToString(), SecureDebugString(resp));
 
   // If we've detected that our master was elected leader, send a full tablet
   // report in the next heartbeat.

@@ -45,6 +45,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -114,7 +115,7 @@ class ReplicaDumper {
 
       if (resp.has_error()) {
         return Status::IOError("Failed to read: ",
-                               resp.error().ShortDebugString());
+                               SecureShortDebugString(resp.error()));
       }
 
       // The first response has a scanner ID. We use this for all subsequent
@@ -225,7 +226,7 @@ Status DeleteReplica(const RunnerContext& context) {
                         "DeleteTablet() failed");
   if (resp.has_error()) {
     return Status::IOError("Failed to delete tablet: ",
-                           resp.error().ShortDebugString());
+                           SecureShortDebugString(resp.error()));
   }
   return Status::OK();
 }
@@ -322,7 +323,7 @@ Status CopyReplica(const RunnerContext& context) {
     req.set_caller_term(std::numeric_limits<int64_t>::max());
   }
 
-  LOG(INFO) << "Sending copy replica request:\n" << req.DebugString();
+  LOG(INFO) << "Sending copy replica request:\n" << SecureDebugString(req);
   LOG(WARNING) << "NOTE: this copy may happen asynchronously "
                << "and may timeout if the tablet size is large. Watch the logs on "
                << "the target tablet server for indication of progress.";

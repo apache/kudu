@@ -176,7 +176,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
     string previous_seg_path;
     int64_t previous_seg_seqno = -1;
     for (const SegmentSequence::value_type& entry : read_segments) {
-      VLOG(1) << " Log Reader Indexed: " << entry->footer().ShortDebugString();
+      VLOG(1) << " Log Reader Indexed: " << SecureShortDebugString(entry->footer());
       // Check that the log segments are in sequence.
       if (previous_seg_seqno != -1 && entry->header().sequence_number() != previous_seg_seqno + 1) {
         return Status::Corruption(Substitute("Segment sequence numbers are not consecutive. "
@@ -305,7 +305,7 @@ Status LogReader::ReadReplicatesInRange(int64_t starting_at,
         CHECK_GT(this_index, prev_index)
           << "Expected that an entry batch should only include increasing log indexes: "
           << index_entry.ToString()
-          << "\nBatch: " << batch->DebugString();
+          << "\nBatch: " << SecureDebugString(*batch);
         prev_index = this_index;
       }
     }
@@ -446,7 +446,7 @@ string LogReader::ToString() const {
   for (const SegmentSequence::value_type& entry : segments_) {
     ret.append(Substitute("Segment: $0 Footer: $1\n",
                           entry->header().sequence_number(),
-                          !entry->HasFooter() ? "NONE" : entry->footer().ShortDebugString()));
+                          !entry->HasFooter() ? "NONE" : SecureShortDebugString(entry->footer())));
   }
   return ret;
 }

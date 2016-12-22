@@ -40,6 +40,7 @@
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_leader_failure_detection);
@@ -177,7 +178,8 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
 
       // Ensure that our tablet reports are consistent.
       TabletReportPB& report = reports[0];
-      ASSERT_EQ(1, report.updated_tablets_size()) << "Wrong report size:\n" << report.DebugString();
+      ASSERT_EQ(1, report.updated_tablets_size())
+          << "Wrong report size:\n" << SecureDebugString(report);
       ReportedTabletPB reported_tablet = report.updated_tablets(0);
       ASSERT_TRUE(reported_tablet.has_committed_consensus_state());
 
@@ -185,10 +187,10 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
       RaftPeerPB::Role role = GetConsensusRole(uuid, reported_tablet.committed_consensus_state());
       if (replica == new_leader_idx) {
         ASSERT_EQ(RaftPeerPB::LEADER, role)
-            << "Tablet report: " << report.ShortDebugString();
+            << "Tablet report: " << SecureShortDebugString(report);
       } else {
         ASSERT_EQ(RaftPeerPB::FOLLOWER, role)
-            << "Tablet report: " << report.ShortDebugString();
+            << "Tablet report: " << SecureShortDebugString(report);
       }
     }
   }

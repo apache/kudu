@@ -39,6 +39,7 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/subprocess.h"
 
@@ -269,9 +270,9 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
     rpc.set_timeout(MonoDelta::FromSeconds(10));
     req.add_tablet_ids()->assign(tablet_id);
     ASSERT_OK(cluster_->master_proxy()->GetTabletLocations(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_EQ(1, resp.errors_size());
-    ASSERT_STR_CONTAINS(resp.errors(0).ShortDebugString(),
+    ASSERT_STR_CONTAINS(SecureShortDebugString(resp.errors(0)),
                         "code: NOT_FOUND message: \"Tablet deleted: Table deleted");
   }
 
@@ -309,7 +310,7 @@ TEST_F(DeleteTableTest, TestDeleteTabletDestUuidValidation) {
   ASSERT_OK(ts->tserver_admin_proxy->DeleteTablet(req, &resp, &rpc));
   ASSERT_TRUE(resp.has_error());
   ASSERT_EQ(tserver::TabletServerErrorPB::WRONG_SERVER_UUID, resp.error().code())
-      << resp.ShortDebugString();
+      << SecureShortDebugString(resp);
   ASSERT_STR_CONTAINS(StatusFromPB(resp.error().status()).ToString(),
                       "Wrong destination UUID");
 }
@@ -788,7 +789,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   // The election history should have been wiped out.
   ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(kTsIndex, tablet_id, &cmeta_pb));
   ASSERT_EQ(3, cmeta_pb.current_term());
-  ASSERT_TRUE(!cmeta_pb.has_voted_for()) << cmeta_pb.ShortDebugString();
+  ASSERT_TRUE(!cmeta_pb.has_voted_for()) << SecureShortDebugString(cmeta_pb);
 }
 
 // Regression test for KUDU-987, a bug where followers with transactions in
@@ -907,7 +908,7 @@ TEST_F(DeleteTableTest, TestOrphanedBlocksClearedOnDelete) {
   }
   ASSERT_GT(superblock_pb.rowsets_size(), 0)
       << "Timed out waiting for rowset flush on TS " << follower_ts->uuid() << ": "
-      << "Superblock:\n" << superblock_pb.DebugString();
+      << "Superblock:\n" << SecureDebugString(superblock_pb);
 
   // Shut down the leader so it doesn't try to copy a new replica to our follower later.
   workload.StopAndJoin();
@@ -919,8 +920,8 @@ TEST_F(DeleteTableTest, TestOrphanedBlocksClearedOnDelete) {
                                 boost::none, timeout));
   NO_FATALS(WaitForTabletTombstonedOnTS(kFollowerIndex, tablet_id, CMETA_EXPECTED));
   ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(kFollowerIndex, tablet_id, &superblock_pb));
-  ASSERT_EQ(0, superblock_pb.rowsets_size()) << superblock_pb.DebugString();
-  ASSERT_EQ(0, superblock_pb.orphaned_blocks_size()) << superblock_pb.DebugString();
+  ASSERT_EQ(0, superblock_pb.rowsets_size()) << SecureDebugString(superblock_pb);
+  ASSERT_EQ(0, superblock_pb.orphaned_blocks_size()) << SecureDebugString(superblock_pb);
 }
 
 vector<const string*> Grep(const string& needle, const vector<string>& haystack) {

@@ -598,13 +598,13 @@ Status LogBlockContainer::CheckBlockRecord(const BlockRecordPB& record,
         record.length() < 0) {
       return Status::Corruption(Substitute(
           "Found malformed block record in data file: $0\nRecord: $1\n",
-          data_file_->filename(), record.DebugString()));
+          data_file_->filename(), SecureDebugString(record)));
     }
     if (record.offset() + record.length() > data_file_size) {
       return Status::Corruption(Substitute(
           "Found block extending beyond the end of data file: $0\n"
           "Record: $1\nData file size: $2",
-          data_file_->filename(), record.DebugString(), data_file_size));
+          data_file_->filename(), SecureDebugString(record), data_file_size));
     }
 
     // We could also check that the record's offset is aligned with the
@@ -615,7 +615,7 @@ Status LogBlockContainer::CheckBlockRecord(const BlockRecordPB& record,
       LOG(WARNING) << Substitute(
           "Found misaligned block in data file: $0\nRecord: $1\n"
           "This is likely because of KUDU-1793",
-          data_file_->filename(), record.DebugString());
+          data_file_->filename(), SecureDebugString(record));
     }
   }
   return Status::OK();
@@ -1733,7 +1733,7 @@ Status LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
       if (!InsertIfNotPresent(block_map, block_id, lb)) {
         return Status::Corruption(Substitute(
             "found duplicate CREATE record for block $0 in container $1: $2",
-            block_id.ToString(), container->ToString(), record.DebugString()));
+            block_id.ToString(), container->ToString(), SecureDebugString(record)));
       }
 
       VLOG(2) << Substitute("Found CREATE block $0 at offset $1 with length $2",
@@ -1755,14 +1755,14 @@ Status LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
       if (block_map->erase(block_id) != 1) {
         return Status::Corruption(Substitute(
             "Found DELETE record for invalid block $0 in container $1: $2",
-            block_id.ToString(), container->ToString(), record.DebugString()));
+            block_id.ToString(), container->ToString(), SecureDebugString(record)));
       }
       VLOG(2) << Substitute("Found DELETE block $0", block_id.ToString());
       break;
     default:
       return Status::Corruption(Substitute(
           "Found unknown op type in container $0: $1",
-          container->ToString(), record.DebugString()));
+          container->ToString(), SecureDebugString(record)));
   }
 
   return Status::OK();
