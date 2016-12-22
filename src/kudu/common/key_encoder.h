@@ -29,6 +29,7 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/memutil.h"
 #include "kudu/gutil/type_traits.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 
@@ -92,11 +93,11 @@ struct KeyEncoderTraits<Type,
   }
 
   static Status DecodeKeyPortion(Slice* encoded_key,
-                                 bool is_last,
-                                 Arena* arena,
+                                 bool /*is_last*/,
+                                 Arena* /*arena*/,
                                  uint8_t* cell_ptr) {
     if (PREDICT_FALSE(encoded_key->size() < sizeof(cpp_type))) {
-      return Status::InvalidArgument("key too short", encoded_key->ToDebugString());
+      return Status::InvalidArgument("key too short", KUDU_REDACT(encoded_key->ToDebugString()));
     }
 
     unsigned_cpp_type val;
@@ -205,7 +206,7 @@ struct KeyEncoderTraits<BINARY, Buffer> {
                                                       "\0\0", 2));
     if (PREDICT_FALSE(separator == NULL)) {
       return Status::InvalidArgument("Missing separator after composite key string component",
-                                     encoded_key->ToDebugString());
+                                     KUDU_REDACT(encoded_key->ToDebugString()));
     }
 
     uint8_t* src = encoded_key->mutable_data();

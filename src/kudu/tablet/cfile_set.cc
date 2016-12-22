@@ -154,9 +154,9 @@ Status CFileSet::LoadMinMaxKeys() {
     return Status::Corruption("No max key found", ToString());
   }
   if (Slice(min_encoded_key_).compare(max_encoded_key_) > 0) {
-    return Status::Corruption(StringPrintf("Min key %s > max key %s",
-                                           Slice(min_encoded_key_).ToDebugString().c_str(),
-                                           Slice(max_encoded_key_).ToDebugString().c_str()),
+    return Status::Corruption(Substitute("Min key $0 > max key $1",
+                                         KUDU_REDACT(Slice(min_encoded_key_).ToDebugString()),
+                                         KUDU_REDACT(Slice(max_encoded_key_).ToDebugString())),
                               ToString());
   }
 
@@ -373,9 +373,9 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
       LOG(DFATAL) << "CFileSet indicated upper bound was within range, but "
                   << "key iterator could not seek. "
                   << "CFileSet upper_bound = "
-                  << Slice(base_data_->max_encoded_key_).ToDebugString()
+                  << KUDU_REDACT(Slice(base_data_->max_encoded_key_).ToDebugString())
                   << ", enc_key = "
-                  << spec->exclusive_upper_bound_key()->encoded_key().ToDebugString();
+                  << KUDU_REDACT(spec->exclusive_upper_bound_key()->encoded_key().ToDebugString());
     } else {
       RETURN_NOT_OK(s);
 

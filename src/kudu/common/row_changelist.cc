@@ -78,7 +78,7 @@ string RowChangeList::ToString(const Schema &schema) const {
       if (dec.null) {
         ret.append("NULL");
       } else {
-        ret.append(dec.raw_value.ToDebugString());
+        ret.append(KUDU_REDACT(dec.raw_value.ToDebugString()));
       }
     } else {
       // Known column.
@@ -149,11 +149,11 @@ Status RowChangeListDecoder::Init() {
   if (PREDICT_FALSE(!was_valid || type_ == RowChangeList::kUninitialized)) {
     return Status::Corruption(Substitute("bad type enum value: $0 in $1",
                                          static_cast<int>(remaining_[0]),
-                                         remaining_.ToDebugString()));
+                                         KUDU_REDACT(remaining_.ToDebugString())));
   }
   if (PREDICT_FALSE(is_delete() && remaining_.size() != 1)) {
     return Status::Corruption("DELETE changelist too long",
-                              remaining_.ToDebugString());
+                              KUDU_REDACT(remaining_.ToDebugString()));
   }
 
   remaining_.remove_prefix(1);
@@ -351,7 +351,7 @@ Status RowChangeListDecoder::DecodedUpdate::Validate(const Schema& schema,
   if (PREDICT_FALSE(col.type_info()->size() != this->raw_value.size())) {
     return Status::Corruption(Substitute(
                                   "invalid value $0 for column $1",
-                                  this->raw_value.ToDebugString(), col.ToString()));
+                                  KUDU_REDACT(this->raw_value.ToDebugString()), col.ToString()));
   }
 
   *value = reinterpret_cast<const void*>(this->raw_value.data());

@@ -32,6 +32,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_tree.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/slice.h"
 
 using std::shared_ptr;
@@ -78,15 +79,15 @@ int CommonPrefix(const Slice& min, const Slice& max) {
 }
 
 void DCheckCommonPrefix(const Slice& min, const Slice& imin,
-                       const Slice& imax, int common_prefix) {
+                        const Slice& imax, int common_prefix) {
   DCHECK_EQ(memcmp(min.data(), imin.data(), common_prefix), 0)
     << "slices should share common prefix:\n"
-    << "\t" << min.ToDebugString() << "\n"
-    << "\t" << imin.ToDebugString();
+    << "\t" << KUDU_REDACT(min.ToDebugString()) << "\n"
+    << "\t" << KUDU_REDACT(imin.ToDebugString());
   DCHECK_EQ(memcmp(min.data(), imax.data(), common_prefix), 0)
     << "slices should share common prefix:\n"
-    << "\t" << min.ToDebugString() << "\n"
-    << "\t" << imin.ToDebugString();
+    << "\t" << KUDU_REDACT(min.ToDebugString()) << "\n"
+    << "\t" << KUDU_REDACT(imin.ToDebugString());
 }
 
 uint64_t SliceTailToInt(const Slice& slice, int start) {
@@ -240,7 +241,7 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
                  << " or RowSetTree::STOP=" << RowSetTree::STOP << ".\n"
                  << "\tRecieved:\n"
                  << "\t\tRowSet=" << rs->ToString() << "\n"
-                 << "\t\tKey=" << next << "\n"
+                 << "\t\tKey=" << KUDU_REDACT(next.ToDebugString()) << "\n"
                  << "\t\tEndpointType=" << rse.endpoint_;
     }
   }
@@ -281,8 +282,8 @@ string RowSetInfo::ToString() const {
   StringAppendF(&ret, "(% 3dM) [%.04f, %.04f]", size_mb_,
                 cdf_min_key_, cdf_max_key_);
   if (has_bounds_) {
-    ret.append(" [").append(Slice(min_key_).ToDebugString());
-    ret.append(",").append(Slice(max_key_).ToDebugString());
+    ret.append(" [").append(KUDU_REDACT(Slice(min_key_).ToDebugString()));
+    ret.append(",").append(KUDU_REDACT(Slice(max_key_).ToDebugString()));
     ret.append("]");
   }
   return ret;

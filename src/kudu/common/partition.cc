@@ -26,7 +26,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hash_util.h"
@@ -512,7 +511,7 @@ Status PartitionSchema::DecodeRangeKey(Slice* encoded_key,
   }
   if (!encoded_key->empty()) {
     return Status::InvalidArgument("unable to fully decode range key",
-                                   CHexEscape(encoded_key->ToString()));
+                                   KUDU_REDACT(encoded_key->ToDebugString()));
   }
   return Status::OK();
 }
@@ -705,6 +704,9 @@ string PartitionSchema::RangePartitionDebugString(const KuduPartialRow& lower_bo
 string PartitionSchema::RangePartitionDebugString(Slice lower_bound,
                                                   Slice upper_bound,
                                                   const Schema& schema) const {
+  // Partitions are considered metadata, so don't redact them.
+  ScopedDisableRedaction no_redaction;
+
   Arena arena(1024, 128 * 1024);
   KuduPartialRow lower(&schema);
   KuduPartialRow upper(&schema);

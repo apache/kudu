@@ -29,6 +29,7 @@
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 
@@ -240,6 +241,10 @@ bool OutboundTransfer::TransferFinished() const {
 }
 
 string OutboundTransfer::HexDump() const {
+  if (KUDU_SHOULD_REDACT()) {
+    return kRedactionMessage;
+  }
+
   string ret;
   for (int i = 0; i < n_payload_slices_; i++) {
     ret.append(payload_slices_[i].ToDebugString());

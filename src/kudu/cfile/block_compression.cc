@@ -26,6 +26,7 @@
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 
 DEFINE_int64(max_cfile_block_size, 16 * 1024 * 1024,
              "The maximum size of an uncompressed CFile block when using compression. "
@@ -95,7 +96,7 @@ Status CompressedBlockDecoder::ValidateHeader(const Slice& data, uint32_t *uncom
       StringPrintf("data size %lu is not enough to contains the header. "
         "required %lu, buffer",
         data.size(), CompressedBlockBuilder::kHeaderReservedLength),
-        data.ToDebugString(50));
+        KUDU_REDACT(data.ToDebugString(50)));
   }
 
   // Decode the header
@@ -107,14 +108,15 @@ Status CompressedBlockDecoder::ValidateHeader(const Slice& data, uint32_t *uncom
     return Status::Corruption(
       StringPrintf("compressed size %u does not match remaining length in buffer %lu, buffer",
         compressed_size, data.size() - CompressedBlockBuilder::kHeaderReservedLength),
-        data.ToDebugString(50));
+        KUDU_REDACT(data.ToDebugString(50)));
   }
 
   // Check if uncompressed size seems to be reasonable
   if (*uncompressed_size > FLAGS_max_cfile_block_size) {
     return Status::Corruption(
       StringPrintf("uncompressed size %u overflows the maximum length %lu, buffer",
-        compressed_size, FLAGS_max_cfile_block_size), data.ToDebugString(50));
+                   compressed_size, FLAGS_max_cfile_block_size),
+      KUDU_REDACT(data.ToDebugString(50)));
   }
 
   return Status::OK();

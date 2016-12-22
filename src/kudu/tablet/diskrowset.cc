@@ -20,24 +20,25 @@
 #include <mutex>
 #include <vector>
 
+#include "kudu/cfile/bloomfile.h"
+#include "kudu/cfile/cfile_writer.h"
+#include "kudu/cfile/type_encodings.h"
 #include "kudu/common/generic_iterators.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/log_anchor_registry.h"
-#include "kudu/cfile/bloomfile.h"
-#include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/type_encodings.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/compaction.h"
+#include "kudu/tablet/delta_compaction.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/diskrowset.h"
-#include "kudu/tablet/delta_compaction.h"
 #include "kudu/tablet/multi_column_writer.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 
 DEFINE_int32(tablet_delta_store_minor_compact_max, 1000,
@@ -185,8 +186,8 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
 #ifndef NDEBUG
     CHECK_LT(Slice(prev_key).compare(enc_key), 0)
-      << enc_key.ToDebugString() << " appended to file not > previous key "
-      << Slice(prev_key).ToDebugString();
+      << KUDU_REDACT(enc_key.ToDebugString()) << " appended to file not > previous key "
+      << KUDU_REDACT(Slice(prev_key).ToDebugString());
 #endif
   }
 
@@ -219,8 +220,8 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   Slice first_enc_slice(first_encoded_key);
 
   CHECK_LE(first_enc_slice.compare(last_enc_slice), 0)
-      << "First Key not <= Last key: first_key=" << first_enc_slice.ToDebugString()
-      << "   last_key=" << last_enc_slice.ToDebugString();
+      << "First Key not <= Last key: first_key=" << KUDU_REDACT(first_enc_slice.ToDebugString())
+      << "   last_key=" << KUDU_REDACT(last_enc_slice.ToDebugString());
   key_index_writer()->AddMetadataPair(DiskRowSet::kMaxKeyMetaEntryName, last_enc_slice);
 
   // Finish writing the columns themselves.
