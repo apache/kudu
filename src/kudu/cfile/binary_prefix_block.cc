@@ -365,8 +365,8 @@ Status BinaryPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
 #ifndef NDEBUG
     VLOG(3) << "loop iter:\n"
             << "cur_idx = " << cur_idx_ << "\n"
-            << "target  =" << target.ToString() << "\n"
-            << "cur_val_=" << Slice(cur_val_).ToString();
+            << "target  =" << KUDU_REDACT(target.ToDebugString()) << "\n"
+            << "cur_val_=" << KUDU_REDACT(Slice(cur_val_).ToDebugString());
 #endif
     int cmp = Slice(cur_val_).compare(target);
     if (cmp >= 0) {

@@ -26,6 +26,7 @@
 #include "kudu/cfile/compression_codec.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/util/logging.h"
 
 namespace kudu {
 namespace cfile {
@@ -172,7 +173,7 @@ class Lz4Codec : public CompressionCodec {
     if (n != compressed.size()) {
       return Status::Corruption(
         StringPrintf("unable to uncompress the buffer. error near %d, buffer", -n),
-          compressed.ToDebugString(100));
+                     KUDU_REDACT(compressed.ToDebugString(100)));
     }
     return Status::OK();
   }

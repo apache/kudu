@@ -18,10 +18,12 @@
 #define KUDU_TABLET_DELTA_KEY_H
 
 #include <string>
+
 #include "kudu/common/rowid.h"
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -73,11 +75,13 @@ class DeltaKey {
   Status DecodeFrom(Slice *key) {
     Slice orig(*key);
     if (!PREDICT_TRUE(DecodeRowId(key, &row_idx_))) {
-      return Status::Corruption("Bad delta key: bad rowid", orig.ToDebugString(20));
+      return Status::Corruption("Bad delta key: bad rowid",
+                                KUDU_REDACT(orig.ToDebugString(20)));
     }
 
     if (!PREDICT_TRUE(timestamp_.DecodeFrom(key))) {
-      return Status::Corruption("Bad delta key: bad timestamp", orig.ToDebugString(20));
+      return Status::Corruption("Bad delta key: bad timestamp",
+                                KUDU_REDACT(orig.ToDebugString(20)));
     }
     return Status::OK();
   }

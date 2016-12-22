@@ -295,6 +295,18 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
       R"(HASH (a, b): 0, HASH (c): 29, RANGE (a, b, c): (<redacted>, <redacted>, <redacted>))";
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
+
+    // Check that row values are redacted from error messages when the
+    // log_redact_user_data flag is set.
+
+    EXPECT_EQ("<hash-decode-error>",
+              partition_schema.PartitionKeyDebugString(string("\0\1\0\1", 4), schema));
+    EXPECT_EQ("HASH (a, b): 0, HASH (c): 0, RANGE (a, b, c): "
+              "<range-key-decode-error: Invalid argument: "
+              "Error decoding partition key range component 'a': key too short: <redacted>>",
+              partition_schema.PartitionKeyDebugString(string("\0\0\0\0"
+                                                              "\0\0\0\0"
+                                                              "a", 9), schema));
   }
 }
 
@@ -792,5 +804,4 @@ TEST_F(PartitionTest, TestIncrementRangePartitionStringBounds) {
     check(test, false);
   }
 }
-
 } // namespace kudu

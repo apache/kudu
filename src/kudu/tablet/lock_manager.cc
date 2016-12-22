@@ -27,6 +27,7 @@
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/trace.h"
 
@@ -56,7 +57,7 @@ class LockEntry {
   }
 
   std::string ToString() const {
-    return key_.ToDebugString();
+    return KUDU_REDACT(key_.ToDebugString());
   }
 
   // Mutex used by the LockManager
@@ -357,15 +358,15 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
     while (!(*entry)->sem.TimedAcquire(MonoDelta::FromSeconds(1))) {
       const TransactionState* cur_holder = ANNOTATE_UNPROTECTED_READ((*entry)->holder_);
       LOG(WARNING) << "Waited " << (++waited_seconds) << " seconds to obtain row lock on key "
-                   << key.ToDebugString() << " cur holder: " << cur_holder;
-      // TODO: would be nice to also include some info about the blocking transaction,
+                   << KUDU_REDACT(key.ToDebugString()) << " cur holder: " << cur_holder;
+      // TODO(unknown): would be nice to also include some info about the blocking transaction,
       // but it's a bit tricky to do in a non-racy fashion (the other transaction may
       // complete at any point)
     }
     MicrosecondsInt64 wait_us = GetMonoTimeMicros() - start_wait_us;
     TRACE_COUNTER_INCREMENT("row_lock_wait_us", wait_us);
     if (wait_us > 100 * 1000) {
-      TRACE("Waited $0us for lock on $1", wait_us, key.ToDebugString());
+      TRACE("Waited $0us for lock on $1", wait_us, KUDU_REDACT(key.ToDebugString()));
     }
   }
 

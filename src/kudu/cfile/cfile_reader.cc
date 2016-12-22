@@ -662,7 +662,7 @@ Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
     *exact_match = false;
     if (PREDICT_FALSE(!validx_iter_->HasNext())) {
       return Status::NotFound("key after last block in file",
-                              key.encoded_key().ToDebugString());
+                              KUDU_REDACT(key.encoded_key().ToDebugString()));
     }
     RETURN_NOT_OK(validx_iter_->Next());
     RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_, b.get()));

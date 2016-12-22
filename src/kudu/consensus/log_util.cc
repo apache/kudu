@@ -40,6 +40,7 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
 
@@ -468,13 +469,13 @@ Status ReadableLogSegment::ParseHeaderMagicAndHeaderLength(const Slice &data,
       // 12 bytes of NULLs, good enough for us to consider this a file that
       // was never written to (but apparently preallocated).
       LOG(WARNING) << "Log segment file " << path() << " has 12 initial NULL bytes instead of "
-                   << "magic and header length: " << data.ToDebugString()
+                   << "magic and header length: " << KUDU_REDACT(data.ToDebugString())
                    << " and will be treated as a blank segment.";
       return Status::Uninitialized("log magic and header length are all NULL bytes");
     }
     // If no magic and not uninitialized, the file is considered corrupt.
     return Status::Corruption(Substitute("Invalid log segment file $0: Bad magic. $1",
-                                         path(), data.ToDebugString()));
+                                         path(), KUDU_REDACT(data.ToDebugString())));
   }
 
   *parsed_len = DecodeFixed32(data.data() + strlen(kLogSegmentHeaderMagicString));

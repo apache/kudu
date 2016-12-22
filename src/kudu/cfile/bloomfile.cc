@@ -106,7 +106,8 @@ Status BloomFileWriter::AppendKeys(
 }
 
 Status BloomFileWriter::FinishCurrentBloomBlock() {
-  VLOG(1) << "Appending a new bloom block, first_key=" << Slice(first_key_).ToDebugString();
+  VLOG(1) << "Appending a new bloom block, first_key="
+          << KUDU_REDACT(Slice(first_key_).ToDebugString());
 
   // Encode the header.
   BloomBlockHeaderPB hdr;

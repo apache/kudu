@@ -49,14 +49,15 @@
 #include <memory>
 #include <string>
 
-#include "kudu/util/debug/sanitizer_scopes.h"
-#include "kudu/util/inline_slice.h"
-#include "kudu/util/memory/arena.h"
-#include "kudu/util/status.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/mathlimits.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/stringprintf.h"
+#include "kudu/util/debug/sanitizer_scopes.h"
+#include "kudu/util/inline_slice.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/status.h"
 
 //#define TRAVERSE_PREFETCH
 #define SCAN_PREFETCH
@@ -547,7 +548,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
     bool exact;
     size_t idx = Find(key, &exact);
     CHECK(!exact)
-      << "Trying to insert duplicate key " << key.ToDebugString()
+      << "Trying to insert duplicate key " << KUDU_REDACT(key.ToDebugString())
       << " into an internal node! Internal node keys should result "
       << " from splits and therefore be unique.";
 
@@ -631,7 +632,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
         ret.append(", ");
       }
       Slice k = keys_[i].as_slice();
-      ret.append(k.ToDebugString());
+      ret.append(KUDU_REDACT(k.ToDebugString()));
     }
     ret.append("]");
     return ret;
@@ -786,9 +787,9 @@ class LeafNode : public NodeBase<Traits> {
       Slice k = keys_[i].as_slice();
       Slice v = vals_[i].as_slice();
       ret.append("[");
-      ret.append(k.ToDebugString());
+      ret.append(KUDU_REDACT(k.ToDebugString()));
       ret.append("=");
-      ret.append(v.ToDebugString());
+      ret.append(KUDU_REDACT(v.ToDebugString()));
       ret.append("]");
     }
     return ret;
@@ -1240,7 +1241,7 @@ class CBTree {
           DebugPrint(inode->child_pointers_[i], inode, indent + 4);
           if (i < inode->key_count()) {
             SStringPrintf(&buf, "%*sKEY ", indent + 2, "");
-            buf.append(inode->GetKey(i).ToDebugString());
+            buf.append(KUDU_REDACT(inode->GetKey(i).ToDebugString()));
             LOG(INFO) << buf;
           }
         }
@@ -1488,8 +1489,8 @@ class CBTree {
     dst_leaf->PrepareMutation(mutation);
 
     CHECK_EQ(INSERT_SUCCESS, dst_leaf->Insert(mutation, val))
-      << "node split at " << split_key.ToDebugString()
-      << " did not result in enough space for key " << key.ToDebugString()
+      << "node split at " << KUDU_REDACT(split_key.ToDebugString())
+      << " did not result in enough space for key " << KUDU_REDACT(key.ToDebugString())
       << " in left node";
 
     // Insert the new node into the parents.
@@ -1536,7 +1537,7 @@ class CBTree {
       case INSERT_SUCCESS:
       {
         VLOG(3) << "Inserted new entry into internal node "
-                << parent << " for " << split_key.ToDebugString();
+                << parent << " for " << KUDU_REDACT(split_key.ToDebugString());
         left->Unlock();
         right->Unlock();
         parent->Unlock();
@@ -1557,8 +1558,8 @@ class CBTree {
           (split_key.compare(inode_split) < 0) ? parent : new_inode;
 
         VLOG(2) << "Split internal node " << parent << " for insert of "
-                << split_key.ToDebugString() << "[" << right << "]"
-                << " (split at " << inode_split.ToDebugString() << ")";
+                << KUDU_REDACT(split_key.ToDebugString()) << "[" << right << "]"
+                << " (split at " << KUDU_REDACT(inode_split.ToDebugString()) << ")";
 
         CHECK_EQ(INSERT_SUCCESS, dst_inode->Insert(split_key, right_ptr, arena_.get()));
 
